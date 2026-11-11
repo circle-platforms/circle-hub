@@ -61,7 +61,7 @@ test('one brief directory lasts across repairs and nothing in it is overwritten:
   const first = JSON.parse((await w.runBrief()).stdout).briefs[0];
   await writeFile(first.verdict, JSON.stringify(VERDICT));
   const again = JSON.parse((await w.runBrief()).stdout);
-  assert.equal(again.briefs[0].state, '已有这份计划的审计结果'); assert.deepEqual(again.to_audit, []);
+  assert.equal(again.briefs[0].state, '未确认'); assert.deepEqual(again.to_audit, []);
   const plan = await w.planOf(); plan.slots.plan[0].data.steps[1].args = ['echo 192.0.2.91'];
   await writeFile(join(w.plans, '00.json'), JSON.stringify(plan));
   const changed = JSON.parse((await w.runBrief()).stdout);
@@ -70,19 +70,19 @@ test('one brief directory lasts across repairs and nothing in it is overwritten:
   const names = (await readdir(w.briefs)).sort();
   assert.equal(names.filter((name) => name.endsWith('.brief.json')).length, 2, 'the earlier brief stays as it was');
   assert.equal(names.filter((name) => name.endsWith('.verdict.json')).length, 1, 'the earlier verdict stays under its own name');
-  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '缺审计结果', 'and is not merged into the changed plan');
+  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '未知', 'and is not merged into the changed plan');
 });
 
 test('a verdict is merged only for the plan it answered, with the digest the tool writes; what the Hub would return is said before submitting', async () => {
   const w = await workspace();
   const before = JSON.parse((await w.runApply()).stdout);
-  assert.deepEqual([before.ready, before.attention[0].state], [false, '简报过期'], 'no brief yet');
+  assert.deepEqual([before.ready, before.attention[0].state], [false, '未知'], 'no brief yet');
   await w.runBrief();
-  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '缺审计结果');
+  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '未知');
   await writeFile(await w.verdictPath(), JSON.stringify({ ...VERDICT, brief_sha256: 'f'.repeat(64) }));
-  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '审计结果不合式', 'the auditor writes two items; the digest is the tool’s');
+  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '未知', 'the auditor writes two items; the digest is the tool’s');
   await writeFile(await w.verdictPath(), JSON.stringify({ ...VERDICT, steps: [] }));
-  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '审计结果不合式');
+  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '未知');
   assert.equal((await w.planOf()).slots.plan[0].data.fidelity, undefined, 'nothing merged so far');
 
   await writeFile(await w.verdictPath(), JSON.stringify(VERDICT));
@@ -92,15 +92,15 @@ test('a verdict is merged only for the plan it answered, with the digest the too
   const current = fidelityBrief('doc-1:c-1', RECORD, rest)!;
   assert.equal(fidelity.brief_sha256, current.brief_sha256);
   assert.deepEqual(fidelityProblems(current, fidelity).problems, [], 'what the Hub checks passes');
-  assert.equal(JSON.parse((await w.runBrief()).stdout).briefs[0].state, '已有这份计划的审计结果', 'the merged verdict is not part of the brief');
+  assert.equal(JSON.parse((await w.runBrief()).stdout).briefs[0].state, '未确认', 'the merged verdict is not part of the brief');
 
   // The plan is edited after the audit: the old verdict is not merged again, and a changed verdict is reported, not hidden.
   data.steps[1].args = ['echo 192.0.2.92']; await writeFile(join(w.plans, '00.json'), JSON.stringify(plan));
-  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '简报过期');
+  assert.equal(JSON.parse((await w.runApply()).stdout).attention[0].state, '未知');
   await w.runBrief();
   await writeFile(await w.verdictPath(), JSON.stringify({ steps: [{ ...VERDICT.steps[0], verdict: 'changed' }], disclosure: VERDICT.disclosure }));
   const returned = JSON.parse((await w.runApply()).stdout);
-  assert.deepEqual([returned.ready, returned.merged[0].changed, returned.attention[0].state], [false, 1, '审计判这条计划要改']);
-  assert.match(returned.attention[0].message, /审计判作者步骤 a2 的场景被改了.*改计划后重跑 fidelity-brief、重新审计这一条/);
+  assert.deepEqual([returned.ready, returned.merged[0].changed, returned.attention[0].state], [false, 1, '未确认']);
+  assert.match(returned.attention[0].message, /审计判作者步骤 a2 的场景被改了.*判断错误，原因编写模型的问题，下一步由编写模型修改这条自动化用例，再交给独立模型核对/);
   assert.equal((await w.planOf()).slots.plan[0].data.fidelity.steps[0].verdict, 'changed', 'the verdict is merged as the auditor gave it');
 });

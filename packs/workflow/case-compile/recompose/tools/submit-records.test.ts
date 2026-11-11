@@ -30,15 +30,15 @@ test('what the model judged replaces only the atom it names', () => {
 
 test('a candidate never signs, and an atom the case does not have is refused', () => {
   assert.equal(recordFor(item(), { method, candidates: [{ ref: 'x', signing_authority: true }] }, 'scripted').sources.candidates[0].signing_authority, false);
-  assert.throws(() => recordFor(item(), { method, states: [{ atom: 'a9', state: 'conflict' }] }, 'scripted'), /没有这条用例原句/);
-  assert.throws(() => recordFor(item(), { method, slots: [{ atom: 'a1' }] }, 'scripted'), /不是该条目里期望的用例原句/);
-  assert.throws(() => recordFor(item(), {}, 'scripted'), /缺 method/);
+  assert.throws(() => recordFor(item(), { method, states: [{ atom: 'a9', state: 'conflict' }] }, 'scripted'), /没有这条原句/);
+  assert.throws(() => recordFor(item(), { method, slots: [{ atom: 'a1' }] }, 'scripted'), /期望不是这条原始用例的原句/);
+  assert.throws(() => recordFor(item(), {}, 'scripted'), /缺少用例重组的方法/);
 });
 
 test('a submission covers every frozen case, and only those', () => {
   const run = { run: 'run_x', items: [item('one'), item('two')] };
-  assert.throws(() => submissionFor(run, [{ item: 'one', method }], 'scripted'), /还有 1 个用例没有文件：two/);
-  assert.throws(() => submissionFor(run, [{ item: 'one', method }, { item: 'two', method }, { item: 'three', method }], 'scripted'), /不是这个运行的条目/);
+  assert.throws(() => submissionFor(run, [{ item: 'one', method }], 'scripted'), /还有 1 条原始用例没有重组后的用例/);
+  assert.throws(() => submissionFor(run, [{ item: 'one', method }, { item: 'two', method }, { item: 'three', method }], 'scripted'), /不属于本次用例重组的原始用例/);
   const sent = submissionFor(run, [{ item: 'one', method }, { item: 'two', method }], 'scripted');
   assert.equal(sent.items.length, 2);
   assert.equal(sent.items[0].slots.record[0].quotes.length, 3);

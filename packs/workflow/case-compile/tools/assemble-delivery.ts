@@ -1,12 +1,3 @@
-// The delivery directory at the end of a compile run, after the reference engine's (InfoTest docs/engine/07_display_contract.md
-// §11.9): case.xlsx (the pass volume), unsuccessful_cases.xlsx, delivery_report.md, unsuccessful_cases.md and delivery.json.
-// Verdicts come from the Hub's relay of the jobs (GET /run-export/<run>/jobs); the pass volume is regenerated from its plan run
-// and must be byte for byte the workbook that was dispatched; the unsuccessful volume merges each case not passed as it last went
-// to the bed, from the plan run of its latest dispatch. Author-conflict quotations are checked against the locked knowledge root.
-// The token is read from standard input only, in the one form the skills home admits:
-//   node <skill directory>/tools/assemble-delivery.ts --hub %HUB_URL% --runs <run>,<run> --recompose <run> --notes <file> --out <directory> <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -14,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
@@ -74,18 +65,17 @@ function lineageKeyOf(sources: unknown): string | null {
 const lineageKey = (run: Record<string, unknown>) => lineageKeyOf(run.sources);
 /** The Hub's run-successors@1 answer for `run`: the runs started from it that the reader may export. */
 function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack: string; started_at: string; parameters: Record<string, unknown>; sources: unknown }> {
-  if (!isRecord(value) || value.schema !== 'run-successors@1' || value.run !== run || !Array.isArray(value.successors)) throw new Error(`Hub 给的运行 ${run} 的后继清单不合式`);
+  if (!isRecord(value) || value.schema !== 'run-successors@1' || value.run !== run || !Array.isArray(value.successors)) throw new Error(`Hub 返回的后续脚本编写和上机验证信息不完整`);
   return value.successors.map((r) => {
-    if (!isRecord(r) || typeof r.run !== 'string' || !RUN_ID.test(r.run) || typeof r.pack !== 'string' || typeof r.started_at !== 'string' || !isRecord(r.parameters) || !Array.isArray(r.sources)) throw new Error(`运行 ${run} 的后继条目不合式`);
+    if (!isRecord(r) || typeof r.run !== 'string' || !RUN_ID.test(r.run) || typeof r.pack !== 'string' || typeof r.started_at !== 'string' || !isRecord(r.parameters) || !Array.isArray(r.sources)) throw new Error(`Hub 返回的后续脚本编写和上机验证信息不完整`);
     return { run: r.run, pack: r.pack, started_at: r.started_at, parameters: r.parameters, sources: r.sources };
   });
 }
 /** The answer the model gives the person, made here so it holds the counts and paths and nothing else. */
-export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = []): string {
-  const counts = (Object.keys(STATUS) as Array<keyof typeof STATUS>).map((status) => `${STATUS[status]} ${totals[status] ?? 0}`).join('，');
-  const closings = closingCounts(cases);
-  return [`交付目录：${out}`, `共 ${totals.cases} 条：${counts}。`, ...(closings ? [closings] : []), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = [], input?: ReportInput): string {
+  return [`交付目录 ${out}`, ...(input ? cases.map((outcome) => caseConclusion(input, outcome)) : [`共 ${totals.cases} 条原始用例。`]), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
 }
+
 /**
  * What the Hub recorded for item `id` in a plan run's latest accepted result, on a requirement of the plan, not the workbook's (a
  * plan run has no workbook yet): pending on a data gap with a request to a named audience (a missing fact), or else no accepted
@@ -141,12 +131,12 @@ async function knowledgeBatch(origin: string, bearer: string, run: string): Prom
   try {
     reply = await fetch(`${origin}/run-export/${run}/knowledge`, { headers: { authorization: `Bearer ${bearer}` }, signal: AbortSignal.timeout(KNOWLEDGE_TIMEOUT_MS) });
     bytes = new Uint8Array(await reply.arrayBuffer());
-  } catch { throw new Error(`Hub 没有在 ${KNOWLEDGE_TIMEOUT_MS / 1000} 秒内给出计划运行 ${run} 锁定的知识根，或不可达；稍后用同一命令重取`); }
-  if (reply.status === 404) throw new Error(`Hub 读不到计划运行 ${run} 锁定的知识根（这个运行没有锁定知识根，或你的读取层级读不到它），author_conflict 核对不了`);
+  } catch { throw new Error(`Hub 尚未返回脚本编写时使用的手册和命令树，请稍后用同一命令重新下载`); }
+  if (reply.status === 404) throw new Error(`Hub 无法读取脚本编写时使用的手册和命令树，原始用例与手册冲突的判断尚未核对`);
   if (!reply.ok) throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
-  if (bytes.length > KNOWLEDGE_MAX_BYTES) throw new Error(`知识根超过 ${KNOWLEDGE_MAX_BYTES / (1024 * 1024)} MiB 上限，author_conflict 核对不了`);
+  if (bytes.length > KNOWLEDGE_MAX_BYTES) throw new Error(`手册和命令树超过可读取的大小，原始用例与手册冲突的判断尚未核对`);
   const digest = /^sha-256=:([A-Za-z0-9+/=]+):$/.exec(reply.headers.get('content-digest') ?? '');
-  if (!digest || Buffer.from(digest[1], 'base64').toString('hex') !== sha256(bytes)) throw new Error('知识根的字节与 Hub 给的摘要不符，author_conflict 核对不了');
+  if (!digest || Buffer.from(digest[1], 'base64').toString('hex') !== sha256(bytes)) throw new Error('手册和命令树与保存的原件不一致，原始用例与手册冲突的判断尚未核对');
   return bytes;
 }
 async function citedStatements(origin: string, bearer: string, cited: ReadonlySet<string>, planRuns: readonly string[], rootOf: (run: string) => unknown): Promise<Map<string, string>> {
@@ -156,7 +146,7 @@ async function citedStatements(origin: string, bearer: string, cited: ReadonlySe
     const holder = [...planRuns].reverse().find((run) => rootOf(run) === root);
     if (!holder) continue;
     const batch = lockedStatements(await knowledgeBatch(origin, bearer, holder), holder, cited);
-    if (batch.root !== root) throw new Error(`Hub 给的计划运行 ${holder} 的知识根不是运行记录里的 ${root}，author_conflict 核对不了`);
+    if (batch.root !== root) throw new Error(`手册和命令树与脚本编写时使用的构建不一致，原始用例与手册冲突的判断尚未核对`);
     for (const [reference, statement] of batch.statements) statements.set(reference, statement);
   }
   return statements;
@@ -166,7 +156,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
   try {
     const args = options(argv);
     const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
-    if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) throw new Error('--runs 写按上机先后排列、逗号分隔的核验运行号；--recompose 写重组运行号');
+    if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) throw new Error('--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号');
     // The notes are a file the model writes and edits by hand: a break in it is named with its place and the text around it, as
     // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readBytes(args.notes, 'notes'));
@@ -188,7 +178,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const runOf = async (run: string): Promise<Record<string, unknown> | null> => { const exported = JSON.parse(decode(await get(`${origin}/run-export/${run}/run`, bearer))); return isRecord(exported) && isRecord(exported.run) && exported.run.run === run ? exported.run : null; };
     const ours = (run: Record<string, unknown> | null, key: string) => !!run && typeof run.pack === 'string' && run.pack.split('@')[0] === 'case-compile' && lineageKey(run) === key;
     for (const d of given.values()) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
-    if (keys.size !== 1) throw new Error('--runs 的核验运行不是同一份重组（或同一份脑图）编出来的；只写这份脑图的核验运行');
+    if (keys.size !== 1) throw new Error('--runs 中的自动化用例不是来自同一份重组后的用例或原始用例，请只选择这份原始用例的上机验证');
     const [key] = keys;
     // Up: a rework's plan run may name the booking or the verification run before it as predecessor (run 12 did the first, run 14
     // the second), so the walk climbs while the predecessor is a run of this compilation and starts below the first one that is not.
@@ -226,8 +216,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const originals: Record<string, Original> = {}; let population: string[] = [];
     if (args.recompose) {
       const exported = JSON.parse(decode(await get(`${origin}/run-export/${args.recompose}/run`, bearer)));
-      if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 给的重组运行不合式或不是 --recompose 指定的');
-      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组运行的条目没有 case_id 和用例原句，不是重组运行'); population.push(read.autoid); originals[read.autoid] = read.original; }
+      if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 返回的重组后的用例不完整或与本次用例重组不符');
+      for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组后的用例缺少原始用例 ID 或原句'); population.push(read.autoid); originals[read.autoid] = read.original; }
     }
     const excluded = [...new Set([...plans.values()].flatMap((p) => excludedOf(p.run)))];
     for (const d of dispatches) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
@@ -271,8 +261,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const assembly = (() => {
       try { return assemble(population, dispatches); } catch (error) {
         if (!(error instanceof Error) || !hits.size) throw error;
-        const told = [...hits.entries()].slice(-5).map(([key, hit]) => `用例 ${key.split('\u0000')[1]} 的${hit.where}里有一行“${hit.line.length > 160 ? `${hit.line.slice(0, 160)}…` : hit.line}”`);
-        throw new Error(`${error.message}。通过复核把这些通过改记为无判定（合约声明的执行失败原话出现在它的运行日志里，而它自己的断言没有读到这一行）：${told.join('；')}。让这条用例的断言读到这一行，或换一种不会执行失败的观察，再整卷上机`);
+        const told = [...hits.entries()].slice(-5).map(([key, hit]) => `原始用例 ${key.split('\u0000')[1]} ${originals[key.split('\u0000')[1]]?.title ?? '标题未知'} 的设备输出里有一行“${hit.line.length > 160 ? `${hit.line.slice(0, 160)}…` : hit.line}”`);
+        throw new Error(`${error.message}。核对设备输出后，以下原始用例状态未知，执行失败原话没有被自动化用例检查：${told.join('；')}。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，再把自动化用例 Excel 一起做上机验证`);
       }
     })();
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
@@ -284,7 +274,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (assembly.pass) {
       const passRecipes = recipesOf(plans.get(assembly.pass.plan_run)!);
       const bytes = generateWorkbookSet(passRecipes);
-      if (sha256(bytes) !== assembly.pass.sha256) throw new Error(`从计划运行 ${assembly.pass.plan_run} 重算的工作簿和核验运行 ${assembly.pass.run} 派发的那份字节不一致；通过卷只能是最后一次整卷上机的那份`);
+      if (sha256(bytes) !== assembly.pass.sha256) throw new Error(`重新生成的自动化用例 Excel 与上机验证使用的文件不一致；请使用最近一次一起做上机验证且全部正确的自动化用例 Excel`);
       passLast = volumeOrder(passRecipes).moved;
       outputs.push({ name: 'case.xlsx', bytes }); passFile = { sha256: assembly.pass.sha256 };
     }
@@ -296,7 +286,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
         const planRun = sources[autoid].plan_run; const plan = plans.get(planRun)!;
         if (!recipes.has(planRun)) recipes.set(planRun, recipesOf(plan));
         const k = (plan.run.items as unknown[]).findIndex((item) => autoidOf(item) === autoid);
-        if (k < 0) throw new Error(`计划运行 ${planRun} 里没有用例 ${autoid}，它却在那次上机里`);
+        if (k < 0) throw new Error(`原始用例 ${autoid} ${originals[autoid]?.title ?? '标题未知'} 的自动化用例不在脚本编写结果里，却在上机验证中出现`);
         return recipes.get(planRun)![k];
       });
       const bytes = generateWorkbookSet(selected, { merged: true });
@@ -308,8 +298,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     for (const outcome of assembly.cases.filter((c) => c.status !== 'delivered')) {
       const last = outcome.history.at(-1); const found = last?.log ? /^src:([0-9a-f]{64})$/.exec(last.log) : null;
       if (!last || !found) continue;
-      try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) !== found[1]) throw new Error('日志字节和引用的摘要不符'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
-      catch (error) { logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? 'Hub 的读取层级不给这份日志的字节' : `没有取到：${error instanceof Error ? error.message : '读取失败'}` }; }
+      try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) !== found[1]) throw new Error('设备输出与保存的原件不一致'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
+      catch (error) { logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? '没有读取这份设备输出的权限' : `没有取到：${error instanceof Error ? error.message : '读取失败'}` }; }
     }
     // The reference engine's attribution rule: a case not delivered that went to the bed is explained with the device's own words,
     // verbatim from its last device output (the runner log or a device session), checked here against the bytes the Hub relays.
@@ -381,8 +371,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
-    process.stdout.write(JSON.stringify({ out, totals: assembly.totals, files, runs: dispatches.map((d) => d.run), added_runs: added, reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases) }) + '\n');
+    process.stdout.write(JSON.stringify({ out, totals: assembly.totals, files, runs: dispatches.map((d) => d.run), added_runs: added, reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input) }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(`交付没有组成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(`交付报告未生成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

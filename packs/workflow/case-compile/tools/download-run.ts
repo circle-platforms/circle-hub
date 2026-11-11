@@ -15,12 +15,12 @@ import { writeBriefs } from './authoring-brief.ts';
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, brief: (directory: string) => Promise<{ briefs: number }> = writeBriefs): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
-    if (!RUN_ID.test(args.run)) throw new Error('--run 必须是运行编号');
+    if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
     const { files, ...report } = await downloadRun(origin, await bearerFrom(readToken), args.run, args.out);
     // The run is on disk by now: a brief that cannot be written is said, and is no reason to call the download failed.
     let briefs = 0, note: string | undefined;
-    try { briefs = (await brief(args.out)).briefs; } catch (error) { note = `编写简报没有写出（${error instanceof Error ? error.message : '原因不明'}）；运行已完整下载，照常读 items/ 和 knowledge/`; }
+    try { briefs = (await brief(args.out)).briefs; } catch (error) { note = `脚本编写所需的原始用例和手册未保存。原因${error instanceof Error ? error.message : '还没查清'}；其余原始资料已下载，请从原始资料继续脚本编写`; }
     process.stdout.write(JSON.stringify({ ...report, written: Object.keys(files).length + briefs, briefs, ...(note ? { briefs_note: note } : {}) }) + '\n'); return 0;
   } catch (error) { process.stderr.write(`下载失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }

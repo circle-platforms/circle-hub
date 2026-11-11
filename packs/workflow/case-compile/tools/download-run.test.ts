@@ -166,7 +166,7 @@ test('items that carry a recomposition record get their authoring brief with the
   const third = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const failed = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', third], async () => TOKEN, async () => { throw new Error('合成故障'); }));
   assert.equal(failed.code, 0, failed.stderr);
-  assert.deepEqual([JSON.parse(failed.stdout).briefs, JSON.parse(failed.stdout).briefs_note], [0, '编写简报没有写出（合成故障）；运行已完整下载，照常读 items/ 和 knowledge/']);
+  assert.deepEqual([JSON.parse(failed.stdout).briefs, JSON.parse(failed.stdout).briefs_note], [0, '脚本编写所需的原始用例和手册未保存。原因合成故障；其余原始资料已下载，请从原始资料继续脚本编写']);
   assert.equal((await readdir(join(third, 'items'))).length, 12);
   // The recomposition stage's own download writes no briefs: its items are what a record is made from.
   const other = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');

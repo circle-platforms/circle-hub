@@ -12,7 +12,7 @@ import { argumentsOf, bearerFrom, downloadRun, hubOrigin, RUN_ID, tokenFromStdin
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
-    if (!RUN_ID.test(args.run)) throw new Error('--run 必须是运行编号');
+    if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
     const { files, ...report } = await downloadRun(origin, await bearerFrom(readToken), args.run, args.out);
     process.stdout.write(JSON.stringify({ ...report, written: Object.keys(files).length }) + '\n'); return 0;

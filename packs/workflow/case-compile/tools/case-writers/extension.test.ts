@@ -190,8 +190,8 @@ test('one writer per case starts at once; every file is read back by identity; n
     assert.equal(byIndex['00']!.report, '已写出 00。\n没有缺口。');
     assert.equal(byIndex['00']!.title, '正常');
     assert.ok(byIndex['01']!.note!.includes('不存在') && byIndex['01']!.plan_file === undefined && byIndex['01']!.report!.includes('没有写'));
-    assert.ok(byIndex['02']!.note!.includes('doc:c-1') && byIndex['02']!.note!.includes('doc:c-2'), 'a plan of another item is named as that');
-    assert.ok(byIndex['03']!.note!.includes('briefs/03.md') && byIndex['03']!.item === 'doc:c-3');
+    assert.ok(byIndex['02']!.note!.includes('不是这条原始用例的自动化用例'), 'a plan of another item is named as that');
+    assert.ok(byIndex['03']!.note!.includes('第 03 份原始用例缺少重组后的用例或手册') && byIndex['03']!.item === 'doc:c-3');
     assert.ok(byIndex['04']!.note!.includes('model endpoint unavailable'));
     assert.ok(byIndex['05']!.note!.includes('一字未变') && byIndex['05']!.sha256 !== undefined);
     assert.equal(await readFile(join(w.plans, planFileName('doc:c-5')), 'utf8'), earlier, 'the code never rewrites a plan file');
@@ -201,7 +201,7 @@ test('one writer per case starts at once; every file is read back by identity; n
     assert.deepEqual(result.stray_files, ['notes.json'], 'a file that is no plan file and appeared during the call; the plan file of another run is left alone');
     assert.equal(result.concurrency, 'all');
     assert.ok(result.summary.startsWith('8 个编写者，同时开始：4 份自动化用例已写出，4 个要处理，1 条没有启动，自动化用例目录里多出 1 个'), result.summary);
-    assert.ok(result.next!.includes('only') && result.next!.includes('submit-plans'));
+    assert.ok(result.next!.includes('选择尚未写好的原始用例继续脚本编写') && result.next!.includes('脚本合并前移走'));
     assert.equal(statuses[0], '编写者 0/8');
     assert.ok(statuses.includes('编写者 8/8'));
     assert.equal(statuses.at(-1), null, 'the footer line is cleared');
@@ -245,7 +245,7 @@ test('an item whose plan file exists under another name keeps that file, and two
     assert.equal(JSON.parse(await readFile(join(w.plans, '01.json'), 'utf8')).slots.plan[0].text, '这一轮');
     await writeFile(join(w.plans, 'copy-of-01.json'), planOf('doc:c-1'));
     task.calls.length = 0;
-    await assert.rejects(async () => executeOf(registered)({ run_directory: w.run, plans_directory: w.plans, skill_directory: w.skill }, contextOf()), (error: Error) => error instanceof StubToolError && error.message.includes('01.json') && error.message.includes('copy-of-01.json') && error.message.includes('同一个原始用例'));
+    await assert.rejects(async () => executeOf(registered)({ run_directory: w.run, plans_directory: w.plans, skill_directory: w.skill }, contextOf()), (error: Error) => error instanceof StubToolError && error.message.includes('01.json') && error.message.includes('copy-of-01.json') && error.message.includes('同一条原始用例'));
     assert.deepEqual(task.calls, [], 'nothing was started');
   } finally { await w.remove(); }
 });
@@ -276,7 +276,7 @@ test('an abort stops anything not yet started and the cases left are listed as n
     const result = await executeOf(registered)({ run_directory: w.run, plans_directory: w.plans, skill_directory: w.skill }, contextOf(controller.signal)) as { cases: Array<{ index: string; status: string; note?: string }> };
     assert.deepEqual(task.calls.map((call) => call.index), ['00']);
     assert.deepEqual(result.cases.map((value) => value.status), ['written', 'not_started', 'not_started', 'not_started']);
-    assert.equal(result.cases[1]!.note, '中止前没有启动');
+    assert.equal(result.cases[1]!.note, '脚本编写已停止，这条原始用例尚未开始编写');
     assert.equal(task.calls[0]!.context.signal.aborted, true, 'the writers get a signal that follows the call\'s');
   } finally { await w.remove(); }
 });
@@ -303,13 +303,13 @@ test('arguments and directories that are not what the tool needs are refused bef
     await seen(registered, task.tool);
     const base = { run_directory: w.run, plans_directory: w.plans, skill_directory: w.skill };
     const refuse = async (args: Json, text: string) => assert.rejects(async () => executeOf(registered)(args, contextOf()), (error: Error) => error instanceof StubToolError && error.message.includes(text), text);
-    await refuse({ ...base, skill_directory: join(w.root, 'plans') }, 'SKILL.md');
-    await refuse({ ...base, run_directory: join(w.root, 'skill') }, 'items/');
-    await refuse({ ...base, only: ['7'] }, '没有序号 7');
-    await refuse({ ...base, notes: { '1': '这条没有简报' } }, 'notes 里的序号 1');
-    await refuse({ ...base, only: 'all' }, 'only');
-    await refuse({ plans_directory: w.plans, skill_directory: w.skill }, 'run_directory');
-    await refuse({ ...base, plans_directory: join(w.skill, 'SKILL.md') }, '不是可以放自动化用例文件的目录');
+    await refuse({ ...base, skill_directory: join(w.root, 'plans') }, '脚本编写说明');
+    await refuse({ ...base, run_directory: join(w.root, 'skill') }, '原始用例目录');
+    await refuse({ ...base, only: ['7'] }, '没有第 7 份原始用例');
+    await refuse({ ...base, notes: { '1': '这条没有简报' } }, '第 1 份原始用例不在本次脚本编写中');
+    await refuse({ ...base, only: 'all' }, '请选择要继续脚本编写的原始用例');
+    await refuse({ plans_directory: w.plans, skill_directory: w.skill }, '原始用例目录');
+    await refuse({ ...base, plans_directory: join(w.skill, 'SKILL.md') }, '无法写入');
     assert.deepEqual(task.calls, []);
   } finally { await w.remove(); }
 });

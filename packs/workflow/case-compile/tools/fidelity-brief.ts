@@ -24,20 +24,20 @@ export const verdictFile = (directory: string, base: string, sha256: string): st
 /** Every case file of a plan directory that has authored actions, with the brief of its plan as it stands now (placeholders expanded). */
 export async function planCases(runPath: string, plans: string): Promise<{ cases: PlanCase[]; skipped: Array<{ file: string; reason: string }> }> {
   const run = parsedPlanFile('run.json', await readFile(runPath));
-  if (!isRecord(run) || !Array.isArray(run.items)) throw new Error('--run 写 download-run 下载的 run.json（计划运行）');
+  if (!isRecord(run) || !Array.isArray(run.items)) throw new Error('--run 请使用脚本编写时下载的原始用例文件');
   const items = new Map(run.items.filter(isRecord).filter((i) => typeof i.id === 'string').map((i) => [i.id as string, i]));
   await expandPlanFiles(plans);
   const cases: PlanCase[] = [], skipped: Array<{ file: string; reason: string }> = [];
   for (const file of (await readdir(plans)).filter((name) => name.endsWith('.json')).sort()) {
     const value = parsedPlanFile(file, await readFile(join(plans, file)));
-    if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例计划文件（没有 item）' }); continue; }
+    if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例自动化用例文件（没有 item）' }); continue; }
     const item = items.get(value.item);
-    if (!item) { skipped.push({ file, reason: `运行里没有条目 ${value.item}` }); continue; }
+    if (!item) { skipped.push({ file, reason: `不属于本次脚本编写的原始用例` }); continue; }
     const data = planDataOf(value);
     const { fidelity: _judged, ...plan } = isRecord(data) ? data : {};
     const fields = isRecord(item.fields) ? item.fields : {};
     const brief = fidelityBrief(value.item, isRecord(fields.recomposition) ? fields.recomposition.record : undefined, plan);
-    if (!brief) { skipped.push({ file, reason: '没有重组记录里的作者动作原句，不用审计' }); continue; }
+    if (!brief) { skipped.push({ file, reason: '缺少用例重组时的原始用例步骤，尚未核对自动化用例' }); continue; }
     cases.push({ file, base: file.replace(/\.json$/, ''), item: value.item, value, brief });
   }
   return { cases, skipped };
@@ -55,10 +55,10 @@ export async function main(argv: string[]): Promise<number> {
       if ((await readText(at)) === null) await writeNew(at, Buffer.from(JSON.stringify(brief, null, 2) + '\n'));
       const audited = (await readText(verdict)) !== null;
       if (!audited) toAudit.push(resolve(at));
-      briefs.push({ file, item, brief: resolve(at), verdict: resolve(verdict), brief_sha256: brief.brief_sha256, author_steps: brief.author_steps.length, state: audited ? '已有这份计划的审计结果' : '需要审计' });
+      briefs.push({ file, item, brief: resolve(at), verdict: resolve(verdict), brief_sha256: brief.brief_sha256, author_steps: brief.author_steps.length, state: audited ? '未确认' : '未知' });
     }
     process.stdout.write(JSON.stringify({ briefs, to_audit: toAudit, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(`简报没有算出：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(`自动化用例的核对资料未生成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

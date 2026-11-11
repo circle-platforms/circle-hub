@@ -45,7 +45,7 @@ test('the client generator writes the cases that leave state behind last and nam
   const printed = JSON.parse(done.stdout);
   assert.equal(printed.generator, GENERATOR);
   assert.deepEqual(printed.moved_tail.map((row: { autoid: string; channels: Array<{ id: string }> }) => [row.autoid, row.channels.map((channel) => channel.id)]), [[A, ['disk']]]);
-  assert.match(printed.moved_text, new RegExp(`排在卷尾执行：${A}（合成用例 41）$`));
+  assert.match(printed.moved_text, new RegExp(`原始用例 ${A} 合成用例 41 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。$`));
   const read = readWorkbook(coreModel(done.bytes!), recipes);
   assert.ok(read.ok, JSON.stringify(read)); if (read.ok) assert.deepEqual(read.autoids, [B, C, A]);
   // A volume without such a case prints what it printed before.
@@ -59,7 +59,7 @@ test('the client generator refuses a volume with both sides of a forbidden combi
   assert.equal(done.status, 1);
   assert.equal(done.written, false);
   assert.equal(done.stdout, '');
-  for (const part of ['生成失败：同一卷里有产品声明互斥的两侧命令（组合 boot_reload）', A, C, BOOT_ON, RELOAD, BOOT, '未生成可运行卷', 'parameters.exclude']) assert.ok(done.stderr.includes(part), part);
+  for (const part of ['自动化用例 Excel 未生成：同一份自动化用例 Excel 中有产品文档声明不能一起使用的命令', A, C, BOOT_ON, RELOAD, '未生成自动化用例 Excel', '请使用者决定是否修改原始用例']) assert.ok(done.stderr.includes(part), part);
   assert.ok(!done.stderr.includes(B), 'a case on neither side is not named');
 });
 
@@ -67,9 +67,9 @@ test('the delivery report declares the cases placed last in each volume', () => 
   const dispatch = { run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', job: 'a'.repeat(64), plan_run: PLAN_RUN, sha256: 'c'.repeat(64), items: [A, B], rows: [{ item: A, dynamic_terminal: 'pass' }, { item: B, dynamic_terminal: 'pass' }] };
   const assembly = assemble([A, B], [dispatch]);
   const input: ReportInput = { name: '合成交付', generatedAt: '2026-11-11 12:00', build: 'Fixture_Build_A', assembly, notes: { cases: {} }, originals: { [A]: { title: '合成用例一', lines: [] }, [B]: { title: '合成用例二', lines: [] } }, excluded: [], files: { pass: { sha256: 'c'.repeat(64) }, unsuccessful: null }, logs: {} };
-  assert.ok(!deliveryReport(input).includes('卷尾'), 'nothing is said when no case was placed last');
+  assert.ok(!deliveryReport(input).includes('排到最后'), 'nothing is said when no case was placed last');
   const moved = [{ autoid: A, channels: [{ id: 'disk', source: 'x', commands: [STORE] }] }];
   const report = deliveryReport({ ...input, placedLast: { pass: moved, unsuccessful: [] } });
-  assert.ok(report.includes(`- 通过卷：有 1 个用例的命令按产品声明会留下每个用例结束后的清理清不掉的状态（disk），排在卷尾执行：${A}（合成用例一）`), report);
-  assert.ok(!report.includes('- 未通过卷：有'));
+  assert.ok(report.includes(`原始用例 ${A} 合成用例一 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。`), report);
+  assert.ok(!report.includes('未通过卷'));
 });

@@ -60,7 +60,7 @@ test('a command is in a channel by its tree prefix, and an optional parameter co
   assert.deepEqual(volumeOrder([recipe(B, [STORE])]).moved, []);
   assert.deepEqual(autoids(volumeOrder([recipe(B, [STORE]), recipe(D, [PUSH])]).ordered), [B, D]);
   assert.equal(movedText([]), '');
-  assert.match(movedText(volumeOrder([recipe(A, [SHOW]), recipe(B, [STORE]), recipe(D, [PUSH])]).moved, new Map([[B, '合成用例 42']])), new RegExp(`^有 2 个用例的命令按产品声明会留下每个用例结束后的清理清不掉的状态（disk、peer），排在卷尾执行：${B}（合成用例 42）、${D}$`));
+  assert.match(movedText(volumeOrder([recipe(A, [SHOW]), recipe(B, [STORE]), recipe(D, [PUSH])]).moved, new Map([[B, '合成用例 42']])), new RegExp(`^原始用例 ${B} 合成用例 42、${D} 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。$`));
 });
 
 test('a volume that holds both sides of a forbidden combination is not written, and every case on either side is named', () => {
@@ -69,7 +69,7 @@ test('a volume that holds both sides of a forbidden combination is not written, 
   assert.deepEqual(rows.map((row) => [row.combination, row.source, row.side_a.map((c) => c.autoid), row.side_b.map((c) => c.autoid)]), [['boot_reload', BOOT, [A], [C, D]]]);
   assert.deepEqual(rows[0].side_b.map((c) => c.commands), [[RELOAD], [PUSH]]);
   const text = conflictText(rows[0]);
-  for (const part of [A, C, D, BOOT_ON, RELOAD, PUSH, '合成用例 41', BOOT, '同一卷里有产品声明互斥的两侧命令（组合 boot_reload）']) assert.ok(text.includes(part), part);
+  for (const part of [A, C, D, BOOT_ON, RELOAD, PUSH, '合成用例 41', '同一份自动化用例 Excel 中有产品文档声明不能一起使用的命令']) assert.ok(text.includes(part), part);
   assert.ok(!text.includes(B), 'a case on neither side is not named');
   // Only one side, the other side switched off, or no declaration: nothing is refused.
   assert.deepEqual(volumeProblems([recipe(A, [BOOT_ON]), recipe(B, [SHOW])]), []);
@@ -78,7 +78,7 @@ test('a volume that holds both sides of a forbidden combination is not written, 
   // One case with both sides is the same violation.
   const same = volumeProblems([recipe(A, [BOOT_ON, RELOAD])]);
   assert.deepEqual(same.map((row) => [row.side_a[0].autoid, row.side_b[0].autoid]), [[A, A]]);
-  assert.match(conflictText(same[0]), /^同一个用例里有产品声明互斥的两侧命令/);
+  assert.match(conflictText(same[0]), /^同一条自动化用例中有产品文档声明不能一起使用的命令/);
 });
 
 test('the verification run supports a volume with its placement disclosed, and refuses the cases on either side of a forbidden one', () => {
@@ -89,7 +89,7 @@ test('the verification run supports a volume with its placement disclosed, and r
   const data = results[0][0].data as { autoids: string[]; moved_tail: Array<{ autoid: string; channels: Array<{ id: string; source: string }> }> };
   assert.deepEqual(data.autoids, [A, C, B, D], 'the run reports the cases in the order the workbook holds them');
   assert.deepEqual(data.moved_tail.map((row) => [row.autoid, row.channels.map((channel) => [channel.id, channel.source])]), [[B, [['disk', DISK]]], [D, [['peer', PEER]]]]);
-  assert.match(results[0][0].statement, new RegExp(`有 2 个用例的命令按产品声明会留下每个用例结束后的清理清不掉的状态（disk、peer），排在卷尾执行：${B}（合成用例 42）、${D}（合成用例 44）`));
+  assert.match(results[0][0].statement, new RegExp(`原始用例 ${B} 合成用例 42、${D} 合成用例 44 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。`));
   assert.deepEqual(results[1][0].data, results[0][0].data, 'every item of the run reports the same volume');
   // A workbook written in document order is not this volume's workbook.
   const unordered = generateWorkbookSet(inputs.map((input) => ({ ...input, fields: { ...input.fields, command_catalog: { ...(input.fields.command_catalog as object), policy: plainPolicy } } })));
@@ -106,7 +106,7 @@ test('the verification run supports a volume with its placement disclosed, and r
   for (const k of [0, 2]) {
     const refused = outcomes[k][0] as unknown as { code: string; statement: string; item: string; data: { conflicts: Array<{ combination: string }> } };
     assert.equal(refused.code, 'case-compile.combination_forbidden');
-    for (const part of [A, C, BOOT_ON, RELOAD, BOOT, '没有向设备发车', 'parameters.exclude', '问用户']) assert.ok(refused.statement.includes(part), part);
+    for (const part of [A, C, BOOT_ON, RELOAD, '尚未向设备发送命令', '请使用者决定是否修改原始用例']) assert.ok(refused.statement.includes(part), part);
     assert.deepEqual(refused.data.conflicts.map((row) => row.combination), ['boot_reload']);
   }
   assert.equal((outcomes[0][0] as { item: string }).item, 'doc-1:c-1');
@@ -118,7 +118,7 @@ test('a plan that holds both sides of a forbidden combination is refused when it
   assert.deepEqual(checkCommandsKnown(planInput([BOOT_ON, BOOT_OFF, RELOAD])).map((row) => row.verdict), ['refute'], 'the boot sync is still side A once it has been on');
   const refused = checkCommandsKnown(planInput([SHOW, BOOT_ON, SHOW, RELOAD])) as unknown as Array<{ verdict: string; code: string; statement: string; pointer: string; data: { conflicts: Array<{ combination: string; a: string[]; b: string[] }> } }>;
   assert.deepEqual(refused.map((row) => [row.verdict, row.code, row.pointer]), [['refute', 'case-compile.combination_forbidden', '/data/steps/3/args/0']]);
-  for (const part of ['这个用例的计划里有产品声明互斥的两侧命令（组合 boot_reload）', BOOT_ON, RELOAD, BOOT, '作者步骤与产品文档冲突']) assert.ok(refused[0].statement.includes(part), part);
+  for (const part of ['自动化用例中有产品文档声明不能一起使用的命令', BOOT_ON, RELOAD, '请使用者决定是否修改原始用例']) assert.ok(refused[0].statement.includes(part), part);
   assert.deepEqual(refused[0].data.conflicts.map((row) => [row.combination, row.a, row.b]), [['boot_reload', [BOOT_ON], [RELOAD]]]);
   assert.deepEqual(codes(checkCommandsKnown(planInput([BOOT_ON, PUSH]))), ['case-compile.combination_forbidden'], 'a push is side B and a channel command at once');
   assert.deepEqual(checkCommandsKnown(planInput([BOOT_ON, RELOAD], plainPolicy)).map((row) => row.verdict), ['support'], 'without the declaration nothing is refused');

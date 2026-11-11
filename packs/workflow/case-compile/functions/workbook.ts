@@ -26,10 +26,10 @@ const hash = (value: string | Uint8Array) => createHash('sha256').update(value).
 export function readWorkbook(input: unknown, recipes: GenerationInput | GenerationInput[]): WorkbookRead {
   const problems: WorkbookProblem[] = []; const issue = (rule: string, pointer: string, message: string) => problems.push({ rule, pointer, message });
   const model = readWorkbookModel(input); if (!model) return { ok: false, problems: [{ rule: 'model', pointer: '', message: '不是完整的 xlsx@1 模型' }] };
-  const set = volumeOrder(Array.isArray(recipes) ? recipes : [recipes]).ordered; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可回读的用例计划' }] };
+  const set = volumeOrder(Array.isArray(recipes) ? recipes : [recipes]).ordered; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可核对的自动化用例' }] };
   const plans: PlanSlots[] = [];
-  for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '当前计划槽位不合式' }] }; plans.push(slots.slots); }
-  if (new Set(plans.map((plan) => !!blockMeta(plan))).size !== 1) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '同一份工作簿里块计划与普通计划不能混用' }] };
+  for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '自动化用例不完整' }] }; plans.push(slots.slots); }
+  if (new Set(plans.map((plan) => !!blockMeta(plan))).size !== 1) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '同一份自动化用例 Excel 中的自动化用例必须使用同一种写法' }] };
   const recipe = set[0]; const plan = plans[0]; const profile = recipe.profile; const book = profile.workbook;
   let template: WorkbookTemplate;
   try { template = readTemplate(book); } catch (error) { if (error instanceof TemplateError) return { ok: false, problems: [{ rule: 'template', pointer: '/profile/workbook/template', message: error.message }] }; throw error; }
@@ -76,7 +76,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   if (sheet.lastRow !== template.lastRow || [...values].some(([number, cells]) => number > expectedLast && cells.some(Boolean))) issue('closing', '/sheets/0', '收尾行之后不能再有内容，模板的行数不能变');
   if (JSON.stringify(grid(expectedLast)) !== JSON.stringify(book.closing_row)) issue('closing', '/sheets/0', '收尾行与配置不符');
   const description = headerRow + 1;
-  if (grid(expectedLast - 1).some(Boolean) || grid(description)[2] !== '0' || grid(description)[3] !== `Author         : ${FORMAT.generator}\n计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(description).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '说明或空行不符合冻结的 plan_run/构建，说明行 E–I 必须为空');
+  if (grid(expectedLast - 1).some(Boolean) || grid(description)[2] !== '0' || grid(description)[3] !== `Author         : ${FORMAT.generator}\n计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(description).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '自动化用例 Excel 的说明与脚本编写或构建号不符，说明行的执行内容必须为空');
   const defaultAssertion=assertionTarget(recipe.contract,profile);
   if (!defaultAssertion) issue('assertion', '/profile/allowed', '缺少唯一的允许字面断言组合');
   // Scan every post-header E–I row, including description, blank and closing rows. Registers live within one case, as in
@@ -118,7 +118,7 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   }
   const cases = [...values].filter(([number, cells]) => number > headerRow && number < expectedLast && cells[0] !== '');
   const starts: number[] = []; { let at = headerRow + 2; for (const value of plans) { starts.push(at); at += value.steps.length + value.expects.length + 1; } }
-  if (cases.length !== set.length || cases.some(([number, cells], k) => number !== starts[k] || cells[0] !== set[k].fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cells[0]) || !cells[4]) || new Set(set.map((value) => value.fields.autoid)).size !== set.length) issue('autoid', '/sheets/0', set.length === 1 ? '必须只有一个文本 autoid，等于条目且符合形状，首行 E 不能为空' : '每个用例的首行必须依序是它的文本 autoid，符合形状且互不重复，首行 E 不能为空，用例之间不能夹别的 autoid');
+  if (cases.length !== set.length || cases.some(([number, cells], k) => number !== starts[k] || cells[0] !== set[k].fields.autoid || !new RegExp(book.autoid_pattern, 'u').test(cells[0]) || !cells[4]) || new Set(set.map((value) => value.fields.autoid)).size !== set.length) issue('autoid', '/sheets/0', set.length === 1 ? '必须只有一个原始用例 ID，与原始用例一致，第一步执行内容不能为空' : '每条自动化用例的原始用例 ID 必须依次填写且互不重复，第一步执行内容不能为空，用例之间不能夹入其他原始用例 ID');
   let row = headerRow + 2;
   for (const [k, recipe] of set.entries()) { const plan = plans[k]; let statement = FORMAT.statement_type;
   for (const [i, step] of plan.steps.entries()) {
@@ -129,14 +129,14 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
     for (const expect of plan.expects.filter((v) => v.after === i + 1)) {
       const actual = executionByRow.get(row); const cells = grid(row);
       const target=assertionTarget(recipe.contract,profile,expect),expected=target?assertionCells(expect,target):null;
-      if (!actual?.assertion || !target||!expected||actual.object!==target.call.object||actual.method!==target.call.method||actual.args.length!==1||cells[6]!==expected.g||Object.keys(actual.keywords).length||cells[3]!==''||cells[1]!==''||cells[2]!==String(statement++)||!blockMeta(plan)&&!Object.values(allowed?.parameters??{}).some(role=>role==='device_cli'||role==='host_shell')||blockMeta(plan)&&(cells[7]!==expected.h||cells[8]!==expected.i))issue('assertion',`/sheets/0/rows/${row-1}`,'断言的算子、字面、输出寄存器或次数不等于冻结块计划');
+      if (!actual?.assertion || !target||!expected||actual.object!==target.call.object||actual.method!==target.call.method||actual.args.length!==1||cells[6]!==expected.g||Object.keys(actual.keywords).length||cells[3]!==''||cells[1]!==''||cells[2]!==String(statement++)||!blockMeta(plan)&&!Object.values(allowed?.parameters??{}).some(role=>role==='device_cli'||role==='host_shell')||blockMeta(plan)&&(cells[7]!==expected.h||cells[8]!==expected.i))issue('assertion',`/sheets/0/rows/${row-1}`,'自动化用例 Excel 中的期望或检查设备输出的写法与自动化用例不一致');
       row++;
     }
   }
-  if (!plan.expects.length || grid(row).some(Boolean)) issue('execution', `/sheets/0/rows/${row - 1}`, '每个用例之后必须恰好是一行空行，执行行或断言数与计划不一致');
+  if (!plan.expects.length || grid(row).some(Boolean)) issue('execution', `/sheets/0/rows/${row - 1}`, '每条自动化用例之后必须留一行空行，步骤或期望数量与自动化用例不一致');
   row++;
   }
-  if (row !== expectedLast || executions.length !== plans.reduce((sum, value) => sum + value.steps.length + value.expects.length, 0)) issue('execution', '/sheets/0', '执行行或断言数与本运行用例计划不一致，可能漏行或多行');
+  if (row !== expectedLast || executions.length !== plans.reduce((sum, value) => sum + value.steps.length + value.expects.length, 0)) issue('execution', '/sheets/0', '步骤或期望数量与自动化用例不一致，请核对是否漏写或多写');
   return problems.length ? { ok: false, problems } : { ok: true, executions, autoids: set.map((value) => value.fields.autoid) };
 }
 function generationFields(value: unknown): GenerationFields | null {
@@ -151,19 +151,19 @@ export default function check(input: unknown): Outcome[] {
   if (!s.workbook) {
     const identity = parseRuntimeContract(s.contract);
     const basis = identity.ok && isRecord(s.profile) && typeof s.profile.synthetic === 'boolean' ? markers(s.profile.synthetic, identity.contract) : '（不证明在真实设备上跑得通）';
-    return unknown('missing_input', '缺少客户端生成的工作簿。先将计划要求项修到满足，再自动运行本包脚本、上传并以计划为前驱开新运行绑定 workbook 和 plan_run' + basis);
+    return unknown('missing_input', '缺少自动化用例 Excel。下一步由编写模型把自动化用例核对正确，生成并上传自动化用例 Excel，再继续脚本合并' + basis);
   }
   const raw = isRecord(s.workbook) ? s.workbook : {}; const generation = isRecord(s.generation) ? s.generation : {};
   const contract = parseRuntimeContract(s.contract); const inventory = parseManifest(s.manifest); const slots = readSlots(s.data); const fields = generationFields(s.fields);
   const profile = contract.ok && inventory.ok ? parseProfile(s.profile, contract.contract, inventory.beds) : null;
-  if (!contract.ok || !inventory.ok || !profile?.ok || !slots.ok || !fields || typeof generation.plan_run !== 'string' || typeof generation.build !== 'string' || generation.generator !== FORMAT.generator || typeof s.manifest_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(s.manifest_sha256)) return unknown('check_error', '缺少可重算的冻结输入、生成器版本或清单字节摘要；客户端须重新导出已满足计划及绑定原件，以匹配版本重开核验运行。不证明在真实设备上跑得通。');
+  if (!contract.ok || !inventory.ok || !profile?.ok || !slots.ok || !fields || typeof generation.plan_run !== 'string' || typeof generation.build !== 'string' || generation.generator !== FORMAT.generator || typeof s.manifest_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(s.manifest_sha256)) return unknown('check_error', '缺少执行器规则、测试环境或自动化用例的原始资料；下一步由编写模型重新下载已核对正确的自动化用例和原始资料，再做脚本合并。');
   const qualifier = markers(profile.profile.synthetic, contract.contract); const pointer = '/workbook';
   const grounds = typeof raw.sha256 === 'string' && /^[a-f0-9]{64}$/.test(raw.sha256) ? [`src:${raw.sha256}`, `src:${s.manifest_sha256}`] : [];
   const fail = (message: string, at = pointer): Outcome[] => [{ verdict: 'refute', code: 'case-compile.workbook_invalid', statement: message + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), pointer: at }];
   const checked = [checkContractShape, checkAddresses, checkExpectedSources].flatMap((fn) => fn({ subject: s }));
-  if (checked.some(v => v.verdict === 'refute')) return fail('计划的调用、地址或期望尚未满足，不能核验工作簿；先修计划，再由同版客户端脚本重生成');
+  if (checked.some(v => v.verdict === 'refute')) return fail('自动化用例中的步骤、地址或期望有错误；下一步由编写模型改好自动化用例，再生成自动化用例 Excel');
   const unverified = checked.find(v => v.verdict === 'unknown');
-  if (unverified) return [{ ...unverified, statement: '工作簿未核对：' + unverified.statement, grounds, ...(item ? { item } : {}) }];
+  if (unverified) return [{ ...unverified, statement: '自动化用例 Excel 尚未核对。' + unverified.statement, grounds, ...(item ? { item } : {}) }];
   fields.source_atoms=isRecord(s.fields)?s.fields.source_atoms:undefined;fields.bed_services=s.bed_services;fields.manifest_sha256=s.manifest_sha256 as string;fields.criteria_review=s.criteria_review;fields.expected_nodes=isRecord(s.fields)?s.fields.expected_nodes:undefined;fields.command_identities=isRecord(s.fields)?s.fields.command_identities:undefined;fields.command_catalog=isRecord(s.fields)?s.fields.command_catalog:undefined;
   const own: GenerationInput = { slots: slots.slots, fields, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build };
   // Several cases (decision 104): the run froze, from the plan run's accepted result, every case's accepted plan and catalog
@@ -172,22 +172,22 @@ export default function check(input: unknown): Outcome[] {
   if (s.plan_set !== undefined && s.plan_set !== null) {
     const frozen = Array.isArray(s.plan_set) ? s.plan_set : null;
     const mine = frozen?.filter((entry) => isRecord(entry) && entry.item === item) ?? [];
-    if (!frozen || !frozen.length || mine.length !== 1 || !isRecord(mine[0]) || canonicalJson(mine[0].plan ?? null) !== canonicalJson(s.data ?? null)) return fail('本条重交的计划不等于计划运行受理的计划；整份工作簿只能由计划运行受理的全部计划生成，按原样重交或从新的计划运行重新生成', '/data');
+    if (!frozen || !frozen.length || mine.length !== 1 || !isRecord(mine[0]) || canonicalJson(mine[0].plan ?? null) !== canonicalJson(s.data ?? null)) return fail('自动化用例与已核对正确的版本不一致；请原样再交一次，或重新核对自动化用例并生成自动化用例 Excel', '/data');
     recipes = [];
     for (const entry of frozen) {
       const case_fields = isRecord(entry) ? generationFields(entry.fields) : null; const plan = isRecord(entry) ? readSlots(entry.plan) : null;
-      if (!case_fields || !plan?.ok || !isRecord(entry)) return unknown('check_error', '冻结的用例计划集合不完整，无法重算整份工作簿；以计划运行号绑定 plan_result 重开核验运行。不证明在真实设备上跑得通。');
+      if (!case_fields || !plan?.ok || !isRecord(entry)) return unknown('check_error', '自动化用例不完整，无法重新生成自动化用例 Excel；请重新下载已核对正确的自动化用例，再做脚本合并。');
       const extra = isRecord(entry.fields) ? entry.fields : {};
       recipes.push({ slots: plan.slots, fields: { ...case_fields, source_atoms: extra.source_atoms, bed_services: s.bed_services, manifest_sha256: s.manifest_sha256 as string, criteria_review: s.criteria_review, expected_nodes: extra.expected_nodes, command_identities: entry.command_identities, command_catalog: entry.command_catalog }, contract: contract.contract, profile: profile.profile, plan_run: generation.plan_run, build: generation.build });
     }
   }
   try {
     const forbidden = volumeProblems(recipes).filter((row) => [...row.side_a, ...row.side_b].some((placed) => placed.autoid === fields.autoid));
-    if (forbidden.length) return [{ verdict: 'refute', code: 'case-compile.combination_forbidden', statement: `${forbidden.map(conflictText).join('；')}。${CONFLICT_FIX}。这份工作簿不派发，没有向设备发车${qualifier}`, grounds, tier: 'blocking', ...(item ? { item } : {}), pointer: '/data', data: { conflicts: forbidden } }];
-    const read = readWorkbook(raw.model, recipes); if (!read.ok) return read.problems.map((v) => fail(`${v.rule}：${v.message}；按修复行重生成并开后继运行`, `/workbook/model${v.pointer}`)[0]);
+    if (forbidden.length) return [{ verdict: 'refute', code: 'case-compile.combination_forbidden', statement: `${forbidden.map(conflictText).join('；')}。${CONFLICT_FIX}。这份自动化用例 Excel 未做上机验证，尚未向设备发送命令${qualifier}`, grounds, tier: 'blocking', ...(item ? { item } : {}), pointer: '/data', data: { conflicts: forbidden } }];
+    const read = readWorkbook(raw.model, recipes); if (!read.ok) return read.problems.map((v) => fail(`${v.message}；下一步由编写模型改好自动化用例，重新生成自动化用例 Excel 后继续脚本合并`, `/workbook/model${v.pointer}`)[0]);
     const regenerated = generateWorkbookSet(recipes);
-    if (typeof raw.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(raw.sha256) || hash(regenerated) !== raw.sha256) return fail('bytes：绑定的工作簿原字节摘要与本运行同版生成器重算不同；不能仅凭单元格相同受理');
+    if (typeof raw.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(raw.sha256) || hash(regenerated) !== raw.sha256) return fail('自动化用例 Excel 与重新生成的文件不一致，请重新生成并上传后继续脚本合并');
     const moved = volumeOrder(recipes).moved, titles = new Map(recipes.map((recipe) => [recipe.fields.autoid, recipe.fields.title] as const));
-    return [{ verdict: 'support', statement: '工作簿经独立逐行回读并由本运行生成器重算，绑定原字节完全一致；plan_run 与 predecessor 的一致性由派发核验' + (moved.length ? `；${movedText(moved, titles)}` : '') + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), data: { sha256: raw.sha256, autoids: read.autoids, bed: { id: profile.profile.bed, manifest_sha256: s.manifest_sha256 }, build: generation.build, generator: FORMAT.generator, plan_run: generation.plan_run, ...(moved.length ? { moved_tail: moved } : {}) } }];
-  } catch (error) { return fail('当前槽位无法按本运行生成器写成工作簿：' + (error instanceof Error ? error.message : '无法重算')); }
+    return [{ verdict: 'support', statement: '自动化用例 Excel 与自动化用例逐行一致，重新生成的文件也一致，状态已确认，判断正确。决定者程序。' + (moved.length ? `；${movedText(moved, titles)}` : '') + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), data: { sha256: raw.sha256, autoids: read.autoids, bed: { id: profile.profile.bed, manifest_sha256: s.manifest_sha256 }, build: generation.build, generator: FORMAT.generator, plan_run: generation.plan_run, ...(moved.length ? { moved_tail: moved } : {}) } }];
+  } catch (error) { return fail('自动化用例无法生成自动化用例 Excel。' + (error instanceof Error ? error.message : '无法重算')); }
 }

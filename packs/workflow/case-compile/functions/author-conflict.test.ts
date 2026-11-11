@@ -34,7 +34,7 @@ test('without the claim the three older closings keep their rules: the cap at th
   assert.equal(close(failed('c1'), plain, 3).cases[0].closing, 'authoring_failure');
   const early = close(failed('c1'), plain, 1);
   assert.equal(early.cases[0].closing, undefined);
-  assert.match(early.problems[0], /用例 c1 上机没通过的编写轮次是 1，还不到 3 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论.*和作者步骤与手册冲突（author_conflict：author 作者原句、manual 手册原句、reference 手册那一条的引用，逐字）可以提前定下结论$/);
+  assert.match(early.problems[0], /用例 c1 上机验证有错误，已重写自动化用例 1 次，最多重交 3 次.*原始用例和手册原话均已核对的原始用例问题，才能提前结束脚本编写并由使用者决定$/);
   const candidate = { repro: '合成复现', expected: '对端名显示成功', actual: 'Widget name format error.' };
   const defect = closeFailed([failed('c1')], { cases: { c1: note({ defect_candidate: candidate }) } }, { c1: 1 }, { c1: ['对端名显示成功'] }, { c1: [SEEN] }, GROUND);
   assert.deepEqual([defect.cases[0].closing, defect.problems], ['device_defect', []]);
@@ -42,25 +42,25 @@ test('without the claim the three older closings keep their rules: the cap at th
 
 test('each quote is checked on its own and a claim that does not stand names what to copy again, closing nothing', () => {
   const cases: Array<[string, AuthorConflict, RegExp]> = [
-    ['an author sentence the case never had', { ...CONFLICT, author: '作者没写过这一句' }, /author 不是这条用例脑图原文（标题、步骤或期望）里的字；逐字复制，不改写、不拼接$/],
-    ['a reference outside the locked root', { ...CONFLICT, reference: `tree:${ROOT}/manual/guide/gone@${'3'.repeat(64)}` }, /reference 不是这份脑图各次计划运行锁定的知识根里的条目引用；照 knowledge\/ 里那一条下的“引用”行原样抄/],
-    ['a statement the cited entry does not hold', { ...CONFLICT, manual: '特殊字符仅支持“._-:”' }, /manual 不是 reference 指到的条目里的原话/],
-    ['the statement of another entry', { ...CONFLICT, reference: OTHER }, /manual 不是 reference 指到的条目里的原话/],
-    ['quotes too short to point at anything', { ...CONFLICT, author: 'peer', manual: '._-' }, /author 和 manual 各要逐字引一整句原文，至少 4 个字/],
+    ['an author sentence the case never had', { ...CONFLICT, author: '作者没写过这一句' }, /原始用例引文不是标题、步骤或期望的原句；逐字复制，不改写、不拼接$/],
+    ['a reference outside the locked root', { ...CONFLICT, reference: `tree:${ROOT}/manual/guide/gone@${'3'.repeat(64)}` }, /所选手册不属于脚本编写时使用的手册和命令树，请使用同一构建的手册和命令树/],
+    ['a statement the cited entry does not hold', { ...CONFLICT, manual: '特殊字符仅支持“._-:”' }, /手册引文不是所选手册的原话/],
+    ['the statement of another entry', { ...CONFLICT, reference: OTHER }, /手册引文不是所选手册的原话/],
+    ['quotes too short to point at anything', { ...CONFLICT, author: 'peer', manual: '._-' }, /原始用例原句和手册原话各要逐字引用一整句，至少 4 个字/],
   ];
   for (const [name, conflict, expected] of cases) {
     const closed = close(failed('c1'), { cases: { c1: note({ author_conflict: conflict }) } }, 1);
     assert.equal(closed.cases[0].closing, undefined, name);
     assert.equal(closed.problems.length, 1, name);
     assert.match(closed.problems[0], expected, name);
-    assert.ok(closed.problems[0].startsWith('用例 c1 的 author_conflict：'), name);
+    assert.ok(closed.problems[0].startsWith('用例 c1 判断原始用例的问题时，'), name);
   }
   // Two faults are told together; a carriage return in the device words or the entry changes nothing.
   const both = close(failed('c1'), { cases: { c1: note({ author_conflict: { ...CONFLICT, author: '作者没写过这一句', manual: '手册没写过这一句' } }) } }, 1);
-  assert.match(both.problems[0], /author 不是这条用例脑图原文.*；manual 不是 reference 指到的条目里的原话；逐字复制/);
+  assert.match(both.problems[0], /原始用例引文不是标题、步骤或期望的原句；手册引文不是所选手册的原话；逐字复制/);
   assert.deepEqual(authorConflictProblems('c1', CONFLICT, { authored: { c1: WORDS.map((line) => line.replace(' ', ' \r')) }, statements: new Map([[ENTRY, MANUAL.replace('特殊字符', '特殊\r字符')]]) }, []), []);
   // Nothing known about the case's words or the root is not a pass: the claim is not checked against nothing.
-  assert.match(close(failed('c1'), { cases: { c1: note({ author_conflict: CONFLICT }) } }, 1, [SEEN], { authored: {}, statements: new Map() }).problems[0], /这条用例的脑图原文取不到（组交付时给 --recompose，或让一次计划运行带着它），author 核对不了；reference 不是/);
+  assert.match(close(failed('c1'), { cases: { c1: note({ author_conflict: CONFLICT }) } }, 1, [SEEN], { authored: {}, statements: new Map() }).problems[0], /这条原始用例的原文取不到，请补齐用例重组或脚本编写时的原始用例；所选手册不属于/);
   assert.match(closeFailed([failed('c1')], { cases: { c1: note({ author_conflict: CONFLICT }) } }, { c1: 1 }, {}, { c1: [SEEN] }).problems[0], /取不到/);
 });
 
@@ -69,7 +69,7 @@ test('a last device output with a syntax rejection is the device not accepting t
   const refused = close(failed('c1'), notes, 1, ['合成日志', TYPED_AT_THE_WRONG_PROMPT]);
   assert.equal(refused.cases[0].closing, undefined);
   assert.equal(refused.problems.length, 1);
-  assert.match(refused.problems[0], /用例 c1 的 author_conflict：它最后一次上机里设备用 \^ 拒绝了命令 “widget sync to peer-b”（在 seat# 下）。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上作者步骤与手册冲突：去掉 author_conflict，先修这条命令再上机；3 轮未过的记为模型未找到解决方案/);
+  assert.match(refused.problems[0], /用例 c1 判断原始用例的问题时，它最后一次上机里设备用 \^ 拒绝了命令 “widget sync to peer-b”（在 seat# 下）。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上作者步骤与手册冲突：请重新判断原因，先修这条命令再做上机验证；最多重交 3 次，仍未核对正确时写明编写模型的问题/);
   // The device accepted the command and refused the value: that is the conflict. Without any device words the guard has nothing to read.
   assert.equal(close(failed('c1'), notes, 1, [SEEN]).cases[0].closing, 'author_conflict');
   assert.equal(close(failed('c1'), notes, 1, []).cases[0].closing, 'author_conflict');
@@ -84,10 +84,10 @@ test('a case never sent to the bed closes on the claim too, after the Hub’s ow
   assert.equal(closeUnrun([unrun], { c3: fact }, notes, GROUND).cases[0].closing, 'missing_fact', 'what the Hub recorded keeps its place');
   const stale = closeUnrun([unrun], {}, { cases: { c3: note({ author_conflict: { ...CONFLICT, manual: '手册没写过这一句' } }) } }, GROUND);
   assert.equal(stale.cases[0].closing, undefined);
-  assert.match(stale.problems[0], /^用例 c3 的 author_conflict：manual 不是 reference 指到的条目里的原话；逐字复制/);
+  assert.match(stale.problems[0], /^用例 c3 判断原始用例的问题时，手册引文不是所选手册的原话；逐字复制/);
   // No claim: the older refusal, whose first words are unchanged, now also names the new exit.
   const none = closeUnrun([unrun], {}, { cases: { c3: note() } }, GROUND);
-  assert.match(none.problems[0], /^用例 c3 没有上机，Hub 也没有给它的计划记下缺少的事实或修正轮次用完。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机.*或作者步骤与手册冲突（author_conflict：.*）待作者或用户裁定的，才可以不上机定下结论$/);
+  assert.match(none.problems[0], /^用例 c3 尚未上机验证，Hub 也未确认缺资料或重交次数用完。说明里的判断尚未确认.*原始用例是否修改由使用者决定$/);
   assert.equal(closeUnrun([unrun], {}).problems.length, 1, 'the callers that pass no notes keep working');
 });
 
@@ -95,11 +95,11 @@ test('the notes carry the claim as exactly three plain texts, never beside a def
   const read = (note: unknown) => readNotes({ cases: { c1: note } }, ['c1']);
   const parsed = read({ judged: '合成判断', remedy: '合成取舍', author_conflict: { author: ` ${AUTHOR} `, manual: CONFLICT.manual, reference: ENTRY } });
   assert.deepEqual(parsed.cases.c1.author_conflict, CONFLICT, 'the texts are kept trimmed');
-  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { author: AUTHOR, manual: CONFLICT.manual } }), /用例 c1 的 author_conflict 恰好写 author（作者原句）、manual（手册原句）和 reference（手册那一条的引用）三项/);
-  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { ...CONFLICT, extra: '多余' } }), /恰好写 author/);
-  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { ...CONFLICT, manual: '' } }), /用例 c1 的 author_conflict\.manual 要是 1 到 4000 字的文字/);
-  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: CONFLICT, defect_candidate: { repro: 'r', expected: 'e', actual: 'a' } }), /用例 c1 不能同时写 defect_candidate 和 author_conflict：设备拒绝的取值若是手册说明排除的，只写 author_conflict/);
-  assert.throws(() => read({ judged: 'j', remedy: 'r', other: 1 }), /判作者步骤与手册冲突时的 author_conflict/);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { author: AUTHOR, manual: CONFLICT.manual } }), /用例 c1 判断原始用例的问题时，请只写原始用例原句、手册原话和对应的手册三项/);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { ...CONFLICT, extra: '多余' } }), /判断原始用例的问题时，请只写原始用例原句、手册原话和对应的手册三项/);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { ...CONFLICT, manual: '' } }), /用例 c1 的手册原话 要是 1 到 4000 字的文字/);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: CONFLICT, defect_candidate: { repro: 'r', expected: 'e', actual: 'a' } }), /用例 c1 不能同时判断为设备的问题和原始用例的问题/);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', other: 1 }), /判断设备问题或原始用例问题所需的原文/);
 });
 
 test('the report names the closing and what was and was not checked, in plain words', () => {
@@ -111,7 +111,7 @@ test('the report names the closing and what was and was not checked, in plain wo
   assert.match(closingLine({ ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT })!, /。它没有上机，裁定前不再为它上机/);
   assert.match(closingLine({ ...failed('c1', 'unsettled'), closing: 'author_conflict', conflict: CONFLICT })!, /。它已上机 1 次，裁定前不再为它上机/, 'no authored rounds are counted for a case with no verdict, so none is claimed');
   assert.equal(closingLine({ ...failed('c1'), closing: 'authoring_failure', rounds: 3 })!.startsWith('模型未找到解决方案：编写 3 轮'), true, 'the other closings read as before');
-  assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), '上机未通过的终态：模型未找到解决方案 1，作者步骤与手册冲突（待作者或用户裁定） 1。没有上机的终态：作者步骤与手册冲突（待作者或用户裁定） 1。');
+  assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), '原始用例 c1，原因原始用例的问题。原始用例 c2，原因编写模型的问题。原始用例 c3，原因原始用例的问题。');
 });
 
 test('the statements of the cited entries come from the Hub’s batch of the locked root and from nothing else', () => {
@@ -121,11 +121,11 @@ test('the statements of the cited entries come from the Hub’s batch of the loc
   const found = lockedStatements(batch(), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY, `tree:${ROOT}/manual/guide/gone@${'3'.repeat(64)}`]));
   assert.equal(found.root, ROOT);
   assert.deepEqual([...found.statements], [[ENTRY, MANUAL]], 'only the cited references are kept; one the root does not hold is absent');
-  assert.throws(() => lockedStatements(batch(), 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', new Set([ENTRY])), /不是运行 run_01bbbbbbbbbbbbbbbbbbbbbbbb 的/);
-  assert.throws(() => lockedStatements(batch({ schema: 'run-knowledge@2' }), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /不是运行 run_01aaaaaaaaaaaaaaaaaaaaaaaa 的，或首行不合式/);
-  assert.throws(() => lockedStatements(batch({ nodes: 7 }), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /行数与首行不符/);
-  assert.throws(() => lockedStatements(Buffer.from(''), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /行数与首行不符，或是空的/);
-  assert.throws(() => lockedStatements(Buffer.from('not json\n'), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /不是逐行的 JSON/);
-  assert.throws(() => lockedStatements(Buffer.from([0xff, 0xfe, 0x0a]), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /不是 UTF-8/);
-  assert.throws(() => lockedStatements(batch({}, [{ path: '/x' }]), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /不合式的节点/);
+  assert.throws(() => lockedStatements(batch(), 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', new Set([ENTRY])), /手册和命令树不属于本次脚本编写或内容不完整/);
+  assert.throws(() => lockedStatements(batch({ schema: 'run-knowledge@2' }), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /手册和命令树不属于本次脚本编写或内容不完整/);
+  assert.throws(() => lockedStatements(batch({ nodes: 7 }), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /手册和命令树缺少内容/);
+  assert.throws(() => lockedStatements(Buffer.from(''), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /手册和命令树缺少内容/);
+  assert.throws(() => lockedStatements(Buffer.from('not json\n'), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /手册和命令树内容不完整/);
+  assert.throws(() => lockedStatements(Buffer.from([0xff, 0xfe, 0x0a]), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /手册和命令树无法读取/);
+  assert.throws(() => lockedStatements(batch({}, [{ path: '/x' }]), 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', new Set([ENTRY])), /手册和命令树内容不完整/);
 });
