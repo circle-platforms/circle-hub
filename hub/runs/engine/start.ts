@@ -44,7 +44,8 @@ import { bindExpected, projectItems } from './projection.ts';
 import { canSeeRun, canViewRun, identityOf, runOfRecord, sourceReader } from './readers.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
-import { actionsOf, keyOwner, putAction, putResult, putRun, resultFor, runByClientKey, runById, runRecordDigest } from './store.ts';
+import {actionsOf,keyOwner,putAction,putRun,resultFor,runByClientKey,runById,runRecordDigest} from './store.ts';
+import {saveResult} from './result-summary.ts';
 import { resolveTarget } from './target.ts';
 import { repairRounds } from './terminals.ts';
 import { dispatchCountOf, repetitionSummary } from './repetition.ts';
@@ -855,7 +856,7 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
   const endedAt = ctx.now().toISOString();
   let result: StoredRecord<ValidationResult>;
   try {
-    result = await putResult(ctx.deps.records.store, production.evaluation.result, endedAt);
+    result = await saveResult(ctx.deps.records.store, production.evaluation.result, endedAt);
   } catch (error) {
     // Only without the kit's configuration (the size was checked before the run was stored otherwise).
     if (!(error instanceof LimitError) && !(error instanceof CanonicalizationError)) throw error;

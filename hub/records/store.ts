@@ -422,6 +422,26 @@ export class PgRecordStore implements RecordStore {
     return page<B>(result.rows, limit,tx);
   }
 
+  async findDigests(query: FindQuery, tx?: Transaction): Promise<Page<string>> {
+    if (typeof query.key !== 'string' || !INDEX_KEY.test(query.key)) throw new TypeError(`invalid index key ${JSON.stringify(query.key)}`);
+    if (!isIndexValue(query.value)) return { items: [], next: null };
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const limit = pageLimit(query.limit);
+    const after = decodeCursor(query.cursor);
+    const descending = query.newestFirst === true;
+    const values: unknown[] = [query.key, query.value, limit + 1];
+    let where = 'i.key = $1 AND i.value = $2';
+    if (query.kind !== undefined) { values.push(query.kind); where += ` AND r.kind = $${values.length}`; }
+    if (after !== null) { values.push(after); where += ` AND i.record_seq ${descending ? '<' : '>'} $${values.length}`; }
+    // The statement of find() with the body left out: the same rows in the same order, named by their digests.
+    const result = await this.#db.query<{ seq: string; digest: string }>(
+      `SELECT r.seq, r.digest
+         FROM record_index i JOIN hub_read_records() r ON r.digest = i.digest
+        WHERE ${where} ORDER BY i.record_seq ${descending ? 'DESC' : 'ASC'} LIMIT $3`, values, tx);
+    const last = result.rows.length > limit ? result.rows[limit - 1] : undefined;
+    return { items: result.rows.slice(0, limit).map((row) => String(row.digest)), next: last === undefined ? null : encodeCursor(String(last.seq)) };
+  }
+
   async findBatch<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>{
     const input=queries.map((q,n)=>{
       if(typeof q.key!=='string'||!INDEX_KEY.test(q.key))throw new TypeError(`invalid index key ${JSON.stringify(q.key)}`);

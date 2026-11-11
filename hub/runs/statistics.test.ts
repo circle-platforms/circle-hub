@@ -7,22 +7,24 @@ import {ValidationResult} from '../../contracts/src/validation.ts';
 import {Claim} from '../../contracts/src/claim.ts';
 import {TASK_RESULT} from '../../contracts/generated/vocabulary.ts';
 import type {RunSummary} from '../ports.ts';
-import {runStatistics,runTaskResult,runPendingCount,primaryRunResult} from './statistics.ts';
+import {runStatistics,runTaskResult,runPendingCount,primaryRunResult,resultStatistics,statisticsFor} from './statistics.ts';
 
 function summary():RunSummary{return {run:{...RunRecord.parse(runRecord),requirements:[]},latest:{record:'a'.repeat(64),result:ValidationResult.parse({...accepted,cross_item:[],partitions:{delivered:[{item:'synthetic',label:'合成',location:'src:'+'a'.repeat(64),requirements:[{requirement:'synthetic',status:'satisfied',claims:[claim],layers:[{layer:'static',terminal:'pass'}]}]}],rejected:[],incomplete:[],quarantined:[]}})},production:null};}
 function pending(summary:RunSummary){const requirement=summary.latest!.result.partitions.delivered[0].requirements[0];requirement.status='pending';requirement.layers=[{layer:'static',terminal:'unchecked',reason:'check_error',...RECOVERY}];}
 
 test('statistics preserve every task result, pending count, primary selection and unknown-layer classification',()=>{
- const checked=new Set<string>();const check=(value:RunSummary,expected:string)=>{const statistics=runStatistics(value);assert.equal(statistics.result,expected);assert.equal(statistics.pending,runPendingCount(value));assert.equal(statistics.result,runTaskResult(value));checked.add(expected);return statistics;};
+ const checked=new Set<string>();const composed=(value:RunSummary)=>{const primary=primaryRunResult(value);return statisticsFor(value.management!==undefined,primary===null?null:resultStatistics(primary.result));};
+ const check=(value:RunSummary,expected:string)=>{const statistics=runStatistics(value);assert.equal(statistics.result,expected);assert.deepEqual(composed(value),statistics,'the same from the counting result alone (W08 R[6])');assert.equal(statistics.pending,runPendingCount(value));assert.equal(statistics.result,runTaskResult(value));checked.add(expected);return statistics;};
  const base=summary();base.run.requirements=[];check(base,'passed');
  const waiting=summary();waiting.latest=null;waiting.run.requirements=[];check(waiting,'awaiting');
  const unknown=summary();unknown.run.requirements=[];pending(unknown);assert.equal(check(unknown,'delivered_pending').pending,1);assert.equal(runStatistics(unknown).checks.find(row=>row.terminal==='unchecked')?.unknown,true);
  const unsatisfied=summary();unsatisfied.run.requirements=[];unsatisfied.latest!.result.partitions.delivered[0].requirements[0].status='unsatisfied';check(unsatisfied,'delivered_unsatisfied');
  for(const [partition,expected] of [['rejected','rejected'],['incomplete','incomplete'],['quarantined','held']] as const){const value=summary();value.run.requirements=[];const item=value.latest!.result.partitions.delivered.pop()!;if(partition==='rejected')value.latest!.result.partitions.rejected.push({...item,code:'synthetic.refusal'});else value.latest!.result.partitions[partition].push({...item,reason:'missing_input',...RECOVERY});const stats=check(value,expected);assert.equal(stats.blockers[0].count,1);assert.equal(partition==='rejected'?stats.blockers[0].code:stats.blockers[0].reason,partition==='rejected'?'synthetic.refusal':'missing_input');}
  const abandoned=summary();abandoned.run.requirements=[];abandoned.latest!.result.cross_item.push(Claim.parse({...claim,statement:{text:'合成中止',data:{run_disposition:'abandon'}},grounds:[],warrant:{producer:'function',id:ENGINE_COMPONENT}}));check(abandoned,'abandoned');assert.deepEqual([...checked].sort(),[...TASK_RESULT].sort());
- const management=summary();management.management={record:'b'.repeat(64),disposition:'abandon',result:null};assert.equal(runStatistics(management).result,'abandoned');
- const fact=summary();fact.run.requirements=RunRecord.parse(runRecord).requirements.map(row=>({...row,rules:row.rules??[],run_interpreters:row.run_interpreters??[],accepted_producer:'fact'}));fact.production=fact.latest;fact.latest=null;assert.equal(primaryRunResult(fact),fact.production);assert.equal(runStatistics(fact).result,'passed');
- const system=summary();system.run.requirements=fact.run.requirements;system.production=fact.production;system.latest!.result.system_input='a'.repeat(64);pending(system);assert.equal(primaryRunResult(system),system.latest);assert.equal(runStatistics(system).result,'delivered_pending');
+ const management=summary();management.management={record:'b'.repeat(64),disposition:'abandon',result:null};assert.equal(runStatistics(management).result,'abandoned');assert.deepEqual(composed(management),runStatistics(management));
+ const dropped=summary();dropped.management={record:'b'.repeat(64),disposition:'abandon',result:null};dropped.latest=null;assert.deepEqual(composed(dropped),runStatistics(dropped));assert.deepEqual(composed(dropped),{result:'abandoned',pending:0,checks:[],blockers:[]});
+ const fact=summary();fact.run.requirements=RunRecord.parse(runRecord).requirements.map(row=>({...row,rules:row.rules??[],run_interpreters:row.run_interpreters??[],accepted_producer:'fact'}));fact.production=fact.latest;fact.latest=null;assert.equal(primaryRunResult(fact),fact.production);assert.equal(runStatistics(fact).result,'passed');assert.deepEqual(composed(fact),runStatistics(fact));
+ const system=summary();system.run.requirements=fact.run.requirements;system.production=fact.production;system.latest!.result.system_input='a'.repeat(64);pending(system);assert.equal(primaryRunResult(system),system.latest);assert.deepEqual(composed(system),runStatistics(system));assert.equal(runStatistics(system).result,'delivered_pending');
 });
 
 test('large statements, original fields and claim bodies never scale the returned statistics or retain input objects',()=>{

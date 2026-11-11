@@ -15,7 +15,8 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import type { EngineContext } from './deps.ts';
-import { latestAccepted, listRunRecords, putAction, putResult, runById, submissionsOf, submissionByDigest, actionOfSubmission, actionsOf, isVerbatimObject } from './store.ts';
+import {latestAccepted,listRunRecords,putAction,runById,submissionsOf,submissionByDigest,actionOfSubmission,actionsOf,isVerbatimObject} from './store.ts';
+import {saveResult} from './result-summary.ts';
 import { putRequest, recordResultRequests, requestRecords, requestRecordsIn, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody, type RequestScope, type RequestView } from './requests.ts';
 import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
 import { canFollow, clearRequestWork, noteChanges, noteDeadlines, noteRequests, noteVisit, requestsAwaitWork, type MaintenanceMemory } from './maintenance-memory.ts';
@@ -165,7 +166,7 @@ async function expireRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promi
   const partitions=Object.fromEntries(PARTITION.map(p=>[p,[]])) as unknown as ValidationResult['partitions'];
   partitions.incomplete=run.items.map(item=>({item:item.id,label:item.label,location:item.location,reason:'not_covered',requirements:run.requirements.map(r=>({requirement:r.key,status:'pending',claims:[],layers:r.layers.map(layer=>({layer,terminal:'incomplete' as const,reason:'not_covered' as const,missing:`未在 ${run.submission_due} 前收到条目 ${item.id} / ${r.key} 的完整提交`,exit:{action:'request' as const,request_kind:'disposition' as const,audience:{user:runner},due:request.body.due}}))}))}));
   const result:ValidationResult={schema:'validation@1',run:run.run,submission,system_input:'rec:'+evidence.digest,acceptance:'accepted',errors:[{code:'not_covered',message:request.body.missing,fix:`请求 rec:${request.digest}：${request.body.next_action}`}],rounds:{used:0,max:Math.max(0,...run.requirements.map(r=>r.repair_rounds))},partitions,cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'提交期限已过，Hub 按未覆盖交付'},locks:{...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:randomBytes(16).toString('hex')};
-  const saved=await putResult(ctx.deps.records.store,result,now.toISOString());
+  const saved=await saveResult(ctx.deps.records.store,result,now.toISOString());
   await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:[`rec:${stored.digest}`],startedAt:now.toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:['not_covered'],detail:{deadline:true,submission,result:saved.digest,repair:[]}});
 }
 
@@ -341,7 +342,7 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     const at=ctx.now().toISOString();
     if(!await applyDispatchResults(ctx,run,result,jobs))return;
     await recordResultRequests(ctx,run,result);
-    const saved=await putResult(ctx.deps.records.store,result,at);
+    const saved=await saveResult(ctx.deps.records.store,result,at);
     for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon')))await answerRequest(ctx,request.record,saved.digest);}
     await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:[`rec:${latest.digest}`],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{dispatch_snapshot:signature,result:saved.digest}});
   });
@@ -409,7 +410,7 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
     for(const item of Object.values(projected.partitions).flat())for(const requirement of item.requirements)for(const layer of requirement.layers){if(layer.exit?.action==='reevaluate')layer.exit=structuredClone(exit);for(const gap of layer.gaps??[])if(gap.exit.action==='reevaluate')gap.exit=structuredClone(exit);}
     for(const error of projected.errors)if(error.code==='check_error')error.fix=question.body.missing+'；请求 rec:'+question.digest+'：'+question.body.next_action;
     projected.errors.push({code:'check_error',message:question.body.missing,path:'',fix:'请求 rec:'+question.digest+'：'+question.body.next_action});
-    await putResult(store,projected,ctx.now().toISOString());
+    await saveResult(store,projected,ctx.now().toISOString());
   });
 }
 

@@ -48,7 +48,7 @@ const RELEASES_SHOWN = 5;
 const RELEASE_EVENTS_READ = 10_000;
 
 /** Display names until the model has these (hub/telemetry README, needs): the wording of the approved draft. */
-const TASK_LABEL: Readonly<Record<BackgroundStep, string>> = { 'maintain-runs': '运行维护', 'index-citations': '引用索引', 'index-knowledge': '知识搜索索引', 'sync-knowledge': '知识同步', 'poll-console': '控制台实时轮询', 'clean-staging': '清理暂存', 'renew-lease': '续租约', 'project-document': '投影文档', 'purge-traces': '清理追踪' };
+const TASK_LABEL: Readonly<Record<BackgroundStep, string>> = { 'maintain-runs': '运行维护', 'index-citations': '引用索引', 'summarize-results': '补写结果摘要', 'index-knowledge': '知识搜索索引', 'sync-knowledge': '知识同步', 'poll-console': '控制台实时轮询', 'clean-staging': '清理暂存', 'renew-lease': '续租约', 'project-document': '投影文档', 'purge-traces': '清理追踪' };
 const TIMED: ReadonlySet<string> = new Set(TIMED_BACKGROUND_STEPS);
 /** Node's own words for a fatal error; anything else is shown as it stands. */
 const CRASH_REASON: ReadonlyMap<string, string> = new Map([['Allocation failed - JavaScript heap out of memory', 'JavaScript 堆耗尽']]);

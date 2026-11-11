@@ -614,3 +614,13 @@ read field `object_route`, the JSON route whose answer is the object itself; a r
 object and an echo of a credential the Hub sent stay neutral (B02 R[6]). R02 R[0], the display rule and `SOURCE_UNAVAILABLE`
 follow. The four skill packs that mirror the protocol codes advance with them. No read tier, record kind or MCP tool changes.
 D05 `changes42` states the change.
+
+Decision 153 (owner, 2026-11-11) sets model 43: W08 R[6] says that a result summary record is appended, in the same
+transaction, when a validation result is stored. One record kind, `result_summary` (`result-summary@1`,
+`contracts/src/result-summary.ts`): the run, the digest of the result it summarizes, the result's submission, receipt and
+whether it carries a system-delivery input, what the result comes to when it is the run's current one (`ResultStatistics`:
+task result, pending count, counts by layer terminal, counts by blocker), the grounds it names, the digests its validity
+conditions bind, and its unavailable references. The result record is not rewritten and stays the authority; W08 R[0] still
+holds, the counts are not stored in the result. The task list and the overview read the summary, verified by its own
+digest, instead of the whole result. A result without a summary is read whole with the same answer. No protocol code, MCP
+tool or vocabulary axis changes. W08 `changes43` states the change.

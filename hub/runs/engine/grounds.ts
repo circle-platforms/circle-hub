@@ -1,11 +1,10 @@
 // Current audience and withdrawal checks are views; historical submissions and validation records are never rewritten.
-import { Ground } from '../../../contracts/src/reference.ts';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import type {RequestBody} from '../../requests/api.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import { verifiedBodyDigest, type Principal } from '../../records/api.ts';
+import type { Principal } from '../../records/api.ts';
 import { createDocumentCache, parseReference, resolveReference, type RecordReader } from '../../refs/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun, identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
@@ -16,65 +15,10 @@ import {attemptEvidence} from './retry-evidence.ts';
 import {receivedDigest} from './util.ts';
 import {unavailableError} from './errors.ts';
 import {queryRead} from './query-scope.ts';
-
-/**
- * What a stored record names as grounds depends on its content alone, and its digest stands for that content: the store
- * verified the body against it when it read the record. A page that lists a hundred tasks asked for the same extraction of
- * every result on each load, a full parse and two walks of a result each time (issue 200). The extraction of a verified body
- * is kept by its digest; whether a reader may read each ground is still decided on every call.
- */
-const EXTRACTED_LIMIT=2048;
-const extracted=new Map<string,readonly string[]>();
-function remembered(key:string|undefined,compute:()=>string[]):string[]{
-  if(key===undefined)return compute();
-  const hit=extracted.get(key);
-  if(hit!==undefined){extracted.delete(key);extracted.set(key,hit);return [...hit];}
-  const value=Object.freeze(compute());
-  extracted.set(key,value);
-  if(extracted.size>EXTRACTED_LIMIT)extracted.delete(extracted.keys().next().value!);
-  return [...value];
-}
-/** Drops what is kept, for a test that counts the work. */
-export function forgetExtractedGrounds():void{extracted.clear();}
-
-export function groundsOf(value:unknown):string[]{
-  // Only one verified body is kept: a list of values is walked as one, in the order it always was.
-  const digest=Array.isArray(value)?undefined:verifiedBodyDigest(value);
-  return remembered(digest===undefined?undefined:'grounds\n'+digest,()=>extractGrounds(value));
-}
-function extractGrounds(value:unknown):string[]{
-  const metadata=new WeakMap<object,string>();
-  for(const candidate of Array.isArray(value)?value:[value])if(ValidationResult.safeParse(candidate).success){
-    const result=candidate as ValidationResult;
-    const items=Object.values(result.partitions).flat();
-    // These links explain Hub routing/provenance; the original records retain their separate read guards.
-    for(const item of items)for(const criterion of item.replaced_criteria??[])metadata.set(criterion,'review');
-    for(const claim of [...result.cross_item,...items.flatMap(item=>item.requirements.flatMap(requirement=>requirement.claims))]){
-      const source=claim.statement.data?.judgment_source;
-      if(claim.warrant.producer==='model'&&source&&typeof source==='object'&&(source as {submission?:unknown}).submission===result.submission&&(source as {pointer?:unknown}).pointer===claim.pointer)metadata.set(source,'record');
-    }
-  }
-  const found=new Set<string>(),seen=new Set<object>(),work=[value];
-  while(work.length){const row=work.pop();if(typeof row==='string'){if(row.includes(':')&&Ground.safeParse(row).success)found.add(row);}else if(row&&typeof row==='object'&&!seen.has(row)){seen.add(row);for(const [key,item] of Object.entries(row))if(metadata.get(row)!==key)work.push(item);}}
-  return [...found];
-}
-
-/** Structural rule claims bind source digests even when their rendered statement contains no explicit URI. */
-function resultGrounds(value:unknown,run:RunRecord):string[]{
-  // The sources a result binds are those of its run, and a run record does not change: the pair names the answer.
-  const digest=Array.isArray(value)?undefined:verifiedBodyDigest(value);
-  return remembered(digest===undefined?undefined:'result\n'+digest+'\n'+run.run,()=>extractResultGrounds(value,run));
-}
-function extractResultGrounds(value:unknown,run:RunRecord):string[]{
-  const found=new Set(groundsOf(value)),bound=new Set<string>(),work=[value],seen=new Set<object>();
-  while(work.length){const row=work.pop();if(!row||typeof row!=='object'||seen.has(row))continue;seen.add(row);
-    const validity=(row as Record<string,unknown>).validity;
-    if(validity&&typeof validity==='object'&&Array.isArray((validity as Record<string,unknown>).bound))for(const digest of (validity as {bound:unknown[]}).bound)if(typeof digest==='string')bound.add(digest);
-    work.push(...Object.values(row));
-  }
-  for(const source of run.sources){const ref=parseReference(source.reference);if(ref.scheme==='src'&&bound.has(ref.sha256)||source.artifact&&bound.has(source.artifact))found.add(source.reference);}
-  return [...found];
-}
+import {groundsOf,groundsWithSources,resultGrounds,sourceGrounds} from './ground-extraction.ts';
+import {resultSummaryOf,type ResultSummary} from './result-summary.ts';
+import {INDEX} from './store.ts';
+export {forgetExtractedGrounds,groundsOf} from './ground-extraction.ts';
 
 async function withdrawalReferences(ctx:EngineContext,value:unknown,trustedResult=false):Promise<string[]>{
   const diagnostics=trustedResult?new Set((Array.isArray(value)?value:[value]).flatMap(result=>(result as ValidationResult).unavailable_references??[])):new Set<string>();
@@ -115,7 +59,11 @@ export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:Vali
   return null;
 }
 
-export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string;unavailableReferences?:readonly string[]}={}):Promise<boolean>{
+/**
+ * Whether `by` may read every ground `value` names within `run`. `references` gives those grounds when the caller already
+ * holds them (a result's summary lists them, in the order the result gives them); `value` is then not looked at.
+ */
+export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:unknown,by:Principal,options:{pending?:boolean;trustedResult?:boolean;provisionalSubmission?:string;unavailableReferences?:readonly string[];references?:readonly string[]}={}):Promise<boolean>{
   const documents=createDocumentCache(8);
   const check=async(reference:string,seen:Set<string>,depth:number,atRun=run,pending=options.pending===true,inheritedInput=false):Promise<boolean>=>{
     if(depth>64||seen.has(reference))return false;seen.add(reference);
@@ -220,7 +168,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     return true;
   };
   const diagnostic=new Set(options.trustedResult?(value as ValidationResult).unavailable_references??[]:options.unavailableReferences??[]);
-  try{for(const reference of resultGrounds(value,run).filter(reference=>!diagnostic.has(reference)))if(!await check(reference,new Set(),0))return false;return true;}finally{documents.dispose?.();}
+  try{for(const reference of (options.references??resultGrounds(value,run)).filter(reference=>!diagnostic.has(reference)))if(!await check(reference,new Set(),0))return false;return true;}finally{documents.dispose?.();}
 }
 
 /** A workflow grant never lends the initiator's private input data to another reader. */
@@ -228,7 +176,7 @@ export async function runReadableBy(ctx:EngineContext,by:Principal,run:RunRecord
   if(ctx.deps.records.principals){const account=await ctx.deps.records.principals.get(by.id);if(!account||account.disabled)return false;by=account;}
   if(run.pack_space&&run.pack_space!=='team'&&run.runner!==by.id&&run.configurer!==by.id){const owner=await ctx.deps.records.principals?.get(run.pack_space);if(!owner||owner.disabled)return false;}
   if(!await canViewRun(by,run,ctx.deps.records.store))return false;
-  return run.runner===by.id||run.configurer===by.id||await groundsReadableBy(ctx,run,run.sources,by);
+  return run.runner===by.id||run.configurer===by.id||await groundsReadableBy(ctx,run,run.sources,by,{references:sourceGrounds(run)});
 }
 
 /** Instance diagnostics of a rejected submission do not grant access to its private grounds. */
@@ -242,13 +190,40 @@ export async function resultReadableBy(ctx:EngineContext,run:RunRecord,result:Va
  });
 }
 
+/**
+ * resultReadableBy for a result known by its summary (W08 R[6]): the same rule over the same grounds, which the summary
+ * lists in the order the result gives them, so the result itself is not read.
+ */
+export async function summaryReadableBy(ctx:EngineContext,run:RunRecord,summary:ResultSummary,by:Principal):Promise<boolean>{
+ return queryRead(ctx,['summary-readable',by,run.run,summary.result] as const,async()=>{
+  if(run.runner===by.id)return true;
+  const references=groundsWithSources(summary.grounds,summary.bound,run);
+  if(!canSeeRun(by,run)&&summary.acceptance!=='accepted'||!await groundsReadableBy(ctx,run,null,by,{references,unavailableReferences:summary.unavailable_references}))return false;
+  const raw=await submissionByDigest(ctx.deps.records.store,run.run,summary.submission);
+  if(raw&&!await groundsReadableBy(ctx,run,raw.body,by,{unavailableReferences:summary.unavailable_references}))return false;
+  return true;
+ });
+}
+
 /** Request instances retain run-owner/administrator scope and never lend a private submission's diagnostics. */
 export async function requestReadable(ctx:EngineContext,by:Principal,request:RequestBody):Promise<boolean>{
   if(!request.run)return by.role==='admin'||request.audience===by.id;
+  // The answer rests on the run and on what issued the request, and a result issues its requests by the dozen: it is
+  // worked out once for the pair within a read, not once a request.
+  return queryRead(ctx,['request-readable',by,request.run,request.source] as const,()=>issuedReadable(ctx,by,{run:request.run!,source:request.source}));
+}
+async function issuedReadable(ctx:EngineContext,by:Principal,request:{run:string;source:string}):Promise<boolean>{
   const stored=await runById(ctx.deps.records.store,request.run);if(!stored||!canSeeRun(by,stored.body)||!await runReadableBy(ctx,by,stored.body))return false;
   if(stored.body.runner===by.id||stored.body.configurer===by.id)return true;
-  const result=await resultFor(ctx.deps.records.store,request.run,request.source);
-  if(result)return resultReadableBy(ctx,stored.body,result.body,by);
+  const store=ctx.deps.records.store;
+  // The result that issued the request, by its summary: a page of waiting requests no longer reads a result for each.
+  const issued=store.findDigests?(await store.findDigests({key:INDEX.resultSubmission,value:`${request.run}:${request.source}`,kind:'validation_result',limit:1,newestFirst:true})).items[0]:undefined;
+  const summary=issued===undefined?null:await resultSummaryOf(store,request.run,issued);
+  if(summary)return summaryReadableBy(ctx,stored.body,summary,by);
+  if(!store.findDigests||issued!==undefined){
+    const result=await resultFor(store,request.run,request.source);
+    if(result)return resultReadableBy(ctx,stored.body,result.body,by);
+  }
   const raw=await submissionByDigest(ctx.deps.records.store,request.run,request.source);
   return !raw||await groundsReadableBy(ctx,stored.body,raw.body,by);
 }
