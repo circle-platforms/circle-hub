@@ -30,7 +30,7 @@ export type { RecordKind } from '../../contracts/generated/protocol.ts';
 export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
 export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
 export { recordIntegrityNotes, noteRecordIntegrity, type RecordIntegrityNote } from './integrity-notes.ts';
-export { createRecordStore, type StoreOptions } from './store.ts';
+export { createRecordStore, verifiedBodyDigest, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
 export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';

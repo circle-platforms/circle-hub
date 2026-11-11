@@ -534,6 +534,17 @@ export function verifiedRecord<B>(row: Row,tx?:Transaction): StoredRecord<B> {
   const normalized={id:String(row.id),digest:row.digest,kind:String(row.kind),schema:String(row.schema),provenance:String(row.provenance),created_at:iso(row.created_at),body:String(row.body)};
   return verifiedReadValue([normalized.digest,normalized.id,normalized.kind,normalized.schema,normalized.provenance,normalized.created_at,normalized.body],()=>verifyRecord<B>(normalized),tx);
 }
+/**
+ * The digest each body was verified against, by the parsed body itself. A body reaches this map only here, after its canonical
+ * form hashed to the digest, so the digest stands for exactly this content: a reader may key what it derives from the body
+ * alone by it (issue 200). Nothing a caller builds or copies is in the map.
+ */
+const VERIFIED_BODIES = new WeakMap<object, string>();
+/** The digest a record body was read and verified under in this process; undefined for any other value, a copy included. */
+export function verifiedBodyDigest(body: unknown): string | undefined {
+  return body !== null && typeof body === 'object' ? VERIFIED_BODIES.get(body) : undefined;
+}
+
 function verifyRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
@@ -565,6 +576,7 @@ function verifyRecord<B>(row: Row): StoredRecord<B> {
     throw new IntegrityError('记录正文不是 JSON', { detail: { record: row.id }, cause: error });
   }
   if (noncanonical) noteNoncanonical(String(row.id), String(row.digest));
+  if (parsed !== null && typeof parsed === 'object') VERIFIED_BODIES.set(parsed, String(row.digest));
   return { id: String(row.id), kind: kind.data, schema: meta.schema, digest: String(row.digest), provenance: meta.provenance, created_at: createdAt, body: parsed, ...(noncanonical?{integrity_note:NONCANONICAL_EXPLANATION}:{}) };
 }
 

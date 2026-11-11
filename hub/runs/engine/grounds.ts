@@ -5,7 +5,7 @@ import { ValidationResult } from '../../../contracts/src/validation.ts';
 import type {RequestBody} from '../../requests/api.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import type { Principal } from '../../records/api.ts';
+import { verifiedBodyDigest, type Principal } from '../../records/api.ts';
 import { createDocumentCache, parseReference, resolveReference, type RecordReader } from '../../refs/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun, identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
@@ -17,7 +17,32 @@ import {receivedDigest} from './util.ts';
 import {unavailableError} from './errors.ts';
 import {queryRead} from './query-scope.ts';
 
+/**
+ * What a stored record names as grounds depends on its content alone, and its digest stands for that content: the store
+ * verified the body against it when it read the record. A page that lists a hundred tasks asked for the same extraction of
+ * every result on each load, a full parse and two walks of a result each time (issue 200). The extraction of a verified body
+ * is kept by its digest; whether a reader may read each ground is still decided on every call.
+ */
+const EXTRACTED_LIMIT=2048;
+const extracted=new Map<string,readonly string[]>();
+function remembered(key:string|undefined,compute:()=>string[]):string[]{
+  if(key===undefined)return compute();
+  const hit=extracted.get(key);
+  if(hit!==undefined){extracted.delete(key);extracted.set(key,hit);return [...hit];}
+  const value=Object.freeze(compute());
+  extracted.set(key,value);
+  if(extracted.size>EXTRACTED_LIMIT)extracted.delete(extracted.keys().next().value!);
+  return [...value];
+}
+/** Drops what is kept, for a test that counts the work. */
+export function forgetExtractedGrounds():void{extracted.clear();}
+
 export function groundsOf(value:unknown):string[]{
+  // Only one verified body is kept: a list of values is walked as one, in the order it always was.
+  const digest=Array.isArray(value)?undefined:verifiedBodyDigest(value);
+  return remembered(digest===undefined?undefined:'grounds\n'+digest,()=>extractGrounds(value));
+}
+function extractGrounds(value:unknown):string[]{
   const metadata=new WeakMap<object,string>();
   for(const candidate of Array.isArray(value)?value:[value])if(ValidationResult.safeParse(candidate).success){
     const result=candidate as ValidationResult;
@@ -36,6 +61,11 @@ export function groundsOf(value:unknown):string[]{
 
 /** Structural rule claims bind source digests even when their rendered statement contains no explicit URI. */
 function resultGrounds(value:unknown,run:RunRecord):string[]{
+  // The sources a result binds are those of its run, and a run record does not change: the pair names the answer.
+  const digest=Array.isArray(value)?undefined:verifiedBodyDigest(value);
+  return remembered(digest===undefined?undefined:'result\n'+digest+'\n'+run.run,()=>extractResultGrounds(value,run));
+}
+function extractResultGrounds(value:unknown,run:RunRecord):string[]{
   const found=new Set(groundsOf(value)),bound=new Set<string>(),work=[value],seen=new Set<object>();
   while(work.length){const row=work.pop();if(!row||typeof row!=='object'||seen.has(row))continue;seen.add(row);
     const validity=(row as Record<string,unknown>).validity;
