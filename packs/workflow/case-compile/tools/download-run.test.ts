@@ -56,7 +56,7 @@ test('a run with nothing submitted yet lands on disk: the record, one file per i
   const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const { code, stdout } = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
   assert.equal(code, 0);
-  assert.deepEqual(JSON.parse(stdout), { run: RUN, out, items: 12, sources: 2, withheld: [sha(secret)], knowledge: null, written: 16 });
+  assert.deepEqual(JSON.parse(stdout), { run: RUN, out, items: 12, sources: 2, withheld: [sha(secret)], knowledge: null, written: 16, briefs: 0 });
   assert.ok(h.paths.includes(`/run-export/${RUN}/knowledge`), 'the locked knowledge root is asked for once; this run locked none');
   assert.ok(!h.paths.includes(`/run-export/${RUN}`), 'only the run alone is asked for, which needs no accepted result');
   assert.equal(h.paths.filter((path) => path.endsWith(sha(mindmap))).length, 1, 'a fragment of an original already fetched is not fetched again');
@@ -126,6 +126,8 @@ test('the knowledge root the run locked comes with the run as files to read and 
   const report = JSON.parse(stdout);
   assert.deepEqual(report.knowledge, { root: ROOT, composition: null, nodes: 4, entries: 3, sha256: sha(bytes), files: ['root.txt', 'widgets.txt', `subtree-${sha(Buffer.from('%E6%89%8B%E5%86%8C%20%E4%B8%80')).slice(0, 12)}.txt`] });
   assert.equal(report.written, 16 + 5, 'the batch as received, one text file per top-level node, and the index');
+  assert.equal(report.briefs, 0, 'no item of this run carries a recomposition record, so there is nothing to brief');
+  await assert.rejects(readdir(join(out, 'briefs')));
   assert.equal(h.paths.filter((path) => path.endsWith('/knowledge')).length, 1, 'one request for the whole root');
   assert.deepEqual(await readFile(join(out, 'knowledge', 'nodes.jsonl')), bytes, 'the Hub\'s answer byte for byte');
   assert.equal(await readFile(join(out, 'knowledge', 'widgets.txt'), 'utf8'), [
@@ -142,6 +144,33 @@ test('the knowledge root the run locked comes with the run as files to read and 
   const second = await outputOf(() => recomposeMain(['--hub', h.url, '--run', RUN, '--out', other], async () => TOKEN));
   assert.equal(second.code, 0, second.stderr);
   assert.deepEqual(await readFile(join(other, 'knowledge', 'widgets.txt')), await readFile(join(out, 'knowledge', 'widgets.txt')));
+});
+
+// The reference implementation builds each writer's brief before the writer starts; here the download does, for every item
+// that carries a recomposition record (tools/authoring-brief.ts has the brief's own tests).
+test('items that carry a recomposition record get their authoring brief with the download', async (t) => {
+  const bytes = ndjson(knowledgeLines());
+  const withRecord = (item: Record<string, unknown>, index: number) => index % 6 ? item : { ...item, fields: { title: `合成用例 ${index}`, recomposition: { record: { atoms: [], ledgers: { adapted: [{ atom: 'a1', commands: [], equivalence_refs: [`tree:${ROOT}/widgets/health@${ENTRY}`] }] } } } } };
+  const h = await hub({ knowledge: { bytes }, runAnswer: (run) => ({ schema: 'run-export@1', run: { ...run, items: (run.items as Array<Record<string, unknown>>).map(withRecord) } }) }); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
+  const { code, stdout, stderr } = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
+  assert.equal(code, 0, stderr);
+  const report = JSON.parse(stdout);
+  assert.deepEqual([report.briefs, report.written], [2, 16 + 5 + 2]);
+  assert.deepEqual(await readdir(join(out, 'briefs')), ['00.md', '06.md']);
+  const brief = await readFile(join(out, 'briefs', '06.md'), 'utf8');
+  assert.match(brief, /^# 编写简报 06：合成用例 6\n/);
+  assert.ok(brief.includes(`# /widgets/health\n· widget health interval <seconds:int 1..60>\n  Set the health interval\n  seconds: 合成参数说明\n  引用 tree:${ROOT}/widgets/health@${ENTRY}\n`), 'the entry the record references, word for word with its reference');
+  // A brief that cannot be written does not undo a download that is already on disk.
+  const third = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
+  const failed = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', third], async () => TOKEN, async () => { throw new Error('合成故障'); }));
+  assert.equal(failed.code, 0, failed.stderr);
+  assert.deepEqual([JSON.parse(failed.stdout).briefs, JSON.parse(failed.stdout).briefs_note], [0, '编写简报没有写出（合成故障）；运行已完整下载，照常读 items/ 和 knowledge/']);
+  assert.equal((await readdir(join(third, 'items'))).length, 12);
+  // The recomposition stage's own download writes no briefs: its items are what a record is made from.
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
+  assert.equal((await outputOf(() => recomposeMain(['--hub', h.url, '--run', RUN, '--out', other], async () => TOKEN))).code, 0);
+  await assert.rejects(readdir(join(other, 'briefs')));
 });
 
 test('a knowledge batch whose bytes do not match the digest, or that is another run\'s or cut short, writes nothing at all', async (t) => {

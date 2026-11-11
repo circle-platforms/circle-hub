@@ -1,0 +1,198 @@
+// The authoring brief of a case: the entries of the locked tree its writer would otherwise look up one model round trip at a
+// time. With the knowledge root on local disk a search costs nothing, but each search is still a reply of the model: in run 22
+// the six plan writers spent 78% of their model time in 208 replies that only searched (the commands their case's
+// recomposition record already names, the inverses and read-only forms of those commands, their siblings), and every rework
+// round starts a fresh writer that searches again. The reference implementation does this before a writer starts: its engine
+// builds each case's brief in code (compile_engine/briefs.py build_brief) and binds the recompose stage's command grounding to
+// it, and the writer's rule is to read that first and query only what it does not carry (agents/compile-worker.md, "Reuse
+// sealed recompose grounding before querying").
+//
+// Facts only, taken by structure and never by matching words: the tree references the record carries, the command lines its
+// rewrites and the author's own lines spell (followed word by word down the tree), the inverse rules and read-only prefixes
+// the product declares (command-policy@1, the same rule the cleanup check applies), and the tree's own parents and children.
+// Nothing here is a judgement and nothing here is plan content.
+import { isRecord } from './text.ts';
+
+export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string }> }
+export interface BriefPolicy { inverse_rules: Array<{ source_prefix: string; inverse_prefix: string; leading_parameters?: number }>; inverse_alternatives: string[][]; read_only: string[] }
+/** The locked root as the run download wrote it: its nodes by canonical path, and where each node's block starts in the text files. */
+export interface BriefKnowledge { root: string; nodes: Map<string, BriefNode>; lines: Map<string, { file: string; line: number; count: number }> }
+
+/** Commands hang below this node in a locked tree (the catalog's paths, as the recomposition check builds them). */
+const COMMANDS = '/commands';
+/** How many siblings a command lists, and how large a block of another node may be to be quoted whole. */
+const SIBLINGS = 40, QUOTED_BYTES = 3000, QUOTED_BLOCKS = 4;
+
+const segments = (path: string): string[] => path.split('/').slice(1);
+const decoded = (segment: string): string => { try { return decodeURIComponent(segment); } catch { return segment; } };
+/** One spelling of a path: references encode a space, the text files do not, and a slash inside a name stays encoded in both. */
+export const canonicalPath = (path: string): string => '/' + segments(path).map((segment) => encodeURIComponent(decoded(segment))).join('/');
+const within = (path: string, prefix: string): boolean => path === prefix || path.startsWith(prefix + '/');
+const words = (path: string): string => segments(path).slice(1).map(decoded).join(' ');
+
+const WHOLE = /^tree:([0-9a-f]{64})(\/[^@]*)(?:@[0-9a-f]{64})?$/;
+const QUOTED = /tree:([0-9a-f]{64})(\/[^@\s"]+)@[0-9a-f]{64}/g;
+/** Every path of the locked root a value's strings reference: a string that is a reference, or one written out with its entry inside a sentence. */
+export function referencedPaths(value: unknown, root: string): string[] {
+  const found = new Set<string>();
+  const visit = (current: unknown): void => {
+    if (typeof current === 'string') {
+      const whole = WHOLE.exec(current);
+      if (whole) { if (whole[1] === root) found.add(canonicalPath(whole[2])); return; }
+      for (const match of current.matchAll(QUOTED)) if (match[1] === root) found.add(canonicalPath(match[2]));
+    } else if (Array.isArray(current)) current.forEach(visit);
+    else if (isRecord(current)) Object.values(current).forEach(visit);
+  };
+  visit(value);
+  return [...found];
+}
+
+/** The command a line names: its words followed down the tree from the command node, as far as they are node names; a node that defines nothing is no command. */
+export function commandPath(knowledge: BriefKnowledge, line: string): string | null {
+  const top = knowledge.nodes.get(COMMANDS);
+  if (!top) return null;
+  let node: BriefNode = top;
+  for (const token of line.trim().split(/\s+/)) {
+    const child: { name: string; path: string } | undefined = node.children.find((candidate) => candidate.name === token);
+    const next: BriefNode | undefined = child ? knowledge.nodes.get(canonicalPath(child.path)) : undefined;
+    if (!next) break;
+    node = next;
+  }
+  return node.entries.length && node !== top ? canonicalPath(node.path) : null;
+}
+
+/** The product's inverse of a command: the rule with the longest source prefix, when it is the only one of that length (the cleanup check's rule). */
+export function inverseOf(policy: BriefPolicy, path: string): { path: string; rule: BriefPolicy['inverse_rules'][number] } | null {
+  const matches = policy.inverse_rules.filter((rule) => within(path, canonicalPath(rule.source_prefix))).sort((a, b) => segments(b.source_prefix).length - segments(a.source_prefix).length);
+  const rule = matches[0];
+  if (!rule || (matches[1] && canonicalPath(matches[1].source_prefix) === canonicalPath(rule.source_prefix))) return null;
+  return { path: canonicalPath(rule.inverse_prefix) + path.slice(canonicalPath(rule.source_prefix).length), rule };
+}
+
+/**
+ * The sibling a declared pair of inverse values names: the command's last word is one member and the same parent holds a
+ * command under the other (`… on` and `… off`). The cleanup check asks this before the prefix rules; the other form of a
+ * declared pair, an enumerated argument of one signature, is not in the text of the tree and is left to the rule stated in
+ * the brief's head.
+ */
+export function pairedSibling(policy: BriefPolicy, knowledge: BriefKnowledge, path: string): { pair: string[]; node: BriefNode } | null {
+  const parts = segments(path), leaf = decoded(parts.at(-1) ?? '');
+  const pair = policy.inverse_alternatives.find((members) => members.length === 2 && members.includes(leaf));
+  if (!pair) return null;
+  const node = knowledge.nodes.get(canonicalPath('/' + [...parts.slice(0, -1), pair[0] === leaf ? pair[1] : pair[0]].join('/')));
+  return node?.entries.length ? { pair, node } : null;
+}
+
+export function policyOf(value: unknown): BriefPolicy | null {
+  if (!isRecord(value) || value.schema !== 'command-policy@1' || !Array.isArray(value.inverse_rules) || !Array.isArray(value.read_only)) return null;
+  const rules = value.inverse_rules.filter(isRecord).filter((rule) => typeof rule.source_prefix === 'string' && typeof rule.inverse_prefix === 'string')
+    .map((rule) => ({ source_prefix: rule.source_prefix as string, inverse_prefix: rule.inverse_prefix as string, ...(typeof rule.leading_parameters === 'number' ? { leading_parameters: rule.leading_parameters } : {}) }));
+  const pairs = Array.isArray(value.inverse_alternatives) ? value.inverse_alternatives.filter((pair): pair is string[] => Array.isArray(pair) && pair.every((member) => typeof member === 'string')) : [];
+  return { inverse_rules: rules, inverse_alternatives: pairs, read_only: value.read_only.filter((prefix): prefix is string => typeof prefix === 'string') };
+}
+
+/** A node as the run download writes it into the text files, line for line. */
+export function nodeBlock(node: BriefNode): string[] {
+  const out = [`# ${node.path}`];
+  if (node.children.length) out.push(`  子节点 ${node.children.length} 个：${node.children.map((child) => child.name).join('、')}`);
+  for (const entry of node.entries) {
+    out.push(`· ${entry.statement}`);
+    if (entry.applicability) out.push(`  适用 ${entry.applicability}`);
+    out.push(`  引用 ${entry.reference}`);
+  }
+  return out;
+}
+const syntaxLine = (node: BriefNode): string | null => (node.entries.find((entry) => entry.kind === 'definition') ?? node.entries[0])?.statement.split('\n', 1)[0] ?? null;
+
+/**
+ * The command the same words lead to below a read-only prefix: the deepest node that exists there along the command's own
+ * words, when that node defines a command. A branch that only lists children is not one (below a statistics prefix the words
+ * of a configuration command end at the module's branch, which says nothing about that command).
+ */
+function readOnlyForm(knowledge: BriefKnowledge, prefix: string, path: string): BriefNode | null {
+  const base = segments(path), under = segments(prefix);
+  if (under[0] !== base[0]) return null;
+  for (let length = base.length - 1; length >= 1; length--) {
+    const node = knowledge.nodes.get(canonicalPath('/' + [...under, ...base.slice(1, 1 + length)].join('/')));
+    if (node) return node.entries.length ? node : null;
+  }
+  return null;
+}
+
+export interface AuthoringBrief { text: string; commands: string[]; others: string[]; missing: string[] }
+/**
+ * The brief of one frozen item of a plan run, or null when the item carries no recomposition record. `commands` are the tree
+ * paths of the commands the record names, `others` the other nodes it references, `missing` the referenced paths the locked
+ * root does not hold.
+ */
+export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null): AuthoringBrief | null {
+  const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
+  const recomposition = fields && isRecord(fields.recomposition) ? fields.recomposition : null;
+  const record = recomposition && isRecord(recomposition.record) ? recomposition.record : null;
+  if (!isRecord(item) || !fields || !record) return null;
+  const named = new Set<string>(referencedPaths(recomposition, knowledge.root));
+  const ledgers = isRecord(record.ledgers) ? record.ledgers : {};
+  const lines: string[] = [];
+  for (const row of Array.isArray(ledgers.adapted) ? ledgers.adapted : []) if (isRecord(row) && Array.isArray(row.commands)) for (const line of row.commands) if (typeof line === 'string') lines.push(line);
+  for (const atom of Array.isArray(record.atoms) ? record.atoms : []) if (isRecord(atom) && typeof atom.text === 'string') lines.push(...atom.text.split(/\r?\n/));
+  for (const line of lines) { const path = commandPath(knowledge, line); if (path) named.add(path); }
+  const commands = [...named].filter((path) => within(path, COMMANDS) && knowledge.nodes.get(path)?.entries.length).sort();
+  const others = [...named].filter((path) => knowledge.nodes.has(path) && !commands.includes(path)).sort();
+  const missing = [...named].filter((path) => !knowledge.nodes.has(path)).sort();
+  const shown = new Set<string>();
+  const block = (node: BriefNode): string[] => { const path = canonicalPath(node.path); if (shown.has(path)) return [`（${node.path} 的条目已在上文）`]; shown.add(path); return nodeBlock(node); };
+  const out: string[] = [
+    `# 编写简报 ${index}：${typeof fields.title === 'string' ? fields.title : ''}`,
+    '',
+    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，以及记录点到的其它节点在 knowledge/ 里的位置。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
+    '',
+    `条目 ${String(item.id ?? '')}；锁定根 ${knowledge.root}。`,
+  ];
+  // The order is the cleanup check's own (functions/command-obligations.ts, alternativeInverses then inverse_rules).
+  if (policy) out.push(`产品声明的命令规则（run.json 的 command_policy）：只读前缀 ${policy.read_only.join('、') || '无'}；互逆取值 ${policy.inverse_alternatives.map((pair) => pair.join('/')).join('、') || '无'}。`
+    + (policy.inverse_alternatives.length ? '核验认逆操作的顺序：命令的枚举参数取了互逆取值之一时，逆操作是同一条命令取另一个值；命令的末词是互逆取值之一、同级又有另一个取值的命令时，逆操作是那条同级命令；都不是时按前缀规则。' : ''));
+  else out.push('run.json 里没有产品声明的命令规则（command_policy），下面不列逆操作和只读命令。');
+  out.push('', `## 重组记录点到的命令（${commands.length} 条）`);
+  if (!commands.length) out.push('', '重组记录没有点到命令树里的命令；要用的命令到 knowledge/ 里搜。');
+  for (const path of commands) {
+    const node = knowledge.nodes.get(path)!;
+    out.push('', `### ${words(path)}`, ...block(node));
+    if (policy) {
+      if (policy.read_only.some((prefix) => within(path, canonicalPath(prefix)))) out.push('这条命令在产品声明的只读前缀下。');
+      else {
+        const paired = pairedSibling(policy, knowledge, path), inverse = paired ? null : inverseOf(policy, path);
+        if (paired) out.push(`逆操作（产品声明的互逆取值 ${paired.pair.join('/')}：同级的另一条命令）：`, ...block(paired.node));
+        else if (!inverse) out.push('逆操作：产品没有为这条命令声明唯一的逆操作规则。');
+        else {
+          const carried = inverse.rule.leading_parameters === undefined ? '' : `，逆操作带这条命令的前 ${inverse.rule.leading_parameters} 个参数`;
+          const target = knowledge.nodes.get(inverse.path);
+          out.push(`逆操作（产品规则 ${inverse.rule.source_prefix} → ${inverse.rule.inverse_prefix}${carried}）：`);
+          if (target?.entries.length) out.push(...block(target));
+          else out.push(`按这条规则算出的 ${decodeURI(inverse.path)} 不在锁定命令树里。`);
+        }
+        for (const prefix of policy.read_only) {
+          const form = readOnlyForm(knowledge, canonicalPath(prefix), path);
+          if (form) out.push(`只读前缀 ${prefix} 下同样的词走到的命令：`, ...block(form));
+        }
+      }
+    }
+    const parent = knowledge.nodes.get(path.slice(0, path.lastIndexOf('/')));
+    const siblings = (parent?.children ?? []).filter((child) => canonicalPath(child.path) !== path).map((child) => knowledge.nodes.get(canonicalPath(child.path))).filter((sibling): sibling is BriefNode => sibling !== undefined);
+    if (parent && siblings.length) {
+      const at = knowledge.lines.get(canonicalPath(parent.path));
+      out.push(`同级命令（${parent.path} 下另有 ${siblings.length} 个，完整条目在 knowledge/${at ? `${at.file} 第 ${at.line} 行起` : '里按路径找'}）：`);
+      for (const sibling of siblings.slice(0, SIBLINGS)) { const syntax = syntaxLine(sibling); out.push(syntax ? `· ${syntax}` : `· ${words(canonicalPath(sibling.path))} …（下面有 ${sibling.children.length} 个子节点）`); }
+      if (siblings.length > SIBLINGS) out.push(`（还有 ${siblings.length - SIBLINGS} 个没有列出）`);
+    }
+  }
+  out.push('', `## 重组记录点到的其它节点（${others.length} 个）`);
+  let quoted = 0;
+  for (const path of others) {
+    const node = knowledge.nodes.get(path)!, at = knowledge.lines.get(path), text = nodeBlock(node);
+    const where = at ? `knowledge/${at.file} 第 ${at.line} 行起，共 ${at.count} 行` : 'knowledge/ 里按路径找';
+    if (quoted < QUOTED_BLOCKS && Buffer.byteLength(text.join('\n')) <= QUOTED_BYTES) { quoted++; out.push('', `${where}：`, ...block(node)); }
+    else out.push('', `# ${node.path}`, `（${where}，没有抄在这里）`);
+  }
+  if (missing.length) out.push('', '## 记录点到、锁定根里没有的路径', ...missing.map((path) => `- ${decodeURI(path)}`));
+  return { text: out.join('\n') + '\n', commands, others, missing };
+}

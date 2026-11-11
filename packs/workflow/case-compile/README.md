@@ -437,6 +437,36 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.14.0: each case's authoring brief comes with the run
+
+With the root on local disk a search costs nothing, but each search is still a reply of the model. Run 22 made no `get_nodes`
+call, and its six plan writers spent 78% of their model time (49 of 63 minutes) in 208 replies that only searched, about 14
+seconds each: 91 searches for commands in `knowledge/commands.txt` (the commands the case's recomposition record already
+names, their inverse and read-only forms, their neighbours), the rest for the plan format, the bed and the manual. A writer wrote
+its first file 4 to 13 minutes after it started, and every rework round starts fresh writers that search again.
+
+The reference implementation does this before a writer starts: its engine builds each case's brief in code
+(`compile_engine/briefs.py` `build_brief`) and binds the recompose stage's command grounding to it, and the writer's rule is
+"Reuse sealed recompose grounding before querying" (`agents/compile-worker.md`): read it first, query only what it does not
+carry. `tools/download-run.ts` now writes `briefs/<index>.md` beside `items/` and `knowledge/` for every item that carries a
+recomposition record (`functions/authoring-brief.ts`; `tools/authoring-brief.ts` writes them for a directory downloaded
+before). A brief holds facts only, taken by structure:
+
+- the commands the record names: tree references anywhere in the record, and the command lines of its rewrites and of the
+  author's own lines followed word by word down the tree; each with its entries exactly as `knowledge/commands.txt` has them,
+  reference line included;
+- the inverse the product declares for each (`command_policy` of the run, in the cleanup check's own order: a declared pair
+  of sibling words such as `… on` and `… off` first, else the inverse rule with the longest prefix and its leading
+  parameters), with that command's entries, or the statement that the path the rule gives is not in the locked tree;
+- the command the same words lead to below each declared read-only prefix, when there is one;
+- the syntax line of each sibling under the same parent (40 at most) and where the parent's block starts in the text file;
+- the other nodes the record references (manual sections): quoted when short, otherwise the file, line and length.
+
+It states no judgement and writes no plan content; what it does not hold is searched for in `knowledge/` as before. SKILL
+step 2 names the file (two sentences, budget 8980). A brief that cannot be written is reported in the download's answer and
+does not fail the download. On run 22's seventeen items the briefs take 0.2 seconds and are 1 to 22 KB each. The
+recomposition stage's download is unchanged: its items are what a record is made from.
+
 ### 3.13.0: the knowledge root comes with the run, once, and is read locally
 
 The design model has three knowledge interactions for a run (D06 R[2]: lock the root, fetch the subtree, verify the references
