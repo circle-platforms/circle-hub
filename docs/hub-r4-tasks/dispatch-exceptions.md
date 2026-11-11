@@ -37,8 +37,8 @@ issue 写的时候（2026-10-31）派发只有管理员命令。之后决定 105
 
 ## 验证
 
-`node --test hub/dispatch/accepted.test.ts`：13 项通过。新增五项：未发出（目标不给租约、预检不满足、目标连不上各一）、有认证阶段的目标拒绝（重交后第二次提交）、已发出无应答（重交不再发、不到目标）。原有“最终边界拒绝后不再试”和“效果边界拒绝后重交再试”两项仍然通过。只用回环 MCP 桩和合成字节，不能据此认证真实目标。
+派发包全部测试（`node --test "hub/dispatch/**/*.test.ts"`）404 项通过，其中 `accepted.test.ts` 13 项。验收测试 `tests/acceptance/28-device-run.test.ts`（9 项）和 `58-bed-install.test.ts` 通过；28 里“只预订了一部分环境”的那一项按新的答复改了断言：重交的答复先是上一个被拒作业的结局，再是这一次的结果。新增五项：未发出（目标不给租约、预检不满足、目标连不上各一）、有认证阶段的目标拒绝（重交后第二次提交）、已发出无应答（重交不再发、不到目标）。原有“最终边界拒绝后不再试”和“效果边界拒绝后重交再试”两项仍然通过。只用回环 MCP 桩和合成字节，不能据此认证真实目标。
 
 ## 允许路径
 
-`hub/dispatch/{accepted.ts,accepted.test.ts,service.ts,transport.ts,README.md}`、`docs/hub-r4-progress.md`、`CHANGELOG.md`、本任务页
+`hub/dispatch/{accepted.ts,accepted.test.ts,service.ts,transport.ts,README.md}`、`tests/acceptance/28-device-run.test.ts`、`docs/hub-r4-progress.md`、`CHANGELOG.md`、本任务页
