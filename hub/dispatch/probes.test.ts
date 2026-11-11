@@ -236,7 +236,7 @@ test('residue is judged beside the version and interfaces rules, which stay as t
 for (const [name, reply, fact] of [
   ['a blank answer', '', /没有声明的收尾行/],
   ['headers without the closing line', 'peers:\nname        address', /没有声明的收尾行/],
-  ['a line the definition declares as a failure', '% rejected: no such command\nDEMO#', /失败行/],
+  ['a line the definition declares as a failure', '% rejected: no such command\nDEMO#', /设备输出说明读取失败/],
   ['a tool answer that holds no text', { output: 5 }, /没有文字回答/],
 ] as const) {
   test(`${name} is an unread bed, never a clean one and never a residue`, async t => {
