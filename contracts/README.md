@@ -624,3 +624,16 @@ conditions bind, and its unavailable references. The result record is not rewrit
 holds, the counts are not stored in the result. The task list and the overview read the summary, verified by its own
 digest, instead of the whole result. A result without a summary is read whole with the same answer. No protocol code, MCP
 tool or vocabulary axis changes. W08 `changes43` states the change.
+
+Decision 154 (owner, 2026-11-11, issue 194) sets model 44: B02 R[4] is rewritten. The content of a source is not scanned
+for credentials and is not kept at `retain_only`, refused or sent to an administrator for review because it looks like one:
+what a business system answers, what a member uploads, what is written into a knowledge space or a memory, the parameters
+of a run and what is dispatched reach whoever may read them, the pack functions and the model as they are. Credentials
+needed for use come from the client's own variables, not from content. What the Hub itself writes down (call log, notes,
+resource and executor settings, variables, pack files) still carries no credential, and an echo of a credential the Hub
+itself sent is still B02 R[6]. Records stored under `credential-scan@3` are not rewritten: one with a hit keeps its stored
+read tier and its review and acceptance rules when a read names it, and the same content read or uploaded again makes a
+readable record. The rules elsewhere in the model about ordinary-source hits (retain only, `possible_credentials`, review
+requests, refused uploads, refused memory and space writes) apply to those earlier records only. No record kind, protocol
+code, MCP tool or vocabulary axis changes; the codes of the old refusals stay registered. The administrator's masking
+dictionary is a later step. B02 `changes44` states the change.

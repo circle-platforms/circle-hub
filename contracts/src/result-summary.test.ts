@@ -10,7 +10,7 @@ const body={run,result:digest,submission,acceptance:'accepted',system_input:fals
  grounds:['src:'+'c'.repeat(64),'rec:'+'d'.repeat(64)+'#/partitions/delivered/0','tree:'+'e'.repeat(64)+'/synthetic/folder'],bound:['c'.repeat(64)],unavailable_references:['src:'+'f'.repeat(64)]};
 
 test('model 43 adds the result_summary kind and the W08 rule that says what it is',()=>{
- assert.equal(model.version,43);assert.equal(MODEL_VERSION,43);
+ assert.ok(model.version>=43);assert.equal(MODEL_VERSION,model.version);
  assert.ok((RECORD_KINDS as readonly string[]).includes('result_summary'));
  const w08=model.elements.find((e:{id:string})=>e.id==='W08');
  assert.ok(w08.rules[6].includes('result_summary')&&w08.rules[6].includes('result-summary@1')&&w08.rules[6].includes('决定 153'));
