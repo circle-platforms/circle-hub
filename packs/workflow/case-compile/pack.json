@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "985c8f28d0e773f4be824909d70b48eda2b60e6acc9e455419ff88dcb7429fd6",
-      "size": 21414
+      "sha256": "de821fb6868c6fbebb9d0b658ab13f377eb7064bce3ef4d01e2753a3f28247a5",
+      "size": 21352
     },
     {
       "path": "checks.json",
@@ -720,6 +720,16 @@
       "path": "tools/authoring-brief.ts",
       "sha256": "bd5e315594e739522fc2582615f9f4727f541296c6a66e8dd06be3e51c08acf9",
       "size": 6768
+    },
+    {
+      "path": "tools/case-writers/extension.json",
+      "sha256": "429096cf981d43653110966e7a573d7ae6cc728ba79c523c6fd505f197e8432c",
+      "size": 157
+    },
+    {
+      "path": "tools/case-writers/extension.ts",
+      "sha256": "845bf2a0e8c5930c681b97c2c0b655c72bc5e4bfe45f6dc3f5816809ba03a22e",
+      "size": 24458
     },
     {
       "path": "tools/delivery.md",
