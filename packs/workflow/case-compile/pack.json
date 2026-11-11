@@ -217,6 +217,11 @@
       "size": 11347
     },
     {
+      "path": "functions/generated/skills/command-tools/command-check/value-domain.ts",
+      "sha256": "5b5d4cfe103931868f74b93e64b332d9dcde565d6148a5bd2ea7ce5b999f3a93",
+      "size": 20716
+    },
+    {
       "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
       "sha256": "cda38095f6ebf28363c002c09894fd9e88a0531102c97fca592ac6d24df46f5f",
       "size": 14816
@@ -273,8 +278,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "e917c6912f98e6f7aa2c5cc9c6088bedc8102892406a307b8b9e53b6f3de728a",
-      "size": 13588
+      "sha256": "00a4e4c30c97bc11615e89d821ab9c6bf82d52671e318d34adc75e03536ad56f",
+      "size": 15035
     },
     {
       "path": "functions/profile.ts",
@@ -333,8 +338,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "f38f36635eab16017969d7ae2a138b08b772a79d7d699c401571a809d1375c3e",
-      "size": 12796
+      "sha256": "b6609ecc222ba7997661c5bbb6c72b9475a098aa697f4112d71906170061a811",
+      "size": 12871
     },
     {
       "path": "functions/text.ts",
