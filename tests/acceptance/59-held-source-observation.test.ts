@@ -8,6 +8,11 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { BUGS } from '../fixtures/plm/index.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
+import { withCredentialDetectors } from '../../hub/testing/records.ts';
+
+// Issue 194: new content is no longer held for looking like a credential. This file covers what a held object answers,
+// which records stored under credential-scan@3 still follow, so it turns the detectors on for itself.
+withCredentialDetectors();
 
 const ID = '5151';
 const VALUE = ['Synthetic', 'Held', 'Value', '42'].join('-');
