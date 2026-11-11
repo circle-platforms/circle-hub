@@ -61,19 +61,28 @@ export async function saveResult(store: RecordStore, result: ValidationResult, c
   return tx === undefined ? store.withTransaction(write) : write(tx);
 }
 
-/**
- * The summary of the result `digest` of `run`: its summary record when it has one that names this result and run, read and
- * verified as a record; otherwise the same facts from the result itself. Null when the result is not this run's or is gone.
- */
-export async function resultSummaryOf(store: RecordStore, run: string, digest: string): Promise<ResultSummary | null> {
+/** The summary record of the result `digest` of `run`, read and verified as a record; null when it has none that names this result and run. */
+export async function storedSummaryOf(store: RecordStore, run: string, digest: string): Promise<ResultSummary | null> {
   // The oldest summary of a result is the one stored with it: a record appended later cannot take its place.
   const found = (await store.find<unknown>({ kind: 'result_summary', key: INDEX.summaryResult, value: digest, limit: 1 })).items[0];
-  if (found !== undefined && found.schema === SCHEMAS.summary && hasSummaryShape(found)) {
-    const body = found.body as ResultSummary;
-    if (body.result === digest && body.run === run) return body;
-  }
+  if (found === undefined || found.schema !== SCHEMAS.summary || !hasSummaryShape(found)) return null;
+  const body = found.body as ResultSummary;
+  return body.result === digest && body.run === run ? body : null;
+}
+
+/** The same facts from the result itself, read whole: for a result with no summary. Null when it is not this run's or is gone. */
+export async function summarizeStored(store: RecordStore, run: string, digest: string): Promise<ResultSummary | null> {
   const record = await store.get<ValidationResult>(digest);
   return record?.kind === 'validation_result' && record.schema === SCHEMAS.result && record.body.run === run ? summarize(record.body, digest) : null;
+}
+
+/**
+ * The summary of the result `digest` of `run`: its summary record when it has one, otherwise the same facts from the result
+ * itself. `whole` reads a result that has no summary; a caller that lists many tasks gives one that reads apart from its
+ * own scope, so that a megabyte read for one row is released before the next.
+ */
+export async function resultSummaryOf(store: RecordStore, run: string, digest: string, whole: (run: string, digest: string) => Promise<ResultSummary | null> = (id, result) => summarizeStored(store, id, result)): Promise<ResultSummary | null> {
+  return await storedSummaryOf(store, run, digest) ?? whole(run, digest);
 }
 
 /** Every result has its summary: a pass over the older ones reached its end (summarizeStoredResults). */

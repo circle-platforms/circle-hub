@@ -329,8 +329,12 @@ function taskTabOf(ctx: PageContext): TaskTab {
   const asked = param(ctx, 'tab') ?? (ctx.url.searchParams.get('view') === 'record' ? 'record' : undefined);
   return (TASK_TABS as readonly string[]).includes(asked ?? '') ? asked as TaskTab : 'requirements';
 }
-/** How many of a task's newest submissions its page lists at once (the rest by "older" links). */
-export const RUN_HISTORY_LIMIT = 50;
+/**
+ * How many of a task's newest submissions its page lists at once (the rest by "older" links). Each row shows what its
+ * result says, so each row reads a whole result: fifty rows read fifty megabytes for a task submitted that often, and the
+ * newest few are what a reader comes for (issue 200).
+ */
+export const RUN_HISTORY_LIMIT = 10;
 
 export async function runPage(ctx: PageContext, runId: string): Promise<PageResult> {
   if (!RUN_ID.test(runId)) return neutralPage(ctx);
