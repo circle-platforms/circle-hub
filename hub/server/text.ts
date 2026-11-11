@@ -87,6 +87,9 @@ type Limits = { readonly [K in keyof typeof CLIP]: number };
 /** Content read by reference is the place to read things whole: no field is shortened there (long lines are paged). */
 const WHOLE: Limits = Object.fromEntries(Object.keys(CLIP).map((key) => [key, Number.POSITIVE_INFINITY])) as unknown as Limits;
 
+// Escape terminal controls for display while preserving the stored device output.
+const visibly = (line: string): string => line.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, (control) => `\\x${control.charCodeAt(0).toString(16).padStart(2, '0')}`);
+
 /** The example reference of an upload in example calls: valid syntax, plainly not a real digest. */
 const EXAMPLE_SOURCE = `src:${'0'.repeat(64)}`;
 const MODEL_PLACEHOLDER = '<模型名与配置>';
@@ -980,6 +983,21 @@ function startText(v: StartOut, context: TextContext): string {
       unit: '设备观察',
       measure: '条',
       more: () => `设备观察：${seeConsole(r.run)}`,
+    });
+  }
+  if (r.device_help !== undefined && r.device_help.length > 0) {
+    blocks.push({
+      priority: 2,
+      head: ['设备对所问位置的说明（设备原话，各带观察时刻和原件；它不是命令树，也不是手册，不能当期望值的依据）：'],
+      entries: r.device_help.map((c) => {
+        const clip = new Clip(null, seeConsole(r.run));
+        const words = typeof c.statement.data?.help === 'string' ? c.statement.data.help : null;
+        const lead = `- ${claimText(c, clip, CLIP.field)}`;
+        return clip.entry(words === null ? lead : [lead, ...words.split(/\r\n|\r|\n/).map((line) => `    ${visibly(line)}`)]);
+      }),
+      unit: '设备说明',
+      measure: '条',
+      more: () => `设备说明：${seeConsole(r.run)}`,
     });
   }
   // A page of the run record's text has the same lines as here, so a cursor names the same line in both.

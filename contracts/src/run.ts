@@ -178,6 +178,10 @@ export const RunSummary = z.strictObject({
     .array(Claim)
     .optional()
     .describe('what each device behind the leases this run acquired showed when the booking was granted: one observed claim per probed device, the build its version probe echoed, the probe output as ground; absent when the workflow did not ask for observations'),
+  device_help: z
+    .array(Claim)
+    .optional()
+    .describe('what the devices answered when this run asked them what they expect at the end of a line it was given: per line one claim stating the positions the Hub asked, then one observed claim per position with the device\'s own words (data.help) and the stored answer as ground; or an unknown claim naming what is missing when nothing was asked; absent when the run asked nothing'),
   unversioned_root: Sha256.optional().describe('product-wide knowledge root locked for this run'),
   root: Sha256.optional().describe('knowledge root locked for this run'),
   sources: z.array(SourceBinding).describe('every source bound to the run besides the knowledge root: inputs and the expected sources the pack bound'),

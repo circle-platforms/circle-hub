@@ -122,6 +122,31 @@
           ],
           "additionalProperties": false
         },
+        "read_only": {
+          "description": "the target's help tool never presses Enter on the asked line and always clears it (D02 R[4]: read-only enforced by the target); certified per target version",
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "evidence": {
+              "minItems": 1,
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^src:[a-f0-9]{64}$"
+              }
+            }
+          },
+          "required": [
+            "version",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
         "retry_safety": {
           "type": "object",
           "properties": {
@@ -1258,6 +1283,90 @@
         "output": {
           "type": "string",
           "maxLength": 500
+        },
+        "help": {
+          "type": "object",
+          "properties": {
+            "line_pattern": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "modes": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "call": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "arguments": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "timeout_ms": {
+                  "default": 30000,
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 600000
+                }
+              },
+              "required": [
+                "tool",
+                "arguments",
+                "timeout_ms"
+              ],
+              "additionalProperties": false
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "the target's description of the asked position, a string; absent, null or empty: it described nothing"
+            },
+            "caret_only": {
+              "description": "boolean: the target answered with nothing but a caret under the line",
+              "type": "string",
+              "maxLength": 500
+            },
+            "entered": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "boolean: whether Enter was pressed on the asked line; must read false"
+            },
+            "cleared": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "boolean: whether the input line was cleared again; must read true"
+            },
+            "max_positions": {
+              "default": 12,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            }
+          },
+          "required": [
+            "line_pattern",
+            "call",
+            "text",
+            "entered",
+            "cleared",
+            "max_positions"
+          ],
+          "additionalProperties": false
         },
         "seats": {
           "minItems": 1,
