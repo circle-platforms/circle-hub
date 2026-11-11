@@ -3,8 +3,8 @@ import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import type { Claim } from '../../../contracts/src/claim.ts';
-import { observationClaims } from './observations.ts';
-import type { DeviceObservation } from '../../../contracts/src/pack.ts';
+import { deviceHelpClaims, observationClaims } from './observations.ts';
+import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation } from '../../../contracts/src/pack.ts';
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
@@ -178,6 +178,35 @@ async function lineageOf(ctx: EngineContext, runId: string, predecessor: string 
     at = record?.body.predecessor_access==='view'?undefined:record?.body.predecessor;
   }
   return lineage;
+}
+
+export async function askClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, asks: ReadonlyArray<DeviceHelpTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {
+  if (asks.length === 0) return [];
+  const declared = workflow.workflow.leases;
+  const service = ctx.deps.leases;
+  if (declared === undefined || service === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要向设备问一行，但这个 Hub 没有配置租约服务或工作流没有声明 leases`, { path: '/pack', fix: '请管理员配置租约服务，或联系任务包作者在 workflow.json 里声明 leases' })]);
+  function refuse(code: ProtocolError['code'], message: string, fix: string): never { throw new Refusal([{ code, message, fix }]); }
+  const keys = [...new Set(asks.flatMap((ask) => ask.keys))];
+  if (keys.some((key) => !key.startsWith(declared.prefix))) refuse('LEASE_PREFIX', '要问的设备的租约键不在声明的前缀下', `键以前缀 ${declared.prefix} 开头`);
+  const lineage = await lineageOf(ctx, runId, predecessor);
+  const rows = await service.holders(keys);
+  const now = ctx.now();
+  for (const key of keys) {
+    const row = rows.find((r) => r.key === key);
+    if (!row || row.user !== user.id || !lineage.has(row.run)) refuse('LEASE_UNAVAILABLE', `设备的租约 ${key} 不在这次运行的血缘持有之下，不能往它的终端里打字`, '先预订这台设备，开始这次运行时 predecessor 写预订那次运行的编号');
+    if (row.released || (row.expires_at !== null && Date.parse(row.expires_at) <= now.getTime())) refuse('LEASE_EXPIRED', `设备的租约 ${key} 已释放或过期`, '重新预订后再问');
+  }
+  const at = now.toISOString();
+  let results: DeviceHelpResult[];
+  try {
+    if (ctx.deps.observations?.ask === undefined) throw new Error('Hub 没有接问设备的端口（派发服务）');
+    results = await ctx.deps.observations.ask(user, runId, asks);
+  } catch (error) {
+    ctx.log({ traceId, run: runId, what: 'device_help', detail: describe(error) });
+    const fact = 'Hub 这次没能向设备问（原因在管理员记录里）';
+    results = asks.map((ask) => ({ inventory: ask.inventory, device: ask.device, label: ask.label, line: ask.line, mode: ask.mode ?? null, words: 0, positions: [], missing: { fact: `${ask.label}：${fact}`, next_action: '稍后再问一次；连续出现时请管理员检查派发服务' } }));
+  }
+  return deviceHelpClaims(results, at);
 }
 
 export async function grantLeases(
@@ -630,6 +659,7 @@ async function startFresh(
   // on compensates by releasing what was granted (D04 R[0]: no lease outlives the run it was taken for).
   let grantedLeases: Array<LeaseDone> = [];
   let deviceClaims: Claim[] = [];
+  let helpClaims: Claim[] = [];
   try {
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run);
     // Once an acquire is granted, the Hub looks at the booked devices the projection named (decision 112); it never throws.
@@ -637,6 +667,7 @@ async function startFresh(
       const looked = ctx.deps.observations ? await ctx.deps.observations.observe(user, runId, projection.observe) : { observed: [], missing: 'Hub 没有接设备观察（派发服务）' };
       deviceClaims = observationClaims(looked, ctx.now().toISOString());
     }
+    helpClaims = await askClaims(ctx, user, workflow, projection.ask, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run, call.traceId);
   let items = projection.items;
   const packId = workflow.pack.id;
   const previous = predecessor;
@@ -729,6 +760,7 @@ async function startFresh(
     ...(frozenLeaseRows !== null ? { lease_context: frozenLeaseRows, lease_registrations: leaseView!.registrations } : {}),
     ...(observationContext !== null ? { observation_context: observationContext } : {}),
     ...(deviceClaims.length > 0 ? { device_observations: deviceClaims } : {}),
+    ...(helpClaims.length > 0 ? { device_help: helpClaims } : {}),
   } satisfies RunRecord);
   const subjectPath = `/inputs/${workflow.workflow.subject}`;
   const runTooLarge = tooLarge(ctx, record, `这个被判对象投影出 ${items.length} 个条目，运行记录`, subjectPath);

@@ -1,4 +1,4 @@
-import type { DeviceObservation } from '../../../contracts/src/pack.ts';
+import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation } from '../../../contracts/src/pack.ts';
 import type { ContributionLayer } from '../../knowledge/api.ts';
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
@@ -64,6 +64,8 @@ export interface RunsEngineDeps {
   observations?: {
     latest(): Promise<DeviceObservation[]>;
     observe(user: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }>;
+    /** Asks devices the run's lineage holds what they expect at the end of a line a writer chose; never throws, says what it could not ask. */
+    ask?(user: Principal, run: string, targets: ReadonlyArray<DeviceHelpTarget>): Promise<DeviceHelpResult[]>;
   };
 }
 

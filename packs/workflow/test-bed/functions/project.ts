@@ -6,6 +6,7 @@
 // - acquire: the chosen bed (the `bed` parameter, else the best match), one item with the lease plan, and
 //   `lease_requests` for the Hub to grant (keys bed/<bed>/<device> and bed/<bed>/ip/<address>, TTL in seconds, the
 //   workflow's cap; a grant failure is the Hub's LEASE_UNAVAILABLE with the earliest free moment);
+// - help: one item and one `ask` for a device the frozen lease view marks mine;
 // - extend / release: one item for the booking (the `booking` parameter names the booking run; the run starts with it
 //   as predecessor), the lease operation on every key the frozen view marks mine, or the honest refusal
 //   "你没有持有这个预订" when the lineage holds nothing.
@@ -17,6 +18,7 @@ import { isRecord } from './common.ts';
 import {
   acquirePlan,
   factsFields,
+  helpPlan,
   leaseRecord,
   manifestBeds,
   readParameters,
@@ -48,6 +50,8 @@ interface Out {
   lease_requests?: LeaseRequest[];
   /** The booked devices the Hub looks at once the booking is granted (decision 112), by the inventory digest and pointer. */
   observe?: Array<{ inventory: string; device: string; label: string }>;
+  /** The lines to ask booked devices, what they expect at the end of each (help); the Hub asks only devices the lineage holds. */
+  ask?: Array<{ inventory: string; device: string; label: string; line: string; mode?: string; keys: string[] }>;
 }
 
 interface Failure {
@@ -111,6 +115,9 @@ export default function project(input: unknown): Out | Failure {
       booking: normalized.booking,
       reason: normalized.reason,
       devices: normalized.devices,
+      device: normalized.device ?? null,
+      line: normalized.line ?? null,
+      mode: normalized.mode ?? null,
       manifest: slot.model,
       inventory,
       observations,
@@ -151,6 +158,27 @@ export default function project(input: unknown): Out | Failure {
       })),
       groups,
       warnings,
+    };
+  }
+  if (action === 'help') {
+    const planned = helpPlan(beds, normalized, frozenLeases);
+    if (!planned.ok) return failure(planned.failure.code, planned.failure.message, planned.failure.fix, [], planned.failure.pointer === undefined ? {} : { pointer: planned.failure.pointer });
+    const plan = planned.plan;
+    const pointer = inventory === null ? null : devicePointer(slot.model, plan.bed, plan.device);
+    if (inventory === null || pointer === null) return failure('test-bed.unknown_bed', `清单里找不到设备 ${plan.device} 的位置`, '用当前清单重开运行');
+    return {
+      items: [
+        {
+          id: `${plan.bed}/${plan.device}`,
+          label: `问 ${plan.bed}/${plan.device}`,
+          summary: plan.conclusion,
+          location: locationOf(slot.model, plan.bed),
+          fields: { action, booking: plan.booking, bed: plan.bed, device: plan.device, line: plan.line, mode: plan.mode, key: plan.key, conclusion: plan.conclusion },
+        },
+      ],
+      groups,
+      warnings,
+      ask: [{ inventory, device: pointer, label: `${plan.bed}/${plan.device}`, line: plan.line, ...(plan.mode === null ? {} : { mode: plan.mode }), keys: [plan.key] }],
     };
   }
   if(action==='register'||action==='unregister'||action==='force_release'){
