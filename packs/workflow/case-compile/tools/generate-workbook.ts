@@ -12,6 +12,7 @@ import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { readSlots } from '../functions/slots.ts';
 import { generateWorkbookSet, GENERATOR, type GenerationInput } from '../functions/generate.ts';
+import { CONFLICT_FIX, conflictText, movedText, volumeOrder, volumeProblems } from '../functions/channels.ts';
 import { argumentsOf, readBytes, jsonBytes, writeNew, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 function record(value: unknown, message: string): Record<string, unknown> { if (!isRecord(value)) throw new Error(message); return value; }
 /** One case of the run (the run's only item). */
@@ -82,7 +83,11 @@ export async function main(argv: string[]): Promise<number> {
     const args = argumentsOf(argv, ['run', 'result', 'submission', 'contract', 'profile', 'inventory', 'out']);
     const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(args.run,'run'), readBytes(args.result,'result'), readBytes(args.submission,'submission'), readBytes(args.contract,'contract'), readBytes(args.profile,'profile'), readBytes(args.inventory,'inventory')]);
     const recipes = satisfiedRecipes({ run: jsonBytes(run,'run'), result: jsonBytes(result,'result'), submission: jsonBytes(submission,'submission'), contract, profile, inventory });
-    const bytes = generateWorkbookSet(recipes); await writeNew(args.out, bytes); process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length }) + '\n'); return 0;
+    const forbidden = volumeProblems(recipes);
+    if (forbidden.length) throw new Error(`${forbidden.map(conflictText).join('；')}。未生成自动化用例 Excel。${CONFLICT_FIX}`);
+    const bytes = generateWorkbookSet(recipes); await writeNew(args.out, bytes);
+    const moved = volumeOrder(recipes).moved, titles = new Map(recipes.map((recipe) => [recipe.fields.autoid, recipe.fields.title] as const));
+    process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length, ...(moved.length ? { moved_tail: moved, moved_text: movedText(moved, titles) } : {}) }) + '\n'); return 0;
   } catch (error) { process.stderr.write(`自动化用例 Excel 未生成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

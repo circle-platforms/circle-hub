@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import REQUIREMENTS from '../requirements.json' with { type: 'json' };
+import { canonicalJson } from '../functions/canonical-json.ts';
+import { GENERATOR, type GenerationInput } from '../functions/generate.ts';
+import { readWorkbook } from '../functions/workbook.ts';
+import { assemble, deliveryReport, type ReportInput } from '../functions/delivery.ts';
+import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { MANIFEST_DOC } from '../functions/test-support.ts';
+import { coreModel } from '../testing/workbook-model.ts';
+import { AUTOIDS, BOOT, ROOT, contractDoc, profileDoc, recipe } from '../testing/channels.ts';
+
+const [A, B, C] = AUTOIDS;
+const SHOW = 'show pool', STORE = 'demo store file backup', BOOT_ON = 'demo mirror boot on', RELOAD = 'demo reload file backup';
+const PLAN_RUN = 'run_00000000000000000000000000';
+
+/** The files fetch-run writes for a satisfied plan run over `recipes` (document order), as tools/scripts.test.ts builds them for one case. */
+function planRunFiles(recipes: GenerationInput[]) {
+  const contract = Buffer.from(JSON.stringify(contractDoc)), profile = Buffer.from(JSON.stringify(profileDoc)), inventory = Buffer.from(JSON.stringify(MANIFEST_DOC));
+  const ids = recipes.map((_, k) => `case-${k + 1}`);
+  const submission = { run: PLAN_RUN, model: 'synthetic-model', items: recipes.map((input, k) => ({ item: ids[k], handling: 'handled', slots: { plan: [{ data: input.slots }] } })) };
+  const run = { run: PLAN_RUN, pack: 'case-compile', pack_digest: 'b'.repeat(64), root: ROOT, build: 'Fixture_Build_A', items: recipes.map((input, k) => ({ id: ids[k], fields: input.fields })), requirements: REQUIREMENTS.requirements.map((v) => ({ key: v.key, accepted_producer: v.accepted_producer })), sources: Object.entries({ contract, profile, inventory }).map(([slot, bytes]) => ({ slot, role: 'expected', reference: `src:${sha256(bytes)}` })) };
+  const result = { schema: 'validation@1', run: PLAN_RUN, submission: sha256(canonicalJson(submission)), acceptance: 'accepted', errors: [], locks: { pack: GENERATOR, pack_digest: run.pack_digest, root: ROOT }, coverage: { complete: true, examined: recipes.length, total: recipes.length }, partitions: { delivered: recipes.map((input, k) => ({ item: ids[k], requirements: REQUIREMENTS.requirements.map((v) => ({ requirement: v.key, status: v.key === 'workbook_verified' ? 'unresolved' : 'satisfied', claims: v.key === 'commands_known' ? [{ statement: { verdict: 'support', data: { command_catalog: input.fields.command_catalog } } }] : v.key === 'contract_methods' ? [{ statement: { verdict: 'support', data: { runtime_version: input.contract.runtimeVersion, contract_sha256: input.contract.pinned.identity } } }] : [] })) })) } };
+  return { run, submission, result, contract, profile, inventory };
+}
+function generate(recipes: GenerationInput[]) {
+  const dir = mkdtempSync(join(tmpdir(), 'volume-order-'));
+  try {
+    const args: string[] = [];
+    for (const [key, value] of Object.entries(planRunFiles(recipes))) { const path = join(dir, `${key}.json`); writeFileSync(path, value instanceof Uint8Array ? value : JSON.stringify(value)); args.push(`--${key}`, path); }
+    const out = join(dir, 'case.xlsx');
+    const done = spawnSync(process.execPath, ['packs/workflow/case-compile/tools/generate-workbook.ts', ...args, '--out', out], { encoding: 'utf8' });
+    return { status: done.status, stdout: done.stdout, stderr: done.stderr, written: existsSync(out), bytes: existsSync(out) ? readFileSync(out) : null };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+test('the client generator writes the cases that leave state behind last and names them', () => {
+  const recipes = [recipe(A, [STORE]), recipe(B, [SHOW]), recipe(C, [SHOW])];
+  const done = generate(recipes);
+  assert.equal(done.status, 0, done.stderr);
+  const printed = JSON.parse(done.stdout);
+  assert.equal(printed.generator, GENERATOR);
+  assert.deepEqual(printed.moved_tail.map((row: { autoid: string; channels: Array<{ id: string }> }) => [row.autoid, row.channels.map((channel) => channel.id)]), [[A, ['disk']]]);
+  assert.match(printed.moved_text, new RegExp(`排在卷尾执行：${A}（合成用例 41）$`));
+  const read = readWorkbook(coreModel(done.bytes!), recipes);
+  assert.ok(read.ok, JSON.stringify(read)); if (read.ok) assert.deepEqual(read.autoids, [B, C, A]);
+  // A volume without such a case prints what it printed before.
+  const plain = generate([recipe(B, [SHOW]), recipe(C, [SHOW])]);
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.deepEqual(Object.keys(JSON.parse(plain.stdout)).sort(), ['bytes', 'generator', 'sha256']);
+});
+
+test('the client generator refuses a volume with both sides of a forbidden combination and writes nothing', () => {
+  const done = generate([recipe(A, [BOOT_ON]), recipe(B, [SHOW]), recipe(C, [RELOAD])]);
+  assert.equal(done.status, 1);
+  assert.equal(done.written, false);
+  assert.equal(done.stdout, '');
+  for (const part of ['生成失败：同一卷里有产品声明互斥的两侧命令（组合 boot_reload）', A, C, BOOT_ON, RELOAD, BOOT, '未生成可运行卷', 'parameters.exclude']) assert.ok(done.stderr.includes(part), part);
+  assert.ok(!done.stderr.includes(B), 'a case on neither side is not named');
+});
+
+test('the delivery report declares the cases placed last in each volume', () => {
+  const dispatch = { run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', job: 'a'.repeat(64), plan_run: PLAN_RUN, sha256: 'c'.repeat(64), items: [A, B], rows: [{ item: A, dynamic_terminal: 'pass' }, { item: B, dynamic_terminal: 'pass' }] };
+  const assembly = assemble([A, B], [dispatch]);
+  const input: ReportInput = { name: '合成交付', generatedAt: '2026-11-11 12:00', build: 'Fixture_Build_A', assembly, notes: { cases: {} }, originals: { [A]: { title: '合成用例一', lines: [] }, [B]: { title: '合成用例二', lines: [] } }, excluded: [], files: { pass: { sha256: 'c'.repeat(64) }, unsuccessful: null }, logs: {} };
+  assert.ok(!deliveryReport(input).includes('卷尾'), 'nothing is said when no case was placed last');
+  const moved = [{ autoid: A, channels: [{ id: 'disk', source: 'x', commands: [STORE] }] }];
+  const report = deliveryReport({ ...input, placedLast: { pass: moved, unsuccessful: [] } });
+  assert.ok(report.includes(`- 通过卷：有 1 个用例的命令按产品声明会留下每个用例结束后的清理清不掉的状态（disk），排在卷尾执行：${A}（合成用例一）`), report);
+  assert.ok(!report.includes('- 未通过卷：有'));
+});

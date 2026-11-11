@@ -38,7 +38,7 @@ First reserve the bed, then start a plan run with that reservation predecessor a
 
 Run normalize-mindmap.ts only for local exports needing the declared transformations: remove the KityMinder export head (U+FFFF then U+FEFF, bytes EF BF BF EF BB BF, which every real local export carries; since 3.8.8) or two leading U+FFFF, and convert a single array wrapper into root. It preserves element spelling, including long numeric literals, and prints before/after SHA plus client-normalization disclosure. Ordinary root documents retain their original bytes.
 
-The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full coverage of every item of the run, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size. No environment or network is read and existing files are not overwritten.
+The offline generator accepts --run --result --submission --contract --profile --inventory --out. It checks the received-submission digest, accepted result, full coverage of every item of the run, locked pack/root, every mandatory plan status and exact expected-source bytes, then reads the verified identity receipt. It writes a new private file and prints only digest/version/size (and, when cases were placed last for the state their commands leave behind, which ones: `moved_tail`). No environment or network is read and existing files are not overwritten.
 
 Source and published scripts both live under tools/, exactly as pack.json declares; staging copies those paths without namespace mapping. Installation must preserve tools/, functions/, tables/ and requirements.json together. The script and checker import the same functions/generate.ts. Node 24 is required; no production dependencies beyond built-ins are added.
 
@@ -198,6 +198,16 @@ Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽�
 作者片段按原有完整行语法解析，不截散文。出现次数按定义身份（来源根、完整路径、签名引用）计，不把参数值当成必须保留的文字；计划仍须独立核参数。可以改参数，不可以删命令：同一定义的执行次数至少等于作者次数，清理段不充数，缺失次数写入阻断结果的 `data.obligations` 并随结果留存。工作簿生成、独立核验、派发前检查共用这些边界。
 
 容量来自冻结 profile 的显式 ordinal 与自动化测试环境同类型设备计数，不读对象名中的数字。设备座位还不超过冻结的预检设备数；主机映射若声明 ordinal，也按其类型计数核对。越界时投影整份拒绝，写明“框架取不到那台设备，整卷不跑”，没有部分工作簿。旧根缺产品规则时设备计划保持未知，需升级产品包并重新育苗，不能从命令文字猜只读/修改。
+
+### 持久化通道：执行顺序与互斥组合
+
+产品的 `command_policy` 可声明 `persistence_channels` 和 `forbidden_combinations`，以锁定命令树的路径和可选参数位置说明哪些命令留下状态、哪些命令不能同时使用；`source` 保留手册原文。没有声明时保持原有行为。本包不带产品的真实声明。
+
+`functions/channels.ts` 按已解析的命令身份读规则。留下状态的用例排到自动化用例 Excel 最后，其余顺序保持；生成器、独立读取器和交付工具用同一顺序，并保留调整顺序的用例和依据。
+
+`commands_known` 拒绝一个自动化用例同时含互斥命令；`generate-workbook.ts` 在写文件前检查跨用例冲突，`workbook_verified` 再拒绝两侧用例，说明用例、命令和手册依据。这份 Excel 不进入上机验证。
+
+参考方法是 InfoTest `persistence.py` 的 `case_channels`、`order_volume`、`coexist_violations`；本实现按命令树结构读取。测试位于 `functions/channels.test.ts`、`tools/volume-order.test.ts` 和技能模块的 `command-policy.test.ts`。本次只执行第一个测试文件，5 项正确、0 项错误、0 项跳过。
 
 ### 公开线的互逆与触发核对（3.8.7）
 

@@ -14,6 +14,7 @@ import { runtimeMethod, type RuntimeContract } from './runtime-contract.ts';
 import { bindArguments, hasSingleLineValue } from './binding.ts';
 import { encodeG, type GOptions } from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 import { fillTemplate, readTemplate, TemplateError } from './generated/skills/runner-workbook/workbook-writer/workbook-template.ts';
+import { volumeOrder } from './channels.ts';
 export const GENERATOR = FORMAT.generator;
 export interface GenerationFields {source_atoms?:unknown;bed_services?:unknown;manifest_sha256?:string;criteria_review?:unknown;expected_nodes?:unknown; command_catalog?:unknown;command_identities?:unknown; autoid: string; title: string; path?: string[]; priority?: string | null; steps: Array<{ text: string }> }
 export interface GenerationInput { slots: PlanSlots; fields: GenerationFields; contract: RuntimeContract; profile: RuntimeProfile; plan_run: string; build: string; generator?: string }
@@ -48,14 +49,15 @@ export function recipeDigest(recipes: unknown[]): string {
 /** Rows are constructed only here; the independent workbook reader does not call this routine to interpret input. */
 export function generateWorkbook(input: GenerationInput): Uint8Array { return generateWorkbookSet([input]); }
 /** One workbook for the cases of one run (decision 104): the runner's template, then below its header the description row,
- * each case's rows in the given order followed by a blank row, and the closing case. One case gives exactly the single-case layout.
+ * each case's rows in policy order followed by a blank row, and the closing case. One case keeps the single-case layout.
  * `merged` lets the cases come from several plan runs of the same contract, profile, build and generator, as the unsuccessful
  * volume of a delivery does (each case as it last went to the bed); the description row then names every plan run. Such a
  * workbook is not one plan run's recomputation, so it is never what a verification run binds. */
-export function generateWorkbookSet(inputs: GenerationInput[], options: { merged?: boolean } = {}): Uint8Array {
-  if (!inputs.length) reject('/cases', '至少一个已核验用例才可生成');
+export function generateWorkbookSet(given: GenerationInput[], options: { merged?: boolean } = {}): Uint8Array {
+  if (!given.length) reject('/cases', '至少一个已核验用例才可生成');
+  const inputs = volumeOrder(given).ordered;
   const first = inputs[0]; const { contract, profile } = first; const many = inputs.length > 1;
-  const at = (k: number, pointer: string) => many ? `/cases/${k}${pointer}` : pointer;
+  const at = (k: number, pointer: string) => many ? `/cases/${given.indexOf(inputs[k])}${pointer}` : pointer;
   for (const [k, input] of inputs.entries()) if (input.contract.pinned.identity !== contract.pinned.identity || input.contract.runtimeVersion !== contract.runtimeVersion || canonicalJson(input.profile) !== canonicalJson(profile) || (!options.merged && input.plan_run !== first.plan_run) || input.build !== first.build || input.generator !== first.generator) reject(at(k, '/context'), '同一份工作簿的用例必须共用同一合约、配置、计划运行、构建和生成器');
   if (new Set(inputs.map((input) => input.fields.autoid)).size !== inputs.length) reject('/cases', '同一份工作簿里的 autoid 重复');
   if (first.generator !== undefined && first.generator !== GENERATOR) reject('/generator', '生成器版本与当前包版本不符');

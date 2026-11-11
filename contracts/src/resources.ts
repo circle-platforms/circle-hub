@@ -951,6 +951,8 @@ function oneNamedGroup(pattern: string): boolean {
   return groups === 1;
 }
 const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:z.string().min(1).max(2000).refine(oneNamedGroup)});
+const linePattern = z.string().min(1).max(2000).refine(p => compiled(`^(?:${p})$`), { message: '行模式不是有效的正则' });
+const residueProbe = z.strictObject({ command: z.string().min(1).max(500), closing: linePattern, header_patterns: z.array(linePattern).max(20).default([]), failure_patterns: z.array(linePattern).max(20).default([]) });
 /**
  * Which of the bound manifest's devices commands are dispatched to (P07 R[1], C07 R[4]). Declared, never recognised: the
  * pointer to the type field of one device and the closed set of declared type values that are dispatch targets, compared
@@ -1052,12 +1054,34 @@ const bedState = z.strictObject({
     }
   }
 });
-const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
+const helpAsk = z.strictObject({
+  line_pattern: z.string().min(1).max(2000).refine(p => p.startsWith('^') && p.endsWith('$') && compiled(p)),
+  modes: z.array(z.string().min(1).max(100)).min(1).max(8).optional(),
+  call,
+  text: pointer.describe('the target\'s description of the asked position, a string; absent, null or empty: it described nothing'),
+  caret_only: pointer.optional().describe('boolean: the target answered with nothing but a caret under the line'),
+  entered: pointer.describe('boolean: whether Enter was pressed on the asked line; must read false'),
+  cleared: pointer.describe('boolean: whether the input line was cleared again; must read true'),
+  max_positions: z.number().int().min(1).max(32).default(12),
+});
+const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,help:helpAsk.optional(),seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction,residue:z.array(residueProbe).min(1).max(10).optional()})).min(1).max(100)}).superRefine((p,ctx)=>{
   const match = new RegExp(p.command_pattern);
   if (new Set(p.seats.map(s=>s.seat)).size !== p.seats.length || new Set(p.seats.map(s=>s.index)).size !== p.seats.length) ctx.addIssue({code:'custom',message:'探测座位名称和序号不得重复'});
   if (p.dispatch_targets && p.devices === undefined) ctx.addIssue({code:'custom',message:'派发目标声明需要设备集合指针 devices'});
   if (p.dispatch_targets && new Set(p.dispatch_targets.types).size !== p.dispatch_targets.types.length) ctx.addIssue({code:'custom',message:'派发目标的设备类型闭集不得重复取值'});
   for (const seat of p.seats) for (const step of [seat.version,seat.interfaces]) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'探测命令不符合声明的命令形状'});
+  for (const seat of p.seats) {
+    const residue = seat.residue ?? [];
+    for (const step of residue) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'残留探测命令不符合声明的命令形状'});
+    if (new Set(residue.map(step=>step.command)).size !== residue.length) ctx.addIssue({code:'custom',message:'同一座位的残留探测命令不得重复'});
+  }
+  if (p.help) {
+    const bound = (key: string) => countBindings(p.help!.call.arguments, key);
+    if (['line','seat_index','lease_id'].some(key => bound(key) !== 1)) ctx.addIssue({code:'custom',path:['help','call'],message:'问位置的调用必须各绑定一次问的那一行、座位序号和本次租约身份'});
+    if (bound('mode') !== (p.help.modes ? 1 : 0)) ctx.addIssue({code:'custom',path:['help','call'],message:'只有声明了级别集合才绑定级别，且恰好绑定一次'});
+    if (p.help.modes && new Set(p.help.modes).size !== p.help.modes.length) ctx.addIssue({code:'custom',path:['help','modes'],message:'级别不得重复取值'});
+    if (p.help.call.tool === p.call.tool) ctx.addIssue({code:'custom',path:['help','call'],message:'问位置的工具不能就是逐台版本探测的工具'});
+  }
 });
 const base = z.strictObject({
   credential: SecretReference.optional(),
@@ -1065,7 +1089,7 @@ const base = z.strictObject({
   environment:EnvironmentSchema.optional(),
   retry_safety: RetrySafetySchema.default('unsafe'),
   target: z.string().min(1).max(200), manifest_sha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null), endpoint: z.string().url().max(2048), ca: z.string().max(65536),
-  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),retry_safety:certificate.optional(),conditional_write:certificate.optional(),window_resend:certificate.extend({window_ms:z.number().int().min(1).max(86400000000)}).optional() }).default({}),
+  premises: z.strictObject({ request_journal: certificate.optional(), result_ownership: certificate.optional(),read_only:certificate.optional().describe('the target\'s help tool never presses Enter on the asked line and always clears it (D02 R[4]: read-only enforced by the target); certified per target version'),retry_safety:certificate.optional(),conditional_write:certificate.optional(),window_resend:certificate.extend({window_ms:z.number().int().min(1).max(86400000000)}).optional() }).default({}),
   actor: z.strictObject({ header: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,127}$/).refine(h => !h.toLowerCase().startsWith('mcp-') && !['authorization', 'cookie', 'host', 'content-length', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version'].includes(h.toLowerCase())), pattern: z.string().min(1).max(500).refine(p => { try { new RegExp(p); return p.startsWith('^') && p.endsWith('$'); } catch { return false; } }), max_length: z.number().int().min(1).max(512) }).optional(),
   limitations: z.array(z.string().min(1).max(1000)).max(50).default([]),
   precheck_context: z.record(z.string(), z.unknown()).default({}),
@@ -1109,7 +1133,8 @@ const definition=base.superRefine((d, ctx) => {
   if (u.protocol === 'https:') try { new X509Certificate(d.ca); } catch { ctx.addIssue({ code: 'custom', message: 'HTTPS 需要固定 CA 证书' }); }
   if (new Set(d.resources).size !== d.resources.length || new Set(d.allowed_tools).size !== d.allowed_tools.length) ctx.addIssue({ code: 'custom', message: '资源键和允许工具不得重复' });
   const bedCalls = d.bed_state?.items.map(item => item.call) ?? [];
-  for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : []), ...bedCalls]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
+  const helpCalls = d.probes?.help ? [d.probes.help.call] : [];
+  for (const c of [...Object.values(d.calls), ...d.precheck_reads, ...(d.probes ? [d.probes.call] : []), ...helpCalls, ...bedCalls]) if (!d.allowed_tools.includes(c.tool)) ctx.addIssue({ code: 'custom', message: '生命周期调用不在允许工具清单内' });
   if (d.refused_tools.some(name=>d.allowed_tools.includes(name))) ctx.addIssue({code:'custom',message:'同一工具不能既被允许又被拒绝'});
   { // Every dispatch carries its durable request/sequence identity, including unsafe legacy executors.
     if (['request_id','dispatch_sequence','sequence_scope'].some(name=>countBindings(d.calls.submit.arguments,name)!==1)) ctx.addIssue({code:'custom',message:'请求协议必须各绑定一次请求身份、派发序号与执行器序号流；绝对截止不由目标判定'});
@@ -1117,11 +1142,11 @@ const definition=base.superRefine((d, ctx) => {
   if (d.reconciliation && (!d.calls.query || !d.receipt.request_id || countBindings(d.calls.query.arguments,'request_id') !== 1)) ctx.addIssue({code:'custom',message:'查账必须绑定原请求身份并登记回执身份指针'});
   if (d.probes && ['command','seat_index','lease_id'].some(key=>countBindings(d.probes!.call.arguments,key)!==1))ctx.addIssue({code:'custom',message:'座位探测必须各绑定一次命令、座位序号和本次租约身份'});
   if (d.bed_state?.items.some(item => countBindings(item.call.arguments, 'lease_id') !== 1)) ctx.addIssue({ code: 'custom', message: '床面快照必须且只能绑定一次本次租约身份' });
-  if(Object.entries(d.calls).some(([role,c])=>role!=='submit' && c?.tool===d.calls.submit.tool) || d.precheck_reads.some(c=>c.tool===d.calls.submit.tool) || d.probes?.call.tool===d.calls.submit.tool || d.bed_state?.items.some(item => item.call.tool === d.calls.submit.tool))ctx.addIssue({code:'custom',message:'提交工具不能同时作为租约、读取或探测工具'});
+  if(Object.entries(d.calls).some(([role,c])=>role!=='submit' && c?.tool===d.calls.submit.tool) || d.precheck_reads.some(c=>c.tool===d.calls.submit.tool) || d.probes?.call.tool===d.calls.submit.tool || helpCalls.some(c => c.tool === d.calls.submit.tool) || d.bed_state?.items.some(item => item.call.tool === d.calls.submit.tool))ctx.addIssue({code:'custom',message:'提交工具不能同时作为租约、读取或探测工具'});
   const payload = at(d.calls.submit.arguments, d.payload_argument);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length !== 1 || (payload as Record<string, unknown>).$value !== 'payload_base64' || countPayloadBindings(d.calls.submit.arguments) !== 1) ctx.addIssue({ code: 'custom', message: '提交内容参数必须且只能绑定一次已核验字节' });
   for (const [role, c] of Object.entries(d.calls)) if (role !== 'submit' && countPayloadBindings(c.arguments)) ctx.addIssue({ code: 'custom', message: '非提交角色不能携带工作内容字节' });
-  if ([...d.precheck_reads,...(d.probes ? [d.probes.call] : []), ...(d.bed_state?.items.map(item => item.call) ?? [])].some(c => countPayloadBindings(c.arguments))) ctx.addIssue({ code: 'custom', message: '只读核对不能携带工作内容字节' });
+  if ([...d.precheck_reads,...(d.probes ? [d.probes.call] : []), ...helpCalls, ...(d.bed_state?.items.map(item => item.call) ?? [])].some(c => countPayloadBindings(c.arguments))) ctx.addIssue({ code: 'custom', message: '只读核对不能携带工作内容字节' });
 });
 function at(value: unknown, pointer: string): unknown {
   if (pointer === '') return value;

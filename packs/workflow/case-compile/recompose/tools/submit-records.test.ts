@@ -43,3 +43,20 @@ test('a submission covers every frozen case, and only those', () => {
   assert.equal(sent.items.length, 2);
   assert.equal(sent.items[0].slots.record[0].quotes.length, 3);
 });
+
+test("a user's ruling stays in the fields the file already has: the atom's state reason, the adapted step and who decided the value", () => {
+  const ruling = '用户裁定：以手册为准，改成手册允许的写法';
+  const record = recordFor(item(), {
+    method,
+    states: [{ atom: 'a2', state: 'settled', reason: ruling }],
+    adapted: [{ atom: 'a2', action: 'parameter_change', text: '合成动作二（改名）', commands: ['widget name peer_b'], equivalence_reason: ruling, equivalence_refs: [`tree:${'b'.repeat(64)}/manual/guide/names@${'1'.repeat(64)}`] }],
+    concretizations: [{ atom: 'a2', slot: 'peer_name', value: 'peer_b', value_ref: `tree:${'b'.repeat(64)}/manual/guide/names@${'1'.repeat(64)}`, decided_by: '用户', source_kind: 'catalog' }, { atom: 'a2', slot: 'mode', value: 'full', value_ref: 'ref', source_kind: 'catalog' }],
+  }, 'scripted');
+  assert.deepEqual(record.sources.states.map((s: any) => [s.state, s.reason]), [['settled', '模型没有提出缺口'], ['settled', ruling], ['settled', '模型没有提出缺口']]);
+  assert.equal(record.sources.states[1].adjudicated_by, null, 'a user’s ruling names no independent adjudication');
+  assert.equal(record.ledgers.adapted[0].equivalence_reason, ruling);
+  assert.deepEqual(record.ledgers.concretizations.map((c: any) => c.decided_by), ['用户', 'scripted'], 'the model’s name is the default, the user is kept when the file names the user');
+  // A case left for the author: an underdetermined atom and a gap with a named audience; the record stays complete.
+  const waiting = recordFor(item(), { method, states: [{ atom: 'a2', state: 'underdetermined', reason: '用户裁定：保留作者原样，这条先不编，待作者裁定' }], unknowns: [{ missing: '作者步骤与手册冲突', next_action: '作者或用户裁定', audience: '作者或用户', due: '交付之前' }] }, 'scripted');
+  assert.deepEqual([waiting.sources.states[1].state, waiting.status, waiting.unknowns.length], ['underdetermined', 'complete', 1]);
+});
