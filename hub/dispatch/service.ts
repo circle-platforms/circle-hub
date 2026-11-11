@@ -497,7 +497,7 @@ export class DispatchService {
       if (!await this.assessConditions(binding,d.conditions,precheck,context,'precheck.evaluated')) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
       const deviceIdentity = await this.probeSeats(binding,d,session,context);
-      if (!deviceIdentity) throw new Error('逐座位只读探测不符；见受限探测原件中的座位及 version/interfaces 核对');
+      if (!deviceIdentity) throw new Error('设备版本、接口或残留核对有误。管理员查看设备输出后重新核对测试环境');
       await this.gateBed(binding, d, session, context);
       const latest = await this.registry.get(executor);
       if (!latest?.definition.enabled || latest.digest !== registered.digest || latest.resolved_digest !== registered.resolved_digest) throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
@@ -2031,7 +2031,7 @@ export class DispatchService {
       if (policy.baseline_first || policy.fresh_context) {
         const ok = await this.baselineOk(binding, d, session, remote);
         if (!ok && policy.baseline_first) { await this.noteRound(binding, { round: next, terminal: 'not_run', meets: null, reason: 'integrity_unproven' }); continue; }
-        if (!ok) throw new Error('逐座位只读探测不符；见受限探测原件中的座位及 version/interfaces 核对');
+        if (!ok) throw new Error('设备版本、接口或残留核对有误。管理员查看设备输出后重新核对测试环境');
         deviceIdentity = true;
       }
       const status = await this.submitRound({ ...args, session, remote, pulse, round: next, deviceIdentity });
