@@ -437,6 +437,22 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.14.3: when the user is asked
+
+In run 23 a subagent that reworked one case put three questions to the user through the client's question tool: which form
+of a command to write (the main session's task text named a form the locked tree does not have), which of two strings the
+task text gave, and which fragment of a name to assert on. All three were answerable from the locked tree, the manual and the
+files of the run; the owner: "这几个问题看起来都不应该是问用户的，全是自己理解的有问题，应该和infotest一致".
+
+The reference engine gives its ask-the-user tool to the lead agent alone: the definitions of its writer, attributor,
+recomposer and fidelity auditor list no such tool, and what they cannot settle goes back to the engine
+(`compile_report_underdetermined`, `engine_gap`). The tool's own text reserves it for an answer that changes what happens
+next and that no source settles (an ambiguous request, a device verdict that needs a human call, a mind map that lacks a
+field no manual or precedent supplies) and tells the agent to pick the obvious option and say so where there is a
+conventional default or a fact it can verify itself. SKILL.md now carries that rule as one paragraph, and says a subagent
+never asks: what it cannot settle goes into its report to the main agent (budget 9210). The acceptance home's tool guard
+refuses the question tool for a subagent's session with the same instruction; that guard is not part of the pack.
+
 ### 3.14.2: one writer per case, all sent out together
 
 The prompt of every run since 17 asks for "每条用例的计划编写……各交给一个子代理去做", and the main session has grouped the

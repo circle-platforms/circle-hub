@@ -12,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.14.2'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.14.3'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -68,10 +68,17 @@ test('the examples use the original synthetic contract, matching profile and fin
 // 3.14.0 the two sentences of step 2 that name the authoring brief the download writes for each case (the reference
 // implementation's writer reads the brief its engine built and queries only what that does not carry); 3.14.1 the clause
 // that says the brief ends with the envelope of the case's plan file; 3.14.2 the sentence that gives each case its own writer,
-// all sent out together (the reference engine fans its writers out one per case).
-const SKILL_BUDGET = 9060;
+// all sent out together (the reference engine fans its writers out one per case); 3.14.3 the paragraph that says when the
+// user is asked, in the words of the reference engine's ask_user tool, and that a subagent never asks.
+const SKILL_BUDGET = 9210;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
+});
+// The reference engine gives its ask-the-user tool to the lead agent alone and reserves it for answers that change what happens
+// next and that no source settles; run 23 had a rework subagent put three questions about how to write a plan to the user.
+test('the client skill says when the user is asked and that a subagent never asks', () => {
+  const skill = read('SKILL.md');
+  for (const phrase of ['问用户：只在答案会改变做法、资料里又查不到时才问', '设备结论要人来判（产品缺陷还是用例写错）', '能在锁定命令树、手册、合约、条目里查证的不问，自己定并在报告里说明', '子代理不问用户：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);
 });
 test('the client skill makes the model adapt the bed, seed what assertions read and clean up in reverse', () => {
   const skill = read('SKILL.md');
