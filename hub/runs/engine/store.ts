@@ -311,14 +311,20 @@ export async function resultFor(store: RecordStore, run: string, submission: str
 /** Every validation result of a run, in record sequence. */
 export async function resultsOf(store:RecordStore,run:string):Promise<StoredRecord<ValidationResult>[]>{return all(cursor=>store.find<ValidationResult>({key:INDEX.resultRun,value:run,kind:'validation_result',limit:500,cursor}));}
 
-/** The latest accepted validation result of a run (an accepted submission or a production result). */
-export async function latestAccepted(store: RecordStore, run: string, batchSize=100): Promise<StoredRecord<ValidationResult> | null> {
-  let cursor: string | null = null;
+/**
+ * The latest accepted validation result of a run (an accepted submission or a production result). The newest result is
+ * nearly always the accepted one and a result can be megabytes, so the first page reads `batchSize` results (one unless
+ * the caller says otherwise) and each further page twice as many, to 64. Reading the newest hundred at once made every
+ * page of a task submitted 56 times read 56 results to show one (issue 200).
+ */
+export async function latestAccepted(store: RecordStore, run: string, batchSize=1): Promise<StoredRecord<ValidationResult> | null> {
+  let cursor: string | null = null, size = batchSize;
   do {
-    const page: Page<StoredRecord<ValidationResult>> = await store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: batchSize, cursor, newestFirst: true });
+    const page: Page<StoredRecord<ValidationResult>> = await store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: size, cursor, newestFirst: true });
     const found = page.items.find((r) => r.body.acceptance === 'accepted');
     if (found) return found;
     cursor = page.next;
+    size = Math.min(Math.max(size, 1) * 2, 64);
   } while (cursor !== null);
   return null;
 }

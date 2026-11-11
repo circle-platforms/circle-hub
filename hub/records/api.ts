@@ -334,6 +334,12 @@ export interface RecordStore {
    * record in the answer, for the caller to read what closed it.
    */
   findUnsettled?<B = unknown>(query: { kind: RecordKind; key?: string; values?: readonly string[]; closing: string; closingKind?: RecordKind; settled: string }, tx?: Transaction): Promise<StoredRecord<B>[]>;
+  /**
+   * The records of `kind` indexed under `key` with one of `values` that carry no index entry under `lacking`, verified, in
+   * insertion order. The index entries decide which are read: a caller marks at writing the records a listing never needs,
+   * and one stored without the mark is read and looked at, so the answer does not depend on the mark being complete.
+   */
+  findLacking?<B = unknown>(query: { kind: RecordKind; key: string; values: readonly string[]; lacking: string }, tx?: Transaction): Promise<StoredRecord<B>[]>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   /** The digests findFirstMany would answer, in one query that reads no record body. */

@@ -31,12 +31,21 @@ export function requestKeyOf(view:RequestView):string{
 export function closingIndex(request:string,settles:boolean):{key:string;value:string}[]{
   return [{key:'runs.request.answer',value:request},...(settles?[{key:'runs.request.settled',value:request}]:[])];
 }
+/**
+ * A request that carries no criterion-change declaration is found under `runs.request.plain`, so the listing of a run's
+ * declarations reads the others alone. Migration 32 added the entry to the requests already stored; one without it is read
+ * and looked at as before.
+ */
+function plainIndex(body:RequestBody):{key:string;value:string}[]{
+  const bound=body.run??body.pack_digest;
+  return body.declaration||!bound?[]:[{key:'runs.request.plain',value:bound}];
+}
 export async function putRequest(ctx:RequestContext,input:RequestBody):Promise<StoredRecord<RequestBody>>{
   const body=Request.parse(input);
   const key=requestKey(body);
   const old=await ctx.deps.records.store.find<RequestBody>({kind:'request',key:'runs.request.key',value:key,limit:1},ctx.transaction);
   if(old.items[0])return old.items[0];
-  return ctx.deps.records.store.put({kind:'request',schema:'request@1',provenance:'observed',body,created_at:ctx.now().toISOString(),index:[{key:'runs.request.key',value:key},...(body.run?[{key:'runs.request.run',value:body.run}]:[]),...(body.pack_digest?[{key:'runs.request.pack',value:body.pack_digest}]:[])]},ctx.transaction);
+  return ctx.deps.records.store.put({kind:'request',schema:'request@1',provenance:'observed',body,created_at:ctx.now().toISOString(),index:[{key:'runs.request.key',value:key},...(body.run?[{key:'runs.request.run',value:body.run}]:[]),...(body.pack_digest?[{key:'runs.request.pack',value:body.pack_digest}]:[]),...plainIndex(body)]},ctx.transaction);
 }
 export async function answerRequest(ctx:RequestContext,request:string,source:string):Promise<void>{
   Sha256.parse(source);
@@ -124,6 +133,21 @@ export async function waitingRequestRecords(ctx:RequestContext,run?:string):Prom
   }
   return out;
 }
+/**
+ * The requests of a run that carry a criterion-change declaration, waiting or closed: the views requestRecords gives for
+ * them, in the same order. Nearly every request carries none and is marked so at writing; those are not read.
+ */
+export async function declaredRequestRecords(ctx:RequestContext,run:string):Promise<RequestView[]>{
+  const store=ctx.deps.records.store;
+  if(!store.findLacking)return (await requestRecords(ctx,run)).filter(request=>request.declaration);
+  const declared=(await store.findLacking<RequestBody>({kind:'request',key:'runs.request.run',values:[run],lacking:'runs.request.plain'},ctx.transaction)).filter(record=>record.schema==='request@1'&&record.body.declaration);
+  const out:RequestView[]=[];
+  for(let at=0;at<declared.length;at+=REQUEST_PAGE){
+    const page=declared.slice(at,at+REQUEST_PAGE),answers=await newestAnswers(ctx,page.map(record=>record.digest));
+    for(const record of page)out.push(viewOf(record.body,record.digest,answers.get(record.digest)));
+  }
+  return out;
+}
 /** A narrowed read of the requests: those bound to these runs or packs, and these requests themselves. */
 export interface RequestScope {runs?:readonly string[];packs?:readonly string[];records?:readonly string[]}
 /**
@@ -184,6 +208,7 @@ export function createRequestService(records:Pick<RecordsKit,'store'>,now:()=>Da
     inspect:async(id:string):Promise<RequestView|null>=>{if(!Sha256.safeParse(id).success)return null;const record=await records.store.get(id);if(record?.kind!=='request'||record.schema!=='request@1')return null;const parsed=Request.safeParse(record.body);if(!parsed.success)return null;const answer=await records.store.find<{detail:{answer:string;superseded?:unknown}}>({kind:'action',key:'runs.request.answer',value:id,limit:1,newestFirst:true});return viewOf(parsed.data,id,closingOf(answer.items[0]?.body.detail));},
     all:(run?:string)=>requestRecords(ctx,run),
     waiting:(run?:string)=>waitingRequestRecords(ctx,run),
+    declared:(run:string)=>declaredRequestRecords(ctx,run),
     within:(scope:RequestScope)=>requestRecordsIn(ctx,scope),
     write:(input:RequestBody)=>putRequest(ctx,input),
     list:(by:Principal,run?:string,options:{waiting?:boolean}={})=>requestsOf(ctx,by,run,options),

@@ -50,3 +50,24 @@ test('a record is settled when its newest closing record carries the settled ent
   await assert.rejects(store.findUnsettled!({ kind: 'request', key: 'test.group', closing: CLOSING, settled: SETTLED }), TypeError, 'a key without its values');
   await assert.rejects(store.findUnsettled!({ kind: 'request', values: ['a'], closing: CLOSING, settled: SETTLED }), TypeError);
 });
+
+test('findLacking answers the records under an index value that carry no entry under another key', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const store = kit.store;
+  let n = 0;
+  const put = async (group: string, marked: boolean, kind: 'request' | 'claim' = 'request') => (await store.put({ kind, schema: 'synthetic-open@1', provenance: 'declared', body: { n: ++n }, index: [{ key: 'test.group', value: group }, ...(marked ? [{ key: 'test.plain', value: group }] : [])] })).digest;
+  const a1 = await put('a', false), a2 = await put('a', true), a3 = await put('a', false), b1 = await put('b', false);
+  await put('a', false, 'claim');
+  const ask = async (values: string[]) => (await store.findLacking!({ kind: 'request', key: 'test.group', values, lacking: 'test.plain' })).map((record) => record.digest);
+  assert.deepEqual(await ask(['a']), [a1, a3]);
+  assert.deepEqual(await ask(['a', 'b']), [a1, a3, b1]);
+  assert.deepEqual(await ask(['none']), []);
+  assert.deepEqual(await ask([]), []);
+  // The mark may be added later (the index is derived): the record then leaves the answer, whatever value it is under.
+  assert.equal(await store.addIndex!(a3, [{ key: 'test.plain', value: 'elsewhere' }]), 1);
+  assert.deepEqual(await ask(['a']), [a1]);
+  assert.deepEqual((await store.findLacking!({ kind: 'request', key: 'test.group', values: ['a'], lacking: 'test.plain' }))[0], await store.get(a1));
+  await assert.rejects(store.findLacking!({ kind: 'request', key: 'test.group', values: ['a'], lacking: 'Not A Key' }), TypeError);
+  await assert.rejects(store.findLacking!({ kind: 'no-such-kind' as 'request', key: 'test.group', values: ['a'], lacking: 'test.plain' }), TypeError);
+});

@@ -148,7 +148,8 @@ export async function freezeCriteria(ctx:EngineContext,previous:RunRecord|null,p
 export async function criterionNotices(ctx:EngineContext,run:RunRecord):Promise<import('../../../contracts/src/criterion.ts').CriterionNotice[]>{
  const result=[] as import('../../../contracts/src/criterion.ts').CriterionNotice[];
  for(const id of run.criterion_requests??[]){const request=await requestService(ctx).inspect(id);if(request){const notice=await noticeAt(ctx,request,run.started_at);if(notice)result.push(notice);}}
- for(const request of await requestService(ctx).all(run.run))if(request.declaration){const notice=await noticeAt(ctx,request,ctx.now().toISOString());if(notice)result.push(notice);}
+ // Only a request that carries a declaration gives a notice: the others, thousands in a run submitted many times, stay unread.
+ for(const request of await requestService(ctx).declared(run.run))if(request.declaration){const notice=await noticeAt(ctx,request,ctx.now().toISOString());if(notice)result.push(notice);}
  return result;
 }
 

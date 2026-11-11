@@ -124,3 +124,47 @@ test('what the index says is never the answer: a closing record decides, and a s
   const plain = new Proxy(kit.store, { get(target, property) { if (property === 'findUnsettled') return undefined; const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value; } });
   assert.deepEqual(await createRequestService({ store: plain }, () => NOW).waiting(run), await service.waiting(run));
 });
+
+test('the declarations of a run are read without its other requests, whenever they were stored', async (t) => {
+  const { kit, body, service } = await bed(t);
+  const run = newId('run'), other = newId('run');
+  const declared = (pointer: number, of = run): RequestBody => ({ ...body(of), kind: 'judgment', declaration: `/criterion_changes/${pointer}` });
+  /** A request as code before the plain entry wrote it. */
+  const legacy = async (request: RequestBody) => (await kit.store.put({ kind: 'request', schema: 'request@1', provenance: 'observed', created_at: NOW.toISOString(), body: request, index: [{ key: 'runs.request.run', value: request.run! }] })).digest;
+  const made: string[] = [];
+  for (let i = 0; i < 4; i++) made.push((await service.write(body(run))).digest);
+  const first = (await service.write(declared(0))).digest;
+  const oldPlain = [await legacy(body(run)), await legacy(body(run))], oldDeclared = await legacy(declared(1));
+  const second = (await service.write(declared(2))).digest;
+  await service.write(declared(0, other));
+  await service.answer(first, (await kit.store.put({ kind: 'claim', schema: 'synthetic-source@1', provenance: 'declared', body: { label: 'answer' } })).digest);
+
+  const full = await service.all(run), expected = full.filter((request) => request.declaration);
+  assert.deepEqual(expected.map((request) => request.record), [first, oldDeclared, second]);
+  assert.ok(expected[0].answered_by, 'a closed declaration is listed with what closed it');
+  /** The requests one listing read. */
+  const read = async () => {
+    const seen: string[] = [];
+    const store = new Proxy(kit.store, { get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (property === 'findLacking') return async (...args: unknown[]) => { const rows = await (value as (...a: unknown[]) => Promise<{ digest: string }[]>).apply(target, args); seen.push(...rows.map((row) => row.digest)); return rows; };
+      if (property === 'find' || property === 'list') return (query: { kind?: string }, tx?: unknown) => { assert.notEqual(query.kind, 'request', 'the requests of the run are not listed whole'); return (value as (...a: unknown[]) => unknown).call(target, query, tx); };
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    assert.deepEqual(await createRequestService({ store }, () => NOW).declared(run), expected);
+    return seen;
+  };
+  assert.deepEqual(await read(), [first, ...oldPlain, oldDeclared, second], 'a request stored without the entry is read and looked at');
+
+  const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
+  const migration = MIGRATIONS.find((m) => m.version === 32)!;
+  await owner.query(migration.sql);
+  await owner.query(migration.sql);
+  const plain = await owner.query<{ digest: string }>(`SELECT digest FROM record_index WHERE key='runs.request.plain' AND value=$1 ORDER BY record_seq`, [run]);
+  assert.deepEqual(plain.rows.map((row) => row.digest), [...made, ...oldPlain], 'the requests with no declaration, each once');
+  assert.deepEqual(await read(), [first, oldDeclared, second], 'after the migration the declarations alone are read');
+  assert.deepEqual(await service.declared(newId('run')), []);
+
+  const without = new Proxy(kit.store, { get(target, property) { if (property === 'findLacking') return undefined; const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value; } });
+  assert.deepEqual(await createRequestService({ store: without }, () => NOW).declared(run), expected, 'a store without the index reads them all');
+});

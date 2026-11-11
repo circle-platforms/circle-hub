@@ -174,6 +174,19 @@ export class PgRecordStore implements RecordStore {
     return result.rows.map(row => verifiedRecord<B>(row,tx));
   }
 
+  async findLacking<B = unknown>(query: { kind: import('./api.ts').RecordKind; key: string; values: readonly string[]; lacking: string }, tx?: Transaction): Promise<StoredRecord<B>[]> {
+    for (const key of [query.key, query.lacking]) if (typeof key !== 'string' || !INDEX_KEY.test(key)) throw new TypeError('invalid index key');
+    if (!RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!values.length) return [];
+    const result = await this.#db.query(
+      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM hub_read_records() r
+       WHERE r.kind=$1 AND r.digest IN (SELECT i.digest FROM record_index i WHERE i.key=$2 AND i.value=ANY($3::text[]))
+         AND NOT EXISTS (SELECT 1 FROM record_index m WHERE m.digest=r.digest AND m.key=$4)
+       ORDER BY r.seq`, [query.kind, query.key, values, query.lacking], tx);
+    return result.rows.map(row => verifiedRecord<B>(row,tx));
+  }
+
   async addIndex(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number> {
     if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) throw new TypeError('a record digest is 64 hexadecimal characters');
     const index = validateIndex(entries);
