@@ -13,7 +13,7 @@ import { Submission } from '../../contracts/src/submission.ts';
 import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type ResolveReferenceOutput, type StartRunOutput, type SubmitResultOutput, type UploadFileOutput } from '../../contracts/src/tools.ts';
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
-import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
+import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -400,7 +400,7 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const claims = item.requirements.flatMap(requirement => requirement.claims);
   const model = claims.some(claim => claim.qualifier.nature === 'judgment' || claim.warrant.producer === 'model');
   const partial = claims.some(claim => claim.qualifier.coverage?.complete === false || claim.qualifier.marks.includes('partial'));
-  const unknown = partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || claim.statement.verdict === 'unknown' || claim.statement.verdict === 'abstain') || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
+  const unknown = partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
   const status = unknown ? '未知' : model ? '未确认' : '已确认';
   const judgment = wrong.length ? '错误' : unknown ? null : '正确';
   const statement = wrong.length ? wrong.map(requirement => messageOf(requirement)).filter(Boolean).join('；') || '核对发现错误' : unknown ? '还没有确认结论' : claims.map(claim => claim.statement.text).join('；') || '已按要求核对';

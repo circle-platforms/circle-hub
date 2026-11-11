@@ -1,6 +1,6 @@
 // Console fields keep their contract labels; reader-facing conclusions use the display mappings below.
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
-import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal, type Verdict } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
 import { EXIT_NOT_RECORDED, isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
@@ -173,6 +173,12 @@ export const USER_REASON = {
 
 export const USER_DECIDER = { function: '程序', model: '模型', human: '使用者' } as const satisfies Record<ProducerKind, string>;
 
+export const USER_VERDICT = { support: '正确', refute: '错误', unknown: null, abstain: null } as const satisfies Record<Verdict, string | null>;
+
+export function userVerdict(verdict: Verdict | undefined): string | null | undefined {
+  return verdict === undefined ? undefined : USER_VERDICT[verdict];
+}
+
 const REASON_TEXT = {
   no_check: '缺资料', check_error: '还没查清', timeout: '临时故障', missing_input: '缺资料',
   declared_skip: '还没查清', not_covered: '缺资料', awaiting_step: '缺资料', output_failed: '还没查清',
@@ -193,10 +199,11 @@ export function userNextStep(layer: Pick<LayerResult, 'exit'>): string {
 }
 
 export function userClaimText(claim: Claim): string {
+  const verdict = userVerdict(claim.statement.verdict);
   const partial = claim.qualifier.coverage?.complete === false || claim.qualifier.marks.includes('partial');
-  const unknown = partial || claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || claim.statement.verdict === 'unknown' || claim.statement.verdict === 'abstain';
+  const unknown = partial || claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || verdict === null;
   const status = unknown ? '未知' : claim.qualifier.nature === 'judgment' || claim.warrant.producer === 'model' ? '未确认' : '已确认';
-  const judgment = unknown ? undefined : claim.statement.verdict === 'support' ? '正确' : claim.statement.verdict === 'refute' ? '错误' : undefined;
+  const judgment = unknown ? undefined : verdict;
   const parts = [claim.statement.text, `状态${status}`, judgment === undefined ? undefined : `判断${judgment}`];
   if (unknown || judgment === '错误') {
     parts.push(`原因${partial ? '缺资料' : claim.statement.reason === undefined ? '还没查清' : REASON_TEXT[claim.statement.reason]}`, '下一步由使用者核对原始用例和资料');
