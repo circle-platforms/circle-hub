@@ -3,10 +3,10 @@
 // have a plan but did not pass, a report with one section per case not delivered (what happened, how it was judged, the fix or
 // the trade-off), a longer report for whoever picks those cases up, and a machine summary. Every status and count here comes
 // from the jobs' verdicts as the Hub relays them (decision 160), and a failed case closes by the reference engine's rules
-// (closeFailed). The model writes only the judged paragraphs of each case not delivered and, for a product-defect candidate, quotes
-// that are checked verbatim; nothing here reads device prose to decide anything.
+// (closeFailed). Model-supplied defect candidates and author conflicts carry quotations checked verbatim.
 import { isRecord } from './text.ts';
 import { isDynamicTerminal, labelOf } from './generated/vocabulary.ts';
+import { quoteMatches } from './quote.ts';
 
 export const STATUS = { delivered: '交付', failed: '上机未通过', unsettled: '上机没有结论', unrun: '没有上机' } as const;
 export type Status = keyof typeof STATUS;
@@ -19,7 +19,9 @@ export interface ExportedJob { job: string; verification_run: string; plan_run: 
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
 /** A product-defect candidate (InfoTest fail_attribution.py defect_candidate): how to reproduce it, the author's expected text and the device's actual words. */
 export interface DefectCandidate { repro: string; expected: string; actual: string }
-export interface CaseNote { judged: string; remedy: string; evidence?: string; defect_candidate?: DefectCandidate }
+// The model proposes the conflict; quotation checks do not decide who is right.
+export interface AuthorConflict { author: string; manual: string; reference: string }
+export interface CaseNote { judged: string; remedy: string; evidence?: string; defect_candidate?: DefectCandidate; author_conflict?: AuthorConflict }
 export interface Notes { batch?: string; cases: Record<string, CaseNote> }
 /** What the document holds for a case: its title and original lines (steps with their expectations), when known. */
 export interface Original { title: string; lines: Array<{ text: string; expected: string[] }> }
@@ -56,7 +58,7 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
-export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; closing?: Closing; missing?: MissingFact }
+export interface CaseOutcome { autoid: string; status: Status; history: Array<{ ordinal: number; run: string; job: string; terminal: string; log?: string; sessions?: Record<string, string>; audit?: RowAudit }>; rounds?: number; closing?: Closing; missing?: MissingFact; conflict?: AuthorConflict }
 /**
  * What the Hub recorded for a case's own plan in `plan_run`: `requirement` left pending on a data gap with a request (a missing
  * fact), or left without an accepted plan after the repair rounds were used up (repair_exhausted).
@@ -230,13 +232,16 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
   const cases: Record<string, CaseNote> = {};
   for (const autoid of undelivered) {
     const note = value.cases[autoid];
-    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate'].includes(k))) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）、remedy（修复方案或取舍）、evidence（设备原话）和判产品缺陷时的 defect_candidate`);
-    const candidate = note.defect_candidate;
+    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）、remedy（修复方案或取舍）、evidence（设备原话）、判产品缺陷时的 defect_candidate 和判作者步骤与手册冲突时的 author_conflict`);
+    const candidate = note.defect_candidate, conflict = note.author_conflict;
     if (candidate !== undefined && (!isRecord(candidate) || Object.keys(candidate).sort().join() !== 'actual,expected,repro')) throw new Error(`用例 ${autoid} 的 defect_candidate 恰好写 repro（复现步骤）、expected（作者期望原文）和 actual（设备原话）三项`);
+    if (conflict !== undefined && (!isRecord(conflict) || Object.keys(conflict).sort().join() !== 'author,manual,reference')) throw new Error(`用例 ${autoid} 的 author_conflict 恰好写 author（作者原句）、manual（手册原句）和 reference（手册那一条的引用）三项`);
+    if (candidate !== undefined && conflict !== undefined) throw new Error(`用例 ${autoid} 不能同时写 defect_candidate 和 author_conflict：设备拒绝的取值若是手册说明排除的，只写 author_conflict；手册说明支持作者的取值才写 defect_candidate`);
     cases[autoid] = {
       judged: text(note.judged, `用例 ${autoid} 的 judged`), remedy: text(note.remedy, `用例 ${autoid} 的 remedy`),
       ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的 evidence`) }),
       ...(isRecord(candidate) ? { defect_candidate: { repro: text(candidate.repro, `用例 ${autoid} 的 defect_candidate.repro`), expected: text(candidate.expected, `用例 ${autoid} 的 defect_candidate.expected`), actual: text(candidate.actual, `用例 ${autoid} 的 defect_candidate.actual`) } } : {}),
+      ...(isRecord(conflict) ? { author_conflict: { author: text(conflict.author, `用例 ${autoid} 的 author_conflict.author`), manual: text(conflict.manual, `用例 ${autoid} 的 author_conflict.manual`), reference: text(conflict.reference, `用例 ${autoid} 的 author_conflict.reference`) } } : {}),
     };
   }
   return { ...(value.batch === undefined ? {} : { batch: text(value.batch, 'batch') }), cases };
@@ -273,7 +278,7 @@ export function evidenceProblems(notes: Notes, deviceTexts: Record<string, strin
  * handed over as 上机没有结论 after two authored versions, with no third round and no closing.
  */
 export const MAX_ROUNDS = 3;
-export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）', missing_fact: '缺少 Hub 点名的事实（待补齐）' } as const;
+export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）', missing_fact: '缺少 Hub 点名的事实（待补齐）', author_conflict: '作者步骤与手册冲突（待作者或用户裁定）' } as const;
 export type Closing = keyof typeof CLOSING;
 
 /** The line by which the pass review dropped the case's latest pass, when that is how its last dispatch ended. */
@@ -281,15 +286,64 @@ export const droppedPass = (outcome: CaseOutcome): RowAudit | undefined => (outc
 /** Whether the closing rules of a failed case apply: its latest verdict is a failure, or a pass the pass review dropped. */
 export const reworked = (outcome: CaseOutcome): boolean => outcome.status === 'failed' || droppedPass(outcome) !== undefined;
 
+export interface ConflictGround { authored: Readonly<Record<string, readonly string[]>>; statements: ReadonlyMap<string, string> }
+// Quotation width follows the existing author-conflict evidence rule.
+const CONFLICT_MIN_QUOTE = 4;
+const shownRejections = (refused: readonly SyntaxRejection[]): string => refused.slice(0, 3).map((r) => `“${r.command.length > 80 ? `${r.command.slice(0, 80)}…` : r.command}”${r.prompt ? `（在 ${r.prompt} 下）` : ''}`).join('、');
+
+export function authorConflictProblems(autoid: string, conflict: AuthorConflict, ground: ConflictGround | undefined, deviceTexts: readonly string[]): string[] {
+  const refused = deviceTexts.flatMap((text) => syntaxRejections(text));
+  if (refused.length) return [`用例 ${autoid} 的 author_conflict：它最后一次上机里设备用 ^ 拒绝了命令 ${shownRejections(refused)}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上作者步骤与手册冲突：去掉 author_conflict，先修这条命令再上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`];
+  const plain = (text: string) => text.replace(/\r/g, '');
+  const wrong: string[] = [];
+  if (plain(conflict.author).length < CONFLICT_MIN_QUOTE || plain(conflict.manual).length < CONFLICT_MIN_QUOTE) wrong.push(`author 和 manual 各要逐字引一整句原文，至少 ${CONFLICT_MIN_QUOTE} 个字，几个字指不出作者要的是什么、手册排除的是什么`);
+  else {
+    const words = ground?.authored[autoid];
+    if (!words?.length) wrong.push('这条用例的脑图原文取不到（组交付时给 --recompose，或让一次计划运行带着它），author 核对不了');
+    else if (!words.some((line) => quoteMatches(plain(line), plain(conflict.author)))) wrong.push('author 不是这条用例脑图原文（标题、步骤或期望）里的字');
+    const statement = ground?.statements.get(conflict.reference);
+    if (statement === undefined) wrong.push('reference 不是这份脑图各次计划运行锁定的知识根里的条目引用；照 knowledge/ 里那一条下的“引用”行原样抄');
+    else if (!quoteMatches(plain(statement), plain(conflict.manual))) wrong.push('manual 不是 reference 指到的条目里的原话');
+  }
+  return wrong.length ? [`用例 ${autoid} 的 author_conflict：${wrong.join('；')}；逐字复制，不改写、不拼接`] : [];
+}
+
+export function lockedStatements(bytes: Uint8Array, run: string, wanted: ReadonlySet<string>): { root: string; statements: Map<string, string> } {
+  let head: Record<string, unknown> | null = null, nodes = 0;
+  const statements = new Map<string, string>();
+  let lines: string[];
+  try { lines = new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n'); } catch { throw new Error('Hub 给的知识根不是 UTF-8'); }
+  for (const line of lines) {
+    if (line.length === 0) continue;
+    let value: unknown;
+    try { value = JSON.parse(line); } catch { throw new Error('Hub 给的知识根不是逐行的 JSON'); }
+    if (head === null) {
+      if (!isRecord(value) || value.schema !== 'run-knowledge@1' || value.run !== run || typeof value.root !== 'string') throw new Error(`Hub 给的知识根不是运行 ${run} 的，或首行不合式`);
+      head = value; continue;
+    }
+    if (!isRecord(value) || !Array.isArray(value.entries)) throw new Error('Hub 给的知识根里有不合式的节点');
+    nodes++;
+    for (const entry of value.entries) if (isRecord(entry) && typeof entry.reference === 'string' && typeof entry.statement === 'string' && wanted.has(entry.reference)) statements.set(entry.reference, entry.statement);
+  }
+  if (head === null || head.nodes !== nodes) throw new Error(`Hub 给的知识根行数与首行不符，或是空的`);
+  return { root: head.root as string, statements };
+}
+
 /**
  * Closes every case that failed or whose pass the pass review dropped, or says why the delivery cannot be assembled yet.
  * `rounds` holds, per such case, how many distinct plans of it did not pass on the bed (a failure or a dropped pass);
- * `authored` the author's expectation texts of each case; `deviceTexts` its last device output.
+ * `authored` holds expectations; `deviceTexts` holds the last device output; `ground` anchors author-conflict quotations.
  */
-export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<string, number>, authored: Record<string, string[]>, deviceTexts: Record<string, string[]>): { cases: CaseOutcome[]; problems: string[] } {
+export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<string, number>, authored: Record<string, string[]>, deviceTexts: Record<string, string[]>, ground?: ConflictGround): { cases: CaseOutcome[]; problems: string[] } {
   const problems: string[] = [];
   const plain = (text: string) => text.replace(/\r/g, '');
   const closed = cases.map((outcome) => {
+    const conflict = notes.cases[outcome.autoid]?.author_conflict;
+    if (conflict && (outcome.status === 'failed' || outcome.status === 'unsettled')) {
+      const wrong = authorConflictProblems(outcome.autoid, conflict, ground, deviceTexts[outcome.autoid] ?? []);
+      if (wrong.length) { problems.push(...wrong); return outcome; }
+      return { ...outcome, ...(rounds[outcome.autoid] === undefined ? {} : { rounds: rounds[outcome.autoid] }), closing: 'author_conflict' as const, conflict };
+    }
     if (!reworked(outcome)) return outcome;
     const used = rounds[outcome.autoid] ?? 0;
     const candidate = notes.cases[outcome.autoid]?.defect_candidate;
@@ -300,7 +354,7 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
       // realized on it. In run 19 a case closed as a candidate on the caret under a command typed at the wrong prompt.
       const refused = (deviceTexts[outcome.autoid] ?? []).flatMap((text) => syntaxRejections(text));
       if (refused.length) {
-        problems.push(`用例 ${outcome.autoid} 的 defect_candidate：它最后一次上机里设备用 ^ 拒绝了命令 ${refused.slice(0, 3).map((r) => `“${r.command.length > 80 ? `${r.command.slice(0, 80)}…` : r.command}”${r.prompt ? `（在 ${r.prompt} 下）` : ''}`).join('、')}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上声明与设备行为冲突：去掉 defect_candidate，先修这条命令再上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
+        problems.push(`用例 ${outcome.autoid} 的 defect_candidate：它最后一次上机里设备用 ^ 拒绝了命令 ${shownRejections(refused)}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上声明与设备行为冲突：去掉 defect_candidate，先修这条命令再上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
         return outcome;
       }
       const wrong: string[] = [];
@@ -316,7 +370,7 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
       problems.push(`用例 ${outcome.autoid} 最近一次上机运行器报通过，通过复核改记为无判定：${dropped.where}里有执行失败的设备原话“${dropped.line.length > 160 ? `${dropped.line.slice(0, 160)}…` : dropped.line}”，它自己的断言没有读这一行。照 InfoTest，这样的用例和上机没通过的一样回到编写：它没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。让它的断言读到这一行，或换一种不会执行失败的观察，改计划后整卷上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
       return outcome;
     }
-    problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置这类文字主张不是依据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）可以提前定下结论`);
+    problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置这类文字主张不是依据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）和作者步骤与手册冲突（author_conflict：author 作者原句、manual 手册原句、reference 手册那一条的引用，逐字）可以提前定下结论`);
     return outcome;
   });
   return { cases: closed, problems };
@@ -330,16 +384,22 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
  * tools/assemble-delivery.ts in the latest plan run that holds the case and has an accepted result): a requirement of the plan
  * (not the workbook's) left pending on a data gap with a request, which closes it as a missing fact; and the plan left without an
  * accepted version after the repair rounds were used up, which closes it as the model not finding a solution, as the reference
- * engine closes a case whose authored attempts were all refused at its round cap (compose_rejected counts as an attempt). Any
- * other case never dispatched goes back to authoring.
+ * engine closes a case whose authored attempts were all refused at its round cap (compose_rejected counts as an attempt).
+ * A verified author-conflict claim closes without a device return; other cases go back to authoring.
  */
-export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFact>): { cases: CaseOutcome[]; problems: string[] } {
+export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFact>, notes?: Notes, ground?: ConflictGround): { cases: CaseOutcome[]; problems: string[] } {
   const problems: string[] = [];
   const closed = cases.map((outcome) => {
     if (outcome.status !== 'unrun') return outcome;
     const fact = facts[outcome.autoid];
     if (fact) return { ...outcome, closing: fact.kind === 'data_gap' ? 'missing_fact' as const : 'authoring_failure' as const, missing: fact };
-    problems.push(`用例 ${outcome.autoid} 没有上机，Hub 也没有给它的计划记下缺少的事实或修正轮次用完。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机，按设备原话归因，最多 ${MAX_ROUNDS} 轮。它自己的计划交给 Hub 后被判缺原合约事实（Hub 记下数据缺口并点名补证请求），或修正轮次用完仍没有受理的，才可以不上机定下结论`);
+    const conflict = notes?.cases[outcome.autoid]?.author_conflict;
+    if (conflict) {
+      const wrong = authorConflictProblems(outcome.autoid, conflict, ground, []);
+      if (wrong.length) { problems.push(...wrong); return outcome; }
+      return { ...outcome, closing: 'author_conflict' as const, conflict };
+    }
+    problems.push(`用例 ${outcome.autoid} 没有上机，Hub 也没有给它的计划记下缺少的事实或修正轮次用完。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机，按设备原话归因，最多 ${MAX_ROUNDS} 轮。它自己的计划交给 Hub 后被判缺原合约事实（Hub 记下数据缺口并点名补证请求），或修正轮次用完仍没有受理的，或作者步骤与手册冲突（author_conflict：author 作者原句、manual 手册原句、reference 手册那一条的引用，逐字）待作者或用户裁定的，才可以不上机定下结论`);
     return outcome;
   });
   return { cases: closed, problems };
@@ -356,6 +416,10 @@ export function closingLine(outcome: CaseOutcome): string | null {
     return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过${dropped ? `（其中 ${dropped} 次上机运行器报通过，通过复核改记无判定，照 InfoTest 算没通过）` : ''}，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
+  if (outcome.closing === 'author_conflict') {
+    const ran = outcome.history.length ? `它已上机 ${outcome.history.length} 次${outcome.rounds === undefined ? '' : `（编写 ${outcome.rounds} 轮）`}` : '它没有上机';
+    return `${CLOSING.author_conflict}：模型判断作者的步骤要的取值或写法，在产品自己的手册说明里被排除了。作者原句和手册原句已逐字核对（见下），工具只核了这两段原文确实存在，没有核它们是否真的对不上，也没有判谁对：是按手册改作者的步骤，还是作者就要照原样测，由作者或用户裁定。${ran}，裁定前不再为它上机，也不为凑满 ${MAX_ROUNDS} 轮再跑一卷。下面“怎么判断的”是模型自述，不是裁定。`;
+  }
   if (outcome.closing === 'missing_fact' && outcome.missing) {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
     return `${CLOSING.missing_fact}：它的计划在计划运行 ${outcome.missing.plan_run} 交给 Hub，Hub 判它缺少事实并点名了补证请求${said ? `（Hub 原话：${said}）` : ''}；补齐前不生成工作簿、不上机。下面“怎么判断的”是模型自述。`;
@@ -410,6 +474,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const fence = (text: string) => ['```device-evidence', text.replace(/```/g, '`​``'), '```'];
   const closing = closingLine(outcome);
   const candidate = outcome.closing === 'device_defect' ? note.defect_candidate : undefined;
+  const conflict = outcome.closing === 'author_conflict' ? outcome.conflict : undefined;
   return [
     `## ${title(input, outcome.autoid)}`,
     `- 编号 \`${outcome.autoid}\` · 状态：${STATUS[outcome.status]} · 上机 ${outcome.history.length} 次${outcome.closing ? ` · 终态：${CLOSING[outcome.closing]}` : ''}`,
@@ -417,6 +482,7 @@ function section(input: ReportInput, outcome: CaseOutcome): string[] {
     ...(note.evidence ? ['', `**设备原话**（已核对出自最后一次上机的设备返回）：`, ...fence(note.evidence)] : []),
     ...(closing ? ['', `**结论**：${closing}`] : []),
     ...(candidate ? ['', `**缺陷候选**：复现步骤：${candidate.repro}`, '', '作者期望（原文）：', ...fence(candidate.expected), '', '设备实际（原话）：', ...fence(candidate.actual)] : []),
+    ...(conflict ? ['', '**作者原句**（脑图原文，已逐字核对）：', ...fence(conflict.author), '', `**手册原文**（锁定知识根里的条目，引用 ${conflict.reference}，已逐字核对）：`, ...fence(conflict.manual)] : []),
     '', `**怎么判断的**：${note.judged}`,
     '', `**修复方案／取舍**：${note.remedy}`,
   ];

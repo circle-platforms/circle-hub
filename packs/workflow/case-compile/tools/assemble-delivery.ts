@@ -2,8 +2,8 @@
 // §11.9): case.xlsx (the pass volume), unsuccessful_cases.xlsx, delivery_report.md, unsuccessful_cases.md and delivery.json.
 // Verdicts come from the Hub's relay of the jobs (GET /run-export/<run>/jobs); the pass volume is regenerated from its plan run
 // and must be byte for byte the workbook that was dispatched; the unsuccessful volume merges each case not passed as it last went
-// to the bed, from the plan run of its latest dispatch. The model supplies only the judged paragraphs (--notes). The token is read from
-// standard input only, in the one form the skills home admits:
+// to the bed, from the plan run of its latest dispatch. Author-conflict quotations are checked against the locked knowledge root.
+// The token is read from standard input only, in the one form the skills home admits:
 //   node <skill directory>/tools/assemble-delivery.ts --hub %HUB_URL% --runs <run>,<run> --recompose <run> --notes <file> --out <directory> <<'EOF'
 //   %HUB_TOKEN%
 //   EOF
@@ -13,7 +13,7 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, closingCounts, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { bearerFrom, get, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
@@ -130,6 +130,35 @@ export function planDigest(plan: RunInputs, autoid: string): string {
   const id = isRecord(item) ? item.id : undefined;
   const entry = Array.isArray(plan.submission.items) ? plan.submission.items.find((s) => isRecord(s) && s.item === id) : undefined;
   return isRecord(entry) && id !== undefined ? sha256(canonicalJson(withoutAudit(entry.slots ?? null))) : `run:${String(plan.run.run)}`;
+}
+
+// A whole knowledge root uses the run download's larger response limit.
+const KNOWLEDGE_MAX_BYTES = 256 * 1024 * 1024;
+const KNOWLEDGE_TIMEOUT_MS = 300_000;
+async function knowledgeBatch(origin: string, bearer: string, run: string): Promise<Uint8Array> {
+  let reply: Response, bytes: Uint8Array;
+  try {
+    reply = await fetch(`${origin}/run-export/${run}/knowledge`, { headers: { authorization: `Bearer ${bearer}` }, signal: AbortSignal.timeout(KNOWLEDGE_TIMEOUT_MS) });
+    bytes = new Uint8Array(await reply.arrayBuffer());
+  } catch { throw new Error(`Hub 没有在 ${KNOWLEDGE_TIMEOUT_MS / 1000} 秒内给出计划运行 ${run} 锁定的知识根，或不可达；稍后用同一命令重取`); }
+  if (reply.status === 404) throw new Error(`Hub 读不到计划运行 ${run} 锁定的知识根（这个运行没有锁定知识根，或你的读取层级读不到它），author_conflict 核对不了`);
+  if (!reply.ok) throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
+  if (bytes.length > KNOWLEDGE_MAX_BYTES) throw new Error(`知识根超过 ${KNOWLEDGE_MAX_BYTES / (1024 * 1024)} MiB 上限，author_conflict 核对不了`);
+  const digest = /^sha-256=:([A-Za-z0-9+/=]+):$/.exec(reply.headers.get('content-digest') ?? '');
+  if (!digest || Buffer.from(digest[1], 'base64').toString('hex') !== sha256(bytes)) throw new Error('知识根的字节与 Hub 给的摘要不符，author_conflict 核对不了');
+  return bytes;
+}
+async function citedStatements(origin: string, bearer: string, cited: ReadonlySet<string>, planRuns: readonly string[], rootOf: (run: string) => unknown): Promise<Map<string, string>> {
+  const statements = new Map<string, string>();
+  const roots = new Set([...cited].flatMap((reference) => { const root = /^tree:([0-9a-f]{64})\//.exec(reference)?.[1]; return root ? [root] : []; }));
+  for (const root of roots) {
+    const holder = [...planRuns].reverse().find((run) => rootOf(run) === root);
+    if (!holder) continue;
+    const batch = lockedStatements(await knowledgeBatch(origin, bearer, holder), holder, cited);
+    if (batch.root !== root) throw new Error(`Hub 给的计划运行 ${holder} 的知识根不是运行记录里的 ${root}，author_conflict 核对不了`);
+    for (const [reference, statement] of batch.statements) statements.set(reference, statement);
+  }
+  return statements;
 }
 
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date()): Promise<number> {
@@ -295,7 +324,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const rounds: Record<string, number> = {};
     for (const outcome of assembly.cases.filter(reworked)) rounds[outcome.autoid] = new Set(outcome.history.filter((h) => h.terminal === 'fail' || h.audit).map((h) => planDigest(plans.get(dispatches[h.ordinal - 1].plan_run)!, outcome.autoid))).size;
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
-    const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts);
+    const conflictGround: ConflictGround = {
+      authored: Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, [original.title, ...original.lines.flatMap((line) => [line.text, ...line.expected])].filter((text) => text.length > 0)])),
+      statements: await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root),
+    };
+    const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts, conflictGround);
     // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
     // dispatched is looked up in the latest plan run of this compilation that holds it and has an accepted result: a plan run
     // opened but never answered judged no plan (closeUnrun in functions/delivery.ts).
@@ -318,7 +351,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
         }
       }
     }
-    const settled = closeUnrun(closed.cases, facts);
+    const settled = closeUnrun(closed.cases, facts, notes, conflictGround);
     const unproven = [...evidenceProblems(notes, deviceTexts), ...closed.problems, ...settled.problems];
     if (unproven.length) throw new Error(unproven.join('；'));
     assembly.cases = settled.cases;
@@ -333,7 +366,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       pass_volume: assembly.pass ? { file: 'case.xlsx', sha256: assembly.pass.sha256, run: assembly.pass.run, job: assembly.pass.job, plan_run: assembly.pass.plan_run, items: assembly.pass.items } : null,
       unsuccessful_volume: assembly.unsuccessful ? { file: 'unsuccessful_cases.xlsx', sha256: unsuccessfulFile!.sha256, items: assembly.unsuccessful.items.map((autoid) => ({ autoid, plan_run: assembly.unsuccessful!.sources[autoid].plan_run, run: assembly.unsuccessful!.sources[autoid].run })), dispatched: false } : null,
       closings: Object.fromEntries((Object.keys(CLOSING) as Array<keyof typeof CLOSING>).map((closing) => [closing, assembly.cases.filter((c) => c.closing === closing).length])),
-      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}) })) })),
+      cases: assembly.cases.map((c) => ({ autoid: c.autoid, title: originals[c.autoid]?.title ?? null, status: c.status, label: STATUS[c.status], ...(c.closing ? { closing: c.closing, closing_label: CLOSING[c.closing], rounds: c.rounds } : {}), ...(c.missing ? { missing: c.missing } : {}), ...(c.conflict ? { conflict: c.conflict } : {}), dispatches: c.history.map((h) => ({ run: h.run, job: h.job, terminal: h.terminal, label: terminalLabel(h.terminal), ...(h.audit ? { audit: h.audit } : {}) })) })),
     };
     outputs.push({ name: 'delivery.json', bytes: json(summary) });
 
