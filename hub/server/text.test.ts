@@ -419,7 +419,7 @@ const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SC
 });
 
   test('requirement facts say the accepted producer only: no producer kind the contracts do not give', () => {
-const text=toolText('start_run',startAnswer(runOf(items(5))));assert.doesNotMatch(text,/生产者|接受的生产者|记账型|门禁型/);assert.match(text,/决定者程序/);
+const text=toolText('start_run',startAnswer(runOf(items(5))));assert.doesNotMatch(text,/生产者|接受的生产者|记账型|门禁型/);assert.match(text,/决定者程序/);const run=runOf(items(1));delete run.items[0].fields.autoid;run.items[0].fields.case_id='CASE-0';run.items[0].label='CASE-0';const recomposed=toolText('start_run',startAnswer(run));assert.match(recomposed,/原始用例 CASE-0 标题未知/);assert.doesNotMatch(recomposed,/原始用例 CASE-0 CASE-0/);
 });
 
   test('item locations: one rule when they follow the ids; per item for a short list without one; where to read them for a long one', () => {
@@ -639,7 +639,38 @@ describe('through the MCP server: the ways to read the rest that the notes give 
   });
 
   test('a 4,000-line upload read by reference comes whole through the server, with its disclosure, and a cursor reads on', async () => {
-const client=await server.client(server.admin.token);const text=Array.from({length:4000},(_,i)=>'第 '+i+' 行 😀').join('\n');const uploaded=await client.call('upload_file',{file_path:Buffer.from(text).toString('base64')});const reference=String(uploaded.structuredContent.reference);const read=await client.call('get_nodes',{reference});const shown=String((read.content as {type:string;text:string}[])[0].text);assert.ok(shown.includes(text));assert.doesNotMatch(shown,/^追踪 /m);assert.equal(read.structuredContent.content && (read.structuredContent.content as {text:string}).text,text);await client.close();
+    const client = await server.client(server.admin.token);
+    const text = Array.from({length:4000}, (_, index) => `第 ${index} 行 😀`).join('\n');
+    const uploaded = await client.call('upload_file', {file_path:Buffer.from(text).toString('base64')});
+    const reference = String(uploaded.structuredContent.reference);
+    assert.equal(uploaded.content.length, 2);
+    assert.equal(uploaded.content[1].text?.split('\n')[0], '供模型引用');
+    assert.deepEqual(JSON.parse(uploaded.content[1].text!.slice('供模型引用\n'.length)), uploaded.structuredContent);
+    assert.doesNotMatch(uploaded.content[0].text!, /src:/);
+    const read = await client.call('get_nodes', {reference});
+    const shown = read.content[0].text!;
+    assert.ok(shown.includes(text));
+    assert.doesNotMatch(shown, /^追踪 /m);
+    assert.equal((read.structuredContent.content as {text:string}).text, text);
+    assert.equal(read.content.length, 2);
+    assert.deepEqual(JSON.parse(read.content[1].text!.slice('供模型引用\n'.length)), read.structuredContent);
+    await server.assign(server.admin.principal, 'review');
+    server.fakes.runs.items = subject => [{id:'synthetic:n1',label:'合成原始用例',location:subject+'/kityminder@1/n/n1',fields:{autoid:'CASE-SYNTHETIC-1',title:'合成原始用例'}}];
+    const started = await client.call('start_run', {pack:'review',inputs:{subject:{reference}}});
+    const run = started.structuredContent.run as {run:string};
+    const original_cases = [{id:'synthetic:n1',autoid:'CASE-SYNTHETIC-1',title:'合成原始用例'}];
+    assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
+    assert.deepEqual(JSON.parse(started.content[1].text!.slice('供模型引用\n'.length)), {...started.structuredContent,original_cases});
+    assert.doesNotMatch(started.content[0].text!, /rec:|run_/);
+    const refused = await client.call('submit_result', {run:run.run,model:'scripted-model@test',items:[{item:'synthetic:n1',handling:'handled',slots:{findings:[]}}],notes:'quote-mismatch'});
+    const references = JSON.parse(refused.content[1].text!.slice('供模型引用\n'.length));
+    assert.deepEqual(references, {...refused.structuredContent,original_cases});
+    assert.match(references.record, /^rec:[0-9a-f]{64}$/);
+    assert.equal(references.errors[0].item, 'synthetic:n1');
+    assert.equal(references.errors[0].path, '/items/0/slots');
+    assert.equal(references.original_cases[0].autoid, 'CASE-SYNTHETIC-1');
+    assert.doesNotMatch(refused.content[0].text!, /rec:|synthetic:n1|\/items\/0\/slots/);
+    await client.close();
 });
 });
 

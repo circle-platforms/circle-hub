@@ -389,8 +389,9 @@ function itemSummary(item: ItemProjection): string {
 
 function caseName(item: ItemProjection | undefined, label: string): string {
   if (item && isRecord(item.fields.review_counts)) return label;
-  const id = item?.fields.autoid;
-  return `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${label}`;
+  const id = item?.fields.autoid ?? item?.fields.case_id;
+  const title = item?.fields.case_id !== undefined && item.fields.title === undefined ? '标题未知' : label;
+  return `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${title}`;
 }
 
 function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
