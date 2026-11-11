@@ -21,7 +21,7 @@ test('each later condition is named in the order the admission checks it', () =>
   const p = pair('recompose', [], [], { root: context.root, product_pack_digest: context.product_pack_digest });
   assert.match(recompositionProblem(p.run, bound('run', {}), context, 'src:x', 'n/1'), /recomposition_result 绑的是 run /);
   const other = pair('recompose-authority', [], [], { root: context.root, product_pack_digest: context.product_pack_digest });
-  assert.match(recompositionProblem(other.run, other.result, context, 'src:x', 'n/1'), /是 recompose-authority@1\.1\.3 的运行，不是 recompose@1\.1\.3 的重组运行/);
+  assert.equal(recompositionProblem(other.run, other.result, context, 'src:x', 'n/1'), '这份重组后的用例使用的技能版本不受支持；请使用当前技能重新做用例重组');
   assert.match(recompositionProblem(p.run, p.result, { ...context, root: 'f'.repeat(64) }, 'src:x', 'n/1'), /产品、版本根或产品包与本运行不同/);
   assert.match(recompositionProblem(p.run, p.result, context, 'src:x', 'n/1'), /里没有这条用例（脑图节点 n\/1）/);
 });
