@@ -3,11 +3,12 @@
 // before it queries anything; here the brief is taken, by structure alone, from the files the run download wrote. Synthetic
 // tree, policy and record only.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { authoringBrief, canonicalPath, commandPath, inverseOf, nodeBlock, pairedSibling, policyOf, referencedPaths } from '../functions/authoring-brief.ts';
+import { authoringBrief, canonicalPath, commandPath, inverseOf, nodeBlock, pairedSibling, planEnvelope, policyOf, referencedPaths } from '../functions/authoring-brief.ts';
 import { knowledgeFiles } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { main, readKnowledge, writeBriefs } from './authoring-brief.ts';
 
@@ -55,9 +56,11 @@ const ITEM = {
   id: 'doc-1:c-1',
   fields: {
     title: '合成用例', steps: [{ text: '合成步骤' }],
+    expected_nodes: [{ reference: `src:${digest(8)}/kityminder@1/n/e-1`, text: '合成期望一' }, { reference: `src:${digest(8)}/kityminder@1/n/e-2`, text: '合成期望二', declaration: { kind: 'literal' } }],
     recomposition: {
       receipt: `rec:${digest(7)}`,
       record: {
+        case: { id: 'case-0001', title: '合成用例' }, expectation_slots: [{ slot: 'e1', atom: 'a4' }, { slot: 'e2', atom: 'a5' }],
         atoms: [{ id: 'a1', kind: 'action', text: 'widget sync to peer-b' }, { id: 'a2', kind: 'action', text: '合成步骤，不是命令' }, { id: 'a3', kind: 'action', text: 'widget sync' }],
         ledgers: {
           adapted: [{
@@ -75,7 +78,7 @@ const ITEM = {
 async function downloaded(items: unknown[], policy: unknown = POLICY): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'cc-brief-'));
   for (const { name, bytes } of knowledgeFiles(batch(), RUN).outputs) { await mkdir(dirname(join(directory, name)), { recursive: true }); await writeFile(join(directory, name), bytes); }
-  await writeFile(join(directory, 'run.json'), JSON.stringify({ run: RUN, ...(policy === null ? {} : { command_policy: policy }) }));
+  await writeFile(join(directory, 'run.json'), JSON.stringify({ run: RUN, groups: [{ kind: 'other' }, { kind: 'case-compile', profile: { bed: 'bed-a' } }], ...(policy === null ? {} : { command_policy: policy }) }));
   await mkdir(join(directory, 'items'));
   for (const [at, item] of items.entries()) await writeFile(join(directory, 'items', `${String(at).padStart(2, '0')}.json`), JSON.stringify(item));
   return directory;
@@ -138,10 +141,41 @@ test('a brief holds the commands the record names with their entries word for wo
   // Other nodes: a short one is quoted with where it is, a long one only says where it is.
   assert.match(text, /## 重组记录点到的其它节点（2 个）\n\nknowledge\/manual\.txt 第 \d+ 行起，共 3 行：\n# \/manual\/guide\/two words\n· 合成手册句：部件默认关闭。\n/);
   assert.match(text, /# \/manual\/guide\/whole chapter\n（knowledge\/manual\.txt 第 \d+ 行起，共 3 行，没有抄在这里）\n/);
-  assert.ok(text.endsWith('## 记录点到、锁定根里没有的路径\n- /commands/widget/gone\n'));
+  assert.ok(text.includes('## 记录点到、锁定根里没有的路径\n- /commands/widget/gone\n\n## 这条用例的计划文件外壳\n'));
   // The line the brief gives is the line of the block in the file.
   const at = knowledge.lines.get('/manual/guide/two%20words')!;
   assert.equal((await readFile(join(directory, 'knowledge', at.file), 'utf8')).split('\n')[at.line - 1], '# /manual/guide/two words');
+});
+
+// Run 22: the main session's hand-written template made the plan slot an object and put `bucket` beside `data`; fourteen plans
+// copied it and were refused. The shape is the Hub's own and is shown whole only by the pack's example.
+test('the brief ends with the envelope of the plan file: the Hub’s shape, the item’s identities filled in, the writer’s parts empty', async () => {
+  const knowledge = (await readKnowledge(await downloaded([])))!;
+  const envelope = planEnvelope(ITEM, 'bed-a')!;
+  assert.deepEqual(envelope, {
+    item: 'doc-1:c-1', handling: 'handled',
+    slots: { plan: [{
+      text: '',
+      quotes: [{ reference: `src:${digest(8)}/kityminder@1/n/e-1`, text: '合成期望一' }, { reference: `src:${digest(8)}/kityminder@1/n/e-2`, text: '合成期望二' }],
+      data: { bucket: 'bed-a', blocks: [], replacements: [], steps: [], expects: [], recomposition: { receipt: `rec:${digest(7)}`, case_id: 'case-0001', slots: [{ slot: 'e1', assertions: [] }, { slot: 'e2', assertions: [] }], rebindings: [] } },
+    }] },
+  });
+  // The same outer keys as the pack's example submission, one statement as the slot schema asks, and every key the plan schema requires.
+  const example = JSON.parse(readFileSync(new URL('../examples/submit-result.json', import.meta.url), 'utf8')).items[0];
+  const schema = JSON.parse(readFileSync(new URL('../slots.schema.json', import.meta.url), 'utf8')).item.plan;
+  const statement = (envelope.slots as { plan: Array<Record<string, unknown>> }).plan[0];
+  assert.deepEqual([Object.keys(envelope), Object.keys(statement)], [Object.keys(example), Object.keys(example.slots.plan[0])]);
+  assert.deepEqual([schema.min, schema.max, (envelope.slots as { plan: unknown[] }).plan.length], [1, 1, 1]);
+  for (const key of schema.data.required) assert.ok(Object.hasOwn(statement.data as object, key), key);
+  for (const key of Object.keys(statement.data as object)) assert.ok(Object.hasOwn(schema.data.properties, key), key);
+  const text = authoringBrief(ITEM, '00', knowledge, policyOf(POLICY), 'bed-a')!.text;
+  assert.ok(text.endsWith('\n```json\n' + JSON.stringify(envelope, null, 2) + '\n```\n'));
+  assert.match(text, /## 这条用例的计划文件外壳\n\n一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 \{text, quotes, data\}/);
+  assert.ok(text.includes('bucket（本运行配置选定的自动化测试环境）、重组回执') && text.includes('空着的不填会被拒。'));
+  // Without a profile that names a bed the bucket is left to the writer and is not claimed as filled.
+  const open = authoringBrief(ITEM, '00', knowledge, policyOf(POLICY))!.text;
+  assert.ok(open.includes('"bucket": ""') && !open.includes('bucket（本运行配置选定的自动化测试环境）'));
+  assert.equal(planEnvelope({ fields: {} }, 'bed-a'), null, 'an item without an id has no file to name');
 });
 
 test('without a declared policy no inverse is stated; without a record there is no brief; more siblings than fit are counted', async () => {
@@ -162,7 +196,7 @@ test('the tool writes one brief per item that carries a record, beside items/ an
   assert.deepEqual(await writeBriefs(directory), { briefs: 1, kept: 0, without_record: 1 });
   assert.deepEqual(await readdir(join(directory, 'briefs')), ['00.md']);
   const first = await readFile(join(directory, 'briefs', '00.md'), 'utf8');
-  assert.equal(first, authoringBrief(ITEM, '00', (await readKnowledge(directory))!, policyOf(POLICY))!.text);
+  assert.equal(first, authoringBrief(ITEM, '00', (await readKnowledge(directory))!, policyOf(POLICY), 'bed-a')!.text, 'the policy and the bed are the run record’s');
   await writeFile(join(directory, 'briefs', '00.md'), '写手自己的批注');
   assert.deepEqual(await writeBriefs(directory), { briefs: 0, kept: 1, without_record: 1 });
   assert.equal(await readFile(join(directory, 'briefs', '00.md'), 'utf8'), '写手自己的批注', 'left as it is');

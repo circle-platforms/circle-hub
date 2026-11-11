@@ -11,6 +11,17 @@
 // rewrites and the author's own lines spell (followed word by word down the tree), the inverse rules and read-only prefixes
 // the product declares (command-policy@1, the same rule the cleanup check applies), and the tree's own parents and children.
 // Nothing here is a judgement and nothing here is plan content.
+//
+// The brief ends with the envelope of the case's plan file. The Hub takes a plan as one statement in a list, {text, quotes,
+// data}, and only `data` is described by slots.schema.json; the one place that shows the whole shape is
+// examples/submit-result.json, which the skill text never names. So a writer learnt the shape from a refusal: run 21's first
+// submission had 162 schema violations, and in run 22 the main session's hand-written template put the plan slot as an object
+// with `bucket` outside `data`, which fourteen plans copied (fourteen refusals; its `bucket` was the words of the skill
+// sentence instead of the bed the run's profile selects). The reference engine hands its writer the envelope's field-level
+// schema (lang_query docs blocks_schema, section mechanical_case_envelope). The envelope here carries only identities of the
+// frozen item: its id, its expected sentences with their references, the bed of the run's profile, the recomposition receipt,
+// the case id and the expectation slots. What a writer writes is left empty, and empty is refused, so an unfilled envelope
+// cannot pass as a plan.
 import { isRecord } from './text.ts';
 
 export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string }> }
@@ -119,13 +130,38 @@ function readOnlyForm(knowledge: BriefKnowledge, prefix: string, path: string): 
   return null;
 }
 
+/**
+ * The envelope of a case's plan file with the identities of its frozen item filled in, or null when the item has no id. The
+ * statement's text, the steps, the expectations and each slot's assertions are the writer's and stay empty.
+ */
+export function planEnvelope(item: unknown, bed: string | null): Record<string, unknown> | null {
+  const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
+  if (!isRecord(item) || typeof item.id !== 'string' || !fields) return null;
+  const recomposition = isRecord(fields.recomposition) ? fields.recomposition : null;
+  const record = recomposition && isRecord(recomposition.record) ? recomposition.record : null;
+  const quotes = (Array.isArray(fields.expected_nodes) ? fields.expected_nodes : []).filter(isRecord)
+    .filter((node) => typeof node.reference === 'string' && typeof node.text === 'string').map((node) => ({ reference: node.reference, text: node.text }));
+  const slots = (record && Array.isArray(record.expectation_slots) ? record.expectation_slots : []).filter(isRecord).filter((slot) => typeof slot.slot === 'string').map((slot) => ({ slot: slot.slot, assertions: [] }));
+  const caseId = record && isRecord(record.case) && typeof record.case.id === 'string' ? record.case.id : '';
+  return {
+    item: item.id, handling: 'handled',
+    slots: { plan: [{
+      text: '', quotes,
+      data: {
+        bucket: bed ?? '', blocks: [], replacements: [], steps: [], expects: [],
+        ...(record ? { recomposition: { receipt: typeof recomposition!.receipt === 'string' ? recomposition!.receipt : '', case_id: caseId, slots, rebindings: [] } } : {}),
+      },
+    }] },
+  };
+}
+
 export interface AuthoringBrief { text: string; commands: string[]; others: string[]; missing: string[] }
 /**
  * The brief of one frozen item of a plan run, or null when the item carries no recomposition record. `commands` are the tree
  * paths of the commands the record names, `others` the other nodes it references, `missing` the referenced paths the locked
  * root does not hold.
  */
-export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null): AuthoringBrief | null {
+export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null, bed: string | null = null): AuthoringBrief | null {
   const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
   const recomposition = fields && isRecord(fields.recomposition) ? fields.recomposition : null;
   const record = recomposition && isRecord(recomposition.record) ? recomposition.record : null;
@@ -144,7 +180,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const out: string[] = [
     `# 编写简报 ${index}：${typeof fields.title === 'string' ? fields.title : ''}`,
     '',
-    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，以及记录点到的其它节点在 knowledge/ 里的位置。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
+    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
     '',
     `条目 ${String(item.id ?? '')}；锁定根 ${knowledge.root}。`,
   ];
@@ -194,5 +230,11 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
     else out.push('', `# ${node.path}`, `（${where}，没有抄在这里）`);
   }
   if (missing.length) out.push('', '## 记录点到、锁定根里没有的路径', ...missing.map((path) => `- ${decodeURI(path)}`));
+  const envelope = planEnvelope(item, bed);
+  if (envelope) out.push('', '## 这条用例的计划文件外壳',
+    '',
+    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由你写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。`,
+    '',
+    '```json', JSON.stringify(envelope, null, 2), '```');
   return { text: out.join('\n') + '\n', commands, others, missing };
 }

@@ -160,6 +160,7 @@ test('items that carry a recomposition record get their authoring brief with the
   assert.deepEqual(await readdir(join(out, 'briefs')), ['00.md', '06.md']);
   const brief = await readFile(join(out, 'briefs', '06.md'), 'utf8');
   assert.match(brief, /^# 编写简报 06：合成用例 6\n/);
+  assert.ok(brief.includes('## 这条用例的计划文件外壳') && brief.includes('"item": "case-6"'), 'and the envelope of that case’s plan file');
   assert.ok(brief.includes(`# /widgets/health\n· widget health interval <seconds:int 1..60>\n  Set the health interval\n  seconds: 合成参数说明\n  引用 tree:${ROOT}/widgets/health@${ENTRY}\n`), 'the entry the record references, word for word with its reference');
   // A brief that cannot be written does not undo a download that is already on disk.
   const third = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');

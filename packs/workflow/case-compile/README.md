@@ -437,6 +437,25 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.14.1: the brief ends with the envelope of the case's plan file
+
+The Hub takes a plan as one statement in a list, `{text, quotes, data}`; `slots.schema.json` describes only `data`, and the
+one place that shows the whole file is `examples/submit-result.json`, which the skill text never named. A writer learnt the
+shape from a refusal: run 21's first plan submission had 162 schema violations; in run 22 the main session wrote its own
+template with the plan slot as an object and `bucket` beside `data`, fourteen plans copied it and all fourteen were refused,
+and its `bucket` was the words of the skill sentence instead of the bed the run's profile selects. In run 23 the main session
+spent six minutes before it started any writer reading the schema and searching `run.json` for `bucket`, item ids and receipts.
+
+The reference engine hands its writer the envelope's field-level schema (`lang_query` docs `blocks_schema`, section
+`mechanical_case_envelope`). Each brief now ends with the envelope of that case's plan file (`planEnvelope`): the item id,
+`handling`, the one statement with the case's expected sentences and their references as `quotes`, and in `data` the bed of
+the run's bound profile as `bucket`, the empty `blocks`, `replacements`, `steps` and `expects`, and `recomposition` with the
+receipt, the case id and one entry per expectation slot. Everything filled in is an identity copied from the frozen run;
+the statement's text, the steps, the expectations and each slot's assertions are the writer's and are left empty, and the
+Hub refuses an empty text, no expectation and an empty assertion list, so an unfilled envelope cannot pass as a plan. A
+test holds the envelope to the outer keys of the pack's example and to the keys the plan schema requires. SKILL step 2 says
+the brief ends with it (budget 9020).
+
 ### 3.14.0: each case's authoring brief comes with the run
 
 With the root on local disk a search costs nothing, but each search is still a reply of the model. Run 22 made no `get_nodes`

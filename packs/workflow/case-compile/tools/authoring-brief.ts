@@ -1,6 +1,6 @@
 // The authoring briefs of a downloaded plan run (functions/authoring-brief.ts): one text file per case, `briefs/<index>.md`,
-// beside `items/` and `knowledge/`, so a writer starts from the tree entries its case already names instead of searching for
-// them reply by reply. tools/download-run.ts writes them with the run; run alone, this tool writes them for a directory that
+// beside `items/` and `knowledge/`, so a writer starts from the tree entries its case already names and from the envelope of
+// its plan file instead of searching for them reply by reply. tools/download-run.ts writes them with the run; run alone, this tool writes them for a directory that
 // was downloaded before. It reads local files only, decides nothing and never overwrites a brief.
 //   node <skill directory>/tools/authoring-brief.ts --run <downloaded run directory>
 import { realpathSync } from 'node:fs';
@@ -55,10 +55,13 @@ export async function writeBriefs(directory: string): Promise<BriefReport> {
   if (!knowledge) return report;
   const run = parsed('run.json', await readFile(join(directory, 'run.json'), 'utf8'));
   const policy = policyOf(isRecord(run) ? run.command_policy : null);
+  // The bed a plan's bucket must name is the one the run's bound profile selects.
+  const groups = isRecord(run) && Array.isArray(run.groups) ? run.groups.filter(isRecord) : [];
+  const bed = groups.map((group) => (isRecord(group.profile) && typeof group.profile.bed === 'string' ? group.profile.bed : null)).find((value) => value !== null) ?? null;
   const present = new Set(await readdir(join(directory, 'briefs')).catch(() => [] as string[]));
   for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
     const index = name.slice(0, -'.json'.length);
-    const brief = authoringBrief(parsed(`items/${name}`, await readFile(join(directory, 'items', name), 'utf8')), index, knowledge, policy);
+    const brief = authoringBrief(parsed(`items/${name}`, await readFile(join(directory, 'items', name), 'utf8')), index, knowledge, policy, bed);
     if (!brief) { report.without_record++; continue; }
     if (present.has(`${index}.md`)) { report.kept++; continue; }
     await mkdir(join(directory, 'briefs'), { recursive: true, mode: 0o700 });
