@@ -1,4 +1,6 @@
-import {withdrawalState,groundsReadableBy,runReadableBy,resultReadableBy} from './grounds.ts';
+import {withdrawalState,groundsReadableBy,runReadableBy,resultReadableBy,summaryReadableBy} from './grounds.ts';
+import {resultSummaryOf,type ResultSummary} from './result-summary.ts';
+import {runStatistics,statisticsFor} from '../statistics.ts';
 import {criterionNotices} from './criterion-changes.ts';
 import { isReason,labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { abandonDecision } from './management.ts';
@@ -12,7 +14,7 @@ import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
 import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
-import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow, RunHistoryOptions } from '../../ports.ts';
+import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow, RunHistoryOptions, RunStatistics } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { canSeeRun, canViewRun } from './readers.ts';
 import { actionOfSubmission, isVerbatimObject, latestAccepted, listRunRecords, resultFor, resultsOf, runById, submissionByDigest, submissionsOf, INDEX, keyOwner } from './store.ts';
@@ -85,6 +87,43 @@ export async function getRunSummary(ctx:EngineContext,user:Principal,run:string)
     cursor=page.next;
   }while(cursor!==null);
   return {run:await withRulingSummary(ctx,stored.body),latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
+}
+
+/**
+ * The statistics of a run: what runStatistics gives for getRunSummary, worked out from the summary record of each result
+ * (W08 R[6]) instead of the results. The heads are chosen the same way, each result named by its digest from the same index
+ * and known by its summary; a result without one is read whole, with the same answer. Who may read a result is decided as
+ * before, over the grounds its summary lists.
+ */
+export async function getRunStatistics(ctx:EngineContext,user:Principal,run:string):Promise<RunStatistics|null>{
+  const store=ctx.deps.records.store;
+  if(!store.findDigests){const summary=await getRunSummary(ctx,user,run);return summary?runStatistics(summary):null;}
+  const stored=await visibleRun(ctx,user,run);if(!stored)return null;
+  const known=(digest:string)=>resultSummaryOf(store,run,digest);
+  // latestAccepted, by summary: the newest result first, then pages that double.
+  let technicalLatest:ResultSummary|null=null,cursor:string|null=null,size=1;
+  search:do{
+    const page:Page<string>=await store.findDigests({key:INDEX.resultRun,value:run,kind:'validation_result',limit:size,cursor,newestFirst:true});
+    for(const digest of page.items){const summary=await known(digest);if(summary?.acceptance==='accepted'){technicalLatest=summary;break search;}}
+    cursor=page.next;size=Math.min(size*2,64);
+  }while(cursor!==null);
+  // selectedHead, by summary.
+  const management=await abandonDecision(ctx,run);
+  const delivered=management?(await store.findDigests({kind:'validation_result',key:INDEX.resultSystemInput,value:'rec:'+management.digest,limit:1})).items[0]:undefined;
+  const selected=management?(delivered===undefined?null:await known(delivered)):technicalLatest;
+  const latest=selected!==null&&!await summaryReadableBy(ctx,stored.body,selected,user)?null:selected;
+  // The production result, as getRunSummary finds it.
+  let production:ResultSummary|null=null;cursor=null;
+  do{
+    const page:Page<string>=await store.findDigests({key:INDEX.resultSubmission,value:run+':'+stored.digest,kind:'validation_result',limit:1,cursor,newestFirst:true});
+    const candidate=page.items[0]===undefined?null:await known(page.items[0]);
+    if(candidate&&candidate.submission===stored.digest&&!candidate.system_input&&await summaryReadableBy(ctx,stored.body,candidate,user)){production=candidate;break;}
+    cursor=page.next;
+  }while(cursor!==null);
+  // primaryRunResult, by summary: the requirements are the run's as the summary read gives them.
+  const requirements=(await withRulingSummary(ctx,stored.body)).requirements;
+  const primary=latest?.system_input?latest:requirements.length>0&&requirements.every(row=>row.accepted_producer==='fact')?production:latest;
+  return statisticsFor(management!==null,primary?.statistics??null);
 }
 
 /** The newest readable result of this index value (a submission of the run, or the run's own production), without reading older ones once found. */

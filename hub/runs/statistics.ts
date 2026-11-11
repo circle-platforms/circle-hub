@@ -1,7 +1,8 @@
 import type {TaskResult} from '../../contracts/generated/vocabulary.ts';
 import {isUnknownTerminal} from '../../contracts/src/validation.ts';
 import type {RunSummary,RunStatistics} from '../ports.ts';
-import {isAbandonedResult} from './engine/management.ts';
+import type {ValidationResult} from '../../contracts/src/validation.ts';
+import {isAbandonedResult} from './engine/abandoned.ts';
 
 export function primaryRunResult(detail:RunSummary):RunSummary['latest']{
  if(detail.latest?.result.system_input)return detail.latest;
@@ -34,4 +35,20 @@ export function runStatistics(detail:RunSummary):RunStatistics{
   const key=JSON.stringify(value),held=blockers.get(key);if(held)held.count++;else blockers.set(key,{...value,count:1});
  }
  output.blockers=[...blockers.values()];return output;
+}
+/**
+ * What a result comes to when it is the one that counts for its run: the statistics of a run whose current result it is,
+ * with no production result and no management disposition. A function of the result alone, so it can be worked out once,
+ * where the result is stored (its summary record, W08 R[6]).
+ */
+export function resultStatistics(result:ValidationResult):RunStatistics{
+ return runStatistics({run:{requirements:[]},latest:{record:'',result},production:null} as unknown as RunSummary);
+}
+/**
+ * The statistics of a run from those of its counting result (primaryRunResult): what runStatistics answers for the same
+ * run. An abandoned run is abandoned whatever its result; a run with no counting result awaits one.
+ */
+export function statisticsFor(management:boolean,primary:RunStatistics|null):RunStatistics{
+ const base=primary??{result:'awaiting' as const,pending:0,checks:[],blockers:[]};
+ return management?{...base,result:'abandoned'}:base;
 }

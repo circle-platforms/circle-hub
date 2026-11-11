@@ -43,21 +43,8 @@ import { canSeeRun } from './readers.ts';
 import { HubReadFailure } from './retry-read.ts';
 import { carriedItems } from './reuse.ts';
 import { issuesOf, requirementAt, slotProblems, slotSchemaOf } from './slots.ts';
-import {
-  INDEX,
-  actionsOf,
-  isVerbatimObject,
-  keyOwner,
-  latestAccepted,
-  putAction,
-  putResult,
-  putSubmission,
-  resultFor,
-  runById,
-  submissionByDigest,
-  successorsOf,
-  type VerbatimObjectBody,
-} from './store.ts';
+import {INDEX,actionsOf,isVerbatimObject,keyOwner,latestAccepted,putAction,putSubmission,resultFor,runById,submissionByDigest,successorsOf,type VerbatimObjectBody} from './store.ts';
+import {saveResult} from './result-summary.ts';
 import { repairRounds, isUnsettled } from './terminals.ts';
 import { clipPointer, clipText, isObject, pointerOf, receivedDigest, sessionOf, tooDeep, unique, wellFormed } from './util.ts';
 
@@ -274,7 +261,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(management!==null){
     const refusal=protocolError('RUN_ABANDONED',PROTOCOL_CODES.RUN_ABANDONED.when,{path:'/run'});
     const result:ValidationResult={schema:'validation@1',run:run.run,submission:received.digest,acceptance:'not_accepted',errors:[refusal],rounds:{used:0,max:0},partitions:emptyPartitions(),cross_item:[],coverage:{complete:false,examined:0,total:run.items.length,note:'已放弃运行的新输入仍原样保存，不重新核验'},locks:{...(run.skills?{skills:run.skills}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:call.traceId};
-    const saved=await putResult(store,result,ctx.now().toISOString());
+    const saved=await saveResult(store,result,ctx.now().toISOString());
     await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
     return answerOf(saved.body);
   }
@@ -456,8 +443,8 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
   try {
     const save = async () => {
       const criteria=outcome.criterionChanges??[];
-      if(outcome.result.acceptance!=='accepted')return putResult(store,outcome.result,ctx.now().toISOString());
-      if(outcome.prepared===undefined&&!criteria.length&&!base.run.criterion_review)return putResult(store,outcome.result,ctx.now().toISOString());
+      if(outcome.result.acceptance!=='accepted')return saveResult(store,outcome.result,ctx.now().toISOString());
+      if(outcome.prepared===undefined&&!criteria.length&&!base.run.criterion_review)return saveResult(store,outcome.result,ctx.now().toISOString());
       // What storing the contributions reads is read now, before the transaction holds its locks (issue #104).
       const plans=new Map<string,ContributionAppendPlan|null>();
       if(outcome.prepared!==undefined){
@@ -466,7 +453,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
       }
       return store.withTransaction(async tx => {
         await publishCriterionRequests(ctx,base.run,base.submissionRecord,criteria,outcome.result,tx);
-        if(outcome.prepared===undefined){const stored=await putResult(store,outcome.result,ctx.now().toISOString(),tx);await answerCriterionReview(ctx,base.run,stored,tx);return stored;}
+        if(outcome.prepared===undefined){const stored=await saveResult(store,outcome.result,ctx.now().toISOString(),tx);await answerCriterionReview(ctx,base.run,stored,tx);return stored;}
 
         const receipt: NonNullable<ValidationResult['contributions']> = { submitted: outcome.prepared!.size+(outcome.refusals?.size??0), stored: [], not_stored: [...(outcome.refusals??new Map())].map(([item,reason])=>({item,reason})) };
         const eligible = new Set(outcome.result.partitions.delivered.filter(item => item.requirements.length > 0 && item.requirements.every(r => r.status === 'satisfied')).map(item => item.item));
@@ -482,7 +469,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
           const record = await layer.append(prepared, {run:base.run.run,submission:base.digest,session:sessionOf(base.call),model:outcome.model!}, tx, plans.get(item) ?? null);
           receipt.stored.push({ item, record });
         }
-        return putResult(store, { ...outcome.result, contributions: receipt }, ctx.now().toISOString(), tx);
+        return saveResult(store, { ...outcome.result, contributions: receipt }, ctx.now().toISOString(), tx);
       });
     };
     return { result: await save(), problems: outcome.problems, retryAttempts: outcome.retryAttempts ?? [] };
@@ -499,7 +486,7 @@ async function keepResult(base: Basis, outcome: Validated): Promise<{ result: St
       path: '',
       fix: size !== null && limit !== null ? `把被判对象分成至少 ${Math.ceil(size / limit)} 块（每块分别开运行），或缩短陈述和引文后重交` : '把被判对象分块（每块分别开运行），或缩短陈述和引文后重交',
     });
-    return { result: await putResult(store, notAccepted(base, [tooLarge]), ctx.now().toISOString()), problems: new Set(), retryAttempts: outcome.retryAttempts ?? [] };
+    return { result: await saveResult(store, notAccepted(base, [tooLarge]), ctx.now().toISOString()), problems: new Set(), retryAttempts: outcome.retryAttempts ?? [] };
   }
 }
 

@@ -11,11 +11,12 @@ import {createRequestService} from '../../requests/api.ts';
 import {recReference} from '../../refs/api.ts';
 import {ENGINE_COMPONENT,type EngineContext} from './deps.ts';
 import {canSeeRun} from './readers.ts';
-import {INDEX,SCHEMAS,actionsOf,latestAccepted,putResult,runById} from './store.ts';
+import {INDEX,SCHEMAS,actionsOf,latestAccepted,runById} from './store.ts';
+import {saveResult} from './result-summary.ts';
 
 const Input=z.strictObject({run:RunId,run_record:Sha256,request:Sha256,disposition:DispositionSchema.extract(['abandon']),decided_by:UserId,decided_at:IsoTime,reason:z.string().min(1).max(2000),prior_result:Sha256.nullable(),trace:TraceId});
 export interface ManagementReceipt {record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}
-export function isAbandonedResult(result:ValidationResult):boolean{return result.cross_item.some(c=>c.warrant.producer==='function'&&c.warrant.id===ENGINE_COMPONENT&&c.statement.data?.run_disposition==='abandon');}
+export {isAbandonedResult} from './abandoned.ts';
 export async function abandonDecision(ctx:EngineContext,run:string):Promise<StoredRecord<ActionBody>|null>{
   return [...await actionsOf(ctx.deps.records.store,run)].reverse().find(a=>a.body.component===ENGINE_COMPONENT&&a.body.detail.run_disposition==='abandon')??null;
 }
@@ -72,7 +73,7 @@ export async function finishAbandon(ctx:EngineContext,stored:StoredRecord<RunRec
       if(original?.partition==='quarantined')parts.quarantined.push({...projected,reason:'integrity_unproven'});else parts.delivered.push(projected);
     }
     const result:ValidationResult={schema:'validation@1',run:run.run,submission:digestOf(input),system_input,acceptance:'accepted',errors:[],rounds:old?.rounds??{used:0,max:Math.max(0,...run.requirements.map(r=>r.repair_rounds))},partitions:parts,cross_item:[Claim.parse({statement:{text:'已记录管理放弃；技术层沿用来源记录，未重新核验，原效果及冻结不改写',data:{run_disposition:'abandon',decided_by:input.decided_by,reason:input.reason,previous_result:input.prior_result,previous_counts:counts,legacy_unwritten_fields:unwritten}},qualifier:{nature:'fact',provenance:'observed',basis_rank:'rule_over_observation',marks:[]},grounds:[system_input,...(input.prior_result?[recReference(input.prior_result)]:[])],warrant:{producer:'function',id:ENGINE_COMPONENT},validity:{status:'valid',bound:[stored.digest,decision.digest,...(input.prior_result?[input.prior_result]:[])],premises:[]}})],coverage:{complete:true,examined:run.items.length,total:run.items.length,note:'管理处置覆盖全部条目；技术层未重验，原未知计数保留；旧缺字段只引用本次真实管理出口，不回填原件'},locks:{...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),pack:run.pack,pack_digest:run.pack_digest,...(run.root?{root:run.root}:{})},trace:input.trace};
-    saved=await putResult(ctx.deps.records.store,result,ctx.now().toISOString());
+    saved=await saveResult(ctx.deps.records.store,result,ctx.now().toISOString());
   }else current=(await abandonDecision(ctx,run.run))?.digest===decision.digest;
   for(const request of await requests.all(run.run))if(request.answered_by===null&&(request.record===input.request||request.audience===(run.runner??run.configurer)&&!request.job&&!request.pack_digest&&!request.sources?.length))await requests.answer(request.record,decision.digest);
   return {record:saved.digest,result:saved.body,decision:decision.digest,created:previous.items.length===0,current};

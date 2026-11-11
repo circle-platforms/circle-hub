@@ -342,6 +342,8 @@ export interface RecordStore {
   findLacking?<B = unknown>(query: { kind: RecordKind; key: string; values: readonly string[]; lacking: string }, tx?: Transaction): Promise<StoredRecord<B>[]>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** The digests find would answer, page for page and with the same cursor, in a query that reads no record body. */
+  findDigests?(query: FindQuery, tx?: Transaction): Promise<Page<string>>;
   /** The digests findFirstMany would answer, in one query that reads no record body. */
   firstDigests(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, string>>;
   /** Bounded index scan retaining each matching value and the record's append position. */

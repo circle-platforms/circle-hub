@@ -40,7 +40,8 @@
         "knowledge_source_attribution",
         "member_deletion",
         "knowledge_team_source_attribution",
-        "token_issuance"
+        "token_issuance",
+        "result_summary"
       ]
     },
     "schema": {
