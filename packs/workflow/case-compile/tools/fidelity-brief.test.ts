@@ -41,9 +41,9 @@ test('the brief is computed from the expanded plan the Hub will receive, with th
   const { code, stdout, stderr } = await w.runBrief();
   assert.equal(code, 0, stderr);
   const printed = JSON.parse(stdout);
-  assert.deepEqual(printed.skipped, [{ file: '01.json', reason: '没有重组记录里的作者动作原句，不用审计' }]);
+  assert.deepEqual(printed.skipped, [{ file: '01.json', reason: '缺少用例重组时的原始用例步骤，尚未核对自动化用例' }]);
   assert.equal(printed.briefs.length, 1);
-  assert.equal(printed.briefs[0].state, '需要审计');
+  assert.equal(printed.briefs[0].state, '未知');
   assert.deepEqual(printed.to_audit, [printed.briefs[0].brief]);
   const expanded = await w.planOf();
   assert.doesNotMatch(JSON.stringify(expanded), /\{\{name:40\}\}/, 'the plan file was expanded and written back');
@@ -65,7 +65,7 @@ test('one brief directory lasts across repairs and nothing in it is overwritten:
   const plan = await w.planOf(); plan.slots.plan[0].data.steps[1].args = ['echo 192.0.2.91'];
   await writeFile(join(w.plans, '00.json'), JSON.stringify(plan));
   const changed = JSON.parse((await w.runBrief()).stdout);
-  assert.equal(changed.briefs[0].state, '需要审计'); assert.deepEqual(changed.to_audit, [changed.briefs[0].brief]);
+  assert.equal(changed.briefs[0].state, '未知'); assert.deepEqual(changed.to_audit, [changed.briefs[0].brief]);
   assert.notEqual(changed.briefs[0].brief, first.brief, 'another plan, another brief file');
   const names = (await readdir(w.briefs)).sort();
   assert.equal(names.filter((name) => name.endsWith('.brief.json')).length, 2, 'the earlier brief stays as it was');
