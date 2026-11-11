@@ -1,6 +1,7 @@
 // Device observations as claims (decision 111, B01): what each booked device showed when the booking was granted is an
 // observed claim with the probe output as its ground and its moment as its time bound (A05 R[3]); a device that could not be
 // looked at is an unknown that names why and that the version probe before a dispatch looks again.
+import type { QualifierMark, Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { DeviceHelpPosition, DeviceHelpResult, DeviceObservation } from '../../../contracts/src/pack.ts';
 
@@ -38,12 +39,13 @@ export function observationClaims(result: { observed: DeviceObservation[]; missi
 
 const HELP_RULE = 'dispatch.device_help@1';
 const ASK_RULE = 'runs.ask_devices@1';
+const HELP_MARKS: QualifierMark[] = ['target_reported', 'local_ops_not_excluded'];
 const HELP_PREMISE = '目标这一版的问位置工具只读：不按回车、输入行总是清掉（premises.read_only，已认证）';
 
 export function deviceHelpClaims(results: readonly DeviceHelpResult[], at: string): Claim[] {
   const claims: Claim[] = [];
   const data = (r: DeviceHelpResult) => ({ label: r.label, inventory: r.inventory, device: r.device, line: r.line, mode: r.mode });
-  const unknown = (r: DeviceHelpResult, text: string, fact: string, next: string, reason: 'missing_input' | 'integrity_unproven', grounds: string[]): Claim => Claim.parse({
+  const unknown = (r: DeviceHelpResult, text: string, fact: string, next: string, reason: Reason, grounds: string[]): Claim => Claim.parse({
     statement: { text, data: { ...data(r), asked: r.positions.length > 0, missing_fact: fact, next_action: next }, verdict: 'unknown', reason },
     qualifier: { nature: 'unknown', provenance: 'projected', marks: [], collected_at: at },
     grounds,
@@ -72,7 +74,7 @@ export function deviceHelpClaims(results: readonly DeviceHelpResult[], at: strin
     const refs = r.positions.flatMap(groundsOf);
     claims.push(Claim.parse({
       statement: { text: `${r.label} 上问“${r.line}”：${summary}`, data: { ...data(r), kind: 'summary', words: r.words, asked: r.positions.length, described_prefix: answered?.prefix ?? null, next_word: answered?.next_word ?? null } },
-      qualifier: { nature: 'fact', provenance: 'projected', marks: ['target_reported', 'local_ops_not_excluded'], collected_at: r.positions[0]!.observed_at },
+      qualifier: { nature: 'fact', provenance: 'projected', marks: HELP_MARKS, collected_at: r.positions[0]!.observed_at },
       grounds: refs,
       warrant: { producer: 'function', id: HELP_RULE },
       validity: { status: 'valid', bound: [r.inventory, ...refs.flatMap((g) => shaOf(g) ?? [])], premises: [HELP_PREMISE] },
@@ -89,7 +91,7 @@ export function deviceHelpClaims(results: readonly DeviceHelpResult[], at: strin
       const base = { ...data(r), kind: 'position', prefix: p.prefix, words: p.words, next_word: p.next_word, described: p.described, caret_only: p.caret_only, help: p.text, truncated: p.truncated, withheld: p.withheld, anomaly: p.anomaly };
       claims.push(Claim.parse({
         statement: p.anomaly !== null ? { text, data: base, verdict: 'unknown', reason: 'integrity_unproven' } : { text, data: base },
-        qualifier: { nature: p.anomaly !== null ? 'unknown' : 'fact', provenance: 'observed', marks: p.anomaly !== null ? [] : ['target_reported', 'local_ops_not_excluded'], collected_at: p.observed_at },
+        qualifier: { nature: p.anomaly !== null ? 'unknown' : 'fact', provenance: 'observed', marks: p.anomaly !== null ? [] : HELP_MARKS, collected_at: p.observed_at },
         grounds: groundsOf(p),
         warrant: { producer: 'function', id: HELP_RULE },
         validity: { status: 'valid', bound: [r.inventory, ...groundsOf(p).flatMap((g) => shaOf(g) ?? [])], premises: p.anomaly !== null ? [] : [HELP_PREMISE] },
