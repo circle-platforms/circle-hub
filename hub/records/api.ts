@@ -1,4 +1,4 @@
-export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
+export {historyUsage,chargedBytes,safeBytes,forgetCapacityCharges,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
@@ -38,6 +38,7 @@ export { newId, ulid, idTime, isId } from './ids.ts';
 export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
 export { initialPassword, validPassword } from './password.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
+export { scanContent, useContentDetectors, CONTENT_SCANNER } from './content-scan.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';

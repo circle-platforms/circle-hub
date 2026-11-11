@@ -12,7 +12,7 @@ import { KnowledgeError, describeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
 import { DEFAULT_SANDBOX, type KnowledgeContext } from './context.ts';
 import { knowledgeSourceLoader } from './credential-policy.ts';
-import { bindDirectorySources, declaredDirectory } from './directory-sources.ts';
+import { bindDirectorySources, declaredDirectory, type DirectorySkill } from './directory-sources.ts';
 import { produceSeedling, seedlingName, type SeedlingResult } from './seedling.ts';
 import { resolveProductVariables } from './variables.ts';
 import type { ReprojectionReport } from './feeding.ts';
@@ -77,6 +77,8 @@ export interface SeedReport {
   missing: SeedGap[];
   /** Non-blocking facts of the seed (an optional source not read while its declared directory root covers the role). */
   notes: string[];
+  /** The skill whose directory walk bound the manual sources, as recorded with the production (issue 34). */
+  directory_skill?: DirectorySkill;
   reason: string | null;
   /** The re-projection of the line's fed cases onto the new root, before the pointer moved (null: none ran). */
   reprojection: ReprojectionReport | null;
@@ -365,6 +367,8 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     if (role === 'app-manual' && read.revision) revisions.app = read.revision;
   }
   let overlay: Record<string, string | string[]> | null = null;
+  // The skill whose walk bound the overlay: recorded with the production and shown in the report (issue 34).
+  let walked: DirectorySkill | undefined;
   const svnBlocked = report.missing.some((item) => item.detail === '没有启用的 svn 系统包资源');
   if (directory && directory !== 'several' && manualProducer && typeof directoryRoot === 'string' && !svnBlocked) {
     const bound = await bindDirectorySources({
@@ -372,7 +376,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
       loader: knowledgeSourceLoader(context, by, 'knowledge seed'), maxBytes: context.limits.maxBuildBytes, next: againCommand(shown, args.line),
     });
     if (!bound.ok) report.missing.push(gap('cli-manual', publicText(bound.detail), bound.next));
-    else overlay = bound.sources;
+    else { overlay = bound.sources; if (bound.sources !== null) walked = bound.skill; }
   }
   if (report.missing.length > 0) return report;
   const roles = {
@@ -385,7 +389,8 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
     // that throws on this group fails the dry run with its own message instead of passing until the real seed. It
     // writes the ordinary production records (the audit stays), writes no seedling claim and moves no pointer.
     const only = [...new Set(Object.values(roles).map((role) => role.producer))];
-    const produced = await knowledge.produceTree({ product, build, by, producers: only, ...(overlay ? { sources: overlay } : {}) });
+    if (walked) report.directory_skill = walked;
+    const produced = await knowledge.produceTree({ product, build, by, producers: only, ...(overlay ? { sources: overlay } : {}), ...(walked ? { directorySkill: walked } : {}) });
     if (!produced.ok || produced.root === null) {
       report.reason = produced.reason ?? '试运行生产没有产出根';
       return report;
@@ -398,7 +403,8 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
   }
 
   const before = await context.records.pointers.get(seedlingName(productId, args.line));
-  const result = await produceSeedling(context, knowledge, product, { line: args.line, build: build.name, by, basis: args.basis, roles, revisions: { cli: revisions.cli ?? null, app: revisions.app ?? null }, ...(overlay ? { sources: overlay } : {}) });
+  const result = await produceSeedling(context, knowledge, product, { line: args.line, build: build.name, by, basis: args.basis, roles, revisions: { cli: revisions.cli ?? null, app: revisions.app ?? null }, ...(overlay ? { sources: overlay } : {}), ...(walked ? { directorySkill: walked } : {}) });
+  if (walked) report.directory_skill = walked;
   return await finish(context, report, result, before?.target ?? null);
 }
 
@@ -459,6 +465,7 @@ export function formatSeedReport(report: SeedReport): string {
     lines.push(`来源 ${source.label} ${source.producer}.${source.slot} ${source.external}${source.sha256 === null ? '' : ` ${source.sha256}`} 修订 ${source.revision ?? '（无）'}`);
   }
   for (const source of report.composition_revisions) lines.push(`组成来源 ${source.producer}.${source.slot} ${source.external} 修订 ${source.revision ?? '（无）'}`);
+  if (report.directory_skill) lines.push(`目录遍历 ${report.directory_skill.id}@${report.directory_skill.version}（${report.directory_skill.module} ${report.directory_skill.sha256}）`);
   if (report.pointer !== null) {
     lines.push(report.pointer.moved ? `指针：${report.pointer.from ?? '（无）'} → ${report.pointer.to}（${report.pointer.reason}）` : `指针：${report.pointer.reason}`);
   }

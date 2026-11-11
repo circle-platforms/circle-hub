@@ -1,4 +1,5 @@
 // Exact synthetic uploads and temporary PostgreSQL; declarations never replace source or reader checks.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import type {z} from 'zod';
@@ -44,7 +45,7 @@ test('foreign accounts cannot sign, equal-byte captures do not inherit declarati
  assert.equal((await spaces.share(w.user,twin.input)).code,'SHARE_UPLOAD_UNSIGNED');
  await spaces.attributeSource(w.user,twin.source.digest,twin.file.digest);assert.equal((await spaces.share(w.user,twin.input)).status,'merged');
 });
-test('forged joins, unreadable or uninspectable captures and stopped uploaders never gain source eligibility',async t=>{
+test('forged joins, unreadable or uninspectable captures and stopped uploaders never gain source eligibility',async t=>{ credentialDetectorsFor(t);
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,p=await prepare(w);
  const falseBody=SourceAttributionBody.parse({space:w.outsider.id,source:p.source.digest,artifact:p.file.digest,sha256:p.file.body.sha256,by:w.outsider.id,at:new Date().toISOString(),audience:'team'});
  await w.kit.store.put({kind:'knowledge_source_attribution',schema:'knowledge-source-attribution@1',provenance:'declared',body:falseBody,index:[{key:'knowledge.source.attribution.capture',value:p.file.digest}]});

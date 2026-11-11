@@ -21,6 +21,8 @@ export class HttpReplyError extends Error {
   readonly status:number;
   constructor(status:number){super('目标 HTTP 回答不成功；原文已保存，不跟随重定向');this.status=status;}
 }
+/** The target gave no whole answer: unreachable, timed out or over the limit. What was received is stored first. */
+export class IncompleteReplyError extends Error {constructor(){super('目标回答不完整、超时或超限；已有字节先保存，不重试');}}
 export class ResponseStorageError extends Error {constructor(){super('目标原件未能保存；先修复本地存储后重读');}}
 export class RpcReplyError extends Error {constructor(){super('目标的完整回答不符合 RPC 协议；修正接口后重读原作业');}}
 export class CapabilityPolicyError extends Error { constructor(){super('密钥权限超出运行权限；换成仅运行权限的密钥后重跑，未调用任何工具');} }
@@ -167,7 +169,7 @@ export class RpcClient {
     try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response,request_bytes_written:received.request_bytes_written });}
     catch {throw new ResponseStorageError();}
     if(operation==='submit' && !received.complete && received.status===0 && received.request_bytes_written===0)throw new SubmissionNotSentError(source);
-    if (!received.complete || !validEncoding) throw new Error('目标回答不完整、超时或超限；已有字节先保存，不重试');
+    if (!received.complete || !validEncoding) throw new IncompleteReplyError();
     if (received.status < 200 || received.status >= 300) throw new HttpReplyError(received.status);
     if (received.session) { if (/[\r\n]/.test(received.session) || received.session.length > 512) throw new Error('目标会话标识无效'); this.#session = received.session; }
     if (notification) return { value: {}, source, received_at, started_at };

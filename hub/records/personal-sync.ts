@@ -17,7 +17,7 @@ import {iso} from './db.ts';
 import {canonicalize} from './canonical.ts';
 import {sha256Hex} from './digest.ts';
 import {RecordsError,IntegrityError} from './errors.ts';
-import {scanForCredentials} from './scan.ts';
+import {scanContent} from './content-scan.ts';
 import {INITIAL_PERSONAL_EPOCH,type PersonalScope,type PgPersonalPayloads} from './personal-payloads.ts';
 
 type State=z.infer<typeof PersonalSyncState>;
@@ -259,7 +259,7 @@ export class PgPersonalSync {
    return {missing:request.data.objects.filter(id=>!owned.has(id))};
   });
  }
- #scan(bytes:Uint8Array,code:ProtocolCode,requireText=false){const scan=scanForCredentials(bytes);if(scan.findings.length||scan.truncated)fail(code);if(requireText&&!scan.inspected)fail('SPACE_CONTENT_UNINSPECTABLE');}
+ #scan(bytes:Uint8Array,code:ProtocolCode,requireText=false){const scan=scanContent(bytes);if(scan.findings.length||scan.truncated)fail(code);if(requireText&&!scan.inspected)fail('SPACE_CONTENT_UNINSPECTABLE');}
  #scanText(value:unknown,code:ProtocolCode):void{
   if(typeof value==='string'){this.#scan(Buffer.from(value),code,true);return;}
   if(Array.isArray(value)){for(const item of value)this.#scanText(item,code);return;}

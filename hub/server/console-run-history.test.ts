@@ -32,7 +32,7 @@ test('the task page asks for the newest window, says how many submissions it lis
  // The submissions are in the 过程 tab of the task page (decision 151); its paging links stay in that tab.
  const plain=await send(`/console/runs/${id}?tab=process`,cookie);assert.equal(plain.status,200);
  assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:RUN_HISTORY_LIMIT,before:null}},'the page reads a window, never the whole history');
- assert.equal(RUN_HISTORY_LIMIT,50);
+ assert.equal(RUN_HISTORY_LIMIT,10,'a row reads a whole result: ten at a time');
  // Every other tab shows the current and the production result only, and asks for a window of one submission.
  for(const tab of ['','?tab=items','?tab=requests','?tab=sources','?tab=record','?view=record']){
   server.fakes.runs.runOptions.length=0;assert.equal((await send(`/console/runs/${id}${tab}`,cookie)).status,200,tab);
@@ -43,20 +43,20 @@ test('the task page asks for the newest window, says how many submissions it lis
  assert.doesNotMatch(plain.body,/查看更早的提交|回到最近的提交/,'no paging note while the fake answers without a window');
  // A windowed answer: older submissions remain, and the first row is the one behind the current result.
  const detail=(await server.fakes.runs.getRun(user.principal,id))!;
- server.fakes.runs.script.answerNext('getRun',{...detail,history:{limit:50,next:'synthetic-older-cursor',pinned:detail.submissions[0]?.record??'x'.repeat(64)}});
+ server.fakes.runs.script.answerNext('getRun',{...detail,history:{limit:RUN_HISTORY_LIMIT,next:'synthetic-older-cursor',pinned:detail.submissions[0]?.record??'x'.repeat(64)}});
  const windowed=await send(`/console/runs/${id}?tab=process`,cookie);assert.equal(windowed.status,200);
- assert.match(windowed.body,/本页列出 \d+ 次提交，每页最多 50 次，较早的在上；第一行是当前结果对应的提交；撤回提示按本页列出的结果、当前结果和生产结果判断。/);
+ assert.match(windowed.body,/本页列出 \d+ 次提交，每页最多 10 次，较早的在上；第一行是当前结果对应的提交；撤回提示按本页列出的结果、当前结果和生产结果判断。/);
  assert.ok(windowed.body.includes(`href="/console/runs/${id}?tab=process&amp;older=synthetic-older-cursor"`),'the link to older submissions carries the cursor');
  assert.doesNotMatch(windowed.body,/回到最近的提交/,'the newest window has no way back');
  assert.deepEqual(wordingProblems(windowed.body),[]);
  // An older page: the cursor reaches the service, and the way back is offered.
  server.fakes.runs.runOptions.length=0;
- server.fakes.runs.script.answerNext('getRun',{...detail,history:{limit:50,next:null}});
+ server.fakes.runs.script.answerNext('getRun',{...detail,history:{limit:RUN_HISTORY_LIMIT,next:null}});
  const older=await send(`/console/runs/${id}?tab=process&older=synthetic-older-cursor`,cookie);assert.equal(older.status,200);
- assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:50,before:'synthetic-older-cursor'}});
+ assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:RUN_HISTORY_LIMIT,before:'synthetic-older-cursor'}});
  assert.match(older.body,new RegExp(`href="/console/runs/${id}\\?tab=process">回到最近的提交`));assert.doesNotMatch(older.body,/查看更早的提交/,'the oldest window has no older link');
  // A cursor longer than any the store hands out is not passed on.
  server.fakes.runs.runOptions.length=0;
  const hostile=await send(`/console/runs/${id}?tab=process&older=${'x'.repeat(600)}`,cookie);assert.equal(hostile.status,200);
- assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:50,before:null}});
+ assert.deepEqual(server.fakes.runs.runOptions.at(-1),{history:{limit:RUN_HISTORY_LIMIT,before:null}});
 });

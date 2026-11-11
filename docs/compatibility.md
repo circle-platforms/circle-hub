@@ -9,7 +9,7 @@
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
 | circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；发行 0.3.0（2026-11-04）是重建后的第一个发行，带安装包；此前的 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md)、[当前状态](hub-status-2026-11.md) | 所有者的持久部署自 2026-11-04 起从 main 部署（决定 145），私有集成分支已封存 |
-| 合约 | 通用模型第 43 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
+| 合约 | 通用模型第 45 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
 | MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权（授权码或设备码）或 Bearer 令牌 |
 | Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | Circle main 已合入六项通用 MCP 客户端改进并删去内置 Hub（circle#309，2026-10-26）和按 MCP 标准授权在浏览器登录（circle#396，2026-11-02）；Circle 里不出现 Hub 专用的界面或标签（D06 R[1]）；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
 | `foundation/circle` | Circle **1.0.4** 源基线，冻结 | `references/README.md` 的来源记录 | 只是源码参考，不装、不跑它的安装器；不是 hub 的运行依赖 |
@@ -83,3 +83,5 @@
 - 2026-11-10：模型到第 41 版（决定 150）：已受理的新提交下发请求时，同一运行此前各次提交下发、仍在等待回应的请求作废；请求显示状态加“已作废”。记录种类、协议码、MCP 工具和迁移都不变，已有的请求记录不改写。
 - 2026-11-10：模型到第 42 版（决定 152，所有者 2026-11-05 定）：业务系统的应答里有未核看的疑似凭据、而这个应答能说明对象存在时答“X 存在，内容待核看”，新增协议码 `SOURCE_PENDING_REVIEW`，`system@1` 加可选读取字段 `object_route`。这项改动在自己的分支上是模型第 41 版、决定 149，合入 main 时顺延。source-read 工作流源码升为 0.1.9：0.1.7（内容待核看）和 0.1.8（规格目录入口）两处改动之和，行为没有再变。
 - 2026-11-11：模型到第 43 版（决定 153）：存下校验结果时另追加一条结果摘要记录，新增记录种类 `result_summary`（`result-summary@1`）；任务列表和总览的统计读摘要而不读整条结果，已有的结果记录不改写，没有摘要的结果照旧读整条结果，后台补写。协议码、MCP 工具和词表轴不变。同一天 Hub 的迁移到 32（#319）：给已存的请求和了结请求的记录补两种索引项（`runs.request.settled`、`runs.request.plain`），只加索引项，不改记录；摘要记录本身不需要迁移。
+- 2026-11-11：模型到第 44 版（决定 154，issue #194）：来源内容不再做凭据扫描，不因看起来像凭据而只保留、拒收或送管理员核看。业务系统的应答、成员上传、写进知识空间和记忆的文字、运行参数、要派发的内容，都照原样交给有权读的人、包函数和模型。对外可见的变化：`upload_file` 不再因内容像凭据返回 `CREDENTIAL_IN_UPLOAD`；读业务系统不再因此返回 `SOURCE_PENDING_REVIEW` 或只保留；记忆和知识空间的写入不再返回 `MEMORY_CREDENTIALS_DETECTED`、`SPACE_CREDENTIALS_DETECTED`；`start_run` 不再因参数像凭据拒绝。这些协议码仍然登记，此前存下的记录和回执里有它们。新记录的扫描结论写 `credential-scan@4`（不检查、无命中）。此前按 `credential-scan@3` 存下并命中的记录不改写，指名读它时仍是原档位；同一内容重新读取或上传会产生可读的新记录。不变的部分：Hub 自己写下的东西（调用日志、备注、资源与执行器配置、变量、包文件）仍不写入凭据；Hub 发出的密钥被应答回显时仍只保留。记录种类、MCP 工具、词表轴和迁移都不变。管理员可配置的遮盖字典是后一步，还没有做。
+- 2026-11-11：模型到第 45 版（决定 157，issue #34）：把“通用技能包”写进模型原文（C02 的定义和 R[2]、T01 的定义），新增 C02 R[3]：Hub 核心不导入产品包的代码，需要直接用一项通用能力时只经通用技能包的公开入口，并在产生的记录里写明所用技能包的包名、版本和模块的 SHA-256。对外可见的变化只有一处：由 Hub 自己的目录遍历绑定来源的知识生产（`knowledge seed`），生产记录的 `detail` 多一个可选项 `directory_skill`（`id`、`version`、`module`、`sha256`），命令输出多一行“目录遍历 …”。此前的生产记录没有这一项，不补写。记录种类、协议码、MCP 工具、词表轴和迁移都不变。

@@ -244,10 +244,11 @@ const HEALTH_CSS = `
 .ch-table[data-view="knowledge-entries"] { width: 100%; }
 .ch-table[data-view="knowledge-entries"] td { max-width: none; white-space: nowrap; }
 .ch-table[data-view="knowledge-entries"] td:has([data-statement]) { white-space: normal; min-width: 14rem; }
-/* The statement is the row's main content: neutral text with an underline marks it as the way in, so it does not compete with the
-   status and the other links in link colour; hover and keyboard focus bring the link colour back (the focus ring stays). */
-.ch-table[data-view="knowledge-entries"] [data-statement] a { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--text-tertiary); text-underline-offset: 3px; }
-.ch-table[data-view="knowledge-entries"] [data-statement] a:is(:hover, :focus-visible) { color: var(--text-link); text-decoration-color: currentColor; }
+/* The statement is the row's main content: neutral text, so it does not compete with the status and the other links in link
+   colour. It carries no line at rest (owner, 2026-11-12, issue 215: a line under every row of a long statement reads heavy);
+   hover and keyboard focus bring the link colour and the underline, and the focus ring stays. */
+.ch-table[data-view="knowledge-entries"] [data-statement] a { color: var(--text-primary); text-decoration: none; text-underline-offset: 3px; }
+.ch-table[data-view="knowledge-entries"] [data-statement] a:is(:hover, :focus-visible) { color: var(--text-link); text-decoration: underline; }
 @media (max-width: 760px) {
  .ch-table[data-view="knowledge-entries"] thead { display: none; }
  .ch-table[data-view="knowledge-entries"], .ch-table[data-view="knowledge-entries"] tbody, .ch-table[data-view="knowledge-entries"] tr, .ch-table[data-view="knowledge-entries"] td { display: block; }

@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../../testing/records.ts';
 import { recordingRunner, socketPort, freePort, captureIo } from '../../platform/test-support.ts';
 import type {Environment} from '../../../contracts/generated/vocabulary.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
@@ -726,7 +727,7 @@ describe('source', () => {
   const bytes = Buffer.from(['# 手册（合成）', '', '示例：', '', `    copy ftp://user:${secret}@192.0.2.10/images/system.bin flash:`, ''].join('\n'));
   const sha = createHash('sha256').update(bytes).digest('hex');
 
-  test('a held-back source is listed, its findings shown as positions and shapes, accepted with a note and withdrawn again; no output carries the value', async () => {
+  test('a held-back source is listed, its findings shown as positions and shapes, accepted with a note and withdrawn again; no output carries the value', async (t) => { credentialDetectorsFor(t);
     const admin = await setup();
     const read = { bytes, mediaType: 'text/markdown', origin: { read: { object: 'manuals:file:cli/manual.md@1', resource: 'manual-store', action: null } }, author: { user: null }, provenanceType: 'observed' as const, visibility: { readers: [], admins: true, packs: [], shareable: false }, name: 'manual.md' };
     await withKit(admin, async (kit) => void (await kit.artifacts.ingest(read)));
@@ -749,7 +750,7 @@ describe('source', () => {
     }
   });
 
-  test('source commands distinguish current direct, derived and absent acceptance without disclosing matches or fingerprints', async () => {
+  test('source commands distinguish current direct, derived and absent acceptance without disclosing matches or fingerprints', async (t) => { credentialDetectorsFor(t);
     secrets.add(secret);
     const admin = await setup();
     const read = {bytes,mediaType:'text/markdown',origin:{read:{object:'manuals:file:synthetic/source.md'}},author:{user:null},provenanceType:'observed' as const,visibility:{readers:[],admins:true,packs:[],shareable:false}};

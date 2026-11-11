@@ -95,11 +95,13 @@ export async function getRunSummary(ctx:EngineContext,user:Principal,run:string)
  * and known by its summary; a result without one is read whole, with the same answer. Who may read a result is decided as
  * before, over the grounds its summary lists.
  */
-export async function getRunStatistics(ctx:EngineContext,user:Principal,run:string):Promise<RunStatistics|null>{
+export async function getRunStatistics(ctx:EngineContext,user:Principal,run:string,options:{whole?:(run:string,digest:string)=>Promise<ResultSummary|null>}={}):Promise<RunStatistics|null>{
   const store=ctx.deps.records.store;
   if(!store.findDigests){const summary=await getRunSummary(ctx,user,run);return summary?runStatistics(summary):null;}
   const stored=await visibleRun(ctx,user,run);if(!stored)return null;
-  const known=(digest:string)=>resultSummaryOf(store,run,digest);
+  // One result can be both the current and the production result: it is asked about once.
+  const asked=new Map<string,Promise<ResultSummary|null>>();
+  const known=(digest:string):Promise<ResultSummary|null>=>{let summary=asked.get(digest);if(!summary){summary=resultSummaryOf(store,run,digest,options.whole);asked.set(digest,summary);}return summary;};
   // latestAccepted, by summary: the newest result first, then pages that double.
   let technicalLatest:ResultSummary|null=null,cursor:string|null=null,size=1;
   search:do{

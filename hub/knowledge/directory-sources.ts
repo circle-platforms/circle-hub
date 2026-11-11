@@ -2,7 +2,10 @@
 // one revision, the whole subtree, no batch cut. The walk is the adoc-format skill's generic module, reached only
 // through that pack's api.ts; the version-line directory spelling is the layout the product pack declares.
 import type { Producer } from '../../contracts/src/product.ts';
-import { DIRECTORY_LIMITS, DirectorySourceError, booksOf, directoryOf, listedSources, mainsOf, rootId } from '../../packs/skill/adoc-format/api.ts';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { sha256Hex } from '../records/api.ts';
+import { DIRECTORY_LIMITS, DirectorySourceError, PACK_DIR, booksOf, directoryOf, listedSources, mainsOf, rootId } from '../../packs/skill/adoc-format/api.ts';
 import { readSource } from './page.ts';
 import type { SourceLoader } from './sources.ts';
 
@@ -26,8 +29,25 @@ export function declaredDirectory(producer: Producer): { meta: DirectorySlot | n
   };
 }
 
+/**
+ * The skill whose walk bound a production's sources (issue 34, decision 157): the pack's id and version as its manifest
+ * states them, the walk module, and the SHA-256 of that module's bytes as this process loaded them. The manifest of that
+ * version lists the same file with its digest, so the record can be checked against the published skill. A production
+ * whose walk ran inside the product pack's sandbox carries the product pack's digest instead, which covers its copy.
+ */
+export interface DirectorySkill { id: string; version: string; module: string; sha256: string }
+const WALK_MODULE = 'functions/directory.ts';
+let walkSkill: Promise<DirectorySkill> | undefined;
+export function directorySkill(): Promise<DirectorySkill> {
+  return (walkSkill ??= (async () => {
+    const manifest = JSON.parse(await readFile(join(PACK_DIR, 'pack.json'), 'utf8')) as { id?: unknown; version?: unknown };
+    if (typeof manifest.id !== 'string' || typeof manifest.version !== 'string') throw new Error('目录遍历技能包的清单缺少包名或版本');
+    return { id: manifest.id, version: manifest.version, module: WALK_MODULE, sha256: sha256Hex(await readFile(join(PACK_DIR, WALK_MODULE))) };
+  })());
+}
+
 export type DirectoryBind =
-  | { ok: true; sources: Record<string, string | string[]> | null }
+  | { ok: true; sources: Record<string, string | string[]> | null; skill?: DirectorySkill }
   | { ok: false; slot: string; detail: string; next: string };
 
 /**
@@ -117,5 +137,5 @@ export async function bindDirectorySources(input: {
   const sources: Record<string, string | string[]> = {};
   if (declared.meta) sources[declared.meta.role] = rootId(path);
   if (declared.many) sources[declared.many.role] = files;
-  return { ok: true, sources };
+  return { ok: true, sources, skill: await directorySkill() };
 }

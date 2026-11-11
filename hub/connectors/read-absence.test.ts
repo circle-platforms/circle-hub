@@ -1,4 +1,5 @@
 // Synthetic injected responses; no external host is contacted.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
@@ -49,7 +50,7 @@ test('a known projection failure has a registered public correction, while an in
  const hidden=await w.external();assert.ok(!hidden.ok && hidden.inputError===undefined);
 });
 
-test('a retained envelope never discloses its message through public or persisted failure diagnostics',async t=>{
+test('a retained envelope never discloses its message through public or persisted failure diagnostics',async t=>{ credentialDetectorsFor(t);
  const secret='SyntheticEnvelopePassword42';
  const body=JSON.stringify({code:7,password:secret,msg:'password='+secret});
  const w=await world(t,200,undefined,body,true);

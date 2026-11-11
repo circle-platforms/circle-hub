@@ -300,7 +300,9 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
     assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
     // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
-    const again = (await client.call('submit_result', v.sent!)).out.dispatch?.[0];
+    // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
+    const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
+    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /未发出；原因：.*租约.*这次重交 Hub 已再试/);
     assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^Hub 没有派发：.*租约/);
     assert.equal(submissions, before);
     await release(partial);

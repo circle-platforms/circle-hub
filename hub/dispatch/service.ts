@@ -16,7 +16,7 @@ import {background} from '../telemetry/api.ts';
 import {resolveExecutor} from './source.ts';
 import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
-import { RpcClient, CapabilityPolicyError, InvocationDefinitionError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
+import { RpcClient, CapabilityPolicyError, HttpReplyError, IncompleteReplyError, InvocationDefinitionError, ResponseStorageError, RpcReplyError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
 import { probeValues, type BuildKnowledge, type SeatEcho } from './probes.ts';
 import { DeviceObservation } from '../../contracts/src/pack.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
@@ -81,7 +81,7 @@ export interface DispatchOptions {
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus {report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus {/** The request id of the submit intent (issue 142): what the Hub asks the target about when no answer came. */request_id?:string;/** The stage at which the target refused, as the target names it, when the refusal is certified. */rejection_stage?:string;/** Ended before the submit was called: nothing was sent, and the cause may pass. */not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
 interface Heartbeat {stop:()=>Promise<void>;held:()=>boolean;lastConfirmedAt:()=>number|null;}
 interface LeaseClock {at:number;mono:number;ttl:number;}
@@ -128,6 +128,21 @@ class LeaseCoverageError extends Error {
 }
 /** Another job holds the physical target. The message names the jobs and the administrator's commands (the CLI shows it);
  * the Hub's own dispatch tells the runner only that the target is occupied, since those jobs may be other users'. */
+/** The target did not grant its lease: nothing was submitted. */
+export class TargetLeaseError extends Error { constructor(){super('目标租约未取得，未提交');} }
+/**
+ * What the runner is told when nothing was sent (issue 142): the kind of the cause, in the Hub's own fixed words. The
+ * target's text, its address and the error's detail stay in the administrator's `reason`.
+ */
+function notSentReason(error:unknown):string|undefined {
+  if(error instanceof TargetLeaseError)return '目标环境没有给出租约，可能正被占用';
+  if(error instanceof IncompleteReplyError)return '目标没有给出完整应答：连不上、超时或应答超限';
+  if(error instanceof HttpReplyError)return `目标的 HTTP 应答不成功（状态码 ${error.status}）`;
+  if(error instanceof RpcReplyError)return '目标的应答不符合约定的协议';
+  if(error instanceof ToolReplyError)return '目标拒绝了提交之前的调用（取得租约或只读核对）';
+  if(error instanceof ResponseStorageError)return 'Hub 没能保存目标的应答';
+  return undefined;
+}
 export class TargetOccupiedError extends Error {
   readonly jobs: readonly string[];
   constructor(jobs: readonly string[], message: string) { super(message); this.jobs = jobs; }
@@ -167,6 +182,9 @@ export class DispatchService {
     const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || retrySafeOutcome(e.body.detail.outcome) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
     const unknown = isFrozen(events); const result = projectedResult(events); const end = eventOf(events, 'complete')??eventOf(events,'boundary_refused');
     const intent = eventOf(events, 'intent'); const receipt = receiptOf(events);
+    // The stage word of a certified rejection is the target's own: handed on only when it is a short plain word.
+    const stage=[...events].reverse().find(e=>e.body.detail.phase==='rejection')?.body.detail.stage;
+    const rejectionStage=typeof stage==='string'&&/^[\p{L}\p{N}_. -]{1,64}$/u.test(stage)?stage:undefined;
     const uncertainty = [...events].reverse().find(e => e.body.detail.uncertain === true && typeof e.body.detail.missing_fact === 'string');
     const decision=eventOf(events,'dispose');const choice=decision?.body.detail.disposition;
     const riskDisposed=choice==='mark_failed' && decision?.body.detail.risk_confirmed===true;
@@ -186,7 +204,7 @@ export class DispatchService {
     if(typeof note==='string'){try{const bytes=await this.options.records.objects.get(note);if(!bytes||sha256Hex(bytes)!==note)throw new Error('missing');adminRelease=JSON.parse(new TextDecoder().decode(bytes)).checks;}catch{adminReleaseMissing=true;}}
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=roundRecords(events).filter(e=>typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
-    return { job,...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}), phase: String(events.at(-1)!.body.detail.phase),
+    return { job,...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}),...(typeof intent?.body.detail.request_id==='string'?{request_id:intent.body.detail.request_id}:{}),...(rejectionStage!==undefined?{rejection_stage:rejectionStage}:{}),...(end?.body.detail.phase==='complete'&&end.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?{not_sent:true}:{}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:pendingReport&&!unknown&&!missingReceipt?{next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:`circle-hub job resume ${job}；只读补报告，不重交`}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
@@ -640,7 +658,7 @@ export class DispatchService {
         else await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
       }
       else {
-        await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(error instanceof CapabilityPolicyError || error instanceof InvocationDefinitionError || error instanceof InputVerificationError || error instanceof PrecheckFactError ? {public_reason:error.message} : {}),...(error instanceof PrecheckFactError?{missing_fact:error.missing_fact}:{}), reason: session.redact(error instanceof Error ? error.message.toWellFormed().slice(0, 1000) : '前提核对出错'), next_action:error instanceof PrecheckFactError?error.next_action:'核对只读条件、租约和执行器定义后重新核验；没有提交' });
+        await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(error instanceof CapabilityPolicyError || error instanceof InvocationDefinitionError || error instanceof InputVerificationError || error instanceof PrecheckFactError ? {public_reason:error.message} : notSentReason(error)!==undefined ? {public_reason:notSentReason(error)} : {}),...(error instanceof PrecheckFactError?{missing_fact:error.missing_fact}:{}), submit_invoked:false, reason: session.redact(error instanceof Error ? error.message.toWellFormed().slice(0, 1000) : '前提核对出错'), next_action:error instanceof PrecheckFactError?error.next_action:'核对只读条件、租约和执行器定义后重新核验；没有提交' });
         if (remote) await this.release(binding, session, remote);
       }
       return await this.status(by, binding.job);
@@ -1056,7 +1074,7 @@ export class DispatchService {
     const started={at:this.now().getTime(),mono:performance.now()};
     const response = await client.call('acquire', context);
     const lease = { id: at(response.value, d.lease.id), token: at(response.value, d.lease.token), ttl: Number(at(response.value, d.lease.ttl_ms)) * d.lease.ttl_scale_ms };
-    if (mapped(d.lease.map, at(response.value, d.lease.acceptance)) !== 'accepted' || !this.opaque(lease.id) || !this.opaque(lease.token) || !Number.isFinite(lease.ttl) || lease.ttl < 3) throw new Error('目标租约未取得，未提交');
+    if (mapped(d.lease.map, at(response.value, d.lease.acceptance)) !== 'accepted' || !this.opaque(lease.id) || !this.opaque(lease.token) || !Number.isFinite(lease.ttl) || lease.ttl < 3) throw new TargetLeaseError();
     await this.journal.append(binding, 'acquire', 'lease', 'completed', { op:'acquire' satisfies LeaseOp,remote_lease: lease }, [response.source]);this.#leaseClocks.set(lease,{...started,ttl:lease.ttl}); return lease;
   }
   private opaque(value: unknown): boolean { return (typeof value === 'string' && !/[\x00-\x1f\x7f-\x9f]/.test(value) && value.length > 0 && value.length <= 4096 && !value.includes('[已隐藏]')) || (typeof value === 'number' && Number.isSafeInteger(value)); }
