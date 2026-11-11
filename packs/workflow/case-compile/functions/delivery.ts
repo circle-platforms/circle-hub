@@ -7,6 +7,7 @@
 // that are checked verbatim; nothing here reads device prose to decide anything.
 import { isRecord } from './text.ts';
 import { isDynamicTerminal, labelOf } from './generated/vocabulary.ts';
+import { movedText, type MovedCase } from './channels.ts';
 
 export const STATUS = { delivered: '交付', failed: '上机未通过', unsettled: '上机没有结论', unrun: '没有上机' } as const;
 export type Status = keyof typeof STATUS;
@@ -379,6 +380,7 @@ export interface ReportInput {
   logs: Record<string, { reference: string; job: string; text: string | null; withheld?: string }>;
   /** The pass review: how many markers the contracts declared (null: none declared), passes read, turned into no verdict, and passes with no device words saved. */
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
+  placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || `用例 …${autoid.slice(-6)}`;
 /** The closings of the failed cases, of those whose pass was dropped and of those never dispatched, one sentence each, naming only those that occur; empty when none closed. */
@@ -398,6 +400,7 @@ function head(input: ReportInput): string[] {
     unsuccessful && input.files.unsuccessful ? `- 未通过卷 \`unsuccessful_cases.xlsx\`：${unsuccessful.items.length} 个用例，每条用它最后一次上机的计划（计划运行 ${[...new Set(unsuccessful.items.map((item) => unsuccessful.sources[item].plan_run))].join('、')}），没有再上机。` : '- 没有未通过卷：没有带计划却没通过的用例。',
   ];
   if (input.build) lines.push(`- 构建：${input.build}`);
+  for (const [label, moved] of [['通过卷', input.placedLast?.pass], ['未通过卷', input.placedLast?.unsuccessful]] as const) if (moved?.length) lines.push(`- ${label}：${movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const)))}`);
   const audit = input.passAudit;
   if (audit) lines.push(audit.markers === null
     ? '- 通过复核：合约没有声明执行失败标记，通过的条目没有按 InfoTest 的规则复核。'

@@ -1,9 +1,6 @@
-// Display of claims (B01, D05 R[6]) and layer terminals (V03) for the MCP content text and the console. Claims are shown in
-// DISPLAY_ORDER; every enumeration value is shown through the generated vocabulary: the model's labels for the text models
-// read, the interface terms for the console (display rule 20). Unknown terminals have their own symbol and are never shown
-// as success or failure.
+// Console fields keep their contract labels; reader-facing conclusions use the display mappings below.
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
-import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type DynamicTerminal, type Layer, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
+import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
 import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
@@ -16,7 +13,7 @@ export interface Labels {
   axis: typeof axisLabel;
 }
 
-/** The model's labels: the MCP content text and the CLI. */
+/** Contract labels used by existing displays. */
 export const MODEL_LABELS: Labels = { of: labelOf, axis: axisLabel };
 /** The interface terms of the console (display rule 20); a value without one shows its label. */
 export const INTERFACE_LABELS: Labels = { of: uiLabelOf, axis: axisUiLabel };
@@ -163,4 +160,44 @@ export function requirementText(r: RequirementResult, labels: Labels = MODEL_LAB
   const declared = r.layers.map((layer) => terminalText(layer, labels));
   const others = LAYER.filter((layer) => !r.layers.some((l) => l.layer === layer)).map((layer) => `${labels.of('layer', layer)}：${NOT_APPLICABLE}`);
   return `${r.requirement}：${[...declared, ...others].join('；')}；${statusText(r, labels)}`;
+}
+
+export const USER_REASON = {
+  data_gap: '缺资料', author_input: '原始用例的问题', producer_error: '编写模型的问题',
+  transient: '临时故障', target_side: '设备的问题', unattributed: '还没查清',
+} as const satisfies Record<Attribution, string>;
+
+export const USER_DECIDER = { function: '程序', model: '模型', human: '使用者' } as const satisfies Record<ProducerKind, string>;
+
+const REASON_TEXT = {
+  no_check: '缺资料', check_error: '还没查清', timeout: '临时故障', missing_input: '缺资料',
+  declared_skip: '还没查清', not_covered: '缺资料', awaiting_step: '缺资料', output_failed: '还没查清',
+  repair_exhausted: '还没查清', budget_exhausted: '还没查清', integrity_unproven: '缺资料',
+} as const satisfies Record<Reason, string>;
+
+const NEXT_STEP = {
+  reread: '程序重新读取资料', reconcile: '程序重新核对资料', observe: '程序重新读取设备输出',
+  request: '使用者补齐资料', rerun: '使用者重新核对原始用例', reevaluate: '程序重新核对结论',
+} as const satisfies Record<ExitAction, string>;
+
+export function userReason(layer: Pick<LayerResult, 'attribution' | 'reason'>): string {
+  return layer.attribution !== undefined ? USER_REASON[layer.attribution] : layer.reason !== undefined ? REASON_TEXT[layer.reason] : '还没查清';
+}
+
+export function userNextStep(layer: Pick<LayerResult, 'exit'>): string {
+  return layer.exit === undefined ? '使用者核对资料后重新交给 Hub 检查' : NEXT_STEP[layer.exit.action];
+}
+
+export function userClaimText(claim: Claim): string {
+  const unknown = claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || claim.statement.verdict === 'unknown' || claim.statement.verdict === 'abstain';
+  const status = unknown ? '未知' : claim.qualifier.nature === 'judgment' || claim.warrant.producer === 'model' ? '未确认' : '已确认';
+  const judgment = unknown ? undefined : claim.statement.verdict === 'support' ? '正确' : claim.statement.verdict === 'refute' ? '错误' : undefined;
+  const parts = [claim.statement.text, `状态${status}`, judgment === undefined ? undefined : `判断${judgment}`];
+  if (unknown || judgment === '错误') {
+    parts.push(`原因${claim.statement.reason === undefined ? '还没查清' : REASON_TEXT[claim.statement.reason]}`, '下一步由使用者核对原始用例和资料');
+  }
+  const quotes = claim.resolutions?.map(value => value.text) ?? [];
+  if (quotes.length) parts.push(`证据${quotes.join('；')}`);
+  parts.push(`决定者${USER_DECIDER[claim.warrant.producer]}`);
+  return join(parts, '；');
 }

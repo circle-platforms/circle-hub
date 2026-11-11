@@ -1,0 +1,99 @@
+{
+  "id": "help_mismatch",
+  "source": "author",
+  "check": "bed",
+  "note": "合成反例：help 条目写的行和冻结的参数不是同一行，重算对不上",
+  "subject": {
+    "items": [
+      {
+        "id": "bed-a/afamx0",
+        "location": "src:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/json@1/p/beds/0",
+        "fields": {
+          "action": "help",
+          "booking": "run_book1",
+          "bed": "bed-a",
+          "device": "afamx0",
+          "line": "widget set demo 2",
+          "mode": null,
+          "key": "bed/bed-a/afamx0",
+          "conclusion": "向 bed-a 的设备 afamx0 问命令行“widget set demo 1”各个位置的说明：只问、不按回车、不执行（预订 run_book1）"
+        }
+      }
+    ],
+    "context": {
+      "groups": [
+        {
+          "action": "help",
+          "need": {
+            "devices": []
+          },
+          "bed": null,
+          "addresses": null,
+          "booking": "run_book1",
+          "reason": "",
+          "devices": null,
+          "manifest": {
+            "schema": "test-bed-manifest@1",
+            "beds": [
+              {
+                "name": "bed-a",
+                "devices": [
+                  {
+                    "name": "afamx0",
+                    "type": "load-balancer",
+                    "ipv4": [
+                      "192.0.2.10/26"
+                    ],
+                    "ipv6": []
+                  },
+                  {
+                    "name": "client0",
+                    "type": "client",
+                    "ipv4": [
+                      "192.0.2.74/26"
+                    ],
+                    "ipv6": []
+                  }
+                ],
+                "services": [],
+                "reserved": []
+              }
+            ]
+          },
+          "leases": {
+            "now": "2026-10-22T02:00:00.000Z",
+            "entries": [
+              {
+                "key": "bed/bed-a/afamx0",
+                "until": null,
+                "mine": true,
+                "run": "run_sample",
+                "since": "2026-10-22T02:00:00.000Z",
+                "jobs": []
+              },
+              {
+                "key": "bed/bed-a/client0",
+                "until": null,
+                "mine": true,
+                "run": "run_sample",
+                "since": "2026-10-22T02:00:00.000Z",
+                "jobs": []
+              }
+            ],
+            "registrations": []
+          },
+          "device": "afamx0",
+          "line": "widget set demo 1",
+          "mode": null
+        }
+      ]
+    }
+  },
+  "expect": [
+    {
+      "verdict": "refute",
+      "code": "test-bed.help_mismatch",
+      "tier": "advisory"
+    }
+  ]
+}

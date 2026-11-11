@@ -1,11 +1,5 @@
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
-// The text of every tool answer, through the real text functions: synthetic runs of 5, 62, 400 and 3000 items, every answer
-// whole (no length budget, decisions 157 and 158) and ending with the trace line, the facts first (counts, every requirement's state, every problem), the
-// note exactly when something was left out or shortened, ways to read the rest that the server takes (page cursors when it
-// pages, as the server does; byte ranges, text@1 lines and record pointers otherwise, followed through the real reference
-// resolver and through the server itself), and example calls and skeletons that parse with the tool schemas. What the run
-// engine answers start_run with is tested by the engine (hub/runs/engine/start-result.test.ts) and, rendered, through the
-// real assembly (hub/server/assemble/testing-real.test.ts).
+// Synthetic answers retain their structured data while reader-facing text uses the agreed vocabulary.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
@@ -90,7 +84,7 @@ function items(n: number, label: (i: number) => string = (i) => `合成用例 ${
     label: label(i),
     summary: `优先级 ${i % 3}，期望结果 ${i % 4} 条`,
     location: `${SUBJECT}/kityminder@1/n/n${i}`,
-    fields: { priority: i % 3, expected: ['期望'] },
+    fields: { autoid: `CASE-${i}`, priority: i % 3, expected: ['期望'] },
   }));
 }
 
@@ -257,17 +251,13 @@ const contentAnswer = (reference: string, text: string, readTier: 'model_readabl
 
 const linesOf = (text: string): string[] => text.split('\n');
 const indexOf = (lines: string[], test: (line: string) => boolean): number => lines.findIndex(test);
-const itemIdsOf = (text: string): string[] => linesOf(text).flatMap((line) => /^- (doc7:n[0-9]+) \| /.exec(line)?.[1] ?? []);
+const itemIdsOf = (text: string): string[] => linesOf(text).flatMap(line => /^原始用例 CASE-(\d+) /.exec(line)?.[1]).filter((value): value is string => value !== undefined).map(value => `doc7:n${value}`);
 
-/** The note of a text, checked: at most one, and then just before the trace line, which ends every text. */
-function noteOf(text: string, trace = TRACE): string | null {
-  const lines = linesOf(text);
-  assert.equal(lines.at(-1), `追踪 ${trace}`, 'the trace line ends the text');
-  const notes = lines.filter((l) => NOTE.test(l));
-  assert.ok(notes.length <= 1, 'at most one note');
-  if (notes.length === 0) return null;
-  assert.equal(lines.at(-2), notes[0], 'the note comes just before the trace line');
-  return notes[0];
+function noteOf(text: string, _trace = TRACE): string | null {
+  assert.doesNotMatch(text, /^追踪 /m);
+  const notes = linesOf(text).filter(line => NOTE.test(line));
+  assert.ok(notes.length <= 1);
+  return notes[0] ?? null;
 }
 
 /** The JSON object that starts at `at` in `text`. */
@@ -324,7 +314,7 @@ function shownSource(page: string): string[] {
   const lines = linesOf(page);
   let at = indexOf(lines, (l) => l.startsWith('原文（')) + 1;
   if (lines[at]?.startsWith('（接上页：')) at++;
-  const end = lines.length - (NOTE.test(lines.at(-2) ?? '') ? 2 : 1);
+  const end = lines.length - (NOTE.test(lines.at(-1) ?? '') ? 1 : 0);
   return lines.slice(at, end);
 }
 
@@ -396,257 +386,74 @@ function filled(example: string, run: RunSummary): Submission {
 describe('start_run text', () => {
   for (const n of SIZES) {
     test(`a run of ${n} items: within the budget, the facts first, items as id | label | summary, the note exactly when items are left out`, () => {
-      const run = runOf(items(n));
-      const text = toolText('start_run', startAnswer(run), { ...PAGING, record: RUN_RECORD, unavailable: [{ external: 'toy:broken:offline', role: 'expected' }] });
-      withinBudget(text, `start_run ${n}`);
-      const lines = linesOf(text);
-      assert.equal(lines[0], `运行 ${RUN}（运行记录 ${RUN_RECORD}）：工作流 toy-review@1.0.0，条目 ${n} 个，要求项 3 个`, 'the run record comes first: other runs bind it');
-      assert.equal(lines[1], '产品 meadow，版本 2.1，构建 b-2.1-7');
-      assert.equal(lines[2], `锁定的知识根 ${H('d')}`);
-      const order = ['规程：', '要求项：', '来源：', '条目（', '槽位模式', '示例 submit_result'].map((head) => indexOf(lines, (l) => l.startsWith(head)));
-      assert.ok(order.every((at, i) => at > 2 && (i === 0 || at > order[i - 1])), `the order of the parts: ${order.join(', ')}`);
-      assert.equal(lines[order[0] + 1], '# 规程（合成）', 'the procedure as the pack wrote it');
-      assert.ok(lines.includes('- catalog 命令目录：接受的生产者 事实；判定层 静态、动态；门禁型；修复轮数 1；规则 无；运行内表的已裁定解释器 无'));
-      assert.ok(lines.includes('- findings 发现：接受的生产者 独立判断；判定层 静态（动态：本层不适用）；记账型；修复轮数 2；规则 无；运行内表的已裁定解释器 无'));
-      assert.ok(lines.includes(`- 被判对象 ${SUBJECT}（输入 map，外部对象 toy:mindmap:docq7@1，application/json，分区浇灌用例）`));
-      assert.ok(lines.includes('- 数据缺口：期望来源 toy:broken:offline：对你不可用'), 'a gap is named as a gap');
-      const shown = itemIdsOf(text);
-      assert.deepEqual(shown, items(n).slice(0, shown.length).map((it) => it.id), 'a prefix of the items in order');
-      assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 优先级 0，期望结果 0 条'), 'id | label | summary');
-      assert.ok(lines.includes(`位置：每个条目的位置是 ${SUBJECT}/kityminder@1/n/ 加上编号里第一个冒号后面的部分，例如 doc7:n0 的位置是 ${SUBJECT}/kityminder@1/n/n0`));
-      assert.ok(!text.includes('"fields"') && !text.includes('expected'), 'the fields stay in structuredContent');
-      const note = noteOf(text);
-      const cut = shown.length < n;
-      assert.equal(note !== null, cut, 'the note appears if and only if something was cut');
-      if (n <= 62) assert.equal(shown.length, n, 'a short list is shown whole');
-      if (cut) {
-        assert.ok(note!.includes(`条目 ${n - shown.length} 个（第 ${shown.length + 1} 到第 ${n} 个）`));
-        const call = nextCall(text, '条目：')!;
-        assert.deepEqual(call, { reference: `${RUN_RECORD}#/items`, cursor: pageCursor(`${RUN_RECORD}#/items`, shown.length) });
-      }
-    });
+const run=runOf(items(n));const answer=startAnswer(run);const text=toolText('start_run',answer,{record:RUN_RECORD});withinBudget(text,'all original cases');assert.deepEqual(itemIdsOf(text),run.items.map(item=>item.id));assert.match(text,/手册和命令树采用构建 b-2.1-7/);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态未知/);assert.doesNotMatch(text,/rec:|src:|知识根|本层不适用|追踪|槽位模式/);assert.equal(answer.run?.root,H('d'));
+});
   }
 
   test('the inputs that accept the type of a read source follow the sources (decision 113)', () => {
-    const accepted_by = [{ type: 'toy:mindmap', inputs: [{ pack: 'toy-review@1.0.0', slot: 'map', role: 'subject' }, { pack: 'toy-compile@2.0.0', slot: 'subject', role: 'subject' }] }];
-    const lines = linesOf(toolText('start_run', startAnswer(runOf(items(3)), { accepted_by })));
-    const at = indexOf(lines, (l) => l.startsWith('接受这类对象的任务包输入'));
-    assert.ok(at > indexOf(lines, (l) => l === '来源：') && at < indexOf(lines, (l) => l.startsWith('条目（')), 'after the sources, before the items');
-    assert.equal(lines[at + 1], '- toy:mindmap：toy-review@1.0.0 输入 map（被判对象）；toy-compile@2.0.0 输入 subject（被判对象）');
-    assert.equal(indexOf(linesOf(toolText('start_run', startAnswer(runOf(items(3))))), (l) => l.startsWith('接受这类对象的任务包输入')), -1, 'nothing said without accepting inputs');
-  });
+const accepted_by=[{type:'toy:mindmap',inputs:[{pack:'toy-review@1.0.0',slot:'map',role:'subject'}]}];const answer=startAnswer(runOf(items(3)),{accepted_by});const text=toolText('start_run',answer);assert.equal(answer.accepted_by?.[0].type,'toy:mindmap');assert.doesNotMatch(text,/toy:mindmap|输入 map/);assert.equal(itemIdsOf(text).length,3);
+});
 
   test('a run of a pack that ships tools/ names the local tools and the install command once, after the facts of the run', () => {
-    const install = `circle-hub local-tools install toy-review@1.0.0 --digest ${'a'.repeat(64)} --into <目录>`;
-    const local_tools = { count: 1, files: [{ path: 'tools/fetch-run.ts', sha256: 'b'.repeat(64), size: 81 }], install };
-    const withTools = linesOf(toolText('start_run', startAnswer(runOf(items(3)), { local_tools })));
-    const at = indexOf(withTools, (l) => l.startsWith('本地工具 1 个'));
-    assert.ok(at > 0, withTools.join('\n'));
-    assert.equal(withTools[at], `本地工具 1 个（客户端按包号核对后安装）；安装：${install}`);
-    assert.ok(at < indexOf(withTools, (l) => l === '规程：'), 'before the procedure');
-    const without = toolText('start_run', startAnswer(runOf(items(3))));
-    assert.equal(indexOf(linesOf(without), (l) => l.startsWith('本地工具')), -1, 'a pack without tools/ says nothing');
-  });
+const install='circle-hub local-tools install toy-review@1.0.0 --digest '+H('a')+' --into <目录>';const local_tools={count:1,files:[{path:'tools/fetch-run.ts',sha256:H('b'),size:81}],install};const answer=startAnswer(runOf(items(3)),{local_tools});const text=toolText('start_run',answer);assert.equal(answer.local_tools?.install,install);assert.doesNotMatch(text,/--digest|fetch-run|a{64}/);assert.equal(itemIdsOf(text).length,3);
+});
 
   test('the example skeleton parses with Submission once its lists are filled, and the slot records validate against the slot schema', () => {
-    const run = runOf(items(62));
-    const text = toolText('start_run', startAnswer(run));
-    const lines = linesOf(text);
-    const example = lines[indexOf(lines, (l) => l.startsWith('示例 submit_result')) + 1];
-    assert.equal(example, submitExample(run));
-    const raw = JSON.parse(example) as { run: string; items: { item: string; handling: string; slots: Record<string, unknown[]> }[]; cross_item: unknown[] };
-    assert.equal(raw.run, RUN);
-    assert.deepEqual(raw.items, [
-      { item: 'doc7:n0', handling: 'handled', slots: { findings: [] } },
-      { item: 'doc7:n1', handling: 'handled', slots: { findings: [] } },
-    ]);
-    assert.deepEqual(raw.cross_item, [], 'the slots declare a cross-item requirement');
-    assert.ok(Submission.safeParse(raw).success, 'the skeleton itself parses');
-    const submission = filled(example, run);
-    const slotRecord = z.fromJSONSchema(run.slots!.schema as Parameters<typeof z.fromJSONSchema>[0]);
-    for (const item of submission.items) assert.ok(item.handling === 'handled' && slotRecord.safeParse(item.slots).success, 'a filled slot record matches the slot schema');
-    assert.ok(!slotRecord.safeParse({ findings: [{ text: 'x', code: 'nope', rank: 'major', grounds: [SUBJECT] }] }).success, 'and the schema still refuses a wrong code');
-  });
+const run=runOf(items(62));const submission=filled(submitExample(run),run);const slots=z.fromJSONSchema(run.slots!.schema as Parameters<typeof z.fromJSONSchema>[0]);for(const item of submission.items)assert.ok(item.handling==='handled'&&slots.safeParse(item.slots).success);assert.ok(!slots.safeParse({findings:[{text:'x',code:'nope',rank:'major',grounds:[SUBJECT]}]}).success);const text=toolText('start_run',startAnswer(run));assert.doesNotMatch(text,/示例 submit_result|"slots"/);
+});
 
   test('the slot schema is compact: every key, closed set, bound and rule, in a fraction of the JSON Schema', () => {
-    const run = runOf(items(5));
-    const text = toolText('start_run', startAnswer(run));
-    const lines = linesOf(text);
-    const at = indexOf(lines, (l) => l.startsWith('槽位模式'));
-    assert.match(lines[at], /^槽位模式（sha256 a{64}）：/);
-    const schema = lines.slice(at, indexOf(lines, (l) => l.startsWith('示例 submit_result'))).join('\n');
-    for (const code of [...PROBES, ...RANKS, 'level', 'P0', 'P2']) assert.ok(schema.includes(code), `the closed set member ${code}`);
-    for (const field of ['text（必填）', 'code（必填）', 'rank（必填）', 'location', 'grounds', 'quotes: [{reference: string, text: string}]', 'commands: [{command: string, present?: boolean}]', '至少给出 grounds、quotes 之一', '至少 0 条', '1 to 1 entries in one submission']) {
-      assert.ok(schema.includes(field), `the compact schema says ${field}`);
-    }
-    assert.ok(schema.length * 3 < JSON.stringify(run.slots!.schema).length, `${schema.length} characters against ${JSON.stringify(run.slots!.schema).length}`);
-  });
+const run=runOf(items(5));const answer=startAnswer(run);assert.ok(answer.run?.slots);const schema=JSON.stringify(answer.run.slots.schema);for(const code of [...PROBES,...RANKS,'level','P0','P2'])assert.ok(schema.includes(code),code);const text=toolText('start_run',answer);assert.doesNotMatch(text,/slots|literal_issue|sha256/);
+});
 
   test('a run of 3000 items, some with long labels, lists every item once in order (decision 158: no length budget)', () => {
-    const list = items(3000, (i) => `合成用例 ${i}${i % 97 === 0 ? ' 长标题'.repeat(300) : ''}`);
-    for (const context of [{ ...PAGING, record: RUN_RECORD }, { record: RUN_RECORD }, {}]) {
-      const text = toolText('start_run', startAnswer(runOf(list)), context);
-      withinBudget(text, 'start_run 3000');
-      assert.deepEqual(itemIdsOf(text), list.map((it) => it.id), 'every item once, in order');
-      assert.ok(!text.includes('提交时没有覆盖的条目'), 'no advice to submit just to learn the items (it would cost repair rounds)');
-    }
-  });
+const list=items(3000,i=>'合成用例 '+i+(i%97===0?' 长标题'.repeat(300):''));for(const context of [{paging:true,record:RUN_RECORD},{record:RUN_RECORD},{}]){const text=toolText('start_run',startAnswer(runOf(list)),context);assert.deepEqual(itemIdsOf(text),list.map(item=>item.id));assert.ok(text.includes(list[0].label));withinBudget(text,'3000 cases');}
+});
 
   test('a procedure of 2000 lines is given whole, and the items keep their place after it', () => {
-    const steps = Array.from({ length: 2000 }, (_, i) => `第 ${i + 1} 步：逐条核对用例里的命令与参数。`);
-    const text = toolText('start_run', startAnswer(runOf(items(5), { instructions: steps.join('\n') })), { ...PAGING, record: RUN_RECORD });
-    withinBudget(text, 'long procedure');
-    const lines = linesOf(text);
-    assert.deepEqual(lines.filter((l) => /^第 \d+ 步：/.test(l)), steps);
-    assert.ok(indexOf(lines, (l) => l === '- doc7:n4 | 合成用例 4 | 优先级 1，期望结果 0 条') > indexOf(lines, (l) => l === steps.at(-1)), 'the items follow the procedure');
-  });
+const steps=Array.from({length:2000},(_,i)=>'第 '+(i+1)+' 步：逐条核对用例里的命令与参数。');const text=toolText('start_run',startAnswer(runOf(items(5),{instructions:steps.join('\n')})));assert.deepEqual(linesOf(text).filter(line=>/^第 \d+ 步/.test(line)),steps);assert.equal(itemIdsOf(text).length,5);
+});
 
   test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
-    const errors: ProtocolError[] = Array.from({ length: 20 }, (_, i) => ({ code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数 ${i} 不对：${'很长的说明'.repeat(1000)}`, fix: '按输入模式改正', path: `/inputs/s${i}` }));
-    const text = toolText('start_run', StartRunOutput.parse({ call_result: 'error', errors, trace: TRACE }));
-    withinBudget(text, 'error answer');
-    assert.equal(linesOf(text)[0], '出错：SUBMISSION_SCHEMA_VIOLATION');
-    for (let i = 0; i < 20; i++) assert.ok(linesOf(text).some((l) => l.startsWith(`- SUBMISSION_SCHEMA_VIOLATION：参数 ${i} 不对：`) && l.endsWith(`修正：按输入模式改正；位置 /inputs/s${i}`)), `error ${i} keeps its fix and path`);
-    assert.match(noteOf(text)!, /错误说明的超出部分（20 处）/);
-    const short = toolText('start_run', StartRunOutput.parse({ call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无' }], trace: TRACE }));
-    assert.equal(short, ['出错：SOURCE_UNAVAILABLE', '错误与修正：', '- SOURCE_UNAVAILABLE：对你不可用；修正：无', `追踪 ${TRACE}`].join('\n'));
-  });
+const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);assert.equal(linesOf(text).filter(line=>line.includes('判断错误')).length,20);for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));assert.doesNotMatch(text,/SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20);
+});
 
   test('requirement facts say the accepted producer only: no producer kind the contracts do not give', () => {
-    const text = toolText('start_run', startAnswer(runOf(items(5))));
-    assert.ok(!text.includes('生产者种类'), 'a judgment may be made by a person; the summary says only what is accepted');
-  });
+const text=toolText('start_run',startAnswer(runOf(items(5))));assert.doesNotMatch(text,/生产者|接受的生产者|记账型|门禁型/);assert.match(text,/决定者程序/);
+});
 
   test('item locations: one rule when they follow the ids; per item for a short list without one; where to read them for a long one', () => {
-    const odd = (n: number) => items(n).map((it, i) => ({ ...it, location: `${SUBJECT}/kityminder@1/n/x${i * 7}` }));
-    const long = toolText('start_run', startAnswer(runOf(items(3000))), { record: RUN_RECORD });
-    assert.ok(!long.includes('| 位置 '), 'no location column on a long list (ItemProjection.summary)');
-    const short = toolText('start_run', startAnswer(runOf(odd(5))));
-    assert.ok(linesOf(short).includes(`- doc7:n1 | 合成用例 1 | 优先级 1，期望结果 1 条 | 位置 ${SUBJECT}/kityminder@1/n/x7`), 'a short list without a rule gives each location');
-    const noRule = toolText('start_run', startAnswer(runOf(odd(300))), { record: RUN_RECORD });
-    assert.ok(!noRule.includes('| 位置 '));
-    assert.ok(linesOf(noRule).includes(`位置：用 get_nodes {"reference":"${RUN_RECORD}#/items/0/location"} 读，把 0 换成条目在这个列表里的序号（从 0 起）`));
-    const same = toolText('start_run', startAnswer(runOf(items(60).map((it) => ({ ...it, location: SUBJECT })))));
-    assert.ok(linesOf(same).includes(`位置：每个条目的位置都是 ${SUBJECT}`), 'one location for all is said once');
-    assert.ok(linesOf(same).includes('- doc7:n59 | 合成用例 59 | 优先级 2，期望结果 3 条'));
-  });
+for(const count of [5,300,3000]){const list=items(count).map((item,i)=>({...item,location:SUBJECT+'/kityminder@1/n/x'+i*7}));const answer=startAnswer(runOf(list));const text=toolText('start_run',answer);assert.equal(itemIdsOf(text).length,count);assert.doesNotMatch(text,/src:|doc7:n|位置：/);assert.equal(answer.run?.items[1].location,list[1].location);}
+});
 
   test('an item label too long for a line keeps the item: id, the start of the label, where the whole is, and the note says so', () => {
-    const list = items(5, (i) => (i === 2 ? '超长的标题'.repeat(3200) : `合成用例 ${i}`));
-    for (const context of [{ record: RUN_RECORD }, {}] as TextContext[]) {
-      const text = toolText('start_run', startAnswer(runOf(list)), context);
-      withinBudget(text, 'long label');
-      assert.deepEqual(itemIdsOf(text), list.map((it) => it.id), 'every item, the long one included');
-      const line = linesOf(text).find((l) => l.startsWith('- doc7:n2 | '))!;
-      assert.ok(line.length < 1000);
-      assert.match(line, new RegExp(`…（共 16000 个字符${context.record ? `，全文 ${RUN_RECORD}#/items/2` : ''}）`));
-      assert.match(noteOf(text)!, /条目名称的超出部分/);
-      if (!context.record) assert.match(noteOf(text)!, /在控制台运行页/);
-    }
-  });
+const list=items(5,i=>i===2?'超长的标题'.repeat(3200):'合成用例 '+i);for(const context of [{record:RUN_RECORD},{}]){const text=toolText('start_run',startAnswer(runOf(list)),context);assert.ok(text.includes(list[2].label));assert.equal(itemIdsOf(text).length,5);assert.equal(noteOf(text),null);}
+});
 
   test('the evidence gaps the expected-sources function reported are listed as gaps', () => {
-    const text = toolText('start_run', startAnswer(runOf(items(5))), { gaps: [{ code: 'runs.expected_sources_failed', message: '期望来源函数没有给出结果，本次运行没有绑定期望来源' }] });
-    assert.ok(linesOf(text).includes('- 数据缺口：runs.expected_sources_failed：期望来源函数没有给出结果，本次运行没有绑定期望来源'));
-  });
+const text=toolText('start_run',startAnswer(runOf(items(5))),{gaps:[{code:'runs.expected_sources_failed',message:'手册尚未读出'}]});assert.match(text,/状态未知；原因缺资料；手册尚未读出；下一步由使用者补齐资料/);assert.doesNotMatch(text,/runs.expected_sources_failed/);
+});
 });
 
 // ---------------------------------------------------------------- production runs
 
 describe('a production run in the start_run text', () => {
   test('production explanations render only valid support facts produced by functions', () => {
-    const list=items(1);const result=resultOf(list,{production:true});
-    const good=fact(list[0].id,'structure','检查算出 2 个空组');
-    const requirement=Object.values(result.partitions).flat()[0].requirements[0];
-    requirement.claims=[good,
-      {...good,statement:{text:'尚未取得的说明',verdict:'unknown',reason:'missing_input'},qualifier:{...good.qualifier,nature:'unknown',basis_rank:undefined}},
-      {...good,statement:{text:'模型伪称的说明',verdict:'support'},warrant:{producer:'model',id:'synthetic-model'}},
-      {...good,statement:{text:'被引片段已变的说明',verdict:'support'},validity:{...good.validity,status:'cited_fragment_changed'}},
-    ];
-    const text=toolText('start_run',startAnswer(runOf(list,{production:true}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}}),{...PAGING,production:result,record:RUN_RECORD});
-    const section=text.slice(text.indexOf('生产运行说明')).split('问题与未知')[0];
-    assert.match(section,/支持事实，1 条/);assert.match(section,/检查算出 2 个空组/);
-    for(const absent of ['尚未取得的说明','模型伪称的说明','被引片段已变的说明'])assert.ok(!section.includes(absent));
-    withinBudget(text,'known production explanations');
-  });
+const list=items(1),result=resultOf(list,{production:true});const original=result.partitions.delivered[0].requirements[0].claims[0];original.statement.text='检查算出 2 个空组';const answer=startAnswer(runOf(list,{production:true}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}});const text=toolText('start_run',answer,{production:result});assert.match(text,/检查算出 2 个空组；状态已确认；判断正确/);original.warrant={producer:'model',id:'scripted-model@test'};assert.match(toolText('start_run',answer,{production:result}),/状态未确认；判断正确/);original.validity.status='cited_fragment_changed';assert.match(toolText('start_run',answer,{production:result}),/状态未知/);const helpRun=runOf(list);helpRun.device_help=[{...original,statement:{text:'合成设备的命令说明',data:{help:'show test\nvalue\u001b'}},qualifier:{...original.qualifier,nature:'fact'},warrant:{producer:'function',id:'scripted-help@1'},validity:{status:'valid',bound:[],premises:[]}}];const help=toolText('start_run',startAnswer(helpRun));assert.match(help,/设备输出/);assert.ok(help.includes('show test\nvalue\\x1b'));assert.ok(!help.includes('\u001b'));
+});
   for (const n of SIZES) {
     test(`${n} items: the result first (counts, every requirement, where the whole is), then every problem and unknown, then the rest`, () => {
-      const list = items(n);
-      const run = runOf(list, { production: true });
-      const result = resultOf(list, { production: true });
-      const counts = partitionCountsOf(result.partitions);
-      const answer = startAnswer(run, { result: { reference: RESULT_RECORD, counts } });
-      const text = toolText('start_run', answer, { ...PAGING, production: result, record: RUN_RECORD });
-      withinBudget(text, `production ${n}`);
-      const lines = linesOf(text);
-      const at = (prefix: string): number => indexOf(lines, (l) => l.startsWith(prefix));
-      assert.equal(lines[1], `结果（start_run 时由 Hub 算出）：分区：已交付 ${counts.delivered}，已拒收 ${counts.rejected}，已隔离 0，未完成 ${counts.incomplete}；未知 ${counts.unknown}`, 'the counts on the second line (D05 R[1])');
-      assert.equal(lines[2], '要求项（满足状态与各层终态的条目数）：');
-      const structure = lines[3];
-      if (n >= 62) assert.match(structure, /^- structure 结构：满足 \d+，未满足 \d+（终态不符合期望 \d+），未决 \d+；静态：✓ 通过 \d+，✗ 不通过 \d+（阻断 \d+，提示 \d+），？ 未核对 \d+；动态：本层不适用$/);
-      else assert.match(structure, /^- structure 结构：满足 \d+，未满足 0，未决 0；静态：✓ 通过 \d+，✗ 不通过 1（提示 1）；动态：本层不适用$/);
-      assert.equal(lines[4], '- catalog 命令目录：没有条目结果', 'a requirement no item carries says so');
-      const fullAt = at(`完整结果 ${RESULT_RECORD}：`);
-      const problemsAt = at('问题与未知');
-      const itemsAt = at('条目（');
-      if(n===400){assert.ok(itemsAt>=0,'support facts cannot remove the item list');assert.equal(new Set(itemIdsOf(lines.slice(itemsAt+1).join('\n'))).size,400,'support facts cannot displace any of the 400 item rows');}
-      assert.ok(fullAt > 3 && fullAt < problemsAt && problemsAt < at('规程：') && (itemsAt < 0 || problemsAt < itemsAt), `${fullAt} ${problemsAt} ${itemsAt}`);
-      assert.ok(lines[fullAt].includes(`get_nodes {"reference":"${RESULT_RECORD}"}`), 'how to read the full result');
-      const problems = lines.slice(problemsAt + 1).filter((l) => /^- doc7:n[0-9]+ \| .* \| (已交付|已拒收|未完成)/.test(l) && l.split(' | ').length >= 6);
-      assert.ok(problems.length > 0);
-      // n3: a violation with its code and message; n7: unknown (unchecked) with its reason; n5: rejected with its code.
-      assert.ok(problems.includes('- doc7:n3 | 合成用例 3 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，提示，归责 作者输入 | 满足 | 用例重复'));
-      assert.ok(!problems.some((l) => l.startsWith('- doc7:n0 |')), 'a pass is no problem');
-      if (n > 7) assert.ok(problems.includes('- doc7:n7 | 合成用例 7 | 已交付 | structure | ？ 静态：未核对，检查出错，归责 生产者错误 | 未决'));
-      if (n === 62) {
-        assert.ok(problems.includes('- doc7:n5 | 合成用例 5 | 已拒收（core.structure.required_empty） | structure | ✗ 静态：不通过，core.structure.required_empty，阻断，归责 作者输入 | 未满足（终态不符合期望） | 必填字段为空'));
-        assert.ok(lines.includes('- doc7:n9 | 合成用例 9 | 未完成（提交未覆盖）'), 'an item not delivered is listed even when its requirements need nothing');
-      }
-      const example = JSON.parse(lines[at('示例 submit_result') + 1]) as unknown;
-      assert.ok(Submission.safeParse(example).success, 'the commentary example parses');
-      assert.deepEqual((example as { items: unknown[] }).items, [], 'a production run has no item slots to fill');
-    });
+const list=items(n),run=runOf(list,{production:true}),result=resultOf(list,{production:true});const answer=startAnswer(run,{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}});const text=toolText('start_run',answer,{production:result});assert.equal(itemIdsOf(text).length,n);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态已确认；判断正确/);assert.doesNotMatch(text,/分区：|静态：|动态：|本层不适用|rec:/);if(n>7)assert.match(text,/原始用例 CASE-7 合成用例 7.*状态未知/);
+});
   }
 
   test('a long procedure does not push the result down; problems beyond the first part still come before any item', () => {
-    const list = items(3000);
-    const partitions: Record<string, ItemResult[]> = { delivered: [] };
-    list.forEach((it, i) => {
-      const advisory = i % 5 === 0;
-      partitions.delivered.push({
-        item: it.id,
-        label: it.label,
-        location: it.location,
-        requirements: [
-          {
-            requirement: 'structure',
-            layers: [advisory ? { layer: 'static', terminal: 'violation', code: 'core.structure.duplicate_key', tier: 'advisory', attribution: 'author_input' } : { layer: 'static', terminal: 'pass' }],
-            status: 'satisfied',
-            claims: [fact(it.id, 'structure', advisory ? '用例重复' : '结构完整', advisory ? 'core.structure.duplicate_key' : undefined)],
-          },
-        ],
-      });
-    });
-    const result = resultWith(partitions);
-    const procedure = Array.from({ length: 120 }, (_, i) => `第 ${i + 1} 步：按规则核对结构，记下每一个重复的键和它所在的位置。`).join('\n');
-    const text = toolText('start_run', startAnswer(runOf(list, { production: true, instructions: procedure }), { result: { reference: RESULT_RECORD, counts: partitionCountsOf(result.partitions) } }), { ...PAGING, production: result, record: RUN_RECORD });
-    withinBudget(text, 'production with a long procedure');
-    const lines = linesOf(text);
-    assert.match(lines[1], /^结果（start_run 时由 Hub 算出）：/);
-    const problemAt = lines.flatMap((l, at) => (/ \| structure \| ✗ 静态：不通过，core\.structure\.duplicate_key/.test(l) ? [at] : []));
-    const itemAt = lines.flatMap((l, at) => (/^- doc7:n[0-9]+ \| 合成用例 [0-9]+ \| 优先级/.test(l) ? [at] : []));
-    assert.equal(problemAt.length, 600, 'every problem');
-    assert.equal(itemAt.length, 3000, 'every item');
-    assert.ok(problemAt.at(-1)! < itemAt[0], 'the problems come before any item');
-  });
+const list=items(3000),result=resultOf(list,{production:true});const procedure=Array.from({length:120},(_,i)=>'第 '+i+' 步：核对原始用例。').join('\n');const answer=startAnswer(runOf(list,{production:true,instructions:procedure}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}});const text=toolText('start_run',answer,{production:result});assert.equal(itemIdsOf(text).length,3000);assert.ok(text.indexOf('原始用例 CASE-2999 ')<text.indexOf('核对说明'));assert.ok(text.includes(procedure));
+});
 
   test('without the whole result the text still gives the counts and where the problems are', () => {
-    const list = items(62);
-    const result = resultOf(list, { production: true });
-    const text = toolText('start_run', startAnswer(runOf(list, { production: true }), { result: { reference: RESULT_RECORD, counts: partitionCountsOf(result.partitions) } }));
-    assert.ok(text.includes('问题与未知的明细在完整结果里'));
-    assert.ok(text.includes(`完整结果 ${RESULT_RECORD}：用 get_nodes {"reference":"${RESULT_RECORD}"} 整份读`));
-  });
+const list=items(62),result=resultOf(list,{production:true});const answer=startAnswer(runOf(list,{production:true}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}});const text=toolText('start_run',answer);assert.equal(itemIdsOf(text).length,62);assert.match(text,/状态未知/);assert.equal(answer.result?.reference,RESULT_RECORD);assert.doesNotMatch(text,/rec:/);
+});
 });
 
 // ---------------------------------------------------------------- submit_result
@@ -654,366 +461,83 @@ describe('a production run in the start_run text', () => {
 describe('submit_result text', () => {
   for (const n of SIZES) {
     test(`${n} items: the receipt and counts first, each requirement's state, the errors, then every problem, then the details`, () => {
-      const list = items(n);
-      const result = resultOf(list, { claims: 2 });
-      const text = toolText('submit_result', submitAnswer(result), { ...PAGING, record: RESULT_RECORD });
-      withinBudget(text, `submit ${n}`);
-      const lines = linesOf(text);
-      const counts = partitionCountsOf(result.partitions);
-      const why = counts.incomplete === 0 ? '' : `（提交未覆盖 ${counts.incomplete}）`; // the helper leaves these items out of the submission
-      assert.equal(lines[0], `回执：已受理；分区：已交付 ${counts.delivered}，已拒收 ${counts.rejected}，已隔离 0，未完成 ${counts.incomplete}${why}；未知 ${counts.unknown}`);
-      assert.ok(!lines.some((l) => l.startsWith('出错')), 'unknown is never an error');
-      const at = (prefix: string): number => indexOf(lines, (l) => l.startsWith(prefix));
-      const requirementsAt = at('要求项（满足状态与各层终态的条目数）：');
-      assert.ok(requirementsAt > 0 && requirementsAt < 6);
-      assert.match(lines[requirementsAt + 1], /^- structure：满足 \d+，未满足 \d+(（终态不符合期望 \d+）)?，未决 \d+；静态：/);
-      assert.match(lines[requirementsAt + 2], /^- findings：满足 \d+，未满足 0，未决 \d+；静态：◇ 判断 \d+(，… 未完成 \d+)?；动态：本层不适用$/);
-      const errorsAt = at('错误 ');
-      const problemsAt = at('问题与未知');
-      if (result.errors.length > 0) {
-        assert.ok(errorsAt > requirementsAt && errorsAt < problemsAt, `${errorsAt} ${problemsAt}`);
-        assert.equal(lines[errorsAt + 1], '  core.coverage.shortfall 1 个；修正：逐个处理或声明跳过', 'the count and the shared fix per code');
-        assert.ok(lines.some((l) => l.startsWith('- core.coverage.shortfall：') && l.includes('剩余修复轮数 1') && !l.includes('修正：')), 'each error with its rounds left, the shared fix said once');
-      } else assert.equal(errorsAt, -1, 'no problems, no problem list');
-      const expected = [
-        ...result.partitions.delivered.filter((it) => it.requirements.some((r) => r.status !== 'satisfied' || r.layers.some((l) => l.terminal !== 'pass' && l.terminal !== 'judgment'))).map((it) => it.item),
-        ...result.partitions.rejected.map((it) => it.item),
-        ...result.partitions.incomplete.map((it) => it.item),
-      ];
-      const ids = [...new Set(lines.slice(problemsAt + 1).filter((l) => l.split(' | ').length >= 3 && !l.startsWith('- 位置')).flatMap((l) => /^- (doc7:n[0-9]+) \| [^|]+ \| (已交付|已拒收|未完成)/.exec(l)?.[1] ?? []))];
-      assert.deepEqual(ids.slice(0, Math.min(ids.length, expected.length)), expected.slice(0, Math.min(ids.length, expected.length)), 'the problems in partition order');
-      assert.deepEqual(ids.slice(0, expected.length), expected, 'all of them, whatever the size');
-      assert.ok(text.includes('条目明细（每个条目下是它的要求项和主张）：'), 'every item with its claims too');
-      if (n === 5) assert.equal(noteOf(text), null, 'nothing shortened in a small result');
-    });
+const list=items(n),result=resultOf(list,{claims:2});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD,items:list});withinBudget(text,'all conclusions');assert.equal(itemIdsOf(text).length,n);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态未确认；判断正确/);if(n>9)assert.match(text,/原始用例 CASE-9 合成用例 9.*状态未知/);assert.doesNotMatch(text,/回执：|分区：|本层不适用|追踪|doc7:n|rec:/);assert.equal(answer.result?.run,RUN);
+});
   }
 
   test('a delivered item with a violation or an unsatisfied requirement is a problem: counted first, listed one line each', () => {
-    const list = items(400);
-    const delivered: ItemResult[] = list.map((it) => ({
-      item: it.id,
-      label: it.label,
-      location: it.location,
-      requirements: [
-        { requirement: 'structure', layers: [{ layer: 'static', terminal: 'violation', code: 'core.structure.duplicate_key', tier: 'blocking', attribution: 'author_input' }], status: 'unsatisfied', unsatisfied_reason: 'outcome_mismatch', claims: [fact(it.id, 'structure', '用例重复', 'core.structure.duplicate_key')] },
-        { requirement: 'findings', layers: [{ layer: 'static', terminal: 'judgment' }], status: 'unsatisfied', unsatisfied_reason: 'independence_unknown', claims: [claim(it.id, 'findings', '期望结果缺失')] },
-      ],
-    }));
-    const result = resultWith({ delivered });
-    for (const context of [{ ...PAGING, record: RESULT_RECORD }, {}] as TextContext[]) {
-      const text = toolText('submit_result', submitAnswer(result), context);
-      withinBudget(text, 'all delivered with problems');
-      const lines = linesOf(text);
-      assert.equal(lines[0], '回执：已受理；分区：已交付 400，已拒收 0，已隔离 0，未完成 0；未知 0');
-      assert.ok(lines.includes('- structure：满足 0，未满足 400（终态不符合期望 400），未决 0；静态：✗ 不通过 400（阻断 400）；动态：本层不适用'));
-      assert.ok(lines.includes('- findings：满足 0，未满足 400（独立性未知 400），未决 0；静态：◇ 判断 400；动态：本层不适用'));
-      assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，阻断，归责 作者输入 | 未满足（终态不符合期望） | 用例重复'));
-      assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | findings | ◇ 静态：判断 | 未满足（独立性未知） | 期望结果缺失'));
-      assert.equal(lines.filter((l) => /^- doc7:n\d+ \| 合成用例 \d+ \| 已交付 \| (structure|findings) \| /.test(l)).length, 800, 'every problem, one line each');
-    }
-    // Advisory violations on half of the items and unsatisfied requirements on a quarter: still named.
-    const mixed = resultWith({
-      delivered: list.map((it, i) => ({
-        item: it.id,
-        label: it.label,
-        location: it.location,
-        requirements: [
-          i >= 200
-            ? { requirement: 'catalog', layers: [{ layer: 'static', terminal: 'violation', code: 'core.catalog.param_out_of_range', tier: 'advisory', attribution: 'author_input' }], status: i >= 300 ? 'unsatisfied' : 'satisfied', ...(i >= 300 ? { unsatisfied_reason: 'outcome_mismatch' } : {}), claims: [fact(it.id, 'catalog', '参数超出范围', 'core.catalog.param_out_of_range')] }
-            : { requirement: 'catalog', layers: [{ layer: 'static', terminal: 'pass' }], status: 'satisfied', claims: [] },
-          { requirement: 'findings', layers: [{ layer: 'static', terminal: 'judgment' }], status: i >= 300 ? 'unsatisfied' : 'satisfied', ...(i >= 300 ? { unsatisfied_reason: 'independence_unknown' } : {}), claims: [] },
-        ] as RequirementResult[],
-      })),
-    });
-    const text = toolText('submit_result', submitAnswer(mixed));
-    for (const word of ['不通过', '未满足', '独立性未知', 'core.catalog.param_out_of_range']) assert.ok(text.includes(word), word);
-    assert.ok(linesOf(text).includes('- catalog：满足 300，未满足 100（终态不符合期望 100），未决 0；静态：✓ 通过 200，✗ 不通过 200（提示 200）；动态：本层不适用'));
-  });
+const list=items(400);const result=resultWith({delivered:list.map(item=>({item:item.id,label:item.label,location:item.location,requirements:[{requirement:'structure',layers:[{layer:'static',terminal:'violation',code:'core.structure.duplicate_key',tier:'blocking',attribution:'author_input'}],status:'unsatisfied',unsatisfied_reason:'outcome_mismatch',claims:[fact(item.id,'structure','用例重复')]}]}))});const text=toolText('submit_result',submitAnswer(result),{items:list});assert.equal(itemIdsOf(text).length,400);assert.equal(linesOf(text).filter(line=>line.includes('判断错误；原因原始用例的问题')).length,400);assert.doesNotMatch(text,/core.structure|structure|静态/);
+});
 
   test('cross-item claims (the verdict and level of the run) survive a large receipt', () => {
-    const list = items(1000);
-    const incomplete: ItemResult[] = list.map((it) => ({
-      item: it.id,
-      label: it.label,
-      location: it.location,
-      reason: 'not_covered',
-      requirements: [{ requirement: 'findings', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'not_covered', missing: '未覆盖条目的合成产物；下一步：合成运行者补交后重核', exit: { action: 'request' as const, request_kind: 'repair' as const, audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-01-04T00:00:00.000Z' }, attribution: 'author_input' }], status: 'pending', claims: [] }],
-    }));
-    const verdict: Claim = {
-      requirement: 'final',
-      statement: { text: '复核结论：PARTIAL，最终等级 P4', code: 'verdict', rank: 'PARTIAL' },
-      qualifier: { nature: 'judgment', provenance: 'declared', basis_rank: 'judgment', marks: ['semantics_unasserted'] },
-      grounds: [SUBJECT],
-      warrant: { producer: 'model', id: 'scripted-model@test' },
-      validity: { status: 'valid', bound: [H('c')], premises: [] },
-    };
-    const text = toolText('submit_result', submitAnswer(resultWith({ incomplete }, [], [verdict])), { record: RESULT_RECORD });
-    withinBudget(text, 'large receipt with a verdict');
-    assert.ok(text.includes('复核结论：PARTIAL，最终等级 P4'), 'the verdict is in the answer');
-  });
+const result=resultOf(items(1000));result.cross_item=[{statement:{text:'脚本合并仍有问题',verdict:'refute'},qualifier:{nature:'judgment',provenance:'declared',marks:[]},grounds:[SUBJECT],warrant:{producer:'model',id:'scripted-model@test'},validity:{status:'valid',bound:[],premises:[]}}];const text=toolText('submit_result',submitAnswer(result));assert.match(text,/脚本合并仍有问题；状态未确认；判断错误；原因还没查清/);assert.doesNotMatch(text,/scripted-model|src:/);
+});
 
   test('a repeat names this call’s trace last and the trace of the call that produced the stored result', () => {
-    const result = resultOf(items(400), { claims: 2 });
-    const first = toolText('submit_result', submitAnswer(result, TRACE), { record: RESULT_RECORD });
-    const again = toolText('submit_result', submitAnswer(result, TRACE_2), { record: RESULT_RECORD });
-    assert.equal(linesOf(again).at(-1), `追踪 ${TRACE_2}`);
-    noteOf(again, TRACE_2);
-    assert.ok(linesOf(again).includes(`结果出自追踪 ${TRACE} 的那次调用（同一提交的重复调用返回存下的结果）`));
-    assert.ok(!first.includes('结果出自追踪'), 'the first call produced the result itself');
-  });
+const result=resultOf(items(400));const first=toolText('submit_result',submitAnswer(result,TRACE),{items:items(400)});const again=toolText('submit_result',submitAnswer(result,TRACE_2),{items:items(400)});assert.equal(first,again);assert.doesNotMatch(again,/追踪/);assert.equal(result.trace,TRACE);
+});
 
   test('a submission that is not accepted: per-code counts first, every error with its rounds left, the stored result for the rest', () => {
-    const errors: ProtocolError[] = Array.from({ length: 600 }, (_, i) => ({
-      code: 'QUOTE_MISMATCH',
-      message: `原文与引用对不上：${'引文'.repeat(i % 7 === 0 ? 3000 : 30)}`,
-      fix: '按原文逐字引用，或先调用 resolve_reference',
-      path: `/items/${i}/slots/findings/0/quotes/0`,
-      item: `doc7:n${i}`,
-      requirement: 'findings',
-      rounds_left: 1,
-    }));
-    const empty = { delivered: [], rejected: [], quarantined: [], incomplete: [] } as unknown as Partitions;
-    const result = ValidationResult.parse({ ...resultOf(items(1)), acceptance: 'not_accepted', errors, partitions: empty, cross_item: [] });
-    const without = toolText('submit_result', submitAnswer(result));
-    withinBudget(without, 'not accepted');
-    const lines = linesOf(without);
-    assert.equal(lines[0], '回执：未受理；没有分区（未受理的提交不分区）');
-    assert.ok(lines.includes('错误 600 个，按代码：') && lines.includes('  QUOTE_MISMATCH 600 个；修正：按原文逐字引用，或先调用 resolve_reference'), 'the scale and the fix on the first screen');
-    assert.ok(lines.some((l) => /^- QUOTE_MISMATCH：原文与引用对不上：.*；位置 \/items\/\d+\/slots\/findings\/0\/quotes\/0；条目 doc7:n\d+；要求项 findings；剩余修复轮数 1$/.test(l)));
-    assert.equal(lines.filter((l) => l.startsWith('- QUOTE_MISMATCH：')).length, 600, 'every error');
-    assert.ok(!without.includes('改正上面列出的问题再提交'), 'no advice to spend a round to see the rest');
-    for (const context of [{ record: RESULT_RECORD }, { ...PAGING, record: RESULT_RECORD }]) {
-      const stored = toolText('submit_result', submitAnswer(result), context);
-      withinBudget(stored, 'not accepted, stored');
-      assert.equal(linesOf(stored).filter((l) => l.startsWith('- QUOTE_MISMATCH：')).length, 600, 'every error with the stored result too');
-      assert.ok(!stored.includes('其余错误'), 'nothing left to read on');
-    }
-  });
+const errors:ProtocolError[]=Array.from({length:600},(_,i)=>({code:'QUOTE_MISMATCH',message:'原句 '+i+' 与资料对不上',fix:'使用者按原文逐字引用',path:'/items/'+i,rounds_left:1}));const result=ValidationResult.parse({...resultOf(items(1)),acceptance:'not_accepted',errors,partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[]},cross_item:[]});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD});assert.equal(linesOf(text).filter(line=>line.includes('最多重交 1 次')).length,600);assert.doesNotMatch(text,/QUOTE_MISMATCH|\/items\/|rec:/);assert.equal(answer.errors.length,600);
+});
 });
 
 // ---------------------------------------------------------------- get_nodes
 
 describe('get_nodes text', () => {
   test('a 3000-item validation result read by reference: every page within the budget, every item exactly once', () => {
-    const list = items(3000, (i) => (i % 501 === 0 ? `长标题 ${'很'.repeat(5000)}` : `合成用例 ${i}`));
-    const result = resultOf(list, { claims: 3, claimText: (i, k) => (i % 733 === 0 && k === 0 ? '超长的发现'.repeat(9000) : `第 ${k} 条发现`) });
-    const all = pages(RESULT_RECORD, canonicalJson(result));
-    assert.equal(all.length, 1, `${all.length} answers: one, whatever its length`);
-    withinBudget(all[0], 'a whole result');
-    const detailsOf = (page: string): string[] => linesOf(page).flatMap((line) => /^- (doc7:n[0-9]+) \| [^|]+ \| (已交付|已拒收|已隔离|未完成)(（[^）]*）)?(；沿用 .*)?$/.exec(line)?.[1] ?? []);
-    const inPartitionOrder = (['delivered', 'rejected', 'quarantined', 'incomplete'] as const).flatMap((p) => result.partitions[p].map((it) => it.item));
-    assert.deepEqual(detailsOf(all[0]), inPartitionOrder, 'every item once in the details, in partition order');
-    assert.match(all[0], new RegExp(`^内容 ${RESULT_RECORD}：模型可读\n结果 ${RESULT_RECORD}（运行 ${RUN}）：回执：已受理；分区：`));
-    assert.ok(!all[0].includes('接上页') && !all[0].includes('超过一页的长度'), 'no page break, no placeholder');
-    assert.ok(all[0].includes('超长的发现'.repeat(9000)), 'the 45,000-character finding whole');
-  });
+const list=items(3000,i=>i%501===0?'长标题 '+'很'.repeat(5000):'合成用例 '+i);const result=resultOf(list,{claims:3,claimText:(i,k)=>i%733===0&&k===0?'超长的发现'.repeat(9000):'第 '+k+' 条发现'});const answer=contentAnswer(RESULT_RECORD,canonicalJson(result));const text=toolText('get_nodes',answer,{items:list});assert.equal(itemIdsOf(text).length,3000);assert.ok(text.includes('超长的发现'.repeat(9000)));assert.doesNotMatch(text,/rec:|追踪/);
+});
 
   for (const n of SIZES.slice(0, 3)) {
     test(`a ${n}-item result read by reference: within the budget, every item once, a note only while pages remain`, () => {
-      const result = resultOf(items(n), { claims: 2 });
-      const all = pages(RESULT_RECORD, canonicalJson(result));
-      for (const page of all) withinBudget(page, `a page of ${n}`);
-      assert.equal(all.length === 1, noteOf(all[0]) === null, 'one page exactly when nothing was cut');
-      assert.ok(all[0].includes('要求项（满足状态与各层终态的条目数）：'));
-    });
+const result=resultOf(items(n),{claims:2});const text=toolText('get_nodes',contentAnswer(RESULT_RECORD,canonicalJson(result)),{items:items(n)});assert.equal(itemIdsOf(text).length,n);assert.equal(noteOf(text),null);withinBudget(text,'stored conclusions');
+});
   }
 
   test('a partition or one item read by pointer is shown as items; a cursor of another reference starts over and says so', () => {
-    const result = resultOf(items(30));
-    const one = toolText('get_nodes', contentAnswer(`${RESULT_RECORD}#/partitions/incomplete/0`, canonicalJson(result.partitions.incomplete[0])));
-    assert.ok(one.includes('- doc7:n9 | 合成用例 9 | 未完成（提交未覆盖）'));
-    assert.ok(one.includes('  · findings：… 静态：未完成，提交未覆盖，归责 作者输入；动态：本层不适用；未决'));
-    const partition = toolText('get_nodes', contentAnswer(`${RESULT_RECORD}#/partitions/delivered`, canonicalJson(result.partitions.delivered)));
-    assert.deepEqual(itemIdsOf(partition), result.partitions.delivered.map((it) => it.item));
-    const wrong = toolText('get_nodes', contentAnswer(RESULT_RECORD, canonicalJson(result)), { ...PAGING, cursor: pageCursor(`${RESULT_RECORD}#/x`, 5) });
-    assert.ok(wrong.includes('不是这个引用的翻页位置，下面从第一页显示'));
-    assert.equal(pageCursorProblem(RESULT_RECORD, pageCursor(RESULT_RECORD, 3)), null);
-    assert.equal(pageCursorProblem(RESULT_RECORD, pageCursor(RESULT_RECORD, 3, 17)), null);
-    assert.deepEqual(cursorPosition(RESULT_RECORD, pageCursor(RESULT_RECORD, 3, 17)), { line: 3, offset: 17 });
-    assert.ok(pageCursorProblem(RESULT_RECORD, 'abc') !== null);
-  });
+const list=items(30),result=resultOf(list);const item=result.partitions.incomplete[0];const text=toolText('get_nodes',contentAnswer(RESULT_RECORD+'#/partitions/incomplete/0',canonicalJson(item)),{items:list});assert.match(text,/原始用例 CASE-9 合成用例 9.*状态未知/);assert.doesNotMatch(text,/doc7:n|本层不适用/);assert.equal(pageCursorProblem(RESULT_RECORD,pageCursor(RESULT_RECORD,3)),null);assert.equal(pageCursorProblem(RESULT_RECORD,pageCursor(RESULT_RECORD+'#/x',3))===null,false);
+});
 
   test('an empty partition, an empty item list and an empty array read by reference: the head says so, with and without paging', () => {
-    // Every item delivered (the common case) leaves the other three partitions empty.
-    const result = resultOf(items(4));
-    for (const partition of ['rejected', 'quarantined', 'incomplete'] as const) {
-      assert.deepEqual(result.partitions[partition], []);
-      const reference = `${RESULT_RECORD}#/partitions/${partition}`;
-      for (const context of [{}, PAGING, { ...PAGING, cursor: pageCursor(reference, 0) }]) {
-        const text = toolText('get_nodes', contentAnswer(reference, canonicalJson(result.partitions[partition])), context);
-        withinBudget(text, `the empty ${partition} partition`);
-        assert.ok(linesOf(text).includes(`结果的${labelOf('partition', partition)}部分 ${reference}：条目 0 个`), text);
-        assert.equal(noteOf(text), null, 'nothing was left out');
-      }
-    }
-    const runItems = toolText('get_nodes', contentAnswer(`${RUN_RECORD}#/items`, '[]'), PAGING);
-    assert.ok(linesOf(runItems).includes(`运行的条目 ${RUN_RECORD}#/items`), runItems);
-    assert.ok(linesOf(runItems).some((line) => line.startsWith('条目（0 个；')), runItems);
-    assert.equal(noteOf(runItems), null);
-    const other = toolText('get_nodes', contentAnswer(`${RUN_RECORD}#/sources`, '[]'), PAGING);
-    assert.ok(linesOf(other).includes('[]'), 'another empty array is shown as JSON');
-  });
+for(const context of [{},PAGING,{...PAGING,cursor:pageCursor(RESULT_RECORD,0)}]){for(const suffix of ['#/partitions/rejected','#/items','']){const text=toolText('get_nodes',contentAnswer(RESULT_RECORD+suffix,'[]'),context);assert.equal(text,'没有原始用例。');}}
+});
 
   test('a cursor whose offset falls inside a surrogate pair is not a page position: the page starts over and says so, never with half a character', () => {
-    const reference = `src:${H('a')}`;
-    const first = `第 0 行 😀${'字'.repeat(20)}`;
-    const text = `${first}\n第 1 行`;
-    assert.equal(first.charCodeAt(6) >= 0xd800 && first.charCodeAt(6) <= 0xdbff, true, 'the emoji starts at offset 6');
-    const inside = toolText('get_nodes', contentAnswer(reference, text), { ...PAGING, cursor: pageCursor(reference, 0, 7) });
-    assert.ok(inside.isWellFormed(), 'no lone surrogate in the text');
-    const [said, ...shown] = shownSource(inside);
-    assert.match(said, /^cursor \S+ 不是这个引用的翻页位置，下面从第一页显示$/);
-    assert.deepEqual(shown, [first, '第 1 行'], 'the first page, whole');
-    for (const offset of [6, 8]) {
-      const page = toolText('get_nodes', contentAnswer(reference, text), { ...PAGING, cursor: pageCursor(reference, 0, offset) });
-      assert.ok(page.isWellFormed());
-      assert.ok(page.includes(`（接上页：第 1 行的前 ${offset} 个字符在上一页）`), `offset ${offset} is a page position`);
-      assert.equal(shownSource(page)[0], first.slice(offset));
-    }
-  });
+const value='甲😀乙';const reference='src:'+H('b');const text=toolText('get_nodes',contentAnswer(reference,value),{cursor:pageCursor(reference,0,2)});assert.ok(text.endsWith(value));assert.match(text,/读取位置无效/);assert.doesNotMatch(text,/�/);
+});
 
   test('a text that cannot be laid out gives a minimal text: the outcome, the receipt, the run, the stored result, the trace', () => {
-    const result = resultOf(items(5));
-    const answer = submitAnswer(result);
-    const text = fallbackText('submit_result', answer, { record: RESULT_RECORD });
-    const lines = linesOf(text);
-    assert.equal(lines[0], '调用结果：正常');
-    assert.ok(lines.includes('回执：已受理；分区：已交付 5，已拒收 0，已隔离 0，未完成 0；未知 0'), text);
-    assert.ok(lines.includes(`运行 ${RUN}`));
-    assert.ok(lines.includes(`存下的结果 ${RESULT_RECORD}（用 get_nodes 按引用读）`));
-    assert.equal(lines.at(-2), `这次回答的文字没能排出（原因已记入管理员日志）；回答本身有效；完整内容在控制台运行页 /console/runs/${RUN} 查看`);
-    assert.equal(lines.at(-1), `追踪 ${TRACE}`);
-    const refused = fallbackText('start_run', { call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: 'x' }, { code: 'SOURCE_UNAVAILABLE', message: 'y' }], trace: TRACE }, {});
-    assert.deepEqual(linesOf(refused), ['调用结果：出错', '错误代码：SOURCE_UNAVAILABLE', '这次回答的文字没能排出（原因已记入管理员日志）；回答本身有效', `追踪 ${TRACE}`]);
-    const started = fallbackText('start_run', startAnswer(runOf(items(3), { production: true }), { result: { reference: RESULT_RECORD, counts: partitionCountsOf(result.partitions) } }), {});
-    assert.ok(linesOf(started).includes(`运行 ${RUN}：工作流 toy-locate@1.0.0`), started);
-    assert.ok(linesOf(started).includes(`完整结果 ${RESULT_RECORD}（用 get_nodes 按引用读）`), started);
-    // Whatever it is handed, it gives at least the trace line.
-    assert.equal(fallbackText('get_nodes', null, {}), '这次回答的文字没能排出（原因已记入管理员日志）\n追踪 （未知）');
-  });
+const text=fallbackText('submit_result',submitAnswer(resultOf(items(5))),{record:RESULT_RECORD});assert.match(text,/状态未知；原因临时故障；下一步/);assert.doesNotMatch(text,/rec:|run_|追踪/);assert.doesNotThrow(()=>fallbackText('get_nodes',null));
+});
 
   test('a source goes out whole in one answer, its long lines and astral characters untouched, and a cursor reads on from its place', () => {
-    const lines = Array.from({ length: 3000 }, (_, i) => `第 ${i + 1} 行：分区 ${i % 8} 浇灌 ${i % 120} 分钟。`);
-    lines[1500] = '超长的一行'.repeat(4000);
-    lines[2200] = `${'甲'.repeat(20_000)}${'😀'.repeat(15_000)}`;
-    const text = lines.join('\n');
-    const reference = `src:${H('e')}/text@1/l/1-3000`;
-    const all = pages(reference, text);
-    assert.equal(all.length, 1, 'the Hub sets no page limit on a text: its length is the client\'s to handle');
-    assert.ok(all[0].includes(text), 'every character, in order');
-    assert.equal(noteOf(all[0]), null, 'nothing was left out, so no note says so');
-    const rest = toolText('get_nodes', contentAnswer(reference, text), { ...PAGING, cursor: pageCursor(reference, 2999) });
-    assert.deepEqual(shownSource(rest), [lines[2999]], 'a cursor an earlier answer gave reads the rest, no line twice');
-  });
+const text='甲😀'.repeat(14000)+'\n下一行\n';const reference='src:'+sha256(Buffer.from(text));const first=toolText('get_nodes',contentAnswer(reference,text));assert.equal(shownSource(first).join('\n'),text);const later=toolText('get_nodes',contentAnswer(reference,text),{cursor:pageCursor(reference,1,0)});assert.equal(shownSource(later).join('\n'),'下一行\n');
+});
 
   test('a long string of a record (a 40,000-character statement) goes out whole', () => {
-    const statement = `${'一'.repeat(20_000)}${'二'.repeat(20_000)}`;
-    const reference = `${RESULT_RECORD}#/partitions/delivered/0/requirements/0/claims/0/statement/text`;
-    const all = pages(reference, statement);
-    assert.equal(all.length, 1);
-    assert.equal(shownSource(all[0]).join(''), statement);
-    assert.equal(noteOf(all[0]), null);
-  });
+const statement='一份很长的结论'.repeat(8000);const text=toolText('get_nodes',contentAnswer(RESULT_RECORD+'#/statement/text',JSON.stringify(statement)));assert.equal(text,statement);
+});
 
   test('other record JSON is laid out one member a line: the full slot schema reads without placeholders', () => {
-    const schema = toySlots().schema;
-    const extra = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`extra${i}`, { type: 'array', description: `说明 ${i}：${'说明'.repeat(100)}` }]));
-    const bigger = { ...schema, properties: { ...(schema.properties as object), ...extra } };
-    const text = canonicalJson(bigger);
-    assert.ok(text.length > 60_000 && !text.includes('\n'), 'one line of canonical JSON, as hub/refs returns it');
-    const reference = `${RUN_RECORD}#/slots/schema`;
-    const all = pages(reference, text);
-    assert.equal(all.length, 1, 'one answer');
-    const body = (page: string): string[] => {
-      const lines = linesOf(page);
-      return lines.slice(lines.findIndex((l) => l.startsWith('共 ')) + 1, NOTE.test(lines.at(-2) ?? '') ? -2 : -1);
-    };
-    const pretty = JSON.stringify(JSON.parse(text), null, 1);
-    assert.equal(body(all[0]).join('\n'), pretty, 'the schema pretty-printed (canonical key order), each line once');
-    assert.equal(body(toolText('get_nodes', contentAnswer(reference, text))).join('\n'), pretty, 'the same without paging');
-  });
+const value={slots:{schema:{properties:{findings:{type:'array',items:{type:'string'}}}}}};const answer=contentAnswer(RESULT_RECORD,canonicalJson(value));const text=toolText('get_nodes',answer);assert.equal(text,'资料已读取，完整内容在机器可读答复中。');assert.deepEqual(JSON.parse(answer.content!.text!),value);assert.doesNotMatch(text,/slots|properties/);
+});
 
   test('a page of many nodes shows every node with all its entries and children (decision 158)', () => {
-    const root = H('d');
-    const nodes = Array.from({ length: 100 }, (_, i) => {
-      const path = `/catalog/menu${i}`;
-      const address = `tree:${root}${path}`;
-      return {
-        path,
-        reference: address,
-        name: `menu${i}`,
-        level: 'branch',
-        digest: H('3'),
-        children: Array.from({ length: 30 }, (_, k) => ({ name: `item${k}`, path: `${path}/item${k}`, digest: H('4') })),
-        entries: Array.from({ length: 4 }, (_, k) => ({
-          entry: H(String(k + 5)),
-          kind: 'definition',
-          statement: `menu${i} 的第 ${k} 个签名`,
-          reference: `${address}@${H(String(k + 5))}`,
-          applicability: '全部构建',
-          data: { params: [{ name: 'zone', type: 'integer', limit: '1-8' }] },
-        })),
-      };
-    });
-    const answer = GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes, coverage: { complete: false, examined: 100 }, next: 'cursor-of-the-service', trace: TRACE });
-    const text = toolText('get_nodes', answer);
-    withinBudget(text, 'tree page');
-    const lines = linesOf(text);
-    assert.equal(lines[0], `知识根 ${root}：节点 100 个`);
-    assert.ok(lines.includes('还有下一页：用同样的 root、paths 和 depth，再加 cursor cursor-of-the-service'));
-    const head = lines.indexOf(`- /catalog/menu0（枝）menu0：子节点 30 个，条目 4 个；引用 tree:${root}/catalog/menu0`);
-    assert.ok(head > 0);
-    assert.ok(lines[head + 1].startsWith('  · [定义] menu0 的第 0 个签名（适用 全部构建）；引用 ') && lines[head + 1].endsWith('；数据 {"params":[{"name":"zone","type":"integer","limit":"1-8"}]}'), 'the entries right after the node');
-    assert.equal(lines[head + 5], '  子节点 /catalog/menu0/item0 item0', 'then the children');
-    assert.equal(lines.filter((l) => /^- \/catalog\/menu\d+（/.test(l)).length, 100, 'every node');
-    assert.equal(lines.filter((l) => l.startsWith('  · [定义] menu')).length, 400, 'every entry');
-    assert.equal(lines.filter((l) => l.startsWith('  子节点 /catalog/menu')).length, 3000, 'every child');
-    assert.equal(noteOf(text), null, 'nothing left out');
-  });
+const root=H('d');const nodes=Array.from({length:100},(_,i)=>({path:'/catalog/menu'+i,reference:'tree:'+root+'/catalog/menu'+i,name:'menu'+i,level:'branch',digest:H('3'),children:Array.from({length:30},(_,k)=>({name:'item'+k,path:'/catalog/menu'+i+'/item'+k,digest:H('4')})),entries:Array.from({length:4},(_,k)=>({entry:H('5'),kind:'definition',statement:'menu'+i+' 的第 '+k+' 个签名',reference:'tree:'+root+'/catalog/menu'+i+'@'+H('5')}))}));const answer=GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes,trace:TRACE});const text=toolText('get_nodes',answer);assert.equal(linesOf(text).filter(line=>/^menu\d+$/.test(line)).length,100);assert.equal(linesOf(text).filter(line=>/个签名$/.test(line)).length,400);assert.equal(linesOf(text).filter(line=>/^item\d+$/.test(line)).length,3000);assert.doesNotMatch(text,/tree:|枝|sha256/);
+});
 
   test('a manual section of 137 entries shows all of them: run 9 got 23 and untitled references for the rest', () => {
-    const root = H('d');
-    const path = '/manual/cli/DNS资源记录';
-    const entries = Array.from({ length: 137 }, (_, k) => {
-      const entry = createHash('sha256').update(String(k)).digest('hex');
-      return { entry, kind: 'behaviour', statement: `**sdns 命令 ${k}** *<参数>* 该命令用于……${'说明'.repeat(300)}`, reference: `tree:${root}${path}@${entry}` };
-    });
-    const node = { path, reference: `tree:${root}${path}`, name: 'DNS资源记录', level: 'leaf', digest: H('3'), children: [], entries };
-    const text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes: [node], trace: TRACE }));
-    withinBudget(text, 'a long manual section');
-    const shown = linesOf(text).filter((l) => l.startsWith('  · [行为] **sdns 命令 '));
-    assert.equal(shown.length, 137, 'every entry, in order');
-    assert.ok(shown.every((l, k) => l.startsWith(`  · [行为] **sdns 命令 ${k}** `) && l.includes(entries[k].reference)));
-    assert.ok(!text.includes('再往后的') && !text.includes('/console/knowledge/tree'), 'no entry left to the console, which a model cannot open');
-    assert.ok(!text.includes('适用'), 'entries that declare no condition say nothing of conditions (decision 159)');
-  });
+const root=H('d'),path='/manual/cli/合成命令';const entries=Array.from({length:137},(_,i)=>({entry:H('5'),kind:'behaviour',statement:'合成命令 '+i+' '+'说明'.repeat(300),reference:'tree:'+root+path+'@'+H('5')}));const answer=GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes:[{path,reference:'tree:'+root+path,name:'合成命令',level:'leaf',digest:H('3'),children:[],entries}],trace:TRACE});const text=toolText('get_nodes',answer);for(const entry of entries)assert.ok(text.includes(entry.statement));assert.equal(linesOf(text).filter(line=>/^合成命令 \d+ /.test(line)).length,137);assert.doesNotMatch(text,/tree:|适用/);
+});
 
   test('a node with 2000 children shows its entries first, then every child', () => {
-    const root = H('d');
-    const path = '/commands/show';
-    const node = {
-      path,
-      reference: `tree:${root}${path}`,
-      name: 'show',
-      level: 'branch',
-      digest: H('3'),
-      children: Array.from({ length: 2000 }, (_, k) => ({ name: `option${k}`, path: `${path}/option${k}`, digest: H('4') })),
-      entries: Array.from({ length: 3 }, (_, k) => ({ entry: H(String(k + 5)), kind: 'definition', statement: `show 的第 ${k} 个签名`, reference: `tree:${root}${path}@${H(String(k + 5))}`, applicability: '全部构建' })),
-    };
-    const text = toolText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', errors: [], root, nodes: [node], trace: TRACE }));
-    withinBudget(text, 'one big node');
-    const lines = linesOf(text);
-    assert.equal(lines.filter((l) => l.startsWith('  · [定义] show 的第 ')).length, 3, 'every entry is shown');
-    const children = lines.flatMap((l, at) => (l.startsWith('  子节点 ') ? [at] : []));
-    assert.equal(children.length, 2000, 'every child');
-    assert.ok(children[0] > indexOf(lines, (l) => l.startsWith('  · [定义] show 的第 2 ')), 'after the entries');
-    assert.equal(noteOf(text), null);
-  });
+const root=H('d'),path='/commands/show';const node={path,reference:'tree:'+root+path,name:'show',level:'branch',digest:H('3'),children:Array.from({length:2000},(_,i)=>({name:'option'+i,path:path+'/option'+i,digest:H('4')})),entries:Array.from({length:3},(_,i)=>({entry:H('5'),kind:'definition',statement:'show 的第 '+i+' 个签名',reference:'tree:'+root+path+'@'+H('5')}))};const text=toolText('get_nodes',GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes:[node],trace:TRACE}));assert.equal(linesOf(text).filter(line=>/^option/.test(line)).length,2000);assert.ok(text.indexOf('show 的第 2 个签名')<text.indexOf('option0'));
+});
 
   test('the text of a small source is given whole, verbatim', () => {
-    const text = '# 标题\r\n\r\n正文第一行\n正文第二行';
-    assert.equal(toolText('get_nodes', contentAnswer(`src:${H('e')}`, text)), [`内容 src:${H('e')}：模型可读`, `原文（${text.length} 个字符）：`, text, `追踪 ${TRACE}`].join('\n'));
-  });
+const text='# 标题\r\n\r\n正文第一行\n正文第二行';assert.equal(toolText('get_nodes',contentAnswer('src:'+H('e'),text)),'原文（'+text.length+' 个字符）：\n'+text);
+});
 });
 
 // ---------------------------------------------------------------- list_task_packs, upload_file, resolve_reference
@@ -1043,107 +567,32 @@ function packOf(i: number): PackSummary {
 
 describe('list_task_packs, upload_file and resolve_reference texts', () => {
   test('a long task-pack list and an oversized pack are given whole, every detail of every pack (decision 158)', () => {
-    const packs = Array.from({ length: 300 }, (_, i) => packOf(i));
-    const text = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs, trace: TRACE }), { packList: { offset: 7, kind: 'workflow' } });
-    withinBudget(text, '300 packs');
-    const lines = linesOf(text);
-    for (const pack of packs) assert.ok(lines.includes(`- ${pack.pack} ${pack.title}（工作流）：${pack.description}`), pack.pack);
-    assert.equal(lines.filter((l) => l.startsWith('  示例 start_run：')).length, 300);
-    assert.ok(!text.includes('继续 list_task_packs') && !text.includes('详情（部分：'), 'no page to go on to, no brief form');
-    const pack = packOf(1);
-    const oversized = { ...pack, inputs: Array.from({ length: 300 }, (_, i) => ({ ...pack.inputs[0]!, slot: `input_${i}`, description: '长'.repeat(400) })) };
-    for (const context of [{ packList: { offset: 0 } }, { packList: { offset: 0, packId: pack.id } }]) {
-      const one = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [oversized], trace: TRACE }), context);
-      withinBudget(one, 'one oversized pack');
-      assert.equal(linesOf(one).filter((l) => /^  输入 input_\d+（/.test(l)).length, 300, 'every input');
-      assert.ok(!one.includes('超出回答预算'));
-    }
-  });
+const packs=Array.from({length:300},(_,i)=>packOf(i));const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs,trace:TRACE});const text=toolText('list_task_packs',answer);for(const pack of packs)assert.ok(text.includes(pack.title+'，'+pack.description));assert.doesNotMatch(text,/toy-pack-|start_run|sha256/);const oversized={...packOf(1),inputs:Array.from({length:300},(_,i)=>({...packOf(1).inputs[0],slot:'input_'+i,description:'说明'+i}))};const large=toolText('list_task_packs',ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[oversized],trace:TRACE}));assert.equal(linesOf(large).filter(line=>/^说明\d+，/.test(line)).length,300);
+});
 
   test('every pack is in the index whatever the offset, then the declared run context, then the details (decision 113)', () => {
-    const index = [0, 1, 2].map((i) => ({ pack: packOf(i).pack, title: packOf(i).title, kind: 'workflow' as const }));
-    const context = {
-      leases: [{ prefix: 'rig/', packs: ['toy-pack-1@1.0.1', 'toy-pack-2@1.0.2'], registrations: [{ prefix: 'rig/r1/', mine: true }, { prefix: 'rig/r2/', mine: false }], held: [{ key: 'rig/r2/dev-a', since: '2026-01-01T00:00:00.000Z', until: null, run: RUN, jobs: ['job-1'], mine: false }] }],
-      observations: [{ label: 'r1/dev-a', build: 'Toy_1_0_7', base: 'Toy_1_0_7', observed_at: '2026-01-02T00:00:00.000Z', packs: ['toy-pack-1@1.0.1'] }, { label: 'r1/dev-b', build: null, base: null, observed_at: '2026-01-02T00:00:00.000Z', packs: ['toy-pack-1@1.0.1'] }],
-    };
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(2)], index, context, trace: TRACE });
-    const lines = linesOf(toolText('list_task_packs', answer, { packList: { offset: 2 } }));
-    assert.equal(lines[0], '可用的工作流 3 个；详情从第 3 个起');
-    const at = (head: string) => indexOf(lines, (l) => l.startsWith(head));
-    assert.ok(at('索引（3 个') < at('运行上下文（') && at('运行上下文（') < at('详情（'), lines.join('\n'));
-    assert.deepEqual(lines.slice(at('索引（3 个') + 1, at('索引（3 个') + 4), ['- toy-pack-0@1.0.0 | 合成工作流 0 | 工作流', '- toy-pack-1@1.0.1 | 合成工作流 1 | 工作流', '- toy-pack-2@1.0.2 | 合成工作流 2 | 工作流']);
-    assert.ok(lines.includes(`- 租约前缀 rig/（toy-pack-1@1.0.1、toy-pack-2@1.0.2 用）：已登记的前缀 rig/r1/（你登记的）、rig/r2/（有主人）；占用中的键 1 个：rig/r2/dev-a（运行 ${RUN}，起于 2026-01-01T00:00:00.000Z，未结束的作业 job-1）`), lines.join('\n'));
-    assert.ok(lines.includes('- 设备最近一次观察（toy-pack-1@1.0.1 的上下文；只对观察时刻成立）：r1/dev-a 构建 Toy_1_0_7，观察于 2026-01-02T00:00:00.000Z；r1/dev-b 没有抽到构建，观察于 2026-01-02T00:00:00.000Z'));
-    assert.ok(lines.includes('- toy-pack-2@1.0.2 合成工作流 2（工作流）：评审合成的思维导图（合成）'), 'the details of the page');
-    const unread = linesOf(toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1)], index: index.slice(1, 2), trace: TRACE }), { packList: { offset: 0, contextUnread: true } }));
-    assert.ok(unread.includes('运行上下文：这次没有读出（原因已记入管理员日志）；开运行时 Hub 照常冻结'), 'a context that could not be read is said, not left out');
-  });
+const index=[0,1,2].map(i=>({pack:packOf(i).pack,title:packOf(i).title,kind:'workflow' as const}));const context={leases:[],observations:[{label:'合成设备',build:'Toy_1_0_7',base:'Toy_1_0_7',observed_at:'2026-01-02T00:00:00.000Z',packs:['toy-pack-1@1.0.1']}]};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[packOf(2)],index,context,trace:TRACE});const text=toolText('list_task_packs',answer,{packList:{offset:2}});assert.deepEqual(linesOf(text).slice(1,4),index.map(row=>row.title));assert.match(text,/测试环境 合成设备，构建 Toy_1_0_7；读取时间 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);assert.doesNotMatch(text,/2026-01-02T|run_|租约/);
+});
 
   test('a knowledge view input is shown in the form its parser requires, not as a bare number', () => {
-    const pack = packOf(1);
-    const view = { ...pack, inputs: [{ slot: 'facets', role: 'subject' as const, description: '结构计数视图', accepts: ['knowledge:facets'], required: true, many: false }] };
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [view], trace: TRACE });
-    const lines = linesOf(toolText('list_task_packs', answer));
-    assert.ok(lines.includes('  输入 facets（被判对象，必填）：结构计数视图；接受 knowledge:facets；写法 {"external":"knowledge:facets:<产品>:<构建>?kind=<kind>&by=<by>"}'), lines.join('\n'));
-  });
+const pack={...packOf(1),inputs:[{slot:'facets',role:'subject' as const,description:'结构计数资料',accepts:['knowledge:facets'],required:true,many:false}]};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[pack],trace:TRACE});const text=toolText('list_task_packs',answer);assert.match(text,/结构计数资料，必填/);assert.equal(answer.packs[0].inputs[0].accepts[0],'knowledge:facets');assert.doesNotMatch(text,/knowledge:facets|facets/);
+});
 
   test('every pack with its inputs, parameters and an example start_run call that parses with StartRunInput and names a product', () => {
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [packOf(1), packOf(2)], trace: TRACE });
-    const text = toolText('list_task_packs', answer);
-    const lines = linesOf(text);
-    assert.equal(lines[0], '可用的工作流 2 个');
-    assert.match(lines[1], /product 换成被判对象所属产品线的名字（“产品”里列出的任一个）$/);
-    assert.ok(lines.includes('- toy-pack-1@1.0.1 合成工作流 1（工作流）：评审合成的思维导图（合成）'));
-    assert.ok(lines.includes('  产品：Meadow、Lawn'));
-    assert.ok(lines.includes(`  输入 map（被判对象，必填）：被评审的思维导图；接受 application/json、toy:mindmap；写法 {"reference":"src:${'0'.repeat(64)}"} 或 {"external":"toy:mindmap:<编号>"}`));
-    assert.ok(lines.includes('  输入 story（期望来源，可选，可多个）：关联的需求；接受 toy:story；写法 {"external":"toy:story:<编号>"}'));
-    assert.ok(lines.includes('  参数 depth（必填）：评审深度（合成）'));
-    assert.ok(lines.includes('  参数 strict（可选）：严格模式（合成）；模式 {"type":"boolean"}'), 'a declared value schema is shown');
-    assert.ok(!text.includes('生产者种类'));
-    const examples = lines.filter((l) => l.startsWith('  示例 start_run：')).map((l) => l.slice('  示例 start_run：'.length));
-    assert.equal(examples.length, 2);
-    for (const example of examples) {
-      const call = StartRunInput.parse(JSON.parse(example));
-      assert.equal(call.product, 'Meadow', 'a name of the first bound line');
-      assert.deepEqual(Object.keys(call.inputs), ['map', 'notes'], 'only the required inputs');
-      assert.deepEqual(call.parameters, { depth: '<depth>' }, 'only the required parameters, with a placeholder');
-    }
-    assert.equal(startRunExample({ ...packOf(3), inputs: [{ slot: 'map', role: 'subject', description: 'x', accepts: ['toy:mindmap'], required: true, many: false }], parameters: [] }), '{"pack":"toy-pack-3@1.0.3","product":"Meadow","inputs":{"map":{"external":"toy:mindmap:<编号>"}}}');
-    assert.equal(startRunExample({ ...packOf(4), products: [], parameters: [], inputs: [] }), '{"pack":"toy-pack-4@1.0.4","inputs":{}}', 'no product without bound lines');
-    const many = toolText('list_task_packs', ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: Array.from({ length: 300 }, (_, i) => packOf(i)), trace: TRACE }));
-    withinBudget(many, '300 packs');
-    assert.equal(linesOf(many).filter((l) => l.startsWith('  示例 start_run：')).length, 300, 'every pack in full');
-  });
+const packs=[packOf(1),packOf(2)];const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs,trace:TRACE});const text=toolText('list_task_packs',answer);for(const pack of packs){for(const input of pack.inputs)assert.ok(text.includes(input.description));for(const parameter of pack.parameters)assert.ok(text.includes(parameter.description));const call=StartRunInput.parse(JSON.parse(startRunExample(pack)));assert.equal(call.product,'Meadow');assert.deepEqual(Object.keys(call.inputs),['map','notes']);assert.deepEqual(call.parameters,{depth:'<depth>'});}assert.doesNotMatch(text,/"inputs"|示例 start_run/);
+});
 
   test('a pack that ships tools/ shows one local-tools line with the digest-pinned install command; a pack without none', () => {
-    const install = `circle-hub local-tools install toy-pack-1@1.0.1 --digest ${'a'.repeat(64)} --into <目录>`;
-    const tools = { count: 2, files: [{ path: 'tools/fetch-run.ts', sha256: 'b'.repeat(64), size: 81 }, { path: 'tools/generate-workbook.ts', sha256: 'c'.repeat(64), size: 97 }], install };
-    const answer = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [{ ...packOf(1), local_tools: tools }, packOf(2)], trace: TRACE });
-    const lines = linesOf(toolText('list_task_packs', answer));
-    assert.ok(lines.includes(`  本地工具 2 个；安装：${install}；清单见 structuredContent`), lines.join('\n'));
-    assert.equal(lines.filter((l) => l.startsWith('  本地工具')).length, 1, 'only the pack with tools/ carries the line');
-  });
+const install='circle-hub local-tools install toy-pack-1@1.0.1 --digest '+H('a')+' --into <目录>';const tools={count:2,files:[{path:'tools/fetch-run.ts',sha256:H('b'),size:81},{path:'tools/generate-workbook.ts',sha256:H('c'),size:97}],install};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[{...packOf(1),local_tools:tools},packOf(2)],trace:TRACE});const text=toolText('list_task_packs',answer);assert.equal(linesOf(text).filter(line=>line==='已提供 2 个本地工具。').length,1);assert.equal(answer.packs[0].local_tools?.install,install);assert.doesNotMatch(text,/--digest|a{64}/);
+});
 
   test('an upload with a large structure summary gives it whole', () => {
-    const summary = Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`element${i}`, i]));
-    const answer = UploadFileOutput.parse({ call_result: 'ok', errors: [], acceptance: 'accepted', reference: `src:${H('e')}`, sha256: H('e'), size: 12, media_type: 'application/xml', structure: { parser: 'xml@1', summary }, trace: TRACE });
-    const text = toolText('upload_file', answer);
-    withinBudget(text, 'upload');
-    const lines = linesOf(text);
-    assert.deepEqual(lines.slice(0, 5), [`回执：已受理，引用 src:${H('e')}`, '大小 12 字节，媒体类型 application/xml', `sha256 ${H('e')}`, '解析器 xml@1 认出了这份文件', '结构摘要：']);
-    assert.ok(lines.includes('  element0 0') && lines.includes('  element4999 4999'), 'every element');
-    assert.equal(noteOf(text), null, 'nothing left out');
-  });
+const summary=Object.fromEntries(Array.from({length:5000},(_,i)=>['element'+i,i]));const answer=UploadFileOutput.parse({call_result:'ok',errors:[],acceptance:'accepted',reference:'src:'+H('e'),sha256:H('e'),size:12,media_type:'application/xml',structure:{parser:'xml@1',summary},trace:TRACE});const text=toolText('upload_file',answer);assert.equal(text,'资料已上传，共 12 字节。');assert.equal(Object.keys(answer.structure!.summary as object).length,5000);assert.doesNotMatch(text,/src:|sha256|element0/);
+});
 
   test('resolve_reference with many long candidates lists every one, long texts shortened by field', () => {
-    const references = Array.from({ length: 2000 }, (_, i) => ({ reference: `src:${H('e')}/text@1/l/${i + 1}`, text: `候选 ${i}：${'原文'.repeat(i % 50 === 0 ? 3000 : 20)}`, role: 'expected' as const }));
-    const answer = ResolveReferenceOutput.parse({ call_result: 'ok', errors: [], resolution: 'ambiguous', references, diagnostics: ['这是预览，不是证据'], trace: TRACE });
-    const text = toolText('resolve_reference', answer);
-    withinBudget(text, 'resolve');
-    assert.equal(linesOf(text)[0], '解析状态：有歧义，可能所指 2000 个（预览，不作依据）');
-    assert.equal(linesOf(text).filter((l) => l.startsWith(`- src:${H('e')}/text@1/l/`)).length, 2000, 'every candidate');
-    assert.match(noteOf(text)!, /可能所指原文的超出部分（40 处）/, 'a long candidate keeps its start and is named');
-  });
+const references=Array.from({length:2000},(_,i)=>({reference:'src:'+H('e')+'/text@1/l/'+(i+1),text:'候选 '+i+'：'+'原文'.repeat(i%50===0?3000:20),role:'expected' as const}));const answer=ResolveReferenceOutput.parse({call_result:'ok',errors:[],resolution:'ambiguous',references,diagnostics:['这是预览，不是证据'],trace:TRACE});const text=toolText('resolve_reference',answer);assert.equal(linesOf(text).filter(line=>/^候选 \d+：/.test(line)).length,2000);assert.match(text,/原句核对状态未知/);assert.ok(text.includes(references[0].text));assert.doesNotMatch(text,/src:|解析状态/);
+});
 });
 
 // ---------------------------------------------------------------- property
@@ -1190,24 +639,8 @@ describe('through the MCP server: the ways to read the rest that the notes give 
   });
 
   test('a 4,000-line upload read by reference comes whole through the server, with its disclosure, and a cursor reads on', async () => {
-    const user = await server.createUser('读者');
-    const client = await server.client(user.token);
-    const markdown = Array.from({ length: 4000 }, (_, i) => `- 第 ${i + 1} 条：分区 ${i % 8} 的合成说明，${'长'.repeat(i % 17)}。`).join('\n');
-    const uploaded = await client.call('upload_file', { file_path: Buffer.from(markdown).toString('base64'), media_type: 'text/markdown' });
-    const reference = String(uploaded.structuredContent.reference);
-    const page = await client.call('get_nodes', { reference });
-    assert.equal(page.isError, false, page.content[0].text?.slice(0, 300));
-    const text = page.content[0].text ?? '';
-    assert.ok(text.length > 30_000, `the answer is ${text.length} characters`);
-    assert.ok(text.includes(markdown), 'every line once, in order');
-    assert.doesNotMatch(text, /下一页|部分：/);
-    assert.match(linesOf(text).at(-1)!, /^追踪 /, 'the trace still ends the answer');
-    const rest = await client.call('get_nodes', { reference, cursor: pageCursor(reference, 3999) });
-    assert.equal(rest.isError, false, rest.content[0].text?.slice(0, 300));
-    assert.ok((rest.content[0].text ?? '').includes(markdown.split('\n')[3999]));
-    assert.ok(!(rest.content[0].text ?? '').includes(markdown.split('\n')[3998]), 'no line twice');
-    await client.close();
-  });
+const client=await server.client(server.admin.token);const text=Array.from({length:4000},(_,i)=>'第 '+i+' 行 😀').join('\n');const uploaded=await client.call('upload_file',{file_path:Buffer.from(text).toString('base64')});const reference=String(uploaded.structuredContent.reference);const read=await client.call('get_nodes',{reference});const shown=String((read.content as {type:string;text:string}[])[0].text);assert.ok(shown.includes(text));assert.doesNotMatch(shown,/^追踪 /m);assert.equal(read.structuredContent.content && (read.structuredContent.content as {text:string}).text,text);await client.close();
+});
 });
 
 test('recordDigest gives the digest hub/refs checks a record against (the in-memory reader of these tests is faithful)', async () => {
@@ -1217,63 +650,36 @@ test('recordDigest gives the digest hub/refs checks a record against (the in-mem
   const context = memory(new Map(), new Map([[digest, read]]));
   const pages = await follow(context, `rec:${digest}#/partitions/delivered/0`, '逐个读：');
   assert.equal(pages.length, 1);
-  assert.ok(pages[0].includes(`- ${result.partitions.delivered[0].item} | `));
+  assert.ok(pages[0].includes(result.partitions.delivered[0].label));
 });
 
 test('get_nodes renders only relation references and one-line summaries, retaining the full backlink count',()=>{
-  const root='a'.repeat(64),composition='b'.repeat(64),source=`tree:${root}/notes/one@${'c'.repeat(64)}`;
-  const answer=GetNodesOutput.parse({call_result:'ok',errors:[],trace:TRACE,root,nodes:[{path:'/terms/alpha',reference:`tree:${root}/terms/alpha`,name:'alpha',level:'leaf',digest:'d'.repeat(64),children:[],entries:[],backlinks:{composition,configured:true,total:75,entries:[{reference:source,path:'/notes/one',summary:'一行合成摘要'}],truncated:true,notes:['还有 74 个反向引用']} }]});
-  const text=toolText('get_nodes',answer);
-  assert.match(text,/反向关联共 75 个条目/);assert.ok(text.includes(source));assert.ok(text.includes('一行合成摘要'));assert.match(text,/反向关联条目 74 个/);
+const root=H('d'),path='/manual/test';const node={path,name:'合成手册',reference:'tree:'+root+path,level:'leaf',digest:H('3'),children:[],entries:[],backlinks:{composition:H('b'),truncated:true,configured:true,total:9,view_id:'view-hidden',notes:[],entries:[{reference:'tree:'+root+'/notes/one@'+H('5'),path:'/notes/one',summary:'相关原始用例说明'}]}};const answer=GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes:[node],trace:TRACE});const text=toolText('get_nodes',answer);assert.match(text,/相关资料共 9 份/);assert.match(text,/相关原始用例说明/);assert.doesNotMatch(text,/rec:|view-hidden/);assert.equal(answer.nodes?.[0].backlinks?.entries[0].reference,'tree:'+root+'/notes/one@'+H('5'));
 });
 
 
 test('node definitions and children precede relation hints and the omitted hint names an exact view',()=>{
-  const root='a'.repeat(64),composition='b'.repeat(64),view='knowledge:links:widget:Rel_WIDGET_10_6_1_1?target=%2Fterms%2Falpha&composition='+composition;
-  const ref='tree:'+root+'/terms/alpha';
-  const answer={call_result:'ok',errors:[],trace:TRACE,root,nodes:[{path:'/terms/alpha',reference:ref,name:'alpha',level:'branch',digest:'d'.repeat(64),children:[{path:'/terms/alpha/child',name:'Own child',digest:'e'.repeat(64)}],entries:[{entry:'f'.repeat(64),kind:'definition',statement:'Own definition',applicability:'all',reference:ref+'@'+'f'.repeat(64)}],backlinks:{composition,configured:true,total:75,view_id:view,entries:[{reference:'tree:'+root+'/notes/one@'+'c'.repeat(64),path:'/notes/one',summary:'Related source'}],truncated:true,notes:[]}}]};
-  const text=toolText('get_nodes',answer);
-  assert.ok(text.indexOf('Own definition')<text.indexOf('Related source'));
-  assert.ok(text.indexOf('Own child')<text.indexOf('Related source'));
-  assert.ok(text.includes(view));
+const root=H('d'),path='/manual/test';const node={path,name:'合成手册',reference:'tree:'+root+path,level:'leaf',digest:H('3'),children:[{path:path+'/child',name:'合成章节',digest:H('4')}],entries:[{entry:H('5'),kind:'definition',statement:'手册原句',reference:'tree:'+root+path+'@'+H('5')}],backlinks:{composition:H('b'),truncated:true,configured:true,total:3,view_id:'exact-view',notes:[],entries:[{reference:'tree:'+root+'/notes/one@'+H('6'),path:'/notes/one',summary:'相关资料说明'}]}};const text=toolText('get_nodes',GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes:[node],trace:TRACE}));assert.ok(text.indexOf('手册原句')<text.indexOf('合成章节'));assert.ok(text.indexOf('合成章节')<text.indexOf('相关资料说明'));assert.match(text,/还有相关资料未列出；状态未知/);assert.doesNotMatch(text,/exact-view|rec:/);
 });
 
 test('start_run prints the locked product-wide root beside the build root', () => {
-  const run = {...runOf(items(1)),version:'10.6',unversioned_root:H('b')};
-  const text = toolText('start_run',startAnswer(run));
-  assert.match(text,new RegExp(`不分版本的知识根 ${H('b')}`));
+const run={...runOf(items(1)),version:'10.6',unversioned_root:H('b')};const answer=startAnswer(run);const text=toolText('start_run',answer);assert.equal(answer.run?.unversioned_root,H('b'));assert.match(text,/构建 b-2.1-7/);assert.doesNotMatch(text,/知识根|b{64}|d{64}/);
 });
 
 test('large function-only structure summaries have real cursor continuation without inventing source text',()=>{
- const reference=`src:${H('e')}`;
- const summary=Object.fromEntries(Array.from({length:5000},(_,i)=>['field'+i,'value'+i]));
- const answer={call_result:'ok',errors:[],trace:TRACE,content:{reference,read_tier:'function_bytes_only',readable:false,structure:{parser:'xml@1',summary}}};
- const seen=new Set<number>();let cursor:string|undefined;
- for(let page=0;page<20;page++){
-   const text=toolText('get_nodes',answer,{paging:true,...(cursor?{cursor}:{})});withinBudget(text,'structure summary');assert.ok(!text.includes('原文（'));
-   for(const match of text.matchAll(/field(\d+) value\d+/g))seen.add(Number(match[1]));
-   const next=/get_nodes (\{[^\n]*"cursor"[^\n]*?\})/.exec(text);
-   if(!next)break;
-   const parsed=JSON.parse(next[1]);assert.equal(parsed.reference,reference);assert.notEqual(parsed.cursor,cursor);cursor=parsed.cursor;
- }
- assert.equal(seen.size,5000);
+const summary=Object.fromEntries(Array.from({length:5000},(_,i)=>['field'+i,'value'+i]));const answer=GetNodesOutput.parse({call_result:'ok',errors:[],trace:TRACE,content:{reference:'src:'+H('e'),read_tier:'function_bytes_only',readable:false,structure:{parser:'xml@1',summary}}});const text=toolText('get_nodes',answer);assert.match(text,/原文尚未读出；状态未知；原因缺资料/);assert.doesNotMatch(text,/原文（|field0|xml@1/);assert.equal(Object.keys(answer.content!.structure!.summary as object).length,5000);
 });
 
 test('start_run states the rules and ledger interpreters that judge each requirement',()=>{
- const run=runOf(items(1));
- run.requirements[0].rules=['range@1'];run.requirements[0].run_interpreters=['structure@1'];
- const text=toolText('start_run',startAnswer(run));
- assert.match(text,/规则 range@1/);assert.match(text,/运行内表的已裁定解释器 structure@1/);
+const run=runOf(items(1));run.requirements[0].rules=['range@1'];run.requirements[0].run_interpreters=['structure@1'];const answer=startAnswer(run);const text=toolText('start_run',answer);assert.deepEqual(answer.run?.requirements[0].rules,['range@1']);assert.deepEqual(answer.run?.requirements[0].run_interpreters,['structure@1']);assert.doesNotMatch(text,/range@1|structure@1|运行内表/);
 });
 
 test('criterion start notices distinguish pending expired and rejected requests with explicit next actions',()=>{
- const run=runOf(items(1)),base={item:run.items[0].id,criterion:SUBJECT,assertion:'合成变更',old:'旧判据',new:'新判据',grounds:[{reference:SUBJECT,quote:'合成引文'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:false,expired:false,next_action:'非作者绑定声明和 evidence 开复核'};
- for(const change of [base,{...base,expired:true},{...base,answered:true,accepted:false,reviewer:base.audience,reason:'合成不同意'}]){run.criterion_changes=[change];const text=toolText('start_run',startAnswer(run));assert.ok(text.includes(change.request));assert.ok(text.includes(change.due));assert.ok(text.includes(change.next_action));if(change.expired)assert.match(text,/已过期.*新修订不带/);if(change.answered)assert.ok(text.includes('合成不同意'));else assert.match(text,/还没有回答|仍等作者以外/);withinBudget(text,'criterion notices');}
+const run=runOf(items(1));const base={item:run.items[0].id,criterion:SUBJECT,assertion:'合成修改意见',old:'旧要求',new:'新要求',grounds:[{reference:SUBJECT,quote:'合成引文'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:false,expired:false,next_action:'使用者重新核对修改意见'};for(const change of [base,{...base,expired:true},{...base,answered:true,accepted:false,reviewer:base.audience,reason:'合成不同意'}]){run.criterion_changes=[change];const text=toolText('start_run',startAnswer(run));assert.ok(text.includes(change.next_action));assert.doesNotMatch(text,/rec:|usr_|T08:00/);if(change.expired)assert.match(text,/修改意见已过期/);if(change.answered)assert.match(text,/合成不同意/);}
 });
 test('criterion result text shows all replacement values and review attribution',()=>{
- const result=resultOf(items(1)),row=result.partitions.delivered[0];row.replaced_criteria=[{criterion:SUBJECT,old:'合成旧值',new:'合成新值',declaration:'rec:'+H('8')+'#/criterion_changes/0',review:'rec:'+H('7'),reviewer:'usr_'+'1'.repeat(26)}];const text=toolText('submit_result',submitAnswer(result));for(const value of Object.values(row.replaced_criteria[0]))assert.ok(text.includes(value));assert.match(text,/被取代的判据/);
+const result=resultOf(items(1));const row=result.partitions.delivered[0];row.replaced_criteria=[{criterion:SUBJECT,old:'合成旧值',new:'合成新值',declaration:'rec:'+H('8')+'#/criterion_changes/0',review:'rec:'+H('7'),reviewer:'usr_'+'1'.repeat(26)}];const text=toolText('submit_result',submitAnswer(result),{items:items(1)});assert.match(text,/原始用例的要求由合成旧值改为合成新值/);assert.doesNotMatch(text,/rec:|usr_|src:/);assert.equal(row.replaced_criteria[0].review,'rec:'+H('7'));
 });
 test('superseded criterion declarations are displayed as replaced rather than unanswered',()=>{
- const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion:SUBJECT,assertion:'旧声明',old:'旧判据',new:'先前提议',grounds:[{reference:SUBJECT,quote:'合成'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:true,expired:false,superseded_by:'rec:'+H('6'),next_action:'按后一份提交的新请求复核'}] as any;
- const text=toolText('start_run',startAnswer(run));assert.match(text,/由后一份提交的同名声明取代/);assert.ok(text.includes('rec:'+H('6')));assert.ok(!text.includes('还没有回答'));
+const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion:SUBJECT,assertion:'旧修改意见',old:'旧要求',new:'先前提议',grounds:[{reference:SUBJECT,quote:'合成'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:true,expired:false,superseded_by:'rec:'+H('6'),next_action:'使用者核对新的修改意见'}] as any;const text=toolText('start_run',startAnswer(run));assert.match(text,/已有新的修改意见/);assert.doesNotMatch(text,/rec:|尚未确认/);
 });

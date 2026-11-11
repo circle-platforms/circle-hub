@@ -215,6 +215,10 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
         return dispatch.observeDevices(user, run, targets);
       },
+      ask: async (user, run, targets) => {
+        if (!dispatch) throw new Error('设备观察端口未就绪，请管理员检查装配');
+        return dispatch.askDevices(user, run, targets);
+      },
     } } : {}),
     adminLog: notes.engine,
   };
