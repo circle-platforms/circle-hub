@@ -6,7 +6,7 @@ title: Skill hooks proposal
 
 ## 范围
 
-本次只增加本任务页和 `docs/hub-r4-tasks/skill-hooks-proposal.patch`。补丁未应用，不改模型、生成文件、包清单或运行时代码。
+本次只增加本任务页和 `docs/hub-r4-tasks/skill-hooks-proposal.patch`。补丁未应用，不改模型、生成文件、包清单或运行时代码。补丁采用零上下文格式，清除了空白上下文行；获准后使用 `git apply --unidiff-zero docs/hub-r4-tasks/skill-hooks-proposal.patch` 应用。
 
 ## 待所有者决定
 
