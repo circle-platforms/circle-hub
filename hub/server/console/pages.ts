@@ -340,7 +340,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
   // reading 50 results, most of which no tab but one shows.
   const tab = taskTabOf(ctx);
   const olderParam = param(ctx, 'older'), before = tab === 'process' && olderParam !== undefined && olderParam.length <= 512 ? olderParam : null;
-  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: tab === 'process' ? RUN_HISTORY_LIMIT : 1, before } });
+  const detail: RunDetail | null = await ctx.deps.runs.getRun(ctx.principal, runId, { history: { limit: tab === 'process' ? RUN_HISTORY_LIMIT : 1, before }, ...(tab === 'process' ? {} : { requests: 'waiting' as const }) });
   if (detail === null) return neutralPage(ctx);
   const run = detail.run;
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);

@@ -12,16 +12,17 @@ import {requestReadable} from './grounds.ts';
 import {queryRead} from './query-scope.ts';
 import { runById, keyOwner, submissionByDigest } from './store.ts';
 import { createRequestService, type RequestBody, type RequestScope, type RequestView } from '../../requests/api.ts';
-export { createRequestService, RequestBodySchema, requestKey, requestKeyOf } from '../../requests/api.ts';
+export { closingIndex, createRequestService, RequestBodySchema, requestKey, requestKeyOf } from '../../requests/api.ts';
 export type { RequestBody, RequestScope, RequestView } from '../../requests/api.ts';
 function service(ctx:EngineContext){return createRequestService(ctx.deps.records,ctx.now,{canReadRun:async(by,run)=>{const stored=await runById(ctx.deps.records.store,run);return stored!==null&&canSeeRun(by,stored.body);}});}
 export const putRequest=(ctx:EngineContext,input:RequestBody)=>service(ctx).write(input);
 export const answerRequest=(ctx:EngineContext,request:string,source:string)=>service(ctx).answer(request,source);
 export const requestRecords=(ctx:EngineContext,run?:string):Promise<RequestView[]>=>service(ctx).all(run);
 export const requestRecordsIn=(ctx:EngineContext,scope:RequestScope):Promise<RequestView[]>=>service(ctx).within(scope);
-export async function requestsOf(ctx:EngineContext,by:Principal,run?:string):Promise<RequestView[]>{
- return queryRead(ctx,['requests',by,run??null] as const,async([,by,run])=>{
-  const rows=await service(ctx).list(by,run??undefined),allowed=await Promise.all(rows.map(request=>requestReadable(ctx,by,request)));
+/** The requests a reader may see, of one run or of all; `waiting` asks for those still waiting only, which reads no settled request. */
+export async function requestsOf(ctx:EngineContext,by:Principal,run?:string,options:{waiting?:boolean}={}):Promise<RequestView[]>{
+ return queryRead(ctx,['requests',by,run??null,options.waiting===true] as const,async([,by,run,waiting])=>{
+  const rows=await service(ctx).list(by,run??undefined,{waiting}),allowed=await Promise.all(rows.map(request=>requestReadable(ctx,by,request)));
   return rows.filter((_,i)=>allowed[i]);
  });
 }

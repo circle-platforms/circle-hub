@@ -107,11 +107,14 @@ test('one request reuses the protected global request list across run pages, wit
  Database.prototype.query=(async function(this:Database,...args:Parameters<typeof original>){calls++;return original.apply(this,args);}) as typeof original;t.after(()=>{Database.prototype.query=original;});
  await withReadScope(async()=>{
   assert.equal((await h.service.listRuns(h.admin,{limit:1})).requests?.[0].record,record.digest);
-  const before=calls;assert.equal((await h.service.listRequests!(h.admin))[0].record,record.digest);assert.equal(calls,before,'a second protected global listing adds no SQL');
+  // The run listing reads the waiting requests (issue 200): the same listing again is the same read.
+  const before=calls;assert.equal((await h.service.listRequests!(h.admin,undefined,{waiting:true}))[0].record,record.digest);assert.equal(calls,before,'a second protected global listing adds no SQL');
+  assert.equal((await h.service.listRequests!(h.admin))[0].record,record.digest,'the listing of every request is its own read and names it too');
   assert.deepEqual(await h.service.listRequests!(h.bob),[],'a different reader rechecks visibility in the same outer request');
  });
  await requests.answer(record.digest,run.digest);
  assert.equal((await h.service.listRequests!(h.admin))[0].answered_by,run.digest,'a fresh request observes an answer');
+ assert.deepEqual(await h.service.listRequests!(h.admin,undefined,{waiting:true}),[],'and it no longer waits');
 });
 
 test('malformed sort headers do not disable readable run pages or repeat through cursors in native and fallback stores',async t=>{

@@ -326,6 +326,14 @@ export interface RecordStore {
    * the entries it already has are kept, and a record holds at most 200. The number added; 0 for a record that is not stored.
    */
   addIndex?(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number>;
+  /**
+   * The records of `kind` that nothing has settled, verified, in insertion order: those indexed under `key` with one of
+   * `values`, or every record of the kind when no key is given. A record is settled when the newest record indexed under
+   * `closing` with the record's digest as its value is also indexed under `settled` with that digest. The index entries
+   * decide, so the body of a settled record is not read; a closing record stored without the `settled` entry leaves its
+   * record in the answer, for the caller to read what closed it.
+   */
+  findUnsettled?<B = unknown>(query: { kind: RecordKind; key?: string; values?: readonly string[]; closing: string; closingKind?: RecordKind; settled: string }, tx?: Transaction): Promise<StoredRecord<B>[]>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
   /** The digests findFirstMany would answer, in one query that reads no record body. */

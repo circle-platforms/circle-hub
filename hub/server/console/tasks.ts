@@ -46,7 +46,7 @@ export async function loadTasks(ctx: PageContext, runs: readonly RunRecordView[]
 
 /** The unanswered requests of the listed tasks: a page never needs the requests of any other run. Asked together, its read scope batches them. */
 export async function waitingRequests(ctx: PageContext, tasks: readonly TaskRow[]): Promise<RunRequestView[]> {
-  const lists = await Promise.all(tasks.map((task) => ctx.deps.runs.listRequests?.(ctx.principal, task.run.run) ?? []));
+  const lists = await Promise.all(tasks.map((task) => ctx.deps.runs.listRequests?.(ctx.principal, task.run.run, { waiting: true }) ?? []));
   return lists.flat().filter((request) => request.answered_by === null);
 }
 
