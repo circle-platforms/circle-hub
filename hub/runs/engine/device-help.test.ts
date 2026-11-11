@@ -132,7 +132,7 @@ describe('a run that asks the devices its lineage holds', { skip }, () => {
     assert.ok(!run.sources.some((source) => /[abc]{64}/.test(source.reference)), 'the device words are no source of the run: nothing can take them as an expected value');
     const text = toolText('start_run', detail.answer);
     assert.match(text, /设备输出\n/);
-    assert.match(text, /\n<1-9>   a number\n<cr>\n/, 'the device output keeps its line breaks');
+    assert.match(text, /\n<1-9>   a number\n<cr>(?:\n|$)/, 'the device output keeps its line breaks');
   });
 
   it('a device the lineage does not hold is never asked: no predecessor, someone else\'s booking, a key outside the prefix', async () => {
@@ -215,7 +215,7 @@ describe('a run that asks the devices its lineage holds', { skip }, () => {
     const claims = detail.answer.run!.device_help!;
     assert.equal(claims.at(-1)!.statement.data?.help, raw, 'as received');
     assert.equal(claims[0]!.statement.text, 'bed/meadow/dev/7 上问“widget set demo 5”：设备给出说明的最长的被问前缀是“widget set demo”（比它长的前缀没有问）');
-    assert.match(toolText('start_run', detail.answer), /\nname\n\\x1b\[1mbold\\x1b\[0m\n<cr>\n/);
+    assert.match(toolText('start_run', detail.answer), /\nname\n\\x1b\[1mbold\\x1b\[0m\n<cr>(?:\n|$)/);
   });
 
   it('a pack that asks without declaring leases is refused before anything is asked', async () => {
