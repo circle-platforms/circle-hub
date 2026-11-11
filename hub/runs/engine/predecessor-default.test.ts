@@ -70,7 +70,7 @@ test('an opted-in missing slot freezes the latest accepted submitted result desp
     assert.equal(run.sources.find(s=>s.slot==='draft')!.reference,'rec:'+expected.record);
     assert.deepEqual((await w.h.service.getRun(w.h.alice,run.run))!.run.input_defaults,defaults);
     const text=toolText('start_run',{...answer,trace:w.h.call().traceId});
-    assert.ok(text.includes(`draft 按前驱 ${w.draft.run} 的已受理结果 rec:${expected.record} 绑定`),text);
+    assert.doesNotMatch(text,/rec:|src:|run_|前驱|冻结/);
     const later=await w.submit('合成后续记录');assert.notEqual(later.record,expected.record);
     const repeated=await w.h.service.startRun(w.h.alice,args,w.h.call('verifier-session'));
     assert.equal(repeated.run!.run,run.run);assert.deepEqual(repeated.run!.input_defaults,defaults,'client-key replay retains the original selection');
@@ -190,7 +190,7 @@ test('a named predecessor input is copied when absent and refused when it differ
     assert.deepEqual(copied,{slot:'map',predecessor:w.draft.run,reference:w.map,kind:'input'});
     assert.equal(answer.run!.sources.find(source=>source.slot==='map')!.reference,w.map);
     const text=toolText('start_run',{...answer,trace:w.h.call().traceId});
-    assert.ok(text.includes(`map 按前驱 ${w.draft.run} 冻结的输入 ${w.map} 绑定`),text);
+    assert.doesNotMatch(text,/rec:|src:|run_|前驱|冻结/);
     const mismatch=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:'src:'+'ab'.repeat(32)}}},w.h.call('other-verifier'));
     assert.equal(mismatch.call_result,'error');
     assert.match(mismatch.errors.map(error=>`${error.message} ${error.fix??''}`).join('\n'),/不一致/);
@@ -207,7 +207,7 @@ test('a run id resolves to that run’s accepted result and an omitted slot foll
     assert.equal(lineage.call_result,'ok',JSON.stringify(lineage.errors));
     assert.deepEqual(lineage.run!.input_defaults,[{slot:'checks',predecessor:w.draft.run,reference:draft.reference}]);
     const text=toolText('start_run',{...lineage,trace:w.h.call().traceId});
-    assert.ok(text.includes(`checks 按前驱 ${w.draft.run} 的已受理结果 ${draft.reference} 绑定`),text);
+    assert.doesNotMatch(text,/rec:|src:|run_|前驱|冻结/);
     const absent=await w.h.service.startRun(w.h.alice,{...w.input,inputs:{map:{reference:w.map},draft,checks:[{run:'run_01m5h9zm2nhzbz2hrfjfb6azta'}]}},w.h.call('missing-run'));
     assert.equal(absent.call_result,'error');
     assert.match(absent.errors.map(error=>error.message).join('\n'),/不存在或当前用户不可见/);
