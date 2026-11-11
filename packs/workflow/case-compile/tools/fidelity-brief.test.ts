@@ -100,7 +100,7 @@ test('a verdict is merged only for the plan it answered, with the digest the too
   await w.runBrief();
   await writeFile(await w.verdictPath(), JSON.stringify({ steps: [{ ...VERDICT.steps[0], verdict: 'changed' }], disclosure: VERDICT.disclosure }));
   const returned = JSON.parse((await w.runApply()).stdout);
-  assert.deepEqual([returned.ready, returned.merged[0].changed, returned.attention[0].state], [false, 1, '审计判这条计划要改']);
+  assert.deepEqual([returned.ready, returned.merged[0].changed, returned.attention[0].state], [false, 1, '未确认']);
   assert.match(returned.attention[0].message, /审计判作者步骤 a2 的场景被改了.*判断错误，原因编写模型的问题，下一步由编写模型修改这条自动化用例，再交给独立模型核对/);
   assert.equal((await w.planOf()).slots.plan[0].data.fidelity.steps[0].verdict, 'changed', 'the verdict is merged as the auditor gave it');
 });

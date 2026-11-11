@@ -5,7 +5,6 @@
 // from the jobs' verdicts as the Hub relays them (decision 160), and a failed case closes by the reference engine's rules
 // (closeFailed). Model-supplied defect candidates and author conflicts carry quotations checked verbatim.
 import { isRecord } from './text.ts';
-import { isDynamicTerminal, labelOf } from './generated/vocabulary.ts';
 import { movedText, type MovedCase } from './channels.ts';
 import { quoteMatches } from './quote.ts';
 
@@ -34,10 +33,10 @@ const strings = (value: unknown): value is string[] => Array.isArray(value) && v
 
 /** The Hub's run-jobs@1 answer for `run`, checked for shape; anything else is refused rather than guessed at. */
 export function parseRunJobs(value: unknown, run: string): ExportedJob[] {
-  if (!isRecord(value) || value.schema !== 'run-jobs@1' || value.run !== run || !Array.isArray(value.jobs)) throw new Error(`Hub 给的运行 ${run} 的作业清单不合式或不是这个运行的`);
+  if (!isRecord(value) || value.schema !== 'run-jobs@1' || value.run !== run || !Array.isArray(value.jobs)) throw new Error(`Hub 返回的上机验证信息不完整或不属于本次上机验证`);
   return value.jobs.map((job) => {
-    if (!isRecord(job) || typeof job.job !== 'string' || !RUN.test(String(job.verification_run)) || !RUN.test(String(job.plan_run)) || !strings(job.items) || !SHA.test(String(job.sha256)) || typeof job.frozen !== 'boolean' || typeof job.outcome !== 'string') throw new Error(`运行 ${run} 的作业条目不合式`);
-    if (job.rows !== null && (!Array.isArray(job.rows) || job.rows.some((row) => !isRecord(row) || typeof row.item !== 'string' || typeof row.dynamic_terminal !== 'string'))) throw new Error(`运行 ${run} 的作业 ${job.job} 的逐条结论不合式`);
+    if (!isRecord(job) || typeof job.job !== 'string' || !RUN.test(String(job.verification_run)) || !RUN.test(String(job.plan_run)) || !strings(job.items) || !SHA.test(String(job.sha256)) || typeof job.frozen !== 'boolean' || typeof job.outcome !== 'string') throw new Error(`Hub 返回的上机验证信息不完整`);
+    if (job.rows !== null && (!Array.isArray(job.rows) || job.rows.some((row) => !isRecord(row) || typeof row.item !== 'string' || typeof row.dynamic_terminal !== 'string'))) throw new Error(`Hub 返回的原始用例结论不完整`);
     return job as unknown as ExportedJob;
   });
 }
@@ -49,13 +48,13 @@ export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   const job = settled.at(-1);
   if (!job) {
     const open = own.find((j) => j.ended === null);
-    if (open) throw new Error(`运行 ${run} 的作业 ${open.job} 还没有结束；等它结束再组交付`);
+    if (open) throw new Error(`上机验证还没有结束，请等结束后生成交付报告`);
     const frozen = own.find((j) => j.frozen || j.ended === 'unknown');
-    if (frozen) throw new Error(`运行 ${run} 的作业 ${frozen.job} 结果未知、等管理员处置；处置前它不算一次上机，不组交付`);
-    throw new Error(`运行 ${run} 没有派发过、或作业没有带回逐条结论；--runs 只写派发过并已结束的核验运行`);
+    if (frozen) throw new Error(`上机验证状态未知，原因还没查清；下一步由使用者联系管理员处理，再生成交付报告`);
+    throw new Error(`尚未上机验证，或设备输出缺少逐条结论；--runs 请只选择已结束的上机验证`);
   }
   const rows = job.rows!;
-  if (rows.length !== job.items.length || new Set(rows.map((r) => r.item)).size !== rows.length || rows.some((r) => !job.items.includes(r.item))) throw new Error(`运行 ${run} 的作业 ${job.job} 的逐条结论没有逐一覆盖派发的用例`);
+  if (rows.length !== job.items.length || new Set(rows.map((r) => r.item)).size !== rows.length || rows.some((r) => !job.items.includes(r.item))) throw new Error(`设备输出中的结论没有覆盖本次上机验证的全部原始用例`);
   return { run, job: job.job, plan_run: job.plan_run, sha256: job.sha256, items: [...job.items], rows };
 }
 
@@ -82,10 +81,10 @@ export interface Assembly {
  * volume is dispatched (run 15 ran fourteen passes together, reran one alone, and that one became the only delivered case).
  */
 export function assemble(population: string[], dispatches: Dispatch[]): Assembly {
-  if (!population.length || new Set(population).size !== population.length) throw new Error('用例清单为空或有重复的 autoid');
-  if (!dispatches.length) throw new Error('没有上机过的核验运行；--runs 至少写一次整卷上机');
-  if (new Set(dispatches.map((d) => d.run)).size !== dispatches.length) throw new Error('--runs 里同一个核验运行写了两次');
-  for (const d of dispatches) for (const item of d.items) if (!population.includes(item)) throw new Error(`运行 ${d.run} 派发了不在这份脑图用例清单里的 ${item}`);
+  if (!population.length || new Set(population).size !== population.length) throw new Error('原始用例清单为空或用例 ID 重复');
+  if (!dispatches.length) throw new Error('尚未上机验证；--runs 请至少选择一次自动化用例 Excel 的上机验证');
+  if (new Set(dispatches.map((d) => d.run)).size !== dispatches.length) throw new Error('--runs 中重复选择了同一次上机验证');
+  for (const d of dispatches) for (const item of d.items) if (!population.includes(item)) throw new Error(`上机验证包含不在这份原始用例清单里的原始用例 ${item}`);
   const passedWhole = (d: Dispatch) => d.rows.length > 0 && d.rows.every((r) => r.dynamic_terminal === 'pass');
   const latestOf = (item: string) => [...dispatches].reverse().flatMap((d) => d.rows.filter((r) => r.item === item))[0]?.dynamic_terminal;
   const lastPassed = population.filter((item) => latestOf(item) === 'pass');
@@ -94,8 +93,8 @@ export function assemble(population: string[], dispatches: Dispatch[]): Assembly
   const pass = at < 0 ? null : dispatches[at];
   // Every latest pass belongs in the pass volume; without one, or with passes outside it, dispatch the volume that holds them all.
   const outside = pass ? lastPassed.filter((item) => !pass.items.includes(item)) : [];
-  if (pass && outside.length) throw new Error(`最近一次上机通过的 ${outside.join('、')} 不在最后一次整卷全部通过的那一卷（核验运行 ${pass.run}）里。所有最近一次上机通过的用例要放在同一卷里一起整卷上机、逐条通过才交付：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交所有最近一次上机通过的用例的计划，生成、核验、派发，再组交付`);
-  if (!pass && lastPassed.length) throw new Error(`还没有一次整卷全部通过、之后也没再失败的上机，${lastPassed.join('、')} 最近一次上机通过了。通过卷要单独整卷上机：开新的计划运行，parameters.exclude 写上没通过的和没编出来的用例，原样重交通过用例的计划，生成、核验、派发，再把那次核验运行加到 --runs 末尾`);
+  if (pass && outside.length) throw new Error(`原始用例 ${outside.join('、')} 最近一次上机验证正确，但不在最近一份全部正确的自动化用例 Excel 里。下一步由编写模型把最近一次上机验证正确的原始用例单独做脚本合并，生成自动化用例 Excel，一起做上机验证后再生成交付报告`);
+  if (!pass && lastPassed.length) throw new Error(`尚无一起做上机验证且全部正确的自动化用例 Excel。原始用例 ${lastPassed.join('、')} 最近一次上机验证正确。下一步由编写模型把这些原始用例单独做脚本合并，生成自动化用例 Excel，一起做上机验证后再生成交付报告`);
   const delivered = new Set(pass?.items ?? []);
   const cases: CaseOutcome[] = population.map((autoid) => {
     const history = dispatches.flatMap((d, k) => d.rows.filter((r) => r.item === autoid).map((r) => ({ ordinal: k + 1, run: d.run, job: d.job, terminal: r.dynamic_terminal, ...(r.evidence?.log ? { log: r.evidence.log } : {}), ...(r.evidence?.sessions ? { sessions: r.evidence.sessions } : {}), ...(r.audit ? { audit: r.audit } : {}) })));
@@ -222,7 +221,7 @@ export function executionRefusals(session: string, markers: readonly string[]): 
 
 /** The model's notes: one judged paragraph and one fix-or-trade-off paragraph for exactly the cases not delivered. */
 export function readNotes(value: unknown, undelivered: string[]): Notes {
-  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件要写成 {"cases":{"<autoid>":{"judged":"…","remedy":"…","evidence":"…"}},"batch":"…"}（batch 可省）');
+  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件请按原始用例分别写结论、下一步和设备输出，格式见交付工具说明');
   const text = (v: unknown, where: string): string => {
     if (typeof v !== 'string' || !v.trim() || v.length > NOTE_MAX || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(v)) throw new Error(`${where} 要是 1 到 ${NOTE_MAX} 字的文字（可换行，不含其他控制字符）`);
     return v.trim();
@@ -233,19 +232,19 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
   const cases: Record<string, CaseNote> = {};
   for (const autoid of undelivered) {
     const note = value.cases[autoid];
-    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明只写 judged（怎么判断的）、remedy（修复方案或取舍）、evidence（设备原话）、判产品缺陷时的 defect_candidate 和判作者步骤与手册冲突时的 author_conflict`);
+    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明请只写结论、下一步、设备输出，以及判断设备问题或原始用例问题所需的原文`);
     const candidate = note.defect_candidate, conflict = note.author_conflict;
-    if (candidate !== undefined && (!isRecord(candidate) || Object.keys(candidate).sort().join() !== 'actual,expected,repro')) throw new Error(`用例 ${autoid} 的 defect_candidate 恰好写 repro（复现步骤）、expected（作者期望原文）和 actual（设备原话）三项`);
-    if (conflict !== undefined && (!isRecord(conflict) || Object.keys(conflict).sort().join() !== 'author,manual,reference')) throw new Error(`用例 ${autoid} 的 author_conflict 恰好写 author（作者原句）、manual（手册原句）和 reference（手册那一条的引用）三项`);
-    if (candidate !== undefined && conflict !== undefined) throw new Error(`用例 ${autoid} 不能同时写 defect_candidate 和 author_conflict：设备拒绝的取值若是手册说明排除的，只写 author_conflict；手册说明支持作者的取值才写 defect_candidate`);
+    if (candidate !== undefined && (!isRecord(candidate) || Object.keys(candidate).sort().join() !== 'actual,expected,repro')) throw new Error(`用例 ${autoid} 判断设备的问题时，请只写复现步骤、原始用例期望原句和设备输出三项`);
+    if (conflict !== undefined && (!isRecord(conflict) || Object.keys(conflict).sort().join() !== 'author,manual,reference')) throw new Error(`用例 ${autoid} 判断原始用例的问题时，请只写原始用例原句、手册原话和对应的手册三项`);
+    if (candidate !== undefined && conflict !== undefined) throw new Error(`用例 ${autoid} 不能同时判断为设备的问题和原始用例的问题；手册排除这个取值时请核对原始用例，手册支持这个取值时请核对设备输出`);
     cases[autoid] = {
-      judged: text(note.judged, `用例 ${autoid} 的 judged`), remedy: text(note.remedy, `用例 ${autoid} 的 remedy`),
-      ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的 evidence`) }),
-      ...(isRecord(candidate) ? { defect_candidate: { repro: text(candidate.repro, `用例 ${autoid} 的 defect_candidate.repro`), expected: text(candidate.expected, `用例 ${autoid} 的 defect_candidate.expected`), actual: text(candidate.actual, `用例 ${autoid} 的 defect_candidate.actual`) } } : {}),
-      ...(isRecord(conflict) ? { author_conflict: { author: text(conflict.author, `用例 ${autoid} 的 author_conflict.author`), manual: text(conflict.manual, `用例 ${autoid} 的 author_conflict.manual`), reference: text(conflict.reference, `用例 ${autoid} 的 author_conflict.reference`) } } : {}),
+      judged: text(note.judged, `用例 ${autoid} 的结论`), remedy: text(note.remedy, `用例 ${autoid} 的下一步`),
+      ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的设备输出`) }),
+      ...(isRecord(candidate) ? { defect_candidate: { repro: text(candidate.repro, `用例 ${autoid} 的复现步骤`), expected: text(candidate.expected, `用例 ${autoid} 的期望原句`), actual: text(candidate.actual, `用例 ${autoid} 的设备输出`) } } : {}),
+      ...(isRecord(conflict) ? { author_conflict: { author: text(conflict.author, `用例 ${autoid} 的原始用例原句`), manual: text(conflict.manual, `用例 ${autoid} 的手册原话`), reference: text(conflict.reference, `用例 ${autoid} 对应的手册`) } } : {}),
     };
   }
-  return { ...(value.batch === undefined ? {} : { batch: text(value.batch, 'batch') }), cases };
+  return { ...(value.batch === undefined ? {} : { batch: text(value.batch, '补充说明') }), cases };
 }
 
 /**
@@ -259,8 +258,8 @@ export function evidenceProblems(notes: Notes, deviceTexts: Record<string, strin
   for (const [autoid, texts] of Object.entries(deviceTexts)) {
     if (!texts.length) continue;
     const evidence = notes.cases[autoid]?.evidence;
-    if (evidence === undefined) problems.push(`用例 ${autoid} 上过机，说明里缺 evidence：从它最后一次上机的设备返回（运行日志或设备会话）逐字复制说明失败的那一段`);
-    else if (!texts.some((text) => plain(text).includes(plain(evidence)))) problems.push(`用例 ${autoid} 的 evidence 不是它最后一次上机设备返回里的原话；逐字复制，不改写、不拼接`);
+    if (evidence === undefined) problems.push(`用例 ${autoid} 已做上机验证，但说明缺少设备输出；请逐字复制最近一次上机验证说明错误的那段设备输出`);
+    else if (!texts.some((text) => plain(text).includes(plain(evidence)))) problems.push(`用例 ${autoid} 的设备输出不是最近一次上机验证的原话；逐字复制，不改写、不拼接`);
   }
   return problems;
 }
@@ -294,39 +293,39 @@ const shownRejections = (refused: readonly SyntaxRejection[]): string => refused
 
 export function authorConflictProblems(autoid: string, conflict: AuthorConflict, ground: ConflictGround | undefined, deviceTexts: readonly string[]): string[] {
   const refused = deviceTexts.flatMap((text) => syntaxRejections(text));
-  if (refused.length) return [`用例 ${autoid} 的 author_conflict：它最后一次上机里设备用 ^ 拒绝了命令 ${shownRejections(refused)}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上作者步骤与手册冲突：去掉 author_conflict，先修这条命令再上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`];
+  if (refused.length) return [`用例 ${autoid} 判断原始用例的问题时，它最后一次上机里设备用 ^ 拒绝了命令 ${shownRejections(refused)}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上作者步骤与手册冲突：请重新判断原因，先修这条命令再做上机验证；最多重交 ${MAX_ROUNDS} 次，仍未核对正确时写明编写模型的问题`];
   const plain = (text: string) => text.replace(/\r/g, '');
   const wrong: string[] = [];
-  if (plain(conflict.author).length < CONFLICT_MIN_QUOTE || plain(conflict.manual).length < CONFLICT_MIN_QUOTE) wrong.push(`author 和 manual 各要逐字引一整句原文，至少 ${CONFLICT_MIN_QUOTE} 个字，几个字指不出作者要的是什么、手册排除的是什么`);
+  if (plain(conflict.author).length < CONFLICT_MIN_QUOTE || plain(conflict.manual).length < CONFLICT_MIN_QUOTE) wrong.push(`原始用例原句和手册原话各要逐字引用一整句，至少 ${CONFLICT_MIN_QUOTE} 个字，几个字指不出作者要的是什么、手册排除的是什么`);
   else {
     const words = ground?.authored[autoid];
-    if (!words?.length) wrong.push('这条用例的脑图原文取不到（组交付时给 --recompose，或让一次计划运行带着它），author 核对不了');
-    else if (!words.some((line) => quoteMatches(plain(line), plain(conflict.author)))) wrong.push('author 不是这条用例脑图原文（标题、步骤或期望）里的字');
+    if (!words?.length) wrong.push('这条原始用例的原文取不到，请补齐用例重组或脚本编写时的原始用例');
+    else if (!words.some((line) => quoteMatches(plain(line), plain(conflict.author)))) wrong.push('原始用例引文不是标题、步骤或期望的原句');
     const statement = ground?.statements.get(conflict.reference);
-    if (statement === undefined) wrong.push('reference 不是这份脑图各次计划运行锁定的知识根里的条目引用；照 knowledge/ 里那一条下的“引用”行原样抄');
-    else if (!quoteMatches(plain(statement), plain(conflict.manual))) wrong.push('manual 不是 reference 指到的条目里的原话');
+    if (statement === undefined) wrong.push('所选手册不属于脚本编写时使用的手册和命令树，请使用同一构建的手册和命令树');
+    else if (!quoteMatches(plain(statement), plain(conflict.manual))) wrong.push('手册引文不是所选手册的原话');
   }
-  return wrong.length ? [`用例 ${autoid} 的 author_conflict：${wrong.join('；')}；逐字复制，不改写、不拼接`] : [];
+  return wrong.length ? [`用例 ${autoid} 判断原始用例的问题时，${wrong.join('；')}；逐字复制，不改写、不拼接`] : [];
 }
 
 export function lockedStatements(bytes: Uint8Array, run: string, wanted: ReadonlySet<string>): { root: string; statements: Map<string, string> } {
   let head: Record<string, unknown> | null = null, nodes = 0;
   const statements = new Map<string, string>();
   let lines: string[];
-  try { lines = new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n'); } catch { throw new Error('Hub 给的知识根不是 UTF-8'); }
+  try { lines = new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n'); } catch { throw new Error('手册和命令树无法读取'); }
   for (const line of lines) {
     if (line.length === 0) continue;
     let value: unknown;
-    try { value = JSON.parse(line); } catch { throw new Error('Hub 给的知识根不是逐行的 JSON'); }
+    try { value = JSON.parse(line); } catch { throw new Error('手册和命令树内容不完整'); }
     if (head === null) {
-      if (!isRecord(value) || value.schema !== 'run-knowledge@1' || value.run !== run || typeof value.root !== 'string') throw new Error(`Hub 给的知识根不是运行 ${run} 的，或首行不合式`);
+      if (!isRecord(value) || value.schema !== 'run-knowledge@1' || value.run !== run || typeof value.root !== 'string') throw new Error(`手册和命令树不属于本次脚本编写或内容不完整`);
       head = value; continue;
     }
-    if (!isRecord(value) || !Array.isArray(value.entries)) throw new Error('Hub 给的知识根里有不合式的节点');
+    if (!isRecord(value) || !Array.isArray(value.entries)) throw new Error('手册和命令树内容不完整');
     nodes++;
     for (const entry of value.entries) if (isRecord(entry) && typeof entry.reference === 'string' && typeof entry.statement === 'string' && wanted.has(entry.reference)) statements.set(entry.reference, entry.statement);
   }
-  if (head === null || head.nodes !== nodes) throw new Error(`Hub 给的知识根行数与首行不符，或是空的`);
+  if (head === null || head.nodes !== nodes) throw new Error(`手册和命令树缺少内容`);
   return { root: head.root as string, statements };
 }
 
@@ -355,23 +354,23 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
       // realized on it. In run 19 a case closed as a candidate on the caret under a command typed at the wrong prompt.
       const refused = (deviceTexts[outcome.autoid] ?? []).flatMap((text) => syntaxRejections(text));
       if (refused.length) {
-        problems.push(`用例 ${outcome.autoid} 的 defect_candidate：它最后一次上机里设备用 ^ 拒绝了命令 ${shownRejections(refused)}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上声明与设备行为冲突：去掉 defect_candidate，先修这条命令再上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
+        problems.push(`用例 ${outcome.autoid} 判断设备的问题时，它最后一次上机里设备用 ^ 拒绝了命令 ${shownRejections(refused)}。设备没有接受这条命令的写法，作者的场景没有在设备上实现，够不上声明与设备行为冲突：请重新判断原因，先修这条命令再做上机验证；最多重交 ${MAX_ROUNDS} 次，仍未核对正确时写明编写模型的问题`);
         return outcome;
       }
       const wrong: string[] = [];
-      if (!(authored[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.expected)))) wrong.push('expected 不是这条用例作者期望原文里的字');
-      if (!(deviceTexts[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.actual)))) wrong.push('actual 不是它最后一次上机设备返回里的原话');
+      if (!(authored[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.expected)))) wrong.push('期望不是原始用例的原句');
+      if (!(deviceTexts[outcome.autoid] ?? []).some((text) => plain(text).includes(plain(candidate.actual)))) wrong.push('设备输出不是最近一次上机验证的原话');
       if (!wrong.length) return { ...outcome, rounds: used, closing: 'device_defect' as const };
-      problems.push(`用例 ${outcome.autoid} 的 defect_candidate：${wrong.join('；')}；逐字复制，不改写、不拼接`);
+      problems.push(`用例 ${outcome.autoid} 判断设备的问题时，${wrong.join('；')}；逐字复制，不改写、不拼接`);
       return outcome;
     }
     if (used >= MAX_ROUNDS) return { ...outcome, rounds: used, closing: 'authoring_failure' as const };
     const dropped = droppedPass(outcome);
     if (dropped) {
-      problems.push(`用例 ${outcome.autoid} 最近一次上机运行器报通过，通过复核改记为无判定：${dropped.where}里有执行失败的设备原话“${dropped.line.length > 160 ? `${dropped.line.slice(0, 160)}…` : dropped.line}”，它自己的断言没有读这一行。照 InfoTest，这样的用例和上机没通过的一样回到编写：它没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。让它的断言读到这一行，或换一种不会执行失败的观察，改计划后整卷上机；${MAX_ROUNDS} 轮未过的记为模型未找到解决方案`);
+      problems.push(`用例 ${outcome.autoid} 最近一次上机验证状态未知，设备输出有执行失败原话“${dropped.line.length > 160 ? `${dropped.line.slice(0, 160)}…` : dropped.line}”，自动化用例没有检查这一行。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，改好自动化用例再一起做上机验证。已重写自动化用例 ${used} 次，最多重交 ${MAX_ROUNDS} 次，同一份自动化用例重新验证不算重写`)
       return outcome;
     }
-    problems.push(`用例 ${outcome.autoid} 上机没通过的编写轮次是 ${used}，还不到 ${MAX_ROUNDS} 轮（同一份计划重跑不算新的一轮）。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置这类文字主张不是依据，照用例原样继续编写；“未定”就在被测命令前加只读观察再上机；按设备原话改计划，整卷上机。只有核对得上的产品缺陷候选（defect_candidate：repro 复现步骤、expected 作者期望原文、actual 设备原话，后两项逐字）和作者步骤与手册冲突（author_conflict：author 作者原句、manual 手册原句、reference 手册那一条的引用，逐字）可以提前定下结论`);
+    problems.push(`用例 ${outcome.autoid} 上机验证有错误，已重写自动化用例 ${used} 次，最多重交 ${MAX_ROUNDS} 次，同一份自动化用例重新验证不算重写。说明里的判断尚未确认：测试环境缺资料或前置条件的说明尚未确认，请按原始用例继续脚本编写；原因还没查清时，请在被测命令前加只读观察；编写模型按设备输出改好自动化用例，再把自动化用例 Excel 一起做上机验证。只有复现步骤、原始用例原句、设备输出均已核对的设备问题，或原始用例和手册原话均已核对的原始用例问题，才能提前结束脚本编写并由使用者决定`);
     return outcome;
   });
   return { cases: closed, problems };
@@ -400,7 +399,7 @@ export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFa
       if (wrong.length) { problems.push(...wrong); return outcome; }
       return { ...outcome, closing: 'author_conflict' as const, conflict };
     }
-    problems.push(`用例 ${outcome.autoid} 没有上机，Hub 也没有给它的计划记下缺少的事实或修正轮次用完。说明里的判断不能让它定下结论：环境缺数据、缺拓扑、缺前置、缺命令这类文字主张不是依据，照用例原样编写、交卷，和其他用例一起整卷上机，按设备原话归因，最多 ${MAX_ROUNDS} 轮。它自己的计划交给 Hub 后被判缺原合约事实（Hub 记下数据缺口并点名补证请求），或修正轮次用完仍没有受理的，或作者步骤与手册冲突（author_conflict：author 作者原句、manual 手册原句、reference 手册那一条的引用，逐字）待作者或用户裁定的，才可以不上机定下结论`);
+    problems.push(`用例 ${outcome.autoid} 尚未上机验证，Hub 也未确认缺资料或重交次数用完。说明里的判断尚未确认：测试环境缺资料或前置条件的说明尚未确认，请按原始用例继续脚本编写和脚本合并，再把自动化用例 Excel 一起做上机验证；根据设备输出做失败分析，最多重交 ${MAX_ROUNDS} 次。只有 Hub 确认缺资料或最多重交的次数用完，或模型提出原始用例与手册冲突且原句已核对，才能在上机验证前结束脚本编写；原始用例是否修改由使用者决定`);
     return outcome;
   });
   return { cases: closed, problems };
@@ -428,12 +427,10 @@ export function closingLine(outcome: CaseOutcome): string | null {
   return null;
 }
 
-export const terminalLabel = (terminal: string): string => isDynamicTerminal(terminal) ? labelOf('dynamic_terminal', terminal) : '无法识别的结论';
-/** What happened, mechanically from the verdict sequence (the reference engine translates its verdict ledger the same way). */
+export const terminalLabel = (terminal: string): string => terminal === 'pass' ? '正确' : terminal === 'fail' ? '错误' : '未知';
 export function timeline(outcome: CaseOutcome, excluded: boolean): string {
-  if (!outcome.history.length) return excluded ? '没有上机：计划运行用 parameters.exclude 排除了这一条，没有编出可执行的计划。' : '没有上机：没有一次派发包含这一条。';
-  const steps = outcome.history.map((h) => `第 ${h.ordinal} 次上机（核验运行 ${h.run}）：${terminalLabel(h.terminal)}${h.audit ? `（运行器报通过，但 ${h.audit.where} 里有执行失败的设备原话“${h.audit.line}”，本条断言没有读它，不算通过）` : ''}`).join(' → ');
-  return steps + '。';
+  if (!outcome.history.length) return excluded ? '未做上机验证，这条原始用例未完成脚本编写。' : '未做上机验证。';
+  return outcome.history.map((h) => `第 ${h.ordinal} 次上机验证${h.audit ? `状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : `判断${terminalLabel(h.terminal)}`}`).join('；') + '。';
 }
 
 export interface ReportInput {
@@ -446,58 +443,55 @@ export interface ReportInput {
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
   placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
 }
-const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || `用例 …${autoid.slice(-6)}`;
-/** The closings of the failed cases, of those whose pass was dropped and of those never dispatched, one sentence each, naming only those that occur; empty when none closed. */
+const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || '标题未知';
 export function closingCounts(cases: CaseOutcome[]): string {
-  return (['failed', 'unsettled', 'unrun'] as const).map((status) => {
-    const counts = (Object.keys(CLOSING) as Closing[]).map((closing) => [closing, cases.filter((c) => c.status === status && c.closing === closing).length] as const).filter(([, n]) => n > 0);
-    return counts.length ? `${STATUS[status]}的终态：${counts.map(([closing, n]) => `${CLOSING[closing]} ${n}`).join('，')}。` : '';
-  }).join('');
+  return cases.filter((outcome) => outcome.closing).map((outcome) => `原始用例 ${outcome.autoid}，原因${reasonOf(outcome)}。`).join('');
+}
+const reasonOf = (outcome: CaseOutcome): string => outcome.closing === 'authoring_failure' ? '编写模型的问题' : outcome.closing === 'author_conflict' ? '原始用例的问题' : outcome.closing === 'missing_fact' ? '缺资料' : '还没查清';
+export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string {
+  const named = `原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`;
+  if (outcome.status === 'delivered') return `${named}，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者程序。`;
+  const note = input.notes.cases[outcome.autoid];
+  const model = outcome.closing === 'author_conflict' || outcome.closing === 'device_defect';
+  const status = model ? '未确认' : outcome.closing === 'authoring_failure' ? '已确认' : outcome.closing === 'missing_fact' || outcome.status === 'unsettled' || outcome.status === 'unrun' ? '未知' : '已确认';
+  const conclusion = outcome.closing === 'author_conflict' ? '模型判断原始用例与手册冲突' : outcome.closing === 'device_defect' ? '模型判断原始用例的期望与设备输出不一致' : outcome.closing === 'authoring_failure' ? `自动化用例尚未编写正确${outcome.rounds === undefined ? '' : `，已重写自动化用例 ${outcome.rounds} 次`}` : outcome.closing === 'missing_fact' ? '缺少脚本编写所需的资料' : outcome.status === 'failed' ? '上机验证发现错误' : '上机验证尚无结论';
+  const next = model ? '使用者核对原始用例、手册和设备输出后决定是否修改原始用例' : note.remedy;
+  return `${named}，${conclusion}，状态${status}${status === '未知' ? '' : '，判断错误'}。原因${reasonOf(outcome)}，下一步${next}。决定者${model ? '模型' : '程序'}。`;
 }
 function head(input: ReportInput): string[] {
-  const { totals, pass, unsuccessful } = input.assembly;
-  const closings = closingCounts(input.assembly.cases);
+  const { pass, unsuccessful } = input.assembly;
   const lines = [
-    `本份脑图选中 ${totals.cases} 个用例：${STATUS.delivered} ${totals.delivered}，${STATUS.failed} ${totals.failed}，${STATUS.unsettled} ${totals.unsettled}，${STATUS.unrun} ${totals.unrun}。${closings}`,
-    '',
-    pass && input.files.pass ? `- 通过卷 \`case.xlsx\`：${pass.items.length} 个用例。这份工作簿（sha256 ${input.files.pass.sha256.slice(0, 12)}…）在核验运行 ${pass.run}（作业 ${pass.job.slice(0, 12)}）里整卷上机，逐条通过。` : '- 没有通过卷：最后一次上机没有用例通过。',
-    unsuccessful && input.files.unsuccessful ? `- 未通过卷 \`unsuccessful_cases.xlsx\`：${unsuccessful.items.length} 个用例，每条用它最后一次上机的计划（计划运行 ${[...new Set(unsuccessful.items.map((item) => unsuccessful.sources[item].plan_run))].join('、')}），没有再上机。` : '- 没有未通过卷：没有带计划却没通过的用例。',
+    pass && input.files.pass ? `自动化用例 Excel case.xlsx 中的 ${pass.items.length} 条原始用例已一起完成上机验证，判断正确。` : '尚无核对正确的自动化用例 Excel。',
+    unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
   ];
-  if (input.build) lines.push(`- 构建：${input.build}`);
-  for (const [label, moved] of [['通过卷', input.placedLast?.pass], ['未通过卷', input.placedLast?.unsuccessful]] as const) if (moved?.length) lines.push(`- ${label}：${movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const)))}`);
+  if (input.build) lines.push(`构建 ${input.build}。`);
+  for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))));
   const audit = input.passAudit;
-  if (audit) lines.push(audit.markers === null
-    ? '- 通过复核：合约没有声明执行失败标记，通过的条目没有按 InfoTest 的规则复核。'
-    : `- 通过复核（InfoTest 的执行失败标记，合约声明 ${audit.markers} 条）：读了 ${audit.read} 条通过的运行日志，${audit.downgraded} 条里有本条断言没读的执行失败原话、改记无判定${audit.wordless ? `；${audit.wordless} 条通过没有存下运行日志，没有复核` : ''}。`);
-  if (input.notes.batch) lines.push('', `> ${input.notes.batch.replace(/\n/g, '\n> ')}`);
+  if (audit?.markers === null) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
+  else if (audit?.downgraded || audit?.wordless) lines.push(`核对设备输出后，${audit.downgraded} 条原始用例有执行失败原话却未被自动化用例检查，状态未知；${audit.wordless} 条缺少设备输出，状态未知。下一步由编写模型补齐检查或由使用者补齐设备输出。决定者程序。`);
   return lines;
 }
 function section(input: ReportInput, outcome: CaseOutcome): string[] {
   const note = input.notes.cases[outcome.autoid];
-  const fence = (text: string) => ['```device-evidence', text.replace(/```/g, '`​``'), '```'];
-  const closing = closingLine(outcome);
+  const fence = (text: string) => ['```', text.replace(/```/g, '`​``'), '```'];
   const candidate = outcome.closing === 'device_defect' ? note.defect_candidate : undefined;
   const conflict = outcome.closing === 'author_conflict' ? outcome.conflict : undefined;
   return [
-    `## ${title(input, outcome.autoid)}`,
-    `- 编号 \`${outcome.autoid}\` · 状态：${STATUS[outcome.status]} · 上机 ${outcome.history.length} 次${outcome.closing ? ` · 终态：${CLOSING[outcome.closing]}` : ''}`,
-    '', `**发生了什么**：${timeline(outcome, input.excluded.includes(outcome.autoid))}`,
-    ...(note.evidence ? ['', `**设备原话**（已核对出自最后一次上机的设备返回）：`, ...fence(note.evidence)] : []),
-    ...(closing ? ['', `**结论**：${closing}`] : []),
-    ...(candidate ? ['', `**缺陷候选**：复现步骤：${candidate.repro}`, '', '作者期望（原文）：', ...fence(candidate.expected), '', '设备实际（原话）：', ...fence(candidate.actual)] : []),
-    ...(conflict ? ['', '**作者原句**（脑图原文，已逐字核对）：', ...fence(conflict.author), '', `**手册原文**（锁定知识根里的条目，引用 ${conflict.reference}，已逐字核对）：`, ...fence(conflict.manual)] : []),
-    '', `**怎么判断的**：${note.judged}`,
-    '', `**修复方案／取舍**：${note.remedy}`,
+    `## 原始用例 ${outcome.autoid} ${title(input, outcome.autoid)}`,
+    caseConclusion(input, outcome),
+    '', timeline(outcome, input.excluded.includes(outcome.autoid)),
+    ...(note.judged ? ['', `模型说明，状态未确认。${note.judged}`] : []),
+    ...(outcome.missing?.missing ? ['', `证据，Hub 核对结果原话。${outcome.missing.missing}`] : []),
+    ...(note.evidence ? ['', '**证据，设备输出**，已按照规则核对设备输出。', ...fence(note.evidence)] : []),
+    ...(candidate ? ['', `复现步骤 ${candidate.repro}`, '', '原始用例原句', ...fence(candidate.expected), '', '设备输出', ...fence(candidate.actual)] : []),
+    ...(conflict ? ['', '**证据，原始用例原句**，已按照规则核对原文。', ...fence(conflict.author), '', `**证据，手册原话**，构建 ${input.build ?? '未知'}，已按照规则核对原文。`, ...fence(conflict.manual)] : []),
   ];
 }
-const DELIVERABLES = '交付物：`case.xlsx`（通过卷）、`unsuccessful_cases.xlsx`（未通过卷）、`delivery_report.md`（本报告）、`unsuccessful_cases.md`（未通过用例详报）、`delivery.json`（机读汇总）；没有的卷上面已说明。';
+const DELIVERABLES = '自动化用例 Excel：`case.xlsx`、`unsuccessful_cases.xlsx`。交付报告：`delivery_report.md`、`unsuccessful_cases.md`。机器可读结果：`delivery.json`。';
 
 export function deliveryReport(input: ReportInput): string {
-  const delivered = input.assembly.cases.filter((c) => c.status === 'delivered');
-  const others = input.assembly.cases.filter((c) => c.status !== 'delivered');
   const lines = [`# 交付报告 — ${input.name}`, `> 生成 ${input.generatedAt}`, '', ...head(input)];
-  if (delivered.length) lines.push('', '## 交付的用例', ...delivered.map((c) => `- \`${c.autoid}\` ${title(input, c.autoid)}`));
-  for (const c of others) lines.push('', ...section(input, c));
+  for (const outcome of input.assembly.cases) lines.push('', ...(outcome.status === 'delivered' ? [caseConclusion(input, outcome)] : section(input, outcome)));
   lines.push('', '---', DELIVERABLES);
   return lines.join('\n') + '\n';
 }
@@ -505,20 +499,20 @@ export function deliveryReport(input: ReportInput): string {
 const LOG_TAIL = 1500;
 export function unsuccessfulReport(input: ReportInput): string {
   const others = input.assembly.cases.filter((c) => c.status !== 'delivered');
-  const lines = [`# 未通过用例详报 — ${input.name}`, `> 生成 ${input.generatedAt} · 共 ${others.length} 个`];
-  for (const c of others) {
-    lines.push('', ...section(input, c));
-    const original = input.originals[c.autoid];
+  const lines = [`# 原始用例的错误和未知 — ${input.name}`, `> 生成 ${input.generatedAt}`];
+  for (const outcome of others) {
+    lines.push('', ...section(input, outcome));
+    const original = input.originals[outcome.autoid];
     if (original?.lines.length) {
-      lines.push('', '**脑图原始用例**：');
-      for (const line of original.lines) lines.push(`- ${line.text}${line.expected.length ? ` → 预期：${line.expected.join('；')}` : ''}`);
+      lines.push('', '**原始用例原句**');
+      for (const line of original.lines) lines.push(`- ${line.text}${line.expected.length ? ` → 期望 ${line.expected.join('；')}` : ''}`);
     }
-    const log = input.logs[c.autoid];
+    const log = input.logs[outcome.autoid];
     if (log) {
-      if (log.text === null) lines.push('', `**最后一次设备日志**（作业 ${log.job.slice(0, 12)}，${log.reference}）：${log.withheld ?? '没有取到字节'}`);
+      if (log.text === null) lines.push('', `**设备输出**。状态未知，原因缺资料，${log.withheld ?? '没有取得设备输出'}；下一步由使用者补齐设备输出。`);
       else {
         const tail = log.text.length > LOG_TAIL ? log.text.slice(-LOG_TAIL) : log.text;
-        lines.push('', `**最后一次设备日志**（作业 ${log.job.slice(0, 12)}，${log.text.length > LOG_TAIL ? `末尾 ${LOG_TAIL} 字` : '全文'}；原件 ${log.reference}）：`, '```device-evidence', tail.replace(/```/g, '`​``'), '```');
+        lines.push('', `**设备输出**${log.text.length > LOG_TAIL ? `，末尾 ${LOG_TAIL} 字` : ''}`, '```', tail.replace(/```/g, '`​``'), '```');
       }
     }
   }

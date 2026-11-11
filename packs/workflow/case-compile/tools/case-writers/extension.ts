@@ -55,19 +55,19 @@ export function parseArguments(args: Json, workspace: string): { ok: true; value
   };
   const runDirectory = directory('run_directory'), plansDirectory = directory('plans_directory'), skillDirectory = directory('skill_directory');
   if (runDirectory === null || plansDirectory === null || skillDirectory === null) {
-    const missing = [['run_directory', runDirectory], ['plans_directory', plansDirectory], ['skill_directory', skillDirectory]].filter(([, value]) => value === null).map(([name]) => name);
-    return { ok: false, problem: `${missing.join('、')} 要写成目录路径` };
+    const missing = [['原始用例目录', runDirectory], ['自动化用例目录', plansDirectory], ['脚本编写所用的技能目录', skillDirectory]].filter(([, value]) => value === null).map(([name]) => name);
+    return { ok: false, problem: `${missing.join('、')}请填写目录路径` };
   }
   let only: string[] | null = null;
   if (args.only !== undefined) {
-    if (!Array.isArray(args.only) || !args.only.every((value) => typeof value === 'string' && /^\d+$/.test(value))) return { ok: false, problem: 'only 要写成序号的列表，例如 ["03","07"]，序号是 items/ 里文件名的数字' };
+    if (!Array.isArray(args.only) || !args.only.every((value) => typeof value === 'string' && /^\d+$/.test(value))) return { ok: false, problem: '请选择要继续脚本编写的原始用例，填写对应文件名的数字列表' };
     only = [...new Set(args.only as string[])];
   }
   const notes = new Map<string, string>();
   if (args.notes !== undefined) {
-    if (!isRecord(args.notes)) return { ok: false, problem: 'notes 要写成对象：键是序号，值是给那个编写者的文字' };
+    if (!isRecord(args.notes)) return { ok: false, problem: '补充说明请按原始用例分别填写' };
     for (const [index, text] of Object.entries(args.notes)) {
-      if (!/^\d+$/.test(index) || typeof text !== 'string' || text.trim() === '' || Array.from(text).length > NOTE_CHARS) return { ok: false, problem: `notes 里 ${index} 不合式：键是序号，值是不超过 ${NOTE_CHARS} 字的非空文字` };
+      if (!/^\d+$/.test(index) || typeof text !== 'string' || text.trim() === '' || Array.from(text).length > NOTE_CHARS) return { ok: false, problem: `第 ${index} 份原始用例的补充说明请填写 1 到 ${NOTE_CHARS} 字` };
       notes.set(index, text);
     }
   }
@@ -86,12 +86,12 @@ export function planFileName(item: string): string {
 export function planFanOut(input: { cases: readonly RunCase[]; only: readonly string[] | null; notes: ReadonlyMap<string, string>; plansDirectory: string; existing: ReadonlySet<string>; fileOfItem?: ReadonlyMap<string, string> }): { planned: PlannedCase[]; skipped: SkippedCase[]; problems: string[] } {
   const planned: PlannedCase[] = [], skipped: SkippedCase[] = [], problems: string[] = [];
   const only = input.only;
-  for (const index of only ?? []) if (!input.cases.some((value) => sameIndex(value.index, index))) problems.push(`这次运行里没有序号 ${index} 的原始用例`);
+  for (const index of only ?? []) if (!input.cases.some((value) => sameIndex(value.index, index))) problems.push(`本次脚本编写没有第 ${index} 份原始用例`);
   for (const value of input.cases) {
     if (only !== null && !only.some((index) => sameIndex(index, value.index))) continue;
     const item = isRecord(value.item) && typeof value.item.id === 'string' && value.item.id !== '' ? value.item.id : null;
-    if (item === null) { skipped.push({ index: value.index, item: null, reason: value.unreadable ?? `items/${value.index}.json 里没有原始用例号 id` }); continue; }
-    if (value.brief === null || value.brief.trim() === '') { skipped.push({ index: value.index, item, reason: `没有编写简报 briefs/${value.index}.md（这条用例没有重组记录，或简报没有写出）；不启动编写者，由主代理另行处理` }); continue; }
+    if (item === null) { skipped.push({ index: value.index, item: null, reason: value.unreadable ?? `第 ${value.index} 份原始用例缺少编号` }); continue; }
+    if (value.brief === null || value.brief.trim() === '') { skipped.push({ index: value.index, item, reason: `第 ${value.index} 份原始用例缺少重组后的用例或手册；下一步由主代理补齐资料再继续脚本编写` }); continue; }
     const fields = isRecord(value.item) && isRecord(value.item.fields) ? value.item.fields : {};
     const file = input.fileOfItem?.get(item) ?? planFileName(item);
     const note = [...input.notes].find(([index]) => sameIndex(index, value.index))?.[1] ?? null;
@@ -100,10 +100,10 @@ export function planFanOut(input: { cases: readonly RunCase[]; only: readonly st
   const seen = new Map<string, string>();
   for (const value of planned) {
     const earlier = seen.get(value.item);
-    if (earlier !== undefined) problems.push(`序号 ${earlier} 和 ${value.index} 的原始用例号相同（${value.item}），一个原始用例只能有一个自动化用例文件`);
+    if (earlier !== undefined) problems.push(`第 ${earlier} 份和第 ${value.index} 份原始用例相同，每条原始用例只能有一份自动化用例`);
     seen.set(value.item, value.index);
   }
-  for (const index of input.notes.keys()) if (!planned.some((value) => sameIndex(value.index, index))) problems.push(`notes 里的序号 ${index} 不是这次要写的用例`);
+  for (const index of input.notes.keys()) if (!planned.some((value) => sameIndex(value.index, index))) problems.push(`第 ${index} 份原始用例不在本次脚本编写中，请删除它的补充说明`);
   return { planned, skipped, problems };
 }
 
@@ -152,8 +152,8 @@ export function checkPlanFile(bytes: Uint8Array | null, item: string): PlanFileS
   try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return { state: 'bad', reason: '不是合法的 UTF-8 文本' }; }
   let value: unknown;
   try { value = JSON.parse(text); } catch (error) { return { state: 'bad', reason: `不是合法的 JSON（${error instanceof Error ? oneLine(error.message, ERROR_CHARS) : '无法解析'}）` }; }
-  if (!isRecord(value) || typeof value.item !== 'string' || value.item === '' || typeof value.handling !== 'string') return { state: 'bad', reason: '不是一个原始用例：要写 {"item":"<编号>","handling":"handled","slots":{"plan":[…]}}' };
-  if (value.item !== item) return { state: 'bad', reason: `里面的原始用例号是 ${value.item}，不是这条用例的 ${item}` };
+  if (!isRecord(value) || typeof value.item !== 'string' || value.item === '' || typeof value.handling !== 'string') return { state: 'bad', reason: '不是完整的自动化用例，请按脚本编写说明补齐' };
+  if (value.item !== item) return { state: 'bad', reason: `不是这条原始用例的自动化用例，请按下载的原始用例重写` };
   return { state: 'ok' };
 }
 
@@ -185,7 +185,7 @@ async function plansByItem(directory: string, names: Iterable<string>): Promise<
     try { value = JSON.parse(await readFile(join(directory, name), 'utf8')); } catch { continue; }
     if (!isRecord(value) || typeof value.item !== 'string' || value.item === '') continue;
     const earlier = found.get(value.item);
-    if (earlier !== undefined) throw new FanOutProblem(`自动化用例目录里 ${earlier} 和 ${name} 是同一个原始用例 ${value.item}；每个原始用例只留一个文件，留哪个由你定，删掉另一个再来`);
+    if (earlier !== undefined) throw new FanOutProblem(`自动化用例目录里 ${earlier} 和 ${name} 对应同一条原始用例；请使用者决定保留哪份自动化用例，移走另一份后继续脚本编写`);
     found.set(value.item, name);
   }
   return found;
@@ -193,7 +193,7 @@ async function plansByItem(directory: string, names: Iterable<string>): Promise<
 
 async function readRunCases(directory: string): Promise<RunCase[]> {
   let names: string[];
-  try { names = await readdir(join(directory, 'items')); } catch { throw new FanOutProblem(`${directory} 里没有 items/：run_directory 要写 tools/download-run.ts 写出的运行目录`); }
+  try { names = await readdir(join(directory, 'items')); } catch { throw new FanOutProblem(`原始用例目录 ${directory} 中没有原始用例，请先下载本次脚本编写的原始用例`); }
   const files = names.filter((name) => /^\d+\.json$/.test(name)).sort((a, b) => Number(a.slice(0, -5)) - Number(b.slice(0, -5)));
   if (!files.length) throw new FanOutProblem(`${join(directory, 'items')} 里没有 <序号>.json`);
   const out: RunCase[] = [];
@@ -221,9 +221,9 @@ export interface FanOutResult {
 export async function writeCasePlans(options: { args: Arguments; runWriter: RunWriter; signal: AbortSignal; limit: number; progress?: (done: number, total: number) => void }): Promise<FanOutResult> {
   const { args } = options;
   const skill = await stat(join(args.skillDirectory, 'SKILL.md')).catch(() => null);
-  if (skill === null || !skill.isFile()) throw new FanOutProblem(`${args.skillDirectory} 里没有 SKILL.md：skill_directory 要写已安装的 case-compile 目录`);
+  if (skill === null || !skill.isFile()) throw new FanOutProblem(`技能目录 ${args.skillDirectory} 中没有脚本编写说明，请选择已经安装的脚本编写技能`);
   const cases = await readRunCases(args.runDirectory);
-  try { await mkdir(args.plansDirectory, { recursive: true }); } catch { throw new FanOutProblem(`${args.plansDirectory} 不是可以放自动化用例文件的目录：plans_directory 要写一个目录`); }
+  try { await mkdir(args.plansDirectory, { recursive: true }); } catch { throw new FanOutProblem(`自动化用例目录 ${args.plansDirectory} 无法写入，请选择可写的目录`); }
   const before = await stamps(args.plansDirectory);
   const plan = planFanOut({ cases, only: args.only, notes: args.notes, plansDirectory: args.plansDirectory, existing: new Set(before.keys()), fileOfItem: await plansByItem(args.plansDirectory, before.keys()) });
   if (plan.problems.length) throw new FanOutProblem(plan.problems.join('；'));
@@ -240,7 +240,7 @@ export async function writeCasePlans(options: { args: Arguments; runWriter: RunW
   for (const [at, value] of plan.planned.entries()) {
     const outcome = outcomes[at] as Outcome<string>;
     const base = { index: value.index, item: value.item, ...(value.title === '' ? {} : { title: value.title }) };
-    if (outcome.state === 'skipped') { results.push({ ...base, status: 'not_started', note: '中止前没有启动' }); continue; }
+    if (outcome.state === 'skipped') { results.push({ ...base, status: 'not_started', note: '脚本编写已停止，这条原始用例尚未开始编写' }); continue; }
     const bytes = await readFile(value.path).catch(() => null);
     const state = checkPlanFile(bytes, value.item);
     const digest = bytes === null ? null : sha256(bytes);
@@ -249,10 +249,10 @@ export async function writeCasePlans(options: { args: Arguments; runWriter: RunW
     const said = report.length === 0 ? {} : { report: report.slice(0, REPORT_CHARS).join(''), ...(report.length > REPORT_CHARS ? { report_clipped: true } : {}) };
     if (outcome.state === 'failed') {
       const why = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
-      results.push({ ...base, status: 'error', note: `编写者出错：${oneLine(why, ERROR_CHARS)}${state.state === 'ok' ? '；它出错前已经写出一份可读的自动化用例文件，用之前自己看一遍' : ''}`, ...(state.state === 'ok' ? file : {}) });
-    } else if (state.state === 'missing') results.push({ ...base, status: 'no_file', note: `编写者回了报告，但 ${value.path} 不存在`, ...said });
+      results.push({ ...base, status: 'error', note: `脚本编写未完成。原因临时故障，${oneLine(why, ERROR_CHARS)}${state.state === 'ok' ? '；编写模型已经写出一份自动化用例，下一步由编写模型核对内容' : ''}`, ...(state.state === 'ok' ? file : {}) });
+    } else if (state.state === 'missing') results.push({ ...base, status: 'no_file', note: `编写模型已答复，但自动化用例文件 ${value.path} 不存在`, ...said });
     else if (state.state === 'bad') results.push({ ...base, status: 'bad_file', note: `${value.path} ${state.reason}`, ...file, ...said });
-    else if (earlier.get(value.file) === digest) results.push({ ...base, status: 'unchanged', note: `${value.path} 在编写者运行前后一字未变；返工时这表示它没有改，报告里有原因的话照报告`, ...file, ...said });
+    else if (earlier.get(value.file) === digest) results.push({ ...base, status: 'unchanged', note: `${value.path} 在脚本编写前后一字未变，请查看编写模型说明后继续脚本编写`, ...file, ...said });
     else results.push({ ...base, status: 'written', ...file, ...said });
   }
   results.sort((a, b) => Number(a.index) - Number(b.index));
@@ -269,7 +269,7 @@ function resultOf(cases: CaseResult[], started: number, limit: number, plansDire
   const summary = (started === 0 ? '没有启动编写者' : `${started} 个编写者${narrowed ? `，最多同时 ${limit} 个` : '，同时开始'}：${counts.written} 份自动化用例已写出`)
     + (open > 0 ? `，${open} 个要处理` : '') + (counts.not_started > 0 ? `${started === 0 ? '：' : '，'}${counts.not_started} 条没有启动` : '') + (stray.length > 0 ? `，自动化用例目录里多出 ${stray.length} 个不属于任何用例的文件` : '') + '。';
   const next = open + counts.not_started + stray.length === 0 ? undefined
-    : `要处理的先看各条的 note 和 report；编写者没写成的可以用 only 只重跑那几个序号。${stray.length > 0 ? 'stray_files 里的 .json 文件会被 tools/submit-plans.ts 当作原始用例读，提交前移走。' : ''}`;
+    : `下一步查看各条原始用例的原因和编写模型说明，再选择尚未写好的原始用例继续脚本编写。${stray.length > 0 ? '自动化用例目录中多出的文件可能被当作自动化用例，请在脚本合并前移走。' : ''}`;
   return { summary, plans_directory: plansDirectory, concurrency: narrowed ? limit : 'all', counts, cases, stray_files: stray, ...(next === undefined ? {} : { next }) };
 }
 

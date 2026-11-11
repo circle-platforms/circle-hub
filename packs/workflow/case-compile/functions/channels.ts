@@ -30,9 +30,8 @@ export function volumeOrder<T extends VolumeCase>(inputs: readonly T[]): { order
 }
 export function movedText(moved: readonly MovedCase[], titles: ReadonlyMap<string, string> = new Map()): string {
   if (!moved.length) return '';
-  const named = moved.map((row) => `${row.autoid}${titles.get(row.autoid) ? `（${titles.get(row.autoid)}）` : ''}`);
-  const channels = [...new Set(moved.flatMap((row) => row.channels.map((channel) => channel.id)))];
-  return `有 ${moved.length} 个用例的命令按产品声明会留下每个用例结束后的清理清不掉的状态（${channels.join('、')}），排在卷尾执行：${named.join('、')}`;
+  const named = moved.map((row) => `${row.autoid}${titles.get(row.autoid) ? ` ${titles.get(row.autoid)}` : ''}`);
+  return `原始用例 ${named.join('、')} 的命令会留下用例结束后仍未清除的配置，已在自动化用例 Excel 中排到最后。决定者程序。`;
 }
 
 export interface ConflictRow { combination: string; source: string; side_a: Array<{ autoid: string; title: string; commands: string[] }>; side_b: Array<{ autoid: string; title: string; commands: string[] }> }
@@ -43,10 +42,10 @@ export function volumeProblems(inputs: readonly VolumeCase[]): ConflictRow[] {
     return { combination: conflict.combination, source: conflict.source, side_a: side(conflict.side_a, 'a'), side_b: side(conflict.side_b, 'b') };
   });
 }
-const caseNames = (cases: ConflictRow['side_a']): string => `${cases.slice(0, 5).map((row) => `${row.autoid}${row.title ? `（${row.title}）` : ''}的命令 ${row.commands.slice(0, 3).join('；')}`).join('、')}${cases.length > 5 ? ` 等 ${cases.length} 个用例` : ''}`;
+const caseNames = (cases: ConflictRow['side_a']): string => `${cases.slice(0, 5).map((row) => `${row.autoid}${row.title ? ` ${row.title}` : ''} 的命令 ${row.commands.slice(0, 3).join('；')}`).join('、')}${cases.length > 5 ? ` 等 ${cases.length} 个用例` : ''}`;
 export function conflictText(row: ConflictRow): string {
   const same = row.side_a.length === 1 && row.side_b.length === 1 && row.side_a[0].autoid === row.side_b[0].autoid;
-  return `${same ? '同一个用例里' : '同一卷里'}有产品声明互斥的两侧命令（组合 ${row.combination}）：一侧是用例 ${caseNames(row.side_a)}，另一侧是用例 ${caseNames(row.side_b)}。产品声明的依据：${row.source}`;
+  return `${same ? '同一条自动化用例中' : '同一份自动化用例 Excel 中'}有产品文档声明不能一起使用的命令，一组来自原始用例 ${caseNames(row.side_a)}，另一组来自原始用例 ${caseNames(row.side_b)}`;
 }
 export function planProblems(profile: CaseProfile): Array<{ combination: string; source: string; a: string[]; b: string[] }> {
   return volumeConflicts([{ id: '', profile }]).map((conflict) => {
@@ -55,7 +54,7 @@ export function planProblems(profile: CaseProfile): Array<{ combination: string;
   });
 }
 export function planConflictText(row: ReturnType<typeof planProblems>[number]): string {
-  return `这个用例的计划里有产品声明互斥的两侧命令（组合 ${row.combination}）：一侧是命令 ${row.a.slice(0, 3).join('；')}，另一侧是命令 ${row.b.slice(0, 3).join('；')}。产品声明的依据：${row.source}`;
+  return `自动化用例中有产品文档声明不能一起使用的命令，一组是 ${row.a.slice(0, 3).join('；')}，另一组是 ${row.b.slice(0, 3).join('；')}`;
 }
-export const PLAN_CONFLICT_FIX = '去掉计划自己加的那一侧命令；两侧都是作者写的命令时，计划不能删（可以改参数，不可以删命令），这是作者步骤与产品文档冲突，按“问用户”处理，不自己改；要先编其余用例时，把这个用例写进 parameters.exclude 后重新开计划运行';
-export const CONFLICT_FIX = '互斥的两侧不放同一卷：把其中一侧的用例写进 parameters.exclude 后重新开计划运行，另开运行用 autoid 单独编；作者要测的正是这个组合时，是作者步骤与产品文档冲突，按“问用户”处理，不自己改';
+export const PLAN_CONFLICT_FIX = '下一步由编写模型去掉自行添加的那组命令；两组命令都是原始用例要求时，请使用者决定是否修改原始用例。其余原始用例可单独继续脚本编写';
+export const CONFLICT_FIX = '下一步把不能一起使用的命令分别放在两份自动化用例 Excel 中做上机验证；原始用例要求一起使用时，请使用者决定是否修改原始用例';

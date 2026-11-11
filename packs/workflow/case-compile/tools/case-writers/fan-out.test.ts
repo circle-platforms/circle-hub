@@ -34,7 +34,7 @@ test('arguments: directories are resolved against the workspace, only and notes 
   const bare = parseArguments({ run_directory: 'run', plans_directory: 'plans', skill_directory: 'skill' }, '/work');
   assert.ok(bare.ok && bare.value.only === null && bare.value.notes.size === 0);
   const missing = parseArguments({ run_directory: 'run', skill_directory: '' }, '/work');
-  assert.ok(!missing.ok && missing.problem.includes('plans_directory') && missing.problem.includes('skill_directory') && !missing.problem.includes('run_directory'));
+  assert.ok(!missing.ok && missing.problem.includes('自动化用例目录') && missing.problem.includes('脚本编写所用的技能目录') && !missing.problem.includes('原始用例目录'));
   for (const bad of [{ only: '03' }, { only: ['x'] }, { only: [3] }, { notes: ['a'] }, { notes: { x: 'a' } }, { notes: { '1': '' } }, { notes: { '1': 7 } }, { notes: { '1': 'a'.repeat(4001) } }]) {
     const result = parseArguments({ run_directory: 'r', plans_directory: 'p', skill_directory: 's', ...bad }, '/work');
     assert.ok(!result.ok, JSON.stringify(bad));
@@ -58,7 +58,7 @@ test('one writer per case that has a brief; a case without one is listed with th
   assert.deepEqual(plan.planned.map((value) => value.path), plan.planned.map((value) => `/work/plans/${planFileName(value.item)}`));
   assert.deepEqual(plan.planned.map((value) => value.brief), ['# 编写简报 00\n合成简报零\n', '# 编写简报 01\n合成简报一\n', '合成简报六'], 'each writer holds its own brief, byte for byte');
   assert.deepEqual(plan.skipped.map((value) => [value.index, value.item]), [['02', 'doc:c-2'], ['03', null], ['04', null], ['05', 'doc:c-5']]);
-  assert.ok(plan.skipped[0]!.reason.includes('briefs/02.md'));
+  assert.ok(plan.skipped[0]!.reason.includes('第 02 份原始用例缺少重组后的用例或手册'));
   assert.equal(plan.skipped[2]!.reason, 'items/04.json 不是完整的 JSON');
 });
 
@@ -73,11 +73,11 @@ test('only picks cases by index number, notes go to the writer of their index, a
   assert.deepEqual(some.problems, []);
   assert.deepEqual(some.planned.map((value) => [value.index, value.note]), [['01', null], ['06', '设备拒绝了第二条命令']]);
   assert.deepEqual(some.skipped, [], 'cases that were not asked for are not listed');
-  assert.deepEqual(planFanOut({ ...base, only: ['9'], notes: new Map() }).problems, ['这次运行里没有序号 9 的原始用例']);
-  assert.deepEqual(planFanOut({ ...base, only: ['0'], notes: new Map([['1', '这条没有要写']]) }).problems, ['notes 里的序号 1 不是这次要写的用例']);
+  assert.deepEqual(planFanOut({ ...base, only: ['9'], notes: new Map() }).problems, ['本次脚本编写没有第 9 份原始用例']);
+  assert.deepEqual(planFanOut({ ...base, only: ['0'], notes: new Map([['1', '这条没有要写']]) }).problems, ['第 1 份原始用例不在本次脚本编写中，请删除它的补充说明']);
   const twice = planFanOut({ ...base, cases: [{ index: '00', item: item('same'), brief: 'a' }, { index: '01', item: item('same'), brief: 'b' }], only: null, notes: new Map() });
   assert.equal(twice.problems.length, 1);
-  assert.ok(twice.problems[0]!.includes('一个原始用例只能有一个自动化用例文件'));
+  assert.ok(twice.problems[0]!.includes('每条原始用例只能有一份自动化用例'));
 });
 
 test('a writer is told the case, the three directories, the file to write and its own brief; a rework is told the file is last round\'s plan', () => {
@@ -143,8 +143,8 @@ test('the file a writer left is accepted by the rule of the submission tool and 
   const reason = (value: Uint8Array) => { const state = checkPlanFile(value, 'doc:c-0'); assert.equal(state.state, 'bad'); return state.state === 'bad' ? state.reason : ''; };
   assert.ok(reason(new Uint8Array([0xff, 0xfe, 0x00])).includes('UTF-8'));
   assert.ok(reason(bytes('{"item": "doc:c-0", ')).includes('JSON'));
-  for (const wrong of [[], '"text"', null, { handling: 'handled' }, { item: '', handling: 'handled' }, { item: 'doc:c-0' }, { item: 7, handling: 'handled' }]) assert.ok(reason(bytes(wrong)).includes('不是一个原始用例'), JSON.stringify(wrong));
-  assert.ok(reason(bytes({ item: 'doc:c-1', handling: 'handled' })).includes('doc:c-1'), 'another case\'s plan is named');
+  for (const wrong of [[], '"text"', null, { handling: 'handled' }, { item: '', handling: 'handled' }, { item: 'doc:c-0' }, { item: 7, handling: 'handled' }]) assert.ok(reason(bytes(wrong)).includes('不是完整的自动化用例'), JSON.stringify(wrong));
+  assert.ok(reason(bytes({ item: 'doc:c-1', handling: 'handled' })).includes('不是这条原始用例的自动化用例'), 'another case\'s plan is named');
 });
 
 test('files that appeared or changed in the plans directory and are not a plan file are reported; untouched ones and the plan files are not', () => {
