@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "ce42169a9fabf3ef2c5d27dba1ca9dd2c6ef2b12ce05d9dc7c32244f2091fba2",
-      "size": 21408
+      "sha256": "985c8f28d0e773f4be824909d70b48eda2b60e6acc9e455419ff88dcb7429fd6",
+      "size": 21414
     },
     {
       "path": "checks.json",
@@ -183,8 +183,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "cca7f2deed89ab6f527178f7399d1377386ca037d962ed81160ba8038c910dd7",
-      "size": 40545
+      "sha256": "779c0afe10bb465dc6680eb9395f4d03c6b0f2c3fc87d6bd5c29fae9c5f60aba",
+      "size": 47860
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -713,8 +713,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "08a3853e948141648df88f44aeb2220ac227edc28983a9a48b059540e2aac86d",
-      "size": 32883
+      "sha256": "b513476f23a5a382156ef1039d8bea8470d675d9cdd10093a041a2f45db06329",
+      "size": 35960
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -723,8 +723,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "5b2bbb2258e5067ff693c1c9ae6a376c15cab56e8bac2acbf8bac7bd3f0b4173",
-      "size": 9886
+      "sha256": "6588932e913711669dbd11407b383be3c1809e0c593b238fd394a6d622765b31",
+      "size": 11430
     },
     {
       "path": "tools/download-returns.ts",
