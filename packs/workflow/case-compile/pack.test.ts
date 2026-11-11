@@ -62,71 +62,62 @@ test('the examples use the original synthetic contract, matching profile and fin
 // Keep the client instructions within the existing skill budget.
 const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
-  const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
+  const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成执行器规则或发布的执行器规则核对', '不证明在真实设备上跑得通', '自动重交', '最多重交 2 次', '第二次 start_run']) assert.ok(skill.includes(phrase), phrase);
 });
-// The reference engine gives its ask-the-user tool to the lead agent alone and reserves it for answers that change what happens
-// next and that no source settles; run 23 had a rework subagent put three questions about how to write a plan to the user.
 test('the client skill says when the user is asked and that a subagent never asks', () => {
   const skill = read('SKILL.md');
-  for (const phrase of ['问用户：只在答案会改变做法、资料里又查不到时才问', '设备结论要人来判（产品缺陷还是用例写错）', '能在锁定命令树、手册、合约、条目里查证的不问，自己定并在报告里说明', '子代理不问用户：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);
+  for (const phrase of ['只在答案会改变做法、资料里又查不到时问使用者', '设备的问题还是原始用例的问题，需要使用者决定', '能查清的自己查并在报告说明', '子代理不问使用者：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);
 });
-// Run 23, one case in three dispatches: a host name with a character the manual's row for that parameter excludes (the row was
-// not in the locked root), the device's refusal read as a possible defect each time; another case kept a sentence as the text
-// to find and then dropped the check. The reference hands its writer the value domain in the vendor's own words beside the
-// argument contract, signs an expectation's polarity as found/not_found and never greps the author's sentence, keeps the
-// signed expectations when a case is fixed, and tells the next writer that an execution failure is the case's own fault.
 test('the client skill and the closing procedure carry the reference rules on parameter values, authored negatives and refused commands', () => {
   const skill = read('SKILL.md'), closing = read('tools/delivery.md');
   for (const phrase of [
     '手册对各参数的说明',
     '参数取值：写进命令的每个值都要在手册对该参数的说明之内',
-    '是作者步骤与手册冲突：不照写上机，也不自己改，按上文“问用户”处理；作者要测的正是非法输入时照写',
-    '重组已有裁定就照做，不再问',
-    '只有设备运行时才产生的值（生成的文件名、编号）不从上一次上机的回显抄进计划',
-    '不把这句话写进 text，也不删掉这项检查，用块计划的 not_found 断言指向那次观察的输出',
-    '设备上的配置和观察都用运行器合约为该设备声明的设备方法（与块计划同一组），照 InfoTest',
-    '要跑很久的设备命令（配置同步、整机清理）在那一步给出读窗（keywords 的 timeout，秒数不超过环境的 max_wait_seconds）',
+    '原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写',
+    '重组时使用者已决定的照做，不再问',
+    '只有设备执行时才产生的值，不从上一次上机验证的设备输出抄进自动化用例',
+    '不把这句话当设备输出去找，也不删掉这项检查；使用能核对没有找到的写法，指向那次设备输出',
+    '设备上的配置和观察都用执行器规则为该设备声明的方法',
+    '要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限',
   ]) assert.ok(skill.includes(phrase), phrase);
   assert.ok(!skill.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
   for (const phrase of [
-    'execution_refused：设备对一条命令回了运行器合约声明的执行失败原话的',
-    '问题在这条用例自己的命令序列，不在环境',
-    '先确认上一轮的修改进了这一卷；进了而同一句失败原话又出现，那个方向就错了',
-    '返工保住作者的范围和每一项期望',
-    'submit-plans 会跳过本运行排除的条目并报出来，不用复制或改写文件',
-    '这台设备的清理没有发出：在说明的 batch 里写明是哪台设备、哪些清理没有发出；照 InfoTest 的床态体检，残留没核清之前不派发下一卷',
-    '说明不支持的，是作者步骤与手册冲突，judged 里逐字写出手册那一句和它的引用，不写 defect_candidate',
-    '可以提前定下结论。没上机的用例同样不凭说明定结论',
-    '和作者步骤与手册冲突（第 3 步的 author_conflict）可以提前定下结论',
-    '计划运行用 parameters.exclude 排除它，说明里写 author_conflict，不上机就记为作者步骤与手册冲突',
-    'author_conflict 只在作者步骤与手册冲突时写',
-    '`{"author":"…","manual":"…","reference":"tree:…"}`',
-    '对得上，这条用例不管编写了几轮、上没上过机，都记为“作者步骤与手册冲突（待作者或用户裁定）”，不再为它多跑一卷',
-    '工具不判谁对，只说这两段原文对不上，由作者或用户裁定',
-    '不和 defect_candidate 同写。作者要测的正是非法输入、期望本来就是被拒绝的，不是冲突，照写不记这一条',
+    '设备输出包含执行器规则声明的执行失败原话时',
+    '问题在这条自动化用例自己的命令顺序',
+    '先确认上次修改已进本次自动化用例 Excel；已经改了而同一句设备输出又出现，就换解释',
+    '重新编写要保住原始用例的范围和每一项期望',
+    'submit-plans 会跳过本次排除的原始用例，不用复制或改写文件',
+    '说明设备名字和哪些清理没做，残留没核清之前不上机验证下一份自动化用例 Excel',
+    '原始用例要的取值被手册排除时，写原始用例的问题，不写设备的问题',
+    '只有设备的问题有对应原句和设备输出，或原始用例与手册不一致，才可提前写结论',
+    '原始用例与手册不一致且使用者尚未决定的，先排除',
+    'author_conflict 仅在原始用例与手册不一致时填写',
+    '{"author":"原始用例原句","manual":"手册原话","reference":"<下载文件中的手册引用>"}',
+    '不论编写几轮、是否上机，均可等待作者或使用者决定，不再为它上机',
+    '核原句存在不证明模型对两句话的理解正确',
+    '不和 defect_candidate 同写；原始用例本来就测非法输入时不用这一项',
   ]) assert.ok(closing.includes(phrase), phrase);
 });
 
 test('the recompose skill raises an author step the manual excludes to the user before writing, through the lead agent, and records the ruling in the fields a record already has', () => {
   const recompose = read('recompose/SKILL.md');
   for (const phrase of [
-    '作者的步骤和手册冲突的，先照“作者的步骤和手册冲突”一节问用户，再写文件',
-    '作者的步骤要一个取值或写法、期望却是成功，而锁定根的命令树或手册对这个参数的说明把它排除了',
-    '写这条用例的文件之前先交用户裁定：不自己改写，也不照写',
-    '作者要测的正是非法输入、期望本来就是被拒绝的，不算冲突',
-    '只有主代理问用户。子代理不问，把用例、作者原句、手册原句和它的引用写进给主代理的报告',
-    '整份脑图的这类冲突攒齐了问一次',
-    '用记录已有的字段，不另造',
-    '`reason` 以“用户裁定：”开头、逐字写用户的话，`state` 记 `settled`',
-    '`decided_by` 写“用户”',
-    '编写时这条用例用 parameters.exclude 排除，交付时记为作者步骤与手册冲突',
-    '不要记成 `conflict`：它要两个有签发权的来源，作者原句和手册都不是，会被拒',
+    '原始用例要求的取值或写法被手册和命令树排除，期望却是成功时',
+    '先让使用者决定，不自行改写，也不照写上机',
+    '原始用例要测的正是非法输入、期望就是被拒绝时，不算这种问题',
+    '只有主代理问使用者。子代理不问',
+    '整份原始用例的这类问题攒齐了问一次',
+    '只用已有字段保存决定，不另造结构',
+    'states.reason 以“使用者决定：”开头，逐字写使用者的话；state=settled',
+    'concretizations.decided_by="使用者"',
+    '脚本编写先排除，交付时写原始用例的问题',
+    '不用 conflict: 它要求两个有签发权的来源，原始用例和手册都不是',
   ]) assert.ok(recompose.includes(phrase), phrase);
 });
 
 test('the client skill makes the model adapt the bed, seed what assertions read and clean up in reverse', () => {
   const skill = read('SKILL.md');
-  for (const phrase of ['按自动化测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '先在 steps 前部安排创建步骤', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要逆操作']) assert.ok(skill.includes(phrase), phrase);
+  for (const phrase of ['按测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '要查询的记录先在步骤前部创建', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要清理']) assert.ok(skill.includes(phrase), phrase);
   const plan = json('requirements.json').requirements.find((r: any) => r.key === 'plan');
   for (const phrase of ['先在前部创建', '逆序对应的逆操作', '恢复原地址']) assert.ok(plan.description.includes(phrase), phrase);
   const grounded = json('requirements.json').requirements.find((r: any) => r.key === 'expected_grounded');
@@ -172,7 +163,7 @@ test('every emitted pack code and every pack repair code is declared',()=>{
 
 test('published skill heading never advertises a stale pack version',()=>{
  // The standard Agent Skills frontmatter opens the file; the heading that follows it is what must not carry a stale version.
- const body=read('SKILL.md').replace(/^---\n[\s\S]*?\n---\n/,'');const heading=body.split('\n').find((line:string)=>line.trim()!=='') ?? '';const title='# 用例编译与工作簿核验';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
+ const body=read('SKILL.md').replace(/^---\n[\s\S]*?\n---\n/,'');const heading=body.split('\n').find((line:string)=>line.trim()!=='') ?? '';const title='# 自动化用例';assert.ok(heading===title||heading===`${title} ${json('pack.json').version}`,heading);
 });
 
 test('repository manifest paths directly name ordinary files with their declared bytes',()=>{
