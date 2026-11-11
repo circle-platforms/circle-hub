@@ -1,4 +1,4 @@
-export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
+export {historyUsage,chargedBytes,safeBytes,forgetCapacityCharges,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';

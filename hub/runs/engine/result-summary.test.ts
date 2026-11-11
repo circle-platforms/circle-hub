@@ -196,3 +196,49 @@ test('a request is shown to a reader by the summary of the result that issued it
   assert.equal(visible.has(made.closedSummary),false);
  }
 });
+
+test('the statistics read in the page\'s own scope: the run a page listed is not read again, and a result without a summary is read apart each time',async t=>{
+ const h=await openHarness(pg);t.after(h.close);
+ const make=async(key:string,summarized:boolean)=>{
+  const run=RunRecord.parse({...runRecord,run:newId('run'),runner:h.alice.id,pack:`${h.review.pack.id}@${h.review.pack.version}`,pack_digest:h.review.pack.digest,requirements:[],sources:[],items:[],target_basis:[],client_key:key});
+  const record=await putRun(h.kit.store,run,at(run));
+  const result=ValidationResult.parse({...accepted,run:run.run,submission:record.digest});
+  const written=summarized?await saveResult(h.kit.store,result,at(run)):await putResult(h.kit.store,result,at(run));
+  return {run,written,result};
+ };
+ const withSummary=await make('synthetic-scope-summary',true),without=await make('synthetic-scope-whole',false);
+ /** The records of one kind the store handed out while `work` ran. */
+ const reads=async<T>(kind:string,work:()=>Promise<T>):Promise<{value:T;count:number}>=>{
+  const store=h.kit.store as unknown as Record<string,(...args:unknown[])=>Promise<unknown>>,originals=new Map<string,(...args:unknown[])=>Promise<unknown>>();let count=0;
+  const note=(value:unknown):void=>{const records=value==null?[]:value instanceof Map?[...value.values()]:Array.isArray(value)?value.flatMap(item=>item&&Array.isArray((item as {items?:unknown[]}).items)?(item as {items:unknown[]}).items:[item]):Array.isArray((value as {items?:unknown[]}).items)?(value as {items:unknown[]}).items:[value];for(const record of records)if((record as {kind?:string}|null)?.kind===kind)count++;};
+  for(const name of ['get','getMany','find','findBatch','findMany','list','runCandidates']){const original=store[name].bind(store);originals.set(name,store[name]);store[name]=async(...args:unknown[])=>{const value=await original(...args);note(value);return value;};}
+  try{return {value:await work(),count};}finally{for(const [name,original] of originals)store[name]=original;}
+ };
+ // One page: it lists the runs, then asks for the statistics of each. The run records come from the listing.
+ await withReadScope(async()=>{
+  const listed=await h.service.listRuns(h.alice,{limit:10,requests:false});
+  assert.ok(listed.items.some(run=>run.run===withSummary.run.run));
+  const first=await h.service.getRunStatistics!(h.alice,withSummary.run.run);
+  assert.equal(first!.result,runStatistics({run:{...withSummary.run,requirements:[]},latest:{record:withSummary.written.digest,result:withSummary.result},production:null}).result);
+  // What the statistics read stays in the page's scope: asked again for the same task, nothing is asked of the database.
+  const original=Database.prototype.query;let queries=0;
+  Database.prototype.query=(async function(this:Database,...args:Parameters<typeof original>){queries++;return original.apply(this,args);}) as typeof original;
+  try{assert.deepEqual(await h.service.getRunStatistics!(h.alice,withSummary.run.run),first);}finally{Database.prototype.query=original;}
+  assert.equal(queries,0,'the statistics of a task with summaries share the page\'s reads');
+  // A result with no summary is read whole, and not kept by the page: asked twice, read twice.
+  const whole=await reads('validation_result',()=>h.service.getRunStatistics!(h.alice,without.run.run));
+  const again=await reads('validation_result',()=>h.service.getRunStatistics!(h.alice,without.run.run));
+  assert.equal(whole.count,1);assert.equal(again.count,1,'the megabyte read for one row is released before the next');
+  assert.deepEqual(again.value,whole.value);
+  assert.equal((await reads('validation_result',()=>h.service.getRunStatistics!(h.alice,withSummary.run.run))).count,0);
+ });
+ // A result without a summary is still verified by the statistics: equivalent whitespace is readable, an altered body is refused.
+ const database=new Database(createPool(h.kit.database,1));t.after(()=>database.end());
+ const corrupt=async(sql:string)=>{await database.transaction(async tx=>{await database.query("SET LOCAL session_replication_role='replica'",[],tx);await database.query(sql,[without.written.digest],tx);});};
+ const expected=await h.service.getRunStatistics!(h.alice,without.run.run);
+ await corrupt("UPDATE records SET body=body || ' ' WHERE digest=$1");
+ assert.deepEqual(await h.service.getRunStatistics!(h.alice,without.run.run),expected,'canonical-equivalent whitespace stays readable');
+ await corrupt("UPDATE records SET body=replace(body,'\"accepted\"','\"not_accepted\"') WHERE digest=$1");
+ await assert.rejects(h.service.getRunStatistics!(h.alice,without.run.run),IntegrityError);
+});
+

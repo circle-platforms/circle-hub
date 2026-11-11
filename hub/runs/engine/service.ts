@@ -20,7 +20,7 @@ import { getResult, getRun, getRunStatistics, getRunSummary, listRuns, runHeader
 import { submissionByDigest } from './store.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
-import { summarizeStoredResults } from './result-summary.ts';
+import { summarizeStored, summarizeStoredResults } from './result-summary.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
 import { packContext } from './pack-context.ts';
 import { wellFormed } from './util.ts';
@@ -161,7 +161,9 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     getRunSummary(user,run){return withQueryReads(ctx,current=>getRunSummary(current,user,run));},
     runHeader(user,run){return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runHeader(current,user,run)));},
     runVisible(user,run){return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>runVisible(current,user,run)));},
-    getRunStatistics(user,run){return withQueryReads(ctx,current=>getRunStatistics(current,user,run),{isolated:true});},
+    // The statistics read the page's own scope: the run the page listed, and summaries of a few kilobytes. Only a result
+    // with no summary yet is read whole, apart, and released before the next task (decision 153, owner 2026-11-11).
+    getRunStatistics(user,run){return withQueryReads(ctx,current=>getRunStatistics(current,user,run,{whole:(id,digest)=>withQueryReads(ctx,apart=>summarizeStored(apart.deps.records.store,id,digest),{isolated:true})}));},
     resultState(user,result){return withDocuments(ctx,undefined,current=>resultState(current,user,result));},
     requestReadable(user,request){return withDocuments(ctx,undefined,current=>requestReadable(current,user,request));},
     listRuns(user, query) {
