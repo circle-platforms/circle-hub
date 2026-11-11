@@ -421,7 +421,8 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
 
 function resultConclusions(result: ValidationResult, originals: readonly ItemProjection[] = []): string[] {
   const items = new Map(originals.map(item => [item.id, item]));
-  return itemsOf(result.partitions).map(({ item }) => itemConclusion(item, items.get(item.item)));
+  const conclusions = itemsOf(result.partitions).map(({ item }) => itemConclusion(item, items.get(item.item)));
+  return result.acceptance === 'accepted' && conclusions.length === 0 ? ['没有需要核对的原始用例。'] : conclusions;
 }
 
 function startText(v: StartOut, context: TextContext): string {
