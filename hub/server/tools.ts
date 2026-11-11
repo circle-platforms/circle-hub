@@ -456,10 +456,11 @@ const startRun: Handler = async (deps, call, args) => {
   let text: TextContext = {};
   if (deps.runsDetail !== undefined) {
     const detail = await deps.runsDetail.startRunDetailed(call.principal, parsed.data, call.context);
-    answer = detail.answer as Answer;
+    const record = recordReference(detail.runRecord);
+    answer = { ...detail.answer, ...(record === null ? {} : { record }) } as Answer;
     const named = (answer.result as { reference?: unknown } | undefined)?.reference;
     text = {
-      record: recordReference(detail.runRecord),
+      record,
       // Only the result the answer names: its counts and its problems must be of one result.
       production: detail.production !== null && detail.production.reference === named ? detail.production.result : null,
       unavailable: detail.unavailable ?? [],
@@ -525,7 +526,8 @@ const submitResult: Handler = async (deps, call, args) => {
   const run = args.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
   const answer = { ...((await deps.runs.submitResult(call.principal, args, call.context)) as Answer) };
-  return { answer, text: { record: await storedResult(deps, call, answer) } };
+  const record = await storedResult(deps, call, answer);
+  return { answer: { ...answer, ...(record === null ? {} : { record }) }, text: { record } };
 };
 
 /** rec:<digest> of the validation result record an answer carries, or null (no result, or no record of it). */
