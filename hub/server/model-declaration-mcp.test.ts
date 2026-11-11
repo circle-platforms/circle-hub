@@ -14,7 +14,11 @@ test('the MCP contract permits same-session model omission and requires a declar
   const uploaded=await first.call('upload_file',{file_path:Buffer.from('synthetic source').toString('base64'),media_type:'text/plain'});
   const start=await first.call('start_run',{pack:'review',model_identity:{model_id:'synthetic-model',model_family_id:'synthetic-family'},inputs:{subject:{reference:uploaded.structuredContent.reference}}});
   assert.equal(start.isError,false,JSON.stringify(start.structuredContent));
-  assert.match(start.content[0].text??'',/同一开始会话提交可省略 model 和 model_identity/);
+  const modelText=start.content[1].text??'';
+  assert.ok(modelText.startsWith('供模型引用\n'));
+  const declared=JSON.parse(modelText.slice('供模型引用\n'.length)) as {run:{session:string;model_identity:{model_id:string;model_family_id:string}}};
+  assert.equal(declared.run.session,'synthetic-first');
+  assert.deepEqual(declared.run.model_identity,{model_id:'synthetic-model',model_family_id:'synthetic-family'});
   const run=(start.structuredContent.run as {run:string}).run,input={run,items:[]};
   const same=await first.call('submit_result',input);assert.equal(same.structuredContent.acceptance,'accepted',JSON.stringify(same.structuredContent));
   const other=await second.call('submit_result',input);assert.equal(other.structuredContent.acceptance,'not_accepted');

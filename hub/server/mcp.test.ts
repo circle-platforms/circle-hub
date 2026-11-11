@@ -649,7 +649,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       const started = await startRun(client, reference);
       const text = started.content[0].text ?? '';
       const summary = started.structuredContent.run as { items: Array<{ id: string; label: string; summary: string; location: string }>; slots: { sha256: string; schema: { properties: Record<string, unknown> } } };
-      for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}，等待核对；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i}`);
+      for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}，摘要 ${i}；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i} keeps its summary`);
       assert.ok(summary.items.every((item) => item.location === reference), 'every machine-readable item keeps its location');
       assert.deepEqual(summary.items.map((item) => [item.id, item.label, item.summary]), Array.from({ length: 60 }, (_, i) => [`doc-9:n${i}`, `合成用例 ${i}`, `摘要 ${i}`]));
       assert.match(summary.slots.sha256, /^[0-9a-f]{64}$/);
@@ -885,8 +885,9 @@ describe('start_run with the engine\'s detail', () => {
       const started = await startRun(client, reference);
       const text = started.content[0].text ?? '';
       assert.deepEqual(modelReference(started).source_context, server.fakes.runs.gaps);
-      assert.ok(text.includes('\n状态未知；原因缺资料；下一步由使用者提供可读取的资料。\n'));
-      assert.ok(text.includes('\n状态未知；原因缺资料；期望来源函数没有给出结果（合成）；下一步由使用者补齐资料。\n'));
+      assert.ok(text.split('\n').includes('状态未知；原因缺资料；下一步由使用者提供可读取的资料。'));
+      assert.ok(text.split('\n').includes('状态未知；原因缺资料；期望来源函数没有给出结果（合成）；下一步由使用者补齐资料。'));
+      assert.doesNotMatch(text, /tracker:document:404|review.expected_failed/);
     } finally {
       server.fakes.runs.gaps = { unavailable: [], gaps: [] };
     }
