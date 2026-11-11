@@ -403,7 +403,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(summary.session, 'sess-start-1', 'the service got the session id from the header');
     assert.equal(summary.root, ROOT_1);
     assert.match(run.content[0].text ?? '', /^已读入原始用例，手册和命令树采用构建 b-2.1-7。/);
-    assert.match(run.content[0].text ?? '', /核对说明\n按规程逐条评审每个合成用例。/);
+    assert.equal((modelReference(run).run as { instructions: string }).instructions, '按规程逐条评审每个合成用例。');
     const external = await client.call('start_run', { pack: 'review', inputs: { subject: { external: 'tracker:document:42' } } });
     assert.equal(external.isError, false);
     const misspelled = await client.call('start_run', { pack: 'review', inputs: {}, buidl: 'b-1' });
@@ -649,7 +649,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       const started = await startRun(client, reference);
       const text = started.content[0].text ?? '';
       const summary = started.structuredContent.run as { items: Array<{ id: string; label: string; summary: string; location: string }>; slots: { sha256: string; schema: { properties: Record<string, unknown> } } };
-      for (const i of [0, 49, 50, 59]) assert.ok(text.includes(`\n原始用例 合成用例 ${i}，等待核对；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序\n`), `original case ${i}`);
+      for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}，等待核对；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i}`);
       assert.ok(summary.items.every((item) => item.location === reference), 'every machine-readable item keeps its location');
       assert.deepEqual(summary.items.map((item) => [item.id, item.label, item.summary]), Array.from({ length: 60 }, (_, i) => [`doc-9:n${i}`, `合成用例 ${i}`, `摘要 ${i}`]));
       assert.match(summary.slots.sha256, /^[0-9a-f]{64}$/);
@@ -657,7 +657,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       const model = modelReference(started);
       assert.deepEqual(model.run, started.structuredContent.run);
       assert.equal(model.record, started.structuredContent.record);
-      assert.deepEqual(model.original_cases, Array.from({ length: 60 }, (_, i) => ({ id: `doc-9:n${i}`, title: `合成用例 ${i}` })));
+      assert.deepEqual(model.original_cases, Array.from({ length: 60 }, (_, i) => ({ id: `doc-9:n${i}`, autoid: null, title: null })));
       assert.deepEqual(summary.slots.schema.properties.findings, { type: 'array', description: '评审发现（合成）', items: { type: 'object', properties: { text: { type: 'string', description: '发现的说明' }, code: { type: 'string' } }, required: ['text'] } });
       assert.doesNotMatch(text, /doc-9:n|src:|rec:|slots|findings|sha256|\"\$schema\"/);
     } finally {
@@ -882,7 +882,9 @@ describe('start_run with the engine\'s detail', () => {
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
     server.fakes.runs.gaps = { unavailable: [{ external: 'tracker:document:404', role: 'expected' }], gaps: [{ code: 'review.expected_failed', message: '期望来源函数没有给出结果（合成）' }] };
     try {
-      const text = (await startRun(client, reference)).content[0].text ?? '';
+      const started = await startRun(client, reference);
+      const text = started.content[0].text ?? '';
+      assert.deepEqual(modelReference(started).source_context, server.fakes.runs.gaps);
       assert.ok(text.includes('\n状态未知；原因缺资料；下一步由使用者提供可读取的资料。\n'));
       assert.ok(text.includes('\n状态未知；原因缺资料；期望来源函数没有给出结果（合成）；下一步由使用者补齐资料。\n'));
     } finally {
@@ -1176,7 +1178,7 @@ describe('the isError matrix and output schemas', () => {
       assert.equal(result.content[0].type, 'text');
       assert.throws(() => JSON.parse(result.content[0].text ?? ''), SyntaxError, 'the first block is reader-facing text');
       assert.doesNotMatch(result.content[0].text ?? '', /^追踪 /m);
-      const { original_cases: _originals, ...model } = modelReference(result);
+      const { original_cases: _originals, source_context: _sources, ...model } = modelReference(result);
       assert.deepEqual(model, result.structuredContent, 'the model can read the complete validated answer in the second text block');
       assert.match(String(model.trace), /^[0-9a-f]{32}$/);
     }
