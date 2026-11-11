@@ -467,6 +467,7 @@ function nodeEntry(node: KnowledgeNode, _root: string): Entry {
     }
     if (!('statement' in contribution)) {
       lines.push('原文不可读取；状态未知；原因缺资料；下一步由使用者请管理员核对读取权限。');
+      if (view.note !== null) lines.push(view.note);
       continue;
     }
     const changed = view.status !== 'valid';
