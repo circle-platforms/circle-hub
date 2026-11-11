@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   BuildInfo,
+  CommandPolicy,
   ExternalTemplate,
   ProducedEntry,
   Producer,
@@ -44,6 +45,41 @@ test('a product declaration parses and a wrong one names its problem', () => {
   const dupProducer = ProductDeclaration.safeParse({ ...declaration, producers: [declaration.producers[0], declaration.producers[0]] });
   assert.ok(!dupProducer.success && dupProducer.error.issues.some((i) => /declared twice/.test(i.message)));
   assert.ok(!ProductDeclaration.safeParse({ ...declaration, extra: 1 }).success, 'unknown keys are refused');
+});
+
+test('a command policy declares persistence channels and forbidden combinations by locked-tree prefix, each id once', () => {
+  const base = { schema: 'command-policy@1', read_only: ['/commands/show'], inverse_rules: [] };
+  const declared = {
+    ...base,
+    persistence_channels: [
+      { id: 'disk', commands: [{ prefix: '/commands/demo/store' }], source: 'Synthetic manual 4.2: a stored file stays on the unit' },
+      { id: 'peer', commands: [{ prefix: '/commands/demo/mirror/push' }, { prefix: '/commands/demo/link/rank', with_parameter: 3 }], source: 'Synthetic manual 7.1: a push writes the peer' },
+    ],
+    forbidden_combinations: [{ id: 'boot_reload', side_a: [{ prefix: '/commands/demo/mirror/boot/on' }], side_b: [{ prefix: '/commands/demo/reload' }], source: 'Synthetic manual 7.3: switch the boot sync off first' }],
+  };
+  assert.ok(CommandPolicy.safeParse(base).success, 'a policy without the declarations is as before');
+  assert.deepEqual(CommandPolicy.parse(declared), declared);
+  assert.ok(ProductDeclaration.safeParse({ ...declaration, command_policy: declared }).success, 'the product declares it beside its other command rules');
+  const refused: Array<[string, (value: any) => void]> = [
+    ['an unknown key', (v) => { v.persistence_channel = []; }],
+    ['an unknown key in a channel', (v) => { v.persistence_channels[0].scope = 'volume'; }],
+    ['a channel id declared twice', (v) => { v.persistence_channels[1].id = 'disk'; }],
+    ['a combination id declared twice', (v) => { v.forbidden_combinations.push({ ...v.forbidden_combinations[0] }); }],
+    ['an id that is not lowercase words', (v) => { v.persistence_channels[0].id = 'Disk'; }],
+    ['a prefix outside the command tree', (v) => { v.persistence_channels[0].commands[0].prefix = '/knowledge/demo'; }],
+    ['a command that is a bare string', (v) => { v.persistence_channels[0].commands = ['/commands/demo/store']; }],
+    ['a channel without commands', (v) => { v.persistence_channels[0].commands = []; }],
+    ['a combination without one side', (v) => { delete v.forbidden_combinations[0].side_b; }],
+    ['a parameter position below zero', (v) => { v.persistence_channels[1].commands[1].with_parameter = -1; }],
+    ['a parameter position that is not a whole number', (v) => { v.persistence_channels[1].commands[1].with_parameter = 1.5; }],
+    ['no source', (v) => { delete v.persistence_channels[0].source; }],
+    ['a source on two lines', (v) => { v.forbidden_combinations[0].source = 'one\ntwo'; }],
+    ['a source over 400 characters', (v) => { v.persistence_channels[0].source = 'x'.repeat(401); }],
+    ['more than sixteen channels', (v) => { v.persistence_channels = Array.from({ length: 17 }, (_, k) => ({ ...v.persistence_channels[0], id: `c${k}` })); }],
+  ];
+  for (const [name, mutate] of refused) { const value = structuredClone(declared); mutate(value); assert.ok(!CommandPolicy.safeParse(value).success, name); }
+  const twice = CommandPolicy.safeParse({ ...declared, persistence_channels: [declared.persistence_channels[0], declared.persistence_channels[0]] });
+  assert.ok(!twice.success && twice.error.issues.some((i) => /declared twice/.test(i.message)), 'the problem names the repeated id');
 });
 
 test('a catalog may be limited to the entries of one declared producer', () => {

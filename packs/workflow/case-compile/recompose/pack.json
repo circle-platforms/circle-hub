@@ -23,7 +23,7 @@
     },
     {
       "pack": "command-tools",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "module": "command-check"
     }
   ],
@@ -45,8 +45,8 @@
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
-      "sha256": "e03fa7ee7d4bfaf45373d392c6bbeac9ebf98e750f223578efb686fc42842d0f",
-      "size": 5501
+      "sha256": "139f2ebeece30624fc2c49a9442b3f6a5b52029dbba0dae3033abaa2eb5a9a12",
+      "size": 9166
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/grammar.ts",
