@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
+import { setupJournal } from './testing/journal.ts';
 import { acceptedDispatch, MAX_NOTE_TEXT, MAX_NOTES, runnerNote } from './accepted.ts';
 import { definition } from './testing/definition.ts';
 import { readRunJobs } from './read-runs.ts';
@@ -78,9 +79,13 @@ test('the runner note names no administrator command in any job state', () => {
   const status = (extra: Record<string, unknown>) => ({ job, phase: 'synthetic', outcome: 'unknown', frozen: false, events: 3, next_action: `circle-hub job resume ${job}`, ...extra }) as unknown as JobStatus;
   const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
     { ended: null, status: status({}), expect: /还在进行/ },
-    { ended: 'unknown', status: status({ frozen: true }), expect: /等管理员 admin-1 对账/ },
+    { ended: 'unknown', status: status({ frozen: true, request_id: 'synthetic-intent:1' }), expect: /派发结果未确认.*请求号 synthetic-intent:1.*不要重交.*管理员 admin-1 处置/ },
     { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /不会再派发/ },
     { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'not_dispatched', not_sent: true, reason: '合成：目标没有给出租约' }), expect: /未发出.*原因：合成：目标没有给出租约.*什么都没有发到目标.*Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'target_rejected', rejection_stage: 'admission' }), expect: /目标拒绝.*目标在“admission”阶段拒绝.*修正后原样重交，Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'proven_not_executed' }), expect: /已证明目标没有执行；原样重交，Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'target_rejected', decided_by: 'admin-1' }), expect: /管理员已处置这个作业/ },
     { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }), expect: /读结果引用看逐条结论/ },
     { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, missing_fact: '合成：缺归属认证' }), expect: /部分条目没有判定/ },
   ];
@@ -113,8 +118,10 @@ test('a dispatch refused at the effect boundary before any reservation says that
   const keys = definition('x').resources;
   await c.leases.forceRelease({ keys, by: c.admin.id, reason: '合成：改由本运行的谱系持有' });
   await c.leases.acquire({ keys, prefix: 'synthetic/', ttlSeconds: 3600, maxTtlSeconds: 3600, holder: { user: c.owner.id, run: c.run } });
-  const [retried] = await acceptedDispatch(c.kit, c.service, c.run, true);
-  assert.ok(retried.job && retried.job !== note.job, JSON.stringify(retried)); assert.match(retried.text, /已按任务包的效果行派发作业/);
+  // The answer that tries again first says what the refused job came to (issue 142), then reports the new one.
+  const [earlier, retried] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.equal(earlier.job, note.job); assert.match(earlier.text, /未发出；原因：/); assert.match(earlier.text, /这次重交 Hub 已再试/);
+  assert.ok(retried.job && retried.job !== note.job, JSON.stringify(retried)); assert.match(retried.text, /已再次按任务包的效果行派发作业/);
   await settled(c);
   assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
   const [after] = (await acceptedDispatch(c.kit, c.service, c.run, true)).filter((row) => row.job === retried.job);
@@ -132,4 +139,86 @@ test('the accepted answer reports the reserved job, then a repeat reads its prog
   assert.equal(progress.length, 1); assert.equal(progress[0].job, job.job);
   assert.match(progress[0].text, /阶段 complete/);
   assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
+});
+
+// Issue 142 (decision 155): a dispatch that went wrong comes back in the answer of the submission that triggered it.
+async function ended(c: C, count: number) {
+  for (let i = 0; i < 200; i++) { const jobs = await readRunJobs(c.kit, c.service, c.admin, c.run, { unbound: true }); if (jobs.length >= count && jobs.every((job) => job.ended !== null)) return jobs; await new Promise((resolve) => setTimeout(resolve, 50)); }
+  throw new Error('the dispatched jobs did not end');
+}
+
+for (const [mode, reason] of [['busy', /原因：目标拒绝了提交之前的调用（取得租约或只读核对）/], ['build', /未满足的条件：\/build equals/]] as const) {
+  test(`not sent (${mode}): the next answer says why and the same submission dispatches again`, async (t) => {
+    const c = await setup({ mode }); t.after(() => c.close());
+    const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
+    assert.ok(first?.job, JSON.stringify(first));
+    const [job] = await ended(c, 1);
+    assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, not_sent: job.status.not_sent, refused: job.boundary_refused }, { ended: 'done', outcome: 'not_dispatched', not_sent: true, refused: false });
+    assert.equal(c.calls.includes('send_blob'), false, 'nothing was submitted');
+    const reached = c.calls.length;
+    const again = await acceptedDispatch(c.kit, c.service, c.run, true);
+    assert.equal(again.length, 2, JSON.stringify(again));
+    assert.equal(again[0].job, first.job);
+    assert.match(again[0].text, /未发出/); assert.match(again[0].text, reason); assert.match(again[0].text, /这次重交 Hub 已再试/);
+    assert.ok(again[1].job && again[1].job !== first.job, 'a new job'); assert.match(again[1].text, /已再次按任务包的效果行派发作业/);
+    for (const note of again) assert.doesNotMatch(note.text, /circle-hub|job resume|job dispose|192\.0\.2\./, 'no administrator command and nothing of the target');
+    await ended(c, 2);
+    assert.ok(c.calls.length > reached, 'the repeat reached the target again');
+    assert.equal(c.calls.includes('send_blob'), false);
+    // A submission that is not ready only reads: it starts nothing.
+    const read = await acceptedDispatch(c.kit, c.service, c.run, false);
+    assert.equal(read.length, 2); assert.match(read[1].text, /什么都没有发到目标；原因消除后原样重交，Hub 会再试一次/);
+  });
+}
+
+test('not sent (the target cannot be reached): the reason names no address, and the same submission dispatches again', async (t) => {
+  const c = await setup(); t.after(() => c.close());
+  await c.endpoint.close();
+  const first = await acceptedDispatch(c.kit, c.service, c.run, true);
+  const [job] = await ended(c, 1);
+  assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, not_sent: job.status.not_sent }, { ended: 'done', outcome: 'not_dispatched', not_sent: true }, JSON.stringify(job.status));
+  assert.equal(job.status.reason, '目标没有给出完整应答：连不上、超时或应答超限');
+  const again = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.equal(again.length, 2, JSON.stringify(again));
+  assert.match(again[0].text, /未发出；原因：目标没有给出完整应答：连不上、超时或应答超限/);
+  assert.ok(again[1].job && again[1].job !== job.job);
+  for (const note of [...first, ...again]) assert.doesNotMatch(note.text, /127\.0\.0\.1|localhost|ECONN|circle-hub/);
+  await ended(c, 2);
+});
+
+test('rejected by the target with a certified stage: the answer names the stage and the same submission dispatches again', async (t) => {
+  const c = await setupJournal({ lost: true, rejected: true }); t.after(() => c.close());
+  const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(first?.job, JSON.stringify(first));
+  const [job] = await ended(c, 1);
+  assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, frozen: job.status.frozen, stage: job.status.rejection_stage }, { ended: 'done', outcome: 'target_rejected', frozen: false, stage: 'admission' });
+  assert.equal(c.calls.filter((name) => name === 'send_blob').length, 1);
+  const again = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.equal(again.length, 2, JSON.stringify(again));
+  assert.match(again[0].text, /目标拒绝；目标在“admission”阶段拒绝/); assert.match(again[0].text, /这次重交 Hub 已再试/);
+  assert.ok(again[1].job && again[1].job !== first.job);
+  await ended(c, 2);
+  assert.equal(c.calls.filter((name) => name === 'send_blob').length, 2, 'the repeat submitted once more');
+});
+
+test('sent without an answer: the note gives the request id, forbids a resend and no repeat sends again', async (t) => {
+  const c = await setup({ mode: 'lost' }); t.after(() => c.close());
+  const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
+  assert.ok(first?.job, JSON.stringify(first));
+  const [job] = await ended(c, 1);
+  assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, frozen: job.status.frozen }, { ended: 'unknown', outcome: 'unknown', frozen: true });
+  assert.ok(job.status.request_id, 'the request id of the submit intent');
+  assert.equal(job.status.requests?.length, 1, 'the unresolved outcome is a request to the administrator');
+  const sent = c.calls.filter((name) => name === 'send_blob').length, reached = c.calls.length;
+  for (const ready of [true, false]) {
+    const again = await acceptedDispatch(c.kit, c.service, c.run, ready);
+    assert.equal(again.length, 1, JSON.stringify(again)); assert.equal(again[0].job, first.job);
+    assert.match(again[0].text, /派发结果未确认/); assert.ok(again[0].text.includes(`请求号 ${job.status.request_id}`));
+    assert.match(again[0].text, /不要重交，也不要另开运行重发，目标可能已经执行过一次/);
+    assert.ok(again[0].text.includes(`管理员 ${c.admin.id} 处置（期限 ${job.status.requests![0].deadline}）`));
+    assert.doesNotMatch(again[0].text, /circle-hub|job resume|job dispose/);
+  }
+  assert.equal(c.calls.filter((name) => name === 'send_blob').length, sent, 'nothing is sent again');
+  assert.equal(c.calls.length, reached, 'and a read of the progress does not reach the target');
+  assert.equal((await readRunJobs(c.kit, c.service, c.admin, c.run, { unbound: true })).length, 1);
 });

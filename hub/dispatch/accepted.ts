@@ -1,5 +1,9 @@
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
+// Issue 142 (decision 155): what went wrong comes back in the answer of the call that triggered the dispatch, in three
+// kinds. Not sent: the reason, and a repeat tries again. Rejected by the target: the stage, and a repeat tries again
+// after the fix. Sent without an answer: the request id, and no repeat sends again, since the target may have run it; the
+// Hub asks the target by that id and only what stays unresolved goes to a named administrator.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
@@ -28,12 +32,15 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   const admin = await activeAdmin(records);
   if (!admin) return ready ? [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动派发；等管理员开通账号' }] : [];
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
-  // A job refused at the effect boundary before any remote call sent nothing and used nothing of the run's dispatch: once
-  // the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as the reference compile skill
-  // resubmits a workbook its gateway refused. A job that reached the target, its precheck included, is only read.
-  const retry = ready && jobs.length > 0 && jobs.every((job) => job.ended === 'done' && job.boundary_refused && job.status.outcome === 'not_dispatched');
+  // Every job of the run ended without an effect that could repeat (see `retriable`): a repeat of the ready submission
+  // tries again, as the reference compile skill resubmits a workbook its gateway refused. Any other job is only read.
+  const retry = ready && jobs.length > 0 && jobs.every(retriable);
   if (jobs.length && !retry) return capped(jobs.map((job) => runnerNote(job, admin.id)));
   if (!ready) return [];
+  // What the earlier jobs came to is told beside the new attempt: the runner learns why the last one ended before it reads
+  // that the Hub tried again.
+  const earlier = jobs.map((job) => runnerNote(job, admin.id, true));
+  const answer = (notes: DispatchNote[]) => capped([...earlier, ...notes]);
   const state: { reserved?: { job: string; executor: string } } = {};
   let wake: () => void = () => {};
   const woken = new Promise<void>((resolve) => { wake = resolve; });
@@ -43,18 +50,18 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
   clearTimeout(timer);
-  if (state.reserved) { const { job, executor } = state.reserved; return [{ job, executor, text: clip(`Hub 已按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]; }
+  if (state.reserved) { const { job, executor } = state.reserved; return answer([{ job, executor, text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]); }
   const settled = await Promise.race([work, Promise.resolve(null)]);
-  if (settled === null) return [{ text: `Hub 正在做派发前核对；${PROGRESS}` }];
+  if (settled === null) return answer([{ text: `Hub 正在做派发前核对；${PROGRESS}` }]);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
   // the executor's whole target): nothing was sent, so the answer says why instead of reporting a dispatch.
   if (settled.started && settled.status) {
     const { status } = settled;
     const job = (await readRunJobs(records, service, admin, run, { unbound: true })).find((row) => row.job === status.job);
     const why = [status.reason ?? status.missing_fact ?? '派发前核对没有通过', ...details(status)].join('；');
-    return [{ job: status.job, ...(settled.executor ? { executor: settled.executor } : {}), text: clip(`Hub 没有派发：${why}；下一步：${job ? nextStep(job, admin.id) : NO_MORE}`) }];
+    return answer([{ job: status.job, ...(settled.executor ? { executor: settled.executor } : {}), text: clip(`Hub 没有派发：${why}；下一步：${job ? nextStep(job, admin.id) : NO_MORE}`) }]);
   }
-  return [{ ...(settled.executor ? { executor: settled.executor } : {}), text: clip(`Hub 没有派发：${settled.reason ?? '派发前核对没有通过'}`) }];
+  return answer([{ ...(settled.executor ? { executor: settled.executor } : {}), text: clip(`Hub 没有派发：${settled.reason ?? '派发前核对没有通过'}`) }]);
 }
 
 /** The run's jobs that have not ended, with their notes, or null: submit_result keeps a different submission from them. */
@@ -66,15 +73,39 @@ export async function runInFlight(records: Pick<RecordsKit, 'store' | 'principal
 }
 
 const NO_MORE = '这个核验运行不会再派发：能在计划、工作簿或预订上改的，改好后开新的核验运行；其余等管理员处理';
+const RETRY = '原样重交，Hub 会再试一次';
+
+/**
+ * A job after which a repeat of the same ready submission dispatches again (issue 142): it ended, no administrator has
+ * disposed of it, and what it came to cannot have run on the target. Nothing was sent (refused at the effect boundary
+ * before any remote call, or ended before the submit was called: no lease, an unreachable target, a failed precheck),
+ * the target refused it with a certified stage, or it is proven not to have run. The dispatch itself still checks every
+ * premise and the lineage's earlier attempts before it sends. A refusal at the final boundary after the target was
+ * reached is not among them: its cause is in the run, and only a new verification run changes it.
+ */
+function retriable(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): boolean {
+  const { status } = job;
+  if (job.ended !== 'done' || status.frozen || status.decided_by) return false;
+  if (status.outcome === 'not_dispatched') return job.boundary_refused || status.not_sent === true;
+  return status.outcome === 'target_rejected' || status.outcome === 'proven_not_executed';
+}
 
 /** What the runner can do next in the job's state. The administrator's next action (a CLI command) is never forwarded. */
 function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, admin: string): string {
   const { status } = job;
   if (job.ended === null) return `作业还在进行；${PROGRESS}`;
   if (status.decided_by) return '管理员已处置这个作业；要再派发请开新的核验运行';
-  if (job.ended === 'unknown' || status.frozen) return `结果未知，等管理员 ${admin} 对账（Hub 已记下）；对账后原样重交读进展`;
+  if (job.ended === 'unknown' || status.frozen) {
+    // The Hub asks the target by the request id where the executor declares a query; what stays unresolved is a request to
+    // the named administrator, and only then does the note say it was handed over.
+    const due = status.requests?.find((request) => request.deadline !== null)?.deadline;
+    const handling = status.requests?.length ? `已交给管理员 ${admin} 处置${due ? `（期限 ${due}）` : ''}` : `Hub 会按请求号向目标查询，查不清再交给管理员 ${admin} 处置`;
+    return `派发结果未确认：不要重交，也不要另开运行重发，目标可能已经执行过一次；${handling}；之后原样重交读进展`;
+  }
   if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${PROGRESS}`;
-  if (status.outcome === 'not_dispatched') return job.boundary_refused ? '按原因补齐（例如预订整个自动化测试环境）后原样重交，Hub 会再试一次' : NO_MORE;
+  if (status.outcome === 'not_dispatched') return job.boundary_refused ? `按原因补齐（例如预订整个自动化测试环境）后${RETRY}` : status.not_sent ? `什么都没有发到目标；原因消除后${RETRY}` : NO_MORE;
+  if (status.outcome === 'target_rejected') return `目标没有接收，也没有执行；按拒绝的原因修正后${RETRY}`;
+  if (status.outcome === 'proven_not_executed') return `已证明目标没有执行；${RETRY}`;
   if (status.missing_fact) return '部分条目没有判定，缺的事实写在结果引用对应的行里；要管理员补的 Hub 已记下';
   return '读结果引用看逐条结论';
 }
@@ -86,16 +117,19 @@ function details(status: JobStatus): string[] {
   return parts;
 }
 
-/** The runner's note on one job of the run. */
-export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string): DispatchNote {
+/** The runner's note on one job of the run; `retried` when the answer that carries it dispatches again after it. */
+export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false): DispatchNote {
   const { status } = job;
-  const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '结果未知' : '进行中';
+  const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '派发结果未确认' : '进行中';
   const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
+  if (status.outcome === 'target_rejected' && status.rejection_stage) parts.push(`目标在“${status.rejection_stage}”阶段拒绝`);
+  // The id the Hub asks the target about: told only while the answer is missing, where it is what an administrator needs.
+  if ((job.ended === 'unknown' || status.frozen) && status.request_id) parts.push(`请求号 ${status.request_id}`);
   // Before anything is sent the reference holds the pre-dispatch device checks, never results of the cases (decision 116).
   if (status.result) parts.push(status.outcome === 'not_dispatched'
     ? `派发前核对的结论 ${status.result}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）`
     : `结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   if (status.reason) parts.push(`原因：${status.reason}`);
-  parts.push(...details(status), `下一步：${nextStep(job, admin)}`);
+  parts.push(...details(status), retried ? '这次重交 Hub 已再试，见后面的条目' : `下一步：${nextStep(job, admin)}`);
   return { job: job.job, ...(status.result ? { result: status.result } : {}), text: clip(parts.join('；')) };
 }
