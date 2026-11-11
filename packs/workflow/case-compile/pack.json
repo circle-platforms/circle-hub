@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "de821fb6868c6fbebb9d0b658ab13f377eb7064bce3ef4d01e2753a3f28247a5",
-      "size": 21352
+      "sha256": "25986a48b2039b4519d867ec54c2eec4bd5f5d5e45264a140af0cdba86f2b716",
+      "size": 14815
     },
     {
       "path": "checks.json",
@@ -738,8 +738,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "6588932e913711669dbd11407b383be3c1809e0c593b238fd394a6d622765b31",
-      "size": 11430
+      "sha256": "05f5250986758d72e0221e3c9360c4b8b8e15d632df9870ee782422e91e2c79b",
+      "size": 8543
     },
     {
       "path": "tools/download-returns.ts",
@@ -768,8 +768,8 @@
     },
     {
       "path": "tools/fidelity.md",
-      "sha256": "c7bcf193a242e7b3c663d14b5f3c77d8a78a9f70a9119a2fa51145782bf3b463",
-      "size": 2538
+      "sha256": "d20126deb55644a76be4d4c6ec339d7a92a14401fa5c5dd9151b4e51c5b65c78",
+      "size": 2679
     },
     {
       "path": "tools/generate-workbook.ts",

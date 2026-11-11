@@ -1,81 +1,92 @@
 ---
 name: recompose
-description: 把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加改写、具体化和缺口。把整份脑图编译成自动化用例之前先用它；需要这份脑图在敏捷平台上的文档号。
+description: 把原始用例整理成重组后的用例，保留原意、原句、改写后的步骤、具体取值和缺的资料。脚本编写前处理整份原始用例，需要敏捷平台上的文档号。
 ---
 
-# 脑图重组
+# 用例重组
 
-把作者写的测试脑图重组成编写阶段能用的记录：每个用例一份契约，加改写、具体化和缺口。这一步是搬运，不是创作。
+原始用例经过用例重组，得到重组后的用例，再交给脚本编写。这里搬运原文，不创作内容。Hub 已按脑图位置读出原始用例的意图、动作和期望，不调用模型。
 
-本地工具由客户端装进技能目录（通用根 `~/.agents/skills/<包>/`；装好的目录即下文 `<技能目录>`，Base directory 由客户端在加载时给出）。`%HUB_URL%` 是 Hub 的 MCP 端点基址，`%HUB_TOKEN%` 是 Bearer 令牌：模型只写占位符名字，值由客户端执行时展开。
+本地工具在客户端给出的 `<技能目录>`。命令中的 `%HUB_URL%` 和 `%HUB_TOKEN%` 由客户端执行时展开；令牌从标准输入给工具，不写进文件、答复或日志。
 
-一次处理一整份脑图。Hub 已经按树位置读出用例原句（意图、动作、期望），在运行记录每个条目的 `fields/atoms` 里，Hub 不调模型。
+每条原始用例只写一句结论，带 ID 加标题、结论、状态和判断。状态只用未确认、已确认、未知，模型的判断是未确认；判断只用正确或错误，未知不替它写判断。错误或未知才写原因和下一步。原因用缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题或还没查清。证据和决定者放最后；决定者用程序、模型、使用者。工具参数与内部引用留在机器可读部分。
 
-## 铁律
+## 读原始用例
 
-1. **零发明。** 契约里的意图和期望必须是作者原文，工具会逐字取出，你不用重打。作者没写的知识不进契约，写进缺口。
-2. **搬运，不是重新表述。** 知识常常写错了位置：验证方法写在步骤里，结果写在标题里。把它们对应起来，不要重新表述。
-3. **不丢东西。** 作者写的否定、条件、差异和命令都要留下。可以改命令的参数，不能删命令，也不能加作者没写的对象或动作。
-4. **和环境无关。** 记录里不写设备、座位和环境地址。换成环境地址是编写阶段的事。
-5. **说不清就写缺口。** 缺口是这一步的产出，不是失败。一个诚实的缺口比一个像样的编造好。
+一次处理整份原始用例，与后面的脚本编写使用同一构建的手册和命令树。先整份下载，再读每条原始用例及手册和命令树，在本地读和搜，不逐条、逐页取 Hub。
 
-## 步骤
-
-1. `start_run` 用 recompose，绑定 subject（同一份脑图）。product、build 和 version 写在 start_run 顶层，和之后编写用同一个构建：重组记录只对同一棵锁定的知识树有效。用例和 case-compile 取的是同一批：带 autoid、没有声明不自动化的。
-2. 先把运行整份取到本地（<目录> 为工作目录下的新目录），再用文件工具读每个用例的 `items/<序号>.json` 里的 `fields/atoms`，不逐条用 get_nodes 读 `rec:<运行记录>#/items/<序号>`：
-
-```sh
-node <技能目录>/tools/download-run.ts --hub %HUB_URL% --run <运行号> --out <目录> <<'EOF'
-%HUB_TOKEN%
-EOF
+```text
+start_run: pack=recompose；inputs.subject=<同一份脑图>
+product/build/version: start_run 顶层，与后续 case-compile 相同
+选择: 带 autoid、未声明不自动化的原始用例
+本地原始用例: items/<序号>.json 中 fields.atoms
+本地来源: sources.json、sources/<摘要>；手册和命令树: knowledge/
+引用照抄下载文件中的“引用”行，不自行拼接
 ```
 
-   `sources.json` 列出绑定的源，`sources/<摘要>` 是原件原字节，都已核对摘要。锁定根的命令树和手册也在这次下载里：`knowledge/` 下每个顶层节点一个文本文件（`# <路径>` 一块，条目原文后面跟它的“引用”行），在本地读和搜，引用照抄，不逐页用 get_nodes 读 `tree:<根>/...`。
-3. 每个用例写一个文件 `<目录>/NN.json`，只写需要判断的字段（见下）。作者的步骤和手册冲突的，先照“作者的步骤和手册冲突”一节问用户，再写文件。
-4. 执行下面的命令。工具补全机械字段，整份一次提交：
-
 ```sh
-node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <运行号> --model <模型> --records <目录> <<'EOF'
-%HUB_TOKEN%
-EOF
+node <技能目录>/tools/download-run.ts --hub %HUB_URL% --run <用例重组编号> --out <新目录>
 ```
 
-5. 读答复。被拒的用例按修正说明改文件后重交。每个用例都要有文件，全部通过这次重组才完成。
-6. 编写时把运行记录的 `rec:` 绑到 `recomposition_run`，把本运行号写到 `recomposition_result`。
+## 写重组后的用例
 
-## 用例文件
+意图和期望保持原始用例原句，工具会逐字取出，不用重打。写错位置的验证方法或结果可以搬到对应位置，不重新表述。否定、条件、差异和命令都留下；命令可以改参数，不能删除，也不能加原始用例没写的对象或动作。
+
+重组后的用例不带具体设备或测试环境地址，脚本编写时再按测试环境选。说不清就写缺什么以及谁接下来做什么，不编造答案。只有“设置成功”这种说法、没有能判断的观察目标时，仍然缺资料。
+
+读手册，把原始用例成立所缺的前置写全。例如功能默认关闭、依赖对象没建、查询前要有服务监听。不要假设测试环境已经具备，执行器在每条自动化用例结束后都会清理配置。
+
+每条原始用例写一个文件，机器形状如下。除前两项外可省略；没有提出问题的原句保持原样。具体字段的取值以 tables/recompose-format.json 为准。
 
 ```json
 {
-  "item": "<条目编号>",
-  "method": {"kind": "declared", "text": "怎么验证", "sources": ["<用例原句或树的引用>"], "basis": "为什么这样验证"},
-  "slots": [{"atom": "a4", "knowledge_location": "has_verification_knowledge", "evidence": [], "proposal": null}],
-  "states": [{"atom": "a2", "state": "missing_prerequisite", "reason": "缺什么", "prerequisites": ["要先做什么"]}],
-  "adapted": [{"atom": "a2", "action": "structural_completion", "text": "改写后的步骤", "commands": ["完整命令行"], "equivalence_reason": "为什么等价", "equivalence_refs": ["tree:<根>/commands/..."]}],
-  "concretizations": [{"slot": "e1", "value": "具体值", "value_ref": "<来源引用>", "source_kind": "catalog"}],
-  "unknowns": [{"missing": "缺什么", "next_action": "下一步", "audience": "编写模型", "due": "编写提交之前"}]
+  "item": "<下载文件中的 id>",
+  "method": {"kind":"declared","text":"怎么验证","sources":["<原句或手册引用>"],"basis":"为什么这样验证"},
+  "slots": [{"atom":"a4","knowledge_location":"has_verification_knowledge","evidence":[],"proposal":null}],
+  "states": [{"atom":"a2","state":"missing_prerequisite","reason":"缺什么","prerequisites":["要先做什么"]}],
+  "adapted": [{"atom":"a2","action":"structural_completion","text":"改写后的步骤","commands":["完整命令行"],"equivalence_reason":"为什么保持原意","equivalence_refs":["<手册或命令树引用>"]}],
+  "concretizations": [{"slot":"e1","value":"具体取值","value_ref":"<来源引用>","source_kind":"catalog"}],
+  "unknowns": [{"missing":"缺什么","next_action":"接下来谁做什么","audience":"编写模型","due":"脚本编写之前"}]
 }
 ```
 
-除 `item` 和 `method` 外都可以省略。没提到的用例原句算 `settled`。
+```text
+method.kind: declared=原始用例写了方法；recomposed=方法在别处搬来；missing=确实没有，须写 unknowns
+knowledge_location: has_verification_knowledge=能判断期望；recomposable_from_elsewhere=别处有依据，写 evidence；genuinely_missing=缺依据，写 proposal
+states.state: underdetermined=写法不清；missing_prerequisite=缺前置，写 prerequisites；settled=已有决定
+adapted.action: parameter_change=改参数；equivalent_form=等价写法；structural_completion=补全结构
+adapted.commands: 完整命令行，由对应构建的命令树解析
+```
 
-- `method.kind`：`declared` 作者写了验证方法；`recomposed` 方法在别的位置，你把它搬来；`missing` 确实没有，这时 `unknowns` 必须写明。
-- `knowledge_location`：`has_verification_knowledge` 期望可以判断；`recomposable_from_elsewhere` 判断依据在别处，`evidence` 写来源；`genuinely_missing` 真的没有，`proposal` 写缺什么。只有结果标签（如“设置成功”）而没有可判定的观察目标时，写 `genuinely_missing`，不要把标签当判据。
-- `states`：`underdetermined` 作者没说清，交给写手选一个能保持原意的写法；`missing_prerequisite` 用例要成立还差前置，写清差什么；`conflict` 作者的两处写法互相矛盾，这种情况要等人决定。
-- `adapted.action`：`parameter_change` 改参数；`equivalent_form` 换等价写法；`structural_completion` 补全结构。
+## 原始用例与手册不一致
 
-## 前置要写全
+原始用例要求的取值或写法被手册和命令树排除，期望却是成功时，先让使用者决定，不自行改写，也不照写上机。原始用例要测的正是非法输入、期望就是被拒绝时，不算这种问题。先读同一构建的手册原话，保存其引用。
 
-最常见的失败是前置没人管。功能默认关闭、依赖的对象还没建、查询要先有服务监听，这些手册写着但作者不一定写。读手册，凡是用例要成立却没写的前置，写进 `states` 的 `missing_prerequisite`，`prerequisites` 写清要先做什么。写手靠它补步骤。不要假设环境已经具备：运行器每条用例结束都会清理配置。
+只有主代理问使用者。子代理不问，把原始用例 ID 加标题、原句、构建号、手册原话及引用交给主代理。整份原始用例的这类问题攒齐了问一次：以手册为准改写；或保留原始用例，这条暂不做脚本编写，等作者决定。使用者另有明确决定就照做，已经决定的不再问。
 
-## 作者的步骤和手册冲突
+只用已有字段保存决定，不另造结构。尚未决定的写明原因和下一步，脚本编写先排除，交付时写原始用例的问题，不为凑轮数上机。
 
-作者的步骤要一个取值或写法、期望却是成功，而锁定根的命令树或手册对这个参数的说明把它排除了（例如手册只允许某几种字符，作者给的名字里有别的字符；手册写明两种记录不能同名，作者让它们同名），这是作者步骤与手册冲突。写这条用例的文件之前先交用户裁定：不自己改写，也不照写。作者要测的正是非法输入、期望本来就是被拒绝的，不算冲突。手册那一句在 `knowledge/` 里读到，引用照抄。
+```text
+已决定: states.reason 以“使用者决定：”开头，逐字写使用者的话；state=settled
+按手册改写: adapted.action=parameter_change；equivalence_reason 引用决定
+确定取值: concretizations.decided_by="使用者"；value_ref=<手册引用>
+暂不编写或尚未问到: state=underdetermined；reason 写原句、手册原话及使用者的决定（没有就如实写）
+unknowns: missing 写原始用例与手册不一致；next_action 写作者或使用者决定
+脚本编写: parameters.exclude=[autoid,...]；交付说明写 author_conflict，见 tools/delivery.md
+不用 conflict: 它要求两个有签发权的来源，原始用例和手册都不是
+```
 
-只有主代理问用户。子代理不问，把用例、作者原句、手册原句和它的引用写进给主代理的报告。整份脑图的这类冲突攒齐了问一次，每条列出用例、作者原句、手册原句和引用，让用户选：以手册为准，改成手册允许的写法；保留作者原样，这条先不编，待作者裁定。用户另有裁定（例如说手册不对、照原样写）就照他说的。
+## 交给脚本编写
 
-裁定写进这条用例自己的记录，用记录已有的字段，不另造：该原句的 `states` 里，`reason` 以“用户裁定：”开头、逐字写用户的话，`state` 记 `settled`。以手册为准的，改写后的步骤写进 `adapted`（`parameter_change`，`equivalence_reason` 引用这句裁定），定下的值写进 `concretizations`（`decided_by` 写“用户”，`value_ref` 写手册那一条的引用）。选了先不编的，或问不到用户的（不替用户选），`state` 记 `underdetermined`，`reason` 写清冲突在哪里、用户说了什么（没问到就写没问到），`unknowns` 写明“作者步骤与手册冲突”和下一步“作者或用户裁定”；编写时这条用例用 parameters.exclude 排除，交付时记为作者步骤与手册冲突。不要记成 `conflict`：它要两个有签发权的来源，作者原句和手册都不是，会被拒。
+```sh
+node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <用例重组编号> --model <模型> --records <重组后的用例目录>
+```
 
-## 命令
+令牌从标准输入给工具。工具补齐能按规则确定的内容，把整份重组后的用例一次交给 Hub。每条原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。
 
-`adapted.commands` 写完整命令行，Hub 按锁定命令树解析。命令名不在树里就被拒，改之前先读树。作者写的命令不能丢，只能改参数。
+```text
+脚本编写与脚本合并: inputs.recomposition_run=<用例重组记录引用>
+inputs.recomposition_result=<用例重组编号>
+```
+
+后续脚本合并、上机验证和失败分析按 case-compile 技能做。
