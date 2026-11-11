@@ -15,18 +15,18 @@ import { parseProfile, allowedCall } from './profile.ts';
 import { bindArguments } from './binding.ts';
 import { checkContractShape, checkAddresses, checkExpectedSources } from './checks.ts';
 import { generateWorkbookSet, caseRecipe, recipeDigest, pathCell, type GenerationInput, type GenerationFields } from './generate.ts';
+import { CONFLICT_FIX, conflictText, movedText, volumeOrder, volumeProblems } from './channels.ts';
 import { readTemplate, TemplateError, type WorkbookTemplate } from './generated/skills/runner-workbook/workbook-writer/workbook-template.ts';
 import { isRecord, markers, type Outcome, opened } from './text.ts';
 export interface WorkbookProblem { rule: string; pointer: string; message: string }
 export interface ReadExecution { row: number; object: string; method: string; args: string[]; keywords: Record<string, string | number>; assertion: boolean;h?:string;i?:string }
 export type WorkbookRead = { ok: true; executions: ReadExecution[]; autoids: string[] } | { ok: false; problems: WorkbookProblem[] };
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
-/** Does not call the generator or use generated rows to interpret the uploaded model. Several recipes are the cases of one
- * run in workbook order (decision 104); one recipe is the single-case layout. */
+/** Interpret uploaded rows independently in the same declared case order as the generator. */
 export function readWorkbook(input: unknown, recipes: GenerationInput | GenerationInput[]): WorkbookRead {
   const problems: WorkbookProblem[] = []; const issue = (rule: string, pointer: string, message: string) => problems.push({ rule, pointer, message });
   const model = readWorkbookModel(input); if (!model) return { ok: false, problems: [{ rule: 'model', pointer: '', message: '不是完整的 xlsx@1 模型' }] };
-  const set = Array.isArray(recipes) ? recipes : [recipes]; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可回读的用例计划' }] };
+  const set = volumeOrder(Array.isArray(recipes) ? recipes : [recipes]).ordered; if (!set.length) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '没有可回读的用例计划' }] };
   const plans: PlanSlots[] = [];
   for (const recipe of set) { const slots = readSlots(recipe.slots); if (!slots.ok) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '当前计划槽位不合式' }] }; plans.push(slots.slots); }
   if (new Set(plans.map((plan) => !!blockMeta(plan))).size !== 1) return { ok: false, problems: [{ rule: 'slots', pointer: '/slots', message: '同一份工作簿里块计划与普通计划不能混用' }] };
@@ -182,9 +182,12 @@ export default function check(input: unknown): Outcome[] {
     }
   }
   try {
+    const forbidden = volumeProblems(recipes).filter((row) => [...row.side_a, ...row.side_b].some((placed) => placed.autoid === fields.autoid));
+    if (forbidden.length) return [{ verdict: 'refute', code: 'case-compile.combination_forbidden', statement: `${forbidden.map(conflictText).join('；')}。${CONFLICT_FIX}。这份工作簿不派发，没有向设备发车${qualifier}`, grounds, tier: 'blocking', ...(item ? { item } : {}), pointer: '/data', data: { conflicts: forbidden } }];
     const read = readWorkbook(raw.model, recipes); if (!read.ok) return read.problems.map((v) => fail(`${v.rule}：${v.message}；按修复行重生成并开后继运行`, `/workbook/model${v.pointer}`)[0]);
     const regenerated = generateWorkbookSet(recipes);
     if (typeof raw.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(raw.sha256) || hash(regenerated) !== raw.sha256) return fail('bytes：绑定的工作簿原字节摘要与本运行同版生成器重算不同；不能仅凭单元格相同受理');
-    return [{ verdict: 'support', statement: '工作簿经独立逐行回读并由本运行生成器重算，绑定原字节完全一致；plan_run 与 predecessor 的一致性由派发核验' + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), data: { sha256: raw.sha256, autoids: read.autoids, bed: { id: profile.profile.bed, manifest_sha256: s.manifest_sha256 }, build: generation.build, generator: FORMAT.generator, plan_run: generation.plan_run } }];
+    const moved = volumeOrder(recipes).moved, titles = new Map(recipes.map((recipe) => [recipe.fields.autoid, recipe.fields.title] as const));
+    return [{ verdict: 'support', statement: '工作簿经独立逐行回读并由本运行生成器重算，绑定原字节完全一致；plan_run 与 predecessor 的一致性由派发核验' + (moved.length ? `；${movedText(moved, titles)}` : '') + qualifier, grounds, tier: 'blocking', ...(item ? { item } : {}), data: { sha256: raw.sha256, autoids: read.autoids, bed: { id: profile.profile.bed, manifest_sha256: s.manifest_sha256 }, build: generation.build, generator: FORMAT.generator, plan_run: generation.plan_run, ...(moved.length ? { moved_tail: moved } : {}) } }];
   } catch (error) { return fail('当前槽位无法按本运行生成器写成工作簿：' + (error instanceof Error ? error.message : '无法重算')); }
 }

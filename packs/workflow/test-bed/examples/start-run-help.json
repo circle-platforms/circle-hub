@@ -1,0 +1,15 @@
+{
+  "comment": "问设备：booking 和 predecessor 写预订那次运行的编号，device 写你预订的那台设备在清单里的名字，line 写要问的命令行（不带问号）。Hub 在这台设备上从整行起、再从最长的前缀往短的，逐个前缀问“这里该写什么”，不按回车、不执行，把设备的原话和观察时刻还给你。设备的话只作参考，不是命令树，也不是手册。",
+  "tool": "start_run",
+  "arguments": {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "predecessor": "run_0123456789abcdef",
+    "parameters": {
+      "action": "help",
+      "booking": "run_0123456789abcdef",
+      "device": "afamx0",
+      "line": "widget set demo 1"
+    }
+  }
+}

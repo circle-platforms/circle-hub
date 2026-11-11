@@ -32,3 +32,24 @@ test('all four source states, including settled continuation, require a complete
 test('decision 155: a named gap stays in the record for the writer and does not hold the case back', () => { const f = fixture(); f.record.unknowns = [{ missing: '尚未给出前置事实', next_action: '补前置后重交', audience: '编写模型', due: '提交之前' }]; assert.ok(outcomes(f).every(o => o.verdict === 'support')); f.record.unknowns = [{ missing: '只写了缺什么' }] as any; assert.ok(outcomes(f).some(o => o.code === 'recompose.missing_without_exit')); });
 test('unlisted method sources and missing actual declaration fragments cannot acquire authority', () => { const a = fixture(), ref = 'src:' + 'f'.repeat(64); a.record.contract.method.sources = [ref]; a.subject.evidence.push({ reference: ref, resolved: true, text: '存在但未声明' }); assert.ok(outcomes(a).some(o => o.code === 'recompose.candidate_signed')); const b = fixture(); b.subject.evidence = []; assert.ok(outcomes(b).some(o => o.verdict === 'unknown' && o.missing.includes('可读'))); });
 test('conflict requires two genuinely different closed declarations and current independent scope', () => { const a = fixture('conflict'); a.authority.governing[1].constraints = structuredClone(a.authority.governing[0].constraints); assert.ok(outcomes(a).some(o => o.verdict === 'refute' && o.statement.includes('完全相等'))); const b = fixture('conflict'); b.subject.review_run = { ...b.review.run, meta: null } as any; assert.ok(outcomes(b).some(o => o.verdict === 'unknown' && o.missing.includes('独立裁定'))); });
+test("a user's ruling on an author step against the manual is carried by the fields a record already has, and waiting for one is an underdetermined atom", () => {
+  const ruled = fixture();
+  for (const state of ruled.record.sources.states) state.adjudicated_by = null;
+  ruled.record.sources.states[0].reason = '用户裁定：以手册为准，改成手册允许的写法';
+  ruled.record.ledgers.adapted[0].equivalence_reason = '用户裁定：以手册为准，改成手册允许的写法';
+  const declaration = ruled.authority.values[0], ref = declaration.ref + '/values/0';
+  ruled.record.ledgers.concretizations = [{ atom: 'a1', slot: declaration.slot, value: 5, value_ref: ref, source_of_value: declaration.ref, source_kind: 'catalog', decided_by: '用户', authority: declaration.ref }];
+  ruled.subject.evidence.push({ reference: ref, resolved: true, text: '5' }, { reference: declaration.ref, resolved: true, text: '合成声明' });
+  assert.deepEqual(outcomes(ruled).map(o => o.verdict), ['support'], JSON.stringify(outcomes(ruled)));
+
+  const waiting = fixture();
+  for (const state of waiting.record.sources.states) state.adjudicated_by = null;
+  Object.assign(waiting.record.sources.states[0], { state: 'underdetermined', reason: '用户裁定：保留作者原样，这条先不编，待作者裁定' });
+  waiting.record.unknowns = [{ missing: '作者步骤与手册冲突：合成', next_action: '作者或用户裁定', audience: '作者或用户', due: '交付之前' }];
+  assert.deepEqual(outcomes(waiting).map(o => o.verdict), ['support'], JSON.stringify(outcomes(waiting)));
+
+  const conflict = fixture();
+  for (const state of conflict.record.sources.states) state.adjudicated_by = null;
+  conflict.record.sources.states[0].state = 'conflict';
+  assert.ok(outcomes(conflict).some(o => o.verdict === 'refute' && o.code === 'recompose.candidate_signed'), JSON.stringify(outcomes(conflict)));
+});

@@ -29,7 +29,7 @@
     },
     {
       "pack": "command-tools",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "module": "command-check"
     }
   ],
@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "ce42169a9fabf3ef2c5d27dba1ca9dd2c6ef2b12ce05d9dc7c32244f2091fba2",
-      "size": 21408
+      "sha256": "de821fb6868c6fbebb9d0b658ab13f377eb7064bce3ef4d01e2753a3f28247a5",
+      "size": 21352
     },
     {
       "path": "checks.json",
@@ -167,9 +167,14 @@
       "size": 8176
     },
     {
+      "path": "functions/channels.ts",
+      "sha256": "7a5325925bb20ef968434b73f07ba72cf830d11caff5f759ce7b011e916e7958",
+      "size": 6046
+    },
+    {
       "path": "functions/checks.ts",
-      "sha256": "106cac0a88c45fecab3d61c99e9408e022b2dc4dd80402c4315ce90c83c7c831",
-      "size": 32113
+      "sha256": "e87d84fe8700f6534ef1b3a743eebcf11cff104c534916a74bfc963c042c1da4",
+      "size": 32507
     },
     {
       "path": "functions/command-obligations.ts",
@@ -178,8 +183,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "75babe35a83bfd779e7214583554acfed7cd2d7b5ce4ede761c6968db843a24e",
-      "size": 40129
+      "sha256": "779c0afe10bb465dc6680eb9395f4d03c6b0f2c3fc87d6bd5c29fae9c5f60aba",
+      "size": 47860
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -198,18 +203,23 @@
     },
     {
       "path": "functions/generate.ts",
-      "sha256": "069b9f8bf9f05c461758624b7f1c67be21dd93ef6c4e18f2264209c55d514a1c",
-      "size": 15292
+      "sha256": "46f616ae31d6f4f95a2fe5003f4557f96f2022120169c399c1cf10ab31405beb",
+      "size": 15392
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/command-policy.ts",
-      "sha256": "e03fa7ee7d4bfaf45373d392c6bbeac9ebf98e750f223578efb686fc42842d0f",
-      "size": 5501
+      "sha256": "139f2ebeece30624fc2c49a9442b3f6a5b52029dbba0dae3033abaa2eb5a9a12",
+      "size": 9166
     },
     {
       "path": "functions/generated/skills/command-tools/command-check/grammar.ts",
       "sha256": "2dd2b0f59cbdb827737d1c61bf1056f7e2bb1135b1d28b91cce5af737e2939b7",
       "size": 11347
+    },
+    {
+      "path": "functions/generated/skills/command-tools/command-check/value-domain.ts",
+      "sha256": "5b5d4cfe103931868f74b93e64b332d9dcde565d6148a5bd2ea7ce5b999f3a93",
+      "size": 20716
     },
     {
       "path": "functions/generated/skills/mindmap-format/case-structure/index.ts",
@@ -268,8 +278,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "e917c6912f98e6f7aa2c5cc9c6088bedc8102892406a307b8b9e53b6f3de728a",
-      "size": 13588
+      "sha256": "00a4e4c30c97bc11615e89d821ab9c6bf82d52671e318d34adc75e03536ad56f",
+      "size": 15035
     },
     {
       "path": "functions/profile.ts",
@@ -328,8 +338,8 @@
     },
     {
       "path": "functions/subject.ts",
-      "sha256": "f38f36635eab16017969d7ae2a138b08b772a79d7d699c401571a809d1375c3e",
-      "size": 12796
+      "sha256": "b6609ecc222ba7997661c5bbb6c72b9475a098aa697f4112d71906170061a811",
+      "size": 12871
     },
     {
       "path": "functions/text.ts",
@@ -348,8 +358,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "945f55a92d4f6343de3a72bfc583cc6b20f47f61f4d51a280c8909e083930285",
-      "size": 24304
+      "sha256": "be84f136d9a0a84bcf5b8dc4804db8c108adb3e76ec1952e7481cfa3586873ca",
+      "size": 25051
     },
     {
       "path": "policies/dispatch.json",
@@ -358,8 +368,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "49139a60f027e4f100133b7dfcd6208a6cc7fbf78936b6d810fc22a76bb5eaaf",
-      "size": 13315
+      "sha256": "23dafe3eeccd15bd4fae9ec2ec47dde0ce4e3175b7da8106f889c6fd8a4f1d75",
+      "size": 13866
     },
     {
       "path": "samples/negative/quote.json",
@@ -628,8 +638,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "95ce772a3811d4f5b38472c235b4e2e3c1f2d76f66f66de11c3f7c864c9be3a4",
-      "size": 12624
+      "sha256": "f370b8668fe8b194fad376b0645b0cae077c9b1869ea12505627f17561ddd231",
+      "size": 13186
     },
     {
       "path": "tables/command-identity.schema.json",
@@ -708,8 +718,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "ed7ca9fb855aa35fb690b8ec2d48dde8a0e01c04173546159e14debf79c7ec00",
-      "size": 32409
+      "sha256": "b513476f23a5a382156ef1039d8bea8470d675d9cdd10093a041a2f45db06329",
+      "size": 35960
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -717,9 +727,19 @@
       "size": 6768
     },
     {
+      "path": "tools/case-writers/extension.json",
+      "sha256": "429096cf981d43653110966e7a573d7ae6cc728ba79c523c6fd505f197e8432c",
+      "size": 157
+    },
+    {
+      "path": "tools/case-writers/extension.ts",
+      "sha256": "845bf2a0e8c5930c681b97c2c0b655c72bc5e4bfe45f6dc3f5816809ba03a22e",
+      "size": 24458
+    },
+    {
       "path": "tools/delivery.md",
-      "sha256": "5b2bbb2258e5067ff693c1c9ae6a376c15cab56e8bac2acbf8bac7bd3f0b4173",
-      "size": 9886
+      "sha256": "6588932e913711669dbd11407b383be3c1809e0c593b238fd394a6d622765b31",
+      "size": 11430
     },
     {
       "path": "tools/download-returns.ts",
@@ -753,8 +773,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "57b88493ea485e6bef244e68eb8c30e8e423bdc5d3bd5258bb7b5046951e7440",
-      "size": 12597
+      "sha256": "ab230cf6debfea9326f41853abedb7c8293ad1d4c34cb4821ac8b32277568330",
+      "size": 13119
     },
     {
       "path": "tools/normalize-mindmap.ts",

@@ -59,22 +59,7 @@ test('the examples use the original synthetic contract, matching profile and fin
   const start = json('examples/start-run.json').arguments; assert.equal(typeof start.parameters.autoid, 'string'); assert.ok(start.inputs.profile.external.startsWith('doc:doc:'));
   const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');
 });
-// The budget covers the standard Agent Skills frontmatter (client-neutral loading: every client that reads
-// Agent Skills reads the same name/description) plus the neutral local-tools paragraph and the plan files of step 4; the procedure
-// body is unchanged in intent. 3.11.0 adds the one sentence of step 4 that points to the scenario-fidelity audit (tools/fidelity.md);
-// 3.11.2 the one sentence of step 2 on the method of a device step (the reference compiler lowers every device block to it) and
-// the sentence of step 8 that hands the wait for a job to a background command instead of sleeping and resubmitting;
-// 3.13.0 the clause of step 2 that names the knowledge root the run download now brings (model K05: one batch, read locally);
-// 3.14.0 the two sentences of step 2 that name the authoring brief the download writes for each case (the reference
-// implementation's writer reads the brief its engine built and queries only what that does not carry); 3.14.1 the clause
-// that says the brief ends with the envelope of the case's plan file; 3.14.2 the sentence that gives each case its own writer,
-// all sent out together (the reference engine fans its writers out one per case); 3.14.3 the paragraph that says when the
-// user is asked, in the words of the reference engine's ask_user tool, and that a subagent never asks.
-// 3.15.0 the bullet on parameter values (within the manual's statement of the parameter the brief now lists; a conflict
-// between the author's step and the manual goes to the user; a value only the device produces at run time is not copied from
-// an earlier return) and the reference's rule on an authored negative in place of the judgement by description; 3.16.0 the
-// bullet on device methods (the ones the contract declares for the device, as the reference lowers every device step) and
-// on a read window for a long device command instead of a guessed wait.
+// Keep the client instructions within the existing skill budget.
 const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
@@ -96,6 +81,7 @@ test('the client skill and the closing procedure carry the reference rules on pa
     '手册对各参数的说明',
     '参数取值：写进命令的每个值都要在手册对该参数的说明之内',
     '是作者步骤与手册冲突：不照写上机，也不自己改，按上文“问用户”处理；作者要测的正是非法输入时照写',
+    '重组已有裁定就照做，不再问',
     '只有设备运行时才产生的值（生成的文件名、编号）不从上一次上机的回显抄进计划',
     '不把这句话写进 text，也不删掉这项检查，用块计划的 not_found 断言指向那次观察的输出',
     '设备上的配置和观察都用运行器合约为该设备声明的设备方法（与块计划同一组），照 InfoTest',
@@ -110,7 +96,32 @@ test('the client skill and the closing procedure carry the reference rules on pa
     'submit-plans 会跳过本运行排除的条目并报出来，不用复制或改写文件',
     '这台设备的清理没有发出：在说明的 batch 里写明是哪台设备、哪些清理没有发出；照 InfoTest 的床态体检，残留没核清之前不派发下一卷',
     '说明不支持的，是作者步骤与手册冲突，judged 里逐字写出手册那一句和它的引用，不写 defect_candidate',
+    '可以提前定下结论。没上机的用例同样不凭说明定结论',
+    '和作者步骤与手册冲突（第 3 步的 author_conflict）可以提前定下结论',
+    '计划运行用 parameters.exclude 排除它，说明里写 author_conflict，不上机就记为作者步骤与手册冲突',
+    'author_conflict 只在作者步骤与手册冲突时写',
+    '`{"author":"…","manual":"…","reference":"tree:…"}`',
+    '对得上，这条用例不管编写了几轮、上没上过机，都记为“作者步骤与手册冲突（待作者或用户裁定）”，不再为它多跑一卷',
+    '工具不判谁对，只说这两段原文对不上，由作者或用户裁定',
+    '不和 defect_candidate 同写。作者要测的正是非法输入、期望本来就是被拒绝的，不是冲突，照写不记这一条',
   ]) assert.ok(closing.includes(phrase), phrase);
+});
+
+test('the recompose skill raises an author step the manual excludes to the user before writing, through the lead agent, and records the ruling in the fields a record already has', () => {
+  const recompose = read('recompose/SKILL.md');
+  for (const phrase of [
+    '作者的步骤和手册冲突的，先照“作者的步骤和手册冲突”一节问用户，再写文件',
+    '作者的步骤要一个取值或写法、期望却是成功，而锁定根的命令树或手册对这个参数的说明把它排除了',
+    '写这条用例的文件之前先交用户裁定：不自己改写，也不照写',
+    '作者要测的正是非法输入、期望本来就是被拒绝的，不算冲突',
+    '只有主代理问用户。子代理不问，把用例、作者原句、手册原句和它的引用写进给主代理的报告',
+    '整份脑图的这类冲突攒齐了问一次',
+    '用记录已有的字段，不另造',
+    '`reason` 以“用户裁定：”开头、逐字写用户的话，`state` 记 `settled`',
+    '`decided_by` 写“用户”',
+    '编写时这条用例用 parameters.exclude 排除，交付时记为作者步骤与手册冲突',
+    '不要记成 `conflict`：它要两个有签发权的来源，作者原句和手册都不是，会被拒',
+  ]) assert.ok(recompose.includes(phrase), phrase);
 });
 
 test('the client skill makes the model adapt the bed, seed what assertions read and clean up in reverse', () => {

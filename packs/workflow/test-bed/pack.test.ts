@@ -26,7 +26,7 @@ describe('the pack files', () => {
     const manifest = PackManifest.parse(json('pack.json'));
     assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.2.17', 'workflow']);
     const files = await packFiles();
-    assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('examples/bed-topology.json'));
+    assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('samples/negative/help-mismatch.json') && files.includes('samples/positive/help-support.json') && files.includes('examples/bed-topology.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
   });
 
@@ -40,7 +40,7 @@ describe('the pack files', () => {
     assert.deepEqual(workflow.leases, { prefix: 'bed/' }, 'the reservation has no expiry cap');
     assert.deepEqual(
       workflow.parameters.map((p) => p.name),
-      ['action', 'need', 'bed', 'hours', 'booking', 'addresses', 'devices', 'reason'],
+      ['action', 'need', 'bed', 'hours', 'booking', 'addresses', 'devices', 'device', 'line', 'mode', 'reason'],
     );
     assert.deepEqual([workflow.subject, workflow.projection], ['inventory', { module: 'functions/project.ts' }]);
     const requirements = RequirementsFile.parse(json('requirements.json')).requirements;
@@ -91,10 +91,10 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
     const report = await runPublishCheck({ pack: validation.pack, packDir: dir });
     assert.deepEqual(report.failures, [], JSON.stringify(report.failures, null, 1));
     assert.deepEqual(report.unsampled, []);
-    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [16, 16, 0]);
+    assert.deepEqual([report.samples.total, report.samples.passed, report.samples.failed], [18, 18, 0]);
     assert.deepEqual(
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
-      [['bed', 'advisory', 8, 8, ['author_samples_only']]],
+      [['bed', 'advisory', 9, 9, ['author_samples_only']]],
     );
   });
 });

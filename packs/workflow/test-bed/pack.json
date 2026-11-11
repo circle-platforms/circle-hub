@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "64f809bf999ba317e7b115414b6a0e89b9e384b93fc3c14bf520cfe8a570cba9",
-      "size": 3066
+      "sha256": "5f0da5a7fb29b664a377b88732c191cdcd934074a8dbf977c93fd377a3d9e153",
+      "size": 4219
     },
     {
       "path": "checks.json",
@@ -37,6 +37,11 @@
       "size": 374
     },
     {
+      "path": "examples/start-run-help.json",
+      "sha256": "8f522d811e588e0147166e1c81a9aa938cf05fc1e39ab1016e2dc5996af37e01",
+      "size": 775
+    },
+    {
       "path": "examples/start-run-release.json",
       "sha256": "73a47e8c41b43aeb1d05c926bd81cb7c63b857dd73c2870e48ae62fac877b581",
       "size": 539
@@ -53,8 +58,8 @@
     },
     {
       "path": "functions/check-bed.ts",
-      "sha256": "543e551c0e09f85b6af778e4b6ac27cf1c96c1984f301c8f64101f6ec4ed5c26",
-      "size": 15037
+      "sha256": "3745672003b8105a3fa9ad795a77a62f7905e28ddeda260ea97a4018bd961502",
+      "size": 16554
     },
     {
       "path": "functions/common.ts",
@@ -63,8 +68,8 @@
     },
     {
       "path": "functions/conclude.ts",
-      "sha256": "57a6228e61031e06802f65d86dbf68c8101521015951f60482a1eda3c9c00f80",
-      "size": 23725
+      "sha256": "886a9371329e2eb114adbcdcc89127394fcfb73cd7ffac41011f43b235c8a699",
+      "size": 27032
     },
     {
       "path": "functions/facts.ts",
@@ -88,8 +93,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "0d72886750fcaed1c3fd888e4b821783318a16e51c7166bc0129a200bb64dff5",
-      "size": 11085
+      "sha256": "f97ea278542697195d503a04cffb1c2a857b3b05381a681a982daa37315c589a",
+      "size": 12740
     },
     {
       "path": "functions/subject.ts",
@@ -103,8 +108,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "1071a91f127aad5feba3fe1593e3ba6a7bb53567ae961a9aef67e59a1d5dd20a",
-      "size": 1269
+      "sha256": "525e3dd1a7d6c8169db6d5647b1c17f96a6036fd6a3b07a0a48228fa92543d30",
+      "size": 1524
     },
     {
       "path": "samples/negative/acquire-mismatch.json",
@@ -120,6 +125,11 @@
       "path": "samples/negative/force_release-negative.json",
       "sha256": "996859205f06fcd873ab5df9a90f5d1e15017e7ff0de37283de6a129c784d59e",
       "size": 2321
+    },
+    {
+      "path": "samples/negative/help-mismatch.json",
+      "sha256": "21a213593feac6db145d4b24585fb20951b934dd216e521746faf7f7f3699df2",
+      "size": 2729
     },
     {
       "path": "samples/negative/register-negative.json",
@@ -162,6 +172,11 @@
       "size": 2330
     },
     {
+      "path": "samples/positive/help-support.json",
+      "sha256": "3d843b9e26b308f64613c3f43872a8b469645d8090385fe3745713fdfee519ef",
+      "size": 2757
+    },
+    {
       "path": "samples/positive/register-positive.json",
       "sha256": "5ffc079efb8615540c15754a8a71ae9fff873b389b9fb342ed7badf64c2bc1d7",
       "size": 2017
@@ -198,13 +213,13 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "321f251c660e477052bc77e2c594cbab59f9a7175e4d256b46fad270f9119cf8",
-      "size": 1596
+      "sha256": "49ad8ea0085e3e279d8a8d43134d33364e2135b75b42290054071914b50ee280",
+      "size": 2007
     },
     {
       "path": "workflow.json",
-      "sha256": "7bba0845cb073d9e17a2e47a1ac7a03c476fa8e770054631e72cbb94fc239fa4",
-      "size": 4182
+      "sha256": "11afafff3469c4c1ecd1e0b4d313eff4ac8694eafdc8c8116f5b99968517bf94",
+      "size": 5291
     }
   ]
 }

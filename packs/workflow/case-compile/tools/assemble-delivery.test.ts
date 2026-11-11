@@ -26,6 +26,12 @@ const log = Buffer.from('合成日志：第 3 步断言没有命中\n');
 const planRun = (run: string, autoids: string[], exclude: string[], pause?: string, contractBytes: Uint8Array = contract) => planRunFixture({ run, autoids, exclude, pause, contract: contractBytes, profile, inventory, predecessor: BOOKING, recomposed: RECOMPOSED });
 const plan1 = planRun(PLAN1, CASES.slice(0, 3), [CASES[3]]);
 const plan2 = planRun(PLAN2, [CASES[0], CASES[2]], [CASES[1], CASES[3]]);
+// The knowledge root the plan runs locked, as the Hub gives it in one batch (a head line, then one node a line), with one manual row.
+const ROOT = String(plan1.record.root), ENTRY = `tree:${ROOT}/manual/guide/names@${'1'.repeat(64)}`, MANUAL = '| peer_name | 合成参数说明：特殊字符仅支持“._-”。 |';
+const lockedRoot = (run: string, root: string) => {
+  const nodes = [{ path: '/manual/guide/names', children: [], entries: [{ entry: '1'.repeat(64), kind: 'behaviour', statement: MANUAL, reference: ENTRY, data: {} }] }];
+  return Buffer.from([{ schema: 'run-knowledge@1', run, root, composition: null, nodes: nodes.length, entries: 1 }, ...nodes].map((line) => JSON.stringify(line)).join('\n') + '\n');
+};
 // The plan run that held CASES[3] before the model left it out of the others.
 const GAP = 'run_01777777777777777777777777', LATER = 'run_01888888888888888888888888', GAP_WORDS = '合成缺失事实：配置命令的逆操作不在锁定树里', SPENT_WORDS = '合成：缺少修复后符合要求的产物（修复轮数用完）';
 type Gap = 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | 'shadowed' | 'workbook' | 'unsubmitted' | 'none';
@@ -58,7 +64,7 @@ const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/$
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
-async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded') {
+async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served') {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
   const jobs = Object.fromEntries(runsInOrder.map((run) => [run, all[run]]));
@@ -88,6 +94,13 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
     const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: records[whole[1]] ?? p.record, result: p.result, submission: p.submission })); return; }
     if (whole && records[whole[1]]) { response.statusCode = 409; response.end('这个运行还没有已受理的提交\n'); return; }
     if (url === `/run-export/${RECOMPOSE}/run`) { response.end(JSON.stringify({ schema: 'run-export@1', run: recomposed })); return; }
+    const batch = /^\/run-export\/(run_\w+)\/knowledge$/.exec(url);
+    if (batch) {
+      if (knowledge === 'absent' || !records[batch[1]]) { response.statusCode = 404; response.end('没有\n'); return; }
+      const body = lockedRoot(batch[1], knowledge === 'other-root' ? 'e'.repeat(64) : ROOT);
+      response.setHeader('content-digest', `sha-256=:${Buffer.from(sha256(body), 'hex').toString('base64')}:`);
+      response.end(knowledge === 'tampered' ? Buffer.concat([body, Buffer.from(' ')]) : body); return;
+    }
     const alone = /^\/run-export\/(run_\w+)\/run$/.exec(url); if (alone && records[alone[1]]) { response.end(JSON.stringify({ schema: 'run-export@1', run: records[alone[1]] })); return; }
     const source = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url); if (source && originals.has(source[1])) { response.end(originals.get(source[1])); return; }
     response.statusCode = 404; response.end('没有\n');
@@ -303,7 +316,7 @@ test('a failed case goes back to authoring until three authored versions failed;
   assert.deepEqual(JSON.parse(closed.stdout).added_runs, [WHOLE, R2, R3]);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual({ closing: summary.cases[1].closing, label: summary.cases[1].closing_label, rounds: summary.cases[1].rounds }, { closing: 'authoring_failure', label: '模型未找到解决方案', rounds: 3 });
-  assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1 });
+  assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1, author_conflict: 0 });
   assert.match(JSON.parse(closed.stdout).reply, /\n上机未通过的终态：模型未找到解决方案 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。\n/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /上机未通过 1，上机没有结论 0，没有上机 1。上机未通过的终态：模型未找到解决方案 1。/);
@@ -401,7 +414,7 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
   assert.equal(summary.cases[3].status, 'unrun');
   assert.equal(summary.cases[3].closing, 'missing_fact');
   assert.deepEqual(summary.cases[3].missing, { kind: 'data_gap', plan_run: GAP, requirement: 'contract_methods', missing: GAP_WORDS });
-  assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1 });
+  assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 1, missing_fact: 1, author_conflict: 0 });
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /上机未通过的终态：声明与设备行为冲突（待仲裁） 1。没有上机的终态：缺少 Hub 点名的事实（待补齐） 1。/);
   assert.ok(report.includes(`**结论**：缺少 Hub 点名的事实（待补齐）：它的计划在计划运行 ${GAP} 交给 Hub，Hub 判它缺少事实并点名了补证请求（Hub 原话：${GAP_WORDS}）；补齐前不生成工作簿、不上机。`));
@@ -450,4 +463,66 @@ test('a notes file that is not valid JSON is named with the place and the text a
   assert.equal(refused.code, 1);
   assert.match(refused.stderr, /说明文件 notes\.json 不是合法的 JSON（.+）；出错位置第 \d+ 个字符，附近原文：".*拒绝.*"。常见原因是括号或引号没有成对；改好这个文件再提交/);
   assert.doesNotMatch(refused.stderr, /重新导出该运行对应输入的原始字节/);
+});
+
+const CONFLICT = { author: '合成步骤', manual: '特殊字符仅支持“._-”', reference: ENTRY };
+const fenced = (text: string) => ['```device-evidence', text, '```'].join('\n');
+test("an author's step against the manual closes a failed case at its first round and a case left unwritten without a device, checking both quotes against the locked root", async (t) => {
+  const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'none'); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
+  const written = await run(h, await notes({
+    [CASES[1]]: { judged: '合成判断：设备拒绝了作者给的名字', remedy: '合成取舍：等作者或用户裁定', evidence: '第 3 步断言没有命中', author_conflict: CONFLICT },
+    [CASES[3]]: { judged: '合成判断：重组时问过用户，选了先不编', remedy: '合成取舍：等作者裁定', author_conflict: { ...CONFLICT, author: '合成动作' } },
+  }), out);
+  assert.equal(written.code, 0, written.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.deepEqual(summary.cases.map((c: { status: string; closing?: string }) => [c.status, c.closing ?? null]), [['delivered', null], ['failed', 'author_conflict'], ['delivered', null], ['unrun', 'author_conflict']]);
+  assert.deepEqual([summary.cases[1].closing_label, summary.cases[1].rounds, summary.cases[1].conflict], ['作者步骤与手册冲突（待作者或用户裁定）', 1, CONFLICT]);
+  assert.deepEqual([summary.cases[3].rounds ?? null, summary.cases[3].conflict], [null, { ...CONFLICT, author: '合成动作' }]);
+  assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 0, missing_fact: 0, author_conflict: 2 });
+  assert.match(JSON.parse(written.stdout).reply, /\n上机未通过的终态：作者步骤与手册冲突（待作者或用户裁定） 1。没有上机的终态：作者步骤与手册冲突（待作者或用户裁定） 1。\n/);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /- 编号 `990000000000000102` · 状态：上机未通过 · 上机 1 次 · 终态：作者步骤与手册冲突（待作者或用户裁定）/);
+  assert.match(report, /\*\*结论\*\*：作者步骤与手册冲突（待作者或用户裁定）：模型判断作者的步骤要的取值或写法，在产品自己的手册说明里被排除了。.*它已上机 1 次（编写 1 轮），裁定前不再为它上机，也不为凑满 3 轮再跑一卷。/);
+  assert.match(report, /- 编号 `990000000000000104` · 状态：没有上机 · 上机 0 次 · 终态：作者步骤与手册冲突（待作者或用户裁定）/);
+  assert.match(report, /。它没有上机，裁定前不再为它上机/);
+  const quoted = (author: string) => `**作者原句**（脑图原文，已逐字核对）：\n${fenced(author)}\n\n**手册原文**（锁定知识根里的条目，引用 ${ENTRY}，已逐字核对）：\n${fenced(CONFLICT.manual)}`;
+  assert.ok(report.includes(quoted('合成步骤')) && report.includes(quoted('合成动作')), 'both sentences and the statement are shown as the tool checked them');
+  assert.ok((await readFile(join(out, 'unsuccessful_cases.md'), 'utf8')).includes(quoted('合成步骤')));
+  assert.doesNotMatch(report, /模型未找到解决方案/, 'the model is not blamed for a conflict the author or the user has to rule on');
+});
+
+test('an author conflict whose quotes do not stand, or whose root the Hub cannot give, refuses the delivery and writes nothing', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-delivery-'));
+  const note = (conflict: unknown) => notes({ ...NOTES, [CASES[1]]: { judged: '合成判断', remedy: '合成取舍', evidence: '第 3 步断言没有命中', author_conflict: conflict } });
+  const served = await hub(); t.after(served.close);
+  const refusals: Array<[string, unknown, RegExp]> = [
+    ['manual', { ...CONFLICT, manual: '特殊字符仅支持“._-:”' }, /用例 990000000000000102 的 author_conflict：manual 不是 reference 指到的条目里的原话；逐字复制，不改写、不拼接/],
+    ['author', { ...CONFLICT, author: '作者没写过这一句' }, /用例 990000000000000102 的 author_conflict：author 不是这条用例脑图原文（标题、步骤或期望）里的字；逐字复制/],
+    ['entry', { ...CONFLICT, reference: `tree:${ROOT}/manual/guide/gone@${'3'.repeat(64)}` }, /reference 不是这份脑图各次计划运行锁定的知识根里的条目引用；照 knowledge\/ 里那一条下的“引用”行原样抄/],
+    ['root', { ...CONFLICT, reference: `tree:${'d'.repeat(64)}/manual/guide/names@${'1'.repeat(64)}` }, /reference 不是这份脑图各次计划运行锁定的知识根里的条目引用/],
+  ];
+  for (const [name, conflict, expected] of refusals) {
+    const out = join(dir, name), refused = await run(served, await note(conflict), out);
+    assert.equal(refused.code, 1, name);
+    assert.match(refused.stderr, expected, name);
+    await assert.rejects(readdir(out), `${name}: nothing was written`);
+  }
+  // A root the Hub cannot give, or gives wrong, is said as that: the claim is not called false for it.
+  const broken: Array<['absent' | 'tampered' | 'other-root', RegExp]> = [
+    ['absent', /Hub 读不到计划运行 run_01d+ 锁定的知识根（这个运行没有锁定知识根，或你的读取层级读不到它），author_conflict 核对不了/],
+    ['tampered', /知识根的字节与 Hub 给的摘要不符，author_conflict 核对不了/],
+    ['other-root', /Hub 给的计划运行 run_01d+ 的知识根不是运行记录里的 f+，author_conflict 核对不了/],
+  ];
+  for (const [mode, expected] of broken) {
+    const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', mode); t.after(h.close);
+    const out = join(dir, mode), refused = await run(h, await note(CONFLICT), out);
+    assert.equal(refused.code, 1, mode);
+    assert.match(refused.stderr, expected, mode);
+    await assert.rejects(readdir(out), `${mode}: nothing was written`);
+  }
+  // Nothing is cited, nothing is read: a delivery without the claim never asks the Hub for the root (the stub would answer 404).
+  const unread = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', 'absent'); t.after(unread.close);
+  const plain = await run(unread, await notes(NOTES), join(dir, 'plain'));
+  assert.equal(plain.code, 0, plain.stderr);
 });

@@ -2,7 +2,8 @@ import {recompositionGaps} from './recomposition.ts';
 import {checkBlockExpected} from './block-expected.ts';
 import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
 import {labelOf} from './generated/vocabulary.ts';
-import {planCommands} from './plan-commands.ts';
+import {planCommands,deviceCommandLines} from './plan-commands.ts';
+import {lineProfile,planProblems,planConflictText,PLAN_CONFLICT_FIX} from './channels.ts';
 import { typedAuthorityGaps, authorityRecovery, typedAddressUses } from './typed-authority.ts';
 import { authoredAddresses, type RunnerCovered } from './command-obligations.ts';
 // Verify authored plans against original runner identities, runtime profile, manifest, and frozen lineage addresses.
@@ -222,10 +223,18 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   return [support(s, told, { replacements: slots.replacements, ...(accepted.length ? { accepted_criteria: accepted } : {}) })];
 }
 
-/** commands_known resolves whole plan commands against the locked grammar, then checks typed authority. */
 export function checkCommandsKnown(input:unknown):Outcome[]{
  const s=subjectOf(input),missing=prerequisites(s);if(missing)return missing;const read=slotsOf(s);if(read.errors)return read.errors;
- const gaps=typedPrerequisites(s,read.slots);if(gaps)return gaps;const resolved=s.contract&&s.profile?planCommands(s.contract,s.profile,read.slots,s.command_catalog):null;const declarations=resolved?.problems.filter(problem=>problem.pointer==='/command_identities')??[];if(declarations.length)return declarations.map(problem=>refute(s,'slots_invalid',problem.message+'；删除可选 command_identities，由 Hub 从 steps 解析；或按 Hub 回执修正声明','/data/command_identities'));return [support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved?.identities??[],command_catalog:resolved?.catalog})];
+ const gaps=typedPrerequisites(s,read.slots);if(gaps)return gaps;
+ const resolved=planCommands(s.contract!,s.profile!,read.slots,s.command_catalog);
+ const declarations=resolved.problems.filter(problem=>problem.pointer==='/command_identities');
+ if(declarations.length)return declarations.map(problem=>refute(s,'slots_invalid',problem.message+'；删除可选 command_identities，由 Hub 从 steps 解析；或按 Hub 回执修正声明','/data/command_identities'));
+ const rows=planProblems(lineProfile(s.command_catalog,resolved.byLine));
+ if(rows.length){
+  const sent=deviceCommandLines(s.contract!,s.profile!,read.slots,resolved.answers),where=sent.find(row=>row.line===rows[0].b[0]);
+  return [refute(s,'combination_forbidden',`${rows.map(planConflictText).join('；')}。${PLAN_CONFLICT_FIX}`,'/data'+(where?blockPointer(read.slots,where.pointer):'/steps'),{conflicts:rows})];
+ }
+ return [support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved.identities,command_catalog:resolved.catalog})];
 }
 /**
  * scenario_kept: the audit verdict in data.fidelity answers the brief of this very plan and keeps every authored action of the

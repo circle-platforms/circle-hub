@@ -177,7 +177,7 @@
     {
       "key": "commands_known",
       "name": "命令在目标构建的命令目录里",
-      "description": "执行计划里的命令行在目标构建的命令目录（commands@1）里存在，参数类型和取值在范围内（catalog@1 解释器核对） 完整解析后的身份须在合约 command_scope 与可选 commands 的交集中；作者命令按定义身份计次数，可以改参数，不可以删命令，缺失次数留作义务；改配置命令必须有同设备、逆序的声明清理操作。",
+      "description": "执行计划里的命令行在目标构建的命令目录（commands@1）里存在，参数类型和取值在范围内（catalog@1 解释器核对） 完整解析后的身份须在合约 command_scope 与可选 commands 的交集中；作者命令按定义身份计次数，可以改参数，不可以删命令，缺失次数留作义务；改配置命令必须有同设备、逆序的声明清理操作。产品命令规则声明互斥的两侧命令不能同在一个用例的计划里。",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -206,6 +206,11 @@
         },
         {
           "code": "core.catalog.param_type_mismatch",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.combination_forbidden",
           "action": "repair",
           "max_rounds": 2
         }
@@ -324,7 +329,7 @@
     {
       "key": "workbook_verified",
       "name": "工作簿原字节核验",
-      "description": "客户端工作簿由独立读取器解释，符合运行器布局、原合约和本轮配置，再从槽位重算字节与绑定原件摘要相同才支持；缺少文件时自动转客户端生成并开始后继核验运行",
+      "description": "客户端工作簿由独立读取器解释，符合运行器布局、原合约和本轮配置，再从槽位重算字节与绑定原件摘要相同才支持；缺少文件时自动转客户端生成并开始后继核验运行；工作簿的用例顺序是文档顺序，只有产品命令规则声明会留下清理清不掉的状态的用例排在卷尾，同一份工作簿里不能同时有产品声明互斥的两侧命令",
       "target": "item",
       "required": true,
       "done_rule": "bookkeeping",
@@ -371,6 +376,11 @@
         },
         {
           "code": "REFERENCE_UNRESOLVED",
+          "action": "repair",
+          "max_rounds": 2
+        },
+        {
+          "code": "case-compile.combination_forbidden",
           "action": "repair",
           "max_rounds": 2
         }

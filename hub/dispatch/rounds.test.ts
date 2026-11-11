@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { observationLockFree, setup } from './testing/context.ts';
+import { probesWithResidue } from './testing/probes.ts';
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -36,8 +37,8 @@ async function reportOf(c: Fixture, reference: string) {
   return JSON.parse(new TextDecoder().decode(source.bytes)) as { rounds: Array<{ round: number; terminal: string; reason?: string; early_stop?: boolean; meets?: boolean | null }> };
 }
 
-async function openCertified(options: { aggregation?: Aggregation; count?: number; fresh_context?: boolean; baseline_first?: boolean; window_seconds?: number; outcomes?: string[]; failVersion?: number; onSubmit?: () => Promise<void> } = {}) {
-  let reads = 0; let versions = 0; let opens = 0;
+async function openCertified(options: { aggregation?: Aggregation; count?: number; fresh_context?: boolean; baseline_first?: boolean; window_seconds?: number; outcomes?: string[]; failVersion?: number; dirtyResidueRead?: number; onSubmit?: () => Promise<void> } = {}) {
+  let reads = 0; let versions = 0; let opens = 0; let residueReads = 0;
   let c: Fixture;
   c = await setup({
     onSubmit: options.onSubmit,
@@ -46,6 +47,10 @@ async function openCertified(options: { aggregation?: Aggregation; count?: numbe
       if (name === 'touch_slot' && options.fresh_context) {
         const args = c.endpoint.calls.filter(call => call.params.name === 'touch_slot').at(-1)?.params.arguments as { ticket?: string; token?: string } | undefined;
         return { ...value, ticket: args?.ticket, token: args?.token };
+      }
+      if (name === 'inspect_bound_seat' && options.dirtyResidueRead !== undefined) {
+        const command = (c.endpoint.calls.filter(call => call.params.name === 'inspect_bound_seat').at(-1)?.params.arguments as { command?: string } | undefined)?.command;
+        if (command === 'inspect peers' || command === 'inspect units') { residueReads += 1; return { output: residueReads === options.dirtyResidueRead ? 'unit-b 192.0.2.6\nDEMO#' : 'DEMO#' }; }
       }
       if (name === 'inspect_bound_seat' && String((value as { output?: string }).output).startsWith('version:')) {
         versions += 1;
@@ -61,6 +66,10 @@ async function openCertified(options: { aggregation?: Aggregation; count?: numbe
   });
   install(c, policy(options.count ?? 3, options.aggregation ?? 'all', { fresh_context: options.fresh_context, baseline_first: options.baseline_first, window_seconds: options.window_seconds }));
   await certify(c);
+  if (options.dirtyResidueRead !== undefined) {
+    await c.registry.update(c.admin, c.executor.id, { ...(await c.registry.get(c.executor.id))!.definition, probes: { ...probesWithResidue, call: c.executor.definition.probes!.call } });
+    await c.freezeExecutor();
+  }
   return c;
 }
 
@@ -114,6 +123,19 @@ test('a failed baseline round is not_run and does not count as a failure', { tim
   assert.equal(rounds[1]?.reason, 'integrity_unproven');
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
+});
+
+test('residue found at a later round\'s baseline makes that round not_run, like any other baseline mismatch', { timeout: 60000 }, async t => {
+  const c = await openCertified({ baseline_first: true, dirtyResidueRead: 5 }); t.after(() => c.close());
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const rounds = state.rounds ?? [];
+  assert.deepEqual(rounds.map(round => round.terminal), ['pass', 'not_run', 'pass']);
+  assert.equal(rounds[1]?.reason, 'integrity_unproven');
+  assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
+  // Four residue reads open the job (two seats, two commands); the fifth is the first of round 2's baseline.
+  const found = (await c.service.journal.events(state.job)).filter(e => e.body.detail.phase === 'device_probe' && e.body.detail.matched === false);
+  assert.deepEqual(found.map(e => [e.body.detail.seat, e.body.detail.check, e.body.detail.state]), [['synthetic-0', 'residue-1', 'residue']]);
 });
 
 test('a round outside the window stays in the denominator as budget_exhausted', { timeout: 60000 }, async t => {
