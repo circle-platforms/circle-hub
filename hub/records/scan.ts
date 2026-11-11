@@ -869,6 +869,19 @@ function scanBytes(bytes: Uint8Array, located: boolean,limit=MAX_FINDINGS): { sc
 }
 
 /**
+ * The scan of content (issue 194, decision 154; owner, 2026-11-11): what a business system answers, what a member uploads
+ * and what is written into a knowledge space is material for its readers, and nothing in it is withheld, refused or sent
+ * for review because it looks like a credential. It finds nothing and says so under its own scanner version, so that a
+ * record of the same bytes made under the detectors of credential-scan@3 no longer decides their read tier (the scans of the
+ * newest version do). The detectors below still guard what the Hub itself writes down about its work: call logs, notes,
+ * resource settings, variables and what a dispatch sends out.
+ */
+export const CONTENT_SCANNER = 'credential-scan@4';
+export function scanContent(_bytes: Uint8Array): CredentialScan {
+  return { scanner: CONTENT_SCANNER, inspected: true, clean: true, findings: [], truncated: false };
+}
+
+/**
  * Scans bytes and reports where credentials appear. `inspected` is false when the bytes are not text (a compressed or
  * image container, or binary): nothing could be examined, so `clean` is false too, while `findings` still lists any hit.
  */

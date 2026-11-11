@@ -8,7 +8,7 @@ import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } f
 import { SpaceId, SpaceEntryInput, SpaceEntryContent, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanForCredentials, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
+import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanContent, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
@@ -323,7 +323,7 @@ export class KnowledgeSpaces {
   }
   #scan(value: unknown) {
     const inspect = (text: string) => {
-      const scan = scanForCredentials(Buffer.from(text));
+      const scan = scanContent(Buffer.from(text));
       if (scan.findings.length || !scan.inspected)
         fail('SPACE_CREDENTIALS_DETECTED');
     };
@@ -342,7 +342,7 @@ export class KnowledgeSpaces {
     };
     visit(value);
   }
-  #inspectSource(bytes:Uint8Array){const scan=scanForCredentials(bytes);if(scan.findings.length)fail('SPACE_CREDENTIALS_DETECTED');if(!scan.inspected||scan.truncated)fail('SPACE_CONTENT_UNINSPECTABLE');}
+  #inspectSource(bytes:Uint8Array){const scan=scanContent(bytes);if(scan.findings.length)fail('SPACE_CREDENTIALS_DETECTED');if(!scan.inspected||scan.truncated)fail('SPACE_CONTENT_UNINSPECTABLE');}
   async #grantableGround(by: Principal, reference: string, seen = new Set<string>(),capture?:string): Promise<void> {
     if (seen.has(reference))
       fail('SPACE_ENTRY_INVALID');
@@ -921,7 +921,7 @@ export class KnowledgeSpaces {
         if(!input.grounds.length)fail('SHARE_UNVERIFIED');
         if(input.grounds.some(ground=>ground.entry))fail('SHARE_GROUND_UNRESOLVED','单条分享只上传这一条及其来源；依据另一条本机条目的，先分享那一条');
         if(await this.hasWithdrawnGrounds(existing))fail('GROUNDS_WITHDRAWN');
-        const read=async(hash:string)=>{const sent=input.sources.get(hash);if(!sent)return this.#sharingSource(by,hash,tx);const scan=scanForCredentials(sent.bytes),readable=scan.inspected&&!scan.truncated;return {bytes:readable?sent.bytes:null,size:sent.bytes.length,mediaType:sent.mediaType,readTier:readable?'model_readable' as const:'retain_only' as const};};
+        const read=async(hash:string)=>{const sent=input.sources.get(hash);if(!sent)return this.#sharingSource(by,hash,tx);const scan=scanContent(sent.bytes),readable=scan.inspected&&!scan.truncated;return {bytes:readable?sent.bytes:null,size:sent.bytes.length,mediaType:sent.mediaType,readTier:readable?'model_readable' as const:'retain_only' as const};};
         const resolved=[];
         for(const ground of input.grounds){
           const result=await resolveReference(ground.reference!,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read}});

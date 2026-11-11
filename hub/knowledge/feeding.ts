@@ -15,7 +15,7 @@ import {KnowledgeStructureSchema,FeedingRetractionSchema,type FeedingRetraction,
 import type {FeedingQuote as QuoteEvidence} from '../../contracts/generated/shared-interfaces.ts';
 import {parseReference,parserKey,parseDocument,quoteMatches,recognizeAsync,sliceUtf8,type ParsedDocument} from '../refs/api.ts';
 import {parseExternal} from '../connectors/api.ts';
-import {SOURCE_ABSENCE_GENERATOR,SOURCE_PENDING_REVIEW_GENERATOR,canonicalize,disclosedExistence,sha256Hex,scanForCredentials,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
+import {SOURCE_ABSENCE_GENERATOR,SOURCE_PENDING_REVIEW_GENERATOR,canonicalize,disclosedExistence,sha256Hex,scanContent,type IndexedRecord,type Principal,type RecordKind,type Transaction,type StoredRecord,type SourceArtifact} from '../records/api.ts';
 import type {ActionResult,BindingStatus} from '../../contracts/generated/vocabulary.ts';
 import {callPackFunction,callPackFunctionBatch} from '../rules/api.ts';
 import {background} from '../telemetry/api.ts';
@@ -817,7 +817,7 @@ export class FeedingLayer {
  }
  async prepare(principal:Principal,raw:unknown,scope:FeedingScope&{classifications?:readonly string[];variables?:readonly {name:string;decision:string}[]}):Promise<Record<string,any>>{
   const filled=await this.completeOperation(principal,raw,scope);
-  const scan=scanForCredentials(new TextEncoder().encode(canonicalize(filled)));if(!scan.inspected||scan.truncated||scan.findings.length)fail('喂入主张没有通过完整凭据防护扫描；管理员核对原件后修正重交');const checked=KnowledgeStructureSchema.safeParse(filled);if(!checked.success)fail('喂入结构不合格：'+checked.error.issues.map(issue=>issue.path.join('/')).join('、'));const body=checked.data as Record<string,any>;
+  const scan=scanContent(new TextEncoder().encode(canonicalize(filled)));if(!scan.inspected||scan.truncated||scan.findings.length)fail('喂入主张没有通过完整凭据防护扫描；管理员核对原件后修正重交');const checked=KnowledgeStructureSchema.safeParse(filled);if(!checked.success)fail('喂入结构不合格：'+checked.error.issues.map(issue=>issue.path.join('/')).join('、'));const body=checked.data as Record<string,any>;
   if(body.schema==='version-binding@1')fail('模型不能推断或提交版本绑定；绑定只由原始结构或包声明的用户参数生成');
   if(body.schema==='usage@1'||body.schema==='feeding-offset@1')fail('使用和冻结序号由 Hub 观察并填写，客户端不得自报');
   if(body.schema==='retraction@1'){if(principal.role!=='admin'||body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回只允许管理员，并且原因必须是一行');await this.retractionTargets(FeedingRetractionSchema.parse(body));return body;}

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import type { DatabaseConfig, Limits } from '../config/index.ts';
 import { FileKeyProvider, openRecords } from '../records/index.ts';
+import { scanForCredentials } from '../records/api.ts';
 import type { RecordsKit } from '../records/index.ts';
 import { startPostgres } from './postgres.ts';
 import type { TemporaryPostgres } from './postgres.ts';
@@ -17,6 +18,11 @@ export interface TestRecordsOptions {
   limits?: Partial<Limits>;
   /** Create the vault key (default true). */
   initKey?: boolean;
+  /**
+   * Ingest under the detectors of credential-scan@3 instead of the content scan (issue 194): only for tests of the holds and
+   * acceptances that records stored under those detectors still follow.
+   */
+  detectors?: boolean;
 }
 
 export interface TestRecordsKit extends RecordsKit {
@@ -37,7 +43,7 @@ export async function openTestRecords(options: TestRecordsOptions = {}): Promise
     if (options.initKey !== false) await keyProvider.initKey();
     const kit = await openRecords(
       { dataDir, logDir: join(dataDir, 'logs'), database, limits: { ...DEFAULT_LIMITS, ...options.limits } },
-      { keyProvider, now: options.now },
+      { keyProvider, now: options.now, ...(options.detectors === true ? { contentScan: scanForCredentials } : {}) },
     );
     const created = database;
     let closing: Promise<void> | undefined;

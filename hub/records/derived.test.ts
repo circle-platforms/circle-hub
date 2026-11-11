@@ -1,4 +1,7 @@
+// Issue 194: new content is no longer scanned for credentials. These tests open their records with the detectors of
+// credential-scan@3 (`detectors: true`): the holds and acceptances they cover still govern records stored under them.
 // Derived acceptance uses synthetic documents and randomly generated fake credentials only.
+import {scanForCredentials} from './scan.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
@@ -21,7 +24,7 @@ function derived(bytes: Uint8Array, sources: string[]): IngestInput {
   return {...readInput(bytes),origin:{generated:{generator:'synthetic.derive@1',inputs:sources.map(s => `src:${s}`)}},provenanceType:'projected',derivedSources:sources};
 }
 async function world(t: {after(fn: () => Promise<void>): void}) {
-  const kit = await openTestRecords({postgres}); t.after(() => kit.close());
+  const kit = await openTestRecords({ postgres, detectors: true }); t.after(() => kit.close());
   const {user} = await kit.principals.bootstrapAdmin('管理员');
   const admin: Principal = {id:user.id,name:user.name,role:user.role};
   const admitted = async (bytes: Uint8Array) => {
@@ -170,7 +173,7 @@ test('a current acceptance covers a stored scan hold, while an explicit retentio
   assert.equal((await kit.artifacts.source(admin,held.body.sha256,{record:explicit.digest}))?.readTier,'retain_only');
 });
 test('read operations over admitted multi-megabyte bytes use stored scan facts without scanning them', async t => {
-  const kit=await openTestRecords({postgres});
+  const kit=await openTestRecords({ postgres, detectors: true });
   const {user:admin}=await kit.principals.bootstrapAdmin('合成管理员');
   const {openRecords} = await import('./index.ts');
   let scans=0,bytes=0;
@@ -253,12 +256,12 @@ test('admission snapshots caller-owned bytes before awaiting preparation of sour
 });
 
 test('the same bytes are scanned once, whatever their record: a scan depends only on them and takes seconds on a large answer',async t=>{
-  const kit=await openTestRecords({postgres});
+  const kit=await openTestRecords({ postgres, detectors: true });
   const {openRecords} = await import('./index.ts');
   let scans=0;
   let counted: Awaited<ReturnType<typeof openRecords>> | undefined;
   t.after(async()=>{await counted?.close();await kit.close();});
-  counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:()=>{scans++;}});
+  counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:()=>{scans++;},contentScan:scanForCredentials});
   const bytes=Buffer.from(line(fake()));
   const held=await counted.artifacts.ingest({...readInput(bytes),name:'first'});
   assert.equal(held.body.read_tier,'retain_only');assert.equal(scans,1);

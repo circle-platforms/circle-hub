@@ -2,7 +2,7 @@
 // arbitrary detail fields are never copied. Credential protection is the existing B02 scanner; source protection
 // compares exact scalar values and verbatim fragments, without semantic classification or spelling recovery.
 import {SandboxError,type SandboxErrorCode} from '../rules/api.ts';
-import {scanForCredentials} from '../records/api.ts';
+import {scanContent} from '../records/api.ts';
 export interface FeedingErrorDetail {
  function:string;
  code:SandboxErrorCode;
@@ -10,7 +10,7 @@ export interface FeedingErrorDetail {
  message_status:'included'|'credential_withheld'|'source_withheld'|'source_unchecked';
  truncated:boolean;
 }
-const clean=(text:string)=>{const scan=scanForCredentials(new TextEncoder().encode(text));return scan.inspected&&!scan.truncated&&scan.findings.length===0;};
+const clean=(text:string)=>{const scan=scanContent(new TextEncoder().encode(text));return scan.inspected&&!scan.truncated&&scan.findings.length===0;};
 function sourceStatus(message:string,inputs:readonly unknown[]):'source_withheld'|'source_unchecked'|null {
  const pending=[...inputs],seen=new Set<object>();let nodes=0,chars=0;
  const windows=new Set<string>();for(let i=0;i+8<=message.length;i++)windows.add(message.slice(i,i+8));
