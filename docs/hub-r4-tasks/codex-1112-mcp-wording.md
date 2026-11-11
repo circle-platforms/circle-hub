@@ -1,6 +1,6 @@
 # MCP 答复措辞断言同步
 
-范围仅限 `hub/server/mcp.test.ts` 和本页。
+范围仅限 `hub/server/mcp.test.ts`、`hub/server/model-declaration-mcp.test.ts` 和本页。
 
 按 11-12 任务书与措辞规则同步既有 MCP 场景的正文断言。原始用例按标题逐条展示，状态和判断使用规定取值；内部位置、模式、引用和追踪信息在机器可读答复中核对。已有输入、场景和机器可读行为断言保留，未添加测试场景。
 
