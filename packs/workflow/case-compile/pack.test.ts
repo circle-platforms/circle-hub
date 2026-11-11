@@ -59,22 +59,7 @@ test('the examples use the original synthetic contract, matching profile and fin
   const start = json('examples/start-run.json').arguments; assert.equal(typeof start.parameters.autoid, 'string'); assert.ok(start.inputs.profile.external.startsWith('doc:doc:'));
   const data = json('examples/submit-result.json').items[0].slots.plan[0].data; assert.deepEqual(data.blocks, []); assert.ok(Array.isArray(data.steps[0].args)); assert.equal(typeof data.expects[0].after, 'number');
 });
-// The budget covers the standard Agent Skills frontmatter (client-neutral loading: every client that reads
-// Agent Skills reads the same name/description) plus the neutral local-tools paragraph and the plan files of step 4; the procedure
-// body is unchanged in intent. 3.11.0 adds the one sentence of step 4 that points to the scenario-fidelity audit (tools/fidelity.md);
-// 3.11.2 the one sentence of step 2 on the method of a device step (the reference compiler lowers every device block to it) and
-// the sentence of step 8 that hands the wait for a job to a background command instead of sleeping and resubmitting;
-// 3.13.0 the clause of step 2 that names the knowledge root the run download now brings (model K05: one batch, read locally);
-// 3.14.0 the two sentences of step 2 that name the authoring brief the download writes for each case (the reference
-// implementation's writer reads the brief its engine built and queries only what that does not carry); 3.14.1 the clause
-// that says the brief ends with the envelope of the case's plan file; 3.14.2 the sentence that gives each case its own writer,
-// all sent out together (the reference engine fans its writers out one per case); 3.14.3 the paragraph that says when the
-// user is asked, in the words of the reference engine's ask_user tool, and that a subagent never asks.
-// 3.15.0 the bullet on parameter values (within the manual's statement of the parameter the brief now lists; a conflict
-// between the author's step and the manual goes to the user; a value only the device produces at run time is not copied from
-// an earlier return) and the reference's rule on an authored negative in place of the judgement by description; 3.16.0 the
-// bullet on device methods (the ones the contract declares for the device, as the reference lowers every device step) and
-// on a read window for a long device command instead of a guessed wait.
+// Keep the client instructions within the existing skill budget.
 const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
