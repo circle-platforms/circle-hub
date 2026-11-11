@@ -10,7 +10,7 @@ import type { FragmentRef, ProducedEntry, Unplaced } from '../../../../../contra
 import { produceManualEntries,ApplicabilitySourceError } from '../manual.ts';
 import type { CommandCatalog } from '../cases-commands.ts';
 import { asStrings, isRecord } from '../util.ts';
-import { citesExample, citationFor, type Mapped } from './k1-model.ts';
+import { citesExample, citationFor, type AdocBlock, type Mapped } from './k1-model.ts';
 
 /** The parser of every fragment an adoc production cites: the chapter files as numbered lines. */
 export const ADOC_PARSER = 'text@1';
@@ -138,8 +138,23 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
     if (Object.keys(referenceData).length > 0) data.reference = referenceData;
     const source=entry.fragments.map(fragment=>bySelector.get(fragment.selector)).find(Boolean);add({ ...entry, fragments, data },source?.block,source?[source.index,0]:undefined);
   });
+  // A table under a paragraph that declares a command and its parameters documents them: the nearest such paragraph
+  // before the table in its own section. A row whose first cell is, letter for letter, the name of one of those
+  // parameters is the manual's statement of that parameter (its value domain in the vendor's own words). Both are
+  // positions in the document and an exact name, never a reading of the row's words; a row that names no parameter of the
+  // paragraph stays what it was.
+  const headingAbove = (table: AdocBlock): NonNullable<AdocBlock['parameterHeading']> | null => {
+    const at = mapped.model.blocks.indexOf(table);
+    for (let index = at - 1; index >= 0; index--) {
+      const block = mapped.model.blocks[index]!;
+      if (block.section !== table.section) return null;
+      if (block.parameterHeading) return block.parameterHeading;
+    }
+    return null;
+  };
   // K1 supplies the applicability scope; engine rows, not Markdown signatures, supply each table statement.
   for(const block of mapped.model.blocks.filter(block=>block.kind==='table')){
+    const heading = headingAbove(block);
     const original=fragmentOf({selector:block.selector!},'表格');if(!original)continue;
     const entry=byBlock.get(block);
     if(!entry)continue;removed.add(entry);let rowIndex=0;
@@ -147,7 +162,9 @@ export function produceAdocEntries(mapped: Mapped, options: AdocEntryOptions): P
       if(row.authored===false)continue;
       const fragment=fragmentOf({selector:block.selector!,range:row.range},'表格行');if(!fragment)continue;
       const statement=Buffer.from(block.text,'utf8').subarray(...row.range).toString('utf8');
-      add({...entry,statement,data:{...entry.data,form:'table_row',...(mentionsOf(row.inline).length?{command_mentions:mentionsOf(row.inline),...(mentionsOf(row.inline).filter(literal=>exactNode(options.catalog,literal.split(' '))!==null).length?{command_literals:mentionsOf(row.inline).filter(literal=>exactNode(options.catalog,literal.split(' '))!==null)}:{})}:{})},fragments:[fragment,...entry.fragments.filter(other=>other.source!==original.source||other.selector!==original.selector)]},undefined,[bySelector.get(block.selector!)!.index,rowIndex++]);
+      const named = heading?.params.find((param) => param.name === row.cells?.[0]);
+      const parameter = heading && named ? { parameter: { commands: heading.commands, name: named.name } } : {};
+      add({...entry,statement,data:{...entry.data,form:'table_row',...parameter,...(mentionsOf(row.inline).length?{command_mentions:mentionsOf(row.inline),...(mentionsOf(row.inline).filter(literal=>exactNode(options.catalog,literal.split(' '))!==null).length?{command_literals:mentionsOf(row.inline).filter(literal=>exactNode(options.catalog,literal.split(' '))!==null)}:{})}:{})},fragments:[fragment,...entry.fragments.filter(other=>other.source!==original.source||other.selector!==original.selector)]},undefined,[bySelector.get(block.selector!)!.index,rowIndex++]);
     }
   }
   for(const block of mapped.model.blocks){

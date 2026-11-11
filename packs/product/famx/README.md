@@ -1249,3 +1249,32 @@ each overload (`CatalogSignature.access`, source evidence like a parameter's `na
 shows it as a line of the entry's statement. It decides nothing about prompts: the runner contract declares which level each
 of its methods' prompts refuses, and the workflow pack checks a plan against that. Re-project the knowledge tree of each build
 to carry the level; the syntax of every entry is unchanged.
+
+### Block-style table cells and the parameter a row states (1.7.49)
+
+A manual states a parameter's value domain in the table under the paragraph that declares the command, and it writes the long
+ones as AsciiDoc-style cells: `|host_name a|` on one line, then the cell's paragraphs and lists on the lines below. Two rules
+of the origin check left every such row out of the knowledge. The cell before the specifier is spelled `host_name a` in the
+source (the `a` is the specifier of the next cell, the engine's own cell rule), so the engine's text `host_name` matched no
+piece of the line; and the cell under the separator starts on the next line while the engine reports the separator's line for
+it, which the cursor rule read as another block's text. A row with one cell that cites no line is not mapped at all, so the
+whole row was dropped and only reported. In the chapter of one real manual that holds the name-server commands 206 of the 224
+rows written this way were absent from the produced root, among them the row that says which characters a host name may hold;
+in run 23 a case then sent a host name with a character that row excludes in three dispatches running, and the device's
+refusal was read as a possible product defect each time because nothing in the locked root said otherwise.
+
+The origin check now reads a cell specifier at the end of the text before a separator with the engine's rule (the pattern is
+the engine's `CellSpecEndRx`), and accepts a cell that starts on the lines below a separator that ends its line (only blank
+lines between). The same chapter now gives 728 table rows instead of 458. A span specifier is read the same way, so a row such
+as `| *cmd* 2+| text` is mapped as the engine gives it (two cells) and reported as differing from the header, where it used to
+be left out.
+
+A row also records what it states. The paragraph before a table that declares a command and its parameters (one authored
+strong, then authored emphasis spans separated by white space; the manual splits a parameter list over several spans, which
+is not a signature for placement and stays chapter content) names the command forms and the parameter names; a row of the
+table whose first cell is, letter for letter, one of those names carries `data.parameter = { commands, name }`. Both are
+positions in the document and an exact name, never a reading of the row's words: a row that names no parameter of the
+paragraph (a memory table, a list of format symbols, two names in one cell) carries nothing. In the same chapter 650 of the
+728 rows carry it. A workflow pack can then put the manual's statement of each parameter beside the command it belongs to
+(case-compile's authoring brief does). Re-produce the knowledge tree of each build to get the rows; no existing entry changes
+its statement or its reference.
