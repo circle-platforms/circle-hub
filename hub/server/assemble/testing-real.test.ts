@@ -69,7 +69,12 @@ describe('createTestHub', () => {
     const listed = await client.call('list_task_packs');
     assert.equal(listed.isError, false);
     assert.deepEqual((listed.structuredContent.packs as { pack: string }[]).map((p) => p.pack).sort(), [`${REVIEW_PACK}@1.0.0`,...await Promise.all(['html-format','mindmap-format','workbook-format','xml-format'].map(async id=>id+'@'+await repositorySkillVersion(id)))].sort());
-    assert.equal(listed.content.length, 1, 'one plain-text block');
+    assert.equal(listed.content.length, 2, 'reader text followed by model references');
+    assert.ok(listed.content.every(block => block.type === 'text'));
+    assert.match(listed.content[0].text ?? '', /合成用例检查/);
+    assert.doesNotMatch(listed.content[0].text ?? '', /rec:|src:/);
+    assert.match(listed.content[1].text ?? '', /^供模型引用\n/);
+    assert.deepEqual(JSON.parse(listed.content[1].text!.slice('供模型引用\n'.length)), listed.structuredContent);
 
     const started = await client.call('start_run', { pack: REVIEW_PACK, inputs: { map: { external: `agile:mindmap:${AGILE_DOCUMENT}` } } });
     assert.equal(started.isError, false, JSON.stringify(started.structuredContent));
@@ -85,6 +90,10 @@ describe('createTestHub', () => {
     assert.ok(run.items.every(item => item.summary === '1 个期望结果'));
     assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
     assert.match(JSON.stringify(run.slots?.schema), /"notes"/);
+    assert.match(started.content[1].text ?? '', /^供模型引用\n/);
+    const { original_cases, ...modelAnswer } = JSON.parse(started.content[1].text!.slice('供模型引用\n'.length));
+    assert.deepEqual(modelAnswer, started.structuredContent);
+    assert.deepEqual(original_cases, run.items.map(item => ({ id: item.id, autoid: null, title: item.label })));
     const schema = { reference: `${started.structuredContent.record}#/slots/schema` };
     const read = await client.call('get_nodes', schema);
     assert.equal(read.isError, false, read.content[0].text);
