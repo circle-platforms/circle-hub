@@ -120,7 +120,37 @@ test('a pass whose run log carries a declared execution-failure line its asserti
   const unreviewed = JSON.parse(kept.stdout);
   assert.deepEqual(unreviewed.verdicts, { pass: 4 });
   assert.deepEqual([unreviewed.pass_review.markers, unreviewed.pass_review.read, unreviewed.pass_review.unread.length], [null, 0, 1]);
-  assert.match(unreviewed.pass_review.unread[0], /^计划运行 run_01b+ 读不出复核要用的合约和断言（.+），作业 c{12} 的通过没有复核$/);
+  assert.match(unreviewed.pass_review.unread[0], /^计划运行 run_01b+ 读不出复核要用的合约和断言（.+），作业 c{12} 的通过没有复核，被设备拒绝执行的命令也没有列出$/);
+});
+
+test('a command the device refused to execute is listed for its row with the session, the prompt and the device’s reply up to the declared line', async (t) => {
+  // The reference hands the next writer the lines of the last run that carry a device CLI error, with the directive that the
+  // fault is in the case's own command sequence (compile_engine/briefs.py execution_failures); the lines are the ones the
+  // plan run's contract declares, the same the pass review reads.
+  const doc = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+  doc.exec_failure_markers = { source: 'reference-engine/domain_grammar.json', sha256: 'a'.repeat(64), lines: ['Failed to run the synthetic command'] };
+  const contract = text(JSON.stringify(signTypedRuntime(doc))), profile = text(JSON.stringify(PROFILE_DOC)), inventory = text(JSON.stringify(MANIFEST_DOC));
+  const plan = planRunFixture({ run: PLAN, autoids: ['990000000000000301', '990000000000000302'], exclude: [], contract, profile, inventory, predecessor: 'run_01zzzzzzzzzzzzzzzzzzzzzzzz', recomposed: `rec:${'7'.repeat(64)}` });
+  const refused = text('seat(config)#widget name "a_b:c" 60\n\nWidget name format error.\nFailed to run the synthetic command\n\nseat(config)#widget on\nseat(config)#\n');
+  const h = await hub(jobs(refused), [deviceReturn, log, refused, held, contract, profile, inventory], [], plan); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const done = await run(h.url, out);
+  assert.equal(done.code, 0, done.stderr);
+  const index = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
+  assert.deepEqual(index.jobs[0].rows[0].execution_refused, [{ session: 'dev-a.txt', command: 'widget name "a_b:c" 60', prompt: 'seat(config)#', reply: ['Widget name format error.', 'Failed to run the synthetic command'] }]);
+  assert.deepEqual(index.jobs[0].rows[0].syntax_rejected, [], 'no caret: the device parsed the command and refused to execute it');
+  assert.equal('execution_refused' in index.jobs[0].rows[1], false, 'a row without sessions lists nothing');
+  assert.equal(JSON.parse(done.stdout).execution_refused, 1);
+
+  // Without the plan run's contract the declared lines are unknown: nothing is listed, and the returns say so.
+  const blind = await hub(jobs(refused), [deviceReturn, log, refused, held]); t.after(blind.close);
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-returns-')), 'returns');
+  const kept = await run(blind.url, other);
+  assert.equal(kept.code, 0, kept.stderr);
+  const unlisted = JSON.parse(await readFile(join(other, 'index.json'), 'utf8'));
+  assert.equal('execution_refused' in unlisted.jobs[0].rows[0], false);
+  assert.deepEqual(unlisted.jobs[0].rows[0].syntax_rejected, []);
+  assert.match(unlisted.pass_review.unread[0], /被设备拒绝执行的命令也没有列出$/);
 });
 
 test('bytes that do not match their digest, a run never dispatched and a directory already in use write nothing', async (t) => {

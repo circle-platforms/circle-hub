@@ -437,6 +437,51 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.15.0: a parameter's value within the manual's statement, authored negatives, commands the device refused
+
+Run 23, one mind map, three dispatches. One case configured a host name with a character the manual's row for that
+parameter excludes; the device answered "format error" and its verdict line each time, the case was reworked twice without
+changing the name, and it was heading for a defect candidate. The row was not in the locked root (the product pack dropped
+block-style table cells, fixed in the product pack 1.7.49) and nothing put a parameter's row beside its command. Another case
+kept the author's negative outcome as a sentence in `text`, which the runner searches for word by word, failed on it twice,
+and then passed by dropping the check, which the Hub accepted because the expectation still had assertions.
+
+What the reference does, and what this version carries over:
+
+- **The value domain beside the command.** The reference hands its writer, for each argument position, the tree's contract
+  and "the value domain in the vendor's own words" from the manual (`lang_query kind=param`); its program rejects on type,
+  arity, integer range and closed enumerations and leaves a string's characters to the writer's judgement of that text. The
+  authoring brief now lists under each command the manual rows that state its parameters, word for word with their
+  references (`functions/authoring-brief.ts parameterRows`; the rows carry `data.parameter` from the product pack). SKILL.md
+  says a value must lie within that statement; a step of the author that needs a value outside it while expecting success is
+  a conflict between the author and the manual and goes to the user (the reference settles such conflicts before a device
+  is touched); a case that tests an invalid input keeps it; and a value only the device produces at run time is not copied
+  from an earlier return (reference: "never copy whatever the device happens to show right now").
+- **An authored negative is a polarity.** The reference: "a natural-language negative outcome signs semantic polarity, not
+  its sentence as a literal device-output token… do not grep the author sentence", and an expectation's polarity is
+  found or not_found. SKILL.md no longer offers a "judgement by description" (the runner has none): a negative outcome is a
+  `not_found` assertion of the block form, and the check is not dropped. The closing procedure carries the reference's rule
+  for a fix, "fixing a case keeps the signed expectations and authored scope".
+- **A command the device refused to execute is named by program.** The reference keeps one authority for a device's CLI
+  errors (the caret, and the device's one verdict line for a command that fails to execute) and gives the next writer the
+  lines of the last run that carry one, with the directive that the fault is in the case's own command sequence.
+  `tools/download-returns.ts` now lists them per row as `execution_refused` in `index.json` (session, command, prompt, the
+  device's reply up to the declared line; `functions/delivery.ts executionRefusals`), from the failure lines the plan run's
+  contract declares, the same lines the pass review reads. Over the three returns of run 23 it names the refused host name
+  with the device's reason, the sync command refused for a missing peer entry, and the two key files that did not exist.
+  The closing procedure says what to do with them, that a failure repeating after a fix that reached the volume falsifies
+  the direction (reference: re-failed after a recompile), and that a refusal of what the manual's statement excludes is a
+  conflict between the author and the manual, not a defect candidate.
+- The closing procedure says the pass volume is handed in from the same plan directory (the submission tool already leaves
+  out the items a run excludes); in run 23 the model had a subagent copy fifteen plan files one by one first.
+
+Not done here, and the owner's to decide. A hook file of the skill's own that refuses a subagent's question (a client
+that runs skill hooks arms `hooks.json` beside SKILL.md) was written and tested, but `hooks.json` at a pack's root is not a
+place the pack contract lets a pack keep a file, so shipping it needs that contract changed first; the rule stays in the
+skill text (3.14.3) and in the acceptance home's guard. And a program check of a string value against a typed domain (length, characters).
+The reference has none, and reading the manual's sentence by pattern is not allowed in this repository; the designed way is
+a model's typed claim with the manual's row quoted, verified and kept for the build, which a program then applies.
+
 ### 3.14.3: when the user is asked
 
 In run 23 a subagent that reworked one case put three questions to the user through the client's question tool: which form

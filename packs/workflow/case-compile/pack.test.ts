@@ -12,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.14.3'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.15.0'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -70,7 +70,10 @@ test('the examples use the original synthetic contract, matching profile and fin
 // that says the brief ends with the envelope of the case's plan file; 3.14.2 the sentence that gives each case its own writer,
 // all sent out together (the reference engine fans its writers out one per case); 3.14.3 the paragraph that says when the
 // user is asked, in the words of the reference engine's ask_user tool, and that a subagent never asks.
-const SKILL_BUDGET = 9210;
+// 3.15.0 the bullet on parameter values (within the manual's statement of the parameter the brief now lists; a conflict
+// between the author's step and the manual goes to the user; a value only the device produces at run time is not copied from
+// an earlier return) and the reference's rule on an authored negative in place of the judgement by description.
+const SKILL_BUDGET = 9470;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
 });
@@ -80,6 +83,31 @@ test('the client skill says when the user is asked and that a subagent never ask
   const skill = read('SKILL.md');
   for (const phrase of ['问用户：只在答案会改变做法、资料里又查不到时才问', '设备结论要人来判（产品缺陷还是用例写错）', '能在锁定命令树、手册、合约、条目里查证的不问，自己定并在报告里说明', '子代理不问用户：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);
 });
+// Run 23, one case in three dispatches: a host name with a character the manual's row for that parameter excludes (the row was
+// not in the locked root), the device's refusal read as a possible defect each time; another case kept a sentence as the text
+// to find and then dropped the check. The reference hands its writer the value domain in the vendor's own words beside the
+// argument contract, signs an expectation's polarity as found/not_found and never greps the author's sentence, keeps the
+// signed expectations when a case is fixed, and tells the next writer that an execution failure is the case's own fault.
+test('the client skill and the closing procedure carry the reference rules on parameter values, authored negatives and refused commands', () => {
+  const skill = read('SKILL.md'), closing = read('tools/delivery.md');
+  for (const phrase of [
+    '手册对各参数的说明',
+    '参数取值：写进命令的每个值都要在手册对该参数的说明之内',
+    '是作者步骤与手册冲突：不照写上机，也不自己改，按上文“问用户”处理；作者要测的正是非法输入时照写',
+    '只有设备运行时才产生的值（生成的文件名、编号）不从上一次上机的回显抄进计划',
+    '不把这句话写进 text，也不删掉这项检查，用块计划的 not_found 断言指向那次观察的输出',
+  ]) assert.ok(skill.includes(phrase), phrase);
+  assert.ok(!skill.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
+  for (const phrase of [
+    'execution_refused：设备对一条命令回了运行器合约声明的执行失败原话的',
+    '问题在这条用例自己的命令序列，不在环境',
+    '先确认上一轮的修改进了这一卷；进了而同一句失败原话又出现，那个方向就错了',
+    '返工保住作者的范围和每一项期望',
+    'submit-plans 会跳过本运行排除的条目并报出来，不用复制或改写文件',
+    '说明不支持的，是作者步骤与手册冲突，judged 里逐字写出手册那一句和它的引用，不写 defect_candidate',
+  ]) assert.ok(closing.includes(phrase), phrase);
+});
+
 test('the client skill makes the model adapt the bed, seed what assertions read and clean up in reverse', () => {
   const skill = read('SKILL.md');
   for (const phrase of ['按自动化测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '先在 steps 前部安排创建步骤', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要逆操作']) assert.ok(skill.includes(phrase), phrase);

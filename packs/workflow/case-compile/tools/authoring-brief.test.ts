@@ -8,14 +8,14 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { authoringBrief, canonicalPath, commandPath, inverseOf, nodeBlock, pairedSibling, planEnvelope, policyOf, referencedPaths } from '../functions/authoring-brief.ts';
+import { authoringBrief, canonicalPath, commandPath, inverseOf, nodeBlock, pairedSibling, parameterRows, planEnvelope, policyOf, referencedPaths } from '../functions/authoring-brief.ts';
 import { knowledgeFiles } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { main, readKnowledge, writeBriefs } from './authoring-brief.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', ROOT = 'a'.repeat(64), OTHER_ROOT = 'b'.repeat(64);
 const digest = (seed: number) => seed.toString(16).padStart(2, '0').repeat(32);
 let seed = 1;
-type Row = { path: string; children: string[]; statements: Array<[string, string]> };
+type Row = { path: string; children: string[]; statements: Array<[string, string] | [string, string, Record<string, unknown>]> };
 const rows: Row[] = [
   { path: '/', children: ['commands', 'manual'], statements: [] },
   { path: '/commands', children: ['widget', 'no', 'show'], statements: [] },
@@ -33,7 +33,14 @@ const rows: Row[] = [
   { path: '/commands/show', children: ['widget'], statements: [] },
   { path: '/commands/show/widget', children: [], statements: [['definition', 'show widget [<arg1:string="">]']] },
   { path: '/manual', children: ['guide'], statements: [] },
-  { path: '/manual/guide', children: ['two words', 'whole chapter'], statements: [] },
+  { path: '/manual/guide', children: ['parameters', 'two words', 'whole chapter'], statements: [] },
+  // Rows of a manual table: the producer records on a row the command forms and the parameter it states.
+  { path: '/manual/guide/parameters', children: [], statements: [
+    ['behaviour', '| peer_name | 合成参数说明：特殊字符仅支持“._-”。 |', { form: 'table_row', parameter: { commands: ['widget sync to', 'widget sync from'], name: 'peer_name' } }],
+    ['behaviour', '| mode | 合成参数说明：取值为 full 或 delta。 |', { form: 'table_row', parameter: { commands: ['widget sync to'], name: 'mode' } }],
+    ['behaviour', '| 合成表头 | 不是参数行。 |', { form: 'table_row' }],
+    ['behaviour', '| broken | 合成的不完整数据。 |', { form: 'table_row', parameter: { commands: [], name: 'broken' } }],
+  ] },
   { path: '/manual/guide/two words', children: [], statements: [['behaviour', '合成手册句：部件默认关闭。']] },
   { path: '/manual/guide/whole chapter', children: [], statements: [['behaviour', '合成长章节。'.repeat(700)]] },
 ];
@@ -42,7 +49,7 @@ const batch = () => {
   const nodes = rows.map((row) => ({
     path: row.path, reference: `tree:${ROOT}${row.path}`, name: row.path.split('/').at(-1), level: row.children.length ? 'branch' : 'leaf', digest: digest(seed++),
     children: row.children.map((name) => ({ name, path: child(row.path, name), digest: digest(seed++) })),
-    entries: row.statements.map(([kind, statement], at) => ({ entry: digest(200 + at), kind, statement, reference: `tree:${ROOT}${row.path}@${digest(200 + at)}`, data: {} })),
+    entries: row.statements.map(([kind, statement, data], at) => ({ entry: digest(200 + at), kind, statement, reference: `tree:${ROOT}${row.path}@${digest(200 + at)}`, data: data ?? {} })),
   }));
   const head = { schema: 'run-knowledge@1', run: RUN, root: ROOT, composition: null, nodes: nodes.length, entries: nodes.reduce((sum, node) => sum + node.entries.length, 0) };
   return Buffer.from([head, ...nodes].map((line) => JSON.stringify(line)).join('\n') + '\n');
@@ -145,6 +152,29 @@ test('a brief holds the commands the record names with their entries word for wo
   // The line the brief gives is the line of the block in the file.
   const at = knowledge.lines.get('/manual/guide/two%20words')!;
   assert.equal((await readFile(join(directory, 'knowledge', at.file), 'utf8')).split('\n')[at.line - 1], '# /manual/guide/two words');
+});
+
+// Run 23: the writer of a case gave a host name a character the manual's row for that parameter excludes, three dispatches
+// in a row; the row was not in the locked root (the producer dropped block-style cells) and nothing put a parameter's row
+// beside its command. The reference hands the writer the value domain in the vendor's own words with the argument contract.
+test('a brief lists under a command the manual rows that state its parameters, word for word with their references', async () => {
+  const directory = await downloaded([ITEM]);
+  const knowledge = (await readKnowledge(directory))!;
+  assert.deepEqual([...knowledge.parameters!.keys()].sort(), ['widget sync from', 'widget sync to'], 'by the words of each command form a row names; a row without a whole statement names none');
+  assert.deepEqual(parameterRows(knowledge.nodes.values()).get('widget sync from')!.map((row) => row.name), ['peer_name']);
+  const text = authoringBrief(ITEM, '00', knowledge, policyOf(POLICY))!.text;
+  assert.match(text, /命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作/);
+  const block = nodeBlock(knowledge.nodes.get('/commands/widget/sync/to')!).join('\n');
+  assert.ok(text.includes([
+    '### widget sync to', block,
+    '手册对这条命令各参数的说明（2 行，原文）：',
+    '· | peer_name | 合成参数说明：特殊字符仅支持“._-”。 |', `  引用 tree:${ROOT}/manual/guide/parameters@${digest(200)}`,
+    '· | mode | 合成参数说明：取值为 full 或 delta。 |', `  引用 tree:${ROOT}/manual/guide/parameters@${digest(201)}`,
+    '逆操作（产品规则 /commands/widget/sync/to → /commands/widget/sync/rollback，逆操作带这条命令的前 1 个参数）：',
+  ].join('\n') + '\n'), text);
+  assert.ok(!text.includes('不是参数行') && !text.includes('不完整数据'), 'only rows that state a parameter of a command the brief lists');
+  const on = text.slice(text.indexOf('### widget on\n'));
+  assert.ok(!on.slice(0, on.indexOf('\n### ', 1)).includes('手册对这条命令各参数的说明'), 'a command whose parameters no row states gets no such list');
 });
 
 // Run 22: the main session's hand-written template made the plan slot an object and put `bucket` beside `data`; fourteen plans

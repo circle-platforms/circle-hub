@@ -24,10 +24,31 @@
 // cannot pass as a plan.
 import { isRecord } from './text.ts';
 
-export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string }> }
+/** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
+export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; parameter?: { commands: string[]; name: string } }> }
 export interface BriefPolicy { inverse_rules: Array<{ source_prefix: string; inverse_prefix: string; leading_parameters?: number }>; inverse_alternatives: string[][]; read_only: string[] }
-/** The locked root as the run download wrote it: its nodes by canonical path, and where each node's block starts in the text files. */
-export interface BriefKnowledge { root: string; nodes: Map<string, BriefNode>; lines: Map<string, { file: string; line: number; count: number }> }
+export interface BriefParameter { name: string; statement: string; reference: string }
+/** The locked root as the run download wrote it: its nodes by canonical path, where each node's block starts in the text files, and the manual's parameter rows by the words of the command they state. */
+export interface BriefKnowledge { root: string; nodes: Map<string, BriefNode>; lines: Map<string, { file: string; line: number; count: number }>; parameters?: Map<string, BriefParameter[]> }
+
+/**
+ * The manual's statement of each parameter, by the words of the command it belongs to: the value domain in the vendor's
+ * own words, which the reference hands its writer beside the tree's argument contract (lang_query kind=param: "the XML
+ * side gives position/type/optional/help, the manual side gives the value domain in the vendor's own words"). A row is
+ * listed once per command form, in the order the root holds it.
+ */
+export function parameterRows(nodes: Iterable<BriefNode>): Map<string, BriefParameter[]> {
+  const out = new Map<string, BriefParameter[]>();
+  for (const node of nodes) for (const entry of node.entries) {
+    if (!entry.parameter) continue;
+    for (const command of entry.parameter.commands) {
+      const rows = out.get(command) ?? [];
+      if (!rows.some((row) => row.reference === entry.reference)) rows.push({ name: entry.parameter.name, statement: entry.statement, reference: entry.reference });
+      out.set(command, rows);
+    }
+  }
+  return out;
+}
 
 /** Commands hang below this node in a locked tree (the catalog's paths, as the recomposition check builds them). */
 const COMMANDS = '/commands';
@@ -180,7 +201,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const out: string[] = [
     `# 编写简报 ${index}：${typeof fields.title === 'string' ? fields.title : ''}`,
     '',
-    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
+    `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
     '',
     `条目 ${String(item.id ?? '')}；锁定根 ${knowledge.root}。`,
   ];
@@ -193,6 +214,11 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   for (const path of commands) {
     const node = knowledge.nodes.get(path)!;
     out.push('', `### ${words(path)}`, ...block(node));
+    const stated = knowledge.parameters?.get(words(path)) ?? [];
+    if (stated.length) {
+      out.push(`手册对这条命令各参数的说明（${stated.length} 行，原文）：`);
+      for (const row of stated) out.push(`· ${row.statement}`, `  引用 ${row.reference}`);
+    }
     if (policy) {
       if (policy.read_only.some((prefix) => within(path, canonicalPath(prefix)))) out.push('这条命令在产品声明的只读前缀下。');
       else {

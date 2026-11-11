@@ -7,11 +7,18 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { authoringBrief, canonicalPath, policyOf, type BriefKnowledge, type BriefNode } from '../functions/authoring-brief.ts';
+import { authoringBrief, canonicalPath, parameterRows, policyOf, type BriefKnowledge, type BriefNode } from '../functions/authoring-brief.ts';
 import { isRecord } from '../functions/text.ts';
 import { argumentsOf, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 
 const parsed = (name: string, text: string): unknown => { try { return JSON.parse(text); } catch { throw new Error(`${name} 不是完整的 JSON`); } };
+
+/** The command forms and the parameter a manual row states, when the entry's data carries them whole. */
+const parameterOf = (data: unknown): { parameter?: { commands: string[]; name: string } } => {
+  const stated = isRecord(data) && isRecord(data.parameter) ? data.parameter : null;
+  if (!stated || typeof stated.name !== 'string' || !stated.name || !Array.isArray(stated.commands) || !stated.commands.length || !stated.commands.every((command) => typeof command === 'string' && command)) return {};
+  return { parameter: { commands: stated.commands as string[], name: stated.name } };
+};
 
 /** The knowledge root a run download wrote: every node by canonical path, and the line each node's block starts at in the text files. Null when the run brought no root. */
 export async function readKnowledge(directory: string): Promise<BriefKnowledge | null> {
@@ -28,6 +35,7 @@ export async function readKnowledge(directory: string): Promise<BriefKnowledge |
       entries: row.entries.filter(isRecord).filter((entry) => typeof entry.statement === 'string' && typeof entry.reference === 'string').map((entry) => ({
         ...(typeof entry.kind === 'string' ? { kind: entry.kind } : {}), statement: entry.statement as string, reference: entry.reference as string,
         ...(typeof entry.applicability === 'string' && entry.applicability ? { applicability: entry.applicability } : {}),
+        ...parameterOf(entry.data),
       })),
     });
   }
@@ -44,7 +52,7 @@ export async function readKnowledge(directory: string): Promise<BriefKnowledge |
       lines.set(start.path, { file, line: start.at + 1, count: end - start.at });
     });
   }
-  return { root: head.root, nodes, lines };
+  return { root: head.root, nodes, lines, parameters: parameterRows(nodes.values()) };
 }
 
 export interface BriefReport { briefs: number; kept: number; without_record: number }
