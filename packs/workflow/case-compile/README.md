@@ -1,4 +1,6 @@
-# case-compile 3.10.4
+# case-compile 3.17.0
+
+本地版本 3.17.0（2026-11-12）：加入产品声明的用例顺序及跨用例冲突核对、原始用例与手册冲突的第四种收口、逐条编写扩展、取值范围模块和统一措辞。自动化用例 Excel 的生成器同步为 case-compile@3.17.0。取值主张的 Hub 接收尚未实现；根 hooks 仅为未应用提案。本次只提交本地，不发布。
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 

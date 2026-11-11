@@ -1,5 +1,7 @@
 # 命令工具通用技能包
 
+本地版本 1.1.0（2026-11-12）：增加持久状态及互斥命令的产品声明处理、手册取值范围模块。Hub 目前不提供取值主张，没有主张时检查不起作用。本次只提交本地，不发布。
+
 `functions/modules/command-check/` 是可复用模块。`grammar.ts` 由 `tools/gen-contracts.ts` 从 `contracts/src/command-grammar.ts` 生成，类型在那里检查；`command-policy.ts` 在这里改；`value-domain.ts` 也在这里改：手册对参数取值的说明（取值范围主张）的形状、对引文的机械核对和对字面值的应用，设计见 `docs/hub-r4-tasks/value-domain-claims.md`。
 
 Hub 尚未提供取值范围主张；当前只有接收这些主张的模块和自动化用例检查，无主张时不起作用。模型、契约和 Hub 接收部分见设计页中的提案。
