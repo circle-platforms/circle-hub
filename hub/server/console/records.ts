@@ -79,7 +79,7 @@ async function statistics(ctx:PageContext,now:number,daysCount:number,query:Para
  const totals=new Map<string,number>();for(const line of items)if(line.user)totals.set(line.user,(totals.get(line.user)??0)+1);
  const top=await Promise.all([...totals].sort((a,b)=>b[1]-a[1]).slice(0,6).map(async([user,value])=>({label:await ctx.userName(user),value})));
  const statuses=CALL_RESULT.map(result=>({label:uiLabelOf('call_result',result),value:items.filter(line=>line.call_result===result).length,className:RESULT_FILL[result]}));
- return {figures:kpis,charts:html`<section data-columns="2">${distribution}<div class="ch-section">${ctx.admin&&top.length?comparisons('按成员',top,scope+'；最多显示调用次数前 6 名'):''}${parts(statuses,'调用状态')}</div></section>`};
+ return {figures:kpis,charts:html`<h2 class="ch-visually-hidden">统计图</h2><section data-columns="2">${distribution}<div class="ch-section">${ctx.admin&&top.length?comparisons('按成员',top,scope+'；最多显示调用次数前 6 名'):''}${parts(statuses,'调用状态')}</div></section>`};
 }
 
 /** The tabs of the records page (decision 151), in the order shown; the last two are the administrators'. */

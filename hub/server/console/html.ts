@@ -236,7 +236,7 @@ const ADMIN_PLACES: ReadonlySet<NavKey> = new Set<NavKey>(['health']);
 
 function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
 <title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg">${new Html(THEME_TAGS)}<link rel="stylesheet" href="${CONSOLE_CSS.path}" integrity="${CONSOLE_CSS.integrity}" crossorigin="anonymous"></head>
 <body class="hub">${body}${script ? new Html(LIVE_TAG) : ''}</body></html>`;
 }
@@ -260,7 +260,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const area = areaClass(chrome.active);
   const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`${GROUP_STARTS.has(key) ? html`<hr class="ch-nav-sep">` : ''}<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
   const inspector = layout.inspector;
-  return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
+  return htmlDocument(chrome.title, html`<a class="ch-skip" href="#console-main">跳到主要内容</a><div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
 <nav class="ch-nav" aria-label="主导航">
 <input class="ch-visually-hidden" type="checkbox" id="console-navigation-toggle" data-navigation-toggle aria-controls="console-navigation-links" aria-label="展开导航">
 <div class="ch-brand">${logo()}<span>circle-hub</span><label class="ch-icon-btn" for="console-navigation-toggle" title="展开导航" aria-label="展开导航">${icon('menu')}</label></div>
@@ -268,7 +268,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-nav-list" id="console-navigation-links">${nav}</div>
 <div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
-<main class="ch-pane" id="console-main">${top}<div class="ch-section" data-area-content>${content}</div></main>
+<main class="ch-pane" id="console-main" tabindex="-1">${top}<div class="ch-section" data-area-content>${content}</div></main>
 ${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
 </div>`, updates);
 }

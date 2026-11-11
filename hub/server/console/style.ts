@@ -293,4 +293,26 @@ const TYPE_CSS = `
 .ch-table th,.ch-section-label{font-size:13px;line-height:18px}
 `;
 
-export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n${HEALTH_CSS}\n${TYPE_CSS}\n[data-theme-switch][hidden]{display:none}\n`;
+// Findings of the audit against the modern-web-guidance guides (2026-11-12) that need no design decision.
+const AUDIT_CSS = `
+/* accessibility, skip links: out of sight until the keyboard reaches it, then over the page's corner. */
+.ch-skip { position: absolute; left: var(--space-3); top: var(--space-3); z-index: 1000; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text-link); font: 500 13px/20px var(--font-sans); outline: 2px solid var(--focus-ring); outline-offset: 2px; transform: translateY(-300%); }
+.ch-skip:focus { transform: none; }
+#console-main:focus { outline: none; }
+/* tabs, "tabs that do not fit": a row of page tabs stays one row and scrolls in its own box instead of widening the page
+   (a task's six tabs are 405px wide on a 390px screen). */
+main nav.ch-seg { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+main nav.ch-seg a { flex: none; }
+/* color, forced colors: a ring drawn with box-shadow or a border colour is removed there, so the field gets an outline. */
+@media (forced-colors: active) {
+  .ch-input:focus-within, .ch-composer:focus-within { outline: 2px solid Highlight; outline-offset: 1px; }
+  .ch-seg a[aria-current], .ch-seg button[aria-checked="true"], .ch-nav-item[aria-current] { outline: 1px solid Highlight; outline-offset: -1px; }
+}
+/* A value with no place to break (a digest, a run id, a reference) wraps inside its cell instead of widening the page:
+   a 64-character digest in a task's 技术信息 made the page 198px wider than a 390px screen. */
+.ch-kv dd { min-width: 0; overflow-wrap: anywhere; }
+/* html, focus boundaries: a preview that scrolls can be reached and scrolled with the keyboard. */
+.ch-original-preview:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+`;
+
+export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n${HEALTH_CSS}\n${TYPE_CSS}\n${AUDIT_CSS}\n[data-theme-switch][hidden]{display:none}\n`;
