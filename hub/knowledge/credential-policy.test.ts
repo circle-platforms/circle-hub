@@ -1,3 +1,4 @@
+import { withCredentialDetectors } from '../testing/records.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
@@ -6,6 +7,8 @@ import {newId} from '../records/api.ts';
 import {credentialReviewRequests} from './api.ts';
 import {BASE_CATALOG,DEFAULT_PRODUCERS,casesProducer,catalogXml,makeWorld,mindMap,startPostgres} from './test-support.ts';
 import {reconcileCredentialRequests} from './credential-policy.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});
 const name='Rel_ACME_10_6_1_71',flagged='store:mindmap:flagged',good='store:mindmap:good';

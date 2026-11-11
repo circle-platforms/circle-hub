@@ -38,7 +38,8 @@ export { newId, ulid, idTime, isId } from './ids.ts';
 export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
 export { initialPassword, validPassword } from './password.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
-export { scanForCredentials, scanContent, CONTENT_SCANNER, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
+export { scanContent, useContentDetectors, CONTENT_SCANNER } from './content-scan.ts';
+export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
 export { maskedForDisplay, FileKeyProvider } from './vault.ts';
@@ -973,8 +974,6 @@ export interface RecordsKit {
 export interface OpenRecordsOptions {
   /** Optional instrumentation: credential-scanner byte counts only, never bytes or matched values. */
   onCredentialScan?: (byteLength: number) => void;
-  /** The scan applied to bytes at ingest; default the content scan, which finds nothing (issue 194). For tests of old holds. */
-  contentScan?: (bytes: Uint8Array) => CredentialScan;
   /**
    * Default true: apply pending migrations (the connection's role then owns the tables). False for the runtime role, which
    * may only read and append: the schema must already be migrated by the owner (migrateRecords), else MigrationError.

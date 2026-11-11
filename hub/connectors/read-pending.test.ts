@@ -1,5 +1,6 @@
 // An answer held for scan hits says that the object exists and nothing else of it (D05 R[3]). Synthetic injected responses; no
 // external host is contacted.
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {startPostgres,type TemporaryPostgres} from '../testing/postgres.ts';
@@ -9,6 +10,8 @@ import {setSyntheticCredential} from './testing/credentials.ts';
 import type {ConnectorsOptions} from './api.ts';
 import {ReadManifest} from '../../contracts/src/resources.ts';
 import {SOURCE_PENDING_REVIEW_GENERATOR,newId,sha256Hex,type SourceArtifact} from '../records/api.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 
 const VALUE='Synthetic-Held-Value-42';
 const HIT=`{"data":"password=${VALUE}"}`;

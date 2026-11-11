@@ -17,7 +17,7 @@ import {iso} from './db.ts';
 import {canonicalize} from './canonical.ts';
 import {sha256Hex} from './digest.ts';
 import {RecordsError,IntegrityError} from './errors.ts';
-import {scanContent} from './scan.ts';
+import {scanContent} from './content-scan.ts';
 import {INITIAL_PERSONAL_EPOCH,type PersonalScope,type PgPersonalPayloads} from './personal-payloads.ts';
 
 type State=z.infer<typeof PersonalSyncState>;

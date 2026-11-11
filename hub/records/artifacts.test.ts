@@ -11,7 +11,8 @@ import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import type { TestRecordsKit } from '../testing/records.ts';
-import { CONTENT_SCANNER,CREDENTIAL_SCANNER,scanForCredentials, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
+import { CONTENT_SCANNER,CREDENTIAL_SCANNER,scanForCredentials,useContentDetectors, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
+import { openRecords } from './index.ts';
 import { artifactShareKey, RECORD_SCHEMAS } from './constants.ts';
 import { digestOf, sha256Hex } from './digest.ts';
 import { runRecord } from '../../contracts/src/fixtures.ts';
@@ -261,6 +262,31 @@ test('a connector read with a credential is kept at read tier retain_only and it
   assert.equal(view2?.artifact.digest, later.digest);
   assert.equal((await kit.artifacts.readable(admin, restricted.body.sha256))?.digest, later.digest);
   assert.equal((await kit.artifacts.source(admin, restricted.body.sha256))?.artifact.digest, later.digest);
+});
+
+test('bytes held under the detectors are readable once they are read again, by the new record: the content scan is the newest scan of them', async (t) => {
+  const kit = await openTestRecords({ postgres, detectors: true });
+  t.after(() => kit.close());
+  const { admin } = await people(kit);
+  const bytes = Buffer.from('settings\nDB_PASS=Synth3tic9x\n');
+  const sha = sha256Hex(bytes);
+  const input = (object: string): IngestInput => ({ bytes, mediaType: 'text/plain', origin: { read: { object } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
+  const held = await kit.artifacts.ingest(input('manuals:file:settings@1'));
+  assert.equal(held.body.read_tier, 'retain_only');
+  assert.equal((await kit.artifacts.source(admin, sha))?.readTier, 'retain_only');
+  // What a running Hub does now: the same bytes, read again, are scanned as content, and every record of them follows.
+  // A process of its own, as after a restart: a process keeps the scan it made of bytes.
+  useContentDetectors(false);
+  const now = await openRecords({ dataDir: kit.dataDir, logDir: kit.config.logDir, database: kit.database, limits: kit.config.limits }, { migrate: false, keyProvider: kit.keyProvider });
+  t.after(() => now.close());
+  const read = await now.artifacts.ingest(input('manuals:file:settings@2'));
+  assert.equal(read.body.scan.scanner, CONTENT_SCANNER);
+  assert.equal(read.body.read_tier, 'model_readable');
+  assert.deepEqual({ readable: (await now.artifacts.text(admin, sha))?.readable, tier: (await now.artifacts.source(admin, sha))?.readTier }, { readable: true, tier: 'model_readable' });
+  // A read that names the record made under the detectors still gets that record's own stored tier: records never change.
+  // No deployment holds such records, so nothing migrates them; a new read of the object makes a readable record.
+  assert.equal((await now.artifacts.source(admin, sha, { record: held.digest }))?.readTier, 'retain_only');
+  assert.deepEqual(Buffer.from((await now.artifacts.source(admin, sha, { record: read.digest }))?.bytes ?? []), bytes);
 });
 
 test('a credential hit by the newest scanner makes the bytes retain_only for every record of them', async (t) => {

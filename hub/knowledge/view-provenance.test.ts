@@ -1,3 +1,4 @@
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IndexView, ScopedDocument } from '../../contracts/src/views.ts';
@@ -5,6 +6,8 @@ import { CREDENTIAL_SCANNER, type SourceArtifactBody } from '../records/api.ts';
 import { createTestParserRegistry } from '../testing/parsers.ts';
 import { createKnowledge, createKnowledgeReader } from './api.ts';
 import { makeUnversionedWorld, startPostgres } from './test-support.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 
 test('a scanner upgrade changes composition provenance and cursors without changing index content', async t => {
   const postgres = await startPostgres();

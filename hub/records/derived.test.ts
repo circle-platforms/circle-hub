@@ -1,7 +1,6 @@
 // Issue 194: new content is no longer scanned for credentials. These tests open their records with the detectors of
 // credential-scan@3 (`detectors: true`): the holds and acceptances they cover still govern records stored under them.
 // Derived acceptance uses synthetic documents and randomly generated fake credentials only.
-import {scanForCredentials} from './scan.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
@@ -261,7 +260,7 @@ test('the same bytes are scanned once, whatever their record: a scan depends onl
   let scans=0;
   let counted: Awaited<ReturnType<typeof openRecords>> | undefined;
   t.after(async()=>{await counted?.close();await kit.close();});
-  counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:()=>{scans++;},contentScan:scanForCredentials});
+  counted=await openRecords({dataDir:kit.dataDir,logDir:kit.config.logDir,database:kit.database,limits:kit.config.limits},{migrate:false,keyProvider:kit.keyProvider,onCredentialScan:()=>{scans++;}});
   const bytes=Buffer.from(line(fake()));
   const held=await counted.artifacts.ingest({...readInput(bytes),name:'first'});
   assert.equal(held.body.read_tier,'retain_only');assert.equal(scans,1);

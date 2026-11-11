@@ -79,7 +79,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     config: { dataDir: config.dataDir, logDir: config.logDir, limits: { ...config.limits } },
     store,
     objects,
-    artifacts: new RecordArtifacts(db, store, objects, authorizations, { maxBytes: config.limits.maxUploadBytes, now, onCredentialScan:options.onCredentialScan, contentScan:options.contentScan }),
+    artifacts: new RecordArtifacts(db, store, objects, authorizations, { maxBytes: config.limits.maxUploadBytes, now, onCredentialScan:options.onCredentialScan }),
     vault,
     variables,
     principals,

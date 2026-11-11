@@ -3,6 +3,7 @@
 // the plain-text content, absent equals forbidden, records by reference, the call log (no argument content, refused
 // batches, notes records would refuse), trace and session ids, token revocation, concurrent calls, and service answers that
 // violate their output schema.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -350,7 +351,21 @@ describe('upload_file', () => {
     await client.close();
   });
 
-  test('a credential in the upload is not accepted: CREDENTIAL_IN_UPLOAD, no reference, isError', async () => {
+  // Issue 194: an upload is content of its member, not refused for looking like a credential. The test after this one
+  // turns the detectors on and covers the refusal they made.
+  test('an upload that looks like it carries a credential is accepted like any other', async () => {
+    const client = await connect(await person());
+    // Other bytes than the next test's: a scan is kept per bytes, and this server is shared by the tests of the suite.
+    const result = await upload(client, '部署说明\ndb_password = "Wm4!zN7#pK"\n', { name: 'deploy.txt' });
+    assert.equal(result.isError, false);
+    assert.equal(result.structuredContent.acceptance, 'accepted');
+    assert.equal(typeof result.structuredContent.reference, 'string');
+    const rows = await server.records.artifacts.records(String(result.structuredContent.sha256));
+    assert.deepEqual(rows.map(row => row.body.read_tier), ['model_readable']);
+    await client.close();
+  });
+
+  test('a credential in the upload is not accepted: CREDENTIAL_IN_UPLOAD, no reference, isError', async (t) => { credentialDetectorsFor(t);
     const client = await connect(await person());
     const result = await upload(client, '配置说明\ndb_password = "Xk9!rT2#qL"\n', { name: 'conf.txt' });
     assert.equal(result.isError, true);
@@ -448,7 +463,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     await client.close();
   });
 
-  test('get_nodes by reference follows the read tier: function bytes give structure only, retain-only gives the note', async () => {
+  test('get_nodes by reference follows the read tier: function bytes give structure only, retain-only gives the note', async (t) => { credentialDetectorsFor(t);
     const admin = server.admin;
     const restricted = await server.records.artifacts.ingest({
       bytes: Buffer.from(MINDMAP.replace('合成用例集', '受限用例集')),
@@ -1176,7 +1191,7 @@ describe('neutral answers', () => {
 });
 
 describe('the isError matrix and output schemas', () => {
-  test('isError is true exactly for protocol errors and receipts that are not accepted; every answer conforms to its schema', async () => {
+  test('isError is true exactly for protocol errors and receipts that are not accepted; every answer conforms to its schema', async (t) => { credentialDetectorsFor(t);
     const user = await person(['review']);
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);

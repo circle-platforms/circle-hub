@@ -1,6 +1,7 @@
 // Batched feeding visibility (perf-n-plus-one). A frozen cut, a node page, a run's usages and the views over them must answer
 // exactly what the per-record checks answer: the reference is the same feeding layer over a store without the batched index
 // scan, which takes the record-by-record path. The single-key lookups must not grow with the feeding history.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
@@ -79,7 +80,7 @@ async function counted<T>(body: () => Promise<T>): Promise<{ value: T; total: nu
   try { return { value: await body(), total, single }; } finally { pg.Client.prototype.query = original; }
 }
 
-test('a frozen cut, a node page and run usages answer what the record-by-record checks answer, for every reader and after every revocation', { timeout: 300_000 }, async t => {
+test('a frozen cut, a node page and run usages answer what the record-by-record checks answer, for every reader and after every revocation', { timeout: 300_000 }, async t => { credentialDetectorsFor(t);
   const postgres = await startPostgres();
   let close = async (): Promise<void> => {};
   t.after(async () => { await close(); await postgres.stop(); });

@@ -8,12 +8,15 @@
 // Payload length, entry coverage, query budget and all other assertions stay fixed.
 // Process peak RSS moved with GC timing on shared runners, so it is disclosed, not asserted. What the RSS ceiling
 // guarded is asserted exactly instead: what the read holds at once at the store and records boundaries it streams through.
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { benchmarkView, heldBoundViolations, VIEW_PERF_PARTS } from '../../tools/view-perf.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 
 test('a cold 49000-entry index preserves reviewed bytes, complete truncated counts and bounded queries and holdings', { timeout: 600_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'hub-view-perf-test-'));
