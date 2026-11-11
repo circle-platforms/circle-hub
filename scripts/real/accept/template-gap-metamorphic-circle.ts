@@ -2,7 +2,7 @@
 // (1) every document's a and b copies; (2) the c copies (one per outermost case); (3) the d, e and f copies built
 // from phase (2)'s answers, written into the work directory and uploaded there. Every reply carries at most `batch`
 // hub_upload_file calls, one hub_start_run per batch of documents. Answers are matched without trusting order:
-// uploads by src:<sha256> equal to the bytes written, runs by item ids upload-<12 hex> with the batch's count. A
+// uploads by the machine result's src:<sha256>, runs by its item ids upload-<12 hex> with the batch's count. A
 // refused upload or start, or a summary that cannot be read in full, is recorded as unknown with its fixed reason
 // and never counts as agreement. A request after the start with no tool results (Circle compacting the
 // conversation) gets one line of text; nothing restarts or advances, and the compaction check fails.
@@ -31,7 +31,20 @@ export interface GapCircleGold {
   batch: number;
 }
 
-// ---------------------------------------------------------------- reading the Hub's answer texts
+// ---------------------------------------------------------------- reading the Hub's machine result
+
+const MACHINE_MARKER = '\n供模型引用\n';
+const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function machineAnswer(result: string): Record<string, unknown> | null {
+  let text = result;
+  if (text.trimStart().startsWith('"')) {
+    try { const value: unknown = JSON.parse(text); if (typeof value !== 'string') return null; text = value; } catch { return null; }
+  }
+  const at = text.lastIndexOf(MACHINE_MARKER);
+  if (at < 0) return null;
+  try { const value: unknown = JSON.parse(text.slice(at + MACHINE_MARKER.length)); return object(value) ? value : null; } catch { return null; }
+}
 
 /** One item row: "<item> | <label> | 位置 <path> | <summary>" — the summary holds no ' | ', a title may. */
 export function parseItemLine(line: string): { item: string; summary: string } | null {
@@ -86,6 +99,19 @@ export function summaryOfGetNodes(result: string, expectedReference?: string): s
 
 function readSummary(result: string, expectedReference?: string): { summary: string | null; missing: string } {
   const refuse = (missing: string) => ({ summary: null, missing });
+  const answer = machineAnswer(result);
+  if (answer === null && result.includes(MACHINE_MARKER)) return refuse('缺少可解析的完整机器答复');
+  if (answer !== null) {
+    const content = object(answer.content) ? answer.content : null;
+    if (answer.call_result !== 'ok' || content === null) return refuse('缺少成功的摘要读取结果');
+    if (expectedReference !== undefined && content.reference !== expectedReference) return refuse('缺少所请求摘要引用的读取结果');
+    if (content.readable !== true || content.read_tier !== 'model_readable' || typeof content.text !== 'string') return refuse('缺少模型可读的摘要全文');
+    let summary = content.text;
+    if (summary.startsWith('"')) {
+      try { const value: unknown = JSON.parse(summary); if (typeof value !== 'string') return refuse('缺少可解析的摘要字符串'); summary = value; } catch { return refuse('缺少可解析的摘要字符串'); }
+    }
+    return summary.startsWith('用例 ') ? { summary, missing: '' } : refuse('缺少以用例计数开头的摘要全文');
+  }
   const head = contentHeader(result);
   if (!head) return refuse('缺少仅带已知客户端前言的 Hub 内容头');
   if (expectedReference !== undefined && head.reference !== expectedReference) return refuse('缺少所请求摘要引用的读取结果');
@@ -111,8 +137,8 @@ function readSummary(result: string, expectedReference?: string): { summary: str
 export const sha256Of = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 export const uploadIdOf = (sha: string): string => `upload-${sha.slice(0, 12)}`;
 export const srcOf = (result: string): string | null => {
-  const at = /src:([0-9a-f]{64})/.exec(result);
-  return at === null ? null : `src:${at[1]!}`;
+  const answer = machineAnswer(result);
+  return answer?.call_result === 'ok' && answer.acceptance === 'accepted' && typeof answer.reference === 'string' && /^src:[0-9a-f]{64}$/.test(answer.reference) && answer.reference === `src:${answer.sha256}` ? answer.reference : null;
 };
 
 // ---------------------------------------------------------------- the scenario
@@ -264,15 +290,15 @@ export default function scenario(gold: GapCircleGold): Scenario {
     }
     // Absorb the results of the calls this driver made last (same order).
     if (openRun !== null) {
-      const text = turn.toolResults.map((r) => r.text).join('\n');
-      if (turn.toolResults.some((r) => r.isError)) {
-        const code = text.split(/\r?\n/).map(line => /^- ([A-Z_]+)：/.exec(line)?.[1]).find(code => code !== undefined && Object.hasOwn(PROTOCOL_CODES, code));
+      const answer = machineAnswer(turn.toolResults[0]?.text ?? '');
+      if (turn.toolResults.some((r) => r.isError) || answer?.call_result === 'error') {
+        const code = (Array.isArray(answer?.errors) ? answer.errors : []).filter(object).map(error => error.code).find(code => typeof code === 'string' && Object.hasOwn(PROTOCOL_CODES, code));
         for (const { key } of openRun) unknown.set(key, `开始运行被拒${code ? `（${code}）` : ''}；下一步核对开始运行应答的错误码和运行回执，修正输入后重跑该批`);
       } else {
         const items = new Map<string, string>();
-        for (const line of text.split('\n')) {
-          const parsed = parseItemLine(line);
-          if (parsed !== null) items.set(parsed.item, parsed.summary);
+        const run = answer?.call_result === 'ok' && object(answer.run) ? answer.run : null;
+        for (const item of Array.isArray(run?.items) ? run.items : []) {
+          if (object(item) && typeof item.id === 'string' && /^upload-[0-9a-f]{12}$/.test(item.id) && typeof item.summary === 'string') items.set(item.id, item.summary);
         }
         if (items.size !== openRun.length) {
           for (const { key } of openRun) unknown.set(key, '条目数与这一批的份数不符；下一步用 get_nodes 重读该运行记录的 items，核对完整条目后缩小 batch 重跑');
