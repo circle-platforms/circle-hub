@@ -822,7 +822,7 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   call.state.callResult = value.call_result;
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
-  const context: TextContext = { ...reply.text, paging: PAGING };
+  const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items };
   let text: string;
   try {
     text = toolText(name, value, context);
