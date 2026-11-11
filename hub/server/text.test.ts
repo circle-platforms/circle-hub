@@ -664,11 +664,11 @@ describe('through the MCP server: the ways to read the rest that the notes give 
     assert.doesNotMatch(started.content[0].text!, /rec:|run_/);
     const refused = await client.call('submit_result', {run:run.run,model:'scripted-model@test',items:[{item:'synthetic:n1',handling:'handled',slots:{findings:[]}}],notes:'quote-mismatch'});
     const references = JSON.parse(refused.content[1].text!.slice('供模型引用\n'.length));
-    assert.deepEqual(references, {...refused.structuredContent,original_cases});
     assert.match(references.record, /^rec:[0-9a-f]{64}$/);
     assert.equal(references.errors[0].item, 'synthetic:n1');
     assert.equal(references.errors[0].path, '/items/0/slots');
     assert.equal(references.original_cases[0].autoid, 'CASE-SYNTHETIC-1');
+    assert.deepEqual(references, {...refused.structuredContent,original_cases});
     assert.doesNotMatch(refused.content[0].text!, /rec:|synthetic:n1|\/items\/0\/slots/);
     await client.close();
 });
