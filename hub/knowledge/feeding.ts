@@ -107,6 +107,24 @@ interface FeedingJob {key:string;captureKey:string;pack:ProductHandle|null;princ
 
 const LOG='knowledge.feeding.log',OBJECT='knowledge.feeding.object',USAGE='knowledge.feeding.usage',BINDING='knowledge.feeding.binding',RETRACT='knowledge.feeding.retraction',TODO='knowledge.feeding.todo';
 const object=(v:unknown):v is Record<string,any>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+/**
+ * Where a feeding record can show on a node page (entriesAtNodes): its own path, the root page when it has none, and the path
+ * of every command it names. Each is an index entry of the record, by product and root, so a page reads the records of its
+ * nodes instead of the product's whole history (one product held 71,456 records, 258 MB, of which 663 were on the root read).
+ * A record with more places than NODE_PLACES is indexed once under the root alone and read with every page of that root; the
+ * page still decides by the record's body, so the index only narrows and never decides. Records stored before this index
+ * are given the same entries by a migration (feeding_node_index), written to hold at least what this function gives.
+ */
+export const NODE='knowledge.feeding.node',NODE_PLACES=64;
+export const nodeValue=(product:string,root:string,path:string|null):string=>`${product}:${root}:${path===null?'*':sha256Hex(path)}`;
+export function nodeIndex(product:string,body:Record<string,any>):Array<{key:string;value:string}>{
+ if(typeof body.root!=='string'||!/^[0-9a-f]{64}$/.test(body.root))return [];
+ const places=new Set<string>();
+ if(typeof body.path==='string')places.add(body.path);else if(body.path===null||body.path===undefined)places.add('/');
+ if(Array.isArray(body.commands))for(const command of body.commands)if(object(command)&&typeof command.path==='string')places.add(command.path);
+ if(places.size>NODE_PLACES)return [{key:NODE,value:nodeValue(product,body.root,null)}];
+ return [...places].map(path=>({key:NODE,value:nodeValue(product,body.root,path)}));
+}
 interface SeedlingAttachment {locked_root:string;locked_composition:string|null;seedling_root:string;seedling_composition:string;line:string}
 interface Projected {rows:Projection[];pack:string;digest:string;attachment:SeedlingAttachment|null}
 /** What a fed record states about its capture beside the body; a re-projection names the original record it re-projects. */
@@ -329,7 +347,7 @@ export class FeedingLayer {
   if(operationRecord(body.schema))return Claim.parse({statement:{text:'Circle 操作记录；等级为声明，不作为核验、评分或放行的证据',data:{feeding:body,actor:by.id,run,key}},grounds,warrant:{producer:'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:'unknown',provenance:'client_captured',marks:['semantics_unasserted']},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
   return Claim.parse({statement:{text:judgment?'客户端带原文引文的喂入主张；语义仍为判断':'按原件结构登记喂入事实',data:{feeding:body,actor:by.id,run,key,...capture,...(metaSource?{meta_source:metaSource}:{}),...(gaps?.length?{missing:gaps}:{})}},grounds,warrant:{producer:judgment?'model':'function',id:warrant,independence:'judge_not_author'},qualifier:{nature:judgment?'judgment':'fact',provenance:body.schema==='fed-note@1'||body.basis==='declared'?'declared':judgment?'declared':'projected',basis_rank:body.basis==='declared'?'rule_over_claims':judgment?'judgment':'rule_over_observation',marks:[]},validity:{status:'valid',bound:[...new Set(bound)],premises:[]}});
  }
- private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:Capture){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index]},tx);}
+ private async put(body:Record<string,any>,by:Principal,warrant:string,grounds:string[],bound:string[],key:string,index:Array<{key:string;value:string}>,tx:Transaction,judgment=false,run:string|null=null,metaSource?:string,gaps?:Projection['missing'],capture?:Capture){return this.context.records.store.put({kind:'claim',schema:'claim@1',provenance:operationRecord(body.schema)?'client_captured':body.schema==='usage@1'?'observed':judgment||body.schema==='fed-note@1'?'declared':'projected',body:this.claim(body,by,warrant,grounds,bound,judgment,run,key,metaSource,gaps,capture),unique_key:'feeding:'+key,index:[{key:LOG,value:'1'},{key:'knowledge.feeding.actor',value:by.id},{key:'knowledge.feeding.key',value:key},...index,...index.filter(entry=>entry.key==='knowledge.feeding.product').flatMap(entry=>nodeIndex(entry.value,body))]},tx);}
  private key(body:Record<string,any>){const {at:_at,...withoutTime}=body;return sha256Hex(canonicalize(withoutTime));}
  private async usage(principal:Principal,id:string,scope:FeedingScope,tx:Transaction){if(!scope.run)return;const body={schema:'usage@1',object:id,run:scope.run,line:scope.line??null,at:this.context.now().toISOString()};await this.put(body,principal,'hub.feeding@1',[],[id],`usage:${scope.run}:${id}`,[{key:USAGE,value:scope.run},{key:'knowledge.feeding.usage.object',value:id}],tx,false,scope.run);}
  private async todo(principal:Principal,source:Record<string,any>,product:string|null,missing:string,next:string,tx:Transaction,errorDetail?:FeedingErrorDetail){
@@ -716,7 +734,7 @@ export class FeedingLayer {
    typeof body.path==='string'&&selected.has(body.path)||body.path===null&&selected.has('/')||
    Array.isArray(body.commands)&&body.commands.some((command:unknown)=>object(command)&&typeof command.path==='string'&&selected.has(command.path))
   );
-  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset,relevant,this.visibility(principal));
+  if(this.context.records.store.findIndexed)return this.frozenEntries(principal,product,offset,relevant,this.visibility(principal),{root,paths:[...selected]});
   return (await this.entries(principal,product,offset)).filter(row=>relevant(row.body));
  }
  /** Keep the matched index value: one record can be indexed under more than one object. */
@@ -736,8 +754,16 @@ export class FeedingLayer {
   * Frozen cuts batch immutable index facts but still check every record's present-day read permission: one by one, or with a
   * session as one grouped evaluation (recordsVisible) with the same answer per record.
   */
- private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean,session?:Visibility):Promise<FeedingView[]>{
-  const productRows=(await this.indexed<ClaimBody>('knowledge.feeding.product',[product],'claim',through)).get(product)??[];
+ private async frozenEntries(principal:Principal,product:string,through:number,select?:(body:Record<string,any>)=>boolean,session?:Visibility,nodes?:{root:string;paths:readonly string[]}):Promise<FeedingView[]>{
+  let productRows:IndexedRecord<ClaimBody>[];
+  if(nodes){
+   // A node page reads the records indexed at its nodes (and those indexed under the root alone), in the order the product's
+   // whole history would give them; `select` below still decides which of them show.
+   const groups=await this.indexed<ClaimBody>(NODE,[...nodes.paths.map(path=>nodeValue(product,nodes.root,path)),nodeValue(product,nodes.root,null)],'claim',through);
+   const once=new Map<string,IndexedRecord<ClaimBody>>();
+   for(const rows of groups.values())for(const row of rows)if(!once.has(row.record.digest))once.set(row.record.digest,row);
+   productRows=[...once.values()].sort((a,b)=>a.position-b.position);
+  }else productRows=(await this.indexed<ClaimBody>('knowledge.feeding.product',[product],'claim',through)).get(product)??[];
   const candidates:Array<{row:IndexedRecord<ClaimBody>;body:Record<string,any>}>=[];
   for(const row of productRows){const body=this.body(row.record);if(body&&(!select||select(body)))candidates.push({row,body});}
   const shown=session?await this.recordsVisible(candidates.map(({row,body})=>({record:row.record,body})),session):null;

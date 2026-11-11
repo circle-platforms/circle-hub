@@ -1567,6 +1567,28 @@ CREATE UNIQUE INDEX process_events_end ON public.process_events(boot) WHERE kind
  {version:31,name:'trace_client_platform',sql:`ALTER TABLE public.trace_spans ADD COLUMN client_platform pg_catalog.text;
 CREATE INDEX trace_spans_mcp_releases ON public.trace_spans (release,started_at DESC) WHERE is_root AND origin='mcp';
 `},
+ // A feeding record is indexed at the places it can show on a node page (hub/knowledge/feeding.ts nodeIndex): by product and
+ // root, its own path (the root page when it has none) and the path of every command it names; more than 64 places are
+ // indexed once under the root alone. A node page then reads the records of its nodes instead of the product's whole
+ // history. These are the entries for the records stored before the index existed; they hold at least what nodeIndex gives
+ // (the page still decides by the record's body), with the record's own sequence, so a frozen cut reads them as before.
+ {version:32,name:'feeding_node_index',sql:`INSERT INTO public.record_index(key,value,digest,record_seq)
+ SELECT DISTINCT 'knowledge.feeding.node',n.value,f.digest,f.seq
+ FROM (SELECT r.digest,r.seq,p.value AS product,COALESCE(j.b#>'{statement,data,feeding}',j.b#>'{statement,data}') AS body
+   FROM public.record_index p JOIN public.hub_read_records() r ON r.digest=p.digest
+   CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'uFFFD')::pg_catalog.jsonb AS b) j
+   WHERE p.key='knowledge.feeding.product' AND r.kind='claim') f
+ CROSS JOIN LATERAL (
+   WITH places AS (
+     SELECT f.body->>'path' AS path WHERE pg_catalog.jsonb_typeof(f.body->'path')='string'
+     UNION SELECT '/' WHERE f.body->'path' IS NULL OR pg_catalog.jsonb_typeof(f.body->'path')='null'
+     UNION SELECT c->>'path' FROM pg_catalog.jsonb_array_elements(CASE WHEN pg_catalog.jsonb_typeof(f.body->'commands')='array' THEN f.body->'commands' ELSE '[]'::pg_catalog.jsonb END) c
+       WHERE pg_catalog.jsonb_typeof(c)='object' AND pg_catalog.jsonb_typeof(c->'path')='string')
+   SELECT f.product||':'||(f.body->>'root')||':'||CASE WHEN (SELECT pg_catalog.count(*) FROM places)>64 THEN '*'
+     ELSE pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(places.path,'UTF8')),'hex') END AS value FROM places) n
+ WHERE pg_catalog.jsonb_typeof(f.body)='object' AND f.body->>'root' ~ '^[0-9a-f]{64}$'
+ ON CONFLICT DO NOTHING;
+`},
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */

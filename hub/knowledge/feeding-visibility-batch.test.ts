@@ -8,8 +8,11 @@ import pg from 'pg';
 import { runRecord } from '../../contracts/src/fixtures.ts';
 import { RunRecord } from '../../contracts/src/run.ts';
 import { newId, type Principal, type RecordStore } from '../records/api.ts';
+import { Database, createPool } from '../records/db.ts';
+import { MIGRATIONS } from '../records/migrations.ts';
 import { putRun } from '../runs/engine/store.ts';
 import { createKnowledge, createKnowledgeReader, FeedingLayer } from './api.ts';
+import { NODE } from './feeding.ts';
 import type { FeedingCut } from './feeding-types.ts';
 import { TreeReading } from './read.ts';
 import { startPostgres } from './test-support.ts';
@@ -213,4 +216,50 @@ test('the usages of a run ask the first record of each object and read no other 
   assert.equal(listed.length, 80, 'forty cases of each of two documents');
   assert.deepEqual(firsts, [80], 'one lookup of the first record of each object');
   assert.ok(!scans.includes('knowledge.feeding.object'), `no scan of every record of the objects: ${scans.join(', ')}`);
+});
+
+test('a node page reads the records indexed at its nodes, not the product history, and finds the records stored before the index once the migration ran', { timeout: 300_000 }, async t => {
+  // In production one product held 71,456 feeding records (258 MB) and every node page read them all to show the few on its
+  // nodes: 663 of them were on the root being read.
+  const postgres = await startPostgres();
+  let close = async (): Promise<void> => {};
+  t.after(async () => { await close(); await postgres.stop(); });
+  const w = await world(postgres, false, undefined, TREE);
+  const layer = w.knowledge.feeding!;
+  const context = w.knowledge.__context;
+  // A release before the index stored the same records without the node entries.
+  const unindexed = new Proxy(context.records.store, { get(target, key) {
+    const value = Reflect.get(target, key, target);
+    if (key === 'put') return (input: { index?: Array<{ key: string; value: string }> }, tx?: unknown) => (value as Function).call(target, { ...input, index: input.index?.filter((entry) => entry.key !== NODE) }, tx);
+    return typeof value === 'function' ? value.bind(target) : value;
+  } }) as RecordStore;
+  const earlierContext = { ...context, records: { ...context.records, store: unindexed } };
+  const earlier = new FeedingLayer(earlierContext, new TreeReading(earlierContext));
+  close = async () => { await earlier.drain(); await layer.drain(); await w.close(); };
+  const old = await document(w, 0, [w.user.id]);
+  const run = newId('run');
+  await putRun(w.kit.store, RunRecord.parse({ ...runRecord, run, runner: w.user.id, product: 'famx' }), new Date().toISOString());
+  const receipt = await earlier.observeSource(w.user, old.original.body.sha256, { ...w.scope, sourceRecord: old.original.digest, metaSource: old.meta.body.sha256, run });
+  assert.equal(receipt.objects.length, 40, JSON.stringify(receipt.pending));
+  const legacy = recordByRecord(w);
+  const paths = ['/', '/system/show', '/system'];
+  const expected = await legacy.entriesAtNodes(w.user, 'famx', w.root.root, paths);
+  assert.ok(expected.length >= 40, `the record-by-record read shows ${expected.length} records on these nodes`);
+  assert.ok((await layer.entriesAtNodes(w.user, 'famx', w.root.root, paths)).length < expected.length, 'without their index entries the earlier records are not found: the migration is needed');
+  const database = new Database(createPool(w.kit.database));
+  try { await database.query(MIGRATIONS.find((migration) => migration.name === 'feeding_node_index')!.sql, []); } finally { await database.end(); }
+  assert.deepEqual(await layer.entriesAtNodes(w.user, 'famx', w.root.root, paths), expected, 'after the migration the node read gives what the record-by-record read gives');
+  // Records stored from now on carry the entries themselves, and the page never scans the product's history.
+  await readAll(w, w.user, [await document(w, 1, [w.user.id])]);
+  const scans: string[] = [];
+  const spied = new Proxy(context.records.store, { get(target, key) {
+    const value = Reflect.get(target, key, target);
+    if (key === 'findIndexed') return (query: { key: string }, tx?: unknown) => { scans.push(query.key); return (value as Function).call(target, query, tx); };
+    return typeof value === 'function' ? value.bind(target) : value;
+  } }) as RecordStore;
+  const watchedContext = { ...context, records: { ...context.records, store: spied } };
+  const seen = await new FeedingLayer(watchedContext, new TreeReading(watchedContext)).entriesAtNodes(w.user, 'famx', w.root.root, paths);
+  assert.deepEqual(seen, await legacy.entriesAtNodes(w.user, 'famx', w.root.root, paths));
+  assert.ok(seen.length > expected.length, 'both documents show');
+  assert.ok(scans.includes(NODE) && !scans.includes('knowledge.feeding.product'), `index scans of a node page: ${[...new Set(scans)].join(', ')}`);
 });
