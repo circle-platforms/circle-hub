@@ -230,7 +230,7 @@ test('credential withholding keeps the device without exposing the quote', {skip
   assert.match(listed.find(row => row.record === saved.receipt.record)?.note ?? '', /设备 device0（台架 synthetic）/);
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:[path], depth:0}, ctx.w.admin);
   const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
-  assert.match(text, /设备 device0（台架 synthetic）/);
+  assert.match(text, /测试环境 device0，synthetic/);
   assert.doesNotMatch(text, /合成回显：状态正常/);
 });
 
