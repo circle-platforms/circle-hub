@@ -69,6 +69,12 @@ export function groundsWithSources(grounds:readonly string[],bound:readonly stri
   return [...found];
 }
 
+/** The grounds the sources of a run name within it: what resultGrounds gives for `run.sources`, kept by the run record's digest. */
+export function sourceGrounds(run:RunRecord):string[]{
+  const digest=verifiedBodyDigest(run);
+  return remembered(digest===undefined?undefined:'sources\n'+digest,()=>groundsWithSources(groundsOf(run.sources),boundOf(run.sources),run));
+}
+
 export function resultGrounds(value:unknown,run:RunRecord):string[]{
   // The sources a result binds are those of its run, and a run record does not change: the pair names the answer.
   const digest=Array.isArray(value)?undefined:verifiedBodyDigest(value);

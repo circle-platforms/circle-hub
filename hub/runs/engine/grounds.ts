@@ -15,7 +15,7 @@ import {attemptEvidence} from './retry-evidence.ts';
 import {receivedDigest} from './util.ts';
 import {unavailableError} from './errors.ts';
 import {queryRead} from './query-scope.ts';
-import {groundsOf,groundsWithSources,resultGrounds} from './ground-extraction.ts';
+import {groundsOf,groundsWithSources,resultGrounds,sourceGrounds} from './ground-extraction.ts';
 import {resultSummaryOf,type ResultSummary} from './result-summary.ts';
 import {INDEX} from './store.ts';
 export {forgetExtractedGrounds,groundsOf} from './ground-extraction.ts';
@@ -176,7 +176,7 @@ export async function runReadableBy(ctx:EngineContext,by:Principal,run:RunRecord
   if(ctx.deps.records.principals){const account=await ctx.deps.records.principals.get(by.id);if(!account||account.disabled)return false;by=account;}
   if(run.pack_space&&run.pack_space!=='team'&&run.runner!==by.id&&run.configurer!==by.id){const owner=await ctx.deps.records.principals?.get(run.pack_space);if(!owner||owner.disabled)return false;}
   if(!await canViewRun(by,run,ctx.deps.records.store))return false;
-  return run.runner===by.id||run.configurer===by.id||await groundsReadableBy(ctx,run,run.sources,by);
+  return run.runner===by.id||run.configurer===by.id||await groundsReadableBy(ctx,run,run.sources,by,{references:sourceGrounds(run)});
 }
 
 /** Instance diagnostics of a rejected submission do not grant access to its private grounds. */
@@ -208,6 +208,11 @@ export async function summaryReadableBy(ctx:EngineContext,run:RunRecord,summary:
 /** Request instances retain run-owner/administrator scope and never lend a private submission's diagnostics. */
 export async function requestReadable(ctx:EngineContext,by:Principal,request:RequestBody):Promise<boolean>{
   if(!request.run)return by.role==='admin'||request.audience===by.id;
+  // The answer rests on the run and on what issued the request, and a result issues its requests by the dozen: it is
+  // worked out once for the pair within a read, not once a request.
+  return queryRead(ctx,['request-readable',by,request.run,request.source] as const,()=>issuedReadable(ctx,by,{run:request.run!,source:request.source}));
+}
+async function issuedReadable(ctx:EngineContext,by:Principal,request:{run:string;source:string}):Promise<boolean>{
   const stored=await runById(ctx.deps.records.store,request.run);if(!stored||!canSeeRun(by,stored.body)||!await runReadableBy(ctx,by,stored.body))return false;
   if(stored.body.runner===by.id||stored.body.configurer===by.id)return true;
   const store=ctx.deps.records.store;

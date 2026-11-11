@@ -6,7 +6,7 @@
 // complete; a background pass writes the ones missing for the results stored before.
 import { ResultSummaryBody } from '../../../contracts/src/result-summary.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
-import type { Page, RecordStore, StoredRecord, Transaction } from '../../records/api.ts';
+import { verifiedBodyDigest, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
 import { step } from '../../telemetry/api.ts';
 import { resultStatistics } from '../statistics.ts';
 import { boundOf, groundsOf } from './ground-extraction.ts';
@@ -14,6 +14,22 @@ import { INDEX, SCHEMAS, putResult } from './store.ts';
 
 export type ResultSummary = ResultSummaryBody;
 const STORED = '1';
+
+/**
+ * Whether a stored summary has the summary's shape depends on its content alone, and the digest the store verified it
+ * under stands for that content. A page of waiting requests asked for the summary of the same result once a request, and
+ * checked its hundred-odd grounds against the reference grammar each time. The check is kept by the record's digest; the
+ * record is still read and verified on every call.
+ */
+const SHAPED_LIMIT = 4096;
+const shaped = new Map<string, true>();
+function hasSummaryShape(record: StoredRecord<unknown>): boolean {
+  const digest = verifiedBodyDigest(record.body) === record.digest ? record.digest : undefined;
+  if (digest !== undefined && shaped.has(digest)) { shaped.delete(digest); shaped.set(digest, true); return true; }
+  if (!ResultSummaryBody.safeParse(record.body).success) return false;
+  if (digest !== undefined) { shaped.set(digest, true); if (shaped.size > SHAPED_LIMIT) shaped.delete(shaped.keys().next().value!); }
+  return true;
+}
 
 /** The summary of a result: a function of the result and its digest alone. */
 export function summarize(result: ValidationResult, digest: string): ResultSummary {
@@ -52,9 +68,9 @@ export async function saveResult(store: RecordStore, result: ValidationResult, c
 export async function resultSummaryOf(store: RecordStore, run: string, digest: string): Promise<ResultSummary | null> {
   // The oldest summary of a result is the one stored with it: a record appended later cannot take its place.
   const found = (await store.find<unknown>({ kind: 'result_summary', key: INDEX.summaryResult, value: digest, limit: 1 })).items[0];
-  if (found !== undefined && found.schema === SCHEMAS.summary) {
-    const parsed = ResultSummaryBody.safeParse(found.body);
-    if (parsed.success && parsed.data.result === digest && parsed.data.run === run) return parsed.data;
+  if (found !== undefined && found.schema === SCHEMAS.summary && hasSummaryShape(found)) {
+    const body = found.body as ResultSummary;
+    if (body.result === digest && body.run === run) return body;
   }
   const record = await store.get<ValidationResult>(digest);
   return record?.kind === 'validation_result' && record.schema === SCHEMAS.result && record.body.run === run ? summarize(record.body, digest) : null;
