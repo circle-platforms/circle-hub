@@ -12,7 +12,7 @@ import { parseManifest } from './functions/manifest.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.15.0'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
+  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.16.0'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
@@ -72,8 +72,10 @@ test('the examples use the original synthetic contract, matching profile and fin
 // user is asked, in the words of the reference engine's ask_user tool, and that a subagent never asks.
 // 3.15.0 the bullet on parameter values (within the manual's statement of the parameter the brief now lists; a conflict
 // between the author's step and the manual goes to the user; a value only the device produces at run time is not copied from
-// an earlier return) and the reference's rule on an authored negative in place of the judgement by description.
-const SKILL_BUDGET = 9470;
+// an earlier return) and the reference's rule on an authored negative in place of the judgement by description; 3.16.0 the
+// bullet on device methods (the ones the contract declares for the device, as the reference lowers every device step) and
+// on a read window for a long device command instead of a guessed wait.
+const SKILL_BUDGET = 9630;
 test('the client skill specifies verification and continuation without a Hub content generator', () => {
   const skill = read('SKILL.md'); assert.ok(skill.length <= SKILL_BUDGET, `SKILL.md is ${skill.length} chars, budget ${SKILL_BUDGET}`); for (const phrase of ['受限结构', '按合成合约核对', '按发布的运行器合约核对', '不证明在真实设备上跑得通', '自动重交', '第二次 start_run']) assert.ok(skill.includes(phrase));
 });
@@ -96,6 +98,8 @@ test('the client skill and the closing procedure carry the reference rules on pa
     '是作者步骤与手册冲突：不照写上机，也不自己改，按上文“问用户”处理；作者要测的正是非法输入时照写',
     '只有设备运行时才产生的值（生成的文件名、编号）不从上一次上机的回显抄进计划',
     '不把这句话写进 text，也不删掉这项检查，用块计划的 not_found 断言指向那次观察的输出',
+    '设备上的配置和观察都用运行器合约为该设备声明的设备方法（与块计划同一组），照 InfoTest',
+    '要跑很久的设备命令（配置同步、整机清理）在那一步给出读窗（keywords 的 timeout，秒数不超过环境的 max_wait_seconds）',
   ]) assert.ok(skill.includes(phrase), phrase);
   assert.ok(!skill.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
   for (const phrase of [
@@ -104,6 +108,7 @@ test('the client skill and the closing procedure carry the reference rules on pa
     '先确认上一轮的修改进了这一卷；进了而同一句失败原话又出现，那个方向就错了',
     '返工保住作者的范围和每一项期望',
     'submit-plans 会跳过本运行排除的条目并报出来，不用复制或改写文件',
+    '这台设备的清理没有发出：在说明的 batch 里写明是哪台设备、哪些清理没有发出；照 InfoTest 的床态体检，残留没核清之前不派发下一卷',
     '说明不支持的，是作者步骤与手册冲突，judged 里逐字写出手册那一句和它的引用，不写 defect_candidate',
   ]) assert.ok(closing.includes(phrase), phrase);
 });

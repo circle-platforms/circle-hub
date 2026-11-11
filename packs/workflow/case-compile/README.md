@@ -437,6 +437,34 @@ already reads the author's lines along exact tree edges, so the named command's 
 Replayed over run 20: none of the 53 accepted case plans has such a line; the one case that replaced the author's command is
 refused.
 
+### 3.16.0: device command lines through the declared device methods, a read window for a long command
+
+Run 23, case 16 (a configuration sync between two units), dispatches 3 and 4. The plan configured the peer unit with the
+configuration method and later observed it with the enable method. While the sync ran, the device moved the peer's session out
+of configuration mode by itself ("***System is busy. No longer in config mode. ***"). The runner's enable method keeps its own
+record of the mode and, believing it was still in configuration mode, sent `exit` first; at the enable prompt that logs the
+session out (lib/apv/apv.py cmd_enable; the same `exit` ended a manual session at that prompt). Every later command on the
+peer timed out, the case's own cleanup of the peer and the runner's cleanup of it were never sent (the runner's cleanup runs over
+the same session, so no cleanup rule could have reached the device), and the peer kept its HA and sync settings twice. The
+configuration method does not have this problem: when its output shows the enable prompt it takes configuration mode back and
+sends the command again. The plan also waited a fixed 120 seconds after the sync command while the sync took about 165.
+
+The reference never leaves this choice to the writer: its block compiler lowers every device configuration and observation to
+the configuration method (main/case_compiler/blocks.py, "观测走 cmd_config"; the bed's own scripts call it 217,600 times against
+9 calls of the enable method, all `no page`), and it gives a long device step an explicit read window on that method only
+(`timeout_s`). The contract already says the same for the block form: its device output methods are the configuration methods.
+Now a flat plan follows that declaration (`functions/plan-commands.ts deviceMethodRefusal`): a device command line sent with a
+method the contract does not declare for that object's output is refused before dispatch, naming the declared methods the bed
+profile allows for device command lines there. A contract without that declaration is not checked. SKILL.md says to use those
+methods and to give a long device command its read window (the method's `timeout`, within the profile's `max_wait_seconds`)
+instead of a guessed wait. The closing procedure says that a device whose session was lost mid-case did not get its cleanup,
+that the batch note names it, and that, as the reference's bed check does on residue, the next volume waits until the bed is
+checked and the user is told.
+
+The bed's cleanup script is not changed. Its rule for HA (`clear ha all`, with no `ha off` before it) is refused while the unit
+is still in its domain, which matters only on a live session when the plan left HA on; a plan's own cleanup turns HA off, and the
+device's refusal is listed by program since 3.15.0.
+
 ### 3.15.0: a parameter's value within the manual's statement, authored negatives, commands the device refused
 
 Run 23, one mind map, three dispatches. One case configured a host name with a character the manual's row for that

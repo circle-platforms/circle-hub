@@ -4,6 +4,7 @@ import {compileGrammar,commandIdentity,parseCommandState,commandTokens,type Comm
 import {isRecord} from './text.ts';
 import {bindArguments} from './binding.ts';
 import {refusedAccess,runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
+import {runtimeBlocks} from './block-runtime.ts';
 import type {RuntimeProfile} from './profile.ts';
 import type {PlanSlots} from './slots.ts';
 import {identityOf,identityKey} from './typed-contract.ts';
@@ -61,6 +62,21 @@ export function accessRefusal(contract:RuntimeContract,profile:RuntimeProfile,ca
  const others=profile.allowed.filter(call=>call.object===object&&call.method!==method&&Object.values(call.parameters).some(role=>role==='device_cli')&&!refusedAccess(contract,object,call.method).includes(level)).map(call=>call.method);
  return `命令“${entry!.words.join(' ')}”在锁定命令树里的级别是 ${level}，方法 ${method} 下发时所在的提示符不接受这一级别的命令（运行器合约 refused_access），设备会以语法错误拒绝；${others.length?`这台设备上可以下发它的方法：${others.join('、')}`:'这台设备上没有声明可以下发它的方法，缺的是运行器合约的方法声明，由合约维护者补'}`;
 }
+/**
+ * The method a device command line is sent with, against the methods the runner contract declares for that object's output
+ * (runtime.block_model.output_methods, the methods the block form lowers every device step to). The reference compiler
+ * lowers every device configuration and observation to its configuration method, so a flat plan follows the same
+ * declaration: a device command line sent with a method the contract does not declare for that object is refused, naming
+ * the declared methods the bed profile allows for device command lines there. A contract without that declaration for the
+ * object, or a declared method, is not checked; nothing is read from a method's name.
+ */
+export function deviceMethodRefusal(contract:RuntimeContract,profile:RuntimeProfile,object:string,method:string):string|null{
+ const blocks=runtimeBlocks(contract),outputs=blocks&&Array.isArray(blocks.output_methods)?blocks.output_methods.filter(isRecord):[];
+ const declared=[...new Set(outputs.filter(row=>row.object===object&&typeof row.method==='string').map(row=>row.method as string))];
+ if(!declared.length||declared.includes(method))return null;
+ const usable=profile.allowed.filter(call=>call.object===object&&declared.includes(call.method)&&Object.values(call.parameters).some(role=>role==='device_cli')).map(call=>call.method);
+ return `设备命令行要用运行器合约为 ${object} 声明的设备方法下发（runtime.block_model.output_methods），方法 ${method} 不在其中；照 InfoTest，设备上的配置和观察都经这些方法下发。${usable.length?`这台设备上可以用：${usable.join('、')}`:'环境配置没有放行这些方法里能下发设备命令行的，缺的是环境配置的放行，由维护者补'}`;
+}
 export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null;answers:Set<number>}{
  const dialogue=confirmationSteps(contract,profile,slots,readCommandPolicy(isRecord(raw)?raw.policy:undefined));
  const lines=deviceCommandLines(contract,profile,slots,dialogue.answers),answers=dialogue.answers;
@@ -78,7 +94,8 @@ export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slo
  }
  const grammar=compileGrammar(definitions);
  for(const {line,pointer,object,method}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line) as {status:CommandParseStatus;missing?:string},parsed=commandIdentity(grammar,line),identity=parsed?identityOf(parsed):null;
-  if(identity){byLine.set(line,identity);const refusal=accessRefusal(contract,profile,catalog,identity,object,method);if(refusal)note(pointer,refusal,'refute');}else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
+  const methodRefusal=deviceMethodRefusal(contract,profile,object,method);if(methodRefusal)note(pointer,methodRefusal,'refute');
+  if(identity){byLine.set(line,identity);const refusal=methodRefusal?null:accessRefusal(contract,profile,catalog,identity,object,method);if(refusal)note(pointer,refusal,'refute');}else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
  }
  const identities=[...new Map([...byLine.values()].map(identity=>[identityKey(identity),identity])).values()];
  declarations(identities);

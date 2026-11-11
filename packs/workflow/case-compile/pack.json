@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.15.0",
+  "version": "3.16.0",
   "kind": "workflow",
   "dependencies": [
     {
@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "046bd496381155c4d339cd425c2b1553fd8cfd01fe891eb968feea7c98034af8",
-      "size": 21023
+      "sha256": "ce42169a9fabf3ef2c5d27dba1ca9dd2c6ef2b12ce05d9dc7c32244f2091fba2",
+      "size": 21408
     },
     {
       "path": "checks.json",
@@ -268,8 +268,8 @@
     },
     {
       "path": "functions/plan-commands.ts",
-      "sha256": "397667178f23ea07ae64ee621a9d9e61f702b8fd65fd40fdf5b14b05d38a5397",
-      "size": 11631
+      "sha256": "e917c6912f98e6f7aa2c5cc9c6088bedc8102892406a307b8b9e53b6f3de728a",
+      "size": 13588
     },
     {
       "path": "functions/profile.ts",
@@ -438,7 +438,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "a28547fc65341c4917f6a04bb854a1d8c806976c4eb4e62b93677e2aad864fcb",
+      "sha256": "428329eb9cc43bc43177d315ef51f28d168f2c606bd9de0e4bc242987442ea38",
       "size": 202654
     },
     {
@@ -483,7 +483,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "024d2e5871095b52bc4ccecbe1ac288e2852111f1aacd1013244ee60cd8505d8",
+      "sha256": "890816cc3bdd4f88c350b95d2b1ac6038678f48c09ec5bc887e65804c50aab82",
       "size": 202658
     },
     {
@@ -563,7 +563,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "a76d8de2acfc9ba96e632b44866fe1917959fcfa3ac2e40c962995b45e439cc7",
+      "sha256": "e1f042e2c5bc92ba246251f5935a96c3a3cc2d30e3d9e60fe2a92aaf7090c965",
       "size": 202608
     },
     {
@@ -608,7 +608,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "cf4a878fa34ac25fd822eff46ed378a0eef467145e4b8c87c97bf4950dc3a5df",
+      "sha256": "683051a7ad4e9d34ee1b71b648619af0292a3d4b8788e01498bde789e5f67253",
       "size": 202612
     },
     {
@@ -703,7 +703,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "84335d564e0bf7402a761eacbbc743f9109c41bcf45875c07d8af3d0b0527773",
+      "sha256": "21dcb469b0310bbec59229c9c9996962d7c88ba0a2631fbf121474bcf359a0b8",
       "size": 406
     },
     {
@@ -718,8 +718,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "b0253f320789c2ad72e2a378a594350dd0c2c0ce4f8020de343933adbf00a563",
-      "size": 9548
+      "sha256": "5b2bbb2258e5067ff693c1c9ae6a376c15cab56e8bac2acbf8bac7bd3f0b4173",
+      "size": 9886
     },
     {
       "path": "tools/download-returns.ts",
