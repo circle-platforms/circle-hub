@@ -50,6 +50,7 @@ export function checkAnswer<N extends ToolName>(name: N, raw: ToolCallResult): A
   assert.match(raw.content[1].text ?? '', /^供模型引用\n/, `${name}: the second block is for model references`);
   const modelAnswer = JSON.parse(raw.content[1].text!.slice('供模型引用\n'.length));
   delete modelAnswer.original_cases;
+  delete modelAnswer.source_context;
   assert.deepEqual(modelAnswer, raw.structuredContent, `${name}: the model block preserves the complete answer`);
   return { isError: raw.isError, out, text: raw.content[0].text ?? '', raw };
 }
