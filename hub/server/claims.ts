@@ -189,12 +189,13 @@ export function userNextStep(layer: Pick<LayerResult, 'exit'>): string {
 }
 
 export function userClaimText(claim: Claim): string {
-  const unknown = claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || claim.statement.verdict === 'unknown' || claim.statement.verdict === 'abstain';
+  const partial = claim.qualifier.coverage?.complete === false || claim.qualifier.marks.includes('partial');
+  const unknown = partial || claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || claim.statement.verdict === 'unknown' || claim.statement.verdict === 'abstain';
   const status = unknown ? '未知' : claim.qualifier.nature === 'judgment' || claim.warrant.producer === 'model' ? '未确认' : '已确认';
   const judgment = unknown ? undefined : claim.statement.verdict === 'support' ? '正确' : claim.statement.verdict === 'refute' ? '错误' : undefined;
   const parts = [claim.statement.text, `状态${status}`, judgment === undefined ? undefined : `判断${judgment}`];
   if (unknown || judgment === '错误') {
-    parts.push(`原因${claim.statement.reason === undefined ? '还没查清' : REASON_TEXT[claim.statement.reason]}`, '下一步由使用者核对原始用例和资料');
+    parts.push(`原因${partial ? '缺资料' : claim.statement.reason === undefined ? '还没查清' : REASON_TEXT[claim.statement.reason]}`, '下一步由使用者核对原始用例和资料');
   }
   const quotes = claim.resolutions?.map(value => value.text) ?? [];
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);

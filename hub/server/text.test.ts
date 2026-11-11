@@ -415,11 +415,11 @@ const steps=Array.from({length:2000},(_,i)=>'第 '+(i+1)+' 步：逐条核对用
 });
 
   test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
-const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);assert.equal(linesOf(text).filter(line=>line.includes('判断错误')).length,20);for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));assert.doesNotMatch(text,/SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20);
+const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);assert.equal(linesOf(text).filter(line=>line.includes('判断错误')).length,20);for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));assert.doesNotMatch(text,/SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20);const unknown=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_UNAVAILABLE',message:'资料尚未取得',fix:'使用者请管理员核对权限'}],trace:TRACE}));assert.match(unknown,/状态未知；原因缺资料/);assert.doesNotMatch(unknown,/判断错误/);
 });
 
   test('requirement facts say the accepted producer only: no producer kind the contracts do not give', () => {
-const text=toolText('start_run',startAnswer(runOf(items(5))));assert.doesNotMatch(text,/生产者|接受的生产者|记账型|门禁型/);assert.match(text,/决定者程序/);
+const text=toolText('start_run',startAnswer(runOf(items(5))));assert.doesNotMatch(text,/生产者|接受的生产者|记账型|门禁型/);assert.match(text,/决定者程序/);const run=runOf(items(1));delete run.items[0].fields.autoid;run.items[0].fields.case_id='CASE-0';run.items[0].label='CASE-0';const recomposed=toolText('start_run',startAnswer(run));assert.match(recomposed,/原始用例 CASE-0 标题未知/);assert.doesNotMatch(recomposed,/原始用例 CASE-0 CASE-0/);
 });
 
   test('item locations: one rule when they follow the ids; per item for a short list without one; where to read them for a long one', () => {
@@ -524,7 +524,7 @@ const value={slots:{schema:{properties:{findings:{type:'array',items:{type:'stri
 });
 
   test('a page of many nodes shows every node with all its entries and children (decision 158)', () => {
-const root=H('d');const nodes=Array.from({length:100},(_,i)=>({path:'/catalog/menu'+i,reference:'tree:'+root+'/catalog/menu'+i,name:'menu'+i,level:'branch',digest:H('3'),children:Array.from({length:30},(_,k)=>({name:'item'+k,path:'/catalog/menu'+i+'/item'+k,digest:H('4')})),entries:Array.from({length:4},(_,k)=>({entry:H('5'),kind:'definition',statement:'menu'+i+' 的第 '+k+' 个签名',reference:'tree:'+root+'/catalog/menu'+i+'@'+H('5')}))}));const answer=GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes,trace:TRACE});const text=toolText('get_nodes',answer);assert.equal(linesOf(text).filter(line=>/^menu\d+$/.test(line)).length,100);assert.equal(linesOf(text).filter(line=>/个签名$/.test(line)).length,400);assert.equal(linesOf(text).filter(line=>/^item\d+$/.test(line)).length,3000);assert.doesNotMatch(text,/tree:|枝|sha256/);
+const root=H('d');const nodes=Array.from({length:100},(_,i)=>({path:'/catalog/menu'+i,reference:'tree:'+root+'/catalog/menu'+i,name:'menu'+i,level:'branch',digest:H('3'),children:Array.from({length:30},(_,k)=>({name:'item'+k,path:'/catalog/menu'+i+'/item'+k,digest:H('4')})),entries:Array.from({length:4},(_,k)=>({entry:H('5'),kind:'definition',statement:'menu'+i+' 的第 '+k+' 个签名',reference:'tree:'+root+'/catalog/menu'+i+'@'+H('5')}))}));const answer=GetNodesOutput.parse({call_result:'ok',errors:[],root,nodes,trace:TRACE});const text=toolText('get_nodes',answer);assert.equal(linesOf(text).filter(line=>/^menu\d+$/.test(line)).length,100);assert.equal(linesOf(text).filter(line=>/个签名$/.test(line)).length,400);assert.equal(linesOf(text).filter(line=>/^item\d+$/.test(line)).length,3000);assert.doesNotMatch(text,/tree:|枝|sha256/);const contribution={layer:'contribution',product:'synthetic',root,path:'/catalog/menu0',cited_fragment:H('6'),kind:'assertion',statement:'保留的原句',source:{reference:'src:'+H('b'),quote:'原句',fragment:H('7'),provenance:'observed',records:[H('8')],sources:[H('b')]},relation:{kind:'contradicts',other:{reference:'src:'+H('c'),quote:'另一原句',fragment:H('8'),provenance:'observed',records:[H('9')],sources:[H('c')]}},submitted_by:'usr_0123456789abcdefghjkmnpqrs',session:null,submitted_at:'2026-01-01T00:00:00.000Z',model:'scripted-model@test',basis_rank:'judgment',applicability:null};const withdrawn=toolText('get_nodes',{...answer,nodes:[{...answer.nodes![0],contributions:[{record:H('9'),contribution,status:'grounds_withdrawn',note:'旧内部提示'}]}]});assert.match(withdrawn,/资料或证据已撤回/);assert.match(withdrawn,/两份资料的说法有冲突；状态未知/);assert.doesNotMatch(withdrawn,/旧内部提示|rec:|usr_/);
 });
 
   test('a manual section of 137 entries shows all of them: run 9 got 23 and untitled references for the rest', () => {
@@ -639,7 +639,38 @@ describe('through the MCP server: the ways to read the rest that the notes give 
   });
 
   test('a 4,000-line upload read by reference comes whole through the server, with its disclosure, and a cursor reads on', async () => {
-const client=await server.client(server.admin.token);const text=Array.from({length:4000},(_,i)=>'第 '+i+' 行 😀').join('\n');const uploaded=await client.call('upload_file',{file_path:Buffer.from(text).toString('base64')});const reference=String(uploaded.structuredContent.reference);const read=await client.call('get_nodes',{reference});const shown=String((read.content as {type:string;text:string}[])[0].text);assert.ok(shown.includes(text));assert.doesNotMatch(shown,/^追踪 /m);assert.equal(read.structuredContent.content && (read.structuredContent.content as {text:string}).text,text);await client.close();
+    const client = await server.client(server.admin.token);
+    const text = Array.from({length:4000}, (_, index) => `第 ${index} 行 😀`).join('\n');
+    const uploaded = await client.call('upload_file', {file_path:Buffer.from(text).toString('base64')});
+    const reference = String(uploaded.structuredContent.reference);
+    assert.equal(uploaded.content.length, 2);
+    assert.equal(uploaded.content[1].text?.split('\n')[0], '供模型引用');
+    assert.deepEqual(JSON.parse(uploaded.content[1].text!.slice('供模型引用\n'.length)), uploaded.structuredContent);
+    assert.doesNotMatch(uploaded.content[0].text!, /src:/);
+    const read = await client.call('get_nodes', {reference});
+    const shown = read.content[0].text!;
+    assert.ok(shown.includes(text));
+    assert.doesNotMatch(shown, /^追踪 /m);
+    assert.equal((read.structuredContent.content as {text:string}).text, text);
+    assert.equal(read.content.length, 2);
+    assert.deepEqual(JSON.parse(read.content[1].text!.slice('供模型引用\n'.length)), read.structuredContent);
+    await server.assign(server.admin.principal, 'review');
+    server.fakes.runs.items = subject => [{id:'synthetic:n1',label:'合成原始用例',location:subject+'/kityminder@1/n/n1',fields:{autoid:'CASE-SYNTHETIC-1',title:'合成原始用例'}}];
+    const started = await client.call('start_run', {pack:'review',inputs:{subject:{reference}}});
+    const run = started.structuredContent.run as {run:string};
+    const original_cases = [{id:'synthetic:n1',autoid:'CASE-SYNTHETIC-1',title:'合成原始用例'}];
+    assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
+    assert.deepEqual(JSON.parse(started.content[1].text!.slice('供模型引用\n'.length)), {...started.structuredContent,original_cases});
+    assert.doesNotMatch(started.content[0].text!, /rec:|run_/);
+    const refused = await client.call('submit_result', {run:run.run,model:'scripted-model@test',items:[{item:'synthetic:n1',handling:'handled',slots:{findings:[]}}],notes:'quote-mismatch'});
+    const references = JSON.parse(refused.content[1].text!.slice('供模型引用\n'.length));
+    assert.deepEqual(references, {...refused.structuredContent,original_cases});
+    assert.match(references.record, /^rec:[0-9a-f]{64}$/);
+    assert.equal(references.errors[0].item, 'synthetic:n1');
+    assert.equal(references.errors[0].path, '/items/0/slots');
+    assert.equal(references.original_cases[0].autoid, 'CASE-SYNTHETIC-1');
+    assert.doesNotMatch(refused.content[0].text!, /rec:|synthetic:n1|\/items\/0\/slots/);
+    await client.close();
 });
 });
 

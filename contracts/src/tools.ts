@@ -185,7 +185,7 @@ export const AcceptedBy = z.strictObject({
   type: z.string().min(1),
   inputs: z.array(z.strictObject({ pack: z.string().describe('id@version'), slot: z.string().min(1), role: SourceRoleSchema })),
 });
-export const StartRunOutput = Envelope.extend({ run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
+export const StartRunOutput = Envelope.extend({ record: referenceUriOf('rec').optional().describe('Immutable run record reference for machine readers'), run: RunSummary.optional(), result: ProductionResult.optional(), accepted_by: z.array(AcceptedBy).optional(), local_tools: LocalToolsSummary.optional().describe('the tools/ files of the pack this run froze; absent when it ships none. An answer-level fact: the run record itself never changes') }).superRefine((o, ctx) => {
   if ((o.call_result === 'ok') !== (o.run !== undefined)) issue(ctx, ['run'], 'an ok answer carries the run and an error answer carries none');
   if (o.result !== undefined && o.run === undefined) issue(ctx, ['result'], 'a result belongs to a run');
   if (o.local_tools !== undefined && o.run === undefined) issue(ctx, ['local_tools'], 'local tools belong to a run');
@@ -324,6 +324,7 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
+  record: referenceUriOf('rec').optional().describe('Immutable validation result record reference for machine readers'),
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
   withdrawn_grounds_hidden_count:z.number().int().nonnegative().optional().describe('Count of currently unreadable withdrawn grounds, without their identities'),
   acceptance: AcceptanceSchema,

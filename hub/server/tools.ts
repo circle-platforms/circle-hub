@@ -3,14 +3,7 @@ import {knowledgeMessage} from './capacity.ts';
 import {join} from 'node:path';
 import { KnowledgeError } from '../knowledge/api.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
-// The six tools (D06) over the ports: input parsing, the semantics the server owns (list_task_packs, upload_file, get_nodes)
-// and delegation to RunsService for the rest. Every answer is validated against the tool's output schema before it is sent;
-// one that does not conform is an internal error and never reaches the caller (D05). isError is true only when the answer is
-// a protocol error or a receipt that is not accepted: call_result 'error' (the envelope ties the two together); unknown
-// stays inside an accepted answer and is never an error. The content is one block of plain Chinese text (D05 R[0]); the
-// JSON is the structuredContent only. Each handler also says what the text may use besides the answer (TextContext): the
-// server pages content read by reference (get_nodes {reference, cursor}), so every text may offer page cursors; start_run
-// adds the run record, the whole production result and the evidence gaps, submit_result the stored result.
+// Validate tool answers before sending reader-facing prose and a separate model-reference block.
 import { readFileSync } from 'node:fs';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
@@ -456,10 +449,11 @@ const startRun: Handler = async (deps, call, args) => {
   let text: TextContext = {};
   if (deps.runsDetail !== undefined) {
     const detail = await deps.runsDetail.startRunDetailed(call.principal, parsed.data, call.context);
-    answer = detail.answer as Answer;
+    const record = recordReference(detail.runRecord);
+    answer = { ...detail.answer, ...(record === null ? {} : { record }) } as Answer;
     const named = (answer.result as { reference?: unknown } | undefined)?.reference;
     text = {
-      record: recordReference(detail.runRecord),
+      record,
       // Only the result the answer names: its counts and its problems must be of one result.
       production: detail.production !== null && detail.production.reference === named ? detail.production.result : null,
       unavailable: detail.unavailable ?? [],
@@ -525,7 +519,8 @@ const submitResult: Handler = async (deps, call, args) => {
   const run = args.run;
   if (typeof run === 'string' && RunId.safeParse(run).success) call.state.runId = run;
   const answer = { ...((await deps.runs.submitResult(call.principal, args, call.context)) as Answer) };
-  return { answer, text: { record: await storedResult(deps, call, answer) } };
+  const record = await storedResult(deps, call, answer);
+  return { answer: { ...answer, ...(record === null ? {} : { record }) }, text: { record } };
 };
 
 /** rec:<digest> of the validation result record an answer carries, or null (no result, or no record of it). */
@@ -832,9 +827,11 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
     text = fallbackText(name, value, context);
   }
   text=feedingText(text,value);
-  // D05 R[0], display rule 11: content is plain text, the JSON is structuredContent; no second block repeats it.
   return {
-    content: [{ type: 'text', text }],
+    content: [
+      { type: 'text', text },
+      { type: 'text', text: '供模型引用\n' + JSON.stringify({ ...value, original_cases: context.items?.map(item => ({ id: item.id, autoid: item.fields.autoid ?? item.fields.case_id ?? null, title: item.fields.title ?? null })) }) },
+    ],
     structuredContent: value,
     isError: value.call_result === 'error',
   };
