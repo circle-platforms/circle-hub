@@ -951,6 +951,8 @@ function oneNamedGroup(pattern: string): boolean {
   return groups === 1;
 }
 const extraction = z.strictObject({command:z.string().min(1).max(10000),pattern:z.string().min(1).max(2000).refine(oneNamedGroup)});
+const linePattern = z.string().min(1).max(2000).refine(p => compiled(`^(?:${p})$`), { message: '行模式不是有效的正则' });
+const residueProbe = z.strictObject({ command: z.string().min(1).max(500), closing: linePattern, header_patterns: z.array(linePattern).max(20).default([]), failure_patterns: z.array(linePattern).max(20).default([]) });
 /**
  * Which of the bound manifest's devices commands are dispatched to (P07 R[1], C07 R[4]). Declared, never recognised: the
  * pointer to the type field of one device and the closed set of declared type values that are dispatch targets, compared
@@ -1052,12 +1054,17 @@ const bedState = z.strictObject({
     }
   }
 });
-const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction})).min(1).max(100)}).superRefine((p,ctx)=>{
+const probes = z.strictObject({devices:pointer.optional(),dispatch_targets:dispatchTargets.optional(),command_pattern:z.string().min(1).max(2000).refine(p=>p.startsWith('^') && p.endsWith('$') && compiled(p)),call,output:pointer,seats:z.array(z.strictObject({seat:z.string().min(1).max(200),index:z.number().int().min(0),manifest:z.strictObject({device:pointer,addresses:pointer,address:pointer}),version:extraction,interfaces:extraction,residue:z.array(residueProbe).min(1).max(10).optional()})).min(1).max(100)}).superRefine((p,ctx)=>{
   const match = new RegExp(p.command_pattern);
   if (new Set(p.seats.map(s=>s.seat)).size !== p.seats.length || new Set(p.seats.map(s=>s.index)).size !== p.seats.length) ctx.addIssue({code:'custom',message:'探测座位名称和序号不得重复'});
   if (p.dispatch_targets && p.devices === undefined) ctx.addIssue({code:'custom',message:'派发目标声明需要设备集合指针 devices'});
   if (p.dispatch_targets && new Set(p.dispatch_targets.types).size !== p.dispatch_targets.types.length) ctx.addIssue({code:'custom',message:'派发目标的设备类型闭集不得重复取值'});
   for (const seat of p.seats) for (const step of [seat.version,seat.interfaces]) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'探测命令不符合声明的命令形状'});
+  for (const seat of p.seats) {
+    const residue = seat.residue ?? [];
+    for (const step of residue) if (!match.test(step.command)) ctx.addIssue({code:'custom',message:'残留探测命令不符合声明的命令形状'});
+    if (new Set(residue.map(step=>step.command)).size !== residue.length) ctx.addIssue({code:'custom',message:'同一座位的残留探测命令不得重复'});
+  }
 });
 const base = z.strictObject({
   credential: SecretReference.optional(),

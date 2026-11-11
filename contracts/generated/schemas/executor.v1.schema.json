@@ -1338,6 +1338,53 @@
                   "pattern"
                 ],
                 "additionalProperties": false
+              },
+              "residue": {
+                "minItems": 1,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "closing": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "header_patterns": {
+                      "default": [],
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      }
+                    },
+                    "failure_patterns": {
+                      "default": [],
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      }
+                    }
+                  },
+                  "required": [
+                    "command",
+                    "closing",
+                    "header_patterns",
+                    "failure_patterns"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
