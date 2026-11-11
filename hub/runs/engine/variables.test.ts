@@ -1,4 +1,5 @@
 // Ordinary deployment snapshots stay local to one start_run, while frozen input bytes remain immutable.
+import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
@@ -28,7 +29,16 @@ test('one start_run shares a single variable snapshot across inputs and expected
  assert.match(Buffer.from((await h.kit.objects.get(sourceA.reference.slice(4)))!).toString(),/old-value/);
  assert.ok(!JSON.stringify(detailA!.run).includes('DEMO_CHOICE'),'the process snapshot is not serialized into the run');
 });
-test('recognized credentials refuse the whole start_run and reference-looking parameters stay literal', {skip},async t=>{
+// Issue 194: what a run is started with is content of its member, not refused for looking like a credential. The test after
+// this one turns the detectors on and covers the refusal they made.
+test('a parameter that looks like a credential starts the run like any other parameter', {skip},async t=>{
+ const h=await openHarness(pg,{review:{parameterSchema:{type:'string'}}});t.after(()=>h.close());
+ const text='password=DEMO!Password42';
+ const started=await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',inputs:{map:{external:'toy:mindmap:docq7'}},parameters:{strict:text}},h.call());
+ assert.equal(started.call_result,'ok');
+ const detail=await h.service.getRun(h.alice,started.run!.run);assert.equal(detail!.run.parameters?.strict,text);
+});
+test('recognized credentials refuse the whole start_run and reference-looking parameters stay literal', {skip},async t=>{ credentialDetectorsFor(t);
  const h=await openHarness(pg,{review:{parameterSchema:{type:'string'}}});t.after(()=>h.close());
  const input={pack:'toy-review',product:'Meadow',inputs:{map:{external:'toy:mindmap:docq7'}}};
  const rejected=await h.service.startRun(h.alice,{...input,parameters:{strict:'password=DEMO!Password42'}},h.call());

@@ -1,4 +1,5 @@
 // Relations are generic: synthetic terms and notes, no product dialect or model calls.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {canonicalBytes} from '../records/api.ts';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -159,7 +160,7 @@ test('a malformed scoped literal is diagnosed without failing production and its
   assert.equal(diagnostics.length,1);assert.equal(diagnostics[0].path,'/notes/bad');assert.equal(diagnostics[0].reason,'no_check');
 });
 
-test('accepted source coverage serves the same links to members without probing their raw-source permission',async t=>{
+test('accepted source coverage serves the same links to members without probing their raw-source permission',async t=>{ credentialDetectorsFor(t);
   const statement='password = FtpSyntheticCoverage7349';
   const data=[...entries,content('/notes/accepted','behaviour',statement,['alpha'])];
   const w=await makeWorld(postgres,{pack:{id:'widget',names:['WIDGET'],declaration:{catalogs:[],producers:[extraProducer('entities',{entries:data})],links:[rule]}}});t.after(()=>w.close());

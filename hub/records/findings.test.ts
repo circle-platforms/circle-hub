@@ -1,3 +1,5 @@
+// Issue 194: new content is no longer scanned for credentials. These tests open their records with the detectors of
+// credential-scan@3 (`detectors: true`): the holds and acceptances they cover still govern records stored under them.
 // Accepting the credential findings of a document (README decision 18): an admin's resource configuration
 // `scan:<sha256>` bound to scanDigest of the current scan. Synthetic documents only; addresses from 192.0.2.0/24.
 import assert from 'node:assert/strict';
@@ -153,7 +155,7 @@ test('scanDigest is the SHA-256 of the canonical {scanner, findings: [{detector,
 });
 
 test('a manual whose example URL carries a password is retain_only until an admin accepts its findings; the next read keeps its tier', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, packUser } = await people(kit);
   const bytes = manual(password());
@@ -215,7 +217,7 @@ test('a manual whose example URL carries a password is retain_only until an admi
 });
 
 test('only an enabled admin accepts or withdraws findings, and only for stored bytes with a hit', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader } = await people(kit);
   const secret = password();
@@ -252,7 +254,7 @@ test('only an enabled admin accepts or withdraws findings, and only for stored b
 });
 
 test('an acceptance covers exactly these bytes and this finding set', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin } = await people(kit);
   const secret = password();
@@ -303,7 +305,7 @@ test('an acceptance covers exactly these bytes and this finding set', async (t) 
 });
 
 test('an upload with a credential hit is refused even while an acceptance covers the same bytes', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader } = await people(kit);
   const bytes = manual(password());
@@ -319,7 +321,7 @@ test('an upload with a credential hit is refused even while an acceptance covers
 });
 
 test('an acceptance never lifts an upload: an earlier upload of bytes a newer scan flags stays retain_only for its uploader', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader } = await people(kit);
   const bytes = manual(password());
@@ -355,7 +357,7 @@ test('an acceptance never lifts an upload: an earlier upload of bytes a newer sc
 });
 
 test('withdrawing an acceptance makes the bytes retain_only again at once and for new reads; the chain of decisions stays', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, packUser } = await people(kit);
   const bytes = manual(password());
@@ -398,7 +400,7 @@ test('withdrawing an acceptance makes the bytes retain_only again at once and fo
 });
 
 test('a record of a newer scanner version is not covered by an acceptance of an older scan, also for records it covered', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, packUser } = await people(kit);
   const bytes = manual(password());
@@ -422,7 +424,7 @@ test('a record of a newer scanner version is not covered by an acceptance of an 
 });
 
 test('the acceptance and the accepted artifact keep positions and detector ids only, never the matched text', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin } = await people(kit);
   const secret = password();
@@ -442,7 +444,7 @@ test('the acceptance and the accepted artifact keep positions and detector ids o
 });
 
 test('the newest record a reader may read decides readable(), text() and source(); another person\'s upload never outranks the rest', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader, packUser } = await people(kit);
   const bytes = Buffer.from('# 合成的产品说明\n\n第一节。\n');
@@ -472,7 +474,7 @@ test('the newest record a reader may read decides readable(), text() and source(
 });
 
 test('another person\'s upload of the same bytes never changes the record, media type or provenance a reader of the Hub\'s read gets', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader, packUser } = await people(kit);
   const bytes = Buffer.from('# 合成的公开手册\n\n## show version\n\n显示版本。\n');
@@ -501,7 +503,7 @@ test('another person\'s upload of the same bytes never changes the record, media
 });
 
 test('source() and text() pinned to one record: that record decides when the reader may read it, else null', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader, packUser } = await people(kit);
   const bytes = Buffer.from('# 合成的产品说明\n\n第二节。\n');
@@ -539,7 +541,7 @@ test('source() and text() pinned to one record: that record decides when the rea
 });
 
 test('a scan with more findings than it keeps cannot be accepted, and no configuration lifts it', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, packUser } = await people(kit);
   // 120 example URLs, then a line nobody would be shown: past the 100 kept findings and past the 101 hits a pattern looks for.
@@ -570,7 +572,7 @@ test('a scan with more findings than it keeps cannot be accepted, and no configu
 });
 
 test('an acceptance never lifts what a person supplied: a generated record with a person as author stays retain_only', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader } = await people(kit);
   // The canonical JSON of a value from the user's own record, as hub/runs ingests a rec: input (synthetic).
@@ -607,7 +609,7 @@ test('an acceptance never lifts what a person supplied: a generated record with 
 });
 
 test('an acceptance never lifts a record with a person as author that an older scanner passed', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin, uploader } = await people(kit);
   const bytes = canonicalBytes({ kind: 'submission', note: `ftp://user:${password()}@192.0.2.10/b.bin` });
@@ -641,7 +643,7 @@ test('an acceptance never lifts a record with a person as author that an older s
 });
 
 test('a note that copies text from where a finding is is refused, for every form a finding takes; the decision keeps no matched text', async (t) => {
-  const kit = await openTestRecords({ postgres });
+  const kit = await openTestRecords({ postgres, detectors: true });
   t.after(() => kit.close());
   const { admin } = await people(kit);
   const urlSecret = password();

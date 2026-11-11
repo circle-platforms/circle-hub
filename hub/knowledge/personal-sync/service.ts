@@ -7,7 +7,7 @@ import {MemoryVersionBody} from '../../../contracts/src/memory.ts';
 import {PersonalPackVersionBody} from '../../../contracts/src/sharing.ts';
 import {SyncObjectKindSchema,SyncModeSchema,KnowledgeEntryStatusSchema,ReadTierSchema,type SyncObjectKind} from '../../../contracts/generated/vocabulary.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../../contracts/generated/protocol.ts';
-import {canonicalize,sha256Hex,scanForCredentials,CREDENTIAL_SCANNER,RecordsError,type Principal,type Transaction,type PersonalSyncStore,type SourceArtifact,type PurgeRequester,type PurgePending} from '../../records/api.ts';
+import {canonicalize,sha256Hex,scanContent,CREDENTIAL_SCANNER,RecordsError,type Principal,type Transaction,type PersonalSyncStore,type SourceArtifact,type PurgeRequester,type PurgePending} from '../../records/api.ts';
 import {pathOf,pathSegments,parseReference,ReferenceSyntaxError,resolveReference,verifyQuote,type SourceRead} from '../../refs/api.ts';
 import type {KnowledgeContext} from '../context.ts';
 import type {KnowledgeSpaces,SpaceVersion} from '../spaces.ts';
@@ -159,7 +159,7 @@ export class PersonalKnowledgeSync{
   const source=async(id:string)=>{if(sourceData.has(id))return sourceData.get(id)!;const object=await graph.get(id);if(object.kind!==kinds.source_revision)return fail();const body=object.body;if(body.size>api.sourceBytes)return fail('SYNC_OBJECT_INVALID');
    const readBytes=async()=>{const bytes:Buffer[]=[];let size=0;for(const chunk of body.chunks){const part=await graph.get(chunk);if(part.kind!==kinds.bytes)return fail();const data=Buffer.from(part.body.bytes_base64,'base64');size+=data.length;if(size>body.size)return fail();bytes.push(data);}if(size!==body.size)return fail();const all=Buffer.concat(bytes,size);if(sha256Hex(all)!==body.raw_sha256)return fail('SYNC_OBJECT_HASH_MISMATCH');return all;};
    const all=await readBytes();
-   const scan=scanForCredentials(all);if(scan.findings.length||scan.truncated)return fail('SPACE_CREDENTIALS_DETECTED');
+   const scan=scanContent(all);if(scan.findings.length||scan.truncated)return fail('SPACE_CREDENTIALS_DETECTED');
    const directory=await locate(body.directory_id);
    const history=await this.#ctx.records.store.findMany({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[body.raw_sha256]},tx);
    const restrict=(artifact:SourceArtifact)=>('read'in artifact.body.origin&&!artifact.body.visibility.admins?4:artifact.body.read_tier===ReadTierSchema.enum.retain_only?3:artifact.body.read_tier===ReadTierSchema.enum.function_bytes_only?2:1);

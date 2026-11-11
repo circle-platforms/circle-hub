@@ -28,7 +28,7 @@ import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } 
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, RecordsError, AccessError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, RecordsError, AccessError, LimitError, scanContent, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -382,7 +382,7 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   // Scan before schema diagnostics can quote an unknown field name. This never resolves reference-looking text.
   let scanText:string|undefined;
   try {scanText=JSON.stringify(raw);}catch{/* Non-JSON values follow the canonical-domain refusal below. */}
-  if(scanText!==undefined&&scanForCredentials(Buffer.from(scanText,'utf8')).findings.length)return refused([protocolError('SUBMISSION_SCHEMA_VIOLATION','start_run 不受理含凭据的参数',{fix:'参数里不能有凭据；移除凭据后重试'})]);
+  if(scanText!==undefined&&scanContent(Buffer.from(scanText,'utf8')).findings.length)return refused([protocolError('SUBMISSION_SCHEMA_VIOLATION','start_run 不受理含凭据的参数',{fix:'参数里不能有凭据；移除凭据后重试'})]);
   if (!plain.canonical) {
     return refused([
       protocolError('SUBMISSION_SCHEMA_VIOLATION', '参数里有规范 JSON 表示不了的值（孤立的代理字符，或嵌套超过 1000 层）', {

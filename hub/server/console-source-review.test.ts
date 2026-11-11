@@ -1,9 +1,12 @@
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createTestHub} from './testing-real.ts';
 import {openConsole} from '../../tests/acceptance/support/console.ts';
 import {credentialReviewRequests} from '../knowledge/api.ts';
 import type {ActionBody,StoredRecord} from '../records/api.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 
 const now=new Date();
 

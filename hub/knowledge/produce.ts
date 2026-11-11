@@ -109,6 +109,8 @@ export interface ProduceInput {
   refreshSources?:ReadonlySet<string>;
   /** Run only these producer ids of the pack (the seedling production names its three); undefined runs all of the scope. */
   producers?: readonly string[];
+  /** The skill whose walk, run by the Hub, bound `sources`: written into the production's record (issue 34). */
+  directorySkill?: ProduceDetail['directory_skill'];
   /**
    * Source roles to merge onto the build for this production only (a seedling directory the stored build does not keep).
    * Present means every list of this production is one call: the complete group, not a batch cut.
@@ -575,7 +577,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
     await keep();
     const action = await writeProduceAction(
       context,
-      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement: null, reason: text },
+      { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: null, composition: null, sources: usedSources, missing, lists, directory_skill:input.directorySkill, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement: null, reason: text },
       null,
     );
     return result({ reason: text, action });
@@ -974,7 +976,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
         action: async (record, tx) => {
           const action = await writeProduceAction(
             context,
-            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement, reason: null },
+            { startedAt, sync, product: lineProduct, pack, build: recorded.build, root: root.digest, composition: record, sources: usedSources, missing, lists, directory_skill:input.directorySkill, listing_digest:input.listingDigest, source_failures:sourceFailures, problem_chunks:problems.chunks, calls: totals, placement, reason: null },
             tx,
           );
           // A build produced without a build record (not by a sync) gets one, so that builds are known from their records alone.
@@ -1441,6 +1443,7 @@ interface ProduceActionInput {
   calls: { made: number; reused: number };
   placement: ProduceDetail['placement'];
   reason: string | null;
+  directory_skill?: ProduceDetail['directory_skill'];
   problem_chunks?:ProblemChunks;
   listing_digest?:string;
   source_failures?:SourceObservation[];
@@ -1461,6 +1464,7 @@ export async function writeProduceAction(context: KnowledgeContext, input: Produ
     calls: { made: input.calls.made, reused: input.calls.reused },
     placement: input.placement,
     reason: input.reason,
+    ...(input.directory_skill?{directory_skill:input.directory_skill}:{}),
     ...(input.listing_digest?{listing_digest:input.listing_digest}:{}),
     ...(input.source_failures?.length?{source_failures:input.source_failures}:{}),
     ...(input.problem_chunks?{problem_chunks:input.problem_chunks}:{}),

@@ -1,4 +1,5 @@
 // Batched memory reads preserve scalar authorization, state and personal-payload integrity rules.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {makeWorld,startPostgres} from './test-support.ts';
@@ -45,7 +46,7 @@ test('memory batches reject wrong document bindings and missing active personal 
  assert.equal((await memory.precheckGrant(w.user,'/shared'))[0].code,'SOURCE_UNAVAILABLE');
 });
 
-test('batched grant preflight preserves scalar first-failure order and scans referenced original text',async t=>{
+test('batched grant preflight preserves scalar first-failure order and scans referenced original text',async t=>{ credentialDetectorsFor(t);
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  for(const key of ['first','second'])await memory.write(w.user,input(key));
  const heads=await w.kit.memoryIndex!.heads(w.user.id),first=heads[0],last=heads[1];

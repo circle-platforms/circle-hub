@@ -1,6 +1,7 @@
 // Producing roots from synthetic producers (temporary PostgreSQL, real sandboxed pack functions): nodes, composition,
 // digest stability, sharing of unchanged subtrees, refusal of entries that fail verification, credential-hit sources,
 // catalogs and spans left unplaced without a typed-judgment model.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { after, before, describe, test } from 'node:test';
@@ -163,7 +164,7 @@ describe('producing a root', () => {
     assert.equal(note?.nodes[0].entries[0].applicability, '起止构建 Rel_ACME_1_2_15');
   });
 
-  test('a source whose credential scan found something is never parsed into the tree; the reason names its digest', async (t) => {
+  test('a source whose credential scan found something is never parsed into the tree; the reason names its digest', async (t) => { credentialDetectorsFor(t);
     const w = await world(t);
     const secret = catalogXml({ system: [{ name: 'login', help: 'password = Xy7#kq9Lm2' }] });
     w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: secret, mediaType: XML });
@@ -232,7 +233,7 @@ describe('producing a root', () => {
     assert.ok(produced.warnings.some((warning) => warning.includes('store:manual:acme-1.2') && warning.includes('可选')));
   });
 
-  test('function-only bytes, a personal-credential read and bytes the scanner cannot inspect never enter the tree', async (t) => {
+  test('function-only bytes, a personal-credential read and bytes the scanner cannot inspect never enter the tree', async (t) => { credentialDetectorsFor(t);
     const w = await world(t);
     const cases: Array<[string, Parameters<World['external']['set']>[1], RegExp]> = [
       ['Rel_ACME_1_2_1', { bytes: catalogXml(BASE_CATALOG), mediaType: XML, readTier: 'function_bytes_only' }, /读取档位是“只许函数按引用读字节”/],

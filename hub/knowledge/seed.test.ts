@@ -3,7 +3,7 @@ import {createTestParserRegistry as createDefaultRegistry} from '../testing/pars
 // Synthetic only: loopback SVN, platform zx-u, version lines from 10.8, addresses in 192.0.2.0/24.
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -22,6 +22,9 @@ import { PACK_DIR } from '../../packs/system/svn/api.ts';
 import { knowledgeCliCommand } from './cli.ts';
 import { seedlingName } from './seedling.ts';
 import { formatSeedReport, knowledgeSeed, parseKnowledgeSeedArgs, seedRoles } from './seed.ts';
+import { directorySkill } from './directory-sources.ts';
+import { INDEX, ProduceDetail } from './store.ts';
+import { PACK_DIR as ADOC_SKILL_DIR } from '../../packs/skill/adoc-format/api.ts';
 import { catalogXml, makeWorld, sandboxIsolation, startPostgres, STATIC_PLAN_SOURCE, DEFAULT_SYNC, type World } from './test-support.ts';
 
 const LINE = '10.8';
@@ -192,6 +195,12 @@ test('seed reads the three sources over loopback SVN and records the revision', 
   assert.equal(body.origin.find((source) => source.role === 'app-manual')?.revision, '17');
   assert.equal(body.origin.find((source) => source.role === 'command-tree')?.revision, null);
   assert.equal(await loop.w.kit.pointers.get(seedlingName(loop.w.product.id, LINE)).then((pointer) => pointer?.target), seeded.root);
+  // No directory was walked: the production names no directory skill, and the report has no such line (issue 34).
+  assert.equal(seeded.directory_skill, undefined);
+  assert.doesNotMatch(text, /目录遍历/);
+  const productions = await loop.w.kit.store.findMany<{ detail: unknown }>({ kind: 'action', key: INDEX.produceRoot, values: [seeded.root!] });
+  assert.ok(productions.length > 0);
+  for (const production of productions) assert.equal(ProduceDetail.parse(production.body.detail).directory_skill, undefined);
 });
 
 test('a missing manual is named and does not write a seedling', { timeout: 120000 }, async (t) => {
@@ -390,6 +399,18 @@ test('an adoc root seeds one revision of the whole directory and a second run is
   assert.equal(formatSeedReport(first).includes(loop.authorization), false);
   assert.equal(formatSeedReport(first).includes('127.0.0.1'), false);
   assert.equal(formatSeedReport(first).includes('http:'), false);
+  // Issue 34 (decision 157): the production records which skill walked the directory, by the digest of the walk module,
+  // and that digest is the one the skill pack's own manifest lists for the file.
+  const manifest = JSON.parse(await readFile(join(ADOC_SKILL_DIR, 'pack.json'), 'utf8')) as { id: string; version: string; files: Array<{ path: string; sha256: string }> };
+  const listed = manifest.files.find((file) => file.path === 'functions/directory.ts');
+  assert.ok(listed, 'the skill pack ships the walk module');
+  const skill = { id: 'adoc-format', version: manifest.version, module: 'functions/directory.ts', sha256: listed.sha256 };
+  assert.deepEqual(await directorySkill(), skill);
+  assert.deepEqual(first.directory_skill, skill);
+  assert.ok(formatSeedReport(first).includes(`目录遍历 adoc-format@${manifest.version}（functions/directory.ts ${listed.sha256}）`));
+  const productions = await loop.w.kit.store.findMany<{ detail: unknown }>({ kind: 'action', key: INDEX.produceRoot, values: [first.root!] });
+  assert.ok(productions.length > 0);
+  for (const production of productions) assert.deepEqual(ProduceDetail.parse(production.body.detail).directory_skill, skill, 'every production of the root names the skill');
 });
 
 test('a server labelling the adoc files octet-stream still seeds when the producer declares text@1', { timeout: 120000 }, async (t) => {

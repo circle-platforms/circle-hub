@@ -8,7 +8,7 @@ import type { RootSource } from '../../contracts/src/knowledge.ts';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES, type CoreViolationCode, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { labelOf, type ProvenanceType } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, SourceArtifact, Transaction, StoredRecord } from '../records/api.ts';
-import { digestOf, disclosedExistence, scanForCredentials, sha256Hex } from '../records/api.ts';
+import { digestOf, disclosedExistence, scanContent, sha256Hex } from '../records/api.ts';
 import { ReferenceSyntaxError, parseReference, pathSegments, quoteMatches } from '../refs/api.ts';
 import type { KnowledgeContext } from './context.ts';
 import { CompositionView } from './composition.ts';
@@ -69,7 +69,7 @@ const refuse = (code: ContributionAdmissionCode, message: string, detail: Record
 
 function scanPublicText(texts: readonly string[]): void {
   for (const text of texts) {
-    const scan = scanForCredentials(new TextEncoder().encode(text));
+    const scan = scanContent(new TextEncoder().encode(text));
     if (!scan.inspected || scan.truncated || scan.findings.length > 0) refuse("CREDENTIAL_IN_UPLOAD", '回注文字、模型声明或会话标识未通过完整凭据扫描，缺少可安全公开的文本');
   }
 }

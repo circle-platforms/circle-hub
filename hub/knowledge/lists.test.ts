@@ -1,6 +1,7 @@
 // List slots (product@1 ProducerSource many): batches in list order, documents that cannot be read, checked, parsed or
 // that the producer fails on are skipped and listed while the rest is produced, optional and missing lists, list sources
 // used again within max_age_seconds or read again, fragments naming their element, and the per-node entry cap.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { TreeRootBody } from '../../contracts/src/knowledge.ts';
@@ -156,7 +157,7 @@ describe('list slots in batches', () => {
     ]);
   });
 
-  test('hostile documents are skipped one by one: a credential, no mind map, a crash, unparseable bytes; a foreign citation is refused', async (t) => {
+  test('hostile documents are skipped one by one: a credential, no mind map, a crash, unparseable bytes; a foreign citation is refused', async (t) => { credentialDetectorsFor(t);
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 3 })]);
     // Nine documents, four of them hostile: under half of the list is skipped (more fails the production, review.test.ts).
     const ids = documents(w, 1, 9);
@@ -279,7 +280,7 @@ describe('list sources used again within max_age_seconds', () => {
     assert.equal(older.root, second.root, 'equal content gives the same root whichever way the documents were loaded');
   });
 
-  test('stored loads use current acceptance without a re-read and become unreadable after withdrawal', async (t) => {
+  test('stored loads use current acceptance without a re-read and become unreadable after withdrawal', async (t) => { credentialDetectorsFor(t);
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const ids = documents(w, 1, 2);
     w.external.set(ids[1], { bytes: mindMap({ id: 'd2' }, [{ id: 'd2-c1', text: '[cmd: system show] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
