@@ -526,8 +526,6 @@ test('model calls cannot create links or rename directories through direct tools
 });
 
 test('the case-compile skill commands, filled in as Circle hands them to hooks, pass the skills home guard', () => {
-  // Cross-check for case-compile 3.9.6: every local command its published SKILL.md writes, with the client tree installed as
-  // the skill skills/case-compile/ of a skills home, is allowed by that home's generated guard.
   const dir = scratch();
   try {
     const home = join(dir, 'home'), hubUrl = 'https://hub.example.invalid/mcp';
@@ -538,14 +536,19 @@ test('the case-compile skill commands, filled in as Circle hands them to hooks, 
     const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
     const decide = (command: string) => { const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }), encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
     const text = readFileSync(join(pack, 'SKILL.md'), 'utf8');
-    const commands = [...[...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => m[1]), ...[...text.matchAll(/`(node <技能目录>[^`]*)`/g)].map((m) => m[1])];
-    assert.ok(commands.length >= 3 && commands.some((command) => command.includes("<<'EOF'\n%HUB_TOKEN%\nEOF")), 'normalize, fetch and generate, the token by a quoted here-document');
-    const values: Record<string, string> = { 技能目录: skill, 计划运行号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 运行号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 模型: 'synthetic-model', 目录: 'case-compile-run', 导出文件: 'export.json', 规整文件: 'normalized.json' };
+    const commands = [
+      ...[...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => m[1].split('\n').filter((line) => line.length > 0)),
+      ...[...text.matchAll(/^[^:\n]+: (tools\/\S+\.ts(?: [^\n]*)?)$/gm)].map((m) => `node <技能目录>/${m[1]}`),
+      ...[...text.matchAll(/`(node <技能目录>[^`]*)`/g)].map((m) => m[1]),
+    ];
+    assert.ok(commands.length >= 3, 'published command lines and local tool declarations');
+    const values: Record<string, string> = { 技能目录: skill, 脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 模型: 'synthetic-model', 自动化用例目录: 'case-plans', 新目录: 'case-compile-run', 导出文件: 'export.json', 规整文件: 'normalized.json' };
     for (const raw of commands) {
       // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
       const command = raw.replaceAll('%HUB_URL%', hubUrl).replace(/<([^<>'\s]+)>/g, (whole, name: string) => { assert.ok(Object.hasOwn(values, name), `placeholder ${whole} has no synthetic value`); return values[name]; });
       assert.ok(existsSync(/^node (\S+)/.exec(command)?.[1] ?? ''), `installed script: ${command}`);
-      const decision = decide(command); assert.equal(decision.decision, 'allow', `${command}\n${decision.reason}`);
+      const supplied = raw.includes('%HUB_URL%') ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
+      const decision = decide(supplied); assert.equal(decision.decision, 'allow', `${supplied}\n${decision.reason}`);
     }
     // The 3.9.5 spelling, a here-string after a relative script, is what this home refused.
     assert.equal(decide(`node tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
