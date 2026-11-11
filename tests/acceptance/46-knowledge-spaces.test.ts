@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../../hub/testing/records.ts';
 import { RecordsError } from '../../hub/records/api.ts';
 // Decision 131 phase 2 over the real assembly and official MCP client, with no products or business systems.
 import assert from 'node:assert/strict';
@@ -162,7 +163,7 @@ test('run space locks survive later writes and administrator reads remain limite
 });
 const csrf = (body: string) => /name="csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
 const spacePath = (space: string, path = '/', root?: string) => '/console/knowledge/space?' + new URLSearchParams({ space, path, ...(root ? { root } : {}) });
-test('console password sessions browse the three spaces and owner forms enforce grants, CSRF and administrator boundaries', async () => {
+test('console password sessions browse the three spaces and owner forms enforce grants, CSRF and administrator boundaries', async (t) => { credentialDetectorsFor(t);
   const ownConsole = await openConsole(hub, owner.token), otherConsole = await openConsole(hub, other.token), adminConsole = await openConsole(hub, hub.admin.token);
   const home = await ownConsole.get('/console/knowledge');
   assert.equal(home.status, 200);
