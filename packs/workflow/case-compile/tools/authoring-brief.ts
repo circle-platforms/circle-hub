@@ -25,7 +25,7 @@ export async function readKnowledge(directory: string): Promise<BriefKnowledge |
   let raw: string;
   try { raw = await readFile(join(directory, 'knowledge', 'nodes.jsonl'), 'utf8'); } catch { return null; }
   const [head, ...rows] = raw.split('\n').filter((line) => line.length > 0).map((line) => parsed('knowledge/nodes.jsonl', line));
-  if (!isRecord(head) || head.schema !== 'run-knowledge@1' || typeof head.root !== 'string') throw new Error('knowledge/nodes.jsonl 不是运行下载写的知识根');
+  if (!isRecord(head) || head.schema !== 'run-knowledge@1' || typeof head.root !== 'string') throw new Error('knowledge/nodes.jsonl 不是运行下载写的手册和命令树');
   const nodes = new Map<string, BriefNode>();
   for (const row of rows) {
     if (!isRecord(row) || typeof row.path !== 'string' || !Array.isArray(row.children) || !Array.isArray(row.entries)) throw new Error('knowledge/nodes.jsonl 里有不合式的节点');
@@ -85,6 +85,6 @@ export async function main(argv: string[]): Promise<number> {
     const report = await writeBriefs(args.run);
     process.stdout.write(JSON.stringify({ directory: resolve(args.run, 'briefs'), ...report }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(`简报没有写出：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(`脚本编写所需的资料未保存：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

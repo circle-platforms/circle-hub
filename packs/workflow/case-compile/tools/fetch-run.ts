@@ -19,17 +19,17 @@ export interface RunInputs { run: Record<string, unknown>; result: Record<string
 /** The run, its latest accepted result and submission, and the run's bound contract, profile and inventory, each checked. */
 export async function fetchRunInputs(origin: string, bearer: string, run: string): Promise<RunInputs> {
   let exported: unknown;
-  try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${run}`, bearer))); } catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 的运行导出不是合式 JSON'); }
-  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) throw new Error('Hub 的运行导出不合式');
-  if (exported.run.run !== run || exported.result.run !== run || exported.submission.run !== run) throw new Error(`Hub 导出的运行、结果或提交不属于 --run 指定的 ${run}，什么都没有写入；核对运行号后重取`);
+  try { exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${run}`, bearer))); } catch (error) { if (error instanceof Error && error.message.startsWith('Hub ')) throw error; throw new Error('Hub 返回的原始用例和自动化用例无法读取'); }
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || !isRecord(exported.result) || !isRecord(exported.submission)) throw new Error('Hub 返回的原始用例和自动化用例不完整');
+  if (exported.run.run !== run || exported.result.run !== run || exported.submission.run !== run) throw new Error(`Hub 返回的原始用例、自动化用例或核对结果不属于本次脚本编写，文件尚未保存；请核对后重新下载`);
   const sources = Array.isArray(exported.run.sources) ? exported.run.sources : [];
   const originals = {} as RunInputs['originals'];
   for (const slot of SLOTS) {
     const bound = sources.filter((value) => isRecord(value) && value.slot === slot);
     const match = bound.length === 1 && isRecord(bound[0]) ? /^src:([0-9a-f]{64})$/.exec(String(bound[0].reference)) : null;
-    if (!match) throw new Error(`运行没有唯一绑定的 ${slot} 原件`);
+    if (!match) throw new Error(`缺少唯一的${({ contract: "执行器规则", profile: "测试环境配置", inventory: "测试环境清单" })[slot]}`);
     const bytes = await get(`${origin}/run-export/${run}/sources/${match[1]}`, bearer);
-    if (sha256(bytes) !== match[1]) throw new Error(`${slot} 原件摘要与运行绑定不符，什么都没有写入`);
+    if (sha256(bytes) !== match[1]) throw new Error(`${({ contract: "执行器规则", profile: "测试环境配置", inventory: "测试环境清单" })[slot]}与脚本编写时的原件不一致，文件尚未保存`);
     originals[slot] = bytes;
   }
   return { run: exported.run, result: exported.result, submission: exported.submission, originals };
@@ -37,7 +37,7 @@ export async function fetchRunInputs(origin: string, bearer: string, run: string
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
-    if (!RUN_ID.test(args.run)) throw new Error('--run 必须是运行编号');
+    if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
     const bearer = await bearerFrom(readToken);
     // Every original is fetched and checked before anything is written, and a failed write removes what this call wrote, so
@@ -58,6 +58,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); }
     } catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     process.stdout.write(JSON.stringify({ run: args.run, files }) + '\n'); return 0;
-  } catch (error) { process.stderr.write(`取件失败：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(`脚本编写所需的资料未下载：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

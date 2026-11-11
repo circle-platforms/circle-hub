@@ -29,28 +29,28 @@ export async function main(argv: string[]): Promise<number> {
       const note = (state: string, message: string) => attention.push({ file, state, message });
       let stored: unknown = null;
       try { stored = JSON.parse(await readFile(briefFile(args.briefs, base, brief.brief_sha256), 'utf8')); } catch { /* no brief of this plan yet */ }
-      if (!isRecord(stored) || stored.brief_sha256 !== brief.brief_sha256) { note('简报过期', '计划在算简报之后改过，或还没有算简报：重跑 fidelity-brief，审计它列出的简报，再跑本工具'); continue; }
+      if (!isRecord(stored) || stored.brief_sha256 !== brief.brief_sha256) { note('未知', '原因缺资料。自动化用例已更改，或尚未生成核对资料；下一步由编写模型重新生成核对资料，交给独立模型核对，再合并核对结果'); continue; }
       const verdictPath = verdictFile(args.briefs, base, brief.brief_sha256), verdictName = basename(verdictPath);
       let bytes: Uint8Array;
-      try { bytes = await readFile(verdictPath); } catch { note('缺审计结果', `还没有 ${verdictName}：把这份计划的简报交给新开的子代理审计`); continue; }
+      try { bytes = await readFile(verdictPath); } catch { note('未知', '原因缺资料。尚未取得自动化用例的核对结果；下一步交给独立模型核对'); continue; }
       let verdict: unknown;
-      try { verdict = parsedPlanFile(verdictName, bytes); } catch (error) { note('审计结果不合式', error instanceof Error ? error.message : '不是合法的 JSON'); continue; }
-      if (!isRecord(verdict) || Object.keys(verdict).some((key) => key !== 'steps' && key !== 'disclosure')) { note('审计结果不合式', '审计结果恰好写 steps 和 disclosure 两项；让审计子代理按简报里的规则重写这份结果'); continue; }
+      try { verdict = parsedPlanFile(verdictName, bytes); } catch (error) { note('未知', error instanceof Error ? error.message : '不是合法的 JSON'); continue; }
+      if (!isRecord(verdict) || Object.keys(verdict).some((key) => key !== 'steps' && key !== 'disclosure')) { note('未知', '原因编写模型的问题。核对结果的内容不完整；下一步由独立模型按执行器规则重新写出核对结果'); continue; }
       const fidelity = { brief_sha256: brief.brief_sha256, steps: verdict.steps, disclosure: verdict.disclosure };
       const judged = fidelityProblems(brief, fidelity);
       const malformed = judged.problems.filter((p) => p.code === 'fidelity_shape');
-      if (malformed.length) { note('审计结果不合式', `${malformed.map((p) => p.message).join('；')}；让审计子代理按简报里的规则重写这份结果`); continue; }
+      if (malformed.length) { note('未知', `${malformed.map((p) => p.message).join('；')}；下一步由独立模型按执行器规则重新写出核对结果`); continue; }
       const data = planData(value);
-      if (!data) { note('计划不合式', '计划文件里没有 slots.plan，无法写入审计结果'); continue; }
+      if (!data) { note('未知', '原因编写模型的问题。文件里缺少自动化用例；下一步由编写模型补齐自动化用例再合并核对结果'); continue; }
       data.fidelity = fidelity;
       await writeFile(join(args.plans, file), JSON.stringify(value, null, 2) + '\n');
       const count = (verdictName: string) => judged.rows.filter((row) => row.verdict === verdictName).length;
       merged.push({ file, preserved: count('preserved'), changed: count('changed'), unrealized: count('unrealized') });
       // What the Hub will send back to authoring: better known before submitting than after a repair round is spent.
-      for (const problem of judged.problems) note('审计判这条计划要改', `${problem.message}；改计划后重跑 fidelity-brief、重新审计这一条`);
+      for (const problem of judged.problems) note('未确认', `${problem.message}；判断错误，原因编写模型的问题，下一步由编写模型修改这条自动化用例，再交给独立模型核对。决定者模型`);
     }
     process.stdout.write(JSON.stringify({ ready: attention.length === 0, merged, attention, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(`审计结果没有并入：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(`自动化用例的核对结果未合并：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

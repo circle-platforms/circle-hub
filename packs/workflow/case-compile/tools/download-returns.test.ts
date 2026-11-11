@@ -65,7 +65,7 @@ test('the device return, every saved log and session land as checked files; a wi
   assert.deepEqual(index.jobs[0].rows.map((r: { item: string; verdict: string }) => [r.item, r.verdict]), [['990000000000000301', 'fail'], ['990000000000000302', 'pass']]);
   assert.deepEqual(index.jobs[0].rows[0].sessions, { 'dev-a.txt': join('c'.repeat(12), 'cases', '990000000000000301', 'dev-a.txt'), '../escape.txt': null });
   assert.equal(index.withheld.length, 1);
-  assert.match(index.withheld[0], /session-2\.txt（[0-9a-f]{12}，Hub 的读取规则不给原文）/);
+  assert.match(index.withheld[0], /session-2\.txt，没有读取这份设备输出的权限/);
   assert.equal(JSON.parse(done.stdout).withheld.length, 1);
   assert.deepEqual(index.jobs[0].rows[0].syntax_rejected, [], 'sessions read, no lone caret in them');
   assert.equal('syntax_rejected' in index.jobs[0].rows[1], false, 'a row without sessions has nothing to read');
@@ -120,7 +120,7 @@ test('a pass whose run log carries a declared execution-failure line its asserti
   const unreviewed = JSON.parse(kept.stdout);
   assert.deepEqual(unreviewed.verdicts, { pass: 4 });
   assert.deepEqual([unreviewed.pass_review.markers, unreviewed.pass_review.read, unreviewed.pass_review.unread.length], [null, 0, 1]);
-  assert.match(unreviewed.pass_review.unread[0], /^计划运行 run_01b+ 读不出复核要用的合约和断言（.+），作业 c{12} 的通过没有复核，被设备拒绝执行的命令也没有列出$/);
+  assert.match(unreviewed.pass_review.unread[0], /^缺少执行器规则或自动化用例，尚未核对设备输出，也未列出被设备拒绝执行的命令$/);
 });
 
 test('a command the device refused to execute is listed for its row with the session, the prompt and the device’s reply up to the declared line', async (t) => {
@@ -150,7 +150,7 @@ test('a command the device refused to execute is listed for its row with the ses
   const unlisted = JSON.parse(await readFile(join(other, 'index.json'), 'utf8'));
   assert.equal('execution_refused' in unlisted.jobs[0].rows[0], false);
   assert.deepEqual(unlisted.jobs[0].rows[0].syntax_rejected, []);
-  assert.match(unlisted.pass_review.unread[0], /被设备拒绝执行的命令也没有列出$/);
+  assert.match(unlisted.pass_review.unread[0], /也未列出被设备拒绝执行的命令$/);
 });
 
 test('bytes that do not match their digest, a run never dispatched and a directory already in use write nothing', async (t) => {
@@ -159,7 +159,7 @@ test('bytes that do not match their digest, a run never dispatched and a directo
   const wrong = await run(forged.url, join(dir, 'a'));
   assert.equal(wrong.code, 1);
   const none = await hub({ schema: 'run-jobs@1', run: RUN, jobs: [] }, []); t.after(none.close);
-  assert.match((await run(none.url, join(dir, 'b'))).stderr, /没有派发过/);
+  assert.match((await run(none.url, join(dir, 'b'))).stderr, /尚未开始上机验证/);
   const used = join(dir, 'c'); await writeFile(join(dir, 'c-marker'), 'x');
   const fine = await hub(jobs(), [deviceReturn, log, session, held]); t.after(fine.close);
   await run(fine.url, used);
@@ -178,7 +178,7 @@ test('--wait reads the job list until every job of the run has ended, through a 
   const done = await run(h.url, out, ['--wait', '3600'], time);
   assert.equal(done.code, 0, done.stderr);
   assert.deepEqual(time.pauses, [POLL_MS, POLL_MS, POLL_MS], 'one read per interval; the read the Hub failed is tried again');
-  assert.match(done.stderr, /等运行 run_01a+ 的作业结束，最多 3600 秒/);
+  assert.match(done.stderr, /等待上机验证结束，最多 3600 秒/);
   const summary = JSON.parse(done.stdout);
   assert.deepEqual([summary.jobs, summary.ended, summary.verdicts], [1, ['done'], { fail: 1, pass: 1 }]);
   assert.deepEqual(await readFile(join(out, 'c'.repeat(12), 'device-return.txt')), deviceReturn);
@@ -190,16 +190,16 @@ test('--wait gives up at its limit, and sooner when the run shows no job at all,
   const never = await hub(running, []); t.after(never.close);
   const late = clock(), slow = await run(never.url, join(dir, 'a'), ['--wait', '50'], late);
   assert.equal(slow.code, 1);
-  assert.match(slow.stderr, /等了 50 秒，运行 run_01a+ 的作业还没有结束；什么都没有写入，用同一命令再等一次/);
+  assert.match(slow.stderr, /等了 50 秒，上机验证还没有结束；设备输出尚未保存，请用同一命令继续等待/);
   assert.deepEqual(late.pauses, [POLL_MS, POLL_MS, 10_000], 'the last pause ends at the limit');
   const none = await hub(undispatched, []); t.after(none.close);
   const idle = clock(), absent = await run(none.url, join(dir, 'b'), ['--wait', '3600'], idle);
   assert.equal(absent.code, 1);
-  assert.match(absent.stderr, /到现在没有作业：它可能没有派发。原样重交那次提交，读 Hub 答复里的派发说明/);
+  assert.match(absent.stderr, /尚未开始上机验证。请原样再做一次脚本合并，查看 Hub 的上机验证说明/);
   assert.equal(idle.pauses.reduce((sum, ms) => sum + ms, 0), UNDISPATCHED_MS);
   await assert.rejects(readFile(join(dir, 'a', 'index.json')));
   for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 写最多等多少秒/, value);
   assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数写法/);
   // Without --wait a run that was never dispatched is refused at once, as before.
-  assert.match((await run(none.url, join(dir, 'd'))).stderr, /没有派发过/);
+  assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
 });

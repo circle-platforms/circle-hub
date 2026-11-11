@@ -79,7 +79,7 @@ test('an export of another run is refused and nothing is written', async () => {
     const h = await hub(undefined, alter); const out = join(await mkdtemp(join(tmpdir(), 'cc-fetch-')), 'fresh');
     try {
       const { code, text } = await stderrOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
-      assert.equal(code, 1); assert.match(text, new RegExp(`不属于 --run 指定的 ${RUN}`)); assert.equal(existsSync(out), false);
+      assert.equal(code, 1); assert.match(text, /不属于本次脚本编写/); assert.equal(existsSync(out), false);
     } finally { await h.close(); }
   }
 });
@@ -89,7 +89,7 @@ test('a source that fails its digest leaves no file behind, and a directory that
   const h = await hub((sources) => { const keys = [...sources.keys()]; sources.set(keys[2], Buffer.from('changed')); }); t.after(h.close);
   const out = join(await mkdtemp(join(tmpdir(), 'cc-fetch-')), 'fresh');
   const failed = await stderrOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
-  assert.equal(failed.code, 1); assert.match(failed.text, /inventory 原件摘要与运行绑定不符/); assert.equal(existsSync(out), false);
+  assert.equal(failed.code, 1); assert.match(failed.text, /测试环境清单与脚本编写时的原件不一致/); assert.equal(existsSync(out), false);
   const good = await hub(); t.after(good.close); const taken = await mkdtemp(join(tmpdir(), 'cc-fetch-'));
   await writeFile(join(taken, 'profile.json'), 'kept');
   const refused = await stderrOf(() => main(['--hub', good.url, '--run', RUN, '--out', taken], async () => TOKEN));

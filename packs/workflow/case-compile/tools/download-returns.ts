@@ -1,25 +1,3 @@
-// What the bed said, on local disk (decision 164): for one verification run, the Hub's job list, the device return the runner
-// reads and every row's run log and device sessions the Hub saved, each checked against its digest, so the model copies the
-// device's own words into the delivery notes from files instead of from tool answers that may be cut short. It applies the
-// reference engine's two judgements made by program when a verdict is read, and nothing else (see the rows below).
-//   node <skill directory>/tools/download-returns.ts --hub %HUB_URL% --run <verification run> --out <directory> [--wait <seconds>] <<'EOF'
-//   %HUB_TOKEN%
-//   EOF
-// With --wait it first waits, for at most that many seconds, until every job of the run has ended: the wait is the program's,
-// as in the reference engine, whose run tool returns when the bed has finished. Started as a background command, the client
-// tells the model when it exits, so the model neither sleeps nor repeats the submission to read progress (in run 19 it slept
-// 3550 seconds in guessed blocks, 13 minutes of them after the last job had ended). It only reads; the Hub runs the job.
-// Layout: jobs.json (the Hub's answer), then per job <first 12 of the job id>/device-return.txt and cases/<autoid>/log.txt and
-// cases/<autoid>/<session name>, with index.json listing every row's verdict and files (or why a piece is withheld) and, for a
-// row with sessions, syntax_rejected: the commands the device answered with a lone caret (session, command, the word under the
-// caret, the prompt it was typed at), which is the one cause of failure the reference engine names by program, and
-// execution_refused: the commands the device answered with an execution-failure line the plan run's contract declares
-// (session, command, prompt, the device's reply up to that line), which the reference engine hands the next writer as the
-// execution failures of the last run. A pass whose run
-// log carries an execution-failure line the plan run's contract declares and none of the case's own assertions reads is listed
-// as no_verdict with runner_verdict "pass" and pass_review (where, line): the reference engine downgrades such a pass when it
-// reads the verdict (tools/device/batch_tools.py, broken with the subtype errored) and sends the case back to its author, so the
-// model learns it with the returns and not at the delivery (in run 20 a case was reported as passed twice and dropped at the end).
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -53,7 +31,7 @@ const REAL_TIME: Timing = { now: () => Date.now(), pause: (ms) => new Promise((d
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, timing: Timing = REAL_TIME): Promise<number> {
   try {
     const args = options(argv);
-    if (!RUN_ID.test(args.run)) throw new Error('--run 写核验运行的编号');
+    if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次上机验证的编号');
     const wait = args.wait === undefined ? 0 : Number(args.wait);
     if (args.wait !== undefined && !(/^[1-9][0-9]{0,4}$/.test(args.wait) && wait <= WAIT_MAX_SECONDS)) throw new Error(`--wait 写最多等多少秒（1 到 ${WAIT_MAX_SECONDS} 的整数）`);
     const taken = await readdir(args.out).catch(() => [] as string[]);
@@ -64,11 +42,11 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     let { answer: listed, own: jobs } = parsed(await fetchJobs());
     if (wait) {
       const started = timing.now(), deadline = started + wait * 1000;
-      process.stderr.write(`等运行 ${args.run} 的作业结束，最多 ${wait} 秒；结束后写出设备返回\n`);
+      process.stderr.write(`等待上机验证结束，最多 ${wait} 秒；结束后保存设备输出\n`);
       while (!jobs.length || jobs.some((job) => job.ended === null)) {
         const now = timing.now();
-        if (!jobs.length && now - started >= Math.min(UNDISPATCHED_MS, wait * 1000)) throw new Error(`运行 ${args.run} 到现在没有作业：它可能没有派发。原样重交那次提交，读 Hub 答复里的派发说明；什么都没有写入`);
-        if (now >= deadline) throw new Error(`等了 ${wait} 秒，运行 ${args.run} 的作业还没有结束；什么都没有写入，用同一命令再等一次`);
+        if (!jobs.length && now - started >= Math.min(UNDISPATCHED_MS, wait * 1000)) throw new Error(`尚未开始上机验证。请原样再做一次脚本合并，查看 Hub 的上机验证说明；设备输出尚未保存`);
+        if (now >= deadline) throw new Error(`等了 ${wait} 秒，上机验证还没有结束；设备输出尚未保存，请用同一命令继续等待`);
         await timing.pause(Math.min(POLL_MS, deadline - now));
         // A read that fails while waiting (the Hub restarting, the network) is tried again at the next turn; a refusal, or an
         // answer that is not a job list, ends the wait.
@@ -77,7 +55,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
         if (bytes) ({ answer: listed, own: jobs } = parsed(bytes));
       }
     }
-    if (!jobs.length) throw new Error(`运行 ${args.run} 没有派发过；--run 写派发过的核验运行`);
+    if (!jobs.length) throw new Error(`尚未开始上机验证；--run 请使用已开始上机验证的编号`);
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [{ name: 'jobs.json', bytes: json(listed) }];
     const withheld: string[] = [];
     // One source read, checked against its digest; a piece the Hub's read rules hold back is named, not fatal.
@@ -86,8 +64,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       if (!sha) return null;
       let bytes: Uint8Array;
       try { bytes = await get(`${origin}/run-export/${args.run}/sources/${sha}`, bearer); }
-      catch (error) { if (error instanceof HubReplyError && error.status === 403) { withheld.push(`${name}（${sha.slice(0, 12)}，Hub 的读取规则不给原文）`); return null; } throw error; }
-      if (sha256(bytes) !== sha) throw new Error(`${name} 的字节与 Hub 记的摘要不符，什么都没有写入`);
+      catch (error) { if (error instanceof HubReplyError && error.status === 403) { withheld.push(`${name}，没有读取这份设备输出的权限`); return null; } throw error; }
+      if (sha256(bytes) !== sha) throw new Error(`${name} 与 Hub 保存的设备输出不一致，设备输出尚未保存`);
       outputs.push({ name, bytes });
       return name;
     };
@@ -112,10 +90,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       // The declared failure lines are read for every job that has rows: a pass is reviewed against them and a row's sessions are
       // searched for the commands the device answered with one.
       const review = (job.rows ?? []).length ? await reviewOf(job.plan_run) : null;
-      if (typeof review === 'string') passReview.unread.push(`计划运行 ${job.plan_run} 读不出复核要用的合约和断言（${review}），作业 ${folder} 的通过没有复核，被设备拒绝执行的命令也没有列出`);
+      if (typeof review === 'string') passReview.unread.push(`缺少执行器规则或自动化用例，尚未核对设备输出，也未列出被设备拒绝执行的命令`);
       else if (review?.markers.length) passReview.markers = Math.max(passReview.markers ?? 0, review.markers.length);
       for (const row of job.rows ?? []) {
-        if (!/^[0-9A-Za-z_-]{1,64}$/.test(row.item)) throw new Error(`作业 ${folder} 的条目编号 ${row.item} 不能做目录名`);
+        if (!/^[0-9A-Za-z_-]{1,64}$/.test(row.item)) throw new Error(`原始用例的编号不能作为设备输出的目录名`);
         const log = await piece(row.evidence?.log, join(folder, 'cases', row.item, 'log.txt'));
         let dropped: RowAudit | null = null;
         if (row.dynamic_terminal === 'pass' && review && typeof review !== 'string' && review.markers.length) {

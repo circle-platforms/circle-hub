@@ -19,7 +19,7 @@ let RUN_ITEMS = ['doc:a', 'doc:b'];
 async function hub(answer: unknown, status = 200) {
   const seen: Array<{ url?: string; authorization?: string; body: any }> = [];
   const server = createServer((request, response) => {
-    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id) => ({ id })) } })); return; }
+    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id, index) => ({ id, fields: { autoid: `99000000000000010${index + 1}`, title: `合成用例 ${index + 1}` } })) } })); return; }
     let body = '';
     request.on('data', (chunk) => { body += chunk; });
     request.on('end', () => {
@@ -56,7 +56,7 @@ test('the case files become one submit_result call in name order, with the token
   assert.equal(stub.seen[0].body.params.name, 'submit_result');
   assert.deepEqual(stub.seen[0].body.params.arguments, { run: RUN, model: 'synthetic-model', items: [item('doc:a'), item('doc:b')] });
   assert.doesNotMatch(result.out, new RegExp(TOKEN));
-  assert.match(result.out, /2 个条目已提交/);
+  assert.match(result.out, /2 份自动化用例已交给 Hub 做脚本合并/);
 });
 
 test('a skipped case passes through as written', async () => {
@@ -71,15 +71,15 @@ test('a case handed in as skipped is answered with the closing rule after the Hu
   await stub.close();
   assert.equal(result.code, 0);
   assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a'), skipped], 'the skip reaches the Hub as written');
-  assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n声明跳过的 1 个条目（doc:b）：声明跳过不是结论。照 InfoTest，说明里写环境缺数据、缺拓扑、缺前置、缺命令，都不能让用例不上机就定结论；回执里这些条目的“修复轮数用完”是 Hub 给声明跳过条目的 plan 要求项的标注，不表示编写过。组交付时没上机的用例只认两种 Hub 记录：.+照用例原样编写这些条目再交\n$/);
+  assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n原始用例 990000000000000102 合成用例 2，还没有完成脚本编写，状态未知。原因缺资料，下一步由编写模型按原始用例继续编写；只有 Hub 确认缺资料，或最多重交的次数用完仍未核对正确，才能结束脚本编写。决定者程序。\n$/);
   // No skip, no note.
   const plain = await hub(said('受理'));
-  assert.doesNotMatch((await run(plain.url, await plans({ '01.json': item('doc:a') }))).out, /声明跳过/);
+  assert.doesNotMatch((await run(plain.url, await plans({ '01.json': item('doc:a') }))).out, /还没有完成脚本编写/);
   await plain.close();
 });
 
 test('nothing is sent when a file is not an item, two files name one item, or there are no files', async () => {
-  for (const [files, message] of [[{ '01.json': { plan: [] } }, /不是一个条目/], [{ '01.json': item('doc:a'), '02.json': item('doc:a') }, /同一个条目/], [{}, /没有 \.json 文件/], [{ '01.json': 'not json' }, /提交失败/]] as const) {
+  for (const [files, message] of [[{ '01.json': { plan: [] } }, /不是一个条目/], [{ '01.json': item('doc:a'), '02.json': item('doc:a') }, /同一个条目/], [{}, /没有 \.json 文件/], [{ '01.json': 'not json' }, /脚本合并未完成/]] as const) {
     const stub = await hub(said('受理'));
     const result = await run(stub.url, await plans(files));
     await stub.close();
@@ -164,14 +164,14 @@ test('a final verification takes the same plan directory: files of items the run
     await stub.close();
     assert.equal(result.code, 0, result.err);
     assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a')]);
-    assert.match(result.out, /跳过 1 个不属于本运行的条目文件（本运行没有这些条目，例如被 parameters\.exclude 排除）：doc:b/);
+    assert.match(result.out, /另有 1 份自动化用例不属于本次脚本编写，未做脚本合并/);
     RUN_ITEMS = ['doc:z'];
     const stub2 = await hub(said('受理'));
     const none = await run(stub2.url, directory);
     await stub2.close();
     assert.equal(none.code, 1);
     assert.equal(stub2.seen.length, 0);
-    assert.match(none.err, /--plans 目录里没有本运行的条目（本运行有 1 个条目）/);
+    assert.match(none.err, /--plans 目录里没有本次脚本编写的自动化用例，本次共有 1 条原始用例/);
   } finally { RUN_ITEMS = ['doc:a', 'doc:b']; }
 });
 
