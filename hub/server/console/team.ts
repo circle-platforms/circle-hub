@@ -1,7 +1,7 @@
 import {memberDeletionDialog,memberDeletionProgress,deletionDialogId} from './member-deletion.ts';
 import {spaceCapacityDialog} from './space-capacity.ts';
 import {capacitySummary} from './capacity.ts';
-import {stat,dialog,actionLink} from './presentation.ts';
+import {stat,dialog,actionLink,tooltip} from './presentation.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {commands} from './commands.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
@@ -10,7 +10,12 @@ import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
 import {CLIENT_COLUMNS,clientRow,clientInspector,noClients} from './connections.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import {neutralPage,type PageContext,type PageResult} from './pages.ts';
-import {button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
+import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
+
+/** The two tabs of the team page (decision 151, step 7): the members, and the clients they connected. One list each. */
+const TEAM_TABS=['members','clients'] as const;
+type TeamTab=typeof TEAM_TABS[number];
+const TEAM_TAB_LABEL:Record<TeamTab,string>={members:'成员',clients:'已连接的客户端'};
 
 /** Selection is resolved exclusively from the same authorized member/device projection as the tables. */
 export async function teamPage(ctx:PageContext,member?:string):Promise<PageResult>{
@@ -22,15 +27,18 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  const packs=(await ctx.deps.packs.list(ctx.principal)).filter(pack=>pack.kind==='workflow'&&!pack.space&&!pack.withdrawn);
  const circleId=ctx.url.searchParams.get('circle'),workflow=ctx.url.searchParams.get('workflow');
  const members:unknown[][]=[],circles:unknown[][]=[],connections:Array<{owner:string;token:Awaited<ReturnType<typeof principals.tokens>>[number]}>=[];
+ const clientsOf=new Map<string,number>();
  const [assignedByUser,tokensByUser]=await Promise.all([assignmentsForMembers(authorizations,users.map(user=>user.id)),tokensForMembers(principals,users.map(user=>user.id))]);
  for(const user of users){
   const assigned=assignedByUser.get(user.id)??[];
   const name=user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name;
-  members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),user.deleted_at?'—':user.role==='admin'?'全部工作流':assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读').join('、')||'—']);
   for(const token of tokensByUser.get(user.id)??[]){
    if(token.revoked_at!==null||user.disabled||user.deleted_at)continue;
-   connections.push({owner:user.name,token});
+   connections.push({owner:user.name,token});clientsOf.set(user.id,(clientsOf.get(user.id)??0)+1);
   }
+  // A row says how many workflows and clients the member has; their names are one hover or one click away.
+  const titles=assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读'),clients=clientsOf.get(user.id)??0;
+  members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),user.deleted_at?'—':user.role==='admin'?'全部工作流':titles.length?tooltip(`${titles.length.toLocaleString('en-US')} 个`,titles.join('、')):'—',clients?`${clients.toLocaleString('en-US')} 个`:'—']);
  }
  const devices:Array<ConnectedClient&{id:string}>=(await connectedClients(ctx.deps.records,connections)).map(client=>({...client,id:client.token.id}));
  for(const device of devices)circles.push(clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device))));
@@ -62,7 +70,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
    selectedAssignment=card({title:assignment.title},html`<p>${has||user.role==='admin'?'可使用':'不可使用'}</p>${ctx.admin?commandLink(change,has?'移出使用范围…':'加入使用范围…',has?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary'):''}`);
   }
   if(ctx.admin)confirmations=html`${confirmations}${dialog('reset-member-password','重置成员密码',html`<p>生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改。</p>`,html`<form method="post" action="/console/admin/do/password-reset"><input type="hidden" name="csrf" value="${ctx.csrf??''}"><input type="hidden" name="user" value="${user.id}"><button type="submit" class="ch-btn ch-btn--danger">重置密码</button></form>`)}`;
-  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${commandLink(publish,'调整发布权…')}${actionLink('#reset-member-password','重置密码…','danger')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}<footer class="ch-inspector-actions">${ctx.admin?html`${commandLink(toggle,user.disabled?'启用…':'停用…',user.disabled?'ch-btn ch-btn--secondary':'ch-btn ch-btn--danger')}${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}${user.disabled?'':html`${commandLink(spare,'签发客户端访问令牌…')}${commandLink(invite,'签发邀请码…','ch-btn ch-btn--primary')}`}`:''}</footer></div>`;
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${commandLink(publish,'调整发布权…')}${actionLink('#reset-member-password','重置密码…','danger')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${commandLink(toggle,user.disabled?'启用…':'停用…',user.disabled?'ch-btn ch-btn--secondary':'ch-btn ch-btn--danger')}${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}${user.disabled?'':html`${commandLink(spare,'签发客户端访问令牌…')}${commandLink(invite,'签发邀请码…','ch-btn ch-btn--primary')}`}`:''}</footer></div>`;
  }else{
   const usage=ctx.admin&&spaces?await spaces.usage(ctx.principal,'team'):null;
   if(usage)confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,'team',usage)}`;
@@ -73,7 +81,13 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   inspector=html``;
  }
  const selected=!!selectedUser||!!selectedDevice;
- return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`${capacityLine}
- ${liveModule('members',['member.connected'],card({title:'成员',meta:users.length},table(['名字','角色','状态','可用的工作流'],members,'没有可读的成员',undefined,{selected:selectedDevice?-1:users.findIndex(user=>user.id===member),hrefs:users.map(user=>'/console/team/'+user.id)})))}
- ${liveModule('member-circles',['member.connected'],card({title:'已连接的客户端'},table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))})))}${selected?'':confirmations}`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回团队')}))};
+ // One list a tab. A selected member opens the first, a selected client the second; each with its pane.
+ const asked=ctx.url.searchParams.get('tab');
+ const tab:TeamTab=selectedDevice?'clients':selectedUser?'members':TEAM_TABS.find(key=>key===asked)??'members';
+ const counts:Record<TeamTab,number>={members:users.length,clients:devices.length};
+ const tabs=liveModule('team-tabs',['member.connected'],html`<nav class="ch-seg" aria-label="团队内容" data-team-tabs>${TEAM_TABS.map(key=>html`<a href="${href('/console/team',key==='members'?{}:{tab:key})}"${key===tab?html` aria-current="page"`:''}>${TEAM_TAB_LABEL[key]} <span class="ch-count">${counts[key].toLocaleString('en-US')}</span></a>`)}</nav>`);
+ const content=tab==='members'
+  ?html`${capacityLine}${liveModule('members',['member.connected'],box(null,table(['名字','角色','状态','可用的工作流','客户端'],members,'没有可读的成员',undefined,{selected:users.findIndex(user=>user.id===member),hrefs:users.map(user=>'/console/team/'+user.id)}),{flush:true}))}`
+  :liveModule('member-circles',['member.connected'],box(null,table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))}),{flush:devices.length>0}));
+ return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`<div class="ch-stack" data-team>${tabs}<div class="ch-stack" data-team-tab="${tab}">${content}</div>${selected||tab!=='members'?'':confirmations}</div>`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回团队',tab==='members'?{}:{tab})}))};
 }
