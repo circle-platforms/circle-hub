@@ -1,4 +1,5 @@
 // Decision 140 block 2: real loopback Hub, synthetic originals, sessions and current access checks.
+import { credentialDetectorsFor } from '../../hub/testing/records.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import pg from 'pg';
@@ -74,7 +75,7 @@ test('opening a knowledge original loads server quotes, displays every match and
   const unresolved=await spaces.original(member.principal,{sha256:file.body.sha256,artifact:file.digest,root:bad.root,path:'/',entry:bad.entry,ground:0});assert.equal(unresolved.status,'unresolved');assert.equal(unresolved.window,null);spaces.source=get;
  }finally{await hub.close();}
 });
-test('attachments preserve exact bytes, remain non-executable and refuse revoked, withheld and corrupt captures',async()=>{
+test('attachments preserve exact bytes, remain non-executable and refuse revoked, withheld and corrupt captures',async (t) => { credentialDetectorsFor(t);
  const hub=await createTestHub(options);try{
   const member=await hub.createUser('合成下载成员'),peer=await hub.createUser('合成下载读者'),web=await openConsole(hub,member.token),reader=await openConsole(hub,peer.token),spaces=hub.hub.knowledge.spaces!;
   const bytes=Buffer.from([0x50,0x4b,0x03,0x04,0,255,0,128]),file=await spaces.importFile(member.principal,bytes,'application/zip','合成附件.zip','/下载');
