@@ -29,20 +29,6 @@ before(async () => {
   locate = (await writePack(join(packRoot, LOCATE_PACK), locatePack())).dir;
 });
 
-/** The get_nodes call a text gives after `marker`, parsed. */
-function callAfter(text: string, marker: string): Record<string, unknown> | null {
-  const at = text.indexOf(`${marker}get_nodes `);
-  if (at < 0) return null;
-  const from = at + `${marker}get_nodes `.length;
-  for (let end = text.indexOf('}', from); end >= 0; end = text.indexOf('}', end + 1)) {
-    try {
-      return JSON.parse(text.slice(from, end + 1)) as Record<string, unknown>;
-    } catch {
-      // not the end of the object yet
-    }
-  }
-  return null;
-}
 after(async () => {
   await postgres?.stop();
   if (packRoot) await removeTree(packRoot);
@@ -51,9 +37,10 @@ after(async () => {
 interface StartedRun {
   run: string;
   pack: string;
-  items: { id: string; label: string; location: string }[];
+  items: { id: string; label: string; location: string; summary: string }[];
   sources: { reference: string; role: string; external?: string }[];
   requirements: { key: string }[];
+  slots?: { schema: unknown };
 }
 
 describe('createTestHub', () => {
@@ -93,14 +80,16 @@ describe('createTestHub', () => {
     assert.ok(run.items.every((item) => item.id.startsWith(`${AGILE_DOCUMENT}:`) && item.location.startsWith('src:')));
     assert.ok(run.sources.some((s) => s.role === 'subject' && s.external?.startsWith(`agile:mindmap:${AGILE_DOCUMENT}`)));
     assert.equal(stubs.agile.logins, 1, 'one login with the stored digest');
-    // The assembly gives the server the engine's detail: the text names the run record, and its references read.
     const startText = started.content[0].text ?? '';
-    assert.match(startText, /\n- [^\n]+ \| [^\n]+ \| 1 个期望结果\n/, 'items as id | label | summary');
-    const schema = callAfter(startText, '完整的槽位模式（JSON Schema，带说明和写法）：');
-    assert.ok(schema !== null && /^rec:[0-9a-f]{64}#\/slots\/schema$/.test(String(schema.reference)), `the full slot schema is named: ${startText.slice(0, 200)}`);
+    assert.ok(run.items.every(item => startText.includes(`原始用例 ${item.label}，等待核对；状态未知`)));
+    assert.ok(run.items.every(item => item.summary === '1 个期望结果'));
+    assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
+    assert.match(JSON.stringify(run.slots?.schema), /"notes"/);
+    const schema = { reference: `${started.structuredContent.record}#/slots/schema` };
     const read = await client.call('get_nodes', schema);
     assert.equal(read.isError, false, read.content[0].text);
-    assert.match(read.content[0].text ?? '', /"notes"/, 'the full schema of the run record, by reference');
+    assert.match(String((read.structuredContent.content as { text?: string }).text), /"notes"/, 'the full schema of the run record, by reference');
+    assert.doesNotMatch(startText, /rec:|src:|槽位模式/);
 
     const submitted = await client.call('submit_result', {
       run: run.run,
@@ -122,7 +111,8 @@ describe('createTestHub', () => {
     const detail = await hub.hub.runs.getRun(alice.principal, run.run);
     assert.equal(detail?.submissions.length, 1);
     assert.equal(detail?.latest?.result.acceptance, 'accepted');
-    assert.ok((submitted.content[0].text ?? '').includes(`存下的结果 rec:${detail?.latest?.record}（`), 'the receipt names the stored result');
+    assert.equal(submitted.structuredContent.record, `rec:${detail?.latest?.record}`, 'the machine-readable answer names the stored result');
+    assert.doesNotMatch(submitted.content[0].text ?? '', /rec:|存下的结果/);
     const lines = (await hub.records.callLog.query(hub.admin.principal, { userId: alice.user.id, newestFirst: false, limit: 50 })).items;
     const calls = lines.filter((line) => line.tool !== 'initialize' && line.tool !== 'tools/list');
     assert.deepEqual(calls.map((line) => line.tool), ['list_task_packs', 'start_run', 'get_nodes', 'submit_result']);
@@ -131,7 +121,7 @@ describe('createTestHub', () => {
     assert.equal(calls[3].acceptance, 'accepted');
   });
 
-  test('a production run through the real engine: the start_run text gives the counts, each requirement and the problems first, and the whole result reads by reference', async (t) => {
+  test('a production run through the real engine: each original case has a conclusion and the whole result reads by reference', async (t) => {
     const hub = await createTestHub({ postgres, repositoryPacks: false, packs: [locate], stubs: false });
     t.after(() => hub.close());
     const alice = await hub.createUser('甲');
@@ -154,18 +144,17 @@ describe('createTestHub', () => {
     const result = started.structuredContent.result as { reference: string; counts: Record<string, number> };
     assert.match(result.reference, /^rec:[0-9a-f]{64}$/, 'the answer carries the result the engine computed');
     const lines = (started.content[0].text ?? '').split('\n');
-    assert.match(lines[1], /^结果（start_run 时由 Hub 算出）：分区：/);
-    assert.ok(lines.includes('要求项（满足状态与各层终态的条目数）：'), 'the counts of each requirement');
-    assert.ok(lines.some((line) => /^- titles 标题与期望：满足 1，未满足 1/.test(line)), lines.slice(0, 12).join('\n'));
-    const problems = lines.findIndex((line) => line.startsWith('问题与未知（'));
-    const whole = lines.findIndex((line) => line.startsWith(`完整结果 ${result.reference}：`));
-    assert.ok(whole > 0 && problems > whole, 'the whole result is named before the problems');
-    assert.ok(lines.slice(problems).some((line) => line.startsWith('- r1:c2 | 用例二 | ') && line.includes(' | titles | ')), 'the case without an expected result is a problem');
-    assert.ok(problems < lines.findIndex((line) => line.startsWith('条目（')), 'the problems before the items');
+    assert.match(lines.find(line => line.startsWith('原始用例 用例一，')) ?? '', /状态已确认；判断正确/);
+    assert.match(lines.find(line => line.startsWith('原始用例 用例二，')) ?? '', /状态已确认；判断错误；原因原始用例的问题；下一步/);
+    assert.doesNotMatch(lines.join('\n'), /分区：|要求项（|问题与未知|r1:c2|rec:/);
     const read = await client.call('get_nodes', { reference: result.reference });
     assert.equal(read.isError, false, read.content[0].text);
-    assert.match(read.content[0].text ?? '', new RegExp(`^内容 ${result.reference}：模型可读\n`));
-    assert.ok((read.content[0].text ?? '').includes('- r1:c2 | 用例二 | '), 'the item is in the stored result');
+    const stored = JSON.parse(String((read.structuredContent.content as { text?: string }).text)) as { partitions: Record<string, { item: string; requirements: { requirement: string; status: string }[] }[]> };
+    const originalCases = Object.values(stored.partitions).flat();
+    assert.equal(originalCases.length, 2);
+    assert.deepEqual(originalCases.flatMap(item => item.requirements.filter(requirement => requirement.requirement === 'titles').map(requirement => requirement.status)).sort(), ['satisfied', 'unsatisfied']);
+    assert.ok(originalCases.some(item => item.item === 'r1:c2'), 'the item is in the stored result');
+    assert.match(read.content[0].text ?? '', /^原始用例 用例二，.*状态已确认；判断错误/m);
     await client.close();
   });
 
