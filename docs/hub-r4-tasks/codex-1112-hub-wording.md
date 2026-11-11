@@ -36,3 +36,5 @@ MCP 正文按原始用例给出结论、状态和判断，错误或未知才给�
 | 手册原话、完整引用及候选位置 | `content`、`nodes`、`references`，保留完整已校验数据 |
 
 更正后的两次检查仍仅为 `node --test hub/server/text.test.ts`，每次均为 63 通过、0 失败、0 跳过。既有 MCP 场景现在同时核对第一段白话、第二段完整 JSON、开始和脚本合并后的保存位置，以及错误的原始用例 ID 与提交位置。未运行其它测试。
+
+模型引用补齐开始时已知的 `source_context.unavailable` 与 `source_context.gaps`，直接采用原有资料，不新增查询或校验。规程完整留在第二段 `run.instructions`，不再拼进第一段白话。同一测试文件收口结果为 63 通过、0 失败、0 跳过。

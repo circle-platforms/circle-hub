@@ -410,8 +410,8 @@ const run=runOf(items(5));const answer=startAnswer(run);assert.ok(answer.run?.sl
 const list=items(3000,i=>'合成用例 '+i+(i%97===0?' 长标题'.repeat(300):''));for(const context of [{paging:true,record:RUN_RECORD},{record:RUN_RECORD},{}]){const text=toolText('start_run',startAnswer(runOf(list)),context);assert.deepEqual(itemIdsOf(text),list.map(item=>item.id));assert.ok(text.includes(list[0].label));withinBudget(text,'3000 cases');}
 });
 
-  test('a procedure of 2000 lines is given whole, and the items keep their place after it', () => {
-const steps=Array.from({length:2000},(_,i)=>'第 '+(i+1)+' 步：逐条核对用例里的命令与参数。');const text=toolText('start_run',startAnswer(runOf(items(5),{instructions:steps.join('\n')})));assert.deepEqual(linesOf(text).filter(line=>/^第 \d+ 步/.test(line)),steps);assert.equal(itemIdsOf(text).length,5);
+  test('a long procedure stays whole in machine data and does not enter reader prose', () => {
+const steps=Array.from({length:2000},(_,i)=>'第 '+(i+1)+' 步：逐条核对用例里的命令与参数。');const answer=startAnswer(runOf(items(5),{instructions:steps.join('\n')}));const text=toolText('start_run',answer);assert.equal(answer.run?.instructions,steps.join('\n'));assert.doesNotMatch(text,/第 \d+ 步/);assert.equal(itemIdsOf(text).length,5);
 });
 
   test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
@@ -447,8 +447,8 @@ const list=items(n),run=runOf(list,{production:true}),result=resultOf(list,{prod
 });
   }
 
-  test('a long procedure does not push the result down; problems beyond the first part still come before any item', () => {
-const list=items(3000),result=resultOf(list,{production:true});const procedure=Array.from({length:120},(_,i)=>'第 '+i+' 步：核对原始用例。').join('\n');const answer=startAnswer(runOf(list,{production:true,instructions:procedure}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}});const text=toolText('start_run',answer,{production:result});assert.equal(itemIdsOf(text).length,3000);assert.ok(text.indexOf('原始用例 CASE-2999 ')<text.indexOf('核对说明'));assert.ok(text.includes(procedure));
+  test('a long procedure remains in machine data without displacing any reader conclusion', () => {
+const list=items(3000),result=resultOf(list,{production:true});const procedure=Array.from({length:120},(_,i)=>'第 '+i+' 步：核对原始用例。').join('\n');const answer=startAnswer(runOf(list,{production:true,instructions:procedure}),{result:{reference:RESULT_RECORD,counts:partitionCountsOf(result.partitions)}});const text=toolText('start_run',answer,{production:result});assert.equal(itemIdsOf(text).length,3000);assert.equal(answer.run?.instructions,procedure);assert.doesNotMatch(text,/核对说明|第 \d+ 步/);
 });
 
   test('without the whole result the text still gives the counts and where the problems are', () => {
@@ -660,7 +660,7 @@ describe('through the MCP server: the ways to read the rest that the notes give 
     const run = started.structuredContent.run as {run:string};
     const original_cases = [{id:'synthetic:n1',autoid:'CASE-SYNTHETIC-1',title:'合成原始用例'}];
     assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
-    assert.deepEqual(JSON.parse(started.content[1].text!.slice('供模型引用\n'.length)), {...started.structuredContent,original_cases});
+    assert.deepEqual(JSON.parse(started.content[1].text!.slice('供模型引用\n'.length)), {...started.structuredContent,original_cases,source_context:{unavailable:[],gaps:[]}});
     assert.doesNotMatch(started.content[0].text!, /rec:|run_/);
     const refused = await client.call('submit_result', {run:run.run,model:'scripted-model@test',items:[{item:'synthetic:n1',handling:'handled',slots:{findings:[]}}],notes:'quote-mismatch'});
     const references = JSON.parse(refused.content[1].text!.slice('供模型引用\n'.length));
