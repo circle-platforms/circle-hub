@@ -489,10 +489,12 @@ function nodeEntry(node: KnowledgeNode, _root: string): Entry {
   return lines;
 }
 
+const MEMORY_NOTE = '记忆只供参考，不作为核对原始用例的资料或证据。';
+
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
-  if (v.memory_document) return `${v.memory_document.title}\n${v.memory_document.markdown}`;
-  if (v.memory_page) return v.memory_page.items.map(document => document.title).join('\n');
+  if (v.memory_document) return `${v.memory_document.title}\n${MEMORY_NOTE}\n${v.memory_document.markdown}`;
+  if (v.memory_page) return [MEMORY_NOTE, ...v.memory_page.items.map(document => document.title)].join('\n');
   if (v.matches !== undefined) return [`找到 ${v.matches.length} 份相关资料，仅作参考。`, ...v.matches.map(hit => hit.statement), ...(v.warnings ?? []).map(warning => `${warning.message}；下一步${warning.fix ?? '使用者核对资料'}`)].join('\n');
   if (v.call_status) {
     const status = v.call_status;

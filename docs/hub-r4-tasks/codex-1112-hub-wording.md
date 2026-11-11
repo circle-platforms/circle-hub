@@ -2,7 +2,7 @@
 
 来源：所有者 11 月 12 日任务书 B1 与同目录措辞规则。
 
-允许改动 `hub/server/claims.ts`、`hub/server/text.ts`、`hub/server/tools.ts`、对应已有测试、`contracts/src/tools.ts` 及其生成文件，以及本页。
+允许改动 `hub/server/claims.ts`、`hub/server/text.ts`、`hub/server/tools.ts`、`hub/server/console-memory.test.ts` 及对应已有测试、`contracts/src/tools.ts` 及其生成文件，以及本页。
 
 MCP 正文按原始用例给出结论、状态和判断，错误或未知才给原因和下一步。第一段是给使用者的白话，第二个文字块以“供模型引用”开头，完整保留已校验答复与原始用例 ID、标题对应；机器可读答复也继续保留，不改模型或控制台接口。
 
@@ -38,3 +38,5 @@ MCP 正文按原始用例给出结论、状态和判断，错误或未知才给�
 更正后的两次检查仍仅为 `node --test hub/server/text.test.ts`，每次均为 63 通过、0 失败、0 跳过。既有 MCP 场景现在同时核对第一段白话、第二段完整 JSON、开始和脚本合并后的保存位置，以及错误的原始用例 ID 与提交位置。未运行其它测试。
 
 模型引用补齐开始时已知的 `source_context.unavailable` 与 `source_context.gaps`，直接采用原有资料，不新增查询或校验。规程完整留在第二段 `run.instructions`，不再拼进第一段白话。同一测试文件收口结果为 63 通过、0 失败、0 跳过。
+
+全量检查发现记忆读取丢失参考说明，现恢复记忆正文与记忆列表的明确说明：“记忆只供参考，不作为核对原始用例的资料或证据。”原文、权限和记录不变；仅同步既有场景断言，本次未运行测试，由集成分支重跑失败文件。
