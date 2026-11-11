@@ -12,6 +12,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { VAULT_KEY_ITEM, hubKeyProvider, keyDirectory } from '../../platform/api.ts';
 import { checkVaultKey } from '../../records/api.ts';
+import { osIsolationAvailable } from '../../rules/api.ts';
 import { FileKeyProvider, openRecords } from '../../records/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { openTestRecords } from '../../testing/records.ts';
@@ -90,9 +91,12 @@ describe('start-up order and failure modes', () => {
     const calls: string[] = [];
     const assembly = async (): Promise<AssemblyModule> => {
       const module = await realAssembly();
+      // Where the sandbox cannot isolate (a runner without the tools) the production assembly refuses to start (issue 291).
+      // This test is about the order of listening and maintenance, so there it assembles without requiring isolation.
+      const assemble = (await osIsolationAvailable()) ? module.assemble : createAssembly({ requireOsIsolation: false });
       return {
         assemble: async (config, records) => {
-          const deps = await module.assemble(config, records);
+          const deps = await assemble(config, records);
           // A first pass that does not end until it is asked to stop: serve must not wait for it to listen.
           deps.maintenance = {
             startMaintenance: async () => { calls.push('start'); await held; },
@@ -208,6 +212,15 @@ describe('start-up order and failure modes', () => {
       token = (await kit.principals.bootstrapAdmin('管理员')).token.token;
     } finally {
       await kit.close();
+    }
+    // Issue 291: where the sandbox cannot isolate a pack function (a runner without the tools), the production assembly
+    // refuses to start and says so; the rest of this test is for a machine that can.
+    if (!(await osIsolationAvailable())) {
+      const refused = await deployment.run(['serve'], { assembly: realAssembly, stopSignal: stopSoon });
+      assert.equal(refused.code, 1, refused.text);
+      assert.ok(refused.text.includes('沙箱不能运行包内函数，Hub 不启动：'), refused.text);
+      assert.match(refused.text, /修复后再启动 Hub|只支持 macOS 和 Linux/);
+      return;
     }
     let stop: () => void = () => {};
     const stopped = new Promise<void>((resolve) => (stop = resolve));

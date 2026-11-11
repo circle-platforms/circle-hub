@@ -19,7 +19,7 @@ export type { SandboxBatchItem, PackFunctionTarget, SandboxLimits, SandboxOption
 export { callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, sandboxStats, stopAll } from './sandbox/sandbox.ts';
 export type { SandboxErrorCode } from './sandbox/errors.ts';
 export { SANDBOX_ERRORS, SandboxError } from './sandbox/errors.ts';
-export { osIsolationAvailable, osIsolationFailure } from './sandbox/isolation.ts';
+export { osIsolationAvailable, osIsolationFailure, isolationFailureText } from './sandbox/isolation.ts';
 /** sweepOrphans: call once when the Hub starts, to end children an earlier Hub process left running. */
 export { sweepOrphans } from './sandbox/orphans.ts';
 
