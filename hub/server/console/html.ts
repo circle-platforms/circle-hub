@@ -88,6 +88,21 @@ export function table(headers: readonly (string|Html)[], rows: readonly unknown[
   )}</tbody></table></div>`;
 }
 
+/** What table() writes around a table before anything names it. Escaped text can never hold it: only table() does. */
+const UNNAMED_TABLE = /<div class="ch-table-wrap" tabindex="0" role="region" aria-label="表格"><table class="ch-table"( data-view="[^"]*")?>/g;
+
+/**
+ * Names the tables in a part of a page that nothing named yet (accessibility guide, tables; responsive-table guide): the
+ * scroll region around a table and the table itself say what they list, by the title of the section that holds them or,
+ * for a table that stands in no titled section, the page's. The name is a caption only assistive technology gets: the
+ * visible heading above the table already says it to a sighted reader. A table named earlier is left as it is.
+ */
+export function nameTables<T>(part: T, name: string): T | Html {
+  if (!(part instanceof Html) || !part.text.includes('aria-label="表格"><table class="ch-table"') || !name.trim()) return part;
+  const label = html`${name.trim()}`.text;
+  return new Html(part.text.replace(UNNAMED_TABLE, (_all, view: string | undefined) => `<div class="ch-table-wrap" tabindex="0" role="region" aria-label="${label}"><table class="ch-table"${view ?? ''}><caption class="ch-visually-hidden">${label}</caption>`), part.layout);
+}
+
 export function definitions(pairs: readonly (readonly [string, unknown])[]): Html {
   return html`<dl class="ch-kv">${pairs.map(([term, value]) => html`<dt>${term}</dt><dd>${value}</dd>`)}</dl>`;
 }
@@ -244,8 +259,9 @@ function htmlDocument(title: string, body: Html, script = false): Html {
 /** A page of the console: the side navigation and the signed-in account, then the title and the body. */
 export function page(chrome: PageChrome, body: unknown): Html {
   const user = chrome.user;
-  const content = html`${body}`;
   const layout = body instanceof Html ? body.layout : {};
+  // A table no titled section named takes the page's title.
+  const content = nameTables(html`${body}`, chrome.title) as Html;
   // Escaped text can never hold this attribute: only liveModule() writes it.
   const updates = user !== null && [content, layout.inspector, layout.sidebar].some((part) => part?.text.includes(' data-live="'));
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';

@@ -79,3 +79,25 @@ test('the statistics tab has a heading between the page title and its figures',a
  // accessibility, headings: no level is skipped on the way down.
  for(let i=1;i<levels.length;i++)assert.ok(levels[i]<=levels[i-1]+1,`h${levels[i-1]} is followed by h${levels[i]}`);
 });
+
+test('every table says what it lists: its section\'s title, or the page\'s, as the name of its scroll region and as a caption',async t=>{
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,requireOsIsolation:false});t.after(()=>hub.close());
+ const admin=await hub.createUser('合成管理员','admin'),member=await hub.createUser('合成成员'),client=await openConsole(hub,admin.token);
+ const spaces=hub.hub.knowledge.spaces!;await spaces.ensure(member.principal,member.user.id);
+ await spaces.write(member.principal,{path:'/方法',kind:'observation',statement:'合成条目：表格要有名字'});
+ let tables=0;
+ const own=await openConsole(hub,member.token);
+ // The member's own folder is read as the member: an administrator has no way into a personal space.
+ for(const [reader,path] of [[client,'/console/team'],[client,'/console/records'],[client,'/console/connections'],[own,'/console/knowledge/space?'+new URLSearchParams({space:member.user.id,path:'/方法',scope:'personal'})]] as const){
+  const reply=await reader.get(path);assert.equal(reply.status,200,path);
+  // accessibility, tables: no table is left with the generic name.
+  assert.ok(!reply.body.includes('aria-label="表格"'),path);
+  for(const match of reply.body.matchAll(/<div class="ch-table-wrap" tabindex="0" role="region" aria-label="([^"]*)"><table class="ch-table"(?: data-view="[^"]*")?>(<caption class="ch-visually-hidden">([^<]*)<\/caption>)?/g)){
+   tables++;
+   assert.ok(match[1].trim().length>0,`${path}: the scroll region has a name`);
+   assert.equal(match[3],match[1],`${path}: the caption says the same as the region`);
+  }
+ }
+ assert.ok(tables>=2,`tables were checked (${tables})`);
+});
+
