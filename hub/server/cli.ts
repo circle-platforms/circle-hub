@@ -9,7 +9,7 @@ import {deletionCheck,deleteMember,DELETION_EFFECT,handoverLines} from './member
 // assembly's listings. run list is read-only and refuses every account that is not an administrator. Output is Chinese, made safe for a
 // terminal (stored text may come from users' documents), and never shows a secret: a token is printed once, when it is
 // issued, and never again.
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
@@ -31,6 +31,7 @@ import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_
 import { countsLine } from './text.ts';
 import { DEFAULT_ADMIN_NAME, initialPassword } from '../records/api.ts';
 import { issueSetupCode } from './setup-code.ts';
+import { BATCH_DEFAULT_CONCURRENCY, BATCH_MAX_CONCURRENCY, BATCH_MAX_INTERVAL_MS, BATCH_MAX_OBJECTS, BATCH_MAX_PER_RUN, RUN_BATCH_USAGE, batchLines, boundedOption, labelOfRow, objectsOf, startBatch } from './cli-run-batch.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
   io: CliIo;
@@ -97,6 +98,7 @@ function usage(extra: readonly CliCommand[]): string {
     `  ${LOCAL_TOOLS_USAGE}`,
     '  setup-code                                   还没有管理员时，给网页控制台发一个设置码（24 小时内有效，只显示一次），在 /console/setup 用它建第一位管理员',
     '  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改',
+    `  ${RUN_BATCH_USAGE}  管理员为文件里每个外部对象各开始一次运行（只用于开始时由 Hub 直接算出结果的工作流）`,
     '  run list [--pack <包>] [--user <用户>] [--state 受理|未受理|进行中] [--since <ISO时间>] [--unknown] [--limit <N>] [--cursor <游标>] [--json] [--as <管理员>]  列出运行（仅管理员；默认 50 条，新到旧，超出给下一页游标）',
     '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
     '  health [--since <时长或时间>] [--json] [--as <管理员>]   资源的当前值和窗口内的最小、最大值（仅管理员；--since 写 30m、6h、7d 或 ISO 时间，默认 1 小时）',
@@ -485,9 +487,66 @@ async function runListCommand(args: readonly string[], ctx: CliContext, options:
   return 0;
 }
 
+/**
+ * run batch (issue 32, decision 156): the administrator is the runner of the runs started for the objects a file lists. Only a
+ * workflow whose requirements are all facts is taken, where start_run computes the result and no model is asked.
+ */
+async function runBatchCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+  const { values } = parse(args, {
+    pack: { type: 'string' }, slot: { type: 'string' }, from: { type: 'string' }, product: { type: 'string' }, version: { type: 'string' },
+    'per-run': { type: 'string' }, concurrency: { type: 'string' }, 'interval-ms': { type: 'string' }, 'failed-out': { type: 'string' }, json: { type: 'boolean' },
+  }, 0);
+  if (!values.pack || !values.slot || !values.from) throw new UsageError(`用法：${RUN_BATCH_USAGE}`);
+  const usage = (message: string) => new UsageError(message);
+  const concurrency = boundedOption('--concurrency', values.concurrency, BATCH_DEFAULT_CONCURRENCY, 1, BATCH_MAX_CONCURRENCY, usage);
+  const intervalMs = boundedOption('--interval-ms', values['interval-ms'], 0, 0, BATCH_MAX_INTERVAL_MS, usage);
+  const perRun = boundedOption('--per-run', values['per-run'], 1, 1, BATCH_MAX_PER_RUN, usage);
+  const by = await (await tokenRules(options)).member(ctx);
+  if (by.role !== 'admin') throw new CliError('只有管理员可以批量开始运行', '用管理员的操作令牌执行这一条命令');
+  const path = (name: string) => isAbsolute(name) ? name : resolve(ctx.io.cwd, name);
+  let text: string;
+  try { text = await readFile(path(values.from), 'utf8'); }
+  catch { throw new CliError(`读不到文件 ${terminalSafe(values.from)}`, '核对路径和读权限；文件里每行写一个外部对象标识'); }
+  const objects = objectsOf(text);
+  if (!objects.length) throw new CliError('文件里没有外部对象标识', '每行写一个标识，例如 <系统>:<类型>:<编号>；空行和 # 开头的行会跳过');
+  if (objects.length > BATCH_MAX_OBJECTS) throw new CliError(`文件里有 ${objects.length} 个对象，一次最多 ${BATCH_MAX_OBJECTS} 个`, '拆成几个文件分批执行');
+  let deps: ServerDeps;
+  try { deps = await ctx.deps(); }
+  catch (error) {
+    if (isAssemblyMissing(error)) throw new CliError('run batch 要用运行模块，这个装配模块没有提供', (error as Error).message);
+    throw error;
+  }
+  const workflow = await deps.workflows.forUser(by, values.pack);
+  if (workflow === null) throw new CliError(`管理员用不了工作流 ${terminalSafe(values.pack)}`, '核对工作流的名字和版本，以及它是否已发布并分配给这位管理员');
+  if (!workflow.requirements.length || !workflow.requirements.every((row) => row.accepted_producer === 'fact'))
+    throw new CliError(`工作流 ${terminalSafe(values.pack)} 的结果要等提交，不能批量开始`, '批量开始只用于开始运行时由 Hub 直接算出结果的工作流（全部要求项都是事实）；其余工作流由客户端逐个运行并提交');
+  const slot = workflow.workflow.inputs.find((input) => input.slot === values.slot);
+  if (slot !== undefined && perRun > 1 && slot.many !== true) throw new CliError(`输入槽 ${terminalSafe(values.slot)} 一次只接受一个对象`, '去掉 --per-run，每个对象各开始一次运行');
+  if (slot === undefined) throw new CliError(`工作流 ${terminalSafe(values.pack)} 没有输入槽 ${terminalSafe(values.slot)}`, `它的输入槽：${workflow.workflow.inputs.map((input) => input.slot).join('、') || '无'}`);
+  const plan = { pack: values.pack, slot: values.slot, ...(values.product === undefined ? {} : { product: values.product }), ...(values.version === undefined ? {} : { version: values.version }), objects, perRun, concurrency, intervalMs };
+  const quiet = values.json === true;
+  const runs = Math.ceil(objects.length / perRun);
+  if (!quiet) out(ctx.io, `开始 ${objects.length} 个对象、${runs} 次运行：工作流 ${plan.pack}，输入槽 ${plan.slot}，每次运行 ${perRun} 个，并发 ${concurrency}，间隔 ${intervalMs} 毫秒；运行者 ${by.name}`);
+  const summary = await startBatch(deps.runs.startRun.bind(deps.runs), by, plan, {
+    onRow: (row, done) => { if (!quiet) out(ctx.io, row.run === undefined ? `[${done}/${runs}] 没有开始 ${labelOfRow(row)}：${(row.codes ?? []).join('、')}` : `[${done}/${runs}] ${labelOfRow(row)} → 运行 ${row.run}${row.result ? `，结果 ${row.result}` : '，没有结果'}`); },
+  });
+  const failed = summary.rows.filter((row) => row.run === undefined).flatMap((row) => row.objects);
+  if (values['failed-out'] !== undefined && failed.length) {
+    try { await writeFile(path(values['failed-out']), `${failed.join('\n')}\n`, { mode: 0o600, flag: 'wx' }); }
+    catch { throw new CliError(`写不了文件 ${terminalSafe(values['failed-out'])}`, '换一个还不存在的文件名；没有开始的对象也列在上面的输出里'); }
+  }
+  if (quiet) ctx.io.stdout(jsonSafe(JSON.stringify(summary, null, 2)));
+  else {
+    for (const line of batchLines(summary, plan)) out(ctx.io, line);
+    if (values['failed-out'] !== undefined && failed.length) out(ctx.io, `没有开始的 ${failed.length} 个对象已写入 ${values['failed-out']}；原因消除后用 --from 这个文件再执行一次`);
+  }
+  return summary.failed === 0 ? 0 : 1;
+}
+
 async function runCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') return runListCommand(rest, ctx, options);
+  if (sub === 'batch') return runBatchCommand(rest, ctx, options);
   if(sub==='abandon'){
     const {values,positionals}=parse(rest,{'answer-request':{type:'string'},reason:{type:'string'}},1);
     if(!values['answer-request']||!values.reason)throw new UsageError('需要 --answer-request 和 --reason；此命令管理放弃整个运行，不停止远端执行或解除冻结');
@@ -499,7 +558,7 @@ async function runCommand(args: readonly string[], ctx: CliContext, options: Cli
     out(ctx.io,'技术层只保留来源判定，未重新核验；要求项未满足（已放弃）；原效果和冻结记录不改写。');
     return 0;
   }
-  if (sub !== 'show') throw new UsageError('run 的子命令是 list、show 或 abandon');
+  if (sub !== 'show') throw new UsageError('run 的子命令是 list、show、abandon 或 batch');
   const { values, positionals } = parse(rest, { json: { type: 'boolean' }, as: { type: 'string' } }, 1);
   const by = await (await tokenRules(options)).viewer(ctx, values.as);
   let deps: ServerDeps;

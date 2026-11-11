@@ -6,7 +6,7 @@
 // PostgreSQL; operator tokens in memory (never the owner's token file), no launchd.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -597,6 +597,91 @@ process.exitCode = await main(['token', 'issue', '甲', '--raw'], { keyProvider:
 });
 
 describe('commands of other packages', () => {
+  test('run batch starts one run per listed object as the administrator, sums up what did not start and refuses what it is not for', async () => {
+    const env = await migrated();
+    const root = await run(['user', 'create', '根管理员', '--role', 'admin'], env);
+    const rootToken = root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!;
+    const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
+    await run(['user', 'create', '甲'], env, operator);
+    const memberToken = (await run(['token', 'issue', '甲', '--raw'], env, operator)).out[0];
+    const directory = await mkdtemp(join(tmpdir(), 'circle-hub-batch-'));
+    try {
+      const list = join(directory, 'objects.txt');
+      await writeFile(list, '# 合成清单\ntoy:mindmap:1\ntoy:mindmap:2\n\ntoy:mindmap:3\ntoy:mindmap:1\n');
+      const started: Array<{ user: string; role: string; input: unknown }> = [];
+      let fakeStart: ((...args: unknown[]) => Promise<never>) | undefined;
+      const facts = { workflow: { inputs: [{ slot: 'map', accepts: [] }, { slot: 'maps', accepts: [], many: true }] }, requirements: [{ accepted_producer: 'fact' }] };
+      const judged = { workflow: { inputs: [{ slot: 'map', accepts: [] }] }, requirements: [{ accepted_producer: 'fact' }, { accepted_producer: 'model' }] };
+      const assembly: AssemblyModule = {
+        assemble: () => Promise.reject(new Error('not used')),
+        assembleCommand: (config, records) => {
+          const { deps, fakes } = fakeDeps(config, records);
+          fakes.workflows.forUser = async (_user, ref) => (ref === 'synthetic-facts' ? facts : ref === 'synthetic-judged' ? judged : null) as never;
+          fakes.runs.startRun = async (user, input, context) => {
+            started.push({ user: user.name, role: user.role, input });
+            if (fakeStart) return fakeStart(user, input, context);
+            const object = (input.inputs.map as { external: string }).external;
+            if (object.endsWith(':2')) return { call_result: 'error', errors: [{ code: 'SOURCE_ABSENT', message: '合成：没有这份文档', fix: '合成' }] } as never;
+            return { call_result: 'ok', errors: [], run: { run: `run_${'0'.repeat(25)}${object.slice(-1)}` }, result: { reference: `rec:${'a'.repeat(64)}` } } as never;
+          };
+          return deps;
+        },
+      };
+      const extra = { assembly: async () => assembly };
+      // A fresh environment each time: the command takes the token out of the one it is given.
+      const admin = () => ({ ...env, CIRCLE_HUB_TOKEN: rootToken });
+      const failedOut = join(directory, 'failed.txt');
+      const done = await run(['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', list, '--product', 'Meadow', '--concurrency', '1', '--failed-out', failedOut], admin(), extra);
+      assert.equal(done.code, 1, 'one object did not start: ' + done.text);
+      assert.deepEqual(started.map((call) => [call.user, call.role]), [['根管理员', 'admin'], ['根管理员', 'admin'], ['根管理员', 'admin']], 'the administrator is the runner; the repeated line starts once');
+      assert.deepEqual(started.map((call) => call.input), ['1', '2', '3'].map((n) => ({ pack: 'synthetic-facts', product: 'Meadow', inputs: { map: { external: `toy:mindmap:${n}` } } })));
+      assert.ok(done.out.includes('开始 3 个对象、3 次运行：工作流 synthetic-facts，输入槽 map，每次运行 1 个，并发 1，间隔 0 毫秒；运行者 根管理员'), done.text);
+      assert.ok(done.out.includes(`[1/3] toy:mindmap:1 → 运行 run_${'0'.repeat(25)}1，结果 rec:${'a'.repeat(64)}`), done.text);
+      assert.ok(done.out.includes('[2/3] 没有开始 toy:mindmap:2：SOURCE_ABSENT'), done.text);
+      assert.ok(done.out.includes('共 3 个对象、3 次运行：开始并得到结果 2 次，开始但没有结果 0 次，没有开始 1 次'), done.text);
+      assert.ok(done.out.includes('没有开始的原因：SOURCE_ABSENT 1 次'), done.text);
+      assert.ok(done.out.includes('- 没有开始 toy:mindmap:2：SOURCE_ABSENT 合成：没有这份文档'), done.text);
+      assert.ok(done.out.some((line) => /^用时 .+，平均每个对象 .+（每次运行 1 个，并发 1，间隔 0 毫秒）；按这个速度 100 个对象约 .+$/.test(line)), done.text);
+      assert.equal(await readFile(failedOut, 'utf8'), 'toy:mindmap:2\n', 'what did not start is a list for the next attempt');
+      // The summary as JSON, for a script.
+      started.length = 0;
+      const json = await run(['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', list, '--json'], admin(), extra);
+      assert.equal(json.code, 1, json.text);
+      assert.deepEqual(json.err, [], json.text);
+      const summary = JSON.parse(json.out.join('\n')) as { total: number; started: number; failed: number; by_code: unknown; rows: Array<{ objects: string[]; run?: string }> };
+      assert.deepEqual({ total: summary.total, started: summary.started, failed: summary.failed, by_code: summary.by_code }, { total: 3, started: 2, failed: 1, by_code: [{ code: 'SOURCE_ABSENT', count: 1 }] });
+      assert.deepEqual(summary.rows.map((row) => [row.objects, row.run !== undefined]), [[['toy:mindmap:1'], true], [['toy:mindmap:2'], false], [['toy:mindmap:3'], true]]);
+      // A slot that takes many: the objects go two to a run.
+      started.length = 0;
+      fakeStart = async () => ({ call_result: 'ok', errors: [], run: { run: `run_${'0'.repeat(26)}` }, result: { reference: `rec:${'a'.repeat(64)}` } }) as never;
+      const grouped = await run(['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'maps', '--from', list, '--per-run', '2'], admin(), extra);
+      assert.equal(grouped.code, 0, grouped.text);
+      assert.deepEqual(started.map((call) => (call.input as { inputs: { maps: unknown } }).inputs.maps), [[{ external: 'toy:mindmap:1' }, { external: 'toy:mindmap:2' }], [{ external: 'toy:mindmap:3' }]]);
+      assert.ok(grouped.out.includes('共 3 个对象、2 次运行：开始并得到结果 2 次，开始但没有结果 0 次，没有开始 0 次'), grouped.text);
+      fakeStart = undefined;
+      // What it is not for, each refused before any run starts.
+      started.length = 0;
+      const cases: Array<[string[], () => NodeJS.ProcessEnv, RegExp]> = [
+        [['run', 'batch', '--pack', 'synthetic-judged', '--slot', 'map', '--from', list], admin, /错误：工作流 synthetic-judged 的结果要等提交，不能批量开始/],
+        [['run', 'batch', '--pack', 'synthetic-absent', '--slot', 'map', '--from', list], admin, /错误：管理员用不了工作流 synthetic-absent/],
+        [['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'other', '--from', list], admin, /错误：工作流 synthetic-facts 没有输入槽 other[\s\S]*它的输入槽：map/],
+        [['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', join(directory, 'missing.txt')], admin, /错误：读不到文件/],
+        [['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', list, '--concurrency', '9'], admin, /--concurrency 要 1 到 8 的整数/],
+        [['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', list, '--per-run', '2'], admin, /错误：输入槽 map 一次只接受一个对象/],
+        [['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map'], admin, /用法：run batch --pack/],
+        [['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', list], () => ({ ...env, CIRCLE_HUB_TOKEN: memberToken }), /错误：只有管理员可以批量开始运行/],
+      ];
+      for (const [argv, environment, expected] of cases) {
+        const refused = await run(argv, environment(), extra);
+        assert.notEqual(refused.code, 0, argv.join(' '));
+        assert.match(refused.text, expected, argv.join(' '));
+      }
+      assert.equal(started.length, 0, 'a refused batch starts nothing');
+      const missing = await run(['run', 'batch', '--pack', 'synthetic-facts', '--slot', 'map', '--from', list], admin(), { assembly: missingAssembly });
+      assert.match(missing.text, /错误：run batch 要用运行模块，这个装配模块没有提供/);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
+
   test('run show and the reserved commands say clearly what a placeholder assembly module lacks; an unknown command is a usage error', async () => {
     const env = await migrated();
     await run(['user', 'create', '根管理员', '--role', 'admin'], env);
