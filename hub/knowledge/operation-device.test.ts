@@ -142,7 +142,7 @@ test('all three operation structures carry device and bed, and every client-supp
     assert.equal(view.feeding.device, 'device0');
     assert.equal(view.feeding.bed, 'synthetic');
     assert.ok(!('lease' in view.feeding) && !('lease_id' in view.feeding));
-    assert.match(view.view.note ?? '', /设备 device0（台架 synthetic）/);
+    assert.match(view.view.note ?? '', /测试环境 device0，synthetic/);
     assert.deepEqual(Object.keys(view.receipt).sort(), ['item', 'record']);
   }
   const hubValues: Record<string, unknown> = {
@@ -163,7 +163,7 @@ test('without a bed manifest the device and bed are kept as declared', {skip}, a
   const device = await stored(current, await submit(current, {...observation(current, '只声明设备'), device:'device0'}, '只声明设备', {missingBed:true}));
   assert.equal(device.feeding.device, 'device0');
   assert.ok(!('bed' in device.feeding));
-  assert.match(device.view.note ?? '', /设备 device0(?!（)/);
+  assert.match(device.view.note ?? '', /测试环境 device0(?!，)/);
   const bed = await stored(current, await submit(current, {...observation(current, '声明设备和台架'), device:'device0', bed:'first'}, '声明设备和台架'));
   assert.equal(bed.feeding.bed, 'first');
   const orphan = await submit(current, {...observation(current, '只声明台架'), bed:'first'}, '只声明台架');
@@ -225,9 +225,9 @@ test('credential withholding keeps the device without exposing the quote', {skip
   });
   const view = await ctx.w.knowledge.layers.contributions.readView(saved.receipt.record, ctx.w.admin);
   assert.equal(view?.status, 'credential_unreadable');
-  assert.match(view?.note ?? '', /设备 device0（台架 synthetic）/);
+  assert.match(view?.note ?? '', /测试环境 device0，synthetic/);
   const listed = await ctx.w.knowledge.layers.contributions.list(ctx.root, [path], ctx.w.admin);
-  assert.match(listed.find(row => row.record === saved.receipt.record)?.note ?? '', /设备 device0（台架 synthetic）/);
+  assert.match(listed.find(row => row.record === saved.receipt.record)?.note ?? '', /测试环境 device0，synthetic/);
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:[path], depth:0}, ctx.w.admin);
   const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
   assert.match(text, /测试环境 device0，synthetic/);

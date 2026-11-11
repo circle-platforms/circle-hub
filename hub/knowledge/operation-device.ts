@@ -71,5 +71,5 @@ export async function completeOperationDevice(store: RecordStore, input: { run: 
 /** What a view says about an operation record's device and bed, or null when it names none. */
 export function operationDeviceNote(body: unknown): string | null {
   if (!object(body) || !operationSchema(body.schema) || typeof body.device !== 'string' || body.device.length === 0) return null;
-  return `设备 ${body.device}${typeof body.bed === 'string' ? `（台架 ${body.bed}）` : ''}`;
+  return `测试环境 ${body.device}${typeof body.bed === 'string' ? `，${body.bed}` : ''}`;
 }
