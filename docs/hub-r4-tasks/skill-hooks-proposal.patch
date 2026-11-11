@@ -1,43 +1,26 @@
 diff --git a/contracts/model.json b/contracts/model.json
+index 2b1a21ea69..b1706a6a26 100644
 --- a/contracts/model.json
 +++ b/contracts/model.json
-@@ -4362,6 +4362,13 @@
-    {
-     "path": "SKILL.md",
-     "content": "给模型的规程",
+@@ -4368,0 +4369,7 @@
++   {
++    "path": "hooks.json",
++    "content": "技能自己的钩子文件，和 SKILL.md 同目录，由支持技能钩子的客户端执行，Hub 只分发不执行",
 +    "elements": [
 +     "T01"
 +    ]
 +   },
-+   {
-+    "path": "hooks.json",
-+    "content": "技能自己的钩子文件，和 SKILL.md 同目录，由支持技能钩子的客户端执行，Hub 只分发不执行",
-     "elements": [
-      "T01"
-     ]
 diff --git a/contracts/src/pack.test.ts b/contracts/src/pack.test.ts
 index 899fef6bb2..f48aa5fd8b 100644
 --- a/contracts/src/pack.test.ts
 +++ b/contracts/src/pack.test.ts
-@@ -9,10 +9,14 @@ import {
-   ProjectionOutput,
-   REQUIRED_FILES,
-   RequirementsFile,
+@@ -11,0 +12,3 @@ import {
 +  SKILL_HOOKS_FILE,
 +  SKILL_HOOK_COMMAND_MAX,
 +  SkillHooksFile,
-   SlotClaim,
-   SlotsFile,
-   WorkflowFile,
-   WorkflowInput,
+@@ -15,0 +19 @@ import {
 +  mayShipSkillHooks,
-   packPathProblem,
-   schemas,
- } from './pack.ts';
-@@ -71,6 +75,41 @@ test('pack paths stay inside the places packs keep files', () => {
-   }
- });
- 
+@@ -73,0 +78,35 @@ test('pack paths stay inside the places packs keep files', () => {
 +test('the hook file sits at the pack root beside SKILL.md and nothing can live under it', () => {
 +  assert.equal(packPathProblem(SKILL_HOOKS_FILE), null);
 +  assert.equal(packPathProblem('tools/synthetic-skill/hooks.json'), null);
@@ -73,17 +56,11 @@ index 899fef6bb2..f48aa5fd8b 100644
 +  refused({ version: 1, hooks: { before_tool: [entry, { command: 7 }] } }, ['hooks', 'before_tool', 1, 'command'], 'a command is text');
 +});
 +
- test('requirements: valid file, and the rules of W02', () => {
-   assert.ok(RequirementsFile.safeParse(requirements).success);
-   const dupKey = { ...requirements, requirements: [requirements.requirements[0], requirements.requirements[0]] };
 diff --git a/contracts/src/pack.ts b/contracts/src/pack.ts
 index 2e29948f1d..4a810ee602 100644
 --- a/contracts/src/pack.ts
 +++ b/contracts/src/pack.ts
-@@ -136,6 +136,37 @@ export const PackManifest = z
-   });
- export type PackManifest = z.infer<typeof PackManifest>;
- 
+@@ -138,0 +139,31 @@ export type PackManifest = z.infer<typeof PackManifest>;
 +
 +
 +export const SKILL_HOOKS_FILE = 'hooks.json';
@@ -115,60 +92,30 @@ index 2e29948f1d..4a810ee602 100644
 +});
 +export type SkillHooksFile = z.infer<typeof SkillHooksFile>;
 +
- // ---------------------------------------------------------------- requirements.json (W02)
- 
- const Key = z.string().regex(/^[a-z][a-z0-9_]*$/, 'lowercase letters, digits and underscores');
 diff --git a/hub/runs/packs/README.md b/hub/runs/packs/README.md
 index 70d5aad79b..8a190366ce 100644
 --- a/hub/runs/packs/README.md
 +++ b/hub/runs/packs/README.md
-@@ -81,7 +81,7 @@ first (`*.shape` rules; the detail of a zod issue is the contract's English mess
- 
- | Rule | What it checks |
- | --- | --- |
+@@ -84 +84 @@ first (`*.shape` rules; the detail of a zod issue is the contract's English mess
 -| `directory.*`, `manifest.*` | no links (symbolic, or a file with more than one hard link: `directory.hardlink`) or special files (also a link where a listed file should be), directories only where packs keep files, legal paths (`packPathProblem`), no two paths that differ only in case at some level (`manifest.case_collision`: one name on a case-insensitive volume), every listed file present once with its size and SHA-256, nothing unlisted, size caps (over the total or the count cap nothing is read), a canonical version spelling and `id@x.y.z` at most 100 characters (`manifest.version`), declaration files of the pack's own kind only |
 +| `directory.*`, `manifest.*` | no links (symbolic, or a file with more than one hard link: `directory.hardlink`) or special files (also a link where a listed file should be), directories only where packs keep files, legal paths (`packPathProblem`), no two paths that differ only in case at some level (`manifest.case_collision`: one name on a case-insensitive volume), every listed file present once with its size and SHA-256, nothing unlisted, size caps (over the total or the count cap nothing is read), a canonical version spelling and `id@x.y.z` at most 100 characters (`manifest.version`), declaration files of the pack's own kind only, and a `hooks.json` only in a pack whose kind requires a SKILL.md (`manifest.foreign_file`: workflow and skill packs; a product or system pack has no skill folder beside which a client could read it) |
- | `file.json` (`manifest.json` for pack.json) | UTF-8 JSON that canonical JSON (RFC 8785, I-JSON) can hold: no lone surrogate in a string or member name, no number outside the double range, at most 256 levels of nesting |
- | `file.credential` | no file and no manifest title or description in which the records credential scanner finds a credential; the problem names the file and the line, never the text |
- | `requirements.unknown_check`, `requirements.duplicate_check` | every check a requirement lists exists in checks.json, once |
-@@ -97,6 +97,7 @@ first (`*.shape` rules; the detail of a zod issue is the contract's English mess
- | `publish.sample_failed`, `publish.unsampled` | (the publish check) every sample gives what it expects; every check, blocking or advisory, has a positive and a negative sample (C05 R[0], T02 R[0]) |
- | `requirements.unknown_code` | error handling rows and expected-outcome codes are `*`, a core violation code, a protocol code or a pack code `<pack id>.<code>` |
- | `skill.empty`, `skill.encoding` | SKILL.md is non-empty UTF-8 |
+@@ -99,0 +100 @@ first (`*.shape` rules; the detail of a zod issue is the contract's English mess
 +| `hooks.shape` | every `hooks.json` of a pack (the hook file of a skill folder: at the root of a workflow or skill pack, beside its SKILL.md, or in a skill folder nested under `tools/`) is read as the client reads it, because the client leaves a hook that does not fit unarmed and only says so in a notice: `version` is 1, `hooks` is an object whose keys are events the client knows (`before_tool`, `after_tool`, `before_stop`, `session_start`, `permission_request`), each a list of entries with a `command` that is text, not blank, without NUL and at most 4,000 characters (`SkillHooksFile`). Nothing else of an entry is judged. The Hub only distributes the file under the pack digest and never runs it |
- | `product.name_space`, `system.shape`, `product.shape` | product names without surrounding white space; system.json and product.json follow `system@1` and `product@1` |
- | `product.id_collision`, `product.name_collision`, `publish.withdrawn` | (publication of a version of an active product pack) decision 6 |
- 
-@@ -293,6 +294,8 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
- 
- 下发保留作者发布的原字节，不改写文件、不重新打包。它不是 MCP 工具，Circle 中没有专用界面；客户端工具的结果只作“客户端预览”，算数的是 Hub 在沙箱中的重新核验。没有 tools/ 的包继续使用原有发布规则。
- 
+@@ -295,0 +297,2 @@ test file (`hub/testing/postgres.ts`) for the registry and port tests, and run p
 +包根的 `hooks.json` 是技能自己的钩子文件，只有带 SKILL.md 的工作流包和通用技能包可以带（模型的包文件清单列着它；产品包和系统包没有 SKILL.md，带了按 `manifest.foreign_file` 拒绝）。发布时只按 `hooks.shape` 核对结构，随包按原字节下发，不经 `tools/` 扫描；装进客户端时按清单路径落在 SKILL.md 旁边。Hub 不执行它：支持技能钩子的客户端在会话载入这个技能之后才执行，其他客户端把它当作一个普通文件。它在包号覆盖的清单里，`get_nodes` 的 `pack` 加 `file: 'hooks.json'` 可以读到全文。
 +
- 产品包可在 `product@1.variables` 声明普通变量。默认值必须合模式，只用于合成发布样例与试运行；发布时不读取部署值。引用只能占满 `sync.options` 或生产器 `params` 中的一个值，其他文件与其他包种类不接受引用。模式复用运行参数的 `packSchema`，不能执行的模式拒绝。默认值是否属于合成业务数据由发布者负责，Hub 的凭据扫描照常执行，不能机械证明数据的业务来源。
- 
- 变量名字归首个已提交发布决定的包永久所有，撤回也不释放；同包各版模式规范 JSON 必须相同，默认值可变。跨进程产品发布在数据库事务内串行，依次锁定排序后的名字，在同一事务核对历史发布、密钥和部署引用并写发布决定。`variableNameAvailable(name, tx)` 是装配注入的只读端口，缺失时声明变量的发布拒绝；冲突不披露类型，统一“名字不可用”。
 diff --git a/hub/runs/packs/validate.test.ts b/hub/runs/packs/validate.test.ts
 index 05bbf87b00..3993dd989c 100644
 --- a/hub/runs/packs/validate.test.ts
 +++ b/hub/runs/packs/validate.test.ts
-@@ -1,9 +1,10 @@
- import assert from 'node:assert/strict';
+@@ -1,0 +2 @@ import assert from 'node:assert/strict';
 +import { createHash } from 'node:crypto';
- import { join } from 'node:path';
- import { after, before, test } from 'node:test';
- import { readPackDirectory } from './directory.ts';
+@@ -5,2 +6,2 @@ import { readPackDirectory } from './directory.ts';
 -import { editJson, productPack, systemPack, temporaryDirectory, withFiles, workflowPack, writePack, type PackDescription } from './testing/builder.ts';
 -import type { PackProblem, PackValidation } from './types.ts';
 +import { bytesOf, editJson, productPack, systemPack, temporaryDirectory, withFiles, workflowPack, writePack, type FileContent, type PackDescription } from './testing/builder.ts';
 +import type { PackDirectory, PackProblem, PackValidation } from './types.ts';
- import { validatePack } from './validate.ts';
- 
- let temp: { path: string; remove: () => Promise<void> };
-@@ -15,15 +16,23 @@ after(() => temp?.remove());
- 
- type Json = Record<string, any>;
- 
+@@ -18 +19,9 @@ type Json = Record<string, any>;
 -async function validated(pack: PackDescription): Promise<PackValidation> {
 +
 +function withHookFile(pack: PackDirectory, hooks: FileContent): PackDirectory {
@@ -179,35 +126,20 @@ index 05bbf87b00..3993dd989c 100644
 +}
 +
 +async function validated(pack: PackDescription, hooks?: FileContent): Promise<PackValidation> {
-   const written = await writePack(join(temp.path, `v${++n}`), pack);
-   const read = await readPackDirectory(written.dir);
-   assert.ok(read.ok, `the directory itself should read: ${JSON.stringify(!read.ok && read.problems)}`);
+@@ -22 +31 @@ async function validated(pack: PackDescription): Promise<PackValidation> {
 -  return validatePack(read.pack);
 +  return validatePack(hooks === undefined ? read.pack : withHookFile(read.pack, hooks));
- }
- 
+@@ -25,2 +34,2 @@ async function validated(pack: PackDescription): Promise<PackValidation> {
 -async function refused(pack: PackDescription, rule: string, where: { file?: string; field?: string } = {}): Promise<PackProblem> {
 -  const result = await validated(pack);
 +async function refused(pack: PackDescription, rule: string, where: { file?: string; field?: string } = {}, hooks?: FileContent): Promise<PackProblem> {
 +  const result = await validated(pack, hooks);
-   assert.equal(result.ok, false, `expected ${rule}, but the pack validated`);
-   const all = result.ok ? [] : result.problems;
-   const hit = all.find((p) => p.rule === rule && (where.file === undefined || p.file === where.file) && (where.field === undefined || p.field === where.field));
-@@ -33,8 +42,8 @@ async function refused(pack: PackDescription, rule: string, where: { file?: stri
-   return hit;
- }
- 
+@@ -36,2 +45,2 @@ async function refused(pack: PackDescription, rule: string, where: { file?: stri
 -async function accepted(pack: PackDescription): Promise<PackValidation & { ok: true }> {
 -  const result = await validated(pack);
 +async function accepted(pack: PackDescription, hooks?: FileContent): Promise<PackValidation & { ok: true }> {
 +  const result = await validated(pack, hooks);
-   assert.ok(result.ok, `expected the pack to validate: ${JSON.stringify(!result.ok && result.problems, null, 1)}`);
-   return result as PackValidation & { ok: true };
- }
-@@ -292,6 +301,28 @@ test('versions have one spelling, and each kind keeps to its own declaration fil
-   await refused(withFiles(systemPack(), { 'checks.json': base.files['checks.json'] }), 'manifest.foreign_file');
- });
- 
+@@ -294,0 +304,22 @@ test('versions have one spelling, and each kind keeps to its own declaration fil
 +test('a hook file beside SKILL.md is read as the client reads it, and only a pack with a SKILL.md may carry one', async () => {
 +  const hooks = { version: 1, hooks: { session_start: [{ name: '合成记录', command: 'node --version' }], before_tool: [{ name: '合成守卫', tools: 'question', command: 'node --version' }] } };
 +  const skill: PackDescription = { id: 'synthetic-hook-skill', version: '1.0.0', kind: 'skill', title: '合成钩子技能', description: '合成步骤', files: { 'SKILL.md': '# 合成技能\n\n合成步骤。\n', 'skill.json': { schema: 'skill@1', parsers: [] } } };
@@ -230,30 +162,16 @@ index 05bbf87b00..3993dd989c 100644
 +  await accepted(base);
 +});
 +
- test('a version is short enough to be named: id@version at most 100 characters', async () => {
-   // demo-review@ is 12 characters: a version of 88 is the longest a reference can name.
-   const longest = `1.0.${'7'.repeat(84)}`;
 diff --git a/hub/runs/packs/validate.ts b/hub/runs/packs/validate.ts
 index 44ba78e673..47bc250881 100644
 --- a/hub/runs/packs/validate.ts
 +++ b/hub/runs/packs/validate.ts
-@@ -10,9 +10,12 @@ import {
-   KnowledgeFile,
-   LedgerFile,
-   MAX_CHECK_READ_BYTES,
+@@ -12,0 +13 @@ import {
 +  mayShipSkillHooks,
-   PackSample,
-   REQUIRED_FILES,
-   PublishableRequirementsFile,
+@@ -15,0 +17,2 @@ import {
 +  SKILL_HOOKS_FILE,
 +  SkillHooksFile,
-   SlotsFile,
-   SkillDeclaration,
-   WorkflowFile,
-@@ -635,6 +638,16 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
-       if (file.path.startsWith('samples/')) c.add(problem('samples.unknown_check', file.path, `${file.path} 是样例，但只有${labelOf('pack_kind', 'workflow')}有检查和样例`, '删掉这个样例'));
-     }
-   }
+@@ -637,0 +641,10 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
 +  for (const [i, file] of manifest.files.entries()) {
 +    if (file.path !== SKILL_HOOKS_FILE && !file.path.endsWith(`/${SKILL_HOOKS_FILE}`)) continue;
 +    if (file.path === SKILL_HOOKS_FILE && !mayShipSkillHooks(manifest.kind)) {
@@ -264,30 +182,18 @@ index 44ba78e673..47bc250881 100644
 +      );
 +    } else c.parse('hooks.shape', file.path, SkillHooksFile, '技能钩子文件（版本 1）');
 +  }
-   let declarations: PackDeclarations | null;
-   let samples: LoadedSample[] = [];
-   if (manifest.kind === 'workflow') {
 diff --git a/hub/server/README.md b/hub/server/README.md
 index 76c4fbf6a9..194bbda483 100644
 --- a/hub/server/README.md
 +++ b/hub/server/README.md
-@@ -1033,7 +1033,7 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
- 
- `circle-hub local-tools verify <目录> --digest <包号>` 必须带包号。先比目录里 pack.json 的 SHA-256 和这个包号，不等就失败；再按 pack.json 重算每个文件，指出第一处不符的路径并列出多出的文件。只读，不联网，拒绝链接。清单里某个文件的摘要或大小不符时，报的是这个文件的路径。它也能核对集成者手工安装的完整清单目录。同步修改清单和文件会得到另一个包号，用发布时的包号核，这一份过不了。输出只含包号、版本、文件数、字节数及不符路径，不含文件正文或令牌。没有运行任何下载代码。
- 
+@@ -1036 +1036 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 -客户端中立契约（任何 MCP 客户端同样适用，不只 Circle）：`list_task_packs` 的每个包带 `digest`，带 `tools/` 的包还带 `local_tools`（文件清单和钉到 id@version、包号的安装命令，不带令牌）；`start_run` 的回答为本次冻结的版本重复同一披露。没有 `circle-hub` CLI 的客户端按同一协议直连本出口：`GET /local-tools/<包>@<版本>` 取规范清单、核对包号，再逐文件取原字节、核对大小与 SHA-256，全部通过才改名落盘。建议安装根用通用的技能目录 `~/.agents/skills/<包>/`（保留清单相对路径，含 SKILL.md 与 pack.json），Circle 与 DeepSeek Harness 都读这个目录。包规程里的 `%HUB_URL%` 是 Hub 的 MCP 端点基址、`%HUB_TOKEN%` 是 Bearer 令牌：客户端在本地工具执行时展开，模型只写名字，令牌的值不进模型参数、结果、日志或 Git；没有这两个占位符的客户端用自己的等价机制。本地工具是包作者发布的代码，Hub 只做静态扫描不是沙箱，客户端安装与执行前由人审阅并放行。本地跑出来的结果只是“客户端预览”，算数的是 Hub 的重算核验；产物生成所需的在运行、已受理结果、原样提交和绑定原件字节走 `/run-export/<运行>`（决定 104）。支持 macOS 和 Linux，Windows 不做。
 +客户端中立契约（任何 MCP 客户端同样适用，不只 Circle）：`list_task_packs` 的每个包带 `digest`，带 `tools/` 的包还带 `local_tools`（文件清单和钉到 id@version、包号的安装命令，不带令牌）；`start_run` 的回答为本次冻结的版本重复同一披露。没有 `circle-hub` CLI 的客户端按同一协议直连本出口：`GET /local-tools/<包>@<版本>` 取规范清单、核对包号，再逐文件取原字节、核对大小与 SHA-256，全部通过才改名落盘。建议安装根用通用的技能目录 `~/.agents/skills/<包>/`（保留清单相对路径，含 SKILL.md 与 pack.json），Circle 与 DeepSeek Harness 都读这个目录。包根的 `hooks.json`（可选的技能钩子文件）同样保留路径，落在 SKILL.md 旁边：Hub 不执行它，支持技能钩子的客户端在会话载入这个技能之后才执行，其余客户端把它当作一个普通文件；它是包作者发布的代码，和本地工具一样，由人在安装前审阅：据 Circle 1.14 的 docs/hooks.md，装在用户级技能目录里的这份文件在会话载入技能后直接执行，不再单独询问批准；装在项目技能目录里的要先信任文件夹并批准这份文件的字节。包规程里的 `%HUB_URL%` 是 Hub 的 MCP 端点基址、`%HUB_TOKEN%` 是 Bearer 令牌：客户端在本地工具执行时展开，模型只写名字，令牌的值不进模型参数、结果、日志或 Git；没有这两个占位符的客户端用自己的等价机制。本地工具是包作者发布的代码，Hub 只做静态扫描不是沙箱，客户端安装与执行前由人审阅并放行。本地跑出来的结果只是“客户端预览”，算数的是 Hub 的重算核验；产物生成所需的在运行、已受理结果、原样提交和绑定原件字节走 `/run-export/<运行>`（决定 104）。支持 macOS 和 Linux，Windows 不做。
- 
- 读取说明收尾（hub-read-absence）：管理员备注上限 2,000 字，MCP 当前只写理由条数和管理员详情入口，不拼接理由原文。MCP 把每条完整理由分别交给 CallLog，迁移 4 的 call_reasons 在同一调用事务中一次批量写入；管理员查询与控制台“完整理由”展示它们，普通读者、调用记录正文和 JSONL 均不带完整理由。理由按序、只追加，重复 span 不重写；NUL 与不成对代理项先规范化。结果记录引用重查两次仍缺时，给出的是缺少引用这一事实，不改已经算出的校验结果；同一提交再交可恢复引用而不多算修复轮。缺陷计数的持久口径是上述 metric=1 理由行数，按追踪／运行归属查询，不另向模型回显内部异常。
- 
 diff --git a/hub/server/cli-local-tools.test.ts b/hub/server/cli-local-tools.test.ts
 index 44527415a6..df8e803417 100644
 --- a/hub/server/cli-local-tools.test.ts
 +++ b/hub/server/cli-local-tools.test.ts
-@@ -31,6 +31,23 @@ test('install writes only fully verified original files and canonical manifest a
-   assert.deepEqual(await readFile(join(target, 'pack.json')), Buffer.from(canonicalBytes(source.manifest)));
-   assert.deepEqual(await readdir(into), [ref]); const second = await install(into); assert.equal(second.code, 0); assert.match(second.out.join('\n'), /已安装/);
- });
+@@ -33,0 +34,17 @@ test('install writes only fully verified original files and canonical manifest a
 +test('a hook file listed at the pack root is installed beside SKILL.md with the published bytes', async () => {
 +  const hooked = 'synthetic-hooked@1.0.0';
 +  const hooks = { version: 1, hooks: { before_tool: [{ name: 'synthetic guard', tools: 'question', command: 'node --version' }] } };
@@ -305,66 +211,66 @@ index 44527415a6..df8e803417 100644
 +    const checked = await verifyLocalTools(target, pack.digest); assert.equal(checked.ok, true); assert.equal(checked.files, pack.manifest.files.length);
 +  } finally { await second.close(); }
 +});
- test('incorrect pinned digest writes nothing and server corruption leaves no installation or staging directory', async () => {
-   const into = join(root, 'wrong-digest'); assert.equal((await install(into, 'f'.repeat(64))).code, 1); await assert.rejects(readdir(into));
-   const file = join(source.dir, 'tools/task.ts'); const original = await readFile(file); await writeFile(file, Buffer.from('changed'));
+diff --git a/packs/workflow/case-compile/hooks.json b/packs/workflow/case-compile/hooks.json
+new file mode 100644
+index 0000000000..4147f21152
+--- /dev/null
++++ b/packs/workflow/case-compile/hooks.json
+@@ -0,0 +1,18 @@
++{
++  "version": 1,
++  "hooks": {
++    "session_start": [
++      {
++        "name": "用例编译：记下主会话",
++        "command": "node --input-type=module -e 'import{readFileSync,mkdirSync,appendFileSync}from\"node:fs\";import{join}from\"node:path\";import{tmpdir}from\"node:os\";import{createHash}from\"node:crypto\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));const id=String(v?.session_id??\"\");if(v?.event===\"session_start\"&&/^[A-Za-z0-9_.-]{1,80}$/.test(id)&&typeof v.cwd===\"string\"){const d=join(tmpdir(),\"circle-case-compile-lead\");mkdirSync(d,{recursive:true,mode:0o700});appendFileSync(join(d,createHash(\"sha256\").update(v.cwd).digest(\"hex\").slice(0,32)+\".txt\"),id+\"\\n\",{mode:0o600});}}catch{}'"
++      }
++    ],
++    "before_tool": [
++      {
++        "name": "用例编译：子代理不问用户",
++        "tools": "question",
++        "command": "node --input-type=module -e 'import{readFileSync}from\"node:fs\";import{join}from\"node:path\";import{tmpdir}from\"node:os\";import{createHash}from\"node:crypto\";let out=\"{}\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));if(v?.event===\"before_tool\"&&v.tool_name===\"question\"&&typeof v.cwd===\"string\"){let leads=null;try{leads=readFileSync(join(tmpdir(),\"circle-case-compile-lead\",createHash(\"sha256\").update(v.cwd).digest(\"hex\").slice(0,32)+\".txt\"),\"utf8\").split(\"\\n\").filter(Boolean)}catch{}if(leads&&leads.length&&!leads.includes(String(v.session_id??\"\")))out=JSON.stringify({decision:\"deny\",reason:\"子代理不向用户提问：这类问题用户答不了，要你自己按资料定。能在锁定命令树、手册、运行器合约、条目和编写简报里查到的，查了就定，并在给主代理的报告里写明你定了什么、依据在哪一行；任务说明里的写法和这些资料对不上时，以资料为准，同样在报告里说明。资料里确实没有的，把缺的事实和你建议的处理写进报告，交回派给你任务的主代理。\"});}}catch{}console.log(out);'"
++      }
++    ]
++  }
++}
 diff --git a/packs/workflow/case-compile/pack-files.ts b/packs/workflow/case-compile/pack-files.ts
 index 2363412420..27ac1bcfde 100644
 --- a/packs/workflow/case-compile/pack-files.ts
 +++ b/packs/workflow/case-compile/pack-files.ts
-@@ -22,8 +22,8 @@ export const IDENTITY = {
-   description: '把一整份测试脑图编译成自动化用例 Excel 工作簿，再交给自动化测试环境执行；需要这份脑图在敏捷平台上的文档号。每个用例的第一行写着它在脑图里的层级（AAA>BBB>CCC），方便人工对照原文。工作簿由客户端生成，Hub 只逐行核对并重算，不生成内容、不调用模型；核对通过不证明在真实设备上跑得通',
- } as const;
- 
+@@ -25,2 +25,2 @@ export const IDENTITY = {
 -/** Top-level declaration files and the folders whose files belong to the pack. */
 -const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
 +
 +const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md', 'hooks.json'];
- const FOLDERS = ['functions', 'tables', 'policies', 'samples', 'examples', 'tools'];
- /** Tests and their helpers and the harness live beside the functions but are never loaded by a pack function. */
- const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/');
 diff --git a/packs/workflow/case-compile/pack.json b/packs/workflow/case-compile/pack.json
 index 7f04fe3469..35f32b55a0 100644
 --- a/packs/workflow/case-compile/pack.json
 +++ b/packs/workflow/case-compile/pack.json
-@@ -351,6 +351,11 @@
-       "sha256": "945f55a92d4f6343de3a72bfc583cc6b20f47f61f4d51a280c8909e083930285",
-       "size": 24304
-     },
+@@ -353,0 +354,5 @@
 +    {
 +      "path": "hooks.json",
 +      "sha256": "137ed722614de9e941b060110ab2eab45139429c0f41f099f28371a8acc228f8",
 +      "size": 2040
 +    },
-     {
-       "path": "policies/dispatch.json",
-       "sha256": "84e348cecffbb87e2b5a2d20e378af3578468bfe21d33457e4809ccdb52cfe8b",
 diff --git a/packs/workflow/case-compile/pack.test.ts b/packs/workflow/case-compile/pack.test.ts
 index 5e462813a1..6cf1ff4b39 100644
 --- a/packs/workflow/case-compile/pack.test.ts
 +++ b/packs/workflow/case-compile/pack.test.ts
-@@ -1,11 +1,13 @@
- import assert from 'node:assert/strict';
+@@ -2,2 +2,4 @@ import assert from 'node:assert/strict';
 -import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 -import { join } from 'node:path';
 +import { spawnSync } from 'node:child_process';
 +import { mkdtempSync, readFileSync, readdirSync, lstatSync, rmSync } from 'node:fs';
 +import { tmpdir } from 'node:os';
 +import { delimiter, dirname, join } from 'node:path';
- import { test } from 'node:test';
- import ts from 'typescript';
- import {createHash} from 'node:crypto';
+@@ -7,2 +9,2 @@ import {createHash} from 'node:crypto';
 -import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
 -import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
 +import { PackManifest, SkillHooksFile, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
 +import { computeManifest, packFiles, stage, PACK_DIR } from './pack-files.ts';
- import { parseRuntimeContract } from './functions/runtime-contract.ts';
- import { parseProfile } from './functions/profile.ts';
- import { parseManifest } from './functions/manifest.ts';
-@@ -85,6 +87,60 @@ test('the client skill says when the user is asked and that a subagent never ask
-   const skill = read('SKILL.md');
-   for (const phrase of ['问用户：只在答案会改变做法、资料里又查不到时才问', '设备结论要人来判（产品缺陷还是用例写错）', '能在锁定命令树、手册、合约、条目里查证的不问，自己定并在报告里说明', '子代理不问用户：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);
- });
+@@ -87,0 +90,54 @@ test('the client skill says when the user is asked and that a subagent never ask
 +test('the hook file is listed at the pack root and a staged pack carries it beside SKILL.md, byte for byte', async () => {
 +  const listed = (await computeManifest()).files.map((entry) => entry.path);
 +  assert.ok(listed.includes('hooks.json') && listed.includes('SKILL.md'));
@@ -419,30 +325,3 @@ index 5e462813a1..6cf1ff4b39 100644
 +  }
 +});
 +
- // Run 23, one case in three dispatches: a host name with a character the manual's row for that parameter excludes (the row was
- // not in the locked root), the device's refusal read as a possible defect each time; another case kept a sentence as the text
- // to find and then dropped the check. The reference hands its writer the value domain in the vendor's own words beside the
-diff --git a/packs/workflow/case-compile/hooks.json b/packs/workflow/case-compile/hooks.json
-new file mode 100644
-index 0000000000..4147f21152
---- /dev/null
-+++ b/packs/workflow/case-compile/hooks.json
-@@ -0,0 +1,18 @@
-+{
-+  "version": 1,
-+  "hooks": {
-+    "session_start": [
-+      {
-+        "name": "用例编译：记下主会话",
-+        "command": "node --input-type=module -e 'import{readFileSync,mkdirSync,appendFileSync}from\"node:fs\";import{join}from\"node:path\";import{tmpdir}from\"node:os\";import{createHash}from\"node:crypto\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));const id=String(v?.session_id??\"\");if(v?.event===\"session_start\"&&/^[A-Za-z0-9_.-]{1,80}$/.test(id)&&typeof v.cwd===\"string\"){const d=join(tmpdir(),\"circle-case-compile-lead\");mkdirSync(d,{recursive:true,mode:0o700});appendFileSync(join(d,createHash(\"sha256\").update(v.cwd).digest(\"hex\").slice(0,32)+\".txt\"),id+\"\\n\",{mode:0o600});}}catch{}'"
-+      }
-+    ],
-+    "before_tool": [
-+      {
-+        "name": "用例编译：子代理不问用户",
-+        "tools": "question",
-+        "command": "node --input-type=module -e 'import{readFileSync}from\"node:fs\";import{join}from\"node:path\";import{tmpdir}from\"node:os\";import{createHash}from\"node:crypto\";let out=\"{}\";try{const v=JSON.parse(readFileSync(0,\"utf8\"));if(v?.event===\"before_tool\"&&v.tool_name===\"question\"&&typeof v.cwd===\"string\"){let leads=null;try{leads=readFileSync(join(tmpdir(),\"circle-case-compile-lead\",createHash(\"sha256\").update(v.cwd).digest(\"hex\").slice(0,32)+\".txt\"),\"utf8\").split(\"\\n\").filter(Boolean)}catch{}if(leads&&leads.length&&!leads.includes(String(v.session_id??\"\")))out=JSON.stringify({decision:\"deny\",reason:\"子代理不向用户提问：这类问题用户答不了，要你自己按资料定。能在锁定命令树、手册、运行器合约、条目和编写简报里查到的，查了就定，并在给主代理的报告里写明你定了什么、依据在哪一行；任务说明里的写法和这些资料对不上时，以资料为准，同样在报告里说明。资料里确实没有的，把缺的事实和你建议的处理写进报告，交回派给你任务的主代理。\"});}}catch{}console.log(out);'"
-+      }
-+    ]
-+  }
-+}
