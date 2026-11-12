@@ -446,6 +446,7 @@ function startText(v: StartOut, context: TextContext): string {
       lines.push(claimLine({ ...observation, statement: { ...observation.statement, text } }));
     } else lines.push(claimLine(observation));
   }
+  if (run.device_help?.length) lines.push('设备输出仅供参考，不能作为原始用例的期望依据。');
   for (const claim of run.device_help ?? []) {
     lines.push(claimLine(claim));
     const words = claim.statement.data?.help;
@@ -521,19 +522,22 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
     return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步${next}。`;
   }
   if (c.reference.startsWith('rec:')) {
+    const withdrawn = c.structure?.grounds_withdrawn;
+    const hidden = c.structure?.grounds_withdrawn_hidden_count;
+    const qualification = (Array.isArray(withdrawn) && withdrawn.length > 0 || typeof hidden === 'number' && hidden > 0) ? '证据已撤回，当前结论状态未知；原因缺资料；下一步由使用者重新核对当前资料。以下是当时保存的结论。\n' : '';
     let value: unknown;
-    try { value = JSON.parse(c.text); } catch { return c.text; }
-    if (typeof value === 'string') return value;
+    try { value = JSON.parse(c.text); } catch { return qualification + c.text; }
+    if (typeof value === 'string') return qualification + value;
     const result = StoredValidationResult.safeParse(value);
-    if (result.success) return [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
+    if (result.success) return qualification + [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
     const shape = z.union(PARTITION.map(partition => StoredPartitionItem[partition]));
     const item = shape.safeParse(value);
-    if (item.success) return itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
+    if (item.success) return qualification + itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
     const items = shape.array().safeParse(value);
-    if (items.success) return items.data.length ? items.data.map(item => itemConclusion(item, context.items?.find(original => original.id === item.item))).join('\n') : '没有原始用例。';
+    if (items.success) return qualification + (items.data.length ? items.data.map(item => itemConclusion(item, context.items?.find(original => original.id === item.item))).join('\n') : '没有原始用例。');
     const originals = ItemProjection.array().safeParse(value);
-    if (originals.success) return originals.data.length ? originals.data.map(item => caseName(item, item.label)).join('\n') : '没有原始用例。';
-    return '资料已读取，完整内容在机器可读答复中。';
+    if (originals.success) return qualification + (originals.data.length ? originals.data.map(item => caseName(item, item.label)).join('\n') : '没有原始用例。');
+    return qualification + '资料已读取，完整内容在机器可读答复中。';
   }
   const lines = c.text.split('\n');
   const position = context.cursor ? cursorPosition(c.reference, context.cursor) : null;
