@@ -386,7 +386,7 @@ export function helpPlan(beds: ManifestBed[], normalized: Normalized, frozen: Fr
     return parts.length === 3 && parts[0] === 'bed' && parts[2] === device && (normalized.bed === null || parts[1] === normalized.bed) ? [{ key, bed: parts[1] as string }] : [];
   });
   if (held.length === 0) {
-    return { ok: false, failure: { code: 'test-bed.not_holder', message: `你没有持有设备 ${device} 的预订（${booking}）：这次运行的血缘里没有它的租约行`, fix: 'booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；device 写你预订的某台设备的名字；别人预订的设备不能问', pointer: '/parameters/device' } };
+    return { ok: false, failure: { code: 'test-bed.not_holder', message: `你没有持有设备 ${device} 的预订：这次运行的血缘里没有它的租约行`, fix: 'booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；device 写你预订的某台设备的名字；别人预订的设备不能问', pointer: '/parameters/device' } };
   }
   if (held.length > 1) {
     return { ok: false, failure: { code: 'test-bed.bad_help', message: `设备名 ${device} 在你持有的不止一个自动化测试环境里`, fix: 'bed 写这台设备所在的自动化测试环境', pointer: '/parameters/bed' } };
@@ -396,6 +396,6 @@ export function helpPlan(beds: ManifestBed[], normalized: Normalized, frozen: Fr
   if (bed === undefined || !bed.devices.some((d) => d.name === device)) {
     return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${chosen.bed} 的设备 ${device}`, fix: '用当前清单重开运行；清单换过以后要重新预订', pointer: '/parameters/device' } };
   }
-  const conclusion = `向 ${chosen.bed} 的设备 ${device} 问命令行“${line}”各个位置的说明${normalized.mode == null ? '' : `（级别 ${normalized.mode}）`}：只问、不按回车、不执行（预订 ${booking}）`;
+  const conclusion = `向 ${chosen.bed} 的设备 ${device} 问命令行“${line}”各个位置的说明${normalized.mode == null ? '' : `（级别 ${normalized.mode}）`}：只问、不按回车、不执行`;
   return { ok: true, plan: { booking, bed: chosen.bed, device, key: chosen.key, line, mode: normalized.mode ?? null, conclusion } };
 }
