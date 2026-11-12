@@ -37,8 +37,9 @@ describe('a held object in a run that only reads', () => {
     const res = await client.call('start_run', { pack: 'source-read', inputs: { defect: { external: OBJECT } } });
     assert.equal(res.out.call_result, 'ok', JSON.stringify(res.out.errors));
     assert.equal(res.isError, false);
-    assert.match(res.text, new RegExp(`系统 plm 里有 ${OBJECT}，内容待核看`));
-    assert.match(res.text, /到来源系统看原文/);
+    assert.match(res.text, /原始用例或资料尚未读全；状态未知；原因缺资料；下一步由使用者补齐资料。/);
+    assert.match(res.raw.content[1].text!, new RegExp(`系统 plm 里有 ${OBJECT}，内容待核看`));
+    assert.match(res.raw.content[1].text!, /到来源系统看原文/);
     const said = JSON.stringify(res.out);
     for (const secret of [VALUE, 'password=', 'SOURCE_CREDENTIAL']) assert.ok(!said.includes(secret) && !res.text.includes(secret), secret);
 
