@@ -1,10 +1,17 @@
-// Acceptance runner. Without ACCEPTANCE_SHARD it runs every acceptance file in one `node --test` process at concurrency 1.
+// Acceptance runner. The local full run shares a PostgreSQL template and runs independent files in parallel.
 // With ACCEPTANCE_SHARD=<index>/<total> (CI) it runs one of `total` slices, balanced by the durations below (test-shards.ts).
 // With JUNIT_REPORT=<file> (CI) the run also writes Node's junit report there (test-report.ts).
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { globSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startPostgres } from '../hub/testing/postgres.ts';
+import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
+import { prepareTemplate, sharedEnv } from './run-unit-tests.ts';
+import { LOCAL_ACCEPTANCE_SECONDS } from './local-test-timings.ts';
+import { orderedArguments, slowestFirst, usesCoverage } from './ordered-test-runner.ts';
 import { junitArguments } from './test-report.ts';
 import { parseShard, shardFiles } from './test-shards.ts';
 import type { Shard } from './test-shards.ts';
@@ -63,30 +70,48 @@ export function expectedSeconds(file: string): number {
   return MEASURED_SECONDS[file] ?? DEFAULT_SECONDS;
 }
 
-/** One file at a time: every acceptance file starts its own PostgreSQL and Hub. */
-export function acceptanceArguments(files: readonly string[], report?: string): string[] {
-  return ['--test', '--test-concurrency=1', ...junitArguments(report), ...files];
+/** CI slices keep one worker; the local full run supplies its independent-file concurrency. */
+export function acceptanceArguments(files: readonly string[], report?: string, concurrency = 1): string[] {
+  return ['--test', `--test-concurrency=${concurrency}`, ...junitArguments(report), ...files];
 }
 
 /** Resolves to the test runner's exit code; signals reach the runner, which stops its PostgreSQL clusters. */
 export async function runAcceptanceTests(shard: Shard | undefined, report?: string): Promise<number> {
-  const files = shardFiles(acceptanceFiles(), shard, expectedSeconds);
+  const selected = shardFiles(acceptanceFiles(), shard, expectedSeconds);
+  const ordered = shard === undefined && !usesCoverage();
+  const files = ordered ? slowestFirst(selected, file => LOCAL_ACCEPTANCE_SECONDS[file] ?? expectedSeconds(file)) : selected;
   if (files.length === 0) throw new Error('验收分片没有文件，拒绝空运行；减少分片数或检查 tests/acceptance');
   if (shard !== undefined) process.stderr.write(`acceptance shard ${shard.index}/${shard.total}: ${files.length} files\n`);
-  const child = spawn(process.execPath, acceptanceArguments(files, report), { cwd: ROOT, stdio: 'inherit' });
+  let child: ChildProcess | undefined;
+  let postgres: TemporaryPostgres | undefined;
   const forward = (signal: NodeJS.Signals): void => {
-    if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+    if (child && child.exitCode === null && child.signalCode === null) child.kill(signal);
   };
   process.on('SIGINT', forward);
   process.on('SIGTERM', forward);
   try {
+    const concurrency = shard === undefined ? Math.max(2, Math.min(8, availableParallelism() - 1)) : 1;
+    if (shard === undefined) {
+      const began = performance.now();
+      postgres = await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
+      const started = performance.now();
+      await prepareTemplate(postgres);
+      process.stderr.write(`acceptance shared files=${files.length} concurrency=${concurrency} postgres=${((started - began) / 1000).toFixed(3)}s template=${((performance.now() - started) / 1000).toFixed(3)}s\n`);
+    }
+    const runner = spawn(process.execPath, ordered ? orderedArguments(files, concurrency, report) : acceptanceArguments(files, report, concurrency), {
+      cwd: ROOT,
+      stdio: 'inherit',
+      ...(postgres ? { env: sharedEnv(postgres) } : {}),
+    });
+    child = runner;
     return await new Promise<number>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code) => resolve(code ?? 1));
+      runner.once('error', reject);
+      runner.once('exit', (code) => resolve(code ?? 1));
     });
   } finally {
     process.off('SIGINT', forward);
     process.off('SIGTERM', forward);
+    await postgres?.stop();
   }
 }
 
