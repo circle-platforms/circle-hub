@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
-import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
+import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
@@ -173,13 +173,13 @@ const SOURCE_READ_ERRORS = {
   SOURCE_REDIRECT_REFUSED: true, SOURCE_ABSENT: true, SOURCE_PENDING_REVIEW: true,
 } satisfies Partial<Record<ProtocolCode, true>>;
 
-function sourceUnknown(error: ProtocolError): boolean {
-  return Object.hasOwn(SOURCE_READ_ERRORS, error.code);
+function unknownError(error: ProtocolError): boolean {
+  return isReason(error.code) || Object.hasOwn(SOURCE_READ_ERRORS, error.code);
 }
 
 function errorText(v: { errors: ProtocolError[]; trace: string }): string {
-  return [v.errors.every(sourceUnknown) ? '资料尚未取得。' : '这次核对有错误。', ...v.errors.map(error => [
-    error.message, ...(sourceUnknown(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清']),
+  return [v.errors.every(unknownError) ? '资料尚未取得。' : '这次核对有错误。', ...v.errors.map(error => [
+    error.message, ...(unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清']),
     error.fix ? `下一步${error.fix}` : '下一步由使用者核对输入资料',
     error.rounds_left === undefined ? null : `最多重交 ${error.rounds_left} 次`, '决定者程序',
   ].filter(part => part !== null).join('；'))].join('\n');
@@ -557,6 +557,7 @@ function resolveText(v: ResolveOut): string {
 
 function submitText(v: SubmitOut, context: TextContext): string {
   const lines = [v.acceptance === 'accepted' ? '脚本合并已核对。' : '脚本合并有错误。'];
+  const represented = new Set(v.result === undefined ? [] : itemsOf(v.result.partitions).map(({ item }) => item.item));
   if (v.result !== undefined) {
     lines.push(...resultConclusions(v.result, context.items));
     lines.push(...v.result.cross_item.map(claimLine));
@@ -571,11 +572,12 @@ function submitText(v: SubmitOut, context: TextContext): string {
   }
   if (v.dispatch?.length) lines.push(v.dispatch.some(note => note.result !== undefined) ? '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。' : '上机验证还没有结论；状态未知；原因还没查清；下一步由使用者继续读取设备输出。');
   for (const error of v.errors) {
+    if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find(item => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
     const fix = missingRecord ? '由使用者请管理员核对保存的结果后重新读取' : error.fix;
-    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...(sourceUnknown(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清'])];
+    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...(unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清'])];
     if (fix) parts.push(`下一步${fix}`);
     if (error.rounds_left !== undefined) parts.push(`最多重交 ${error.rounds_left} 次`);
     parts.push('决定者程序');
