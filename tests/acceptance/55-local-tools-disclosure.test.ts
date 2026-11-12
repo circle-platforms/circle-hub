@@ -67,13 +67,19 @@ test('list_task_packs discloses the digest and the tools/ files with one install
     { path: 'tools/generate-workbook.ts', sha256: sha256Hex(TOOL_B), size: Buffer.byteLength(TOOL_B) },
   ]);
   assert.equal(mine.local_tools?.install, `circle-hub local-tools install ${PACK}@${published.version} --digest ${published.digest} --into <目录>`);
-  assert.ok(answer.text.includes(`本地工具 2 个；安装：circle-hub local-tools install ${PACK}@${published.version} --digest ${published.digest} --into <目录>`), answer.text);
+  assert.doesNotMatch(answer.text, /--digest|circle-hub local-tools install|安装：/);
   const withTools = answer.out.packs.filter((p) => p.local_tools !== undefined);
   assert.ok(withTools.some((p) => p.id === PACK));
-  const lines = answer.text.split('\n').filter((l) => /^\s+本地工具 \d+ 个；安装：/.test(l));
-  const lineIds = lines.map((l) => /local-tools install (\S+)@/.exec(l)?.[1]).sort();
-  assert.deepEqual(lineIds, withTools.map((p) => p.id).sort(), 'one install line per pack that ships tools, and none for the others');
-  assert.equal(new Set(lineIds).size, lineIds.length, 'no pack carries the line twice');
+  const modelPacks = JSON.parse(answer.raw.content[1].text!.slice('供模型引用\n'.length)).packs as typeof answer.out.packs;
+  for (const pack of answer.out.packs) {
+    const rows = modelPacks.filter((row) => row.id === pack.id);
+    assert.equal(rows.length, 1, 'each pack appears once in the model block');
+    assert.equal(rows[0]!.digest, pack.digest);
+    assert.deepEqual(rows[0]!.local_tools, pack.local_tools, 'the complete tool metadata stays in the model block');
+  }
+  const modelIds = modelPacks.filter((pack) => pack.local_tools !== undefined).map((pack) => pack.id).sort();
+  assert.deepEqual(modelIds, withTools.map((pack) => pack.id).sort(), 'one install declaration per pack that ships tools, and none for the others');
+  assert.equal(new Set(modelIds).size, modelIds.length, 'no pack carries the declaration twice');
 });
 
 test('start_run repeats the disclosure for the very version the run froze', async () => {
@@ -87,10 +93,11 @@ test('start_run repeats the disclosure for the very version the run froze', asyn
     started.out.local_tools?.install,
     `circle-hub local-tools install ${PACK}@${published.version} --digest ${published.digest} --into <目录>`,
   );
-  assert.ok(
-    started.text.includes(`本地工具 2 个（客户端按包号核对后安装）；安装：circle-hub local-tools install ${PACK}@${published.version} --digest ${published.digest} --into <目录>`),
-    started.text,
-  );
+  assert.doesNotMatch(started.text, /--digest|circle-hub local-tools install|安装：/);
+  const model = JSON.parse(started.raw.content[1].text!.slice('供模型引用\n'.length));
+  assert.equal(model.run.pack, `${PACK}@${published.version}`);
+  assert.equal(model.run.pack_digest, published.digest);
+  assert.deepEqual(model.local_tools, started.out.local_tools, 'the frozen version keeps its complete install declaration in the model block');
   assert.ok(!started.text.includes(bed.reviewer.token), 'no token in the answer text');
 });
 
