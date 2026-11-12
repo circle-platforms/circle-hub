@@ -9,7 +9,7 @@ import {runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
 import {bindArguments} from './binding.ts';
 import {readCommandPolicy,within} from './generated/skills/command-tools/command-check/command-policy.ts';
 import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
-export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog:unknown,identities:ReadonlyMap<string,CommandIdentity>,services?:unknown):AuthorityGap[]{
+export function blockGraphGaps(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog:unknown,identities:ReadonlyMap<string,Pick<CommandIdentity,'path'>>,services?:unknown):AuthorityGap[]{
  const meta=blockMeta(slots);if(!meta)return [];
  const gaps:AuthorityGap[]=[],note=(pointer:string,message:string,refute=false)=>gaps.push({document:'blocks',pointer,message,verdict:refute?'refute':'unknown'});
  const context=slots.block_context;

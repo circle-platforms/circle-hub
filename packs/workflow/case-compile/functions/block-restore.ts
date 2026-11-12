@@ -1,5 +1,6 @@
 // Symbolic restore obligations are not CommandIdentity values. Only an executor-declared pre-send guard may resolve them.
 import {blockMeta} from './blocks.ts';
+import {isCommandTemplate,type ResolvedCommand} from './cell-commands.ts';
 import {runtimeBlocks} from './block-runtime.ts';
 import {runtimeMethod,scopeAllows,type RuntimeContract} from './runtime-contract.ts';
 import type {RuntimeProfile} from './profile.ts';
@@ -9,8 +10,7 @@ import {bindArguments} from './binding.ts';
 import {readCommandPolicy,within,pathSegments} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {isRecord} from './text.ts';
 import {canonicalJson} from './canonical-json.ts';
-import type {CommandIdentity} from '../../../../contracts/generated/shared-interfaces.ts';
-export function prepareRestores(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog:unknown,identities:ReadonlyMap<string,CommandIdentity>,manifestSha?:string):AuthorityGap[]{
+export function prepareRestores(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog:unknown,identities:ReadonlyMap<string,ResolvedCommand>,manifestSha?:string):AuthorityGap[]{
  if(!blockMeta(slots))return [];
  const cap=runtimeBlocks(contract),policy=readCommandPolicy(isRecord(catalog)?catalog.policy:undefined),gaps:AuthorityGap[]=[];
  const note=(pointer:string,message:string,refute=false)=>gaps.push({document:'blocks',pointer,message,verdict:refute?'refute':'unknown'});
@@ -20,7 +20,7 @@ export function prepareRestores(contract:RuntimeContract,profile:RuntimeProfile,
   const entry=runtimeMethod(contract,configured.object,configured.method),allowed=profile.allowed.find(call=>call.object===configured.object&&call.method===configured.method);
   const lines=entry?bindArguments(entry,configured,at).values.filter(value=>allowed?.parameters[value.name]==='device_cli'&&typeof value.value==='string'):[];
   const identity=lines.length===1?identities.get(String(lines[0].value)):null;
-  if(!identity){note(at,'恢复对象没有唯一的已完整解析配置身份；先修原配置，不能从回显猜身份');continue;}
+  if(!identity||isCommandTemplate(identity)){note(at,'恢复对象没有唯一的已完整解析配置身份；先修原配置，不能从回显猜身份');continue;}
   if(policy.read_only.some(prefix=>within(identity.path,prefix))){note(at,'只读观察不是可由捕获恢复的配置操作',true);continue;}
   const rules=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length),rule=rules[0];
   if(!rule||rule.leading_parameters===undefined||rules[1]?.source_prefix===rule.source_prefix){note(at,'缺捕获恢复的唯一逆路径及显式前导身份参数数量；下一步：产品包维护者补 inverse_rules 后重新育苗');continue;}

@@ -2,9 +2,10 @@
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 import SHAPE from '../tables/block-plan.schema.json' with {type:'json'};
 import {schema} from './schema.ts';
+import {cellArguments,cellTemplate,literalFormatParameter} from './cell-selection.ts';
 import {isRecord} from './text.ts';
 import type {PlanSlots,PlanStep,PlanExpect,SlotProblem} from './slots.ts';
-export interface RegisterDefinition {name:string;block:string;step:number;object:string}
+export interface RegisterDefinition {name:string;block:string;step:number;object:string;cell?:boolean}
 export interface BlockMeta {raw:Record<string,unknown>;registers:Map<string,RegisterDefinition>;steps:Map<string,number>;deferred:Array<{pointer:string;missing:string;next_action:string}>}
 const normalized=new WeakMap<object,BlockMeta>();
 export const blockMeta=(slots:PlanSlots)=>normalized.get(slots);
@@ -16,7 +17,16 @@ export function identifier(value:unknown):value is string{
  return [...value].every((c,index)=>c==='_'||c>='A'&&c<='Z'||c>='a'&&c<='z'||index>0&&c>='0'&&c<='9');
 }
 export function blockPointer(slots:PlanSlots,pointer:string):string{
- const parts=pointer.split('/');if(parts[1]==='steps'&&Number.isSafeInteger(Number(parts[2]))){const step=slots.steps[Number(parts[2])];if(step?.origin)return step.origin+parts.slice(3).map(part=>'/'+part).join('');}
+ const parts=pointer.split('/');if(parts[1]==='steps'&&Number.isSafeInteger(Number(parts[2]))){const step=slots.steps[Number(parts[2])];if(step?.origin){
+  if(step.block_kind==='SELECT_CELL'){
+   const base=step.origin.slice(0,-'/call'.length);
+   if(parts[3]==='args'&&Number(parts[4])>0)return base+'/select/where/'+(Number(parts[4])-1)+'/value';
+   if(parts[3]==='keywords'&&['separator','columns','format','header'].includes(parts[4]))return base+'/table/'+parts[4];
+   if(parts[3]==='keywords'&&parts[4]==='column')return base+'/column';
+   if(parts[3]==='keywords'&&parts[4]==='row')return base+'/select/row';
+  }
+  return step.origin+parts.slice(3).map(part=>'/'+part).join('');
+ }}
  if(parts[1]==='expects'&&Number.isSafeInteger(Number(parts[2]))){const expect=slots.expects[Number(parts[2])];if(expect?.origin)return expect.origin+parts.slice(3).map(part=>'/'+part).join('');}
  return pointer;
 }
@@ -25,10 +35,10 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
  const blocks=value.blocks as Array<Record<string,any>>,steps:PlanStep[]=[],expects:PlanExpect[]=[],problems:SlotProblem[]=[];
  const meta:BlockMeta={raw:value,registers:new Map(),steps:new Map(),deferred:[]},ids=new Set<string>(),assertions=new Set<string>();
  const issue=(pointer:string,message:string)=>problems.push({pointer,message});
- const capture=(name:unknown,id:string,index:number,at:string,object:string)=>{
+ const capture=(name:unknown,id:string,index:number,at:string,object:string,cell=false)=>{
   if(!identifier(name))issue(at,'寄存器必须是区分大小写的 ASCII 标识符，不能以数字开头');
   else if(meta.registers.has(name))issue(at,'寄存器已经捕获，不能覆盖先前原文');
-  else meta.registers.set(name,{name,block:id,step:index,object});
+  else meta.registers.set(name,{name,block:id,step:index,object,...(cell?{cell:true}:{})});
  };
  const expectation=(raw:Record<string,any>,after:number,origin:string,extra:Partial<PlanExpect>={})=>{
   const id=raw.id??blocks[Number(origin.split('/')[2])]?.id;
@@ -55,10 +65,29 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
    if(block.relation==='same')expectation({...common,id:id+'_reverse'},steps.length,at,{register:block.right,actual_register:block.left,comparison:'same'});
    continue;
   }
+  if(block.kind==='SELECT_CELL'){
+   const captured=meta.registers.get(block.from);
+   if(!literalFormatParameter(block.table.separator))issue(at+'/table/separator','取格分隔符含有现有 G 不能表达的格式花括号');
+   for(const [conditionIndex,condition]of (block.select.where??[]).entries())if(!literalFormatParameter(condition.value))issue(at+'/select/where/'+conditionIndex+'/value','取格条件常量含有现有 G 不能表达的格式花括号');
+   if(!captured||captured.cell)issue(at+'/from','取一格必须引用本条前面保存的完整设备输出');
+   if(block.call.args.length||Object.keys(block.call.keywords).length)issue(at+'/call','取一格的参数由已声明的表格和选择条件生成，call只写对象和方法');
+   if(block.table.format==='key_value'&&(block.table.separator===''||block.table.columns!==2))issue(at+'/table','键值行需要非空字面分隔符和两列');
+   if(block.table.separator===''&&block.table.columns!==1)issue(at+'/table','没有分隔符时只能声明单列');
+   if(typeof block.column==='number'&&block.column>block.table.columns)issue(at+'/column','取值列超出声明列数');
+   for(const [conditionIndex,condition]of (block.select.where??[]).entries())if(condition.column>block.table.columns)issue(at+'/select/where/'+conditionIndex+'/column','选行列超出声明列数');
+   const step:PlanStep={...block.call,...cellArguments({table:block.table,column:block.column,select:block.select}),id,origin:at+'/call',block_kind:block.kind,description:'按声明的行列结构取一格',input_register:block.from,cell_input:true,save_as:block.register};
+   steps.push(step);meta.steps.set(id,steps.length);capture(block.register,id,steps.length,at+'/register',step.object,true);continue;
+  }
   const call=block.call as PlanStep,step:PlanStep={...call,args:[...call.args],keywords:{...call.keywords},id,origin:at+'/call',block_kind:block.kind,...(block.cleanup===true||block.kind==='RESTORE_FROM'?{cleanup:true}:{})};
   const output=block.kind==='OBSERVE_ASSERT'||block.kind==='OBSERVE_ONLY'||block.kind==='CAPTURE'||block.kind==='EXPECT_FROM'||block.kind==='STEP'&&block.output!==undefined;
   if(output){step.output=true;if(block.kind==='STEP'&&block.output!==id)issue(at+'/output','STEP 的 output 必须是本块 id');}
   steps.push(step);meta.steps.set(id,steps.length);
+  if(block.input_register!==undefined){
+   const captured=meta.registers.get(block.input_register);
+   if(!captured?.cell)issue(at+'/input_register','普通命令的输入必须引用本条前面取出的单格');
+   if(!call.args.length||!cellTemplate(call.args[0])||call.args.slice(1).some(value=>value.includes('{')||value.includes('}'))||Object.values(call.keywords).some(value=>typeof value==='string'&&(value.includes('{')||value.includes('}'))))issue(at+'/call','单格回填只在首位置参数写一个{}或重复的{0}');
+   step.input_register=block.input_register;step.cell_input=true;
+  }
   if(block.kind==='CAPTURE'||block.kind==='STEP'&&block.register!==undefined){
    if(!output)issue(at,'捕获必须有产生原文的观察');capture(block.register,id,steps.length,at+'/register',call.object);step.save_as=block.register;
   }
@@ -73,7 +102,7 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
   }
   if(block.kind==='RESTORE_FROM'){
    const captured=meta.registers.get(block.register),target=meta.steps.get(block.for);
-   if(!captured||!target||captured.step>=target||target>=steps.length)issue(at,'恢复必须引用改动前的捕获及前序配置块');
+   if(!captured||captured.cell||!target||captured.step>=target||target>=steps.length)issue(at,'恢复必须引用改动前的捕获及前序配置块');
    if(captured&&captured.object!==call.object)issue(at,'捕获和恢复必须是同一设备对象');
    step.restore_for=target;step.input_register=block.register;
    if(call.args.length!==1||call.args[0]!=='{}')issue(at+'/call/args','捕获还原只接收完整原文参数 {}，由声明的守卫方法核验后执行；不拼接或解析回显');

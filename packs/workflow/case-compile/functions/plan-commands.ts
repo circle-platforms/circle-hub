@@ -3,6 +3,8 @@
 import {compileGrammar,commandIdentity,parseCommandState,commandTokens,type CommandDefinition} from './generated/skills/command-tools/command-check/grammar.ts';
 import {isRecord} from './text.ts';
 import {bindArguments} from './binding.ts';
+import {cellInput} from './cell-selection.ts';
+import {commandTemplate,isCommandTemplate,resolvedKey,type CommandTemplate,type ResolvedCommand} from './cell-commands.ts';
 import {refusedAccess,runtimeMethod,type RuntimeContract} from './runtime-contract.ts';
 import {runtimeBlocks} from './block-runtime.ts';
 import type {RuntimeProfile} from './profile.ts';
@@ -18,9 +20,9 @@ type CommandVerdict = Extract<Verdict, 'unknown' | 'refute'>;
 export interface CommandCatalog {policy?:unknown;authority_entries?:CatalogEntry[];root:string;complete:boolean;entries:CatalogEntry[];covered_lines?:string[];value_domains?:unknown[]}
 export interface CommandProblem {document:string;pointer:string;message:string;verdict:CommandVerdict}
 /** Device CLI values of the plan; `answers` are the indexes of confirmation answer steps, which are dialogue, not commands. */
-export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,answers:ReadonlySet<number>=new Set()):Array<{line:string;pointer:string;object:string;method:string}>{
+export function deviceCommandLines(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,answers:ReadonlySet<number>=new Set()):Array<{line:string;pointer:string;object:string;method:string;input_register?:string}>{
  const lines:Array<{line:string;pointer:string;object:string;method:string}>=[];
- for(const [index,step]of slots.steps.entries()){if(answers.has(index))continue;const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)continue;for(const value of bindArguments(entry,step,`/steps/${index}`).values)if(allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string')lines.push({line:value.value,pointer:value.pointer,object:step.object,method:step.method});}
+ for(const [index,step]of slots.steps.entries()){if(answers.has(index))continue;const entry=runtimeMethod(contract,step.object,step.method),allowed=profile.allowed.find(call=>call.object===step.object&&call.method===step.method);if(!entry||!allowed)continue;for(const value of bindArguments(entry,step,`/steps/${index}`).values)if(allowed.parameters[value.name]==='device_cli'&&typeof value.value==='string')lines.push({line:value.value,pointer:value.pointer,object:step.object,method:step.method,...(cellInput(step)&&value.pointer.endsWith('/args/0')?{input_register:step.input_register}:{})});}
  return lines;
 }
 /** The product's declared confirmations (command-policy@1): a device command under a declared prefix must pass the declared
@@ -56,7 +58,7 @@ export function confirmationSteps(contract:RuntimeContract,profile:RuntimeProfil
  * declared refusal, or a level the contract does not list is not checked, and nothing is read from a method's name. The
  * message names the methods of the same object that send device commands and carry no such refusal.
  */
-export function accessRefusal(contract:RuntimeContract,profile:RuntimeProfile,catalog:CommandCatalog,identity:CommandIdentity,object:string,method:string):string|null{
+export function accessRefusal(contract:RuntimeContract,profile:RuntimeProfile,catalog:CommandCatalog,identity:Pick<CommandIdentity,'path'|'signature'>,object:string,method:string):string|null{
  const refused=refusedAccess(contract,object,method);if(!refused.length)return null;
  const entry=catalog.entries.find(candidate=>isRecord(candidate)&&Array.isArray(candidate.words)&&'/commands/'+candidate.words.map(encodeURIComponent).join('/')===identity.path);
  const signature=entry?.signatures.find(candidate=>candidate.reference===identity.signature),level=signature?.access?.name;
@@ -87,15 +89,15 @@ export function valueDomainMessages(identity:CommandIdentity,claims:readonly Val
   return `命令“${command}”的参数 ${refusal.parameter} 的取值“${clip(refusal.value,80)}”不符合手册对这个参数的说明。状态未确认，判断错误。原因还没查清，${told}。下一步由编写模型改成符合手册说明的取值；认为手册解读有误时，请管理员核对。证据是上述手册原句，决定者是模型`;
  });
 }
-export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];byLine:Map<string,CommandIdentity>;problems:CommandProblem[];catalog:CommandCatalog|null;answers:Set<number>}{
+export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,raw:unknown):{identities:CommandIdentity[];templates:ResolvedCommand[];byLine:Map<string,ResolvedCommand>;problems:CommandProblem[];catalog:CommandCatalog|null;answers:Set<number>}{
  const dialogue=confirmationSteps(contract,profile,slots,readCommandPolicy(isRecord(raw)?raw.policy:undefined));
  const lines=deviceCommandLines(contract,profile,slots,dialogue.answers),answers=dialogue.answers;
  const evidence=isRecord(raw)?{...(raw.policy!==undefined?{policy:raw.policy}:{}),...(Array.isArray(raw.authority_entries)?{authority_entries:raw.authority_entries}:Array.isArray(raw.entries)?{authority_entries:raw.entries}:{})}:{};
- const problems:CommandProblem[]=[...dialogue.problems],byLine=new Map<string,CommandIdentity>();const note=(pointer:string,message:string,verdict:CommandVerdict='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
+ const problems:CommandProblem[]=[...dialogue.problems],byLine=new Map<string,ResolvedCommand>(),allTemplates:CommandTemplate[]=[];const note=(pointer:string,message:string,verdict:CommandVerdict='unknown')=>problems.push({document:'catalog',pointer,message,verdict});
  const declarations=(identities:CommandIdentity[]):void=>{ if(slots.command_identities!==undefined){if(!Array.isArray(slots.command_identities)){note('/command_identities','模型提交的可选命令身份声明不是列表','refute');return;}const declared=slots.command_identities.map(identityOf);if(declared.some(identity=>identity===null))note('/command_identities','模型提交的命令身份结构或类型化值不一致','refute');else{const supplied=new Set(declared.map(identity=>identityKey(identity!))),actual=new Set(identities.map(identityKey));if(supplied.size!==actual.size||[...actual].some(key=>!supplied.has(key)))note('/command_identities','模型提交的命令身份不等于锁定目录对计划命令的完整解析','refute');}}};
- if(!lines.length){declarations([]);return {identities:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[],...evidence}:null,answers};}
- if(!isRecord(raw)||typeof raw.root!=='string'||!Array.isArray(raw.entries)||typeof raw.complete!=='boolean'){note('/command_catalog','缺 Hub 按锁定根提供的 commands 目录；不能用用例身份或模型自报身份代替完整解析');return {identities:[],byLine,problems,catalog:null,answers};}
- if(typeof raw.missing==='string'){note('/command_catalog',raw.missing);return {identities:[],byLine,problems,catalog:null,answers};}
+ if(!lines.length){declarations([]);return {identities:[],templates:[],byLine,problems,catalog:isRecord(raw)&&typeof raw.root==='string'&&typeof raw.complete==='boolean'?{root:raw.root,complete:raw.complete,entries:[],covered_lines:[],...evidence}:null,answers};}
+ if(!isRecord(raw)||typeof raw.root!=='string'||!Array.isArray(raw.entries)||typeof raw.complete!=='boolean'){note('/command_catalog','缺 Hub 按锁定根提供的 commands 目录；不能用用例身份或模型自报身份代替完整解析');return {identities:[],templates:[],byLine,problems,catalog:null,answers};}
+ if(typeof raw.missing==='string'){note('/command_catalog',raw.missing);return {identities:[],templates:[],byLine,problems,catalog:null,answers};}
  const catalog=raw as unknown as CommandCatalog;const claims=readValueDomainClaims(catalog.value_domains);const definitions:CommandDefinition[]=[],candidates=new Set<CatalogEntry>();
  for(const entry of catalog.entries){if(!isRecord(entry)||!Array.isArray(entry.words)||entry.words.some(word=>typeof word!=='string'||!word)||!Array.isArray(entry.signatures)||typeof entry.reference!=='string')continue;const path='/commands/'+entry.words.map(encodeURIComponent).join('/'),ref='tree:'+catalog.root+path;
   if(entry.reference!==ref&&!(entry.reference.slice(0,ref.length+1)===ref+'@'&&entry.reference.slice(ref.length+1).length===64))continue;
@@ -103,11 +105,11 @@ export function planCommands(contract:RuntimeContract,profile:RuntimeProfile,slo
   if(lines.some(({line})=>{const tokens=commandTokens(line);return tokens&&entry.words.every((word,index)=>tokens[index]?.value===word&&!tokens[index].quoted);}))candidates.add(entry as CatalogEntry);
  }
  const grammar=compileGrammar(definitions);
- for(const {line,pointer,object,method}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line) as {status:CommandParseStatus;missing?:string},parsed=commandIdentity(grammar,line),identity=parsed?identityOf(parsed):null;
+ for(const {line,pointer,object,method,input_register}of lines){if(catalog.covered_lines&&!catalog.covered_lines.includes(line)){note(pointer,'目录回执未覆盖这条完整计划命令；重新核验计划以取得锁定目录依据');continue;}const state=parseCommandState(grammar,line) as {status:CommandParseStatus;missing?:string},parsed=commandIdentity(grammar,line),identity=input_register?commandTemplate(definitions,line,input_register):parsed?identityOf(parsed):null;
   const methodRefusal=deviceMethodRefusal(contract,profile,object,method);if(methodRefusal)note(pointer,methodRefusal,'refute');
-  if(identity){byLine.set(line,identity);const refusal=methodRefusal?null:accessRefusal(contract,profile,catalog,identity,object,method);if(refusal)note(pointer,refusal,'refute');for(const message of valueDomainMessages(identity,claims))note(pointer,message,'refute');}else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
+  if(identity){byLine.set(line,identity);if(isCommandTemplate(identity))allTemplates.push(identity);const refusal=methodRefusal?null:accessRefusal(contract,profile,catalog,identity,object,method);if(refusal)note(pointer,refusal,'refute');for(const message of valueDomainMessages({...identity,parameters:identity.parameters.filter((parameter):parameter is CommandIdentity['parameters'][number]=>parameter.parsed.kind!=='runtime_cell')},claims))note(pointer,message,'refute');}else if(state.status==='parameters_unchecked'||state.status==='parsed')note(pointer,state.missing??'完整签名缺类型、原始声明或唯一身份；下一步由目录生产器补结构声明后重核');else note(pointer,'不是锁定 /commands 完整语法可解析的命令；逐词、参数类型和完整消费均须满足',catalog.complete?'refute':'unknown');
  }
- const identities=[...new Map([...byLine.values()].map(identity=>[identityKey(identity),identity])).values()];
+ const identities=[...new Map([...byLine.values()].filter((identity):identity is CommandIdentity=>!isCommandTemplate(identity)).map(identity=>[identityKey(identity),identity])).values()],templates=[...new Map(allTemplates.map(template=>[resolvedKey(template),template])).values()];
  declarations(identities);
- return {identities,byLine,problems,catalog:{root:catalog.root,complete:catalog.complete,entries:[...candidates],...evidence,covered_lines:[...new Set(lines.map(value=>value.line))]},answers};
+ return {identities,templates,byLine,problems,catalog:{root:catalog.root,complete:catalog.complete,entries:[...candidates],...evidence,covered_lines:[...new Set(lines.map(value=>value.line))]},answers};
 }

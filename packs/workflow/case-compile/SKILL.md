@@ -62,7 +62,10 @@ profile: device_count 只读预检及可选 fold_newlines
 
 普通参数是单行文字，无首尾空白，不带未展开占位或等号前缀。按原文恢复配置时使用执行器规定的占位除外。定长名字或域名由工具展开并写回文件，不手打长串。等待秒数为执行器规则上限内的正整数。主机 shell 不能冒充设备命令；只使用执行器规则允许的具体方法、程序、静态参数和效果，不用动作名或正文里的词判断安全。没有参数的方法同样要有执行器规则允许的效果；收紧配置、方法名或确认标记不能代替这项规则。
 
-手册允许指定名字时，在本条的创建、使用、查询和清理命令里写相同的 `{{name:N|前缀|后缀}}`，前后缀取手册允许的字符并区分本条；`tools/fidelity-brief.ts` 和 `tools/submit-plans.ts` 会展开成同一个具体名字并写回自动化用例文件，Hub 核对展开后的命令。设备自行生成且不能指定的值，只能按执行器规则已有的取值和引用方式在本条传递；`CAPTURE/EXPECT_FROM` 保存原文用于检查，不把其中的文字插进普通命令参数，`RESTORE_FROM` 仍只用于执行器已声明的恢复方法。没有对应传递方式时写明缺什么，不能猜文件名或拿旧设备输出补上。
+手册允许指定名字时，在本条的创建、使用、查询和清理命令里写相同的 `{{name:N|前缀|后缀}}`，前后缀取手册允许的字符并区分本条；`tools/fidelity-brief.ts` 和 `tools/submit-plans.ts` 会展开成同一个具体名字并写回自动化用例文件，Hub 核对展开后的命令。设备自行生成且不能指定的值，只能按执行器规则已有的取值和引用方式在本条传递；`CAPTURE` 保存原文，`EXPECT_FROM` 用于检查，整段原文不直接插入普通参数，`RESTORE_FROM` 仍只用于执行器已声明的恢复方法。没有对应传递方式时写明缺什么，不能猜文件名或拿旧设备输出补上。
+
+设备生成的值，在本条先保存设备输出，按表格列和选行条件取一格；后续命令用 {} 引用它。
+数据行按声明的字面分隔符和列数识别；取不到、零行或多行就停止并带设备原话说明，不猜值、不用上一次的输出。
 
 ```text
 每条文件: {item,handling,slots}；plan.data.bucket=<测试环境>
@@ -88,6 +91,7 @@ case_index 仅在已有原始用例身份说明时使用
 
 ```text
 组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
+取一格: SELECT_CELL 的 from 指前序原输出保存名，table 写 format/separator/columns/header，column 是列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}
 每条判断: output、原始用例 expectation 引用和 quote
 block_context.preconditions/causal_links/responders 写全；没有就写空表；主机观察写明谁应答
 obligations 覆盖全部原始期望: 实际判断 id，或 unmet+missing/next_action

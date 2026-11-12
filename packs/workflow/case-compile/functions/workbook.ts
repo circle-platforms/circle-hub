@@ -1,6 +1,7 @@
 import {blockReviewIdentity} from './block-review-identity.ts';
 import {assertionTarget,assertionCells,runtimeBlocks} from './block-runtime.ts';
 import {blockMeta,identifier,sourcePlan} from './blocks.ts';
+import {cellTemplate} from './cell-selection.ts';
 import {selectedExpectedNodes} from './expected-nodes.ts';
 // Independent semantic interpretation of xlsx@1. Only the final identity check calls the client generator.
 import { createHash } from 'node:crypto';
@@ -83,12 +84,12 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   // the reference runner: it resets them at every row that starts a case (an autoid in A on a row whose C is not the init
   // type 1) to the registers its init rows captured, and clears them before each case's init. This generator writes no init rows, so every case
   // starts without registers; inside a case a name is still captured once.
-  const initRegisters=new Set<string>(),caps=runtimeBlocks(recipe.contract); let registers=new Set<string>();
+  const initRegisters=new Set<string>(),initCells=new Set<string>(),caps=runtimeBlocks(recipe.contract); let registers=new Set<string>(),cellRegisters=new Set<string>();
   const executions: ReadExecution[] = []; const executionByRow = new Map<number, ReadExecution>();
   for (const [number, cells] of values) {
     if (number <= headerRow || number === expectedLast) continue;
     const init = cells[2] === '1';
-    if (cells[0] !== '' && !init) registers = new Set(initRegisters);
+    if (cells[0] !== '' && !init) {registers = new Set(initRegisters);cellRegisters=new Set(initCells);}
     if (!cells.slice(4).some(Boolean)) continue;
     const at = `/sheets/0/rows/${number - 1}`; const [object, method, g, h, variable] = cells.slice(4);
     const entry = runtimeMethod(recipe.contract, object, method); const allowed = allowedCall(profile, object, method);
@@ -99,7 +100,10 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
     if (!assertion && !variable && (/[\r\n\v\f\u0085\u2028\u2029]/.test(g) || g.trim() !== g || /\{(?:0)?\}/.test(g))) issue('execution', at, '普通调用 G 必须是单行最终文字，没有占位符或首尾空白');
     try {
       const decoded = decodeG(g, { literalAssertion: assertion, wait, foldNewlines: profile.fold_newlines.some((v) => v.object === object && v.method === method) });
-      if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable?{input_register:variable,restore_for:0}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
+      const selection=Array.isArray(caps?.cell_methods)&&caps.cell_methods.some((row:any)=>row.object===object&&row.method===method);
+      const restore=Array.isArray(caps?.restore_methods)&&caps.restore_methods.some((row:any)=>row.object===object&&row.method===method);
+      const cellBound=!!variable&&(selection||cellRegisters.has(variable));
+      if (!assertion) for (const problem of bindArguments(entry, { object, method, ...decoded,...(variable?{input_register:variable,...(restore?{restore_for:0}:cellBound?{cell_input:true}:{})}:{}) }, at).problems) issue('signature', problem.pointer, problem.message);
       if(blockMeta(plan)){
         if(assertion){
           if(h&&!registers.has(h))issue('register',at,'检查点期望寄存器未先捕获');
@@ -109,8 +113,12 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
           if(!g&&!h)issue('assertion',at,'检查点缺字面或期望寄存器');
         }else{
           if(!g)issue('execution',at,'普通调用 G 不能为空');
-          if(variable&&(!registers.has(variable)||!Array.isArray(caps?.restore_methods)||!caps.restore_methods.some((row:any)=>row.object===object&&row.method===method)||decoded.args.length!==1||decoded.args[0]!=='{}'))issue('register',at,'普通 I 仅用于已捕获原文的声明还原守卫');
-          if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output==='raw_text'))issue('register',at,'H 捕获必须在本用例内命名唯一并由声明的原文观察产生');else{registers.add(h);if(init)initRegisters.add(h);}}
+          if(selection){
+            if(!variable||!registers.has(variable)||cellRegisters.has(variable)||caps?.cell_inputs!==true||decoded.args[0]!=='{}')issue('register',at,'取格输入必须是本条先前保存的完整设备输出');
+          }else if(variable&&cellRegisters.has(variable)){
+            if(caps?.cell_inputs!==true||!decoded.args.length||!cellTemplate(decoded.args[0]))issue('register',at,'普通回填必须使用已声明的单格输入和首位置参数模板');
+          }else if(variable&&(!registers.has(variable)||!restore||decoded.args.length!==1||decoded.args[0]!=='{}'))issue('register',at,'普通 I 仅用于已捕获原文的声明还原守卫或已取出的单格');
+          if(h){if(!identifier(h)||registers.has(h)||!Array.isArray(caps?.output_methods)||!caps.output_methods.some((row:any)=>row.object===object&&row.method===method&&row.output===(selection?'cell_text':'raw_text')))issue('register',at,'H 保存名必须在本条唯一，且方法声明完整原文或单格返回');else{registers.add(h);if(selection){cellRegisters.add(h);if(init)initCells.add(h);}if(init)initRegisters.add(h);}}
         }
       }
       const execution = { row: number, object, method, ...decoded, assertion,...(blockMeta(plan)?{h,i:variable}:{}) }; executions.push(execution); executionByRow.set(number, execution);

@@ -1,6 +1,7 @@
 import {recompositionGaps} from './recomposition.ts';
 import {checkBlockExpected} from './block-expected.ts';
 import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
+import {cellInput,cellSyntax} from './cell-selection.ts';
 import {labelOf} from './generated/vocabulary.ts';
 import {planCommands,deviceCommandLines} from './plan-commands.ts';
 import {lineProfile,planProblems,planConflictText,PLAN_CONFLICT_FIX} from './channels.ts';
@@ -92,12 +93,12 @@ export function checkContractShape(input: unknown): Outcome[] {
       if ((role === 'device_cli' || role === 'host_shell') && typeof v.value !== 'string') { out.push(refute(s, 'param_value', '命令角色必须是单行文字', v.pointer)); continue; }
       if (role === 'wait' && (v.pointer.includes('/keywords/') && Object.values(allowed.parameters).every((role) => role === 'wait') || !/^[0-9]+$/.test(String(v.value)) || !Number.isSafeInteger(Number(v.value)) || Number(v.value) < 1 || s.profile!.max_wait_seconds === null || Number(v.value) > s.profile!.max_wait_seconds)) out.push(refute(s, 'wait_value', '等待值必须是配置上限内的正整数 ASCII 秒数；改为明确时长', v.pointer));
       if ((role === 'device_cli' || role === 'host_shell') && !hasBalancedCommandText(String(v.value)) && !bound.problems.some((problem) => problem.code === 'param_value' && problem.pointer === v.pointer)) out.push(refute(s, 'param_value', '声明为命令的值须符合原文 POSIX 子集：引号成对且不能以反斜杠结尾；不正规化字形', v.pointer));
-      if (role === 'host_shell' && hasShellDynamicSyntax(String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，不符合声明的静态 POSIX 子集语法；改为单一的显式命令', v.pointer));
+      if (role === 'host_shell' && hasShellDynamicSyntax(cellInput(step)&&v.pointer===at+'/args/0'?cellSyntax(String(v.value)):String(v.value))) out.push(refute(s, 'host_shell_dynamic', '主机命令含有扩展、分隔或重定向语法，不符合声明的静态 POSIX 子集语法；改为单一的显式命令', v.pointer));
     }
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
   const cleanup = s.contract!.cleanup;
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，参数角色、签名和值规则均已核对${runnerCleanupText(s.contract!, covered)}${destructiveText(s.contract!)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，${read.slots.steps.some(cellInput)?'参数角色、签名和单格回填格式已核对；单格实际值在上机时取得':'参数角色、签名和值规则均已核对'}${runnerCleanupText(s.contract!, covered)}${destructiveText(s.contract!)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
@@ -124,6 +125,10 @@ export function checkAddresses(input: unknown): Outcome[] {
     else if(inBlindSegment(bed,replacement.bed,triggerTypes))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',at));
   }
   for(const use of uses){
+    if(use.value===null){
+      const statement='本次核对未取得单格的实际地址值，不能按原有规则核对测试环境范围；下一步由编写模型提供可按原规则核对的明确地址，再重核。';
+      out.push({verdict:'unknown',reason:'missing_input',missing:statement,statement,grounds:s.location?[s.location]:[],tier:TIER,item:s.item,pointer:use.pointer,data:{typed_position:use}});continue;
+    }
     if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
     // A role that says the address is not on the environment is not checked; a missing use is checked like a member (decision 115).
     if(use.bed_member===false)continue;
@@ -145,7 +150,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(!host||!entry||!a||!slots.expects.some(e=>e.after===index+1))continue;
     for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){
       if(a.parameters[v.name]?.role!=='host_shell')continue;
-      for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value))?.addresses??[]){
+      for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value),cellInput(step)&&v.pointer.endsWith('/args/0'))?.addresses??[]){
         if(hostReaches(bed,host.device,address)!==false)continue;
         const reaching=s.profile!.hosts.filter(h=>hostReaches(bed,h.device,address)===true).map(h=>`${h.object}.${h.method}（${h.device}）`);
         const key=addressKey(address);
@@ -155,7 +160,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     }
   }
   const disclosed=kept.length?`；作者原文命令里的 ${kept.length} 个地址不在本环境可达范围里，照原值保留（同 SyntheticReference：只拒计划自己编的地址，作者写的写进披露），上机时可能连不通：${kept.join('、')}`:'';
-  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描'+disclosed,{typed_positions:uses,replacements:slots.replacements,author_kept:kept})];
+  return out.length?out:[support(s,uses.length+' 个声明地址/掩码/前缀位置已按类型、用途和冻结范围核对；普通文字不扫描'+disclosed+(slots.steps.some(cellInput)?'；单格回填位置的实际值在上机时取得':''),{typed_positions:uses,replacements:slots.replacements,author_kept:kept})];
 }
 /**
  * The reference engine's assertion_matches_command_echo (InfoTest structural_gate.py:1319): the runner's output window starts with
@@ -234,7 +239,7 @@ export function checkCommandsKnown(input:unknown):Outcome[]{
   const sent=deviceCommandLines(s.contract!,s.profile!,read.slots,resolved.answers),where=sent.find(row=>row.line===rows[0].b[0]);
   return [refute(s,'combination_forbidden',`${rows.map(planConflictText).join('；')}。${PLAN_CONFLICT_FIX}`,'/data'+(where?blockPointer(read.slots,where.pointer):'/steps'),{conflicts:rows})];
  }
- return [support(s,'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved.identities,command_catalog:resolved.catalog})];
+ return [support(s,resolved.templates.length?'设备命令的静态部分与单格回填位置已按锁定目录核对；单格实际值在上机时取得':'所有设备命令均由锁定目录完整解析，已核用例声明（如有）、类型与效果授权',{command_identities:resolved.identities,...(resolved.templates.length?{command_templates:resolved.templates}:{}),command_catalog:resolved.catalog})];
 }
 /**
  * scenario_kept: the audit verdict in data.fidelity answers the brief of this very plan and keeps every authored action of the

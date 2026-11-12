@@ -6,6 +6,7 @@ import type {RuntimeProfile,AllowedCall} from './profile.ts';
 import type {PlanSlots,PlanExpect} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
 import {blockMeta,escapedLiteral} from './blocks.ts';
+import {cellInput} from './cell-selection.ts';
 export function runtimeBlocks(contract:RuntimeContract):Record<string,any>|null{
  const document=sourceDocument(contract),runtime=isRecord(document?.runtime)?document.runtime:{};
  return isRecord(runtime.block_model)&&runtime.block_model.schema===TABLE.runtime_schema?runtime.block_model:null;
@@ -39,6 +40,8 @@ export function blockRuntimeGaps(contract:RuntimeContract,profile:RuntimeProfile
   if(step.save_as&&(contract.objects.includes(step.save_as)||Array.isArray(cap.reserved_registers)&&cap.reserved_registers.includes(step.save_as)))note(at,'捕获寄存器与运行器对象或保留命名冲突',true);
   if(step.save_as&&!Array.isArray(cap.reserved_registers))note(at,'缺运行器保留寄存器闭集；下一步：维护者按实现声明完整命名空间，不按前缀猜测');
   if(step.save_as&&cap.capture_registers!==true)note(at,'缺 H 列原文捕获能力；下一步：执行器维护者实现并声明 capture_registers 后重开运行');
+  if(cellInput(step)&&cap.cell_inputs!==true)note(at,'缺普通单格输入的执行器声明；下一步：发布新取格入口对应的执行器规则');
+  if(step.block_kind==='SELECT_CELL'&&(!Array.isArray(cap.cell_methods)||!cap.cell_methods.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method)||!outputs.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method&&row.output==='cell_text')))note(at,'取格方法及单格返回没有由本次执行器规则明确登记');
   if(step.block_kind==='SLEEP'&&(!call||!Object.values(call.parameters).length||Object.values(call.parameters).some(role=>role!=='wait')))note(at,'SLEEP 必须精确对应本轮允许的 wait 调用',true);
   if(step.restore_for!==undefined){
    const registrations=Array.isArray(cap.restore_methods)?cap.restore_methods:[],registration=registrations.find((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method);
