@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Advance case-compile to 3.17.2 for the owner's authored negative-result rule: query after deletion and check not_found, using a literal or a value captured in the same case, without a separate criterion review. Preserve explicit author declarations, exact quotations, coverage, output and register bindings, executor capability checks and scenario fidelity.
+
 - Advance the local test-bed candidate to 1.3.1 after removing booking identifiers from reader-facing help conclusions and refusals; keep the machine bindings and permission checks unchanged.
 
 - Advance the local case-compile candidate to 3.17.1 after its status interface type changed during verification; regenerate its workbook identity, synthetic samples and manifest without reusing 3.17.0 for different bytes. No release is published.
