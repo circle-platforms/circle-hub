@@ -557,8 +557,8 @@ function resolveText(v: ResolveOut): string {
 
 function submitText(v: SubmitOut, context: TextContext): string {
   const lines = [v.acceptance === 'accepted' ? '脚本合并已核对。' : '脚本合并有错误。'];
-  const represented = new Set(v.result === undefined ? [] : itemsOf(v.result.partitions).map(({ item }) => item.item));
-  if (v.result !== undefined) {
+  const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
+  if (v.acceptance === 'accepted' && v.result !== undefined) {
     lines.push(...resultConclusions(v.result, context.items));
     lines.push(...v.result.cross_item.map(claimLine));
   }
