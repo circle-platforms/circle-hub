@@ -50,6 +50,9 @@ test('author expectation coverage never substitutes one quoted node for another'
  assert.ok(checkExpectedSources(f.subject(data,{expected_nodes:[...f.fields.expected_nodes,{reference:EXPECTED_REF+'other',text:'another'}]})).some(outcome=>outcome.verdict==='refute'));
  const unmet=structuredClone(data);unmet.obligations![0]={expectation:EXPECTED_REF,status:'unmet',assertions:[],missing:'合成缺事实',next_action:'合成维护者补证'};assert.ok(checkExpectedSources(f.subject(unmet)).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('合成维护者')));
  const description=f.subject(data,{expected_nodes:[{reference:EXPECTED_REF,text:EXPECTED}]});assert.ok(checkExpectedSources(description).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('类型化判据')));
+ const negativeQuote={reference:EXPECTED_REF,text:'删除后无残留'},negative=plan([{kind:'OBSERVE_ASSERT',id:'observe',call:call(),assertions:[{...assertion('absent','observe','not_found'),literal:'synthetic-record',quote:negativeQuote}]}]);
+ assert.deepEqual(checkExpectedSources(f.subject(negative,{expected_nodes:[negativeQuote]})).map(outcome=>outcome.verdict),['support']);
+ assert.ok(checkExpectedSources(f.subject(negative,{expected_nodes:[{...negativeQuote,declaration:{op:'abs_found',literal:'synthetic-record'}}]})).some(outcome=>outcome.verdict==='refute'));
 });
 test('restore requires a pre-change capture, exact target and guarded executor capability',()=>{
  const early=positiveBlocks().RESTORE_FROM;[early.blocks[0],early.blocks[1]]=[early.blocks[1],early.blocks[0]];assert.equal(readSlots(early).ok,false);

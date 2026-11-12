@@ -1108,3 +1108,7 @@ version, so the pin moves with them (in the parent, the three copies, `testing/r
 `tools/case-writers/` is a Circle extension for one writer per case, started together. Copy the folder into the chosen Circle home's `extensions/` directory and reload extensions; installation is an operator action and was not performed here. The optional `max_parallel` setting limits concurrent writers.
 
 The extension gets the task tool from `model_call` middleware because Circle has no documented extension call for starting a subagent. Local tests use scripted writers and do not establish installed-client behavior. The owner must decide whether to keep this client interface or wait for a public subagent API. No Hub model calls are introduced.
+
+## Authored negative outcomes
+
+The owner's 2026-11-12 morning decision requires a query after deletion and a block-form `not_found` check for an authored absence or lack of residue, without a new criterion or criterion review. SKILL.md, the closing procedure and each authoring brief now state that instruction. The block check follows the explicit operator, never words in the author's sentence. Source quotations, expectation coverage, authored literal declarations and the separate scenario-fidelity check remain required. The integrator updates the package version and generated manifests after merging.
