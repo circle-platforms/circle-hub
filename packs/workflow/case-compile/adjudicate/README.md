@@ -1,3 +1,7 @@
+# adjudicate 1.1.7
+
+本地合并候选 1.1.7（2026-11-12）：acceptsPack 接受 recompose stage 1.2.3；能力相对 1.1.6 不变。本次不发布。
+
 # recompose-adjudication 1.1.6
 
 本地合并候选 1.1.6（2026-11-12）：acceptsPack 接受本包 1.1.5/1.1.6；能力相对 1.1.5 不变。本次不发布。

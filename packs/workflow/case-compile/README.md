@@ -1,4 +1,6 @@
-# case-compile 3.18.2
+# case-compile 3.18.3
+
+本地合并候选 3.18.3（2026-11-12）：#341 协议文案同步后 mindmap-format 升至 1.0.24，本包嵌入与嵌套包同步升版并刷新工作簿样例。能力相对 3.18.2 不变。本次不发布。
 
 本地合并候选 3.18.2（2026-11-12）：样例 runtime-profile-v2 补上 workbook.template；acceptsPack 接受 recompose 1.2.2 与 authority/adjudication 1.1.5/1.1.6；嵌套包同步升版重签。能力相对 3.18.1 不变。本次不发布。
 
