@@ -14,8 +14,10 @@ test('the product-source import names itself and leaves builds, manuals and comm
   assert.match(page.body,/按产品来源导入/);
   assert.match(page.body,/从所选产品已配置的知识来源，在后台只读导入团队知识，每条附来源/);
   assert.doesNotMatch(page.body,/在后台只读导入构建、手册与命令树/);
-  // What a product source holds is the product pack's to declare; the product field says so once.
-  assert.match(page.body,/具体包含哪些材料（例如构建、手册、命令树）由该产品包声明/);
+  // What a product source imports is the product pack's to declare: the field says so, and names no kind of material
+  // of its own. With no product enabled there is no list to show (issue 238).
+  assert.match(page.body,/每个产品导入哪些内容由它的产品包声明，列在下面/);
+  assert.doesNotMatch(page.body,/例如构建、手册、命令树|data-product-materials/);
   // The route that needs no product pack stays beside it, unchanged.
   assert.match(page.body,/按团队读取原文导入/);assert.match(page.body,/无须产品包/);
   assert.deepEqual(wordingProblems(page.body),[]);

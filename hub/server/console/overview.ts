@@ -94,7 +94,7 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   // The four figures of the page; each says what it counts, and the first leads to the list it counts.
   const kpis = html`<section class="ch-tiles" data-overview-kpis>
 ${tile(kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs', '查看任务列表')}
-${tile(kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '—' : count(passed), { unit: settled.length === 0 ? '' : `/ ${count(settled.length)}`, note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: settled.length===0?'idle':'ok' }))}
+${tile(kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '暂无数据' : count(passed), { unit: settled.length === 0 ? '' : `/ ${count(settled.length)}`, note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: settled.length===0?'idle':'ok' }))}
 ${tile(kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) }))}
 ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的客户端中处理', ...(kinds > 0 ? { note: `内容相同的归并后 ${count(kinds)} 类` } : {}), state: requests.length > 0 ? 'warn' : 'idle' }))}
 </section>`;
@@ -107,12 +107,12 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
     const d = new Date(start);
     return { label: `${d.getMonth() + 1}/${d.getDate()}`, parts: shown.map((result) => inDay.filter((task) => task.result === result).length), all: inDay.length, unread: inDay.filter((task) => task.result === null).length };
   });
-  const daily=chart('每日任务数量',columns.map((column)=>({label:column.label,values:[column.all]})),[{label:'任务'}],'bar',scope);
+  const daily=chart('每日任务数量',columns.map((column)=>({label:column.label,values:[column.all]})),[{label:'任务',column:'任务数',unit:'个任务'}],'bar',scope);
   const resultsTable=html`<details class="ch-tableview"><summary>按结果以表格查看</summary>${table(['日期',...shown.map(result=>uiLabelOf('task_result',result)),'结果暂不可用'],columns.map((column)=>[column.label,...column.parts,column.unread]))}</details>`;
   const checks=checkCounts(tasks),checkTotal=checks.reduce((sum,item)=>sum+item.value,0);
   const checkCard=box({title:'检查项结果',meta:`共 ${count(checkTotal)} 项`,hint:scope+'全部结果中的检查项；等待判定中不计入通过，未知与检查未完成单独统计，不计入未通过。'},parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布'));
   const stuck=blockers(tasks);
-  const stuckCard=stuck.length?box({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},comparisons('主要阻塞原因',stuck)):html``;
+  const stuckCard=stuck.length?box({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},comparisons('主要阻塞原因',stuck,undefined,{rows:'原因',column:'条目数',unit:'个条目'})):html``;
   const { resources, reads } = await step('read-systems', async () => {
     const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
     return { resources, reads: await systemReads(ctx, resources.slice(0, 6).map((r) => r.id),now-since) };

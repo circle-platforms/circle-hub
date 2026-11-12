@@ -18,7 +18,7 @@ function noEntries(ctx:PageContext,scope:string,local:boolean):EmptyState{
  return {title:'还没有可读的知识',text:'我的、团队和与我共享的知识都列在这里。',...(local?{}:{action:create})};
 }
 import type {PageContext} from './pages.ts';
-import {currentAudience,inScope,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
+import {currentAudience,inScope,knowledgeContext,knowledgeGuide,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 /** The knowledge home: the entries readable in the chosen scope, and under 全部 what the reader shared to the team. */
 export async function knowledgeHome(ctx:PageContext):Promise<Html>{
@@ -42,6 +42,6 @@ export async function knowledgeHome(ctx:PageContext):Promise<Html>{
  // One list per page (decision 151): what is readable in this scope, newest change first, with its count in the head. No
  // side pane repeats the list; the pane is only the place where the sync setting opens.
  const list=box({title:scope==='all'?'最近变化':uiLabelOf('knowledge_search_scope',scope),meta:`${recent.total.toLocaleString('en-US')} 条`,hint:'按当前分享权限列出可读条目；时间为条目自身的写入时间'},table(['条目','位置','分享范围','状态','更新'],rows.map(row=>row.cells),noEntries(ctx,scope,local),'knowledge'),{flush:rows.length>0});
- const content=html`<div class="ch-toolbar">${knowledgeTabs(ctx)}${search}</div>${selectedSync?'':syncPanel}${capacity?html`<p class="ch-meta">${capacitySummary(capacity)}</p>`:''}${list}${scope==='all'?submissions:''}`;
+ const content=html`<div class="ch-toolbar">${knowledgeTabs(ctx)}${search}</div>${knowledgeContext(ctx,uiLabelOf('knowledge_view','knowledge'))}${knowledgeGuide()}${selectedSync?'':syncPanel}${capacity?html`<p class="ch-meta">${capacitySummary(capacity)}</p>`:''}${list}${scope==='all'?submissions:''}`;
  return spaceLayout(ctx,pageLayout(content,{inspector:selectedSync?syncPanel:null,actions:controls,detail:selectedSync,back:link('/console/knowledge','返回知识库',{scope})}));
 }

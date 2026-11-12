@@ -5,7 +5,8 @@ import {capacitySummary,capacityError} from './capacity.ts';
 import {parseCapacity} from '../capacity.ts';
 // Space pages and owner actions. Services enforce the same boundaries for browser forms and MCP calls.
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
-import {spaceLayout,currentAudience,knowledgeTabs} from './space-layout.ts';
+import {spaceLayout,currentAudience,knowledgeContext,knowledgeTabs} from './space-layout.ts';
+import {APPLICABILITY_FIELD,DATA_FIELD} from './form-recovery.ts';
 import {directoryName} from './audience.ts';
 import {knowledgeDirectory,batchSharePage,shareBatch,existingTeamLink} from './knowledge-directory.ts';
 export {batchSharePage};
@@ -46,20 +47,29 @@ ${card({ title: uiLabelOf('knowledge_search_scope', 'team'), hint: '团队条目
 ${card({ title: uiLabelOf('knowledge_search_scope', 'shared'), hint: '只列出当前分享给本账户或全体管理员的私人文件夹。收回分享后不能继续读取；已读或已引用的内容无法追回。' }, shared.length ? table(['来自', '可读文件夹'], sharedRows) : html `<p class="empty">没有获分享权限的私人文件夹</p>`)}
 </div>`;
 }
-function editor(ctx: PageContext, space: string, path: string, draft?: SpaceEntryView): Html {
+/** The originals of this folder, by name, for choosing the first source instead of typing its reference (issue 213). */
+async function sourceChoices(ctx: PageContext, space: string, path: string): Promise<Array<{ reference: string; name: string }>> {
+  const spaces = ctx.deps.knowledge.spaces!;
+  const rows = (await spaces.sources(ctx.principal, space)).filter((source) => source.path === path).slice(0, 50);
+  return Promise.all(rows.map(async (source) => ({ reference: 'src:' + source.sha256, name: (await spaces.source(ctx.principal, source.sha256, undefined, 'model', source.artifact))?.artifact.body.name ?? '原文' })));
+}
+async function editor(ctx: PageContext, space: string, path: string, draft?: SpaceEntryView): Promise<Html> {
   const content = draft?.body.content, grounds = draft?.body.grounds ?? [];
+  const choices = await sourceChoices(ctx, space, path), picked = choices.find((choice) => choice.reference === grounds[0]?.reference);
+  // The first source: an original of this folder chosen by its name, or any reference typed below it. A typed reference wins.
+  const picker = choices.length === 0 ? '' : field('来源 1（从这个文件夹的原文中选）', html`<select name="source_pick_0"><option value="">不从原文中选</option>${choices.map((choice) => html`<option value="${choice.reference}"${choice === picked ? html` selected` : ''}>${choice.name}</option>`)}</select>`, '选一份已上传到这个文件夹的原文作为来源；也可以在“来源引用 1”里填写别的引用，两处都填时以填写的引用为准');
   const title = draft ? (space === 'team' ? '修改团队条目' : '修改我的条目') : (space === 'team' ? '导入团队知识条目' : '新建条目');
   const hint = space === 'team' ? '仅管理员可导入；条目及来源原文对全体成员可读。可用团队读取的来源，或管理员本人的普通上传；本次导入记录上传声明。私人空间原文及私人凭据来源仍受原有共享限制。' : '没有来源的笔记记为待验证；提供来源时逐字核对引文与路径，验证不代表陈述内容已被判为事实。修改会创建新条目并取代旧条目。';
   const back='/console/knowledge/space?'+new URLSearchParams({...spaceLink(space,draft?.root,path),...(draft?{entry:draft.row.entry}:{}),scope:ctx.url.searchParams.get('scope')??(space==='team'?'team':'personal')});
-  const ground=(i:number)=>html`<div data-wide-field data-fields>${field(`来源引用 ${i+1}`,html`<input name="ground_${i}" value="${grounds[i]?.reference??''}"${space==='team'&&i===0?html` required`:''}>`)}${field(`逐字引文 ${i+1}`,html`<textarea name="quotation_${i}" rows="2"${space==='team'&&i===0?html` required`:''}>${grounds[i]?.quotation??''}</textarea>`)}</div>`;
+  const ground=(i:number)=>html`<div data-wide-field data-fields>${i===0?picker:''}${field(`来源引用 ${i+1}`,html`<input name="ground_${i}" value="${i===0&&picked?'':grounds[i]?.reference??''}"${space==='team'&&i===0&&choices.length===0?html` required`:''}>`,i===0?'原文、知识条目或记录的引用；从上面选了原文时可留空':undefined)}${field(`逐字引文 ${i+1}`,html`<textarea name="quotation_${i}" rows="2"${space==='team'&&i===0?html` required`:''}>${grounds[i]?.quotation??''}</textarea>`)}</div>`;
   return html`<section class="ch-section" data-editor-foreground>${card({ title, hint }, form(ctx, 'entry', html `
 <input type="hidden" name="space" value="${space}">
 ${draft ? html `<input type="hidden" name="replaces" value="${draft.row.entry}"><input type="hidden" name="expected_version" value="${draft.root}">` : ''}
 ${field('陈述', html `<textarea name="statement" required maxlength="262144" rows="4">${content?.statement ?? ''}</textarea>`)}
 ${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
 ${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
-<details data-editor-advanced data-wide-field${content&&(Object.keys(content.data).length||content.applicability)?html` open`:''}><summary>结构化数据与适用条件</summary><div data-fields>${field('结构化数据（可选 JSON）', html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`, '留空表示没有；填写须是 JSON 对象，例如 {"字段":"值"}')}
-${field('适用条件（可选 JSON）', html `<textarea name="applicability" rows="2" placeholder="留空表示未声明">${content?.applicability ? JSON.stringify(content.applicability, null, 2) : ''}</textarea>`, '产品线、版本和运行环境等条件，须是 JSON 对象；留空表示未声明，不要求产品包')}
+<details data-editor-advanced data-wide-field${content&&(Object.keys(content.data).length||content.applicability)?html` open`:''}><summary>结构化数据与适用条件</summary><div data-fields>${field(DATA_FIELD.label, html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`, DATA_FIELD.hint)}
+${field(APPLICABILITY_FIELD.label, html `<textarea name="applicability" rows="2" placeholder="留空表示未声明">${content?.applicability ? JSON.stringify(content.applicability, null, 2) : ''}</textarea>`, APPLICABILITY_FIELD.hint)}
 </div></details>
 ${ground(0)}
 <details data-editor-sources data-wide-field${grounds.length>1?html` open`:''}><summary>更多来源与逐字引文</summary><div data-fields>${Array.from({length:Math.min(100,Math.max(3,grounds.length+1))-1},(_,i)=>ground(i+1))}</div></details>
@@ -109,7 +119,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
       return neutralPage(ctx);
     }
     const canEdit = (own || space === 'team' && ctx.admin) && (entry.row.status === 'verified' || entry.row.status === 'unverified');
-    if(canEdit&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page({...chrome,title:'编辑知识条目'},await spaceLayout(ctx,pageLayout(editor(ctx,space,path,entry),{inspector:null})))};
+    if(canEdit&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page({...chrome,title:'编辑知识条目'},await spaceLayout(ctx,pageLayout(await editor(ctx,space,path,entry),{inspector:null})))};
     const canWithdraw=canEdit||space==='team'&&entry.body.by===ctx.principal.id&&entry.body.shared_from!==undefined;
     const shared=entry.body.shared_from;
     const provenance=shared?kv([['提交人',await ctx.userName(entry.body.by)],['提交时间',timestamp(entry.body.at)],['来源',await personalOriginCleared(ctx,shared.root)?clearedPersonalFolder():technical(code('tree:'+shared.root+shared.path+'@'+shared.entry),'查看来源引用')]]):html``;
@@ -136,9 +146,9 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
 ${card({title:'来源',meta:entry.body.grounds.length},sources.length?html`${sources}`:html`<p class="ch-meta">未提供来源</p>`)}
 ${signatures}${card({title:'分享'},html`${audienceLine}${provenance}`)}
 ${versionCard}${provenanceCard}
-${showCitations?stat('被引用次数',entry.cited_count??'—'):''}
+${showCitations?stat('被引用次数',entry.cited_count??'暂无数据'):''}
 ${technical(html`${kv([['引用',code(entry.reference)],['作者',await ctx.userName(entry.body.by)]])}${pre(JSON.stringify(entry.body.content.data,null,2))}${pre(JSON.stringify(entry.body.content.applicability??null,null,2))}`)}
-${share}${canEdit&&ctx.url.searchParams.get('edit')==='1'?editor(ctx,space,path,entry):''}
+${share}${canEdit&&ctx.url.searchParams.get('edit')==='1'?await editor(ctx,space,path,entry):''}
 <footer class="ch-inspector-actions">${own||space==='team'&&ctx.admin?actionLink('/console/knowledge/space?'+new URLSearchParams({...spaceLink(space,version.root,path),history:'1'})+'#knowledge-history','知识版本记录','ghost'):''}${canWithdraw?actionLink('#withdraw-entry','撤回…','danger'):''}${own&&entry.row.status==='verified'?actionLink('/console/knowledge/space?'+new URLSearchParams({...spaceLink(space,entry.root,path),entry:digest,share:'1'}),'分享到团队…'):''}${canEdit?actionLink('/console/knowledge/space?'+new URLSearchParams({...spaceLink(space,version.root,path),entry:digest,edit:'1'}),'编辑','primary'):''}</footer>
 ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后这个条目不能再作为新结果的来源。已经引用它的结果保持原样，并标明“${uiLabelOf('validity_status','grounds_withdrawn')}”；条目的版本记录仍保留，已读内容无法追回。</p>`,form(ctx,'withdraw',html`<input type="hidden" name="entry" value="${digest}"><input type="hidden" name="space" value="${space}"><input type="hidden" name="path" value="${path}">`,'撤回条目')):''}</div>`;
     const nodes=await ctx.deps.knowledge.getNodes({root:version.root,paths:[path],depth:1,cursor:ctx.url.searchParams.get('node_cursor')},ctx.principal);
@@ -146,7 +156,7 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后这个条�
     const listing=await knowledgeDirectory(ctx,nodes,version,space,own,showCitations);
     return {status:200,body:page(chrome,await spaceLayout(ctx,pageLayout(html`${knowledgeTabs(ctx)}${listing}`,{inspector:details,detail:true,back:link('/console/knowledge/space','返回列表',{...spaceLink(space,version.root,path),scope:ctx.url.searchParams.get('scope'),node_cursor:ctx.url.searchParams.get('node_cursor')})})))};
   }
-  if((own||space==='team'&&ctx.admin)&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page({...chrome,title:'新建知识条目'},await spaceLayout(ctx,pageLayout(editor(ctx,space,path),{inspector:null})))};
+  if((own||space==='team'&&ctx.admin)&&ctx.url.searchParams.get('edit')==='1')return {status:200,body:page({...chrome,title:'新建知识条目'},await spaceLayout(ctx,pageLayout(await editor(ctx,space,path),{inspector:null})))};
   const nodes = await ctx.deps.knowledge.getNodes({ root: version.root, paths: [path], depth: 1, cursor: ctx.url.searchParams.get('node_cursor') }, ctx.principal);
   if (!nodes)
     return neutralPage(ctx);
@@ -169,8 +179,8 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后这个条�
   const sources = await spaces.sources(ctx.principal, space);
   const capacity=own?await spaces.usage(ctx.principal):null;
   const folderEntries=await spaces.entries(ctx.principal,version.root,version.body.entries.filter(row=>row.path===path));
-  const originals = card({ title: '原文', hint: space === 'team' ? '供团队知识引用的原文，全体成员可读；上传的原文须由上传人确认为团队来源' : '上传的原文保存在所属私人空间，不自动生成条目；可在客户端中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 个条目引用',link('/console/knowledge/source','查看原文',{sha256:s.sha256,artifact:s.artifact})];})), {title:'这个文件夹还没有原文',text:'导入的文件保存在这里，供条目逐字引用。'})}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
-  const context=html`<p class="ch-meta" data-knowledge-context>范围：${title} · 内容：${uiLabelOf('knowledge_view','knowledge')} · 位置：${directoryName(path)}</p>`;
+  const originals = card({ title: '原文', hint: space === 'team' ? '供团队知识引用的原文，全体成员可读；上传的原文须由上传人确认为团队来源' : '上传的原文保存在所属私人空间，不自动生成条目；可在客户端中按引用读取后起草，或手动添加带逐字引文的条目' }, html `${table(['文件名', '大小', '被引用', '原文'], await Promise.all(sources.filter(s=>s.path===path).map(async s => {const source=await spaces.source(ctx.principal,s.sha256,undefined,'model',s.artifact);const origin=source?.artifact.body.origin;const name=source?.artifact.body.name??'原文';const count=folderEntries.filter(entry=>entry?.body.grounds.some(g=>g.reference==='src:'+s.sha256)).length;return [name,bytes(s.size),'被 '+count+' 个条目引用',link('/console/knowledge/source','查看原文',{sha256:s.sha256,artifact:s.artifact})];})), {title:`${directoryName(path)} 中还没有原文`,text:'导入的文件保存在这里，供条目逐字引用。'})}${own&&ctx.url.searchParams.get('import')==='1' ? form(ctx, 'import', html `${field('原文文件', html `<input name="archive" type="file" required>`)}${field('所在文件夹', html `<input name="path" value="${path}" required>`)}`, '导入我的知识', true) : ''}`);
+  const context=knowledgeContext(ctx,uiLabelOf('knowledge_view','knowledge'),directoryName(path),title);
   const listed=nodes.nodes.reduce((sum,node)=>sum+node.entries.length,0);
   const readable=html`<p class="ch-meta" data-folder-count>${tooltip(`本页当前可读条目 ${number(listed)}`,'只统计本页已加载的当前可读条目；条目记录包含所选版本保留的早期版本及撤回记录，不含子文件夹。')}</p>`;
   const content=html`${knowledgeTabs(ctx)}<div class="ch-section">${context}${audienceLine}${readable}${own?html`<p>私人空间 ${capacitySummary(capacity!)} · 本文件夹条目记录（含早期版本及撤回）${number(version.body.entries.filter(r=>r.path===path).length)} · 已验证 ${number(version.body.entries.filter(r=>r.path===path&&r.status==='verified').length)} · 已分享 ${number((await spaces.grants(ctx.principal)).length)}</p>`:''}${directory}${editors}${originals}${authorization}${collapsedHistory}</div>`;
@@ -255,8 +265,9 @@ export async function performSpaceAction(ctx: PageContext, action: string, value
     const addGround = (reference: string, quotation: string) => { reference = reference.trim(); if (!!reference !== !!quotation)
       throw new KnowledgeError('来源引用和逐字引文须同时填写', { code: 'SPACE_ENTRY_INVALID' }); if (reference)
       grounds.push({ reference, quotation }); };
+    // The first source may be an original picked by name; a reference typed beside it wins (issue 213).
     for (let i = 0; i < 100; i++)
-      addGround(get('ground_' + i), get('quotation_' + i));
+      addGround(get('ground_' + i) || (i === 0 ? get('source_pick_0') : ''), get('quotation_' + i));
     if (!values.has('ground_0'))
       addGround(get('ground'), get('quotation'));
     await spaces.write(ctx.principal, { path, kind: get('kind'), statement: get('statement'), data: get('data') ? JSON.parse(get('data')) : {}, applicability: get('applicability') ? JSON.parse(get('applicability')) : null, grounds, ...(get('expected_version') ? { expected_version: get('expected_version') } : {}), ...(get('replaces') ? { replaces: get('replaces') } : {}), reason: get('reason') || '我的条目写入' }, null, space);

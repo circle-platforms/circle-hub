@@ -4,7 +4,7 @@ import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {html,link,code,table,page,pageLayout,type Html} from './html.ts';
 import {actionLink,badge,dialog,evidence,facts,panel,technical,tooltip,stat,field} from './presentation.ts';
 import {attributionBadge,sourceTypeLabel} from './knowledge-display.ts';
-import {selectedScope,spaceLayout,knowledgeTabs} from './space-layout.ts';
+import {selectedScope,spaceLayout,knowledgeContext,knowledgeTabs} from './space-layout.ts';
 import {size as bytes,time} from './format.ts';
 import {directoryName} from './audience.ts';
 import {neutralPage,type PageContext,type PageResult} from './pages.ts';
@@ -65,6 +65,6 @@ export async function sourceArchivePage(ctx:PageContext):Promise<PageResult>{
  const inspector=selected?await originalInspector(ctx,{sha256:selected.body.sha256,artifact:selected.body.artifact}):null;
  const canImport=scope==='all'||scope==='personal',importFolder=canImport?await folderField(ctx,ctx.principal.id,space===ctx.principal.id?path??'/':'/'):html``,importer=canImport?sourceDialog(ctx,'import-original','导入我的原文','原文保存到我的文件夹，沿用文件夹的分享设置。不会自动生成知识。','import-source',html`${field('原文文件',html`<input name="archive" type="file" required>`)}${importFolder}`,'导入原文',true):'';
  const parts=path?.split('/').filter(Boolean)??[],crumbs=!parts.length?undefined:[link('/console/knowledge','知识库'),link('/console/knowledge',uiLabelOf('knowledge_view','sources'),{view:'sources',scope}),link('/console/knowledge',uiLabelOf('knowledge_search_scope',scope),{view:'sources',scope,space}),...parts.slice(0,-1).map((part,index)=>link('/console/knowledge',evidence(part),{view:'sources',scope,space,path:'/'+parts.slice(0,index+1).join('/')}))];
- const content=html`${knowledgeTabs(ctx)}${table(['名称','位置','来源类型','大小','采集时间'],rows,'原文归档保存已导入或明确保存的原文。可从知识或任务的来源中打开原文后保存。',undefined,{hrefs:rowLinks,selected:result.items.findIndex(row=>row.record===selection)})}${cursor?link('/console/knowledge','返回第一页',{...params,source:null,cursor:null}):''}${importer}${result.next?link('/console/knowledge','下一页',{...params,source:null,cursor:result.next}):''}`;
+ const content=html`${knowledgeTabs(ctx)}${knowledgeContext(ctx,uiLabelOf('knowledge_view','sources'),path?directoryName(path):undefined)}${table(['名称','位置','来源类型','大小','采集时间'],rows,'原文归档保存已导入或明确保存的原文。可从知识或任务的来源中打开原文后保存。',undefined,{hrefs:rowLinks,selected:result.items.findIndex(row=>row.record===selection)})}${cursor?link('/console/knowledge','返回第一页',{...params,source:null,cursor:null}):''}${importer}${result.next?link('/console/knowledge','下一页',{...params,source:null,cursor:result.next}):''}`;
  return {status:200,body:page(ctx.chrome(parts.length?directoryName(path!).split(' › ').at(-1)!:'知识库',{active:'knowledge',...(crumbs?{crumbs}:{})}),await spaceLayout(ctx,pageLayout(content,{inspector,actions:canImport?actionLink('#import-original','导入原文…','primary'):undefined,detail:!!selected,back:link('/console/knowledge','返回原文列表',params)})))};
 }

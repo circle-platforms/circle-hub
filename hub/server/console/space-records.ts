@@ -36,7 +36,7 @@ async function memoryRefusals(ctx:PageContext,path:string,user?:string,from?:str
  for(const record of page.items){
   const body=record.body;if(record.schema!=='memory-refusal@1'||!object(body)||body.by!==ctx.principal.id||typeof body.code!=='string'||!Object.hasOwn(PROTOCOL_CODES,body.code)||user!==undefined&&body.by!==user||from!==undefined&&record.created_at<from||to!==undefined&&record.created_at>to)continue;
   const positions=Array.isArray(body.positions)?body.positions.filter(position=>object(position)&&typeof position.field==='string'&&Object.hasOwn(fields,position.field)&&Number.isSafeInteger(position.line)&&Number(position.line)>0):[];
-  for(const position of positions.length?positions:[null])rows.push([when(record.created_at),code(body.code),position?uiLabelOf('memory_field',fields[position.field as keyof typeof fields]):'—',position?'第 '+position.line+' 行':'—']);
+  for(const position of positions.length?positions:[null])rows.push([when(record.created_at),code(body.code),position?uiLabelOf('memory_field',fields[position.field as keyof typeof fields]):'未记录',position?'第 '+position.line+' 行':'未记录']);
  }
  const parameters=new URLSearchParams(ctx.url.searchParams);if(page.next)parameters.set(cursor,page.next);
  return card({title,hint:'仅显示本人的安全摘要；不显示原文、凭据、内部摘要或自由说明'},html`${rowsOrNote(['时间','拒收码','字段','行'], rows, '本页没有匹配的拒收记录')}${page.next?link(path,'更早的拒收记录',Object.fromEntries(parameters)):''}`);
@@ -85,9 +85,9 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     if (!ctx.admin && body.by !== ctx.principal.id || !inFilter(body.by, body.at)) continue;
     // A single-item share (owner ruling 1, issue 141) has no server copy of the personal entry to point to.
     const origin=body.source,cleared=origin?await personalOriginCleared(ctx,origin.root):false;
-    const target=body.target_path?directory(body.target_path,true):cleared||!origin?'—':directory(origin.path,true);
+    const target=body.target_path?directory(body.target_path,true):cleared||!origin?'未记录':directory(origin.path,true);
     const message=cleared?(body.code?PROTOCOL_CODES[body.code as keyof typeof PROTOCOL_CODES].when:''):body.message;
-    rows.push([when(body.at), await ctx.userName(body.by), target, uiLabelOf('knowledge_share_status', body.status), body.code ?? '—', message, cleared?clearedPersonalFolder():origin?technicalCode(`tree:${origin.root}${origin.path}@${origin.entry}`):singleItemOrigin()]);
+    rows.push([when(body.at), await ctx.userName(body.by), target, uiLabelOf('knowledge_share_status', body.status), body.code ?? '无', message, cleared?clearedPersonalFolder():origin?technicalCode(`tree:${origin.root}${origin.path}@${origin.entry}`):singleItemOrigin()]);
   }
   cards.push(card({ title: '分享到团队记录', hint: ctx.admin ? '管理员可见全部分享到团队的安全回执；不包含私人原文或提交内容' : '仅显示本人分享到团队的安全回执，拒收后我的原条目保留' }, html`${rowsOrNote(['时间', '提交人', '团队文件夹', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的分享到团队记录')}${shares.next ? more(cursor, shares.next, '更早的分享到团队') : ''}`));
   const memoryShares=ctx.admin?await ctx.deps.records.store.list({kind:'memory_share',newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')}):await ctx.deps.records.store.find({kind:'memory_share',key:'memory.share.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')});
@@ -95,7 +95,7 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
   for(const record of memoryShares.items){
     const parsed=MemoryShareBody.safeParse(record.body);if(!parsed.success)continue;const body=parsed.data;
     if(!ctx.admin&&body.by!==ctx.principal.id||!inFilter(body.by,body.at))continue;
-    memoryRows.push([when(body.at),await ctx.userName(body.by),body.target_path?directory(body.target_path,true):'—',uiLabelOf('knowledge_share_status',body.status),body.code??'—',body.message,body.team_document?link('/console/knowledge',uiLabelOf('knowledge_view','memory'),{view:'memory',document:body.team_document,scope:'team'}):'—']);
+    memoryRows.push([when(body.at),await ctx.userName(body.by),body.target_path?directory(body.target_path,true):'未记录',uiLabelOf('knowledge_share_status',body.status),body.code??'无',body.message,body.team_document?link('/console/knowledge',uiLabelOf('knowledge_view','memory'),{view:'memory',document:body.team_document,scope:'team'}):'无']);
   }
   cards.push(card({title:uiLabelOf('knowledge_view','memory')+'分享到团队记录',hint:'只列安全回执，不显示私人记忆标题或正文'},html`${rowsOrNote(['时间','提交人','团队文件夹','状态','拒收码','说明','团队文档'], memoryRows, '本页没有匹配的分享到团队记录')}${memoryShares.next?more('memory_shares',memoryShares.next,'更早的分享到团队'):''}`));
   return html`${cards}${await memoryRefusals(ctx,path,user,from,to)}`;

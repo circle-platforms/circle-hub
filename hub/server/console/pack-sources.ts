@@ -20,8 +20,8 @@ export async function packSources(ctx: PageContext, kind: Extract<PackKind, 'pro
     const state = stateOf(pack);
     const product = products.find(handle => handle.id === pack.id && handle.version === pack.version)?.product;
     const systems = resources.filter(resource => resource.system_pack.split('@')[0] === pack.id);
-    const scope = kind === 'product' ? (product === undefined ? '—' : product.title)
-      : systems.length === 0 ? '—' : options.bare ? systems.map(resource => resource.name).join('、') : html`${systems.map(resource => html`<div>${resource.name}${technical(code(resource.system_pack),'查看接入包编号')}</div>`)}`;
+    const scope = kind === 'product' ? (product === undefined ? '未声明' : product.title)
+      : systems.length === 0 ? '尚未接入' : options.bare ? systems.map(resource => resource.name).join('、') : html`${systems.map(resource => html`<div>${resource.name}${technical(code(resource.system_pack),'查看接入包编号')}</div>`)}`;
     return [link(`/console/packs/${pack.id}`, pack.title), ...(options.bare ? [] : [technical(code(pack.version),'查看版本号')]), chip(state.text, state.tone), scope];
   });
   const id = kind === 'product' ? 'product-sources' : 'system-sources';

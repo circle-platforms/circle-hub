@@ -11,7 +11,8 @@ import {button} from './ui.ts';
 import {evidence,panel as card,field as inputField,actionLink,dialog} from './presentation.ts';
 import {exactSize,memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
 import {type PageContext,type PageResult,neutralPage} from './pages.ts';
-import {currentAudience,inScope,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
+import {currentAudience,inScope,knowledgeContext,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
+import {MARKDOWN_FIELD} from './form-recovery.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 
@@ -27,7 +28,8 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
  const local=await personalLocal(ctx);
  const scope=selectedScope(ctx),document=ctx.url.searchParams.get('document'),version=ctx.url.searchParams.get('version');
  if(document&&!Sha256.safeParse(document).success||version&&!Sha256.safeParse(version).success)return neutralPage(ctx);
- const tabs=knowledgeTabs(ctx);
+ // The tabs, then where the reader is: whose memories, and that these are memories (issue 212).
+ const tabs=html`${knowledgeTabs(ctx)}${knowledgeContext(ctx,uiLabelOf('knowledge_view','memory'),ctx.url.searchParams.get('path')&&ctx.url.searchParams.get('path')!=='/'?directoryName(ctx.url.searchParams.get('path')!):undefined)}`;
  let result=html``;
  const receipt=ctx.url.searchParams.get('receipt');
  if(receipt){
@@ -79,7 +81,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
 
 function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:string;current_version:string;title:string;path:string;markdown:string;state:string}):Html{
  const back=location({scope:ctx.url.searchParams.get('scope')??(space==='team'?'team':'personal'),document:doc?.document,version:ctx.url.searchParams.get('version')??undefined,path:ctx.url.searchParams.get('path')??undefined});
- return html`<section data-editor-foreground>${card({title:actionLabel(doc?'edit':'create'),hint:'正文可使用 Markdown 标记，按原文保存，页面不渲染也不转换格式；保存检查大小与疑似凭据，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('文件夹',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div data-wide-field>${field('Markdown 正文',html`<textarea name="markdown" rows="6" required>${doc?.markdown??''}</textarea>`)}</div></div>`,actionLabel('save'),false,false,back))}</section>`;
+ return html`<section data-editor-foreground>${card({title:actionLabel(doc?'edit':'create'),hint:'正文可使用 Markdown 标记，按原文保存，页面不渲染也不转换格式；保存时检查大小，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('文件夹',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div data-wide-field>${field(MARKDOWN_FIELD.label,html`<textarea name="markdown" rows="6" required>${doc?.markdown??''}</textarea>`,MARKDOWN_FIELD.hint)}</div></div>`,actionLabel('save'),false,false,back))}</section>`;
 }
 
 export async function performMemoryAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined}):Promise<string>{

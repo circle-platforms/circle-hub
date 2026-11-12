@@ -675,3 +675,11 @@ later reads only. R[11] names this as the one exception to B02's "stored as they
 to it. `contracts/src/masking.ts` holds the dictionary's schema (`masking-dictionary@1`), the check a rule passes when it
 is set and the replacement itself; the dictionary is put in force by a resource configuration (B04), so there is no new
 record kind, permission kind, protocol code or vocabulary axis. B02 `changes47` states the change.
+
+Decision 160 (issue 241, under the backlog plan the owner approved on 2026-11-09) sets model 48: display rules only.
+Rule 5 keeps the unknown's own symbol and colour and adds that a dynamic layer that never ran is an unknown with a mark
+of its own (`SYMBOL.not_run` in `hub/server/claims.ts`), the question mark being for a look that reached no conclusion;
+it also names the notice of an older result by the words the code writes (下一步处理安排未记录, decision 158). Rule 22
+is new: in the console and in the text returned to a model an absent value says why it is absent (未记录, 不适用, 暂无数据,
+or a more particular fact) and is never a dash; the columns of the command line and notes already written into records
+are outside it. Nothing generated changes but `MODEL_VERSION`.

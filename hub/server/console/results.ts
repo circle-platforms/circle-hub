@@ -68,7 +68,7 @@ export async function resultPage(ctx: PageContext, runId: string): Promise<PageR
   const nav = html`<p>${offset > 0 ? link(`/console/results/${runId}`, '上一页', { terminal, offset: Math.max(0, offset - 500) }) : ''} ${offset + 500 < filtered.length ? link(`/console/results/${runId}`, '下一页', { terminal, offset: offset + 500 }) : ''}</p>`;
   return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: html`${link(`/console/runs/${runId}`, '任务')} · 运行 ${technicalCode(runId)}`, hint: PRODUCTION_RESULT_HINT }), html`${sharedRunNotice(ctx,detail.run)}${ruleWithdrawalNotice(detail)}${authority}${commentary}
 <p><strong>${countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}</strong></p>
-${definitions([['覆盖', coverageText(result.coverage) ?? '—'], ['生产结果记录（start_run 计算）', technicalCode(detail.production.record)]])}
+${definitions([['覆盖', coverageText(result.coverage) ?? '未记录'], ['生产结果记录（start_run 计算）', technicalCode(detail.production.record)]])}
 ${section('跨条目主张（不计入分区）', result.cross_item.length === 0 ? html`<p class="empty">没有</p>` : result.cross_item.map(renderClaim))}
 ${filter}<p>筛选后 ${filtered.length} 个；本页 ${Math.min(offset + 1, filtered.length)}–${Math.min(offset + 500, filtered.length)}</p>
 ${table(['编号', '名称', '摘要', '分区及原因', '要求项状态、各层终态与主张'], rows, '没有条目')}${nav}`) };

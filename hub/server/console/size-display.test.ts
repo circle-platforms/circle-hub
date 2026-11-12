@@ -12,6 +12,6 @@ test('a byte count shows in the console unit style with its exact count in the t
  assert.ok(!String(exactSize(164)).includes('164 字节</span>'),'the visible text carries the unit style, not the long unit word');
 });
 
-test('an unreadable count stays a dash, not a size',()=>{
- assert.match(String(exactSize(-1)),/—/);assert.match(String(exactSize(Number.NaN)),/—/);
+test('an unreadable count says it is unknown, not a size',()=>{
+ assert.match(String(exactSize(-1)),/>未知</);assert.match(String(exactSize(Number.NaN)),/>未知</);
 });

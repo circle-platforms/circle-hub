@@ -170,13 +170,13 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const records = ctx.admin ? '/console/admin/calls' : '/console/records';
   const body = html`${spaceKnowledge}${card(null, form)}
 ${sectionHead('任务', `${results.tasks.length} 个`)}
-${card(null, html`${table(['任务', uiLabelOf('pack_kind', 'workflow'), '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), technicalCode(hit.pack), hit.runner ?? '—', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}
+${card(null, html`${table(['任务', uiLabelOf('pack_kind', 'workflow'), '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), technicalCode(hit.pack), hit.runner ?? '未记录', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}
 ${sectionHead('发布内容', `${results.packs.length} 个`)}
 ${card(null, table(['标识', '名称', '类型'], results.packs.map((hit) => [link(packPath(hit), hit.title,hit.space?{space:hit.space}:{}), hit.title, hit.kind_label]), '没有匹配的发布内容'))}
 ${ctx.deps.knowledge.spaces ? '' : html`${sectionHead('知识库', `${results.knowledge.length} 项`)}
 ${card(null, html`${table(['类型', '名称', '所在'], results.knowledge.map(knowledgeRow), '没有匹配的知识')}${partial(results.partial.knowledge, `仅查找了前 ${MAX_LINES} 条产品线或前 ${MAX_ROOTS} 个当前版本，或匹配多于 ${SEARCH_MAX_HITS} 项；可能还有其他匹配。`)}`)}`}
 ${sectionHead('记录', `${results.records.length} 条`)}
-${card(null, html`${table(['时间', '工具', '任务', ...(ctx.admin ? ['成员'] : [])], results.records.map((hit) => [when(hit.at), hit.tool_label, hit.run === null ? '—' : link(records, '查看任务记录', { run: hit.run }), ...(ctx.admin ? [hit.user ?? '—'] : [])]), '没有匹配的记录')}${partial(results.partial.records, `仅查找了最近的 ${CALLS_SCANNED} 条调用记录，或匹配多于 ${SEARCH_MAX_HITS} 条；可能还有其他匹配。`)}`)}
+${card(null, html`${table(['时间', '工具', '任务', ...(ctx.admin ? ['成员'] : [])], results.records.map((hit) => [when(hit.at), hit.tool_label, hit.run === null ? '无' : link(records, '查看任务记录', { run: hit.run }), ...(ctx.admin ? [hit.user ?? '未记录'] : [])]), '没有匹配的记录')}${partial(results.partial.records, `仅查找了最近的 ${CALLS_SCANNED} 条调用记录，或匹配多于 ${SEARCH_MAX_HITS} 条；可能还有其他匹配。`)}`)}
 ${ctx.admin ? html`${sectionHead('成员', `${results.members.length} 人`)}${card(null, table(['姓名', '角色', '编号'], results.members.map((hit) => [link(`/console/team/${hit.id}`, hit.name), hit.role_label, technicalCode(hit.id)]), '没有匹配的成员'))}` : ''}`;
   return { status: 200, body: page(chrome, body) };
 }

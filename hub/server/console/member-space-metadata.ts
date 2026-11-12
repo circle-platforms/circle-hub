@@ -27,5 +27,5 @@ export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Arr
   counts.push(source.label+' '+(user.disabled?0:[...latest.values()].filter(Boolean).length));
  }
  const sync=await ctx.deps.records.personalSync?.memberMetadata(ctx.principal,user.id);
- return [...(sync?[[axisUiLabel('sync_mode'),uiLabelOf('sync_mode',sync.mode)],[uiLabelOf('sync_field','last_synced_at'),sync.last_synced_at?timestamp(sync.last_synced_at):'—']] as Array<[string,unknown]>:[]),['私人空间容量',capacitySummary(usage)],['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
+ return [...(sync?[[axisUiLabel('sync_mode'),uiLabelOf('sync_mode',sync.mode)],[uiLabelOf('sync_field','last_synced_at'),sync.last_synced_at?timestamp(sync.last_synced_at):'尚未同步']] as Array<[string,unknown]>:[]),['私人空间容量',capacitySummary(usage)],['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
 }

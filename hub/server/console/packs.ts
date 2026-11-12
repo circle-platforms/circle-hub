@@ -134,7 +134,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   } else if (tab === 'checks') {
     content = loaded === null ? unreadable : box(null, table(
       ['检查项', tooltip(axisUiLabel('check_tier'), '阻断项未通过时结果不可用；提示项仅作标记'), axisUiLabel('source_role'), '用于要求项'],
-      loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>`, c.tier === undefined ? '—' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), uiLabelOf('source_role', c.judges), loaded?.requirements.filter((r) => r.checks.includes(c.id)).map((r) => r.name).join('、') || '—']),
+      loaded.checks.map((c) => [html`<b>${c.title ?? '检查项'}</b>`, c.tier === undefined ? '未声明' : chip(uiLabelOf('check_tier', c.tier), c.tier === 'blocking' ? 'fail' : 'plain'), uiLabelOf('source_role', c.judges), loaded?.requirements.filter((r) => r.checks.includes(c.id)).map((r) => r.name).join('、') || '无']),
       '没有检查项'), { flush: true });
   } else if (tab === 'versions') {
     const workflow = pack.kind === 'workflow';
@@ -146,7 +146,7 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
     // The values a person does not read stand on this tab alone: identifiers, digests, version numbers and check scripts.
     content = box({ title: '技术信息', meta: '供排查和对账使用' }, html`<div class="ch-stack" data-technical>${kv([['标识',code(`${pack.id}@${pack.version}`)],['内容哈希',code(pack.digest)]])}
 ${loaded === null ? '' : html`${table(['要求项', '键'], loaded.requirements.map((r) => [r.name, code(r.key)]), '没有要求项')}
-${table(['检查项', '标识', '检查脚本'], loaded.checks.map((c) => [c.title ?? '检查项', code(c.id), c.function ? html`${code(c.function.module)} · ${code(c.function.export ?? 'default')}` : code(c.interpreter ?? '—')]), '没有检查项')}`}
+${table(['检查项', '标识', '检查脚本'], loaded.checks.map((c) => [c.title ?? '检查项', code(c.id), c.function ? html`${code(c.function.module)} · ${code(c.function.export ?? 'default')}` : code(c.interpreter ?? '未声明')]), '没有检查项')}`}
 ${table(['发布时间', '版本', '内容哈希'], versions.map((v) => [timestamp(v.published_at), code(v.version), code(v.digest)]), '没有版本记录')}</div>`);
   }
   // What the page opens with: the state, whose it is, who may use it, and the actions on exactly that.

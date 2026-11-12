@@ -164,7 +164,7 @@ const SHELL_CSS = `
 .ch-row-title { overflow-wrap: anywhere; }
 .ch-inspector [data-area-content] .ch-section + .ch-section { margin-top: var(--space-5); }
 .ch-inspector [data-fields] { grid-template-columns: minmax(0, 1fr); }
-[data-technical] > summary { color: var(--text-link); font: 400 12px/18px var(--font-sans); cursor: pointer; }
+[data-technical] > summary,[data-knowledge-guide] > summary { color: var(--text-link); font: 400 12px/18px var(--font-sans); cursor: pointer; }
 .ch-dialog [data-fields] { display: grid; gap: var(--space-3); }
 .ch-app { min-width: 0; }
 .ch-app > .ch-nav, .ch-app > .ch-inspector { position: sticky; top: 0; height: 100dvh; min-height: 0; box-sizing: border-box; overflow: auto; align-self: start; }
@@ -188,6 +188,8 @@ const SHELL_CSS = `
 .ch-nav-tree li { min-width: 0; }
 .ch-nav-tree ul ul { padding-left: var(--space-3); }
 .ch-nav-owner { display: block; min-width: 0; }
+/* A short list inside a table cell or a card: no marker, no indent. */
+.ch-plain-list { margin: 0; padding: 0; list-style: none; }
 .ch-nav-tree a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch-nav-foot { flex-wrap: wrap; gap: var(--space-2); }
 .ch-nav-foot > .ch-actions { width: 100%; flex-wrap: nowrap; }
@@ -291,7 +293,7 @@ const HEALTH_CSS = `
 // tabs, counts, times). The shared design system is unchanged: both sizes are its own. These rules come last, after the
 // rules of the same weight above that they replace.
 const TYPE_CSS = `
-.ch-meta,.ch-row-meta,.ch-crumbs,.ch-stat-label,.ch-stat-note,.ch-stat-unit,.ch-figure-note,.ch-field-label,.ch-field-hint,.ch-field-error,.ch-tip-bubble,.ch-legend,.ch-tableview summary,[data-filters] label,[data-technical] > summary{font-size:13px;line-height:20px}
+.ch-meta,.ch-row-meta,.ch-crumbs,.ch-stat-label,.ch-stat-note,.ch-stat-unit,.ch-figure-note,.ch-field-label,.ch-field-hint,.ch-field-error,.ch-tip-bubble,.ch-legend,.ch-tableview summary,[data-filters] label,[data-technical] > summary,[data-knowledge-guide] > summary{font-size:13px;line-height:20px}
 .ch-table th,.ch-section-label{font-size:13px;line-height:18px}
 `;
 
