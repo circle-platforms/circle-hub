@@ -716,37 +716,35 @@ const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion
 });
 
 test('submit_result keeps the three dispatch outcomes distinct under reader wording', () => {
+  // note.text is whatever hub/dispatch/accepted.ts already wrote for the reader; this exit must not rewrite it.
   const result = resultOf(items(1));
   const base = submitAnswer(result);
   const notSent = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: 'Hub 没有派发：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' }],
+    dispatch: [{ text: '上机验证没有发出：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' }],
   }), { items: items(1) });
   assert.match(notSent, /上机验证没有发出：目标没有给出租约/);
   assert.match(notSent, /什么都没有发到目标/);
   assert.match(notSent, /状态已确认；判断错误；原因还没查清/);
-  assert.doesNotMatch(notSent, /派发|核验运行|作业 [0-9a-f]{64}/);
 
   const rejected = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '作业已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次' }],
+    dispatch: [{ text: '已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次' }],
   }), { items: items(1) });
   assert.match(rejected, /目标在“admission”阶段拒绝/);
   assert.match(rejected, /目标没有接收，也没有执行/);
   assert.match(rejected, /状态已确认；判断错误；原因还没查清/);
-  assert.doesNotMatch(rejected, /派发结果未确认/);
 
   const unanswered = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '派发结果未确认：不要重交，也不要另开运行重发，目标可能已经执行过一次；已交给管理员 usr_合成 处置（期限 2026-11-12T00:00:00.000Z）；之后原样重交读进展' }],
+    dispatch: [{ text: '上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；已交给管理员处置；之后原样重交读进展' }],
   }), { items: items(1) });
   assert.match(unanswered, /上机验证结果未知：不要重交，也不要另开运行重发/);
   assert.match(unanswered, /状态未知；原因还没查清/);
-  assert.doesNotMatch(unanswered, /派发结果未确认|派发/);
 
   const withResult = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ job: H('1'), executor: 'synthetic-executor', result: `src:${H('2')}`, text: '作业已结束；结果引用 src:合成' }],
+    dispatch: [{ job: H('1'), executor: 'synthetic-executor', result: `src:${H('2')}`, text: '已结束；结果引用 src:合成' }],
   }), { items: items(1) });
   assert.match(withResult, /设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出/);
   assert.doesNotMatch(withResult, /结果引用 src:/);
@@ -754,12 +752,11 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
   const many = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
     dispatch: [
-      { text: 'Hub 没有派发：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' },
-      { job: H('3'), executor: 'synthetic-executor', text: `Hub 已再次按任务包的效果行派发作业 ${H('3')}（执行器 synthetic-executor）；稍后逐字原样重交派发时的那次提交读进展，作业结束后同样的答复带结果引用` },
+      { text: '上机验证没有发出：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' },
+      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）；稍后逐字原样重交上机验证时的那次提交读进展，结束后同样的答复带结果引用' },
     ],
   }), { items: items(1) });
   assert.match(many, /上机验证没有发出：预检条件不满足/);
   assert.match(many, /Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）/);
   assert.equal(linesOf(many).filter(line => line.includes('上机验证')).length >= 2, true);
-  assert.doesNotMatch(many, /派发作业|[0-9a-f]{64}/);
 });

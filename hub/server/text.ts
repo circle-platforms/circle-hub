@@ -569,31 +569,14 @@ function resolveText(v: ResolveOut): string {
 
 /**
  * Decision 155 puts three dispatch outcomes in `dispatch[].text` (not sent, rejected by the target, sent without an
- * answer). Keep each note; rewrite only the step jargon the reader wording forbids (派发/核验运行/作业/计划/工作簿).
+ * answer). Keep each note verbatim — reader wording is owned by hub/dispatch/accepted.ts; do not rewrite at the exit.
  */
-function readerDispatchText(text: string): string {
-  return text
-    .replaceAll('派发结果未确认', '上机验证结果未知')
-    .replaceAll('Hub 没有派发', '上机验证没有发出')
-    .replaceAll('没有自动派发', '没有自动上机验证')
-    .replaceAll('不会再派发', '不会再做上机验证')
-    .replaceAll('要再派发请开新的核验运行', '要再上机请重新开始上机验证')
-    .replaceAll('开新的核验运行', '重新开始上机验证')
-    .replaceAll('这个核验运行', '这次上机验证')
-    .replaceAll('派发前核对', '上机验证前核对')
-    .replaceAll('派发时的那次提交', '上机验证时的那次提交')
-    .replaceAll(/按任务包的效果行派发作业 [0-9a-f]{64}/g, '按任务包的效果行开始上机验证')
-    .replaceAll(/作业结束后/g, '结束后')
-    .replaceAll('工作簿', '自动化用例 Excel')
-    .replaceAll('能在计划、', '能在自动化用例、');
-}
-
-/** One dispatch note for the model: keep the three outcomes distinct and attach the reader status frame. */
 function dispatchNoteLine(note: { text: string; result?: string }): string {
   if (note.result !== undefined) {
     return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
   }
-  const message = readerDispatchText(note.text);
+  const message = note.text;
+  // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.
   if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
     return `${message}；状态未知；原因还没查清；决定者程序`;
   }
