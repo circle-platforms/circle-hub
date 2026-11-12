@@ -339,7 +339,8 @@ describe('pages', () => {
     const listed = await get(`/console/runs/${run}?tab=process`, session);
     const anchor = `submission-${longRecord.digest.slice(0, 12)}`, whole = `/console/runs/${run}?tab=process&amp;submission=${longRecord.digest}#${anchor}`;
     assert.match(listed.body, /只显示前 4,096 个字符，共 6,0\d\d 个/);
-    assert.ok(listed.body.includes(`<a href="${whole}">查看全文</a>`), 'the rest is one link away, on the same row');
+    // The link says which submission it opens to a screen reader: several rows carry a link with the same words.
+    assert.ok(listed.body.includes(`<a href="${whole}">查看全文<span class="ch-visually-hidden">（2026-10-22T00:01:00.000Z 的提交）</span></a>`), 'the rest is one link away, on the same row');
     assert.ok(!listed.body.includes('尾&quot;}'), 'the end of the long submission is not on the list');
     assert.ok(listed.body.includes('&quot;notes&quot;:&quot;&lt;\\ud800&gt;&quot;'), 'a short submission is still shown whole');
     assert.doesNotMatch(listed.body, /<details class="unverified"[^>]* open>/, 'nothing is opened unasked');
@@ -354,7 +355,7 @@ describe('pages', () => {
     server.fakes.runs.runs.get(run)!.submissions.push({ record: many.digest, received_at: '2026-10-22T00:02:00.000Z', acceptance: 'not_accepted', errors, result: null });
     const brief = await get(`/console/runs/${run}?tab=process`, session);
     assert.ok(brief.body.includes('合成缺失事实 3') && !brief.body.includes('合成缺失事实 4'));
-    assert.match(brief.body, new RegExp(`另有 5 条 · <a href="/console/runs/${run}\\?tab=process&amp;submission=${many.digest}#submission-${many.digest.slice(0, 12)}">查看全部</a>`));
+    assert.match(brief.body, new RegExp(`另有 5 条 · <a href="/console/runs/${run}\\?tab=process&amp;submission=${many.digest}#submission-${many.digest.slice(0, 12)}">查看全部<span class="ch-visually-hidden">错误（2026-10-22T00:02:00.000Z 的提交）</span></a>`));
     const every = await get(`/console/runs/${run}?tab=process&submission=${many.digest}`, session);
     assert.ok(every.body.includes('合成缺失事实 8'));assert.doesNotMatch(every.body, /另有 5 条/);
   });

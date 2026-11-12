@@ -183,9 +183,11 @@ const SHELL_CSS = `
 .ch-nav-sep { flex: none; width: auto; height: 0; margin: var(--space-2) var(--space-2); border: 0; border-top: 1px solid var(--line-hairline); }
 .ch-nav-sub section { margin: 0; min-width: 0; }
 .ch-inspector > .ch-section { margin: 0; }
-.ch-nav-sub details { margin: 0; min-width: 0; }
-.ch-nav-sub summary { display: block; min-width: 0; }
-.ch-nav-tree details details { padding-left: var(--space-3); }
+/* The folder tree is nested lists of links (accessibility guide, lists); a folder inside a folder is indented. */
+.ch-nav-tree ul { margin: 0; padding: 0; list-style: none; min-width: 0; }
+.ch-nav-tree li { min-width: 0; }
+.ch-nav-tree ul ul { padding-left: var(--space-3); }
+.ch-nav-owner { display: block; min-width: 0; }
 .ch-nav-tree a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch-nav-foot { flex-wrap: wrap; gap: var(--space-2); }
 .ch-nav-foot > .ch-actions { width: 100%; flex-wrap: nowrap; }
@@ -313,6 +315,39 @@ main nav.ch-seg a { flex: none; }
 .ch-kv dd { min-width: 0; overflow-wrap: anywhere; }
 /* html, focus boundaries: a preview that scrolls can be reached and scrolled with the keyboard. */
 .ch-original-preview:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* breadcrumbs: the places above a page and the page itself are an ordered list drawn on one line. The separator is the
+   style sheet's, with empty alternative text where the browser takes one, so a screen reader reads the names only. */
+.ch-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; margin: 0; padding: 0; list-style: none; }
+.ch-crumbs li { min-width: 0; overflow-wrap: anywhere; }
+.ch-crumbs li + li::before { content: "›"; content: "›" / ""; margin-right: 6px; }
+/* The page itself is told apart by more than colour, and keeps a mark where colours are forced. */
+.ch-crumbs a[aria-current="page"] { color: var(--text-secondary); font-weight: 500; text-decoration: none; }
+@media (forced-colors: active) { .ch-crumbs a[aria-current="page"] { text-decoration: underline; } }
+/* A scroll region holds what is placed out of the flow inside it (the text kept for screen readers in a link of a wide
+   table): without this that text stood where the table's far column is and made the page itself wider than the screen. */
+.ch-table-wrap { position: relative; }
+/* accessibility, headings: where the list is hidden and the detail stands alone (up to 1180px) the page's title is still
+   its level-one heading, for a screen reader; on a wider screen the list's own heading is shown and this one is absent. */
+.ch-detail-heading { display: none; }
+@media (max-width: 1180px) { .ch-app.is-detail .ch-detail-heading { display: block; } }
+/* html, code blocks: code inside a block keeps the block's size and wrapping, not the inline code's. */
+:where(.hub) pre code { font-size: inherit; overflow-wrap: inherit; }
+/* accessibility, target size (WCAG 2.2, 2.5.8): on a touch screen whatever a finger presses is at least 24px high. With a
+   mouse nothing here applies and the rows stay as dense as they were. */
+@media (pointer: coarse) {
+  .hub :is(.ch-table, .ch-kv, .ch-crumbs, .ch-meta, .ch-feed, .ch-list, .ch-actions, .ch-card-foot, .ch-card-tail, p, li, dd) > a:not(.ch-btn, .ch-row, .ch-nav-item), .hub .ch-table td a:not(.ch-btn) { padding-block: 4px; }
+  /* A short name (one or two characters) is as wide as it is high. */
+  .hub .ch-table td a:not(.ch-btn), .hub .ch-crumbs a { display: inline-block; min-width: 24px; }
+  .hub .ch-source-head > a { min-height: 24px; align-content: center; }
+  .hub summary { min-height: 24px; align-content: center; }
+  .hub :is(input[type="checkbox"], input[type="radio"]) { min-width: 24px; min-height: 24px; }
+  .hub :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) { min-height: 32px; }
+  .hub .ch-tip { min-height: 24px; }
+}
+/* forms, zoom on focus: a phone's browser zooms the page in when a field whose text is under 16px is tapped. */
+@media (pointer: coarse), (max-width: 760px) {
+  .hub :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) { font-size: 16px; }
+}
 `;
 
 export const CSS = `${DESIGN_CSS}\n${BASE_CSS}\n${SHELL_CSS}\n${HEALTH_CSS}\n${TYPE_CSS}\n${AUDIT_CSS}\n[data-theme-switch][hidden]{display:none}\n`;

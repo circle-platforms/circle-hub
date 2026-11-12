@@ -90,7 +90,7 @@ function packPage(ctx: PageContext, staging: PackStaging): Html {
   return html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose(kind)}</p><div class="ch-actions">${link('/console/operations/pack','完成有验收要求的任务',{kind:'workflow'})}${link('/console/operations/pack','提供通用做法',{kind:'skill'})}${ctx.admin?link('/console/operations/pack','接入业务系统',{kind:'system'}):''}</div><p class="ch-meta">选择的是发布入口；上传内容的类型仍由 pack.json 声明并按原规则校验。</p></section>${steps(['上传', '发布校验', '发布', '完成'], 0)}
 <section class="ch-section" data-columns="2">
 ${card({ title: `上传${label}`, hint: '上传人需为维护人；先检查结构、样例和来源，通过后暂存 30 分钟，确认发布时重新检查，相同内容不重复发布。' }, html`${form}`)}
-${card({ title: '在运行 Hub 的服务器上发布',hint:'维护人在运行 Hub 的服务器上先检查再发布，检查与记录和控制台相同。' }, html`<pre class="ch-quote">${'circle-hub pack publish <文件夹> --dry-run\ncircle-hub pack publish <文件夹>'}</pre><p>${link(packHome(kind).path,'查看已发布版本')}</p>`)}
+${card({ title: '在运行 Hub 的服务器上发布',hint:'维护人在运行 Hub 的服务器上先检查再发布，检查与记录和控制台相同。' }, html`<pre class="ch-quote"><code>${'circle-hub pack publish <文件夹> --dry-run\ncircle-hub pack publish <文件夹>'}</code></pre><p>${link(packHome(kind).path,'查看已发布版本')}</p>`)}
 </section>${waiting}`;
 }
 

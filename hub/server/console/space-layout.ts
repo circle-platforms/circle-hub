@@ -31,8 +31,15 @@ export function directoryTree(directories:readonly string[],url:(path:string)=>s
  if(levels<=0)return html``;
  const depth=path.split('/').filter(Boolean).length;
  const children=directories.filter(p=>p!==path&&containsDirectory(path,p)&&p.split('/').filter(Boolean).length===depth+1);
- return html`${children.map(child=>html`<details open><summary><a href="${url(child)}" title="${label(child)}"${child===selected?html` aria-current="page"`:''}>${label(child)}</a></summary>${directoryTree(directories,url,child,label,levels-1,selected)}</details>`)}`;
+ return treeList(children.map(child=>treeItem(html`<a href="${url(child)}" title="${label(child)}"${child===selected?html` aria-current="page"`:''}>${label(child)}</a>`,directoryTree(directories,url,child,label,levels-1,selected))));
 }
+/**
+ * The folder tree is a list of links with the folders inside a folder as a list inside its item (accessibility guide,
+ * lists): every folder is always shown, so nothing in it is a disclosure, and a link stands alone instead of inside a
+ * `summary`, where a click beside it would have closed the folder and a screen reader's reading is not defined.
+ */
+const treeList=(items:readonly Html[]):Html=>items.length?html`<ul>${items}</ul>`:html``;
+const treeItem=(head:unknown,inside:Html):Html=>html`<li>${head}${inside}</li>`;
 function ancestors(paths:readonly string[]):string[]{
  const directories=new Set<string>(['/']);for(const path of paths){const parts=path.split('/').filter(Boolean);for(let n=1;n<=parts.length;n++)directories.add('/'+parts.slice(0,n).join('/'));}return [...directories].sort();
 }
@@ -56,7 +63,7 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
    const paths=ancestors(memories.filter(v=>v.space===owner).map(v=>v.path));
    const url=(path:string)=>base+'?'+new URLSearchParams({view:'memory',scope:s,space:owner,path});
    const tree=directoryTree(paths,url,'/',undefined,3,ctx.url.searchParams.get('space')===owner?ctx.url.searchParams.get('path')??'/':undefined);
-   return owner===ctx.principal.id||owner==='team'?tree:html`<details open><summary>${names.get(owner)}</summary>${tree}</details>`;
+   return owner===ctx.principal.id||owner==='team'?tree:treeList([treeItem(html`<span class="ch-nav-owner">${names.get(owner)}</span>`,tree)]);
   }):[];
   const knowledgeGroups=packs||s==='all'||memory?[]:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).map(v=>{
    const mounts=v.version.body.products;
@@ -67,8 +74,8 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
    const label=(path:string)=>labels.get(path)??directoryName(path).split(' › ').at(-1)!;
    const roots=allowed.filter(path=>!allowed.some(parent=>parent!==path&&containsDirectory(parent,path)));
    const selected=ctx.url.searchParams.get('space')===v.space?ctx.url.searchParams.get('path')??'/':undefined;
-   const tree=allowed.includes('/')?directoryTree(allowed,url,'/',label,3,selected):html`${roots.map(root=>html`<details open><summary><a href="${url(root)}" title="${label(root)}"${root===selected?html` aria-current="page"`:''}>${label(root)}</a></summary>${directoryTree(allowed,url,root,label,2,selected)}</details>`)}`;
-   return v.space===ctx.principal.id||v.space==='team'?tree:html`<details open><summary>${link(sources?'/console/knowledge':'/console/knowledge/space',names.get(v.space),{...(sources?{view:'sources'}:{}),space:v.space,path:v.paths[0],scope:s})}</summary>${tree}</details>`;
+   const tree=allowed.includes('/')?directoryTree(allowed,url,'/',label,3,selected):treeList(roots.map(root=>treeItem(html`<a href="${url(root)}" title="${label(root)}"${root===selected?html` aria-current="page"`:''}>${label(root)}</a>`,directoryTree(allowed,url,root,label,2,selected))));
+   return v.space===ctx.principal.id||v.space==='team'?tree:treeList([treeItem(link(sources?'/console/knowledge':'/console/knowledge/space',names.get(v.space),{...(sources?{view:'sources'}:{}),space:v.space,path:v.paths[0],scope:s}),tree)]);
   });
   const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:sources?{view:'sources'}:{})});

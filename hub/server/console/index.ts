@@ -588,9 +588,9 @@ async function setup(request: IncomingMessage, response: ServerResponse, options
 ${pre(outcome.token)}
 <h2>在客户端中连接这个 Hub</h2>
 <h2 class="ch-section-label">${tooltip('MCP 标准连接确认','下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。首次连接时登录控制台并确认身份。')}</h2>
-<pre class="ch-quote">${circleEntry(mcpOrigin(request, secure), false)}</pre>
+<pre class="ch-quote"><code>${circleEntry(mcpOrigin(request, secure), false)}</code></pre>
 <h2 class="ch-section-label">${tooltip('兼容连接方式','客户端不支持 MCP 标准连接确认时，把令牌保存为客户端的密钥 CIRCLE_HUB_TOKEN，再采用下方配置。')}</h2>
-<pre class="ch-quote">${circleEntry(mcpOrigin(request, secure))}</pre>
+<pre class="ch-quote"><code>${circleEntry(mcpOrigin(request, secure))}</code></pre>
 ${secure ? html`${trustSteps()}` : ''}
 <h2>接下来</h2>
 <ol class="ch-meta"><li>${link('/console/operations/member', '添加成员')}</li><li>${link('/console/operations/system', '接入业务系统')}</li><li>${link('/console/operations/pack', '发布工作流')}</li><li>${link('/console/operations/knowledge', '导入知识')}</li></ol>

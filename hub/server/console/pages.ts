@@ -273,7 +273,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
  * A submission as the Hub received and stored it (display rule 3), marked unverified: the arguments of the record, or the
  * JSON text runs kept as an object when the arguments were not canonical JSON (`{received: {object, ...}}`).
  */
-async function submissionContent(ctx: PageContext, digest: string, runId: string, whole?: { full: boolean; href: string }): Promise<Html> {
+async function submissionContent(ctx: PageContext, digest: string, runId: string, whole?: { full: boolean; href: string; received: string }): Promise<Html> {
   const full = whole === undefined || whole.full, limit = full ? SHOWN_SUBMISSION_CHARS : PREVIEW_SUBMISSION_CHARS;
   const record = await ctx.deps.records.store.get(digest);
   if (record === null) return html`<p class="empty">提交记录不在</p>`;
@@ -297,7 +297,7 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
     const cut = `只显示前 ${end.toLocaleString('en-US')} 个字符，共 ${text.length.toLocaleString('en-US')} 个`;
     // A row of the list: the rest is one link away, on the same row. The one asked for: what even that leaves out is in the record.
     if (full) note = [note, `${cut}，全文在记录 ${digest}`].filter(Boolean).join('；');
-    else { note = [note, cut].filter(Boolean).join('；'); more = html` <a href="${whole!.href}">查看全文</a>`; }
+    else { note = [note, cut].filter(Boolean).join('；'); more = html` <a href="${whole!.href}">查看全文<span class="ch-visually-hidden">（${whole!.received} 的提交）</span></a>`; }
   }
   return html`<details class="unverified" id="${submissionAnchor(digest)}"${whole?.full ? html` open` : ''}><summary>提交内容（未经平台验证）</summary>${note || more ? html`<p class="notice">${note}${more}</p>` : ''}${pre(shown)}</details>`;
 }
@@ -456,9 +456,9 @@ ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / �
         technicalCode(s.record),
         s.received_at,
         s.acceptance === null ? '未校验（Hub 中断）' : uiLabelOf('acceptance', s.acceptance),
-        s.errors.length === 0 ? '' : html`${errors.map((e) => html`<div>${code(e.code)} ${e.message}${e.fix ? `；修正：${e.fix}` : ''}${e.rounds_left !== undefined ? `；剩余修复轮数 ${e.rounds_left}` : ''}</div>`)}${errors.length < s.errors.length ? html`<p class="ch-meta" data-more-errors>另有 ${(s.errors.length - errors.length).toLocaleString('en-US')} 条 · <a href="${whole}">查看全部</a></p>` : ''}`,
+        s.errors.length === 0 ? '' : html`${errors.map((e) => html`<div>${code(e.code)} ${e.message}${e.fix ? `；修正：${e.fix}` : ''}${e.rounds_left !== undefined ? `；剩余修复轮数 ${e.rounds_left}` : ''}</div>`)}${errors.length < s.errors.length ? html`<p class="ch-meta" data-more-errors>另有 ${(s.errors.length - errors.length).toLocaleString('en-US')} 条 · <a href="${whole}">查看全部<span class="ch-visually-hidden">错误（${s.received_at} 的提交）</span></a></p>` : ''}`,
         s.result ? technicalCode(s.result) : '—',
-        await submissionContent(ctx, s.record, run.run, { full, href: whole }),
+        await submissionContent(ctx, s.record, run.run, { full, href: whole, received: s.received_at }),
       ]);
     }
     const submissions = table(['提交记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
@@ -493,7 +493,7 @@ ${projectedFields}</div>`;
   return {
     status: 200,
     body: page(
-      ctx.chrome(title, { active: 'tasks', crumbs: link('/console/runs', '任务'), sub: html`${[run.product, run.version, run.build].filter(Boolean).join(' / ') || '—'} · 执行人 ${who} · 开始于 ${when(run.started_at)}` }),
+      ctx.chrome(title, { active: 'tasks', crumbs: [link('/console/runs', '任务')], sub: html`${[run.product, run.version, run.build].filter(Boolean).join(' / ') || '—'} · 执行人 ${who} · 开始于 ${when(run.started_at)}` }),
       pageLayout(html`${liveModule('task', ['task.updated', 'request.updated'], html`${outcome}${notices}`, { run: run.run })}
 ${tabs}
 ${liveModule('task-record', ['task.updated', 'request.updated'], html`<div class="ch-section" data-task-tab="${tab}">${body}</div>`, { run: run.run })}`,{inspector:null}),
@@ -529,7 +529,7 @@ export function callTable(lines: readonly CallLogLine[], admin: boolean, users: 
         line.run === null ? '' : link(`/console/runs/${line.run}`, '查看任务'),
         ...(compact ? [] : [technicalCode(line.trace_id), line.session ?? '', html`${technicalCode(line.args_digest.slice(0, 16))}（${line.args_size}）`]),
       ];
-      if (admin) row.push(line.admin_reasons?.length?html`${line.admin_note??''}<details><summary>完整理由（${line.admin_reasons.length} 条）</summary><ol>${line.admin_reasons.map(reason=>html`<li><pre>${reason}</pre></li>`)}</ol></details>`:line.admin_note??'');
+      if (admin) row.push(line.admin_reasons?.length?html`${line.admin_note??''}<details><summary>完整理由（${line.admin_reasons.length} 条）</summary><ol>${line.admin_reasons.map(reason=>html`<li>${pre(reason)}</li>`)}</ol></details>`:line.admin_note??'');
       return row;
     }),
     '没有调用',
@@ -695,7 +695,7 @@ export async function rootPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: knowledgeShell(
-      ctx.chrome('知识版本', { active: 'knowledge', crumbs: link('/console/knowledge','知识库') }),
+      ctx.chrome('知识版本', { active: 'knowledge', crumbs: [link('/console/knowledge','知识库')] }),
       html`<p>${link('/console/knowledge/tree', '浏览条目', { root, path: '/' })}</p>${technicalCode(root)}
 ${table(
   ['组成记录', '产品线', '构建', '名称族', '版本线', '产出时间'],

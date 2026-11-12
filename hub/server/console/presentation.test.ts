@@ -27,7 +27,9 @@ test('source panels use authorized readable names and exact quotations, with ref
  const sha='b'.repeat(64),quote='<合成逐字引文>';
  const ctx={principal:{id:'reader'},deps:{knowledge:{spaces:{source:async(_who:unknown,digest:string)=>{assert.equal(digest,sha);return {artifact:{body:{name:'合成来源.txt'}}};}}}}} as unknown as PageContext;
  const rendered=(await sourceBlock(ctx,'src:'+sha,quote)).text;
- assert.match(visible(parse(rendered)),/合成来源.txt打开原文<合成逐字引文>查看引用/);
+ // The link names the original it opens, in text kept for screen readers: several sources on a page carry the same words.
+ assert.match(visible(parse(rendered)),/合成来源.txt打开原文：合成来源.txt<合成逐字引文>查看引用/);
+ assert.ok(rendered.includes('打开原文<span class="ch-visually-hidden">：合成来源.txt</span></a>'));
  assert.doesNotMatch(visible(parse(rendered)),new RegExp(sha));
  assert.match(rendered,/&lt;合成逐字引文&gt;/);
  ctx.deps.knowledge.spaces!.source=async()=>null;

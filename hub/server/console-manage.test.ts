@@ -201,7 +201,7 @@ test('the first administrator is created with the setup code; the token shown on
   assert.ok(!done.cookies.some((c) => c.startsWith('circle_hub_session=')), 'creating the administrator opens no session');
   assert.match(done.body, /<a [^>]*href="\/console\/login"[^>]*>前往登录<\/a>/);
   await assert.rejects(access(join(dataDir, 'config', 'setup-code.json')), 'the code is used up');
-  const initial = /初始密码仅显示一次；首次登录必须修改。<\/p><pre>([A-Za-z0-9_-]{24})<\/pre>/.exec(done.body)?.[1];
+  const initial = /初始密码仅显示一次；首次登录必须修改。<\/p><pre><code>([A-Za-z0-9_-]{24})<\/code><\/pre>/.exec(done.body)?.[1];
   assert.ok(initial, 'the generated initial password is on the page');
 
   // The token shown is no console credential; the initial password signs in, but only to change it.

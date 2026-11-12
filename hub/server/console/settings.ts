@@ -223,7 +223,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   } else if (secrets.text.code === 0) {
     secretBody = secrets.text.stdout.length > 0 ? pre(secrets.text.stdout.join('\n')) : html`<p class="empty">尚无凭据：接入业务系统时设置</p>`;
   } else {
-    secretBody = html`<pre class="error">${[...secrets.text.stdout, ...secrets.text.stderr].join('\n')}</pre>`;
+    secretBody = html`<pre class="error"><code>${[...secrets.text.stdout, ...secrets.text.stderr].join('\n')}</code></pre>`;
   }
   // The host operations and their dialogs are the Hub tab's; the credential tab carries no dialog nothing on it opens.
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
@@ -251,7 +251,7 @@ async function memberSettings(ctx: PageContext): Promise<PageResult> {
   const rows = clients.map(client => [...clientRow(client, clientLabel(client)), '由管理员断开']);
   const content = hub ? await hubState(ctx) : html`<section class="ch-section" data-columns="2" id="mine">
 ${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的客户端', undefined, undefined, undefined, '每台设备上的客户端独立连接；名称和版本照客户端报的写；断开由管理员执行')}${table([...CLIENT_COLUMNS,'操作'], rows, { title: '尚无已连接的客户端', text: '按“连接新的客户端”的配置连接后，客户端列在这里。' })}`))}
-${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>`)}
+${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>`)}
 </section>`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('我的客户端', hub, tokens.filter(token => token.revoked_at === null).length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'mine'}">${content}</div></div>`;
   return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(body,{inspector:null})) };

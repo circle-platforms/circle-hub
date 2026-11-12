@@ -117,7 +117,7 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
     const resources = ctx.admin ? await ctx.deps.resources.list(ctx.principal) : [];
     return { resources, reads: await systemReads(ctx, resources.slice(0, 6).map((r) => r.id),now-since) };
   });
-  const systems = !ctx.admin ? html`` : box({ title: '业务系统读取', hint: '只读访问，不修改业务数据；'+scope+'的读取次数与耗时', tail: link('/console/connections', '查看全部') }, resources.length === 0 ? html`<p class="ch-empty-text">尚无业务系统。</p>` : html`<div class="ch-list">${resources.slice(0, 6).map((r) => html`<a class="ch-row" href="/console/connections#systems">${dot(r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle')}<span class="ch-row-body"><b>${r.name}</b><span class="ch-meta">${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span><span class="ch-meta">${reads === null ? '暂不可用' : readsText(reads.get(r.id),scope)}</span></span></a>`)}</div>`, { flush: resources.length > 0 });
+  const systems = !ctx.admin ? html`` : box({ title: '业务系统读取', hint: '只读访问，不修改业务数据；'+scope+'的读取次数与耗时', tail: link('/console/connections', '查看全部业务系统') }, resources.length === 0 ? html`<p class="ch-empty-text">尚无业务系统。</p>` : html`<div class="ch-list">${resources.slice(0, 6).map((r) => html`<a class="ch-row" href="/console/connections#systems">${dot(r.binding_error ? 'down' : r.enabled ? 'ok' : 'idle')}<span class="ch-row-body"><b>${r.name}</b><span class="ch-meta">${r.binding_error ? '配置有误' : r.enabled ? '启用' : '已停用'}</span><span class="ch-meta">${reads === null ? '暂不可用' : readsText(reads.get(r.id),scope)}</span></span></a>`)}</div>`, { flush: resources.length > 0 });
   let state: Html;
   if (ctx.admin) {
     const facts = ctx.hub;

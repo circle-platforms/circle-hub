@@ -226,7 +226,7 @@ describe('operations and commands', () => {
     assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
     for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
       const detail=await get('/console/packs/'+id,admin);
-      assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`>${place}</a> › <a[^>]*>${uiLabelOf('pack_kind',kind)}</a> ›`));
+      assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`<ol><li><a[^>]*>${place}</a></li><li><a[^>]*>${uiLabelOf('pack_kind',kind)}</a></li><li><a href="" aria-current="page">`));
       const user=await member(), session=await signIn(user.token);
       assert.equal((await get('/console/packs/'+id,session)).status,404);
     }
@@ -287,7 +287,7 @@ describe('operations and commands', () => {
     for(const path of ['/console/skills/synthetic-skill','/console/packs/synthetic-skill']){
       const page=await get(path,admin);assert.equal(page.status,200,path);
       assert.match(page.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/,path);
-      assert.match(page.body,/<nav class="ch-crumbs" aria-label="位置"><a href="\/console\/skills">技能<\/a> › 合成通用技能<\/nav>/,path);
+      assert.match(page.body,/<nav class="ch-crumbs" aria-label="位置"><ol><li><a href="\/console\/skills">技能<\/a><\/li><li><a href="" aria-current="page">合成通用技能<\/a><\/li><\/ol><\/nav>/,path);
     }
     const detail=await get('/console/packs/review',admin);
     assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
@@ -297,7 +297,7 @@ describe('operations and commands', () => {
     assert.deepEqual([...(/<nav class="ch-seg" aria-label="工作流内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(detail.body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]),
       [['/console/packs/review',true,'验收要求'],['/console/packs/review?tab=checks',false,'检查项'],['/console/packs/review?tab=versions',false,'版本记录'],['/console/packs/review?tab=technical',false,'技术信息']]);
     // Identifiers, digests and version numbers stand on the last tab only.
-    assert.doesNotMatch(detail.body,/review@1\.0\.0<\/code>|内容哈希/);
+    assert.doesNotMatch(detail.body,/<code>review@1\.0\.0<\/code>|内容哈希/);
     const technical=await get('/console/packs/review?tab=technical',admin);assert.match(technical.body,/<code>review@1\.0\.0<\/code>/);assert.match(technical.body,/内容哈希/);
     const history=await get('/console/packs/review?tab=versions',admin);assert.match(history.body,/当前显示/);assert.doesNotMatch(history.body,/这里显示的是较早的版本/);
     const skillPage=await get('/console/skills/synthetic-skill',admin);
