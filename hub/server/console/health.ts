@@ -449,7 +449,7 @@ function observation(writer: WriterStats | null, summary: HealthSummary | null, 
   return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '写入观测数据不阻塞请求；队列满时丢弃并计数。进程异常退出时，还没写入的数据会丢失，不计入丢弃数。' }, html`${first}${second}`);
 }
 
-const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">这里还不显示。在 运行 Hub 的服务器上执行 ${code('circle-hub db top')} 查看。</p>`);
+const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">这里还不显示。在运行 Hub 的服务器上执行 ${code('circle-hub db top')} 查看。</p>`);
 const NO_SAMPLES = emptyBlock({ title: '近 24 小时没有资源样本', text: 'Hub 服务运行后每 10 秒写一个样本，这里会出现主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和 24 小时曲线。' });
 const HINT = '主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和曲线，后台任务，崩溃和重启。只有管理员可见。诊断数据保留 14 天，不作根据。';
 

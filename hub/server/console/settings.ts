@@ -140,7 +140,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
     : backups.count === 0
       ? html`<p class="ch-meta">尚无备份。</p>`
       : kv([['最近备份', backups.latest_at === null ? '时间未读到' : when(backups.latest_at)], ['份数', `${backups.count} 份`]]);
-  const backup = box({ title: '备份',hint:'备份在 运行 Hub 的服务器上执行。', ...(ctx.admin ? { tail: commandLink(commands.backup(), '备份命令…', 'ch-btn ch-btn--ghost') } : {}) }, backupState);
+  const backup = box({ title: '备份',hint:'备份在运行 Hub 的服务器上执行。', ...(ctx.admin ? { tail: commandLink(commands.backup(), '备份命令…', 'ch-btn ch-btn--ghost') } : {}) }, backupState);
   // Decision 151, step 8: four cards, two a row, each with its state at the head. They were four bare columns.
   return html`<section class="ch-section" data-columns="2" data-hub-state>${service}${certificate}${backup}${database}</section>`;
 }
@@ -217,7 +217,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
 
       ];
     });
-    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 运行 Hub 的服务器上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
+    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
     secretBody = html`<p class="error">凭据列表暂不可用</p>`;
   } else if (secrets.text.code === 0) {
@@ -230,7 +230,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   if (hub) dialogs.push(...stopping);
   const content = hub
     ? html`${await hubState(ctx)}
-${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在 运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
+${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
     : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
@@ -238,7 +238,7 @@ ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSe
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
-      hint: '凭据与 Hub 状态；需人工处理的事项在 运行 Hub 的服务器上完成',
+      hint: '凭据与 Hub 状态；需人工处理的事项在运行 Hub 的服务器上完成',
 
     }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };

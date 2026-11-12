@@ -744,7 +744,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   if (request.method === 'POST' && writePath(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     request.resume();
-    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 运行 Hub 的服务器上执行' }, { ...headers, allow: 'GET, HEAD' });
+    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或运行 Hub 的服务器上执行' }, { ...headers, allow: 'GET, HEAD' });
   }
   const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
   if (principal === null) {

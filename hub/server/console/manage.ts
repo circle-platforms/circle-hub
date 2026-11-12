@@ -376,7 +376,7 @@ function doneNotice(title: string): string {
   return title === '知识同步' ? '已完成知识同步' : '已' + title;
 }
 
-const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在 运行 Hub 的服务器上执行对应的命令';
+const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在运行 Hub 的服务器上执行对应的命令';
 
 /** A run's output with the private directories written as <文件夹>: no page shows where the server keeps an upload. */
 function withoutPaths(run: CommandRun, ...paths: string[]): CommandRun {
@@ -596,7 +596,7 @@ export async function completeSetup(
   const name = form.get('name');
   if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员姓名' };
   const check = await checkSetupCode(dataDir, form.get('code'), now);
-  if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在 运行 Hub 的服务器上执行 circle-hub setup-code 生成' };
+  if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在运行 Hub 的服务器上执行 circle-hub setup-code 生成' };
   if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
   if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
   const supplied=form.get('password');

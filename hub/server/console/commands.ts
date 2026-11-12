@@ -99,7 +99,7 @@ export const commands = {
   }),
   backup: (): CommandDialog => ({
     id: 'cmd-backup', title: '备份',
-    text: '备份数据库、对象、密钥库与设置文件，并清理旧备份；需在 运行 Hub 的服务器上执行。', command: command('backup'),
+    text: '备份数据库、对象、密钥库与设置文件，并清理旧备份；需在运行 Hub 的服务器上执行。', command: command('backup'),
   }),
   restore: (): CommandDialog => ({
     id: 'cmd-restore', title: '恢复',

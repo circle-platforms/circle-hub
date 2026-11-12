@@ -50,7 +50,7 @@ ${field('环境', html`<select name="environment" required>${environmentOptions(
 ${field('允许明文 http 的角色', html`<input name="plaintext" placeholder="逗号分隔，可留空" value="${prefilled(prefill, 'plaintext')}">`)}
 ${field('访问地址', html`<textarea name="origins" rows="3" required placeholder="api=https://192.0.2.20">${prefilled(prefill, 'origins')}</textarea>`, { hint: '每行 角色=地址；业务系统接入声明的每个角色一行', full: true })}
 ${field('设置', html`<textarea name="settings" rows="2" placeholder="tenant=demo">${prefilled(prefill, 'settings')}</textarea>`, { hint: '每行 键=值，可留空', full: true })}
-${field('凭据项', html`<textarea name="credentials" rows="2" placeholder="token=DEMO_TOKEN">${prefilled(prefill, 'credentials')}</textarea>`, { hint: '每行 凭据项=凭据名称；内容在下面填写，或之后在 运行 Hub 的服务器上设置', full: true })}
+${field('凭据项', html`<textarea name="credentials" rows="2" placeholder="token=DEMO_TOKEN">${prefilled(prefill, 'credentials')}</textarea>`, { hint: '每行 凭据项=凭据名称；内容在下面填写，或之后在运行 Hub 的服务器上设置', full: true })}
 ${secretRows}
 <div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="/console/admin/do/system-test" formnovalidate title="只尝试读取接口并记录结果，不保存配置与凭据内容">尝试连接</button> </div>
 ${canForget ? html`<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="/console/admin/do/system-test-forget" formnovalidate title="确认业务系统账户已解锁后，重新填写同一组凭据再清除，不会发送登录或自动重试。">清除这组凭据的失败记录</button></div>` : ''}
@@ -124,7 +124,7 @@ export async function operationsPage(ctx: PageContext, operation: string | undef
   if (!ctx.admin) return neutralPage(ctx);
   if (operation === undefined) {
     const cards = OPERATIONS.map((name) => card({ title: link(`/console/operations/${name}`, TITLES[name].title), hint:TITLES[name].hint }, html``));
-    return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '控制台只执行这四种管理操作；其余操作在相关页面生成命令，在 运行 Hub 的服务器上执行' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
+    return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '控制台只执行这四种管理操作；其余操作在相关页面生成命令，在运行 Hub 的服务器上执行' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
   }
   if (!isOperation(operation)) return neutralPage(ctx);
   const body = operation === 'member' ? memberPage(ctx) : operation === 'system' ? await systemPage(ctx) : operation === 'pack' ? packPage(ctx, staging) : await knowledgePage(ctx, jobs);

@@ -54,7 +54,7 @@ const RUNNING: Readonly<Record<string, string>> = { members: 'member-add', syste
 
 async function execute(ctx: PageContext, options: WriteOptions, name: string, fields: Fields): Promise<ApiResult> {
   const action = ACTIONS[name];
-  if (options.bridge === undefined) return { status: 503, body: { code: null, message: '操作暂不可用：这个 Hub 进程没有接上命令执行', fix: '在 运行 Hub 的服务器上执行同一命令' } };
+  if (options.bridge === undefined) return { status: 503, body: { code: null, message: '操作暂不可用：这个 Hub 进程没有接上命令执行', fix: '在运行 Hub 的服务器上执行同一命令' } };
   let built: Built[];
   try {
     const made = action.build(formOf(fields));
@@ -178,7 +178,7 @@ async function described(ctx: PageContext, operation: string, object: string): P
 
 const refusal = (refused: StepRefusal): ApiResult => (refused.status === 404
   ? neutral()
-  : { status: refused.status, body: { code: null, message: refused.message, fix: refused.status === 503 ? '在 运行 Hub 的服务器上执行同一命令' : '按说明处理后重新上传' } });
+  : { status: refused.status, body: { code: null, message: refused.message, fix: refused.status === 503 ? '在运行 Hub 的服务器上执行同一命令' : '按说明处理后重新上传' } });
 
 async function stage(ctx: PageContext, options: WriteOptions): Promise<ApiResult> {
   const result = await stagePack(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, options.token, options.upload);
