@@ -126,7 +126,9 @@ describe('scenario 17: hub process restart preserves runs and results', () => {
       // Verify reading result by reference through MCP get_nodes on the restarted server
       const readResult = await client2.call('get_nodes', { reference: `rec:${resultDigest}` });
       assert.equal(readResult.isError, false);
-      assert.ok(readResult.text.includes(run1.run) || readResult.text.includes('已交付'));
+      const storedResult=JSON.parse(readResult.out.content!.text!);
+      assert.equal(storedResult.run,run1.run);
+      assert.ok(run1.items.every(item=>readResult.text.includes(`原始用例 ${item.label}，`)));
 
       // Console on restarted Hub
       const reconnectedConsole = await openConsole(
