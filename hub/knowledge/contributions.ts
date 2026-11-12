@@ -164,7 +164,7 @@ export class ContributionLayer {
       const layer=this.#context.feeding;if(!layer)return fail('缺喂入核验服务；管理员恢复后重试');
       const value=await layer.prepare(reader,input.feeding,{composition:scope.composition,product:scope.product,root:scope.root,run:scope.run,classifications:scope.classifications});
       if(value.schema==='retraction@1')return fail('撤回请使用管理员喂入撤回入口，不得伪装对象回注');
-      if(operationRecord(value.schema)&&input.kind!=='assertion')return fail('操作记录的产出种类只能是声明（assertion）；观察、步骤和教训写在 feeding 里');
+      if(operationRecord(value.schema)&&input.kind!=='assertion')return fail('操作记录的产出种类只能是声明（assertion）；观察、步骤和常见误区写在 feeding 里');
       const ref=parseReference(input.source.reference);
       const same=ref.scheme==='src'&&ref.sha256===value.source.bytes;
       // An operation's echo stays on the capture. Its phenomenon quote may cite a different observed original, such as the problem ticket.
@@ -229,7 +229,7 @@ export class ContributionLayer {
         const actual=await this.#context.records.artifacts.readable(reader,ref.sha256);
         // Not found or no permission (D05 R[3], decision 112).
         if(actual===null){const existence=disclosedExistence(reader.id,await this.#context.records.artifacts.records(ref.sha256));if(existence==='neutral')return fail(`引用的原件 ${ref.sha256} 对你不可用；核对引用，或换一份你能读的原件后重交`,'SOURCE_UNAVAILABLE');const exists=existence==='exists';return fail(exists?`引用的原件 ${ref.sha256} 存在，你没有读取权限；请上传者或管理员分享后重交`:`Hub 里没有引用的原件 ${ref.sha256}；先用 upload_file 上传，再按它返回的引用重交`,exists?'SOURCE_NOT_PERMITTED':'SOURCE_ABSENT');}
-        if(actual.body.provenance_type==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或教训，或改引锁定根里的原文。');
+        if(actual.body.provenance_type==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或常见误区，或改引锁定根里的原文。');
         await inspect(actual); // distinguish a session declaration from an outside-root Hub original
         shas = [ref.sha256];
       }
@@ -267,7 +267,7 @@ export class ContributionLayer {
       const artifact = await this.#context.records.store.get<SourceArtifact['body']>(records[0]);
       const provenance=ContributionSource.shape.provenance.safeParse(ref.scheme==='tree'?'projected':artifact?.body.provenance_type);
       if(!provenance.success)return refuse("core.contribution.signature_required", SIGNATURE);
-      if(provenance.data==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或教训，或改引锁定根里的原文。');
+      if(provenance.data==='client_captured')return fail(CAPTURED_GROUND+'。改交观察、步骤或常见误区，或改引锁定根里的原文。');
       return { ...quoted, reference: resolved.value.reference, fragment: sha256Hex(resolved.value.text),
         provenance: provenance.data,
         records: [...new Set([...records, ...(resolved.value.recordSource === undefined ? [] : [resolved.value.recordSource.record])])], sources: shas };

@@ -9,7 +9,7 @@ test('read-time withdrawal qualifies the effective-condition display without cha
  const claim=example(),before=canonicalBytes(claim);
  Object.freeze(claim.validity.bound);Object.freeze(claim.validity.premises);Object.freeze(claim.validity);Object.freeze(claim);
  const original=claimFields(claim),view=claimFields(claim,true);
- assert.ok(condition(claim,true).startsWith('规则已撤回（版本已下架）；记录时：'));
+ assert.ok(condition(claim,true).startsWith('规则已撤回（版本已退役）；记录时：'));
  assert.deepEqual(view.filter(([label])=>label!=='有效条件'),original.filter(([label])=>label!=='有效条件'));
  assert.deepEqual(canonicalBytes(claim),before);
  assert.deepEqual(claimFields(claim,false),original);
@@ -21,7 +21,7 @@ test('read-time withdrawal preserves the recorded validity reason and expiry',()
  assert.deepEqual(canonicalBytes(claim),before);
 });
 test('mentioning withdrawal in authored prose never changes the effective condition',()=>{
- const claim=example();claim.statement.text='模型原文提及规则已撤回（版本已下架）';
+ const claim=example();claim.statement.text='模型原文提及规则已撤回（版本已退役）';
  assert.ok(condition(claim).startsWith('有效'));
  assert.ok(!condition(claim).startsWith('规则已撤回'));
 });

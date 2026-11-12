@@ -123,10 +123,10 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
     const facts = ctx.hub;
     const storage = await step('read-storage', () => storageFacts(ctx));
     const backupNote = storage.backups === null ? '暂不可读' : storage.backups.count === 0 ? '尚无备份' : storage.backups.latest_at === null ? `${storage.backups.count} 份` : html`最近 ${when(storage.backups.latest_at)}`;
-    state = box({ title: 'Hub 状态', tail: link('/console/settings#hub', '查看') }, html`<div class="ch-list">
+    state = box({ title: 'Hub 状态', tail: link('/console/settings#hub', '查看 Hub 状态') }, html`<div class="ch-list">
 <a class="ch-row" href="/console/settings#hub">${dot('ok')}<span><b>服务</b><span class="ch-meta">运行中${facts?.release ? ` · ${facts.release}` : ''}</span></span></a>
 <a class="ch-row" href="/console/settings#hub">${dot(facts?.certificate ? 'ok' : 'idle')}<span><b>证书</b><span class="ch-meta">${facts?.certificate ? '内置 HTTPS 已启用' : '未启用 HTTPS'}</span></span></a>
-<a class="ch-row" href="/console/settings#hub">${dot('ok')}<span><b>数据库</b><span class="ch-meta">仅本机连接${storage.database_bytes === null ? '' : ` · ${sizeText(storage.database_bytes)}`}</span></span></a>
+<a class="ch-row" href="/console/settings#hub">${dot('ok')}<span><b>数据库</b><span class="ch-meta">仅服务器本地连接${storage.database_bytes === null ? '' : ` · ${sizeText(storage.database_bytes)}`}</span></span></a>
 <a class="ch-row" href="/console/settings#hub">${dot(storage.backups !== null && storage.backups.count > 0 ? 'ok' : 'idle')}<span><b>备份</b><span class="ch-meta">${backupNote}</span></span></a>
 <a class="ch-row" href="/console/records">${dot('info')}<span><b>记录</b><span class="ch-meta">仅追加，不可修改</span></span></a>
 </div>`, { flush: true });

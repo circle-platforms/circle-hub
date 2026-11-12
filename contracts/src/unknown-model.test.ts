@@ -57,7 +57,7 @@ test('item 3 reads historical omissions without inventing facts, actors or deadl
   requirement.layers=[{layer:'static',terminal:'unchecked',reason:'timeout'}];requirement.status='pending';
   assert.equal(validation.ValidationResult.safeParse(legacy).success,false);
   const read=validation.readStoredValidationResult(legacy);assert.deepEqual(read.result,legacy);
-  assert.ok(read.notices.some(note=>note.path.endsWith('/exit')&&note.message==='出口未写'));
+  assert.ok(read.notices.some(note=>note.path.endsWith('/exit')&&note.message==='下一步处理安排未记录'));
   assert.ok(!Object.hasOwn(read.result.partitions.delivered[0].requirements[0].layers[0],'exit'));
   assert.deepEqual(legacy,read.result);
 });

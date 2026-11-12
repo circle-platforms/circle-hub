@@ -438,7 +438,7 @@ async function packMissing(ctx: EngineContext, user: Principal, pack: string, fo
   // Another account's personal workflow is answered neutrally whether it is missing, ungranted or withdrawn (D05 R[3], T01 R[1]).
   if (space !== undefined && space !== 'team' && space !== user.id) return unavailable('/pack', note);
   if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${LIST}` })], note);
-  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已下架）`, { path: '/pack', fix: LIST })], note);
+  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
   if (absence === 'unassigned') return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `任务包 ${pack} 存在，没有分配给你`, { path: '/pack', fix: `请管理员把它分配给你；${LIST}` })], note);
   // A skill pack is installed for the whole Hub, never assigned to one user (decision 113).
   if (absence === 'uninstalled') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有安装技能包 ${pack}`, { path: '/pack', fix: `请管理员安装它；${LIST}` })], note);

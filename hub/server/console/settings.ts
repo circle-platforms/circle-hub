@@ -70,7 +70,7 @@ const shortPrint = (fingerprint: string): string => {
 /** Steps to trust this Hub's certificate authority in a browser, per operating system of the reader's computer. */
 export function trustSteps(): Html {
   return html`<details><summary>浏览器信任步骤（macOS / Linux / Windows）</summary>
-<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到本机，按系统导入，并在客户端的信任证书设置中填写路径。')}</p>
+<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到装有客户端的电脑，按系统导入，并在客户端的信任证书设置中填写路径。')}</p>
 <ol class="ch-meta">
 <li><b>macOS</b>：双击证书加入“钥匙串访问”的“系统”钥匙串，打开证书，在“信任”中将“使用此证书时”设为“始终信任”。</li>
 <li><b>Linux</b>：复制到 ${code('/usr/local/share/ca-certificates/circle-hub.crt')}，执行 ${code('sudo update-ca-certificates')}；Firefox 在“设置 → 隐私与安全 → 证书”中导入。</li>
@@ -117,7 +117,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
   const cert = certificateFacts(facts?.certificate ?? null, now);
   const authority = cert === null ? null : await authorityFingerprint(ctx.deps.config.dataDir);
   const service = box({ title: '服务', tail: chip('运行中', 'pass') }, kv([
-    ['版本', facts?.release ? code(facts.release) : '未记录'],
+    ['Hub 版本', facts?.release ? code(facts.release) : '未记录'],
     ['已运行', facts === undefined ? '—' : duration(now - facts.startedAt.getTime())],
     ['访问地址', code(originOf(ctx))],
   ]));
@@ -131,7 +131,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
   const storage = await storageFacts(ctx);
   const database = box({ title: '数据库', meta: 'PostgreSQL' }, kv([
     ['大小', storage.database_bytes === null ? '暂不可读' : sizeText(storage.database_bytes)],
-    ['连接', '仅本机连接，未开放网络端口'],
+    ['连接', '仅服务器本地连接，未开放网络端口'],
     ['记录', '仅追加，已写入的记录不可修改'],
   ]));
   const backups = storage.backups;
@@ -140,7 +140,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
     : backups.count === 0
       ? html`<p class="ch-meta">尚无备份。</p>`
       : kv([['最近备份', backups.latest_at === null ? '时间未读到' : when(backups.latest_at)], ['份数', `${backups.count} 份`]]);
-  const backup = box({ title: '备份',hint:'备份在 Hub 所在的主机上执行。', ...(ctx.admin ? { tail: commandLink(commands.backup(), '备份命令…', 'ch-btn ch-btn--ghost') } : {}) }, backupState);
+  const backup = box({ title: '备份',hint:'备份在 运行 Hub 的服务器上执行。', ...(ctx.admin ? { tail: commandLink(commands.backup(), '备份命令…', 'ch-btn ch-btn--ghost') } : {}) }, backupState);
   // Decision 151, step 8: four cards, two a row, each with its state at the head. They were four bare columns.
   return html`<section class="ch-section" data-columns="2" data-hub-state>${service}${certificate}${backup}${database}</section>`;
 }
@@ -217,7 +217,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
 
       ];
     });
-    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 Hub 所在主机上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
+    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 运行 Hub 的服务器上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
     secretBody = html`<p class="error">凭据列表暂不可用</p>`;
   } else if (secrets.text.code === 0) {
@@ -230,7 +230,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   if (hub) dialogs.push(...stopping);
   const content = hub
     ? html`${await hubState(ctx)}
-${box({title:'主机操作',hint:'控制台不执行这些操作；在 Hub 所在主机上执行。部署与回滚在 Hub 主机上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
+${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在 运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
     : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
@@ -238,7 +238,7 @@ ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSe
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
-      hint: '凭据与 Hub 状态；需人工处理的事项在 Hub 所在主机上完成',
+      hint: '凭据与 Hub 状态；需人工处理的事项在 运行 Hub 的服务器上完成',
 
     }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };

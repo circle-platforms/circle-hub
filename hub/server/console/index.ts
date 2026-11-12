@@ -129,7 +129,7 @@ async function loginPage(options: ConsoleOptions, response: ServerResponse, stat
     html`${message === null ? '' : html`<p class="error">${message}</p>`}${ended ? html`<p class="notice">登录已过期或已退出，请重新登录。</p>` : ''}${setup}
 <form method="post" action="/console/login">
 <div class="ch-field"><label class="ch-field-label" for="hub-username">用户名</label><div class="ch-input"><input id="hub-username" name="username" autocomplete="username" maxlength="200" required></div></div>
-<div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接客户端。忘记密码时由管理员在团队页重置，管理员本人可在 Hub 主机上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
+<div class="ch-field"><label class="ch-field-label" for="hub-password" title="所有账户都用用户名和密码登录；访问令牌只用于连接客户端。忘记密码时由管理员在团队页重置，管理员本人可在运行 Hub 的服务器上执行 circle-hub user password-reset">密码</label><div class="ch-input"><input id="hub-password" type="password" name="password" autocomplete="current-password" maxlength="256" required></div></div>
 <input type="hidden" name="csrf" value="${nonce}">${next === null ? '' : html`<input type="hidden" name="next" value="${safeNext(next)}">`}
 <button type="submit" class="ch-btn ch-btn--primary">登录</button></form>`,
   );
@@ -744,7 +744,7 @@ async function api(request: IncomingMessage, response: ServerResponse, url: URL,
   if (request.method === 'POST' && writePath(rest.join('/'))) return apiWrite(request, response, url, options, session, secure, rest, headers);
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     request.resume();
-    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 Hub 所在主机上执行' }, { ...headers, allow: 'GET, HEAD' });
+    return sendJson(response, 405, { code: null, message: '控制台接口只读，只接受 GET', fix: '用 GET 读取；管理操作在控制台页面或 运行 Hub 的服务器上执行' }, { ...headers, allow: 'GET, HEAD' });
   }
   const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
   if (principal === null) {

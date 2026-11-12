@@ -504,12 +504,12 @@ async function packCommand(session: Session, args: readonly string[]): Promise<n
     case 'retire': {
       const { positionals } = parse(rest, {}, 1);
       const ref = parsePackRef(positionals[0]);
-      if (ref === null || ref.version === null) throw new UsageError(`下架要写 <包号>@<版本>：${positionals[0].slice(0, 120)}`);
+      if (ref === null || ref.version === null) throw new UsageError(`退役要写 <包号>@<版本>：${positionals[0].slice(0, 120)}`);
       const admin = await session.admin();
       const hub = await session.hub();
       await decided(() => hub.registry.retire(admin, ref.id, ref.version as string));
       hub.connectors.refresh();
-      session.out(`${ref.id}@${ref.version} 已下架：新的运行不再用它，已有的运行照常读取和完成`);
+      session.out(`${ref.id}@${ref.version} 已退役：新的运行不再用它，已有的运行照常读取和完成`);
       return 0;
     }
     case 'activate':

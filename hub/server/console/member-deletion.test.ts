@@ -20,11 +20,11 @@ test('deletion preview is administrator-only and read-only; tombstone pages expo
   // Issue 236: the consequences come in labelled groups, in the order of who or what they touch, and none is dropped.
   assert.match(visible,/data-deletion-effects/);
   assert.deepEqual([...visible.matchAll(/<section class="ch-section"><h3>([^<]+)<\/h3><ul class="ch-feed">/g)].map(m=>m[1]),['将清除','将转移','将保留','引用和分享的影响','账户和登录','不可撤销']);
-  for(const phrase of ['现有私人分享失效','分享不随之转移','团队已取得的独立内容保留','运行引用过的私人知识原文一并清除','旧密码、令牌、会话和同步请求均不能恢复该账户','该成员客户端设备上的本地副本不受影响','此操作不可撤销'])assert.ok(visible.includes(phrase),phrase);
+  for(const phrase of ['现有私人分享失效','分享不随之转移','团队已取得的独立内容保留','任务引用过的私人知识原文一并清除','旧密码、令牌、会话和同步请求均不能恢复该账户','该成员客户端设备上的本地副本不受影响','此操作不可撤销'])assert.ok(visible.includes(phrase),phrase);
   assert.doesNotMatch(visible,/本机副本/);
   // Owner ruling 4 (issue 141): the dialog names the receiving administrator for private workflows and skills.
   assert.deepEqual(prepared.preview.handover,{to:hub.admin.principal.id,items:[]});assert.match(visible,/data-deletion-handover/);assert.match(visible,new RegExp('接收人：'+hub.admin.principal.name+'（执行删除的管理员）'));assert.match(visible,/该成员没有私人工作流或技能。/);
-  assert.doesNotMatch(visible,/<dt>(记录|载荷|原件|归档登记|私人版本)<\/dt>/);assert.match(page.body,/在 Hub 所在主机上执行下列命令完成删除；内容变化后须重新检查。/);assert.doesNotMatch(page.body,/确认后，在管理员/);assert.match(page.body,/<summary>查看清除清单摘要<\/summary>[\s\S]*<dt>载荷<\/dt>/);assert.equal(await hub.records.store.watermark!(),mark);
+  assert.doesNotMatch(visible,/<dt>(记录|载荷|原件|归档登记|私人版本)<\/dt>/);assert.match(page.body,/在 运行 Hub 的服务器上执行下列命令完成删除；内容变化后须重新检查。/);assert.doesNotMatch(page.body,/确认后，在管理员/);assert.match(page.body,/<summary>查看清除清单摘要<\/summary>[\s\S]*<dt>载荷<\/dt>/);assert.equal(await hub.records.store.watermark!(),mark);
   assert.equal((await manager.post('/console/api/members/'+member.user.id+'/deletion',{})).status,405);assert.equal((await manager.post('/console/api/commands',{operation:'user-delete',object:member.user.id})).status,403);
   const call=await hub.records.callLog.append({traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,runId:null,userId:member.user.id,tool:'get_nodes',arguments:{},callResult:'ok',durationMs:1});const auditBefore=await hub.records.store.get(call.digest);
   const intent=await hub.records.memberDeletions!.prepare(hub.admin.principal,{...prepared.preview,operation_id:prepared.operation_id});const pending=await manager.get(url);assert.equal(pending.status,200);assert.match(pending.body,/等待清除中/);

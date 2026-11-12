@@ -37,7 +37,7 @@ export function actionNotice(area: KnowledgeView | 'packs', action: string, valu
     return values.get('document') ? '已保存记忆' : '已新建记忆';
   }
   if (area === 'packs') {
-    const done: Record<string, string> = { stage: '已暂存发布内容', discard: '已丢弃暂存内容', publish: '已发布', promote: '已发布到团队', retire: '已下架这个版本' };
+    const done: Record<string, string> = { stage: '已暂存发布内容', discard: '已丢弃暂存内容', publish: '已发布', promote: '已发布到团队', retire: '已退役这个版本' };
     return done[action] ?? null;
   }
   switch (action) {

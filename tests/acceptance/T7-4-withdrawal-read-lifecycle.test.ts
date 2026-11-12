@@ -33,7 +33,7 @@ function conditions(document:string):string[]{
  }
  sections(parse(document));return found;
 }
-const WITHDRAWN='规则已撤回（版本已下架）';
+const WITHDRAWN='规则已撤回（版本已退役）';
 
 test('T7-4 read-time effective conditions survive new-version reassignment and agree for users and administrators',async t=>{
  const postgres=await startPostgres();t.after(()=>postgres.stop());
@@ -65,7 +65,7 @@ test('T7-4 read-time effective conditions survive new-version reassignment and a
   assert.ok((await read()).every(value=>!value.startsWith(WITHDRAWN)));await unchanged();
  });
  const [id,version]=run.pack.split('@');
- await bed.hub.hub.registry.retire(bed.hub.admin.principal,id,version,'合成版本下架');
+ await bed.hub.hub.registry.retire(bed.hub.admin.principal,id,version,'合成版本退役');
  await t.test('after withdrawal every conclusion effective condition displays the current qualifier',async()=>{
   assert.ok((await read()).every(value=>value.startsWith(WITHDRAWN)));await unchanged();
  });

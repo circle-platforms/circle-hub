@@ -335,6 +335,6 @@ test('the Hub\'s own knowledge views are external object types to bind but no ex
 test('historical transitional layers disclose unwritten exits without mutating the result', () => {
   const legacy = { layer: 'static', terminal: 'unchecked', reason: 'missing_input' } as const;
   const before = JSON.stringify(legacy);
-  assert.match(terminalText(legacy), /出口未写/);
+  assert.match(terminalText(legacy), /下一步处理安排未记录/);
   assert.equal(JSON.stringify(legacy), before);
 });

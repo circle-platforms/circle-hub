@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {parse} from 'parse5';
 import {chart,comparisons,curve,parts,timeline,type Curve} from './charts.ts';
-import {fullTime,relativeTime,size,time} from './format.ts';
+import {hoverTime,relativeTime,size,time,zoneOf} from './format.ts';
 
 const text=(markup:string)=>{const walk=(node:any):string=>node.nodeName==='#text'?node.value:(node.childNodes??[]).map(walk).join('');return walk(parse(markup));};
 
@@ -102,7 +102,9 @@ test('compact times retain the original instant and full tooltip across calendar
  const now=new Date(2026,0,1,13,4,5),today=new Date(2026,0,1,10,24,0).toISOString(),yesterday=new Date(2025,11,31,22).toISOString();
  assert.equal(relativeTime(today,now),'今天 10:24');assert.equal(relativeTime(yesterday,now),'昨天');
  assert.equal(relativeTime(new Date(2025,11,30).toISOString(),now),'2025-12-30');assert.equal(relativeTime(new Date(2026,5,3).toISOString(),now),'06-03');
- assert.ok(time(today,now).text.includes('datetime="'+today+'"'));assert.ok(time(today,now).text.includes('title="'+fullTime(today)+'"'));
+ assert.ok(time(today,now).text.includes('datetime="'+today+'"'));assert.ok(time(today,now).text.includes('title="'+hoverTime(today)+'"'));
+ // The hover text says which zone the time is written in (wording table, W37).
+ assert.match(hoverTime(today),/^2026-01-01 10:24:00（UTC[+-]\d{2}:\d{2}）$/);assert.equal(hoverTime(today).slice(-10,-1),zoneOf(new Date(today)));assert.equal(hoverTime(null),'—');assert.equal(hoverTime('unknown'),'unknown');
  assert.equal(relativeTime(null,now),'—');assert.equal(relativeTime('unknown',now),'unknown');
  assert.equal(size(0),'0 B');assert.equal(size(1024),'1.0 KB');assert.equal(size(1024**3),'1.0 GB');assert.equal(size(1.25*1024**2),'1.3 MB');assert.equal(size(NaN),'—');
 });

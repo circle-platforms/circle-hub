@@ -650,3 +650,16 @@ capability run inside a product pack's sandbox is the product pack's generated c
 the production already records. Productions recorded before have no such field and are not rewritten. There is no
 transition form, and an old product pack must reproduce the same trees under the new implementation. No record kind,
 protocol code, MCP tool or vocabulary axis changes. C02 and T01 `changes45` state the change.
+
+Decision 158 (owner, 2026-11-12, the review of the console's wording, rows W1 to W39 adopted as recommended) sets model
+46: words only. The axis `attribution` and V04 are named 原因归类 instead of 归责 (the six values stay; the verb in 按来源归责
+stays); `pitfall` of `entry_kind` is labelled 常见误区 instead of 教训; the team source's 署名 is called 确认 in the label and
+the two values of `source_attribution_status`, in B02 R[7], R[9] and R[10], in K02 R[6] and R[7] and in the text of the
+protocol code `SHARE_UPLOAD_UNSIGNED` (the code, the record kind `knowledge_source_attribution` and the value codes
+stay); `local` of `sync_mode` gains the interface term 仅保存在客户端设备 and keeps the label the client's own messages use;
+display rule 17 calls the console's task page the complete record instead of 权威视图; and retiring a pack version is called
+退役 wherever the prose said 下架 (T02 R[4] to R[6], B04, T01, K01, R01 and the notes that mention it; `retired` of
+`pack_status` was 已退役 already). `contracts/src/validation.ts` exports the two notices of an older result,
+`EXIT_NOT_RECORDED` (下一步处理安排未记录) and `MISSING_NOT_RECORDED` (未写明缺少什么), so that what writes them and what
+compares them share one text. No record kind, value code, protocol code, MCP tool or migration changes. V04, K02, B02,
+K01 and T02 `changes46` state the change; the four skill protocol mirrors are regenerated and their packs signed again.

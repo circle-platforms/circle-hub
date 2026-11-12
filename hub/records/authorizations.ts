@@ -328,7 +328,7 @@ export class RecordAuthorizations implements Authorizations {
       if (published !== null) {
         if (revoked) {
           // The owner withdraws a version, or an admin does (R01 R[1]).
-          if (decider.id !== subject && decider.role !== ADMIN) throw new AccessError('只有包的所有者或管理员可以下架');
+          if (decider.id !== subject && decider.role !== ADMIN) throw new AccessError('只有包的所有者或管理员可以退役');
         } else {
           await this.#checkPublication(decider.id, subject, published.pack, object, bound as string, tx);
         }

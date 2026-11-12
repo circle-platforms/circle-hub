@@ -27,7 +27,7 @@ test('historical results retain counts, requirement states, problem lists and it
   assert.match(text,/^结果 rec:/m);assert.match(text,/未知 1/);
   assert.match(text,/要求项（满足状态与各层终态的条目数）/);
   assert.match(text,/问题与未知/);assert.match(text,/- doc-1:n9 \|/);
-  assert.match(text,/出口未写/);assert.match(text,/缺失事实未写/);
+  assert.match(text,/下一步处理安排未记录/);assert.match(text,/未写明缺少什么/);
   assert.equal(canonicalJson(value),original);
 });
 
@@ -37,7 +37,7 @@ for(const [suffix,select] of [
 ] as const)test('historical partition pointer keeps item layout '+suffix,()=>{
   const value=select(legacy());const text=render(reference+suffix,value);
   assert.match(text,/^结果的已交付部分/m);assert.match(text,/- doc-1:n9 \|/);
-  assert.match(text,/catalog/);assert.match(text,/出口未写/);assert.match(text,/缺失事实未写/);
+  assert.match(text,/catalog/);assert.match(text,/下一步处理安排未记录/);assert.match(text,/未写明缺少什么/);
 });
 
  test('historical notices obey paging without replacing the structured result with a dump',()=>{
@@ -45,5 +45,5 @@ for(const [suffix,select] of [
   value.partitions.delivered=Array.from({length:500},(_,i)=>({...structuredClone(item),item:'legacy:'+i,label:'合成历史条目'+i+'很'.repeat(200)}));
   const text=render(reference,value);
   assert.ok(text.length<=TEXT_BUDGET);
-  assert.match(text,/未知 500/);assert.match(text,/出口未写/);assert.match(text,/缺失事实未写/);assert.match(text,/下一页/);
+  assert.match(text,/未知 500/);assert.match(text,/下一步处理安排未记录/);assert.match(text,/未写明缺少什么/);assert.match(text,/下一页/);
 });

@@ -1021,7 +1021,7 @@ The complete predecessor-result scan, including submission-existence reads, hold
 
 ### Read-time withdrawal qualifier
 
-getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已下架”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.
+getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已退役”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.
 
 ### Citations of knowledge (decision 126, 2026-11-01)
 

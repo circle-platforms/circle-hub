@@ -18,7 +18,7 @@ test('an owner, a folder grantee and a team reader follow listed original links 
   await spaces.grant(owner.principal,{path:'/方法/认证',audience:'member',member:grantee.user.id});
   const team=await hub.records.artifacts.ingest({bytes:Buffer.from('合成团队列表正文'),mediaType:'text/plain',name:'合成团队列表.txt',origin:{read:{object:'synthetic:record:listed-original'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
   await spaces.archiveSource(hub.admin.principal,{artifact:team.digest,message:'archive:'+team.digest,space:'team',path:'/团队原文'});
-  const DECLARED='由上传方提供，Hub 没有独立的采集证明；不代表内容已被核实。';
+  const DECLARED='内容由上传的人提供，Hub 没有独立采集的证明；不代表内容已被核实。';
   const follow=async(web:ConsoleClient,path:string,name:string,text:string,explained=false)=>{
    let listing=await web.get(path);assert.equal(listing.status,200);let row:string|undefined;
    for(let page=0;page<3;page++){

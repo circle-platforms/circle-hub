@@ -276,7 +276,7 @@ test('a new version of an active product pack may not claim a name an older vers
   const clash = await bed.attempt(bed.alice, productPack({ id: 'sprocket', names: ['Sprocket', 'WIDGET'], version: '1.1.0' }));
   assert.ok(!clash.ok);
   assert.deepEqual(clash.problems.map((p) => [p.rule, p.field]), [['product.name_collision', '/names/1']]);
-  assert.match(clash.problems[0].message, /widget@1\.0\.0（未下架的旧版本/);
+  assert.match(clash.problems[0].message, /widget@1\.0\.0（未退役的旧版本/);
   // A lower number is no way around it: every version not withdrawn can become the version in use.
   const lower = await bed.attempt(bed.alice, productPack({ id: 'sprocket', names: ['Gizmo'], version: '0.9.0' }));
   assert.ok(!lower.ok && lower.problems[0].rule === 'product.name_collision');
@@ -295,7 +295,7 @@ test('withdrawing the version in use is refused when the version taking its plac
   await assert.rejects(bed.registry.retire(bed.admin, 'widget', '2.0.0'), (e: unknown) => {
     assert.ok(e instanceof ConflictError);
     assert.match(e.message, /widget@1\.0\.0 会成为在用版本/);
-    assert.match(e.fix ?? '', /先停用 widget 或 sprocket，再下架这一版/);
+    assert.match(e.fix ?? '', /先停用 widget 或 sprocket，再退役这一版/);
     return true;
   });
   assert.equal((await bed.registry.getVersion('widget', '2.0.0'))?.withdrawn, false);

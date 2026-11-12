@@ -56,12 +56,12 @@ test('T7-4 author-only sample marks and withdrawn-rule labels remain visible wit
  await bed.hub.hub.registry.assign(bed.hub.admin.principal,bed.reviewer.user.id,id);
 await bed.hub.hub.registry.retire(bed.hub.admin.principal,id,version,'合成规则撤回');
  const refused=await client.call('start_run',{pack:run.pack,product:bed.second.names[0],version:'2.1',inputs:{subject:{reference:subject}}});
- assert.equal(refused.isError,true);assert.ok(refused.out.errors.some(error=>error.code==='SOURCE_ABSENT'&&/已下架/.test(error.message)),JSON.stringify(refused.out.errors));
+ assert.equal(refused.isError,true);assert.ok(refused.out.errors.some(error=>error.code==='SOURCE_ABSENT'&&/已退役/.test(error.message)),JSON.stringify(refused.out.errors));
  assert.equal(JSON.stringify((await bed.hub.records.store.get(record))!.body),before,'withdrawal never edits the stored conclusion');
  const reread=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,run.run))!;
  assert.equal(reread.rule_withdrawn,true);assert.equal(reread.latest!.record,record);assert.equal(JSON.stringify(reread.latest!.result),before);
  const after=await consoleClient.task(run.run);assert.equal(after.status,200);
- assert.ok(after.body.includes('规则已撤回')&&after.body.includes('版本已下架'),'the read view discloses withdrawal without rewriting the historical receipt');
+ assert.ok(after.body.includes('规则已撤回')&&after.body.includes('版本已退役'),'the read view discloses withdrawal without rewriting the historical receipt');
  const resultView=await bed.hub.hub.runs.getResult(bed.reviewer.principal,run.run);
  assert.equal(resultView!.rule_withdrawn,true);assert.equal(resultView!.record,record);assert.equal(JSON.stringify(resultView!.result),before);
  await bed.hub.assignPack(bed.reviewer.principal,'case-location');
@@ -73,5 +73,5 @@ await bed.hub.hub.registry.retire(bed.hub.admin.principal,id,version,'合成规�
  const [producer,producerVersion]=productionRun.pack.split('@');await bed.hub.hub.registry.retire(bed.hub.admin.principal,producer,producerVersion,'合成生产规则撤回');
  const projected=(await bed.hub.deps.runs.getRun(bed.reviewer.principal,productionRun.run))!;
  assert.equal(projected.rule_withdrawn,true);assert.equal(projected.production!.record,productionRecord);assert.equal(JSON.stringify(projected.production!.result),productionBytes);
- const productionPage=await consoleClient.get('/console/results/'+productionRun.run);assert.equal(productionPage.status,200);assert.ok(productionPage.body.includes('规则已撤回（版本已下架）'));
+ const productionPage=await consoleClient.get('/console/results/'+productionRun.run);assert.equal(productionPage.status,200);assert.ok(productionPage.body.includes('规则已撤回（版本已退役）'));
 });

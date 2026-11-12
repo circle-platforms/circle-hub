@@ -7,7 +7,7 @@ import {DELETION_EFFECT,DELETION_EFFECT_GROUPS} from './member-deletion.ts';
 // Each consequence the paragraph states, as the phrase the grouped preview must also carry.
 const CONSEQUENCES=[
  '私人知识、原文和记忆','现有私人分享失效','转给执行删除的管理员','分享不随之转移','团队已取得的独立内容保留',
- '运行引用过的私人知识原文一并清除','根据不可用','待验证','旧密码、令牌、会话和同步请求均不能恢复该账户','此操作不可撤销',
+ '任务引用过的私人知识原文一并清除','根据不可用','待验证','旧密码、令牌、会话和同步请求均不能恢复该账户','此操作不可撤销',
 ];
 
 test('the grouped preview keeps every consequence of the host command paragraph',()=>{

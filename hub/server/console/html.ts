@@ -103,7 +103,7 @@ export function nameTables<T>(part: T, name: string): T | Html {
   return new Html(part.text.replace(UNNAMED_TABLE, (_all, view: string | undefined) => `<div class="ch-table-wrap" tabindex="0" role="region" aria-label="${label}"><table class="ch-table"${view ?? ''}><caption class="ch-visually-hidden">${label}</caption>`), part.layout);
 }
 
-export function definitions(pairs: readonly (readonly [string, unknown])[]): Html {
+export function definitions(pairs: readonly (readonly [string | Html, unknown])[]): Html {
   return html`<dl class="ch-kv">${pairs.map(([term, value]) => html`<dt>${term}</dt><dd>${value}</dd>`)}</dl>`;
 }
 

@@ -2,7 +2,7 @@
 import {uiLabelOf,type KnowledgeEntryStatus,type MemoryStatus,type ProvenanceType,type SourceAttributionStatus} from '../../../contracts/generated/vocabulary.ts';
 import {html,type Html} from './html.ts';
 import {count,fullTime,type Tone} from './ui.ts';
-import {relativeTime} from './format.ts';
+import {hoverTime,relativeTime} from './format.ts';
 import {badge as chip,tooltip} from './presentation.ts';
 
 const knowledgeTones={verified:'pass',unverified:'plain',withdrawn:'fail',superseded:'incomplete'} satisfies Record<KnowledgeEntryStatus,Tone|'plain'>;
@@ -21,10 +21,12 @@ export {size};
 export const exactSize=(bytes:number):Html=>html`<span class="nowrap" title="${count(bytes)} 字节">${size(bytes)}</span>`;
 export {time as timestamp} from './format.ts';
 export const minute=(iso:string|null|undefined)=>fullTime(iso).slice(0,16);
-export const versionName=(at:string,reason?:string,ordinal?:number)=>'版本'+(ordinal===undefined?'':' '+count(ordinal))+' · '+relativeTime(at)+(reason?' · '+reason:'');
-export const versionLabel=(at:string,reason?:string,ordinal?:number):Html=>html`<span class="nowrap" title="${fullTime(at)}">${versionName(at,undefined,ordinal)}</span>${reason?html` · ${reason}`:''}`;
+/** Which version a numbered version is (wording table, W38): a bare 版本 3 does not say whether it is the knowledge's, a memory's, a workflow's or a product's. */
+export type VersionKind='知识版本'|'记忆版本';
+export const versionName=(kind:VersionKind,at:string,reason?:string,ordinal?:number)=>kind+(ordinal===undefined?'':' '+count(ordinal))+' · '+relativeTime(at)+(reason?' · '+reason:'');
+export const versionLabel=(kind:VersionKind,at:string,reason?:string,ordinal?:number):Html=>html`<span class="nowrap" title="${hoverTime(at)}">${versionName(kind,at,undefined,ordinal)}</span>${reason?html` · ${reason}`:''}`;
 /** What the source type 声明 means: who provided the bytes and what was not collected independently (issue 228). */
-export const DECLARED_SCOPE='由上传方提供，Hub 没有独立的采集证明；不代表内容已被核实。';
+export const DECLARED_SCOPE='内容由上传的人提供，Hub 没有独立采集的证明；不代表内容已被核实。';
 /** What the team-source status says, apart from who uploaded the original: the confirmation is the uploader's, and it is neither a digital signature nor a copyright transfer. */
 export const ATTRIBUTION_SCOPE={
  unsigned:'上传人尚未确认这份原文可作为团队来源；未确认的上传不会被团队知识接收。与上传人是谁无关。',

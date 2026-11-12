@@ -61,7 +61,7 @@ export function localToolsRefusal(reason: LocalToolsReason): string {
     case 'unauthorized':
       return '令牌无效或已撤销；重新领取令牌后再试';
     case 'unavailable':
-      return 'Hub 里没有这个版本的本地工具（版本不存在、已下架、技能包没有安装或这个版本没有本地工具）；核对包号后再试';
+      return 'Hub 里没有这个版本的本地工具（版本不存在、已退役、技能包没有安装或这个版本没有本地工具）；核对包号后再试';
     case 'unassigned':
       return '这个版本存在，没有分配给你；请管理员把这个任务包分配给你后再试';
     case 'integrity':
