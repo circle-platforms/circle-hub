@@ -386,7 +386,7 @@ export function helpPlan(beds: ManifestBed[], normalized: Normalized, frozen: Fr
     return parts.length === 3 && parts[0] === 'bed' && parts[2] === device && (normalized.bed === null || parts[1] === normalized.bed) ? [{ key, bed: parts[1] as string }] : [];
   });
   if (held.length === 0) {
-    return { ok: false, failure: { code: 'test-bed.not_holder', message: `你没有持有设备 ${device} 的预订（${booking}）：这次运行的血缘里没有它的租约行`, fix: 'booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；device 写你预订的某台设备的名字；别人预订的设备不能问', pointer: '/parameters/device' } };
+    return { ok: false, failure: { code: 'test-bed.not_holder', message: `你没有持有设备 ${device} 的预订：这次运行的血缘里没有它的租约行`, fix: 'booking 写你自己的预订运行的编号，开始这次运行时 predecessor 写同一个编号；device 写你预订的某台设备的名字；别人预订的设备不能问', pointer: '/parameters/device' } };
   }
   if (held.length > 1) {
     return { ok: false, failure: { code: 'test-bed.bad_help', message: `设备名 ${device} 在你持有的不止一个自动化测试环境里`, fix: 'bed 写这台设备所在的自动化测试环境', pointer: '/parameters/bed' } };
