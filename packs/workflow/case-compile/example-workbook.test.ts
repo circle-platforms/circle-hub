@@ -8,7 +8,7 @@ import {satisfiedRecipes} from './tools/generate-workbook.ts';
 import {generateWorkbookSet} from './functions/generate.ts';
 import {createTestParserRegistry} from '../../../hub/testing/parsers.ts';
 import {recognize} from '../../../hub/refs/api.ts';
-import {readWorkbookModel} from './functions/xlsx-model.ts';
+import {readWorkbookModel} from './functions/generated/skills/runner-workbook/workbook-writer/xlsx-model.ts';
 
 const skip=await osIsolationAvailable()?false:'no OS network isolation';
 const bytes=(name:string)=>readFileSync(new URL('./examples/'+name,import.meta.url));
