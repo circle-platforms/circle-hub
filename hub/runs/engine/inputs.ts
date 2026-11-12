@@ -12,7 +12,7 @@ import type { BoundInput, WorkflowInput } from '../../../contracts/src/pack.ts';
 import { ExternalObjectId } from '../../../contracts/src/reference.ts';
 import type { InputBinding, SourceBinding } from '../../../contracts/src/run.ts';
 import { disclosedExistence, recordExistence, type Principal, type VariableSnapshot } from '../../records/api.ts';
-import { EXTERNAL_ARTIFACT, PENDING_REVIEW_FIX, pendingReviewLabel, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
+import { EXTERNAL_ARTIFACT, type LoadedWorkflow, type ExternalReadContext } from '../../ports.ts';
 import { ReferenceSyntaxError, parseReference, parserKey, recognizeAsync, type Reference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal, missingError, protocolError, unavailableError } from './errors.ts';
@@ -291,7 +291,6 @@ export async function bindInputs(
       }
       absence={code:'SOURCE_ABSENT',message:absenceLabel(observation)+(next?`；${next}`:'')};
     }
-    if(read.pending)absence={code:'SOURCE_PENDING_REVIEW',message:`${pendingReviewLabel(read.pending)}；${PENDING_REVIEW_FIX}`};
     const chosen = read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.content) ?? read.artifacts.find((a) => a.name === EXTERNAL_ARTIFACT.original);
     if (chosen === undefined) {
       readFailed(path, `读取 ${id} 没有给出原件或内容件`, '由系统包负责人核对这类外部对象的读取声明和投影后重读', 'the read gave no original or content artifact');
@@ -320,7 +319,7 @@ export async function bindInputs(
       }
     }
     const external = withRevision(read.id, read.revision);
-    const title = read.absent ? absenceLabel(read.absent) : read.pending ? pendingReviewLabel(read.pending) : meta !== null && typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
+    const title = read.absent ? absenceLabel(read.absent) : meta !== null && typeof meta.title === 'string' && meta.title !== '' ? meta.title : null;
     return {
       bytes: source.bytes,
       mediaType: source.mediaType,

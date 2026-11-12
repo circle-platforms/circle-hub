@@ -99,21 +99,3 @@ test('a failed source read is not cached as absence', async () => {
     });
   } finally { await kit.close(); }
 });
-
-test('a newly withheld credential finding is not exposed through the request source cache', async () => {
-  const kit = await openTestRecords({ detectors: true });
-  try {
-    const admin = (await kit.principals.bootstrapAdmin('synthetic-admin')).user;
-    const reader = await kit.principals.createUser(admin, 'synthetic-reader');
-    const secret = randomBytes(8).toString('hex');
-    const artifact = await kit.artifacts.ingest({ bytes: Buffer.from(`ftp://synthetic:${secret}@192.0.2.10/file`), mediaType: 'text/plain', origin: { read: { object: 'synthetic:manual:1', resource: 'synthetic' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: ['synthetic-pack'], shareable: false } });
-    await kit.authorizations.assign(admin,reader.id,'synthetic-pack'); await kit.artifacts.acceptFindings(admin,artifact.body.sha256);
-    await withRequestPermissions(kit.artifacts,reader,async () => {
-      const sources=sourceReader(kit.artifacts,'model'), identity={user:reader.id,role:reader.role};
-      assert.ok((await sources.read(artifact.body.sha256,identity))?.bytes);
-      await kit.artifacts.revokeFindings(admin,artifact.body.sha256);
-      const withheld=await sources.read(artifact.body.sha256,identity);
-      assert.ok(withheld === null || withheld.bytes === null);
-    });
-  } finally { await kit.close(); }
-});

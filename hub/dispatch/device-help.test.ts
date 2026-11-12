@@ -2,13 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalBytes } from '../records/api.ts';
 import type { DeviceHelpTarget } from '../../contracts/src/pack.ts';
-import { withCredentialDetectors } from '../testing/records.ts';
 import { setup } from './testing/context.ts';
 import { probes } from './testing/probes.ts';
-
-// Issue 194: a running Hub does not withhold device help for looking like a credential. This file covers the hold path
-// that records stored under credential-scan@3 still follow, so the detectors stay on for every kit it opens.
-withCredentialDetectors();
 
 
 const HELP = {
@@ -152,16 +147,17 @@ test('an answer that does not confirm nothing was entered and the line cleared i
   assert.ok(c.calls.includes('close_slot'), 'the gateway lease is still released');
 });
 
-test('a text the credential scan holds back is not quoted; a very long one keeps its start and says so', async (t) => {
+test('a text that looks like a credential is quoted; a very long one keeps its start and says so', async (t) => {
   const secret = 'DB_PASSWORD=hunter22x';
   const long = 'x'.repeat(20000);
-  const { c, target } = await ready({ reply: (line) => ({ help: line === 'withheld' ? `name   the name\n${secret}\n` : long, caret: false, entered: false, cleared: true }) });
+  const { c, target } = await ready({ reply: (line) => ({ help: line === 'looks-like' ? `name   the name\n${secret}\n` : long, caret: false, entered: false, cleared: true }) });
   t.after(() => c.close());
-  const [held] = await c.service.askDevices(c.owner, 'run_synthetic', [target('withheld')]);
-  assert.equal(held!.positions[0]!.withheld, true);
-  assert.equal(held!.positions[0]!.text, null, 'the words are not quoted');
-  assert.ok(held!.positions[0]!.described);
-  assert.ok(!JSON.stringify(held).includes('hunter22x'), 'not in what the run gets');
+  // Decision 161 / credential-scan@4: looking like a credential does not withhold device help text.
+  const [quoted] = await c.service.askDevices(c.owner, 'run_synthetic', [target('looks-like')]);
+  assert.equal(quoted!.positions[0]!.withheld, false);
+  assert.equal(quoted!.positions[0]!.text, `name   the name\n${secret}\n`);
+  assert.ok(quoted!.positions[0]!.described);
+  assert.ok(JSON.stringify(quoted).includes('hunter22x'), 'the run gets the words as received');
   const [cut] = await c.service.askDevices(c.owner, 'run_synthetic', [target('long')]);
   assert.equal(cut!.positions[0]!.truncated, true);
   assert.equal(cut!.positions[0]!.text!.length, 16000);

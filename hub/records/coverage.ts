@@ -8,6 +8,7 @@ import { digestOf, isSha256 } from './digest.ts';
 import { scanAcceptanceKey } from './constants.ts';
 import { hubArtifact, sourceLinks, type SourceLinks } from './lineage.ts';
 import { CREDENTIAL_SCANNER, scanDigest, scanWithMatches,scanAllCredentials } from './scan.ts';
+import { CONTENT_SCANNER } from './content-scan.ts';
 
 type Evidence = DerivedScanAcceptance['sources'][number];
 type Scan = ReturnType<typeof scanWithMatches>;
@@ -130,11 +131,14 @@ export class CoverageContext {
     this.#lineage.set(row.digest,valid); return valid;
   }
 
-  /** Stored scan facts only: no byte reads and no credential scan on a read. */
+  /**
+   * Stored scan facts only: no byte reads and no credential scan on a read. Records made under the content scan take no
+   * part (decision 161): it finds nothing by design, so a later read of the bytes neither lifts nor withdraws anything.
+   */
   facts(sha: string): CredentialScan | null {
     if(this.#fullFacts.has(sha))return this.#fullFacts.get(sha)!;
     if (this.#facts.has(sha)) return this.#facts.get(sha)!;
-    const rows = this.bySha.get(sha) ?? [];
+    const rows = (this.bySha.get(sha) ?? []).filter(r => r.body.scan.scanner !== CONTENT_SCANNER);
     const newest = Math.max(...rows.map(r => version(r.body.scan)));
     const hits = rows.filter(r => version(r.body.scan) === newest && r.body.scan.findings.length > 0).map(r => r.body.scan);
     const first = hits[0];

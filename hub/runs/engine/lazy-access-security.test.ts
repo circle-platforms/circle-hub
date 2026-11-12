@@ -1,4 +1,3 @@
-import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomBytes } from 'node:crypto';
@@ -10,7 +9,7 @@ import { createResolver, type RunScope } from './exact.ts';
 import type { EngineContext } from './deps.ts';
 import { HubReadFailure } from './retry-read.ts';
 
-test('prefetch and repeated source resolutions recheck current sharing and scan acceptance', async (t) => { credentialDetectorsFor(t);
+test('prefetch and repeated source resolutions recheck current sharing and account state', async (t) => {
   const kit = await openTestRecords();
   try {
     const admin = (await kit.principals.bootstrapAdmin('synthetic-admin')).user;
@@ -32,17 +31,13 @@ test('prefetch and repeated source resolutions recheck current sharing and scan 
     assert.equal((await r.resolve(ref)).ok,false, 'a disabled account cannot use cached text');
     await kit.principals.setDisabled(admin,user.id,false);
 
+    // Text that looks like a credential is read like any other (decisions 154, 161): no acceptance comes between.
     const fake=randomBytes(8).toString('hex');
     const source=await kit.artifacts.ingest({bytes:Buffer.from(`ftp://synthetic:${fake}@192.0.2.10/file\n合成说明`),mediaType:'text/plain',origin:{read:{object:'synthetic:manual:1',resource:'synthetic'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:['synthetic-reader-pack'],shareable:false}});
     await kit.authorizations.assign(admin,user.id,'synthetic-reader-pack');
-    await kit.artifacts.acceptFindings(admin,source.body.sha256);
     const sensitive=make(source.body.sha256), sensitiveRef=`src:${source.body.sha256}/text@1/l/1`;
     await sensitive.prefetch([sensitiveRef]);
-    const accepted=await sensitive.resolve(sensitiveRef); assert.ok(accepted.ok && accepted.value.text?.includes(fake));
-    await kit.artifacts.revokeFindings(admin,source.body.sha256);
-    const revoked=await sensitive.resolve(sensitiveRef); assert.ok(!revoked.ok || revoked.value.text===null);
-    await sensitive.prefetch([sensitiveRef]); await kit.artifacts.acceptFindings(admin,source.body.sha256);
-    const restored=await sensitive.resolve(sensitiveRef); assert.ok(restored.ok && restored.value.text?.includes(fake));
+    const read=await sensitive.resolve(sensitiveRef); assert.ok(read.ok && read.value.text?.includes(fake));
 
     const brokenSource=await kit.artifacts.ingest({bytes:Buffer.from('合成待解析内容'),mediaType:'application/x-synthetic',origin:{upload:{session:'synthetic'}},author:{user:user.id},provenanceType:'declared',visibility:{readers:[user.id],admins:true,packs:[],shareable:false}});
     const parsers=createDefaultRegistry();

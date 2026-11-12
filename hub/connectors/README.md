@@ -297,10 +297,10 @@ The named-variable sections above supersede older review notes below that mentio
 - The sandbox input is bounded (96 MiB default for the functions here): a planner that keeps many large answers across
   rounds fails with FUNCTION_FAILED.
 - At most 200 generated inputs are recorded on a derived artifact (the manifest lists every answer).
-- An answer the credential scanner flags is stored at read tier `retain_only` by records (B02 R[4]): its text reaches no
-  model and no pack function until an admin accepts those findings of those bytes (records' `acceptFindings`) and the
-  object is read again. The registry ignores such `resource_config` decisions: only objects that are resource ids are
-  resources.
+- Answers are not scanned for credentials (decisions 154 and 161): an answer is stored at the tier asked for, unless it
+  echoes a credential the Hub sent (B02 R[6]). A record an older Hub held under credential-scan@3 stays held; reading
+  the object again stores a new readable record. The registry ignores the `resource_config` acceptances recorded
+  before (`scan:<sha256>`): only objects that are resource ids are resources.
 - Envelope codes are compared by their text (`1000` and `"1000"` match).
 - The profile cache keeps a pack reference for 5 s; call `connectors.refresh()` after a withdrawal to see it at once (a new
   publication changes nothing until an admin binds it). The resource list is cached for 5 s (`resourceCacheMs`).

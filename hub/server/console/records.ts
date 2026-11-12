@@ -13,15 +13,6 @@ import { callTable, names, neutralPage, type PageContext, type PageResult } from
 import { TOOL_LABELS, toolName } from './tasks.ts';
 import { box, card, count, duration, kpi, when } from './ui.ts';
 import { spaceRecords } from './space-records.ts';
-import {credentialReviewRequests} from '../../knowledge/api.ts';
-
-async function sourceReviews(ctx:PageContext,path:string):Promise<Html>{
- if(!ctx.admin)return html``;
- const reviews=await credentialReviewRequests(ctx.deps.records,ctx.principal,{cursor:param(ctx,'review_cursor')??null,now:ctx.deps.now?.()??new Date()});
- const rows=await Promise.all(reviews.items.map(async row=>[when(row.created_at),row.external??'对象标识未显示',await ctx.userName(row.audience),when(row.deadline),row.resolved?'已有解决记录':row.superseded?'已到期并生成后续请求':row.expired?'已到期，尚无解决记录':'等待管理员核看',technicalCode(row.reference),technicalCode(row.source)]));
- const next=reviews.next?link(path,'下一页来源核看请求',{...Object.fromEntries(ctx.url.searchParams),review_cursor:reviews.next,call:null}):'';
- return card({title:'来源核看请求',meta:'独立于调用筛选 · 仅显示当前有权访问的来源 · 本页 '+reviews.items.length+' 项'},html`<p class="ch-meta">这些请求已写入记录，不代表管理员已收到外部通知。到期不算接受；请具名接收人核对来源和当前受理决定，已有解决记录也不等于原文当前可读。</p>${table(['创建时间','来源对象','接收管理员','期限','请求进展','请求引用','原文引用'],rows,'本页没有可显示的来源核看请求')}${next}<p class="ch-meta">在运行 Hub 的服务器上执行 ${technicalCode('circle-hub source held')} 查看被保留来源，按原文引用的摘要核对扫描与受理；本页不显示原文或凭据命中值。</p>`);
-}
 
 /** Trial actions are administrator-only and separate from the MCP call log and the real reads' statistics. */
 async function trials(ctx: PageContext, path: string, user: string | undefined, from: string | undefined, to: string | undefined): Promise<Html> {
@@ -83,10 +74,10 @@ async function statistics(ctx:PageContext,now:number,daysCount:number,query:Para
 }
 
 /** The tabs of the records page (decision 151), in the order shown; the last two are the administrators'. */
-const RECORD_TABS = ['calls', 'stats', 'sharing', 'trials', 'reviews'] as const;
+const RECORD_TABS = ['calls', 'stats', 'sharing', 'trials'] as const;
 type RecordTab = typeof RECORD_TABS[number];
-const RECORD_TAB_LABEL: Record<RecordTab, string> = { calls: '调用记录', stats: '统计', sharing: '分享记录', trials: `${uiLabelOf('action_kind', 'trial')}记录`, reviews: '来源核看请求' };
-const ADMIN_TABS: readonly RecordTab[] = ['trials', 'reviews'];
+const RECORD_TAB_LABEL: Record<RecordTab, string> = { calls: '调用记录', stats: '统计', sharing: '分享记录', trials: `${uiLabelOf('action_kind', 'trial')}记录` };
+const ADMIN_TABS: readonly RecordTab[] = ['trials'];
 
 /** The records page at `path` (/console/records, or /console/admin/calls for administrators only). */
 export async function recordsPage(ctx: PageContext, path: '/console/records' | '/console/admin/calls'): Promise<PageResult> {
@@ -113,7 +104,7 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
   const selectedDigest=param(ctx,'call');
   const tabsOf = RECORD_TABS.filter((key) => ctx.admin || !ADMIN_TABS.includes(key));
   const tab: RecordTab = selectedDigest ? 'calls' : tabsOf.find((key) => key === param(ctx, 'tab')) ?? 'calls';
-  const byCall = tab === 'calls' || tab === 'stats', filtered = tab !== 'reviews';
+  const byCall = tab === 'calls' || tab === 'stats';
   const kept = { ...(ctx.admin ? { user } : {}), ...(byCall ? { tool, run } : {}), from: param(ctx, 'from'), to: param(ctx, 'to') };
   const toolOptions = html`<option value="">全部工具</option>${TOOLS.map((t) => html`<option value="${t.name}"${t.name === tool ? html` selected` : ''}>${t.label}</option>`)}${tool !== undefined && !TOOL_LABELS.has(tool) ? html`<option value="${tool}" selected>${tool}</option>` : ''}`;
   const filters = html`<form class="ch-actions" data-filters method="get" action="${path}"><input type="hidden" name="days" value="${days}">${tab === 'calls' ? '' : html`<input type="hidden" name="tab" value="${tab}">`}
@@ -146,10 +137,9 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   const content = tab === 'calls' ? html`${stats!.figures}<p class="ch-meta" data-tab-facts>本页 ${lines.items.length.toLocaleString('en-US')} 条 · 新的在前</p>${box(null, html`${callTable(lines.items, ctx.admin, await names(ctx, lines.items),{path,params:Object.fromEntries(ctx.url.searchParams),selected:selected?.digest,compact:true})}${next}`, { flush: true })}`
     : tab === 'stats' ? html`${stats!.figures}${stats!.charts}`
     : tab === 'sharing' ? await spaceRecords(ctx,path,userId,rangeFrom,rangeTo)
-    : tab === 'trials' ? await trials(ctx,path,userId,rangeFrom,rangeTo)
-    : await sourceReviews(ctx,path);
+    : await trials(ctx,path,userId,rangeFrom,rangeTo);
   return {
     status: 200,
-    body: page(chrome,pageLayout(html`<div class="ch-stack" data-records>${tabs}${filtered ? html`<div class="ch-toolbar">${period}${filters}</div>` : ''}<div class="ch-stack" data-record-tab="${tab}">${content}</div></div>`,{inspector,detail:!!selected,back:link(path,'返回记录',Object.fromEntries([...ctx.url.searchParams].filter(([key])=>key!=='call')))})),
+    body: page(chrome,pageLayout(html`<div class="ch-stack" data-records>${tabs}<div class="ch-toolbar">${period}${filters}</div><div class="ch-stack" data-record-tab="${tab}">${content}</div></div>`,{inspector,detail:!!selected,back:link(path,'返回记录',Object.fromEntries([...ctx.url.searchParams].filter(([key])=>key!=='call')))})),
   };
 }

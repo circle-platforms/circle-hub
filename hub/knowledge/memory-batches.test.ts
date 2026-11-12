@@ -1,5 +1,4 @@
 // Batched memory reads preserve scalar authorization, state and personal-payload integrity rules.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {makeWorld,startPostgres} from './test-support.ts';
@@ -46,7 +45,7 @@ test('memory batches reject wrong document bindings and missing active personal 
  assert.equal((await memory.precheckGrant(w.user,'/shared'))[0].code,'SOURCE_UNAVAILABLE');
 });
 
-test('batched grant preflight preserves scalar first-failure order and scans referenced original text',async t=>{ credentialDetectorsFor(t);
+test('batched grant preflight reports a missing payload and does not refuse referenced text that looks like a credential',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  for(const key of ['first','second'])await memory.write(w.user,input(key));
  const heads=await w.kit.memoryIndex!.heads(w.user.id),first=heads[0],last=heads[1];
@@ -58,6 +57,7 @@ test('batched grant preflight preserves scalar first-failure order and scans ref
  const db=new Database(createPool(w.kit.database));t.after(()=>db.end());
  await db.query('DELETE FROM personal_payloads WHERE owner=$1 AND sha256=(SELECT sha256 FROM personal_record_bindings WHERE record=$2)',[w.user.id,last.version]);
  const checks=await memory.precheckGrant(w.user,'/shared');
- assert.equal(checks[0].code,'MEMORY_CREDENTIALS_DETECTED','an earlier credential scan still wins over a later missing payload');
- assert.equal(checks[0].state,'violation');assert.ok(!JSON.stringify(checks).includes(markdown));
+ // Decisions 154 and 161: the text is not scanned for credentials, so the missing payload is what the preflight reports.
+ assert.equal(checks[0].code,'SOURCE_UNAVAILABLE');
+ assert.equal(checks[0].state,'violation');assert.ok(!checks.some(check=>check.code==='MEMORY_CREDENTIALS_DETECTED'));
 });

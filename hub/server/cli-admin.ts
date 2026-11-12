@@ -60,7 +60,6 @@ export const PACK_USAGE =
   'pack install <通用技能@版本> | uninstall <通用技能> | bind-skills <旧运行> --skill <通用技能@版本>… --reason <理由> | publish <目录> [--stage] [--dry-run] [--answer-request <请求摘要> ...] | grant-publish <用户> | revoke-publish <用户> | assign <用户> <工作流> | unassign <用户> <工作流> | retire <发布版本> | activate <产品知识来源> | deactivate <产品知识来源> | list | shapes <工作流>';
 export const RESOURCE_USAGE = 'resource add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
-export const SOURCE_USAGE = 'source held [--limit <条数>] | findings <sha256> | accept <sha256> --note <说明> | withdraw <sha256> [--note <说明>]';
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
 export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <工作流> [--reason <理由>] | list [--object <对象>]';
@@ -1184,105 +1183,6 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
   return 0;
 }
 
-// ---------------------------------------------------------------- source: held-back content and the credential scan
-
-/** The shape of a line near a finding, never its text: letters and digits become x, so an admin sees what kind of text it is. */
-function shapeAround(line: string, column: number): string {
-  const start = Math.max(0, column - 1 - 12);
-  return line
-    .slice(start, start + 48)
-    .replace(/[A-Za-z]/g, 'x')
-    .replace(/[0-9]/g, '9')
-    .replace(/[\u0080-\uffff]/g, '字');
-}
-
-/** Effective acceptance, not the historical scan annotation; no matched text is ever formatted. */
-function sourceAcceptanceText(acceptance: EffectiveScanAcceptance | undefined): string {
-  if (acceptance === undefined) return '没有受理';
-  if (acceptance.kind === 'direct') return `直接受理（决定 ${acceptance.acceptance.authorization}）`;
-  return `由派生覆盖（${acceptance.acceptance.sources.length} 份来源）`;
-}
-
-async function sourceCommand(session: Session, args: readonly string[]): Promise<number> {
-  const [sub, ...rest] = args;
-  switch (sub) {
-    case 'held': {
-      const { values } = parse(rest, { limit: { type: 'string' }, as: { type: 'string' } }, 0);
-      const viewer = await session.viewer(values.as);
-      if (viewer.role !== 'admin') throw new CliError('只有管理员能看被只保留的内容');
-      const limit = values.limit === undefined ? 50 : Number(values.limit);
-      if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new UsageError('--limit 是 1 到 500 的整数');
-      const kit = await session.records();
-      const seen = new Set<string>();
-      const lines: string[] = [];
-      let cursor: string | null = null;
-      do {
-        const page: Page<StoredRecord<SourceArtifactBody>> = await kit.store.list<SourceArtifactBody>({ kind: 'source_artifact', newestFirst: true, limit: 200, ...(cursor === null ? {} : { cursor }) });
-        for (const record of page.items) {
-          const body = record.body;
-          if (body.scan.findings.length === 0 || seen.has(body.sha256)) continue;
-          seen.add(body.sha256);
-          const origin = 'read' in body.origin ? body.origin.read.object : 'upload' in body.origin ? '上传' : '生成';
-          const detectors = [...new Set(body.scan.findings.map((f) => f.detector))].join('、');
-          const note = body.scan.truncated ? '，命中太多，不能接受' : '';
-          const effective = await kit.artifacts.source(viewer,body.sha256);
-          lines.push([body.sha256, `${body.size} 字节`, origin, `${body.scan.findings.length} 处命中（${detectors}）${note}`, sourceAcceptanceText(effective?.acceptance), `当前档位 ${labelOf('read_tier',effective?.readTier ?? body.read_tier)}`, body.captured_at].join('\t'));
-          if (lines.length >= limit) break;
-        }
-        cursor = lines.length >= limit ? null : page.next;
-      } while (cursor !== null);
-      if (lines.length === 0) session.out('没有凭据扫描命中的来源');
-      for (const line of lines) session.out(line);
-      return 0;
-    }
-    case 'findings': {
-      const { positionals, values } = parse(rest, { as: { type: 'string' } }, 1);
-      const viewer = await session.viewer(values.as);
-      if (viewer.role !== 'admin') throw new CliError('只有管理员能看凭据扫描的命中');
-      const sha = positionals[0];
-      if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
-      const kit = await session.records();
-      const bytes = await kit.artifacts.trustedBytes(sha);
-      if (bytes === null) throw new CliError('Hub 没有保存这份字节');
-      const scan = scanForCredentials(bytes);
-      const effective = await kit.artifacts.source(viewer,sha);
-      session.out(`受理状态：${sourceAcceptanceText(effective?.acceptance)}；当前档位 ${labelOf('read_tier',effective?.readTier ?? 'retain_only')}`);
-      if (effective?.acceptance?.kind === 'derived') for (const source of effective.acceptance.acceptance.sources) session.out(`覆盖来源 ${source.sha256}；来源记录 ${source.record}；受理决定 ${source.acceptances.map(a => a.authorization).join('、')}`);
-      session.out(`扫描器 ${scan.scanner}：${scan.findings.length} 处命中${scan.truncated ? '（超过可列出的上限，不能接受）' : ''}；下面只写探测器和位置，行的内容只给形状（字母写成 x，数字写成 9）`);
-      const lines = new TextDecoder('utf-8', { fatal: false }).decode(bytes).split(/\r?\n/);
-      for (const finding of scan.findings.slice(0, 100)) {
-        session.out(`第 ${finding.line} 行第 ${finding.column} 列\t${finding.detector}\t${shapeAround(lines[finding.line - 1] ?? '', finding.column)}`);
-      }
-      if (scan.findings.length > 100) session.out(`… 还有 ${scan.findings.length - 100} 处`);
-      return 0;
-    }
-    case 'accept': {
-      const { positionals, values } = parse(rest, { note: { type: 'string' } }, 1);
-      const admin = await session.admin();
-      const sha = positionals[0];
-      if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
-      if (values.note === undefined || values.note.trim() === '') throw new UsageError('接受要写说明（--note），例如“手册里的 ftp 示例，密码是占位符”；说明里不要抄命中的内容');
-      const kit = await session.records();
-      const accepted = await decided(() => kit.artifacts.acceptFindings(admin, sha, values.note));
-      session.out(`已接受 ${sha} 的 ${accepted.scan.findings.length} 处命中（扫描器 ${accepted.scan.scanner}）；之后重新读到同样字节时按正常内容保存。决定记录 ${accepted.authorization.digest}`);
-      session.out('历史记录的入库档位不改；重新读取时核当前受理，显式要求只保留的策略不放开');
-      return 0;
-    }
-    case 'withdraw': {
-      const { positionals, values } = parse(rest, { note: { type: 'string' } }, 1);
-      const admin = await session.admin();
-      const sha = positionals[0];
-      if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
-      const kit = await session.records();
-      const withdrawn = await decided(() => kit.artifacts.revokeFindings(admin, sha, values.note ?? null));
-      session.out(`已撤回对 ${sha} 的接受；以后读到它按只保留处理。决定记录 ${withdrawn.digest}`);
-      return 0;
-    }
-    default:
-      throw new UsageError(`source 的子命令：${SOURCE_USAGE}`);
-  }
-}
-
 // ---------------------------------------------------------------- original: the stored originals, listed and exported
 
 /**
@@ -1448,7 +1348,6 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
     const hub = await session.hub();
     const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), { fileName: basename(source) }));
     session.out(put.created ? `已发布命名文档 ${put.name}（摘要 ${put.sha256}，${put.size} 字节）` : `命名文档 ${put.name} 已经是这份（摘要 ${put.sha256}，${put.size} 字节）`);
-    if (put.findings > 0) session.err(`注意：凭据扫描有 ${put.findings} 处命中，已按只保留存；经运行读取这份文档之前，先用 circle-hub source accept ${put.sha256} --note <说明> 接受`);
     return 0;
   }
   if (sub === 'list') {
@@ -1564,7 +1463,6 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },
   { name: 'mask', summary: MASK_USAGE.slice('mask '.length), handler: maskCommand },
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
-  { name: 'source', summary: SOURCE_USAGE.slice('source '.length), handler: sourceCommand },
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
   { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: leaseCommand },
   { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },

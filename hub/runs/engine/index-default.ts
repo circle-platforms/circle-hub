@@ -176,7 +176,7 @@ export async function mergeIndexBindings(ids:readonly string[],label:string,cont
   const origin = {generated:{generator:COMPONENTS.views,inputs:sources}};
   const derivedCoverage = await records.artifacts.prepareDerived({origin,author:{user:null},derivedSources:sources.map(item => item.slice(4))});
   const artifact = await records.artifacts.ingest({bytes:canonicalBytes(merged),mediaType:'application/json',origin,derivedCoverage,author:{user:null},provenanceType:'projected',visibility:{readers:[context.principal.id],admins:true,packs:[],shareable:false},name:'complete-knowledge-view.json'});
-  if(artifact.body.read_tier !== 'model_readable')return fail(label,'完整知识视图有未受理的凭据命中；请管理员核对后重试','请管理员核对凭据扫描后重试');
+  if(artifact.body.read_tier !== 'model_readable')return fail(label,'完整知识视图存下后不可读；请管理员核对后重试','请管理员核对 Hub 的记录存储后重试');
   const now = new Date().toISOString();
   const manifest = await records.store.put({kind:'action',schema:SCHEMAS.action,provenance:'observed',body:{action:ACTION.generate,run:context.run,item:null,inputs:sources,component:COMPONENTS.views,lease:null,started_at:now,ended_at:now,result:'completed',error_code:null,acceptance:null,codes:[],detail:{external:label,revision:first.revision,artifact:artifact.digest,pages:ids.length}}});
   return {...first,id:label,manifest:manifest.digest,artifacts:[{name:'original',artifact},...first.artifacts.filter(item => item.name !== 'original' && item.name !== 'content')]};

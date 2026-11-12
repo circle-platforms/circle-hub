@@ -1,7 +1,6 @@
 // Scheduled rounds keep every effect of a pass over everything while reading only what changed: what arrives between rounds,
 // what falls due with no record at all, and what depends on accounts, which leave no record. No pack function runs here,
 // except in the one test that guards on the sandbox.
-import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -9,6 +8,7 @@ import { createRequestService, type RequestView } from '../../requests/api.ts';
 import type { Principal, StoredRecord, Transaction } from '../../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import { createTestParserRegistry } from '../../testing/parsers.ts';
+import { storeLegacyHeld } from '../../testing/records.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { createRunsService } from './service.ts';
 import { maintainRuns, FULL_PASS_MS } from './maintenance.ts';
@@ -196,50 +196,6 @@ test('a request falling due during a round is escalated once, by that round or t
   assert.equal(escalationsOf(next, packOnly.digest).length, 1, 'bound to a pack alone');
   assert.equal(escalationsOf(next, inScope.digest).length, 1, 'and not again');
   assert.deepEqual([bound, packOnly, inScope].filter((request) => w.memory.due.has(request.digest)), [], 'handled, so no later round is sent to them');
-});
-
-/** A run with a source disposition on bytes the Hub read and kept as retain-only, because they hold a credential. */
-async function retained(w: Awaited<ReturnType<typeof world>>) {
-  const { h } = w;
-  const bytes = Buffer.from(`copy ftp://user:Ftp${randomBytes(8).toString('hex')}9@192.0.2.10/image.bin flash:\n`);
-  const source = await h.kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'synthetic:manual:one' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
-  const run = await storeQuietRun(h);
-  const question = await w.requests.write(requestOf(run, h.admin.id, FAR_AHEAD, '合成来源待接受', { kind: 'disposition', sources: [`src:${source.body.sha256}`] }));
-  const observed = async () => (await actionsOf(h.kit.store, run.body.run)).filter((action) => action.body.detail.sources_available === true).length;
-  return { run, question, sha: source.body.sha256, observed };
-}
-
-test('an acceptance recorded between rounds lets a held source request proceed in the next round, and only then', async (t) => { credentialDetectorsFor(t);
-  const w = await world(t);
-  const { sha, observed } = await retained(w);
-  await w.settle();
-  const quiet = await w.position();
-  await w.round();
-  await w.round();
-  assert.equal(await observed(), 0, 'the source is still retain-only');
-  assert.equal(await w.position(), quiet, 'and polling it wrote nothing');
-  await w.h.kit.artifacts.acceptFindings(w.h.admin, sha, '合成手册的虚构示例');
-  await w.round();
-  assert.equal(await observed(), 1, 'the acceptance is what moved it');
-});
-
-test('a source request that arrives after its source was accepted proceeds at once, and an account change reaches it', async (t) => {
-  const w = await world(t);
-  const first = await retained(w);
-  await w.h.kit.artifacts.acceptFindings(w.h.admin, first.sha, '合成手册的虚构示例');
-  await w.h.kit.principals.setRole(w.h.admin, w.h.bob.id, 'admin');
-  await w.h.kit.principals.setDisabled(w.h.admin, w.h.alice.id, true);
-  await w.settle();
-  assert.equal(await first.observed(), 0, 'the runner cannot act');
-  await w.h.kit.principals.setDisabled(w.h.admin, w.h.alice.id, false);
-  await w.round();
-  assert.equal(await first.observed(), 1, 'nothing but the account changed');
-  const run = await storeQuietRun(w.h);
-  await w.round();
-  const sources = [`src:${first.sha}`];
-  await w.requests.write(requestOf(run, w.h.admin.id, FAR_AHEAD, '合成新来源请求', { kind: 'disposition', sources }));
-  await w.round();
-  assert.equal((await actionsOf(w.h.kit.store, run.body.run)).filter((action) => action.body.detail.sources_available === true).length, 1);
 });
 
 test('a held source request is resubmitted by a round once its source is available, and then answered', { skip }, async () => {
@@ -446,7 +402,7 @@ async function side(t: { after: (fn: () => Promise<void>) => void }, clock: { no
   const now = () => new Date(clock.now);
   const runs: StoredRecord<RunRecord>[] = [];
   for (let n = 0; n < 3; n++) runs.push(await storeQuietRun(h));
-  return { h, ctx: engineOn(h, now), requests: createRequestService(h.kit, now), runs, secrets: [] as string[], admins: [h.admin] as Principal[] };
+  return { h, ctx: engineOn(h, now), requests: createRequestService(h.kit, now), runs, secrets: [] as Array<{ bytes: Buffer; object: string }>, admins: [h.admin] as Principal[] };
 }
 type Side = Awaited<ReturnType<typeof side>>;
 
@@ -491,12 +447,15 @@ async function apply(event: { kind: string; n: number; offset: number; pick: num
     case 'run': s.runs.push(await putRun(h.kit.store, quietRun(h), new Date(clock.now).toISOString())); break;
     case 'held': {
       const bytes = Buffer.from(`copy ftp://user:Ftp${event.n.toString(16).padStart(16, '0')}9@192.0.2.10/image.bin flash:\n`);
-      const source = await h.kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: `synthetic:manual:${event.n}` } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
-      s.secrets.push(source.body.sha256);
+      // A source an older Hub held (credential-scan@3, issue 194), named by a disposition request.
+      const object = `synthetic:manual:${event.n}`;
+      const source = await storeLegacyHeld(h.kit, { bytes, mediaType: 'text/plain', object, visibility: { readers: [], admins: true, packs: [], shareable: false } });
+      s.secrets.push({ bytes, object });
       await s.requests.write(requestOf(runAt, h.admin.id, FAR_AHEAD, `合成来源 ${event.n}`, { kind: 'disposition', sources: [`src:${source.body.sha256}`] }));
       break;
     }
-    case 'accept': { const sha = s.secrets.shift(); if (sha) await h.kit.artifacts.acceptFindings(s.admins[0], sha, '合成手册的虚构示例'); break; }
+    // Reading the object again is the way out of an old hold (decision 161): a new readable record of the same bytes.
+    case 'reread': { const held = s.secrets.shift(); if (held) await h.kit.artifacts.ingest({ bytes: held.bytes, mediaType: 'text/plain', origin: { read: { object: held.object } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } }); break; }
     case 'admins': {
       // Bob comes in as the second administrator, or the two change places; there is always an active one.
       if (s.admins.length === 1) { await h.kit.principals.setRole(h.admin, h.bob.id, 'admin'); s.admins.push(h.bob); } else {
@@ -511,7 +470,7 @@ async function apply(event: { kind: string; n: number; offset: number; pick: num
   }
 }
 
-const EVENTS = ['request', 'request', 'request', 'pack-request', 'repair', 'answer', 'answer', 'publish', 'run', 'held', 'accept', 'admins', 'advance', 'advance', 'advance'];
+const EVENTS = ['request', 'request', 'request', 'pack-request', 'repair', 'answer', 'answer', 'publish', 'run', 'held', 'reread', 'admins', 'advance', 'advance', 'advance'];
 
 for (const seed of [1, 2, 3, 4]) test(`after every round, what the incremental rounds did is what a pass over everything does (seed ${seed})`, async (t) => {
   const draw = random(seed);

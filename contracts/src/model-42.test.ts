@@ -18,7 +18,9 @@ test('R01 R[13] and K02 R[8] are appended and the rules that cite them by number
   assert.ok(element('R01').rules[13].startsWith('团队是管理员命名的一组启用账户'));
   assert.equal(element('K02').rules.length, 9);
   assert.ok(element('K02').rules[8].startsWith('条目文字给不给读者'));
-  for (const [id, index] of [['T01', 3], ['C02', 2], ['D05', 3]] as const) assert.ok(element(id).rules[index].includes('R01 R[13]'), `${id} R[${index}]`);
+  for (const [id, index] of [['T01', 3], ['C02', 2]] as const) assert.ok(element(id).rules[index].includes('R01 R[13]'), `${id} R[${index}]`);
+  // D05 R[3] cited R01 R[13] only in the pending-review clause; decision 161 removed that answer (model 51).
+  assert.ok(element('D05').rules[3].includes('不再答“X 存在，内容待核看”'));
   assert.ok(element('D06').fields[3].includes('K02 R[8]'));
   // B02 R[4] was rewritten by mainline decision 154 (no credential scan on new content); B01 R[7]
   // possible_credentials remains for claims that still rest on older retain-only sources.

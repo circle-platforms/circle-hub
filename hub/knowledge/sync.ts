@@ -1,6 +1,6 @@
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
-import {knowledgeSourceLoader,reconcileCredentialRequests} from './credential-policy.ts';
+import {knowledgeSourceLoader} from './sources.ts';
 // The knowledge sync (W09 standing obligation, executed by the Hub): run the product pack's sync declaration (read the start
 // pages, parse them, ask the plan function which pages to read next, until it is done or a limit is hit, which is reported),
 // store every planned build of every name family, produce the root of every own-tree build that is missing or whose sources
@@ -139,7 +139,6 @@ async function pool<T>(items: readonly T[], limit: number, fn: (item: T) => Prom
 
 export async function syncProduct(context: KnowledgeContext, builds: Builds, product: ProductHandle, options: SyncOptions = {}): Promise<SyncReport> {
   const by = await requireAdmin(context, options.by, '运行知识同步');
-  await reconcileCredentialRequests(context);
   const startedAt = context.now().toISOString();
   const sync = newId('sync');
   const productId = product.product.id;

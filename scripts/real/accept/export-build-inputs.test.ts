@@ -349,12 +349,12 @@ async function viewRead(w: World, external: string): Promise<ViewRead> {
   return { view, root: view?.build?.root, unversioned: view?.unversioned?.root };
 }
 
-test('exports a truncated build whose entries are unplaced, withheld by the scan and without a document key', { timeout: 300_000 }, async t=>{
+test('exports a truncated build whose entries are unplaced, look like a credential or lack a document key', { timeout: 300_000 }, async t=>{
   const fragment=[{parser:'xml@1',selector:'x/catalog/group[1]'}];
   const caseEntries: Array<Record<string, unknown>>=[];
   const documents=Array.from({length:20},(_,d)=>`doc-${String(d).padStart(2,'0')}`);
   for(const document of documents)caseEntries.push({kind:'case',path:'/commands/system/reboot',statement:`用例 ${document}`,data:{document,node:`n-${document}`,commands:['/commands/system/reboot']},fragments:fragment,applicability:null});
-  // A second carrier of the first document whose own text has a credential scan hit: counted, never listed.
+  // A second carrier of the first document whose own text looks like a credential: listed like any other (decision 161).
   caseEntries.push({kind:'case',path:'/commands/net/ping',statement:'含凭据命中的用例',data:{document:documents[0],node:'DB_PASSWORD=synthetic-secret-1',commands:[]},fragments:fragment,applicability:null});
   // A document carried only by an entry the production left unplaced at the root (no command resolved, no placer model).
   caseEntries.push({kind:'case',path:null,statement:'没有命令的用例',data:{document:'zzz-unplaced',node:'n-loose',commands:[]},fragments:fragment,applicability:null});
@@ -412,16 +412,15 @@ test('exports a truncated build whose entries are unplaced, withheld by the scan
   const saved=readdirSync(options.out).filter(name=>name.startsWith('index-'));
   assert.equal(saved.length,first.total_keys,'one shard per document key the Hub counts');
   assert.equal(reads.filter(external=>external.startsWith('knowledge:facets:')).length,1);
-  // A page whose entries have unaccepted credential hits offers no continuation (the Hub clears `next`), so the first page
-  // is partial and the facets cross-check supplies the rest of the key list.
-  assert.equal(first.next,null);
+  // Nothing is withheld from a view for looking like a credential (decision 161): the first page offers its continuation.
+  assert.ok(first.next,'the truncated first page offers a continuation');
   assert.ok(Object.keys(first.keys).length<first.total_keys,'the first page does not list every key');
-  assert.ok(!reads.some(external=>external.includes('&after=')),'no continuation was offered, so none was followed');
   const shards=saved.map(name=>IndexView.parse(JSON.parse(readFileSync(join(options.out,name),'utf8'))));
   const listed=new Set(shards.flatMap(shard=>Object.keys(shard.entries)));
-  assert.equal(listed.size+1,first.total_entries,'every carrier except the one the scan withheld');
+  assert.equal(listed.size,first.total_entries,'every carrier is listed, the one that looks like a credential too');
   assert.deepEqual(shards.flatMap(shard=>Object.keys(shard.keys)).sort(),[...documents,'zzz-unplaced'].sort());
-  assert.match(lines[0],/用例 21 条（另有 1 条被凭据扫描排除，没有进输入）/);
+  assert.match(lines[0],/用例 22 条；/);
+  assert.doesNotMatch(lines[0],/凭据扫描排除/);
   assert.ok(readFileSync(join(options.out,'maps.txt'),'utf8').trim().split('\n').length===documents.length+1);
   assert.ok(!lines.join('\n').includes('doc-00')&&!lines.join('\n').includes(options.token),'no identifier or token on screen');
 });
