@@ -48,7 +48,9 @@ test('space panels show all four readable scopes and only verified own knowledge
  assert.match(home.body,/最近变化/);assert.doesNotMatch(home.body,/知识入库流程/);
  assert.match(home.body,/与我共享 › 合成控制台接收人 › 共享经验/);
  const own=await browser.get(space({space:owner.user.id,path:verified.path}));assert.equal(own.status,200,own.body);
- assert.match(textOf(parse(own.body)),/知识库 › 我的 › 方法/);assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
+ // The trail is an ordered list of links whose separators the style sheet draws: the places above, then the page itself.
+ assert.deepEqual([.../<nav class="ch-crumbs" aria-label="位置"><ol>(.*?)<\/ol><\/nav>/.exec(own.body)![1].matchAll(/<li><a href="[^"]*"( aria-current="page")?>([^<]*)<\/a><\/li>/g)].map(item=>[item[2],item[1]!==undefined]),[['知识库',false],['我的',false],['方法',false],['认证',true]]);
+ assert.match(own.body,/<h1[^>]*>认证<\/h1>/);assert.doesNotMatch(own.body,/id="page-sub"/);assert.match(own.body,new RegExp('name="selected_entry" value="'+verified.entry+'"'));
  assert.doesNotMatch(own.body,new RegExp('name="selected_entry" value="'+note+'"'));assert.match(own.body,/type="checkbox"/);
  assert.match(own.body,/<span class="ch-badge ch-badge--pass"><span[^>]*><\/span>已验证<\/span>/);assert.match(own.body,/<span class="ch-badge ch-badge--pending"><span[^>]*><\/span>待验证<\/span>/);
  // Issue 227: the verified status carries its scope beside it in the list and visibly in the entry's own view.
