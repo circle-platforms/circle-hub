@@ -9,3 +9,5 @@ Add the optional flat expectation op not_found. Its quote remains bound to the o
 Only functions/model-expectations.test.ts was run, as scheduled: the first run had 27 tests, 26 passed and one failed because the new fixture shared its plan quote object with its frozen expected node. Separating those fixture objects preserved the refusal assertion; the second run passed all 27 with no skips. The original logs are retained. Configuration-source indexes are disclosed even when the caller also declares model_judgment.
 
 The existing block-schema generator ran and introduced no other file differences. No type check, other test file or publication sample generator ran. This is an intermediate development commit; the integrator owns the final 3.19.0 version and manifest before any publication.
+
+A follow-up uses the same literal in two configured sources: an earlier bidirectional source and a later valid directed source. The existing implementation already selects the directed source; no production code change was needed. The same test file passed 28 tests with no failures or skips in 0.205769 seconds. Both earlier runs remain recorded separately.
