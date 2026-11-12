@@ -50,7 +50,7 @@ export function checkBlockExpected(slots:PlanSlots,nodes:unknown,evidence:unknow
    if(!authorLiteral)out.push(bad('计划不能更换作者已明确声明的算子、字面或次数；保留原声明或显式未履约',at));
    continue;
   }
-  if(expect.operator==='not_found'&&!expect.register)continue;
+  if(expect.operator==='not_found')continue;
 
   const declared=slots.criteria?.filter(value=>value.id===expect.criterion)??[];
   if(declared.length!==1){out.push(unknown('期望未声明原文字面算子，缺唯一的类型化判据；下一步：模型按 literal / count / capture_relation 声明判据和理由并提交独立复核，不能把描述文字直接复制成断言',at+'/criterion'));continue;}

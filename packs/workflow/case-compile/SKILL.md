@@ -87,7 +87,7 @@ case_index 仅在已有原始用例身份说明时使用
 每条判断: output、原始用例 expectation 引用和 quote
 block_context.preconditions/causal_links/responders 写全；没有就写空表；主机观察写明谁应答
 obligations 覆盖全部原始期望: 实际判断 id，或 unmet+missing/next_action
-原始用例的否定结果: OBSERVE_ASSERT 的 op=not_found，literal 写不应出现的记录，quote 保留原始期望；这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run
+原始用例的否定结果: 常量用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获；执行器须声明寄存器的字面否定方法，不抄旧设备输出；quote 保留原始期望，这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run
 其它描述性期望无作者闭集字面说明: criteria 写类型、算子、值、原引文、scope_root 和理由
 criteria 由 review 阶段的非作者账号核对，使用真实 criteria_review/criteria_review_run
 literal 仍选设备可观察文字；模型对含义的判断保持未确认

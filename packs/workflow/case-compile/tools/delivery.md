@@ -50,7 +50,7 @@ defect_candidate 仅在怀疑设备的问题时填写:
 {"repro":"复现步骤","expected":"原始用例期望原句","actual":"最后一次设备输出原句"}
 expected/actual 逐字复制，由工具核对；模型判断未确认，由使用者决定
 syntax_rejected 非空时不能写 defect_candidate 或 author_conflict
-原始用例的否定结果用 OBSERVE_ASSERT 的 op=not_found；literal 写不应出现的记录，quote 保留原始期望；这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run
+原始用例的否定结果: 常量用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获；执行器须声明寄存器的字面否定方法，不抄旧设备输出；quote 保留原始期望，这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run
 
 author_conflict 仅在原始用例与手册不一致时填写:
 {"author":"原始用例原句","manual":"手册原话","reference":"<下载文件中的手册引用>"}
