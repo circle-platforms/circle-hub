@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
-import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
+import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, isKnowledgeEntryStatus, type KnowledgeEntryStatus, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
@@ -491,6 +491,11 @@ function nodeEntry(node: KnowledgeNode, _root: string): Entry {
 }
 
 const MEMORY_NOTE = '记忆只供参考，不作为核对原始用例的资料或证据。';
+const ENTRY_QUALIFICATION = {
+  verified: '', unverified: '',
+  withdrawn: '资料或证据已撤回，当前结论状态未知；原因缺资料；下一步由使用者重新核对当前资料。以下是当时保存的原文。\n',
+  superseded: '资料已有新版本，以下是当时保存的原文。\n',
+} as const satisfies Record<KnowledgeEntryStatus, string>;
 
 function nodesText(v: NodesOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
@@ -501,7 +506,14 @@ function nodesText(v: NodesOut, context: TextContext): string {
     const status = v.call_status;
     return [`正在处理 ${status.active_total} 次，已结束 ${status.completed.length} 次。`, ...(status.active.map(call => `开始时间 ${localMinute(call.started_at)}`)), ...(status.missing ? [`状态未知；原因缺资料；${status.missing}`] : []), `下一步${status.next_action}`].join('\n');
   }
-  if (v.content !== undefined) return contentText(v.content, v.trace, context);
+  if (v.content !== undefined) {
+    const content = v.content, status = content.structure?.entry_status;
+    const entryQualification = isKnowledgeEntryStatus(status) ? ENTRY_QUALIFICATION[status] : '';
+    const withdrawn = content.structure?.grounds_withdrawn, hidden = content.structure?.grounds_withdrawn_hidden_count;
+    const groundsWithdrawn = Array.isArray(withdrawn) && withdrawn.length > 0 || typeof hidden === 'number' && hidden > 0;
+    const groundsQualification = groundsWithdrawn && status !== 'withdrawn' ? '证据已撤回，当前结论状态未知；原因缺资料；下一步由使用者重新核对当前资料。以下是当时保存的结论。\n' : '';
+    return entryQualification + groundsQualification + contentText(content, v.trace, context);
+  }
   const nodes = v.nodes ?? [];
   return ['手册和命令树', ...nodes.flatMap(node => entryLines(nodeEntry(node, v.root ?? ''))), ...(v.next ? ['还有资料未列出，请继续读取。'] : [])].join('\n');
 }
@@ -521,22 +533,19 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
     return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步${next}。`;
   }
   if (c.reference.startsWith('rec:')) {
-    const withdrawn = c.structure?.grounds_withdrawn;
-    const hidden = c.structure?.grounds_withdrawn_hidden_count;
-    const qualification = (Array.isArray(withdrawn) && withdrawn.length > 0 || typeof hidden === 'number' && hidden > 0) ? '证据已撤回，当前结论状态未知；原因缺资料；下一步由使用者重新核对当前资料。以下是当时保存的结论。\n' : '';
     let value: unknown;
-    try { value = JSON.parse(c.text); } catch { return qualification + c.text; }
-    if (typeof value === 'string') return qualification + value;
+    try { value = JSON.parse(c.text); } catch { return c.text; }
+    if (typeof value === 'string') return value;
     const result = StoredValidationResult.safeParse(value);
-    if (result.success) return qualification + [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
+    if (result.success) return [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
     const shape = z.union(PARTITION.map(partition => StoredPartitionItem[partition]));
     const item = shape.safeParse(value);
-    if (item.success) return qualification + itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
+    if (item.success) return itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
     const items = shape.array().safeParse(value);
-    if (items.success) return qualification + (items.data.length ? items.data.map(item => itemConclusion(item, context.items?.find(original => original.id === item.item))).join('\n') : '没有原始用例。');
+    if (items.success) return items.data.length ? items.data.map(item => itemConclusion(item, context.items?.find(original => original.id === item.item))).join('\n') : '没有原始用例。';
     const originals = ItemProjection.array().safeParse(value);
-    if (originals.success) return qualification + (originals.data.length ? originals.data.map(item => caseName(item, item.label)).join('\n') : '没有原始用例。');
-    return qualification + '资料已读取，完整内容在机器可读答复中。';
+    if (originals.success) return originals.data.length ? originals.data.map(item => caseName(item, item.label)).join('\n') : '没有原始用例。';
+    return '资料已读取，完整内容在机器可读答复中。';
   }
   const lines = c.text.split('\n');
   const position = context.cursor ? cursorPosition(c.reference, context.cursor) : null;
