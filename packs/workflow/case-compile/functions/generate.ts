@@ -65,10 +65,6 @@ export function generateWorkbookSet(given: GenerationInput[], options: { merged?
   if (planRuns.some((run) => !run || !run.startsWith('run_') || /[\r\n]/.test(run)) || !first.build || /[\r\n]/.test(first.build)) reject('/context', '缺少已满足的计划运行号或锁定构建');
   if (contract.pinned.identity !== profile.digest || contract.runtimeVersion !== profile.runtimeVersion) reject('/identity', '合约身份与配置不符');
   if(profile.seats.some(seat=>!Number.isSafeInteger(seat.ordinal)||seat.ordinal<0||seat.ordinal>=profile.device_count))reject('/profile/seats','框架取不到那台设备，整卷不跑：对象序号超出冻结预检容量');
-  const defaultAssertion=assertionTarget(contract,profile);
-  if (!defaultAssertion) reject('/profile/allowed', '生成器需要唯一的已启用字面断言组合');
-  const assertionSeat = profile.seats.find((v) => v.object === defaultAssertion!.call.object);
-  if (assertionSeat && assertionSeat.ordinal >= profile.device_count) reject('/profile/seats', '断言对象的座位超出预检设备数');
   const plans: PlanSlots[] = inputs.map((input, k) => { const read = readSlots(input.slots); if (!read.ok) reject(at(k, '/slots'), read.problems[0].pointer + ' ' + read.problems[0].message); return read.ok ? read.slots : input.slots; });
   const digest = recipeDigest(inputs.map((input, k) => caseRecipe(input, plans[k])));
   const rows: Array<Array<string | number>> = [['', '', 0, describedRun(planRuns.join('、'), first.build)]];
@@ -116,6 +112,8 @@ function caseRows(input: GenerationInput, slots: PlanSlots, at: (pointer: string
       if (!blockMeta(slots)&&!Object.values(allowed!.parameters).some((v) => v === 'device_cli' || v === 'host_shell')) reject(at(`/expects/${k}/after`), '期望不能跟在等待或断言之后');
       if (!expect.register&&!hasSingleLineValue(expect.text)) reject(at(`/expects/${k}/text`), '断言必须是有效单行原文，没有边缘空白、公式前缀或占位符');
       const target=assertionTarget(contract,profile,expect);if(!target)reject(at(`/expects/${k}`),'缺断言方法声明');
+      const assertionSeat=profile.seats.find(value=>value.object===target!.call.object);
+      if(assertionSeat&&assertionSeat.ordinal>=profile.device_count)reject(at(`/expects/${k}`),'断言对象的座位超出预检设备数');
       const cells=assertionCells(expect,target!);
       const text=expect.register?'':encodeG({args:[cells.g],keywords:{}},{literalAssertion:true});
       rows.push(['', '', statement++, '',target!.call.object,target!.call.method,text,...(blockMeta(slots)?[cells.h,cells.i]:[])]);

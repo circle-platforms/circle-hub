@@ -1,10 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import check, { readWorkbook } from './workbook.ts';
-import { generateWorkbook, GENERATOR } from './generate.ts';
+import { generateWorkbook, generateWorkbookSet, GENERATOR, type GenerationInput } from './generate.ts';
 import { generationFixture } from '../testing/workbook.ts';
 import { coreModel, changedWorkbook, workbookCheckInput, digest } from '../testing/workbook-model.ts';
 import { AUTOID } from './test-support.ts';
+import { fixture as assertionFixture, call, EXPECTED_REF } from '../testing/blocks.ts';
+import { signTypedRuntime } from '../testing/typed-fixtures.ts';
+import { parseRuntimeContract } from './runtime-contract.ts';
+import { parseProfile } from './profile.ts';
+import { parseManifest } from './manifest.ts';
+import { templateDocument } from '../testing/template.ts';
+import { checkExpectedSources, checkContractShape } from './checks.ts';
 const SHEET = 'xl/worksheets/sheet1.xml';
 function sheetChange(parts: Map<string, string>, change: (text: string) => string) { parts.set(SHEET, change(parts.get(SHEET)!)); }
 function cell(reference: string, text: string) { return `<c r="${reference}" t="inlineStr"${reference.startsWith('A') ? ' s="1"' : ''}><is><t xml:space="preserve">${text}</t></is></c>`; }
@@ -51,4 +58,64 @@ test('one changed original byte is refused even when the generic parsed model is
 test('verification does not turn a bad plan or invented expectation into a support receipt', () => {
   const input = workbookCheckInput(); input.subject.data = { ...generationFixture().slots, expects: [] };
   assert.ok(check(input).every((v) => v.verdict !== 'support'));
+});
+
+const absenceLiteral='record+a.[x](value)$\\tail';
+type SequentialRecipe=GenerationInput&{frozen:ReturnType<ReturnType<typeof assertionFixture>['subject']>};
+function sequentialAbsence(change?: (document: ReturnType<typeof assertionFixture>['contractDoc']) => void, methods=['literal','not_found']): SequentialRecipe {
+  const fixture=assertionFixture(),document=structuredClone(fixture.contractDoc);
+  change?.(document);
+  const contractDocument=signTypedRuntime(document),contract=parseRuntimeContract(contractDocument),beds=parseManifest(fixture.inventory);
+  assert.ok(contract.ok);assert.ok(beds.ok);
+  const profileDocument=structuredClone(fixture.profileDoc);
+  profileDocument.block_model=false;
+  profileDocument.allowed=profileDocument.allowed.filter((entry: {method: string;parameters: Record<string,string>})=>!Object.values(entry.parameters).includes('literal_assertion')||methods.includes(entry.method));
+  profileDocument.runtime.contract_sha256=contract.contract.pinned.identity;
+  profileDocument.workbook.template=templateDocument(profileDocument.workbook,contract.contract.runtimeVersion,contract.contract.pinned.identity);
+  const profile=parseProfile(profileDocument,contract.contract,beds.beds);
+  assert.ok(profile.ok,JSON.stringify(profile));
+  const original={reference:EXPECTED_REF,text:`合成记录 ${absenceLiteral} 不存在`};
+  const slots:GenerationInput['slots']={bucket:'bed-a',blocks:[],steps:[call()],expects:[{op:'not_found',text:absenceLiteral,quote:{...original},after:1}],replacements:[]};
+  const fields={...fixture.fields,expected_nodes:[{...original}]};
+  const frozen=fixture.subject(slots,{contract:contractDocument,profile:profileDocument,expected_nodes:fields.expected_nodes,command_catalog:fields.command_catalog});
+  return {slots,fields,contract:contract.contract,profile:profile.profile,plan_run:'run_00000000000000000000000000',build:'SYN_ORBIT_10_8_1',frozen};
+}
+test('one sequential workbook preserves absence and ordinary expectations without the block format',()=>{
+  const absent=sequentialAbsence(),found=sequentialAbsence();
+  found.fields.autoid='SYN-BLOCK-2';
+  found.slots.expects=[{text:absenceLiteral,quote:{reference:EXPECTED_REF,text:absenceLiteral},after:1}];
+  for(const input of [absent,found]){
+    const source=checkExpectedSources(input.frozen),contract=checkContractShape(input.frozen);
+    assert.ok(source.every(row=>row.verdict==='support'),JSON.stringify(source));
+    assert.ok(contract.every(row=>row.verdict==='support'),JSON.stringify(contract));
+  }
+  const inputs=[absent,found],read=readWorkbook(coreModel(generateWorkbookSet(inputs)),inputs);
+  assert.ok(read.ok,JSON.stringify(read));if(!read.ok)return;
+  assert.deepEqual(read.autoids,['SYN-BLOCK-1','SYN-BLOCK-2']);
+  const assertions=read.executions.filter(row=>row.assertion);
+  assert.deepEqual(assertions.map(row=>row.method),['not_found','literal']);
+  assert.equal(new RegExp(assertions[0].args[0],'s').test(absenceLiteral),true);
+  assert.equal(new RegExp(assertions[0].args[0],'s').test('recordaaZxvalue$tail'),false);
+  assert.equal(assertions[1].args[0],absenceLiteral);
+});
+for(const corruption of ['method','pattern'])test('sequential absence readback rejects changed '+corruption,()=>{
+  const input=sequentialAbsence(),model=coreModel(generateWorkbook(input));
+  const row=model.sheets[0].rows.find(row=>row.cells.some(cell=>cell.reference.startsWith('F')&&cell.text==='not_found'))!;
+  if(corruption==='method')row.cells.find(cell=>cell.reference.startsWith('F'))!.text='literal';
+  else row.cells.find(cell=>cell.reference.startsWith('G'))!.text=absenceLiteral;
+  const read=readWorkbook(model,input);
+  assert.equal(read.ok,false);if(!read.ok)assert.ok(read.problems.some(problem=>problem.rule==='assertion'));
+});
+test('sequential absence needs its declared operator and published allowed method',()=>{
+  const missing=sequentialAbsence(document=>{document.runtime.block_model.operators=document.runtime.block_model.operators.filter((row: {op: string})=>row.op!=='not_found');});
+  assert.throws(()=>generateWorkbook(missing));
+  const duplicate=sequentialAbsence(document=>{document.runtime.block_model.operators.push({...document.runtime.block_model.operators.find((row: {op: string})=>row.op==='not_found')});});
+  assert.throws(()=>generateWorkbook(duplicate));
+  const disallowed=sequentialAbsence();disallowed.profile.allowed=disallowed.profile.allowed.filter(row=>row.method!=='not_found');
+  assert.throws(()=>generateWorkbook(disallowed));
+});
+test('sequential absence does not need an unused ordinary assertion method',()=>{
+  const input=sequentialAbsence(undefined,['not_found']);
+  const read=readWorkbook(coreModel(generateWorkbook(input)),input);
+  assert.ok(read.ok,JSON.stringify(read));if(read.ok)assert.deepEqual(read.executions.filter(row=>row.assertion).map(row=>row.method),['not_found']);
 });
