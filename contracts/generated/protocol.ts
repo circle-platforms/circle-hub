@@ -22,7 +22,7 @@ export const PROTOCOL_CODES = {
   SOURCE_READ_LIMIT: { when: '有权读者的确定读取拒绝：超过声明的路由页数、请求数或读取字节预算；内部码仍为 READ_LIMIT', fix: '由资源管理员调整声明或缩小读取范围后重新完整读取' },
   SOURCE_REDIRECT_REFUSED: { when: '来源明确要求重定向，但同源声明、路由或跳转上限不允许继续；附状态和安全的 Location', fix: '由资源管理员核对来源给出的 Location 与路由声明，修复配置后按原对象重读' },
   SOURCE_ABSENT: { when: 'Hub 里或外部系统里确定没有这个对象（D05 R[3]）；外部系统的附系统、对象和读取时刻', fix: '核对编号或名称；外部系统的回答按这条确定观察处理' },
-  SOURCE_PENDING_REVIEW: { when: '业务系统里有这个对象，它的应答里有未核看的疑似凭据（D05 R[3]）；附系统、对象和读取时刻，不给内容，也不说命中的是什么', fix: '到来源系统看原文；管理员核看内容后按原对象重读' },
+  SOURCE_PENDING_REVIEW: { when: '此前存下的观察：业务系统里有这个对象，它的应答当时按凭据扫描扣留（D05 R[3]）；新的读取不再产生（决定 161）。附系统、对象和读取时刻，不给内容，也不说命中的是什么', fix: '按原对象重新读取，得到可读的新记录；或到来源系统看原文' },
   EFFECT_NOT_ALLOWED: { when: 'P11 R[3] 第 1 款：动作不在冻结的允许效果表', fix: '使用已声明的动作，或发布包后以新修订重跑' },
   EFFECT_PARAMETER_OUT_OF_RANGE: { when: 'P11 R[3] 第 2 款：参数超出该行范围', fix: '按声明范围改参数并重新核验产物' },
   EFFECT_RELEASE_UNMET: { when: 'P11 R[3] 第 3 款：放行条件未满足', fix: '先完成声明的核验要求项，再派发其已核验产物' },
@@ -119,4 +119,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 48;
+export const MODEL_VERSION = 49;
