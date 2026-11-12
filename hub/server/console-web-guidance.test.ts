@@ -168,7 +168,9 @@ test('on a touch screen whatever is pressed is at least 24px high and a field is
   '> a:not(.ch-btn, .ch-row, .ch-nav-item), .hub .ch-table td a:not(.ch-btn) { padding-block: 4px; }',
   // A name of one or two characters is as wide as it is high.
   '.hub .ch-table td a:not(.ch-btn), .hub .ch-crumbs a { display: inline-block; min-width: 24px; }',
-  '.hub .ch-source-head > a { min-height: 24px; align-content: center; }',
+  // A link that stands alone on a row of a card or a section.
+  '.hub :is(.ch-source-head, .ch-section) > a:not(.ch-btn, .ch-row) { min-height: 24px; align-content: center; }',
+  '.hub .ch-tip { min-width: 24px; min-height: 24px; }',
   '.hub summary { min-height: 24px; align-content: center; }',
   '.hub :is(input[type="checkbox"], input[type="radio"]) { min-width: 24px; min-height: 24px; }',
   '.hub :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) { min-height: 32px; }',

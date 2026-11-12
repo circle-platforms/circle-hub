@@ -338,11 +338,11 @@ main nav.ch-seg a { flex: none; }
   .hub :is(.ch-table, .ch-kv, .ch-crumbs, .ch-meta, .ch-feed, .ch-list, .ch-actions, .ch-card-foot, .ch-card-tail, p, li, dd) > a:not(.ch-btn, .ch-row, .ch-nav-item), .hub .ch-table td a:not(.ch-btn) { padding-block: 4px; }
   /* A short name (one or two characters) is as wide as it is high. */
   .hub .ch-table td a:not(.ch-btn), .hub .ch-crumbs a { display: inline-block; min-width: 24px; }
-  .hub .ch-source-head > a { min-height: 24px; align-content: center; }
+  .hub :is(.ch-source-head, .ch-section) > a:not(.ch-btn, .ch-row) { min-height: 24px; align-content: center; }
   .hub summary { min-height: 24px; align-content: center; }
   .hub :is(input[type="checkbox"], input[type="radio"]) { min-width: 24px; min-height: 24px; }
   .hub :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) { min-height: 32px; }
-  .hub .ch-tip { min-height: 24px; }
+  .hub .ch-tip { min-width: 24px; min-height: 24px; }
 }
 /* forms, zoom on focus: a phone's browser zooms the page in when a field whose text is under 16px is tapped. */
 @media (pointer: coarse), (max-width: 760px) {

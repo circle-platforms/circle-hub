@@ -526,7 +526,7 @@ export function callTable(lines: readonly CallLogLine[], admin: boolean, users: 
         line.acceptance === null ? '' : uiLabelOf('acceptance', line.acceptance),
         line.error_code ?? '',
         line.duration_ms,
-        line.run === null ? '' : link(`/console/runs/${line.run}`, '查看任务'),
+        line.run === null ? '' : link(`/console/runs/${line.run}`, html`查看任务<span class="ch-visually-hidden">（${line.at} 的调用）</span>`),
         ...(compact ? [] : [technicalCode(line.trace_id), line.session ?? '', html`${technicalCode(line.args_digest.slice(0, 16))}（${line.args_size}）`]),
       ];
       if (admin) row.push(line.admin_reasons?.length?html`${line.admin_note??''}<details><summary>完整理由（${line.admin_reasons.length} 条）</summary><ol>${line.admin_reasons.map(reason=>html`<li>${pre(reason)}</li>`)}</ol></details>`:line.admin_note??'');
