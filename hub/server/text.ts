@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
-import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
+import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
@@ -173,13 +173,13 @@ const SOURCE_READ_ERRORS = {
   SOURCE_REDIRECT_REFUSED: true, SOURCE_ABSENT: true, SOURCE_PENDING_REVIEW: true,
 } satisfies Partial<Record<ProtocolCode, true>>;
 
-function sourceUnknown(error: ProtocolError): boolean {
-  return Object.hasOwn(SOURCE_READ_ERRORS, error.code);
+function unknownError(error: ProtocolError): boolean {
+  return isReason(error.code) || Object.hasOwn(SOURCE_READ_ERRORS, error.code);
 }
 
 function errorText(v: { errors: ProtocolError[]; trace: string }): string {
-  return [v.errors.every(sourceUnknown) ? '资料尚未取得。' : '这次核对有错误。', ...v.errors.map(error => [
-    error.message, ...(sourceUnknown(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清']),
+  return [v.errors.every(unknownError) ? '资料尚未取得。' : '这次核对有错误。', ...v.errors.map(error => [
+    error.message, ...(unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清']),
     error.fix ? `下一步${error.fix}` : '下一步由使用者核对输入资料',
     error.rounds_left === undefined ? null : `最多重交 ${error.rounds_left} 次`, '决定者程序',
   ].filter(part => part !== null).join('；'))].join('\n');
@@ -446,6 +446,7 @@ function startText(v: StartOut, context: TextContext): string {
       lines.push(claimLine({ ...observation, statement: { ...observation.statement, text } }));
     } else lines.push(claimLine(observation));
   }
+  if (run.device_help?.length) lines.push('设备输出仅供参考，不能作为原始用例的期望依据。');
   for (const claim of run.device_help ?? []) {
     lines.push(claimLine(claim));
     const words = claim.statement.data?.help;
@@ -521,19 +522,22 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
     return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步${next}。`;
   }
   if (c.reference.startsWith('rec:')) {
+    const withdrawn = c.structure?.grounds_withdrawn;
+    const hidden = c.structure?.grounds_withdrawn_hidden_count;
+    const qualification = (Array.isArray(withdrawn) && withdrawn.length > 0 || typeof hidden === 'number' && hidden > 0) ? '证据已撤回，当前结论状态未知；原因缺资料；下一步由使用者重新核对当前资料。以下是当时保存的结论。\n' : '';
     let value: unknown;
-    try { value = JSON.parse(c.text); } catch { return c.text; }
-    if (typeof value === 'string') return value;
+    try { value = JSON.parse(c.text); } catch { return qualification + c.text; }
+    if (typeof value === 'string') return qualification + value;
     const result = StoredValidationResult.safeParse(value);
-    if (result.success) return [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
+    if (result.success) return qualification + [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
     const shape = z.union(PARTITION.map(partition => StoredPartitionItem[partition]));
     const item = shape.safeParse(value);
-    if (item.success) return itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
+    if (item.success) return qualification + itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
     const items = shape.array().safeParse(value);
-    if (items.success) return items.data.length ? items.data.map(item => itemConclusion(item, context.items?.find(original => original.id === item.item))).join('\n') : '没有原始用例。';
+    if (items.success) return qualification + (items.data.length ? items.data.map(item => itemConclusion(item, context.items?.find(original => original.id === item.item))).join('\n') : '没有原始用例。');
     const originals = ItemProjection.array().safeParse(value);
-    if (originals.success) return originals.data.length ? originals.data.map(item => caseName(item, item.label)).join('\n') : '没有原始用例。';
-    return '资料已读取，完整内容在机器可读答复中。';
+    if (originals.success) return qualification + (originals.data.length ? originals.data.map(item => caseName(item, item.label)).join('\n') : '没有原始用例。');
+    return qualification + '资料已读取，完整内容在机器可读答复中。';
   }
   const lines = c.text.split('\n');
   const position = context.cursor ? cursorPosition(c.reference, context.cursor) : null;
@@ -557,7 +561,8 @@ function resolveText(v: ResolveOut): string {
 
 function submitText(v: SubmitOut, context: TextContext): string {
   const lines = [v.acceptance === 'accepted' ? '脚本合并已核对。' : '脚本合并有错误。'];
-  if (v.result !== undefined) {
+  const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
+  if (v.acceptance === 'accepted' && v.result !== undefined) {
     lines.push(...resultConclusions(v.result, context.items));
     lines.push(...v.result.cross_item.map(claimLine));
   }
@@ -571,11 +576,12 @@ function submitText(v: SubmitOut, context: TextContext): string {
   }
   if (v.dispatch?.length) lines.push(v.dispatch.some(note => note.result !== undefined) ? '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。' : '上机验证还没有结论；状态未知；原因还没查清；下一步由使用者继续读取设备输出。');
   for (const error of v.errors) {
+    if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find(item => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
     const fix = missingRecord ? '由使用者请管理员核对保存的结果后重新读取' : error.fix;
-    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...(sourceUnknown(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清'])];
+    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...(unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清'])];
     if (fix) parts.push(`下一步${fix}`);
     if (error.rounds_left !== undefined) parts.push(`最多重交 ${error.rounds_left} 次`);
     parts.push('决定者程序');
