@@ -20,7 +20,10 @@ test('R01 R[13] and K02 R[8] are appended and the rules that cite them by number
   assert.ok(element('K02').rules[8].startsWith('条目文字给不给读者'));
   for (const [id, index] of [['T01', 3], ['C02', 2], ['D05', 3]] as const) assert.ok(element(id).rules[index].includes('R01 R[13]'), `${id} R[${index}]`);
   assert.ok(element('D06').fields[3].includes('K02 R[8]'));
-  assert.ok(element('B02').rules[4].includes('B01 R[7]') && element('B01').rules[7].includes('possible_credentials'));
+  // B02 R[4] was rewritten by mainline decision 154 (no credential scan on new content); B01 R[7]
+  // possible_credentials remains for claims that still rest on older retain-only sources.
+  assert.ok(element('B02').rules[4].includes('不做凭据扫描'));
+  assert.ok(element('B01').rules[7].includes('possible_credentials'));
 });
 
 test('the display rule and R02 R[1] carry the same exception for a tree entry whose source has no acceptance', () => {

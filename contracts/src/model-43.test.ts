@@ -26,9 +26,12 @@ test('C02 no longer sends everything generic to the Hub core, and C03 keeps the 
 });
 
 test('every element that model 43 changed names the owner decision it follows', () => {
-  const changed = model.elements.filter((e) => e.changes43 !== undefined);
+  // W08 also has changes43 from main's result-summary model; this line's skill-module notes are the 2026-11-06 ones.
+  const changed = model.elements.filter((e) => e.changes43?.some((note) => /所有者 2026-11-06/.test(note)));
   assert.deepEqual(changed.map((e) => e.id).sort(), ['C02', 'C03', 'T01']);
-  for (const e of changed) for (const note of e.changes43!) assert.match(note, /（来源：决定 15[34]，所有者 2026-11-06）$/, e.id);
+  for (const e of changed) for (const note of e.changes43!.filter((n) => /所有者 2026-11-06/.test(n))) {
+    assert.match(note, /（来源：决定 15[34]，所有者 2026-11-06）$/, e.id);
+  }
 });
 
 test('a skill may declare modules and a pack may embed them; both stay optional', () => {

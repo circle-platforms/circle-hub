@@ -642,3 +642,39 @@ grammar declares for a command, by its native name, with the reference of its de
 `CatalogParam.native_type`. It is source evidence: `catalogCanon` builds a signature from its parameters only, so the level
 is not part of the syntax an impact view compares. No code, record kind or vocabulary axis is added; which prompt accepts
 which level is declared by a runner contract and checked by the workflow pack, not by the core.
+
+Decision 159 on this line (owner, 2026-11-07) sets model 44: when a knowledge entry has no declared, judged, conflicting or
+unread applicability field, the Hub stores and shows no applicability block and no per-field status (K02). Partly declared
+entries still disclose the rest as undeclared. K02 `changes44` states the change.
+
+Decision 153 on main (owner, 2026-11-11) sets model 43 there: W08 R[6] and record kind `result_summary` (`result-summary@1`)
+append a projected summary beside each stored validation result so lists read the summary instead of the whole result.
+W08 `changes43` states the change.
+
+Decision 154 on main (owner, 2026-11-11, issue 194) sets model 44 there: B02 R[4] stops scanning source content for
+credentials and stops retaining, refusing or sending it for review because it looks like one. Older `credential-scan@3`
+records are not rewritten. B02 `changes44` states the change. In the merge this supersedes the scan-acceptance sentences of
+this line's model-42 B02 R[4]; team spaces, `audience_scope.team_members`, K02 R[8] and B01 R[7] stay.
+
+Decision 157 on main (owner, 2026-11-11, issue 34) sets model 45 there: C02 and T01 name the generic skill pack in prose;
+C02 R[3] says the core imports no product-pack code and records `directory_skill` when it uses a skill through its public
+entry. C02 and T01 `changes45` state the change. This line's model-43 skill modules and embeds remain.
+
+Decision 158 on main (owner, 2026-11-12) sets model 46 there: shared console words only — `attribution`/V04 原因归类,
+`pitfall` 常见误区, team-source 确认, `sync_mode.local` ui 仅保存在客户端设备, display rule 完整记录以它为准, and 退役
+instead of 下架. V04/K02/B02/K01/T02 `changes46` state the change.
+
+Decision 159 on main (owner, 2026-11-11/12, issue 194 step two) sets model 47 there: B02 F[6]/R[11] masking dictionary
+(`masking-dictionary@1` in `contracts/src/masking.ts`), applied when reading a business system through a connector.
+B02 `changes47` states the change.
+
+Decision 160 on main (issue 241) sets model 48 there: display rules only — a dynamic layer that never ran keeps the unknown's
+own mark, and absent values say why they are absent (never a dash).
+
+### Model 50 (merge 2026-11-12)
+
+Merge of this line's models 42–44 with main's 41–48 into unused version 50 (49 reserved for #341). Keeps this line's teams,
+skill-module composition, empty-applicability omission and `team_members`; takes main's request void, result summary,
+directory_skill, no credential scan, masking dictionary and display rules; takes main's six shared vocabulary labels for the
+console; keeps 裁定清单 (not 台账). Decision-number collisions (this line 150–159 vs main 150–160) are listed for the docs
+agent. B02 `changes50` carries the merge note.
