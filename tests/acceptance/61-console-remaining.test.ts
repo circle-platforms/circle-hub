@@ -42,7 +42,7 @@ describe('the knowledge base says where the reader is, at the same place on ever
     const folder = await member.get('/console/knowledge/space?' + new URLSearchParams({ space: bed.reviewer.user.id, path: '/方法/步骤', scope: 'personal' }));
     assert.equal(context(folder.body), '范围：我的 · 内容：知识 · 位置：方法 › 步骤');
     // One line a reader can open says what the three kinds are; it is closed until asked for, and only on the home.
-    assert.match(home.body, /<details class="ch-section" data-knowledge-guide><summary>知识、记忆和原文有什么不同<\/summary><p class="ch-meta">知识是带来源的陈述，可以分享到团队，供任务引用。记忆是客户端会话用的偏好和习惯，不作为任务的来源。原文是上传或读取到的原始文件，供知识逐字引用。左侧选的是谁的内容：我的、与我共享、团队。<\/p><\/details>/);
+    assert.match(home.body, /<details class="ch-section" data-knowledge-guide><summary>知识、记忆和原文有什么不同<\/summary><p class="ch-meta">知识是带来源的陈述，可以分享到团队，供任务引用。记忆是客户端会话用的偏好和习惯，不作为任务的来源。原文是上传或读取到的原始文件，供知识逐字引用。左侧按内容属于谁来选：本人的、其他成员分享的、团队的。<\/p><\/details>/);
     assert.doesNotMatch(folder.body, /data-knowledge-guide/);
     assert.deepEqual(wordingProblems(home.body), []);
   });
