@@ -44,7 +44,7 @@ export async function awaitingRequests(ctx: PageContext, requests: readonly RunR
       html`<b${showTask ? html` id="request-kind-${index}"` : ''}>${group.missing}</b><p class="ch-meta">${group.next_action}</p>`,
       uiLabelOf('request_kind', group.kind),
       html`${count(group.rows.length)} 条`,
-      ...(showTask ? [group.runs.length === 1 ? html`<a href="${href(`/console/runs/${group.runs[0]}`)}" aria-describedby="request-kind-${index}">查看任务</a>` : group.runs.length === 0 ? '—' : `${count(group.runs.length)} 个任务`] : []),
+      ...(showTask ? [group.runs.length === 1 ? html`<a href="${href(`/console/runs/${group.runs[0]}`)}" aria-describedby="request-kind-${index}">查看任务</a>` : group.runs.length === 0 ? '无' : `${count(group.runs.length)} 个任务`] : []),
       names.join('、') + (group.audiences.length > NAMED_RECIPIENTS ? ` 等 ${count(group.audiences.length)} 人` : ''),
       html`${when(group.due)}${group.overdue > 0 ? html` ${chip(`${count(group.overdue)} 条${uiLabelOf('request_status', 'overdue')}`, 'fail')}` : ''}`,
     ];

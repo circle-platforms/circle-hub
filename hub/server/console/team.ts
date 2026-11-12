@@ -38,7 +38,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   }
   // A row says how many workflows and clients the member has; their names are one hover or one click away.
   const titles=assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读'),clients=clientsOf.get(user.id)??0;
-  members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),user.deleted_at?'—':user.role==='admin'?'全部工作流':titles.length?tooltip(`${titles.length.toLocaleString('en-US')} 个`,titles.join('、')):'—',clients?`${clients.toLocaleString('en-US')} 个`:'—']);
+  members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),user.deleted_at?'不适用':user.role==='admin'?'全部工作流':titles.length?tooltip(`${titles.length.toLocaleString('en-US')} 个`,titles.join('、')):'无',clients?`${clients.toLocaleString('en-US')} 个`:'无']);
  }
  const devices:Array<ConnectedClient&{id:string}>=(await connectedClients(ctx.deps.records,connections)).map(client=>({...client,id:client.token.id}));
  for(const device of devices)circles.push(clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device))));

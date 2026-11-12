@@ -118,7 +118,7 @@ async function hubState(ctx: PageContext): Promise<Html> {
   const authority = cert === null ? null : await authorityFingerprint(ctx.deps.config.dataDir);
   const service = box({ title: '服务', tail: chip('运行中', 'pass') }, kv([
     ['Hub 版本', facts?.release ? code(facts.release) : '未记录'],
-    ['已运行', facts === undefined ? '—' : duration(now - facts.startedAt.getTime())],
+    ['已运行', facts === undefined ? '未记录' : duration(now - facts.startedAt.getTime())],
     ['访问地址', code(originOf(ctx))],
   ]));
   const certificate = cert === null
@@ -233,7 +233,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
       if (!secret.withdrawn&&secret.name===secretName) dialogs.push(set, unset);
       return [
         link('/console/settings',secret.name,{secret:secret.name}),
-        secret.uses.length === 0 ? '—' : html`${secret.uses.map((consumer) => html`<div>${use(consumer)}</div>`)}`,
+        secret.uses.length === 0 ? '未被使用' : html`${secret.uses.map((consumer) => html`<div>${use(consumer)}</div>`)}`,
         secret.by, when(secret.at),
         secret.withdrawn ? chip('已吊销', 'unchecked') : html`<span class="ch-meta">•••••••• 已加密</span>`,
 
@@ -264,7 +264,7 @@ ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSe
       active: 'settings',
       hint: '凭据与 Hub 状态；需人工处理的事项在运行 Hub 的服务器上完成',
 
-    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
+    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'未被使用'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };
 }
 

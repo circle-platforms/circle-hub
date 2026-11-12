@@ -17,7 +17,6 @@ export function dot(state: DotState): Html {
  const kind=state==='ok'?'pass':state==='down'?'fail':state==='warn'?'warn':state==='info'?'info':'pending';
  return html`<span class="ch-dot ch-dot--${kind}" aria-hidden="true"></span>`;
 }
-export const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
 
 export interface CardHead {
   title: unknown;
@@ -57,10 +56,7 @@ export function button(path: string, text: unknown, options: { primary?: boolean
   return html`<a class="ch-btn ${options.primary ? 'ch-btn--primary' : 'ch-btn--secondary'}" href="${href(path, options.params)}"${options.hint === undefined ? '' : html` title="${options.hint}"`}>${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
 }
 
-/** A card for a capability that is planned and not built: its place is kept, nothing in it pretends to be data. */
-export function plannedCard(title:unknown,text:unknown,_iconName:keyof typeof ICONS='clock'):Html{
- return panel({title,tail:planned(),hint:String(text)},html``);
-}
+export const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
 export const kv=facts;
 export function emptyState(title:unknown,text:unknown,action?:Html):Html{
  return html`<div class="ch-empty"><h2 class="ch-empty-title">${title}</h2><p class="ch-empty-text">${text}</p>${action??''}</div>`;
@@ -109,9 +105,18 @@ export interface CommandDialog {
 export const commandLink=sharedCommandLink;
 export const commandModal=sharedCommandModal;
 
+/**
+ * Why a value is absent (issue 241): a bare dash does not say whether nothing was recorded, the field does not apply or
+ * there is no data yet. A cell says which; where a more particular fact is known (未报告, 未声明, 无) the cell says that.
+ */
+export const NOT_RECORDED = '未记录';
+export const DOES_NOT_APPLY = '不适用';
+export const NO_DATA_YET = '暂无数据';
+export const NONE = '无';
+
 /** Milliseconds as the design writes durations: 毫秒 below a second, 秒 below a minute, then 分 and 小时. */
 export function duration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '—';
+  if (!Number.isFinite(ms) || ms < 0) return '未知';
   if (ms < 1000) return `${Math.round(ms)} 毫秒`;
   const seconds = ms / 1000;
   if (seconds < 60) return `${seconds.toFixed(1)} 秒`;
@@ -129,7 +134,7 @@ export {fullTime};
 /** The time of day only, for axes and today's lists. */
 export function clock(iso: string | number): string {
   const d = new Date(typeof iso === 'number' ? iso : Date.parse(iso));
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '未知';
   const two = (n: number): string => String(n).padStart(2, '0');
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }

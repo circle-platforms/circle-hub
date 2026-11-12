@@ -331,7 +331,8 @@ test('by client: name, declared platform, entry, connections, calls and p95; a n
   assert.match(clients, /client-two 未知 MCP 2\.0 0 12 1\.2 秒/, 'no platform declared; the sample says it holds no session');
   assert.match(clients, /未声明名字 未知 MCP 未知 1 6 300 毫秒/);
   assert.match(clients, /client-one os-one 同步 1\.0 未知 12 100 毫秒/);
-  assert.match(clients, /浏览器 — 控制台 — 6 12 200 毫秒/);
+  // The browser has no platform or client version to declare: the cells say so instead of a dash (issue 241).
+  assert.match(clients, /浏览器 不适用 控制台 不适用 6 12 200 毫秒/);
 });
 
 test('a client that holds a session and made no call in the window still has a line', async (t) => {

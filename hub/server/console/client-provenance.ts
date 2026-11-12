@@ -49,11 +49,11 @@ export async function entryProvenance(ctx:PageContext,body:EntryOrigin):Promise<
  if(audit){
   const client=await tokenClient(ctx,body.by,audit.body.token);
   rows.push(['写入方式','同步'],['客户端',evidence(client?.name??UNREPORTED_CLIENT)]);
-  technical.push(['名称来源',client?.origin??'未记录'],['同步请求',body.session],['令牌',audit.body.token],['设备',audit.body.declared_client??'—']);
+  technical.push(['名称来源',client?.origin??'未记录'],['同步请求',body.session],['令牌',audit.body.token],['设备',audit.body.declared_client??'未声明']);
  }else{
   const client=declaredClient(body.client);
   rows.push(['客户端',evidence(client.name)]);
-  technical.push(['名称来源',client.origin],['会话',body.session??'—']);
+  technical.push(['名称来源',client.origin],['会话',body.session??'未记录']);
  }
  return {rows,technical};
 }

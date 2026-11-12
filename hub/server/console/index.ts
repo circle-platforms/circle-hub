@@ -728,7 +728,7 @@ function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL
     ...(options.hub === undefined ? {} : { hub: options.hub }),
     chrome: (title, extra = {}) => ({ title, notice, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
     userName: (userId) => {
-      if (userId === null || userId === undefined) return Promise.resolve('—');
+      if (userId === null || userId === undefined) return Promise.resolve('未记录');
       return memoReadPort(options.deps.records.principals,['get','list']).get(userId).then((user) => user?.deleted_at?uiLabelOf('account_display_name','deleted_member'):user?.name ?? userId);
     },
   };

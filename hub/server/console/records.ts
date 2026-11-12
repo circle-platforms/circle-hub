@@ -40,7 +40,7 @@ async function trials(ctx: PageContext, path: string, user: string | undefined, 
     }
     const body = parsed.data;
     const outcome = (ok: boolean | null) => uiLabelOf('action_result', ok === null ? 'unknown' : ok ? 'completed' : 'error');
-    const routes = body.routes.map((r) => [r.route, r.tried ? outcome(r.ok) : '未尝试读取', r.status === null ? '—' : `HTTP ${r.status}`, r.code ?? '—', r.ms === null ? '—' : duration(r.ms)]);
+    const routes = body.routes.map((r) => [r.route, r.tried ? outcome(r.ok) : '未尝试读取', r.status === null ? (r.tried ? '无应答' : '不适用') : `HTTP ${r.status}`, r.code ?? '无', r.ms === null ? (r.tried ? '未记录' : '不适用') : duration(r.ms)]);
     rows.push([when(body.started_at), uiLabelOf('action_kind', body.action), await ctx.userName(body.principal), technicalCode(`${body.system_pack.id}@${body.system_pack.version}`),
       uiLabelOf('environment', body.environment), body.auth.sent ? `${outcome(body.auth.ok)}${body.auth.code === null ? '' : ` · ${body.auth.code}`}` : '未发送登录',
       html`<details><summary>${body.routes.length} 个接口</summary>${table(['接口', '结果', '状态码', '错误码', '耗时'], routes, '没有接口')}<p class="ch-meta">结束于 ${body.ended_at}</p></details>`,
@@ -73,13 +73,13 @@ async function statistics(ctx:PageContext,now:number,daysCount:number,query:Para
  const end=query?.to?Date.parse(query.to):now,start=query?.from?Date.parse(query.from):end-daysCount*86400000;
  const first=new Date(start);first.setHours(0,0,0,0);const dayCount=Math.max(1,Math.ceil((end-first.getTime())/86400000)),long=dayCount>31,n=long?31:dayCount;
  const tools=TOOLS.map(tool=>tool.name),groups=[...tools.slice(0,3).map(tool=>[tool]),tools.slice(3)];
- const series=groups.map((group,index)=>({label:index===3?'其他':toolName(group[0]),className:'s'+(index+1)}));
+ const series=groups.map((group,index)=>({label:index===3?'其他':toolName(group[0]),className:'s'+(index+1),unit:'次'}));
  const points=Array.from({length:n},(_,i)=>{const date=new Date(first);date.setDate(date.getDate()+i);const next=new Date(date);next.setDate(next.getDate()+1);const at=long?start+i*(end-start)/n:date.getTime(),until=long?start+(i+1)*(end-start)/n:next.getTime();return {label:long?new Date(at).toISOString()+' 至 '+new Date(until).toISOString():date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0'),values:groups.map((group,index)=>items.filter(line=>(index===3?!tools.slice(0,3).includes(line.tool):group.includes(line.tool))&&Date.parse(line.at)>=at&&Date.parse(line.at)<until).length)};});
  const distribution=chart('工具调用趋势',points,series,'line',scope+'；其他：'+groups[3].map(toolName).join('、')+'及协议调用',long?'时段':'日期');
  const totals=new Map<string,number>();for(const line of items)if(line.user)totals.set(line.user,(totals.get(line.user)??0)+1);
  const top=await Promise.all([...totals].sort((a,b)=>b[1]-a[1]).slice(0,6).map(async([user,value])=>({label:await ctx.userName(user),value})));
  const statuses=CALL_RESULT.map(result=>({label:uiLabelOf('call_result',result),value:items.filter(line=>line.call_result===result).length,className:RESULT_FILL[result]}));
- return {figures:kpis,charts:html`<h2 class="ch-visually-hidden">统计图</h2><section data-columns="2">${distribution}<div class="ch-section">${ctx.admin&&top.length?comparisons('按成员',top,scope+'；最多显示调用次数前 6 名'):''}${parts(statuses,'调用状态')}</div></section>`};
+ return {figures:kpis,charts:html`<h2 class="ch-visually-hidden">统计图</h2><section data-columns="2">${distribution}<div class="ch-section">${ctx.admin&&top.length?comparisons('按成员',top,scope+'；最多显示调用次数前 6 名',{rows:'成员',column:'调用次数',unit:'次'}):''}${parts(statuses,'调用状态')}</div></section>`};
 }
 
 /** The tabs of the records page (decision 151), in the order shown; the last two are the administrators'. */
@@ -139,7 +139,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   const next = lines.next === null ? html`` : html`<p>${link(path, '下一页', { ...kept, days, cursor: lines.next })}</p>`;
   const selected=selectedDigest?lines.items.find(line=>line.digest===selectedDigest):undefined;
   if(selectedDigest&&!selected)return neutralPage(ctx);
-  const inspector=selected?html`<div data-inspector-content><span class="ch-tag">调用记录</span><h2 class="ch-panel-title">${toolName(selected.tool)}</h2>${facts([['时间',when(selected.at)],['成员',await ctx.userName(selected.user)],['调用结果',uiLabelOf('call_result',selected.call_result)],['受理结果',selected.acceptance?uiLabelOf('acceptance',selected.acceptance):'—'],['错误码',selected.error_code??'—'],['耗时',duration(selected.duration_ms)],['任务',selected.run?link('/console/runs/'+selected.run,'查看任务'):'—']])}${ctx.admin&&selected.admin_note?card({title:'管理员备注'},html`<p>${selected.admin_note}</p>`):''}${technicalCode(JSON.stringify(selected,null,2))}</div>`:null;
+  const inspector=selected?html`<div data-inspector-content><span class="ch-tag">调用记录</span><h2 class="ch-panel-title">${toolName(selected.tool)}</h2>${facts([['时间',when(selected.at)],['成员',await ctx.userName(selected.user)],['调用结果',uiLabelOf('call_result',selected.call_result)],['受理结果',selected.acceptance?uiLabelOf('acceptance',selected.acceptance):'不适用'],['错误码',selected.error_code??'无'],['耗时',duration(selected.duration_ms)],['任务',selected.run?link('/console/runs/'+selected.run,'查看任务'):'无']])}${ctx.admin&&selected.admin_note?card({title:'管理员备注'},html`<p>${selected.admin_note}</p>`):''}${technicalCode(JSON.stringify(selected,null,2))}</div>`:null;
   const tabs = html`<nav class="ch-seg" aria-label="记录内容" data-record-tabs>${tabsOf.map((key) => html`<a href="${href(path, { ...kept, ...(key === 'calls' || key === 'stats' ? {} : { tool: undefined, run: undefined }), ...(days === 14 ? {} : { days }), ...(key === 'calls' ? {} : { tab: key }) })}"${key === tab ? html` aria-current="page"` : ''}>${RECORD_TAB_LABEL[key]}</a>`)}</nav>`;
   const period = html`<nav class="ch-seg" aria-label="时间范围">${[7,14,30].map(value=>html`<a href="${href(path,{...(ctx.admin?{user}:{}),...(byCall?{tool,run}:{}),days:value,...(tab==='calls'?{}:{tab})})}"${value===days&&!from&&!to?html` aria-current="page"`:''}>近 ${value} 天</a>`)}</nav>`;
   const stats = byCall ? await statistics(ctx,now,days,{userId,tool,runId:run,from:rangeFrom,to:rangeTo}) : null;

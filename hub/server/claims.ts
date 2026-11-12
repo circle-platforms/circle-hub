@@ -86,11 +86,15 @@ export function claimFields(claim: Claim, ruleWithdrawn = false, labels: Labels 
   return out;
 }
 
-/** Symbols of terminal states: success, failure, judgment, unknown (its own) and not complete. */
-export const SYMBOL = { pass: '✓', failure: '✗', judgment: '◇', unknown: '？', incomplete: '…' } as const satisfies Partial<Record<StaticTerminal | DynamicTerminal | 'failure' | 'unknown', string>>;
+/**
+ * Symbols of terminal states: success, failure, judgment, unknown (its own) and not complete. A dynamic layer that never
+ * ran is an unknown too, with the unknown's colour, but it has a mark of its own (issue 241): the question mark says that
+ * something was looked at and no conclusion came of it, and is not used for what was not run at all.
+ */
+export const SYMBOL = { pass: '✓', failure: '✗', judgment: '◇', unknown: '？', not_run: '○', incomplete: '…' } as const satisfies Partial<Record<StaticTerminal | DynamicTerminal | 'failure' | 'unknown', string>>;
 
 /** What a terminal is for display: the key of its symbol, and of its colour on the console (display rule 5). */
-export type TerminalKind = keyof typeof SYMBOL;
+export type TerminalKind = Exclude<keyof typeof SYMBOL, 'not_run'>;
 
 /** A layer and one of its terminals, as a layer result or an item cell carries them. */
 export type LayerTerminal = { layer: 'static'; terminal: StaticTerminal } | { layer: 'dynamic'; terminal: DynamicTerminal };
@@ -104,7 +108,7 @@ export function terminalKind(layer: LayerTerminal): TerminalKind {
 }
 
 export function terminalSymbol(layer: LayerTerminal): string {
-  return SYMBOL[terminalKind(layer)];
+  return layer.layer === 'dynamic' && layer.terminal === 'not_run' ? SYMBOL.not_run : SYMBOL[terminalKind(layer)];
 }
 
 /**

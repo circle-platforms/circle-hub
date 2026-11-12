@@ -206,8 +206,8 @@ function backgroundTable(tasks: readonly BackgroundTotal[] | null, now: Date): H
     const interval = !TIMED.has(task.name) ? '按需' : task.gap_ms !== null ? period(task.gap_ms) : ran ? '只跑过 1 次' : '近 24 小时没有运行';
     return [
       html`<span class="ch-tool">${TASK_LABEL[task.name]} ${code(task.name)}</span>`,
-      ran ? count(Math.round(task.db_rows / task.rounds)) : '—',
-      ran ? size(task.db_bytes / task.rounds) : '—',
+      ran ? count(Math.round(task.db_rows / task.rounds)) : '暂无数据',
+      ran ? size(task.db_bytes / task.rounds) : '暂无数据',
       interval, duration(task.last_ms), when(task.last_at, now), count(task.db_rows), size(task.db_bytes),
       task.capped ? `${count(task.rounds)} 以上` : count(task.rounds),
     ];
@@ -376,9 +376,9 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
     const browser = row.origin === 'console';
     return [
       row.client_name !== null ? evidence(row.client_name) : browser ? '浏览器' : '未声明名字',
-      browser ? '—' : row.client_platform === null ? unknown('客户端没有声明平台') : evidence(row.client_platform),
+      browser ? '不适用' : row.client_platform === null ? unknown('客户端没有声明平台') : evidence(row.client_platform),
       uiLabelOf('trace_origin', row.origin),
-      browser ? '—' : row.client_version === null ? UNKNOWN : evidence(row.client_version),
+      browser ? '不适用' : row.client_version === null ? UNKNOWN : evidence(row.client_version),
       repeat ? html`<span title="连接数只按名字分">同上</span>` : connections(row),
       count(row.calls),
       duration(row.p95_ms),
@@ -418,7 +418,7 @@ function releaseTable(runs: Runs | null, totals: readonly ReleaseTotal[] | null,
     const before = totals[index + 1]?.p95_ms ?? null;
     const p95 = total?.p95_ms ?? null;
     const change = p95 === null
-      ? '—'
+      ? '暂无数据'
       : runs.rows[index + 1] === undefined
         ? unknown('进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了')
         : before === null

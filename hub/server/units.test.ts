@@ -17,7 +17,7 @@ import { VIEW_SYSTEM } from '../knowledge/api.ts';
 import { SandboxError } from '../rules/api.ts';
 
 import { parseTarget } from './app.ts';
-import { SYMBOL, cellText, claimFields, terminalSymbol, terminalText } from './claims.ts';
+import { SYMBOL, cellText, claimFields, terminalKind, terminalSymbol, terminalText } from './claims.ts';
 import { CONTENT_SECURITY_POLICY, escapeHtml, href, html, liveModule, page, THEME_SCRIPT_HASH } from './console/html.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
 import { SessionStore, cookie } from './console/session.ts';
@@ -185,9 +185,12 @@ test('claims are shown in DISPLAY_ORDER; unknown terminals have their own symbol
   for (const terminal of DYNAMIC_TERMINAL) {
     const layer = LayerResult.parse({ layer: 'dynamic', terminal, ...(terminal === 'fail' ? { code: 'x' } : {}), ...(['no_verdict', 'not_run', 'incomplete'].includes(terminal) ? { reason: 'no_check', missing:'合成观察尚未提供',exit:{action:'request',request_kind:'repair',audience:{user:'usr_00000000000000000000000001'},due:'2026-10-25T00:00:00.000Z'} } : {}) });
     const symbol = terminalSymbol(layer);
-    if (isUnknownTerminal(layer)) assert.equal(symbol, SYMBOL.unknown, terminal);
-    else assert.ok(symbol !== SYMBOL.unknown, terminal);
+    // A layer that never ran is unknown with a mark of its own; the question mark is for a look that reached no conclusion (issue 241).
+    if (terminal === 'not_run') assert.equal(symbol, SYMBOL.not_run, terminal);
+    else if (isUnknownTerminal(layer)) assert.equal(symbol, SYMBOL.unknown, terminal);
+    else assert.ok(symbol !== SYMBOL.unknown && symbol !== SYMBOL.not_run, terminal);
     if (terminal === 'not_run' || terminal === 'no_verdict') assert.ok(symbol !== SYMBOL.pass && symbol !== SYMBOL.failure);
+    if (terminal === 'not_run') assert.equal(terminalKind(layer), 'unknown', 'its colour is the unknown\'s');
   }
 });
 
@@ -280,7 +283,7 @@ test('the item cell of a layer: the conjunction terminal first, then the other n
   assert.equal(cellText('static', { terminal: 'pass', counts: {} }), '✓ 静态：通过');
   assert.equal(cellText('static', { terminal: 'unchecked', counts: { judgment: 1, unchecked: 2 } }), '？ 静态：未核对（未核对 2，判断 1）');
   assert.equal(cellText('static', { terminal: 'violation', counts: { unchecked: 1, violation: 1, incomplete: 1 } }), '✗ 静态：不通过（不通过 1，未核对 1，未完成 1）');
-  assert.equal(cellText('dynamic', { terminal: 'not_run', counts: { not_run: 3 } }), '？ 动态：未运行（未运行 3）');
+  assert.equal(cellText('dynamic', { terminal: 'not_run', counts: { not_run: 3 } }), '○ 动态：未运行（未运行 3）');
 });
 
 test('the run of a run-scoped record, by the runs engine\'s shapes; other kinds belong to no run', () => {

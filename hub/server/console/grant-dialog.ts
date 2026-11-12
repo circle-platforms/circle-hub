@@ -10,7 +10,7 @@ export function grantPreviewLocation(path:string,params:Record<string,string>,id
  return path+'?'+new URLSearchParams({...params,grant_audience:audience,grant_member:values.get('member')??''})+'#'+id;
 }
 export function checkTable(checks:readonly SharingCheck[]):Html{
- return table(['自动检查','状态','拒收码','原因与处理办法'],checks.map(row=>[uiLabelOf('share_check',row.check),badge(uiLabelOf('static_terminal',row.state),row.state==='violation'?'fail':row.state),row.code??'—',[row.message,row.fix].filter(Boolean).join('；')]),'没有检查结果');
+ return table(['自动检查','状态','拒收码','原因与处理办法'],checks.map(row=>[uiLabelOf('share_check',row.check),badge(uiLabelOf('static_terminal',row.state),row.state==='violation'?'fail':row.state),row.code??'无',[row.message,row.fix].filter(Boolean).join('；')]),'没有检查结果');
 }
 export async function grantDialog(ctx:PageContext,input:{id:string;content:string;current:string;checks:readonly SharingCheck[];grants:readonly {audience:string;member:string|null;at:string;path?:string}[];form:(action:string,fields:Html,label:string,disabled?:boolean)=>Html;fields:Html;workflow?:boolean;trigger?:boolean}):Promise<Html>{
  const admins=(await ctx.deps.records.principals.list()).filter(user=>!user.disabled&&user.role==='admin').length;

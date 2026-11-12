@@ -2,14 +2,24 @@
 import {html,table,type Html} from './html.ts';
 import {tooltip} from './presentation.ts';
 
-export interface Series {label:string;className?:string}
+/**
+ * One series of a chart. `unit` is what a value counts or measures, written after the number where a point is read alone
+ * (a hover text, the tooltip: 启动任务：8 毫秒); `column` is the head of its column in the table (耗时（毫秒）). A series
+ * without them is read by its label, as a legend names it.
+ */
+export interface Series {label:string;className?:string;unit?:string;column?:string}
 export interface Point {label:string;values:readonly number[]}
 const W=480,H=224,L=38,R=20,T=24,B=32;
 const finite=(n:number)=>{if(!Number.isFinite(n)||n<0)throw new RangeError('Chart values must be finite non-negative observations');return n;};
 const fmt=(n:number)=>n.toLocaleString('en-US');
+const withUnit=(value:number,series:Series|undefined)=>fmt(value)+(series?.unit?' '+series.unit:'');
+/** A point read alone (issue 240): what it is, then each value with its unit; a title is never used as a unit. */
+export const pointText=(point:Point,series:readonly Series[]):string=>series.length===1&&series[0].unit
+ ?`${point.label}：${withUnit(point.values[0],series[0])}`
+ :`${point.label}：${point.values.map((value,k)=>`${series[k]?.label??''} ${withUnit(value,series[k])}`.trim()).join('，')}`;
 const scale=(values:readonly number[])=>{const peak=Math.max(1,...values.map(finite));const power=10**Math.floor(Math.log10(peak));return Math.ceil(peak/power)*power;};
-const tip=(points:readonly Point[],series:readonly Series[])=>html`<div class="ch-chart-tip" hidden role="status">${points.map((point,index)=>html`<div data-chart-tip="${index}" hidden><div class="when">${point.label}</div>${point.values.map((value,k)=>html`<div class="row ${series[k]?.className??''}"><b>${fmt(value)}</b><span>${series[k]?.label??''}</span></div>`)}</div>`)}</div>`;
-const fallback=(points:readonly Point[],series:readonly Series[],axisLabel='日期')=>html`<details class="ch-tableview"><summary>以表格查看</summary>${table([axisLabel,...series.map(s=>s.label)],points.map(point=>[point.label,...point.values]))}</details>`;
+const tip=(points:readonly Point[],series:readonly Series[])=>html`<div class="ch-chart-tip" hidden role="status">${points.map((point,index)=>html`<div data-chart-tip="${index}" hidden><div class="when">${point.label}</div>${point.values.map((value,k)=>html`<div class="row ${series[k]?.className??''}"><b>${withUnit(value,series[k])}</b><span>${series.length===1&&series[k]?.unit?'':series[k]?.label??''}</span></div>`)}</div>`)}</div>`;
+const fallback=(points:readonly Point[],series:readonly Series[],axisLabel='日期')=>html`<details class="ch-tableview"><summary>以表格查看</summary>${table([axisLabel,...series.map(s=>s.column??s.label)],points.map(point=>[point.label,...point.values]))}</details>`;
 const legend=(series:readonly Series[],line=false)=>series.length<2?'':html`<div class="ch-legend${line?' is-line':''}">${series.map(s=>html`<span class="${s.className??''}">${s.label}</span>`)}</div>`;
 
 /** Values never come from client calculations; hover targets point to server-rendered readouts and table rows. */
@@ -38,13 +48,18 @@ export function chart(title:string,points:readonly Point[],series:readonly Serie
  }else{
   const seen=new Set<string>();series.forEach((_,k)=>{const values=points.map(point=>point.values[k]),peak=Math.max(...values),i=values.indexOf(peak),key=i+':'+peak;if(i!==points.length-1&&!seen.has(key)){seen.add(key);keyNumbers.push(html`<text class="value" x="${X(i)+5}" y="${Y(peak)-8}">${fmt(peak)}</text>`);}});
  }
- const targets=html`${points.map((point,i)=>html`<g data-chart-index="${i}" tabindex="${i===0?0:-1}" role="img" aria-label="${point.label+'；'+point.values.map((value,k)=>fmt(value)+' '+series[k].label).join('；')}">${mode==='line'?html`<line class="crosshair" x1="${X(i)}" x2="${X(i)}" y1="${T}" y2="${H-B}" data-crosshair></line>`:''}<rect class="hit" x="${mode==='bar'?L+i*band:Math.max(L,X(i)-Math.max(step/2,8))}" y="${T}" width="${mode==='bar'?band:points.length===1?pw:Math.min(step,pw-(Math.max(L,X(i)-Math.max(step/2,8))-L))}" height="${ph}"><title>${point.label+'；'+point.values.map((value,k)=>fmt(value)+' '+series[k].label).join('；')}</title></rect></g>`)}`;
+ const targets=html`${points.map((point,i)=>html`<g data-chart-index="${i}" tabindex="${i===0?0:-1}" role="img" aria-label="${pointText(point,series)}">${mode==='line'?html`<line class="crosshair" x1="${X(i)}" x2="${X(i)}" y1="${T}" y2="${H-B}" data-crosshair></line>`:''}<rect class="hit" x="${mode==='bar'?L+i*band:Math.max(L,X(i)-Math.max(step/2,8))}" y="${T}" width="${mode==='bar'?band:points.length===1?pw:Math.min(step,pw-(Math.max(L,X(i)-Math.max(step/2,8))-L))}" height="${ph}"><title>${pointText(point,series)}</title></rect></g>`)}`;
  return html`<figure class="ch-figure" data-chart><div><h3 class="ch-figure-title">${note?tooltip(title,note):title}</h3></div>${legend(series,mode==='line')}<div class="ch-plot"><svg class="ch-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">${grid}${marks}${dates}${labels}${keyNumbers}${targets}</svg>${tip(points,series)}</div>${fallback(points,series,axisLabel)}</figure>`;
 }
 
-export function comparisons(title:string,rows:readonly {label:string;value:number}[],note?:string,metric?:string):Html{
- if(rows.length===1)return html`<div class="ch-stat"><span class="ch-stat-label">${note?tooltip(rows[0].label,note):rows[0].label}</span><span class="ch-stat-value">${fmt(finite(rows[0].value))}${metric?' '+metric:''}</span></div>`;
- return chart(title,rows.map(row=>({label:row.label,values:[row.value]})),[{label:metric??title}],'bar',note,'项目');
+/**
+ * Rows compared by one value. `measure` says what the rows are (the head of the first column: 调用, 原因, 成员), what the
+ * value is (the head of its column: 耗时（毫秒）, 条目数) and its unit where a row is read alone (毫秒, 个条目).
+ */
+export interface Measure {rows:string;column:string;unit:string}
+export function comparisons(title:string,rows:readonly {label:string;value:number}[],note:string|undefined,measure:Measure):Html{
+ if(rows.length===1)return html`<div class="ch-stat"><span class="ch-stat-label">${note?tooltip(rows[0].label,note):rows[0].label}</span><span class="ch-stat-value">${fmt(finite(rows[0].value))} ${measure.unit}</span></div>`;
+ return chart(title,rows.map(row=>({label:row.label,values:[row.value]})),[{label:measure.column,column:measure.column,unit:measure.unit}],'bar',note,measure.rows);
 }
 
 export function parts(rows:readonly {label:string;value:number;className:string}[],title:string):Html{
@@ -127,5 +142,5 @@ export function timeline(title:string,spans:readonly Span[],note?:string):Html{
  const X=(time:number)=>left+(time-start)/(end-start)*(width-left-right);
  const trim=(s:string)=>[...s].length>14?[...s].slice(0,14).join('')+'…':s;
  const description=(span:Span)=>span.label+'；'+(span.detail??'')+(span.point?'；记录时间点；耗时未记录':'');
- return html`<figure class="ch-figure" data-chart><div><h3 class="ch-figure-title">${note?tooltip(title,note):title}</h3></div><div class="ch-plot"><svg class="ch-chart" data-timeline viewBox="0 0 ${width} ${height}" role="img" aria-label="${title}"><text class="tick" x="${left}" y="16">${new Date(start).toLocaleTimeString('zh-CN',{hour12:false})}</text><text class="tick" x="${width-right}" y="16" text-anchor="end">${new Date(end).toLocaleTimeString('zh-CN',{hour12:false})}</text>${spans.map((span,index)=>{const y=top+index*row,x=X(span.start),w=Math.max(1,X(span.end)-x);return html`<g data-chart-index="${index}" tabindex="${index===0?0:-1}" role="img" aria-label="${description(span)}"${span.url?html` data-row-href="${span.url}"`:''}><line class="grid" x1="0" x2="${width}" y1="${y+row}" y2="${y+row}"></line><text class="name" x="0" y="${y+20}">${trim(span.label)}</text>${span.point?html`<circle class="dot" cx="${x}" cy="${y+15}" r="4"></circle>`:html`<rect class="bar" data-chart-mark="${index}" x="${x}" y="${y+8}" width="${w}" height="14" rx="4"></rect>`}<rect class="hit" x="0" y="${y}" width="${width}" height="${row}"><title>${description(span)}</title></rect></g>`;})}</svg><div class="ch-chart-tip" hidden role="status">${spans.map((span,index)=>html`<div data-chart-tip="${index}" hidden><div class="when">${span.label}</div>${span.point?html`<div class="row"><b>${new Date(span.start).toISOString()}</b><span>记录于</span></div><p>耗时未记录</p>`:html`<div class="row"><b>${fmt(span.end-span.start)} 毫秒</b><span>跨度</span></div>`}<p>${span.detail??''}</p></div>`)}</div></div><details class="ch-tableview"><summary>以表格查看</summary>${table(['步骤','说明','记录类型','开始或记录时间','结束时间','跨度（毫秒）'],spans.map(span=>[span.url?html`<a href="${span.url}">${span.label}</a>`:span.label,span.detail??'',span.point?'记录时间点':'持续区间',new Date(span.start).toISOString(),span.point?'—':new Date(span.end).toISOString(),span.point?'未记录':span.end-span.start]))}</details></figure>`;
+ return html`<figure class="ch-figure" data-chart><div><h3 class="ch-figure-title">${note?tooltip(title,note):title}</h3></div><div class="ch-plot"><svg class="ch-chart" data-timeline viewBox="0 0 ${width} ${height}" role="img" aria-label="${title}"><text class="tick" x="${left}" y="16">${new Date(start).toLocaleTimeString('zh-CN',{hour12:false})}</text><text class="tick" x="${width-right}" y="16" text-anchor="end">${new Date(end).toLocaleTimeString('zh-CN',{hour12:false})}</text>${spans.map((span,index)=>{const y=top+index*row,x=X(span.start),w=Math.max(1,X(span.end)-x);return html`<g data-chart-index="${index}" tabindex="${index===0?0:-1}" role="img" aria-label="${description(span)}"${span.url?html` data-row-href="${span.url}"`:''}><line class="grid" x1="0" x2="${width}" y1="${y+row}" y2="${y+row}"></line><text class="name" x="0" y="${y+20}">${trim(span.label)}</text>${span.point?html`<circle class="dot" cx="${x}" cy="${y+15}" r="4"></circle>`:html`<rect class="bar" data-chart-mark="${index}" x="${x}" y="${y+8}" width="${w}" height="14" rx="4"></rect>`}<rect class="hit" x="0" y="${y}" width="${width}" height="${row}"><title>${description(span)}</title></rect></g>`;})}</svg><div class="ch-chart-tip" hidden role="status">${spans.map((span,index)=>html`<div data-chart-tip="${index}" hidden><div class="when">${span.label}</div>${span.point?html`<div class="row"><b>${new Date(span.start).toISOString()}</b><span>记录于</span></div><p>耗时未记录</p>`:html`<div class="row"><b>${fmt(span.end-span.start)} 毫秒</b><span>跨度</span></div>`}<p>${span.detail??''}</p></div>`)}</div></div><details class="ch-tableview"><summary>以表格查看</summary>${table(['步骤','说明','记录类型','开始或记录时间','结束时间','跨度（毫秒）'],spans.map(span=>[span.url?html`<a href="${span.url}">${span.label}</a>`:span.label,span.detail??'',span.point?'记录时间点':'持续区间',new Date(span.start).toISOString(),span.point?'不适用':new Date(span.end).toISOString(),span.point?'未记录':span.end-span.start]))}</details></figure>`;
 }

@@ -18,6 +18,18 @@ export const PRODUCT_SOURCES_PATH='/console/knowledge/products';
  * The tabs of the knowledge place: its three views, then the product knowledge sources. The fourth is no view of the
  * vocabulary: it is the list of the packs of that kind, named by the kind's own label, at a path of its own.
  */
+/**
+ * Where a reader is in the knowledge place, in one line at the same spot on every view of it (issue 212): whose content,
+ * which kind of content and, inside a folder, which folder. The words are the vocabulary's.
+ */
+export function knowledgeContext(ctx:PageContext,content:string,position?:string,range?:string):Html{
+ return html`<p class="ch-meta" data-knowledge-context>范围：${range??uiLabelOf('knowledge_search_scope',selectedScope(ctx))} · 内容：${content}${position===undefined?'':html` · 位置：${position}`}</p>`;
+}
+/** One line a reader can open: what the three kinds of content are and whose content the left column chooses (issue 212). */
+export function knowledgeGuide():Html{
+ const view=(code:'knowledge'|'memory'|'sources')=>uiLabelOf('knowledge_view',code),scope=(code:'personal'|'shared'|'team')=>uiLabelOf('knowledge_search_scope',code);
+ return html`<details class="ch-section" data-knowledge-guide><summary>${view('knowledge')}、${view('memory')}和${view('sources')}有什么不同</summary><p class="ch-meta">${view('knowledge')}是带来源的陈述，可以分享到团队，供任务引用。${view('memory')}是客户端会话用的偏好和习惯，不作为任务的来源。${view('sources')}是上传或读取到的原始文件，供${view('knowledge')}逐字引用。左侧选的是谁的内容：${scope('personal')}、${scope('shared')}、${scope('team')}。</p></details>`;
+}
 export function knowledgeTabs(ctx:PageContext):Html{
  const scope=selectedScope(ctx),products=ctx.url.pathname===PRODUCT_SOURCES_PATH,current=products?null:ctx.url.pathname.endsWith('/sources')?'sources':KnowledgeViewSchema.safeParse(ctx.url.searchParams.get('view')).data??'knowledge';
  return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='knowledge'?{}:{view})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}<a href="${PRODUCT_SOURCES_PATH+'?'+new URLSearchParams({scope})}"${products?html` aria-current="page"`:''}>${uiLabelOf('pack_kind','product')}</a></nav>`;

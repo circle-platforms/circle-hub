@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {parse} from 'parse5';
-import {chart,comparisons,curve,parts,timeline,type Curve} from './charts.ts';
+import {chart,comparisons,curve,parts,pointText,timeline,type Curve} from './charts.ts';
 import {hoverTime,relativeTime,size,time,zoneOf} from './format.ts';
 
 const text=(markup:string)=>{const walk=(node:any):string=>node.nodeName==='#text'?node.value:(node.childNodes??[]).map(walk).join('');return walk(parse(markup));};
@@ -18,23 +18,37 @@ test('chart readouts and the accessible table retain every observation, includin
  assert.throws(()=>chart('错列',[{label:'合成',values:[1,2]}],[{label:'合成'}]),RangeError);
 });
 
-test('duration comparisons name the metric in readouts, accessibility text, tables and a single stat',()=>{
- const rows=[{label:'合成调用甲',value:8},{label:'合成调用乙',value:0}];
- const markup=comparisons('耗时最长的调用',rows,undefined,'耗时（毫秒）').text;
- assert.match(markup,/aria-label="合成调用甲；8 耗时（毫秒）"/);
- assert.match(markup,/<title>合成调用乙；0 耗时（毫秒）<\/title>/);
- assert.match(markup,/<span>耗时（毫秒）<\/span>/);
- assert.match(text(markup.slice(markup.indexOf('<table'))),/项目耗时（毫秒）合成调用甲8合成调用乙0/);
- const one=comparisons('耗时最长的调用',rows.slice(0,1),undefined,'耗时（毫秒）').text;
- assert.match(text(one),/合成调用甲8 耗时（毫秒）/);
- const counts=comparisons('合成数量',rows).text;
- assert.match(counts,/aria-label="合成调用甲；8 合成数量"/);
+test('a comparison says what each row is, the value and its unit, wherever a row is read alone; a title is never a unit (issue 240)',()=>{
+ const rows=[{label:'合成调用甲',value:8},{label:'合成调用乙',value:0}],duration={rows:'调用',column:'耗时（毫秒）',unit:'毫秒'};
+ const markup=comparisons('耗时最长的调用',rows,undefined,duration).text;
+ // The hover text and the accessible name of a bar: the call, then the number with its unit.
+ assert.match(markup,/aria-label="合成调用甲：8 毫秒"/);
+ assert.match(markup,/<title>合成调用乙：0 毫秒<\/title>/);
+ // The tooltip repeats neither the title nor the column head: the value with its unit is enough beside the row's name.
+ assert.match(markup,/<div class="when">合成调用甲<\/div><div class="row "><b>8 毫秒<\/b><span><\/span><\/div>/);
+ // The table: what the rows are, then the value's column with the unit in its head.
+ assert.match(text(markup.slice(markup.indexOf('<table'))),/调用耗时（毫秒）合成调用甲8合成调用乙0/);
+ assert.doesNotMatch(markup,/8 耗时|0 耗时|项目/);
+ const one=comparisons('耗时最长的调用',rows.slice(0,1),undefined,duration).text;
+ assert.match(text(one),/合成调用甲8 毫秒/);
+ const counts=comparisons('主要阻塞原因',rows,undefined,{rows:'原因',column:'条目数',unit:'个条目'}).text;
+ assert.match(counts,/aria-label="合成调用甲：8 个条目"/);assert.doesNotMatch(counts,/8 主要阻塞原因/);
+ assert.match(text(counts.slice(counts.indexOf('<table'))),/原因条目数合成调用甲8/);
+});
+
+test('a point of several series names each with its value and unit; a series without a unit is read by its label',()=>{
+ const points=[{label:'2026-11-01',values:[3,0]}];
+ assert.equal(pointText(points[0],[{label:'启动任务',unit:'次'},{label:'提交结果',unit:'次'}]),'2026-11-01：启动任务 3 次，提交结果 0 次');
+ assert.equal(pointText(points[0],[{label:'合成甲'},{label:'合成乙'}]),'2026-11-01：合成甲 3，合成乙 0');
+ assert.equal(pointText({label:'11-01',values:[5]},[{label:'任务',column:'任务数',unit:'个任务'}]),'11-01：5 个任务');
+ const daily=chart('每日任务数量',[{label:'11-01',values:[5]},{label:'11-02',values:[0]}],[{label:'任务',column:'任务数',unit:'个任务'}],'bar').text;
+ assert.match(daily,/<title>11-01：5 个任务<\/title>/);assert.match(text(daily.slice(daily.indexOf('<table'))),/日期任务数11-01511-020/);
 });
 
 test('a single comparison is a Stat; composition and temporal spans retain a full data table',()=>{
- const one=comparisons('合成数量',[{label:'合成项目',value:48000}]).text;assert.match(one,/ch-stat-value">48,000/);assert.doesNotMatch(one,/<svg/);
+ const count={rows:'项目',column:'数量',unit:'个'};const one=comparisons('合成数量',[{label:'合成项目',value:48000}],undefined,count).text;assert.match(one,/ch-stat-value">48,000 个/);assert.doesNotMatch(one,/<svg/);
  const bar=parts([{label:'通过',value:3,className:'fill-pass'},{label:'未知',value:0,className:'fill-unknown'}],'合成分布').text;
- assert.throws(()=>comparisons('未知统计',[{label:'合成项目',value:NaN}]),RangeError);
+ assert.throws(()=>comparisons('未知统计',[{label:'合成项目',value:NaN}],undefined,count),RangeError);
  assert.match(bar,/class="ch-parts"/);assert.match(text(bar.slice(bar.indexOf('<table'))),/通过3未知0/);assert.doesNotMatch(bar,/NaN|Infinity|donut/);
  const start=Date.parse('2026-11-01T10:00:00Z');const span=timeline('合成执行',[{label:'合成长步骤',detail:'原始说明 <raw>',start,end:start+1200}]).text;
  assert.ok(span.includes('2026-11-01T10:00:00.000Z'));assert.ok(span.includes('2026-11-01T10:00:01.200Z'));assert.match(text(span),/原始说明 <raw>/);assert.match(span,/<td class="num">1,200<\/td>/);
@@ -104,7 +118,8 @@ test('compact times retain the original instant and full tooltip across calendar
  assert.equal(relativeTime(new Date(2025,11,30).toISOString(),now),'2025-12-30');assert.equal(relativeTime(new Date(2026,5,3).toISOString(),now),'06-03');
  assert.ok(time(today,now).text.includes('datetime="'+today+'"'));assert.ok(time(today,now).text.includes('title="'+hoverTime(today)+'"'));
  // The hover text says which zone the time is written in (wording table, W37).
- assert.match(hoverTime(today),/^2026-01-01 10:24:00（UTC[+-]\d{2}:\d{2}）$/);assert.equal(hoverTime(today).slice(-10,-1),zoneOf(new Date(today)));assert.equal(hoverTime(null),'—');assert.equal(hoverTime('unknown'),'unknown');
- assert.equal(relativeTime(null,now),'—');assert.equal(relativeTime('unknown',now),'unknown');
- assert.equal(size(0),'0 B');assert.equal(size(1024),'1.0 KB');assert.equal(size(1024**3),'1.0 GB');assert.equal(size(1.25*1024**2),'1.3 MB');assert.equal(size(NaN),'—');
+ assert.match(hoverTime(today),/^2026-01-01 10:24:00（UTC[+-]\d{2}:\d{2}）$/);assert.equal(hoverTime(today).slice(-10,-1),zoneOf(new Date(today)));assert.equal(hoverTime(null),'未记录');assert.equal(hoverTime('unknown'),'unknown');
+ // A time that was never written down says so; a dash would not say why it is absent (issue 241).
+ assert.equal(relativeTime(null,now),'未记录');assert.equal(relativeTime('unknown',now),'unknown');
+ assert.equal(size(0),'0 B');assert.equal(size(1024),'1.0 KB');assert.equal(size(1024**3),'1.0 GB');assert.equal(size(1.25*1024**2),'1.3 MB');assert.equal(size(NaN),'未知');
 });

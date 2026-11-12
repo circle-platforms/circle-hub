@@ -254,7 +254,7 @@ describe('operations and commands', () => {
       const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
       assert.ok(row);
       assert.ok(row.includes(uiLabelOf('pack_status', state)));
-      assert.match(row, /<td>—<\/td>/, 'no product line or business system is invented');
+      assert.match(row, /<td>(未声明|尚未接入)<\/td>/, 'no product line or business system is invented, and the cell says why it is empty');
     }
   });
 
@@ -470,7 +470,7 @@ test('record periods constrain the list and chart together, and an unresolved me
  const seven=await get(base+'&days=7',admin),thirty=await get(base+'&days=30',admin);assert.equal(seven.status,200);assert.ok(seven.body.includes(recent.digest));assert.ok(!seven.body.includes(old.digest));assert.ok(thirty.body.includes(old.digest));
  // Decision 151: the call list and the charts are two tabs of the same period and filters.
  assert.doesNotMatch(seven.body,/<figure/);const charts=(await get(base+'&days=7&tab=stats',admin)).body;assert.ok(!charts.includes(recent.digest),'the statistics tab lists no call');
- const chart=charts.slice(charts.indexOf('<figure'),charts.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/1 其他/,'protocol calls remain in the Other series instead of disappearing');
+ const chart=charts.slice(charts.indexOf('<figure'),charts.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/其他 1 次/,'protocol calls remain in the Other series instead of disappearing');
  const store=server.deps.records.store,original=store.countIndexed;let countCalls=0;t.after(()=>{store.countIndexed=original;});store.countIndexed=async()=>{countCalls++;return {count:999,capped:false};};
  const none=await get('/console/records?user=synthetic-nobody&days=30',admin);assert.equal(none.status,200);assert.equal(countCalls,0,'an unresolved member must not count all private refusal records');assert.match(none.body,/ch-stat-value">0/);assert.doesNotMatch(none.body,new RegExp(recent.digest+'|'+old.digest));
  assert.equal((await get(base+'&from=2099-01-01',admin)).status,400);assert.equal((await get(base+'&from=2026-11-02&to=2026-11-01',admin)).status,400);

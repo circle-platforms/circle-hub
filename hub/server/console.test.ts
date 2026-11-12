@@ -520,7 +520,7 @@ test('knowledge console lists product-wide roots and renders undeclared builds s
     assert.match(overview.body,/不分版本/);assert.match(overview.body,/来源 17 个/);
     assert.match((await get(`/console/knowledge/root?root=${ROOT_1}`,session)).body,/构建未声明/);
     server.deps.knowledge.unversionedRoot=async ()=>null;
-    assert.match((await get('/console/knowledge',session)).body,/不分版本[\s\S]*—/);
+    assert.match((await get('/console/knowledge',session)).body,/不分版本[\s\S]*尚未产出/);
   } finally { server.deps.knowledge.rootInfo=originalInfo;server.deps.knowledge.unversionedRoot=originalRoot; }
 });
 
