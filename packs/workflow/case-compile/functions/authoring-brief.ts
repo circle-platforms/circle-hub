@@ -267,7 +267,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
     '',
     `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由你写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。`,
     '',
-    '原始用例要求不存在、无残留或不再包含时，常量用分块写法 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获，执行器须声明寄存器的字面否定方法，不抄旧设备输出。quote 保留原始期望。要求删除成功时，删除后再查询，指向这次查询的设备输出；不另立判定标准，这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run。',
+    '原始用例要求不存在、无残留或删除后查不到时，顺序步骤在对应查询的 expects 写 op:"not_found"，text 使用原始期望的具体原文，或本条配置后按已声明逆操作撤销的名字，after 指向对应查询；不写描述句，不另立判定标准或发起复核。分块写法的常量仍用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获，执行器须声明寄存器的字面否定方法，不抄旧设备输出。quote 保留原始期望。要求删除成功时，删除后再查询，指向这次查询的设备输出；这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run。',
     '',
     '```json', JSON.stringify(envelope, null, 2), '```');
   return { text: out.join('\n') + '\n', commands, others, missing };

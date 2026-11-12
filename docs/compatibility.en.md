@@ -49,6 +49,8 @@ The following belonged to the retired task-and-approval server (up to 0.2.0) and
 
 ## History
 
+- 2026-11-13: advance local case-compile to 3.19.0 with optional flat `expects.op: "not_found"`, declared runner-method selection and workbook reading. Text comes from the same authored expectation or a same-case named value undone by its declared inverse before the query. Block assertions, review rules and other pack versions are unchanged; nothing is published or deployed.
+
 - 2026-11-13: advance the local case-compile version to 3.18.4 and restore the device-output requirement for explicit model expectations: text is one verbatim line the device will actually output, while rationale identifies the authored expectation and explains the selection. Refresh the generator identity, synthetic workbook samples and manifest. Other pack versions are unchanged; nothing is published or deployed.
 
 - 2026-11-09: the internal dispatch-byte unique key now includes the verified lineage root (and retains round/attempt for repeated work). Historical global-S keys and indexes are not rewritten: complete original reservation bindings select same-lineage retry/unknown history, while independent tasks do not inherit another lineage's rounds/window. Unknown physical-target occupancy still blocks globally; old records with unverifiable bindings remain conservatively refused. The six external tools and contract schemas are unchanged. Rolling back to an older binary retains its conservative global-S refusal for independent tasks and cannot preserve this isolation fix.

@@ -1,4 +1,6 @@
-# case-compile 3.18.4
+# case-compile 3.19.0
+
+本地修正 3.19.0（2026-11-13）：顺序步骤的 expects 可写 op:"not_found"，生成并独立回读执行器已声明的不存在检查，可与同为顺序步骤的其它用例写进一份自动化用例 Excel。文字须来自本条原始期望，或本条配置后按产品有向逆操作撤销的完整名字；不另立判定标准、不发起复核。分块写法的既有行为保留。本次不发布或部署。
 
 本地修正 3.18.4（2026-11-13）：恢复模型判断期望的设备原话要求，text 填写设备执行后实际会输出的一行原文，对应原始期望及选择理由写入 rationale。更新编写资料、生成器身份、合成样例摘要和清单。本次不发布或部署。
 
@@ -32,7 +34,7 @@ The original runner contract is not converted. Every original member except cont
 
 runtime-profile@1 defines expected identity; workbook sheet/nine headers/identity marker/range/closing row/autoid shape; seat and host-method mappings; allowed combinations with parameter roles; device/host rejection lists; synthetic; required device_count from read-only precheck; optional fold_newlines pairs, default empty. Decision 35 considers every enabled pair; allowed contains only opened combinations with role coverage and any required explicit reviewed decision. External-format closed sets live in the pack's format tables. Dispatch must check the real current device count again.
 
-For a flat plan, data is bucket, empty blocks, steps [{object,method,args,keywords}], expects [{text,quote,after}] and replacements [{case,bed}]. Args remain text; keywords may also be safe nonnegative integers because the runner converts digit keywords. Signatures enforce order, required/positional-only arguments, declared keywords and credential exclusion without defaults. Literal assertions are forbidden in steps: only expects supplies assertion text, with an original quotation and a one-based command after. Replacements are numeric one-to-one mappings, and slots contain final text. Device/host rejection lists, catalog@1, quote@1, address ownership and grounded expectations remain required checks. The bed/ prefix exposes test-bed predecessor allocations; unrelated runs cannot use them.
+For a flat plan, data is bucket, empty blocks, steps [{object,method,args,keywords}], expects [{text,quote,after}] with optional op:"not_found", and replacements [{case,bed}]. Args remain text; keywords may also be safe nonnegative integers because the runner converts digit keywords. Signatures enforce order, required/positional-only arguments, declared keywords and credential exclusion without defaults. Literal assertions are forbidden in steps: only expects supplies assertion text, with an original quotation and a one-based command after. Replacements are numeric one-to-one mappings, and slots contain final text. Device/host rejection lists, catalog@1, quote@1, address ownership and grounded expectations remain required checks. The bed/ prefix exposes test-bed predecessor allocations; unrelated runs cannot use them.
 
 ## G behavior and supported encoding
 
