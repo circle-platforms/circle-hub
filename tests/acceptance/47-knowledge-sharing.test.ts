@@ -12,7 +12,6 @@ import { createTestHub, type TestHub } from '../../hub/server/testing-real.ts';
 import { connect, type McpClient } from './support/mcp.ts';
 import { openConsole } from './support/console.ts';
 import { testConsoleCredentials } from '../../hub/server/testing.ts';
-import { labelOf } from '../../contracts/generated/vocabulary.ts';
 
 let hub:TestHub,dir:string,owner:Awaited<ReturnType<TestHub['createUser']>>,other:typeof owner;
 let client:McpClient,reader:McpClient,admin:McpClient;
@@ -33,7 +32,7 @@ test('MCP sharing merges a verified entry, saves refusal receipts and lets its s
   assert.equal(saved.isError,false,saved.text);const entry=saved.out.personal_entry!;
   const submit={root:entry.root,path:'/submitted',entry:entry.entry};
   const shared=await client.call('upload_file',{share_entry:submit});assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.status,'merged');
-  assert.ok(shared.out.share?.reference);assert.match(shared.text,/个人原条目保留/);
+  assert.ok(shared.out.share?.reference);assert.match(shared.text,/个人资料保留/);
   assert.equal((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).isError,false);
   assert.equal((await client.call('get_nodes',{reference:entry.reference})).isError,false);
   const duplicate=await client.call('upload_file',{share_entry:submit});assert.equal(duplicate.out.share?.code,'SHARE_DUPLICATE');assert.equal(duplicate.isError,true);
@@ -87,7 +86,7 @@ test('personal workflow runs freeze the namespace and require grounds readable b
   const rebound=await reader.call('start_run',{pack:packId,pack_space:owner.user.id,inputs:{target:{reference:resultReference}}});
   assert.equal(rebound.out.errors[0]?.code,'SOURCE_UNAVAILABLE',rebound.text);assert.equal(rebound.out.run,undefined,'a record input cannot copy a result whose basis is no longer readable');
   await spaces.grant(owner.principal,{path:'/basis',audience:'member',member:other.user.id});
-  const repaired=await client.call('submit_result',submission);assert.equal(repaired.out.acceptance,'accepted',repaired.text);assert.equal(repaired.out.result?.trace,accepted.out.result?.trace,'the unchanged accepted receipt survives a temporary grant revocation');assert.ok(repaired.text.includes(resultReference));
+  const repaired=await client.call('submit_result',submission);assert.equal(repaired.out.acceptance,'accepted',repaired.text);assert.equal(repaired.out.result?.trace,accepted.out.result?.trace,'the unchanged accepted receipt survives a temporary grant revocation');assert.equal(repaired.out.record,resultReference);
   assert.equal((await reader.call('get_nodes',{reference:resultReference})).isError,false);
   assert.equal((await reader.call('get_nodes',{reference:acceptedRaw})).isError,false,'restoring the grant restores the same immutable raw record');
   await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'member',member:other.user.id,revoke:true});
@@ -107,7 +106,7 @@ test('withdrawal qualifies an immutable accepted result and rejects a new submis
   const detail=await hub.hub.runs.getRun(owner.principal,privateRun);assert.ok(detail?.latest);const digest=detail.latest.record;
   await spaces.withdraw(owner.principal,ref.entry!);
   const current=await hub.hub.runs.getRun(owner.principal,privateRun);assert.ok(current?.grounds_withdrawn?.includes(personalEntry));assert.equal(current?.latest?.record,digest);
-  const read=await client.call('get_nodes',{reference:resultReference});assert.equal(read.isError,false,read.text);assert.ok(read.text.includes(labelOf('validity_status','grounds_withdrawn')));
+  const read=await client.call('get_nodes',{reference:resultReference});assert.equal(read.isError,false,read.text);assert.match(read.text,/证据已撤回，当前结论状态未知/);assert.match(read.text,/以下是当时保存的结论/);assert.deepEqual(read.out.content?.structure?.grounds_withdrawn,[personalEntry]);
   const submit=await client.call('submit_result',{run:privateRun,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',code:'level',rank:'a',statement:'合成撤回后重交',grounds:[personalEntry]}]});assert.equal(submit.out.errors[0]?.code,'GROUNDS_WITHDRAWN',submit.text);
 });
 
@@ -216,7 +215,7 @@ test('shared revisions use the selected team directory through MCP and password-
   const body={kind:'observation',statement:'合成共享修订第一版',path:'/revision-personal',grounds:[{reference:'src:'+source.body.sha256,quotation:'每次三项'}]};
   const first=(await client.call('upload_file',{personal_entry:body})).out.personal_entry!;
   const shared=await client.call('upload_file',{share_entry:{root:first.root,path:body.path,entry:first.entry,team_path:'/revision-team/first'}});
-  assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.target_path,'/revision-team/first');assert.ok(shared.text.includes('/revision-team/first'));
+  assert.equal(shared.isError,false,shared.text);assert.equal(shared.out.share?.target_path,'/revision-team/first');assert.equal(shared.out.share?.reference,`tree:${shared.out.share?.team_root}/revision-team/first@${first.entry}`);
   const changed=(await client.call('upload_file',{personal_entry:{...body,statement:'合成共享修订第二版',replaces:first.entry}})).out.personal_entry!;
   const browser=await openConsole(hub,owner.token);
   const page=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,root:changed.root,path:body.path,entry:changed.entry,share:'1'}));
@@ -241,7 +240,7 @@ test('rejected raw submissions never disclose copied private quotations through 
   const refused=await client.call('submit_result',{run:run.run,model:'synthetic-scripted@1',items:[],cross_item:[{nature:'judgment',code:'level',rank:'a',statement:privateQuote,grounds:[reference]}]});
   assert.equal(refused.out.errors[0]?.code,'RESULT_GROUNDS_UNREADABLE',refused.text);
   const detail=await hub.hub.runs.getRun(owner.principal,run.run);assert.ok(detail?.submissions.length);const raw='rec:'+detail.submissions[0].record;
-  const own=await client.call('get_nodes',{reference:raw});assert.equal(own.isError,false,own.text);assert.ok(own.text.includes(privateQuote),'the received raw submission is preserved for its submitter');
+  const own=await client.call('get_nodes',{reference:raw});assert.equal(own.isError,false,own.text);assert.ok(own.out.content?.text?.includes(privateQuote),'the received raw submission is preserved for its submitter');
   for(const actor of [reader,admin]){
     const denied=await actor.call('get_nodes',{reference:raw}),missing=await actor.call('get_nodes',{reference:'rec:'+'e'.repeat(64)});
     assert.equal(denied.isError,true,denied.text);assert.equal(denied.out.errors?.[0]?.code,'SOURCE_UNAVAILABLE');assert.equal(missing.out.errors?.[0]?.code,'SOURCE_ABSENT');assert.ok(!denied.text.includes(privateQuote));
