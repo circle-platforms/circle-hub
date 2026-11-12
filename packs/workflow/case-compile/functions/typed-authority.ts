@@ -1,5 +1,6 @@
 import {blockMeta,blockPointer} from './blocks.ts';
 import {cellInput} from './cell-selection.ts';
+import {isRecord} from './text.ts';
 import {isCommandTemplate} from './cell-commands.ts';
 import {blockGraphGaps} from './block-checks.ts';
 import {blockRuntimeGaps,assertionTarget,assertionCells} from './block-runtime.ts';
@@ -69,7 +70,7 @@ function commandRole(a:Authority,i:Pick<CommandIdentity,'signature'>,position:nu
  if(native&&a.roles[native]&&a.effects.some(e=>e.roles.includes(native)))declared.push(native);
  const roles=[...new Set(declared)];return roles.length===1?roles[0]:null;
 }
-export interface AddressUse {value:string|number;kind:string;bed_member:boolean|undefined;pointer:string}
+export interface AddressUse {value:string|number|null;kind:string;bed_member:boolean|undefined;pointer:string;input_register?:string}
 /** Typed address positions; a command address whose position has no declared role is checked like an environment member, where the author's own addresses are kept and disclosed (decisions 114, 115). */
 export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile,slots:PlanSlots,catalog?:unknown):AddressUse[]{
  // Flat callers keep their existing boundary; a block carrier must be lowered even when its steps is empty.
@@ -79,8 +80,35 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
   slots=parsed.slots;
  }
  const resolved=planCommands(contract,profile,slots,catalog);
- const uses:AddressUse[]=[];const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
- for(const [index,step]of slots.steps.entries()){const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){const param=a.parameters[v.name];if(!param)continue;if(!(cellInput(step)&&v.pointer.endsWith('/args/0')))put(param.type,v.value,a,param.role,v.pointer);if(param.role==='host_shell')for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value),cellInput(step)&&v.pointer.endsWith('/args/0'))?.addresses??[])uses.push({value:address,kind:address.includes(':')?'ipv6':'ipv4',bed_member:true,pointer:v.pointer});if(param.role==='device_cli')for(const raw of [resolved.byLine.get(String(v.value))]){const i=raw;if(!i)continue;for(const p of i.parameters)if(p.parsed.kind==='address'){const role=commandRole(a,i,p.position,p.role?.name);uses.push({value:p.parsed.value.value,kind:p.parsed.value.kind,bed_member:role?a.roles[role]?.bed_member:true,pointer:v.pointer+'/command_parameters/'+p.position});}}}}
+ const uses:AddressUse[]=[];
+ const put=(type:ValueType,value:string|number,a:Authority,role:string,pointer:string)=>{const kind=type.address_kind??type.declaration.catalog_type;if(kind==='ipv4'||kind==='ipv6'||kind==='mask'||kind==='ipv4_prefix'||kind==='ipv6_prefix')uses.push({value,kind,bed_member:a.roles[role]?.bed_member,pointer});};
+ const deferred=(kind:string,member:boolean|undefined,pointer:string,register:string)=>{if(member!==false)uses.push({value:null,kind,bed_member:member,pointer,input_register:register});};
+ const entries=isRecord(catalog)?Array.isArray(catalog.authority_entries)?catalog.authority_entries:Array.isArray(catalog.entries)?catalog.entries:[]:[];
+ for(const [index,step]of slots.steps.entries()){
+  const entry=runtimeMethod(contract,step.object,step.method),a=entry?.authority;if(!entry||!a)continue;
+  for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){
+   const param=a.parameters[v.name];if(!param)continue;
+   const input=cellInput(step)&&v.pointer.endsWith('/args/0'),kind=param.type.address_kind??param.type.declaration.catalog_type;
+   if(!input)put(param.type,v.value,a,param.role,v.pointer);
+   else if(kind==='ipv4'||kind==='ipv6')deferred(kind,a.roles[param.role]?.bed_member,v.pointer,step.input_register!);
+   if(param.role==='host_shell')for(const effect of a.effects){
+    const line=hostProgramLine(effect.allowed_programs,String(v.value),input);
+    for(const address of line?.addresses??[])uses.push({value:address,kind:address.includes(':')?'ipv6':'ipv4',bed_member:true,pointer:v.pointer});
+    if(line?.unknown_addresses?.length)deferred('address',true,v.pointer,step.input_register!);
+   }
+   if(param.role==='device_cli'){
+    const identity=resolved.byLine.get(String(v.value));if(!identity)continue;
+    for(const parameter of identity.parameters){
+     const role=commandRole(a,identity,parameter.position,parameter.role?.name),member=role?a.roles[role]?.bed_member:true,pointer=v.pointer+'/command_parameters/'+parameter.position;
+     if(parameter.parsed.kind==='address')uses.push({value:parameter.parsed.value.value,kind:parameter.parsed.value.kind,bed_member:member,pointer});
+     else if(parameter.parsed.kind==='runtime_cell'){
+      const declarations=entries.filter(isRecord).flatMap(row=>Array.isArray(row.signatures)?row.signatures.filter(isRecord).filter(signature=>signature.reference===identity.signature).map(signature=>Array.isArray(signature.params)?signature.params[parameter.position]:null):[]);
+      if(declarations.length&&declarations.every(declaration=>isRecord(declaration)&&(declaration.type==='ipv4'||declaration.type==='ipv6')))deferred('address',member,pointer,parameter.parsed.register);
+     }
+    }
+   }
+  }
+ }
  const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
  return uses;
 }

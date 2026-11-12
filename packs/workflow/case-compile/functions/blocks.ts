@@ -2,7 +2,7 @@
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 import SHAPE from '../tables/block-plan.schema.json' with {type:'json'};
 import {schema} from './schema.ts';
-import {cellArguments,cellTemplate} from './cell-selection.ts';
+import {cellArguments,cellTemplate,literalFormatParameter} from './cell-selection.ts';
 import {isRecord} from './text.ts';
 import type {PlanSlots,PlanStep,PlanExpect,SlotProblem} from './slots.ts';
 export interface RegisterDefinition {name:string;block:string;step:number;object:string;cell?:boolean}
@@ -67,6 +67,8 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
   }
   if(block.kind==='SELECT_CELL'){
    const captured=meta.registers.get(block.from);
+   if(!literalFormatParameter(block.table.separator))issue(at+'/table/separator','取格分隔符含有现有 G 不能表达的格式花括号');
+   for(const [conditionIndex,condition]of (block.select.where??[]).entries())if(!literalFormatParameter(condition.value))issue(at+'/select/where/'+conditionIndex+'/value','取格条件常量含有现有 G 不能表达的格式花括号');
    if(!captured||captured.cell)issue(at+'/from','取一格必须引用本条前面保存的完整设备输出');
    if(block.call.args.length||Object.keys(block.call.keywords).length)issue(at+'/call','取一格的参数由已声明的表格和选择条件生成，call只写对象和方法');
    if(block.table.format==='key_value'&&(block.table.separator===''||block.table.columns!==2))issue(at+'/table','键值行需要非空字面分隔符和两列');

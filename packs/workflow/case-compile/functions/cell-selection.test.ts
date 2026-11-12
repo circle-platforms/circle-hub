@@ -12,6 +12,9 @@ import {bindArguments} from './binding.ts';
 import {runtimeMethod} from './runtime-contract.ts';
 import {signTypedRuntime} from '../testing/typed-fixtures.ts';
 import {checkContractShape,checkAddresses} from './checks.ts';
+import {entry,profileDocument} from '../testing/runtime.ts';
+import {createHash} from 'node:crypto';
+import {encodeG,decodeG} from './generated/skills/runner-workbook/workbook-writer/g-syntax.ts';
 
 function recipe(){const f=cellFixture();return {...f,slots:cellPlan(),plan_run:'run_00000000000000000000000000',build:'SYN-BUILD-A'};}
 test('selection lowers readable multiple-equality arguments and roundtrips G H and I',()=>{
@@ -103,4 +106,46 @@ test('a declared host program accepts the bound position while its other syntax 
  input.slots.blocks[2]={kind:'STEP',id:'configure',input_register:'selected',call:{object:'client',method:'shell',args:['echo {}'],keywords:{}}};input.slots.blocks.pop();
  const subject=(data:unknown)=>input.subject(data,{contract,profile});assert.ok(checkContractShape(subject(input.slots)).every(outcome=>outcome.verdict==='support'));
  for(const line of ['another {}','echo {}; other']){const data=structuredClone(input.slots);data.blocks[2].call.args=[line];assert.ok(checkContractShape(subject(data)).some(outcome=>outcome.verdict==='refute'));}
+});
+
+function addressScenario(mode:'direct'|'command'|'host',member=true){
+ const input=recipe(),document=structuredClone(input.contractDoc) as any,source='src:'+input.catalog.root+'/json@1/p';
+ document.types.member_address={declaration:{name:'synthetic-member-address',catalog_type:'ipv4',declaration:source+'/types/member_address',grammar:'synthetic-types@1'},address_kind:'ipv4'};
+ document.roles.member_address={source:source+'/roles/member_address',bed_member:member};
+ document.effects.address_use={source:source+'/effects/address_use',roles:['member_address'],budget:256,allowed_literals:[],command_roles:[]};
+ document.entries.push({...entry('device0','accept_address',[{name:'address',kind:'positional_only',required:true,default:null}]),typed_authority:{source:source+'/methods/accept_address',parameters:{address:{type:'member_address',role:'member_address'}},effects:['address_use']}});
+ const signature='src:'+input.catalog.root+'/xml@1/x/commands/demo/target/arguments';
+ input.catalog.entries.push({words:['demo','target'],reference:'tree:'+input.catalog.root+'/commands/demo/target',signatures:[{id:'/commands/demo/target',reference:signature,params:[{name:'address',type:'ipv4',native_type:{name:'synthetic-member-address',declaration:source+'/types/member_address',grammar:'synthetic-tree@1'}}]}]} as any);
+ input.catalog.policy.read_only.push('/commands/demo/target');document.effects.command.roles.push('member_address');document.effects.command.command_roles.push({signature,position:0,role:'member_address'});
+ if(mode==='host'){document.effects.host.allowed_literals=[];document.effects.host.allowed_programs=[{program:'probe',address_prefix:'--target='}];}
+ const contract=signTypedRuntime(document),profile=structuredClone(input.profileDoc);profile.runtime.contract_sha256=contract.original.contract_sha256;profile.workbook.template=(profileDocument(contract) as any).workbook.template;profile.allowed.push({object:'device0',method:'accept_address',reviewed:true,parameters:{address:'member_address'}});
+ input.slots.blocks[2]={kind:'STEP',id:'configure',input_register:'selected',call:mode==='host'?{object:'client',method:'shell',args:['probe --target={}'],keywords:{}}:{object:'device0',method:mode==='direct'?'accept_address':'command',args:[mode==='direct'?'{}':'demo target {}'],keywords:{}}};input.slots.blocks.pop();
+ const subject=(data=input.slots,extra={})=>input.subject(data,{contract,profile,...extra});return {...input,subject,contract,profile};
+}
+for(const mode of ['direct','command','host'] as const)test('a declared member-address cell remains unknown for '+mode,()=>{
+ const input=addressScenario(mode),out=checkAddresses(input.subject());assert.ok(out.some(row=>row.verdict==='unknown'),JSON.stringify(out));assert.ok(!out.some(row=>row.verdict==='support'));
+});
+test('static member addresses and authored off-environment addresses retain their existing results',()=>{
+ const input=addressScenario('command'),inventory=structuredClone(input.inventory);for(const bed of inventory.beds)for(const device of bed.devices)device.ipv4=device.ipv4.map(value=>value.split('/')[0]+'/32');
+ const data=structuredClone(input.slots);delete data.blocks[2].input_register;data.blocks[2].call.args=['demo target 192.0.2.99'];const manifest_sha256=createHash('sha256').update(JSON.stringify(inventory)).digest('hex');
+ const out=checkAddresses(input.subject(data,{manifest:inventory,manifest_sha256}));assert.ok(out.some(row=>row.code==='case-compile.address_off_bed'),JSON.stringify(out));
+ const authored=checkAddresses(input.subject(data,{manifest:inventory,manifest_sha256,case_texts:['demo target 192.0.2.99']}));assert.ok(authored.every(row=>row.verdict==='support'),JSON.stringify(authored));assert.deepEqual(authored[0].data?.author_kept,['192.0.2.99']);
+ const mixed=addressScenario('host'),mixedData=structuredClone(mixed.slots);mixedData.blocks[2].call.args=['probe --target=192.0.2.99 --target={}'];const combined=checkAddresses(mixed.subject(mixedData,{manifest:inventory,manifest_sha256}));assert.ok(combined.some(row=>row.verdict==='unknown'));assert.ok(combined.some(row=>row.code==='case-compile.address_off_bed'));
+});
+test('a cell whose declared address use is outside the environment is not given a new member check',()=>{
+ const input=addressScenario('direct',false),out=checkAddresses(input.subject());assert.ok(out.every(row=>row.verdict==='support'),JSON.stringify(out));
+ const text=addressScenario('direct'),document=structuredClone(text.contract) as any;delete document.types.member_address.address_kind;document.types.member_address.declaration.catalog_type='string';const contract=signTypedRuntime(document),profile={...text.profile,runtime:{...text.profile.runtime,contract_sha256:contract.original.contract_sha256}};assert.ok(checkAddresses(text.subject(text.slots,{contract,profile})).every(row=>row.verdict==='support'));
+});
+
+test('selection format belongs to the declared closed set',()=>{
+ const data=cellPlan();data.blocks[1].table.format='unknown_shape';assert.equal(readSlots(data).ok,false);
+});
+test('selection arguments reject formatter braces outside the first input position',()=>{
+ for(const mutate of [(block:Record<string,any>)=>{block.select.where[0].value='{field}';},(block:Record<string,any>)=>{block.table.separator='}';},(block:Record<string,any>)=>{block.table.separator='{separator}';}]){const data=cellPlan();mutate(data.blocks[1]);assert.equal(readSlots(data).ok,false);}
+ const literal=recipe();literal.slots.blocks[1].select.where[0].value='{{field}}';assert.ok(checkContractShape(literal.subject(literal.slots)).every(outcome=>outcome.verdict==='support'));
+ const input=recipe();input.slots.blocks[1].select.where[0].value=`a,'quoted',"value"`;assert.ok(checkContractShape(input.subject(input.slots)).some(outcome=>outcome.verdict==='refute'&&outcome.code==='case-compile.param_value'));
+});
+test('literal JSON without an input keeps its existing G representation',()=>{
+ const input=recipe(),step={object:'device0',method:'command',args:['{"field":"value"}'],keywords:{}};
+ assert.deepEqual(bindArguments(runtimeMethod(input.contract,step.object,step.method)!,step,'/steps/0').problems,[]);const decoded=decodeG(encodeG(step));assert.deepEqual(decoded.args,step.args);assert.deepEqual(Object.entries(decoded.keywords),[]);
 });

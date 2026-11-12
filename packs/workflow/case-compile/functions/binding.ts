@@ -60,13 +60,15 @@ export function hasSingleLineValue(value: unknown): value is string {
  * A host line a declared program may run: a static line whose first word is the program. The words after the declared
  * address prefix are addresses and must parse as one; the caller checks them against the environment. Null for anything else.
  */
-export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string,input=false):{addresses:string[]}|null{
+export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string,input=false):{addresses:string[];unknown_addresses?:string[]}|null{
   if(!programs?.length||hasShellDynamicSyntax(input?cellSyntax(line):line))return null;
   const words=line.trim().split(/\s+/),declared=programs.find(row=>row.program===words[0]);
   if(!declared)return null;
   const prefix=declared.addressPrefix;
-  const addresses=prefix===undefined?[]:words.slice(1).filter(word=>word.startsWith(prefix)).map(word=>word.slice(prefix.length)).filter(address=>!input||!address.includes('{}')&&!address.includes('{0}'));
-  return addresses.every(address=>addressKey(address)!==null)?{addresses}:null;
+  const declaredAddresses=prefix===undefined?[]:words.slice(1).filter(word=>word.startsWith(prefix)).map(word=>word.slice(prefix.length));
+  const deferred=(address:string)=>input&&(address.includes('{}')||address.includes('{0}'));
+  const unknown_addresses=declaredAddresses.filter(deferred),addresses=declaredAddresses.filter(address=>!deferred(address));
+  return addresses.every(address=>addressKey(address)!==null)?{addresses,...(unknown_addresses.length?{unknown_addresses}:{})}:null;
 }
 export function hasShellDynamicSyntax(text:string):boolean {
   let quote:string|null=null;

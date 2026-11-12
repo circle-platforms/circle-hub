@@ -125,6 +125,10 @@ export function checkAddresses(input: unknown): Outcome[] {
     else if(inBlindSegment(bed,replacement.bed,triggerTypes))out.push(refute(s,'environment_unreachable','环境不可达，整卷不跑。该地址落在没有触发设备的盲网段。下一步：把计划地址改到有触发设备的网段，或在该网段补一台触发设备后重新冻结清单再编译',at));
   }
   for(const use of uses){
+    if(use.value===null){
+      const statement='本次核对未取得单格的实际地址值，不能按原有规则核对测试环境范围；下一步由编写模型提供可按原规则核对的明确地址，再重核。';
+      out.push({verdict:'unknown',reason:'missing_input',missing:statement,statement,grounds:s.location?[s.location]:[],tier:TIER,item:s.item,pointer:use.pointer,data:{typed_position:use}});continue;
+    }
     if(use.kind!=='ipv4'&&use.kind!=='ipv6')continue;
     // A role that says the address is not on the environment is not checked; a missing use is checked like a member (decision 115).
     if(use.bed_member===false)continue;
@@ -146,7 +150,7 @@ export function checkAddresses(input: unknown): Outcome[] {
     if(!host||!entry||!a||!slots.expects.some(e=>e.after===index+1))continue;
     for(const v of bindArguments(entry,step,blockMeta(slots)&&step.origin?'/data'+step.origin:`/data/steps/${index}`).values){
       if(a.parameters[v.name]?.role!=='host_shell')continue;
-      for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value))?.addresses??[]){
+      for(const effect of a.effects)for(const address of hostProgramLine(effect.allowed_programs,String(v.value),cellInput(step)&&v.pointer.endsWith('/args/0'))?.addresses??[]){
         if(hostReaches(bed,host.device,address)!==false)continue;
         const reaching=s.profile!.hosts.filter(h=>hostReaches(bed,h.device,address)===true).map(h=>`${h.object}.${h.method}（${h.device}）`);
         const key=addressKey(address);

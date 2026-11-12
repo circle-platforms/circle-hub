@@ -20,6 +20,13 @@ export function cellTemplate(value:string):boolean{
  return automatic===1&&indexed===0||automatic===0&&indexed>0;
 }
 export const cellSyntax=(value:string):string=>value.replaceAll('{0}','_').replaceAll('{}','_');
+export function literalFormatParameter(value:string):boolean{
+ for(let at=0;at<value.length;at++)if(value[at]==='{'||value[at]==='}'){
+  if(value[at+1]!==value[at])return false;
+  at++;
+ }
+ return true;
+}
 export function cellArguments(selection:CellSelection):Pick<PlanStep,'args'|'keywords'>{
  return {
   args:['{}',...('where'in selection.select?selection.select.where!.map(condition=>`where ${condition.column}=${condition.value}`):[])],
