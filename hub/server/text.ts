@@ -567,6 +567,48 @@ function resolveText(v: ResolveOut): string {
 
 // ---------------------------------------------------------------- submit_result
 
+/**
+ * Decision 155 puts three dispatch outcomes in `dispatch[].text` (not sent, rejected by the target, sent without an
+ * answer). Keep each note; rewrite only the step jargon the reader wording forbids (派发/核验运行/作业/计划/工作簿).
+ */
+function readerDispatchText(text: string): string {
+  return text
+    .replaceAll('派发结果未确认', '上机验证结果未知')
+    .replaceAll('Hub 没有派发', '上机验证没有发出')
+    .replaceAll('没有自动派发', '没有自动上机验证')
+    .replaceAll('不会再派发', '不会再做上机验证')
+    .replaceAll('要再派发请开新的核验运行', '要再上机请重新开始上机验证')
+    .replaceAll('开新的核验运行', '重新开始上机验证')
+    .replaceAll('这个核验运行', '这次上机验证')
+    .replaceAll('派发前核对', '上机验证前核对')
+    .replaceAll('派发时的那次提交', '上机验证时的那次提交')
+    .replaceAll(/按任务包的效果行派发作业 [0-9a-f]{64}/g, '按任务包的效果行开始上机验证')
+    .replaceAll(/作业结束后/g, '结束后')
+    .replaceAll('工作簿', '自动化用例 Excel')
+    .replaceAll('能在计划、', '能在自动化用例、');
+}
+
+/** One dispatch note for the model: keep the three outcomes distinct and attach the reader status frame. */
+function dispatchNoteLine(note: { text: string; result?: string }): string {
+  if (note.result !== undefined) {
+    return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
+  }
+  const message = readerDispatchText(note.text);
+  if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
+    return `${message}；状态未知；原因还没查清；决定者程序`;
+  }
+  if (
+    message.includes('上机验证没有发出') ||
+    message.includes('什么都没有发到目标') ||
+    message.includes('目标没有接收') ||
+    /目标在“.+”阶段拒绝/.test(message) ||
+    message.includes('已证明目标没有执行')
+  ) {
+    return `${message}；状态已确认；判断错误；原因还没查清；决定者程序`;
+  }
+  return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
+}
+
 function submitText(v: SubmitOut, context: TextContext): string {
   const lines = [v.acceptance === 'accepted' ? '脚本合并已核对。' : '脚本合并有错误。'];
   const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
@@ -582,7 +624,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
       lines.push(`${original ? caseName(original, original.label) : '资料未保存'}，${rejected.reason}；状态已确认；判断错误；原因缺资料；下一步由使用者补齐资料。`);
     }
   }
-  if (v.dispatch?.length) lines.push(v.dispatch.some(note => note.result !== undefined) ? '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。' : '上机验证还没有结论；状态未知；原因还没查清；下一步由使用者继续读取设备输出。');
+  for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note));
   for (const error of v.errors) {
     if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find(item => item.id === error.item);
