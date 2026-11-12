@@ -242,7 +242,7 @@ async function timeClone(postgres: TemporaryPostgres): Promise<number> {
   }
 }
 
-async function prepareTemplate(postgres: TemporaryPostgres): Promise<void> {
+export async function prepareTemplate(postgres: TemporaryPostgres): Promise<void> {
   const database = await postgres.createDatabase('hub_migrated');
   const db = new Database(createPool(database, 1));
   try {
@@ -258,7 +258,7 @@ async function prepareTemplate(postgres: TemporaryPostgres): Promise<void> {
   }
 }
 
-function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
+export function sharedEnv(postgres: TemporaryPostgres): NodeJS.ProcessEnv {
   return stringEnv({
     HUB_UNIT_PG_HOST: postgres.config.host,
     HUB_UNIT_PG_PORT: String(postgres.config.port),
