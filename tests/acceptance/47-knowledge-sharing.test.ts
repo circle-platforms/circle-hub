@@ -225,7 +225,7 @@ test('shared revisions use the selected team directory through MCP and password-
   assert.equal(merged.status,303,merged.body);
   const team=(await spaces.current('team'))!,current=await spaces.entry(other.principal,team.root,'/revision-team/second',changed.entry);
   assert.equal(current?.body.replaces,first.entry);assert.equal(current?.body.shared_from?.path,body.path);
-  assert.match((await reader.call('get_nodes',{reference:shared.out.share!.reference!})).text,/被取代/);
+  const previous=await reader.call('get_nodes',{reference:shared.out.share!.reference!});assert.match(previous.text,/资料已有新版本/);assert.equal(previous.out.content?.structure?.entry_status,'superseded');
   const history=await browser.get('/console/knowledge/submissions');assert.equal(history.status,200,history.body);assert.match(history.body,/团队文件夹/);assert.ok(history.body.includes('revision-team › second'));assert.ok(history.body.includes('path=%2Frevision-team%2Fsecond'));
 });
 
