@@ -2,7 +2,8 @@
 
 ## Administrator source-review requests
 
-`credentialReviewRequests` pages the existing credential-review request index through the integrity-checked records port, checks an enabled current administrator and each pinned source capture's current ACL, and returns only request/source references, a scanned safe external identity, named recipient, deadline and historical progress flags. It does not read source bytes or finding values. Expiry is not acceptance, and a resolution record does not prove the source remains readable now. A page may be empty while its next cursor still leads through inaccessible captures. This is the existing sync-request index; run-read requests from the separate #190 proposal are not present on main yet.
+Removed by decision 161 (issue 194, 2026-11-12): there are no review requests any more, and no `credentialReviewRequests`.
+Requests opened before stay in the records as they are.
 
 ## Verified sharing (decision 134)
 
@@ -266,8 +267,8 @@ catalogs, grounds and provenance.
    the system pack derived one, else the original, bytes only through `Artifacts.source(..., {consumer: 'model', record})`
    pinned to the very record the connector read returned, so every check (visibility, tier, scan) and `RootSource.artifact`
    are that record's, never another record of the same bytes. Refused, with a Chinese reason that names the digest: a
-   credential hit (`retain_only`; the reason says an administrator can accept the findings of that exact document, then
-   rerun the sync: proved end to end with `acceptFindings`), function-only bytes, bytes the scanner could not inspect, a
+   source held under the old credential scan (`retain_only`; the reason says it stays held and that reading the object
+   again gives a readable record, decision 161), function-only bytes, a
    read with a personal credential (`visibility.admins` false), sources of one build above the per-build cap together,
    no core parser that accepts the media type. A required source that is refused or unreadable fails the build; an
    optional one that cannot be read at all is skipped with a warning (and recorded as missing), but an optional one that
@@ -693,8 +694,7 @@ unregistered parser, bad range, missing slot with two inputs, oversize statement
 surrogates in statements, paths, data, applicability, selectors and sections) with every record reading back, warnings
 made storable, a composition the store refuses (failed generate action), equal spans, the per-build byte cap, the
 connector's record deciding a read, the catalog limited to one producer and marked incomplete only for its own losses,
-credential hits refused and unblocked by `acceptFindings`, function-only, personal-credential, uninspected and
-unparseable sources, a producer that reaches for a listening loopback server (no connection), outputs outside the
+function-only, personal-credential and unparseable sources, a producer that reaches for a listening loopback server (no connection), outputs outside the
 contract, aliases; the sync end to end over a two-family synthetic site (index, hub page, listings, a dead link, an
 alias by "based on", an own-tree build of the other family whose root coincides), idempotent reruns, resuming after
 failures and after an abort, read and round limits, a plan that never says done, a broken plan function, one line only,
@@ -1101,18 +1101,9 @@ fields 或 only 的具体办法。运行输入经 completeKnowledgeView 续读�
 Knowledge.scheduleSync 是显式启用的进程内周期接口：同产品同步仍串行，周期结束再排下一次，stop
 取消以后不再启动；意外失败登记管理员修复请求。这里只实现和验证接口，没有配置真实部署或定时器。
 
-运行里的读者被告知对象内容待核看时（D05 R[3]），Hub 经 Knowledge.requestSourceReview 给具名管理员发同一种请求，一个对象一条，还开着就不重发；对账时来源已被接受就关闭请求。
+决定 161 起去掉了 Knowledge.requestSourceReview、待核看请求和对账：读取不再答“内容待核看”，也不再发核看请求。
 
-凭据处理使用 KnowledgeOptions.credentialAcceptance：autoAcceptSources 逐项指定 systemPack 和生产器 slot，
-默认空名单；deadlineHours 默认 72。系统包身份取自已验证的 read-manifest，不能按外部标识前缀猜。
-仅共享、Hub 原件且原请求档位明确为 model_readable 的普通命中可按名单自动受理；明确 retain_only
-（包括真实凭据回显）、个人来源、缺来源身份的观察均不自动接受。接受后重读连接器，让原投影自己完成，
-不把被拦住的原始响应冒充派生内容。管理员撤回不会被自动策略覆盖。
-
-records.artifacts.scanFindings 为管理员分页返回检测类与位置，绝不返回值。acceptFindings 的 detectors
-选择是增量接受；只在完整扫描的全部检测类均有有效决定时解除扫描造成的保留。默认旧调用仍不接受
-截断摘要；完整维护扫描另有 100000 命中的硬界限，超出时要求拆分/转换来源，不放行。派生覆盖也用
-完整扫描，超过旧展示上限的合法覆盖不再被人为丢掉；明确要求保留的档位始终保留。
+决定 161 起去掉了 KnowledgeOptions.credentialAcceptance（自动接受名单和期限）、scanFindings、acceptFindings 和派生覆盖：此前按 credential-scan@3 只保留的来源仍只保留，此前已接受的仍可读，要用被扣留的内容就按原对象重读。
 
 未受理来源登记给具名管理员的有期限请求；到期追加核对请求，不等同接受。同步开始及来源复核会推进
 到期处理，已核验有效的接受会关闭对应请求。视图最后一步仍被保留时，答复给被排除引用、完整分块
@@ -1148,8 +1139,8 @@ unverified edited extraction never grants permission.
 Review closure: impact credential exclusions are counted across the entire scan on
 every page; a final page cannot hide exclusions from an earlier offset. Complete
 bindings reject duplicate placement paths, including duplicates within a page.
-Automatic source acceptance uses the configured administrator (the public sync
-administrator requirement is unchanged). A failed acceptance/verification attempt
+Automatic source acceptance is gone (decision 161; the public sync administrator
+requirement is unchanged). A failed acceptance/verification attempt
 writes `knowledge.credential.acceptance-failed` evidence and links it to the named
 administrator request, without copying exception text or credential values. An
 unrecognized historical reason stays explicitly unrecognized, with a registered

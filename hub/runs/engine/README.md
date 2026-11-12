@@ -593,8 +593,9 @@ failed subject construction explicitly complete their collector slot to avoid de
 concurrently, but only the existing bounded sandbox pool executes children, and fallback uses CHECK_PARALLELISM.
 
 Retain-only bound sources preserve their read tier through both runner and Hub readers. They are read once, never
-retried as transient faults, and are passed/stored as credential_unreadable with the missing administrator acceptance
-and an administrator acceptance/re-evaluation request. Other withheld bytes remain an internal read failure, not a credential fact.
+retried as transient faults, and are passed/stored as credential_unreadable; since decision 161 the missing fact is that
+the old hold is not released and the request asks an administrator to read the object again, after which Hub
+re-evaluates. Other withheld bytes remain an internal read failure, not a credential fact.
 
 Exhausted exact reads write validate actions as error with the registered internal reason and null acceptance.
 The action retains the Hub-side message and administrator recovery/resubmit instruction; getRun shows it as not validated.
@@ -875,7 +876,7 @@ technical terminals. A fresh parent execution observation supplies the actual an
 | 5 | Frozen submission due date and system delivery | deadlines, system-input, abandon |
 | 6 | Interrupted actions, startup/minute recovery and bounded parent retries | interrupted, parent-recovery |
 | 7 | Empty checks, output failure, retained gaps and explicit premises | fragile, terminal-gaps, terminals |
-| 8 | Declaration admission, required catalogs and observed source acceptance | start-requirements, standing-sources, registry |
+| 8 | Declaration admission and required catalogs | start-requirements, registry |
 | 9 | Snapshot-bound product/diff pages and call-log cursors | server console-pagination |
 | 10 | Read-only journal binding, reconciliation and dynamic projection | dispatch read-runs, engine dispatch-results |
 | 11 | Observed sessions and cache policy before receipt reuse | session-boundary, contributions, cache-policy |
