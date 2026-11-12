@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Advance case-compile to 3.17.3 for the owner’s corrected generator scope: express a closed action through allowed device commands, and reuse a generated name throughout the same case when the manual permits naming. Preserve the runner contract, environment profile and executor definition; arbitrary captured command arguments remain unsupported.
+
 - Advance case-compile to 3.17.2 for the owner's authored negative-result rule: query after deletion and check not_found, using a literal or a value captured in the same case, without a separate criterion review. Preserve explicit author declarations, exact quotations, coverage, output and register bindings, executor capability checks and scenario fidelity.
 
 - Advance the local test-bed candidate to 1.3.1 after removing booking identifiers from reader-facing help conclusions and refusals; keep the machine bindings and permission checks unchanged.
