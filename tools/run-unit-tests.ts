@@ -17,6 +17,8 @@ import { migrate } from '../hub/records/migrations.ts';
 import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
 import { junitArguments } from './test-report.ts';
+import { LOCAL_UNIT_SECONDS } from './local-test-timings.ts';
+import { orderedArguments, slowestFirst, usesCoverage } from './ordered-test-runner.ts';
 import { parseShard, shardFiles } from './test-shards.ts';
 import type { Shard } from './test-shards.ts';
 
@@ -186,9 +188,9 @@ export function laneArguments(files: readonly string[], concurrency: number, rep
   return ['--test', '--test-isolation=process', `--test-concurrency=${concurrency}`, ...junitArguments(report), ...files];
 }
 
-function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, report?: string): ChildProcess | undefined {
+function spawnLane(files: string[], concurrency: number, env: NodeJS.ProcessEnv, report?: string, ordered = false): ChildProcess | undefined {
   if (files.length === 0) return undefined;
-  return spawn(process.execPath, laneArguments(files, concurrency, report), { cwd: ROOT, env, stdio: 'inherit' });
+  return spawn(process.execPath, ordered ? orderedArguments(files, concurrency, report) : laneArguments(files, concurrency, report), { cwd: ROOT, env, stdio: 'inherit' });
 }
 
 function exitOf(child: ChildProcess | undefined): Promise<number> {
@@ -316,8 +318,8 @@ async function runLocalLanes(files: string[], children: ChildProcess[]): Promise
   let postgres: TemporaryPostgres | undefined;
   let compileCache: string | undefined;
   const exits: Promise<number>[] = [];
-  const launch = (files: string[], concurrency: number, env: NodeJS.ProcessEnv): Promise<number> => {
-    const child = spawnLane(files, concurrency, { ...env, ...(compileCache ? { NODE_COMPILE_CACHE: compileCache } : {}) });
+  const launch = (files: string[], concurrency: number, env: NodeJS.ProcessEnv, ordered = false): Promise<number> => {
+    const child = spawnLane(files, concurrency, { ...env, ...(compileCache ? { NODE_COMPILE_CACHE: compileCache } : {}) }, undefined, ordered);
     if (child) children.push(child);
     const done = exitOf(child);
     exits.push(done);
@@ -335,7 +337,9 @@ async function runLocalLanes(files: string[], children: ChildProcess[]): Promise
     } else {
       process.stderr.write('unit shared cluster not started\n');
     }
-    const shared = launch(lanes.shared, concurrency, postgres ? sharedEnv(postgres) : stringEnv());
+    const ordered = !usesCoverage();
+    const sharedFiles = ordered ? slowestFirst(lanes.shared, file => LOCAL_UNIT_SECONDS[file] ?? unitSeconds(file)) : lanes.shared;
+    const shared = launch(sharedFiles, concurrency, postgres ? sharedEnv(postgres) : stringEnv(), ordered);
     // Own-cluster files stay at 2 so they do not add SysV segments while the shared lane is busy.
     const isolated = launch(lanes.isolated, 2, stringEnv());
     const sentinel = launch(lanes.sentinel, sentinelLimit, stringEnv());
