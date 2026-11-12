@@ -114,11 +114,12 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const nodes=(parsed.document.model as {nodes:Array<{data:{id?:string};selector:string}>}).nodes;
     const put=(external:string,bytes:Uint8Array)=>hub.external.put(external,{bytes,mediaType:'application/json'});
     put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
-    const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;delete (args.parameters as Partial<typeof args.parameters>).autoid;
+    const started=start();delete (started.inputs as Partial<typeof started.inputs>).case_index;
     // Decision 167 (rule 3): whole mind map without recomposition must set pipeline=legacy. Keep the check; give the
     // mainline whole-workbook starts the winning parameter (派活方 18:35 option A). Assertions unchanged.
-    args.parameters={...args.parameters,pipeline:'legacy'};
-    args.inputs.subject.external='agile:mindmap:synthetic-batch';args.inputs.contract.external='doc:doc:synthetic-large-contract';args.inputs.profile.external='doc:doc:synthetic-large-profile';
+    const parameters: Record<string, string> = { pipeline: 'legacy' };
+    started.inputs.subject.external='agile:mindmap:synthetic-batch';started.inputs.contract.external='doc:doc:synthetic-large-contract';started.inputs.profile.external='doc:doc:synthetic-large-profile';
+    const args={ ...started, parameters };
     const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,cases);
     const send=(run:string)=>({run,model:'synthetic-model',items:plan.items.map((item,i)=>{
       const data=goodData(),leaf=nodes.find(node=>node.data.id==='expected-'+i)!;assert.ok(leaf);data.expects[0].quote.reference=`src:${sha(sourceBytes.toString())}/kityminder@1/${leaf.selector}`;
@@ -129,7 +130,7 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     for(const row of rows)for(const requirement of row.requirements.filter(value=>value.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
     const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,cases);
     const workbook=generateWorkbookSet(recipes);const artifact=await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:four-cases'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
-    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{...args.parameters,plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
+    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{...parameters,plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
     const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!.run),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
     const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,cases);
     for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,cases);}}
