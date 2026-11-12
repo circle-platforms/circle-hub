@@ -7,6 +7,7 @@ import {addressKey} from './manifest.ts';
 import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines,type CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
 import {identityOf} from './typed-contract.ts';
 import {commandTemplate,isCommandTemplate,resolvedKey,resolvedLine,type ResolvedCommand} from './cell-commands.ts';
+import {TEXT_PARAMETER_TYPES} from './generated/skills/command-tools/command-check/value-domain.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
 import type {RunnerCleanup} from './runtime-contract.ts';
@@ -20,6 +21,7 @@ export function runnerRule(cleanup:RunnerCleanup|undefined,object:string,line:st
 }
 export const definitionKey=(identity:Pick<CommandIdentity,'tree_root'|'path'|'signature'>)=>JSON.stringify([identity.tree_root,identity.path,identity.signature]);
 export interface Operation {line:string;pointer:string;object:string;cleanup:boolean;input_register?:string}
+export interface UndoneConfiguration {object:string;configured:number;inverse:number;until?:number;literals:string[];direction_known:boolean}
 function definitions(raw:unknown):CommandDefinition[]{
  if(!isRecord(raw)||typeof raw.root!=='string')return [];
  return (Array.isArray(raw.authority_entries)?raw.authority_entries:Array.isArray(raw.entries)?raw.entries:[]).flatMap(entry=>{
@@ -59,7 +61,7 @@ export function namedCommand(grammar:ReturnType<typeof compileGrammar>,text:stri
  if(first!==undefined&&[...first.value].every(c=>c.charCodeAt(0)<128))return null;
  return {path:found.path,words:tokens.slice(0,found.at+1).map(token=>token.value).join(' ')};
 }
-export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[],runner?:RunnerCleanup,covered?:RunnerCovered[]):AuthorityGap[]{
+export function commandObligations(operations:readonly Operation[],slots:PlanSlots,raw:unknown,sourceTexts:readonly string[],runner?:RunnerCleanup,covered?:RunnerCovered[],undoneConfigurations?:UndoneConfiguration[]):AuthorityGap[]{
  if(!operations.length&&!sourceTexts.length&&!slots.steps.some(step=>step.restore_for!==undefined))return [];
  const policy=readCommandPolicy(isRecord(raw)?raw.policy:undefined);
  const gaps:AuthorityGap[]=[];
@@ -141,6 +143,10 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   return inverse&&inverse.path===siblingPath?{identities:[inverse],ambiguous:false}:{identities:[],ambiguous:true};
  };
 type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'refute'>;obligation?:Record<string,unknown>};
+ const sourceRule=(identity:Pick<ResolvedCommand,'path'>)=>{
+  const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
+  return matches[0]&&!(matches[1]&&matches[0].source_prefix===matches[1].source_prefix)?matches[0]:null;
+ };
  // Whether `received` is the declared inverse of the configured `operation` (null) or why not. The same rule decides a cleanup
  // step and an execution step that undoes an earlier one.
  const inverseProblem=(operation:typeof main[number],received:(typeof actual)[number]|undefined):Problem|null=>{
@@ -153,8 +159,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   if(alternatives.ambiguous)return {pointer:operation.pointer,message:'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核',verdict:'unknown'};
   const alternative=alternatives.identities[0];
   if(alternative!==undefined)return !received||received.object!==operation.object||resolvedKey(received.identity!)!==resolvedKey(alternative)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${resolvedLine(alternative)}）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse:alternative,missing_count:1}}:null;
-  const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
-  const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,verdict:'unknown'};
+  const rule=sourceRule(identity);if(!rule)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,verdict:'unknown'};
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
   // The catalog selection read the rule's line with the plan, so a path the catalog does not hold is one the locked tree does not have: no plan can send it.
   const line=inverseLine(policy,operation.line);
@@ -178,12 +183,30 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
  // Net effect, as SyntheticReference tears down only what is alive at the end: an execution step that is exactly the declared inverse of
  // a still-live earlier one on the same device undoes it (delete then re-create), and neither needs cleanup. The latest live
  // match is undone; anything not exactly the declared inverse stays live and needs its own cleanup.
- const live:typeof main=[];
- for(const operation of main.filter(operation=>modifies(operation.identity!))){
-  let undone=-1;for(let k=live.length-1;k>=0;k--)if(live[k].object===operation.object&&inverseProblem(live[k],{...operation,restore:undefined})===null){undone=k;break;}
-  if(undone>=0)live.splice(undone,1);else live.push(operation);
- }
- const configured=live.reverse();
+ const literalValues=(identity:ResolvedCommand)=>identity.parameters.flatMap(parameter=>{
+  if(parameter.parsed.kind!=='text'||!TEXT_PARAMETER_TYPES.includes(parameter.type.catalog_type??''))return [];
+  const tokens=commandTokens(parameter.raw);return tokens?.length===1?[tokens[0].value]:[];
+ });
+ const replay=(operations:typeof parsed,collect=false)=>{
+  const live:typeof main=[],removed:Array<{proof:UndoneConfiguration;inverse:typeof main[number]}>=[];
+  for(const operation of operations.filter(operation=>modifies(operation.identity!))){
+   if(collect)for(const row of removed)if(row.proof.until===undefined&&row.proof.object===operation.object&&inverseProblem(operation,{...row.inverse,restore:undefined})===null)row.proof.until=ordinal(operation.pointer);
+   let undone=-1;for(let k=live.length-1;k>=0;k--)if(live[k].object===operation.object&&inverseProblem(live[k],{...operation,restore:undefined})===null){undone=k;break;}
+   if(undone>=0){
+    const [configured]=live.splice(undone,1);
+    if(collect&&!live.some(other=>other.object===operation.object&&inverseProblem(other,{...operation,restore:undefined})===null)){
+     const inverseValues=new Set(literalValues(operation.identity!));
+     const alternatives=alternativeInverses(configured.identity!,operation.identity!);
+     const direction_known=!!sourceRule(configured.identity!)&&!policy.inverse_rules.some(rule=>within(configured.identity!.path,rule.inverse_prefix))&&!alternatives.ambiguous&&!alternatives.identities.length;
+     removed.push({proof:{object:operation.object,configured:ordinal(configured.pointer),inverse:ordinal(operation.pointer),literals:literalValues(configured.identity!).filter(value=>inverseValues.has(value)),direction_known},inverse:operation});
+    }
+   }else live.push(operation);
+  }
+  if(collect)undoneConfigurations!.push(...removed.map(row=>row.proof));
+  return live;
+ };
+ const configured=replay(main).reverse();
+ if(undoneConfigurations)replay(parsed,true);
  // Reverse order binds within one device: a device does not undo another's state, so the order between devices is free
  // (the reference implementation's teardown check is not order-sensitive at all). One the runner's own cleanup covers (every
  // sent line against the runner's prefix rules, first hit) needs none, and its explicit inverse is accepted wherever it

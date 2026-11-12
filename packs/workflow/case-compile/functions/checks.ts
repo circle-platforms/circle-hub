@@ -1,5 +1,7 @@
 import {recompositionGaps} from './recomposition.ts';
 import {checkBlockExpected} from './block-expected.ts';
+import BLOCK_TABLE from '../tables/blocks-format.json' with {type:'json'};
+import {configuredExpectedSources} from './flat-expected.ts';
 import {blockMeta,blockPointer,withoutModelIdentities} from './blocks.ts';
 import {cellInput,cellSyntax} from './cell-selection.ts';
 import {labelOf} from './generated/vocabulary.ts';
@@ -191,16 +193,40 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   if(blockMeta(slots)){const echoed=assertionsInCommand(s,slots);const judged=checkBlockExpected(slots,s.expected_nodes,s.criteria_review,isRecord(s.command_catalog)?s.command_catalog.root:undefined,s.item);return echoed.length?[...echoed,...judged.filter(o=>o.verdict!=='support')]:judged;}
   if (!slots.expects.length) return [refute(s, 'expect_without_source', '至少一条期望结果必须带逐字来源并指明它判断的步骤', '/data/expects')];
   const byCriterion: Array<{ at: number; criterion: FrozenItemCriterion }> = [];
+  const configured:Array<{at:number;source:ReturnType<typeof configuredExpectedSources>['sources'][number]}>=[];
+  let configurationSources:ReturnType<typeof configuredExpectedSources>|undefined;
   for (const [i, expect] of slots.expects.entries()) {
     const pointer = `/data/expects/${i}`;
     if (!hasSingleLineValue(expect.text)) out.push(refute(s, 'expect_value', '断言必须是单行、无首尾空白、无等号前缀、无占位符，并符合发布配置的取值规则', `${pointer}/text`));
-    // W10 step two: an expectation may be taken from a criterion declaration the Hub froze into this run after an account
-    // other than the author accepted it. Such an expectation cites the declaration by its exact rec: reference, and both
-    // the quoted criterion and the expectation are compared with the frozen bytes, never with the plan's own copy.
-    if(expect.basis==='model_judgment'){
+    if(expect.op==='not_found'){
+      const missing=(message:string):Outcome=>({verdict:'unknown',reason:'missing_input',missing:message,statement:message,grounds:[],tier:TIER,item:s.item,pointer});
+      if(!Array.isArray(s.expected_nodes)||s.expected_nodes.some(node=>!isRecord(node)||typeof node.reference!=='string'||typeof node.text!=='string'))return [missing('缺本条原始用例的冻结期望节点；下一步：绑定完整原件后重新核对不存在检查')];
+      const node=s.expected_nodes.find(node=>isRecord(node)&&node.reference===expect.quote.reference);
+      if(!isRecord(node)||typeof node.text!=='string'||!quoteMatches(node.text,expect.quote.text))out.push(refute(s,'expect_not_in_quote','不存在检查的 quote 必须逐字引用本条原始用例的期望节点',`${pointer}/quote`));
+      else {
+       let declared=true;
+       if(node.declaration!==undefined){
+        const author=isRecord(node.declaration)?node.declaration:null;
+        if(!author||!BLOCK_TABLE.assertion_ops.some(row=>row.op===author.op)||typeof author.literal!=='string'||!author.literal){declared=false;out.push(missing('作者字面声明格式未知；下一步：由资料维护者核对原声明，不能由模型改写算子或文字'));}
+        else if(author.op!=='not_found'||author.literal!==expect.text||author.count!==undefined){declared=false;out.push(refute(s,'expect_not_in_quote','不存在检查不能更改作者明确声明的算子或字面文字',pointer));}
+       }
+       if(declared&&!quoteMatches(replacedQuote(expect.quote.text,slots.replacements),expect.text)){
+        configurationSources??=configuredExpectedSources(s.contract!,s.profile!,slots,s.command_catalog);
+        if(configurationSources.problems.length)for(const problem of configurationSources.problems)out.push(problem.verdict==='unknown'?missing(problem.message):refute(s,'expect_not_in_quote',problem.message,`${pointer}/text`));
+        else {
+          const sources=configurationSources.sources.filter(source=>source.literals.includes(expect.text)&&source.inverse<expect.after-1&&(source.until===undefined||expect.after-1<source.until));
+          const source=sources.find(source=>source.direction_known)??sources[0];
+          if(source&&!source.direction_known)out.push(missing('产品逆操作声明不能确定唯一配置方向；下一步：资料维护者明确有向逆操作声明，或保留原始期望的字面片段'));
+          else if(source)configured.push({at:i,source});
+          else out.push(refute(s,'expect_not_in_quote','不存在检查的文字必须来自原始期望，或本条在查询前配置并按声明逆操作撤销、且未重建的完整文字参数',`${pointer}/text`));
+        }
+       }
+      }
+    }else if(expect.basis==='model_judgment'){
       if(!Array.isArray(s.expected_nodes)||s.expected_nodes.some(node=>!isRecord(node)||typeof node.reference!=='string'||typeof node.text!=='string'))return [{verdict:'unknown',reason:'missing_input',missing:'缺被判对象本用例期望节点的冻结原文与引用身份；下一步：用完整脑图原件开新运行，不用其他用例、标题或步骤代替',statement:'模型判断的原始期望节点尚未绑定；补齐原件后重核',grounds:[],tier:TIER,item:s.item}];
       if(!s.expected_nodes.some(node=>isRecord(node)&&node.reference===expect.quote.reference&&typeof node.text==='string'&&quoteMatches(node.text,expect.quote.text)))out.push(refute(s,'expect_not_in_quote','模型判断的 quote 必须逐字引用被判对象中本用例的期望节点，不能引用标题、步骤、其他用例或判据声明',`${pointer}/quote`));
     }else {
+    // W10 step two binds a reviewed criterion to the frozen declaration, never the plan's own copy.
     const criterion = citedCriterion(s.criteria, expect.quote.reference);
     if (criterion !== null) {
       if (expect.quote.text !== criterion.new) out.push(refute(s, 'expect_not_in_criterion', `引用的判据文字与冻结的已受理声明 ${criterion.declaration} 不符；照开始运行答复里的新判据逐字抄写，或改回原引文`, `${pointer}/quote/text`));
@@ -220,12 +246,15 @@ export function checkExpectedSources(input: unknown): Outcome[] {
   out.push(...assertionsInCommand(s, slots));
   if (out.length) return out;
   const accepted = [...new Map(byCriterion.map((row) => [row.criterion.declaration, { declaration: row.criterion.declaration, review: row.criterion.review, reviewer: row.criterion.reviewer, expects: byCriterion.filter((other) => other.criterion.declaration === row.criterion.declaration).map((row) => row.at) }])).values()];
-  const told = accepted.length === 0
+  const told = configured.length
+    ? `${slots.expects.length} 个期望结果的来源与步骤已核对，其中 ${configured.length} 条不存在检查使用本条计划中配置后按声明逆操作撤销的完整文字参数`
+    : accepted.length === 0
     ? `${slots.expects.length} 个期望结果都有逐字来源，文字出自替换后引文且判断的步骤合式`
     : `${slots.expects.length} 个期望结果都有逐字来源：${slots.expects.length - byCriterion.length} 条出自替换后引文，${byCriterion.length} 条逐字取自冻结的已受理判据声明（${accepted.map((row) => `声明 ${row.declaration}，复核 ${row.review}，复核人 ${row.reviewer}，期望 ${row.expects.map((at) => at + 1).join('/')} 条`).join('；')}）；新判据的引文在本次运行边界上另行逐字核对`;
+  const configuredData=configured.length?{configured_expectations:configured.map(row=>({expect:row.at+1,configured_step:row.source.configured+1,inverse_step:row.source.inverse+1,object:row.source.object}))}:{};
   const judgments=slots.expects.flatMap((expect,index)=>expect.basis==='model_judgment'?[{index,...expect}]:[]);
-  if(judgments.length){const result=support(s,`${judgments.length} 条模型主张的来源引文、步骤与取值规则已核验：${labelOf('expectation_basis','model_judgment')}，${labelOf('qualifier_mark','conditional_on_judgment')}；Hub 不判断所选文字是否正确`,{model_expectations:judgments,replacements:slots.replacements,...(accepted.length?{accepted_criteria:accepted}:{})});result.grounds=[...new Set([...result.grounds,...judgments.map(expect=>expect.quote.reference)])];result.judgment_sources=judgments.map(expect=>`/plan/0/data/expects/${expect.index}`);return [result];}
-  return [support(s, told, { replacements: slots.replacements, ...(accepted.length ? { accepted_criteria: accepted } : {}) })];
+  if(judgments.length){const result=support(s,`${judgments.length} 条模型主张的来源引文、步骤与取值规则已核验：${labelOf('expectation_basis','model_judgment')}，${labelOf('qualifier_mark','conditional_on_judgment')}；Hub 不判断所选文字是否正确`,{model_expectations:judgments,replacements:slots.replacements,...(accepted.length?{accepted_criteria:accepted}:{}),...configuredData});result.grounds=[...new Set([...result.grounds,...judgments.map(expect=>expect.quote.reference)])];result.judgment_sources=judgments.map(expect=>`/plan/0/data/expects/${expect.index}`);return [result];}
+  return [support(s, told, { replacements: slots.replacements, ...(accepted.length ? { accepted_criteria: accepted } : {}),...configuredData })];
 }
 
 export function checkCommandsKnown(input:unknown):Outcome[]{

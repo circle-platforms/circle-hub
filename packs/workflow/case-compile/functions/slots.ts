@@ -6,7 +6,7 @@ import {isExpectationBasis,type ExpectationBasis} from './generated/vocabulary.t
 import { isRecord } from './text.ts';
 export type KeywordValue = string | number;
 export interface PlanStep { description?:string;id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;cell_input?:boolean;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
-export interface PlanExpect {id?:string;origin?:string;operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
+export interface PlanExpect {id?:string;origin?:string;op?:'not_found';operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
 export interface PlanSlots { recomposition?:{receipt:string;case_id:string;slots:Array<{slot:string;assertions:string[]}>;rebindings:Array<{slot:string;from:string;to:string;authority?:string;source_of_value?:string}>}; command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
 export interface SlotProblem { pointer: string; message: string }
@@ -41,14 +41,15 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   for (const [i, raw] of (Array.isArray(value.expects) ? value.expects : []).entries()) {
     const at = `/expects/${i}`;
     if (!isRecord(raw)) { issue(at, '期望不是对象'); continue; }
-    keys(raw, ['text', 'quote', 'after','basis','rationale'], at);
+    keys(raw, ['text', 'quote', 'after','op','basis','rationale'], at);
+    if(raw.op!==undefined&&raw.op!=='not_found')issue(at+'/op','op 仅接受 not_found；查找检查省略此字段');
     if(raw.basis!==undefined&&!isExpectationBasis(raw.basis))issue(at+'/basis','basis 必须是生成合约声明的完全相等值；默认逐字规则请省略');
     if(raw.basis!==undefined&&(typeof raw.rationale!=='string'||!raw.rationale.trim()))issue(at+'/rationale','模型判断必须有非空 rationale，说明为何选择这段设备可观察文字');
     if(raw.basis===undefined&&raw.rationale!==undefined)issue(at+'/rationale','默认规则不接收 rationale；模型判断请显式声明 basis');
     if (typeof raw.text !== 'string' || !raw.text) issue(`${at}/text`, '期望文字不能为空');
     if (!Number.isSafeInteger(raw.after) || (raw.after as number) < 1) issue(`${at}/after`, 'after 必须是从 1 开始的步骤号');
     if (!isRecord(raw.quote) || typeof raw.quote.reference !== 'string' || !raw.quote.reference || typeof raw.quote.text !== 'string' || !raw.quote.text) issue(`${at}/quote`, 'quote 必须带 reference 和逐字 text');
-    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({...(isExpectationBasis(raw.basis)?{basis:raw.basis,rationale:String(raw.rationale)}:{}), text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
+    else { keys(raw.quote, ['reference', 'text'], `${at}/quote`); expects.push({...(raw.op==='not_found'?{op:raw.op}:{}),...(isExpectationBasis(raw.basis)?{basis:raw.basis,rationale:String(raw.rationale)}:{}), text: String(raw.text), after: raw.after as number, quote: { reference: raw.quote.reference, text: raw.quote.text } }); }
   }
   const replacements: Replacement[] = [];
   if (!Array.isArray(value.replacements)) issue('/replacements', 'replacements 必须是数组，没有替换写 []');
