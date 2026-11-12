@@ -2,7 +2,8 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import TABLE from '../tables/blocks-format.json' with {type:'json'};
 export function blockSchema(){
- const fields=TABLE.fields as Record<string,unknown>;
+ const fields=structuredClone(TABLE.fields) as Record<string,any>;
+ fields.table.properties.format.enum=TABLE.cell_formats;
  const block={anyOf:TABLE.kinds.map(row=>({type:'object',additionalProperties:false,properties:Object.fromEntries(row.fields.map(name=>[name,name==='id'?{type:'string',minLength:1}:name==='kind'?{const:row.kind}:fields[name]])),required:row.required}))};
  const context=structuredClone(TABLE.context_schema),criterion=structuredClone(TABLE.criterion_schema),obligation=structuredClone(TABLE.obligation_schema);
  criterion.properties.operator={...criterion.properties.operator,enum:TABLE.assertion_ops.map(row=>row.op)} as typeof criterion.properties.operator;

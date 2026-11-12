@@ -5,7 +5,8 @@ import {compileGrammar,commandIdentity,commandLines,commandTokens,type CommandDe
 import {isRecord} from './text.ts';
 import {addressKey} from './manifest.ts';
 import {readCommandPolicy,within,pathSegments,inverseLine,inverseLines,type CommandPolicy} from './generated/skills/command-tools/command-check/command-policy.ts';
-import {identityOf,identityKey,commandLine} from './typed-contract.ts';
+import {identityOf} from './typed-contract.ts';
+import {commandTemplate,isCommandTemplate,resolvedKey,resolvedLine,type ResolvedCommand} from './cell-commands.ts';
 import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
 import type {RunnerCleanup} from './runtime-contract.ts';
@@ -17,8 +18,8 @@ export function runnerRule(cleanup:RunnerCleanup|undefined,object:string,line:st
  for(const [rule,row]of cleanup.rules.entries()){const prefix=row.prefixes.find(p=>line.startsWith(p));if(prefix!==undefined)return {rule,prefix,source_line:row.line};}
  return null;
 }
-export const definitionKey=(identity:CommandIdentity)=>JSON.stringify([identity.tree_root,identity.path,identity.signature]);
-export interface Operation {line:string;pointer:string;object:string;cleanup:boolean}
+export const definitionKey=(identity:Pick<CommandIdentity,'tree_root'|'path'|'signature'>)=>JSON.stringify([identity.tree_root,identity.path,identity.signature]);
+export interface Operation {line:string;pointer:string;object:string;cleanup:boolean;input_register?:string}
 function definitions(raw:unknown):CommandDefinition[]{
  if(!isRecord(raw)||typeof raw.root!=='string')return [];
  return (Array.isArray(raw.authority_entries)?raw.authority_entries:Array.isArray(raw.entries)?raw.entries:[]).flatMap(entry=>{
@@ -65,7 +66,8 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  const note=(pointer:string,message:string,verdict:Extract<Verdict,'unknown'|'refute'>='refute',obligation?:Record<string,unknown>)=>gaps.push({document:'catalog',pointer,message,verdict,...(obligation?{obligation}:{})});
  if(!isRecord(raw)||typeof raw.root!=='string'||typeof raw.missing==='string'){note('/command_catalog',isRecord(raw)&&typeof raw.missing==='string'?raw.missing:'缺锁定目录，无法核对作者命令义务','unknown');return gaps;}
  const native=definitions(raw),grammar=compileGrammar(native);
- const parsed=operations.map(operation=>({...operation,identity:identityOf(commandIdentity(grammar,operation.line))}));
+ const parseOperation=(line:string,register?:string):ResolvedCommand|null=>register&&(line.includes('{}')||line.includes('{0}'))?commandTemplate(native,line,register):identityOf(commandIdentity(grammar,line));
+ const parsed=operations.map(operation=>({...operation,identity:parseOperation(operation.line,operation.input_register)}));
  if(parsed.some(operation=>!operation.identity))return gaps; // Native parse outcomes already block; do not guess missing identities.
  const main=parsed.filter(operation=>!operation.cleanup&&operation.identity),cleanup=parsed.filter(operation=>operation.cleanup&&operation.identity);
  // Cleanup is an explicit suffix, including host/wait steps; it cannot hide an execution operation after cleanup.
@@ -90,7 +92,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   if(landed<row.count)note('/steps',`可以改参数，不可以删命令：作者写了命令 ${row.words}（没有写出参数）${row.count} 次，计划里这条命令 ${landed} 次，尚缺 ${row.count-landed} 次；换成别的命令不算`,'refute',{identity:{tree_root:raw.root,path},required_count:row.count,planned_count:landed,missing_count:row.count-landed});
  }
  if(!policy){if(operations.length)note('/command_policy','缺锁定根的产品命令范围与逆操作声明；下一步：产品包作者声明 command-policy@1 后重新育苗并核验','unknown');return gaps;}
- const modifies=(identity:CommandIdentity)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
+ const modifies=(identity:Pick<CommandIdentity,'path'>)=>!policy.read_only.some(prefix=>within(identity.path,prefix));
  const selected=[...new Set([...operations.map(operation=>operation.line),...sourceTexts.flatMap(text=>commandLines(text).map(line=>line.text))])];
  const inversesRead=new Set([...selected,...inverseLines(policy,selected)]);
  const actual=cleanup.filter(operation=>modifies(operation.identity!)).map(operation=>({...operation,restore:undefined as typeof slots.steps[number]|undefined}));
@@ -100,7 +102,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
  // value is the paired value of the SAME signature — decided on the locked tree's declared enum members, never by
  // matching free text. Multiple inverse positions or a non-unique target stay unknown; only an absent enum rule
  // falls back to the declared prefix rules.
- const alternativeInverses=(identity:CommandIdentity,received:CommandIdentity|undefined):{identities:CommandIdentity[];ambiguous:boolean}=>{
+ const alternativeInverses=(identity:ResolvedCommand,received:ResolvedCommand|undefined):{identities:ResolvedCommand[];ambiguous:boolean}=>{
   const pairs=policy.inverse_alternatives??[];
   if(!pairs.length)return {identities:[],ambiguous:false};
   // A union argument type (an address of either family, say) publishes one native argument list as several catalog
@@ -108,7 +110,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   // enum holding a declared pair there is no alternative, and a pair is used only where every one declares that enum.
   const signatures=native.filter(definition=>definition.path===identity.path).flatMap(definition=>definition.signatures).filter(signature=>signature.reference===identity.signature);
   if(!signatures.length)return {identities:[],ambiguous:true};
-  const inverses=new Map<string,CommandIdentity>();let unrepresentable=false;
+  const inverses=new Map<string,ResolvedCommand>();let unrepresentable=false;
   for(const parameter of identity.parameters){
    if(parameter.parsed.kind!=='text')continue;
    const value=parameter.parsed.value,declared=signatures.map(signature=>signature.params[parameter.position]);
@@ -123,8 +125,8 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
    const raw=supplied?.parsed.kind==='text'&&supplied.parsed.value===swapped?supplied.raw:tokens?.length===1&&tokens[0].value===swapped?swapped:quoted;
    const words=identity.path.split('/').slice(2).map(decodeURIComponent);
    const line=[...words,...identity.parameters.map(other=>{if(other===parameter)return raw;const same=received?.parameters.find(p=>p.position===other.position&&JSON.stringify(p.parsed)===JSON.stringify(other.parsed));return same?.raw??other.raw;})].join(' ');
-   const inverse=identityOf(commandIdentity(grammar,line));
-   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)inverses.set(identityKey(inverse),inverse);else unrepresentable=true;
+   const inverse=parseOperation(line,isCommandTemplate(identity)?identity.input_register:undefined);
+   if(inverse&&inverse.path===identity.path&&inverse.signature===identity.signature)inverses.set(resolvedKey(inverse),inverse);else unrepresentable=true;
   }
   if(inverses.size||unrepresentable)return {identities:[...inverses.values()],ambiguous:unrepresentable||inverses.size>1};
   // Only complete sibling paths of the same parent can use the leaf form of a declared pair.
@@ -135,7 +137,7 @@ export function commandObligations(operations:readonly Operation[],slots:PlanSlo
   const siblingPath=segments.slice(0,-1).join('/')+'/'+encodeURIComponent(sibling);
   if(!native.some(definition=>definition.path===siblingPath))return {identities:[],ambiguous:false};
   const line=[...siblingPath.split('/').slice(2).map(decodeURIComponent),...identity.parameters.map(parameter=>parameter.raw)].join(' ');
-  const inverse=identityOf(commandIdentity(grammar,line));
+  const inverse=parseOperation(line,isCommandTemplate(identity)?identity.input_register:undefined);
   return inverse&&inverse.path===siblingPath?{identities:[inverse],ambiguous:false}:{identities:[],ambiguous:true};
  };
 type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'refute'>;obligation?:Record<string,unknown>};
@@ -150,7 +152,7 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const alternatives=alternativeInverses(identity,received?.identity??undefined);
   if(alternatives.ambiguous)return {pointer:operation.pointer,message:'声明的枚举互逆不能在同一签名中得到唯一完整身份；下一步由产品包作者修正互逆声明或命令树后重核',verdict:'unknown'};
   const alternative=alternatives.identities[0];
-  if(alternative!==undefined)return !received||received.object!==operation.object||identityKey(received.identity!)!==identityKey(alternative)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${commandLine(alternative)}）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse:alternative,missing_count:1}}:null;
+  if(alternative!==undefined)return !received||received.object!==operation.object||resolvedKey(received.identity!)!==resolvedKey(alternative)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 缺同设备、逆序的清理操作（声明的枚举互逆：${resolvedLine(alternative)}）`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse:alternative,missing_count:1}}:null;
   const matches=policy.inverse_rules.filter(rule=>within(identity.path,rule.source_prefix)).sort((a,b)=>pathSegments(b.source_prefix)!.length-pathSegments(a.source_prefix)!.length);
   const rule=matches[0];if(!rule||matches[1]&&rule.source_prefix===matches[1].source_prefix)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 缺唯一的产品逆操作规则；下一步由产品包作者补声明后重核`,verdict:'unknown'};
   const path='/'+[...pathSegments(rule.inverse_prefix)!,...pathSegments(identity.path)!.slice(pathSegments(rule.source_prefix)!.length)].join('/');
@@ -161,17 +163,17 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
   const parameters=[...identity.parameters].sort((a,b)=>a.position-b.position);
   const counts=rule.leading_parameters!==undefined?[rule.leading_parameters]:[...new Set(native.filter(definition=>definition.path===path).flatMap(definition=>definition.signatures.flatMap(signature=>Array.from({length:Math.min(signature.params.length,parameters.length)+1},(_,count)=>count))))];
   const copied=parameters.map((parameter,position)=>{const proposed=received.identity!.parameters.find(value=>value.position===position);return proposed&&commandTokens(parameter.raw)?.[0]?.value===commandTokens(proposed.raw)?.[0]?.value?proposed.raw:parameter.raw;});
-  const inverses=new Map<string,CommandIdentity>();
-  for(const count of counts){if(count>parameters.length)continue;const line=[...path.split('/').slice(2).map(decodeURIComponent),...copied.slice(0,count)].join(' ');const inverse=identityOf(commandIdentity(grammar,line));if(inverse&&inverse.path===path&&inverse.parameters.length===count)inverses.set(identityKey(inverse),inverse);if(inverses.size>1)break;}
+  const inverses=new Map<string,ResolvedCommand>();
+  for(const count of counts){if(count>parameters.length)continue;const line=[...path.split('/').slice(2).map(decodeURIComponent),...copied.slice(0,count)].join(' ');const inverse=parseOperation(line,isCommandTemplate(identity)?identity.input_register:undefined);if(inverse&&inverse.path===path&&inverse.parameters.length===count)inverses.set(resolvedKey(inverse),inverse);if(inverses.size>1)break;}
   if(inverses.size>1){
    // Several leading-parameter counts parse (decision 115: the case author writes the teardown): the plan's own cleanup
    // stands when it is exactly one of them; otherwise the refusal lists every valid form.
-   if([...inverses.values()].some(candidate=>identityKey(candidate)===identityKey(received.identity!)))return null;
-   return {pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理应是下面之一：${[...inverses.values()].map(commandLine).join('；')}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
+   if([...inverses.values()].some(candidate=>resolvedKey(candidate)===resolvedKey(received.identity!)))return null;
+   return {pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理应是下面之一：${[...inverses.values()].map(resolvedLine).join('；')}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse_path:path,missing_count:1}};
   }
   if(inverses.size!==1)return {pointer:operation.pointer,message:`配置命令 ${identity.path} 的逆操作 ${path} 不能按锁定树完整解析；由产品包作者核对规则与命令树`,verdict:'refute'};
   const inverse=[...inverses.values()][0];
-  return identityKey(received.identity!)!==identityKey(inverse)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理参数不等于声明的前导身份参数：${commandLine(inverse)}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse,missing_count:1}}:null;
+  return resolvedKey(received.identity!)!==resolvedKey(inverse)?{pointer:operation.pointer,message:`配置命令 ${identity.path} 在逆序位置的清理参数不等于声明的前导身份参数：${resolvedLine(inverse)}`,verdict:'refute',obligation:{cleanup_for:operation.pointer,inverse,missing_count:1}}:null;
  };
  // Net effect, as SyntheticReference tears down only what is alive at the end: an execution step that is exactly the declared inverse of
  // a still-live earlier one on the same device undoes it (delete then re-create), and neither needs cleanup. The latest live

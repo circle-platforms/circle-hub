@@ -1,6 +1,7 @@
 // Bind explicit text values to the original Python signature without expanding defaults or evaluating expressions.
 import type { RuntimeEntry } from './runtime-contract.ts';
 import type { PlanStep, KeywordValue } from './slots.ts';
+import {cellInput,cellTemplate,cellSyntax} from './cell-selection.ts';
 import { addressKey } from './manifest.ts';
 export interface BoundValue { name: string; value: KeywordValue; pointer: string }
 export interface BindProblem { code: string; pointer: string; message: string }
@@ -31,7 +32,7 @@ export function bindArguments(method: RuntimeEntry, step: PlanStep, at: string, 
   }
   for (const v of values) {
     if (typeof v.value === 'number') { if (!Number.isSafeInteger(v.value) || v.value < 0) issue('param_value', v.pointer, '整数关键字必须是安全非负整数'); }
-    else if (!(step.restore_for!==undefined&&step.input_register!==undefined&&v.pointer===at+'/args/0'&&v.value==='{}')&&!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
+    else if (!(step.restore_for!==undefined&&step.input_register!==undefined&&v.pointer===at+'/args/0'&&v.value==='{}')&&!(cellInput(step)&&v.pointer===at+'/args/0'&&cellTemplate(v.value)&&hasSingleLineValue(cellSyntax(v.value)))&&!hasSingleLineValue(v.value)) issue('param_value', v.pointer, '参数值必须是有效单行原文，首尾无空白、不以 = 开头、没有 {} 或 {0}');
   }
   return { values, problems };
 }
@@ -59,12 +60,12 @@ export function hasSingleLineValue(value: unknown): value is string {
  * A host line a declared program may run: a static line whose first word is the program. The words after the declared
  * address prefix are addresses and must parse as one; the caller checks them against the environment. Null for anything else.
  */
-export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string):{addresses:string[]}|null{
-  if(!programs?.length||hasShellDynamicSyntax(line))return null;
+export function hostProgramLine(programs:readonly {program:string;addressPrefix?:string}[]|undefined,line:string,input=false):{addresses:string[]}|null{
+  if(!programs?.length||hasShellDynamicSyntax(input?cellSyntax(line):line))return null;
   const words=line.trim().split(/\s+/),declared=programs.find(row=>row.program===words[0]);
   if(!declared)return null;
   const prefix=declared.addressPrefix;
-  const addresses=prefix===undefined?[]:words.slice(1).filter(word=>word.startsWith(prefix)).map(word=>word.slice(prefix.length));
+  const addresses=prefix===undefined?[]:words.slice(1).filter(word=>word.startsWith(prefix)).map(word=>word.slice(prefix.length)).filter(address=>!input||!address.includes('{}')&&!address.includes('{0}'));
   return addresses.every(address=>addressKey(address)!==null)?{addresses}:null;
 }
 export function hasShellDynamicSyntax(text:string):boolean {
