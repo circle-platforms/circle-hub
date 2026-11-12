@@ -24,7 +24,7 @@ import type { LoadedWorkflow } from '../ports.ts';
 import { canonicalJson, recordDigest, resolveReference, type RecordRead } from '../refs/api.ts';
 import { slotSchemaOf } from '../runs/engine/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
-import { cursorPosition, fallbackText, pageCursor, pageCursorProblem, startRunExample, submitExample, toolText, type TextContext } from './text.ts';
+import { cursorPosition, fallbackText, modelReferencesText, pageCursor, pageCursorProblem, startRunExample, submitExample, toolText, type TextContext } from './text.ts';
 
 // ---------------------------------------------------------------- synthetic answers, checked against the contracts
 
@@ -386,7 +386,7 @@ function filled(example: string, run: RunSummary): Submission {
 describe('start_run text', () => {
   for (const n of SIZES) {
     test(`a run of ${n} items: within the budget, the facts first, items as id | label | summary, the note exactly when items are left out`, () => {
-const run=runOf(items(n));const answer=startAnswer(run);const text=toolText('start_run',answer,{record:RUN_RECORD});withinBudget(text,'all original cases');assert.deepEqual(itemIdsOf(text),run.items.map(item=>item.id));assert.match(text,/手册和命令树采用构建 b-2.1-7/);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态未知/);assert.doesNotMatch(text,/rec:|src:|知识根|本层不适用|追踪|槽位模式/);assert.equal(answer.run?.root,H('d'));
+const run=runOf(items(n));const answer=startAnswer(run);const text=toolText('start_run',answer,{record:RUN_RECORD});withinBudget(text,'all original cases');assert.deepEqual(itemIdsOf(text),run.items.map(item=>item.id));assert.match(text,/本次核对采用构建 b-2.1-7/);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态未知/);assert.doesNotMatch(text,/rec:|src:|知识根|本层不适用|追踪|槽位模式/);assert.equal(answer.run?.root,H('d'));
 });
   }
 
@@ -430,8 +430,8 @@ for(const count of [5,300,3000]){const list=items(count).map((item,i)=>({...item
 const list=items(5,i=>i===2?'超长的标题'.repeat(3200):'合成用例 '+i);for(const context of [{record:RUN_RECORD},{}]){const text=toolText('start_run',startAnswer(runOf(list)),context);assert.ok(text.includes(list[2].label));assert.equal(itemIdsOf(text).length,5);assert.equal(noteOf(text),null);}
 });
 
-  test('the evidence gaps the expected-sources function reported are listed as gaps', () => {
-const text=toolText('start_run',startAnswer(runOf(items(5))),{gaps:[{code:'runs.expected_sources_failed',message:'手册尚未读出'}]});assert.match(text,/状态未知；原因缺资料；手册尚未读出；下一步由使用者补齐资料/);assert.doesNotMatch(text,/runs.expected_sources_failed/);
+  test('reported source metadata stays in model context rather than reader conclusions', () => {
+const answer=startAnswer(runOf(items(5)));const gaps=[{code:'runs.expected_sources_failed',message:'手册尚未读出'}];const text=toolText('start_run',answer,{gaps});assert.doesNotMatch(text,/手册尚未读出|runs.expected_sources_failed/);const model=JSON.parse(modelReferencesText(answer,{gaps}).slice('供模型引用\n'.length));assert.deepEqual(model.source_context.gaps,gaps);
 });
 });
 
