@@ -352,12 +352,12 @@ describe('operations and commands', () => {
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
     // Decision 151, step 8: 凭据 and Hub 状态 are two addresses, no longer two anchors of one page with the first always marked.
     assert.match(settings.body,/<nav class="ch-seg" aria-label="设置内容" data-settings-tabs><a href="\/console\/settings" aria-current="page">凭据/);
-    assert.match(settings.body,/id="secrets"/);assert.doesNotMatch(settings.body,/data-hub-state|主机操作/);
+    assert.match(settings.body,/id="secrets"/);assert.doesNotMatch(settings.body,/data-hub-state|服务器上的操作/);
     const hubTab=await get('/console/settings?tab=hub',admin);
     assert.match(hubTab.body,/<a href="\/console\/settings\?tab=hub" aria-current="page">Hub 状态<\/a>/);assert.doesNotMatch(hubTab.body,/<a href="\/console\/settings" aria-current="page">/);
-    assert.match(hubTab.body,/data-hub-state/);assert.match(hubTab.body,/主机操作/);assert.doesNotMatch(hubTab.body,/id="secrets"/);
+    assert.match(hubTab.body,/data-hub-state/);assert.match(hubTab.body,/服务器上的操作/);assert.doesNotMatch(hubTab.body,/id="secrets"/);
     const memberHub=await get('/console/settings?tab=hub',session);
-    assert.match(memberHub.body,/data-hub-state/);assert.doesNotMatch(memberHub.body,/主机操作|备份命令|id="mine"/);
+    assert.match(memberHub.body,/data-hub-state/);assert.doesNotMatch(memberHub.body,/服务器上的操作|备份命令|id="mine"/);
     assert.match((await get('/console/settings',session)).body,/<a href="\/console\/settings" aria-current="page">我的客户端/);
     const detail=await get(`/console/team/${user.user.id}?workflow=review`,admin);
     assert.match(detail.body,/成员详情|权限|工作流分配|已连接的客户端/);

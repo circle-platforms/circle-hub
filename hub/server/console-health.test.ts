@@ -325,7 +325,7 @@ test('by client: name, declared platform, entry, connections, calls and p95; a n
   await everything(w);
   const clients = section(await shown(w.admin), '按客户端');
   assert.match(clients, /现在 4 个 MCP 会话、6 个实时推送流/);
-  assert.match(clients, /客户端 平台 入口 版本 现在的连接 近 24 小时调用 近 24 小时 p95/);
+  assert.match(clients, /客户端 平台 入口 客户端版本 现在的连接 近 24 小时调用 近 24 小时 p95/);
   assert.match(clients, /client-one os-one MCP 1\.0 3 12 2\.4 秒/);
   assert.match(clients, /client-one os-two MCP 1\.0 同上 12 2\.2 秒/);
   assert.match(clients, /client-two 未知 MCP 2\.0 0 12 1\.2 秒/, 'no platform declared; the sample says it holds no session');
@@ -529,7 +529,7 @@ test('a crash nobody can account for says so, and does not say that nothing was 
   await event(w.db, { at: CRASH + 24_000, kind: 'abnormal_exit', boot: 'boot-crashed', release: CURRENT, uptime: 20 * HOUR_MS, last: CRASH, reports: [] });
   const crashes = section(await shown(w.admin), '崩溃和重启');
   assert.match(crashes, /异常退出 运行 20 小时 0 分 没有崩溃报告 当时在处理什么： ?未知/);
-  assert.match(crashes, /当时在处理什么： ?未知 ?。在途请求日志里没有这个进程，这不等于当时没有请求；主机重启会清掉这个日志。/);
+  assert.match(crashes, /当时在处理什么： ?未知 ?。在途请求日志里没有这个进程，这不等于当时没有请求；服务器重启会清掉这个日志。/);
   assert.match(crashes, /崩溃时间 未知 ?（最后一次活动 /);
   assert.match(crashes, /这个进程崩溃之前 5 分钟没有样本。/);
 });

@@ -9,7 +9,7 @@ test('a declared source says who provided it and that nothing independent was co
  const shown=String(sourceTypeLabel('declared'));
  assert.ok(shown.includes(uiLabelOf('provenance_type','declared')),'the formal label stays');
  assert.ok(shown.includes(`title="${DECLARED_SCOPE}"`)&&shown.includes(`aria-description="${DECLARED_SCOPE}"`),shown);
- assert.match(DECLARED_SCOPE,/由上传方提供/);assert.match(DECLARED_SCOPE,/没有独立的采集证明/);
+ assert.match(DECLARED_SCOPE,/内容由上传的人提供/);assert.match(DECLARED_SCOPE,/没有独立采集的证明/);
  assert.deepEqual(wordingProblems(shown),[]);
 });
 

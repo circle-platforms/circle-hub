@@ -12,7 +12,7 @@ test('the product-source import names itself and leaves builds, manuals and comm
   assert.equal(page.status,200,page.body);
   // The card that needs a product says so in its title; its general hint no longer assumes one kind of material.
   assert.match(page.body,/按产品来源导入/);
-  assert.match(page.body,/从已启用产品包声明的来源，在后台只读导入团队知识，每条附来源/);
+  assert.match(page.body,/从所选产品已配置的知识来源，在后台只读导入团队知识，每条附来源/);
   assert.doesNotMatch(page.body,/在后台只读导入构建、手册与命令树/);
   // What a product source holds is the product pack's to declare; the product field says so once.
   assert.match(page.body,/具体包含哪些材料（例如构建、手册、命令树）由该产品包声明/);
