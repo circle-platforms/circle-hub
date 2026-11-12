@@ -34,7 +34,7 @@ function absenceFixture(literal='record+a.[x]'){
  const catalog={...f.catalog,policy:{schema:'command-policy@1',read_only:['/commands/demo/show'],inverse_rules:[{source_prefix:'/commands/demo/set',inverse_prefix:'/commands/no/demo/set',leading_parameters:1}]},entries:[native('/commands/demo/show',[]),native('/commands/demo/set',[parameter]),native('/commands/no/demo/set',[parameter])]};
  const data:PlanSlots={bucket:'bed-a',blocks:[],replacements:[],steps:[call(`demo set "${literal}"`),call(`no demo set "${literal}"`),call()],expects:[{op:'not_found',text:literal,quote:{...quote},after:3}]};
  const input=f.subject(data,{expected_nodes:[quote],command_catalog:catalog});
- return {f,data,quote,catalog,input};
+ return {f,data,quote,catalog,input,native};
 }
 test('flat absence reads an explicit operator without changing the default expectation shape',()=>{
  const {data}=absenceFixture(),parsed=readSlots(data);assert.ok(parsed.ok);if(parsed.ok)assert.equal(parsed.slots.expects[0].op,'not_found');
@@ -75,6 +75,14 @@ test('configured absence values use declared text or name parameters, not number
 test('flat absence leaves a bidirectional configuration source unknown instead of guessing its direction',()=>{
  const {input,catalog}=absenceFixture();catalog.policy.inverse_rules.push({source_prefix:'/commands/no/demo/set',inverse_prefix:'/commands/demo/set',leading_parameters:1});
  const result=checkExpectedSources(input);assert.ok(result.some(row=>row.verdict==='unknown'),JSON.stringify(result));assert.ok(!result.some(row=>row.verdict==='support'));
+});
+test('flat absence uses a later directed source when an earlier same-value source is ambiguous',()=>{
+ const {data,input,catalog,native}=absenceFixture(),literal=data.expects[0].text,parameter=catalog.entries[1].signatures[0].params;
+ catalog.entries.push(native('/commands/demo/old',parameter),native('/commands/no/demo/old',parameter));
+ catalog.policy.inverse_rules.push({source_prefix:'/commands/demo/old',inverse_prefix:'/commands/no/demo/old',leading_parameters:1},{source_prefix:'/commands/no/demo/old',inverse_prefix:'/commands/demo/old',leading_parameters:1});
+ data.steps=[call(`demo old "${literal}"`),call(`no demo old "${literal}"`),...data.steps];data.expects[0].after=5;
+ const result=checkExpectedSources(input);assert.ok(result.every(row=>row.verdict==='support'),JSON.stringify(result));
+ assert.deepEqual(result[0].data?.configured_expectations,[{expect:1,configured_step:3,inverse_step:4,object:'ORBIT_0'}]);
 });
 test('flat absence does not use model rationale or a criterion record as a new source',()=>{
  const {data,input}=absenceFixture();data.expects[0]={...data.expects[0],text:'invented descriptive output',basis:'model_judgment',rationale:'the model chose this sentence'};
