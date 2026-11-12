@@ -23,7 +23,7 @@ function dialogId(operation: string, object: string): string {
 export const commands = {
   memberPack: (user: string, pack: string, assigned: boolean): CommandDialog => ({
     id: dialogId(`member-pack-${user}`, pack), title: '调整工作流使用范围',
-    text: '调整后对该成员的新任务生效；已有运行记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
+    text: '调整后对该成员的新任务生效；已有任务的记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
   }),
   memberPublish: (user: string, granted: boolean): CommandDialog => ({
     id: dialogId('member-publish', user), title: '调整发布权',
@@ -99,7 +99,7 @@ export const commands = {
   }),
   backup: (): CommandDialog => ({
     id: 'cmd-backup', title: '备份',
-    text: '备份数据库、对象、密钥库与设置文件，并清理旧备份；需在 Hub 所在的主机上执行。', command: command('backup'),
+    text: '备份数据库、对象、密钥库与设置文件，并清理旧备份；需在运行 Hub 的服务器上执行。', command: command('backup'),
   }),
   restore: (): CommandDialog => ({
     id: 'cmd-restore', title: '恢复',

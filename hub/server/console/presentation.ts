@@ -32,7 +32,8 @@ export function technical(body: unknown, label = '查看技术信息'): Html {
   return html`<details class="ch-section" data-technical><summary>${label}</summary>${body}</details>`;
 }
 
-export const technicalCode=(value:unknown)=>technical(code(value),'查看');
+/** A technical value behind a disclosure that says what it opens (wording table, W25): never the bare word 查看. */
+export const technicalCode=(value:unknown)=>technical(code(value),'查看编号');
 export const section=(title:string,body:unknown,hint?:string)=>panel({title,hint},body);
 export function areaPage(chrome:PageChrome,content:unknown,inspector?:Html):Html{
   const layout=content instanceof Html?content.layout:{};
@@ -51,7 +52,7 @@ export function commandLink(dialog:CommandDialog,label:unknown='查看命令…'
   return html`<a class="${cls}" href="#${dialog.id}">${label}</a>`;
 }
 export function commandModal(dialog:CommandDialog):Html{
-  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${tooltip(dialog.title,'在 Hub 所在主机上执行同一命令。')}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre class="ch-quote">${dialog.command}</pre></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
+  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${tooltip(dialog.title,'请在运行 Hub 的服务器上执行下面的命令。')}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre class="ch-quote">${dialog.command}</pre></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
 }
 
 /** Resolve only through the existing read boundary; missing and forbidden names remain indistinguishable. */
@@ -74,7 +75,7 @@ export async function sourceBlock(ctx: PageContext, reference: string, quotation
       }
     } else if (ref.scheme === 'tree' && ref.entry) {
       const entry = await ctx.deps.knowledge.spaces?.entry(ctx.principal, ref.root, ref.path, ref.entry);
-      if (entry) { title = entry.body.content.statement; action = link('/console/knowledge/space', '查看', { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }
+      if (entry) { title = entry.body.content.statement; action = link('/console/knowledge/space', '查看条目', { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }
     }
   } catch { /* Reference diagnostics remain behind the explicit technical disclosure. */ }
   return html`<div class="ch-source"><div class="ch-source-head"><span data-evidence>${title}</span>${state??''}${action ?? html`<span class="ch-meta">无法打开</span>`}</div>${quotation ? html`<p class="ch-quote" data-evidence>${quotation}</p>` : ''}${technical(code(reference), '查看引用')}</div>`;

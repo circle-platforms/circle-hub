@@ -8,7 +8,7 @@ const declaration={space:owner,source:hash,artifact:hash,sha256:hash,by:owner,at
 test('the strict attribution pins registration, exact capture, bytes, uploader and team audience',()=>{
  assert.ok(SourceAttributionBody.safeParse(declaration).success);
  for(const change of [{space:'team'},{by:'usr_'+'2'.repeat(26)},{audience:'member'},{source:'src:'+hash},{author:'合成作者'},{original:'合成原文'},{path:'/私人路径'}])assert.equal(SourceAttributionBody.safeParse({...declaration,...change}).success,false,JSON.stringify(change));
- assert.equal(uiLabelOf('source_attribution_status','unsigned'),'未署名');assert.equal(uiLabelOf('source_attribution_status','attributed'),'已署名为团队来源');
+ assert.equal(uiLabelOf('source_attribution_status','unsigned'),'未确认');assert.equal(uiLabelOf('source_attribution_status','attributed'),'已确认为团队来源');
 });
 test('only team associations and bounded unique team entry attestations carry attribution metadata',()=>{
  const source={space:'team',path:'/',sha256:hash,artifact:hash,size:3,by:owner,at};assert.ok(SpaceSourceBody.safeParse({...source,attribution:hash}).success);assert.ok(SpaceSourceBody.safeParse({...source,space:owner}).success);assert.equal(SpaceSourceBody.safeParse({...source,space:owner,attribution:hash}).success,false);

@@ -46,8 +46,8 @@ function redirectNotice(uri: string, account: string): Html | '' {
   // A device request has no redirect URI: the code goes nowhere, the client's own poll picks up the decision.
   if (uri === '' || redirectIsLocal(uri)) return '';
   const target = redirectTarget(uri);
-  if (target.startsWith('https://')) return callout('warn', html`<span><b>回调地址不在本机。</b>确认后，连接码发送到 ${target}；该地址的服务可凭它以 ${evidence(account)} 的身份连接本 Hub。仅在确认该服务可信时允许连接。</span>`);
-  return callout('info', html`<span>连接码交给本机上处理 ${target} 链接的应用；仅在确认该应用可信时允许连接。</span>`);
+  if (target.startsWith('https://')) return callout('warn', html`<span><b>回调地址不在这台电脑上。</b>确认后，连接码发送到 ${target}；该地址的服务可凭它以 ${evidence(account)} 的身份连接本 Hub。仅在确认该服务可信时允许连接。</span>`);
+  return callout('info', html`<span>连接码交给这台电脑上处理 ${target} 链接的应用；仅在确认该应用可信时允许连接。</span>`);
 }
 
 /** The console's policy with form-action widened to the redirect URI, so the approval may lead there; unchanged without one. */

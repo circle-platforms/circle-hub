@@ -62,7 +62,7 @@ test('HEAD has no body POST is 405 and shared Host and Origin checks still apply
 test('admin notes name each refusal while the answer bytes stay the same', async () => {
   const cases = [
     ['/local-tools/absent@10.6.0', '版本不存在'],
-    ['/local-tools/withdrawn@10.6.0', '版本已下架'],
+    ['/local-tools/withdrawn@10.6.0', '版本已退役'],
     ['/local-tools/no-tools@10.6.0', '这个版本没有本地工具'],
     ['/local-tools/fixture-tools@10.6.0/tools/absent.ts', '清单外路径'],
     ['/local-tools/fixture-tools@10.6.0/../product.json', '路径含 ..'],
@@ -91,7 +91,7 @@ test('one download reuses the verified open and a later withdrawal is refused fr
     const blocked = await get('/local-tools/fixture-tools@10.6.0');
     assert.equal(blocked.status, 404);
     assert.equal(blocked.bytes.toString(), '没有这个本地工具版本或文件\n');
-    assert.equal(calls.at(-1)?.adminNote, '版本已下架');
+    assert.equal(calls.at(-1)?.adminNote, '版本已退役');
   } finally {
     held = null;
     clearDistributionCache();

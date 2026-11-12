@@ -142,7 +142,7 @@ test('procedure and pitfall keep the same binding, a contradiction is marked, an
   assert.equal(second.result?.contributions?.stored.length, 1, JSON.stringify(second.errors));
   const page = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/net/ping'], depth:0}, ctx.w.admin);
   const text = toolText('get_nodes', {call_result:'ok', errors:[], trace:call.traceId, root:ctx.root, nodes:page!.nodes});
-  assert.match(text, /条目 教训/);
+  assert.match(text, /条目 常见误区/);
   assert.match(text, /矛盾已标记，两边都留，不裁决/);
   assert.doesNotMatch(text, /裁决为/);
   const show = await ctx.w.knowledge.getNodes({root:ctx.root, paths:['/commands/system/show'], depth:0}, ctx.w.admin);

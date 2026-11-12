@@ -1130,7 +1130,7 @@ describe('pack', () => {
     }
     // The line breaks in the title cannot fake a line (the server core's own usage block is one multi-line text by design).
     assert.ok(!line.includes('\n'));
-    assert.ok(usage.err.some((l) => l === '错误：下架要写 <包号>@<版本>：\\x1b[31m坏\\x07'), usage.text);
+    assert.ok(usage.err.some((l) => l === '错误：退役要写 <包号>@<版本>：\\x1b[31m坏\\x07'), usage.text);
     assert.ok(renamed.out.some((l) => l.includes('合成\\x1b]0;改了标题\\x07')), renamed.text);
   });
 });

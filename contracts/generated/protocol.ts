@@ -44,7 +44,7 @@ export const PROTOCOL_CODES = {
   SHARE_GROUND_UNRESOLVED: { when: '提交共享的依据暂不可解析', fix: '修复依据引用或恢复可读原文后重试' },
   SHARE_QUOTE_MISMATCH: { when: '提交共享的引文与依据不一致', fix: '按依据原文修正逐字引文后重新保存条目' },
   SHARE_PERSONAL_SOURCE: { when: '个人凭据读取的来源不能提交共享', fix: '先通过团队连接重新读取并核对引文' },
-  SHARE_UPLOAD_UNSIGNED: { when: '上传原文需上传人署名', fix: '请上传人在原文详情中选择“署名为团队来源…”，确认后重新预检' },
+  SHARE_UPLOAD_UNSIGNED: { when: '上传原文需上传人确认为团队来源', fix: '请上传人在原文详情中选择“确认为团队来源…”，确认后重新预检' },
   SHARE_GROUND_UNREADABLE: { when: '依据条目尚不能被团队全部读者读取', fix: '先将依据条目提交共享，或改用可共享的原文引用' },
   SHARE_DUPLICATE: { when: '团队空间已包含相同内容', fix: '使用已有团队条目，或修改陈述后重新核对依据' },
   SHARE_CREDENTIALS: { when: '提交共享的内容或依据命中凭据扫描', fix: '清理凭据并重新采集、核对依据后重试' },
@@ -119,4 +119,4 @@ export const PACK_FILE_PATHS = ['pack.json', 'requirements.json', 'SKILL.md', 's
 
 export const DISPLAY_ORDER = ['位置', '陈述', '性质与依据等级', '限定', '根据', '生产者', '解析状态', '有效条件'] as const;
 
-export const MODEL_VERSION = 45;
+export const MODEL_VERSION = 46;

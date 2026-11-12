@@ -23,6 +23,13 @@ import { Claim } from './claim.ts';
 import { Coverage, IsoTime, UserId, ItemId, ProtocolError, RunId, Sha256, TraceId } from './common.ts';
 import { Ground, ReferenceUri, referenceUriOf } from './reference.ts';
 
+/**
+ * What a reader is told of an unknown in a result stored before every unknown had to say what is missing and what happens
+ * next (its exit): the two facts were not written then and are not filled in afterwards.
+ */
+export const EXIT_NOT_RECORDED = '下一步处理安排未记录';
+export const MISSING_NOT_RECORDED = '未写明缺少什么';
+
 export {MissingFact,MappedIdentity,ExitAudience,UnknownExit,RecoveryGap,recoveryCondition} from './recovery.ts';
 import {MissingFact,UnknownExit,RecoveryGap,recoveryCondition} from './recovery.ts';
 
@@ -298,8 +305,8 @@ export function storedItemNotices(item:Pick<z.infer<typeof StoredPartitionItem.d
     const rules=layer.layer==='static'?STATIC_TERMINAL_RULES:DYNAMIC_TERMINAL_RULES;
     if(ruleOf(rules,layer.terminal)?.reason!=='required')return;
     const path=prefix+'/requirements/'+j+'/layers/'+k;
-    if(layer.exit===undefined)notices.push({path:path+'/exit',message:'出口未写'});
-    if(layer.missing===undefined)notices.push({path:path+'/missing',message:'缺失事实未写'});
+    if(layer.exit===undefined)notices.push({path:path+'/exit',message:EXIT_NOT_RECORDED});
+    if(layer.missing===undefined)notices.push({path:path+'/missing',message:MISSING_NOT_RECORDED});
   }));
   return notices;
 }

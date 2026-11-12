@@ -230,11 +230,11 @@ describe('the MCP standard authorization', () => {
     assert.match(page.body, new RegExp(`以 <b data-evidence>${user.user.name}</b>`));
     assert.match(String(page.headers['content-security-policy']), /form-action 'self' http:\/\/127\.0\.0\.1:43123(;|$)/);
     assert.match(page.body, /以其他账号连接/, 'a signed-in browser may still use an invitation');
-    assert.doesNotMatch(page.body, /回调地址不在本机/, 'a loopback redirect stays on this machine');
+    assert.doesNotMatch(page.body, /回调地址不在这台电脑上/, 'a loopback redirect stays on this machine');
     // A redirect URI on another host is named as such before anyone approves.
     const remote = await register('https://192.0.2.30/callback', '远程服务');
     const away = await openPage(authorizeUrl(remote, challenge, {}, 'https://192.0.2.30/callback'), session);
-    assert.match(away.page.body, /回调地址不在本机。<\/b>确认后，连接码发送到 https:\/\/192\.0\.2\.30/);
+    assert.match(away.page.body, /回调地址不在这台电脑上。<\/b>确认后，连接码发送到 https:\/\/192\.0\.2\.30/);
     const approved = await post(path, approval(page.body), cookie);
     const redirect = new URL(String(approved.headers.location));
     const reply = await exchange({ grant_type: 'authorization_code', code: redirect.searchParams.get('code')!, client_id: client, redirect_uri: 'http://127.0.0.1:43123/callback', code_verifier: verifier, resource: `${origin()}/mcp` });
@@ -500,8 +500,8 @@ describe('decisions, names and limits', () => {
     const client = await register('com.example.circle:/callback');
     const { challenge } = pkce();
     const { page } = await openPage(authorizeUrl(client, challenge, {}, 'com.example.circle:/callback'), await signIn((await member()).token));
-    assert.match(page.body, /连接码交给本机上处理 com\.example\.circle: 链接的应用/);
-    assert.doesNotMatch(page.body, /回调地址不在本机/);
+    assert.match(page.body, /连接码交给这台电脑上处理 com\.example\.circle: 链接的应用/);
+    assert.doesNotMatch(page.body, /回调地址不在这台电脑上/);
   });
 
   test('one sender registers at most twenty clients in ten minutes and holds at most a hundred open requests', () => {

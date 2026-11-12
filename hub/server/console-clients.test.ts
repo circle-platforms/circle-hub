@@ -54,7 +54,7 @@ test('connections, team and settings list each client by the name and version it
  const token=(await hub.records.principals.identify!('Bearer '+owner.token))!.token_id;
  const selected=await admin.get('/console/connections?circle='+token);assert.equal(selected.status,200);
  assert.match(selected.body,/<span class="ch-tag">客户端<\/span><h2 class="ch-panel-title"><span data-evidence>hub-test-real<\/span><\/h2>/);
- assert.match(selected.body,/<dt>版本<\/dt><dd><span data-evidence>0\.0\.0<\/span><\/dd>/);
+ assert.match(selected.body,/<dt>客户端版本<\/dt><dd><span data-evidence>0\.0\.0<\/span><\/dd>/);
  assert.match(selected.body,/data-technical>[\s\S]*名称来源[\s\S]*MCP initialize clientInfo/,'where the name came from stays in the technical details');
  const mine=await member.get('/console/settings');assert.equal(mine.status,200);
  assert.match(mine.body,/我的客户端/);assert.match(mine.body,/hub-test-real 0\.0\.0/);assert.deepEqual(wordingProblems(mine.body),[]);
@@ -113,6 +113,6 @@ test('success messages count merged and refused shares and name the action',()=>
  assert.equal(actionNotice('knowledge','grant',values({audience:'member',member:'Synthetic Reader'})),'已分享给 Synthetic Reader');
  assert.equal(actionNotice('knowledge','revoke',values({})),'已收回分享');
  assert.equal(actionNotice('memory','write',values({enabled:'false'})),'已停用记忆');
- assert.equal(actionNotice('packs','retire',values({})),'已下架这个版本');
+ assert.equal(actionNotice('packs','retire',values({})),'已退役这个版本');
  assert.equal(actionNotice('knowledge','unknown',values({})),null);
 });

@@ -20,7 +20,7 @@ async function sourceReviews(ctx:PageContext,path:string):Promise<Html>{
  const reviews=await credentialReviewRequests(ctx.deps.records,ctx.principal,{cursor:param(ctx,'review_cursor')??null,now:ctx.deps.now?.()??new Date()});
  const rows=await Promise.all(reviews.items.map(async row=>[when(row.created_at),row.external??'对象标识未显示',await ctx.userName(row.audience),when(row.deadline),row.resolved?'已有解决记录':row.superseded?'已到期并生成后续请求':row.expired?'已到期，尚无解决记录':'等待管理员核看',technicalCode(row.reference),technicalCode(row.source)]));
  const next=reviews.next?link(path,'下一页来源核看请求',{...Object.fromEntries(ctx.url.searchParams),review_cursor:reviews.next,call:null}):'';
- return card({title:'来源核看请求',meta:'独立于调用筛选 · 仅显示当前有权访问的来源 · 本页 '+reviews.items.length+' 项'},html`<p class="ch-meta">这些请求已写入记录，不代表管理员已收到外部通知。到期不算接受；请具名接收人核对来源和当前受理决定，已有解决记录也不等于原文当前可读。</p>${table(['创建时间','来源对象','接收管理员','期限','请求进展','请求引用','原文引用'],rows,'本页没有可显示的来源核看请求')}${next}<p class="ch-meta">在 Hub 主机运行 ${technicalCode('circle-hub source held')} 查看被保留来源，按原文引用的摘要核对扫描与受理；本页不显示原文或凭据命中值。</p>`);
+ return card({title:'来源核看请求',meta:'独立于调用筛选 · 仅显示当前有权访问的来源 · 本页 '+reviews.items.length+' 项'},html`<p class="ch-meta">这些请求已写入记录，不代表管理员已收到外部通知。到期不算接受；请具名接收人核对来源和当前受理决定，已有解决记录也不等于原文当前可读。</p>${table(['创建时间','来源对象','接收管理员','期限','请求进展','请求引用','原文引用'],rows,'本页没有可显示的来源核看请求')}${next}<p class="ch-meta">在运行 Hub 的服务器上执行 ${technicalCode('circle-hub source held')} 查看被保留来源，按原文引用的摘要核对扫描与受理；本页不显示原文或凭据命中值。</p>`);
 }
 
 /** Trial actions are administrator-only and separate from the MCP call log and the real reads' statistics. */
@@ -118,9 +118,9 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
   const toolOptions = html`<option value="">全部工具</option>${TOOLS.map((t) => html`<option value="${t.name}"${t.name === tool ? html` selected` : ''}>${t.label}</option>`)}${tool !== undefined && !TOOL_LABELS.has(tool) ? html`<option value="${tool}" selected>${tool}</option>` : ''}`;
   const filters = html`<form class="ch-actions" data-filters method="get" action="${path}"><input type="hidden" name="days" value="${days}">${tab === 'calls' ? '' : html`<input type="hidden" name="tab" value="${tab}">`}
 ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></label>` : ''}${byCall ? html`<label>工具 <select name="tool">${toolOptions}</select></label>
-<label>运行 <input name="run" value="${run ?? ''}"></label>` : ''}<label>从 <input name="from" value="${param(ctx, 'from') ?? ''}" placeholder="2026-11-01"></label>
+<label>任务 <input name="run" value="${run ?? ''}"></label>` : ''}<label>从 <input name="from" value="${param(ctx, 'from') ?? ''}" placeholder="2026-11-01"></label>
 <label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
-  const chrome = ctx.chrome('记录', { active: 'records', hint: ctx.admin ? '操作与校验记录仅追加、不可修改，可按成员、工具、运行与时间筛选' : '仅显示与本人相关的调用；记录仅追加、不可修改' });
+  const chrome = ctx.chrome('记录', { active: 'records', hint: ctx.admin ? '操作与校验记录仅追加、不可修改，可按成员、工具、任务与时间筛选' : '仅显示与本人相关的调用；记录仅追加、不可修改' });
   if (problems.length > 0 || from === null || to === null) {
     return { status: 400, body: page(chrome, html`${card(null, html`${filters}<p class="error">${problems.join('；')}</p>`)}`) };
   }

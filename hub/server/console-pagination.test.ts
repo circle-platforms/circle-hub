@@ -43,7 +43,7 @@ test('run log pagination uses the stored cursor and historical missing exits rem
   const seen:Array<Record<string,unknown>>=[];
   const deps={runs:{getRun:async()=>({run:runRecord,latest:{record:'c'.repeat(64),result:old},production:{record:'c'.repeat(64),result:old},submissions:[]})},records:{callLog:{query:async(_by:unknown,query:Record<string,unknown>)=>{seen.push(query);return {items:[],next:query.cursor?null:'synthetic-next'};}}}};
   // The item results are one tab and the calls another (decision 151); the call log pages inside its tab.
-  assert.ok(String((await runPage(context(deps,`/console/runs/${runRecord.run}?tab=items`),runRecord.run)).body).includes('出口未写'));
+  assert.ok(String((await runPage(context(deps,`/console/runs/${runRecord.run}?tab=items`),runRecord.run)).body).includes('下一步处理安排未记录'));
   const first=String((await runPage(context(deps,`/console/runs/${runRecord.run}?tab=process`),runRecord.run)).body);
   await runPage(context(deps,next(first)),runRecord.run);
   // The waterfall reads the call log too; the paged queries are the ones that carry a cursor.

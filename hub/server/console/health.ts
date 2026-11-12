@@ -14,7 +14,7 @@ import { isTraceOrigin, uiLabelOf } from '../../../contracts/generated/vocabular
 import { KIND_TEXT, MAX_CLIENT_NAMES, RETENTION_MS, type CurvePoint, type HealthReader, type HealthSummary, type NumericField, type ReleaseRun, type ReportSummary, type StoredProcessEvent } from '../../health/api.ts';
 import { BATCH_ROWS, FLUSH_MS, MAX_RELEASE_CALLS_READ, MAX_ROOTS_READ, MAX_ROUNDS_READ, QUEUE_ROWS, TIMED_BACKGROUND_STEPS, type BackgroundStep, type BackgroundTotal, type ClientTotal, type ClientTotals, type ReleaseTotal, type TraceReader, type WriterStats } from '../../telemetry/api.ts';
 import { curve, type Curve } from './charts.ts';
-import { fullTime, size } from './format.ts';
+import { hoverTime, size } from './format.ts';
 import { code, emptyBlock, href, html, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
@@ -62,7 +62,7 @@ const gb = (value: number): string => (value === 0 ? '0' : (value / GB).toFixed(
 const two = (n: number): string => String(n).padStart(2, '0');
 const stamp = (at: string | number): Html => {
   const iso = typeof at === 'number' ? new Date(at).toISOString() : at;
-  return html`<time class="nowrap ch-time" datetime="${iso}" title="${fullTime(iso)}">${clock(iso)}</time>`;
+  return html`<time class="nowrap ch-time" datetime="${iso}" title="${hoverTime(iso)}">${clock(iso)}</time>`;
 };
 /** A period as the table says it: one unit, since it is an observed median and not a setting. */
 function period(ms: number): string {
@@ -195,7 +195,8 @@ function resourceCards(summary: HealthSummary | null, points: readonly CurvePoin
 const unreadable = (what: string): Html => html`<p class="ch-meta">${unknown()} · 这次没有读出${what}，原因记在服务日志；刷新页面重读。这不是没有数据。</p>`;
 
 function backgroundTable(tasks: readonly BackgroundTotal[] | null, now: Date): Html {
-  const hint = '每轮后台任务都是一条追踪。行数和大小来自这一轮根步骤的用量，含它的子步骤；大小是返回行里字符串列的长度之和，jsonb 列不算。每轮的值是近 24 小时的平均。间隔是定时任务近 24 小时相邻两轮的中位数。';
+  const hint = '每轮后台任务都是一条追踪。行数和大小来自这一轮根步骤的用量，含它的子步骤。每轮的值是近 24 小时的平均。间隔是定时任务近 24 小时相邻两轮的中位数。';
+  const basis = '统计口径：大小只统计文本列，不含结构化列。';
   if (tasks === null) return card({ title: '后台任务', hint }, unreadable('后台任务'));
   if (tasks.length === 0) return card({ title: '后台任务' }, emptyBlock({ title: '还没有后台任务的记录', text: '每轮后台任务结束后写一条追踪，这里按占用排序列出每种任务的间隔、上次耗时、读的行数和大小。' }));
   const total = tasks.reduce((sum, task) => sum + task.db_rows, 0);
@@ -213,7 +214,7 @@ function backgroundTable(tasks: readonly BackgroundTotal[] | null, now: Date): H
   });
   const capped = tasks.some((task) => task.capped) ? ` · 超过 ${count(MAX_ROUNDS_READ)} 轮的任务只算最新的 ${count(MAX_ROUNDS_READ)} 轮` : '';
   const share = total === 0 ? '' : ` · 合计 ${count(total)} 行，${TASK_LABEL[top.name]}占 ${percent1(top.db_rows / total)}`;
-  return card({ title: '后台任务', meta: `按近 24 小时读的行数排序${share}${capped}`, hint }, table(['任务', '每轮读的行数', '每轮读的大小', '间隔', '上次耗时', '上次运行', '近 24 小时读的行数 ↓', '近 24 小时读的大小', '近 24 小时轮数'], rows, '没有后台任务', 'background'));
+  return card({ title: '后台任务', meta: `按近 24 小时读的行数排序${share}${capped}`, hint }, html`${table(['任务', '每轮读的行数', '每轮读的大小', '间隔', '上次耗时', '上次运行', '近 24 小时读的行数 ↓', '近 24 小时读的大小', '近 24 小时轮数'], rows, '没有后台任务', 'background')}<p class="ch-meta">${basis}</p>`);
 }
 
 /** When a process really ended: the report's time. `at` is when the next start found out. */
@@ -266,7 +267,7 @@ function crashFacts(event: StoredProcessEvent, last: CurvePoint | undefined): Ht
     ...(report === undefined ? [] : [['原因', evidence(`${report.event ?? '未知'}（${report.trigger ?? '未知'}）`)], ['崩溃报告', code(report.file)]] as [string, unknown][]),
     ['进程', html`PID ${shown(event.pid, String)}${event.node_version === null ? '' : html` · ${event.node_version}`}`],
     ['发布', event.release === null ? UNKNOWN : code(event.release)],
-  ]), '查看');
+  ]), '查看进程信息');
   return html`${facts(pairs)}${details}`;
 }
 
@@ -315,7 +316,7 @@ function crashBody({ event, points, names }: CrashDetail): Html {
   const who = first?.user === null || first?.user === undefined ? UNKNOWN : names?.get(first.user) ?? UNKNOWN;
   const finding = first === undefined
     ? requests === null
-      ? html`<p class="ch-finding">当时在处理什么：${UNKNOWN}。在途请求日志里没有这个进程，这不等于当时没有请求；主机重启会清掉这个日志。</p>`
+      ? html`<p class="ch-finding">当时在处理什么：${UNKNOWN}。在途请求日志里没有这个进程，这不等于当时没有请求；服务器重启会清掉这个日志。</p>`
       : html`<p class="ch-finding">当时没有在处理的请求。</p>`
     : html`<p class="ch-finding">运行最久的是 ${code(first.name)}（${who}），崩溃时已运行 ${duration(Math.max(0, crashAt - firstAt!))}。${heaps}</p>`;
   const total = (requests?.length ?? 0) + event.requests_omitted;
@@ -391,7 +392,7 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
   const parts: unknown[] = [sessions === null && streams === null ? '连接数未知，调用量和 p95 来自追踪，不受影响' : html`现在 ${shown(sessions, count)} 个 MCP 会话、${shown(streams, count)} 个实时推送流`];
   if (totals.groups > totals.rows.length) parts.push(`显示 ${count(totals.rows.length)} / 共 ${count(totals.groups)}`);
   if (oldest !== null) parts.push(html`近 24 小时的调用超过 ${count(MAX_ROOTS_READ)} 次，只算最新的 ${count(MAX_ROOTS_READ)} 次，从 ${oldest} 起`);
-  return card({ title: '按客户端', meta: html`${parts.map((part, index) => html`${index === 0 ? '' : ' · '}${part}`)}`, hint }, table(['客户端', '平台', '入口', '版本', '现在的连接', '近 24 小时调用', '近 24 小时 p95'], rows, '没有客户端', 'clients'));
+  return card({ title: '按客户端', meta: html`${parts.map((part, index) => html`${index === 0 ? '' : ' · '}${part}`)}`, hint }, table(['客户端', '平台', '入口', '客户端版本', '现在的连接', '近 24 小时调用', '近 24 小时 p95'], rows, '没有客户端', 'clients'));
 }
 
 interface Runs {
@@ -428,7 +429,7 @@ function releaseTable(runs: Runs | null, totals: readonly ReleaseTotal[] | null,
     const span = running ? html`已运行 ${duration(now.getTime() - first)}` : first <= retained ? html`运行到 ${when(run.last_event, now)}；只算保留期内` : html`运行 ${duration(last - first)}`;
     const deployed = new Date(first);
     return [
-      html`<span class="ch-tool"><time class="ch-time" datetime="${run.first_start}" title="${fullTime(run.first_start)}">${two(deployed.getMonth() + 1)}-${two(deployed.getDate())} ${two(deployed.getHours())}:${two(deployed.getMinutes())}</time> 部署</span>${running ? html` ${chip('当前', 'pass')}` : ''}`,
+      html`<span class="ch-tool"><time class="ch-time" datetime="${run.first_start}" title="${hoverTime(run.first_start)}">${two(deployed.getMonth() + 1)}-${two(deployed.getDate())} ${two(deployed.getHours())}:${two(deployed.getMinutes())}</time> 部署</span>${running ? html` ${chip('当前', 'pass')}` : ''}`,
       span,
       total === undefined ? UNKNOWN : total.capped ? `${count(total.calls)} 以上` : count(total.calls),
       p95 === null ? '无调用' : duration(p95),
@@ -445,10 +446,10 @@ function observation(writer: WriterStats | null, summary: HealthSummary | null, 
   const counted = (value: number | undefined): unknown => (value === undefined ? UNKNOWN : count(value));
   const first = html`<section class="ch-stats">${kpi('写入延迟 p95', shown(writer?.writeDelayP95Ms, duration), { note: writer !== null && writer.writeDelayP95Ms === null ? '还没有写入过' : `每 ${FLUSH_MS / 1000} 秒或攒够 ${BATCH_ROWS} 行写一次`, hint: '一行从进队列到写进数据库等了多久，最新 1,000 行的 p95。' })}${kpi('队列', counted(writer?.queued), { unit: '行', note: `上限 ${count(QUEUE_ROWS)} 行` })}${kpi('丢弃', counted(writer?.dropped), { unit: '行', note: '队列满时丢弃' })}${kpi('写入失败', counted(writer?.failed), { unit: '行' })}</section>`;
   const second = html`<section class="ch-stats">${kpi('已写入', counted(writer?.written), { unit: '行' })}${kpi('每批写入耗时', shown(writer?.lastBatchMs, duration), { note: '最近一批' })}${kpi('没有写入的样本', summary === null ? UNKNOWN : count(summary.dropped_samples), { unit: '个', note: '近 24 小时' })}${kpi('读取失败的样本', shown(failed, count), { unit: '个', note: '近 24 小时' })}</section>`;
-  return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '观测不能成为负担：请求路径不等待写入，队列满时丢弃并计数。进程崩溃时队列里还没写的行随进程丢失，不计数。' }, html`${first}${second}`);
+  return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '写入观测数据不阻塞请求；队列满时丢弃并计数。进程异常退出时，还没写入的数据会丢失，不计入丢弃数。' }, html`${first}${second}`);
 }
 
-const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">这里还不显示。在 Hub 所在主机上执行 ${code('circle-hub db top')} 查看。</p>`);
+const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">这里还不显示。在运行 Hub 的服务器上执行 ${code('circle-hub db top')} 查看。</p>`);
 const NO_SAMPLES = emptyBlock({ title: '近 24 小时没有资源样本', text: 'Hub 服务运行后每 10 秒写一个样本，这里会出现主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和 24 小时曲线。' });
 const HINT = '主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和曲线，后台任务，崩溃和重启。只有管理员可见。诊断数据保留 14 天，不作根据。';
 

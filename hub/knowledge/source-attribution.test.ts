@@ -17,7 +17,7 @@ async function prepare(w:Awaited<ReturnType<typeof makeWorld>>,session='syntheti
 }
 test('the uploader signs an exact private capture and sharing preserves it beside a declared team copy',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,p=await prepare(w),original=await w.kit.store.get(p.file.digest);
- assert.equal((await spaces.precheckShare(w.user,p.input)).checks.find(row=>row.code==='SHARE_UPLOAD_UNSIGNED')?.fix.includes('署名为团队来源…'),true);
+ assert.equal((await spaces.precheckShare(w.user,p.input)).checks.find(row=>row.code==='SHARE_UPLOAD_UNSIGNED')?.fix.includes('确认为团队来源…'),true);
  const proof=await spaces.attributeSource(w.user,p.source.digest,p.file.digest);assert.equal(proof.by,w.user.id);assert.equal(proof.audience,'team');
  assert.equal((await spaces.current('team')),null,'signing does not publish a team object');
  assert.equal(await spaces.source(w.outsider,p.file.body.sha256),null);assert.equal(await w.kit.artifacts.source(w.outsider,p.file.body.sha256),null);

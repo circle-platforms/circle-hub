@@ -249,5 +249,5 @@ test('without a command bridge the operations answer 503 and point to the Hub\'s
   const bare = await signIn('root', barePort);
   const reply = await send('POST', '/console/api/members', { port: barePort, cookie: bare.cookie, csrf: bare.csrf, body: JSON.stringify({ name: 'carol' }) });
   assert.equal(reply.status, 503);
-  assert.match(JSON.parse(reply.body).fix, /Hub 所在的主机上执行同一命令/);
+  assert.match(JSON.parse(reply.body).fix, /运行 Hub 的服务器上执行同一命令/);
 });

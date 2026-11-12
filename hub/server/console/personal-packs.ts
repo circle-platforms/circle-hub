@@ -37,8 +37,8 @@ export async function personalPackControls(ctx:PageContext,pack:PackListing):Pro
   const checked=ctx.url.searchParams.get('promote')==='1'?await personal.precheckPromotion(ctx.principal,pack.id+'@'+pack.version):null;
   const preview=checked?dialog('promote-personal-pack','发布到团队',html`<p>我的版本与分享保留；团队版本独立，确认时重新检查。</p><p>我的：保留不变 · ${audience.text}</p><p>团队：${uiLabelOf('audience_scope','team')}</p>${checkTable(checked.checks)}`,personalPackForm(ctx,'promote',fields,'确认发布到团队',false,!checked.ok)):html``;
   const body=html`<p>使用范围：${audience.text}</p>${sharingDialog}${preview}`;
-  const retire=pack.withdrawn?html``:dialog('retire-personal-pack','下架我的版本',html`<p>停止新运行使用；版本记录仍按原摘要读取。</p>`,personalPackForm(ctx,'retire',fields,'下架此版本'));
-  return {body:html`${body}${retire}`,actions:html`${pack.withdrawn?'':actionLink('#retire-personal-pack','下架…','danger')}${actionLink('#grant-pack','分享…')}${canPublish?actionLink('/console/packs/'+pack.id+'?'+new URLSearchParams({space:pack.space!,promote:'1'})+'#promote-personal-pack','分享到团队…'):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权">分享到团队…</button>`}`};
+  const retire=pack.withdrawn?html``:dialog('retire-personal-pack','退役我的版本',html`<p>退役后这个版本不再可用于新任务；已有任务照旧可读、可完成，版本记录仍按原摘要读取。</p>`,personalPackForm(ctx,'retire',fields,'退役此版本'));
+  return {body:html`${body}${retire}`,actions:html`${pack.withdrawn?'':actionLink('#retire-personal-pack','退役…','danger')}${actionLink('#grant-pack','分享…')}${canPublish?actionLink('/console/packs/'+pack.id+'?'+new URLSearchParams({space:pack.space!,promote:'1'})+'#promote-personal-pack','分享到团队…'):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权">分享到团队…</button>`}`};
 
 }
 export async function performPersonalPackAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined},staging:PackStaging,upload?:{bytes:Buffer}):Promise<string>{

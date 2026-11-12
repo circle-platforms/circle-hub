@@ -130,8 +130,8 @@ async function proposals(path: string, session: string, captures: VerifiedCaptur
     } else {
       prepared.push({
         ...base,
-        phenomenon: text(common.phenomenon, 'invalid_proposals', '教训缺现象'),
-        suggestion: text(common.suggestion, 'invalid_proposals', '教训缺建议'),
+        phenomenon: text(common.phenomenon, 'invalid_proposals', '常见误区缺现象'),
+        suggestion: text(common.suggestion, 'invalid_proposals', '常见误区缺建议'),
         quote: quoteOf(common.quote, bytes),
       });
     }

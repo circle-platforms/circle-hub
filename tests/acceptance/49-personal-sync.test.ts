@@ -84,7 +84,7 @@ test('a purge also removes the personal original a run cited; the run shows its 
  // Owner ruling 3 (issue 141): the pre-check and the console confirmation name the run-held copy and the affected run.
  const impact=await hub.hub.knowledge.personalSync!.modeCheck(owner.principal,{mode:'local'});assert.equal(impact.run_held_originals,1);assert.equal(impact.affected_runs,1);
  const {openConsole}=await import('./support/console.ts'),browser=await openConsole(hub,owner.token),confirm=await browser.get('/console/knowledge?scope=personal&sync=local');assert.equal(confirm.status,200);
- assert.match(confirm.body.replace(/<[^>]+>/g,''),/运行引用过的 1 份私人原文一并清除；1 次运行的根据将标为“根据不可用”，原因：运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除/);assert.match(confirm.body,/data-purge-run-citations/);
+ assert.match(confirm.body.replace(/<[^>]+>/g,''),/任务引用过的 1 份私人原文一并清除；1 个任务的根据将标为“根据不可用”，原因：运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除/);assert.match(confirm.body,/data-purge-run-citations/);
  await hub.records.personalPayloads!.purge(owner.principal,initial.epoch);assert.equal(await hub.hub.knowledge.spaces!.current(owner.user.id),null);
  assert.equal(await hub.records.artifacts.sourceForRun(owner.principal,source.body.sha256,run.out.run!.run,{record:source.digest}),null,'the run-held copy is gone');assert.equal(await hub.records.objects.get(source.body.sha256),null);
  const detail=await hub.hub.runs.getRun(owner.principal,run.out.run!.run);assert.deepEqual(detail?.grounds_purged?.map(row=>row.reference),['src:'+source.body.sha256]);

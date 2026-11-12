@@ -12,7 +12,7 @@ import type { Claim } from '../../../contracts/src/claim.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
-import { partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult, type ValidationResult } from '../../../contracts/src/validation.ts';
+import { EXIT_NOT_RECORDED, MISSING_NOT_RECORDED, partitionCountsOf, type ItemResult, type LayerResult, type RequirementResult, type ValidationResult } from '../../../contracts/src/validation.ts';
 import type { RunDetail } from '../../ports.ts';
 import type { CallLogLine, Principal } from '../../records/api.ts';
 import { canSeeRun } from '../../runs/engine/api.ts';
@@ -81,6 +81,10 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const RUN_ID = /^run_[0-9a-z]{26}$/;
 const yesNo = (value: boolean): string => (value ? '是' : '否');
 
+/** The formal names of a claim's fields stay; the two that read as jargon get a sentence beside them (wording table, W20 and W21). */
+const CLAIM_TERM_NOTES: Record<string, string> = { 性质与依据等级: '这条结论是什么性质、靠什么得出。“观察上的规则”指由规则直接根据观察到的事实得出；“主张上的规则”指由规则根据已有的主张得出。' };
+const claimTerm = (label: string): string | Html => Object.hasOwn(CLAIM_TERM_NOTES, label) ? tooltip(label, CLAIM_TERM_NOTES[label]) : label;
+
 function errorsTable(errors: readonly ProtocolError[]): Html {
   return table(
     ['码', '说明', '修正', '位置', '条目', '要求项', '剩余修复轮数'],
@@ -94,18 +98,18 @@ export function ruleWithdrawalNotice(detail:Pick<RunDetail,Extract<ValidityStatu
   // Owner ruling 3 (issue 141): name the unavailable grounds and the registered reason.
   const purged=detail.grounds_purged?.length?html`<p class="notice" data-grounds-purged><strong>${uiLabelOf('validity_status','grounds_purged')}</strong>；${PROTOCOL_CODES.GROUNDS_PURGED.when}（${detail.grounds_purged.length} 项来源）。${PROTOCOL_CODES.GROUNDS_PURGED.fix}。</p>${detail.grounds_purged.map(row=>technical(code(row.reference),'查看不可用的引用'))}`:html``;
   const grounds=detail.grounds_withdrawn?.length||detail.grounds_withdrawn_hidden_count?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；来源当前已撤回，原有回执保留。${detail.grounds_withdrawn_hidden_count?`另有 ${detail.grounds_withdrawn_hidden_count} 项来源不可读取。`:''}</p>`:html``;
-  return html`${grounds}${purged}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已下架）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
+  return html`${grounds}${purged}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已退役）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
 }
 
 export function claimBlock(claim: Claim): Html {
-  return technical(html`<div class="ch-source" data-evidence>${definitions(claimFields(claim, false, INTERFACE_LABELS).map(([label,value])=>[label,/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`,'查看主张');
+  return technical(html`<div class="ch-source" data-evidence>${definitions(claimFields(claim, false, INTERFACE_LABELS).map(([label,value])=>[claimTerm(label),/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`,'查看主张');
 }
 
 // ---------------------------------------------------------------- runs
 
 /** Bind the live condition only to result claims; the claim and its receipt remain original evidence. */
 export function claimBlockAtRead(ruleWithdrawn:boolean):typeof claimBlock{
-  return ruleWithdrawn?claim=>technical(html`<div class="ch-source" data-evidence>${definitions(claimFields(claim,true,INTERFACE_LABELS).map(([label,value])=>[label,/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`,'查看主张'):claimBlock;
+  return ruleWithdrawn?claim=>technical(html`<div class="ch-source" data-evidence>${definitions(claimFields(claim,true,INTERFACE_LABELS).map(([label,value])=>[claimTerm(label),/[a-f0-9]{32,}|(?:src|tree|rec):/.test(value)?technicalCode(value):value]))}</div>`,'查看主张'):claimBlock;
 }
 
 /** The tabs of a task's page (decision 151); the first is the page without a tab named. */
@@ -200,7 +204,7 @@ function itemTable(items: readonly ItemResult[], names: ReadonlyMap<string, stri
     for (const [index, r] of item.requirements.entries()) {
       const layers = LAYER.map((layer) => {
         const found: LayerResult | undefined = r.layers.find((l) => l.layer === layer);
-        return found === undefined ? html`${uiLabelOf('layer', layer)}：${NOT_APPLICABLE}` : html`${terminalHtml(found, terminalText(found, INTERFACE_LABELS))}${found.reason?html`<div>${found.missing??'缺失事实未写'}；${found.exit?`${found.exit.due} 前，${'user'in found.exit.audience?found.exit.audience.user:uiLabelOf('execution_host','hub')}：${uiLabelOf('exit_action',found.exit.action)}`:'出口未写'}</div>`:''}${found.gaps?.map(g=>html`<div>未决未知：${g.missing}；${g.exit.due} 前：${uiLabelOf('exit_action',g.exit.action)}</div>`)??''}`;
+        return found === undefined ? html`${uiLabelOf('layer', layer)}：${NOT_APPLICABLE}` : html`${terminalHtml(found, terminalText(found, INTERFACE_LABELS))}${found.reason?html`<div>${found.missing??MISSING_NOT_RECORDED}；${found.exit?`${found.exit.due} 前，${'user'in found.exit.audience?found.exit.audience.user:uiLabelOf('execution_host','hub')}：${uiLabelOf('exit_action',found.exit.action)}`:EXIT_NOT_RECORDED}</div>`:''}${found.gaps?.map(g=>html`<div>未决未知：${g.missing}；${g.exit.due} 前：${uiLabelOf('exit_action',g.exit.action)}</div>`)??''}`;
       });
       rows.push([
         ...(index === 0 ? head : ['', '', '', '']),
@@ -300,8 +304,8 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
 
 /** A visible run may precede its stored production result; ask for a reread before a new run. */
 export function missingProductionResult(detail:RunDetail):Html {
-  return html`<p class="notice">没有找到 start_run 留下的校验结果记录（缺：submission 等于运行记录摘要的 validation_result）。这次运行开始于 ${detail.run.started_at}；如果运行刚开始，请刷新本页再看。刷新后仍缺，再用同样的输入重新开始一次新运行，使用新的 client_key，避免返回这次旧运行。</p>
-${detail.latest===null?'':html`<p class="notice">已有后续受理的模型评论，结果记录 ${technicalCode(detail.latest.record)}；运行页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
+  return html`<p class="notice">没有找到 start_run 留下的校验结果记录（缺：submission 等于运行记录摘要的 validation_result）。这次任务开始于 ${detail.run.started_at}；如果任务刚开始，请刷新本页再看。刷新后仍缺，再用同样的输入重新开始一个新任务，使用新的 client_key，避免返回这次的旧任务。</p>
+${detail.latest===null?'':html`<p class="notice">已有后续受理的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
 }
 
 /** The query already authorized this run; this marker never grants access itself. */
@@ -352,7 +356,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['运行', technicalCode(run.run)],
     [uiLabelOf('pack_kind', 'workflow'), html`${run.pack} ${technicalCode(run.pack_digest)}`],
     ['产品 / 版本 / 构建', [run.product, run.version, run.build].filter(Boolean).join(' / ') || '—'],
-    ['锁定的知识版本', run.root === undefined ? '—' : link('/console/knowledge/tree', '查看', { root: run.root, path: '/' })],
+    ['锁定的知识版本', run.root === undefined ? '—' : link('/console/knowledge/tree', '查看知识', { root: run.root, path: '/' })],
     ['执行人', run.runner === undefined ? '—' : await ctx.userName(run.runner)],
     [axisUiLabel('execution_host'), uiLabelOf('execution_host', run.host)],
     [axisUiLabel('trigger'), uiLabelOf('trigger', run.trigger)],
@@ -362,7 +366,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     ['开始时间', run.started_at],
     ['提交期限', run.submission_due ?? '这次任务未记录提交期限。请从此任务创建新的修订后继续。'],
     ['交付', detail.latest === null ? '尚未交付' : '已有交付结果'],
-    ['边界政策', run.policy ?? '—'],
+    [tooltip('边界政策', '这次任务用的是哪一版规定：哪一类对外操作在哪一类环境里允许。'), run.policy ?? '—'],
     ['规程内容哈希', technicalCode(run.instructions_digest)],
   ]);
   const basis = run.target_basis.length === 0 ? html`<p class="empty">没有</p>` : html`${run.target_basis.map(claimBlock)}`;
@@ -377,7 +381,7 @@ export async function runPage(ctx: PageContext, runId: string): Promise<PageResu
     const management=isAbandonedResult(result);
     const unwritten=management?result.cross_item.find(c=>c.warrant.id==='runs.engine@1'&&c.statement.data?.run_disposition==='abandon')?.statement.data?.legacy_unwritten_fields:undefined;
     return html`<p><strong>${resultHeadline(result,commentary)}</strong></p>
-${management?html`<p>技术层未重新验证；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“出口未写”；本投影出口仅引用本次真实处置请求。</p>`:''}
+${management?html`<p>技术层未重新验证；原记录 ${typeof unwritten==='number'?unwritten:0} 处技术字段未写，原件仍显示“${EXIT_NOT_RECORDED}”；本投影出口仅引用本次真实处置请求。</p>`:''}
 ${definitions([
   [recordLabel, technicalCode(latest.record)],
   [result.system_input?'系统交付输入内容哈希':'提交内容哈希',technicalCode(result.submission)],
@@ -406,7 +410,7 @@ ${section('错误与修正', errorsTable(result.errors))}`;
 ${primary === null ? html`<p class="ch-meta">${factOnly ? '没有找到生产结果记录，原因见“条目”页签。' : '还没有校验结果。'}</p>` : html`<p><strong>${resultHeadline(primary.result)}</strong></p>`}</div>
 <div><h2 class="ch-card-title">还需处理${requests.length > 0 ? ` · ${requests.length.toLocaleString('en-US')} 条请求${uiLabelOf('request_status', 'waiting')}` : ''}</h2>${owing}</div></section>`;
   const notices = html`${sharedRunNotice(ctx,run)}${ruleWithdrawalNotice(detail)}
-${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'运行',{})} ${technicalCode(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新验证；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}`;
+${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${link('/console/runs/'+run.run,'任务',{})} ${technicalCode(detail.management.record)}。${detail.management.result?'下列为管理交付，技术终态沿用原记录，未重新验证；未知计数保留，旧缺字段只引用此次真实处置请求。':'管理交付投影尚未形成，Hub 将自动重试；旧技术结果仍在原记录中。'}</p>`):''}`;
   const counts: Partial<Record<TaskTab, number>> = { requirements: run.requirements.length, items: run.items.length, requests: requests.length, sources: run.sources.length };
   const tabs = html`<nav class="ch-seg" aria-label="任务内容" data-task-tabs>${TASK_TABS.map((key) => html`<a href="${href(base, key === 'requirements' ? {} : { tab: key })}"${key === tab ? html` aria-current="page"` : ''}>${TASK_TAB_LABEL[key]}${counts[key] === undefined ? '' : html` <span class="ch-count">${counts[key]!.toLocaleString('en-US')}</span>`}</a>`)}</nav>`;
   let body: Html;
@@ -509,7 +513,7 @@ export async function names(ctx: PageContext, lines: readonly CallLogLine[]): Pr
  */
 export function callTable(lines: readonly CallLogLine[], admin: boolean, users: ReadonlyMap<string, string>,selection?:{path:string;params:Record<string,string>;selected?:string;compact?:boolean}): Html {
   const compact = selection?.compact === true;
-  const headers = ['时间', '成员', '工具', axisUiLabel('call_result'), axisUiLabel('acceptance'), '错误码', '耗时（毫秒）', '运行', ...(compact ? [] : ['追踪', '会话', '参数摘要（字节）'])];
+  const headers = ['时间', '成员', '工具', axisUiLabel('call_result'), axisUiLabel('acceptance'), '错误码', '耗时（毫秒）', '任务', ...(compact ? [] : ['追踪', '会话', '参数摘要（字节）'])];
   if (admin) headers.push('管理员备注');
   return table(
     headers,
@@ -588,7 +592,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
   if(ctx.url.searchParams.get('view')==='sources')return sourceArchivePage(ctx);
   if(ctx.url.searchParams.get('view')==='memory')return memoryPage(ctx);
   // Decision 151: the home is the list of entries; the product knowledge sources and what waits for intake are the fourth tab.
-  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为运行来源'}),await knowledgeHome(ctx))};
+  if(ctx.deps.knowledge.spaces)return {status:200,body:knowledgeShell(ctx.chrome('知识库',{active:'knowledge',hint:'同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，仅本人及当前获分享权限者可读；记忆仅作会话偏好，不作为任务的来源'}),await knowledgeHome(ctx))};
   const spaces = await spaceOverview(ctx);
   const sources = await packSources(ctx, 'product');
   const lines = await readableLines(ctx);
@@ -619,20 +623,20 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     }
     const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
     rows.push(['不分版本', '—', '构建未声明', '—', unversioned === null ? '—' : `1（来源 ${unversioned.source_count} 个）`,
-      unversioned === null ? '—' : link('/console/knowledge/root', '查看', {root:unversioned.root})]);
+      unversioned === null ? '—' : link('/console/knowledge/root', '查看知识版本', {root:unversioned.root})]);
     const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
     if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
     const options = versions;
-    const diff = options.length === 0 ? html`` : html`<form class="ch-actions" data-filters method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">${ctx.deps.knowledge.spaces?'产品版本差异':'版本差异'}</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">比较</button></form>`;
+    const diff = options.length === 0 ? html`` : html`<form class="ch-actions" data-filters method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">产品版本差异</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">比较</button></form>`;
     blocks.push(
       knowledgePanel(
         { title: line.title, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '—'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
-        html`${table([ctx.deps.knowledge.spaces?'产品版本':'版本', '名称族', '构建', '已发布', '已产出版本', ctx.deps.knowledge.spaces?'当前知识版本':'当前版本'], rows, '还没有构建')}<div class="ch-actions">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
+        html`${table(['产品版本', '名称族', '构建', '已发布', '已产出版本', '当前知识版本'], rows, '还没有构建')}<div class="ch-actions">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
   }
   const flow = html``;
-  const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从产品知识来源声明的来源导入到团队知识库；产品文件夹沿用产品线读权，仅管理员可用' })}` : undefined;
+  const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从所选产品已配置的知识来源导入到团队知识库；产品文件夹沿用产品线的读取权限，仅管理员可用' })}` : undefined;
   return {
     status: 200,
     body: knowledgeShell(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'我的、团队与与本账户共享的知识；已验证与待验证内容分别标示':'统一的知识库：每条知识均附来源，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
@@ -672,7 +676,7 @@ export async function productPage(ctx: PageContext): Promise<PageResult> {
     b.platform ?? '主平台',
     b.built_at ?? '—',
     b.released_at ?? '未发布',
-    b.root === null ? '—' : link('/console/knowledge/root', '查看', { root: b.root }),
+    b.root === null ? '—' : link('/console/knowledge/root', '查看知识版本', { root: b.root }),
   ]);
   const more = html`<p>分页：本页 ${shown.length?listing.start+1:0} 至 ${listing.start+shown.length}，共 ${builds.length} 个${listing.next?html`；${link('/console/knowledge/product','下一页',{id:line.id,line:versionLine,cursor:listing.next})}`:''}</p>`;
   return {
@@ -751,7 +755,7 @@ ${cited === null
     status: 200,
     body: knowledgeShell(
       ctx.chrome('知识条目', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · ${path}` }),
-      html`<div class="ch-actions">版本 ${technicalCode(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</div>
+      html`<div class="ch-actions">知识版本 ${technicalCode(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</div>
 <p>覆盖：${coverageText(nodes.coverage) ?? '—'}</p>${parts}${next}`,
     ),
   };

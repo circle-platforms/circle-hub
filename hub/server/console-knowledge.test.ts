@@ -31,7 +31,7 @@ test('knowledge empty states reflect the reader and import remains an administra
   assert.match(adminBody,/还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入/);
   for(const body of [memberBody,adminBody]) assert.doesNotMatch(body,/按产品线浏览|版本差异|name="from"|name="to"/);
   assert.doesNotMatch(memberBody,/导入团队知识<\/a>/);
-  assert.match(adminBody,/title="从产品知识来源声明的来源导入到团队知识库；产品文件夹沿用产品线读权，仅管理员可用"/);
+  assert.match(adminBody,/title="从所选产品已配置的知识来源导入到团队知识库；产品文件夹沿用产品线的读取权限，仅管理员可用"/);
 });
 test('version comparison offers only the product line builds and defaults to previous and current produced roots', async () => {
   const current='a'.repeat(64),previous='b'.repeat(64),foreign='c'.repeat(64);

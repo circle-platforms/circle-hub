@@ -529,16 +529,16 @@ class Registry implements PackRegistry {
   /** Product line ids and names (NFC, lower case, as ProductDeclaration compares them) that claims share with other packs' claims. */
   #collisions(mine: readonly Claim[], others: readonly Claim[], at: CollisionAt): PackProblem[] {
     const out: PackProblem[] = [];
-    const ref = (c: Claim): string => `${packVersionKey(c.id, c.version)}${c.inUse ? '' : '（未下架的旧版本，下架在用版本后会成为在用版本）'}`;
+    const ref = (c: Claim): string => `${packVersionKey(c.id, c.version)}${c.inUse ? '' : '（未退役的旧版本，退役在用版本后会成为在用版本）'}`;
     for (const m of mine) {
       for (const o of others) {
         if (o.id === m.id) continue;
         const fix =
           at === 'publish'
-            ? `换一个产品名（或产品线号）后发布，或者请管理员先停用 ${o.id}${o.inUse ? '' : `、下架 ${packVersionKey(o.id, o.version)}`}`
+            ? `换一个产品名（或产品线号）后发布，或者请管理员先停用 ${o.id}${o.inUse ? '' : `、退役 ${packVersionKey(o.id, o.version)}`}`
             : at === 'retire'
-              ? `先停用 ${m.id} 或 ${o.id}，再下架这一版`
-              : `先停用 ${o.id}，${m.inUse && o.inUse ? '' : '或者下架撞名的旧版本，'}或者改名后发布新版本`;
+              ? `先停用 ${m.id} 或 ${o.id}，再退役这一版`
+              : `先停用 ${o.id}，${m.inUse && o.inUse ? '' : '或者退役撞名的旧版本，'}或者改名后发布新版本`;
         if (o.product.id === m.product.id) {
           out.push(problem('product.id_collision', 'product.json', `${ref(m)} 的产品线号 ${m.product.id} 已经属于启用中的${labelOf('pack_kind', 'product')} ${ref(o)}`, fix, { field: '/id' }));
         }
@@ -659,7 +659,7 @@ class Registry implements PackRegistry {
 
   async retire(by: Principal, packId: string, version: string, note?: string | null): Promise<AuthorizationRecord> {
     // The right first: whoever may not withdraw learns nothing about which versions exist.
-    await this.#admin(by, '只有管理员可以下架包或版本（R01 R[1]、T02 R[4]）');
+    await this.#admin(by, '只有管理员可以退役包或版本（R01 R[1]、T02 R[4]）');
     const info = await this.getVersion(packId, version);
     const key = packVersionKey(packId, version);
     if (info === null || info.withdrawn) throw new ConflictError(`没有已发布的 ${key}`, { fix: '核对包号和版本' });
@@ -672,7 +672,7 @@ class Registry implements PackRegistry {
       if (claims[0]?.version === version && claims.length > 1 && (await this.#records.authorizations.isActive('assign', WHOLE_HUB, packId))) {
         const next: Claim = { ...claims[1], inUse: true };
         const collisions = this.#collisions([next], await this.#activeClaims(packId, true), 'retire');
-        if (collisions.length > 0) throw this.#collisionError(collisions, `下架 ${key} 之后 ${packVersionKey(packId, next.version)} 会成为在用版本：`);
+        if (collisions.length > 0) throw this.#collisionError(collisions, `退役 ${key} 之后 ${packVersionKey(packId, next.version)} 会成为在用版本：`);
       }
       return withdraw();
     });
@@ -768,7 +768,7 @@ class Registry implements PackRegistry {
 
       if (earlier !== null) {
         if (earlier.digest === digest && !earlier.withdrawn) return dryRun ? checked(earlier.report, earlier) : { ok: true, created: false, version: earlier, report: earlier.report };
-        if (earlier.withdrawn) return refuse([problem('publish.version_withdrawn', 'pack.json', `${packVersionKey(manifest.id, manifest.version)} 已经下架；下架的版本号不再使用`, '改大版本号后发布新版本', { field: '/version' })]);
+        if (earlier.withdrawn) return refuse([problem('publish.version_withdrawn', 'pack.json', `${packVersionKey(manifest.id, manifest.version)} 已经退役；退役的版本号不再使用`, '改大版本号后发布新版本', { field: '/version' })]);
         return refuse([problem('publish.version_reused', 'pack.json', `${packVersionKey(manifest.id, manifest.version)} 已经以另一份内容发布过；发布过的版本不再改变`, '改大版本号后发布', { field: '/version' })]);
       }
       const decided = await authorizations.history({ permission: 'publish', object: packVersionKey(manifest.id, manifest.version), limit: 1 });

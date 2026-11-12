@@ -11,8 +11,8 @@ test('historical result reads explicitly report unwritten exits without inventin
   const original=canonicalJson(old);
   const answer=GetNodesOutput.parse({call_result:'ok',errors:[],content:{reference:`rec:${'a'.repeat(64)}`,read_tier:'model_readable',readable:true,text:original},trace:TRACE});
   const text=toolText('get_nodes',answer);
-  assert.ok(text.includes('出口未写'));
-  assert.ok(text.includes('缺失事实未写'));
+  assert.ok(text.includes('下一步处理安排未记录'));
+  assert.ok(text.includes('未写明缺少什么'));
   assert.equal(canonicalJson(old),original);
 });
 test('system delivery text identifies the reproducible system input instead of a user submission receipt',()=>{

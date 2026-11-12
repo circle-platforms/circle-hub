@@ -618,11 +618,11 @@ describe('a production run in the start_run text', () => {
       const problems = lines.slice(problemsAt + 1).filter((l) => /^- doc7:n[0-9]+ \| .* \| (已交付|已拒收|未完成)/.test(l) && l.split(' | ').length >= 6);
       assert.ok(problems.length > 0);
       // n3: a violation with its code and message; n7: unknown (unchecked) with its reason; n5: rejected with its code.
-      assert.ok(problems.includes('- doc7:n3 | 合成用例 3 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，提示，归责 作者输入 | 满足 | 用例重复'));
+      assert.ok(problems.includes('- doc7:n3 | 合成用例 3 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，提示，原因归类 作者输入 | 满足 | 用例重复'));
       assert.ok(!problems.some((l) => l.startsWith('- doc7:n0 |')), 'a pass is no problem');
-      if (n > 7) assert.ok(problems.includes('- doc7:n7 | 合成用例 7 | 已交付 | structure | ？ 静态：未核对，检查出错，归责 生产者错误 | 未决'));
+      if (n > 7) assert.ok(problems.includes('- doc7:n7 | 合成用例 7 | 已交付 | structure | ？ 静态：未核对，检查出错，原因归类 生产者错误 | 未决'));
       if (n === 62) {
-        assert.ok(problems.includes('- doc7:n5 | 合成用例 5 | 已拒收（core.structure.required_empty） | structure | ✗ 静态：不通过，core.structure.required_empty，阻断，归责 作者输入 | 未满足（终态不符合期望） | 必填字段为空'));
+        assert.ok(problems.includes('- doc7:n5 | 合成用例 5 | 已拒收（core.structure.required_empty） | structure | ✗ 静态：不通过，core.structure.required_empty，阻断，原因归类 作者输入 | 未满足（终态不符合期望） | 必填字段为空'));
         assert.ok(lines.includes('- doc7:n9 | 合成用例 9 | 未完成（提交未覆盖）'), 'an item not delivered is listed even when its requirements need nothing');
       }
       const example = JSON.parse(lines[at('示例 submit_result') + 1]) as unknown;
@@ -740,7 +740,7 @@ describe('submit_result text', () => {
       assert.equal(lines[0], '回执：已受理；分区：已交付 400，已拒收 0，已隔离 0，未完成 0；未知 0');
       assert.ok(lines.includes('- structure：满足 0，未满足 400（终态不符合期望 400），未决 0；静态：✗ 不通过 400（阻断 400）；动态：本层不适用'));
       assert.ok(lines.includes('- findings：满足 0，未满足 400（独立性未知 400），未决 0；静态：◇ 判断 400；动态：本层不适用'));
-      assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，阻断，归责 作者输入 | 未满足（终态不符合期望） | 用例重复'));
+      assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | structure | ✗ 静态：不通过，core.structure.duplicate_key，阻断，原因归类 作者输入 | 未满足（终态不符合期望） | 用例重复'));
       assert.ok(lines.includes('- doc7:n0 | 合成用例 0 | 已交付 | findings | ◇ 静态：判断 | 未满足（独立性未知） | 期望结果缺失'));
       const note = noteOf(text)!;
       assert.match(note, /问题与未知 \d+ 条/, 'the problems left out are counted');
@@ -864,7 +864,7 @@ describe('get_nodes text', () => {
     const result = resultOf(items(30));
     const one = toolText('get_nodes', contentAnswer(`${RESULT_RECORD}#/partitions/incomplete/0`, canonicalJson(result.partitions.incomplete[0])));
     assert.ok(one.includes('- doc7:n9 | 合成用例 9 | 未完成（提交未覆盖）'));
-    assert.ok(one.includes('  · findings：… 静态：未完成，提交未覆盖，归责 作者输入；动态：本层不适用；未决'));
+    assert.ok(one.includes('  · findings：… 静态：未完成，提交未覆盖，原因归类 作者输入；动态：本层不适用；未决'));
     const partition = toolText('get_nodes', contentAnswer(`${RESULT_RECORD}#/partitions/delivered`, canonicalJson(result.partitions.delivered)));
     assert.deepEqual(itemIdsOf(partition), result.partitions.delivered.map((it) => it.item));
     const wrong = toolText('get_nodes', contentAnswer(RESULT_RECORD, canonicalJson(result)), { ...PAGING, cursor: pageCursor(`${RESULT_RECORD}#/x`, 5) });
