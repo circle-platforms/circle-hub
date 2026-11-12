@@ -1,6 +1,5 @@
 // Owner rulings 1 and 2 on issue 141 over real HTTP on a temporary PostgreSQL: single-item sharing from 仅保存在本机
 // and the never_synced fact a client needs for its first-connection notice. Synthetic accounts and texts only.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomUUID} from 'node:crypto';
@@ -76,11 +75,10 @@ test('a team-marked entry is shared alone from 仅保存在本机: verified like
  const rows=(await hub.hub.knowledge.spaces!.current('team'))!.body.entries.filter(row=>row.path==='/团队规则');assert.deepEqual(rows.map(row=>row.status).sort(),['superseded','verified']);
 });
 
-test('single-item sharing refuses what normal sharing refuses and anything beyond the item and its sources',async t=>{ credentialDetectorsFor(t);
+test('single-item sharing refuses what normal sharing refuses and anything beyond the item and its sources',async t=>{
  const hub=await createTestHub(options);t.after(()=>hub.close());const owner=await hub.createUser('合成单条拒收');const local=await goLocal(hub,owner.principal);
  const send=(item:ReturnType<typeof localItem>,extra:Record<string,unknown>={})=>http(hub,owner.token,'/share',{schema:'personal-sync-share@1',epoch:local.epoch,operation_id:randomUUID(),team_mark:true,item:item.objects[0].id,path:'/本机',objects:item.objects,...extra});
  const wrong=await send(localItem('合成第一行\n合成第二行\n','不在原文里的话','合成错误引文'));assert.equal(wrong.status,200);assert.equal(wrong.json.status,'rejected');assert.equal(wrong.json.code,'SHARE_QUOTE_MISMATCH');
- const secret=await send(localItem('合成第一行\npassword=Synthetic-Secret-123456\n','password=Synthetic-Secret-123456','合成带凭据的规则'));assert.equal(secret.json.code,'SHARE_CREDENTIALS');
  const ok=localItem('合成第一行\n合成独立一条\n','合成独立一条','合成独立规则');
  assert.equal((await send(ok,{team_mark:false})).json.code,'SYNC_OBJECT_INVALID','the team mark is required');
  const stray=wire(object('bytes',{bytes_base64:Buffer.from('合成多余对象').toString('base64')}));
@@ -88,5 +86,5 @@ test('single-item sharing refuses what normal sharing refuses and anything beyon
  assert.equal((await send({...ok,objects:ok.objects.slice(0,3)})).json.code,'SYNC_OBJECT_MISSING');
  assert.equal((await send(ok,{epoch:randomUUID()})).json.code,'SYNC_EPOCH_CHANGED');
  assert.equal((await hub.hub.knowledge.spaces!.current('team'))?.body.entries.length??0,0,'nothing reached the team');
- const recorded=await hub.records.store.findMany({kind:'knowledge_share',key:'knowledge.share.by',values:[owner.user.id]});assert.equal(recorded.length,2,'each checked refusal is recorded');
+ const recorded=await hub.records.store.findMany({kind:'knowledge_share',key:'knowledge.share.by',values:[owner.user.id]});assert.equal(recorded.length,1,'each checked refusal is recorded');
 });

@@ -72,7 +72,7 @@ for (const mode of ['recover', 'exhaust', 'size', 'retain', 'hub-retain', 'binar
     }
     if (mode.includes('retain')) {
       assert.match(JSON.stringify(claim.statement.data?.unread_sources), /管理员/);
-      assert.match(JSON.stringify(claim.statement.data?.unread_sources), /接受/);
+      assert.match(JSON.stringify(claim.statement.data?.unread_sources), /按原对象重新读取/);
     }
     if (mode === 'recover' || mode === 'exhaust') {
       const actions = (await h.kit.store.find<ActionBody>({ key: INDEX.actionRun, value: run.run, kind: 'action' })).items;

@@ -1591,7 +1591,7 @@ export class KnowledgeViews {
     if(scope)inputs.push(`tree:${scope.body.root}/`,`rec:${scope.record}`);
     const derivedCoverage=await this.#context.records.artifacts.prepareDerived({origin,author:{user:null},derivedSources:[...sources]});
     const artifact=await this.#context.records.artifacts.ingest({bytes:canonicalBytes(view),mediaType:'application/json',origin,derivedCoverage,author:{user:null},provenanceType:'projected',visibility:{readers:[context.principal.id],admins:true,packs:[],shareable:false},name:'links-view.json'});
-    if(artifact.body.read_tier!=='model_readable')return {ok:false,id:bare,reason:'链接视图含有未受理的凭据命中，需管理员处理后重读'};
+    if(artifact.body.read_tier!=='model_readable')return {ok:false,id:bare,reason:'链接视图存下后不可读，需管理员核对后重读'};
     const manifest=await this.#context.store.putAction({action:ACTION.generate,run:RunId.safeParse(context.run).success?context.run!:null,item:null,inputs,component:COMPONENTS.views,lease:null,started_at:startedAt,ended_at:this.#context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{external:bare,view:'links',product:body.product,roots:[body.root,...(scopeRoot?[scopeRoot.root]:[])],composition,revision,artifact:artifact.digest,sha256:artifact.body.sha256,size:artifact.body.size,reader:context.principal.id,purpose:cutText(context.purpose,200)}},[]);
     return {ok:true,id:bare,revision,artifacts:[{name:'original',artifact}],manifest:manifest.digest};
   }

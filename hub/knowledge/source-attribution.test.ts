@@ -1,5 +1,4 @@
 // Exact synthetic uploads and temporary PostgreSQL; declarations never replace source or reader checks.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import type {z} from 'zod';
@@ -45,13 +44,11 @@ test('foreign accounts cannot sign, equal-byte captures do not inherit declarati
  assert.equal((await spaces.share(w.user,twin.input)).code,'SHARE_UPLOAD_UNSIGNED');
  await spaces.attributeSource(w.user,twin.source.digest,twin.file.digest);assert.equal((await spaces.share(w.user,twin.input)).status,'merged');
 });
-test('forged joins, unreadable or uninspectable captures and stopped uploaders never gain source eligibility',async t=>{ credentialDetectorsFor(t);
+test('forged joins, unreadable captures and stopped uploaders never gain source eligibility',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,p=await prepare(w);
  const falseBody=SourceAttributionBody.parse({space:w.outsider.id,source:p.source.digest,artifact:p.file.digest,sha256:p.file.body.sha256,by:w.outsider.id,at:new Date().toISOString(),audience:'team'});
  await w.kit.store.put({kind:'knowledge_source_attribution',schema:'knowledge-source-attribution@1',provenance:'declared',body:falseBody,index:[{key:'knowledge.source.attribution.capture',value:p.file.digest}]});
  assert.equal((await spaces.share(w.user,p.input)).code,'SHARE_UPLOAD_UNSIGNED');
- const binary=await spaces.importFile(w.user,Buffer.from([0x50,0x4b,0x03,0x04,0,0,0,0]),'application/zip','合成二进制','/binary');const registration=(await w.kit.store.find<z.infer<typeof SpaceSourceBody>>({kind:'knowledge_space_source',key:'knowledge.space.source_hash',value:binary.body.sha256})).items[0];
- await assert.rejects(spaces.attributeSource(w.user,registration.digest,binary.digest),{code:'SPACE_CONTENT_UNINSPECTABLE'});assert.equal((await spaces.sourceAttribution(w.user,binary.body.sha256,binary.digest)).canAttribute,false);
  const source=w.kit.artifacts.source.bind(w.kit.artifacts);w.kit.artifacts.source=async (...args)=>args[2]?.record===p.file.digest?null:source(...args);
  await assert.rejects(spaces.attributeSource(w.user,p.source.digest,p.file.digest),{code:'SOURCE_UNAVAILABLE'});w.kit.artifacts.source=source;
  await spaces.attributeSource(w.user,p.source.digest,p.file.digest);assert.equal((await spaces.precheckShare(w.user,p.input)).ok,true);

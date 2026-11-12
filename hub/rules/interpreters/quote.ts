@@ -34,8 +34,8 @@ export const quoteInterpreter = defineInterpreter({
           const why = request.sources?.why?.(ref);
           const unread = request.sources?.unread?.(ref);
           if (unread?.reason === 'credential_unreadable' || why === 'retain_only') {
-            const failure = unread ?? {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'};
-            outcomes.push(unknown(base,'awaiting_step',`引用 ${ref} 的源文件含凭据，原文不可读；缺少的事实：${failure.missing_fact}；下一步：${failure.next_action}；接受后重评`,{
+            const failure = unread ?? {reason:'credential_unreadable', missing_fact:'此前按凭据扫描只保留的来源不放开', next_action:'请管理员按原对象重新读取，得到可读的新记录后重新核验'};
+            outcomes.push(unknown(base,'awaiting_step',`引用 ${ref} 的源文件含凭据，原文不可读；缺少的事实：${failure.missing_fact}；下一步：${failure.next_action}`,{
               pointer, grounds:[ref], missing: failure.missing_fact, data:{unread_sources:[{reference:ref,...failure}],missing_fact:failure.missing_fact,next_action:failure.next_action},
             }));
           }

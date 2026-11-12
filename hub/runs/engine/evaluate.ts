@@ -459,7 +459,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       const extra = {
         ...(s.external !== undefined ? { external: s.external } : {}),
         ...(s.slot !== undefined ? { slot: s.slot } : {}),
-        ...(result.reason === 'credential_unreadable' ? { missing_fact: '管理员尚未接受此来源', next_action: '请求管理员接受来源，接受后重新核验' } : {}),
+        ...(result.reason === 'credential_unreadable' ? { missing_fact: '此前按凭据扫描只保留的来源不放开', next_action: '请管理员按原对象重新读取，得到可读的新记录后重新核验' } : {}),
       };
       if (!result.resolved) {
         unreadSources.push({ reference: s.reference, reason: result.reason ?? 'SOURCE_UNAVAILABLE', ...extra });
@@ -506,7 +506,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
           if (!r.groundable) return { why: 'not_groundable' };
           const named = await declarationGroundsRefusal(ref, r.grounds, digest => ctx.deps.records.store.get(digest));
           if (named) return { why: 'not_groundable', rule: named };
-          if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'管理员尚未接受此来源', next_action:'请求管理员接受来源，接受后重新核验'} };
+          if (r.readTier === 'retain_only') return { why: 'retain_only', unread: {reason:'credential_unreadable', missing_fact:'此前按凭据扫描只保留的来源不放开', next_action:'请管理员按原对象重新读取，得到可读的新记录后重新核验'} };
           if (r.text === null) return { why: 'no_fragment' };
           if (Buffer.byteLength(r.text, 'utf8') > capBytes) return { why: 'too_large' };
           return { text: r.text, why: 'bound' };

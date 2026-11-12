@@ -11,7 +11,7 @@ import type { Principal } from '../records/api.ts';
 import { KnowledgeError, describeError } from './errors.ts';
 import type { Knowledge } from './service.ts';
 import { DEFAULT_SANDBOX, type KnowledgeContext } from './context.ts';
-import { knowledgeSourceLoader } from './credential-policy.ts';
+import { knowledgeSourceLoader } from './sources.ts';
 import { bindDirectorySources, declaredDirectory, type DirectorySkill } from './directory-sources.ts';
 import { produceSeedling, seedlingName, type SeedlingResult } from './seedling.ts';
 import { resolveProductVariables } from './variables.ts';

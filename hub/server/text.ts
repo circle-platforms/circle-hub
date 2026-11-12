@@ -529,8 +529,10 @@ function insidePair(text: string, at: number): boolean {
 /** The content a reference points at, whole from the reader's position (a cursor an earlier answer gave), else from the start. */
 function contentText(c: Content, _trace: string, context: TextContext): string {
   if (c.text === undefined) {
-    const next = c.read_tier === 'retain_only' ? '请管理员核看原文为何只保留；误报经管理员接受后重新读取；含真凭据或按策略只保留的不会放行' : '由使用者请管理员核对读取权限';
-    return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步${next}。`;
+    if (c.read_tier === 'retain_only') {
+      return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步：这份来源只保留，不会放开；需要其中的内容时，按原对象重新读取，得到一份可读的新记录。`;
+    }
+    return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步由使用者请管理员核对读取权限。`;
   }
   if (c.reference.startsWith('rec:')) {
     let value: unknown;

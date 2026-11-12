@@ -62,19 +62,6 @@ test('a run that only reads binds an absent optional input as its observation an
  const again=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{external:'toy:mindmap:map'}}},h.call());assert.equal(again.gaps?.find(g=>g.code==='SOURCE_ABSENT'),undefined);
 });
 
-test('a run that only reads binds an object held for review as its observation, and the answer stays ok',{skip},async()=>{
- const id=await pack(()=>{},spec=>{spec.id='synthetic-pending-read';
-  const flow=(spec.files['workflow.json'] as {json:{inputs:Array<Record<string,unknown>>;expected_sources?:unknown}}).json;for(const input of flow.inputs)input.required=false;
-  (spec.files['requirements.json'] as {json:{requirements:unknown[]}}).json.requirements=[];(spec.files['checks.json'] as {json:{checks:unknown[]}}).json.checks=[];delete spec.files['functions/overview.ts'];
-  delete flow.expected_sources;delete spec.files['functions/expected.ts'];
-  spec.files['functions/project.ts']="export default function(){return {items:[],warnings:[]}}";
- });
- const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{external:'toy:mindmap:pending'}}},h.call());
- assert.equal(detail.answer.call_result,'ok',JSON.stringify(detail.answer.errors));assert.equal(asked.get('toy:mindmap:pending'),true);
- const source=detail.answer.run!.sources.find(s=>s.slot==='map')!;assert.match(source.label!,/系统 toy 里有 toy:mindmap:pending，内容待核看（读于/);
- const gap=detail.gaps?.find(g=>g.code==='SOURCE_PENDING_REVIEW');assert.ok(gap);assert.match(gap.message,/内容待核看.*来源系统看原文/);
-});
-
 test('an expected source held for review is a warning that says so, and is never bound',{skip},async()=>{
  const id=await pack(()=>{},spec=>{spec.files['functions/expected.ts']="export default function(){return {sources:[{external:'toy:manual:pending',role:'expected',reason:'合成预期'}],warnings:[]}}";});
  const detail=await h.service.startRunDetailed(h.alice,{pack:id,inputs:{map:{external:'toy:mindmap:map'}}},h.call());

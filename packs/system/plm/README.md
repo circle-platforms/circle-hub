@@ -95,7 +95,7 @@ A regression feeds this actual projection into story-traceability instead of man
 
 ## 1.3.11：被扣时说明对象存在
 
-读取 `bug` 和 `story` 声明 `object_route`（`bug-detail`、`story-detail`）：这两条路由的成功应答就是对象本身，被扣时读者得到“X 存在，内容待核看”（决定 152）。别的读取不声明：产品列表、构建列表和多对象的读取，被扣的应答说明不了对象存在，仍答中性。
+读取 `bug` 和 `story` 声明 `object_route`（`bug-detail`、`story-detail`）：这两条路由的成功应答就是对象本身。决定 152 起，被扣时读者得到“X 存在，内容待核看”；决定 161 起读取不再因疑似凭据扣留，也不再这样回答，此前存下的这类观察照原样读。别的读取不声明：产品列表、构建列表和多对象的读取，被扣的应答说明不了对象存在，仍答中性。
 
 ## 1.3.10：构建记录被扣时仍能读到名字
 

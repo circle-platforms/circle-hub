@@ -4,12 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Page, StoredRecord } from '../records/api.ts';
 import { installTraceSink, type SpanRow } from '../telemetry/api.ts';
-import { withCredentialDetectors } from '../testing/records.ts';
 import { setup } from './testing/context.ts';
-
-// Issue 194: a running Hub does not withhold device returns for looking like a credential. This file covers the hold path
-// that records stored under credential-scan@3 still follow, so the detectors stay on for every kit it opens.
-withCredentialDetectors();
 
 
 async function report(c: Awaited<ReturnType<typeof setup>>, reference: string) {
@@ -142,9 +137,11 @@ test('every row names its log as a source its runner reads, and a row that did n
 
 test('the device return gives the runner what the target said word for word: every verdict, the words of each row that did not pass, nothing read into them', async t => {
   const said = 'Error: synthetic-peer is not found in the peer list\nFailed to execute the command';
-  const held = ['pass', 'word: ', 'Synth', 'heldvalue1!9\n'].join('');
+  // Decision 161 / credential-scan@4: content is not withheld for looking like a credential; a session that once
+  // would have been retain_only is quoted whole with the rest.
+  const onceHeld = ['pass', 'word: ', 'Synth', 'heldvalue1!9\n'].join('');
   const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [
-    { id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'device-a.txt': said, 'device-b.txt': held, 'device-c.txt': 'synthetic log' } },
+    { id: 'synthetic-case', outcome: 'bad', log: 'synthetic log', sessions: { 'device-a.txt': said, 'device-b.txt': onceHeld, 'device-c.txt': 'synthetic log' } },
   ] } : value }); t.after(() => c.close());
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
   await c.freezeExecutor();
@@ -155,7 +152,7 @@ test('the device return gives the runner what the target said word for word: eve
   assert.ok(text.includes('synthetic-case：无判定'), text);
   assert.ok(text.includes(said), 'the device reply is quoted whole');
   assert.equal(text.split('synthetic log').length, 2, 'a piece two places share is written once');
-  assert.ok(text.includes('device-b.txt') && !text.includes('heldvalue'), 'a piece the scan holds back is named, never quoted');
+  assert.ok(text.includes('heldvalue'), 'decision 161: looking like a credential does not withhold the session text');
   assert.equal(await c.kit.artifacts.source(await c.kit.principals.createUser(c.admin, '其他合成用户'), state.device_return!.slice(4)).then(read => read?.bytes ?? null), null);
 });
 

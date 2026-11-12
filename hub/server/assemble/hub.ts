@@ -173,8 +173,6 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     sandbox: { requireOsIsolation: sandbox.requireOsIsolation },
     parsers,
     ...(options.resourceCacheMs === undefined ? {} : { resourceCacheMs: options.resourceCacheMs }),
-    // Reads happen only once the Hub is assembled, so the knowledge service below exists by then.
-    pendingReview: (artifact, external) => knowledge.requestSourceReview(artifact, external),
   });
   if(options.requireVaultKey !== false)await connectors.primeSecrets();
   const external = createExternalReader(connectors);

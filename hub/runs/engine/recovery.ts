@@ -67,7 +67,7 @@ export function bindRecovery(layer:LayerResult,second:NamedRecoveryContext|reado
       const held=Array.isArray(outcome.data?.unread_sources)&&outcome.data.unread_sources.some((row:unknown)=>row!==null&&typeof row==='object'&&'reason'in row&&row.reason==='credential_unreadable');
       if(outcome.data?.sandbox==='SANDBOX_UNAVAILABLE'){gap.exit={action:'reevaluate',audience:{hub:true},due};procedure='Hub 在沙箱恢复后自动重评';}
       else if(outcome.reason==='missing_input'&&outcome.data?.why==='unavailable'){gap.exit={action:'reread',audience:{hub:true},due};procedure='Hub 重读已绑定的来源片段后自动重评';}
-      else if(heldInputReasons.safeParse(outcome.reason).success&&held){gap.exit={action:'request',request_kind:'disposition',audience:{user:context.admin},due};procedure='具名管理员接受这份普通来源后 Hub 自动重评';}
+      else if(heldInputReasons.safeParse(outcome.reason).success&&held){gap.exit={action:'request',request_kind:'disposition',audience:{user:context.admin},due};procedure='具名管理员按原对象重新读取这份来源，得到可读的新记录后 Hub 自动重评';}
       else if(outcome.reason==='integrity_unproven'&&outcome.data?.why==='integrity_unproven'){gap.exit={action:'request',request_kind:'repair',audience:{user:context.admin},due};procedure='具名管理员从可信备份恢复与摘要一致的字节后重新核验，不重读损坏的原件';}
     }
     gap.missing+='；下一步：'+procedure;

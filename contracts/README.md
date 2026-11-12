@@ -678,3 +678,11 @@ skill-module composition, empty-applicability omission and `team_members`; takes
 directory_skill, no credential scan, masking dictionary and display rules; takes main's six shared vocabulary labels for the
 console; keeps 裁定清单 (not 台账). Decision-number collisions (this line 150–159 vs main 150–160) are listed for the docs
 agent. B02 `changes50` carries the merge note.
+
+### Model 51 (merge #341, 2026-11-12)
+
+Merges decision 161 (mainline model 49) into model 50: B02 R[4]/R[6], C04 R[6], D05 R[3], R02 R[0], V03 R[12] and display
+rule 9 drop the review, acceptance, withdrawal and pending-review request of credential findings; old holds stay held,
+old acceptances stand, and reading the object again is the way out. Protocol code `SOURCE_PENDING_REVIEW` keeps its code
+with new text. Team spaces, skill-module composition, empty-applicability omission and `team_members` from model 50 stay.
+B02/C04/D05/R02/V03 `changes51` state the change.

@@ -330,7 +330,10 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
 17. **Vault**: AES-256-GCM with a 12-byte IV and the full 16-byte tag (`authTagLength: 16`); any other IV or tag length is
     refused. When entries exist but `key-check` is missing, the key must open an existing entry before the check is
     written; otherwise every operation is refused, so a second key never seals entries next to those of the first.
-18. **Accepting the findings of a document** (integrator's decision of 2026-10-22). A product manual read through a
+18. **Accepting the findings of a document** (integrator's decision of 2026-10-22; **removed by decision 161, 2026-11-12**:
+    `acceptFindings`, `revokeFindings`, `scanFindings` and the `source` command are gone, nothing is held or covered at
+    ingest, and what follows only describes how records stored before are still read: a held record stays held, an
+    acceptance recorded before is still honoured, and a record made under the content scan takes no part in either). A product manual read through a
     connector can contain example URLs with a user name and a password (`ftp://user:<password>@<host>/<path>`), which
     the scanner reports as `basic_credential`; under decision 5 such a manual would stay `retain_only` and never enter the
     knowledge tree. An admin may therefore decide, explicitly and auditably, that the findings of exactly those bytes are
@@ -380,7 +383,9 @@ Record kinds and schemas this package writes: `source_artifact@1`, `action@1` (v
       tier from current acceptance and the requested policy; a historical scan-imposed hold is not a reason to skip a
       currently accepted source. Explicit requested retention remains in force.
 
-19. **Carrying findings acceptance to derived bytes** (task `derived-acceptance`, 2026-10-23; extends decision 18).
+19. **Carrying findings acceptance to derived bytes** (task `derived-acceptance`, 2026-10-23; extends decision 18;
+    **removed by decision 161**: `prepareDerived` now gives the content scan's assessment and `coverDerived` is gone, so a
+    view marks and leaves out nothing; derived receipts stored before are still honoured at read).
     `IngestInput.derivedSources` offers source byte digests for a Hub-generated artifact. Records verifies the links,
     the source records and their entire Hub-owned ancestry, current administrative acceptance and complete scans. Each
     finding of the derived bytes must match an accepted source finding exactly, in memory. The internal scanner returns

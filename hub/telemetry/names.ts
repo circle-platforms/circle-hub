@@ -34,7 +34,7 @@ export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'summ
 const COMMAND_STEPS = [
   'run-command', 'run-user', 'run-token', 'run-logs', 'run-run', 'run-local-tools', 'run-setup-code',
   'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-skill', 'run-pack', 'run-resource', 'run-var', 'run-mask', 'run-secret',
-  'run-source', 'run-original', 'run-lease', 'run-knowledge', 'run-doc', 'run-init-admin', 'run-operator-token', 'run-trace',
+  'run-original', 'run-lease', 'run-knowledge', 'run-doc', 'run-init-admin', 'run-operator-token', 'run-trace',
   'run-init', 'run-db', 'run-key', 'run-service', 'run-backup', 'run-restore', 'run-deploy', 'run-rollback', 'run-rehearse', 'run-status', 'run-tls',
 ] as const;
 
