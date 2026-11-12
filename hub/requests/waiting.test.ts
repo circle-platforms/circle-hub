@@ -74,7 +74,7 @@ test('the waiting requests are the unanswered ones of the full listing, and only
   assert.deepEqual(seen.closingsAsked, [[made[2], made[4], made[5], made[6], made[7]]], 'the answered and the voided requests are not asked about');
 });
 
-test('closing records stored before the settled entry answer the same, and migration 32 spares their reads', async (t) => {
+test('closing records stored before the settled entry answer the same, and migration 33 spares their reads', async (t) => {
   const { kit, source, body, legacyClosing, service } = await bed(t);
   const run = newId('run');
   const made = [];
@@ -95,7 +95,7 @@ test('closing records stored before the settled entry answer the same, and migra
   assert.deepEqual(new Set(before.closingsAsked.flat()), new Set(made), 'without the entry every request is a candidate, read as before');
 
   const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
-  const migration = MIGRATIONS.find((m) => m.version === 32)!;
+  const migration = MIGRATIONS.find((m) => m.version === 33)!;
   await owner.query(migration.sql);
   await owner.query(migration.sql);
   const settled = await owner.query<{ value: string }>(`SELECT value FROM record_index WHERE key='runs.request.settled' ORDER BY value`);
@@ -157,7 +157,7 @@ test('the declarations of a run are read without its other requests, whenever th
   assert.deepEqual(await read(), [first, ...oldPlain, oldDeclared, second], 'a request stored without the entry is read and looked at');
 
   const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
-  const migration = MIGRATIONS.find((m) => m.version === 32)!;
+  const migration = MIGRATIONS.find((m) => m.version === 33)!;
   await owner.query(migration.sql);
   await owner.query(migration.sql);
   const plain = await owner.query<{ digest: string }>(`SELECT digest FROM record_index WHERE key='runs.request.plain' AND value=$1 ORDER BY record_seq`, [run]);

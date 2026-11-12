@@ -144,7 +144,7 @@ async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = 
 // The job the Hub dispatched for an accepted verification run. It runs on after the answer, so it is read, as the runner's
 // repeated submission reads it, until the journal records its end (never inferred from the name of the last phase).
 async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutput> | null }): Promise<JobStatus> {
-  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按任务包的效果行派发作业/);
+  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按任务包的效果行开始上机验证/);
   let read: unknown;
   for (let i = 0; i < 600; i++) {
     const job = (await readRunJobs(bed.hub.records, dispatch(), bed.hub.admin.principal, v.run)).find(row => row.job === note.job); read = job;
@@ -297,7 +297,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const before = submissions; const v = await verify(await plan(partial));
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
     const note = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
-    assert.match(note.text, /^Hub 没有派发：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    assert.match(note.text, /^上机验证没有发出：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
     // Like the reference compile skill's failed bed check, the refusal names what is missing: every device key of the bed the run did not book.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
@@ -306,7 +306,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
     const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
     assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /未发出；原因：.*租约.*这次重交 Hub 已再试/);
-    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^Hub 没有派发：.*租约/);
+    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^上机验证没有发出：.*租约/);
     assert.equal(submissions, before);
     await release(partial);
   });
@@ -316,7 +316,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     // An older workflow port has no effects declaration; all source and result fixtures remain the real run's. It is in place
     // before the verification run is submitted, which is when the Hub would dispatch it (decision 105).
     const legacy=()=>{workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};};
-    try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^Hub 没有派发/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
+    try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^上机验证没有发出/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
       const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
     finally{workflows.byDigest=read;await release(booked);}
   });
@@ -369,7 +369,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
     const whileFrozen=await verify(await plan(booked,1),1);
     // While the first effect is unresolved the Hub dispatches nothing for the next case and says why in the runner's answer.
-    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/没有派发/);
+    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/上机验证没有发出|没有发出/);
     await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
     assert.equal(submissions,before+1);
     assert.deepEqual(latest.ids, [ids[0]], 'the next authored case has not been dispatched');
