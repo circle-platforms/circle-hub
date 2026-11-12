@@ -1,7 +1,6 @@
 // Batched feeding visibility (perf-n-plus-one). A frozen cut, a node page, a run's usages and the views over them must answer
 // exactly what the per-record checks answer: the reference is the same feeding layer over a store without the batched index
 // scan, which takes the record-by-record path. The single-key lookups must not grow with the feeding history.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
@@ -80,7 +79,7 @@ async function counted<T>(body: () => Promise<T>): Promise<{ value: T; total: nu
   try { return { value: await body(), total, single }; } finally { pg.Client.prototype.query = original; }
 }
 
-test('a frozen cut, a node page and run usages answer what the record-by-record checks answer, for every reader and after every revocation', { timeout: 300_000 }, async t => { credentialDetectorsFor(t);
+test('a frozen cut, a node page and run usages answer what the record-by-record checks answer, for every reader and after every revocation', { timeout: 300_000 }, async t => {
   const postgres = await startPostgres();
   let close = async (): Promise<void> => {};
   t.after(async () => { await close(); await postgres.stop(); });
@@ -95,10 +94,9 @@ test('a frozen cut, a node page and run usages answer what the record-by-record 
   const first = await readAll(w, w.user, [...shared, own]);
   await readAll(w, w.user, [...shared, own]);
   const theirs = await readAll(w, other, shared);
-  // A credential hit lifted by an acceptance in force: readable now, withheld once the acceptance is revoked.
+  // Text that looks like a credential is read like any other (decisions 154, 161).
   const secret = await document(w, 3, [w.user.id], `Synthetic case ftp://synthetic:${randomBytes(8).toString('hex')}@192.0.2.10/file`);
-  assert.equal(secret.original.body.read_tier, 'retain_only');
-  await w.kit.artifacts.acceptFindings(w.admin, secret.original.body.sha256);
+  assert.equal(secret.original.body.read_tier, 'model_readable');
   await readAll(w, w.user, [secret]);
   const frozen = await layer.freeze(w.user, newId('run'), w.root.root);
   const legacy = recordByRecord(w);
@@ -120,10 +118,6 @@ test('a frozen cut, a node page and run usages answer what the record-by-record 
   assert.deepEqual([...objectsOf(theirsCut)].sort(), ['SYN-DOC-0', 'SYN-DOC-2'], 'a capture the reader may not read is never disclosed');
   assert.equal(theirsCut!.usages.length, 80, 'only the second reader\'s own run is visible to it');
   assert.equal((await layer.usages(other, first)).length, 0, 'another reader\'s run discloses no usage');
-
-  await w.kit.artifacts.revokeFindings(w.admin, secret.original.body.sha256);
-  const withheld = await same(w.user, 'after the acceptance is revoked');
-  assert.deepEqual([...objectsOf(withheld)].sort(), ['SYN-DOC-0', 'SYN-DOC-1', 'SYN-DOC-2'], 'a credential-withheld original is not disclosed');
 
   w.packs.readers.delete(other.id);
   assert.equal(await same(other, 'after the product is revoked'), null);

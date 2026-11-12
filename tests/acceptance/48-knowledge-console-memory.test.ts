@@ -1,5 +1,4 @@
 // Decision 135: real console and six-tool flows with synthetic passwords, temporary storage and the OS pack sandbox.
-import { credentialDetectorsFor } from '../../hub/testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {parse,type DefaultTreeAdapterMap} from 'parse5';
@@ -149,11 +148,12 @@ test('memory modes remain private, reject evidence binding and accept independen
  assert.equal((await other.call('get_nodes',{memory:{document:memoryDocument}})).isError,true);
 });
 
-test('memory limits and credential refusals are real; re-sharing preserves administrator edits', {skip},async (t) => { credentialDetectorsFor(t);
+test('memory limits are real and text that looks like a credential is not refused; re-sharing preserves administrator edits', {skip},async (t) => {
  const oversized=await client.call('upload_file',{memory:{title:'合成超限',markdown:'合'.repeat(8001),expected_version:null,client_key:'over-document'}});assert.equal(oversized.out.errors[0]?.code,'MEMORY_DOCUMENT_LIMIT');
- const secret='DB_PASSWORD=synthetic-secret-7429';
- for(let attempt=0;attempt<2;attempt++){const refused=await client.call('upload_file',{memory:{title:'合成拒收',markdown:secret,expected_version:null,client_key:'credential-refusal'}});assert.equal(refused.out.errors[0]?.code,'MEMORY_CREDENTIALS_DETECTED');assert.ok(!refused.text.includes('synthetic-secret-7429'));if(attempt===0)assert.match(refused.text,/Markdown 正文第 1 行/);}
- const audits=await hub.records.store.find({kind:'action',key:'memory.refusal.by',value:owner.user.id});assert.equal(audits.items.filter(row=>(row.body as {code:string}).code==='MEMORY_CREDENTIALS_DETECTED').length,1);assert.ok(!JSON.stringify(audits).includes(secret));
+ // Decisions 154 and 161: a memory is not refused for text that looks like a credential, and no refusal is recorded.
+ const kept=await client.call('upload_file',{memory:{title:'合成像凭据的文字',markdown:'DB_PASSWORD=synthetic-secret-7429',expected_version:null,client_key:'credential-like'}});assert.equal(kept.isError,false,kept.text);assert.deepEqual(kept.out.errors,[]);
+ // The one refusal recorded is the oversized document's.
+ assert.deepEqual((await hub.records.store.find({kind:'action',key:'memory.refusal.by',value:owner.user.id})).items.map(row=>(row.body as {code:string}).code),['MEMORY_DOCUMENT_LIMIT']);
  const input={document:memoryDocument,version:memoryVersion,client_key:'accept-share'};
  const before=await hub.records.store.watermark!(),plan=await client.call('upload_file',{memory_share:{...input,check_only:true}});assert.equal(plan.out.memory_share?.effect,'create');assert.equal(await hub.records.store.watermark!(),before+1,'only the ordinary call log is appended by MCP preview');
  const first=await client.call('upload_file',{memory_share:input});assert.equal(first.isError,false,first.text);const team=first.out.memory_share!.share!;

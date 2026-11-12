@@ -1,13 +1,10 @@
-import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IndexView, ScopedDocument } from '../../contracts/src/views.ts';
-import { CREDENTIAL_SCANNER, type SourceArtifactBody } from '../records/api.ts';
+import { CONTENT_SCANNER, CREDENTIAL_SCANNER, type SourceArtifactBody } from '../records/api.ts';
 import { createTestParserRegistry } from '../testing/parsers.ts';
 import { createKnowledge, createKnowledgeReader } from './api.ts';
 import { makeUnversionedWorld, startPostgres } from './test-support.ts';
-// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
-withCredentialDetectors();
 
 test('a scanner upgrade changes composition provenance and cursors without changing index content', async t => {
   const postgres = await startPostgres();
@@ -24,16 +21,17 @@ test('a scanner upgrade changes composition provenance and cursors without chang
   assert.ok(current);
   assert.equal(current.parts, undefined, 'the small fixture keeps its source observations inline');
 
-  // Replay legacy synthetic observations as new append-only fixtures. Only their scanner identity differs.
+  // Replay synthetic observations as an older Hub stored them (credential-scan@3, issue 194) as new append-only fixtures.
+  // Only their scanner identity differs.
   const sources: typeof current.sources = [];
   for (const source of current.sources) {
     const capture = await w.kit.store.get<SourceArtifactBody>(source.artifact);
     assert.ok(capture);
-    assert.equal(capture.body.scan.scanner, CREDENTIAL_SCANNER);
+    assert.equal(capture.body.scan.scanner, CONTENT_SCANNER);
     const legacy = await w.kit.store.put({
       kind: capture.kind, schema: capture.schema, provenance: capture.provenance,
       created_at: capture.created_at,
-      body: { ...capture.body, scan: { ...capture.body.scan, scanner: 'credential-scan@2' } },
+      body: { ...capture.body, scan: { ...capture.body.scan, scanner: CREDENTIAL_SCANNER } },
     });
     assert.notEqual(legacy.digest, capture.digest);
     sources.push({ ...source, artifact: legacy.digest });

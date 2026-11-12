@@ -94,7 +94,7 @@ test('one layer preserves independent reasons and their separate facts', () => {
   assert.ok(LayerResult.safeParse(layer).success);
 });
 test('withheld source waits for an administrator while an unavailable source is reread', () => {
-  const retained = unknown({ tier: 'advisory', grounds: [] }, 'awaiting_step', '管理员尚未接受来源', { data: { unread_sources: [{ reason: 'credential_unreadable' }] } });
+  const retained = unknown({ tier: 'advisory', grounds: [] }, 'awaiting_step', '此前按凭据扫描只保留的来源不放开', { data: { unread_sources: [{ reason: 'credential_unreadable' }] } });
   const temporary = unknown({ tier: 'advisory', grounds: [] }, 'missing_input', '暂不可读的片段原文', { data: { why: 'unavailable' } });
   assert.deepEqual(bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }, [retained], context).exit?.audience, { user: context.admin });
   assert.equal(bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'missing_input' }, [temporary], context).exit?.action, 'reread');
@@ -119,13 +119,13 @@ test('a missing input caused by structured source withholding has an administrat
   const outcome = unknown({ tier: 'advisory', grounds: [] }, 'missing_input', '普通来源尚不可读', { data: { unread_sources: [{ reason: 'credential_unreadable' }] } });
   const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'missing_input' }, [outcome], context);
   assert.deepEqual(result.exit?.audience, { user: context.admin });
-  assert.match(result.missing!, /管理员接受/);
+  assert.match(result.missing!, /管理员按原对象重新读取/);
 });
-test('an empty unread list never changes a prerequisite repair into administrator acceptance', () => {
+test('an empty unread list never changes a prerequisite repair into an administrator\'s re-read', () => {
   const outcome = unknown({ tier: 'advisory', grounds: [] }, 'awaiting_step', '前置检查修正后的事实', { data: { unread_sources: [] } });
   const result = bindRecovery({ layer: 'static', terminal: 'unchecked', reason: 'awaiting_step' }, [outcome], context);
   assert.deepEqual(result.exit?.audience, { user: context.runner });
-  assert.doesNotMatch(result.missing!, /管理员接受/);
+  assert.doesNotMatch(result.missing!, /按原对象重新读取/);
 });
 
 test('package-authored exit metadata cannot choose another request audience',()=>{

@@ -1,5 +1,4 @@
 // Relations are generic: synthetic terms and notes, no product dialect or model calls.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {canonicalBytes} from '../records/api.ts';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -158,29 +157,6 @@ test('a malformed scoped literal is diagnosed without failing production and its
   }while(cursor);
   const diagnostics=pages.flatMap(page=>page.diagnostics??[]);
   assert.equal(diagnostics.length,1);assert.equal(diagnostics[0].path,'/notes/bad');assert.equal(diagnostics[0].reason,'no_check');
-});
-
-test('accepted source coverage serves the same links to members without probing their raw-source permission',async t=>{ credentialDetectorsFor(t);
-  const statement='password = FtpSyntheticCoverage7349';
-  const data=[...entries,content('/notes/accepted','behaviour',statement,['alpha'])];
-  const w=await makeWorld(postgres,{pack:{id:'widget',names:['WIDGET'],declaration:{catalogs:[],producers:[extraProducer('entities',{entries:data})],links:[rule]}}});t.after(()=>w.close());
-  const bytes=Buffer.from(catalogXml({sample:[{name:'node'}]})+'\n<!-- '+statement+' -->');
-  const source=await w.kit.artifacts.ingest({bytes,mediaType:'application/xml',origin:{read:{object:'site:tree:links'}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
-  assert.ok(source.body.scan.findings.length>0);
-  await w.kit.artifacts.acceptFindings(w.admin,source.body.sha256,'合成样例，不是凭据');
-  assert.equal(await w.kit.artifacts.source(w.user,source.body.sha256),null);
-  w.external.set('site:tree:links',{bytes,mediaType:'application/xml'});
-  const produced=await w.knowledge.produceTree({product:w.product,build});assert.ok(produced.ok,produced.reason??'');
-  await w.knowledge.reconcileLine('widget',build.line,w.admin);
-  const raw=w.kit.artifacts.source.bind(w.kit.artifacts);let probes=0;
-  t.mock.method(w.kit.artifacts,'source',async(...args:Parameters<typeof raw>)=>{if(args[1]===source.body.sha256)probes++;return raw(...args);});
-  const reader=createKnowledgeReader(w.knowledge),answers:Uint8Array[]=[];
-  for(const principal of [w.admin,w.user]){
-    const result=await reader.read('knowledge:links:widget:10.6.1',{principal,run:null,purpose:'synthetic'});
-    assert.ok(result.ok,result.ok?'':result.reason);
-    const answer=await w.kit.objects.get(result.artifacts[0].artifact.body.sha256);assert.ok(answer);answers.push(answer);
-  }
-  assert.deepEqual(answers[0],answers[1]);assert.equal(probes,0);
 });
 
 test('no-rule productions snapshot an empty declaration and omit unrelated backlink blocks',async t=>{

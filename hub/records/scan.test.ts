@@ -5,7 +5,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { assertLinearGrowth } from '../testing/growth.ts';
-import { base64Spans, CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanForCredentials, scanWithContexts } from './scan.ts';
+import { base64Spans, CREDENTIAL_DETECTORS, CREDENTIAL_SCANNER, scanDigest, scanForCredentials, scanWithContexts } from './scan.ts';
+import { canonicalize } from './canonical.ts';
+import { scanAcceptanceKey } from './constants.ts';
+import { sha256Hex } from './digest.ts';
+import type { CredentialScan } from './api.ts';
 
 const BS = String.fromCharCode(0x5c);
 const dashes = '-'.repeat(5);
@@ -486,4 +490,84 @@ test('scanWithContexts gives the same scan and, per kept finding, the text it wa
   const capped = scanWithContexts(many);
   assert.deepEqual(capped.scan, scanForCredentials(many));
   assert.equal(capped.contexts.length, 100);
+});
+
+// Moved from the findings tests (decision 161): an acceptance recorded before is still checked at read against this digest.
+/** A password that is no placeholder, new in every run, so a search for it in the database means something. */
+function password(): string {
+  return `Ftp${randomBytes(5).toString('hex')}9`;
+}
+
+/** A manual-like synthetic document whose example URL carries a user name and a password. */
+function manual(secret: string, extra = ''): Buffer {
+  return Buffer.from(
+    [
+      '# 命令行手册（合成）',
+      '',
+      '## copy',
+      '',
+      '语法：copy <源地址> <目的地址>',
+      '',
+      '示例：',
+      '',
+      `    copy ftp://user:${secret}@192.0.2.10/images/system.bin flash:`,
+      '',
+      `说明：也可以写 tftp://192.0.2.11/system.bin。${extra}`,
+      '',
+    ].join('\n'),
+  );
+}
+
+test('scanDigest is the SHA-256 of the canonical {scanner, findings: [{detector, offset}]} and of nothing else', () => {
+  const scan: CredentialScan = {
+    scanner: 'credential-scan@2',
+    inspected: true,
+    clean: false,
+    findings: [
+      { detector: 'basic_credential', offset: 40, line: 3, column: 5 },
+      { detector: 'password_assignment', offset: 90, line: 6, column: 1 },
+    ],
+    truncated: false,
+  };
+  const expected = sha256Hex(
+    canonicalize({ scanner: 'credential-scan@2', findings: [{ detector: 'basic_credential', offset: 40 }, { detector: 'password_assignment', offset: 90 }] }),
+  );
+  assert.equal(scanDigest(scan), expected);
+  // Lines, columns, inspected, truncated, an earlier acceptance and the order the findings are listed in take no part.
+  const relisted: CredentialScan = {
+    ...scan,
+    inspected: false,
+    truncated: true,
+    findings: scan.findings.map((finding) => ({ ...finding, line: 1, column: 1 })).reverse(),
+    accepted: { by: 'usr_0000000000000000000000000a', at: '2026-10-22T00:00:00.000Z', authorization: 'a'.repeat(64) },
+  };
+  assert.equal(scanDigest(relisted), expected);
+  // Another scanner version, detector or offset, or a finding more or less: another digest.
+  const others: CredentialScan[] = [
+    { ...scan, scanner: 'credential-scan@3' },
+    { ...scan, findings: [scan.findings[0]] },
+    { ...scan, findings: [...scan.findings, { detector: 'jwt', offset: 120, line: 7, column: 1 }] },
+    { ...scan, findings: [{ ...scan.findings[0], offset: 41 }, scan.findings[1]] },
+    { ...scan, findings: [{ ...scan.findings[0], detector: 'bearer_credential' }, scan.findings[1]] },
+    { ...scan, findings: [] },
+  ];
+  for (const other of others) assert.notEqual(scanDigest(other), expected, JSON.stringify(other));
+  // The scanner's own order is the digest's order: the digest of a real scan is the formula over its findings as listed.
+  const real = scanForCredentials(manual(password()));
+  assert.equal(real.findings.length, 1);
+  assert.equal(scanDigest(real), sha256Hex(canonicalize({ scanner: real.scanner, findings: real.findings.map(({ detector, offset }) => ({ detector, offset })) })));
+  assert.equal(scanDigest(scanForCredentials(manual('Ftp0000000009'))), scanDigest(scanForCredentials(manual('Ftp0000000009'))));
+  for (const bad of [
+    null,
+    {},
+    { scanner: '', findings: [] },
+    { scanner: 'credential-scan@2', findings: [{ detector: 'jwt', offset: -1 }] },
+    { scanner: 'credential-scan@2', findings: [{ detector: 'jwt', offset: 1.5 }] },
+    { scanner: 'credential-scan@2', findings: [{ detector: '', offset: 1 }] },
+    { scanner: 'credential-scan@2', findings: [{ offset: 1 }] },
+  ]) {
+    assert.throws(() => scanDigest(bad as never), TypeError, JSON.stringify(bad));
+  }
+  assert.equal(scanAcceptanceKey('a'.repeat(64)), `scan:${'a'.repeat(64)}`);
+  for (const bad of ['', 'A'.repeat(64), 'a'.repeat(63), null]) assert.throws(() => scanAcceptanceKey(bad as never), TypeError, String(bad));
 });

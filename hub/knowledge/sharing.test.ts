@@ -1,5 +1,4 @@
 // Sharing tests use only synthetic observed captures and temporary records, including legacy untrusted verification flags.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { SpaceEntryBody, SpaceVersionBody } from '../../contracts/src/spaces.ts';
@@ -65,10 +64,10 @@ async function claimedEntry(w:Awaited<ReturnType<typeof makeWorld>>,changes:Part
   return {root:root.digest,entry:body.entry};
 }
 
-test('sharing rechecks missing references, exact quotations and credentials rather than trusting saved verification',async t=>{ credentialDetectorsFor(t);
-  for(const [which,code] of [['missing','SHARE_GROUND_UNRESOLVED'],['quote','SHARE_QUOTE_MISMATCH'],['credential','SHARE_CREDENTIALS']] as const){
+test('sharing rechecks missing references and exact quotations rather than trusting saved verification',async t=>{
+  for(const [which,code] of [['missing','SHARE_GROUND_UNRESOLVED'],['quote','SHARE_QUOTE_MISMATCH']] as const){
     const w=await makeWorld(postgres);t.after(w.close);const source=await observed(w);
-    const entry=await claimedEntry(w,which==='credential'?{content:{kind:'observation',statement:'DB_PASSWORD=hunter22x',data:{},applicability:null}}:{grounds:[{reference:'src:'+(which==='missing'?'a'.repeat(64):source.body.sha256),quotation:which==='quote'?'每次保留三份':'每次保留两份'}]});
+    const entry=await claimedEntry(w,{grounds:[{reference:'src:'+(which==='missing'?'a'.repeat(64):source.body.sha256),quotation:which==='quote'?'每次保留三份':'每次保留两份'}]});
     const receipt=await w.knowledge.spaces!.share(w.user,{root:entry.root,path:'/notes',entry:entry.entry});assert.equal(receipt.code,code,which);assert.ok(!JSON.stringify(receipt).includes('hunter22x'));assert.equal((await w.knowledge.spaces!.current('team'))?.body.entries.length,0);
   }
 });
@@ -126,20 +125,6 @@ test('a new shared revision records a withdrawn predecessor without undoing its 
   assert.equal((await spaces.entry(w.user,receipt.team_root,'/notes',next.entry))?.body.replaces,first.entry);
   assert.equal((await spaces.entry(w.outsider,shared.team_root,'/notes',first.entry))?.row.status,'withdrawn');
   assert.deepEqual(await spaces.withdrawnGrounds([shared.reference],w.outsider),[shared.reference]);
-});
-
-test('team destination paths are scanned and credential-bearing targets never enter refusal receipts',async t=>{ credentialDetectorsFor(t);
-  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entry=await verified(w);
-  await spaces.ensure(w.user,'team');
-  const before=(await spaces.current('team'))!.root,secret='hunter22x',team_path='/DB_PASSWORD='+secret;
-  const input={root:entry.root,path:'/notes',entry:entry.entry,team_path};
-  const preview=await spaces.precheckShare(w.user,input);assert.equal(preview.target_path,undefined);assert.ok(!JSON.stringify(preview).includes(secret));
-  const refused=await spaces.share(w.user,input);assert.equal(refused.code,'SHARE_CREDENTIALS');assert.equal(refused.status,'rejected');assert.equal(refused.target_path,undefined);assert.ok(!JSON.stringify(refused).includes(secret));
-  assert.equal((await spaces.current('team'))!.root,before);assert.equal((await spaces.current('team'))!.body.entries.length,0);
-  assert.equal((await share(w,entry)).status,'merged');
-  const duplicate=await spaces.share(w.user,input);assert.equal(duplicate.code,'SHARE_DUPLICATE');assert.equal(duplicate.target_path,undefined,'an earlier refusal must not persist the unchecked destination either');
-  const duplicatePreview=await spaces.precheckShare(w.user,input);assert.equal(duplicatePreview.target_path,undefined);assert.ok(!JSON.stringify(duplicatePreview).includes(secret));
-  const history=await spaces.shareHistory(w.user);assert.ok(!JSON.stringify(history).includes(secret));
 });
 
 test('withdrawal qualifiers hide unreadable ancestor identities and disclose only their count',async t=>{

@@ -1,4 +1,3 @@
-import { credentialDetectorsFor } from '../testing/records.ts';
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {makeWorld,startPostgres} from './test-support.ts';
@@ -16,17 +15,11 @@ test('memory and knowledge take text that looks like it carries a credential, as
  const saved=await memory.write(w.user,create(text,'looks-like-a-credential'));assert.equal((await memory.read(w.user,saved.document)).markdown,text);
  const note=await spaces.write(w.user,{kind:'observation',statement:text});assert.equal((await spaces.entry(w.user,note.root,'/',note.entry))?.body.content.statement,text);
 });
-test('memory and knowledge refuse encoded credentials without changing stored clean Unicode content',async t=>{ credentialDetectorsFor(t);
+test('memory and knowledge keep text that looks like a credential and clean Unicode content as written (decisions 154, 161)',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,spaces=w.knowledge.spaces!,secret=['Synth3tic','!2498'].join('');
- const variants=['ＤＢ＿ＰＡＳＳＷＯＲＤ＝'+secret,'DB_PASS\u200bWORD='+secret,'DB_PASS\u00adWORD='+secret,'DB_PASSWORD&#61;'+secret,Buffer.from('DB_PASSWORD='+secret).toString('base64')];
- for(const [n,text] of variants.entries()){
-  await assert.rejects(memory.write(w.user,create(text,'encoded-'+n)),{code:'MEMORY_CREDENTIALS_DETECTED'});
-  await assert.rejects(memory.write(w.user,{...create('合成正文','encoded-title-'+n),title:text}),{code:'MEMORY_CREDENTIALS_DETECTED'});
-  await assert.rejects(spaces.write(w.user,{kind:'observation',statement:text}),{code:'SPACE_CREDENTIALS_DETECTED'});
- }
- for(const [n,path] of ['/DB_PASS/WORD=/'+secret,'/DB_PASSWORD/'+secret].entries()){
-  await assert.rejects(memory.write(w.user,{...create('合成正文','encoded-path-'+n),path}),{code:'MEMORY_CREDENTIALS_DETECTED'});
-  await assert.rejects(spaces.directory(w.user,path),{code:'SPACE_CREDENTIALS_DETECTED'});
+ for(const [n,text] of ['ＤＢ＿ＰＡＳＳＷＯＲＤ＝'+secret,'DB_PASSWORD&#61;'+secret,Buffer.from('DB_PASSWORD='+secret).toString('base64')].entries()){
+  const saved=await memory.write(w.user,create(text,'encoded-'+n));assert.equal((await memory.read(w.user,saved.document)).markdown,text);
+  const note=await spaces.write(w.user,{kind:'observation',statement:text});assert.equal((await spaces.entry(w.user,note.root,'/',note.entry))?.body.content.statement,text);
  }
  const clean='合成　偏好\nＵＴＦ－８　原文\u200b。',saved=await memory.write(w.user,create(clean,'keep-bytes'));
  assert.equal((await memory.read(w.user,saved.document)).markdown,clean);
@@ -109,16 +102,11 @@ test('memory writes are versioned, optimistic and idempotent; pagination preserv
  await assert.rejects(memory.query(w.user,{document:first.document,version:first.version,for_session:true,cursor:one.memory_document!.next!}),{code:'SOURCE_UNAVAILABLE'});
  const before=await memory.usage(w.user);await memory.rebuild(w.user);assert.deepEqual(await memory.usage(w.user),before);await memory.rebuild(w.user);assert.deepEqual(await memory.usage(w.user),before);
 });
-test('refused credentials and size limits retain one safe audit and no content or quota writes',async t=>{ credentialDetectorsFor(t);
+test('size limits leave no content or quota writes',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
- const secret='DB_PASSWORD=synthetic-secret-2498';
- const failures:Error[]=[];
- for(let n=0;n<2;n++)await assert.rejects(memory.write(w.user,create(secret,'secret')),error=>{assert.equal((error as {code:string}).code,'MEMORY_CREDENTIALS_DETECTED');failures.push(error as Error);return true;});
- assert.match(failures[0].message,/Markdown 正文第 1 行/);assert.equal(failures[1].message,failures[0].message);
- assert.equal((await w.kit.store.list({kind:'memory_document'})).items.length,0);assert.equal((await w.kit.store.list({kind:'memory_version'})).items.length,0);
- const audit=await w.kit.store.find({kind:'action',key:'memory.refusal.by',value:w.user.id});assert.equal(audit.items.length,1);assert.ok(!JSON.stringify(audit).includes(secret));assert.ok(!JSON.stringify(audit).includes('synthetic-secret-2498'));
- assert.equal((await memory.usage(w.user)).history,0);
  w.kit.memoryIndex!.limits.documentBytes=8;await assert.rejects(memory.write(w.user,{...create('一二三','disabled-limit'),enabled:false}),{code:'MEMORY_DOCUMENT_LIMIT'});await assert.rejects(memory.write(w.user,create('一二三','limit')),{code:'MEMORY_DOCUMENT_LIMIT'});assert.equal((await memory.usage(w.user)).active,0);
+ assert.equal((await w.kit.store.list({kind:'memory_document'})).items.length,0);assert.equal((await w.kit.store.list({kind:'memory_version'})).items.length,0);
+ assert.equal((await memory.usage(w.user)).history,0);
 });
 test('active quotas are serialized across services, disable frees active bytes, and knowledge shares historical capacity',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,other=new MemoryDocuments(w.knowledge.__context,w.knowledge.spaces!);
@@ -188,16 +176,14 @@ test('metadata pages are bounded in UTF-8 bytes and version changes invalidate t
  await memory.write(w.user,{document:saved[0].document,expected_version:saved[0].version,enabled:false,client_key:'page-change'});
  await assert.rejects(memory.query(w.user,{scope:'personal',cursor:firstCursor}),{code:'MEMORY_CURSOR_STALE'});
 });
-test('history is owner or team-administrator only and sensitive share paths never enter receipts',async t=>{ credentialDetectorsFor(t);
+test('history is owner or team-administrator only, and a share refused for capacity writes nothing on preview',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const saved=await memory.write(w.user,create());await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});
  assert.equal((await memory.history(w.user,saved.document)).items.length,1);
  await assert.rejects(memory.history(w.outsider,saved.document),{code:'SOURCE_UNAVAILABLE'});
- const secret='/DB_PASSWORD=synthetic-secret-9837';
- for(const key of ['credentials','early-size']){
-  if(key==='early-size')w.kit.memoryIndex!.limits.spaceBytes=0;
-  const input={document:saved.document,version:saved.version,team_path:secret,client_key:key};
-  const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...input,check_only:true});assert.equal(plan.ok,false);assert.equal(plan.target_path,undefined);assert.equal(await w.kit.store.watermark!(),before);
-  const refused=await memory.share(w.user,input);assert.equal(refused.share?.target_path,undefined);assert.ok(!JSON.stringify(refused).includes('synthetic-secret-9837'));assert.ok(!JSON.stringify((await w.kit.store.get(refused.record!))?.body).includes('synthetic-secret-9837'));
- }
+ // A path that looks like a credential is taken as given (decisions 154, 161); the share is refused for capacity only.
+ w.kit.memoryIndex!.limits.spaceBytes=0;
+ const input={document:saved.document,version:saved.version,team_path:'/DB_PASSWORD=synthetic-secret-9837',client_key:'early-size'};
+ const before=await w.kit.store.watermark!(),plan=await memory.share(w.user,{...input,check_only:true});assert.equal(plan.ok,false);assert.equal(await w.kit.store.watermark!(),before);
+ const refused=await memory.share(w.user,input);assert.ok(refused.record,'the refusal is recorded');
 });

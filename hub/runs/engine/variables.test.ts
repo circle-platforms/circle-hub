@@ -1,5 +1,4 @@
 // Ordinary deployment snapshots stay local to one start_run, while frozen input bytes remain immutable.
-import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
@@ -38,15 +37,15 @@ test('a parameter that looks like a credential starts the run like any other par
  assert.equal(started.call_result,'ok');
  const detail=await h.service.getRun(h.alice,started.run!.run);assert.equal(detail!.run.parameters?.strict,text);
 });
-test('recognized credentials refuse the whole start_run and reference-looking parameters stay literal', {skip},async t=>{ credentialDetectorsFor(t);
+test('parameters are not scanned for credentials, a malformed argument is refused, and reference-looking parameters stay literal', {skip},async t=>{
  const h=await openHarness(pg,{review:{parameterSchema:{type:'string'}}});t.after(()=>h.close());
  const input={pack:'toy-review',product:'Meadow',inputs:{map:{external:'toy:mindmap:docq7'}}};
- const rejected=await h.service.startRun(h.alice,{...input,parameters:{strict:'password=DEMO!Password42'}},h.call());
- assert.equal(rejected.call_result,'error');assert.ok(rejected.errors.some(e=>e.code==='SUBMISSION_SCHEMA_VIOLATION'));assert.match(rejected.errors[0].fix??'',/参数里不能有凭据/);
- assert.equal(h.external.reads.length,0);assert.equal((await h.kit.store.list({kind:'run'})).items.length,0);
+ // Decisions 154 and 161: a parameter that looks like a credential is taken as given.
+ const kept=await h.service.startRun(h.alice,{...input,parameters:{strict:'password=DEMO!Password42'}},h.call());
+ assert.equal(kept.call_result,'ok',JSON.stringify(kept.errors));
  const malformedArguments={...input,['password=DEMO!Password42']:'x'};
  const malformed=await h.service.startRun(h.alice,malformedArguments,h.call());
- assert.equal(malformed.call_result,'error');assert.ok(!JSON.stringify(malformed).includes('DEMO!Password42'));
+ assert.equal(malformed.call_result,'error');
 
  const literal='${var:DEMO_NOT_SET}';const accepted=await h.service.startRun(h.alice,{...input,parameters:{strict:literal}},h.call());assert.equal(accepted.call_result,'ok');
  const detail=await h.service.getRun(h.alice,accepted.run!.run);assert.equal(detail!.run.parameters?.strict,literal);

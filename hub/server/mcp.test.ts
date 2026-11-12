@@ -3,7 +3,6 @@
 // the plain-text content, absent equals forbidden, records by reference, the call log (no argument content, refused
 // batches, notes records would refuse), trace and session ids, token revocation, concurrent calls, and service answers that
 // violate their output schema.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { readdir, readFile, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -16,6 +15,7 @@ import { SubmitResultOutput } from '../../contracts/src/tools.ts';
 import { SERVER_INSTRUCTIONS, TOOLS } from '../../contracts/src/tools.ts';
 import { canonicalize, sha256Hex, type CallLogInput } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
+import { storeLegacyHeld } from '../testing/records.ts';
 import { ROOT_1, defaultPacks, fakeWorkflowPack } from './fakes.ts';
 import { createTestServer, type TestMcpClient, type TestServer, type TestUser, type ToolCallResult } from './testing.ts';
 
@@ -365,21 +365,6 @@ describe('upload_file', () => {
     await client.close();
   });
 
-  test('a credential in the upload is not accepted: CREDENTIAL_IN_UPLOAD, no reference, isError', async (t) => { credentialDetectorsFor(t);
-    const client = await connect(await person());
-    const result = await upload(client, '配置说明\ndb_password = "Xk9!rT2#qL"\n', { name: 'conf.txt' });
-    assert.equal(result.isError, true);
-    assert.equal(result.structuredContent.acceptance, 'not_accepted');
-    assert.equal(result.structuredContent.reference, undefined);
-    assert.match(String(result.structuredContent.sha256), /^[0-9a-f]{64}$/);
-    const error = firstError(result);
-    assert.equal(error.code, 'CREDENTIAL_IN_UPLOAD');
-    assert.equal(error.fix, PROTOCOL_CODES.CREDENTIAL_IN_UPLOAD.fix);
-    assert.match(error.message, /第 2 行/);
-    assert.doesNotMatch(JSON.stringify(result), /Xk9!rT2#qL/, 'the credential is never echoed');
-    await client.close();
-  });
-
   test('non-canonical base64, a path instead of content, a bad media type or name are schema violations', async () => {
     const client = await connect(await person());
     const padding = await client.call('upload_file', { file_path: 'QR==' });
@@ -463,7 +448,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     await client.close();
   });
 
-  test('get_nodes by reference follows the read tier: function bytes give structure only, retain-only gives the note', async (t) => { credentialDetectorsFor(t);
+  test('get_nodes by reference follows the read tier: function bytes give structure only, retain-only gives the note', async (t) => {
     const admin = server.admin;
     const restricted = await server.records.artifacts.ingest({
       bytes: Buffer.from(MINDMAP.replace('合成用例集', '受限用例集')),
@@ -474,12 +459,11 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       visibility: { readers: [admin.principal.id], admins: true, packs: [], shareable: true },
       readTier: 'function_bytes_only',
     });
-    const secret = await server.records.artifacts.ingest({
+    // A read an older Hub held under the credential scan (issue 194): it stays held, and get_nodes gives the note.
+    const secret = await storeLegacyHeld(server.records, {
       bytes: Buffer.from('读取到的页面\ndb_password = "Xk9!rT2#qL"\n'),
       mediaType: 'text/plain',
-      origin: { read: { object: 'tracker:page:7' } },
-      author: { user: null },
-      provenanceType: 'observed',
+      object: 'tracker:page:7',
       visibility: { readers: [], admins: true, packs: [], shareable: false },
     });
     const client = await connect(admin);
@@ -1191,7 +1175,7 @@ describe('neutral answers', () => {
 });
 
 describe('the isError matrix and output schemas', () => {
-  test('isError is true exactly for protocol errors and receipts that are not accepted; every answer conforms to its schema', async (t) => { credentialDetectorsFor(t);
+  test('isError is true exactly for protocol errors and receipts that are not accepted; every answer conforms to its schema', async (t) => {
     const user = await person(['review']);
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
@@ -1200,7 +1184,8 @@ describe('the isError matrix and output schemas', () => {
       ['list_task_packs', {}, false],
       ['list_task_packs', { kind: 'nope' }, true],
       ['upload_file', { file_path: b64('合成文本 MATRIX') }, false],
-      ['upload_file', { file_path: b64('password = "Xk9!rT2#qL"') }, true],
+      // An upload that looks like a credential is accepted like any other (decisions 154, 161).
+      ['upload_file', { file_path: b64('password = "Xk9!rT2#qL"') }, false],
       ['upload_file', { file_path: 'QR==' }, true],
       ['start_run', { pack: 'review', inputs: { subject: { reference } } }, false],
       ['start_run', { pack: 'review', inputs: {} }, true],

@@ -1,5 +1,4 @@
 // Synthetic injected responses; no external host is contacted.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import {writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
@@ -48,13 +47,4 @@ test('a known projection failure has a registered public correction, while an in
  const answer=await w.external();assert.ok(!answer.ok && answer.inputError?.code==='SOURCE_READ_FAILED');if(!answer.ok){assert.match(answer.inputError!.message,/投影函数失败/);assert.doesNotMatch(answer.inputError!.message,/fixture.invalid|合成格式错误/);assert.match(answer.inputError!.fix,/系统包负责人/);}
  await w.kit.records.principals.setDisabled(w.kit.admin,w.kit.user.id,true);
  const hidden=await w.external();assert.ok(!hidden.ok && hidden.inputError===undefined);
-});
-
-test('a retained envelope never discloses its message through public or persisted failure diagnostics',async t=>{ credentialDetectorsFor(t);
- const secret='SyntheticEnvelopePassword42';
- const body=JSON.stringify({code:7,password:secret,msg:'password='+secret});
- const w=await world(t,200,undefined,body,true);
- const result=await w.external();assert.ok(!result.ok && result.inputError===undefined);assert.ok(!JSON.stringify(result).includes(secret));
- for(const record of (await w.kit.records.store.list({kind:'action',limit:100})).items)assert.ok(!JSON.stringify(record.body).includes(secret));
- assert.ok(!JSON.stringify(w.kit.log).includes(secret));
 });

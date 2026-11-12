@@ -1,4 +1,3 @@
-import { credentialDetectorsFor } from '../../testing/records.ts';
 import {osIsolationAvailable} from '../../rules/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 // Synthetic end-to-end contribution runs: real knowledge, records, resolver and pack sandbox.
@@ -64,16 +63,6 @@ test('public contribution records omit private run links and identical content i
   }
 });
 
-test('a refused digest stays refused after source recovery; a new submission can be verified',async t=>{ credentialDetectorsFor(t);
-  const w=await setup(t,{acceptedRoot:true});const args=w.args();
-  await w.kit.artifacts.revokeFindings(w.admin,w.original,'合成撤回');
-  const first=await w.service.submitResult(w.admin,args,call);assert.equal(first.result?.contributions?.stored.length,0);assert.equal(first.result?.contributions?.not_stored.length,4);
-  await w.kit.artifacts.acceptFindings(w.admin,w.original,'合成恢复');
-  assert.deepEqual(await w.service.submitResult(w.admin,args,{...call,sessionId:'new-session'}),first);
-  const changed=await w.service.submitResult(w.admin,{...args,notes:'读取条件已恢复，申请重新核验'},call);
-  assert.equal(changed.result?.contributions?.stored.length,4,JSON.stringify(changed.errors));
-});
-
 async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:boolean;task?:boolean;declaredRoot?:boolean;wrappedDeclaration?:boolean;refute?:boolean;acceptedRoot?:boolean;hiddenOriginal?:boolean;pageBytes?:number;treeEntries?:number;nodePath?:string;modern?:boolean} = {}) {
   const w = await makeWorld(postgres,{knowledge:{limits:{pageBytes:options.pageBytes??2*1024*1024}},pack:{declaration:{producers:[...DEFAULT_PRODUCERS.map(p=>({...p,placement:'judgment_allowed'})),...((options.treeEntries||options.nodePath)?[extraProducer('large_tree',{entries:Array.from({length:options.treeEntries??1},(_,i)=>({kind:'behaviour',path:options.nodePath??'/commands/system/show',statement:'合成树条目 '+i+' '+ 'tree '.repeat(400),data:{i},fragments:[{parser:'xml@1',selector:'x/catalog/group[1]'}],applicability:null}))},undefined,'judgment_allowed')]:[])]}}}); t.after(()=>w.close());
   const b = options.modern?{...build('rel_acme_10_6_1'),line:'10.6'}:build('Rel_ACME_1_2_15');
@@ -88,7 +77,6 @@ async function setup(t: {after(fn:()=>Promise<void>):void}, options: {ordinary?:
     const xml=catalogXml({...BASE_CATALOG,system:[BASE_CATALOG.system[0],{name:'show',params:[],help:["show t","he sta","te htt","ps://d","emo:sy","ntheti","c-secr","et@192",".0.2.8","/path"].join('')}]});
     w.external.set(b.sources.tree,{bytes:xml,mediaType:'application/xml'});
     const artifact=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(xml),mediaType:'application/xml',origin:{read:{object:b.sources.tree}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
-    await w.kit.artifacts.acceptFindings(w.admin,artifact.body.sha256,'合成演练数据');
   }
   const produced = await w.knowledge.produceTree({product:w.product,build:b});
   assert.ok(produced.ok,produced.reason ?? '');
@@ -178,26 +166,7 @@ test('a run-bound session excerpt needs a signature before root membership is co
   assert.ok(result.errors.some(e=>e.code==='core.contribution.signature_required'&&e.message.includes('需要负责人署名')));
 });
 
-test('sensitive contribution text is refused before it reaches the product layer',async t=>{ credentialDetectorsFor(t);
-  const w=await setup(t);const args=w.args();const secret=["https:","//demo",":synth","etic-s","ecret@","192.0.","2.8/pa","th"].join('');args.items[0].slots.contribution[0].text=secret;
-  const result=await w.service.submitResult(w.admin,args,call);
-  assert.equal(result.result?.contributions?.stored.length,3);
-  assert.ok(result.errors.some(e=>e.code==='CREDENTIAL_IN_UPLOAD'));
-  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
-  assert.ok(!JSON.stringify(page).includes(secret));
-});
-
-test('credential scanning also covers both quote fields and prevents self relations',async t=>{ credentialDetectorsFor(t);
-  const secret=["https:","//demo",":synth","etic-s","ecret@","192.0.","2.8/pa","th"].join('');
-  for(const other of [false,true]){
-    const w=await setup(t,{acceptedRoot:true});const args=w.args();
-    const quote={reference:`src:${w.original}`,quote:secret};
-    if(other)args.items[3].slots.contribution[0].data.relation!.other=quote;else args.items[0].slots.contribution[0].data.source=quote;
-    const result=await w.service.submitResult(w.admin,args,call);
-    assert.equal(result.result?.contributions?.stored.length,3,JSON.stringify(result.errors));
-    assert.ok(result.errors.some(e=>e.code==='CREDENTIAL_IN_UPLOAD'));
-    assert.ok(!JSON.stringify(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.admin)).includes(secret));
-  }
+test('a contribution that relates a source to itself is refused',async t=>{
   const w=await setup(t);const args=w.args();args.items[3].slots.contribution[0].data.relation!.other={...args.items[3].slots.contribution[0].data.source};
   const result=await w.service.submitResult(w.admin,args,call);
   assert.equal(result.result?.contributions?.stored.length,3);assert.ok(result.errors.some(e=>e.code==='core.contribution.self_relation'));
@@ -470,38 +439,6 @@ test('a layer write failure rolls back every contribution before the not-accepte
 });
 
 
-test('a revoked source acceptance returns safe markers without changing original records or receipts',async t=>{ credentialDetectorsFor(t);
-  const w=await setup(t,{acceptedRoot:true});const result=await w.service.submitResult(w.admin,w.args(),call);
-  assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
-  const digest=result.result!.contributions!.stored[0].record;
-  assert.ok(await w.knowledge.layers.contributions.read(digest,w.user));
-  await w.kit.artifacts.revokeFindings(w.admin,w.original,'结束合成演练');
-  assert.equal(await w.knowledge.layers.contributions.read(digest,w.user),null);
-  const views=await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user);
-  assert.equal(views.length,4);
-  for(const view of views){
-    assert.equal(view.status,'credential_unreadable');assert.match(view.note??'',/管理员/);
-    assert.ok(!('statement'in view.contribution));assert.ok(!('quote'in view.contribution.source));
-    if(view.contribution.relation)assert.ok(!('quote'in view.contribution.relation.other));
-  }
-  const node=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
-  const text=toolText('get_nodes',{call_result:'ok',errors:[],trace:call.traceId,root:w.root,nodes:node!.nodes});
-  assert.match(text,/含凭据，原文不可读/);assert.match(text,/管理员/);
-  const raw=await w.kit.store.get(digest);assert.ok('statement'in (raw!.body as object));
-  assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),result);
-});
-
-test('credential-bearing model declarations never enter product-readable contributions',async t=>{ credentialDetectorsFor(t);
-  const w=await setup(t);const args={...w.args(),model:["synthe","tic-mo","del ht","tps://","demo:s","ynthet","ic-sec","ret@19","2.0.2.","8/v1"].join('')};
-  const result=await w.service.submitResult(w.admin,args,call);
-  assert.equal(result.result?.contributions?.stored.length,0);
-  assert.equal(result.result?.contributions?.not_stored.length,4);
-  assert.ok(result.errors.some(error=>error.code==='CREDENTIAL_IN_UPLOAD'));
-  assert.deepEqual(await w.knowledge.layers.contributions.list(w.root,['/commands/system/show'],w.user),[]);
-  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);
-  assert.ok(!JSON.stringify(page).includes('synthetic-secret'));
-});
-
 
 test('ordinary partial cross item errors keep original indexes and do not charge another requirement',async t=>{
   const w=await setup(t,{ordinary:true});
@@ -563,30 +500,6 @@ test('admission refusal codes and fixes come from the core registry rather than 
   const w=await setup(t);const args=w.args();args.items[0].slots.contribution[0].data.source={reference:`tree:${w.root}/commands/system`,quote:'reboot'};
   const result=await w.service.submitResult(w.admin,args,call);const error=result.errors.find(error=>error.item==='classification'&&error.code==='core.contribution.source_not_original');
   assert.ok(error,JSON.stringify(result.errors));assert.equal(error.fix,CORE_VIOLATION_CODES['core.contribution.source_not_original'].fix);
-});
-
-test('credential-bearing session headers are refused before append and never reach public node or record reads',async t=>{ credentialDetectorsFor(t);
-  const w=await setup(t),layer=w.knowledge.layers.contributions;
-  const secret='synthetic-session-secret',session=['https:','//probe:',secret,'@192.0.2.44/v1'].join('');
-  const append=layer.append.bind(layer);let calls=0;
-  t.mock.method(layer,'append',async(...args:Parameters<typeof append>)=>{calls++;return append(...args);});
-  const result=await w.service.submitResult(w.admin,w.args(),{...call,sessionId:session});
-  assert.equal(result.result?.contributions?.stored.length,0);assert.equal(calls,0);
-  assert.equal(result.result?.contributions?.not_stored.length,4);assert.ok(result.errors.some(error=>error.code==='CREDENTIAL_IN_UPLOAD'));
-  const records=await w.kit.store.find({key:'knowledge.contribution.product',value:w.product.product.id,kind:'claim',limit:100});assert.equal(records.items.length,0);
-  const page=await w.knowledge.getNodes({root:w.root,paths:['/commands/system/show'],depth:0},w.user);assert.ok(!JSON.stringify(page).includes(secret));
-  const safe=await w.service.submitResult(w.admin,{...w.args(),notes:'safe session control'},call);assert.equal(safe.result?.contributions?.stored.length,4);
-  for(const item of safe.result!.contributions!.stored){const record=await layer.read(item.record,w.user);assert.ok(record);assert.ok(!JSON.stringify(record).includes(secret));assert.equal((record.body as {session:string}).session,call.sessionId);}
-});
-
-test('append scans the actual session again before an identity can reuse a public record',async t=>{ credentialDetectorsFor(t);
-  const w=await setup(t),layer=w.knowledge.layers.contributions,append=layer.append.bind(layer);
-  t.mock.method(layer,'append',async(...[prepared,origin,tx]:Parameters<typeof append>)=>append(prepared,{...origin,session:["https:","//prob","e:synt","hetic-","append","-secre","t@192.","0.2.44","/v1"].join('')},tx));
-  const interrupted=await w.service.submitResult(w.admin,w.args(),call);
-  assert.equal(interrupted.acceptance,'not_accepted');
-  assert.ok(interrupted.errors.some(e=>e.code==='check_error'));
-  assert.ok(!JSON.stringify(interrupted).includes('synthetic-append-secret'));
-  assert.deepEqual(await layer.list(w.root,['/commands/system/show'],w.user),[]);
 });
 
 
