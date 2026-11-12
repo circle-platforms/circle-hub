@@ -462,17 +462,17 @@ export class DispatchService {
       } catch (error) { unmet.add('放行核对出错'); log('release error', `${candidate.id}: ${described(error)}`); }
     }
     if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，等管理员指定执行器（已记下）` }; }
-    if (!released.length) return { started: false, reason: candidates.length ? `放行条件尚未全部满足：${[...unmet].join('、')}；能在提交、计划或预订上补齐的补齐后原样重交，其余等管理员处理（已记下）` : '没有为该任务包登记的启用执行器，Hub 没有派发；等管理员登记执行器' };
+    if (!released.length) return { started: false, reason: candidates.length ? `放行条件尚未全部满足：${[...unmet].join('、')}；能在提交、自动化用例或预订上补齐的补齐后原样重交，其余等管理员处理（已记下）` : '没有为该任务包登记的启用执行器，上机验证没有发出；等管理员登记执行器' };
     const chosen = released[0];
     try {
       const status = await this.dispatch(admin, run, chosen.id, (job) => onReserved?.(job, chosen.id), { initiatedBy: detail.run.runner });
       return { started: true, executor: chosen.id, status };
     } catch (error) {
       log('error', `${chosen.id}: ${described(error)}`);
-      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次没有派发；等占用结束后原样重交'
+      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
-          ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后开新运行` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
-          : '派发前核对出错，没有派发；等管理员处理（已记下）后原样重交' };
+          ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后重新开始上机验证` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
+          : '上机验证前核对出错，没有发出；等管理员处理（已记下）后原样重交' };
     }
   }
 
