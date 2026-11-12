@@ -1,6 +1,6 @@
 import { countEntryPositions } from './counts.ts';
 import type { KnowledgeEntryCounts } from '../../contracts/src/views.ts';
-import {knowledgeSourceLoader} from './credential-policy.ts';
+import {knowledgeSourceLoader} from './sources.ts';
 import {resolveProductVariables,productionVariableUses} from './variables.ts';
 import {emptyScopeNote} from './empty-scope.ts';
 import type {VariableUse} from '../../contracts/src/variables.ts';

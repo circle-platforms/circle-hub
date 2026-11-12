@@ -10,6 +10,7 @@ import { EXTERNAL_ARTIFACT, type ExternalReaderPort } from '../ports.ts';
 import type { Artifacts, Principal, SourceArtifact, VariableSnapshot } from '../records/api.ts';
 import { ParseError, parserKey,parserCacheKey,parseDocument,recognizeAsync, type ParsedDocument, type ParserRegistry } from '../refs/api.ts';
 import { describeError } from './errors.ts';
+import type { KnowledgeContext } from './context.ts';
 import { Lru } from './store.ts';
 
 const MODEL_READABLE: ReadTier = 'model_readable';
@@ -50,17 +51,23 @@ export interface SourceDeps {
   artifacts: Artifacts;
   parsers: ParserRegistry;
   records?:Pick<RecordStore,'get'>;
-  onCredential?:(load:Extract<ExternalLoad,{ok:true}>,slot?:string)=>Promise<void>;
-  onReadable?:(load:Extract<ExternalLoad,{ok:true}>)=>Promise<void>;
   variables?: VariableSnapshot;
 }
 
-/** The message for a source whose credential scan found something: names the digest and how an administrator unblocks it. */
+/**
+ * The message for a source held under the old credential scan (credential-scan@3; B02 R[4], decision 161): it stays held,
+ * and reading the object again stores a new record that is read as any other.
+ */
 export function credentialReason(sha256: string, external: string): string {
   return (
-    `源文件 ${sha256}（${external}）的凭据扫描有命中，读取档位为“${labelOf('read_tier', RETAIN_ONLY)}”（${labelOf('validity_status', 'credential_unreadable')}），` +
-    `不进知识树。管理员核对后可以接受这份文件（摘要 ${sha256}）的扫描命中项，然后重新运行同步。`
+    `源文件 ${sha256}（${external}）此前按凭据扫描扣留，读取档位为“${labelOf('read_tier', RETAIN_ONLY)}”（${labelOf('validity_status', 'credential_unreadable')}），` +
+    `不进知识树。重新读取这个对象（重新运行同步）会得到一份可读的新记录。`
   );
+}
+
+/** The loader of one sync or production: reads, checks and parses its sources as the given account. */
+export function knowledgeSourceLoader(context: KnowledgeContext, by: Principal, purpose: string, variables?: VariableSnapshot): SourceLoader {
+  return new SourceLoader({ external: context.external, artifacts: context.records.artifacts, parsers: context.parsers, records: context.records.store, variables }, by, purpose);
 }
 
 /**
@@ -73,7 +80,6 @@ export class SourceLoader {
   readonly #purpose: string;
   readonly #reads = new Map<string, Promise<ExternalLoad>>();
   readonly #readWrites=new Map<string,Promise<void>>();
-  readonly #credentialReads=new Map<string,Promise<ExternalLoad>>();
   /** Parsed documents by digest, parser and media/charset options; source bytes never change. A few large documents at most. */
   readonly #documents = new Lru<string, ParsedDocument>(4);
   /** Which parser recognised the bytes of a digest and media type. */
@@ -105,28 +111,9 @@ export class SourceLoader {
       pending = this.#read(id);
       this.#reads.set(id, pending);
     }
-    return pending.then(load=>{
-      if(load.ok||!load.retained?.length||!this.#deps.onCredential)return load;
-      const key=`${id}\0${slot??''}`;let recovery=this.#credentialReads.get(key);
-      if(!recovery){recovery=this.#recover(load,slot);this.#credentialReads.set(key,recovery);}
-      return recovery;
-    });
+    return pending;
   }
 
-  async #recover(load:Extract<ExternalLoad,{ok:false}>,slot?:string):Promise<ExternalLoad>{
-    let readable=true;
-    for(const digest of load.retained??[]){
-      const record=await this.#deps.records?.get(digest);if(record?.kind!=='source_artifact'){readable=false;continue;}
-      const artifact=record as SourceArtifact;
-      const stored={ok:true as const,id:load.id,artifact,revision:null,manifest:load.observation?.manifest};
-      const current=await this.#deps.artifacts.source(this.#by,artifact.body.sha256,{consumer:'model',record:artifact.digest});
-      if(current?.bytes===null)await this.#deps.onCredential?.(stored,slot);
-      const checked=await this.#deps.artifacts.source(this.#by,artifact.body.sha256,{consumer:'model',record:artifact.digest});
-      if(!checked?.bytes)readable=false;
-    }
-    if(!readable)return load;
-    const retried=this.#read(load.id);this.#reads.set(load.id,retried);return retried;
-  }
 
   /** Resuming a saved plan pins a stored observation, never reinterprets it as a fresh connector read. */
   restore(id:string,artifact:SourceArtifact,revision:string|null,manifest?:string|null):void {
@@ -187,11 +174,7 @@ export class SourceLoader {
       return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）是用个人凭据读到的，个人凭据读到的源文件不进知识树` };
     }
     if (body.size > maxBytes) return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）有 ${body.size} 字节，超过还能读的 ${maxBytes} 字节` };
-    let source = await this.#deps.artifacts.source(this.#by, sha256, { consumer: 'model', record: load.artifact.digest });
-    if(source?.bytes===null&&source.readTier==='retain_only'&&this.#deps.onCredential){
-      await this.#deps.onCredential(load,context.slot);
-      source=await this.#deps.artifacts.source(this.#by,sha256,{consumer:'model',record:load.artifact.digest});
-    }
+    const source = await this.#deps.artifacts.source(this.#by, sha256, { consumer: 'model', record: load.artifact.digest });
     if (source === null) return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）对执行同步的管理员不可读` };
     if (source.bytes === null || source.readTier !== MODEL_READABLE) {
       if (source.readTier === RETAIN_ONLY) return { ok: false, sha256, reason: credentialReason(sha256, id) };
@@ -200,7 +183,6 @@ export class SourceLoader {
     if (!source.artifact.body.scan.inspected) {
       return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）不是凭据扫描能检查的文本，不进知识树` };
     }
-    await this.#deps.onReadable?.(load);
     return {
       ok: true,
       value: {

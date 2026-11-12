@@ -5,7 +5,6 @@ import { KnowledgeSpaces } from './spaces.ts';
 import { KnowledgeError } from './errors.ts';
 import {scheduleSync} from './sync-schedule.ts';
 import {requestKnowledgeFact} from './requests.ts';
-import {requestSourceReview} from './credential-policy.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
@@ -49,7 +48,6 @@ export interface KnowledgeOptions {
   limits?: Partial<KnowledgeLimits>;
   /** Default admin context of syncs and productions that name none. */
   admin?: Principal | null;
-  credentialAcceptance?:import('./credential-policy.ts').CredentialAcceptanceOptions;
   /** Reads the feeding layer beside seedlings (kb-feeding); absent when nothing was fed yet. */
   feeding?:import('./feeding-types.ts').FeedingReader;
 }
@@ -106,7 +104,6 @@ export interface Knowledge extends KnowledgePort {
   /** Provenance for a reader who may read the root; null for anyone else (absent and forbidden alike). */
   provenanceOf(reference: string, reader: Principal): Promise<ProvenanceRow[] | null>;
   /** A reader was told this held source awaits review: asks a named administrator, once while a request stays open (B02 R[4]). */
-  requestSourceReview(artifact: SourceArtifact, external: string): Promise<void>;
   calibration: KnowledgeCalibration;
   placement: KnowledgePlacement;
   layers: { observations: ObservationLayer; contributions: ContributionLayer };
@@ -118,8 +115,6 @@ export interface Knowledge extends KnowledgePort {
 
 export function createKnowledge(options: KnowledgeOptions): Knowledge {
   const now = options.clock ?? (() => new Date());
-  const deadlineHours=options.credentialAcceptance?.deadlineHours??72;
-  if(!Number.isFinite(deadlineHours)||deadlineHours<=0||!Number.isFinite(new Date(now().getTime()+deadlineHours*3600000).getTime()))throw new TypeError('凭据核对期限必须是有效的正数小时');
   const store = new KnowledgeStore(options.records.store);
   const placer = new Placer({ jev: options.jev ?? null, store, now });
   const calibration = new CalibrationStore(store, options.records.principals);
@@ -142,7 +137,6 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     limits: { ...DEFAULT_KNOWLEDGE_LIMITS, ...(options.limits ?? {}) },
     admin: options.admin ?? null,
     feedingReader: options.feeding,
-    credentialAcceptance:{autoAcceptSources:options.credentialAcceptance?.autoAcceptSources??[],deadlineHours},
     writes: new WriteQueue(),
   };
   const builds = new Builds(context);
@@ -284,7 +278,6 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     // ------------------------------------------------ KnowledgePort
     /** The context this service was created with (the seedling production and tests of this package reach for it). */
     __context: context,
-    requestSourceReview:(artifact,external)=>requestSourceReview(context,artifact,external),
     feeding,
     async builds(product: string, filter: { line?: string; released?: boolean } = {}): Promise<KnownBuild[]> {
       return (await builds.known(product)).filter(
