@@ -22,6 +22,7 @@ import { planSubject } from './functions/subject.ts';
 import {parseRuntimeContract,runtimeDigest,stripAdditions} from './functions/runtime-contract.ts';
 import {profileDocument} from './testing/runtime.ts';
 import { call, openHub, sha, ROOT, type Hub } from './testing/hub.ts';
+import { TEMPLATE_HEADER_ROW, templateDocument } from './testing/template.ts';
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres; let hub: Hub;
 const map = (duplicate = false) => ({ root: { data: { id: 'doc-1', text: '合成文档' }, children: [
@@ -98,7 +99,13 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const original=stripAdditions(contract)!;contract.original.contract_sha256=runtimeDigest(original);original.contract_sha256=contract.original.contract_sha256;
     contract.original.sha256=sha(JSON.stringify(original));contract.contract_sha256=runtimeDigest(contract);
     const parsedContract=parseRuntimeContract(contract);assert.ok(parsedContract.ok,JSON.stringify(parsedContract));
-    const profile=profileDocument(contract),contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>size.min&&contractBytes.length<size.max,String(contractBytes.length));
+    const profile=profileDocument(contract);
+    // Our synthetic runner template defaults to 80 rows; 34 cases need ~172. Size the template to the start input
+    // (same idea as pipeline=legacy): meet the mechanical rule without changing assertions.
+    const book=profile.workbook;
+    const templateRows=Math.max(80, TEMPLATE_HEADER_ROW + 1 + cases * 6 + 8);
+    profile.workbook={...book,template:templateDocument({sheet:book.sheet,header:book.header,identity_marker:book.identity_marker,range_name:book.range_name},contract.runtime.minimum_version,contract.original?.contract_sha256??contract.contract_sha256,TEMPLATE_HEADER_ROW,templateRows)};
+    const contractBytes=Buffer.from(JSON.stringify(contract));assert.ok(contractBytes.length>size.min&&contractBytes.length<size.max,String(contractBytes.length));
     const document=map();document.root.data.id='batch-doc';document.root.children=Array.from({length:cases},(_,i)=>{
       const node=structuredClone(map().root.children[0]);node.data.id='case-'+i;node.data.autoid=String(BigInt(AUTOID)+BigInt(i));
       const step=node.children[0];assert.ok('children' in step);step.data.id='step-'+i;step.children[0].data.id='expected-'+i;return node;
@@ -108,6 +115,9 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const put=(external:string,bytes:Uint8Array)=>hub.external.put(external,{bytes,mediaType:'application/json'});
     put('agile:mindmap:synthetic-batch',sourceBytes);put('doc:doc:synthetic-large-contract',contractBytes);put('doc:doc:synthetic-large-profile',Buffer.from(JSON.stringify(profile)));
     const args=start();delete (args.inputs as Partial<typeof args.inputs>).case_index;delete (args.parameters as Partial<typeof args.parameters>).autoid;
+    // Decision 167 (rule 3): whole mind map without recomposition must set pipeline=legacy. Keep the check; give the
+    // mainline whole-workbook starts the winning parameter (派活方 18:35 option A). Assertions unchanged.
+    args.parameters={...args.parameters,pipeline:'legacy'};
     args.inputs.subject.external='agile:mindmap:synthetic-batch';args.inputs.contract.external='doc:doc:synthetic-large-contract';args.inputs.profile.external='doc:doc:synthetic-large-profile';
     const first=await hub.service.startRunDetailed(hub.alice,args,call());assert.equal(first.answer.call_result,'ok',JSON.stringify(first.answer.errors));const plan=first.answer.run!;assert.equal(plan.items.length,cases);
     const send=(run:string)=>({run,model:'synthetic-model',items:plan.items.map((item,i)=>{
@@ -119,7 +129,7 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     for(const row of rows)for(const requirement of row.requirements.filter(value=>value.requirement!=='workbook_verified'))assert.equal(requirement.status,'satisfied',JSON.stringify(requirement));
     const recipes=satisfiedRecipes({run:first.answer,result:answer,submission:submitted,contract:contractBytes,profile:Buffer.from(JSON.stringify(profile)),inventory:Buffer.from(JSON.stringify(MANIFEST_DOC))});assert.equal(recipes.length,cases);
     const workbook=generateWorkbookSet(recipes);const artifact=await hub.kit.artifacts.ingest({bytes:workbook,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',origin:{read:{object:'fixture:workbook:four-cases'}},author:{user:null},provenanceType:'observed',visibility:{readers:[hub.alice.id],admins:true,packs:[],shareable:false}});
-    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
+    const second=await hub.service.startRunDetailed(hub.alice,{...args,predecessor:plan.run,parameters:{...args.parameters,plan_run:plan.run},inputs:{...args.inputs,plan_result:{run:plan.run},workbook:{reference:'src:'+artifact.body.sha256}}},call());assert.equal(second.answer.call_result,'ok',JSON.stringify(second.answer.errors));
     const verified=await hub.service.submitResult(hub.alice,send(second.answer.run!.run),call());assert.equal(verified.acceptance,'accepted',JSON.stringify(verified.errors));
     const verifiedRows=Object.values(verified.result!.partitions).flat();assert.equal(verifiedRows.length,cases);
     for(const row of verifiedRows){assert.ok(row.requirements.every(requirement=>requirement.status==='satisfied'),JSON.stringify(row.requirements));const proofs=row.requirements.filter(requirement=>requirement.requirement==='workbook_verified').flatMap(requirement=>requirement.claims).filter(claim=>claim.statement.data?.sha256);assert.ok(proofs.length);for(const proof of proofs){assert.equal(proof.statement.data!.sha256,artifact.body.sha256);assert.equal((proof.statement.data!.autoids as string[]).length,cases);}}

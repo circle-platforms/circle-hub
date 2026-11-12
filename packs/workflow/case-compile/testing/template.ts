@@ -15,9 +15,11 @@ const inline = (reference: string, value: string, style = '') => `<c r="${refere
 const dataRow = (number: number) => `<row r="${number}">${['3', '4', '4', '5', '5', '5', '5', '5', '5'].map((style, column) => `<c r="${String.fromCharCode(65 + column)}${number}" s="${style}" t="n"></c>`).join('')}</row>`;
 
 export interface TemplateBookFixture { sheet: string; header: string[]; identity_marker: string; range_name: string }
-/** `headerRow` defaults to TEMPLATE_HEADER_ROW (6). The bundled example pins 2 so description is row 3 and the first case lands on A4. */
-export function templateDocument(book: TemplateBookFixture, runtime: string, identity: string, headerRow = TEMPLATE_HEADER_ROW): { sha256: string; xlsx_base64: string } {
+/** `headerRow` defaults to TEMPLATE_HEADER_ROW (6). The bundled example pins 2 so description is row 3 and the first case lands on A4.
+ *  `lastRow` defaults to TEMPLATE_LAST_ROW (80). Whole-workbook production tests that emit more rows pass a larger lastRow. */
+export function templateDocument(book: TemplateBookFixture, runtime: string, identity: string, headerRow = TEMPLATE_HEADER_ROW, lastRow = TEMPLATE_LAST_ROW): { sha256: string; xlsx_base64: string } {
   if (headerRow < 2) throw new Error('headerRow must leave row 1 for the identity marker');
+  if (lastRow <= headerRow) throw new Error('lastRow must leave room after the header');
   const header = headerRow;
   const rows = [
     `<row r="1" hidden="1" customHeight="1">${inline('A1', book.identity_marker)}${inline('B1', runtime)}${inline('C1', identity)}${header === 2 ? `${inline('K1', 'widget-seat')}${inline('L1', 'configure')}` : ''}</row>`,
@@ -37,10 +39,10 @@ export function templateDocument(book: TemplateBookFixture, runtime: string, ide
   }
   const headerSide = header === 2 ? `${inline(`K${header}`, 'widget-host')}${inline(`L${header}`, 'shell')}` : '';
   rows.push(`<row r="${header}" ht="30" customHeight="1">${book.header.map((value, column) => inline(`${String.fromCharCode(65 + column)}${header}`, value, ' s="2"')).join('')}${headerSide}</row>`);
-  for (let number = header + 1; number <= TEMPLATE_LAST_ROW; number++) rows.push(dataRow(number));
+  for (let number = header + 1; number <= lastRow; number++) rows.push(dataRow(number));
   const listFrom = header > 5 ? 3 : 1;
   const listTo = header > 5 ? 4 : header;
-  const sheet = `<worksheet xmlns="${MAIN}"><dimension ref="A1:L${TEMPLATE_LAST_ROW}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col width="22" customWidth="1" min="1" max="1"/><col width="48" customWidth="1" min="4" max="4"/></cols><sheetData>${rows.join('')}</sheetData><dataValidations count="1"><dataValidation sqref="E${header + 1}:E${TEMPLATE_LAST_ROW}" type="list"><formula1>IST_E_VALUES</formula1></dataValidation></dataValidations></worksheet>`;
+  const sheet = `<worksheet xmlns="${MAIN}"><dimension ref="A1:L${lastRow}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col width="22" customWidth="1" min="1" max="1"/><col width="48" customWidth="1" min="4" max="4"/></cols><sheetData>${rows.join('')}</sheetData><dataValidations count="1"><dataValidation sqref="E${header + 1}:E${lastRow}" type="list"><formula1>IST_E_VALUES</formula1></dataValidation></dataValidations></worksheet>`;
   const name = book.sheet.replaceAll("'", "''");
   const files: Record<string, string> = {
     '[Content_Types].xml': `${XML}<Types xmlns="${PACKAGE}/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`,
