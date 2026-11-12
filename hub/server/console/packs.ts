@@ -170,7 +170,8 @@ ${pack === current ? '' : html`<p class="notice" data-pack-earlier>这里显示�
     : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',list:'/console/connections?tab=packs'}
     : {...PACK_PLACES[pack.kind],list:PACK_PLACES[pack.kind].path};
   // A place that lists one kind is not followed by that kind's name again.
-  const breadcrumb = html`${link(home.path,home.title)}${home.title===kindTitle||pack.kind==='skill'?'':html` › ${link(home.list,kindTitle)}`} › ${pack.title}`;
+  // The page itself, the pack's title, is the last place of the trail: page() adds it.
+  const breadcrumb = [link(home.path,home.title),...(home.title===kindTitle||pack.kind==='skill'?[]:[link(home.list,kindTitle)])];
   const layout=pageLayout(body,{inspector:null});
   return { status: 200, body: page(ctx.chrome(pack.title, { active: home.active, crumbs:breadcrumb, ...(actions.text ? { actions } : {}) }),pack.kind==='workflow'||pack.kind==='skill'?await spaceLayout(ctx,layout,listings,pack.kind):layout) };
 }

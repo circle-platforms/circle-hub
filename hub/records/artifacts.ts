@@ -25,6 +25,7 @@ import type {
   Artifacts,
   AuthorizationRecord,
   Authorizations,
+  ArtifactMasking,
   CredentialScan,
   CredentialFindingsPage,
   DerivedScanAcceptance,
@@ -90,6 +91,18 @@ function short(value: unknown, field: string): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string' || !SHORT.test(value)) throw new TypeError(`${field} must be printable ASCII, at most 200 characters`);
   return value;
+}
+
+/** What the dictionary replaced (B02 R[11]): only on an answer read from a business system, and only when something was replaced. */
+function validMasking(masking: ArtifactMasking | undefined, origin: ArtifactOrigin): ArtifactMasking | null {
+  if (masking === undefined) return null;
+  if (!('read' in origin)) throw new TypeError('masking is recorded on a read of a business system only');
+  if (!isSha256(masking.dictionary)) throw new TypeError('masking.dictionary must be the digest of the dictionary in force');
+  if (!Array.isArray(masking.rules) || masking.rules.length === 0) throw new TypeError('masking.rules names at least one rule that matched');
+  return { dictionary: masking.dictionary, rules: masking.rules.map((row) => {
+    if (typeof row?.rule !== 'string' || !/^[a-z][a-z0-9-]{0,62}$/.test(row.rule) || !Number.isSafeInteger(row.count) || row.count < 1) throw new TypeError('masking.rules holds a rule name and how often it matched');
+    return { rule: row.rule, count: row.count };
+  }) };
 }
 
 function validOrigin(origin: ArtifactOrigin): ArtifactOrigin {
@@ -296,6 +309,7 @@ export class RecordArtifacts implements Artifacts {
     if (!isProvenanceType(input.provenanceType)) throw new TypeError('unknown provenance type');
     const requestedTier = input.readTier ?? MODEL_READABLE;
     if (!isReadTier(requestedTier)) throw new TypeError('unknown read tier');
+    const masking = validMasking(input.masking, origin);
     const visibility = validVisibility(input.visibility, origin);
     const name = text(input.name, 'name', 300);
     const run = input.run ?? null;
@@ -352,6 +366,7 @@ export class RecordArtifacts implements Artifacts {
       requested_read_tier:requestedTier,
       visibility,
       scan: { ...scan, ...(accepted === null ? {} : {accepted}), ...(derived === null ? {} : {derived}) },
+      ...(masking === null ? {} : { masking }),
     };
     // The acceptance takes part only when there is one, so the dedupe key of every other ingest is what it always was.
     // An upload's explicit capture time distinguishes its captures; an upload without one keeps the legacy idempotency.
@@ -371,6 +386,8 @@ export class RecordArtifacts implements Artifacts {
       requested_read_tier:requestedTier === RETAIN_ONLY ? requestedTier : undefined,
       accepted: accepted?.authorization,
       derived: derived ?? undefined,
+      // Only a masked answer carries it, so the key of every other ingest is what it always was.
+      masking: masking ?? undefined,
     });
     // Every check that can refuse runs before the bytes are written: objects are never deleted.
     const index = validateIndex([

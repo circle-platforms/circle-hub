@@ -20,7 +20,7 @@ import {readRetryDelay,READ_TRANSPORT_RETRIES,READ_RETRY_WAIT_MS,type ReadRetry}
 import { SANDBOX_ERRORS, SandboxError } from '../rules/api.ts';
 import { parseDocument, type ParserRegistry } from '../refs/api.ts';
 import { pendingReviewLabel, type ExternalArtifact, type ExternalReadContext, type ExternalRedirect, type PackHandle } from '../ports.ts';
-import type { Artifacts, Principal, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
+import type { Artifacts, CompiledMasking, Principal, Principals, RecordStore, SourceArtifact, Visibility } from '../records/api.ts';
 import { SOURCE_ABSENCE_GENERATOR, SOURCE_PENDING_REVIEW_GENERATOR, canonicalBytes, sha256Hex, scanForCredentials } from '../records/api.ts';
 import type {Coverage} from '../../contracts/src/common.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
@@ -46,7 +46,7 @@ import {
   type SystemProfile,
 } from '../../contracts/src/resources.ts';
 import { CONNECTOR_ERRORS, ConnectorError, FATAL_READ_ERRORS, asConnectorError, isConnectorErrorCode, type ConnectorErrorCode } from './errors.ts';
-import { decodeText, type ConnectorLog, type HttpExchange, type HttpReply, type HttpSource } from './http.ts';
+import { decodeText, maskAnswer, type ConnectorLog, type HttpExchange, type HttpReply, type HttpSource } from './http.ts';
 import type { LoginManager, StaticCredential, StaticHeader } from './login.ts';
 import type { Redactor } from './redact.ts';
 import { MAX_PATH, buildPath, type CompiledRoute } from './routes.ts';
@@ -116,6 +116,8 @@ export interface ReadEngineOptions {
   nestedCacheBytes?: number;
   /** Asks a named administrator for the review a reader was just told is awaited (B02 R[4]). */
   pendingReview?: (artifact: SourceArtifact, external: string) => Promise<void>;
+  /** The masking dictionary in force (B02 R[11]); absent where no dictionary is kept, and then nothing is replaced. */
+  masking?: () => Promise<{ masking: CompiledMasking; dictionary: string | null }>;
 }
 
 export const COMPONENT = 'connectors@1';
@@ -377,6 +379,8 @@ export class ReadEngine {
     const views = (): Record<string, ReadResponse> => Object.fromEntries(order.flatMap((key) => (responses.has(key) ? [[key, forFunction(responses.get(key)!)]] : [])));
     const nestedViews = (): Record<string, NestedRead> => Object.fromEntries(nestedOrder.flatMap((key) => (nested.has(key) ? [[key, nested.get(key)!.view]] : [])));
 
+    // One dictionary for the whole read: every answer of it is replaced by the same rules (B02 R[11]).
+    const dictionary = await this.#o.masking?.() ?? null;
     const store = async (exchange: HttpExchange, key: string): Promise<Stored> => {
       if (bytes + exchange.bytes.byteLength > maxBytes) {
         throw new ConnectorError('READ_LIMIT', `这次读取的应答合计超过 ${maxBytes} 字节；不截断保存`, { layer: 'transport', detail: { limit: maxBytes } });
@@ -396,6 +400,7 @@ export class ReadEngine {
           name: `${read.name}/${key}`,
           capturedAt: new Date(exchange.endedAt).toISOString(),
           ...(echoed ? { readTier: RETAIN_ONLY } : {}),
+          ...(exchange.masking === undefined ? {} : { masking: exchange.masking }),
         });
         if(echoed){echoedArtifacts.add(artifact.body.sha256);this.#event('secret_echoed',{resource:runtime.resource.id,route:exchange.route.id,status:exchange.status,record:artifact.digest});}
         const held = echoed || artifact.body.read_tier === RETAIN_ONLY || await this.#held(principal, artifact);
@@ -588,6 +593,9 @@ export class ReadEngine {
               received: async (exchange) => {
                 received = { exchange, stored: await store(exchange, planned.key) };
               },
+              // An answer that echoes a credential the Hub sent is not touched: it is kept whole, for an administrator only (B02 R[6]),
+              // and a rule that matched part of the value must not leave the rest of it in a readable record.
+              ...(dictionary === null ? {} : { mask: (answer: Uint8Array, mediaType: string) => this.#o.redactor.echoedIn(answer, mediaType) ? null : maskAnswer(dictionary.masking, dictionary.dictionary, answer, mediaType) }),
             },
           );
           const got = received as { exchange: HttpExchange; stored: Stored } | null;

@@ -30,7 +30,7 @@ test('the way back from an original leads to the entry it was opened from, in wh
   for(const account of [owner,reader]){
    const browser=await openConsole(hub,account.token);
    const opened=await browser.get('/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,path:'/共享知识',entry:entry.entry}));assert.equal(opened.status,200,account.user.name);
-   const original=hrefOf(opened.body,'打开原文');assert.ok(original,'the entry links to its original');
+   const original=hrefOf(opened.body,'打开原文<span class="ch-visually-hidden">[^<]*</span>');assert.ok(original,'the entry links to its original');
    const page=await browser.get(original!.split('#')[0]);assert.equal(page.status,200,account.user.name);
    const back=hrefOf(page.body,'返回条目');assert.ok(back,'the original links back to the entry');
    assert.equal(new URLSearchParams(back!.split('?')[1]).get('space'),owner.user.id,'the way back names the space of the entry');

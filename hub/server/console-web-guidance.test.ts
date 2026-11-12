@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createTestHub} from './testing-real.ts';
 import {openConsole} from '../../tests/acceptance/support/console.ts';
+import {request as httpRequest} from 'node:http';
+import {brotliDecompressSync,gunzipSync} from 'node:zlib';
 import {CSS} from './console/style.ts';
+import {CONSOLE_CSS,CONSOLE_LIVE,CONSOLE_THEME,assetCoding} from './console/assets.ts';
+import {pre} from './console/html.ts';
+import {commandModal} from './console/presentation.ts';
 import {INTERACTION_SCRIPT} from './console/interaction.ts';
 
 test('every signed-in page declares its colour schemes and starts with one skip link to its main content',async t=>{
@@ -101,3 +106,127 @@ test('every table says what it lists: its section\'s title, or the page\'s, as t
  assert.ok(tables>=2,`tables were checked (${tables})`);
 });
 
+
+// The items the owner approved on 2026-11-12 (they change what a reader sees or what the server sends).
+
+test('a trail is an ordered list of links: the places above, then the page itself as the current one',async t=>{
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,requireOsIsolation:false});t.after(()=>hub.close());
+ const member=await hub.createUser('合成成员'),client=await openConsole(hub,member.token);
+ const spaces=hub.hub.knowledge.spaces!;await spaces.ensure(member.principal,member.user.id);
+ await spaces.write(member.principal,{path:'/方法/步骤',kind:'observation',statement:'合成条目：路径要说全'});
+ const reply=await client.get('/console/knowledge/space?'+new URLSearchParams({space:member.user.id,path:'/方法/步骤',scope:'personal'}));assert.equal(reply.status,200);
+ const nav=/<nav class="ch-crumbs" aria-label="位置"><ol>(.*?)<\/ol><\/nav>/.exec(reply.body);assert.ok(nav,'breadcrumbs: an ordered list inside a named navigation landmark');
+ const items=[...nav[1].matchAll(/<li><a href="([^"]*)"( aria-current="page")?>(.*?)<\/a><\/li>/g)];
+ assert.equal(items.map(item=>item[0]).join(''),nav[1],'every item is a link and nothing stands between the items');
+ assert.deepEqual(items.map(item=>item[3].replace(/<[^>]*>/g,'')),['知识库','我的','方法','步骤']);
+ // The last item is the page: a link to itself, the only one marked current; the places above lead elsewhere.
+ assert.deepEqual(items.map(item=>item[2]!==undefined),[false,false,false,true]);
+ assert.equal(items.at(-1)![1],'');for(const item of items.slice(0,-1))assert.match(item[1],/^\/console\/knowledge/);
+ // No separator is written into the text a screen reader reads: the style sheet draws it; the current page is told apart
+ // by its weight as well as its colour, and by an underline where colours are forced.
+ assert.doesNotMatch(nav[1],/›/);
+ for(const rule of ['.ch-crumbs li + li::before { content: "›"; content: "›" / ""; margin-right: 6px; }','.ch-crumbs a[aria-current="page"] { color: var(--text-secondary); font-weight: 500; text-decoration: none; }','@media (forced-colors: active) { .ch-crumbs a[aria-current="page"] { text-decoration: underline; } }'])assert.ok(CSS.includes(rule),rule);
+ // A page of a place itself has no trail: its title is the place.
+ assert.doesNotMatch((await client.get('/console/runs')).body,/class="ch-crumbs" aria-label="位置"/);
+});
+
+test('the folder tree is nested lists of links: no folder is a disclosure and no link sits inside a summary',async t=>{
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,requireOsIsolation:false});t.after(()=>hub.close());
+ const member=await hub.createUser('合成成员'),client=await openConsole(hub,member.token);
+ const spaces=hub.hub.knowledge.spaces!;await spaces.ensure(member.principal,member.user.id);
+ await spaces.write(member.principal,{path:'/方法/步骤',kind:'observation',statement:'合成条目：树是列表'});
+ const reply=await client.get('/console/knowledge?scope=personal');assert.equal(reply.status,200);
+ const tree=/<div class="ch-nav-tree">(.*?)<\/div>/.exec(reply.body)?.[1];assert.ok(tree,'the tree of the selected scope');
+ assert.match(tree,/^<ul><li><a href="[^"]+" title="方法">方法<\/a><ul><li><a href="[^"]+" title="步骤">步骤<\/a><\/li><\/ul><\/li>/);
+ assert.doesNotMatch(tree,/<details|<summary/);
+ for(const rule of ['.ch-nav-tree ul { margin: 0; padding: 0; list-style: none; min-width: 0; }','.ch-nav-tree ul ul { padding-left: var(--space-3); }'])assert.ok(CSS.includes(rule),rule);
+});
+
+test('a detail that stands alone carries the page title as a level-one heading, absent where the list shows its own',async t=>{
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,requireOsIsolation:false});t.after(()=>hub.close());
+ const member=await hub.createUser('合成成员'),client=await openConsole(hub,member.token);
+ const spaces=hub.hub.knowledge.spaces!;await spaces.ensure(member.principal,member.user.id);
+ const written=await spaces.write(member.principal,{path:'/方法',kind:'observation',statement:'合成条目：详情要有标题'});
+ const place={space:member.user.id,path:'/方法',scope:'personal'};
+ const list=await client.get('/console/knowledge/space?'+new URLSearchParams(place));assert.equal(list.status,200);
+ const entry=/[?&amp;]entry=([^"&]+)/.exec(list.body)?.[1];assert.ok(entry,JSON.stringify(Object.keys(written)));
+ const detail=await client.get('/console/knowledge/space?'+new URLSearchParams({...place,entry:decodeURIComponent(entry)}));assert.equal(detail.status,200);
+ assert.match(detail.body,/<div class="ch-app[^"]* is-detail"/);
+ // accessibility, headings: one level-one heading in the list's pane and one for the pane that replaces it on a narrow screen.
+ assert.match(detail.body,/<aside class="ch-inspector" aria-label="详情"><h1 class="ch-visually-hidden ch-detail-heading">方法<\/h1>/);
+ assert.equal((detail.body.match(/<h1\b/g)??[]).length,2);
+ // Only one of the two is ever rendered: this one is off wherever the list, and with it the page's own heading, is shown.
+ assert.ok(CSS.includes('.ch-detail-heading { display: none; }\n@media (max-width: 1180px) { .ch-app.is-detail .ch-detail-heading { display: block; } }'));
+ assert.ok(CSS.includes('.ch-app.is-detail > .ch-pane { display: none; }'),'the list is hidden at the same width');
+ // A page without a selected thing has the one heading of its pane.
+ assert.equal((list.body.match(/<h1\b/g)??[]).length,1);assert.doesNotMatch(list.body,/ch-detail-heading/);
+});
+
+test('on a touch screen whatever is pressed is at least 24px high and a field is 16px; with a mouse nothing changes',()=>{
+ const coarse=/@media \(pointer: coarse\) \{\n((?:  .*\n)+)\}/.exec(CSS)?.[1];assert.ok(coarse,'accessibility, target size: one block for coarse pointers');
+ for(const rule of [
+  '> a:not(.ch-btn, .ch-row, .ch-nav-item), .hub .ch-table td a:not(.ch-btn) { padding-block: 4px; }',
+  // A name of one or two characters is as wide as it is high.
+  '.hub .ch-table td a:not(.ch-btn), .hub .ch-crumbs a { display: inline-block; min-width: 24px; }',
+  // A link that stands alone on a row of a card or a section.
+  '.hub :is(.ch-source-head, .ch-section) > a:not(.ch-btn, .ch-row) { min-height: 24px; align-content: center; }',
+  '.hub .ch-tip { min-width: 24px; min-height: 24px; }',
+  '.hub summary { min-height: 24px; align-content: center; }',
+  '.hub :is(input[type="checkbox"], input[type="radio"]) { min-width: 24px; min-height: 24px; }',
+  '.hub :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) { min-height: 32px; }',
+ ])assert.ok(coarse.includes(rule),rule);
+ // forms: 16px keeps a phone from zooming the page in when a field is tapped; on a phone-width window too.
+ assert.ok(CSS.includes('@media (pointer: coarse), (max-width: 760px) {\n  .hub :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select, textarea) { font-size: 16px; }\n}'));
+ // Outside these two blocks no rule of the audit touches a size: the dense rows of a mouse are as they were.
+ const outside=CSS.slice(CSS.indexOf('/* accessibility, skip links')).replace(/@media \(pointer: coarse\)[^{]*\{\n(?:  .*\n)+\}/g,'');
+ assert.doesNotMatch(outside,/padding-block: 4px|min-height: 24px|min-width: 24px|min-height: 32px|font-size: 16px/);
+ // A scroll region holds the text kept for screen readers inside it, so a wide table never widens the page itself.
+ assert.ok(CSS.includes('.ch-table-wrap { position: relative; }'));
+});
+
+test('output that is code or data is a code element inside its block, and keeps the block\'s size',()=>{
+ // html, code blocks: a command to copy, a command's output and a JSON body are code; the element says so.
+ assert.equal(pre('{"合成":1}').text,'<pre><code>{&quot;合成&quot;:1}</code></pre>');
+ const modal=commandModal({id:'cmd-synthetic',title:'合成命令',text:'合成说明',command:'circle-hub status'}).text;
+ assert.ok(modal.includes('<pre class="ch-quote"><code>circle-hub status</code></pre>'),modal);
+ // Inline code is 12px and breaks anywhere; inside a block it takes the block's size and wrapping.
+ assert.ok(CSS.includes(':where(.hub) pre code { font-size: inherit; overflow-wrap: inherit; }'));
+});
+
+test('the three assets are sent compressed to a client that takes it, each coding with its own validator; a page never is',async t=>{
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,requireOsIsolation:false});t.after(()=>hub.close());
+ // fetch() would add its own Accept-Encoding and decode the answer, so the coded bytes are read with node:http.
+ const raw=(path:string,headers:Record<string,string>={})=>new Promise<{status:number;headers:Record<string,string|string[]|undefined>;bytes:Buffer}>((resolve,reject)=>{
+  const request=httpRequest({host:'127.0.0.1',port:hub.port,path,headers},response=>{const chunks:Buffer[]=[];response.on('data',chunk=>chunks.push(chunk));response.on('end',()=>resolve({status:response.statusCode??0,headers:response.headers,bytes:Buffer.concat(chunks)}));});
+  request.on('error',reject);request.end();
+ });
+ for(const value of [CONSOLE_CSS,CONSOLE_THEME,CONSOLE_LIVE]){
+  const plain=await raw(value.path);assert.equal(plain.status,200);
+  assert.equal(plain.headers['content-encoding'],undefined);assert.equal(plain.headers.vary,'Accept-Encoding');
+  assert.equal(plain.bytes.toString('utf8'),value.body);assert.equal(plain.headers.etag,`"${value.integrity}"`);
+  const br=await raw(value.path,{'accept-encoding':'gzip, deflate, br'});assert.equal(br.status,200);
+  assert.equal(br.headers['content-encoding'],'br');assert.equal(br.headers.vary,'Accept-Encoding');
+  assert.equal(br.headers['content-length'],String(br.bytes.length));assert.equal(br.headers['cache-control'],'public, max-age=31536000, immutable');
+  assert.equal(brotliDecompressSync(br.bytes).toString('utf8'),value.body,'the integrity the page pins is over these decoded bytes');
+  const gzip=await raw(value.path,{'accept-encoding':'gzip'});assert.equal(gzip.headers['content-encoding'],'gzip');
+  assert.equal(gunzipSync(gzip.bytes).toString('utf8'),value.body);
+  // Each coding is a representation of its own: three validators, and a conditional request matches only its own.
+  assert.equal(new Set([plain.headers.etag,br.headers.etag,gzip.headers.etag]).size,3);
+  assert.equal((await raw(value.path,{'accept-encoding':'br','if-none-match':String(br.headers.etag)})).status,304);
+  assert.equal((await raw(value.path,{'accept-encoding':'br','if-none-match':String(gzip.headers.etag)})).status,200);
+  // A coding the client refuses is not used.
+  assert.equal((await raw(value.path,{'accept-encoding':'br;q=0, gzip;q=0'})).headers['content-encoding'],undefined);
+  if(Buffer.byteLength(value.body)>10_000)assert.ok(br.bytes.length*3<Buffer.byteLength(value.body),'a third of the size or less');
+ }
+ // A page carries the form token of its session: it is sent as it is, whatever the client accepts.
+ const member=await hub.createUser('合成成员'),client=await openConsole(hub,member.token);
+ const page=await raw('/console/overview',{'accept-encoding':'gzip, deflate, br',cookie:`circle_hub_session=${client.sessionCookie}`});
+ assert.equal(page.status,200);assert.equal(page.headers['content-encoding'],undefined);assert.match(page.bytes.toString('utf8'),/name="csrf" value="[^"]+"/);
+});
+
+test('an Accept-Encoding header picks the preferred coding the client names or covers, and none where it names none',()=>{
+ assert.equal(assetCoding('gzip, deflate, br'),'br');assert.equal(assetCoding('gzip'),'gzip');assert.equal(assetCoding('*'),'br');
+ assert.equal(assetCoding('br;q=0, *;q=0.1'),'gzip');assert.equal(assetCoding('gzip;q=0.5, br;q=0'),'gzip');
+ assert.equal(assetCoding(undefined),null);assert.equal(assetCoding(''),null);assert.equal(assetCoding('identity'),null);assert.equal(assetCoding('br;q=abc'),null);
+ assert.equal(assetCoding(['deflate','BR ; q=0.8']),'br');
+});

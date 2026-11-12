@@ -30,9 +30,10 @@ test('check descriptors display the module and selected export instead of an obj
 
 test('breadcrumbs keep distinct classifications without repeating the area a place already names',async()=>{
  for(const [kind,labels] of [['workflow',['工作流','合成详情']],['skill',['技能','合成详情']],['product',['知识库','产品知识来源','合成详情']],['system',['连接','业务系统接入','合成详情']]] as const){
-  const ctx=detailContext(kind);let crumbs='';ctx.chrome=(title,options)=>{crumbs=String(options?.crumbs??'');return {title,user:null,csrf:null};};
+  // The trail lists the places above; page() adds the page itself, by its title, as the last place.
+  const ctx=detailContext(kind);let places:string[]=[];ctx.chrome=(title,options)=>{places=[...(options?.crumbs??[]).map(String),title];return {title,user:null,csrf:null};};
   await packPage(ctx,'synthetic-detail');
-  assert.deepEqual(crumbs.split(' › ').map(part=>part.replace(/<[^>]*>/g,'')),labels);
+  assert.deepEqual(places.map(part=>part.replace(/<[^>]*>/g,'')),labels);
  }
 });
 

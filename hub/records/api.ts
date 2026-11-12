@@ -28,6 +28,8 @@ export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
 export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
+export { MaskingRules, MaskingRuleError, MASKING_DICTIONARY_KEY, MASKING_REFRESH_MS, type MaskingState } from './masking.ts';
+export { maskPlaceholder, isMaskableMediaType, compileMasking, MASKING_DICTIONARY_SCHEMA, type MaskingCount, type MaskingRule, type CompiledMasking } from '../../contracts/src/masking.ts';
 export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
 export { recordIntegrityNotes, noteRecordIntegrity, type RecordIntegrityNote } from './integrity-notes.ts';
 export { createRecordStore, verifiedBodyDigest, type StoreOptions } from './store.ts';
@@ -501,7 +503,14 @@ export interface SourceArtifactBody {
   requested_read_tier?: ReadTier;
   visibility: Visibility;
   scan: CredentialScan;
+  /**
+   * Present only on an answer of a business system in which the masking dictionary replaced something (B02 R[11]): the
+   * bytes of this record are the replaced text, never what the system sent. `dictionary` is the digest of the dictionary
+   * in force; `rules` says which rules matched and how often, never what they matched.
+   */
+  masking?: ArtifactMasking;
 }
+export interface ArtifactMasking { dictionary: string; rules: Array<{ rule: string; count: number }> }
 
 export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 
@@ -531,6 +540,8 @@ export interface IngestInput {
   capturedAt?: string;
   /** Run the upload or generation belongs to, recorded on the refusal action when an upload is refused. */
   run?: string | null;
+  /** What the masking dictionary replaced in these bytes before they were handed over; only a read of a business system passes it. */
+  masking?: ArtifactMasking;
 }
 
 export interface ArtifactText {
@@ -962,6 +973,8 @@ export interface RecordsKit {
   artifacts: Artifacts;
   vault: Vault;
   variables: import('./variables.ts').RecordVariables;
+  /** The masking dictionary (B02 R[11]); absent on a fake that reads no business system. */
+  masking?: import('./masking.ts').MaskingRules;
   principals: Principals;
   authorizations: Authorizations;
   pointers: Pointers;

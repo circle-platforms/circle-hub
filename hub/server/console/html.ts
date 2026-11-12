@@ -124,8 +124,18 @@ export function code(value: unknown): Html {
   return html`<code>${value}</code>`;
 }
 
+/** Preformatted output that is code or data (a command's output, a JSON body): `pre` holding `code` (html guide, code blocks). */
 export function pre(value: unknown): Html {
-  return html`<pre>${value}</pre>`;
+  return html`<pre><code>${value}</code></pre>`;
+}
+
+/**
+ * Where a page is (breadcrumbs guide): an ordered list in a navigation landmark, the places above as links and the page
+ * itself last, a link to itself marked as the current page, so that every step of the trail is the same kind of thing.
+ * The separators are drawn by the style sheet, so a screen reader reads the names only.
+ */
+export function trail(above: readonly (Html | string)[], current: unknown): Html {
+  return html`<nav class="ch-crumbs" aria-label="位置"><ol>${above.map((place) => html`<li>${place}</li>`)}<li><a href="" aria-current="page">${current}</a></li></ol></nav>`;
 }
 
 export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
@@ -182,7 +192,8 @@ export interface PageChrome {
   /** Buttons to the right of the title. */
   actions?: unknown;
   /** Explicit parent location, above the title; no URL guessing or additional reads. */
-  crumbs?: Html;
+  /** The places above this page, the nearest last; page() adds the page itself (breadcrumbs guide). */
+  crumbs?: readonly (Html | string)[];
   /** A page without an account shown as a wider card (the setup steps). */
   wide?: boolean;
 }
@@ -266,12 +277,13 @@ export function page(chrome: PageChrome, body: unknown): Html {
   const updates = user !== null && [content, layout.inspector, layout.sidebar].some((part) => part?.text.includes(' data-live="'));
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
   const current = NAV.find(([key]) => key === chrome.active);
-  const crumbs = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? link(current[2], current[1]) : undefined);
   const heading = chrome.heading ?? chrome.title;
+  const above = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? [link(current[2], current[1])] : undefined);
+  const crumbs = above === undefined || above.length === 0 ? undefined : trail(above, heading);
   const title = chrome.hint === undefined ? heading : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${heading}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
   const actions=layout.actions??chrome.actions;
   const notice=chrome.notice?html`<div class="ch-toast" role="status" data-toast-success tabindex="0">${chrome.notice}</div>`:'';
-  const top = html`${layout.detail?'':notice}${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
+  const top = html`${layout.detail?'':notice}${crumbs ?? ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
   const area = areaClass(chrome.active);
   const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`${GROUP_STARTS.has(key) ? html`<hr class="ch-nav-sep">` : ''}<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
@@ -285,7 +297,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
 <main class="ch-pane" id="console-main" tabindex="-1">${top}<div class="ch-section" data-area-content>${content}</div></main>
-${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
+${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail ? html`<h1 class="ch-visually-hidden ch-detail-heading">${heading}</h1>` : ''}${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
 </div>`, updates);
 }
 

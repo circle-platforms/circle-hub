@@ -89,7 +89,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
   const showCitations=own||space==='team';
   const title = space === 'team' ? uiLabelOf('knowledge_space_kind', 'team') : own ? uiLabelOf('knowledge_space_kind', 'personal') : uiLabelOf('knowledge_search_scope', 'shared');
   const parts=path.split('/').filter(Boolean),parentParts=parts.slice(0,-1);
-  const chrome = ctx.chrome(parts.at(-1)??'知识库', { active: 'knowledge', crumbs: html`${link('/console/knowledge','知识库')} › ${link('/console/knowledge/space',title,{space,path:'/'})}${parentParts.map((name,index)=>html` › ${link('/console/knowledge/space',name,{space,path:'/'+parentParts.slice(0,index+1).join('/')})}`)}` });
+  const chrome = ctx.chrome(parts.at(-1)??'知识库', { active: 'knowledge', crumbs: [link('/console/knowledge','知识库'),link('/console/knowledge/space',title,{space,path:'/'}),...parentParts.map((name,index)=>link('/console/knowledge/space',name,{space,path:'/'+parentParts.slice(0,index+1).join('/')}))] });
   const audience=await currentAudience(ctx,space,path,version.body.products.some(p=>path===p.path||path.startsWith(p.path+'/')));
   const audienceLine=html`<p>分享范围：${audience.text}${own&&audience.members.length?'（'+audience.members.join('、')+'）':''}${audience.inherited.map(parent=>html`<span title="文件夹分享包含全部子文件夹"> · 同文件夹设置 · ${directoryName(parent)}</span>`)}</p>`;
   const digest = ctx.url.searchParams.get('entry');

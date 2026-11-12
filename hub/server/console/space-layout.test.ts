@@ -12,7 +12,9 @@ test('the shared panel groups only current authorized paths and keeps displayed 
  // Decision 151: the layout adds no summary pane; the count of a scope stands beside the scope in the navigation.
  assert.equal(layout.layout.inspector,null);
  assert.match(layout.layout.sidebar?.text??'',/与我共享 <span class="ch-count">1<\/span>/,'unreadable private rows do not contribute to the count of the scope');
- assert.match(body,/合成授权人/);assert.match(body,/<details open>/);assert.match(body,/scope=shared/);assert.doesNotMatch(body,/private/);
+ assert.match(body,/合成授权人/);
+ // The folders are a list inside the item of the member who shared them; nothing in the tree is a disclosure.
+ assert.match(body,/<ul><li><a [^>]*>合成授权人<\/a><ul><li><a [^>]*>allowed<\/a><ul><li><a [^>]*>child<\/a><\/li><\/ul><\/li><\/ul><\/li><\/ul>/);assert.doesNotMatch(body,/<details|<summary/);assert.match(body,/scope=shared/);assert.doesNotMatch(body,/private/);
  assert.match(body,/>allowed</);assert.match(body,/>child</);assert.doesNotMatch(body,/>\/allowed/);
  assert.match(body,/scope=shared" aria-current="page"/);
  assert.match(body,/scope=shared" aria-current="page">与我共享 <span class="ch-count">1<\/span>/);

@@ -876,7 +876,7 @@ export class KnowledgeSpaces {
           const original=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!original?.bytes)fail('SHARE_GROUND_UNRESOLVED');
           const metadata=original.artifact.body;
           // A new explicitly held team copy keeps declared provenance. The private capture and ACL are immutable.
-          const alias=await this.#ctx.records.artifacts.ingest({bytes:original.bytes,mediaType:metadata.media_type,name:metadata.name,origin:metadata.origin,author:metadata.author,provenanceType:'declared',capturedAt:metadata.captured_at,readTier:'model_readable',visibility:{readers:[...new Set([by.id,metadata.author.user!])],admins:true,packs:[],shareable:false}},tx);artifact=alias.digest;
+          const alias=await this.#ctx.records.artifacts.ingest({bytes:original.bytes,mediaType:metadata.media_type,name:metadata.name,origin:metadata.origin,...(metadata.masking?{masking:metadata.masking}:{}),author:metadata.author,provenanceType:'declared',capturedAt:metadata.captured_at,readTier:'model_readable',visibility:{readers:[...new Set([by.id,metadata.author.user!])],admins:true,packs:[],shareable:false}},tx);artifact=alias.digest;
         }
         const stored=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:SpaceSourceBody.parse({sha256:source.sha256,artifact,size:source.size,...(source.attribution?{attribution:source.attribution}:{}),space:'team',path:teamPath,by:by.id,at}),index:[{key:SOURCE_KEY,value:'team'},{key:'knowledge.space.source_hash',value:source.sha256}]},tx);sourceRecords.push(stored.digest);
       }
@@ -974,7 +974,7 @@ export class KnowledgeSpaces {
         if(source.attribution&&!source.team){
           const original=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!original?.bytes)fail('SHARE_GROUND_UNRESOLVED');
           const metadata=original.artifact.body;
-          const alias=await this.#ctx.records.artifacts.ingest({bytes:original.bytes,mediaType:metadata.media_type,name:metadata.name,origin:metadata.origin,author:metadata.author,provenanceType:'declared',capturedAt:metadata.captured_at,readTier:'model_readable',visibility:{readers:[...new Set([by.id,metadata.author.user!])],admins:true,packs:[],shareable:false}},tx);artifact=alias.digest;
+          const alias=await this.#ctx.records.artifacts.ingest({bytes:original.bytes,mediaType:metadata.media_type,name:metadata.name,origin:metadata.origin,...(metadata.masking?{masking:metadata.masking}:{}),author:metadata.author,provenanceType:'declared',capturedAt:metadata.captured_at,readTier:'model_readable',visibility:{readers:[...new Set([by.id,metadata.author.user!])],admins:true,packs:[],shareable:false}},tx);artifact=alias.digest;
         }
         await associate(source.sha256,artifact,source.size,source.attribution);
       }
@@ -1428,7 +1428,7 @@ export class KnowledgeSpaces {
       let artifact=input.artifact;
       if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({...(space===by.id?{personalOwner:by.id}:{}),bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
       // Saving an observed snapshot preserves its original read time; it is not a new system read.
-      else if(space===by.id){const metadata=source.artifact.body,copy=await this.#ctx.records.artifacts.ingest({personalOwner:by.id,bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,capturedAt:metadata.captured_at,origin:metadata.origin,author:metadata.author,provenanceType:metadata.provenance_type,visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:metadata.requested_read_tier},tx);artifact=copy.digest;}
+      else if(space===by.id){const metadata=source.artifact.body,copy=await this.#ctx.records.artifacts.ingest({personalOwner:by.id,bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,capturedAt:metadata.captured_at,origin:metadata.origin,...(metadata.masking?{masking:metadata.masking}:{}),author:metadata.author,provenanceType:metadata.provenance_type,visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:metadata.requested_read_tier},tx);artifact=copy.digest;}
 
       const body=SpaceSourceBody.parse({personal_epoch:epoch,space,path,sha256:source.sha256,artifact,size:source.size,by:by.id,at:this.#ctx.now().toISOString()});
       const saved=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body,index:[{key:SOURCE_KEY,value:space},{key:'knowledge.space.source_hash',value:body.sha256}]},tx);

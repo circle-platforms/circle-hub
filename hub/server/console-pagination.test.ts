@@ -64,6 +64,8 @@ test('the requests of the listed tasks name their audience and put overdue reque
   assert.match(body,/等待回应中的请求/);
   assert.doesNotMatch(body,/已到期未回答的请求|未回答的请求/);
   assert.equal(body.split(request.missing).length,2);
+  // The task link of a row is described by what the row asks for, by reference: the words are on the page once.
+  assert.match(body,/<b id="request-kind-0">合成逾期事实<\/b>/);assert.match(body,/<a href="\/console\/runs\/[^"]+" aria-describedby="request-kind-0">查看任务<\/a>/);
   assert.ok(body.indexOf(request.missing)<body.indexOf(future.missing),'the overdue kind comes first');
   assert.doesNotMatch(body,new RegExp(`${request.record}|${request.audience}`));
   assert.match(body,/<td>合成用户<\/td>/);

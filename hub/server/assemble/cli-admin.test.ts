@@ -2071,3 +2071,47 @@ test('pack shapes lists only unruled identities and refuses nonadministrators',a
  const denied=await admin.run(['pack','shapes','synthetic'],{[OPERATOR_TOKEN_VARIABLE]:token});
  assert.equal(denied.code,1);assert.match(denied.text,/管理员/);
 });
+
+// The masking dictionary (B02 R[11], decision 159): listed, set, tried on a sample and removed from the command line.
+test('mask: an administrator sets, lists, tries and removes rules; a sample\'s matched values are never printed', async () => {
+  const admin = await setup();
+  const SECRET = 'synthetic-pass-20261112';
+  assert.deepEqual((await expectOk(admin, ['mask', 'list'])).out, ['遮盖字典里没有规则：业务系统的应答原样保存']);
+  const sample = join(admin.deployment.dataDir, 'synthetic-sample.txt');
+  await writeFile(sample, `第一行没有口令\nlogin password=${SECRET} 结束\n第三行 PASSWORD=${SECRET}\n`);
+  // A draft is tried before it is set: the counts and the replaced lines, never the value.
+  const draft = await expectOk(admin, ['mask', 'test', '--pattern', 'password=(?<secret>\\S+)', '--label', '密码', '--file', sample]);
+  assert.match(draft.out[0], /^样本 \d+ 字节，1 条规则，替换 1 处，用时 .+ 毫秒$/);
+  assert.deepEqual(draft.out.slice(1), ['  draft：1 处', '替换后的行：', '  2: login password=[密码已遮盖 *****] 结束']);
+  assert.ok(!draft.text.includes(SECRET));
+  const set = await expectOk(admin, ['mask', 'set', 'device-password', '--label', '密码', '--pattern', 'password=(?<secret>\\S+)', '--ignore-case', '--reason', '合成设备口令不进知识']);
+  assert.deepEqual(set.out, ['已添加遮盖规则 device-password  [密码已遮盖 *****]  /password=(?<secret>\\S+)/i（只替换 secret 分组）', '现在共 1 条规则；之后读到的业务系统应答按新规则替换，已经保存的内容不改写']);
+  const pattern = join(admin.deployment.dataDir, 'synthetic-pattern.txt');
+  await writeFile(pattern, 'sk-[a-z0-9]{12}\n');
+  assert.match((await expectOk(admin, ['mask', 'set', 'api-key', '--label', '密钥', '--pattern-file', pattern, '--reason', '合成密钥规则'])).out[0], /^已添加遮盖规则 api-key  \[密钥已遮盖 \*\*\*\*\*\]  \/sk-\[a-z0-9\]\{12\}\/$/);
+  assert.match((await expectOk(admin, ['mask', 'set', 'api-key', '--label', '接口密钥', '--pattern-file', pattern, '--reason', '合成改标签'])).out[0], /^已更新遮盖规则 api-key  \[接口密钥已遮盖/);
+  const listed = await expectOk(admin, ['mask', 'list']);
+  assert.equal(listed.out.length, 3); assert.match(listed.out[0], /^遮盖字典 2 条规则/);
+  const json = JSON.parse((await expectOk(admin, ['mask', 'list', '--json'])).out[0]);
+  assert.deepEqual(json.rules.map((rule: { name: string }) => rule.name), ['device-password', 'api-key']); assert.match(json.dictionary, /^[0-9a-f]{64}$/);
+  // The rules in force on the sample: case is ignored now, so both lines are replaced.
+  const all = await expectOk(admin, ['mask', 'test', '--all', '--file', sample]);
+  assert.deepEqual(all.out.slice(1), ['  device-password：2 处', '替换后的行：', '  2: login password=[密码已遮盖 *****] 结束', '  3: 第三行 PASSWORD=[密码已遮盖 *****]']);
+  assert.ok(!all.text.includes(SECRET));
+  assert.deepEqual((await expectOk(admin, ['mask', 'test', 'api-key', '--file', sample])).out.slice(1), []);
+  // What is refused, and how.
+  for (const [argv, message] of [
+    [['mask', 'set', 'runaway', '--label', '密码', '--pattern', '(a+)+$', '--reason', '合成'], /过慢/],
+    [['mask', 'set', 'Bad', '--label', '密码', '--pattern', 'x', '--reason', '合成'], /规则名/],
+    [['mask', 'set', 'no-reason', '--label', '密码', '--pattern', 'x'], /用法：circle-hub mask/],
+    [['mask', 'set', 'both', '--label', '密码', '--pattern', 'x', '--pattern-file', pattern, '--reason', '合成'], /用法：circle-hub mask/],
+    [['mask', 'remove', 'absent', '--reason', '合成'], /没有名为 absent 的规则/],
+    [['mask', 'test', 'absent', '--file', sample], /没有名为 absent 的规则/],
+    [['mask', 'test', '--all'], /用法：circle-hub mask/],
+    [['mask', 'unknown'], /用法：circle-hub mask/],
+  ] as const) { const refused = await admin.run([...argv]); assert.equal(refused.code, /用法/.test(message.source) ? 2 : 1, argv.join(' ')); assert.match(refused.text, message, argv.join(' ')); }
+  assert.deepEqual((await expectOk(admin, ['mask', 'remove', 'device-password', '--reason', '合成规则不再需要'])).out, ['已删除遮盖规则 device-password；现在共 1 条规则。已经按它替换过的内容不恢复']);
+  // Only an administrator: a member's token reads nothing of the dictionary.
+  const token = await userWithToken(admin, '普通读者');
+  for (const argv of [['mask', 'list'], ['mask', 'set', 'x', '--label', '密码', '--pattern', 'x', '--reason', '合成']]) { const denied = await admin.run(argv, { [OPERATOR_TOKEN_VARIABLE]: token }); assert.equal(denied.code, 1); assert.match(denied.text, /管理员/); }
+});

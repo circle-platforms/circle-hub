@@ -14,6 +14,7 @@ import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protoco
 import {referencesIn} from '../../contracts/src/variables.ts';
 import {bindLegacySkills,bindLegacyParser} from '../refs/api.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
+import { maskCommand, MASK_USAGE } from './cli-mask.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
 import { updateTrace } from '../telemetry/api.ts';
@@ -1561,6 +1562,7 @@ const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
   { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
   { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },
+  { name: 'mask', summary: MASK_USAGE.slice('mask '.length), handler: maskCommand },
   { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
   { name: 'source', summary: SOURCE_USAGE.slice('source '.length), handler: sourceCommand },
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },

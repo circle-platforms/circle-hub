@@ -52,7 +52,7 @@ export function commandLink(dialog:CommandDialog,label:unknown='查看命令…'
   return html`<a class="${cls}" href="#${dialog.id}">${label}</a>`;
 }
 export function commandModal(dialog:CommandDialog):Html{
-  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${tooltip(dialog.title,'请在运行 Hub 的服务器上执行下面的命令。')}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre class="ch-quote">${dialog.command}</pre></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
+  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${tooltip(dialog.title,'请在运行 Hub 的服务器上执行下面的命令。')}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre class="ch-quote"><code>${dialog.command}</code></pre></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
 }
 
 /** Resolve only through the existing read boundary; missing and forbidden names remain indistinguishable. */
@@ -71,11 +71,12 @@ export async function sourceBlock(ctx: PageContext, reference: string, quotation
         if(view?.status==='resolved'&&view.selected)title+=' · '+(view.parsed?'片段内第':'第')+' '+view.selected.line+' 行';
         if(view?.status&&view.status!=='resolved')state=badge(uiLabelOf('source_location_status',view.status),view.status==='ambiguous'?'incomplete':'plain');
         const params=new URLSearchParams(Object.entries({sha256:ref.sha256,artifact:source.artifact.digest,...location}).map(([key,value])=>[key,String(value)]));
-        action = link('/console/knowledge/source?'+params+(view?.status==='resolved'?'#quoted-text':''),view?.status==='ambiguous'?'选择位置':'打开原文');
+        // Several sources on a page carry this link: to a screen reader each says which original it opens.
+        action = link('/console/knowledge/source?'+params+(view?.status==='resolved'?'#quoted-text':''),html`${view?.status==='ambiguous'?'选择位置':'打开原文'}<span class="ch-visually-hidden">：${title}</span>`);
       }
     } else if (ref.scheme === 'tree' && ref.entry) {
       const entry = await ctx.deps.knowledge.spaces?.entry(ctx.principal, ref.root, ref.path, ref.entry);
-      if (entry) { title = entry.body.content.statement; action = link('/console/knowledge/space', '查看条目', { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }
+      if (entry) { title = entry.body.content.statement; action = link('/console/knowledge/space', html`查看条目<span class="ch-visually-hidden">：${title}</span>`, { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }
     }
   } catch { /* Reference diagnostics remain behind the explicit technical disclosure. */ }
   return html`<div class="ch-source"><div class="ch-source-head"><span data-evidence>${title}</span>${state??''}${action ?? html`<span class="ch-meta">无法打开</span>`}</div>${quotation ? html`<p class="ch-quote" data-evidence>${quotation}</p>` : ''}${technical(code(reference), '查看引用')}</div>`;

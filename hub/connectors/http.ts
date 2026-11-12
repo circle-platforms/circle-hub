@@ -21,6 +21,7 @@ import {
   type RouteDeclaration,
 } from '../../contracts/src/resources.ts';
 import { mediaTypeEssence } from '../refs/api.ts';
+import { isMaskableMediaType, type ArtifactMasking, type CompiledMasking } from '../records/api.ts';
 import { recordSourceRead } from '../telemetry/api.ts';
 import { ConnectorError, type ErrorLayer } from './errors.ts';
 import { Redactor } from './redact.ts';
@@ -88,6 +89,8 @@ export interface HttpExchange {
   credentialSent: boolean;
   retryAfterInvalid?:boolean;
   retryAfterMs?:number;
+  /** What the masking dictionary replaced in this answer (B02 R[11]); `bytes`, `sha256` and `mediaType` are then of the replaced text. */
+  masking?: ArtifactMasking;
 }
 
 export interface HttpReply extends HttpExchange {
@@ -100,6 +103,12 @@ export interface HttpReply extends HttpExchange {
 export interface RequestHooks {
   /** Called with the complete answer before anything interprets it; the read stores it here. */
   received?: (exchange: HttpExchange) => Promise<void>;
+  /**
+   * The masking dictionary, applied to the answer before it becomes an exchange (B02 R[11]): what is stored, what the
+   * system pack's functions see and what is interpreted are then one and the same replaced text. Only a read passes it;
+   * a login never does, since it needs the token its answer carries. Null says nothing was replaced.
+   */
+  mask?: (bytes: Uint8Array, mediaType: string) => MaskedAnswer | null;
 }
 
 export interface LoginAnswer {
@@ -174,6 +183,26 @@ function sameCode(value: unknown, codes: readonly (string | number)[]): boolean 
 export function charsetOf(mediaType: string): string | null {
   const match = /;\s*charset\s*=\s*"?([A-Za-z0-9._:-]+)"?/i.exec(mediaType);
   return match === null ? null : match[1].toLowerCase();
+}
+
+export interface MaskedAnswer { bytes: Uint8Array; mediaType: string; masking: ArtifactMasking }
+/**
+ * Applies the dictionary to one answer (B02 R[11]). Only text is touched, by its media type; bytes that do not decode in
+ * the charset the type names are not text and are left alone, as is an answer in which nothing matched (the same bytes,
+ * the same record as without a dictionary). A replaced answer is UTF-8 whatever it was sent in, and its media type says so.
+ */
+export function maskAnswer(masking: CompiledMasking, dictionary: string | null, bytes: Uint8Array, mediaType: string): MaskedAnswer | null {
+  if (dictionary === null || masking.rules.length === 0 || bytes.byteLength === 0 || !isMaskableMediaType(mediaType)) return null;
+  let text: string;
+  try { text = new TextDecoder(charsetOf(mediaType) ?? 'utf-8', { fatal: true }).decode(bytes); } catch { return null; }
+  const masked = masking.apply(text);
+  if (masked.applied.length === 0) return null;
+  const charset = charsetOf(mediaType);
+  return {
+    bytes: Buffer.from(masked.text, 'utf8'),
+    mediaType: charset === null || charset === 'utf-8' || charset === 'utf8' ? mediaType : mediaType.replace(/;\s*charset\s*=\s*"?[A-Za-z0-9._:-]+"?/i, '; charset=utf-8'),
+    masking: { dictionary, rules: masked.applied },
+  };
 }
 
 /** Text of an answer in the charset its media type names (UTF-8 otherwise), without a byte order mark. */
@@ -369,6 +398,9 @@ export class HttpSource {
       release();
     }
     const endedAt = this.#now();
+    const media = effectiveMediaType(raw.mediaType, route, url);
+    const masked = hooks.mask?.(raw.bytes, media) ?? null;
+    const answerBytes = masked?.bytes ?? raw.bytes;
     const exchange: HttpExchange = {
       route,
       method: request.method,
@@ -379,14 +411,15 @@ export class HttpSource {
       ...(raw.location===undefined?{}:{location:raw.location}),
       status: raw.status,
       serverMediaType: raw.mediaType === '' ? DEFAULT_MEDIA_TYPES[route.response] : raw.mediaType,
-      mediaType: effectiveMediaType(raw.mediaType, route, url),
+      mediaType: masked?.mediaType ?? media,
       etag: raw.etag,
       ...(raw.retryAfterMs===undefined?{}:Number.isNaN(raw.retryAfterMs)?{retryAfterInvalid:true}:{retryAfterMs:raw.retryAfterMs}),
-      bytes: raw.bytes,
-      sha256: createHash('sha256').update(raw.bytes).digest('hex'),
+      bytes: answerBytes,
+      sha256: createHash('sha256').update(answerBytes).digest('hex'),
       startedAt,
       endedAt,
       credentialSent: credential !== null,
+      ...(masked === null ? {} : { masking: masked.masking }),
     };
     this.#event('http', { route: route.id, method: request.method, path: request.path, status: raw.status, bytes: raw.bytes.byteLength, ms: endedAt - startedAt });
     if (hooks.received) await hooks.received(exchange);

@@ -1,6 +1,6 @@
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { RunRequestView } from '../../ports.ts';
-import { html, link, table, type Html } from './html.ts';
+import { href, html, table, type Html } from './html.ts';
 import type { PageContext } from './pages.ts';
 import { box, chip, count, when } from './ui.ts';
 
@@ -38,13 +38,13 @@ export async function awaitingRequests(ctx: PageContext, requests: readonly RunR
   if (groups.length === 0) return html``;
   const total = groups.reduce((sum, group) => sum + group.rows.length, 0);
   const cut = groups.length > SHOWN_GROUPS ? html`<p class="ch-meta" data-cut>显示 ${SHOWN_GROUPS} / 共 ${count(groups.length)} 类</p>` : '';
-  const rows = await Promise.all(groups.slice(0, SHOWN_GROUPS).map(async (group) => {
+  const rows = await Promise.all(groups.slice(0, SHOWN_GROUPS).map(async (group, index) => {
     const names = await Promise.all(group.audiences.slice(0, NAMED_RECIPIENTS).map((id) => ctx.userName(id)));
     return [
-      html`<b>${group.missing}</b><p class="ch-meta">${group.next_action}</p>`,
+      html`<b${showTask ? html` id="request-kind-${index}"` : ''}>${group.missing}</b><p class="ch-meta">${group.next_action}</p>`,
       uiLabelOf('request_kind', group.kind),
       html`${count(group.rows.length)} 条`,
-      ...(showTask ? [group.runs.length === 1 ? link(`/console/runs/${group.runs[0]}`, '查看任务') : group.runs.length === 0 ? '—' : `${count(group.runs.length)} 个任务`] : []),
+      ...(showTask ? [group.runs.length === 1 ? html`<a href="${href(`/console/runs/${group.runs[0]}`)}" aria-describedby="request-kind-${index}">查看任务</a>` : group.runs.length === 0 ? '—' : `${count(group.runs.length)} 个任务`] : []),
       names.join('、') + (group.audiences.length > NAMED_RECIPIENTS ? ` 等 ${count(group.audiences.length)} 人` : ''),
       html`${when(group.due)}${group.overdue > 0 ? html` ${chip(`${count(group.overdue)} 条${uiLabelOf('request_status', 'overdue')}`, 'fail')}` : ''}`,
     ];
