@@ -16,7 +16,7 @@
           "line": "widget set demo 1",
           "mode": null,
           "key": "bed/bed-a/afamx0",
-          "conclusion": "向 bed-a 的设备 afamx0 问命令行“widget set demo 1”各个位置的说明：只问、不按回车、不执行（预订 run_book1）"
+          "conclusion": "向 bed-a 的设备 afamx0 问命令行“widget set demo 1”各个位置的说明：只问、不按回车、不执行"
         }
       }
     ],

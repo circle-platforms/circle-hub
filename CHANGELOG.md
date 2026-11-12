@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- Advance the local test-bed candidate to 1.3.1 after removing booking identifiers from reader-facing help conclusions and refusals; keep the machine bindings and permission checks unchanged.
+
 - Advance the local case-compile candidate to 3.17.1 after its status interface type changed during verification; regenerate its workbook identity, synthetic samples and manifest without reusing 3.17.0 for different bytes. No release is published.
 
 - Revise local case automation packages: case-compile 3.17.0, command-tools 1.1.0, recompose 1.2.0, test-bed 1.3.0, and shared recompose-authority/recompose-adjudication 1.1.4. Add declared cross-case command checks, author/manual conflict handling, one writer per case, optional value-domain checks, device help reads, and the agreed reader wording. Keep prior recomposition versions readable; root hooks remain an unapplied proposal. These changes are local and unpublished.
