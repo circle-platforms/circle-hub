@@ -18,6 +18,6 @@ test('model 48: an unknown keeps its own mark and colour; a layer that never ran
 
 test('model 48: an absent value says why it is absent and is never a dash',()=>{
  const rule:string=model.displayRules[21].rule;
- for(const part of ['缺失的值写明原因，不写破折号','“未记录”','“不适用”','“暂无数据”','分不清是哪一种时写“未知”，不猜','issue #241'])assert.ok(rule.includes(part),part);
+ for(const part of ['控制台和返回给模型的文字里，缺失的值写明原因，不写破折号','“未记录”','“不适用”','“暂无数据”','分不清是哪一种时写“未知”，不猜','命令行按列输出的表格和已经写进记录的说明不在此列','issue #241'])assert.ok(rule.includes(part),part);
  assert.equal(model.displayRules.length,22);
 });

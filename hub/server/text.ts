@@ -797,7 +797,7 @@ function problemLines(result: ValidationResult, record: string | null, more: str
       const clip = new Clip(whole, more);
       const shown = r.layers.filter((l) => l.terminal !== 'pass' && l.terminal !== 'judgment');
       const terminals = (shown.length > 0 ? shown : r.layers).map((layer) => terminalText(layer)).join('；');
-      const columns = [...base(clip), clip.field(r.requirement, CLIP.code, '要求项键的超出部分'), terminals === '' ? '—' : terminals, statusText(r)];
+      const columns = [...base(clip), clip.field(r.requirement, CLIP.code, '要求项键的超出部分'), terminals === '' ? '未记录各层结果' : terminals, statusText(r)];
       const notices=storedItemNotices({requirements:[r]});
       if(notices.length)columns.push(clip.field(notices.map(n=>n.message).join('、'),CLIP.problemMessage,'历史记录缺失提示的超出部分'));
       const message = messageOf(r);
