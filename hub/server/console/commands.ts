@@ -87,14 +87,6 @@ export const commands = {
     id: dialogId('pack-retire', ref), title: `退役版本 ${ref}`,
     text: '退役后该版本不再可用于新任务；已有任务照旧可读、可完成。', command: command('pack', 'retire', ref),
   }),
-  skillInstall: (ref: string): CommandDialog => ({
-    id: dialogId('skill-install', ref), title: `安装通用技能 ${ref}`,
-    text: '安装后新运行按这个版本读取它提供的解析器；已开始的运行不变。', command: command('pack', 'install', ref),
-  }),
-  skillUninstall: (pack: string): CommandDialog => ({
-    id: dialogId('skill-uninstall', pack), title: `卸载通用技能 ${pack}`,
-    text: '卸载后新运行不再用它的解析器；已锁定的运行不变，内嵌了它的工作流不受影响。', command: command('pack', 'uninstall', pack),
-  }),
   packActivate: (pack: string, active: boolean): CommandDialog => ({
     id: dialogId(active ? 'pack-deactivate' : 'pack-activate', pack), title: `${active ? '停用' : '启用'}产品知识来源 ${pack}`,
     text: active ? '停用后该产品线的知识不再对全 Hub 生效。' : '启用后该产品线的知识对全 Hub 生效。', command: command('pack', active ? 'deactivate' : 'activate', pack),
