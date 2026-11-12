@@ -209,7 +209,7 @@ describe('the read-only interface', () => {
     await mkdir(join(server.deps.config.dataDir, 'backups', '.partial-20261101T000000Z-x'), { recursive: true });
     const after = await json('/console/api/hub', admin);
     assert.deepEqual(after.backups, { count: 2, latest_at: '2026-10-31T00:00:00.000Z' }, 'a partial backup is not counted');
-    const settings = await send('/console/settings', { headers: { cookie: admin } });
+    const settings = await send('/console/settings?tab=hub', { headers: { cookie: admin } });
     assert.match(settings.body, /最近备份/);
     assert.match(settings.body, /2 份/);
   });

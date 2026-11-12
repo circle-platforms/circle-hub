@@ -3,10 +3,9 @@
 // a lease, as InfoTest's probe records name their bed and leave the lease empty.
 import type { RecordStore } from '../records/api.ts';
 import { runById } from '../runs/api.ts';
+import { frozenBeds } from '../../packs/workflow/test-bed/api.ts';
 import { operationSchema } from './declaration-grade.ts';
 import { KnowledgeError } from './errors.ts';
-
-interface RunBody { groups?: unknown }
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -16,26 +15,18 @@ function refuse(message: string): never {
   throw new KnowledgeError(message, { code: 'SUBMISSION_SCHEMA_VIOLATION' });
 }
 
-/** Bed name to device names, from the manifest a run or booking froze; null when it froze none. */
-function frozenBeds(body: RunBody | null | undefined): Map<string, string[]> | null {
-  const group = Array.isArray(body?.groups) ? body.groups[0] : undefined;
-  if (!object(group) || !object(group.manifest) || !Array.isArray(group.manifest.beds)) return null;
-  const beds = new Map<string, string[]>();
-  for (const bed of group.manifest.beds) {
-    if (!object(bed) || typeof bed.name !== 'string' || !Array.isArray(bed.devices)) continue;
-    beds.set(bed.name, bed.devices.flatMap(device => object(device) && typeof device.name === 'string' ? [device.name] : []));
-  }
-  return beds;
-}
-
-/** The beds this run froze, or else those of the booking it continues, as `reproductionLease` reads its lease. */
+/**
+ * The beds this run froze, or else those of the booking it continues, as `reproductionLease` reads its lease. Null when
+ * neither froze a manifest; a manifest the test-bed pack cannot read is refused, never taken for an empty or absent one.
+ */
 async function runBeds(store: RecordStore, runId: string | null): Promise<Map<string, string[]> | null> {
   if (runId === null) return null;
   const run = await runById(store, runId);
   const own = frozenBeds(run?.body);
-  if (own) return own;
-  const predecessor = run?.body.predecessor;
-  return typeof predecessor === 'string' ? frozenBeds((await runById(store, predecessor))?.body) : null;
+  const found = own ?? (typeof run?.body.predecessor === 'string' ? frozenBeds((await runById(store, run.body.predecessor))?.body) : null);
+  if (found === null) return null;
+  if (!found.ok) refuse(`${found.problem}；台架清单的形状由台架包定义，请管理员核对台架包版本后重试`);
+  return found.beds;
 }
 
 function wellFormed(value: unknown): value is string {

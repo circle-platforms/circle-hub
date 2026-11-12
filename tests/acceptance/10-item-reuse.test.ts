@@ -126,7 +126,7 @@ describe('scenario 10: item reuse and carry-over', () => {
     assert.equal(lastSubmit.acceptance, 'accepted');
 
     // Console HTML check
-    const page = await consoleClient.get(`/console/runs/${r2.run}`);
+    const page = await consoleClient.task(r2.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(r2.run));
   });

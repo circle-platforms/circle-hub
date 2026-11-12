@@ -40,7 +40,7 @@ function exposeRead(id: string, outcome: Extract<ReadOutcome, { ok: false }>, re
 }
 
 export interface ConnectorsOptions {
-  records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts' | 'vault' | 'principals' | 'authorizations' | 'variables'>;
+  records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts' | 'vault' | 'principals' | 'authorizations' | 'variables' | 'masking'>;
   /** Provided by runs: published packs (the system pack of each resource). */
   packs: PacksPort;
   /** Injectable for tests; default the global fetch. */
@@ -322,6 +322,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     nestedCacheMs: options.nestedCacheMs,
     nestedCacheBytes: options.nestedCacheBytes,
     pendingReview: options.pendingReview,
+    // The dictionary lives with the records; a kit without one (a fake) replaces nothing.
+    ...(records.masking === undefined ? {} : { masking: () => records.masking!.compiled() }),
   });
 
   function event(name: string, detail: Record<string, unknown>): void {

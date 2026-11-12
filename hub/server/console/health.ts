@@ -14,7 +14,7 @@ import { isTraceOrigin, uiLabelOf } from '../../../contracts/generated/vocabular
 import { KIND_TEXT, MAX_CLIENT_NAMES, RETENTION_MS, type CurvePoint, type HealthReader, type HealthSummary, type NumericField, type ReleaseRun, type ReportSummary, type StoredProcessEvent } from '../../health/api.ts';
 import { BATCH_ROWS, FLUSH_MS, MAX_RELEASE_CALLS_READ, MAX_ROOTS_READ, MAX_ROUNDS_READ, QUEUE_ROWS, TIMED_BACKGROUND_STEPS, type BackgroundStep, type BackgroundTotal, type ClientTotal, type ClientTotals, type ReleaseTotal, type TraceReader, type WriterStats } from '../../telemetry/api.ts';
 import { curve, type Curve } from './charts.ts';
-import { fullTime, size } from './format.ts';
+import { hoverTime, size } from './format.ts';
 import { code, emptyBlock, href, html, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './pages.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
@@ -48,7 +48,7 @@ const RELEASES_SHOWN = 5;
 const RELEASE_EVENTS_READ = 10_000;
 
 /** Display names until the model has these (hub/telemetry README, needs): the wording of the approved draft. */
-const TASK_LABEL: Readonly<Record<BackgroundStep, string>> = { 'maintain-runs': '运行维护', 'index-citations': '引用索引', 'index-knowledge': '知识搜索索引', 'sync-knowledge': '知识同步', 'poll-console': '控制台实时轮询', 'clean-staging': '清理暂存', 'renew-lease': '续租约', 'project-document': '投影文档', 'purge-traces': '清理追踪' };
+const TASK_LABEL: Readonly<Record<BackgroundStep, string>> = { 'maintain-runs': '运行维护', 'index-citations': '引用索引', 'summarize-results': '补写结果摘要', 'index-knowledge': '知识搜索索引', 'sync-knowledge': '知识同步', 'poll-console': '控制台实时轮询', 'clean-staging': '清理暂存', 'renew-lease': '续租约', 'project-document': '投影文档', 'purge-traces': '清理追踪' };
 const TIMED: ReadonlySet<string> = new Set(TIMED_BACKGROUND_STEPS);
 /** Node's own words for a fatal error; anything else is shown as it stands. */
 const CRASH_REASON: ReadonlyMap<string, string> = new Map([['Allocation failed - JavaScript heap out of memory', 'JavaScript 堆耗尽']]);
@@ -62,7 +62,7 @@ const gb = (value: number): string => (value === 0 ? '0' : (value / GB).toFixed(
 const two = (n: number): string => String(n).padStart(2, '0');
 const stamp = (at: string | number): Html => {
   const iso = typeof at === 'number' ? new Date(at).toISOString() : at;
-  return html`<time class="nowrap ch-time" datetime="${iso}" title="${fullTime(iso)}">${clock(iso)}</time>`;
+  return html`<time class="nowrap ch-time" datetime="${iso}" title="${hoverTime(iso)}">${clock(iso)}</time>`;
 };
 /** A period as the table says it: one unit, since it is an observed median and not a setting. */
 function period(ms: number): string {
@@ -90,6 +90,8 @@ function pointLabel(at: number, now: Date): string {
 
 interface Line {
   label: string;
+  tableLabel?:string;
+  tableValue?:(value:number)=>unknown;
   className?: string;
   field: Exclude<keyof CurvePoint, 'at' | 'last_at' | 'samples' | 'failed' | 'dropped'>;
 }
@@ -107,16 +109,17 @@ function dayCurve(points: readonly CurvePoint[], now: Date, lines: readonly Line
   const axis = [0, 72, 144, 216, CURVE_POINTS - 1].map((index) => [index, pointLabel(stamps[index]!, now).slice(-5)] as const);
   return curve({
     ...head,
+    note:[head.note,`曲线每 5 分钟${least?'取最小值':'取最大值'}；提示每 30 分钟、表格每小时分别${least?'取最小值':'取最大值'}。缺测保持未知。`].filter(Boolean).join(' '),
     labels: stamps.map((at) => pointLabel(at, now)),
     series: lines.map((line) => ({ label: line.label, ...(line.className ? { className: line.className } : {}), values: points.map((point) => point[line.field]) })),
     xLabels: axis,
     hoverEvery: POINTS_PER_READOUT,
     least,
     table: {
-      head: ['时间', ...lines.map((line) => `${line.label}（${least ? '最小' : '最大'}）`)],
+      head: ['时间', ...lines.map((line) => line.tableLabel??`${line.label}（${least ? '最小' : '最大'}）`)],
       rows: hours.map((slice) => [pointLabel(Date.parse(slice[0]!.at), now), ...lines.map((line) => {
         const value = fold(slice.map((point) => point[line.field]));
-        return value === null ? '未知' : head.value(value);
+        return value === null ? '未知' : (line.tableValue??head.value)(value);
       })]),
     },
   });
@@ -150,7 +153,7 @@ function resourceCards(summary: HealthSummary | null, points: readonly CurvePoin
     title: '主线程', value: shown(delay, duration), label: '事件循环延迟最大值 · 最近 10 秒',
     note: html`延迟 p99 ${shown(current('event_loop_delay_p99_ms'), duration)} · 事件循环利用率 ${shown(current('event_loop_utilization'), percent)} · 进程 CPU ${shown(current('process_cpu_ratio'), percent)}（一核为 100%）`,
     failure: failed('event-loop', 'cpu'),
-    figures: dayCurve(points, now, [{ label: '延迟最大值', field: 'event_loop_delay_max_ms' }], { title: '近 24 小时 · 延迟最大值（毫秒）', note: '每 5 分钟取最大值，不取平均，免得把尖峰抹平。10 秒里一次长阻塞只进最大值，不进 p99，所以这里画最大值。', max: delayTop, ticks: ticksOf(delayTop), tick: (value) => count(Math.round(value)), value: duration, marks }),
+    figures: dayCurve(points, now, [{ label: '延迟最大值', field: 'event_loop_delay_max_ms',tableLabel:'延迟最大值（毫秒）',tableValue:value=>value }], { title: '近 24 小时 · 延迟最大值（毫秒）', note: '每 5 分钟取最大值，以保留短时峰值。最近 10 秒内的单次长阻塞可能未体现在 p99 中，因此此处显示延迟最大值。', max: delayTop, ticks: ticksOf(delayTop), tick: (value) => count(Math.round(value)), value: duration, marks }),
   });
   const memory = resourceCard({
     title: '内存', value: shown(heap, size), unit: limit === null ? null : `/ 上限 ${size(limit)}`,
@@ -192,7 +195,8 @@ function resourceCards(summary: HealthSummary | null, points: readonly CurvePoin
 const unreadable = (what: string): Html => html`<p class="ch-meta">${unknown()} · 这次没有读出${what}，原因记在服务日志；刷新页面重读。这不是没有数据。</p>`;
 
 function backgroundTable(tasks: readonly BackgroundTotal[] | null, now: Date): Html {
-  const hint = '每轮后台任务都是一条追踪。行数和大小来自这一轮根步骤的用量，含它的子步骤；大小是返回行里字符串列的长度之和，jsonb 列不算。每轮的值是近 24 小时的平均。间隔是定时任务近 24 小时相邻两轮的中位数。';
+  const hint = '每轮后台任务都是一条追踪。行数和大小来自这一轮根步骤的用量，含它的子步骤。每轮的值是近 24 小时的平均。间隔是定时任务近 24 小时相邻两轮的中位数。';
+  const basis = '统计口径：大小只统计文本列，不含结构化列。';
   if (tasks === null) return card({ title: '后台任务', hint }, unreadable('后台任务'));
   if (tasks.length === 0) return card({ title: '后台任务' }, emptyBlock({ title: '还没有后台任务的记录', text: '每轮后台任务结束后写一条追踪，这里按占用排序列出每种任务的间隔、上次耗时、读的行数和大小。' }));
   const total = tasks.reduce((sum, task) => sum + task.db_rows, 0);
@@ -202,15 +206,15 @@ function backgroundTable(tasks: readonly BackgroundTotal[] | null, now: Date): H
     const interval = !TIMED.has(task.name) ? '按需' : task.gap_ms !== null ? period(task.gap_ms) : ran ? '只跑过 1 次' : '近 24 小时没有运行';
     return [
       html`<span class="ch-tool">${TASK_LABEL[task.name]} ${code(task.name)}</span>`,
-      ran ? count(Math.round(task.db_rows / task.rounds)) : '—',
-      ran ? size(task.db_bytes / task.rounds) : '—',
+      ran ? count(Math.round(task.db_rows / task.rounds)) : '暂无数据',
+      ran ? size(task.db_bytes / task.rounds) : '暂无数据',
       interval, duration(task.last_ms), when(task.last_at, now), count(task.db_rows), size(task.db_bytes),
       task.capped ? `${count(task.rounds)} 以上` : count(task.rounds),
     ];
   });
   const capped = tasks.some((task) => task.capped) ? ` · 超过 ${count(MAX_ROUNDS_READ)} 轮的任务只算最新的 ${count(MAX_ROUNDS_READ)} 轮` : '';
   const share = total === 0 ? '' : ` · 合计 ${count(total)} 行，${TASK_LABEL[top.name]}占 ${percent1(top.db_rows / total)}`;
-  return card({ title: '后台任务', meta: `按近 24 小时读的行数排序${share}${capped}`, hint }, table(['任务', '每轮读的行数', '每轮读的大小', '间隔', '上次耗时', '上次运行', '近 24 小时读的行数 ↓', '近 24 小时读的大小', '近 24 小时轮数'], rows, '没有后台任务', 'background'));
+  return card({ title: '后台任务', meta: `按近 24 小时读的行数排序${share}${capped}`, hint }, html`${table(['任务', '每轮读的行数', '每轮读的大小', '间隔', '上次耗时', '上次运行', '近 24 小时读的行数 ↓', '近 24 小时读的大小', '近 24 小时轮数'], rows, '没有后台任务', 'background')}<p class="ch-meta">${basis}</p>`);
 }
 
 /** When a process really ended: the report's time. `at` is when the next start found out. */
@@ -263,7 +267,7 @@ function crashFacts(event: StoredProcessEvent, last: CurvePoint | undefined): Ht
     ...(report === undefined ? [] : [['原因', evidence(`${report.event ?? '未知'}（${report.trigger ?? '未知'}）`)], ['崩溃报告', code(report.file)]] as [string, unknown][]),
     ['进程', html`PID ${shown(event.pid, String)}${event.node_version === null ? '' : html` · ${event.node_version}`}`],
     ['发布', event.release === null ? UNKNOWN : code(event.release)],
-  ]), '查看');
+  ]), '查看进程信息');
   return html`${facts(pairs)}${details}`;
 }
 
@@ -312,7 +316,7 @@ function crashBody({ event, points, names }: CrashDetail): Html {
   const who = first?.user === null || first?.user === undefined ? UNKNOWN : names?.get(first.user) ?? UNKNOWN;
   const finding = first === undefined
     ? requests === null
-      ? html`<p class="ch-finding">当时在处理什么：${UNKNOWN}。在途请求日志里没有这个进程，这不等于当时没有请求；主机重启会清掉这个日志。</p>`
+      ? html`<p class="ch-finding">当时在处理什么：${UNKNOWN}。在途请求日志里没有这个进程，这不等于当时没有请求；服务器重启会清掉这个日志。</p>`
       : html`<p class="ch-finding">当时没有在处理的请求。</p>`
     : html`<p class="ch-finding">运行最久的是 ${code(first.name)}（${who}），崩溃时已运行 ${duration(Math.max(0, crashAt - firstAt!))}。${heaps}</p>`;
   const total = (requests?.length ?? 0) + event.requests_omitted;
@@ -372,9 +376,9 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
     const browser = row.origin === 'console';
     return [
       row.client_name !== null ? evidence(row.client_name) : browser ? '浏览器' : '未声明名字',
-      browser ? '—' : row.client_platform === null ? unknown('客户端没有声明平台') : evidence(row.client_platform),
+      browser ? '不适用' : row.client_platform === null ? unknown('客户端没有声明平台') : evidence(row.client_platform),
       uiLabelOf('trace_origin', row.origin),
-      browser ? '—' : row.client_version === null ? UNKNOWN : evidence(row.client_version),
+      browser ? '不适用' : row.client_version === null ? UNKNOWN : evidence(row.client_version),
       repeat ? html`<span title="连接数只按名字分">同上</span>` : connections(row),
       count(row.calls),
       duration(row.p95_ms),
@@ -388,7 +392,7 @@ function clientTable(totals: ClientTotals | null, summary: HealthSummary | null,
   const parts: unknown[] = [sessions === null && streams === null ? '连接数未知，调用量和 p95 来自追踪，不受影响' : html`现在 ${shown(sessions, count)} 个 MCP 会话、${shown(streams, count)} 个实时推送流`];
   if (totals.groups > totals.rows.length) parts.push(`显示 ${count(totals.rows.length)} / 共 ${count(totals.groups)}`);
   if (oldest !== null) parts.push(html`近 24 小时的调用超过 ${count(MAX_ROOTS_READ)} 次，只算最新的 ${count(MAX_ROOTS_READ)} 次，从 ${oldest} 起`);
-  return card({ title: '按客户端', meta: html`${parts.map((part, index) => html`${index === 0 ? '' : ' · '}${part}`)}`, hint }, table(['客户端', '平台', '入口', '版本', '现在的连接', '近 24 小时调用', '近 24 小时 p95'], rows, '没有客户端', 'clients'));
+  return card({ title: '按客户端', meta: html`${parts.map((part, index) => html`${index === 0 ? '' : ' · '}${part}`)}`, hint }, table(['客户端', '平台', '入口', '客户端版本', '现在的连接', '近 24 小时调用', '近 24 小时 p95'], rows, '没有客户端', 'clients'));
 }
 
 interface Runs {
@@ -414,7 +418,7 @@ function releaseTable(runs: Runs | null, totals: readonly ReleaseTotal[] | null,
     const before = totals[index + 1]?.p95_ms ?? null;
     const p95 = total?.p95_ms ?? null;
     const change = p95 === null
-      ? '—'
+      ? '暂无数据'
       : runs.rows[index + 1] === undefined
         ? unknown('进程事件里没有上一个发布：已过 14 天保留期，或恢复备份时清空了')
         : before === null
@@ -425,7 +429,7 @@ function releaseTable(runs: Runs | null, totals: readonly ReleaseTotal[] | null,
     const span = running ? html`已运行 ${duration(now.getTime() - first)}` : first <= retained ? html`运行到 ${when(run.last_event, now)}；只算保留期内` : html`运行 ${duration(last - first)}`;
     const deployed = new Date(first);
     return [
-      html`<span class="ch-tool"><time class="ch-time" datetime="${run.first_start}" title="${fullTime(run.first_start)}">${two(deployed.getMonth() + 1)}-${two(deployed.getDate())} ${two(deployed.getHours())}:${two(deployed.getMinutes())}</time> 部署</span>${running ? html` ${chip('当前', 'pass')}` : ''}`,
+      html`<span class="ch-tool"><time class="ch-time" datetime="${run.first_start}" title="${hoverTime(run.first_start)}">${two(deployed.getMonth() + 1)}-${two(deployed.getDate())} ${two(deployed.getHours())}:${two(deployed.getMinutes())}</time> 部署</span>${running ? html` ${chip('当前', 'pass')}` : ''}`,
       span,
       total === undefined ? UNKNOWN : total.capped ? `${count(total.calls)} 以上` : count(total.calls),
       p95 === null ? '无调用' : duration(p95),
@@ -442,12 +446,17 @@ function observation(writer: WriterStats | null, summary: HealthSummary | null, 
   const counted = (value: number | undefined): unknown => (value === undefined ? UNKNOWN : count(value));
   const first = html`<section class="ch-stats">${kpi('写入延迟 p95', shown(writer?.writeDelayP95Ms, duration), { note: writer !== null && writer.writeDelayP95Ms === null ? '还没有写入过' : `每 ${FLUSH_MS / 1000} 秒或攒够 ${BATCH_ROWS} 行写一次`, hint: '一行从进队列到写进数据库等了多久，最新 1,000 行的 p95。' })}${kpi('队列', counted(writer?.queued), { unit: '行', note: `上限 ${count(QUEUE_ROWS)} 行` })}${kpi('丢弃', counted(writer?.dropped), { unit: '行', note: '队列满时丢弃' })}${kpi('写入失败', counted(writer?.failed), { unit: '行' })}</section>`;
   const second = html`<section class="ch-stats">${kpi('已写入', counted(writer?.written), { unit: '行' })}${kpi('每批写入耗时', shown(writer?.lastBatchMs, duration), { note: '最近一批' })}${kpi('没有写入的样本', summary === null ? UNKNOWN : count(summary.dropped_samples), { unit: '个', note: '近 24 小时' })}${kpi('读取失败的样本', shown(failed, count), { unit: '个', note: '近 24 小时' })}</section>`;
-  return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '观测不能成为负担：请求路径不等待写入，队列满时丢弃并计数。进程崩溃时队列里还没写的行随进程丢失，不计数。' }, html`${first}${second}`);
+  return card({ title: '观测自身', meta: '写入的计数从本次启动算起', hint: '写入观测数据不阻塞请求；队列满时丢弃并计数。进程异常退出时，还没写入的数据会丢失，不计入丢弃数。' }, html`${first}${second}`);
 }
 
-const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">这里还不显示。在 Hub 所在主机上执行 ${code('circle-hub db top')} 查看。</p>`);
+const SLOW_QUERIES = card({ title: '最慢的查询' }, html`<p class="ch-meta">这里还不显示。在运行 Hub 的服务器上执行 ${code('circle-hub db top')} 查看。</p>`);
 const NO_SAMPLES = emptyBlock({ title: '近 24 小时没有资源样本', text: 'Hub 服务运行后每 10 秒写一个样本，这里会出现主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和 24 小时曲线。' });
 const HINT = '主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和曲线，后台任务，崩溃和重启。只有管理员可见。诊断数据保留 14 天，不作根据。';
+
+/** The tabs of the page, in the order shown. A crash asked for by `event` opens the tab that lists it. */
+const HEALTH_TABS = ['resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
+type HealthTab = typeof HEALTH_TABS[number];
+const HEALTH_TAB_LABEL: Record<HealthTab, string> = { resources: '资源', tasks: '后台任务', events: '崩溃和重启', clients: '按客户端', releases: '按发布', self: '观测自身' };
 
 export async function healthPage(ctx: PageContext, sources: HealthPageSources | undefined, log: (line: string) => void): Promise<PageResult> {
   const now = ctx.deps.now?.() ?? new Date();
@@ -465,40 +474,54 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
       return null;
     }
   };
+  // Decision 151, step 8: one part a tab, and a tab reads only what it shows. The page used to make nine reads, one after the
+  // other, for six blocks down one page. The latest sample is read on every tab: it is the line under the title.
+  const asked = ctx.url.searchParams.get('tab');
+  const tab: HealthTab = ctx.url.searchParams.has('event') ? 'events' : HEALTH_TABS.find((key) => key === asked) ?? 'resources';
   // One after the other: the reads share one connection, and a page that reports on load keeps to one at a time.
   const summary = await read('样本', (s) => s.health.summary(by, { since: from }));
-  const curvePoints = await read('曲线', (s) => s.health.curve(by, { from, to, points: CURVE_POINTS }));
-  const events = await read('进程事件', (s) => s.health.events(by, { limit: EVENTS_SHOWN }));
-  const eventTotal = await read('进程事件数', (s) => s.health.eventCount(by, { limit: EVENTS_COUNTED }));
-  const crashes = events?.filter((event) => event.kind === 'abnormal_exit') ?? [];
-  const wanted = Number(ctx.url.searchParams.get('event'));
-  const openEvent = crashes.find((event) => event.seq === wanted) ?? crashes[0] ?? null;
-  let opened: CrashDetail | null = null;
-  if (openEvent !== null) {
-    const end = new Date(crashTime(openEvent));
-    const boot = openEvent.boot;
-    const points = boot === null ? [] : await read('崩溃之前的样本', (s) => s.health.curve(by, { from: new Date(end.getTime() - CRASH_WINDOW_MS), to: end, points: CRASH_POINTS, boot }));
-    const ids = [...new Set((openEvent.requests ?? []).slice(0, REQUESTS_SHOWN).flatMap((request) => (request.user === null ? [] : [request.user])))];
-    const accounts = ids.length === 0 ? new Map<string, string>() : await read('账号', async () => new Map((await ctx.deps.records.principals.some(ids)).map((user) => [user.id, user.deleted_at ? uiLabelOf('account_display_name', 'deleted_member') : user.name])));
-    opened = { event: openEvent, points, names: accounts };
-  }
-  const tasks = await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained }));
-  const clients = await read('客户端', (s) => s.traces.clients(by, { since: from.toISOString(), limit: CLIENTS_SHOWN }));
-  const runs = await read('发布', async (s) => withRunNow(await s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }), ctx.hub, now));
-  // A run ends where the line above it begins.
-  const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { runs: runs.rows.map((run, index) => ({ release: run.release, from: run.first_start, until: runs.rows[index - 1]?.first_start ?? null })), retained, windowMs: DAY_MS }));
-
-  const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));
-  const fresh = summary !== null && curvePoints !== null && summary.samples === 0;
   const uptime = ctx.hub === undefined ? '' : ` · 本次启动已运行 ${duration(now.getTime() - ctx.hub.startedAt.getTime())}`;
   const sub = summary === null ? html`最新样本 ${UNKNOWN}${uptime}` : summary.latest === null ? '近 24 小时没有样本 · Hub 服务运行后每 10 秒写一个' : html`最新样本 ${when(summary.latest, now)} · 每 10 秒一个${uptime}`;
-  const capped = clients?.capped === true && clients.oldest !== null ? stamp(clients.oldest) : null;
-  const body = html`${fresh ? card({ title: '资源' }, NO_SAMPLES) : resourceCards(summary, points, crashes, now)}
-${backgroundTable(tasks, now)}
-${eventList(events, eventTotal, opened, now)}
-${SLOW_QUERIES}
-${clientTable(clients, summary, capped)}
-${releaseTable(runs, releases, ctx.hub?.release ?? null, now)}
-${observation(sources?.writer() ?? null, summary, curvePoints)}`;
+  const curveOf = () => read('曲线', (s) => s.health.curve(by, { from, to, points: CURVE_POINTS }));
+  const eventsOf = () => read('进程事件', (s) => s.health.events(by, { limit: EVENTS_SHOWN }));
+  let content: Html;
+  if (tab === 'resources') {
+    const curvePoints = await curveOf();
+    const crashes = (await eventsOf())?.filter((event) => event.kind === 'abnormal_exit') ?? [];
+    const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));
+    const fresh = summary !== null && curvePoints !== null && summary.samples === 0;
+    content = fresh ? card({ title: '资源' }, NO_SAMPLES) : resourceCards(summary, points, crashes, now);
+  } else if (tab === 'tasks') {
+    content = backgroundTable(await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained })), now);
+  } else if (tab === 'events') {
+    const events = await eventsOf();
+    const eventTotal = await read('进程事件数', (s) => s.health.eventCount(by, { limit: EVENTS_COUNTED }));
+    const crashes = events?.filter((event) => event.kind === 'abnormal_exit') ?? [];
+    const wanted = Number(ctx.url.searchParams.get('event'));
+    const openEvent = crashes.find((event) => event.seq === wanted) ?? crashes[0] ?? null;
+    let opened: CrashDetail | null = null;
+    if (openEvent !== null) {
+      const end = new Date(crashTime(openEvent));
+      const boot = openEvent.boot;
+      const points = boot === null ? [] : await read('崩溃之前的样本', (s) => s.health.curve(by, { from: new Date(end.getTime() - CRASH_WINDOW_MS), to: end, points: CRASH_POINTS, boot }));
+      const ids = [...new Set((openEvent.requests ?? []).slice(0, REQUESTS_SHOWN).flatMap((request) => (request.user === null ? [] : [request.user])))];
+      const accounts = ids.length === 0 ? new Map<string, string>() : await read('账号', async () => new Map((await ctx.deps.records.principals.some(ids)).map((user) => [user.id, user.deleted_at ? uiLabelOf('account_display_name', 'deleted_member') : user.name])));
+      opened = { event: openEvent, points, names: accounts };
+    }
+    content = eventList(events, eventTotal, opened, now);
+  } else if (tab === 'clients') {
+    const clients = await read('客户端', (s) => s.traces.clients(by, { since: from.toISOString(), limit: CLIENTS_SHOWN }));
+    content = clientTable(clients, summary, clients?.capped === true && clients.oldest !== null ? stamp(clients.oldest) : null);
+  } else if (tab === 'releases') {
+    const runs = await read('发布', async (s) => withRunNow(await s.health.releases(by, { limit: RELEASES_SHOWN + 1, events: RELEASE_EVENTS_READ }), ctx.hub, now));
+    // A run ends where the line above it begins.
+    const releases = runs === null ? null : await read('发布的调用', (s) => s.traces.releases(by, { runs: runs.rows.map((run, index) => ({ release: run.release, from: run.first_start, until: runs.rows[index - 1]?.first_start ?? null })), retained, windowMs: DAY_MS }));
+    content = releaseTable(runs, releases, ctx.hub?.release ?? null, now);
+  } else {
+    content = html`${observation(sources?.writer() ?? null, summary, await curveOf())}
+${SLOW_QUERIES}`;
+  }
+  const tabs = html`<nav class="ch-seg" aria-label="运行状况内容" data-health-tabs>${HEALTH_TABS.map((key) => html`<a href="${href('/console/health', key === 'resources' ? {} : { tab: key })}"${key === tab ? html` aria-current="page"` : ''}>${HEALTH_TAB_LABEL[key]}</a>`)}</nav>`;
+  const body = html`<div class="ch-stack" data-health>${tabs}<div data-health-tab="${tab}">${content}</div></div>`;
   return { status: 200, body: page(ctx.chrome('运行状况', { active: 'health', hint: HINT, sub }), body) };
 }

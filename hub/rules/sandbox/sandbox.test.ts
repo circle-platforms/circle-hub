@@ -607,6 +607,9 @@ describe('isolation layers', () => {
     const dir = pack({ 'fn.ts': 'export default () => 1;' });
     const error = await failure(callPackFunction({ packDir: dir, module: 'fn.ts' }, null));
     assert.equal(error.code, 'SANDBOX_UNAVAILABLE', detailOf(error));
+    // Issue 291: the message names the one cause the probe found, not every cause the code can have.
+    assert.match(error.message, /^沙箱现在不能运行包内函数：/);
+    assert.doesNotMatch(error.message, /排队已满或 Hub 正在停止/);
   });
 });
 

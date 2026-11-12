@@ -1,4 +1,5 @@
 // Standing obligations must revalidate current credential acceptance before giving bytes to pack functions.
+import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -18,7 +19,7 @@ const skip = await sandboxSkip();
 before(async () => { postgres = await startPostgres(); });
 after(async () => { await postgres?.stop(); });
 
-test('a standing obligation loses function access when credential acceptance is withdrawn', { skip }, async t => {
+test('a standing obligation loses function access when credential acceptance is withdrawn', { skip }, async t => { credentialDetectorsFor(t);
   const h = await openHarness(postgres); t.after(() => h.close());
   const bytes = Buffer.from(`copy ftp://user:Ftp${randomBytes(8).toString('hex')}9@192.0.2.10/image.bin flash:`);
   const sha = sha256Hex(bytes);

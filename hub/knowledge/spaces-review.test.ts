@@ -1,4 +1,5 @@
 // Regression cases from the independent phase-2 security review; all bytes and accounts are synthetic.
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { zipSync, strToU8 } from 'fflate';
@@ -7,6 +8,8 @@ import { sha256Hex } from '../records/api.ts';
 import { KnowledgeError } from './api.ts';
 import { Database,createPool } from '../records/db.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 

@@ -1,6 +1,7 @@
 // Scheduled rounds keep every effect of a pass over everything while reading only what changed: what arrives between rounds,
 // what falls due with no record at all, and what depends on accounts, which leave no record. No pack function runs here,
 // except in the one test that guards on the sandbox.
+import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -208,7 +209,7 @@ async function retained(w: Awaited<ReturnType<typeof world>>) {
   return { run, question, sha: source.body.sha256, observed };
 }
 
-test('an acceptance recorded between rounds lets a held source request proceed in the next round, and only then', async (t) => {
+test('an acceptance recorded between rounds lets a held source request proceed in the next round, and only then', async (t) => { credentialDetectorsFor(t);
   const w = await world(t);
   const { sha, observed } = await retained(w);
   await w.settle();

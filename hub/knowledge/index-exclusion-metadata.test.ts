@@ -1,8 +1,11 @@
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { sha256Hex } from '../records/api.ts';
 import { createKnowledgeReader } from './api.ts';
 import { BASE_CATALOG, DEFAULT_PRODUCERS, casesProducer, catalogXml, makeWorld, mindMap, startPostgres } from './test-support.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 
 let postgres: Awaited<ReturnType<typeof startPostgres>>;
 before(async () => { postgres = await startPostgres(); });

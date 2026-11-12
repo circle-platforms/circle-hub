@@ -151,6 +151,42 @@ export class PgRecordStore implements RecordStore {
     return result.rows.map(row => verifiedRecord<B>(row,tx));
   }
 
+  async findUnsettled<B = unknown>(query: { kind: import('./api.ts').RecordKind; key?: string; values?: readonly string[]; closing: string; closingKind?: import('./api.ts').RecordKind; settled: string }, tx?: Transaction): Promise<StoredRecord<B>[]> {
+    for (const key of [query.closing, query.settled, ...(query.key === undefined ? [] : [query.key])]) if (typeof key !== 'string' || !INDEX_KEY.test(key)) throw new TypeError('invalid index key');
+    for (const kind of [query.kind, ...(query.closingKind === undefined ? [] : [query.closingKind])]) if (!RecordKindSchema.safeParse(kind).success) throw new TypeError('unknown record kind');
+    if ((query.key === undefined) !== (query.values === undefined)) throw new TypeError('an index key and its values are given together');
+    const values = query.values === undefined ? null : [...new Set(query.values.filter(isIndexValue))];
+    if (values !== null && !values.length) return [];
+    // The newest closing record is found as find({newestFirst}) finds it, through the same gated read; whether it settles
+    // its record is the presence of one more index entry on it, so a settled record costs index probes and no body.
+    const result = await this.#db.query(
+      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM hub_read_records() r
+       WHERE r.kind=$1 ${values === null ? '' : 'AND r.digest IN (SELECT i.digest FROM record_index i WHERE i.key=$5 AND i.value=ANY($6::text[]))'}
+         AND NOT EXISTS (
+           SELECT 1 FROM (
+             SELECT c.digest FROM record_index c JOIN hub_read_records() a ON a.digest=c.digest
+              WHERE c.key=$2 AND c.value=r.digest AND ($4::text IS NULL OR a.kind=$4)
+              ORDER BY c.record_seq DESC LIMIT 1
+           ) newest JOIN record_index s ON s.key=$3 AND s.value=r.digest AND s.digest=newest.digest
+         )
+       ORDER BY r.seq`,
+      values === null ? [query.kind, query.closing, query.settled, query.closingKind ?? null] : [query.kind, query.closing, query.settled, query.closingKind ?? null, query.key, values], tx);
+    return result.rows.map(row => verifiedRecord<B>(row,tx));
+  }
+
+  async findLacking<B = unknown>(query: { kind: import('./api.ts').RecordKind; key: string; values: readonly string[]; lacking: string }, tx?: Transaction): Promise<StoredRecord<B>[]> {
+    for (const key of [query.key, query.lacking]) if (typeof key !== 'string' || !INDEX_KEY.test(key)) throw new TypeError('invalid index key');
+    if (!RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const values = [...new Set(query.values.filter(isIndexValue))];
+    if (!values.length) return [];
+    const result = await this.#db.query(
+      `SELECT r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM hub_read_records() r
+       WHERE r.kind=$1 AND r.digest IN (SELECT i.digest FROM record_index i WHERE i.key=$2 AND i.value=ANY($3::text[]))
+         AND NOT EXISTS (SELECT 1 FROM record_index m WHERE m.digest=r.digest AND m.key=$4)
+       ORDER BY r.seq`, [query.kind, query.key, values, query.lacking], tx);
+    return result.rows.map(row => verifiedRecord<B>(row,tx));
+  }
+
   async addIndex(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number> {
     if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) throw new TypeError('a record digest is 64 hexadecimal characters');
     const index = validateIndex(entries);
@@ -386,6 +422,26 @@ export class PgRecordStore implements RecordStore {
     return page<B>(result.rows, limit,tx);
   }
 
+  async findDigests(query: FindQuery, tx?: Transaction): Promise<Page<string>> {
+    if (typeof query.key !== 'string' || !INDEX_KEY.test(query.key)) throw new TypeError(`invalid index key ${JSON.stringify(query.key)}`);
+    if (!isIndexValue(query.value)) return { items: [], next: null };
+    if (query.kind !== undefined && !RecordKindSchema.safeParse(query.kind).success) throw new TypeError('unknown record kind');
+    const limit = pageLimit(query.limit);
+    const after = decodeCursor(query.cursor);
+    const descending = query.newestFirst === true;
+    const values: unknown[] = [query.key, query.value, limit + 1];
+    let where = 'i.key = $1 AND i.value = $2';
+    if (query.kind !== undefined) { values.push(query.kind); where += ` AND r.kind = $${values.length}`; }
+    if (after !== null) { values.push(after); where += ` AND i.record_seq ${descending ? '<' : '>'} $${values.length}`; }
+    // The statement of find() with the body left out: the same rows in the same order, named by their digests.
+    const result = await this.#db.query<{ seq: string; digest: string }>(
+      `SELECT r.seq, r.digest
+         FROM record_index i JOIN hub_read_records() r ON r.digest = i.digest
+        WHERE ${where} ORDER BY i.record_seq ${descending ? 'DESC' : 'ASC'} LIMIT $3`, values, tx);
+    const last = result.rows.length > limit ? result.rows[limit - 1] : undefined;
+    return { items: result.rows.slice(0, limit).map((row) => String(row.digest)), next: last === undefined ? null : encodeCursor(String(last.seq)) };
+  }
+
   async findBatch<B=unknown>(queries:readonly FindQuery[],tx?:Transaction):Promise<Page<StoredRecord<B>>[]>{
     const input=queries.map((q,n)=>{
       if(typeof q.key!=='string'||!INDEX_KEY.test(q.key))throw new TypeError(`invalid index key ${JSON.stringify(q.key)}`);
@@ -534,6 +590,17 @@ export function verifiedRecord<B>(row: Row,tx?:Transaction): StoredRecord<B> {
   const normalized={id:String(row.id),digest:row.digest,kind:String(row.kind),schema:String(row.schema),provenance:String(row.provenance),created_at:iso(row.created_at),body:String(row.body)};
   return verifiedReadValue([normalized.digest,normalized.id,normalized.kind,normalized.schema,normalized.provenance,normalized.created_at,normalized.body],()=>verifyRecord<B>(normalized),tx);
 }
+/**
+ * The digest each body was verified against, by the parsed body itself. A body reaches this map only here, after its canonical
+ * form hashed to the digest, so the digest stands for exactly this content: a reader may key what it derives from the body
+ * alone by it (issue 200). Nothing a caller builds or copies is in the map.
+ */
+const VERIFIED_BODIES = new WeakMap<object, string>();
+/** The digest a record body was read and verified under in this process; undefined for any other value, a copy included. */
+export function verifiedBodyDigest(body: unknown): string | undefined {
+  return body !== null && typeof body === 'object' ? VERIFIED_BODIES.get(body) : undefined;
+}
+
 function verifyRecord<B>(row: Row): StoredRecord<B> {
   const createdAt = iso(row.created_at);
   const meta = { kind: String(row.kind), schema: String(row.schema), provenance: String(row.provenance), created_at: createdAt };
@@ -565,6 +632,7 @@ function verifyRecord<B>(row: Row): StoredRecord<B> {
     throw new IntegrityError('记录正文不是 JSON', { detail: { record: row.id }, cause: error });
   }
   if (noncanonical) noteNoncanonical(String(row.id), String(row.digest));
+  if (parsed !== null && typeof parsed === 'object') VERIFIED_BODIES.set(parsed, String(row.digest));
   return { id: String(row.id), kind: kind.data, schema: meta.schema, digest: String(row.digest), provenance: meta.provenance, created_at: createdAt, body: parsed, ...(noncanonical?{integrity_note:NONCANONICAL_EXPLANATION}:{}) };
 }
 

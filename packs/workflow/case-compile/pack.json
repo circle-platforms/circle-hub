@@ -53,8 +53,8 @@
     },
     {
       "path": "examples/case-mindmap.json",
-      "sha256": "f568a541a64f7f5250b3cbfc7ef446dfa4f5232cfa36f41e978652f033733942",
-      "size": 806
+      "sha256": "ddc9b8bffb027f83323aa449adc5856d3d2268c100441a271c680123f990ec85",
+      "size": 616
     },
     {
       "path": "examples/command-identities-v2.json",
@@ -93,13 +93,13 @@
     },
     {
       "path": "examples/start-run.json",
-      "sha256": "f7747c16ebce06ed8da5cfea7c50cae0febc30651decff1c9f6700ec53dc25d2",
+      "sha256": "d72b39e7c32d13d0f7e23cca30f54d8c60e37ff970974eb5bcbbdfe5f6c31a01",
       "size": 1088
     },
     {
       "path": "examples/submit-result.json",
-      "sha256": "d1cb9457b04e7879539341e1cf74e5fe76d9715ac051c7d70de2e58b338813ad",
-      "size": 3152
+      "sha256": "ebb4bb865bbbce653d5b2f9a687f50358415becc484e22abc472eb442fc0d4c6",
+      "size": 1410
     },
     {
       "path": "examples/typed-authority-source.json",

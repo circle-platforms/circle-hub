@@ -115,7 +115,7 @@ describe('scenario 19: concurrency with parallel submissions', () => {
     assert.ok(submitLogs.length >= 2, `expected at least 2 submit_result logs, got ${submitLogs.length}`);
 
     // Console page for the run renders cleanly
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.match(page.body, new RegExp(run.run));
   });

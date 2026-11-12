@@ -1,6 +1,6 @@
 # 来源原件读取（source-read）
 
-通用技能包 `source-read`：在任意工作中按系统包路由读取平台原件（缺陷、需求、构建、脑图文档、构建页、手册文件、SVN 文件）。
+通用技能包 `source-read`：在任意工作中按系统包路由读取平台原件（缺陷、需求、构建、脑图文档、构建页、规格目录清单、手册文件、SVN 文件）。
 
 不绑定产品线，零要求项。`start_run` 时 Hub 按现有系统包连接器读取原件，返回来源引用（`src:<sha256>`）并触发喂入投影。投影可能在后台继续；是否完成、版本绑定和矛盾要以之后的喂入回执为准。
 
@@ -26,8 +26,18 @@ Hub 保证：
 | `build` | PLM 产品构建列表 | `plm:builds` | `{"external": "plm:builds:101"}` |
 | `mindmap` | 敏捷测试平台脑图文档 | `agile:mindmap` | `{"external": "agile:mindmap:880001"}` |
 | `build_page` | 构建站页面或文件 | `buildsite:listing` / `buildsite:file` | `{"external": "buildsite:listing:rel_demo.html"}` |
+| `spec_list` | 列出已配置规格目录的直接成员；只列清单，不选或读文件 | `manual:spec-list` | `{"external": "manual:spec-list:configured"}` |
 | `manual_file` | 手册库或文档库文件 | `manual:file` / `openkm:file` | `{"external": "manual:file:cli.md"}` |
 | `svn_file` | SVN 仓库只读文件 | `svn:file` | `{"external": "svn:file:17/path/to/file.txt"}` |
+
+## 查找规格书：先清单，再显式读取
+
+用户问“某个需求有没有规格书”时，需求记录附件为空、知识检索零命中都不能推出文档库没有原件。先从 `list_task_packs` 确认当前账号可用的工作流和输入声明；包列出了类型也不等于其资源已启用。只在已确认启用且当前账号获准的来源上调用；资源状态不明时说明尚未核实，并请资源管理员确认，不凭空推荐 `openkm:file` 或编造路径。手册库镜像可用不证明 OpenKM 可用。
+
+1. 通过本工作流读取 `spec_list: {"external":"manual:spec-list:configured"}`。它只列资源管理员设置的 `spec_folders` 的直接成员，不使用关键词打分、不代替模型选择、不递归子目录、不读文件正文。没有目录设置时，请资源管理员配置后重读；这不是“没有规格书”。
+2. 用本次运行的确切 `src:` 引用读取目录投影，核对 `folders`、`files`、`directories`、`unread`、`complete`。完整且空的清单只证明这些目录在这次观察中没有直接文件；子目录未展开、未读目录和其他来源仍未知。`complete: false` 不得当空清单或全库覆盖。
+3. 客户端模型根据列表提出候选，使用列表中的准确 `path` 发起新的 `manual_file: {"external":"manual:file:<path>"}` 读取。只从文件名或显示标题不能确认它属于某需求；读取正文后按需求编号、标题及内容逐字证据核对，判断由模型给出并标注依据。Hub 不做语义匹配。
+4. 回复分别交代实际读过的目录和候选、读取时刻/引用、无法核实的来源与可执行下一步。尚未读取的来源答“尚未检查”，不答“不存在”；被扣或不可用的原件也不能当成不存在。
 
 ## 调用方法
 

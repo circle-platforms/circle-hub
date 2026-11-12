@@ -63,6 +63,16 @@
       "many": false
     },
     {
+      "slot": "spec_list",
+      "role": "subject",
+      "description": "List direct members of configured specification folders (manual:spec-list:configured); requires an enabled, permitted manual-store resource with spec_folders. This lists paths only, never selects or reads files. Empty or incomplete listings say nothing about unexamined folders or other systems; choose candidates on the client and read their exact manual:file paths explicitly.",
+      "accepts": [
+        "manual:spec-list"
+      ],
+      "required": false,
+      "many": false
+    },
+    {
       "slot": "manual_file",
       "role": "subject",
       "description": "手册文件：手册库或文档库按路径读取的一个文件（manual:file:<路径> 或 openkm:file:<路径>）",

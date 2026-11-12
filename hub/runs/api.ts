@@ -4,6 +4,7 @@
 
 // ---------------------------------------------------------------- run engine (its own api.ts)
 export * from './engine/api.ts';
+export {primaryRunResult,runTaskResult,runPendingCount,runStatistics} from './statistics.ts';
 
 // ---------------------------------------------------------------- pack registry (T01 T02 B04)
 export { createPackRegistry, PACK_VERSION_SCHEMA, productNameKey } from './packs/registry.ts';

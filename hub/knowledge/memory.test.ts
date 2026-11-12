@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../testing/records.ts';
 import {before,after,test} from 'node:test';
 import assert from 'node:assert/strict';
 import {makeWorld,startPostgres} from './test-support.ts';
@@ -8,7 +9,14 @@ let postgres:TemporaryPostgres;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
 const create=(markdown='合成偏好',key='create')=>({title:'合成记忆',markdown,path:'/preferences',expected_version:null,client_key:key});
 
-test('memory and knowledge refuse encoded credentials without changing stored clean Unicode content',async t=>{
+// Issue 194: what a member writes is their content, not refused for looking like a credential. The test after this one
+// turns the detectors on and covers the refusal they made.
+test('memory and knowledge take text that looks like it carries a credential, as written',async t=>{
+ const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,spaces=w.knowledge.spaces!,text='DB_PASSWORD='+['Synth3tic','!2498'].join('');
+ const saved=await memory.write(w.user,create(text,'looks-like-a-credential'));assert.equal((await memory.read(w.user,saved.document)).markdown,text);
+ const note=await spaces.write(w.user,{kind:'observation',statement:text});assert.equal((await spaces.entry(w.user,note.root,'/',note.entry))?.body.content.statement,text);
+});
+test('memory and knowledge refuse encoded credentials without changing stored clean Unicode content',async t=>{ credentialDetectorsFor(t);
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory,spaces=w.knowledge.spaces!,secret=['Synth3tic','!2498'].join('');
  const variants=['ＤＢ＿ＰＡＳＳＷＯＲＤ＝'+secret,'DB_PASS\u200bWORD='+secret,'DB_PASS\u00adWORD='+secret,'DB_PASSWORD&#61;'+secret,Buffer.from('DB_PASSWORD='+secret).toString('base64')];
  for(const [n,text] of variants.entries()){
@@ -101,7 +109,7 @@ test('memory writes are versioned, optimistic and idempotent; pagination preserv
  await assert.rejects(memory.query(w.user,{document:first.document,version:first.version,for_session:true,cursor:one.memory_document!.next!}),{code:'SOURCE_UNAVAILABLE'});
  const before=await memory.usage(w.user);await memory.rebuild(w.user);assert.deepEqual(await memory.usage(w.user),before);await memory.rebuild(w.user);assert.deepEqual(await memory.usage(w.user),before);
 });
-test('refused credentials and size limits retain one safe audit and no content or quota writes',async t=>{
+test('refused credentials and size limits retain one safe audit and no content or quota writes',async t=>{ credentialDetectorsFor(t);
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const secret='DB_PASSWORD=synthetic-secret-2498';
  const failures:Error[]=[];
@@ -180,7 +188,7 @@ test('metadata pages are bounded in UTF-8 bytes and version changes invalidate t
  await memory.write(w.user,{document:saved[0].document,expected_version:saved[0].version,enabled:false,client_key:'page-change'});
  await assert.rejects(memory.query(w.user,{scope:'personal',cursor:firstCursor}),{code:'MEMORY_CURSOR_STALE'});
 });
-test('history is owner or team-administrator only and sensitive share paths never enter receipts',async t=>{
+test('history is owner or team-administrator only and sensitive share paths never enter receipts',async t=>{ credentialDetectorsFor(t);
  const w=await makeWorld(postgres);t.after(w.close);const memory=w.knowledge.memory;
  const saved=await memory.write(w.user,create());await memory.grant(w.user,{path:'/',audience:'member',member:w.outsider.id});
  assert.equal((await memory.history(w.user,saved.document)).items.length,1);

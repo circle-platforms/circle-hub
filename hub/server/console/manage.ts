@@ -136,7 +136,7 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
   'pack-revoke': { title: '撤销发布权', back: PACKS, build: (form) => ({ argv: ['pack', 'revoke-publish', word(form, 'user', '用户')] }) },
   'pack-assign': { title: '分配工作流', back: PACKS, build: (form) => ({ argv: ['pack', 'assign', word(form, 'user', '用户'), word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))] }) },
   'pack-unassign': { title: '取消分配', back: PACKS, build: (form) => ({ argv: ['pack', 'unassign', word(form, 'user', '用户'), word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))] }) },
-  'pack-retire': { title: '下架工作流版本', back: PACKS, build: (form) => ({ argv: ['pack', 'retire', word(form, 'ref', '包号@版本')] }) },
+  'pack-retire': { title: '退役工作流版本', back: PACKS, build: (form) => ({ argv: ['pack', 'retire', word(form, 'ref', '包号@版本')] }) },
   'pack-activate': { title: '启用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'activate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
   'pack-deactivate': { title: '停用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'deactivate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
   'resource-add': {
@@ -305,7 +305,7 @@ function runLines(run: CommandRun, notice: string | null): Html {
   return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${uiLabelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
 ${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
-${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
+${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}</code></pre>` : ''}`;
 }
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
@@ -326,8 +326,8 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
   const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
-      ? card({ title: '写入成员的客户端',hint:'把令牌保存为成员客户端的密钥 CIRCLE_HUB_TOKEN，再按下面 mcp_servers 格式的条目填写 MCP 地址。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx))}</pre>${connected}`)
-      : card({ title: '成员的客户端如何连接',hint:'按下面 mcp_servers 格式的条目在成员的客户端中填写 MCP 地址。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>${connected}`);
+      ? card({ title: '写入成员的客户端',hint:'把令牌保存为成员客户端的密钥 CIRCLE_HUB_TOKEN，再按下面 mcp_servers 格式的条目填写 MCP 地址。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx))}</code></pre>${connected}`)
+      : card({ title: '成员的客户端如何连接',hint:'按下面 mcp_servers 格式的条目在成员的客户端中填写 MCP 地址。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>${connected}`);
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
     body: page({...actionChrome(ctx, action),...(last.code===0?{notice:doneNotice(action.title)}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
@@ -376,7 +376,7 @@ function doneNotice(title: string): string {
   return title === '知识同步' ? '已完成知识同步' : '已' + title;
 }
 
-const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在 Hub 所在主机上执行对应的命令';
+const BRIDGE_MISSING = '这个 Hub 进程没有接上命令执行，网页管理暂不可用；请在运行 Hub 的服务器上执行对应的命令';
 
 /** A run's output with the private directories written as <文件夹>: no page shows where the server keeps an upload. */
 function withoutPaths(run: CommandRun, ...paths: string[]): CommandRun {
@@ -488,7 +488,7 @@ export function stageForms(stage: StagedPack, csrf: string): Html {
 
 function checkLines(run: CommandRun): Html {
   const state = run.code === 0 ? html`<p class="ok">发布校验已通过（退出码 0）</p>` : run.code === 2 ? html`<p class="error">参数不正确，未执行（退出码 2）</p>` : html`<p class="error">未通过发布校验（退出码 ${run.code}）</p>`;
-  return html`${state}${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}${run.stderr.length > 0 ? html`<pre class="error">${run.stderr.join('\n')}</pre>` : ''}`;
+  return html`${state}${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}</code></pre>` : ''}`;
 }
 
 function refusedPage(ctx: PageContext, refusal: StepRefusal): PageResult {
@@ -596,7 +596,7 @@ export async function completeSetup(
   const name = form.get('name');
   if (name === '' || name.startsWith('-') || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, status: 400, message: '请填写管理员姓名' };
   const check = await checkSetupCode(dataDir, form.get('code'), now);
-  if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在 Hub 所在的主机上执行 circle-hub setup-code 生成' };
+  if (check === 'none') return { ok: false, status: 403, message: '没有有效的初始化码：在运行 Hub 的服务器上执行 circle-hub setup-code 生成' };
   if (check === 'expired') return { ok: false, status: 403, message: '初始化码已过期：执行 circle-hub setup-code 重新生成' };
   if (check === 'wrong') return { ok: false, status: 403, message: '初始化码不正确' };
   const supplied=form.get('password');

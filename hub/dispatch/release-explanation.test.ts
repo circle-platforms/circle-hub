@@ -76,3 +76,56 @@ test('proof failures before release still reach private administrator notes with
   assert.ok(logs.length>0);
  }
 });
+
+// Issue 36: the gate between "release conditions met" and "dispatch accepted" is the lineage holding every resource key the
+// executor declares. explain-release says so, with the keys, exactly where dispatch would refuse.
+const COVERAGE='lease.coverage';
+const coverageOf=(report:{lease_coverage:{condition:string;satisfied:boolean|null;missing_fact?:string;next_action?:string}|null})=>report.lease_coverage?.condition===COVERAGE?report.lease_coverage:undefined;
+
+test('explain-release lists the declared resource keys the run lineage does not hold, as dispatch would refuse them',async t=>{
+ const c=await setup({mode:'lineage'});t.after(()=>c.close());
+ const report=await c.service.explainRelease(c.admin,c.run,c.executor.id);
+ const check=coverageOf(report);assert.ok(check,'the coverage clause is listed');
+ assert.equal(check.satisfied,false);assert.equal(report.satisfied,true,'the clause-3 verdict keeps its meaning: dispatchAccepted picks the executor by it, then dispatch refuses and tells the runner');
+ for(const key of c.executor.definition.resources)assert.ok(check.missing_fact?.includes(key),`names ${key}`);
+ assert.match(check.next_action??'',/整个自动化测试环境|全部键/);
+ // Dispatch refuses on exactly this ground and names the same keys.
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+ assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.length,0);
+ const refused=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
+ assert.equal(refused.body.error_code,'LEASE_UNAVAILABLE');
+ for(const key of c.executor.definition.resources)assert.ok(String(state.reason??state.missing_fact??'').includes(key)||JSON.stringify(state).includes(key),`dispatch names ${key}`);
+});
+
+test('explain-release names only the keys a partial hold lacks and is satisfied once the lineage holds all of them',async t=>{
+ const c=await setup();t.after(()=>c.close());
+ const full=await c.service.explainRelease(c.admin,c.run,c.executor.id);
+ assert.equal(coverageOf(full)?.satisfied,true);assert.equal(full.satisfied,true);assert.equal(coverageOf(full)?.missing_fact,undefined);
+ const [kept,lost]=c.executor.definition.resources;
+ await c.leases.forceRelease({keys:[lost],by:c.admin.id,reason:'合成部分释放'});
+ const partial=await c.service.explainRelease(c.admin,c.run,c.executor.id);
+ const check=coverageOf(partial)!;
+ assert.equal(check.satisfied,false);assert.equal(partial.satisfied,true);
+ assert.ok(check.missing_fact?.includes(lost));assert.ok(!check.missing_fact?.includes(kept),'a key the lineage holds is not reported missing');
+ assert.equal(c.calls.length,0,'explaining never contacts the executor');
+});
+
+test('explain-release does not count a hold that ends before the dispatch window as covering',async t=>{
+ const c=await setup({mode:'expiry'});t.after(()=>c.close());
+ c.clock.ms+=5_000;
+ const report=await c.service.explainRelease(c.admin,c.run,c.executor.id);
+ assert.equal(coverageOf(report)?.satisfied,false);assert.equal(report.satisfied,true);
+});
+
+
+test('explain-release exits nonzero and says dispatch would be refused while the lineage lacks declared keys, and exits zero once it holds them',async t=>{
+ for(const [mode,exit,covered] of [['lineage',1,'租约覆盖 0：派发会被边界拒绝'],[undefined,0,'租约覆盖 1']] as const){
+  const c=await setup(mode?{mode}:{});t.after(()=>c.close());const output:string[]=[];
+  const session:JobCommandSession={ctx:{io:{cwd:process.cwd()}},options:{},out:line=>output.push(line),err:()=>{},admin:async()=>c.admin,records:async()=>c.kit,hub:async()=>({dispatch:c.service,records:c.kit})};
+  assert.equal(await jobCommand(session,['explain-release','--run',c.run,'--executor',c.executor.id]),exit,String(mode));
+  assert.ok(output.includes('放行条件满足 1'),'the release conditions are met in both cases');
+  assert.ok(output.includes(covered),output.join('\n'));
+  assert.equal(output.some(line=>line.includes('"condition":"lease.coverage"')),true);
+  assert.equal(c.calls.length,0);
+ }
+});

@@ -133,11 +133,11 @@ describe('尝试连接', () => {
     const refused = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: member.cookie, origin: origin(), 'x-csrf-token': member.csrf, 'content-type': 'application/json' }, body: JSON.stringify(fields()) });
     assert.equal(refused.status, 404);
     assert.equal(agile.logins, 1, 'nothing sent for a refused request');
-    const records = await send('/console/records', { headers: { cookie: admin.cookie } });
+    const records = await send('/console/records?tab=trials', { headers: { cookie: admin.cookie } });
     assert.match(records.body, /尝试读取记录/);
     assert.match(records.body, /plm-test@1.0.0/);
     assert.match(records.body, /HTTP 200/);
-    const memberRecords = await send('/console/records', { headers: { cookie: member.cookie } });
+    const memberRecords = await send('/console/records?tab=trials', { headers: { cookie: member.cookie } });
     assert.doesNotMatch(memberRecords.body, /尝试读取记录|plm-test@/);
   });
 
@@ -237,7 +237,7 @@ describe('the reads of the last day', () => {
     const connections = await send('/console/connections', { headers: { cookie: admin.cookie } });
     assert.match(connections.body, /近 24 小时读取/);
     assert.match(connections.body, /3 次（报错 1 次） · 中位 200 毫秒/);
-    assert.match(connections.body, /统计时段 .+ 至 .+；/);
+    assert.match(connections.body, /<p class="ch-meta" data-tab-facts>已启用 \d+ 个，共 \d+ 个 · 统计时段 [^；]+? 至 [^；]+?<\/p>/);
     const overview = await send('/console/overview', { headers: { cookie: admin.cookie } });
     assert.match(overview.body, /4 次（报错 1 次）/, 'the selected seven-day period also includes the read 36 hours ago');
   });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {startPostgres} from '../testing/postgres.ts';
 import {openTestRecords} from '../testing/records.ts';
-import {withReadScope,scopedRecordStore,memoReadPort,memoReadValue,IntegrityError,type RecordStore} from './api.ts';
+import {withReadScope,retireReadScope,scopedRecordStore,memoReadPort,memoReadValue,IntegrityError,type RecordStore} from './api.ts';
 import {ReadValues} from './read-value.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
@@ -52,6 +52,33 @@ test('authorization memoization is isolated by reader and request, including an 
  await withReadScope(async()=>assert.equal(await memoReadPort(port,['canRead']).canRead('owner'),false));assert.equal(calls,4);
 });
 
+test('isolated nested reads release their own memo without borrowing or populating the parent',async()=>{
+ let calls=0;const port={read:async(key:string)=>({key,call:++calls,body:'synthetic'.repeat(10000)})};
+ await withReadScope(async()=>{const parent=memoReadPort(port,['read']);const first=await parent.read('same');let child:typeof port;
+  await withReadScope(async()=>{child=memoReadPort(port,['read']);const value=await child.read('same');assert.notEqual(value,first);assert.equal(await child.read('same'),value);await child.read('child-only');},{isolated:true});
+  assert.equal(calls,3);assert.equal(await parent.read('same'),first);await parent.read('child-only');assert.equal(calls,4);await child!.read('same');assert.equal(calls,5);
+ });
+});
+test('a write in an isolated child invalidates its parent cache without lending stale state',async()=>{
+ let value=0;const store={getMany:async()=>new Map([['a'.repeat(64),{digest:'a'.repeat(64),body:{value}}]]),put:async()=>{value++;return {digest:'a'.repeat(64),body:{value}};}} as unknown as RecordStore;
+ await withReadScope(async()=>{const parent=scopedRecordStore(store);assert.equal((await parent.get<{value:number}>('a'.repeat(64)))!.body.value,0);
+  await withReadScope(async()=>{await scopedRecordStore(store).put({kind:'action',schema:'synthetic-isolated@1',provenance:'declared',body:{value:1}});},{isolated:true});
+  assert.equal((await parent.get<{value:number}>('a'.repeat(64)))!.body.value,1);
+ });
+});
+test('an ordinary write invalidates another active isolated sibling before it reads again',async()=>{
+ let value=0;const gate=Promise.withResolvers<void>(),ready=Promise.withResolvers<void>(),id='a'.repeat(64),store={getMany:async()=>new Map([[id,{digest:id,body:{value}}]]),put:async()=>{value++;return {digest:id,body:{value}};}} as unknown as RecordStore;
+ await withReadScope(async()=>{const sibling=withReadScope(async()=>{const scoped=scopedRecordStore(store);assert.equal((await scoped.get<{value:number}>(id))!.body.value,0);ready.resolve();await gate.promise;assert.equal((await scoped.get<{value:number}>(id))!.body.value,1);},{isolated:true});
+  try{await ready.promise;await withReadScope(async()=>{await scopedRecordStore(store).put({kind:'action',schema:'synthetic-sibling@1',provenance:'declared',body:{value:1}});},{isolated:true});}finally{gate.resolve();await sibling;}
+ });
+});
+test('retiring an isolated child also retires the surrounding read generation',async()=>{
+ let allowed=true,calls=0;const port={read:async()=>{calls++;return allowed;}};
+ await withReadScope(async()=>{const parent=memoReadPort(port,['read']);assert.equal(await parent.read(),true);
+  await withReadScope(async()=>{assert.equal(await memoReadPort(port,['read']).read(),true);allowed=false;retireReadScope();assert.equal(await memoReadPort(port,['read']).read(),false);},{isolated:true});
+  assert.equal(await parent.read(),false);
+ });assert.equal(calls,4);
+});
 test('failed reads can retry inside the same scope instead of caching a transient failure',async()=>{
  let calls=0;const port={read:async()=>{if(++calls===1)throw new Error('synthetic transient read');return true;}};
  await withReadScope(async()=>{const scoped=memoReadPort(port,['read']);await assert.rejects(scoped.read());assert.equal(await scoped.read(),true);});assert.equal(calls,2);

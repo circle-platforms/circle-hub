@@ -112,7 +112,7 @@ describe('scenario 13: idempotence of start_run and submit_result', () => {
 
     // Console session expired due to 25h time advance; re-login to check the new run
     consoleClient = await openConsole(bed.hub, bed.reviewer.token);
-    const page = await consoleClient.get(`/console/runs/${newRun.run}`);
+    const page = await consoleClient.task(newRun.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(newRun.run));
   });

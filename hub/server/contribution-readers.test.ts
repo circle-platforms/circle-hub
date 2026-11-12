@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../testing/records.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -33,7 +34,7 @@ test('contribution rec reads use the product reader rule before the administrato
   assert.equal(await read(w.user),null);
 });
 
-test('get_nodes gives an independent held marker while rec record bytes remain immutable',async t=>{
+test('get_nodes gives an independent held marker while rec record bytes remain immutable',async t=>{ credentialDetectorsFor(t);
   const w=await makeWorld(postgres);t.after(()=>w.close());
   const original=await w.kit.artifacts.ingest({bytes:new TextEncoder().encode(["origin","al htt","ps://d","emo:sy","ntheti","c-secr","et@192",".0.2.8","/path"].join('')),mediaType:'text/plain',origin:{read:{object:'site:document:held'}},author:{user:null},provenanceType:'observed',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:false}});
   await w.kit.artifacts.acceptFindings(w.admin,original.body.sha256,'合成受理');

@@ -6,7 +6,7 @@ import {historyUsage,requireCapacity} from './capacity.ts';
 import {MemoryDocumentBody,MemoryVersionBody,MemoryGrantBody,MemoryShareBody,MemoryWriteInput,MemoryShareInput,MemoryQuery,MemoryWriteReceipt,type MemoryMetadata} from '../../contracts/src/memory.ts';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {SyncObjectKindSchema,SyncModeSchema,ActionKindSchema,ShareCheckSchema,uiLabelOf,MemoryFieldSchema,type KnowledgeSearchScope,type KnowledgeGrantee} from '../../contracts/generated/vocabulary.ts';
-import {withReadScope,scopedRecordStore,memoReadPort,canonicalize,sha256Hex,scanForCredentials,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
+import {withReadScope,scopedRecordStore,memoReadPort,canonicalize,sha256Hex,scanContent,newId,type Principal,type StoredRecord,type RecordKind,type Transaction,type MemoryHead,type Page} from '../records/api.ts';
 import {pathOf,pathSegments} from '../refs/api.ts';
 import {KnowledgeError} from './errors.ts';
 import {WriteQueue,type KnowledgeContext} from './context.ts';
@@ -133,7 +133,7 @@ export class MemoryDocuments{
  }
  #scan(title:string,path:string,markdown:string){
   for(const [name,text] of [['title',title],['path',path],['markdown',markdown]]){
-   const scan=scanForCredentials(Buffer.from(text));if(!scan.inspected||scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');
+   const scan=scanContent(Buffer.from(text));if(!scan.inspected||scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');
    const field=uiLabelOf('memory_field',name==='title'?MemoryFieldSchema.enum.document_title:name==='path'?MemoryFieldSchema.enum.directory_path:MemoryFieldSchema.enum.markdown_text);
    if(scan.findings.length)throw new KnowledgeError(PROTOCOL_CODES.MEMORY_CREDENTIALS_DETECTED.when+'；'+scan.findings.slice(0,5).map(f=>field+'第 '+f.line+' 行').join('、'),{code:'MEMORY_CREDENTIALS_DETECTED',detail:{positions:scan.findings.map(f=>({field:name,line:f.line,detector:f.detector}))}});
   }
@@ -236,7 +236,7 @@ export class MemoryDocuments{
   const disabled=merged.some(share=>share.team_document&&heads.get(share.team_document)?.state==='disabled');
   const replacement=old&&old.version===previous?.team_version?old:undefined;
   const target=pathCheck(input.team_path??source.path),effect=replacement?'replace':'create';
-  const scan=scanForCredentials(Buffer.from(target)),safeTarget=scan.inspected&&!scan.truncated&&!scan.findings.length;
+  const scan=scanContent(Buffer.from(target)),safeTarget=scan.inspected&&!scan.truncated&&!scan.findings.length;
   try{
    if(disabled)fail('MEMORY_TEAM_DISABLED');checks[phase++].state='pass';
    const index=this.#index(),usage=await index.usage('team',tx),contextBytes=Buffer.byteLength(source.title+target+source.markdown),documents=usage.activeDocuments-Number(replacement?.state==='enabled')+1;

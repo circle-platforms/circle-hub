@@ -505,4 +505,22 @@ describe('events and their audience', () => {
     assert.equal(await visibleTo(ctx(true), event('environment.status', { environment: 'bench-1' })), true);
     assert.equal(await visibleTo(ctx(false), event('environment.status', { environment: 'bench-1' })), false);
   });
+
+  test('a run event asks the visibility port, never the full detail, when the engine has one', async () => {
+    const asked: string[] = [];
+    const event = (name: LiveEvent['name'], data: LiveEvent['data']): LiveEvent => ({ name, data });
+    const ctx = {
+      admin: false,
+      principal: { id: 'usr_me', name: 'usr_me', role: 'user' },
+      deps: {
+        runs: {
+          runVisible: async (_user: unknown, run: string) => { asked.push(run); return run === RUN; },
+          getRun: async () => { throw new Error('the full detail must not be read to decide visibility'); },
+        },
+      },
+    } as unknown as PageContext;
+    assert.equal(await visibleTo(ctx, event('task.updated', { run: RUN })), true);
+    assert.equal(await visibleTo(ctx, event('request.updated', { run: `run_${'z'.repeat(26)}`, request: DIGEST })), false);
+    assert.deepEqual(asked, [RUN, `run_${'z'.repeat(26)}`]);
+  });
 });

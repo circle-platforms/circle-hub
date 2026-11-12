@@ -5,6 +5,7 @@
 // (pinned) are answered by the Hub's own reader: the digest freezes into the run at start, the provenance is
 // `declared`, and only a run of a pack that declares the doc input type reads them, only for that run's user;
 // everyone else gets the same answer as for a doc that does not exist. Temporary PostgreSQL, synthetic content only.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -200,7 +201,7 @@ describe('the doc:doc: reader', () => {
     void user;
   });
 
-  test('a credential hit is held back until an admin accepts it', async (t) => {
+  test('a credential hit is held back until an admin accepts it', async (t) => { credentialDetectorsFor(t);
     const { kit, docs, admin } = await world();
     t.after(() => kit.close());
     const bytes = enc.encode('示例手册：copy ftp://user:synthetic-pass-42@192.0.2.10/images/system.bin flash:');

@@ -139,7 +139,7 @@ describe('scenario 20: injected defects benchmark verification', () => {
     assert.ok(logPage.items.some((l) => l.tool === 'submit_result'));
 
     // Console page renders properly
-    const page = await consoleClient.get(`/console/runs/${mutatedRun.run}`);
+    const page = await consoleClient.task(mutatedRun.run);
     assert.equal(page.status, 200);
     assert.match(page.body, new RegExp(mutatedRun.run));
   });

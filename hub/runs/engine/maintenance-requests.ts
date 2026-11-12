@@ -1,4 +1,4 @@
-import {MissingFact,RecoveryGap,UnknownExit,type LayerResult,type ValidationResult} from '../../../contracts/src/validation.ts';
+import {EXIT_NOT_RECORDED,MISSING_NOT_RECORDED,MissingFact,RecoveryGap,UnknownExit,type LayerResult,type ValidationResult} from '../../../contracts/src/validation.ts';
 import {PARTITION,isReason} from '../../../contracts/generated/vocabulary.ts';
 import type {RunRecord} from '../../../contracts/src/run.ts';
 import {digestOf,type Page,type StoredRecord} from '../../records/api.ts';
@@ -13,7 +13,7 @@ export async function restoreLegacyRequests(ctx:EngineContext,stored:StoredRecor
   for(const [partition,items] of Object.entries(latest.body.partitions))for(const [i,item] of items.entries())for(const [j,requirement] of item.requirements.entries())for(const [k,layer] of requirement.layers.entries()){
     if(!isUnsettled(layer)||!layer.reason||layer.exit&&layer.missing)continue;
     const path='/partitions/'+partition+'/'+i+'/requirements/'+j+'/layers/'+k;
-    const input:RequestBody={run:stored.body.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:latest.digest,code:layer.reason,item:item.item,requirement:requirement.requirement,missing:'旧结果 rec:'+latest.digest+' '+path+'：'+(!layer.exit?'出口未写；':'')+(!layer.missing?'缺失事实未写':''),next_action:'原提交者带 Circle-Session-Id 用 submit_result 原样重交，Hub 追加重评结果；旧运行或作者缺会话时，以原工作为 predecessor 开带会话的新修订后重新复核。旧记录不回填'};
+    const input:RequestBody={run:stored.body.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:latest.digest,code:layer.reason,item:item.item,requirement:requirement.requirement,missing:'旧结果 rec:'+latest.digest+' '+path+'：'+(!layer.exit?EXIT_NOT_RECORDED+'；':'')+(!layer.missing?MISSING_NOT_RECORDED:''),next_action:'原提交者带 Circle-Session-Id 用 submit_result 原样重交，Hub 追加重评结果；旧运行或作者缺会话时，以原工作为 predecessor 开带会话的新修订后重新复核。旧记录不回填'};
     const {due:_,...identity}=input;planned.push({input,key:digestOf(identity)});
   }
   const keys=[...new Set(planned.map(row=>row.key))],existing=new Set<string>();

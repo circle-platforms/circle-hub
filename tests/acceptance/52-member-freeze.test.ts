@@ -33,7 +33,7 @@ test('deactivation pauses personal knowledge, originals and memory for stale rea
 test('an already archived exact original hides its save action while an independent unsaved capture remains saveable',async()=>{
  const hub=await createTestHub(options);try{
   const owner=await hub.createUser('合成保存动作作者'),spaces=hub.hub.knowledge.spaces!,web=await openConsole(hub,owner.token),text=Buffer.from('合成保存动作原文'),file=await spaces.importFile(owner.principal,text,'text/plain','合成已归档原文.txt','/方法/认证');
-  const detail=await web.get('/console/knowledge/source?'+new URLSearchParams({sha256:file.body.sha256,artifact:file.digest}));assert.equal(detail.status,200);assert.doesNotMatch(detail.body,/保存到我的原文|id="save-original"/);assert.match(detail.body,/下载原文/);assert.match(detail.body,/署名为团队来源/);
+  const detail=await web.get('/console/knowledge/source?'+new URLSearchParams({sha256:file.body.sha256,artifact:file.digest}));assert.equal(detail.status,200);assert.doesNotMatch(detail.body,/保存到我的原文|id="save-original"/);assert.match(detail.body,/下载原文/);assert.match(detail.body,/确认为团队来源/);
   const raw=await hub.records.artifacts.ingest({bytes:text,mediaType:'text/plain',name:'合成未归档任务原文.txt',origin:{upload:{session:'synthetic-unsaved-capture'}},author:{user:owner.user.id},provenanceType:'declared',visibility:{readers:[owner.user.id],admins:false,packs:[],shareable:false}});
   const unsaved=await web.get('/console/knowledge/source?'+new URLSearchParams({sha256:raw.body.sha256,artifact:raw.digest}));assert.equal(unsaved.status,200);assert.match(unsaved.body,/保存到我的原文…/);assert.match(unsaved.body,/id="save-original"/);
  }finally{await hub.close();}

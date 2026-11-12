@@ -22,9 +22,9 @@ test('sync Inspector and Dialogs preserve precheck, actual mode, one-time purge 
  const fields=Object.fromEntries(['csrf','epoch','expected_state','operation_id','check'].map(key=>[key,hidden(preview.body,key)]));
  const refused=await browser.post('/console/knowledge/do/sync-mode',{...fields,mode:'local'});assert.equal(refused.status,400);assert.equal((await api.state(owner.principal)).mode,'hub');
  const changed=await browser.post('/console/knowledge/do/sync-mode',{...fields,mode:'local',confirm_purge:'true'});assert.equal(changed.status,303);assert.equal(changed.headers.location,'/console/knowledge?scope=personal&sync=settings');
- const result=await browser.get(String(changed.headers.location));assert.match(result.body,/data-toast-success[^>]*>同步方式：仅保存在本机/);assert.match(result.body,/id="sync-resume" role="dialog"/);assert.doesNotMatch(result.body,/合成不公开标题|合成不公开正文/);assert.deepEqual(wordingProblems(result.body),[]);
- const refreshed=await browser.get(String(changed.headers.location));assert.doesNotMatch(refreshed.body,/<div[^>]+data-toast-success/);assert.match(refreshed.body,/仅保存在本机/);
- const detail=await admin.get('/console/team/'+owner.user.id);assert.match(detail.body,/<aside class="ch-inspector"/);assert.match(detail.body,/同步方式/);assert.match(detail.body,/仅保存在本机/);assert.match(detail.body,/上次同步/);assert.doesNotMatch(detail.body,/合成不公开标题|合成不公开正文/);assert.deepEqual(wordingProblems(detail.body),[]);
+ const result=await browser.get(String(changed.headers.location));assert.match(result.body,/data-toast-success[^>]*>同步方式：仅保存在客户端设备/);assert.match(result.body,/id="sync-resume" role="dialog"/);assert.doesNotMatch(result.body,/合成不公开标题|合成不公开正文/);assert.deepEqual(wordingProblems(result.body),[]);
+ const refreshed=await browser.get(String(changed.headers.location));assert.doesNotMatch(refreshed.body,/<div[^>]+data-toast-success/);assert.match(refreshed.body,/仅保存在客户端设备/);
+ const detail=await admin.get('/console/team/'+owner.user.id);assert.match(detail.body,/<aside class="ch-inspector"/);assert.match(detail.body,/同步方式/);assert.match(detail.body,/仅保存在客户端设备/);assert.match(detail.body,/上次同步/);assert.doesNotMatch(detail.body,/合成不公开标题|合成不公开正文/);assert.deepEqual(wordingProblems(detail.body),[]);
  assert.equal((await reader.get('/console/team/'+owner.user.id)).status,404);
  const resume=Object.fromEntries(['csrf','epoch','expected_state','operation_id'].map(key=>[key,hidden(refreshed.body,key)]));
  assert.equal((await browser.post('/console/knowledge/do/sync-resume',resume)).status,303);

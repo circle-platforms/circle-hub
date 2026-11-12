@@ -183,7 +183,8 @@ test('a refused or failed change writes no record, and a failing record write un
   const invitations = (await db.query('SELECT * FROM invitations ORDER BY id')).rows;
   const users = (await db.query('SELECT * FROM users ORDER BY id')).rows;
   const count = (await records(kit)).length;
-  // On the test's clock: the invitation above expires a day after it, and an expired one never reaches the record write.
+  // On the world's clock: on the wall clock the invitation made at the world's time would have
+  // expired a day later, and taking it would refuse before it reached the record write.
   const failing = new PgPrincipals(db, now, { put: async () => { throw new Error('synthetic record failure'); } });
   await assert.rejects(failing.issueToken(admin, member.id, '失败'), /synthetic record failure/);
   await assert.rejects(failing.revokeToken(admin, live.id), /synthetic record failure/);

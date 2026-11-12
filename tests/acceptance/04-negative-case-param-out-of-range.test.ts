@@ -81,7 +81,7 @@ describe('scenario 4: negative case with out-of-range parameter', () => {
     assert.equal(lastSubmit.acceptance, 'accepted');
 
     // Console HTML renders the run
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(run.run));
   });

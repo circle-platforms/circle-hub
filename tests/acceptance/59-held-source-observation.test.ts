@@ -1,6 +1,6 @@
 // An object whose answer holds unreviewed suspected credentials, through the real read engine and the run engine: the run that
 // only reads ends normally, and what its reader can reach says the object exists and nothing else of the answer, while a named
-// administrator is asked to review it (D05 R[3], decision 149). Synthetic fixtures only.
+// administrator is asked to review it (D05 R[3], decision 152). Synthetic fixtures only.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { ReadManifest } from '../../contracts/src/resources.ts';
@@ -8,6 +8,11 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { BUGS } from '../fixtures/plm/index.ts';
 import { openBed, type Bed } from './support/hub.ts';
 import type { McpClient } from './support/mcp.ts';
+import { withCredentialDetectors } from '../../hub/testing/records.ts';
+
+// Issue 194: new content is no longer held for looking like a credential. This file covers what a held object answers,
+// which records stored under credential-scan@3 still follow, so it turns the detectors on for itself.
+withCredentialDetectors();
 
 const ID = '5151';
 const VALUE = ['Synthetic', 'Held', 'Value', '42'].join('-');

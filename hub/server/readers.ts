@@ -81,13 +81,17 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
     if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
     const run = runOfRecord(record.kind, record.body, record.schema);
     if (run === null) return account.role==='admin';
-    const detail = await runs.getRun(account, run);
-    if (detail === null) return false;
+    // The run header decides visibility and canSeeRun; only a submission read by someone other than its runner needs the receipts.
+    const header = runs.runHeader !== undefined ? await runs.runHeader(account, run) : (await runs.getRun(account, run))?.run ?? null;
+    if (header === null) return false;
     if(record.kind==='request'&&runs.requestReadable&&!await runs.requestReadable(account,record.body as import('../requests/api.ts').RequestBody))return false;
     if(record.kind==='validation_result'&&runs.resultState&&!(await runs.resultState(account,record.body as import('../../contracts/src/validation.ts').ValidationResult)).readable)return false;
-    if(record.kind==='submission'&&detail.run.runner!==account.id&&!detail.submissions.some(row=>row.record===record.digest&&row.result!==null))return false;
-    if(!canSeeRun(account,detail.run)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return false;
-    return canSeeRun(account, detail.run) || record.kind !== 'validation_result' || isObject(record.body) && record.body.acceptance === 'accepted';
+    if(record.kind==='submission'&&header.runner!==account.id){
+      const detail = await runs.getRun(account, run);
+      if(detail===null||!detail.submissions.some(row=>row.record===record.digest&&row.result!==null))return false;
+    }
+    if(!canSeeRun(account,header)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return false;
+    return canSeeRun(account, header) || record.kind !== 'validation_result' || isObject(record.body) && record.body.acceptance === 'accepted';
   };
   return {
     async read(digest): Promise<RecordRead | null> {

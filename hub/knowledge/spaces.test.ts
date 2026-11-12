@@ -1,4 +1,5 @@
 // Space boundaries use synthetic records, a temporary PostgreSQL and the real reference verifier, never an external system.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { GetNodesOutput } from '../../contracts/src/tools.ts';
@@ -42,7 +43,7 @@ test('owners, directory grantees, administrators and revoked readers have indepe
   await spaces.grant(w.user, { path: '/', audience: 'administrators', revoke: true });
   assert.equal(await read(w.admin), null);
 });
-test('source quotes are checked, missing grounds stay unverified and private imports do not grant an administrator access', async (t) => {
+test('source quotes are checked, missing grounds stay unverified and private imports do not grant an administrator access', async (t) => { credentialDetectorsFor(t);
   const w = await makeWorld(postgres);
   t.after(w.close);
   const spaces = w.knowledge.spaces!;

@@ -40,9 +40,8 @@ export function roundOf(detail: { round?: unknown }): number {
   return typeof detail.round === 'number' && Number.isInteger(detail.round) && detail.round >= 1 ? detail.round : 1;
 }
 
-/** Round 1 of a single-round dispatch keeps `dispatch.bytes:<S>:<attempt>`. Later rounds add the round. */
-export function bytesKey(sha: string, round: number, attempt: number, multi: boolean): string {
-  return multi ? `dispatch.bytes:${sha}:${round}:${attempt}` : `dispatch.bytes:${sha}:${attempt}`;
+export function bytesKey(sha: string, round: number, attempt: number, multi: boolean, lineage:string): string {
+  return multi ? `dispatch.bytes:${sha}:${lineage}:${round}:${attempt}` : `dispatch.bytes:${sha}:${lineage}:${attempt}`;
 }
 
 export function roundAllowed(round: number, policy: RoundPolicy): boolean {

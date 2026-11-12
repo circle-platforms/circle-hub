@@ -118,7 +118,7 @@ test('publish rights, publish records by the owner and withdrawal', async (t) =>
   await assert.rejects(kit.authorizations.grant(bob, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.1', bound: nextDigest }), AccessError);
   await assert.rejects(kit.authorizations.grant(admin, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.1', bound: nextDigest }), AccessError);
   await assert.rejects(kit.authorizations.revoke(bob, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.0' }), AccessError);
-  await kit.authorizations.revoke(admin, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.0', note: '下架' });
+  await kit.authorizations.revoke(admin, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.0', note: '退役' });
   assert.equal(await kit.authorizations.isActive('publish', alice.id, 'case-review@1.0.0'), false);
   await kit.authorizations.revokePublishRight(admin, alice.id);
   assert.equal(await kit.authorizations.canPublish(alice.id), false);
@@ -205,7 +205,7 @@ test('a publication needs the publish right, a SHA-256 bound and the pack owner;
   assert.equal(await a.isPublished('case-review@3.0.0'), false);
   assert.equal(await a.isPublished('not a version'), false);
   // Withdrawn by an admin: not published, and an admin's withdrawal under another subject changes nothing for the owner.
-  await a.revoke(admin, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.0', note: '下架' });
+  await a.revoke(admin, { permission: 'publish', subject: alice.id, object: 'case-review@1.0.0', note: '退役' });
   assert.equal(await a.publication('case-review@1.0.0'), null);
   await a.revoke(admin, { permission: 'publish', subject: bob.id, object: 'case-review@1.1.0' });
   assert.equal(await a.isPublished('case-review@1.1.0', v2), true);

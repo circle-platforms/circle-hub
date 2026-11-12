@@ -1,4 +1,5 @@
 // Sharing tests use only synthetic observed captures and temporary records, including legacy untrusted verification flags.
+import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { SpaceEntryBody, SpaceVersionBody } from '../../contracts/src/spaces.ts';
@@ -64,7 +65,7 @@ async function claimedEntry(w:Awaited<ReturnType<typeof makeWorld>>,changes:Part
   return {root:root.digest,entry:body.entry};
 }
 
-test('sharing rechecks missing references, exact quotations and credentials rather than trusting saved verification',async t=>{
+test('sharing rechecks missing references, exact quotations and credentials rather than trusting saved verification',async t=>{ credentialDetectorsFor(t);
   for(const [which,code] of [['missing','SHARE_GROUND_UNRESOLVED'],['quote','SHARE_QUOTE_MISMATCH'],['credential','SHARE_CREDENTIALS']] as const){
     const w=await makeWorld(postgres);t.after(w.close);const source=await observed(w);
     const entry=await claimedEntry(w,which==='credential'?{content:{kind:'observation',statement:'DB_PASSWORD=hunter22x',data:{},applicability:null}}:{grounds:[{reference:'src:'+(which==='missing'?'a'.repeat(64):source.body.sha256),quotation:which==='quote'?'每次保留三份':'每次保留两份'}]});
@@ -127,7 +128,7 @@ test('a new shared revision records a withdrawn predecessor without undoing its 
   assert.deepEqual(await spaces.withdrawnGrounds([shared.reference],w.outsider),[shared.reference]);
 });
 
-test('team destination paths are scanned and credential-bearing targets never enter refusal receipts',async t=>{
+test('team destination paths are scanned and credential-bearing targets never enter refusal receipts',async t=>{ credentialDetectorsFor(t);
   const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entry=await verified(w);
   await spaces.ensure(w.user,'team');
   const before=(await spaces.current('team'))!.root,secret='hunter22x',team_path='/DB_PASSWORD='+secret;

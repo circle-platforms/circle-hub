@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../testing/records.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 // Regression tests for the findings of the milestone 2 review of this package, one scenario per finding: a list producer
 // broken for every document, failures that are not memoized, too many documents skipped or isolated, a document that times
@@ -354,7 +355,7 @@ describe('index keys from data values (finding: __proto__)', () => {
 });
 
 describe('credential findings an administrator accepted (finding: every view over the entry is refused)', () => {
-  test('views retain covered entries and recheck the acceptance even with a warm cache', async (t) => {
+  test('views retain covered entries and recheck the acceptance even with a warm cache', async (t) => { credentialDetectorsFor(t);
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
     const ids = documents(w, 1, 3);
     w.external.set(ids[1], { bytes: mindMap({ id: 'd2', module: 'M2' }, [{ id: 'd2-c1', text: '[cmd: system reboot] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
@@ -395,7 +396,7 @@ describe('credential findings an administrator accepted (finding: every view ove
   });
 });
 
-test('a view retains covered text while omitting novel text even if another unrelated source accepted it', async t => {
+test('a view retains covered text while omitting novel text even if another unrelated source accepted it', async t => { credentialDetectorsFor(t);
   const known = 'FtpSynthetic7779', novel = 'FtpSynthetic9993';
   const cases = CASES_SOURCE.replace('statement: node.text +',`statement: (data.id === 'd1-c1' ? 'invented password = ${novel}' : node.text) +`);
   const w = await world(t,[DEFAULT_PRODUCERS[0],casesProducer()],{pack:{functions:{'cases.ts':cases}}});
@@ -665,7 +666,7 @@ describe('views cut over the byte budget (findings: index estimate below the rea
     assert.deepEqual(cut.entries[digest], all.entries[digest]);
   });
 });
-test('a complete accepted scan covers credential-bearing index keys and all entries beyond the old display cap', async t => {
+test('a complete accepted scan covers credential-bearing index keys and all entries beyond the old display cap', async t => { credentialDetectorsFor(t);
   const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:5})]);
   const ids:string[]=[];
   for(let d=0;d<5;d++) {
@@ -698,7 +699,7 @@ test('a complete accepted scan covers credential-bearing index keys and all entr
 // Inject two single-hit undercounts only into the public per-part estimate. The real private ingest
 // scanner and coverage assessment still run, so this exercises an actual truncated
 // stored answer and the single safe retry, rather than fabricating an ingest receipt.
-test('the private whole-answer scan verifies covered content beyond the old cap despite a public estimate undercount', async t => {
+test('the private whole-answer scan verifies covered content beyond the old cap despite a public estimate undercount', async t => { credentialDetectorsFor(t);
   const w=await world(t,[DEFAULT_PRODUCERS[0],casesProducer({batch:2})]);
   const ids:string[]=[];
   for (let d=0;d<2;d++) {

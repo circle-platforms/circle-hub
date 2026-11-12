@@ -3,13 +3,14 @@
 // route keeps, generated from it; a kept part held for suspected credentials gives no name, and the reader is told only that
 // the record is not available (D05 R[3]: suspected credentials held is a credential class), never why; the coverage of the
 // read names the response it left out (decision 113). Synthetic stub data only.
+import { credentialDetectorsFor } from '../../../hub/testing/records.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createTestHub } from '../../../hub/server/testing-real.ts';
 import { PLM_BUGS, PLM_PRODUCTS } from '../../../hub/connectors/testing/plm.ts';
 import { newId } from '../../../hub/records/api.ts';
 
-test('a bug read names its opened build when the build record is readable and stays neutral when the record is held', async () => {
+test('a bug read names its opened build when the build record is readable and stays neutral when the record is held', async (t) => { credentialDetectorsFor(t);
   const hub = await createTestHub({ repositoryPacks: ['plm'] });
   try {
     const resource = await hub.addResource({ system_pack: 'plm', name: '合成缺陷资源', environment: 'test', credentials: { username: 'SYNTHETIC_PLM_USER', password: 'SYNTHETIC_PLM_PASSWORD' }, origins: { 'plm-oauth': hub.stubs!.agile.origin, 'plm-api': hub.stubs!.plm.origin }, allow_plaintext: [hub.stubs!.agile.origin, hub.stubs!.plm.origin] });
@@ -71,7 +72,7 @@ test('a bug read names its opened build when the build record is readable and st
   }
 });
 
-test('a bug whose own answer is held tells the reader it exists and asks a named administrator; a list says nothing of what is in it', async () => {
+test('a bug whose own answer is held tells the reader it exists and asks a named administrator; a list says nothing of what is in it', async (t) => { credentialDetectorsFor(t);
   const hit = ['pass', 'word=Zq8-', 'Hunter2-Secret-79'].join('');
   PLM_BUGS['5151'] = { id: '5151', title: '组件升级后报错', status: 'active', openedDate: '2026-02-07 09:00:00', steps: `<p>${hit}</p>` };
   const products = PLM_PRODUCTS.length;

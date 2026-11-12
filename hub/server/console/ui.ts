@@ -17,7 +17,6 @@ export function dot(state: DotState): Html {
  const kind=state==='ok'?'pass':state==='down'?'fail':state==='warn'?'warn':state==='info'?'info':'pending';
  return html`<span class="ch-dot ch-dot--${kind}" aria-hidden="true"></span>`;
 }
-export const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
 
 export interface CardHead {
   title: unknown;
@@ -31,6 +30,17 @@ export interface CardHead {
 }
 
 export const card=panel;
+/** A bordered block of the reorganized pages (decision 151): an optional head, a body and an optional foot. */
+export function box(head:{title:unknown;hint?:string;meta?:unknown;tail?:unknown}|null,body:unknown,options:{flush?:boolean;foot?:unknown}={}):Html{
+ return html`<section class="ch-card">${head?html`<div class="ch-card-head"><h2 class="ch-card-title">${head.hint?tooltip(head.title,head.hint):head.title}</h2>${head.meta===undefined?'':html`<span class="ch-meta">${head.meta}</span>`}${head.tail===undefined?'':html`<span class="ch-card-tail">${head.tail}</span>`}</div>`:''}<div class="ch-card-body"${options.flush?html` data-flush`:''}>${body}</div>${options.foot===undefined?'':html`<div class="ch-card-foot">${options.foot}</div>`}</section>`;
+}
+/**
+ * One figure of a page's summary row. A figure that leads to the list it counts carries a link over the whole tile, named by
+ * `to`: the label, value and note stay separate texts instead of running together as one link text.
+ */
+export function tile(figure:Html,path?:string,to?:string):Html{
+ return html`<div class="ch-card ch-tile">${figure}${path===undefined?'':html`<a class="ch-tile-link" href="${path}" aria-label="${to??''}"></a>`}</div>`;
+}
 export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
  return html`<div class="ch-stat"><span class="ch-stat-label">${options.state?dot(options.state):''}${options.hint?tooltip(label,options.hint):label}</span><span class="ch-stat-value">${value}${options.unit?html`<span class="ch-stat-unit"> ${options.unit}</span>`:''}</span>${options.note?html`<span class="ch-stat-note">${options.note}</span>`:''}</div>`;
 }
@@ -46,10 +56,7 @@ export function button(path: string, text: unknown, options: { primary?: boolean
   return html`<a class="ch-btn ${options.primary ? 'ch-btn--primary' : 'ch-btn--secondary'}" href="${href(path, options.params)}"${options.hint === undefined ? '' : html` title="${options.hint}"`}>${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
 }
 
-/** A card for a capability that is planned and not built: its place is kept, nothing in it pretends to be data. */
-export function plannedCard(title:unknown,text:unknown,_iconName:keyof typeof ICONS='clock'):Html{
- return panel({title,tail:planned(),hint:String(text)},html``);
-}
+export const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
 export const kv=facts;
 export function emptyState(title:unknown,text:unknown,action?:Html):Html{
  return html`<div class="ch-empty"><h2 class="ch-empty-title">${title}</h2><p class="ch-empty-text">${text}</p>${action??''}</div>`;
@@ -68,10 +75,11 @@ export function pills(items: readonly Pill[], label: string): Html {
   return html`<nav class="ch-actions" aria-label="${label}">${items.map((p) => html`<a class="ch-chip" href="${href(p.path, p.params)}"${p.on ? html` aria-current="true"` : ''}>${p.label}${p.count === undefined ? '' : html` <span class="ch-count">${p.count}</span>`}</a>`)}</nav>`;
 }
 
-/** Anchors within the page, as the segmented control of the design. */
-export function seg(items: readonly (readonly [string, unknown])[], label: string): Html {
-  return html`<nav class="ch-seg" aria-label="${label}">${items.map(([anchor, text], i) => html`<a${i === 0 ? html` aria-current="page"` : ''} href="#${anchor}">${text}</a>`)}</nav>`;
+export function pageContents(items:readonly (readonly [string,unknown])[],label:string):Html{
+ return html`<nav class="ch-page-toc" data-page-toc aria-label="${label}"><span class="ch-page-toc-label">本页内容</span><div>${items.map(([anchor,text])=>html`<a href="#${anchor}">${text}</a>`)}</div></nav>`;
 }
+
+/** Anchors within the page, as the segmented control of the design. */
 
 /** The steps of an operation, the current one marked; a step the backend does not have yet is marked as planned. */
 export function stepper(names: readonly (string | readonly [string, true])[], current: number): Html {
@@ -97,9 +105,18 @@ export interface CommandDialog {
 export const commandLink=sharedCommandLink;
 export const commandModal=sharedCommandModal;
 
+/**
+ * Why a value is absent (issue 241): a bare dash does not say whether nothing was recorded, the field does not apply or
+ * there is no data yet. A cell says which; where a more particular fact is known (未报告, 未声明, 无) the cell says that.
+ */
+export const NOT_RECORDED = '未记录';
+export const DOES_NOT_APPLY = '不适用';
+export const NO_DATA_YET = '暂无数据';
+export const NONE = '无';
+
 /** Milliseconds as the design writes durations: 毫秒 below a second, 秒 below a minute, then 分 and 小时. */
 export function duration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '—';
+  if (!Number.isFinite(ms) || ms < 0) return '未知';
   if (ms < 1000) return `${Math.round(ms)} 毫秒`;
   const seconds = ms / 1000;
   if (seconds < 60) return `${seconds.toFixed(1)} 秒`;
@@ -117,7 +134,7 @@ export {fullTime};
 /** The time of day only, for axes and today's lists. */
 export function clock(iso: string | number): string {
   const d = new Date(typeof iso === 'number' ? iso : Date.parse(iso));
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '未知';
   const two = (n: number): string => String(n).padStart(2, '0');
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }

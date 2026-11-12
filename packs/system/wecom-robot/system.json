@@ -1,0 +1,126 @@
+{
+  "schema": "system@1",
+  "title": "企业微信智能机器人",
+  "description": "企业微信智能机器人系统包的只读面：通讯录成员（wecom:user，为请求的外部身份映射提供证据）与应用群会话（wecom:chat）。发送与回调不在路由里：外发按 executor@1 的写声明在部署时登记，长连接回调事件由 bot 宿主处理后再触发这些读取（事件是提示，收到后重读对象）。应答 HTTP 200 带信封 {errcode, errmsg}，errcode 0 为成功；令牌由密钥库保管，按 Bearer 放进请求头。真实企业微信以 GET /cgi-bin/gettoken 用 corpid 与 corpsecret 换 access_token 并放查询参数，现有登录档案只支持 POST 加 JSON 模板，表达不了这一形态，见包 README 的 Needs。本档案只镜像真实系统的形状，全部取值是合成的，未经真实端点核对。",
+  "roles": [
+    {
+      "name": "wecom-api",
+      "description": "企业自建应用与机器人接口的基地址"
+    }
+  ],
+  "auth": {
+    "kind": "static_header",
+    "header": {
+      "name": "Authorization",
+      "scheme": "bearer"
+    },
+    "roles": [
+      "wecom-api"
+    ],
+    "credential": "access_token"
+  },
+  "envelope": {
+    "code": "/errcode",
+    "ok": [
+      0
+    ],
+    "expired": [],
+    "message": "/errmsg"
+  },
+  "routes": [
+    {
+      "id": "member-get",
+      "role": "wecom-api",
+      "method": "GET",
+      "path": "/cgi-bin/user/get",
+      "query": {
+        "type": "object",
+        "properties": {
+          "userid": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_@.-]+$"
+          }
+        },
+        "required": [
+          "userid"
+        ],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 1048576,
+      "timeout_ms": 15000,
+      "read": true,
+      "description": "通讯录成员详情（读接口）"
+    },
+    {
+      "id": "chat-get",
+      "role": "wecom-api",
+      "method": "POST",
+      "path": "/cgi-bin/appchat/get",
+      "body": {
+        "type": "object",
+        "properties": {
+          "chatid": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "chatid"
+        ],
+        "additionalProperties": false
+      },
+      "response": "json",
+      "envelope": true,
+      "max_bytes": 1048576,
+      "timeout_ms": 15000,
+      "read": true,
+      "description": "应用群会话详情（读接口，用 POST）"
+    }
+  ],
+  "reads": [
+    {
+      "name": "member",
+      "external": "wecom:user",
+      "description": "一个通讯录成员：content {userid, name, department, status, mobile, email}，应答没有的字段为 null，不猜；meta {userid, name}。身份映射的回答要落到具名账号，以这条读取的原件为证据。企业微信不认识的成员是确定的缺档（wecom.absent），不是失败，也不报成功",
+      "request": {
+        "route": "member-get",
+        "query": {
+          "userid": "{id}"
+        }
+      },
+      "project": {
+        "module": "functions/wecom.ts",
+        "export": "memberProject"
+      },
+      "max_requests": 1,
+      "absent_codes": [
+        "wecom.absent"
+      ]
+    },
+    {
+      "name": "chat",
+      "external": "wecom:chat",
+      "description": "一个应用群会话：content {chatid, name, owner, users, department}，meta {chatid, name, owner}；owner 与 users 供送达受众核对。未知的群是确定的缺档（wecom.absent）",
+      "request": {
+        "route": "chat-get",
+        "body": {
+          "chatid": "{id}"
+        }
+      },
+      "project": {
+        "module": "functions/wecom.ts",
+        "export": "chatProject"
+      },
+      "max_requests": 1,
+      "absent_codes": [
+        "wecom.absent"
+      ]
+    }
+  ]
+}

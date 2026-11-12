@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../../testing/records.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomBytes } from 'node:crypto';
@@ -9,7 +10,7 @@ import { createResolver, type RunScope } from './exact.ts';
 import type { EngineContext } from './deps.ts';
 import { HubReadFailure } from './retry-read.ts';
 
-test('prefetch and repeated source resolutions recheck current sharing and scan acceptance', async () => {
+test('prefetch and repeated source resolutions recheck current sharing and scan acceptance', async (t) => { credentialDetectorsFor(t);
   const kit = await openTestRecords();
   try {
     const admin = (await kit.principals.bootstrapAdmin('synthetic-admin')).user;

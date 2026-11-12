@@ -5,7 +5,7 @@ import { after, before, test } from 'node:test';
 import { ConflictError, newId, type Principal } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
-import { createRequestService, type RequestBody } from './api.ts';
+import { createRequestService, requestKey, requestKeyOf, type RequestBody } from './api.ts';
 
 let pg: TemporaryPostgres;
 let kit: TestRecordsKit;
@@ -180,4 +180,48 @@ test('a read of a scope gives the requests of those runs and packs and those rec
   assert.deepEqual(records(await writer.within({ records: [outside.digest, answer] })), [outside.digest], 'a named record that is no request is left out');
   assert.equal((await writer.within({ packs: [pack] })).find((view) => view.record === packOnly.digest)?.answered_by, answer);
   assert.deepEqual(await writer.within({}), []);
+});
+
+test('a later result voids waiting requests only, once, and a voided request is neither waiting nor answerable', async () => {
+  const { alice } = await once();
+  const run = newId('run');
+  // Records are addressed by content, time included: a closing record equal in every field to an earlier one is that record.
+  // Two closings of one request by one result are never at the same instant outside a test, so this clock moves.
+  let tick = 0;
+  const service = createRequestService(kit, () => new Date(NOW.getTime() + tick++));
+  const made = [];
+  for (let i = 0; i < 3; i++) made.push(await service.write({ ...fields(alice.id, await sourceRecord(`void-${i}`)), run, missing: `合成缺口：作废第 ${i} 项` }));
+  const answer = await sourceRecord('void-answer');
+  const later = await sourceRecord('void-later-result');
+  await service.answer(made[0]!.digest, answer);
+  assert.equal(await service.supersede(made.map((request) => request.digest), later), 2, 'the answered request is left alone');
+  assert.equal(await service.supersede(made.map((request) => request.digest), await sourceRecord('void-even-later')), 0, 'a voided request keeps what voided it');
+  const listed = new Map((await service.all(run)).map((view) => [view.record, view]));
+  assert.equal(listed.get(made[0]!.digest)!.answered_by, answer);
+  assert.equal(listed.get(made[0]!.digest)!.superseded, undefined, 'an answer is not a voiding');
+  for (const request of made.slice(1)) {
+    const view = listed.get(request.digest)!;
+    assert.equal(view.answered_by, later);
+    assert.equal(view.superseded, true);
+    assert.equal(requestKeyOf(view), requestKey(request.body), 'the listed view still has the key its creation indexed');
+    assert.deepEqual(await service.inspect(request.digest), view, 'one request read alone agrees with the listing');
+  }
+  await assert.rejects(service.answer(made[1]!.digest, answer), ConflictError, 'a voided request takes no answer');
+  await assert.rejects(service.supersede([made[1]!.digest], 'f'.repeat(64)), /作废来源记录不存在/);
+  assert.equal(await service.supersede([], later), 0);
+
+  // The submission that issued them is the result again: voided requests wait again, an answered one does not.
+  const again = await sourceRecord('void-result-again');
+  assert.equal(await service.reinstate(made.map((request) => request.digest), again), 2);
+  assert.equal(await service.reinstate(made.map((request) => request.digest), again), 0, 'a waiting request is not reinstated twice');
+  const back = new Map((await service.all(run)).map((view) => [view.record, view]));
+  assert.equal(back.get(made[0]!.digest)!.answered_by, answer);
+  for (const request of made.slice(1)) {
+    assert.equal(back.get(request.digest)!.answered_by, null);
+    assert.equal(back.get(request.digest)!.superseded, undefined);
+    assert.deepEqual(await service.inspect(request.digest), back.get(request.digest));
+  }
+  assert.equal(await service.supersede([made[1]!.digest], later), 1, 'and it can be voided again');
+  assert.equal((await service.inspect(made[1]!.digest))!.superseded, true);
+  await assert.rejects(service.reinstate([made[1]!.digest], 'f'.repeat(64)), /恢复来源记录不存在/);
 });

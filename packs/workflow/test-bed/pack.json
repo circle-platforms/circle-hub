@@ -57,6 +57,16 @@
       "size": 10335
     },
     {
+      "path": "functions/bed-key.ts",
+      "sha256": "82988d22a439cf39a5da7d88fa040401a678e0acee16f5c9fed85d574198b43c",
+      "size": 740
+    },
+    {
+      "path": "functions/booking.ts",
+      "sha256": "2f841a76c5fb7b1dfcc00d90760a6476552acc11132d3a9b952b21b267a50113",
+      "size": 4475
+    },
+    {
       "path": "functions/check-bed.ts",
       "sha256": "3745672003b8105a3fa9ad795a77a62f7905e28ddeda260ea97a4018bd961502",
       "size": 16554
@@ -83,8 +93,8 @@
     },
     {
       "path": "functions/match.ts",
-      "sha256": "8e116c7e05aa32f576e40ecf3a570f6aeacffde07494d7f41fbd9ed05d7f7b82",
-      "size": 11490
+      "sha256": "2fae122c9b6b063e733ffdccce163e5219d2fc4b2e2f4507081a96672653cffb",
+      "size": 11547
     },
     {
       "path": "functions/ownership.ts",

@@ -53,7 +53,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
       submittedRequest = _args.request;
       const bytes = Buffer.from(String(_args.blob), 'base64'); submitted.push(bytes); submittedSha = sha256Hex(bytes); submittedIds = _args.ids;
       if (_args.digest !== submittedSha) return { ok: false };
-      sawIntentAtSubmit = (await kit.store.getByKey('action', `dispatch.bytes:${submittedSha}:1`)) !== null;
+      sawIntentAtSubmit = (await kit.store.findMany<import('../../records/api.ts').ActionBody>({kind:'action',key:'dispatch.bytes',values:[submittedSha]})).some(row=>row.body.detail.phase==='intent'&&row.body.detail.request_id===submittedRequest);
       if (options.onSubmit) await options.onSubmit();
       if (options.mode === 'disconnect'||options.mode==='disconnect-once'&&!failedSubmit) { failedSubmit=true;res.destroy(); return {}; }
       if (options.mode === 'timeout') await new Promise(resolve => setTimeout(resolve, 80));

@@ -1,5 +1,4 @@
 import {tooltip} from './presentation.ts';
-import {dot} from './ui.ts';
 import {stat,facts,technicalCode,technical} from './presentation.ts';
 // 设置 (the design canvas's Admin board): members and the Circles connected with their tokens, credentials and the Hub's
 // state for administrators; a member sees their own Circles and the Hub's state. The console runs only adding a member
@@ -10,14 +9,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
-import type { TokenInfo, User } from '../../records/api.ts';
+import { maskPlaceholder, type TokenInfo, type User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { commands } from './commands.ts';
 import { connectedClients, clientLabel } from './circles.ts';
 import { CLIENT_COLUMNS, clientRow } from './connections.ts';
-import { code, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
+import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './pages.ts';
-import { button, card, chip, commandLink, commandModal, duration, kv, sectionHead, seg, when, type CommandDialog } from './ui.ts';
+import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
 /** What the console knows about the process serving it, for the Hub's state. */
 export interface HubFacts {
@@ -71,7 +70,7 @@ const shortPrint = (fingerprint: string): string => {
 /** Steps to trust this Hub's certificate authority in a browser, per operating system of the reader's computer. */
 export function trustSteps(): Html {
   return html`<details><summary>浏览器信任步骤（macOS / Linux / Windows）</summary>
-<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到本机，按系统导入，并在客户端的信任证书设置中填写路径。')}</p>
+<p>${tooltip('颁发机构证书','把 Hub 数据文件夹中的 tls/ca.crt 复制到装有客户端的电脑，按系统导入，并在客户端的信任证书设置中填写路径。')}</p>
 <ol class="ch-meta">
 <li><b>macOS</b>：双击证书加入“钥匙串访问”的“系统”钥匙串，打开证书，在“信任”中将“使用此证书时”设为“始终信任”。</li>
 <li><b>Linux</b>：复制到 ${code('/usr/local/share/ca-certificates/circle-hub.crt')}，执行 ${code('sudo update-ca-certificates')}；Firefox 在“设置 → 隐私与安全 → 证书”中导入。</li>
@@ -117,22 +116,22 @@ async function hubState(ctx: PageContext): Promise<Html> {
   const now = (ctx.deps.now?.() ?? new Date()).getTime();
   const cert = certificateFacts(facts?.certificate ?? null, now);
   const authority = cert === null ? null : await authorityFingerprint(ctx.deps.config.dataDir);
-  const service = card({ title: '服务', lead: html`${dot('ok')}`, tail: chip('运行中', 'pass') }, kv([
-    ['版本', facts?.release ? code(facts.release) : '未记录'],
-    ['已运行', facts === undefined ? '—' : duration(now - facts.startedAt.getTime())],
+  const service = box({ title: '服务', tail: chip('运行中', 'pass') }, kv([
+    ['Hub 版本', facts?.release ? code(facts.release) : '未记录'],
+    ['已运行', facts === undefined ? '未记录' : duration(now - facts.startedAt.getTime())],
     ['访问地址', code(originOf(ctx))],
   ]));
   const certificate = cert === null
-    ? card({ title: '证书',hint:'启用内置 HTTPS 后显示证书指纹与有效期。', lead: html`${dot('idle')}`, tail: chip('未启用 HTTPS', 'unchecked') }, html`<p class="ch-meta">内置 HTTPS 未启用</p>`)
-    : card({ title: '证书', lead: html`${dot(cert.daysLeft > 30 ? 'ok' : 'warn')}`, meta: `剩余 ${cert.daysLeft} 天` }, html`${kv([
+    ? box({ title: '证书',hint:'启用内置 HTTPS 后显示证书指纹与有效期。', tail: chip('未启用 HTTPS', 'unchecked') }, html`<p class="ch-meta">内置 HTTPS 未启用</p>`)
+    : box({ title: '证书', tail: chip(`剩余 ${cert.daysLeft} 天`, cert.daysLeft > 30 ? 'pass' : 'incomplete') }, html`${kv([
         ['颁发机构指纹', authority === null ? '未读到颁发机构证书' : html`${technicalCode(authority)}`],
         ['服务器证书指纹', html`${technicalCode(cert.fingerprint)}`],
         ['有效期至', when(cert.validTo)],
       ])}${ctx.admin ? trustSteps() : ''}`);
   const storage = await storageFacts(ctx);
-  const database = card({ title: '数据库', lead: html`${dot('ok')}`, meta: 'PostgreSQL' }, kv([
+  const database = box({ title: '数据库', meta: 'PostgreSQL' }, kv([
     ['大小', storage.database_bytes === null ? '暂不可读' : sizeText(storage.database_bytes)],
-    ['连接', '仅本机连接，未开放网络端口'],
+    ['连接', '仅服务器本地连接，未开放网络端口'],
     ['记录', '仅追加，已写入的记录不可修改'],
   ]));
   const backups = storage.backups;
@@ -141,8 +140,9 @@ async function hubState(ctx: PageContext): Promise<Html> {
     : backups.count === 0
       ? html`<p class="ch-meta">尚无备份。</p>`
       : kv([['最近备份', backups.latest_at === null ? '时间未读到' : when(backups.latest_at)], ['份数', `${backups.count} 份`]]);
-  const backup = card({ title: '备份',hint:'备份在 Hub 所在的主机上执行。', lead: html`${dot(backups !== null && backups.count > 0 ? 'ok' : 'idle')}` }, html`${backupState}${ctx.admin ? html`<div class="ch-actions">${commandLink(commands.backup(), '备份命令')}</div>` : ''}`);
-  return html`<section class="ch-section" data-columns="4">${service}${certificate}${backup}${database}</section>`;
+  const backup = box({ title: '备份',hint:'备份在运行 Hub 的服务器上执行。', ...(ctx.admin ? { tail: commandLink(commands.backup(), '备份命令…', 'ch-btn ch-btn--ghost') } : {}) }, backupState);
+  // Decision 151, step 8: four cards, two a row, each with its state at the head. They were four bare columns.
+  return html`<section class="ch-section" data-columns="2" data-hub-state>${service}${certificate}${backup}${database}</section>`;
 }
 
 /** Active tokens of a user: each one is a Circle (or a spare console login) that can connect. */
@@ -154,7 +154,7 @@ function lastUse(tokens: readonly TokenInfo[]): string | null {
 }
 
 export interface Secrets {
-  rows: { name: string; consumers: string[]; by: string; at: string; withdrawn: boolean }[] | null;
+  rows: { name: string; consumers: string[]; uses: { definition: string; item: string }[]; by: string; at: string; withdrawn: boolean }[] | null;
   /** The text of `secret list` when the records have no variables port (or it failed). */
   text: CommandRun | null;
 }
@@ -170,6 +170,7 @@ export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Prom
         rows.push({
           name: named.name,
           consumers: (definition?.consumers ?? []).map((consumer) => `${consumer.definition} · ${consumer.item}`),
+          uses: definition?.consumers ?? [],
           by: await ctx.userName(named.decision.body.decided_by),
           at: named.decision.body.decided_at,
           withdrawn: named.decision.body.revoked,
@@ -183,8 +184,35 @@ export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Prom
   return { rows: null, text: run === null ? null : await run(['secret', 'list']) };
 }
 
+/**
+ * The masking dictionary, for an administrator (B02 R[11], decision 159): the rules in force, what each puts in place of a
+ * match, and the commands that change them. A pattern is not a secret and is shown; nothing a rule matched is kept anywhere.
+ */
+async function maskingCard(ctx: PageContext, dialogs: CommandDialog[]): Promise<Html | null> {
+  const store = ctx.deps.records.masking;
+  if (store === undefined) return null;
+  const set = commands.maskSet();
+  dialogs.push(set);
+  const hint = '读业务系统的文本内容时，命中规则的片段先换成方括号里的文字再保存；包函数、模型和页面看到的都是替换后的内容，被替换的值 Hub 不保存。只处理文本，表格、压缩包等文件原样保存。成员上传和写入的内容不替换。';
+  let body: Html;
+  try {
+    const state = await store.list(ctx.principal);
+    const removals = state.rules.map((rule) => commands.maskRemove(rule.name));
+    dialogs.push(...removals);
+    body = table(['规则', '替换成', '模式', '操作'], state.rules.map((rule, index) => [rule.name, maskPlaceholder(rule.label), html`${code(rule.pattern)}${rule.ignore_case ? html` <span class="ch-meta">不区分大小写</span>` : ''}`, commandLink(removals[index], '删除…', 'ch-btn ch-btn--sm ch-btn--ghost')]), { title: '还没有遮盖规则', text: '业务系统的内容原样保存。添加规则后，命中的密码、密钥等片段在保存前被替换。' });
+  } catch {
+    body = html`<p class="error">遮盖字典暂不可用</p>`;
+  }
+  return html`<section id="masking">${box({ title: '遮盖字典', hint, tail: commandLink(set, '添加规则…', 'ch-btn ch-btn--sm ch-btn--secondary') }, body, { flush: true })}</section>`;
+}
+
 export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
   return ctx.admin ? adminSettings(ctx, run) : memberSettings(ctx);
+}
+
+/** The two tabs of the settings page (decision 151, step 8): the first is the reader's own list, the second the Hub's state. */
+function settingsTabs(first: string, hub: boolean, count?: number): Html {
+  return html`<nav class="ch-seg" aria-label="设置内容" data-settings-tabs><a href="/console/settings"${hub ? '' : html` aria-current="page"`}>${first}${count === undefined ? '' : html` <span class="ch-count">${count.toLocaleString('en-US')}</span>`}</a><a href="${href('/console/settings', { tab: 'hub' })}"${hub ? html` aria-current="page"` : ''}>Hub 状态</a></nav>`;
 }
 
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
@@ -192,6 +220,11 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   const secrets = await secretsOf(ctx, run);
   const secretName=ctx.url.searchParams.get('secret'),selectedSecret=secrets.rows?.find(secret=>secret.name===secretName);
   if(secretName&&!selectedSecret)return neutralPage(ctx);
+  const hub = !selectedSecret && ctx.url.searchParams.get('tab') === 'hub';
+  // A credential says which system uses it by the system's name; the system's identifier stays in the pane's technical details.
+  const systems = new Map<string, string>();
+  if (!hub && secrets.rows?.some((secret) => secret.uses.length > 0)) try { for (const resource of await ctx.deps.resources.list(ctx.principal)) systems.set(resource.id, resource.name); } catch { /* The identifiers are shown instead. */ }
+  const use = (consumer: { definition: string; item: string }) => `${systems.get(consumer.definition) ?? consumer.definition} · ${consumer.item}`;
   let secretBody: Html;
   if (secrets.rows !== null) {
     const rows = secrets.rows.map((secret) => {
@@ -200,51 +233,52 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
       if (!secret.withdrawn&&secret.name===secretName) dialogs.push(set, unset);
       return [
         link('/console/settings',secret.name,{secret:secret.name}),
-        secret.consumers.length === 0 ? '—' : html`${secret.consumers.map((consumer) => html`<div>${consumer}</div>`)}`,
+        secret.uses.length === 0 ? '未被使用' : html`${secret.uses.map((consumer) => html`<div>${use(consumer)}</div>`)}`,
         secret.by, when(secret.at),
         secret.withdrawn ? chip('已吊销', 'unchecked') : html`<span class="ch-meta">•••••••• 已加密</span>`,
 
       ];
     });
-    secretBody = table(['名称', '用于', '设置人', '更新时间', '内容'], rows, '尚无凭据：接入业务系统时设置',undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
+    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
     secretBody = html`<p class="error">凭据列表暂不可用</p>`;
   } else if (secrets.text.code === 0) {
     secretBody = secrets.text.stdout.length > 0 ? pre(secrets.text.stdout.join('\n')) : html`<p class="empty">尚无凭据：接入业务系统时设置</p>`;
   } else {
-    secretBody = html`<pre class="error">${[...secrets.text.stdout, ...secrets.text.stderr].join('\n')}</pre>`;
+    secretBody = html`<pre class="error"><code>${[...secrets.text.stdout, ...secrets.text.stderr].join('\n')}</code></pre>`;
   }
-  const origin = originOf(ctx);
+  // The masking dictionary stands under the credentials (B02 R[11]): what the Hub replaces in a business system's answer.
+  const masking = hub ? null : await maskingCard(ctx, dialogs);
+  // The host operations and their dialogs are the Hub tab's; the credential tab carries no dialog nothing on it opens.
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
-  dialogs.push(...stopping);
-  const body = html`${sectionHead('凭据', undefined, undefined, 'secrets', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在 Hub 所在主机上执行')}
-${card(null, secretBody)}
-${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
-${await hubState(ctx)}
-${sectionHead('需停机或在主机上执行的操作', undefined, undefined, undefined, '控制台不执行这些操作；在 Hub 所在主机上执行')}
-${card({title:'主机操作',hint:'部署与回滚在 Hub 主机上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}
-${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}`;
+  if (hub) dialogs.push(...stopping);
+  const content = hub
+    ? html`${await hubState(ctx)}
+${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
+    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${masking ?? ''}`;
+  const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
+${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
   return {
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
-      hint: '凭据与 Hub 状态；需人工处理的事项在 Hub 所在主机上完成',
+      hint: '凭据与 Hub 状态；需人工处理的事项在运行 Hub 的服务器上完成',
 
-    }),pageLayout(html`${seg([['secrets','凭据'],['hub','Hub 状态']],'设置分区')}${body}`,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.consumers.join('、')||'—'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:html`<h2 class="ch-panel-title">设置</h2>${stat('凭据项',secrets.rows?.length??'—')}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用'],['已运行',ctx.hub?duration(Date.now()-ctx.hub.startedAt.getTime()):'—']])}`})),
+    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'未被使用'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };
 }
 
 async function memberSettings(ctx: PageContext): Promise<PageResult> {
+  const hub = ctx.url.searchParams.get('tab') === 'hub';
   const tokens = await ctx.deps.records.principals.tokens(ctx.principal.id);
-  const clients = await connectedClients(ctx.deps.records, tokens.filter(token => token.revoked_at === null).map(token => ({ token, owner: ctx.principal.name })));
+  const clients = hub ? [] : await connectedClients(ctx.deps.records, tokens.filter(token => token.revoked_at === null).map(token => ({ token, owner: ctx.principal.name })));
   const rows = clients.map(client => [...clientRow(client, clientLabel(client)), '由管理员断开']);
-  const body = html`<section class="ch-section" data-columns="2" id="mine">
+  const content = hub ? await hubState(ctx) : html`<section class="ch-section" data-columns="2" id="mine">
 ${liveModule('my-circles', ['member.connected'], card({ title: ctx.principal.name, lead: html`<span class="ch-avatar" aria-hidden="true">${[...ctx.principal.name][0] ?? ''}</span>`, tail: chip(uiLabelOf('permission_role', ctx.principal.role), 'plain') }, html`${sectionHead('我的客户端', undefined, undefined, undefined, '每台设备上的客户端独立连接；名称和版本照客户端报的写；断开由管理员执行')}${table([...CLIENT_COLUMNS,'操作'], rows, { title: '尚无已连接的客户端', text: '按“连接新的客户端”的配置连接后，客户端列在这里。' })}`))}
-${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote">${circleEntry(originOf(ctx), false)}</pre>`)}
-</section>
-${sectionHead('Hub 状态', undefined, undefined, 'hub', '服务、证书、备份与数据库')}
-${await hubState(ctx)}`;
-  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(html`${seg([['mine','我的客户端'],['hub','Hub 状态']],'设置分区')}${body}`,{inspector:html`<h2 class="ch-panel-title">我的客户端</h2>${stat('已连接',rows.length)}${card({title:'最近使用'},html`<p>${when(lastUse(active(tokens)))}</p>`)}${facts([['服务','运行中'],['内置 HTTPS',ctx.hub?.certificate?'已启用':'未启用']])}`})) };
+${card({ title: '连接新的客户端', meta: 'MCP 标准连接确认',hint:'下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。浏览器确认身份后允许连接；其他设备可使用管理员签发的邀请码。' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>`)}
+</section>`;
+  const body = html`<div class="ch-stack" data-settings>${settingsTabs('我的客户端', hub, tokens.filter(token => token.revoked_at === null).length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'mine'}">${content}</div></div>`;
+  return { status: 200, body: page(ctx.chrome('设置', { active: 'settings', hint: '我的客户端与 Hub 状态',  }),pageLayout(body,{inspector:null})) };
 }
 
 /** The old management pages of decision 122 land here; a member gets the neutral page as before. */

@@ -90,7 +90,7 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     assert.equal(submitCall.acceptance, 'accepted');
 
     // Console HTML displays the ~150 items and delivered count
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(String(run.items.length)));
     assert.ok(page.body.includes(run.run));

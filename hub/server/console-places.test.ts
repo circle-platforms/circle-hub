@@ -1,3 +1,4 @@
+import { ACCEPTED_PRODUCER_NOTE, DONE_RULE_NOTE } from './console/pack-display.ts';
 import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // The seven places of the redesigned console (proposal decisions 3 and 6 of 2026-10-31) over HTTP with the fake services:
@@ -146,7 +147,7 @@ describe('the eight places', () => {
 });
 
 describe('tasks', () => {
-  test('the list filters by task result, the detail shows the execution process above the full record', async () => {
+  test('the list filters by task result, the detail opens with the result and keeps the rest in tabs', async () => {
     const user = await member();
     const run = await runWithResult(user);
     const session = await signIn(user.token);
@@ -159,10 +160,23 @@ describe('tasks', () => {
     const other = TASK_RESULT.find((r) => r !== result)!;
     assert.ok(!(await get(`/console/runs?result=${other}`, session)).body.includes(`/console/runs/${run}"`), 'another result filters it out');
     assert.equal((await get('/console/runs?result=bogus', session)).status, 400);
+    // Decision 151: the page opens with the result and what still waits for someone; the rest is one of six tabs.
     const detail = await get(`/console/runs/${run}`, session);
-    for (const text of ['执行过程', '工具调用', 'Hub 校验', '任务结果', '完整记录', '提交结果', '启动任务']) assert.ok(detail.body.includes(text), text);
-    assert.ok(detail.body.indexOf('执行过程') < detail.body.indexOf('完整记录'), 'the process comes first');
-    assert.match(detail.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
+    const outcome = detail.body.indexOf('data-task-outcome');
+    assert.ok(outcome >= 0, 'the page has a result block');
+    assert.ok(outcome < detail.body.indexOf('data-task-tabs'), 'the result comes before the tabs');
+    for (const text of ['任务结果', '还需处理', '验收要求', '条目', '请求', '过程', '来源', '技术信息']) assert.ok(detail.body.includes(text), text);
+    assert.match(detail.body, /data-task-tab="requirements"/);
+    assert.doesNotMatch(detail.body, /data-timeline|<aside class="ch-inspector"/, 'the first tab draws no process and the page has no side pane');
+    const process = await get(`/console/runs/${run}?tab=process`, session);
+    for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '提交与回执', '调用日志']) assert.ok(process.body.includes(text), text);
+    assert.match(process.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
+    assert.ok(process.body.indexOf('data-task-outcome') < process.body.indexOf('data-timeline'), 'the result stays above every tab');
+    assert.match(process.body, /<a href="\/console\/runs\/[^"]+\?tab=process" aria-current="page">过程/);
+    const items = await get(`/console/runs/${run}?tab=items`, session);
+    assert.equal((items.body.match(/id="task-evidence"/g) ?? []).length, 1, 'one evidence section, in the 条目 tab');
+    // The old address of the full record opens the technical information.
+    assert.match((await get(`/console/runs/${run}?view=record`, session)).body, /data-task-tab="record"/);
   });
 
   test('a task result follows display rule 20: held, incomplete and rejected first, unknown never passed', () => {
@@ -205,14 +219,14 @@ describe('operations and commands', () => {
 
   test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
     const admin=await signIn(server.admin.token);
-    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections',admin);
+    const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections?tab=packs',admin);
     assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/packs\/line-a"/);
     assert.ok(knowledge.body.includes(uiLabelOf('pack_kind','product')));assert.match(knowledge.body,/合成产品线/);
-    assert.match(connections.body,/id="system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
+    assert.match(connections.body,/id="live-system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
     assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
     for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
       const detail=await get('/console/packs/'+id,admin);
-      assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`>${place}</a> › <a[^>]*>${uiLabelOf('pack_kind',kind)}</a> ›`));
+      assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`<ol><li><a[^>]*>${place}</a></li><li><a[^>]*>${uiLabelOf('pack_kind',kind)}</a></li><li><a href="" aria-current="page">`));
       const user=await member(), session=await signIn(user.token);
       assert.equal((await get('/console/packs/'+id,session)).status,404);
     }
@@ -235,34 +249,64 @@ describe('operations and commands', () => {
     server.fakes.workflows.packs.push(...sources);
     t.after(() => { for (const source of sources) server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(source), 1); });
     const admin = await signIn(server.admin.token);
-    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections', sources[1], 'retired']] as const) {
+    for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections?tab=packs', sources[1], 'retired']] as const) {
       const body = (await get(path, admin)).body;
       const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
       assert.ok(row);
       assert.ok(row.includes(uiLabelOf('pack_status', state)));
-      assert.match(row, /<td>—<\/td>/, 'no product line or business system is invented');
+      assert.match(row, /<td>(未声明|尚未接入)<\/td>/, 'no product line or business system is invented, and the cell says why it is empty');
     }
   });
 
-  test('workflows and generic skills have separate lists and acceptance stays above detail controls without a node graph', async t => {
+  test('workflows and skills have separate places, and acceptance stays above detail controls without a node graph', async t => {
     const skill={id:'synthetic-skill',version:'1.0.0',kind:'skill' as const,title:'合成通用技能',description:'合成说明',digest:'f'.repeat(64),owner:null,summary:null};
     server.fakes.workflows.packs.push(skill);
     t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
     const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
-    assert.equal(list.status,200);assert.match(list.body,/class="ch-list"/);
-    const workflow=/<section class="ch-section" id="team-workflow" aria-label="工作流">([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    const skillList=await get('/console/skills',admin);assert.equal(skillList.status,200);assert.doesNotMatch(list.body,/id="team-skill"/);
-    const skills=/<section class="ch-section" id="team-skill" aria-label="通用技能">([\s\S]*?)<\/section>/.exec(skillList.body)?.[1];
-    assert.ok(workflow&&skills);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);
-    assert.ok(!workflow.includes(skill.title));assert.ok(skills.includes(skill.title));
-    assert.match(workflow,/title="规定做法与验收要求；由客户端执行，Hub 按验收要求判定结果"/);
-    assert.match(skills,/title="只规定做法，没有验收要求"/);
+    assert.equal(list.status,200);
+    // Decision 151, step 6: the place is one table; under 全部 a column says whose each row is.
+    const workflow=/<section class="ch-section" id="workflow" aria-label="工作流"[^>]*>([\s\S]*?)<\/section>/.exec(list.body)?.[1];
+    assert.ok(workflow);assert.match(workflow,/<table class="ch-table" data-view="packs">/);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);assert.match(workflow,/data-pack-scope="team"/);
+    assert.doesNotMatch(list.body,/class="ch-empty"/,'a group with nothing in it takes no room');
+    // Decision 151: the workflows place lists workflows only; skills have their own place.
+    assert.doesNotMatch(list.body,/id="skill"/);assert.ok(!list.body.includes(skill.title));
+    assert.match(list.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
+    const skills=await get('/console/skills',admin);
+    assert.equal(skills.status,200);
+    const group=/<section class="ch-section" id="skill" aria-label="通用技能"[^>]*>([\s\S]*?)<\/section>/.exec(skills.body)?.[1];
+    assert.ok(group);assert.ok(group.includes(skill.title));assert.match(group,/href="\/console\/skills\/synthetic-skill\?scope=all"/);
+    assert.doesNotMatch(skills.body,/id="workflow"/);assert.doesNotMatch(skills.body,/href="\/console\/packs\/review/);
+    assert.match(skills.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/);
+    assert.match(skills.body,/<h1 class="ch-title">[\s\S]*?技能/);
+    // What each kind is for is the hint of its place's title: one place, one kind, one purpose.
+    assert.match(list.body,/要完成一项有验收要求的任务，选择工作流/);assert.doesNotMatch(list.body,/要让客户端遵循一套通用做法/);
+    assert.match(skills.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);assert.doesNotMatch(skills.body,/要完成一项有验收要求的任务/);
+    assert.doesNotMatch(workflow,/title="规定做法与验收要求/);
     assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
+    // A skill's page answers under either path and stands in the skills place; its trail does not repeat the kind.
+    for(const path of ['/console/skills/synthetic-skill','/console/packs/synthetic-skill']){
+      const page=await get(path,admin);assert.equal(page.status,200,path);
+      assert.match(page.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/,path);
+      assert.match(page.body,/<nav class="ch-crumbs" aria-label="位置"><ol><li><a href="\/console\/skills">技能<\/a><\/li><li><a href="" aria-current="page">合成通用技能<\/a><\/li><\/ol><\/nav>/,path);
+    }
     const detail=await get('/console/packs/review',admin);
+    assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
+    // A pack is a page of its own: its name is the title, no pane stands beside it, and its content is in tabs.
+    assert.match(detail.body,/<h1 class="ch-title">[\s\S]*?合成评审/);assert.doesNotMatch(detail.body,/<aside class="ch-inspector"/);
+    assert.deepEqual([...(/<nav class="ch-seg" aria-label="工作流内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(detail.body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]),
+      [['/console/packs/review',true,'验收要求'],['/console/packs/review?tab=checks',false,'检查项'],['/console/packs/review?tab=versions',false,'版本记录'],['/console/packs/review?tab=technical',false,'技术信息']]);
+    // Identifiers, digests and version numbers stand on the last tab only.
+    assert.doesNotMatch(detail.body,/<code>review@1\.0\.0<\/code>|内容哈希/);
+    const technical=await get('/console/packs/review?tab=technical',admin);assert.match(technical.body,/<code>review@1\.0\.0<\/code>/);assert.match(technical.body,/内容哈希/);
+    const history=await get('/console/packs/review?tab=versions',admin);assert.match(history.body,/当前显示/);assert.doesNotMatch(history.body,/这里显示的是较早的版本/);
+    const skillPage=await get('/console/skills/synthetic-skill',admin);
+    assert.deepEqual([...(/<nav class="ch-seg" aria-label="通用技能内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(skillPage.body)?.[1]??'').matchAll(/<a href="[^"]+"(?: aria-current="page")?>([^<]+)/g)].map(match=>match[1].trim()),['版本记录','技术信息'],'a skill declares no acceptance');
+    // Issue 229: the abstract column heads of the requirement table say what they mean.
+    assert.ok(detail.body.includes(DONE_RULE_NOTE)&&detail.body.includes(ACCEPTED_PRODUCER_NOTE),'the workflow page explains the delivery rule and the accepted producer');
     assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);
-    const memberSession=await signIn((await member()).token), mine=await get('/console/packs',memberSession);
-    assert.ok(!mine.body.includes(skill.title));
+    const memberSession=await signIn((await member()).token);
+    for(const path of ['/console/packs','/console/skills'])assert.ok(!(await get(path,memberSession)).body.includes(skill.title),path);
   });
 
   test('client tables show registered client names or direct-token labels without token identifiers', async () => {
@@ -272,7 +316,8 @@ describe('operations and commands', () => {
     const direct=await server.records.principals.issueToken(server.admin.principal,user.user.id,'合成 Linux Circle');
     const admin=await signIn(server.admin.token), memberSession=await signIn(user.token);
     for(const path of ['/console/team',`/console/team/${user.user.id}`,'/console/connections']) {
-      const reply=await get(path,admin);
+      // The clients are a tab of the team page and of the connections page; a member's own page lists that member's clients in its pane.
+      const reply=await get(path===`/console/team/${user.user.id}`?path:path+'?tab=clients',admin);
       const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
       assert.match(tables,/<th scope="col">客户端<\/th>[\s\S]*<th scope="col">连接方式<\/th>/);
       assert.match(tables,/合成 MacBook Circle/);
@@ -295,8 +340,25 @@ describe('operations and commands', () => {
     assert.ok(team.body.indexOf('href="/console/team"')<team.body.indexOf('href="/console/settings"'));
     assert.match(team.body,/第一个账户是管理员/);
     assert.match(team.body,/添加成员/);
+    // Decision 151, step 7: the team page is two tabs, the members and the clients they connected, one list each.
+    const teamTabs=(body:string)=>[...(/<nav class="ch-seg" aria-label="团队内容" data-team-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]);
+    assert.deepEqual(teamTabs(team.body),[['/console/team',true,'成员'],['/console/team?tab=clients',false,'已连接的客户端']]);
+    assert.match(team.body,/ id="live-members"/);assert.doesNotMatch(team.body,/ id="live-member-circles"/);
+    assert.match(team.body,/<th scope="col">可用的工作流<\/th><th scope="col">客户端<\/th>/,'a row counts the member\'s workflows and clients');
+    const teamClients=await get('/console/team?tab=clients',admin);
+    assert.deepEqual(teamTabs(teamClients.body).map(row=>row[1]),[false,true]);
+    assert.match(teamClients.body,/ id="live-member-circles"/);assert.doesNotMatch(teamClients.body,/ id="live-members"/);
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);
+    // Decision 151, step 8: 凭据 and Hub 状态 are two addresses, no longer two anchors of one page with the first always marked.
+    assert.match(settings.body,/<nav class="ch-seg" aria-label="设置内容" data-settings-tabs><a href="\/console\/settings" aria-current="page">凭据/);
+    assert.match(settings.body,/id="secrets"/);assert.doesNotMatch(settings.body,/data-hub-state|服务器上的操作/);
+    const hubTab=await get('/console/settings?tab=hub',admin);
+    assert.match(hubTab.body,/<a href="\/console\/settings\?tab=hub" aria-current="page">Hub 状态<\/a>/);assert.doesNotMatch(hubTab.body,/<a href="\/console\/settings" aria-current="page">/);
+    assert.match(hubTab.body,/data-hub-state/);assert.match(hubTab.body,/服务器上的操作/);assert.doesNotMatch(hubTab.body,/id="secrets"/);
+    const memberHub=await get('/console/settings?tab=hub',session);
+    assert.match(memberHub.body,/data-hub-state/);assert.doesNotMatch(memberHub.body,/服务器上的操作|备份命令|id="mine"/);
+    assert.match((await get('/console/settings',session)).body,/<a href="\/console\/settings" aria-current="page">我的客户端/);
     const detail=await get(`/console/team/${user.user.id}?workflow=review`,admin);
     assert.match(detail.body,/成员详情|权限|工作流分配|已连接的客户端/);
     assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
@@ -327,7 +389,7 @@ describe('operations and commands', () => {
     const circle = await get('/console/team?circle='+token.id,admin);
     assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
-    assert.ok(connections.body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
+    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
     const pack = await get('/console/packs/review', admin);
     assert.ok(pack.body.includes('circle-hub pack retire review@1.0.0'));
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
@@ -374,14 +436,18 @@ test('contextual system and call inspectors only select rows in the authorized p
  const refused=await get('/console/connections?system='+encodeURIComponent(resource.id),other),absent=await get('/console/connections?system=synthetic-missing',other);
  assert.equal(refused.status,404);assert.equal(withoutNonces(refused.body),withoutNonces(absent.body));
  const complete=await get('/console/runs/'+run+'?view=record',await signIn(author.token));
- assert.match(complete.body,/data-without-inspector/);assert.match(complete.body,/完整记录/);assert.doesNotMatch(complete.body,/class="ch-app[^\"]*is-detail/);
+ assert.match(complete.body,/data-without-inspector/);assert.match(complete.body,/data-task-tab="record"/);assert.match(complete.body,/技术信息/);assert.doesNotMatch(complete.body,/class="ch-app[^\"]*is-detail/);
 });
 
 test('the overview uses a Stat and thin parts bar with labelled counts instead of a donut and no area renders placeholder inspector facts',async()=>{
  const session=await signIn(server.admin.token),overview=await get('/console/overview',session);
  assert.match(overview.body,/检查项结果/);assert.match(overview.body,/class="ch-stat-value"/);assert.match(overview.body,/class="ch-parts"/);assert.doesNotMatch(overview.body,/donut|donut-hold/);
  for(const area of ['overview','runs','connections','records','team','settings']){
-  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.match(page.body,/aria-label="概况"/);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+  const page=await get('/console/'+area,session);assert.equal(page.status,200);assert.doesNotMatch(page.body,/当前页面|当前账号/);
+  // Decision 151: no place repeats itself in a summary pane; a pane opens only for a selected thing.
+  assert.doesNotMatch(page.body,/aria-label="概况"|<aside class="ch-inspector"/,area);
+  // A dialog on the page is one something on the page opens: none is left behind without a link to it.
+  for(const dialog of page.body.matchAll(/<div class="ch-dialog" id="([^"]+)"/g))assert.ok(page.body.includes('href="#'+dialog[1]+'"'),area+' links to its dialog '+dialog[1]);
  }
 });
 
@@ -402,7 +468,9 @@ test('record periods constrain the list and chart together, and an unresolved me
  const recent=await put(now-1000,'initialize'),old=await put(now-20*86400000,'list_task_packs');
  const base='/console/records?user='+encodeURIComponent(user.user.name);
  const seven=await get(base+'&days=7',admin),thirty=await get(base+'&days=30',admin);assert.equal(seven.status,200);assert.ok(seven.body.includes(recent.digest));assert.ok(!seven.body.includes(old.digest));assert.ok(thirty.body.includes(old.digest));
- const chart=seven.body.slice(seven.body.indexOf('<figure'),seven.body.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/1 其他/,'protocol calls remain in the Other series instead of disappearing');
+ // Decision 151: the call list and the charts are two tabs of the same period and filters.
+ assert.doesNotMatch(seven.body,/<figure/);const charts=(await get(base+'&days=7&tab=stats',admin)).body;assert.ok(!charts.includes(recent.digest),'the statistics tab lists no call');
+ const chart=charts.slice(charts.indexOf('<figure'),charts.indexOf('</figure>'));assert.match(chart,/其他/);assert.match(chart,/其他 1 次/,'protocol calls remain in the Other series instead of disappearing');
  const store=server.deps.records.store,original=store.countIndexed;let countCalls=0;t.after(()=>{store.countIndexed=original;});store.countIndexed=async()=>{countCalls++;return {count:999,capped:false};};
  const none=await get('/console/records?user=synthetic-nobody&days=30',admin);assert.equal(none.status,200);assert.equal(countCalls,0,'an unresolved member must not count all private refusal records');assert.match(none.body,/ch-stat-value">0/);assert.doesNotMatch(none.body,new RegExp(recent.digest+'|'+old.digest));
  assert.equal((await get(base+'&from=2099-01-01',admin)).status,400);assert.equal((await get(base+'&from=2026-11-02&to=2026-11-01',admin)).status,400);

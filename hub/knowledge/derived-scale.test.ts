@@ -1,5 +1,6 @@
 // Synthetic scale guard: 3,000 actual composition sources, 20 admitted sources and 200 credential-bearing entries.
 // Instrument SQL executions and scanner byte counts, never SQL values, source bytes or match text.
+import { withCredentialDetectors } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import pg from 'pg';
@@ -12,6 +13,8 @@ import { INDEX, SCHEMAS } from './store.ts';
 import { DEFAULT_PRODUCERS, BASE_CATALOG, casesProducer, catalogXml, makeWorld, mindMap, startPostgres } from './test-support.ts';
 import { mapLimited } from './concurrency.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
+// Issue 194: these tests cover the holds and reviews of credential-scan@3, which records stored under it still follow.
+withCredentialDetectors();
 
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });

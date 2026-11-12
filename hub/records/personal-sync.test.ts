@@ -168,12 +168,11 @@ test('a frozen inventory paginates a complete graph and never absorbs later stag
  assert.equal(await w.api.object(w.owner,epoch,later.id),null);
 });
 
-test('batch limits and memory credential scans refuse without retaining plaintext, while binary originals stay staged only',async t=>{
+test('batch limits refuse; a memory that looks like it carries a credential is taken like any other (issue 194); binary originals stay staged only',async t=>{
  const w=await world(t,{limits:{maxSyncBatchBytes:1024}}),s=await session(w),epoch=s.state.epoch;
  await assert.rejects(w.api.upload(w.owner,s.session_id,batch(epoch,[blob('s'.repeat(1200))])),{code:'SYNC_BATCH_LIMIT'});
  const memory={schema:'personal-sync-object@1',kind:kinds.memory_revision,body:{item_id:randomUUID(),parents:[],directory_id:randomUUID(),title:'synthetic',markdown:'Authorization: Bearer '+'s1'.repeat(20),state:'enabled'}};
- const object=pack(memory);await assert.rejects(w.api.upload(w.owner,s.session_id,batch(epoch,[object])),{code:'MEMORY_CREDENTIALS_DETECTED'});
- assert.equal((await w.db.query('SELECT 1 FROM personal_payloads WHERE sha256=$1',[object.id])).rowCount,0);
+ const object=pack(memory);await w.api.upload(w.owner,s.session_id,batch(epoch,[object]));assert.ok(await w.api.object(w.owner,epoch,object.id),'content is not refused for looking like a credential');
  const binary=pack({schema:'personal-sync-object@1',kind:kinds.bytes,body:{bytes_base64:Buffer.from([0,255,128,1,2]).toString('base64')}});
  await w.api.upload(w.owner,s.session_id,batch(epoch,[binary]));assert.ok(await w.api.object(w.owner,epoch,binary.id));assert.equal(await w.kit.artifacts.source(w.owner,binary.id),null);
 });

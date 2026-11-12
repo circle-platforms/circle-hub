@@ -1,3 +1,5 @@
+// Issue 194: new content is no longer scanned for credentials. These tests open their records with the detectors of
+// credential-scan@3 (`detectors: true`): the holds and acceptances they cover still govern records stored under them.
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {startPostgres} from '../testing/postgres.ts';
@@ -6,7 +8,7 @@ import {openTestRecords} from '../testing/records.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(async()=>{await postgres?.stop();});
 test('administrators page every finding without values and can accept detector classes separately',async t=>{
- const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic administrator');
+ const kit=await openTestRecords({ postgres, detectors: true });t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic administrator');
  const user=await kit.principals.createUser(admin,'synthetic reader');
  const values=Array.from({length:143},(_,i)=>`SyntheticSecret${i}#72`);
  const bearer=['SyntheticBearer73','AbcDefGh'].join('');
@@ -33,7 +35,7 @@ test('administrators page every finding without values and can accept detector c
 });
 
 test('automatic and manual detector acceptance have distinct immutable audit receipts without values',async t=>{
- const kit=await openTestRecords({postgres});t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic administrator');
+ const kit=await openTestRecords({ postgres, detectors: true });t.after(()=>kit.close());const {user:admin}=await kit.principals.bootstrapAdmin('synthetic administrator');
  for(const automatic of [false,true]){
   const artifact=await kit.artifacts.ingest({bytes:Buffer.from('password = SyntheticCredential'+(automatic?'A':'B')+'#72'),mediaType:'text/plain',origin:{read:{object:'synthetic:document:'+String(automatic)}},author:{user:null},provenanceType:'observed',visibility:{readers:[],admins:true,packs:[],shareable:false}});
   const accepted=await kit.artifacts.acceptFindings(admin,artifact.body.sha256,'合成示例接受',{detectors:['password_assignment'],automatic});

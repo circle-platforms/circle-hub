@@ -1,5 +1,17 @@
 # hub/runs/engine
 
+## Compact verified task statistics
+
+The optional internal `getRunStatistics` answers what `runStatistics` gives for `getRunSummary`: the same current-head selection, current source permissions and management projection, and only task result/pending counts, layer-terminal counts and blocker code/reason counts. Since model 43 (W08 R[6], decision 153) it reads the summary record of each result instead of the result: `saveResult` (`result-summary.ts`) stores a result and, in the same transaction, a `result_summary` record projected from it (receipt, submission, whether it carries a system input, what it comes to as the run's current result, the grounds it names, the digests its validity conditions bind, its unavailable references). The heads are found by digest in the result indexes (`RecordStore.findDigests`, no body), each result is known by its summary, and who may read it is decided over the grounds the summary lists (`summaryReadableBy`), in the order the result gives them. The summary is a record: it is verified by its own digest on every read and an altered one is refused; the oldest summary of a result is the one read, so a record appended later cannot take its place, and one that names another result or run is not used. The result stays the authority and is not rewritten. A result with no summary is read whole, with the same answer; `summarizeStoredResults` writes the summaries of the results stored before, in the background round `summarize-results`, and marks the end so it does not walk again. An altered result that has a summary is therefore refused where the result is read (task detail, export, reference resolution), no longer by a list row. The statistics read in the page's own read scope (owner, 2026-11-11): the run record the page listed is not read again and a summary of a few kilobytes stays for the request; only a result with no summary is read whole in a scope of its own and released before the next task. No authorization is cached across requests. Full detail/export and the old summary port stay unchanged.
+
+The console retains the four-worker page bound and discards full claims even through older summary/detail-only adapters. The earlier #251 history early-stop patch can be applied independently. Neither small returned statistics nor released child memos prove a fixed heap/latency: page-level listRuns still retains original run views, database/body verification and long history scans remain, and deployment/two-week observation are outstanding.
+## Check source accounting
+
+Each evaluation owns its byte/reference budget and shares only the process-wide read concurrency gate. Repeated reads of one exact reference charge its maximum observed text size once, including across items and checks; larger later reads add only the difference. Different fragments retain different accounting, and other evaluations do not inherit consumed bytes. Limits refuse excess instead of returning a successful empty source. Unit controls cover repeated large sources, growing/shrinking reads, distinct fragments, independent evaluations and a total-byte overflow; case-compile has a separate four-case/large-contract whole-workbook engine regression. These synthetic observations are not deployed or real-source evidence.
+## Summary history reads
+
+A summary reads validation candidates newest-first one body at a time, stopping at the accepted technical head, and reads production candidates separately through the existing run/submission index. The selected management head and current-ground permissions remain the same as full detail: a hidden technical head never falls back to an older success, while production retains its existing last-readable ordering. Every candidate still comes through the integrity-checked records port. The regression inserts large unrelated history and counts exact loaded bodies and bytes rather than measuring wall-clock speed. `getRunSummary` itself still reads result bodies; the statistics of a list read the verified summary records instead (above), and the run records are still read whole. Full task detail is not paginated beyond its submission window; rejected or unreadable candidate chains may still require successive reads.
+
 ## Space locks and citations (decision 133)
 
 New runs optionally store `knowledge_spaces` with the team root, initiator personal root and initiator account. Legacy
@@ -69,7 +81,8 @@ well-formed text). The same reasons go to the admin note of the call they belong
 | `lineage.ts` | the author of the work a run judges (A04): the predecessor chain, the runs of handed-over records, their producers |
 | `terminals.ts`, `partitions.ts`, `independence.ts`, `claims.ts` | the pure rules, tested on their own |
 | `reuse.ts` | carry-over offers and carried items (C08 R[4]) |
-| `preview.ts`, `queries.ts` | resolve_reference; getRun, listRuns, getResult, runsFor |
+| `preview.ts`, `queries.ts` | resolve_reference; getRun, runHeader, listRuns, getResult, runsFor |
+| `preview.ts`, `queries.ts` | resolve_reference; getRun, runVisible, listRuns, getResult, runsFor |
 | `store.ts`, `readers.ts` | records and index keys (`runs.*`, `action.kind`, `action.run`); visibility and the readers hub/refs resolves with |
 | `testing/` | fakes of the ports, the synthetic toy packs (written to temp directories with real function files), mind maps, the harness |
 
@@ -667,7 +680,11 @@ requirement is named in errors with that reason and remaining rounds; one distin
 requirement. At zero remaining rounds, missing artifact work becomes `repair_exhausted`, not another coverage prompt.
 
 B07 requests are append-only records keyed by the exact run, item, requirement, source and missing fact. Repeating the
-same problem never extends its original due date. Result errors name the request and the existing tool to answer it;
+same problem never extends its original due date. An accepted submission voids the waiting requests the run's earlier
+submissions issued, and their escalations, after it issued its own (R[10], `supersedeEarlierRequests`): its result lists
+everything still missing. When the same content is submitted again after another submission and accepted, the requests it
+had issued and the other voided wait again. A submission that is not accepted voids nothing, and a criterion change's judgment, a dispatched
+job's disposition, a rerun request and a repair asked of the pack's author are left to the step that closes them. Result errors name the request and the existing tool to answer it;
 full replacement submissions remain allowed after exhaustion. Answers reference actual stored records and never
 rewrite requests or old results. `getRun`/`listRequests` apply run visibility before listing requests. The request fields
 of `listRuns` read every request the reader may see, whichever page is listed, so a caller that shows none of them passes
@@ -1010,7 +1027,7 @@ The complete predecessor-result scan, including submission-existence reads, hold
 
 ### Read-time withdrawal qualifier
 
-getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已下架”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.
+getRun / getResult check the exact frozen pack version through the existing workflow metadata port after run visibility is established. A known withdrawn version adds rule_withdrawn: true to the read wrapper, outside the immutable run and validation_result bodies. Run and production-result pages disclose the generated validity label with “版本已退役”. Historical result digests, claims, partitions and requirement terminals remain byte-for-byte unchanged; unassignment is not withdrawal, and no approval workflow is introduced. Raw record references remain original evidence, not a rewritten current-state result.
 
 ### Citations of knowledge (decision 126, 2026-11-01)
 
@@ -1112,3 +1129,14 @@ Deleted owners do not invalidate exact already-frozen workflow evaluation or an 
 declaration. This custody adds no current namespace access or new-run eligibility. MCP lease context resolves historical
 holder and registration-owner names through the generated deleted-account interface label, while stable identity keys
 and stored run bytes stay unchanged.
+
+## Bounded detail history (B1, #200)
+
+`getRun(user, run, {history:{limit, before?}})` returns a window: the newest `limit` (1–200) submissions of the run, listed oldest first, with `history.next` (an opaque cursor for the older ones, null at the end) and `history.pinned` (the submission behind the current result when it is older than the window; listed first, on the newest window only). Results are read for the listed rows only, each by its own index entry and the newest readable one wins, as the unbounded read decides; the production result is read by its own index entry. The withdrawn-grounds state is computed over the results the read shows (the listed rows', the current result and the production result), which the page states. A cursor the store cannot use ends the paging with an empty window. Without the option the read is exactly what it was. Receipt checks of other callers (`hub/server/readers.ts`), `exportRun`, the JSON task view and the result page keep the unbounded read. Not removed: `latestAccepted` still scans backward from the newest result, so the cost of finding the current result is its distance from the end of the history.
+
+## Run header for record reads (B1)
+
+`runHeader(user, run)` answers null exactly when `getRun` does (same `visibleRun` rule) and otherwise returns only `runner`, `host` and `pack_space`, the fields `canSeeRun` decides on. The server's record reader (`hub/server/readers.ts`, behind every `rec:` read of the tools) uses it instead of the full detail; the receipts are read only when someone other than the runner reads a submission, whose answer depends on them. An engine without the port keeps the full read.
+## Run visibility without history (B1)
+
+`runVisible(user, run)` answers whether `getRun` would answer for the run: it applies the same run-visibility rule (`visibleRun`: the account is enabled, the reader may view the run, and the run's grounds are readable) and reads neither submissions, results, requests nor withdrawal state. The console live stream asks it for every run event instead of reading the full detail once per subscriber and run; an engine without the port keeps the old `getRun(...) !== null` answer. The port keeps no verdict of its own (the stream's 30-second verdict cache is unchanged), so a revoked share is seen by the next question. It does not shorten the detail page, the export or the summary reads.

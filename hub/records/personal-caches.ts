@@ -7,8 +7,8 @@ const SHARED_TEMP_GRACE_MS=24*60*60*1000;
 export async function retirePersonalCaches(db:Database,owner:string,roots:ReadonlySet<string>,sharedRoots:ReadonlySet<string>){
  const rows=await db.query("SELECT value FROM record_index WHERE key='personal.pack.digest' AND value LIKE $1 UNION SELECT owner||'/'||digest FROM personal_cache_installs WHERE owner=$2",[owner+'/%',owner]);
  const digests=new Set(rows.rows.map(row=>String(row.value).slice(owner.length+1)).filter(hash=>/^[0-9a-f]{64}$/.test(hash)));
- const remove=async(path:string):Promise<void>=>{let entry;try{entry=await lstat(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}if(entry.isDirectory()){await chmod(path,0o700);for(const name of await readdir(path))await remove(join(path,name));}await rm(path,{force:true,recursive:true});};
- const sync=async(path:string)=>{const handle=await open(path,'r');try{await handle.sync();}finally{await handle.close();}};
+ const remove=async(path:string):Promise<void>=>{try{const entry=await lstat(path);if(entry.isDirectory()){await chmod(path,0o700);for(const name of await readdir(path))await remove(join(path,name));}await rm(path,{force:true,recursive:true});}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}};
+ const sync=async(path:string)=>{let handle;try{handle=await open(path,'r');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}try{await handle.sync();}finally{await handle.close();}};
  for(const root of roots){if(!isAbsolute(root))throw new TypeError('private cache root');let entries:string[];try{entries=await readdir(root);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')continue;throw error;}
   for(const hash of digests){
    const held=await db.query(`SELECT 1 FROM run_pack_records WHERE digest=$1

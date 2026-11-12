@@ -201,7 +201,8 @@ before(async () => {
     if(name==='inspect_seat'){const device=MANIFEST_DOC.beds[0].devices[Number(args.seat)];assert.ok(device);return {output:args.command==='inspect version'?`version: ${aliasEcho ? bed.site.ALIAS : bed.site.RELEASED}`:device.interfaces.map(address=>`address: ${address}`).join('\n')};}
     if (name === 'send_blob') {
       submissions++; const payload = Buffer.from(String(args.blob), 'base64');
-      const intents=await bed.hub.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.bytes',values:[sha256Hex(payload)]});const intent=intents.find(row=>row.body.detail.phase==='intent'&&row.body.detail.request_id===args.request);assert.ok(intent,'matching request intent committed before submission');assert.ok(intent.body.inputs.includes(`src:${sha256Hex(payload)}`));assert.equal((await bed.hub.records.store.getByKey('action',`dispatch.bytes:${sha256Hex(payload)}:${intent.body.detail.attempt}`))?.digest,intent.digest);
+      const intents=await bed.hub.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.bytes',values:[sha256Hex(payload)]});const intent=intents.find(row=>row.body.detail.phase==='intent'&&row.body.detail.request_id===args.request);assert.ok(intent,'matching request intent committed before submission');assert.ok(intent.body.inputs.includes(`src:${sha256Hex(payload)}`));// The intent is unique per byte, task lineage and attempt (issue 145): the lineage is the one the job was bound to.
+      const lineage=(await (dispatch() as any).journal.binding(String(intent.body.detail.job))).input?.lineage;assert.match(String(lineage),/^run_[0-9a-z]{26}$/);assert.equal((await bed.hub.records.store.getByKey('action',`dispatch.bytes:${sha256Hex(payload)}:${lineage}:${intent.body.detail.attempt}`))?.digest,intent.digest);
       assert.equal(typeof args.request,'string');latest = { request:String(args.request), key: `synthetic-remote-${submissions}`, digest: sha256Hex(payload), ids: args.ids as string[], submitted: new Date().toISOString(), payload };
       assert.equal(args.digest, latest.digest);
       if (lose) { response.destroy(); return {}; }
@@ -302,7 +303,9 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
     assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
     // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
-    const again = (await client.call('submit_result', v.sent!)).out.dispatch?.[0];
+    // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
+    const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
+    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /未发出；原因：.*租约.*这次重交 Hub 已再试/);
     assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^Hub 没有派发：.*租约/);
     assert.equal(submissions, before);
     await release(partial);

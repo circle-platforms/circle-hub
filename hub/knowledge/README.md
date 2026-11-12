@@ -1,5 +1,9 @@
 # hub/knowledge: the content-addressed knowledge tree
 
+## Administrator source-review requests
+
+`credentialReviewRequests` pages the existing credential-review request index through the integrity-checked records port, checks an enabled current administrator and each pinned source capture's current ACL, and returns only request/source references, a scanned safe external identity, named recipient, deadline and historical progress flags. It does not read source bytes or finding values. Expiry is not acceptance, and a resolution record does not prove the source remains readable now. A page may be empty while its next cursor still leads through inaccessible captures. This is the existing sync-request index; run-read requests from the separate #190 proposal are not present on main yet.
+
 ## Verified sharing (decision 134)
 
 `spaces.share` accepts only the caller's currently verified personal entry. The ordered checks re-resolve all grounds,
@@ -234,7 +238,7 @@ const engineExternal = routeKnowledgeViews(createKnowledgeReader(knowledge), ext
 | `sources.ts`, `verify.ts`, `tree.ts`, `digest.ts`, `store.ts` | reads and refusals, fragment and path checks, the in-memory tree, normalisation, digests and text cutting, record I/O with schema checks |
 | `cli.ts` | `parseKnowledgeSyncArgs`, `knowledgeSync`, `formatSyncReport`, `knowledgeCliCommand` (`sync` and `seed`) |
 | `seed.ts` | `knowledge seed`: the three sources the product pack declares, `produceSeedling`, the Chinese report |
-| `directory-sources.ts` | the seed's adoc directory binding: the walk of the adoc-format skill (`packs/skill/adoc-format/api.ts`, the only pack the core imports for it), with the `{line_dir}` spelling taken from the manual producer's declared `layout` parameter (decision 136 item 9) |
+| `directory-sources.ts` | the seed's adoc directory binding: the walk of the adoc-format skill (`packs/skill/adoc-format/api.ts`, the only pack the core imports for it); a binding names the skill that walked (`directorySkill`: pack id, version, the walk module and its SHA-256), which the production records as `directory_skill` (C02 R[3], decision 157); with the `{line_dir}` spelling taken from the manual producer's declared `layout` parameter (decision 136 item 9) |
 | `test-support.ts` | synthetic product pack with real pack functions (a list producer over synthetic mind maps among them), fake `PacksPort` and `ExternalReaderPort`, synthetic build site, a deterministic scale corpus |
 | `testing/feeding-bounds-fixture.ts` | test-only: loads the repository's synthetic product pack (`packs/product/famx`) and the mindmap-format skill as fixture data for the feeding bounds tests; no runtime module of this package imports a product pack |
 
@@ -1032,7 +1036,7 @@ entry edits. Ordinary-field declarations and their counts keep their existing be
 
 | 状态 | 数据来源 | 现状 |
 | --- | --- | --- |
-| `rule_withdrawn` 规则已撤回 | 组成行的 `decided_by`（决定该条目的包 id@version）；读时查包端口，下架即标。一次读里同版本的查询有缓存 | 有数据，已算 |
+| `rule_withdrawn` 规则已撤回 | 组成行的 `decided_by`（决定该条目的包 id@version）；读时查包端口，退役即标。一次读里同版本的查询有缓存 | 有数据，已算 |
 | `cited_fragment_changed` 被引片段已变 | **所引根 X 与读者根 Y 比**（K03 R[5]）：X ≠ Y，且 Y 里同一路径的条目摘要与 X 里的不同、或 Y 里没有这个路径，才标，并写出 X 和 Y 两个根（`cited_root`、`reader_root`）。读者根：运行里 = 读者的锁（锁定组成）所属的根；**运行外（K01 R[6]）= 这条产品线的当前根指针**（指针已移到别的根时同样标，并注明主张在所引根上仍成立）；**同一个根永远不会变**（根按内容寻址）；当前指针也取不到（这条产品线@构建还没有根）时不标，照实不算 | 有数据，已算 |
 | `expired` 已过期 | 记录主张 `validity.expires_at`，解析时按解析上下文注入的时钟（没有才用墙钟）重读（B01 R[3]）；树条目自身无过期字段，不算 | 记录主张有数据，已算；树条目无来源 |
 | `contradicted` 出现矛盾主张 | `claim` 记录带 `relation: 'contradicts'`，见下；**只算读者本人可见的关系**（本人的候选关系 + Hub 确定性规则产出的关系），别人的私有候选关系不给另一个读者打标（K05 R[4]，管理员也不例外）；也包括组成记录 `applicability_sources` 标记的适用条件冲突，含义是「来源声明互相矛盾」：凡可读这个根的人都能看到这些组成出处，只有 claim 关系受上述读者可见范围限制；这一来源不补造 claim，也不写入 `validity.contradictions` 关系列表 | 合成关系记录与组成出处已算；候选层的提议通道由另一终端在建 |

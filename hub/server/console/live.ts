@@ -164,8 +164,14 @@ export function environmentTransition(record: Pick<StoredRecord, 'kind' | 'body'
   return { job, executor: typeof executor === 'string' && EXECUTOR_ID.test(executor) ? executor : null };
 }
 
+/** Whether the account may see the run: the visibility port when the engine has one, otherwise the full detail answer. */
+async function runVisibleTo(ctx: PageContext, run: string): Promise<boolean> {
+  const runs = ctx.deps.runs;
+  return runs.runVisible !== undefined ? runs.runVisible(ctx.principal, run) : (await runs.getRun(ctx.principal, run)) !== null;
+}
+
 /** Whether the account of `ctx` may see what `event` names, by the rules of the pages that show it. */
-export async function visibleTo(ctx: PageContext, event: LiveEvent, runVisible: (run: string) => Promise<boolean> = async (run) => (await ctx.deps.runs.getRun(ctx.principal, run)) !== null): Promise<boolean> {
+export async function visibleTo(ctx: PageContext, event: LiveEvent, runVisible: (run: string) => Promise<boolean> = (run) => runVisibleTo(ctx, run)): Promise<boolean> {
   const data = event.data;
   switch (event.name) {
     case 'task.updated':
@@ -533,7 +539,7 @@ export class LiveEvents {
     const now = Date.now();
     const kept = this.#verdicts.get(key);
     if (kept !== undefined && now - kept.at < VERDICT_MS) return kept.visible;
-    const visible = (await ctx.deps.runs.getRun(ctx.principal, run)) !== null;
+    const visible = await runVisibleTo(ctx, run);
     this.#verdicts.set(key, { visible, at: now });
     if (this.#verdicts.size > SEEN) this.#verdicts.delete(this.#verdicts.keys().next().value!);
     return visible;

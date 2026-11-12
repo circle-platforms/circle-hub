@@ -37,7 +37,7 @@ export function actionNotice(area: KnowledgeView | 'packs', action: string, valu
     return values.get('document') ? '已保存记忆' : '已新建记忆';
   }
   if (area === 'packs') {
-    const done: Record<string, string> = { stage: '已暂存发布内容', discard: '已丢弃暂存内容', publish: '已发布', promote: '已发布到团队', retire: '已下架这个版本' };
+    const done: Record<string, string> = { stage: '已暂存发布内容', discard: '已丢弃暂存内容', publish: '已发布', promote: '已发布到团队', retire: '已退役这个版本' };
     return done[action] ?? null;
   }
   switch (action) {
@@ -46,7 +46,7 @@ export function actionNotice(area: KnowledgeView | 'packs', action: string, valu
     case 'withdraw': return '已撤回条目';
     case 'import': case 'import-source': return upload?.name ? `已导入原文 · ${upload.name}` : '已导入原文';
     case 'save-source': return '已保存到我的原文';
-    case 'attribute-source': return '已署名为团队来源';
+    case 'attribute-source': return '已确认为团队来源';
     case 'quota': return '已调整容量';
     default: return null;
   }

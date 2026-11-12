@@ -41,9 +41,10 @@ test('connections, team and settings list each client by the name and version it
  await hub.records.principals.issueToken(hub.admin.principal,owner.user.id,UNNAMED_CLIENT,unnamed.id);
  const admin=await openConsole(hub,hub.admin.token),member=await openConsole(hub,owner.token);
  for(const path of ['/console/connections','/console/team']){
-  const reply=await admin.get(path);assert.equal(reply.status,200,path);
+  // Both pages list the clients on a tab of their own (decision 151).
+  const reply=await admin.get(path+'?tab=clients');assert.equal(reply.status,200,path);
   const tables=[...reply.body.matchAll(/<table[\s\S]*?<\/table>/g)].map(match=>match[0]).join('');
-  assert.match(tables,/<th scope="col">客户端<\/th><th scope="col">成员<\/th><th scope="col">连接方式<\/th><th scope="col">最近连接<\/th>/,path);
+  assert.match(tables,/<th scope="col">客户端<\/th><th scope="col">成员<\/th><th scope="col">连接方式<\/th><th scope="col">最近凭据使用<\/th>/,path);
   assert.match(tables,/<span data-evidence>hub-test-real 0\.0\.0<\/span>/,'the name and version from clientInfo, as recorded');
   assert.match(tables,/访问令牌 · <span data-evidence>test<\/span>/,'the token it connected with');
   assert.match(tables,/<span data-evidence>客户端<\/span>[\s\S]*标准连接确认</,'an unnamed registration is 客户端');
@@ -53,7 +54,7 @@ test('connections, team and settings list each client by the name and version it
  const token=(await hub.records.principals.identify!('Bearer '+owner.token))!.token_id;
  const selected=await admin.get('/console/connections?circle='+token);assert.equal(selected.status,200);
  assert.match(selected.body,/<span class="ch-tag">客户端<\/span><h2 class="ch-panel-title"><span data-evidence>hub-test-real<\/span><\/h2>/);
- assert.match(selected.body,/<dt>版本<\/dt><dd><span data-evidence>0\.0\.0<\/span><\/dd>/);
+ assert.match(selected.body,/<dt>客户端版本<\/dt><dd><span data-evidence>0\.0\.0<\/span><\/dd>/);
  assert.match(selected.body,/data-technical>[\s\S]*名称来源[\s\S]*MCP initialize clientInfo/,'where the name came from stays in the technical details');
  const mine=await member.get('/console/settings');assert.equal(mine.status,200);
  assert.match(mine.body,/我的客户端/);assert.match(mine.body,/hub-test-real 0\.0\.0/);assert.deepEqual(wordingProblems(mine.body),[]);
@@ -112,6 +113,6 @@ test('success messages count merged and refused shares and name the action',()=>
  assert.equal(actionNotice('knowledge','grant',values({audience:'member',member:'Synthetic Reader'})),'已分享给 Synthetic Reader');
  assert.equal(actionNotice('knowledge','revoke',values({})),'已收回分享');
  assert.equal(actionNotice('memory','write',values({enabled:'false'})),'已停用记忆');
- assert.equal(actionNotice('packs','retire',values({})),'已下架这个版本');
+ assert.equal(actionNotice('packs','retire',values({})),'已退役这个版本');
  assert.equal(actionNotice('knowledge','unknown',values({})),null);
 });

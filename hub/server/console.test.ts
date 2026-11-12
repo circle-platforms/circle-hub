@@ -11,9 +11,11 @@ import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { NEUTRAL } from './console/pages.ts';
+import { ACCEPTED_PRODUCER_NOTE, DONE_RULE_NOTE } from './console/pack-display.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
+import { everyTaskTab } from './console/testing-task-tabs.ts';
 
 let postgres: TemporaryPostgres;
 let server: TestServer;
@@ -264,10 +266,13 @@ describe('pages', () => {
     const session = await signIn(user.token);
     const list = await get('/console/runs', session);
     assert.ok(list.body.includes(run));
-    const page = await get(`/console/runs/${run}`, session);
+    const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
+    // Issue 239: a run recorded without a submission deadline says what the reader can do, in plain words.
+    assert.ok(page.body.includes('这次任务未记录提交期限。请从此任务创建新的修订后继续。'));
+    assert.ok(!page.body.includes('旧运行没有记录期限'));
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
-    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '完整记录']) {
+    for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '技术信息', DONE_RULE_NOTE, ACCEPTED_PRODUCER_NOTE]) {
       assert.ok(page.body.includes(text), `the run page shows ${text}`);
     }
     const blocks = [...page.body.matchAll(/<div class="ch-source"(?: data-evidence)?><dl[^>]*>([\s\S]*?)<\/dl><\/div>/g)].map((m) => [...m[1].matchAll(/<dt>([^<]+)<\/dt>/g)].map((d) => d[1]));
@@ -283,11 +288,15 @@ describe('pages', () => {
     assert.doesNotMatch(page.body, /管理员备注/, 'a user sees no admin note column');
   });
 
+  test('the task overview states applicable verification scope rather than universal completed checks',async()=>{
+    const user=await person(),session=await signIn(user.token),page=await get('/console/runs',session);
+    assert.equal(page.status,200);assert.match(page.body,/按工作流要求检查提交结果/);assert.match(page.body,/每项是否执行及其结果/);assert.doesNotMatch(page.body,/每个结果都经过 Hub 校验/);
+  });
   test('the run page shows each item\'s two cells by conjunction, the three groups and every submission verbatim, marked unverified', async () => {
     const user = await person();
     const run = await runWithResult(user, ['发现<甲>']);
     const session = await signIn(user.token);
-    const page = await get(`/console/runs/${run}`, session);
+    const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
     // V03 R[3], display rule 4: one cell per layer, the strongest terminal and the counts of the non-pass values.
     // The words are the interface terms of display rule 20: 引用校验 for the static layer, 等待判定中 for a judgment, ….
@@ -299,7 +308,8 @@ describe('pages', () => {
     assert.match(page.body, /<span class="t-unknown">？ 引用校验：未检查/);
     assert.match(CONSOLE_CSS.body, /\.t-unknown\{color:/);
     // Display rule 13: the three groups derived from the partition list.
-    const adopted = page.body.indexOf('已采用的成果（已交付');
+    const adopted = page.body.indexOf('已交付的结果（已交付');
+    assert.doesNotMatch(page.body,/已采用的成果/);
     const open = page.body.indexOf('仍需处理的事项（已拒收、派发结果未确认、未完成');
     assert.ok(adopted > 0 && open > adopted, 'adopted and still to handle');
     assert.doesNotMatch(page.body, /未回答的请求/, 'empty request sections stay hidden');
@@ -317,9 +327,37 @@ describe('pages', () => {
       body: { received: { object: object.sha256, size: text.length, non_canonical_path: '/notes', run } },
     });
     server.fakes.runs.runs.get(run)!.submissions.push({ record: received.digest, received_at: '2026-10-22T00:00:00.000Z', acceptance: 'not_accepted', errors: [], result: null });
-    const again = await get(`/console/runs/${run}`, session);
+    // The submissions are in the 过程 tab of the task page (decision 151).
+    const again = await get(`/console/runs/${run}?tab=process`, session);
     assert.ok(again.body.includes('收到的参数不是规范 JSON，按收到的 JSON 文本保存'));
     assert.ok(again.body.includes('&quot;notes&quot;:&quot;&lt;\\ud800&gt;&quot;'), 'the JSON text as received, escaped');
+    // A long submission: the list shows its beginning and says how much there is; the row asked for shows the rest, opened.
+    const long = Buffer.from(`{"run":"${run}","model":"m","items":[],"notes":"${'甲'.repeat(6000)}尾"}`);
+    const longObject = await server.records.objects.put(long, 'application/json');
+    const longRecord = await server.records.store.put({ kind: 'submission', schema: 'submission-received@1', provenance: 'declared', body: { received: { object: longObject.sha256, size: long.length, non_canonical_path: '/notes', run } } });
+    server.fakes.runs.runs.get(run)!.submissions.push({ record: longRecord.digest, received_at: '2026-10-22T00:01:00.000Z', acceptance: 'not_accepted', errors: [], result: null });
+    const listed = await get(`/console/runs/${run}?tab=process`, session);
+    const anchor = `submission-${longRecord.digest.slice(0, 12)}`, whole = `/console/runs/${run}?tab=process&amp;submission=${longRecord.digest}#${anchor}`;
+    assert.match(listed.body, /只显示前 4,096 个字符，共 6,0\d\d 个/);
+    // The link says which submission it opens to a screen reader: several rows carry a link with the same words.
+    assert.ok(listed.body.includes(`<a href="${whole}">查看全文<span class="ch-visually-hidden">（2026-10-22T00:01:00.000Z 的提交）</span></a>`), 'the rest is one link away, on the same row');
+    assert.ok(!listed.body.includes('尾&quot;}'), 'the end of the long submission is not on the list');
+    assert.ok(listed.body.includes('&quot;notes&quot;:&quot;&lt;\\ud800&gt;&quot;'), 'a short submission is still shown whole');
+    assert.doesNotMatch(listed.body, /<details class="unverified"[^>]* open>/, 'nothing is opened unasked');
+    const opened = await get(`/console/runs/${run}?tab=process&submission=${longRecord.digest}`, session);
+    assert.ok(opened.body.includes('尾&quot;}'), 'the submission asked for is shown whole');
+    assert.match(opened.body, new RegExp(`<details class="unverified" id="${anchor}" open>`));
+    assert.equal((opened.body.match(/<details class="unverified"[^>]* open>/g) ?? []).length, 1, 'and only that one is opened');
+    assert.doesNotMatch(opened.body, new RegExp(`submission=${longRecord.digest}#${anchor}">查看全文`), 'it no longer offers itself');
+    // Errors follow the same rule: the list shows the first three and how many more, the row asked for shows them all.
+    const errors = Array.from({ length: 8 }, (_, n) => ({ code: 'missing_input', message: `合成缺失事实 ${n + 1}` }));
+    const many = await server.records.store.put({ kind: 'submission', schema: 'submission-received@1', provenance: 'declared', body: { received: { object: object.sha256, size: text.length, non_canonical_path: '/notes', run, note: 'errors' } } });
+    server.fakes.runs.runs.get(run)!.submissions.push({ record: many.digest, received_at: '2026-10-22T00:02:00.000Z', acceptance: 'not_accepted', errors, result: null });
+    const brief = await get(`/console/runs/${run}?tab=process`, session);
+    assert.ok(brief.body.includes('合成缺失事实 3') && !brief.body.includes('合成缺失事实 4'));
+    assert.match(brief.body, new RegExp(`另有 5 条 · <a href="/console/runs/${run}\\?tab=process&amp;submission=${many.digest}#submission-${many.digest.slice(0, 12)}">查看全部<span class="ch-visually-hidden">错误（2026-10-22T00:02:00.000Z 的提交）</span></a>`));
+    const every = await get(`/console/runs/${run}?tab=process&submission=${many.digest}`, session);
+    assert.ok(every.body.includes('合成缺失事实 8'));assert.doesNotMatch(every.body, /另有 5 条/);
   });
 
   test('stored case text, finding text, session ids and user names are escaped: no markup gets through', async () => {
@@ -333,7 +371,7 @@ describe('pages', () => {
       const user = await person(['review'], 'user', `<b>名字</b>${attribute}`);
       const run = await runWithResult(user, [`发现${payload}`, attribute], `s"><script>x</script>`);
       const session = await signIn(user.token);
-      const page = await get(`/console/runs/${run}`, session);
+      const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
       assert.equal(page.status, 200);
       assert.ok(!page.body.includes('<script>'), 'no script element from stored text');
       assert.ok(!page.body.includes('<img src=x'), 'no element from an attribute payload');
@@ -358,6 +396,8 @@ describe('pages', () => {
     assert.equal(forbidden.status, 404);
     assert.equal(withoutNonces(forbidden.body),withoutNonces(absent.body));
     assert.ok(forbidden.body.includes(NEUTRAL));
+    // Issue 239: the neutral page points to a next step without telling the two cases apart (the bodies above are identical).
+    assert.ok(forbidden.body.includes('请返回总览或列表重新进入；仍需要时联系内容所有者或管理员确认。'));
     assert.ok(!(await get('/console/runs', session)).body.includes(run), 'a user lists only their own runs');
     for (const path of ['/console/__proto__', '/console/constructor', '/console/knowledge/__proto__', '/console/runs/a/b']) {
       const reply = await get(path, session);
@@ -425,7 +465,7 @@ describe('pages', () => {
     for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope='), id);
     for (const id of ['line-a', 'tracker-system']) assert.ok(!all.body.includes('href="/console/packs/'+id+'?scope='), id);
     assert.ok((await get('/console/knowledge', admin)).body.includes('line-a'));
-    assert.ok((await get('/console/connections', admin)).body.includes('tracker-system'));
+    assert.ok((await get('/console/connections?tab=packs', admin)).body.includes('tracker-system'));
     assert.ok(all.body.includes(user.user.name), 'assignments are shown to admins');
   });
 
@@ -457,7 +497,7 @@ describe('pages', () => {
     assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
     assert.ok(!(await get('/console/connections', userSession)).body.includes('http://192.0.2.10:8080'), 'not for a member');
     const packs = await get('/console/packs', session);
-    assert.match(packs.body, new RegExp(`使用范围：[^<]*${user.user.name}`), 'assignments');
+    assert.match(packs.body, new RegExp(`<span data-pack-audience>[^<]*${user.user.name}`), 'assignments');
     await runWithResult(user);
     const calls = await get(`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`, session);
     assert.equal(calls.status, 200);
@@ -480,7 +520,7 @@ test('knowledge console lists product-wide roots and renders undeclared builds s
     assert.match(overview.body,/不分版本/);assert.match(overview.body,/来源 17 个/);
     assert.match((await get(`/console/knowledge/root?root=${ROOT_1}`,session)).body,/构建未声明/);
     server.deps.knowledge.unversionedRoot=async ()=>null;
-    assert.match((await get('/console/knowledge',session)).body,/不分版本[\s\S]*—/);
+    assert.match((await get('/console/knowledge',session)).body,/不分版本[\s\S]*尚未产出/);
   } finally { server.deps.knowledge.rootInfo=originalInfo;server.deps.knowledge.unversionedRoot=originalRoot; }
 });
 

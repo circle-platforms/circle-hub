@@ -310,6 +310,12 @@ export const ProduceDetail = z.object({
   /** Optional sources that could not be read for this production. */
   missing: z.array(z.object({ producer: z.string(), slot: z.string(), external: z.string().nullable(), observation:z.unknown().optional(), conclusion:z.string().optional() })).default([]),
   lists: z.array(ListDetail).default([]),
+  /**
+   * The skill whose directory walk, run by the Hub itself, bound this production's sources (issue 34, decision 157): pack
+   * id and version, the walk module and the SHA-256 of its bytes. Absent when no directory was walked by the Hub, and on
+   * every production recorded before this field: for those the walk that was used is not recorded.
+   */
+  directory_skill: z.object({ id: z.string(), version: z.string(), module: z.string(), sha256: z.string() }).optional(),
   /** Producer calls made and calls answered from stored outputs. */
   calls: z.object({ made: z.number(), reused: z.number() }).nullable().default(null),
   /** The typed-judgment placement the root depends on: model, threshold, spans placed or not, judge failures, skipped entries per producer. */

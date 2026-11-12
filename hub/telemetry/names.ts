@@ -24,16 +24,16 @@ const SYNC_STEPS = [
 ] as const;
 
 /** One round of a background task. */
-export const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'index-knowledge', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
+export const BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'summarize-results', 'index-knowledge', 'sync-knowledge', 'poll-console', 'clean-staging', 'renew-lease', 'project-document', 'purge-traces'] as const;
 export type BackgroundStep = (typeof BACKGROUND_STEPS)[number];
 
 /** Rounds a timer starts. The others run when something asks (a document job, a staged pack's expiry, a lease in use), so they have no interval to report. */
-export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'index-knowledge', 'poll-console', 'purge-traces'] as const satisfies readonly BackgroundStep[];
+export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'summarize-results', 'index-knowledge', 'poll-console', 'purge-traces'] as const satisfies readonly BackgroundStep[];
 
 /** The root step of a CLI command, by the command's name; `run-command` for a name the CLI does not know. */
 const COMMAND_STEPS = [
   'run-command', 'run-user', 'run-token', 'run-logs', 'run-run', 'run-local-tools', 'run-setup-code',
-  'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-skill', 'run-pack', 'run-resource', 'run-var', 'run-secret',
+  'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-skill', 'run-pack', 'run-resource', 'run-var', 'run-mask', 'run-secret',
   'run-source', 'run-original', 'run-lease', 'run-knowledge', 'run-doc', 'run-init-admin', 'run-operator-token', 'run-trace',
   'run-init', 'run-db', 'run-key', 'run-service', 'run-backup', 'run-restore', 'run-deploy', 'run-rollback', 'run-rehearse', 'run-status', 'run-tls',
 ] as const;

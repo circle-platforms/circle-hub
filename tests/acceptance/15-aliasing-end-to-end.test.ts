@@ -84,8 +84,8 @@ describe('scenario 15: FAMX and FAMY aliasing end to end', () => {
     assert.equal(famyRec.items.length, 1);
 
     // Console HTML check
-    const pageFAMX = await consoleClient.get(`/console/runs/${runFAMX.run}`);
-    const pageFAMY = await consoleClient.get(`/console/runs/${runFAMY.run}`);
+    const pageFAMX = await consoleClient.task(runFAMX.run);
+    const pageFAMY = await consoleClient.task(runFAMY.run);
     assert.equal(pageFAMX.status, 200);
     assert.equal(pageFAMY.status, 200);
     assert.ok(runFAMX.root && runFAMY.root);

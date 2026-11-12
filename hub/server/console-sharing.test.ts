@@ -7,6 +7,7 @@ import { runPage, type PageContext } from './console/pages.ts';
 import { resultPage, resultsPage } from './console/results.ts';
 import { productionShareKey } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
+import { everyTaskTab } from './console/testing-task-tabs.ts';
 let postgres: TemporaryPostgres;
 const skip = await sandboxSkip();
 before(async()=>{postgres=await startPostgres();}); after(async()=>{await postgres?.stop();});
@@ -23,7 +24,8 @@ test('console shared views are marked, administrator views list decisions, and r
   for(const view of [await runPage(bob,run.run),await resultPage(bob,run.run),await resultsPage(bob)]){
     assert.equal(view.status,200);assert.ok(String(view.body).includes('经管理员分享'));
   }
-  const admin=await runPage(context(h.admin),run.run);
+  // The decisions are technical information, one of the page's tabs (decision 151).
+  const admin=await everyTaskTab('http://127.0.0.1/console/runs/'+run.run,(path)=>runPage({...context(h.admin),url:new URL(path)},run.run));
   assert.ok(String(admin.body).includes('当前分享'));assert.ok(String(admin.body).includes('production:toy-locate'));
   await h.kit.authorizations.unshare(h.admin,productionShareKey('toy-locate'),{kind:'pack_users',pack:'toy-locate'});
   assert.deepEqual(await runPage(bob,run.run),absent);
@@ -42,10 +44,11 @@ test('shared console receipts omit rejected validation explanations and pointers
   assert.ok(errors.some(error=>error.path!==undefined&&error.message.includes('synthetic-private-item')));
   await h.kit.authorizations.share(h.admin,run.run,[h.bob.id]);
   const context=(principal:typeof h.bob):PageContext=>({deps:{records:h.kit,runs:h.service} as unknown as ServerDeps,principal,admin:principal.role==='admin',url:new URL('http://127.0.0.1/console/runs'),chrome:title=>({title,user:{name:principal.name,role:principal.role,admin:principal.role==='admin'},csrf:null}),userName:async id=>id?(await h.kit.principals.get(id))?.name??id:'—'});
-  const shared=await runPage(context(h.bob),run.run);assert.equal(shared.status,200);
+  const tabs=(principal:typeof h.bob)=>everyTaskTab('http://127.0.0.1/console/runs/'+run.run,(path)=>runPage({...context(principal),url:new URL(path)},run.run));
+  const shared=await tabs(h.bob);assert.equal(shared.status,200);
   for(const error of errors){assert.ok(!String(shared.body).includes(error.message));if(error.path)assert.ok(!String(shared.body).includes(error.path));}
   for(const user of [h.alice,h.admin]){
-    const own=await runPage(context(user),run.run);assert.equal(own.status,200);
+    const own=await tabs(user);assert.equal(own.status,200);
     assert.ok(String(own.body).includes('synthetic-private-item 不是本运行的条目'));
   }
   await h.kit.authorizations.unshare(h.admin,run.run,h.bob.id);

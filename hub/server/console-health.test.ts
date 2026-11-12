@@ -181,13 +181,49 @@ function section(markup: string, title: string): string {
   return found;
 }
 
-async function shown(client: ConsoleClient, path = '/console/health'): Promise<string> {
+/** The tabs of the page (decision 151): each is an address of its own and reads only what it shows. */
+const TABS = ['resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
+const tabPath = (tab: typeof TABS[number]): string => (tab === 'resources' ? '/console/health' : `/console/health?tab=${tab}`);
+
+async function one(client: ConsoleClient, path: string): Promise<string> {
   const reply = await client.get(path);
   assert.equal(reply.status, 200, reply.body.slice(0, 400));
   return reply.body;
 }
 
+/** One address, or the whole place: what its six tabs show, one after the other. */
+async function shown(client: ConsoleClient, path?: string): Promise<string> {
+  if (path !== undefined) return one(client, path);
+  let all = '';
+  for (const tab of TABS) all += await one(client, tabPath(tab));
+  return all;
+}
+
 // ---------------------------------------------------------------- who may open it
+
+test('six tabs, each an address of its own, and a tab reads only what it shows', async (t) => {
+  const reads: string[] = [];
+  const counted = <T extends object>(name: string, target: T): T => new Proxy(target, { get: (object, key, receiver) => { const value = Reflect.get(object, key, receiver); return typeof value !== 'function' ? value : (...args: unknown[]) => { reads.push(`${name}.${String(key)}`); return (value as (...a: unknown[]) => unknown).apply(object, args); }; } });
+  const w = await world(t, (page) => ({ health: counted('health', healthReader(page)), traces: counted('traces', new TraceReader(page)) }));
+  const tabsOf = (body: string) => [...(/<nav class="ch-seg" aria-label="运行状况内容" data-health-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1] ?? '').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map((match) => [match[1], !!match[2], match[3]]);
+  const expected: Record<typeof TABS[number], { label: string; reads: string[] }> = {
+    resources: { label: '资源', reads: ['health.summary', 'health.curve', 'health.events'] },
+    tasks: { label: '后台任务', reads: ['health.summary', 'traces.background'] },
+    events: { label: '崩溃和重启', reads: ['health.summary', 'health.events', 'health.eventCount'] },
+    clients: { label: '按客户端', reads: ['health.summary', 'traces.clients'] },
+    releases: { label: '按发布', reads: ['health.summary', 'health.releases', 'traces.releases'] },
+    self: { label: '观测自身', reads: ['health.summary', 'health.curve'] },
+  };
+  for (const tab of TABS) {
+    reads.length = 0;
+    const body = await shown(w.admin, tabPath(tab));
+    assert.deepEqual(tabsOf(body), TABS.map((key) => [tabPath(key), key === tab, expected[key].label]), tab);
+    assert.match(body, new RegExp(`data-health-tab="${tab}"`));
+    assert.deepEqual(reads, expected[tab].reads, `the reads of ${tab}`);
+  }
+  reads.length = 0;
+  assert.match(await shown(w.admin, '/console/health?tab=absent'), /data-health-tab="resources"/, 'an unknown tab is the first');
+});
 
 test('运行状况 is an administrator\'s page: listed for them, and a member gets what any other administrators\' page gives', async (t) => {
   const w = await world(t);
@@ -289,13 +325,14 @@ test('by client: name, declared platform, entry, connections, calls and p95; a n
   await everything(w);
   const clients = section(await shown(w.admin), '按客户端');
   assert.match(clients, /现在 4 个 MCP 会话、6 个实时推送流/);
-  assert.match(clients, /客户端 平台 入口 版本 现在的连接 近 24 小时调用 近 24 小时 p95/);
+  assert.match(clients, /客户端 平台 入口 客户端版本 现在的连接 近 24 小时调用 近 24 小时 p95/);
   assert.match(clients, /client-one os-one MCP 1\.0 3 12 2\.4 秒/);
   assert.match(clients, /client-one os-two MCP 1\.0 同上 12 2\.2 秒/);
   assert.match(clients, /client-two 未知 MCP 2\.0 0 12 1\.2 秒/, 'no platform declared; the sample says it holds no session');
   assert.match(clients, /未声明名字 未知 MCP 未知 1 6 300 毫秒/);
   assert.match(clients, /client-one os-one 同步 1\.0 未知 12 100 毫秒/);
-  assert.match(clients, /浏览器 — 控制台 — 6 12 200 毫秒/);
+  // The browser has no platform or client version to declare: the cells say so instead of a dash (issue 241).
+  assert.match(clients, /浏览器 不适用 控制台 不适用 6 12 200 毫秒/);
 });
 
 test('a client that holds a session and made no call in the window still has a line', async (t) => {
@@ -471,6 +508,13 @@ test('a reading that failed is 未知, the curve breaks there, and the card says
   assert.match(clients, /client-one os-one MCP 1\.0 未知 12 2\.4 秒/);
 });
 
+test('delay tables name milliseconds and disclose all three aggregation intervals without duplicating maximum',async t=>{
+ const w=await world(t);await samples(w.db,1);const page=await shown(w.admin);let main='';
+ walk(parse(page),node=>{if('attrs' in node&&node.nodeName==='section'){const markup=serialize(node as DefaultTreeAdapterMap['parentNode']);if(visible(markup).trim().startsWith('主线程'))main=markup;}return !main;});assert.ok(main);
+ assert.match(main,/延迟最大值（毫秒）/);assert.doesNotMatch(main,/延迟最大值（最大）/);assert.match(main,/每 5 分钟取最大值/);assert.match(main,/每 30 分钟/);assert.match(main,/表格每小时/);
+ assert.match(main,/<td class="num">120<\/td>/);
+});
+
 test('a value the sample never had is 未知, however the other readings went', async (t) => {
   const w = await world(t);
   await samples(w.db, 1);
@@ -486,7 +530,7 @@ test('a crash nobody can account for says so, and does not say that nothing was 
   await event(w.db, { at: CRASH + 24_000, kind: 'abnormal_exit', boot: 'boot-crashed', release: CURRENT, uptime: 20 * HOUR_MS, last: CRASH, reports: [] });
   const crashes = section(await shown(w.admin), '崩溃和重启');
   assert.match(crashes, /异常退出 运行 20 小时 0 分 没有崩溃报告 当时在处理什么： ?未知/);
-  assert.match(crashes, /当时在处理什么： ?未知 ?。在途请求日志里没有这个进程，这不等于当时没有请求；主机重启会清掉这个日志。/);
+  assert.match(crashes, /当时在处理什么： ?未知 ?。在途请求日志里没有这个进程，这不等于当时没有请求；服务器重启会清掉这个日志。/);
   assert.match(crashes, /崩溃时间 未知 ?（最后一次活动 /);
   assert.match(crashes, /这个进程崩溃之前 5 分钟没有样本。/);
 });

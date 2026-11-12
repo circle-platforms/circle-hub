@@ -35,6 +35,7 @@ export const PACK_DIRECTORIES: Readonly<Record<string, string>> = {
   'build-site': here('../../system/build-site/'),
   'manual-store': here('../../system/manual-store/'),
   openkm: here('../../system/openkm/'),
+  'wecom-robot': here('../../system/wecom-robot/'),
 };
 
 /** A pack file: a legal pack path that is not a test. README.md, api.ts and testing/ are not legal pack paths. */

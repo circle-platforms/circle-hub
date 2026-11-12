@@ -189,12 +189,15 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
 - **Discovery.** An unauthenticated `/mcp` answer carries `WWW-Authenticate: Bearer realm="circle-hub",
   resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp"`, plus `error="invalid_token"` when a token was
   sent and does not work (the body stays the same for every reason). The resource metadata names `<origin>/mcp` and this
-  Hub as its authorization server; the authorization server metadata offers the authorization code with PKCE S256 only,
-  public clients only (`none`), no refresh token, and the `iss` response parameter. `<origin>` is the scheme of the
+  Hub as its authorization server; the authorization server metadata offers the authorization code with PKCE S256 and
+  the device code (`device_authorization_endpoint`, RFC 8628), public clients only (`none`), no refresh token, and the
+  `iss` response parameter. `<origin>` is the scheme of the
   channel and the Host the request came with (already checked against the allowed hosts).
 - **Registration** (`POST /oauth/register`, RFC 7591): JSON; what the Hub does not support is replaced, not refused
-  (RFC 7591 3.2.1): every client is public (`none`, no secret, whatever method was asked) and gets the authorization code
-  only; a client whose `grant_types` or `response_types` leave the code out is refused. Redirect URIs are sent in the form
+  (RFC 7591 3.2.1): every client is public (`none`, no secret, whatever method was asked) and gets the authorization code,
+  and the device code when its `grant_types` ask for it; a client whose `grant_types` or `response_types` leave the
+  authorization code out is refused, so a client that only uses the device code still registers a redirect URI. Grant
+  types are not stored with a client: the token endpoint takes either grant from any registered client. Redirect URIs are sent in the form
   a URL parser writes them (they are stored, shown and matched as sent), and are https to a plain DNS name or IP
   address, http on a loopback address (any port at authorization, RFC 8252 7.3) or a private-use scheme named by a
   reversed domain name (`com.example.app:`, RFC 8252 7.1, which leaves out the operating system's handlers such as `tel:`
@@ -222,6 +225,26 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   on every request, so revocation is immediate: disconnecting a Circle is revoking its token (`circle-hub token revoke`).
 - **Revocation** (`POST /oauth/revoke`, RFC 7009): whoever holds a token revokes it by its value; an unknown token gets
   the same 200.
+- **Device code** (RFC 8628; owner, 2026-11-09: a client signs in without opening a browser itself or taking a redirect,
+  as GitHub's device login does). `POST /oauth/device_authorization` (form encoding) takes a registered `client_id` and
+  optionally the `resource`, which must be this Hub's `/mcp` (`invalid_target` otherwise); `scope` is ignored. It answers
+  a 43-character `device_code`, a `user_code` of eight letters of twenty consonants shown as `XXXX-XXXX` (about 34 bits),
+  `verification_uri` `<origin>/console/device`, `verification_uri_complete` with `?user_code=`, `expires_in` 600 and
+  `interval` 5. Device requests live in memory for `DEVICE_REQUEST_TTL_MS` (10 minutes) with the same bounds as
+  authorization requests (ten per client, a hundred per sender, 5000 in all). A person types the code on
+  `/console/device` (any case, with a space or a dash; the form carries a one-time nonce in the `circle_hub_device`
+  cookie, SameSite=Strict, and is taken from this console's own origin only). Ten codes per sender in 15 minutes, right or
+  wrong, then 429, so codes cannot be guessed at speed. A code of an undecided request opens an authorization request for
+  it, bound to that browser with `circle_hub_authorize` exactly like one from `/oauth/authorize`, and the browser goes to
+  `/console/authorize/<request>`: the same identity step (invitation or console session) and confirm page, which shows
+  the user code to compare with the client's and warns against a code sent by someone else, instead of a redirect URI. The
+  decision redirects nowhere: the page says how it was decided, and the client's next poll of `/oauth/token` with
+  `grant_type=urn:ietf:params:oauth:grant-type:device_code` gets it. Until then the poll answers
+  `authorization_pending`, and `slow_down` (the interval grows by five seconds) when it comes sooner than the interval.
+  After the decision it answers `access_denied` once, or an ordinary Hub token once (the same kind and label as from a
+  code). After that, and for another client's device code, it answers `invalid_grant`; after the lifetime it answers
+  `expired_token`. When two browsers typed the same code, the first decision counts; the other page says the code was
+  handled and spends no invitation.
 - **Invitations**: `circle-hub user invite <user>` (an administrator; the console's 添加成员) prints a twelve-character
   code once; the records keep its SHA-256 (`invitations`, migration 7), valid 24 hours, used once by the client it
   authorized. Requests, codes and login links live in memory and end with the process, like console sessions.
@@ -600,7 +623,8 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   alone while it holds an open dialog or a focused field; when the stream breaks the page says 连接中断 with the time of
   its data, keeps it, and polls every 15 s until the stream is back.
 - **The neutral page** says “该内容不存在或无权查看” on the console (the MCP tools keep their own neutral text), the same
-  words whatever the path. A session that ended (revoked token, disabled account, expiry) returns to the login page with
+  words whatever the path, with one sentence of next step (go back to the overview or the list, ask the content's owner or an
+  administrator) that does not tell absent from forbidden. A session that ended (revoked token, disabled account, expiry) returns to the login page with
   a two-minute `circle_hub_ended` cookie scoped to `/console/login`, so the page says the sign-in ended, once.
 
 - **The authorization page** (`/console/authorize/<request>`, `console/authorize.ts`, decision 125): the request the
@@ -1023,7 +1047,7 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 
 ## 包内本地工具的原字节下载
 
-`/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和下架状态；版本必须带 tools/。无权、不存在、下架、没有工具、清单外路径、穿越路径和编码斜杠的回答字节相同。真实原因只写在管理员日志：版本不存在、未分配、已下架、账号停用、没有本地工具、清单外路径、路径含 `..`、编码或保留字符、版本引用格式不对，各记各的。同一进程里，一个用户和一个版本在一分钟内复用已经核对过的解包，避免按文件把整包再哈希一遍；这一分钟里每次请求仍问分配和下架，发出去的那个文件仍重算 SHA-256。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
+`/local-tools/<包>@<版本>` 返回发布清单的规范 JSON 字节，包号是其 SHA-256；后接清单路径时返回该文件的原字节，连同 Content-Digest 和 ETag。每次请求先核 Bearer 令牌，再经 WorkflowStore.forUser 核对版本分配和退役状态；版本必须带 tools/。无权、不存在、退役、没有工具、清单外路径、穿越路径和编码斜杠的回答字节相同。真实原因只写在管理员日志：版本不存在、未分配、已退役、账号停用、没有本地工具、清单外路径、路径含 `..`、编码或保留字符、版本引用格式不对，各记各的。同一进程里，一个用户和一个版本在一分钟内复用已经核对过的解包，避免按文件把整包再哈希一遍；这一分钟里每次请求仍问分配和退役，发出去的那个文件仍重算 SHA-256。共享 Host/Origin 检查先行，出口只收 GET/HEAD，不经过 MCP、不增加工具。
 
 `/run-export/<运行>`（决定 104）把运行、最近一次已受理结果和该结果的原样提交以规范 JSON 交给运行发起人和管理员，供客户端在本地生成产物；`/run-export/<运行>/run` 只给运行本身，第一次受理之前也能取，供客户端工具读冻结的条目（决定 155）；`/run-export/<运行>/sources/<sha256>` 返回绑定在该运行上的一份原件的原字节（`artifacts.sourceForRun`：只给运行可见者、只给绑定的原件、只在读取层级允许时给字节），带 Content-Digest。每次请求先核 Bearer 令牌，只接受 GET 和 HEAD；别人的运行、未绑定的原件和形状不对的路径都答 404，没有已受理提交时答 409。每次请求写一行调用日志（工具名 run-export），不含令牌和正文。 `/run-export/<运行>/knowledge`（模型 K05、D06 R[2]）一次给出运行锁定的产品知识根：每个节点到叶子、照这位读者读子树时看到的样子，首行之后每行一个节点（`run-knowledge@1`），带 `content-digest`；同一个根的内容对所有可读者相同，进程留着最近两个根的结果，每次仍核对读者能否读这个根；没有锁定根、读者读不到或根是知识空间时答 404。客户端按摘要留在本地读，不再逐页用 get_nodes 读同一个不变的根。
 

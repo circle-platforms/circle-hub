@@ -23,7 +23,7 @@ const ABSENCE_NOTE = {
   unknown: '版本不存在',
   unassigned: '版本没有分配给这个用户',
   uninstalled: '技能包版本没有安装',
-  withdrawn: '版本已下架',
+  withdrawn: '版本已退役',
   disabled: '账号已停用',
 } as const;
 
@@ -62,7 +62,7 @@ async function openForDownload(deps: ServerDeps, principal: Principal, ref: stri
 /** Why a version is not handed out: the admin note, and the answer D05 R[3] gives (absent, not assigned, not a valid account). */
 async function absence(deps: ServerDeps, principal: Principal, ref: string): Promise<{ note: string; status: number; bytes: Buffer }> {
   const ask = deps.workflows.absence;
-  if (ask === undefined) return { note: '版本不存在、未分配或已下架', status: 404, bytes: ABSENT };
+  if (ask === undefined) return { note: '版本不存在、未分配或已退役', status: 404, bytes: ABSENT };
   const why = await ask(principal, ref);
   if (why === null) return { note: '版本已发布并分配，但不能作为本地工具下发', status: 404, bytes: ABSENT };
   if (why === 'unassigned') return { note: ABSENCE_NOTE[why], status: 403, bytes: UNASSIGNED };

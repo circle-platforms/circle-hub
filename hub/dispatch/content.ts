@@ -1,12 +1,14 @@
-// Scan the exact admitted bytes; a container's semantic model alone cannot cover its opaque members.
+// Check the exact admitted bytes. What is dispatched is content, and content is not refused for looking like a credential
+// (issue 194): the content scan finds nothing, so this comes down to the digest. The walk over a container's members is
+// what the detectors used, kept for the tests of that refusal until it is removed.
 import {createDefaultRegistry,recognize,readContainerMembers,type ParserRegistry} from '../refs/api.ts';
-import {scanForCredentials,canonicalBytes,sha256Hex} from '../records/api.ts';
+import {scanContent,canonicalBytes,sha256Hex} from '../records/api.ts';
 const registry=createDefaultRegistry();
-function clean(bytes:Uint8Array):boolean {const scan=scanForCredentials(bytes);return scan.inspected&&scan.clean&&!scan.truncated;}
+function clean(bytes:Uint8Array):boolean {const scan=scanContent(bytes);return scan.inspected&&scan.clean&&!scan.truncated;}
 function decodeXml(s:string):string {return s.replace(/&(?:#([0-9]+)|#x([0-9a-fA-F]+)|(amp|apos|quot|lt|gt));/gi,(_,dec,hex,named)=>{if(dec)return String.fromCodePoint(parseInt(dec,10));if(hex)return String.fromCodePoint(parseInt(hex,16));const n=named.toLowerCase();return n==='amp'?'&':n==='apos'?"'":n==='quot'?'"':n==='lt'?'<':'>';});}
 export function verifiedContent(bytes:Uint8Array,sha256:string,mediaType:string,parsers?:ParserRegistry):boolean {
  if(sha256Hex(bytes)!==sha256)return false;
- const original=scanForCredentials(bytes);if(original.findings.length||original.truncated)return false;
+ const original=scanContent(bytes);if(original.findings.length||original.truncated)return false;
  if(original.inspected)return original.clean;
  try {
    const reg=parsers??registry;

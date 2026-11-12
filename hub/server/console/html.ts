@@ -88,7 +88,22 @@ export function table(headers: readonly (string|Html)[], rows: readonly unknown[
   )}</tbody></table></div>`;
 }
 
-export function definitions(pairs: readonly (readonly [string, unknown])[]): Html {
+/** What table() writes around a table before anything names it. Escaped text can never hold it: only table() does. */
+const UNNAMED_TABLE = /<div class="ch-table-wrap" tabindex="0" role="region" aria-label="表格"><table class="ch-table"( data-view="[^"]*")?>/g;
+
+/**
+ * Names the tables in a part of a page that nothing named yet (accessibility guide, tables; responsive-table guide): the
+ * scroll region around a table and the table itself say what they list, by the title of the section that holds them or,
+ * for a table that stands in no titled section, the page's. The name is a caption only assistive technology gets: the
+ * visible heading above the table already says it to a sighted reader. A table named earlier is left as it is.
+ */
+export function nameTables<T>(part: T, name: string): T | Html {
+  if (!(part instanceof Html) || !part.text.includes('aria-label="表格"><table class="ch-table"') || !name.trim()) return part;
+  const label = html`${name.trim()}`.text;
+  return new Html(part.text.replace(UNNAMED_TABLE, (_all, view: string | undefined) => `<div class="ch-table-wrap" tabindex="0" role="region" aria-label="${label}"><table class="ch-table"${view ?? ''}><caption class="ch-visually-hidden">${label}</caption>`), part.layout);
+}
+
+export function definitions(pairs: readonly (readonly [string | Html, unknown])[]): Html {
   return html`<dl class="ch-kv">${pairs.map(([term, value]) => html`<dt>${term}</dt><dd>${value}</dd>`)}</dl>`;
 }
 
@@ -109,8 +124,18 @@ export function code(value: unknown): Html {
   return html`<code>${value}</code>`;
 }
 
+/** Preformatted output that is code or data (a command's output, a JSON body): `pre` holding `code` (html guide, code blocks). */
 export function pre(value: unknown): Html {
-  return html`<pre>${value}</pre>`;
+  return html`<pre><code>${value}</code></pre>`;
+}
+
+/**
+ * Where a page is (breadcrumbs guide): an ordered list in a navigation landmark, the places above as links and the page
+ * itself last, a link to itself marked as the current page, so that every step of the trail is the same kind of thing.
+ * The separators are drawn by the style sheet, so a screen reader reads the names only.
+ */
+export function trail(above: readonly (Html | string)[], current: unknown): Html {
+  return html`<nav class="ch-crumbs" aria-label="位置"><ol>${above.map((place) => html`<li>${place}</li>`)}<li><a href="" aria-current="page">${current}</a></li></ol></nav>`;
 }
 
 export const SCRIPT_HASH = createHash('sha256').update(LIVE_SCRIPT, 'utf8').digest('base64');
@@ -141,8 +166,13 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  return {text:body.text.replaceAll(THEME_RUNTIME_TAG,tag(THEME_RUNTIME_TAG)).replaceAll(LIVE_TAG,tag(LIVE_TAG)),policy:policy.replace('script-src ',`script-src 'nonce-${nonce}' `)};
 }
 
-/** The nine places (decision 147); only the current place may expand its authorized navigation. */
+/**
+ * The ten places (decision 151: skills left the workflows place and the places stand in four groups); only the current
+ * place may expand its authorized navigation.
+ */
 export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
+/** The name of the skills place. The kind it lists keeps its vocabulary name (pack_kind skill). */
+export const SKILLS_PLACE = '技能';
 
 export interface PageChrome {
   title: string;
@@ -162,7 +192,8 @@ export interface PageChrome {
   /** Buttons to the right of the title. */
   actions?: unknown;
   /** Explicit parent location, above the title; no URL guessing or additional reads. */
-  crumbs?: Html;
+  /** The places above this page, the nearest last; page() adds the page itself (breadcrumbs guide). */
+  crumbs?: readonly (Html | string)[];
   /** A page without an account shown as a wider card (the setup steps). */
   wide?: boolean;
 }
@@ -191,6 +222,7 @@ export const ICONS = {
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5V12l3 2',
   flow: 'M3 6h5c5 0 5 12 10 12h3M3 18h5c2.5 0 3.5-3 4.5-6M15 6h6',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  skill: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z',
 } as const;
 
 /**
@@ -214,20 +246,23 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['tasks', '任务', '/console/runs', 'review'],
   ['knowledge', '知识库', '/console/knowledge', 'book'],
   ['packs', uiLabelOf('pack_kind', 'workflow'), '/console/packs', 'pack'],
-  ['skills', uiLabelOf('pack_kind', 'skill'), '/console/skills', 'pack'],
+  ['skills', SKILLS_PLACE, '/console/skills', 'skill'],
   ['connections', '连接', '/console/connections', 'sys'],
-  ['records', '记录', '/console/records', 'rec'],
   ['team', '团队', '/console/team', 'users'],
+  ['records', '记录', '/console/records', 'rec'],
   ['settings', '设置', '/console/settings', 'gear'],
   ['health', '运行状况', '/console/health', 'flow'],
 ];
+
+/** The first place of each later group: the overview, the work, the team and its connections, the Hub itself. A line separates the groups. */
+const GROUP_STARTS: ReadonlySet<NavKey> = new Set<NavKey>(['tasks', 'connections', 'settings']);
 
 /** A place only an administrator's navigation lists; its page answers a member as any other administrators' page does. */
 const ADMIN_PLACES: ReadonlySet<NavKey> = new Set<NavKey>(['health']);
 
 function htmlDocument(title: string, body: Html, script = false): Html {
   return html`<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
 <title>${title} · circle-hub</title><link rel="icon" type="image/svg+xml" href="/console/favicon.svg">${new Html(THEME_TAGS)}<link rel="stylesheet" href="${CONSOLE_CSS.path}" integrity="${CONSOLE_CSS.integrity}" crossorigin="anonymous"></head>
 <body class="hub">${body}${script ? new Html(LIVE_TAG) : ''}</body></html>`;
 }
@@ -235,23 +270,25 @@ function htmlDocument(title: string, body: Html, script = false): Html {
 /** A page of the console: the side navigation and the signed-in account, then the title and the body. */
 export function page(chrome: PageChrome, body: unknown): Html {
   const user = chrome.user;
-  const content = html`${body}`;
   const layout = body instanceof Html ? body.layout : {};
+  // A table no titled section named takes the page's title.
+  const content = nameTables(html`${body}`, chrome.title) as Html;
   // Escaped text can never hold this attribute: only liveModule() writes it.
   const updates = user !== null && [content, layout.inspector, layout.sidebar].some((part) => part?.text.includes(' data-live="'));
   const state = updates ? html`<p class="live-state" id="live-state" role="status" hidden></p>` : '';
   const current = NAV.find(([key]) => key === chrome.active);
-  const crumbs = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? link(current[2], current[1]) : undefined);
   const heading = chrome.heading ?? chrome.title;
+  const above = chrome.crumbs ?? (user !== null && current && chrome.title !== current[1] ? [link(current[2], current[1])] : undefined);
+  const crumbs = above === undefined || above.length === 0 ? undefined : trail(above, heading);
   const title = chrome.hint === undefined ? heading : html`<span class="ch-tip ch-tip--start" tabindex="0" title="${chrome.hint}" aria-describedby="page-hint">${heading}<span class="ch-tip-bubble" id="page-hint" role="tooltip">${chrome.hint}</span></span>`;
   const actions=layout.actions??chrome.actions;
   const notice=chrome.notice?html`<div class="ch-toast" role="status" data-toast-success tabindex="0">${chrome.notice}</div>`:'';
-  const top = html`${layout.detail?'':notice}${crumbs ? html`<nav class="ch-crumbs" aria-label="位置">${crumbs}</nav>` : ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
+  const top = html`${layout.detail?'':notice}${crumbs ?? ''}<header class="ch-page-head"><div><h1 class="ch-title">${title}</h1>${chrome.sub === undefined ? '' : html`<p class="ch-meta" id="page-sub">${chrome.sub}</p>`}${layout.detail ? '' : state}</div>${actions === undefined ? '' : html`<div class="ch-actions">${actions}</div>`}</header>`;
   if (user === null) return htmlDocument(chrome.title, html`<main class="ch-pane" data-sign-in${chrome.wide ? html` data-wide` : ''}>${brand()}${top}<div class="ch-section" data-sign-in-content>${content}</div><footer class="ch-actions">${themeSwitch()}</footer></main>`);
   const area = areaClass(chrome.active);
-  const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
+  const nav = NAV.filter(([key]) => user.admin || !ADMIN_PLACES.has(key)).map(([key, label, path]) => html`${GROUP_STARTS.has(key) ? html`<hr class="ch-nav-sep">` : ''}<a class="ch-nav-item${areaClass(key) ? ' ' + areaClass(key) : ''}" href="${path}"${key === chrome.active ? html` aria-current="page"` : ''}><span class="ch-dot" aria-hidden="true"></span><span>${label}</span></a>${key === chrome.active ? layout.sidebar ?? scopeNavigation(key) : ''}`);
   const inspector = layout.inspector;
-  return htmlDocument(chrome.title, html`<div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
+  return htmlDocument(chrome.title, html`<a class="ch-skip" href="#console-main">跳到主要内容</a><div class="ch-app${area ? ' ' + area : ''}${layout.detail && inspector ? ' is-detail' : ''}"${inspector ? '' : html` data-without-inspector`}>
 <nav class="ch-nav" aria-label="主导航">
 <input class="ch-visually-hidden" type="checkbox" id="console-navigation-toggle" data-navigation-toggle aria-controls="console-navigation-links" aria-label="展开导航">
 <div class="ch-brand">${logo()}<span>circle-hub</span><label class="ch-icon-btn" for="console-navigation-toggle" title="展开导航" aria-label="展开导航">${icon('menu')}</label></div>
@@ -259,8 +296,8 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-nav-list" id="console-navigation-links">${nav}</div>
 <div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="/console/logout"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
-<main class="ch-pane" id="console-main">${top}<div class="ch-section" data-area-content>${content}</div></main>
-${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
+<main class="ch-pane" id="console-main" tabindex="-1">${top}<div class="ch-section" data-area-content>${content}</div></main>
+${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail ? html`<h1 class="ch-visually-hidden ch-detail-heading">${heading}</h1>` : ''}${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}
 </div>`, updates);
 }
 
@@ -273,13 +310,13 @@ function themeSwitch(): Html {
 }
 
 function areaClass(active?: NavKey): string {
-  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
+  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' || active === 'skills' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
 }
 
 /** Detail pages without a directory projection still offer scope links, without inventing counts or a selected scope. */
 function scopeNavigation(active: NavKey): Html {
-  if (active !== 'knowledge' && active !== 'packs') return html``;
-  const base = active === 'knowledge' ? '/console/knowledge' : '/console/packs';
+  if (active !== 'knowledge' && active !== 'packs' && active !== 'skills') return html``;
+  const base = active === 'knowledge' ? '/console/knowledge' : active === 'skills' ? '/console/skills' : '/console/packs';
   const values = KnowledgeSearchScopeSchema.enum;
   return html`<div class="ch-nav-sub" aria-label="空间">${[values.all, values.personal, values.shared, values.team].map((scope) => link(base, uiLabelOf('knowledge_search_scope', scope), {scope}))}</div>`;
 }

@@ -1,4 +1,4 @@
-export {historyUsage,chargedBytes,safeBytes,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
+export {historyUsage,chargedBytes,safeBytes,forgetCapacityCharges,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
 import type {PgPersonalPayloads} from './personal-payloads.ts';
@@ -28,9 +28,11 @@ export type { HubConfig, DatabaseConfig, Limits } from '../config/index.ts';
 export type { RecordKind } from '../../contracts/generated/protocol.ts';
 
 export { RecordVariables, VariableError, secretForms, validateChangeReason } from './variables.ts';
+export { MaskingRules, MaskingRuleError, MASKING_DICTIONARY_KEY, MASKING_REFRESH_MS, type MaskingState } from './masking.ts';
+export { maskPlaceholder, isMaskableMediaType, compileMasking, MASKING_DICTIONARY_SCHEMA, type MaskingCount, type MaskingRule, type CompiledMasking } from '../../contracts/src/masking.ts';
 export type { NamedVersion, VariableSnapshot, SecretWrite, SecretMaterial, PreparedSecrets } from './variables.ts';
 export { recordIntegrityNotes, noteRecordIntegrity, type RecordIntegrityNote } from './integrity-notes.ts';
-export { createRecordStore, type StoreOptions } from './store.ts';
+export { createRecordStore, verifiedBodyDigest, type StoreOptions } from './store.ts';
 export { parseStrictJson } from './strict-json.ts';
 export { canonicalize, canonicalBytes, canonicalByteLength, createCanonicalEncoder, CanonicalizationError } from './canonical.ts';
 export { sha256Hex, digestOf, recordDigest, isSha256, SHA256_PATTERN } from './digest.ts';
@@ -38,6 +40,7 @@ export { newId, ulid, idTime, isId } from './ids.ts';
 export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
 export { initialPassword, validPassword } from './password.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
+export { scanContent, useContentDetectors, CONTENT_SCANNER } from './content-scan.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
@@ -326,8 +329,24 @@ export interface RecordStore {
    * the entries it already has are kept, and a record holds at most 200. The number added; 0 for a record that is not stored.
    */
   addIndex?(digest: string, entries: readonly IndexEntry[], tx?: Transaction): Promise<number>;
+  /**
+   * The records of `kind` that nothing has settled, verified, in insertion order: those indexed under `key` with one of
+   * `values`, or every record of the kind when no key is given. A record is settled when the newest record indexed under
+   * `closing` with the record's digest as its value is also indexed under `settled` with that digest. The index entries
+   * decide, so the body of a settled record is not read; a closing record stored without the `settled` entry leaves its
+   * record in the answer, for the caller to read what closed it.
+   */
+  findUnsettled?<B = unknown>(query: { kind: RecordKind; key?: string; values?: readonly string[]; closing: string; closingKind?: RecordKind; settled: string }, tx?: Transaction): Promise<StoredRecord<B>[]>;
+  /**
+   * The records of `kind` indexed under `key` with one of `values` that carry no index entry under `lacking`, verified, in
+   * insertion order. The index entries decide which are read: a caller marks at writing the records a listing never needs,
+   * and one stored without the mark is read and looked at, so the answer does not depend on the mark being complete.
+   */
+  findLacking?<B = unknown>(query: { kind: RecordKind; key: string; values: readonly string[]; lacking: string }, tx?: Transaction): Promise<StoredRecord<B>[]>;
   /** Oldest matching record per index value, verified, in one query; equivalent to find({limit:1}) per value. */
   findFirstMany<B = unknown>(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, StoredRecord<B>>>;
+  /** The digests find would answer, page for page and with the same cursor, in a query that reads no record body. */
+  findDigests?(query: FindQuery, tx?: Transaction): Promise<Page<string>>;
   /** The digests findFirstMany would answer, in one query that reads no record body. */
   firstDigests(query: { key: string; values: readonly string[]; kind?: RecordKind ;}, tx?: Transaction): Promise<Map<string, string>>;
   /** Bounded index scan retaining each matching value and the record's append position. */
@@ -484,7 +503,14 @@ export interface SourceArtifactBody {
   requested_read_tier?: ReadTier;
   visibility: Visibility;
   scan: CredentialScan;
+  /**
+   * Present only on an answer of a business system in which the masking dictionary replaced something (B02 R[11]): the
+   * bytes of this record are the replaced text, never what the system sent. `dictionary` is the digest of the dictionary
+   * in force; `rules` says which rules matched and how often, never what they matched.
+   */
+  masking?: ArtifactMasking;
 }
+export interface ArtifactMasking { dictionary: string; rules: Array<{ rule: string; count: number }> }
 
 export type SourceArtifact = StoredRecord<SourceArtifactBody>;
 
@@ -514,6 +540,8 @@ export interface IngestInput {
   capturedAt?: string;
   /** Run the upload or generation belongs to, recorded on the refusal action when an upload is refused. */
   run?: string | null;
+  /** What the masking dictionary replaced in these bytes before they were handed over; only a read of a business system passes it. */
+  masking?: ArtifactMasking;
 }
 
 export interface ArtifactText {
@@ -945,6 +973,8 @@ export interface RecordsKit {
   artifacts: Artifacts;
   vault: Vault;
   variables: import('./variables.ts').RecordVariables;
+  /** The masking dictionary (B02 R[11]); absent on a fake that reads no business system. */
+  masking?: import('./masking.ts').MaskingRules;
   principals: Principals;
   authorizations: Authorizations;
   pointers: Pointers;

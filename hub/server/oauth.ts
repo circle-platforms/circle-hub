@@ -12,6 +12,13 @@
 // else can finish (or watch) a request another browser identified itself on. A request the endpoint refuses is answered with
 // a page, never by redirecting to a URI a client registered for itself (no open redirector, RFC 9700 4.11). The error codes
 // and descriptions on the wire are the protocol's own (RFC 6749 5.2, RFC 7591 3.2.2): codes of OAuth, ASCII descriptions.
+//
+// A client may also use the device authorization grant (RFC 8628), which needs no browser on the client's side and no
+// redirect back to it: the client asks /oauth/device_authorization for a device code and a short user code, shows the user
+// code with the address of the device page, and polls the token endpoint. A person types the user code on the console's
+// device page; a valid code opens an authorization request for it, bound to that browser like any other, and the same
+// authorization page names the account and takes the approval. An approval answers the client's next poll once with an
+// ordinary Hub token; a refusal answers it with access_denied. Device requests live in memory for DEVICE_REQUEST_TTL_MS.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
@@ -23,6 +30,18 @@ export const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000;
 export const AUTHORIZATION_CODE_TTL_MS = 2 * 60 * 1000;
 /** Where the authorization endpoint sends the browser: under /console, so the console session cookie is sent. */
 export const AUTHORIZE_PAGE = '/console/authorize';
+/** The device authorization grant (RFC 8628 3.4). */
+export const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+/** Where a person types the user code a client shows: under /console, so the console session cookie is sent. */
+export const DEVICE_PAGE = '/console/device';
+/** A device request lives as long as an authorization request. */
+export const DEVICE_REQUEST_TTL_MS = AUTHORIZATION_REQUEST_TTL_MS;
+/** Seconds a client waits between polls at first; each slow_down adds five (RFC 8628 3.5). */
+export const DEVICE_POLL_INTERVAL_S = 5;
+/** Open device requests in all; beyond it new ones are refused. */
+const MAX_DEVICE_REQUESTS = 5000;
+/** User codes are eight letters of twenty consonants (RFC 8628 6.1: about 34 bits, no vowels, no look-alikes), XXXX-XXXX. */
+const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ';
 /** Open requests in all; beyond it new ones are refused, so a flood never evicts a request somebody is finishing. */
 const MAX_REQUESTS = 5000;
 /** Open requests of one client, and of one sender: a new one beyond this ends that client's (that sender's) oldest. */
@@ -50,6 +69,7 @@ const PATHS = new Set([
   '/.well-known/oauth-authorization-server',
   '/oauth/register',
   '/oauth/authorize',
+  '/oauth/device_authorization',
   '/oauth/token',
   '/oauth/revoke',
 ]);
@@ -129,6 +149,23 @@ export function responseUri(uri: string, params: Readonly<Record<string, string 
 const secret = (): string => randomBytes(32).toString('base64url');
 const digest = (value: string): string => createHash('sha256').update(value, 'utf8').digest('hex');
 
+/** Eight letters of USER_CODE_ALPHABET, drawn without bias (bytes of 240 and above are skipped). */
+function newUserCode(): string {
+  let code = '';
+  while (code.length < 8) for (const byte of randomBytes(16)) if (byte < 240 && code.length < 8) code += USER_CODE_ALPHABET[byte % 20];
+  return code;
+}
+
+/** The eight letters of a typed user code, in any case and with spaces or dashes; null for anything else. */
+export function normalizeUserCode(typed: string): string | null {
+  if (typed.length > 64) return null;
+  const letters = typed.toUpperCase().replace(/[\s-]/g, '');
+  return letters.length === 8 && [...letters].every((letter) => USER_CODE_ALPHABET.includes(letter)) ? letters : null;
+}
+
+/** A user code as shown and sent: XXXX-XXXX. */
+export const formatUserCode = (code: string): string => `${code.slice(0, 4)}-${code.slice(4)}`;
+
 // ---------------------------------------------------------------- authorization requests and codes
 
 export interface AuthorizationRequest {
@@ -156,6 +193,11 @@ export interface AuthorizationRequest {
   invitation: { id: string; user: string; name: string; role: PermissionRole } | null;
   /** Wrong invitation codes typed for this request. */
   failures: number;
+  /**
+   * The device request a typed user code opened this page for, or null for a request of the authorization endpoint. A
+   * device request has no redirect URI, state or PKCE challenge: deciding it answers the client's next poll instead.
+   */
+  device: { id: string; userCode: string } | null;
   ended: 'approved' | 'denied' | null;
   /**
    * The decision under way or taken: where the browser goes next, or why not. A request is decided once; a second submit
@@ -179,9 +221,40 @@ export interface CodeGrant {
   compromised: boolean;
 }
 
+/** A device authorization request (RFC 8628 3.1): what the client polls for with its device code. */
+export interface DeviceRequest {
+  id: string;
+  client: Pick<OAuthClient, 'id' | 'name'>;
+  /** The eight letters of the user code, without the dash. */
+  userCode: string;
+  /** The digest of the device code, which is kept by nobody but the client. */
+  codeDigest: string;
+  resource: string;
+  issuer: string;
+  /** A request opened over HTTPS is decided only on a page reached over HTTPS. */
+  secure: boolean;
+  peer: string;
+  created: number;
+  /** Seconds the client waits between polls. */
+  interval: number;
+  lastPoll: number | null;
+  status: 'pending' | 'approved' | 'denied';
+  /** The account a person approved it for. */
+  user: string | null;
+}
+
+/** What one poll of the token endpoint with a device code finds (RFC 8628 3.5). */
+export type DevicePoll =
+  | { outcome: 'invalid' | 'expired' | 'pending' | 'slow_down' | 'denied' | 'invalid_target' }
+  | { outcome: 'approved'; device: DeviceRequest };
+
 export class AuthorizationStore {
   readonly #requests = new Map<string, AuthorizationRequest>();
   readonly #codes = new Map<string, CodeGrant>();
+  readonly #devices = new Map<string, DeviceRequest>();
+  /** Device code digest, and user code, to the device request's id. */
+  readonly #deviceCodes = new Map<string, string>();
+  readonly #userCodes = new Map<string, string>();
   readonly #now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -189,7 +262,7 @@ export class AuthorizationStore {
   }
 
   /** A new request, or null when too many are open (a flood is refused instead of evicting others' requests). */
-  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'redirectSent' | 'state' | 'challenge' | 'peer' | 'resource' | 'issuer' | 'secure'>): AuthorizationRequest | null {
+  open(fields: Pick<AuthorizationRequest, 'client' | 'redirectUri' | 'redirectSent' | 'state' | 'challenge' | 'peer' | 'resource' | 'issuer' | 'secure' | 'device'>): AuthorizationRequest | null {
     this.#prune();
     const own = [...this.#requests.values()].filter((request) => request.client.id === fields.client.id);
     if (own.length >= REQUESTS_PER_CLIENT) this.#requests.delete(own[0].id);
@@ -236,15 +309,101 @@ export class AuthorizationStore {
     return { grant, reused };
   }
 
+  /** A new device request and its device code (RFC 8628 3.2), or null when too many are open. */
+  openDevice(fields: Pick<DeviceRequest, 'client' | 'resource' | 'issuer' | 'secure' | 'peer'>): { request: DeviceRequest; deviceCode: string } | null {
+    this.#prune();
+    const own = [...this.#devices.values()].filter((device) => device.client.id === fields.client.id);
+    if (own.length >= REQUESTS_PER_CLIENT) this.#dropDevice(own[0]);
+    const sender = [...this.#devices.values()].filter((device) => device.peer === fields.peer);
+    if (sender.length >= REQUESTS_PER_PEER) this.#dropDevice(sender[0]);
+    if (this.#devices.size >= MAX_DEVICE_REQUESTS) return null;
+    let userCode = newUserCode();
+    while (this.#userCodes.has(userCode)) userCode = newUserCode();
+    const deviceCode = secret();
+    const request: DeviceRequest = { ...fields, id: secret(), userCode, codeDigest: digest(deviceCode), created: this.#now(), interval: DEVICE_POLL_INTERVAL_S, lastPoll: null, status: 'pending', user: null };
+    this.#devices.set(request.id, request);
+    this.#deviceCodes.set(request.codeDigest, request.id);
+    this.#userCodes.set(userCode, request.id);
+    return { request, deviceCode };
+  }
+
+  /** The undecided device request of a typed user code, or null (unknown, expired or already decided). */
+  deviceByUserCode(typed: string): DeviceRequest | null {
+    const code = normalizeUserCode(typed);
+    const device = code === null ? undefined : this.#liveDevice(this.#userCodes.get(code));
+    return device !== undefined && device.status === 'pending' ? device : null;
+  }
+
+  /** Whether the device request an authorization page was opened for can still be decided. */
+  devicePending(request: AuthorizationRequest): boolean {
+    return request.device !== null && request.ended === null && this.#liveDevice(request.device.id)?.status === 'pending';
+  }
+
+  /**
+   * Decides the device request an authorization page was opened for: approved for `user`, or refused when `user` is
+   * null. False when that request was decided on another page, or expired, meanwhile.
+   */
+  decideDevice(request: AuthorizationRequest, user: string | null): boolean {
+    if (!this.devicePending(request)) return false;
+    const device = this.#devices.get(request.device!.id)!;
+    request.ended = user === null ? 'denied' : 'approved';
+    device.status = user === null ? 'denied' : 'approved';
+    device.user = user;
+    return true;
+  }
+
+  /**
+   * One poll of the token endpoint with a device code of `client` (RFC 8628 3.4, 3.5). An approval or a refusal is
+   * answered once: the poll that learns it ends the request. A poll sooner than the interval slows the client down.
+   */
+  pollDevice(deviceCode: string, client: string, resource: string | null): DevicePoll {
+    const device = this.#devices.get(this.#deviceCodes.get(digest(deviceCode)) ?? '');
+    if (device === undefined || device.client.id !== client) return { outcome: 'invalid' };
+    const now = this.#now();
+    if (now - device.created >= DEVICE_REQUEST_TTL_MS) {
+      this.#dropDevice(device);
+      return { outcome: 'expired' };
+    }
+    if (resource !== null && resource !== device.resource) return { outcome: 'invalid_target' };
+    if (device.status !== 'pending') {
+      this.#dropDevice(device);
+      return device.status === 'approved' ? { outcome: 'approved', device } : { outcome: 'denied' };
+    }
+    const early = device.lastPoll !== null && now - device.lastPoll < device.interval * 1000;
+    device.lastPoll = now;
+    if (!early) return { outcome: 'pending' };
+    device.interval += 5;
+    return { outcome: 'slow_down' };
+  }
+
   clear(): void {
     this.#requests.clear();
     this.#codes.clear();
+    this.#devices.clear();
+    this.#deviceCodes.clear();
+    this.#userCodes.clear();
+  }
+
+  /** A device request that has not expired; an expired one is dropped. */
+  #liveDevice(id: string | undefined): DeviceRequest | undefined {
+    const device = id === undefined ? undefined : this.#devices.get(id);
+    if (device === undefined) return undefined;
+    if (this.#now() - device.created < DEVICE_REQUEST_TTL_MS) return device;
+    this.#dropDevice(device);
+    return undefined;
+  }
+
+  #dropDevice(device: DeviceRequest): void {
+    this.#devices.delete(device.id);
+    this.#deviceCodes.delete(device.codeDigest);
+    this.#userCodes.delete(device.userCode);
   }
 
   #prune(): void {
     const now = this.#now();
     for (const [id, request] of this.#requests) if (now - request.created >= AUTHORIZATION_REQUEST_TTL_MS) this.#requests.delete(id);
     for (const [key, grant] of this.#codes) if (grant.expires <= now) this.#codes.delete(key);
+    for (const device of [...this.#devices.values()]) if (now - device.created >= DEVICE_REQUEST_TTL_MS) this.#dropDevice(device);
   }
 }
 
@@ -333,17 +492,18 @@ function protectedResource(issuer: string): Record<string, unknown> {
   return { resource: `${issuer}/mcp`, authorization_servers: [issuer], bearer_methods_supported: ['header'], resource_name: 'circle-hub' };
 }
 
-/** RFC 8414: public clients only, the authorization code with PKCE S256, no refresh token. */
+/** RFC 8414: public clients only, the authorization code with PKCE S256 or the device code (RFC 8628 4), no refresh token. */
 function authorizationServer(issuer: string): Record<string, unknown> {
   return {
     issuer,
     authorization_endpoint: `${issuer}/oauth/authorize`,
+    device_authorization_endpoint: `${issuer}/oauth/device_authorization`,
     token_endpoint: `${issuer}/oauth/token`,
     registration_endpoint: `${issuer}/oauth/register`,
     revocation_endpoint: `${issuer}/oauth/revoke`,
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', DEVICE_CODE_GRANT],
     token_endpoint_auth_methods_supported: ['none'],
     revocation_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],
@@ -373,6 +533,7 @@ export async function handleOAuth(request: IncomingMessage, response: ServerResp
   }
   if (request.method !== 'POST') return methodNotAllowed(request, response, 'POST');
   if (path === '/oauth/register') return register(request, response, options);
+  if (path === '/oauth/device_authorization') return deviceAuthorization(request, response, options, issuer, secure);
   if (path === '/oauth/token') return token(request, response, options);
   return revoke(request, response, options);
 }
@@ -404,10 +565,12 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
     if (problem !== null) return oauthError(response, 400, 'invalid_redirect_uri', problem);
   }
   // RFC 7591 3.2.1: the server may replace metadata it does not support. Every client here is public (no secret is issued,
-  // whatever token_endpoint_auth_method was asked) and gets the authorization code only; a client that cannot use the
-  // authorization code at all is refused.
+  // whatever token_endpoint_auth_method was asked) and gets the authorization code, and the device code when it asks for
+  // it; a client that cannot use the authorization code at all is refused. The token endpoint takes either grant from
+  // any registered client: the grant types are not stored with a client.
   const grants = metadata.grant_types;
   if (grants !== undefined && (!Array.isArray(grants) || !grants.includes('authorization_code'))) return oauthError(response, 400, 'invalid_client_metadata', 'grant_types must include authorization_code');
+  const granted = Array.isArray(grants) && grants.includes(DEVICE_CODE_GRANT) ? ['authorization_code', DEVICE_CODE_GRANT] : ['authorization_code'];
   const types = metadata.response_types;
   if (types !== undefined && (!Array.isArray(types) || !types.includes('code'))) return oauthError(response, 400, 'invalid_client_metadata', 'response_types must include code');
   if (options.registrations !== undefined && !options.registrations.take(peerOf(request))) return oauthError(response, 503, 'temporarily_unavailable', 'too many registrations from this sender; retry later', { 'retry-after': '600' });
@@ -427,7 +590,7 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
     client_id_issued_at: Math.floor(Date.parse(client.created_at) / 1000),
     client_name: client.name,
     redirect_uris: client.redirect_uris,
-    grant_types: ['authorization_code'],
+    grant_types: granted,
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
   }, NO_STORE);
@@ -450,7 +613,7 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
   const resource = `${issuer}/mcp`;
   const asked = query.get('resource');
   if (asked !== null && asked !== resource) return refuse(response, 400, '授权请求无效：访问范围不是本 Hub 的 MCP 服务。请在客户端中重新连接。');
-  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, redirectSent: sent !== null, state, challenge, peer: peerOf(request), resource, issuer, secure });
+  const opened = options.store.open({ client: { id: client.id, name: client.name }, redirectUri, redirectSent: sent !== null, state, challenge, peer: peerOf(request), resource, issuer, secure, device: null });
   if (opened === null) return refuse(response, 503, '当前待处理的授权请求过多，请稍后在客户端中重新连接。');
   const page = `${AUTHORIZE_PAGE}/${opened.id}`;
   setCommonHeaders(response);
@@ -464,6 +627,61 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
   response.end();
 }
 
+/**
+ * RFC 8628 3.1, 3.2: a registered client asks for a device code and a user code for this Hub's /mcp. Scopes are not used
+ * here, so a `scope` is ignored, as the authorization endpoint ignores it.
+ */
+async function deviceAuthorization(request: IncomingMessage, response: ServerResponse, options: OAuthOptions, issuer: string, secure: boolean): Promise<void> {
+  const form = await formBody(request, response);
+  if (form === null) return;
+  const client = await options.principals.client(form.get('client_id') ?? '');
+  if (client === null) return oauthError(response, 401, 'invalid_client', 'unknown client_id', { 'www-authenticate': 'Bearer realm="circle-hub"' });
+  const resource = `${issuer}/mcp`;
+  const asked = form.get('resource');
+  if (asked !== null && asked !== resource) return oauthError(response, 400, 'invalid_target', "the resource is not this Hub's MCP service");
+  const opened = options.store.openDevice({ client: { id: client.id, name: client.name }, resource, issuer, secure, peer: peerOf(request) });
+  if (opened === null) return oauthError(response, 503, 'temporarily_unavailable', 'too many open device requests; retry later', { 'retry-after': '60' });
+  const userCode = formatUserCode(opened.request.userCode);
+  options.log(`标准授权：客户端 ${client.id}（${client.name}）请求设备码`);
+  sendJson(response, 200, {
+    device_code: opened.deviceCode,
+    user_code: userCode,
+    verification_uri: `${issuer}${DEVICE_PAGE}`,
+    verification_uri_complete: `${issuer}${DEVICE_PAGE}?user_code=${userCode}`,
+    expires_in: DEVICE_REQUEST_TTL_MS / 1000,
+    interval: DEVICE_POLL_INTERVAL_S,
+  }, NO_STORE);
+}
+
+/** The error code and description of each poll outcome but the approval (RFC 8628 3.5, RFC 8707 2). */
+const DEVICE_POLL_ERRORS: Record<Exclude<DevicePoll['outcome'], 'approved'>, [string, string]> = {
+  invalid: ['invalid_grant', 'the device code is invalid'],
+  expired: ['expired_token', 'the device code expired; ask for a new one'],
+  invalid_target: ['invalid_target', 'the resource differs from the device authorization'],
+  denied: ['access_denied', 'the request was refused'],
+  slow_down: ['slow_down', 'poll less often'],
+  pending: ['authorization_pending', 'the request is not approved yet'],
+};
+
+/** RFC 8628 3.4, 3.5: a poll with a device code; once a person approved it, the token, once. */
+async function deviceToken(form: URLSearchParams, client: OAuthClient, response: ServerResponse, options: OAuthOptions): Promise<void> {
+  const deviceCode = form.get('device_code') ?? '';
+  if (deviceCode === '') return oauthError(response, 400, 'invalid_request', 'device_code is required');
+  const polled = options.store.pollDevice(deviceCode, client.id, form.get('resource'));
+  if (polled.outcome !== 'approved') return oauthError(response, 400, ...DEVICE_POLL_ERRORS[polled.outcome]);
+  const user = await options.principals.get(polled.device.user!);
+  if (user === null || user.disabled) return oauthError(response, 400, 'invalid_grant', 'the account is not available');
+  let issued: IssuedToken;
+  try {
+    issued = await options.principals.issueToken({ id: user.id, name: user.name, role: user.role }, user.id, client.name, client.id);
+  } catch (error) {
+    if (error instanceof RecordsError && error.code === null && error.name !== 'IntegrityError') return oauthError(response, 400, 'invalid_grant', 'the account is not available');
+    throw error;
+  }
+  options.log(`标准授权：${user.name}（${user.id}）的令牌 ${issued.id} 已按设备码签发给客户端 ${client.id}（${client.name}）`);
+  sendJson(response, 200, { access_token: issued.token, token_type: 'Bearer' }, NO_STORE);
+}
+
 function pkceMatches(verifier: string, challenge: string): boolean {
   if (!VERIFIER.test(verifier)) return false;
   const actual = Buffer.from(createHash('sha256').update(verifier, 'ascii').digest('base64url'));
@@ -474,9 +692,11 @@ function pkceMatches(verifier: string, challenge: string): boolean {
 async function token(request: IncomingMessage, response: ServerResponse, options: OAuthOptions): Promise<void> {
   const form = await formBody(request, response);
   if (form === null) return;
-  if (form.get('grant_type') !== 'authorization_code') return oauthError(response, 400, 'unsupported_grant_type', 'only the authorization_code grant is supported');
+  const grantType = form.get('grant_type');
+  if (grantType !== 'authorization_code' && grantType !== DEVICE_CODE_GRANT) return oauthError(response, 400, 'unsupported_grant_type', 'only the authorization_code and device_code grants are supported');
   const client = await options.principals.client(form.get('client_id') ?? '');
   if (client === null) return oauthError(response, 401, 'invalid_client', 'unknown client_id', { 'www-authenticate': 'Bearer realm="circle-hub"' });
+  if (grantType === DEVICE_CODE_GRANT) return deviceToken(form, client, response, options);
   const code = form.get('code') ?? '';
   const taken = code === '' ? null : options.store.take(code);
   if (taken === null) return oauthError(response, 400, 'invalid_grant', 'the authorization code is invalid or expired');

@@ -163,7 +163,9 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
       for (const { values, expression } of compared.values()) for (const axis of axes) {
         const originalType = semantic?.checker.getTypeAtLocation(expression);
         const type = originalType && (semantic!.checker.getBaseConstraintOfType(originalType) ?? originalType);
-        const members = type?.isUnion() ? type.types : type ? [type] : [];
+        // An optional or nullable value of a vocabulary type is still of that type: TypeScript 6 checks null strictly by
+        // default, so `x?: Disposition` reads as `Disposition | undefined` here.
+        const members = (type?.isUnion() ? type.types : type ? [type] : []).filter(t => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) === 0);
         const finite = members.length > 0 && members.every(t => (t.flags & ts.TypeFlags.StringLiteral) !== 0);
         const finiteAxis = finite && members.every(t=>axes.some(a=>a.values.has((t as ts.StringLiteralType).value)));
         const symbol=semantic?.checker.getSymbolAtLocation(expression);

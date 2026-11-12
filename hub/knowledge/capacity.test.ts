@@ -5,7 +5,7 @@ import {createKnowledge} from './api.ts';
 import {createTestParserRegistry} from '../testing/parsers.ts';
 import {makeWorld,startPostgres} from './test-support.ts';
 import {legacyRootSource} from './testing-capacity.ts';
-import {historyUsage,chargedBytes,type RecordStore,type Transaction} from '../records/api.ts';
+import {historyUsage,chargedBytes,forgetCapacityCharges,type RecordStore,type Transaction} from '../records/api.ts';
 import {barrier,reaches} from '../testing/member-freeze.ts';
 let postgres:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{postgres=await startPostgres();});after(()=>postgres?.stop());
@@ -52,13 +52,19 @@ test('an already locked write commits first, then a lower quota preserves its co
 });
 
 
-test('exact historical capacity batches admitted entries and originals independently of the number of versions',async t=>{
+test('exact historical capacity keeps what each version admitted: a later call reads the new version alone, and from nothing the history is three batches whatever its length',async t=>{
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,legacy=await legacyRootSource(w.kit,w.user);let expected=legacy.expected;
  for(let n=0;n<12;n++){
   const saved=await spaces.write(w.user,{kind:'observation',statement:'合成容量批量条目 '+n}),version=await spaces.version(saved.root),row=version!.body.entries.find(row=>row.entry===saved.entry)!,entry=await w.kit.store.get(row.record);
   expected+=chargedBytes(version!.body)+chargedBytes(entry!.body);
   if(n!==2&&n!==11)continue;
-  let batches=0,scalars=0;const store=new Proxy(w.kit.store,{get(target,key){const method=Reflect.get(target,key,target);if(key==='getMany')return(...args:unknown[])=>{batches++;return Reflect.apply(method,target,args);};if(key==='get')return(...args:unknown[])=>{scalars++;return Reflect.apply(method,target,args);};return typeof method==='function'?method.bind(target):method;}}) as RecordStore;
-  assert.deepEqual(await historyUsage(store,w.user.id),{knowledge:expected,memory:0,used:expected});assert.equal(batches,2,'one admission-body batch and one exact-capture batch');assert.equal(scalars,0,'a version or source must not add a scalar read');
+  let batches=0,scalars=0,asked=0;const store=new Proxy(w.kit.store,{get(target,key){const method=Reflect.get(target,key,target);if(key==='getMany')return(...args:unknown[])=>{batches++;asked+=(args[0] as unknown[]).length;return Reflect.apply(method,target,args);};if(key==='get')return(...args:unknown[])=>{scalars++;return Reflect.apply(method,target,args);};return typeof method==='function'?method.bind(target):method;}}) as RecordStore;
+  // The writes above already worked out the older versions: only the newest, its parent and the entry it adds are read.
+  assert.deepEqual(await historyUsage(store,w.user.id),{knowledge:expected,memory:0,used:expected});assert.ok(asked<=3,`read ${asked} records for one new version`);assert.equal(scalars,0,'a version or source must not add a scalar read');
+  // Asked again, nothing of the history is read.
+  batches=0;asked=0;assert.deepEqual(await historyUsage(store,w.user.id),{knowledge:expected,memory:0,used:expected});assert.equal(batches,0);
+  // From nothing: the versions, what they admitted, and the originals' captures, three batches at three versions and at twelve.
+  forgetCapacityCharges();batches=0;asked=0;
+  assert.deepEqual(await historyUsage(store,w.user.id),{knowledge:expected,memory:0,used:expected},'the same figure worked out afresh');assert.equal(batches,3,'one batch of versions, one of admitted records and one of captures');assert.ok(asked>=2*(n+1));assert.equal(scalars,0);
  }
 });

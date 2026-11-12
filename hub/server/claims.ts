@@ -3,7 +3,7 @@ import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, labelOf, uiLabelOf, type Attribution, type DynamicTerminal, type ExitAction, type Layer, type ProducerKind, type Reason, type StaticTerminal } from '../../contracts/generated/vocabulary.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
-import { isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { EXIT_NOT_RECORDED, isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
 
 type DisplayLabel = (typeof DISPLAY_ORDER)[number];
 
@@ -77,17 +77,21 @@ export function claimFields(claim: Claim, ruleWithdrawn = false, labels: Labels 
   const out: [DisplayLabel, string][] = [];
   for (const label of DISPLAY_ORDER) {
     const recorded = fields[label](claim);
-    const text = label === '有效条件' && ruleWithdrawn ? `${labels.of('validity_status','rule_withdrawn')}（版本已下架）；记录时：${recorded}` : recorded;
+    const text = label === '有效条件' && ruleWithdrawn ? `${labels.of('validity_status','rule_withdrawn')}（版本已退役）；记录时：${recorded}` : recorded;
     if (text.length > 0) out.push([label, text]);
   }
   return out;
 }
 
-/** Symbols of terminal states: success, failure, judgment, unknown (its own) and not complete. */
-export const SYMBOL = { pass: '✓', failure: '✗', judgment: '◇', unknown: '？', incomplete: '…' } as const satisfies Partial<Record<StaticTerminal | DynamicTerminal | 'failure' | 'unknown', string>>;
+/**
+ * Symbols of terminal states: success, failure, judgment, unknown (its own) and not complete. A dynamic layer that never
+ * ran is an unknown too, with the unknown's colour, but it has a mark of its own (issue 241): the question mark says that
+ * something was looked at and no conclusion came of it, and is not used for what was not run at all.
+ */
+export const SYMBOL = { pass: '✓', failure: '✗', judgment: '◇', unknown: '？', not_run: '○', incomplete: '…' } as const satisfies Partial<Record<StaticTerminal | DynamicTerminal | 'failure' | 'unknown', string>>;
 
 /** What a terminal is for display: the key of its symbol, and of its colour on the console (display rule 5). */
-export type TerminalKind = keyof typeof SYMBOL;
+export type TerminalKind = Exclude<keyof typeof SYMBOL, 'not_run'>;
 
 /** A layer and one of its terminals, as a layer result or an item cell carries them. */
 export type LayerTerminal = { layer: 'static'; terminal: StaticTerminal } | { layer: 'dynamic'; terminal: DynamicTerminal };
@@ -101,7 +105,7 @@ export function terminalKind(layer: LayerTerminal): TerminalKind {
 }
 
 export function terminalSymbol(layer: LayerTerminal): string {
-  return SYMBOL[terminalKind(layer)];
+  return layer.layer === 'dynamic' && layer.terminal === 'not_run' ? SYMBOL.not_run : SYMBOL[terminalKind(layer)];
 }
 
 /**
@@ -141,7 +145,7 @@ export function terminalText(layer: LayerResult, labels: Labels = MODEL_LABELS):
     layer.code,
     layer.tier && labelOf('check_tier', layer.tier),
     layer.reason && labelOf('reason', layer.reason),
-    layer.reason && layer.exit === undefined && '出口未写',
+    layer.reason && layer.exit === undefined && EXIT_NOT_RECORDED,
     layer.attribution && `${axisLabel('attribution')} ${labelOf('attribution', layer.attribution)}`,
   ]);
 }

@@ -5,7 +5,8 @@ import { sandboxSkip, type Harness } from './testing/harness.ts';
 import { openRetryHarness as openHarness } from './testing/retry-harness.ts';
 import { standardDocument, toyMap } from './testing/mindmap.ts';
 import { createEngineContext } from './deps.ts';
-import { putRequest, requestsOf, answerRequest, answerSuccessorRequests } from './requests.ts';
+import { putSubmission } from './store.ts';
+import { putRequest, requestsOf, answerRequest, answerSuccessorRequests, supersedeEarlierRequests } from './requests.ts';
 let pg:TemporaryPostgres;let h:Harness;
 const skip=await sandboxSkip();
 before(async()=>{pg=await startPostgres();if(!skip)h=await openHarness(pg);});
@@ -57,4 +58,42 @@ test('successor answers only explicit continuation requests and exactly the requ
   const rows=await requestsOf(ctx,h.alice,run.run);
   assert.equal(rows.find(q=>q.record===repair.digest)!.answered_by,right.digest);
   assert.equal(rows.find(q=>q.record===unrelated.digest)!.answered_by,null);
+});
+test('an accepted result voids the earlier submissions\' waiting requests and their escalations, and nothing another step closes', {skip}, async()=>{
+  const map=await h.upload(h.alice,toyMap(standardDocument()));
+  const run=(await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call())).run!;
+  const ctx=createEngineContext({records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external});
+  const record=async(label:string)=>(await h.kit.store.put({kind:'claim',schema:'synthetic-claim@1',provenance:'declared',body:{label}})).digest;
+  // A request of a submission carries the digest of what was submitted, which the submission record is indexed under.
+  const submitted=async(digest:string)=>{await putSubmission(h.kit.store,{run:run.run,digest,body:{label:digest.slice(0,4)},parses:false,createdAt:'2026-10-24T00:00:00.000Z'});return digest;};
+  const earlier=await submitted('e'.repeat(64)),current=await submitted('c'.repeat(64)),other=await record('not a submission'),result=await record('later result');
+  const base={run:run.run,kind:'clarification' as const,audience:h.alice.id,due:'2026-10-25T00:00:00.000Z',next_action:'合成的下一步',code:'missing_input',item:run.items[0].id,requirement:'findings'};
+  const put=async(missing:string,extra:Record<string,unknown>={})=>(await putRequest(ctx,{...base,source:earlier,missing,...extra} as Parameters<typeof putRequest>[1])).digest;
+  const plain=await put('合成缺口：等待作废');
+  const escalation=await put('合成缺口：逾期升级',{source:plain});
+  const answered=await put('合成缺口：已回答');await answerRequest(ctx,answered,other);
+  const kept={
+    declaration:await put('合成缺口：判据变更声明',{kind:'judgment',declaration:'/criterion_changes/0'}),
+    job:await put('合成缺口：派发作业处置',{kind:'disposition',job:'b'.repeat(64)}),
+    rerun:await put('合成缺口：要求重跑',{kind:'disposition',answer_action:'rerun'}),
+    pack:await put('合成缺口：包作者修复',{kind:'repair',pack_digest:run.pack_digest}),
+    notSubmission:await put('合成缺口：来源不是提交',{source:other}),
+    current:await put('合成缺口：本次提交下发',{source:current}),
+  };
+  const closed=async()=>new Map((await requestsOf(ctx,h.alice,run.run)).map(view=>[view.record,view]));
+  await supersedeEarlierRequests(ctx,run,{acceptance:'not_accepted',submission:current},result);
+  assert.equal((await closed()).get(plain)!.answered_by,null,'a submission that was not accepted voids nothing');
+  await supersedeEarlierRequests(ctx,run,{acceptance:'accepted',submission:current},result);
+  const after=await closed();
+  for(const id of [plain,escalation]){assert.equal(after.get(id)!.answered_by,result);assert.equal(after.get(id)!.superseded,true);}
+  assert.equal(after.get(answered)!.answered_by,other);assert.equal(after.get(answered)!.superseded,undefined);
+  for(const [name,id] of Object.entries(kept))assert.equal(after.get(id)!.answered_by,null,name+' stays waiting');
+  // The earlier content is submitted again and accepted: its requests wait again and the other submission's are void.
+  const again=await record('result of the earlier content again');
+  await supersedeEarlierRequests(ctx,run,{acceptance:'accepted',submission:earlier},again);
+  const back=await closed();
+  for(const id of [plain,escalation]){assert.equal(back.get(id)!.answered_by,null);assert.equal(back.get(id)!.superseded,undefined);}
+  assert.equal(back.get(answered)!.answered_by,other,'an answered request is not reopened');
+  assert.equal(back.get(kept.current)!.answered_by,again);assert.equal(back.get(kept.current)!.superseded,true);
+  for(const name of ['declaration','job','rerun','pack','notSubmission'] as const)assert.equal(back.get(kept[name])!.answered_by,null,name+' still waits');
 });

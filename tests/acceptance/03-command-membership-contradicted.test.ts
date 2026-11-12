@@ -88,7 +88,7 @@ describe('scenario 3: command membership contradicted', () => {
     assert.equal(submitLog.acceptance, 'accepted');
 
     // Console HTML shows the run and error
-    const page = await consoleClient.get(`/console/runs/${run.run}`);
+    const page = await consoleClient.task(run.run);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes('core.catalog.membership_contradicted') || page.body.includes(run.run));
   });

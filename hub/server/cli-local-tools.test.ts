@@ -148,7 +148,7 @@ test('a stopped hub, a bad token, an absent version and an unassigned one each s
   assert.equal(denied.err.join('\n').includes('wrong-token'), false);
   const absent = io();
   assert.equal(await localToolsCommand(['install', 'other-workflow@10.6.0', '--digest', 'ab'.repeat(32), '--into', join(root, 'absent'), '--hub', url], absent, { input: Readable.from([token + '\n']) }), 1);
-  assert.equal(absent.err.join('\n'), 'Hub 里没有这个版本的本地工具（版本不存在、已下架、技能包没有安装或这个版本没有本地工具）；核对包号后再试');
+  assert.equal(absent.err.join('\n'), 'Hub 里没有这个版本的本地工具（版本不存在、已退役、技能包没有安装或这个版本没有本地工具）；核对包号后再试');
   assert.equal(absent.err.join('\n').includes(token), false);
   // The download answers 403 for a version that exists and is not assigned (D05 R[3], decision 113).
   const refusing = createServer((_request, response) => { response.statusCode = 403; response.end('这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n'); });

@@ -23,6 +23,12 @@ export const INDEX = {
   resultRun: 'runs.result.run',
   resultSystemInput: 'runs.result.system_input',
   resultSubmission: 'runs.result.submission',
+  /** On a result stored together with its summary record (W08 R[6]); the oldest such is where that started. */
+  resultSummarized: 'runs.result.summarized',
+  /** On the result where a pass that summarized the older ones ended: from then on every result has its summary. */
+  resultSummariesComplete: 'runs.result.summaries_complete',
+  /** On a result's summary record: the digest of the result it summarizes. */
+  summaryResult: 'runs.summary.result',
   actionRun: 'runs.action.run',
   actionSubmission: 'runs.action.submission',
   /** The knowledge an accepted submission cites (citationIndex): a node by its root and path, an entry by its digest. */
@@ -171,6 +177,7 @@ export const SCHEMAS = {
   submission: 'submission@1',
   received: 'submission-received@1',
   result: 'validation@1',
+  summary: 'result-summary@1',
   action: 'action@1',
 } as const;
 
@@ -288,7 +295,8 @@ export async function submissionsOf(store: RecordStore, run: string): Promise<St
   return all((cursor) => store.find<unknown>({ key: INDEX.submissionRun, value: run, kind: 'submission', limit: 500, cursor }));
 }
 
-export async function putResult(store: RecordStore, result: ValidationResult, createdAt: string, tx?: Transaction): Promise<StoredRecord<ValidationResult>> {
+/** Appends the result record alone; `index` adds entries. The engine stores a result with its summary through saveResult (result-summary.ts). */
+export async function putResult(store: RecordStore, result: ValidationResult, createdAt: string, tx?: Transaction, index: readonly IndexEntry[] = []): Promise<StoredRecord<ValidationResult>> {
   const body = ValidationResult.parse(result);
   return step('append-record', () => store.put<ValidationResult>({
     kind: 'validation_result',
@@ -299,6 +307,7 @@ export async function putResult(store: RecordStore, result: ValidationResult, cr
     index: [
       {key:INDEX.resultRun,value:body.run},
       ...(body.system_input?[{key:INDEX.resultSystemInput,value:body.system_input}]:[{ key: INDEX.resultSubmission, value: `${body.run}:${body.submission}` }]),
+      ...index,
     ],
   }, tx));
 }
@@ -311,14 +320,20 @@ export async function resultFor(store: RecordStore, run: string, submission: str
 /** Every validation result of a run, in record sequence. */
 export async function resultsOf(store:RecordStore,run:string):Promise<StoredRecord<ValidationResult>[]>{return all(cursor=>store.find<ValidationResult>({key:INDEX.resultRun,value:run,kind:'validation_result',limit:500,cursor}));}
 
-/** The latest accepted validation result of a run (an accepted submission or a production result). */
-export async function latestAccepted(store: RecordStore, run: string): Promise<StoredRecord<ValidationResult> | null> {
-  let cursor: string | null = null;
+/**
+ * The latest accepted validation result of a run (an accepted submission or a production result). The newest result is
+ * nearly always the accepted one and a result can be megabytes, so the first page reads `batchSize` results (one unless
+ * the caller says otherwise) and each further page twice as many, to 64. Reading the newest hundred at once made every
+ * page of a task submitted 56 times read 56 results to show one (issue 200).
+ */
+export async function latestAccepted(store: RecordStore, run: string, batchSize=1): Promise<StoredRecord<ValidationResult> | null> {
+  let cursor: string | null = null, size = batchSize;
   do {
-    const page: Page<StoredRecord<ValidationResult>> = await store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: 100, cursor, newestFirst: true });
+    const page: Page<StoredRecord<ValidationResult>> = await store.find<ValidationResult>({ key: INDEX.resultRun, value: run, kind: 'validation_result', limit: size, cursor, newestFirst: true });
     const found = page.items.find((r) => r.body.acceptance === 'accepted');
     if (found) return found;
     cursor = page.next;
+    size = Math.min(Math.max(size, 1) * 2, 64);
   } while (cursor !== null);
   return null;
 }

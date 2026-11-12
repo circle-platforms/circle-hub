@@ -23,7 +23,7 @@ function dialogId(operation: string, object: string): string {
 export const commands = {
   memberPack: (user: string, pack: string, assigned: boolean): CommandDialog => ({
     id: dialogId(`member-pack-${user}`, pack), title: '调整工作流使用范围',
-    text: '调整后对该成员的新任务生效；已有运行记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
+    text: '调整后对该成员的新任务生效；已有任务的记录保留。', command: command('pack', assigned ? 'unassign' : 'assign', user, pack),
   }),
   memberPublish: (user: string, granted: boolean): CommandDialog => ({
     id: dialogId('member-publish', user), title: '调整发布权',
@@ -48,6 +48,16 @@ export const commands = {
   tokenIssue: (user: { id: string; name: string }): CommandDialog => ({
     id: dialogId('token-issue', user.id), title: `签发客户端访问令牌：${user.name}`,
     text: '新令牌仅在签发时显示一次，只用于连接客户端，不能登录控制台；所有账户都用用户名和密码登录控制台。', command: command('token', 'issue', user.id, '--label=客户端'),
+  }),
+  // The masking dictionary (B02 R[11]): rules are set, tried and removed on the server; the page lists them.
+  maskSet: (): CommandDialog => ({
+    id: dialogId('mask-set', 'rule'), title: '添加或更新遮盖规则',
+    text: '规则名相同即更新。模式是正则表达式；写了名为 secret 的分组时只替换该分组，周围的文字保留。先用第一条命令在一份样本上试，确认替换结果后再用第二条命令保存。之后读到的业务系统应答按新规则替换，已经保存的内容不改写。',
+    command: `${command('mask', 'test', '--pattern=password=(?<secret>\\S+)', '--label=密码', '--file=样本文件')}\n${command('mask', 'set', '规则名', '--label=密码', '--pattern=password=(?<secret>\\S+)', REASON)}`,
+  }),
+  maskRemove: (name: string): CommandDialog => ({
+    id: dialogId('mask-remove', name), title: `删除遮盖规则 ${name}`,
+    text: '删除后读到的业务系统应答不再按这条规则替换；已经按它替换过的内容不恢复，被替换的值 Hub 没有保存。', command: command('mask', 'remove', name, REASON),
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
@@ -107,7 +117,7 @@ export const commands = {
   }),
   backup: (): CommandDialog => ({
     id: 'cmd-backup', title: '备份',
-    text: '备份数据库、对象、密钥库与设置文件，并清理旧备份；需在 Hub 所在的主机上执行。', command: command('backup'),
+    text: '备份数据库、对象、密钥库与设置文件，并清理旧备份；需在运行 Hub 的服务器上执行。', command: command('backup'),
   }),
   restore: (): CommandDialog => ({
     id: 'cmd-restore', title: '恢复',

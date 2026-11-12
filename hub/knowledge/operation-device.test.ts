@@ -125,11 +125,11 @@ async function stored(ctx: Context, answer: Awaited<ReturnType<typeof submit>>) 
   return {receipt, view, feeding, text, list};
 }
 
-async function booking(ctx: Context, beds: Array<{name:string; devices:string[]}>) {
+async function booking(ctx: Context, beds: Array<{name:string; devices:string[]}>, frozen?: unknown) {
   const {run:_run, predecessor:_predecessor, groups:_groups, leases:_leases, feeding_offset:_feedingOffset, ...base} = ctx.run;
   return putRun(ctx.w.kit.store, {
     ...base, run:newId('run'), pack:'test-bed@1.0.0',
-    groups:[{manifest:{schema:'test-bed-manifest@1', beds:beds.map(bed => ({name:bed.name, devices:bed.devices.map(name => ({name, type:'router', ipv4:[], ipv6:[]}))}))}}],
+    groups:[{manifest:frozen ?? {schema:'test-bed-manifest@1', beds:beds.map(bed => ({name:bed.name, devices:bed.devices.map(name => ({name, type:'router', ipv4:[], ipv6:[]}))}))}}],
   }, ctx.run.started_at);
 }
 
@@ -189,6 +189,20 @@ test('a frozen bed manifest checks the device and bed and names the bed only whe
   }
   const named = await stored(current, await submit(current, {...observation(current, '指明台架'), device:'device0', bed:'second'}, '指明台架'));
   assert.equal(named.feeding.bed, 'second');
+});
+
+test('a frozen manifest the test-bed pack cannot read refuses the declaration instead of widening the check (issue 110)', {skip}, async t => {
+  const ctx = await world(t);
+  const unreadable = await booking(ctx, [], {schema:'test-bed-manifest@2', sites:[{name:'first', machines:['device0']}]});
+  const current = await captureRun(ctx, {predecessor:unreadable.body.run});
+  const answer = await submit(current, {...observation(current, '读不懂的清单'), device:'device0', bed:'first'}, '读不懂的清单', {missingBed:true});
+  assert.equal(answer.acceptance, 'not_accepted');
+  assert.match(JSON.stringify(answer.errors), /没有 beds 列表.*台架包/);
+  // The same declaration against a readable manifest that holds it is accepted, so the refusal is the manifest's, not the device's.
+  const readable = await booking(ctx, [{name:'first', devices:['device0']}]);
+  const fine = await captureRun(ctx, {predecessor:readable.body.run});
+  const accepted = await submit(fine, {...observation(fine, '读得懂的清单'), device:'device0', bed:'first'}, '读得懂的清单');
+  assert.equal(accepted.acceptance, 'accepted', JSON.stringify(accepted.errors));
 });
 
 test('equal-byte captures keep their own artifacts and an identical submission reads the stored operation', {skip}, async t => {

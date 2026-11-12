@@ -192,8 +192,8 @@ describe('scenario 22: fact-requirement model independence', () => {
     assert.ok(logsB.items.some((l) => l.tool === 'submit_result'));
 
     // Console pages for both runs render 200 OK
-    const pageA = await consoleClient.get(`/console/runs/${runA.run}`);
-    const pageB = await consoleClient.get(`/console/runs/${runB.run}`);
+    const pageA = await consoleClient.task(runA.run);
+    const pageB = await consoleClient.task(runB.run);
     assert.equal(pageA.status, 200);
     assert.equal(pageB.status, 200);
     assert.match(pageA.body, new RegExp(runA.run));

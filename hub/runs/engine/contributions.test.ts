@@ -1,3 +1,4 @@
+import { credentialDetectorsFor } from '../../testing/records.ts';
 import {osIsolationAvailable} from '../../rules/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 // Synthetic end-to-end contribution runs: real knowledge, records, resolver and pack sandbox.
@@ -63,7 +64,7 @@ test('public contribution records omit private run links and identical content i
   }
 });
 
-test('a refused digest stays refused after source recovery; a new submission can be verified',async t=>{
+test('a refused digest stays refused after source recovery; a new submission can be verified',async t=>{ credentialDetectorsFor(t);
   const w=await setup(t,{acceptedRoot:true});const args=w.args();
   await w.kit.artifacts.revokeFindings(w.admin,w.original,'合成撤回');
   const first=await w.service.submitResult(w.admin,args,call);assert.equal(first.result?.contributions?.stored.length,0);assert.equal(first.result?.contributions?.not_stored.length,4);
@@ -177,7 +178,7 @@ test('a run-bound session excerpt needs a signature before root membership is co
   assert.ok(result.errors.some(e=>e.code==='core.contribution.signature_required'&&e.message.includes('需要负责人署名')));
 });
 
-test('sensitive contribution text is refused before it reaches the product layer',async t=>{
+test('sensitive contribution text is refused before it reaches the product layer',async t=>{ credentialDetectorsFor(t);
   const w=await setup(t);const args=w.args();const secret=["https:","//demo",":synth","etic-s","ecret@","192.0.","2.8/pa","th"].join('');args.items[0].slots.contribution[0].text=secret;
   const result=await w.service.submitResult(w.admin,args,call);
   assert.equal(result.result?.contributions?.stored.length,3);
@@ -186,7 +187,7 @@ test('sensitive contribution text is refused before it reaches the product layer
   assert.ok(!JSON.stringify(page).includes(secret));
 });
 
-test('credential scanning also covers both quote fields and prevents self relations',async t=>{
+test('credential scanning also covers both quote fields and prevents self relations',async t=>{ credentialDetectorsFor(t);
   const secret=["https:","//demo",":synth","etic-s","ecret@","192.0.","2.8/pa","th"].join('');
   for(const other of [false,true]){
     const w=await setup(t,{acceptedRoot:true});const args=w.args();
@@ -469,7 +470,7 @@ test('a layer write failure rolls back every contribution before the not-accepte
 });
 
 
-test('a revoked source acceptance returns safe markers without changing original records or receipts',async t=>{
+test('a revoked source acceptance returns safe markers without changing original records or receipts',async t=>{ credentialDetectorsFor(t);
   const w=await setup(t,{acceptedRoot:true});const result=await w.service.submitResult(w.admin,w.args(),call);
   assert.equal(result.result?.contributions?.stored.length,4,JSON.stringify(result.errors));
   const digest=result.result!.contributions!.stored[0].record;
@@ -490,7 +491,7 @@ test('a revoked source acceptance returns safe markers without changing original
   assert.deepEqual(await w.service.submitResult(w.admin,w.args(),call),result);
 });
 
-test('credential-bearing model declarations never enter product-readable contributions',async t=>{
+test('credential-bearing model declarations never enter product-readable contributions',async t=>{ credentialDetectorsFor(t);
   const w=await setup(t);const args={...w.args(),model:["synthe","tic-mo","del ht","tps://","demo:s","ynthet","ic-sec","ret@19","2.0.2.","8/v1"].join('')};
   const result=await w.service.submitResult(w.admin,args,call);
   assert.equal(result.result?.contributions?.stored.length,0);
@@ -564,7 +565,7 @@ test('admission refusal codes and fixes come from the core registry rather than 
   assert.ok(error,JSON.stringify(result.errors));assert.equal(error.fix,CORE_VIOLATION_CODES['core.contribution.source_not_original'].fix);
 });
 
-test('credential-bearing session headers are refused before append and never reach public node or record reads',async t=>{
+test('credential-bearing session headers are refused before append and never reach public node or record reads',async t=>{ credentialDetectorsFor(t);
   const w=await setup(t),layer=w.knowledge.layers.contributions;
   const secret='synthetic-session-secret',session=['https:','//probe:',secret,'@192.0.2.44/v1'].join('');
   const append=layer.append.bind(layer);let calls=0;
@@ -578,7 +579,7 @@ test('credential-bearing session headers are refused before append and never rea
   for(const item of safe.result!.contributions!.stored){const record=await layer.read(item.record,w.user);assert.ok(record);assert.ok(!JSON.stringify(record).includes(secret));assert.equal((record.body as {session:string}).session,call.sessionId);}
 });
 
-test('append scans the actual session again before an identity can reuse a public record',async t=>{
+test('append scans the actual session again before an identity can reuse a public record',async t=>{ credentialDetectorsFor(t);
   const w=await setup(t),layer=w.knowledge.layers.contributions,append=layer.append.bind(layer);
   t.mock.method(layer,'append',async(...[prepared,origin,tx]:Parameters<typeof append>)=>append(prepared,{...origin,session:["https:","//prob","e:synt","hetic-","append","-secre","t@192.","0.2.44","/v1"].join('')},tx));
   const interrupted=await w.service.submitResult(w.admin,w.args(),call);

@@ -17,6 +17,7 @@ import { PgPrincipals } from './principals.ts';
 import { PgRecordStore } from './store.ts';
 import { FileVault } from './vault.ts';
 import { RecordVariables } from './variables.ts';
+import { MaskingRules } from './masking.ts';
 import {PgMemoryIndex} from './memory-index.ts';
 import { PgSpaceSearchIndex } from './space-index.ts';
 
@@ -82,6 +83,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     artifacts: new RecordArtifacts(db, store, objects, authorizations, { maxBytes: config.limits.maxUploadBytes, now, onCredentialScan:options.onCredentialScan }),
     vault,
     variables,
+    masking: new MaskingRules({ objects, principals, authorizations, now }),
     principals,
     authorizations,
     pointers: new PgPointers(db, store, now),

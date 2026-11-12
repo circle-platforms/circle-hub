@@ -101,7 +101,7 @@ test('a failed source read is not cached as absence', async () => {
 });
 
 test('a newly withheld credential finding is not exposed through the request source cache', async () => {
-  const kit = await openTestRecords();
+  const kit = await openTestRecords({ detectors: true });
   try {
     const admin = (await kit.principals.bootstrapAdmin('synthetic-admin')).user;
     const reader = await kit.principals.createUser(admin, 'synthetic-reader');

@@ -28,7 +28,7 @@ import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } 
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, RecordsError, AccessError, LimitError, scanForCredentials, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, RecordsError, AccessError, LimitError, scanContent, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -44,7 +44,8 @@ import { bindExpected, projectItems } from './projection.ts';
 import { canSeeRun, canViewRun, identityOf, runOfRecord, sourceReader } from './readers.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
-import { actionsOf, keyOwner, putAction, putResult, putRun, resultFor, runByClientKey, runById, runRecordDigest } from './store.ts';
+import {actionsOf,keyOwner,putAction,putRun,resultFor,runByClientKey,runById,runRecordDigest} from './store.ts';
+import {saveResult} from './result-summary.ts';
 import { resolveTarget } from './target.ts';
 import { repairRounds } from './terminals.ts';
 import { dispatchCountOf, repetitionSummary } from './repetition.ts';
@@ -410,7 +411,7 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
   // Scan before schema diagnostics can quote an unknown field name. This never resolves reference-looking text.
   let scanText:string|undefined;
   try {scanText=JSON.stringify(raw);}catch{/* Non-JSON values follow the canonical-domain refusal below. */}
-  if(scanText!==undefined&&scanForCredentials(Buffer.from(scanText,'utf8')).findings.length)return refused([protocolError('SUBMISSION_SCHEMA_VIOLATION','start_run 不受理含凭据的参数',{fix:'参数里不能有凭据；移除凭据后重试'})]);
+  if(scanText!==undefined&&scanContent(Buffer.from(scanText,'utf8')).findings.length)return refused([protocolError('SUBMISSION_SCHEMA_VIOLATION','start_run 不受理含凭据的参数',{fix:'参数里不能有凭据；移除凭据后重试'})]);
   if (!plain.canonical) {
     return refused([
       protocolError('SUBMISSION_SCHEMA_VIOLATION', '参数里有规范 JSON 表示不了的值（孤立的代理字符，或嵌套超过 1000 层）', {
@@ -466,7 +467,7 @@ async function packMissing(ctx: EngineContext, user: Principal, pack: string, fo
   // Another account's personal workflow is answered neutrally whether it is missing, ungranted or withdrawn (D05 R[3], T01 R[1]).
   if (space !== undefined && space !== 'team' && space !== user.id) return unavailable('/pack', note);
   if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${LIST}` })], note);
-  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已下架）`, { path: '/pack', fix: LIST })], note);
+  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
   if (absence === 'unassigned') return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `任务包 ${pack} 存在，没有分配给你`, { path: '/pack', fix: `请管理员把它分配给你；${LIST}` })], note);
   // A skill pack is installed for the whole Hub, never assigned to one user (decision 113).
   if (absence === 'uninstalled') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有安装技能包 ${pack}`, { path: '/pack', fix: `请管理员安装它；${LIST}` })], note);
@@ -887,7 +888,7 @@ async function keepProduction(ctx: EngineContext, stored: StoredRecord<RunRecord
   const endedAt = ctx.now().toISOString();
   let result: StoredRecord<ValidationResult>;
   try {
-    result = await putResult(ctx.deps.records.store, production.evaluation.result, endedAt);
+    result = await saveResult(ctx.deps.records.store, production.evaluation.result, endedAt);
   } catch (error) {
     // Only without the kit's configuration (the size was checked before the run was stored otherwise).
     if (!(error instanceof LimitError) && !(error instanceof CanonicalizationError)) throw error;

@@ -9,6 +9,7 @@ import { ConnectorError, readStatistics, type ReadStatistics, type SystemTrialIn
 import { html, table, type Html } from './html.ts';
 import { FormError, credentialValues, pairs, word, type Form } from './manage.ts';
 import type { PageContext } from './pages.ts';
+import { exactSize } from './knowledge-display.ts';
 import { card, chip, duration } from './ui.ts';
 
 /** The trial input of the operation's form; throws FormError for a line it cannot read. */
@@ -104,9 +105,9 @@ export function trialCard(report: SystemTrialReport): Html {
   const rows = report.routes.map((route) => [
     html`<b>${route.route}</b><div class="ch-meta">${route.method} ${route.path}</div>`,
     !route.tried ? chip('未尝试读取', 'unchecked') : route.ok === true ? chip('可读取', 'pass') : route.ok === false ? chip('读取失败', 'fail') : chip('结果未知', 'unchecked'),
-    route.status === null ? '—' : `HTTP ${route.status}`,
-    route.ms === null ? '—' : duration(route.ms),
-    route.bytes === null ? '—' : `${route.bytes} 字节`,
+    route.status === null ? (route.tried ? '无应答' : '不适用') : `HTTP ${route.status}`,
+    route.ms === null ? (route.tried ? '未记录' : '不适用') : duration(route.ms),
+    route.bytes === null ? (route.tried ? '未记录' : '不适用') : exactSize(route.bytes),
     route.message ?? route.reason ?? '',
   ]);
   const tried = report.routes.filter((route) => route.tried).length;

@@ -1,9 +1,9 @@
 // The result of one task (display rule 20): derived from the partition list and the requirement statuses of the result
 // the run page treats as authoritative, in one place, so no page computes it on its own. Unknown is never shown as passed.
 import { uiLabelOf, type TaskResult } from '../../../contracts/generated/vocabulary.ts';
-import { isUnknownTerminal, type ValidationResult } from '../../../contracts/src/validation.ts';
+import { type ValidationResult } from '../../../contracts/src/validation.ts';
 import type { RunDetail,RunSummary } from '../../ports.ts';
-import { isAbandonedResult } from '../../runs/api.ts';
+import {primaryRunResult,runTaskResult,runPendingCount} from '../../runs/api.ts';
 import { type Html } from './html.ts';
 import { chip, type DotState, type Tone } from './ui.ts';
 
@@ -17,31 +17,16 @@ export function factOnly(detail: Pick<RunDetail, 'run'>): boolean {
  * accepted submission's result.
  */
 export function primaryResult(detail: RunSummary): { record: string; result: ValidationResult } | null {
-  if (detail.latest?.result.system_input) return detail.latest;
-  return factOnly(detail) ? detail.production : detail.latest;
+  return primaryRunResult(detail);
 }
 
 export function taskResultOf(detail: RunSummary): TaskResult {
-  if (detail.management !== undefined) return 'abandoned';
-  const primary = primaryResult(detail);
-  if (primary === null || primary.result.acceptance !== 'accepted') return 'awaiting';
-  const result = primary.result;
-  if (isAbandonedResult(result)) return 'abandoned';
-  const parts = result.partitions;
-  if (parts.quarantined.length > 0) return 'held';
-  if (parts.incomplete.length > 0) return 'incomplete';
-  if (parts.rejected.length > 0) return 'rejected';
-  const requirements = parts.delivered.flatMap((item) => item.requirements);
-  if (requirements.some((r) => r.status === 'pending' || r.layers.some(isUnknownTerminal))) return 'delivered_pending';
-  if (requirements.some((r) => r.status === 'unsatisfied')) return 'delivered_unsatisfied';
-  return 'passed';
+  return runTaskResult(detail);
 }
 
 /** Requirements of delivered items still without a conclusion: the 未决项 of a delivered task. */
 export function pendingCount(detail: RunSummary): number {
-  const primary = primaryResult(detail);
-  if (primary === null || primary.result.acceptance !== 'accepted') return 0;
-  return primary.result.partitions.delivered.flatMap((item) => item.requirements).filter((r) => r.status === 'pending' || r.layers.some(isUnknownTerminal)).length;
+  return runPendingCount(detail);
 }
 
 export const TASK_TONE: Readonly<Record<TaskResult, Tone>> = {
