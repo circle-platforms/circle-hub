@@ -45,7 +45,7 @@ export function positiveBlocks():Record<string,PlanSlots>{
 }
 
 export function cellFixture(){
- const f=fixture(),doc=structuredClone(f.contractDoc) as Record<string,any>,originalDevice=f.profile.seats[0].object,device='device0';
+ const f=fixture(),doc=structuredClone(f.contractDoc) as Record<string,any>&{runtime:{minimum_version:string;[name:string]:any}},originalDevice=f.profile.seats[0].object,device='device0';
  for(const object of doc.objects)if(object.e===originalDevice)object.e=device;
  for(const entry of doc.entries)if(entry.e===originalDevice)entry.e=device;
  for(const field of ['output_methods','restore_methods'])for(const row of doc.runtime.block_model[field])if(row.object===originalDevice)row.object=device;

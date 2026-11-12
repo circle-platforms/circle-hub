@@ -81,7 +81,7 @@ export function deviceMethodRefusal(contract:RuntimeContract,profile:RuntimeProf
  const usable=profile.allowed.filter(call=>call.object===object&&declared.includes(call.method)&&Object.values(call.parameters).some(role=>role==='device_cli')).map(call=>call.method);
  return `设备命令行要用运行器合约为 ${object} 声明的设备方法下发（runtime.block_model.output_methods），方法 ${method} 不在其中；照 InfoTest，设备上的配置和观察都经这些方法下发。${usable.length?`这台设备上可以用：${usable.join('、')}`:'环境配置没有放行这些方法里能下发设备命令行的，缺的是环境配置的放行，由维护者补'}`;
 }
-export function valueDomainMessages(identity:CommandIdentity,claims:readonly ValueDomainClaim[]):string[]{
+export function valueDomainMessages(identity:Pick<ResolvedCommand,'path'|'parameters'>,claims:readonly ValueDomainClaim[]):string[]{
  const command=identity.path.split('/').slice(2).map(decodeURIComponent).join(' ');
  const parameters=identity.parameters.map(parameter=>({name:parameter.name,text:parameter.parsed.kind==='text'&&TEXT_PARAMETER_TYPES.includes(parameter.type.catalog_type??'')?parameter.parsed.value:null}));
  return valueDomainRefusals(command,parameters,claims).map(refusal=>{
