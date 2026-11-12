@@ -1,4 +1,6 @@
-# case-compile 3.18.3
+# case-compile 3.18.4
+
+本地修正 3.18.4（2026-11-13）：恢复模型判断期望的设备原话要求，text 填写设备执行后实际会输出的一行原文，对应原始期望及选择理由写入 rationale。更新编写资料、生成器身份、合成样例摘要和清单。本次不发布或部署。
 
 本地合并候选 3.18.3（2026-11-12）：#341 协议文案同步后 mindmap-format 升至 1.0.24，本包嵌入与嵌套包同步升版并刷新工作簿样例。能力相对 3.18.2 不变。本次不发布。
 
@@ -205,7 +207,7 @@ samples are not evidence of completed remediation and this work-in-progress tree
 
 计划身份可选声明（3.2.2）：plan 的 command_identities 通常省略，默认样例和客户端指令都不要求模型构造原生类型值。只从 steps 的设备命令行及锁定目录解析身份。模型主动交声明时，commands_known 核其结构和完整身份集合，一致才受理；错误提示允许删除可选声明重交。模型声明不进入 contract_shape、地址和期望的共同前置校验；用例本身的明确身份声明仍单独核一致。合成 Hub 回归在没有用例身份槽和模型身份声明时完成计划、客户端工作簿生成、后继回读并满足全部要求项。
 
-显式模型期望（3.3.0）：expects 可写 `{text, quote, after, basis:"model_judgment", rationale}`。basis 来自生成合约 expectation_basis 闭集，rationale 必须非空。quote 的引用必须完全等于本次被判对象中该用例期望节点的冻结引用，其文字逐字来自该节点；标题、步骤、其他用例、外部来源和判据 rec: 均不能代替。期望节点身份由现有用例结构解析在投影时固定，不按词语或标记猜类别。text 由模型选择设备可观察的检查文字，仍须满足单行、profile/原合约取值规则和 after 指向设备或主机步骤；Hub 不判断选择是否正确。省略 basis 时仍执行原来的引文片段规则，W10 的 expected 来源和独立复核规则不变。
+显式模型期望（3.3.0）：expects 可写 `{text, quote, after, basis:"model_judgment", rationale}`。basis 来自生成合约 expectation_basis 闭集，rationale 必须非空。quote 的引用必须完全等于本次被判对象中该用例期望节点的冻结引用，其文字逐字来自该节点；标题、步骤、其他用例、外部来源和判据 rec: 均不能代替。期望节点身份由现有用例结构解析在投影时固定，不按词语或标记猜类别。text 由模型选择设备执行后实际会输出、能在设备输出里逐字找到的一行原文，对应原始期望及选择理由写入 rationale；仍须满足单行、profile/原合约取值规则和 after 指向设备或主机步骤；Hub 不判断选择是否正确。省略 basis 时仍执行原来的引文片段规则，W10 的 expected 来源和独立复核规则不变。
 
 Hub 按检查声明的 judgment_sources，从本条目原始提交的精确槽位指针记录模型主张，绑定真实提交声明的模型、提交摘要及记录；basis、rationale、quote、text、after 一并保留。机械核验仍是事实，模型选择单独记判断，expected_grounded 显示“满足（判断）”，并标“以判断为前提”。工作簿字节逐行回读保持机械事实；生成配方摘要绑定完整期望形状及冻结期望节点。派发冻结相关必需项中的模型前提，设备 PASS/FAIL、各轮和回注结果继承限定及原判断；旧或无效前提不能被静默丢弃成无限定放行。Hub 不调用模型。
 
