@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { startPostgres } from '../hub/testing/postgres.ts';
 import type { TemporaryPostgres } from '../hub/testing/postgres.ts';
 import { prepareTemplate, sharedEnv } from './run-unit-tests.ts';
+import { LOCAL_ACCEPTANCE_SECONDS } from './local-test-timings.ts';
+import { orderedArguments, slowestFirst, usesCoverage } from './ordered-test-runner.ts';
 import { junitArguments } from './test-report.ts';
 import { parseShard, shardFiles } from './test-shards.ts';
 import type { Shard } from './test-shards.ts';
@@ -75,7 +77,9 @@ export function acceptanceArguments(files: readonly string[], report?: string, c
 
 /** Resolves to the test runner's exit code; signals reach the runner, which stops its PostgreSQL clusters. */
 export async function runAcceptanceTests(shard: Shard | undefined, report?: string): Promise<number> {
-  const files = shardFiles(acceptanceFiles(), shard, expectedSeconds);
+  const selected = shardFiles(acceptanceFiles(), shard, expectedSeconds);
+  const ordered = shard === undefined && !usesCoverage();
+  const files = ordered ? slowestFirst(selected, file => LOCAL_ACCEPTANCE_SECONDS[file] ?? expectedSeconds(file)) : selected;
   if (files.length === 0) throw new Error('验收分片没有文件，拒绝空运行；减少分片数或检查 tests/acceptance');
   if (shard !== undefined) process.stderr.write(`acceptance shard ${shard.index}/${shard.total}: ${files.length} files\n`);
   let child: ChildProcess | undefined;
@@ -94,7 +98,7 @@ export async function runAcceptanceTests(shard: Shard | undefined, report?: stri
       await prepareTemplate(postgres);
       process.stderr.write(`acceptance shared files=${files.length} concurrency=${concurrency} postgres=${((started - began) / 1000).toFixed(3)}s template=${((performance.now() - started) / 1000).toFixed(3)}s\n`);
     }
-    const runner = spawn(process.execPath, acceptanceArguments(files, report, concurrency), {
+    const runner = spawn(process.execPath, ordered ? orderedArguments(files, concurrency, report) : acceptanceArguments(files, report, concurrency), {
       cwd: ROOT,
       stdio: 'inherit',
       ...(postgres ? { env: sharedEnv(postgres) } : {}),
