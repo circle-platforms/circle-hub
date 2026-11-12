@@ -16,7 +16,7 @@ test('deletion preview is administrator-only and read-only; tombstone pages expo
   const page=await manager.get(url+'?deletion=preview');assert.equal(page.status,200,page.body);assert.match(page.body,/预览永久删除的影响/);assert.doesNotMatch(page.body,/确认永久删除成员/);assert.match(page.body,/此页只预览影响，不会删除任何内容；执行下方命令才会删除，且不可撤销。/);assert.match(page.body,/--expected-state=/);assert.deepEqual(wordingProblems(page.body),[]);assert.doesNotMatch(page.body,/合成不公开文件|合成不公开路径|合成界面不显示的正文/);assert.equal(await hub.records.store.watermark!(),mark);
   assert.equal((await owner.get(api)).status,404);assert.equal((await owner.get(url+'?deletion=preview')).status,200);assert.doesNotMatch((await owner.get(url+'?deletion=preview')).body,/--expected-state=|永久删除成员|预览永久删除的影响/);
   const check=await manager.get(api);assert.equal(check.status,200,check.body);const prepared=JSON.parse(check.body);assert.deepEqual(prepared.preview.scope_counts,{knowledge:2,memory:2,originals:1,attributions:1,archived_originals:1,private_versions:0});
-  const visible=withoutTechnical(page.body);for(const [label,n]of [['知识',2],['记忆',2],['原文',1],['来源署名',1],['归档的原文',1]])assert.ok(visible.includes('<dt>'+label+'</dt><dd>'+n+'</dd>'),String(label));
+  const visible=withoutTechnical(page.body);for(const [label,n]of [['知识',2],['记忆',2],['原文',1],['来源确认',1],['归档的原文',1]])assert.ok(visible.includes('<dt>'+label+'</dt><dd>'+n+'</dd>'),String(label));
   // Issue 236: the consequences come in labelled groups, in the order of who or what they touch, and none is dropped.
   assert.match(visible,/data-deletion-effects/);
   assert.deepEqual([...visible.matchAll(/<section class="ch-section"><h3>([^<]+)<\/h3><ul class="ch-feed">/g)].map(m=>m[1]),['将清除','将转移','将保留','引用和分享的影响','账户和登录','不可撤销']);

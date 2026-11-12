@@ -92,7 +92,7 @@ try {
         }
         if(name==='deletion-preview'){
           assert.match(await evaluate("document.querySelector('#delete-member-confirm pre').textContent"),/--expected-state=/);
-          assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源署名','归档的原文']);
+          assert.deepEqual(await evaluate("[...document.querySelectorAll('#delete-member-confirm [data-deletion-scope] dt')].map(node=>node.textContent)"),['知识','记忆','原文','来源确认','归档的原文']);
           assert.equal(await evaluate("document.querySelector('[data-deletion-handover] h3 .ch-tip').firstChild.textContent"),'转给管理员的私人工作流与技能');
           assert.match(await evaluate("document.querySelector('[data-deletion-handover]').innerText"),/合成转移工作流/);
           assert.match(await evaluate("document.querySelector('[data-deletion-handover]').innerText"),/接收人：管理员（执行删除的管理员）/);

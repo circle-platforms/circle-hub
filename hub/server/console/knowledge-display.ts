@@ -27,8 +27,8 @@ export const versionLabel=(at:string,reason?:string,ordinal?:number):Html=>html`
 export const DECLARED_SCOPE='由上传方提供，Hub 没有独立的采集证明；不代表内容已被核实。';
 /** What the team-source status says, apart from who uploaded the original: the confirmation is the uploader's, and it is neither a digital signature nor a copyright transfer. */
 export const ATTRIBUTION_SCOPE={
- unsigned:'上传人尚未确认这份原文可作为团队来源；未署名的上传不会被团队知识接收。与上传人是谁无关。',
- attributed:'上传人已确认这份原文可作为团队来源，全体成员可读。署名不是数字签名，也不转让版权；署名人和时间见下。',
+ unsigned:'上传人尚未确认这份原文可作为团队来源；未确认的上传不会被团队知识接收。与上传人是谁无关。',
+ attributed:'上传人已确认这份原文可作为团队来源，全体成员可读。这里的确认不是数字签名，也不转让版权；确认人和时间见下。',
 } as const satisfies Record<SourceAttributionStatus,string>;
 export const sourceTypeLabel=(type:ProvenanceType):Html|string=>{const label=uiLabelOf('provenance_type',type);return type==='declared'?tooltip(label,DECLARED_SCOPE):label;};
 export const attributionBadge=(status:SourceAttributionStatus):Html=>tooltip(chip(uiLabelOf('source_attribution_status',status),status==='attributed'?'pass':'plain'),ATTRIBUTION_SCOPE[status]);

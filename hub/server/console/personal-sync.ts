@@ -19,12 +19,12 @@ export async function personalSyncNotice(ctx:PageContext):Promise<Html>{
  let confirmation=html``,control:Html;
  if(local){
   const resume=html`<form method="post" action="/console/knowledge/do/sync-resume">${hidden}<input type="hidden" name="expected_state" value="${state.state_version}"><button class="ch-btn ch-btn--primary" type="submit">${uiLabelOf('sync_mode','hub')}</button></form>`;
-  confirmation=dialog('sync-resume',uiLabelOf('sync_mode','hub'),html`<p>重新连接后从本机副本同步。同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，先前的分享不会恢复。</p>`,resume);
+  confirmation=dialog('sync-resume',uiLabelOf('sync_mode','hub'),html`<p>重新连接后从客户端设备上的副本同步。同步到 Hub 的私人内容保存在 Hub 数据库和服务器备份中，先前的分享不会恢复。</p>`,resume);
   control=actionLink('#sync-resume',uiLabelOf('sync_mode','hub'),'primary');
  }else if(ctx.url.searchParams.get('sync')===SyncModeSchema.enum.local){
   const impact=await sync.modeCheck(ctx.principal,{mode:SyncModeSchema.enum.local});
   const purge=html`<form id="sync-mode-form" method="post" action="/console/knowledge/do/sync-mode">${hidden}<input type="hidden" name="expected_state" value="${impact.expected_state}"><input type="hidden" name="mode" value="${SyncModeSchema.enum.local}"><input type="hidden" name="check" value="${impact.check}"><button class="ch-btn ch-btn--danger" type="submit">${uiLabelOf('sync_mode','local')}</button></form>`;
-  confirmation=dialog('sync-mode',uiLabelOf('sync_mode','local'),html`<p>清除 Hub 上的私人知识、原文、记忆和版本记录，文件夹分享随之失效。确认时重新检查待完成的分享到团队操作。</p>${purgeFacts(impact)}${runCitationText(impact)}<p>团队副本保留，本机副本不受影响。恢复清除前的备份会带回旧内容。</p><label class="ch-field"><span><input type="checkbox" name="confirm_purge" value="true" required form="sync-mode-form">确认清除 Hub 上的私人空间内容</span></label>`,purge);
+  confirmation=dialog('sync-mode',uiLabelOf('sync_mode','local'),html`<p>清除 Hub 上的私人知识、原文、记忆和版本记录，文件夹分享随之失效。确认时重新检查待完成的分享到团队操作。</p>${purgeFacts(impact)}${runCitationText(impact)}<p>团队副本保留，客户端设备上的副本不受影响。恢复清除前的备份会带回旧内容。</p><label class="ch-field"><span><input type="checkbox" name="confirm_purge" value="true" required form="sync-mode-form">确认清除 Hub 上的私人空间内容</span></label>`,purge);
   control=actionLink('#sync-mode','清除 Hub 副本…','danger');
  }else control=actionLink(location(ctx,SyncModeSchema.enum.local)+'#sync-mode',uiLabelOf('sync_mode','local')+'…');
  const conflicts=state.status===SyncStatusSchema.enum.conflicted?await api.transact(ctx.principal,state.epoch,async(scope,tx)=>Number((await api.head(ctx.principal,scope.epoch,tx)).conflicts)):0;

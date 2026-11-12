@@ -266,7 +266,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
     const member=positionals[0];if(!/^usr_[0-9a-z]{26}$/.test(member))throw new UsageError('永久删除须使用成员编号，不能使用名字');
     if(values.confirm&&values['dry-run'])throw new UsageError('检查与确认不能同时执行');
     const by=await operatorOf(ctx,options),kit=await ctx.records();
-    if(!values.confirm){const check=await deletionCheck(kit,by,member);if(values.json)io.stdout(JSON.stringify(check));else{out(io,DELETION_EFFECT);out(io,`清除范围：记录 ${check.preview.counts.records}，载荷 ${check.preview.counts.payloads}，原件 ${check.preview.counts.objects}，署名 ${check.preview.counts.attributions}，归档登记 ${check.preview.counts.archives}，私人版本 ${check.preview.counts.private_versions}`);for(const line of handoverLines(check.preview))out(io,line);io.stdout(check.command);}return 0;}
+    if(!values.confirm){const check=await deletionCheck(kit,by,member);if(values.json)io.stdout(JSON.stringify(check));else{out(io,DELETION_EFFECT);out(io,`清除范围：记录 ${check.preview.counts.records}，载荷 ${check.preview.counts.payloads}，原件 ${check.preview.counts.objects}，来源确认 ${check.preview.counts.attributions}，归档登记 ${check.preview.counts.archives}，私人版本 ${check.preview.counts.private_versions}`);for(const line of handoverLines(check.preview))out(io,line);io.stdout(check.command);}return 0;}
     if(!values['operation-id'])throw new UsageError('确认须带上检查结果中的 --operation-id');
     const receipt=await deleteMember(kit,by,member,values['operation-id'],values['expected-state'],values.epoch);
     if(values.json)io.stdout(JSON.stringify(receipt));else out(io,`${labelOf('account_status','deleted')}（${member}）；私人内容已清除，私人工作流和技能按检查结果转给执行删除的管理员，审计记录 ${receipt.record}`);return 0;

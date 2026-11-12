@@ -20,7 +20,7 @@ export const AXES = {
   dynamic_terminal: { label: '动态层终态', ui: '沙箱复验结果', owner: 'V03', values: [{ code: 'pass', label: '通过' }, { code: 'fail', label: '失败', ui: '未通过' }, { code: 'no_verdict', label: '无判定', ui: '无结论' }, { code: 'not_run', label: '未运行' }, { code: 'incomplete', label: '未完成', ui: '检查未完成' }] },
   requirement_status: { label: '要求满足状态', ui: '要求项状态', owner: 'V03', values: [{ code: 'satisfied', label: '满足' }, { code: 'unsatisfied', label: '未满足' }, { code: 'pending', label: '未决' }] },
   unsatisfied_reason: { label: '未满足原因', owner: 'V03', values: [{ code: 'no_producer', label: '无生产者', ui: '无产出方' }, { code: 'abandoned', label: '已放弃' }, { code: 'outcome_mismatch', label: '终态不符合期望', ui: '结果不符合期望' }, { code: 'independence_unknown', label: '独立性未知' }] },
-  attribution: { label: '归责', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口' }, { code: 'author_input', label: '作者输入' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因' }] },
+  attribution: { label: '原因归类', owner: 'V04', values: [{ code: 'data_gap', label: '数据缺口' }, { code: 'author_input', label: '作者输入' }, { code: 'producer_error', label: '生产者错误' }, { code: 'transient', label: '瞬态' }, { code: 'target_side', label: '目标侧' }, { code: 'unattributed', label: '待归因' }] },
   partition: { label: '分区', ui: '结果分类', owner: 'V05', values: [{ code: 'delivered', label: '已交付' }, { code: 'rejected', label: '已拒收' }, { code: 'quarantined', label: '已隔离', ui: '派发结果未确认' }, { code: 'incomplete', label: '未完成' }] },
   task_result: { label: '任务结果', owner: 'V05', values: [{ code: 'passed', label: '已通过' }, { code: 'delivered_pending', label: '已交付（含未决项）' }, { code: 'delivered_unsatisfied', label: '已交付（含未满足项）' }, { code: 'rejected', label: '已拒收' }, { code: 'incomplete', label: '未完成' }, { code: 'held', label: '派发结果未确认' }, { code: 'awaiting', label: '等待提交中' }, { code: 'abandoned', label: '已放弃' }] },
   environment_state: { label: '自动化测试环境状态', owner: 'D07', values: [{ code: 'available', label: '可用' }, { code: 'in_use', label: '使用中' }, { code: 'frozen', label: '已冻结' }, { code: 'deactivated', label: '已停用' }, { code: 'unknown', label: '未知' }] },
@@ -49,7 +49,7 @@ export const AXES = {
   request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }, { code: 'superseded', label: '已作废' }] },
   permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
-  entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '教训' }] },
+  entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '常见误区' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干', ui: '大类' }, { code: 'branch', label: '枝', ui: '分类' }, { code: 'leaf', label: '叶', ui: '条目' }] },
   change_kind: { label: '版本差类型', owner: 'K01', values: [{ code: 'added', label: '新增' }, { code: 'removed', label: '删除' }, { code: 'modified', label: '修改' }] },
   read_tier: { label: '读取档位', owner: 'B02', values: [{ code: 'model_readable', label: '模型可读' }, { code: 'function_bytes_only', label: '只许函数按引用读字节' }, { code: 'retain_only', label: '只保留' }] },
@@ -110,12 +110,12 @@ export const AXES = {
   knowledge_directory: { label: '知识目录显示', ui: '知识文件夹显示', owner: 'K01', values: [{ code: 'products', label: '产品' }] },
   knowledge_origin: { label: '知识来源显示', owner: 'K01', values: [{ code: 'personal_entry', label: '个人条目', ui: '私人条目' }, { code: 'team_import', label: '导入' }, { code: 'product_source', label: '产品知识来源' }] },
   memory_field: { label: '记忆字段显示', owner: 'K01', values: [{ code: 'document_title', label: '标题' }, { code: 'directory_path', label: '目录', ui: '文件夹' }, { code: 'markdown_text', label: 'Markdown 正文' }, { code: 'active_content', label: '启用内容' }, { code: 'active_documents', label: '启用篇数' }] },
-  sync_mode: { label: '同步方式', owner: 'K01', values: [{ code: 'local', label: '仅保存在本机' }, { code: 'hub', label: '同步到 Hub' }] },
+  sync_mode: { label: '同步方式', owner: 'K01', values: [{ code: 'local', label: '仅保存在本机', ui: '仅保存在客户端设备' }, { code: 'hub', label: '同步到 Hub' }] },
   sync_status: { label: '同步状态', owner: 'K01', values: [{ code: 'idle', label: '尚未同步' }, { code: 'syncing', label: '等待同步中' }, { code: 'conflicted', label: '有冲突' }, { code: 'purging', label: '等待清除中' }, { code: 'complete', label: '同步完成' }] },
   sync_object_kind: { label: '同步对象种类', owner: 'K01', values: [{ code: 'bytes', label: '保真字节' }, { code: 'source_revision', label: '原文修订' }, { code: 'entry_revision', label: '知识修订' }, { code: 'directory_revision', label: '目录修订' }, { code: 'memory_revision', label: '记忆修订' }, { code: 'pack_manifest', label: '包清单' }, { code: 'inventory_page', label: '清单页' }, { code: 'snapshot', label: '同步快照' }, { code: 'deletion', label: '删除修订' }] },
   sync_field: { label: '同步信息', owner: 'K01', values: [{ code: 'last_synced_at', label: '上次同步' }, { code: 'cleared_personal_folder', label: '已清除的个人文件夹', ui: '已清除的私人文件夹' }, { code: 'single_item_share', label: '本机条目单条分享' }] },
   member_handover_status: { label: '成员私人包的移交', owner: 'R01', values: [{ code: 'transfer', label: '转给执行删除的管理员' }, { code: 'present', label: '管理员已有相同版本，不重复转移' }, { code: 'conflict', label: '管理员已有同号不同内容的版本，不转移，随账户清除' }] },
-  source_attribution_status: { label: '团队来源署名', owner: 'B02', values: [{ code: 'unsigned', label: '未署名' }, { code: 'attributed', label: '已署名为团队来源' }] },
+  source_attribution_status: { label: '团队来源确认', owner: 'B02', values: [{ code: 'unsigned', label: '未确认' }, { code: 'attributed', label: '已确认为团队来源' }] },
   source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
 } as const;
@@ -292,7 +292,7 @@ export function isUnsatisfiedReason(value: unknown): value is UnsatisfiedReason 
   return (UNSATISFIED_REASON as readonly unknown[]).includes(value);
 }
 
-/** 归责 (V04) */
+/** 原因归类 (V04) */
 export const ATTRIBUTION = ['data_gap', 'author_input', 'producer_error', 'transient', 'target_side', 'unattributed'] as const;
 export type Attribution = (typeof ATTRIBUTION)[number];
 export const ATTRIBUTION_LABEL = { 'data_gap': '数据缺口', 'author_input': '作者输入', 'producer_error': '生产者错误', 'transient': '瞬态', 'target_side': '目标侧', 'unattributed': '待归因' } as const satisfies { readonly [K in Attribution]: string };
@@ -585,8 +585,8 @@ export function isKnowledgeLayer(value: unknown): value is KnowledgeLayer {
 /** 知识条目种类 (K02) */
 export const ENTRY_KIND = ['definition', 'behaviour', 'case', 'defect', 'observation', 'procedure', 'pitfall'] as const;
 export type EntryKind = (typeof ENTRY_KIND)[number];
-export const ENTRY_KIND_LABEL = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察', 'procedure': '步骤', 'pitfall': '教训' } as const satisfies { readonly [K in EntryKind]: string };
-export const ENTRY_KIND_UI = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察', 'procedure': '步骤', 'pitfall': '教训' } as const satisfies { readonly [K in EntryKind]: string };
+export const ENTRY_KIND_LABEL = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察', 'procedure': '步骤', 'pitfall': '常见误区' } as const satisfies { readonly [K in EntryKind]: string };
+export const ENTRY_KIND_UI = { 'definition': '定义', 'behaviour': '行为', 'case': '用例', 'defect': '缺陷', 'observation': '观察', 'procedure': '步骤', 'pitfall': '常见误区' } as const satisfies { readonly [K in EntryKind]: string };
 export const EntryKindSchema = z.enum(ENTRY_KIND);
 export function isEntryKind(value: unknown): value is EntryKind {
   return (ENTRY_KIND as readonly unknown[]).includes(value);
@@ -1196,7 +1196,7 @@ export function isMemoryField(value: unknown): value is MemoryField {
 export const SYNC_MODE = ['local', 'hub'] as const;
 export type SyncMode = (typeof SYNC_MODE)[number];
 export const SYNC_MODE_LABEL = { 'local': '仅保存在本机', 'hub': '同步到 Hub' } as const satisfies { readonly [K in SyncMode]: string };
-export const SYNC_MODE_UI = { 'local': '仅保存在本机', 'hub': '同步到 Hub' } as const satisfies { readonly [K in SyncMode]: string };
+export const SYNC_MODE_UI = { 'local': '仅保存在客户端设备', 'hub': '同步到 Hub' } as const satisfies { readonly [K in SyncMode]: string };
 export const SyncModeSchema = z.enum(SYNC_MODE);
 export function isSyncMode(value: unknown): value is SyncMode {
   return (SYNC_MODE as readonly unknown[]).includes(value);
@@ -1242,11 +1242,11 @@ export function isMemberHandoverStatus(value: unknown): value is MemberHandoverS
   return (MEMBER_HANDOVER_STATUS as readonly unknown[]).includes(value);
 }
 
-/** 团队来源署名 (B02) */
+/** 团队来源确认 (B02) */
 export const SOURCE_ATTRIBUTION_STATUS = ['unsigned', 'attributed'] as const;
 export type SourceAttributionStatus = (typeof SOURCE_ATTRIBUTION_STATUS)[number];
-export const SOURCE_ATTRIBUTION_STATUS_LABEL = { 'unsigned': '未署名', 'attributed': '已署名为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
-export const SOURCE_ATTRIBUTION_STATUS_UI = { 'unsigned': '未署名', 'attributed': '已署名为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
+export const SOURCE_ATTRIBUTION_STATUS_LABEL = { 'unsigned': '未确认', 'attributed': '已确认为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
+export const SOURCE_ATTRIBUTION_STATUS_UI = { 'unsigned': '未确认', 'attributed': '已确认为团队来源' } as const satisfies { readonly [K in SourceAttributionStatus]: string };
 export const SourceAttributionStatusSchema = z.enum(SOURCE_ATTRIBUTION_STATUS);
 export function isSourceAttributionStatus(value: unknown): value is SourceAttributionStatus {
   return (SOURCE_ATTRIBUTION_STATUS as readonly unknown[]).includes(value);

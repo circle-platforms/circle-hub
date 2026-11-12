@@ -21,7 +21,7 @@ test('purged personal knowledge and memory stay empty, console offers a fresh Hu
  const own=await openConsole(hub,owner.token),admin=await openConsole(hub,hub.admin.token),client=await connect(hub,owner.token);t.after(()=>client.close());
  const initial=await api.state(owner.principal);await hub.records.personalPayloads!.purge(owner.principal,initial.epoch);
  for(const path of ['/console/knowledge?scope=personal','/console/knowledge?scope=all','/console/knowledge?view=memory&scope=personal','/console/knowledge?view=memory&scope=all','/console/knowledge/space?space='+owner.user.id]){
-  const page=await own.get(path);assert.equal(page.status,200,page.body);assert.match(page.body,/仅保存在本机/);assert.match(page.body,/action="\/console\/knowledge\/do\/sync-resume"/);assert.doesNotMatch(page.body,/SYNC_MODE_LOCAL|合成旧私人|合成旧偏好/);
+  const page=await own.get(path);assert.equal(page.status,200,page.body);assert.match(page.body,/仅保存在客户端设备/);assert.match(page.body,/action="\/console\/knowledge\/do\/sync-resume"/);assert.doesNotMatch(page.body,/SYNC_MODE_LOCAL|合成旧私人|合成旧偏好/);
   assert.doesNotMatch(page.body,/action="\/console\/knowledge\/do\/(?:entry|import|memory-write|memory-grant)"/);
  }
  for(const args of [{},{space:owner.user.id}]){const page=await client.call('get_nodes',args);assert.equal(page.isError,false,page.text);assert.deepEqual(page.out.nodes,[]);assert.equal(page.out.root,undefined);assert.equal(page.out.coverage?.total,0);}

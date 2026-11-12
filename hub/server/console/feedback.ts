@@ -46,7 +46,7 @@ export function actionNotice(area: KnowledgeView | 'packs', action: string, valu
     case 'withdraw': return '已撤回条目';
     case 'import': case 'import-source': return upload?.name ? `已导入原文 · ${upload.name}` : '已导入原文';
     case 'save-source': return '已保存到我的原文';
-    case 'attribute-source': return '已署名为团队来源';
+    case 'attribute-source': return '已确认为团队来源';
     case 'quota': return '已调整容量';
     default: return null;
   }

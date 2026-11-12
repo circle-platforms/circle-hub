@@ -16,7 +16,7 @@ test('the shared qualifier axis retains its existing codes and records each mark
  assert.ok(element('V07').changes10.some((text:string)=>text.includes('intermittent')&&text.includes(source)));
 });
 test('the existing work class, ledger and model revision remain unique and consistent with their generated contracts',()=>{
- assert.equal(model.version,45);assert.equal(MODEL_VERSION,45);
+ assert.equal(model.version,46);assert.equal(MODEL_VERSION,46);
  assert.equal(model.vocabulary.length,Object.keys(AXES).length);
  assert.equal(model.vocabulary.filter((value:any)=>value.axis==='work_class').length,1);
  assert.deepEqual(AXES.work_class,{label:'工作类',owner:'V07',values:[{code:'verification',label:'验证'},{code:'reproduction',label:'复现'},{code:'web',label:'Web'}]});
@@ -26,7 +26,7 @@ test('the existing work class, ledger and model revision remain unique and consi
 });
 test('V07 retains the detailed baseline rule and states work-class defaults and explicit dispatch overrides',()=>{
  const rule=element('V07').rules[0];
- for(const phrase of ['终态和码取第一次不合的那一轮（首因不丢）','要求项未满足（终态不符合期望）','这是确定的结论，不记未知','取其中最弱的','写明缺哪几轮','出口是重跑这几轮','只作假设集里的假设，不进归责（V04 R[0]）'])assert.ok(rule.includes(phrase),phrase);
+ for(const phrase of ['终态和码取第一次不合的那一轮（首因不丢）','要求项未满足（终态不符合期望）','这是确定的结论，不记未知','取其中最弱的','写明缺哪几轮','出口是重跑这几轮','只作假设集里的假设，不进原因归类（V04 R[0]）'])assert.ok(rule.includes(phrase),phrase);
  assert.ok(rule.includes('加限定标记“'+labelOf('qualifier_mark','intermittent')+'”'));
 
  const defaults=element('V07').rules[5];
