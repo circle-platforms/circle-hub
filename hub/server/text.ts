@@ -428,12 +428,11 @@ function resultConclusions(result: ValidationResult, originals: readonly ItemPro
 function startText(v: StartOut, context: TextContext): string {
   if (v.call_result === 'error' || v.run === undefined) return errorText(v);
   const run = v.run;
-  const lines = [run.build === undefined ? '已读入原始用例。' : `已读入原始用例，手册和命令树采用构建 ${run.build}。`];
+  const lines = [run.build === undefined ? '资料已读取。' : `资料已读取，本次核对采用构建 ${run.build}。`];
   if (context.production !== undefined && context.production !== null) lines.push(...resultConclusions(context.production, run.items), ...context.production.cross_item.map(claimLine));
   else lines.push(...run.items.map(item => `${caseName(item, item.label)}，${itemSummary(item)}；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`));
   for (const source of run.sources) if (source.coverage?.complete === false) lines.push('原始用例或资料尚未读全；状态未知；原因缺资料；下一步由使用者补齐资料。');
   for (const gap of context.unavailable ?? []) lines.push(`状态未知；原因缺资料；下一步由使用者提供可读取的${gap.role === 'subject' ? '原始用例' : '资料'}。`);
-  for (const gap of context.gaps ?? []) lines.push(`状态未知；原因缺资料；${gap.message}；下一步由使用者补齐资料。`);
   for (const change of run.criterion_changes ?? []) {
     const item = run.items.find(item => item.id === change.item);
     const state = change.superseded_by ? '已有新的修改意见' : change.accepted === true ? '修改意见已确认' : change.accepted === false ? `修改意见未确认，${change.reason}` : change.expired ? '修改意见已过期' : '修改意见尚未确认';
@@ -601,14 +600,12 @@ const RENDERERS: Record<string, (value: never, context: TextContext) => string> 
   submit_result: submitText,
 };
 
-export function feedingText(text: string, value: unknown): string {
-  const pending = recordsOf(value).feeding_pending;
-  if (!Array.isArray(pending)) return text;
-  const rows = [...new Set(pending.map(entry => {
-    const row = recordsOf(entry);
-    return `状态未知；原因缺资料；${String(row.missing)}；下一步${String(row.next_action)}`;
-  }))];
-  return [text, ...rows].join('\n');
+export function modelReferencesText(value: Record<string, unknown>, context: TextContext = {}): string {
+  return '供模型引用\n' + JSON.stringify({
+    ...value,
+    original_cases: context.items?.map(item => ({ id: item.id, autoid: item.fields.autoid ?? item.fields.case_id ?? null, title: item.fields.title ?? null })),
+    source_context: context.unavailable === undefined && context.gaps === undefined ? undefined : { unavailable: context.unavailable, gaps: context.gaps },
+  });
 }
 
 /** User-facing text; identifiers remain in structuredContent. */

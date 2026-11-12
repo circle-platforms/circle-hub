@@ -402,7 +402,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(summary.items.length, 3);
     assert.equal(summary.session, 'sess-start-1', 'the service got the session id from the header');
     assert.equal(summary.root, ROOT_1);
-    assert.match(run.content[0].text ?? '', /^已读入原始用例，手册和命令树采用构建 b-2.1-7。/);
+    assert.match(run.content[0].text ?? '', /^资料已读取，本次核对采用构建 b-2.1-7。/);
     assert.equal((modelReference(run).run as { instructions: string }).instructions, '按规程逐条评审每个合成用例。');
     const external = await client.call('start_run', { pack: 'review', inputs: { subject: { external: 'tracker:document:42' } } });
     assert.equal(external.isError, false);
@@ -876,7 +876,7 @@ describe('start_run with the engine\'s detail', () => {
     }
   });
 
-  test('the evidence gaps of the detail are in the text; without the engine\'s detail start_run still answers and no record is named', async () => {
+  test('source metadata stays in model context while unavailable sources retain a reader notice', async () => {
     const user = await person(['review']);
     const client = await connect(user);
     const reference = String((await upload(client, MINDMAP)).structuredContent.reference);
@@ -886,7 +886,7 @@ describe('start_run with the engine\'s detail', () => {
       const text = started.content[0].text ?? '';
       assert.deepEqual(modelReference(started).source_context, server.fakes.runs.gaps);
       assert.ok(text.split('\n').includes('状态未知；原因缺资料；下一步由使用者提供可读取的资料。'));
-      assert.ok(text.split('\n').includes('状态未知；原因缺资料；期望来源函数没有给出结果（合成）；下一步由使用者补齐资料。'));
+      assert.ok(!text.includes('期望来源函数没有给出结果（合成）'));
       assert.doesNotMatch(text, /tracker:document:404|review.expected_failed/);
     } finally {
       server.fakes.runs.gaps = { unavailable: [], gaps: [] };

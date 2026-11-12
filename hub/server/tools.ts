@@ -32,7 +32,7 @@ import { step } from '../telemetry/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
-import { feedingText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
+import { modelReferencesText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
 import { callStatus } from './call-status.ts';
 import { cachedReadReply } from './read-replies.ts';
 import { recoverRead } from './recover-read.ts';
@@ -826,11 +826,10 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
     call.context.adminNote(`the text of the ${name} answer could not be laid out: ${describeError(error)}`);
     text = fallbackText(name, value, context);
   }
-  text=feedingText(text,value);
   return {
     content: [
       { type: 'text', text },
-      { type: 'text', text: '供模型引用\n' + JSON.stringify({ ...value, original_cases: context.items?.map(item => ({ id: item.id, autoid: item.fields.autoid ?? item.fields.case_id ?? null, title: item.fields.title ?? null })), source_context: context.unavailable === undefined && context.gaps === undefined ? undefined : { unavailable: context.unavailable, gaps: context.gaps } }) },
+      { type: 'text', text: modelReferencesText(value, context) },
     ],
     structuredContent: value,
     isError: value.call_result === 'error',
