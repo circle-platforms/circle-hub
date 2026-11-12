@@ -430,7 +430,8 @@ export interface CredentialFinding {
 
 /**
  * An admin's acceptance that the findings of a scan are no credentials (for example example URLs in a product manual):
- * the resource configuration `scanAcceptanceKey(sha256)` bound to `scanDigest(scan)` (B04; README decision 18).
+ * the resource configuration `scanAcceptanceKey(sha256)` bound to `scanDigest(scan)` (B04; README decision 18). No new
+ * one is made since decision 161; those recorded before are still honoured when the records they cover are read.
  */
 export interface ScanAcceptance {
   /** User id of the admin who decided. */
@@ -530,10 +531,9 @@ export interface IngestInput {
   provenanceType: ProvenanceType;
   visibility: Visibility;
   /**
-   * Default model_readable. A credential hit on a read or generated artifact forces retain_only, unless an admin accepted
-   * exactly these findings of exactly these bytes (acceptFindings), or all findings have verified derived coverage.
-   * Only entirely Hub-owned ancestry qualifies; an upload with a hit is refused whatever was accepted, and a record
-   * with a person as author keeps retain_only.
+   * Default model_readable. Content is not scanned for credentials (decisions 154 and 161), so the tier asked for is the
+   * tier stored; an answer echoing a credential the Hub sent is held by the connector (B02 R[6]). Records an older Hub
+   * held under credential-scan@3 keep their tier, and an acceptance recorded for one of them before is still honoured.
    */
   readTier?: ReadTier;
   name?: string | null;
@@ -562,7 +562,11 @@ export interface ArtifactSource {
   sha256: string;
   size: number;
   mediaType: string;
-  /** Effective tier: retain_only whenever the bytes have a credential hit that no acceptance in force covers for this record. */
+  /**
+   * Effective tier. A record made under the content scan reads at its stored tier. A record an older Hub scanned with the
+   * detectors is retain_only while the newest of those scans of its bytes found something that no acceptance recorded
+   * before covers (decision 161: a later read of the bytes changes neither).
+   */
   readTier: ReadTier;
   /** The verified original, or null when the tier withholds it from this consumer; `note` then says why. */
   bytes: Uint8Array | null;
@@ -574,14 +578,11 @@ export interface Artifacts {
   /** Capture the reader's direct and pack-audience permissions for one request. */
   capturePermissionSnapshot?(principal: Principal): Promise<import('./request-permissions.ts').RequestPermissions>;
   /**
-   * Stores the bytes and a source_artifact record. An upload with a credential hit is refused with a RecordsError coded
-   * CREDENTIAL_IN_UPLOAD: no bytes are stored, only a validate action with the digest and the scan conclusion (B02 R[4]).
-   * A read or generated artifact with a hit is stored at retain_only, unless an acceptance in force covers these bytes and
-   * this finding set, or verified accepted inputs cover all derived findings: it keeps the requested tier and its scan
-   * names direct acceptance (`scan.accepted`) or source/decision-only derived coverage (`scan.derived`).
-   * Bytes the scanner cannot read as text are stored with `scan.inspected: false`. Repeating the same ingest (same bytes,
-   * origin, author, visibility, tier, name, acceptance) returns the existing record. Every check runs before any byte is
-   * written. An optional transaction is supported for uploads, including object registration.
+   * Stores the bytes and a source_artifact record. Nothing is refused, held or covered for looking like a credential
+   * (decisions 154 and 161): the scan written into the record is the content scan (credential-scan@4), which looks for
+   * nothing. Repeating the same ingest (same bytes, origin, author, visibility, tier, name, masking) returns the existing
+   * record. Every check runs before any byte is written. An optional transaction is supported for uploads, including
+   * object registration.
    */
   ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact>;
   /** Consumes whole transferable buffers by detaching every caller alias; other buffers are snapshotted. Do not reuse the input. */
@@ -603,7 +604,7 @@ export interface Artifacts {
   /**
    * Tier-aware read by reference (B02 F[5], R[4]): null when absent or forbidden; the bytes only when the effective tier
    * allows them to this consumer (default model): model_readable to anyone, function_bytes_only to `function` only,
-   * retain_only (every credential hit no acceptance in force covers) to no one. Throws IntegrityError when a recorded
+   * retain_only (a record held before, decision 161, or an echo of the Hub's own credential) to no one. Throws IntegrityError when a recorded
    * object's bytes are missing. `record` (the digest of one source_artifact record of these bytes, for example the record a
    * connector read returned) pins the read: that record decides instead of the rule of readable(), or null when it is not
    * a record of these bytes or the reader may not read it; the credential rule applies to it all the same.
