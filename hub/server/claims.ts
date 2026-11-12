@@ -197,7 +197,7 @@ export function userClaimText(claim: Claim): string {
   if (unknown || judgment === '错误') {
     parts.push(`原因${partial ? '缺资料' : claim.statement.reason === undefined ? '还没查清' : REASON_TEXT[claim.statement.reason]}`, '下一步由使用者核对原始用例和资料');
   }
-  const quotes = claim.resolutions?.map(value => value.text) ?? [];
+  const quotes = claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? [];
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);
   parts.push(`决定者${USER_DECIDER[claim.warrant.producer]}`);
   return join(parts, '；');

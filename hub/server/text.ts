@@ -412,7 +412,7 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
     parts.push(`原因${partial ? '缺资料' : [...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
     parts.push(`下一步${partial ? '使用者补齐资料后重新交给 Hub 检查' : [...new Set(layers.map(userNextStep))].join('；') || '使用者核对资料后重新交给 Hub 检查'}`);
   }
-  const quotes = claims.flatMap(claim => claim.resolutions?.map(value => value.text) ?? []);
+  const quotes = claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []);
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);
   if (item.replaced_criteria?.length) parts.push(...item.replaced_criteria.map(change => `原始用例的要求由${change.old}改为${change.new}`));
   parts.push(`决定者${[...new Set(claims.map(claim => USER_DECIDER[claim.warrant.producer]))].join('、') || '程序'}`);
