@@ -41,7 +41,7 @@ describe('a held object in a run that only reads', () => {
     assert.match(res.raw.content[1].text!, new RegExp(`系统 plm 里有 ${OBJECT}，内容待核看`));
     assert.match(res.raw.content[1].text!, /到来源系统看原文/);
     const said = JSON.stringify(res.out);
-    for (const secret of [VALUE, 'password=', 'SOURCE_CREDENTIAL']) assert.ok(!said.includes(secret) && !res.text.includes(secret), secret);
+    for (const secret of [VALUE, 'password=', 'SOURCE_CREDENTIAL']) assert.ok(!said.includes(secret) && !res.text.includes(secret) && !res.raw.content[1].text!.includes(secret), secret);
 
     const source = res.out.run!.sources.find(row => row.slot === 'defect')!;
     assert.equal(source.coverage?.complete, false);
