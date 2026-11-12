@@ -2,8 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalBytes } from '../records/api.ts';
 import type { DeviceHelpTarget } from '../../contracts/src/pack.ts';
+import { withCredentialDetectors } from '../testing/records.ts';
 import { setup } from './testing/context.ts';
 import { probes } from './testing/probes.ts';
+
+// Issue 194: a running Hub does not withhold device help for looking like a credential. This file covers the hold path
+// that records stored under credential-scan@3 still follow, so the detectors stay on for every kit it opens.
+withCredentialDetectors();
+
 
 const HELP = {
   line_pattern: '^[A-Za-z0-9 ._:/"\'-]{1,500}$',

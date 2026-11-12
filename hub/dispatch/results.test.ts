@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import type { Page, StoredRecord } from '../records/api.ts';
 import { installTraceSink, type SpanRow } from '../telemetry/api.ts';
+import { withCredentialDetectors } from '../testing/records.ts';
 import { setup } from './testing/context.ts';
+
+// Issue 194: a running Hub does not withhold device returns for looking like a credential. This file covers the hold path
+// that records stored under credential-scan@3 still follow, so the detectors stay on for every kit it opens.
+withCredentialDetectors();
+
 
 async function report(c: Awaited<ReturnType<typeof setup>>, reference: string) {
   const source = await c.kit.artifacts.source(c.owner, reference.slice(4));

@@ -16,7 +16,7 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { createEngineContext, type EngineContext, type RunsEngineDeps } from './deps.ts';
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
-import { getResult, getRun, getRunSummary, listRuns, runsFor, resultState, type StoredResult } from './queries.ts';
+import { getResult, getRun, getRunStatistics, getRunSummary, listRuns, runHeader, runsFor, resultState, runVisible, type StoredResult } from './queries.ts';
 import { submissionByDigest, successorsOf } from './store.ts';
 import { exportedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
