@@ -8,8 +8,9 @@
 import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
-import { availableParallelism, loadavg } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { availableParallelism, loadavg, tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPool, Database } from '../hub/records/db.ts';
 import { migrate } from '../hub/records/migrations.ts';
@@ -312,26 +313,39 @@ async function runLocalLanes(files: string[], children: ChildProcess[]): Promise
   process.stderr.write(
     `unit lanes shared=${lanes.shared.length} isolated=${lanes.isolated.length} sentinel=${lanes.sentinel.length} sharedConcurrency=${concurrency} sentinelConcurrency=${sentinelLimit} load=${loadavg().map((n) => n.toFixed(2)).join(' ')}\n`,
   );
-  const postgres = lanes.shared.length === 0 ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
+  let postgres: TemporaryPostgres | undefined;
+  let compileCache: string | undefined;
+  const exits: Promise<number>[] = [];
+  const launch = (files: string[], concurrency: number, env: NodeJS.ProcessEnv): Promise<number> => {
+    const child = spawnLane(files, concurrency, { ...env, ...(compileCache ? { NODE_COMPILE_CACHE: compileCache } : {}) });
+    if (child) children.push(child);
+    const done = exitOf(child);
+    exits.push(done);
+    return done;
+  };
   try {
+    if (process.env.NODE_DISABLE_COMPILE_CACHE !== '1' && process.env.NODE_V8_COVERAGE === undefined
+      && !process.execArgv.includes('--experimental-test-coverage') && !process.env.NODE_OPTIONS?.includes('--experimental-test-coverage')) {
+      compileCache = await mkdtemp(join(tmpdir(), 'circle-hub-unit-compile-'));
+    }
+    postgres = lanes.shared.length === 0 ? undefined : await startPostgres({ maxConnections: 500, sharedBuffers: '512MB', autovacuum: false, private: true });
     if (postgres) {
       await prepareTemplate(postgres);
       process.stderr.write(`template clone ${(await timeClone(postgres)).toFixed(0)} ms\n`);
     } else {
       process.stderr.write('unit shared cluster not started\n');
     }
-    const shared = postgres ? spawnLane(lanes.shared, concurrency, sharedEnv(postgres)) : undefined;
+    const shared = launch(lanes.shared, concurrency, postgres ? sharedEnv(postgres) : stringEnv());
     // Own-cluster files stay at 2 so they do not add SysV segments while the shared lane is busy.
-    const isolated = spawnLane(lanes.isolated, 2, stringEnv());
-    const sentinel = spawnLane(lanes.sentinel, sentinelLimit, stringEnv());
-    for (const child of [shared, isolated, sentinel]) if (child) children.push(child);
+    const isolated = launch(lanes.isolated, 2, stringEnv());
+    const sentinel = launch(lanes.sentinel, sentinelLimit, stringEnv());
     const peaks: Peaks = { shm: 0, rssKiB: 0, cpu: 0 };
     const postmaster = postgres?.pid ?? 0;
     const timer = setInterval(() => samplePeaks(postmaster, peaks), 2000);
     timer.unref();
-    const laneDone = async (name: string, child: ChildProcess | undefined): Promise<number> => {
+    const laneDone = async (name: string, done: Promise<number>): Promise<number> => {
       const began = Date.now();
-      const code = await exitOf(child);
+      const code = await done;
       process.stderr.write(`lane ${name} exit ${code} ${((Date.now() - began) / 1000).toFixed(1)}s\n`);
       return code;
     };
@@ -348,7 +362,12 @@ async function runLocalLanes(files: string[], children: ChildProcess[]): Promise
     );
     return failed;
   } finally {
-    await postgres?.stop();
+    try {
+      await Promise.allSettled(exits);
+      await postgres?.stop();
+    } finally {
+      if (compileCache) await rm(compileCache, { recursive: true, force: true });
+    }
   }
 }
 
