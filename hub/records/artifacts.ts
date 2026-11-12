@@ -50,7 +50,7 @@ import type { Database } from './db.ts';
 import { digestOf, isSha256, sha256Hex } from './digest.ts';
 import { AccessError, ConflictError, IntegrityError, LimitError, RecordsError } from './errors.ts';
 import { isMediaType } from './objects.ts';
-import { scanContent } from './content-scan.ts';
+import { CONTENT_SCANNER, scanContent } from './content-scan.ts';
 import { scanAllCredentials } from './scan.ts';
 import { CoverageContext } from './coverage.ts';
 import { MAX_INDEX_VALUE_BYTES, validateIndex } from './store.ts';
@@ -173,7 +173,10 @@ function scannerVersion(scan: CredentialScan): number {
   return match === null ? 0 : Number(match[1]);
 }
 
-/** Credential hits belong to the bytes: the scans of the newest scanner version among their records decide (B02 R[4]). */
+/**
+ * Credential hits belong to the bytes: the scans of the newest scanner version among their records decide (B02 R[4]).
+ * Callers hand in only records scanned with the detectors (decision 161): the content scan finds nothing by design.
+ */
 function newestHits(records: readonly SourceArtifact[]): SourceArtifact[] {
   let newest = -1;
   for (const record of records) newest = Math.max(newest, scannerVersion(record.body.scan));
@@ -558,12 +561,17 @@ export class RecordArtifacts implements Artifacts {
   }
 
   async #effectiveChoice(chosen: SourceArtifact, all: readonly SourceArtifact[]): Promise<Choice> {
-    const hits = newestHits(all);
+    // Decision 161 (issue 194): a record made under the content scan is read at the tier it stored. A record an older Hub
+    // scanned with the detectors is decided as it was then: by the newest of those scans among the records of its bytes,
+    // and by an acceptance recorded for it. A later read of the bytes changes neither: it does not lift a held record and
+    // does not take an acceptance back.
+    const detected = chosen.body.scan.scanner === CONTENT_SCANNER ? [] : all.filter((record) => record.body.scan.scanner !== CONTENT_SCANNER);
+    const hits = newestHits(detected);
     let acceptance: EffectiveScanAcceptance | null = null;
     let tier = chosen.body.read_tier;
     if (hits.length > 0 && fromHub(chosen.body.origin,chosen.body.author)) {
       const context = this.#context();
-      await context.load([chosen.body.origin],all);
+      await context.load([chosen.body.origin],detected);
       acceptance = context.acceptance(chosen);
       if (acceptance !== null) tier = context.tier(chosen,acceptance);
     }
