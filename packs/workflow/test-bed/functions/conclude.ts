@@ -396,6 +396,6 @@ export function helpPlan(beds: ManifestBed[], normalized: Normalized, frozen: Fr
   if (bed === undefined || !bed.devices.some((d) => d.name === device)) {
     return { ok: false, failure: { code: 'test-bed.unknown_bed', message: `清单里没有自动化测试环境 ${chosen.bed} 的设备 ${device}`, fix: '用当前清单重开运行；清单换过以后要重新预订', pointer: '/parameters/device' } };
   }
-  const conclusion = `向 ${chosen.bed} 的设备 ${device} 问命令行“${line}”各个位置的说明${normalized.mode == null ? '' : `（级别 ${normalized.mode}）`}：只问、不按回车、不执行（预订 ${booking}）`;
+  const conclusion = `向 ${chosen.bed} 的设备 ${device} 问命令行“${line}”各个位置的说明${normalized.mode == null ? '' : `（级别 ${normalized.mode}）`}：只问、不按回车、不执行`;
   return { ok: true, plan: { booking, bed: chosen.bed, device, key: chosen.key, line, mode: normalized.mode ?? null, conclusion } };
 }

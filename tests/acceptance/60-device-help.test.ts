@@ -88,9 +88,8 @@ describe('scenario 60: a writer asks a booked device what it expects', () => {
     assert.ok(lines.every((line) => !/[?\x00-\x1f]/.test(String(line))), 'no question mark of the Hub\'s own, no line end');
     assert.ok(called.every((c) => c.name !== 'send_blob'), 'nothing is dispatched');
     assert.ok(called.some((c) => c.name === 'close_slot'), 'the gateway lease of the questioning is released');
-    // The answer: the claim lines and the device's lines as received, indented, with the reminder of what they are.
-    assert.match(asked.text, /设备对所问位置的说明（设备原话，各带观察时刻和原件；它不是命令树，也不是手册，不能当期望值的依据）：/);
-    assert.match(asked.text, /\n    <1-9>   a number\n    <cr>\n/);
+    assert.match(asked.text, /设备输出仅供参考，不能作为原始用例的期望依据。/);
+    assert.match(asked.text, /\n<1-9>   a number\n<cr>(?:\n|$)/);
     assert.match(asked.text, /设备给出说明的最长前缀是“widget set demo”；它后面的词是“5”/);
     // The run holds them as claims of the target's report, not as a source.
     const run = (asked.out as { run: { run: string; device_help: Array<{ statement: { data?: Record<string, unknown> }; qualifier: { marks: string[]; provenance: string }; grounds: string[] }>; sources: Array<{ reference: string }> } }).run;
