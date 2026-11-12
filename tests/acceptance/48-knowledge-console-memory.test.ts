@@ -56,7 +56,8 @@ test('space panels show all four readable scopes and only verified own knowledge
  {const detail=await browser.get(space({space:owner.user.id,path:verified.path,entry:verified.entry}));assert.equal(detail.status,200,detail.body);assert.match(detail.body,/<p class="ch-meta" data-verified-scope>已逐字核对来源引文与路径，不代表陈述已获事实确认。<\/p>/);}
  assert.match(textOf(parse(own.body)),/\/ 上限 1\.0 GB/);assert.doesNotMatch(own.body,/上限 1073741824 字节/);
  assert.match(own.body,/<details class="ch-section" id="knowledge-history"><summary[^>]*>知识版本记录<\/summary>/);assert.doesNotMatch(own.body,/<details[^>]*open[^>]*><summary[^>]*>知识版本记录/);
- assert.match(own.body,/<span class="nowrap" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}">版本 2 · (?:今天 \d{2}:\d{2}|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2})<\/span> ·/);
+ // The label says which version it is, and the hover text gives the full time with its zone (wording table, W37 and W38).
+ assert.match(own.body,/<span class="nowrap" title="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}（UTC[+-]\d{2}:\d{2}）">知识版本 2 · (?:今天 \d{2}:\d{2}|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2})<\/span> ·/);
  assert.equal((own.body.match(/href="#grant-knowledge"/g)??[]).length,1);
  const checked=await browser.post('/console/knowledge/do/grant',{csrf:csrf(own.body),path:verified.path,audience:'administrators',member:reader.user.name,preview_grant:'1'});
  assert.equal(checked.status,303);const checkedPage=await browser.get(String(checked.headers.location));
