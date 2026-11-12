@@ -204,6 +204,9 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
     `下载运行时由程序从 items/${index}.json、run.json 和 knowledge/ 摘出，只有事实，没有判断，也不是计划：这条用例的重组记录点到的命令在锁定命令树里的条目、手册对这些命令各参数的说明、产品声明的逆操作、只读前缀下同样的词走到的命令、同级命令的语法行，记录点到的其它节点在 knowledge/ 里的位置，最后是这条用例的计划文件外壳。写这条用例先读这一份，这里没有的再到 knowledge/ 里搜；引用照抄条目下的“引用”行。`,
     '',
     `条目 ${String(item.id ?? '')}；锁定根 ${knowledge.root}。`,
+    '',
+    '执行器规则关掉的动作不能作为排除原始用例的理由。按同一构建的手册和命令树，用该设备已开放的命令方法完成原来的效果，保留对象、动作和场景，并说明命令与原始步骤的对应关系；不修改执行器规则或测试环境配置。',
+    '只有上机时才产生的值，在本条自动化用例里先取出再用；手册允许指定名字时，由生成器指定，本条先创建，配置、查询和清理都使用同一个名字。可在这些命令里写相同的 {{name:N|前缀|后缀}}，前后缀取手册允许的字符并区分本条；fidelity-brief.ts 或 submit-plans.ts 展开并写回文件后，Hub 核对具体命令。不写死设备生成的名字，不抄旧设备输出，不沿用设备上已有的东西。CAPTURE/EXPECT_FROM 只把捕获原文用于检查，不能插进普通命令参数；设备不允许命名时，须有执行器规则已支持的本条取值和引用方式，缺少时说明缺什么，不猜。',
   ];
   // The order is the cleanup check's own (functions/command-obligations.ts, alternativeInverses then inverse_rules).
   if (policy) out.push(`产品声明的命令规则（run.json 的 command_policy）：只读前缀 ${policy.read_only.join('、') || '无'}；互逆取值 ${policy.inverse_alternatives.map((pair) => pair.join('/')).join('、') || '无'}。`
