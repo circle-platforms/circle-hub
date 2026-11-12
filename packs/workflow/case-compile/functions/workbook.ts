@@ -78,8 +78,6 @@ export function readWorkbook(input: unknown, recipes: GenerationInput | Generati
   if (JSON.stringify(grid(expectedLast)) !== JSON.stringify(book.closing_row)) issue('closing', '/sheets/0', '收尾行与配置不符');
   const description = headerRow + 1;
   if (grid(expectedLast - 1).some(Boolean) || grid(description)[2] !== '0' || grid(description)[3] !== `Author         : ${FORMAT.generator}\n计划运行 ${recipe.plan_run}；构建 ${recipe.build}` || grid(description).some((v, i) => i !== 2 && i !== 3 && v !== '')) issue('description', '/sheets/0', '自动化用例 Excel 的说明与脚本编写或构建号不符，说明行的执行内容必须为空');
-  const defaultAssertion=assertionTarget(recipe.contract,profile);
-  if (!defaultAssertion) issue('assertion', '/profile/allowed', '缺少唯一的允许字面断言组合');
   // Scan every post-header E–I row, including description, blank and closing rows. Registers live within one case, as in
   // the reference runner: it resets them at every row that starts a case (an autoid in A on a row whose C is not the init
   // type 1) to the registers its init rows captured, and clears them before each case's init. This generator writes no init rows, so every case

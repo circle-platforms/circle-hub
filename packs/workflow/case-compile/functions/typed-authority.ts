@@ -109,7 +109,7 @@ export function typedAddressUses(contract:RuntimeContract,profile:RuntimeProfile
    }
   }
  }
- const assertion=profile.allowed.find(call=>Object.values(call.parameters).includes('literal_assertion'));if(assertion){const a=runtimeMethod(contract,assertion.object,assertion.method)?.authority,name=Object.keys(assertion.parameters).find(n=>assertion.parameters[n]==='literal_assertion');if(a&&name&&a.parameters[name])slots.expects.forEach((e,i)=>put(a.parameters[name].type,e.text,a,a.parameters[name].role,`/data/expects/${i}/text`));}
+ for(const [index,expect]of slots.expects.entries()){const target=assertionTarget(contract,profile,expect),a=target?.entry.authority,name=target?Object.keys(target.call.parameters).find(n=>target.call.parameters[n]==='literal_assertion'):null;if(a&&name&&a.parameters[name])put(a.parameters[name].type,expect.text,a,a.parameters[name].role,`/data/expects/${index}/text`);}
  return uses;
 }
 export const authorityRecovery = (gaps: readonly AuthorityGap[]): string => {

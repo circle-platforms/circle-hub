@@ -129,7 +129,7 @@ export function parseProfile(value: unknown, contract: RuntimeContract, beds: re
   if(value.block_model!==undefined&&typeof value.block_model!=='boolean')issue('/block_model','block_model 必须是显式布尔声明');
   const assertions = allowed.filter((v) => Object.values(v.parameters).some((role) => role === 'literal_assertion'));
   const document=sourceDocument(contract),runnerRuntime=isRecord(document?.runtime)?document.runtime:{},block=isRecord(runnerRuntime.block_model)?runnerRuntime.block_model:{},defaultCall=isRecord(block.default_assertion)?block.default_assertion:{};
-  const defaults=value.block_model===true?assertions.filter(call=>call.object===defaultCall.object&&call.method===defaultCall.method):assertions;
+  const defaults=value.block_model===true||assertions.length>1&&isRecord(block.default_assertion)?assertions.filter(call=>call.object===defaultCall.object&&call.method===defaultCall.method):assertions;
   if (defaults.length !== 1) issue('/allowed', '必须配置唯一的字面断言组合，供生成器从 expects 产生断言');
   for (const call of assertions) {
     const names = Object.keys(call.parameters).filter((name) => call.parameters[name] === 'literal_assertion');

@@ -14,10 +14,11 @@ export function runtimeBlocks(contract:RuntimeContract):Record<string,any>|null{
 export interface AssertionTarget {call:AllowedCall;entry:RuntimeEntry;matching:string}
 export function assertionTarget(contract:RuntimeContract,profile:RuntimeProfile,expect?:PlanExpect):AssertionTarget|null{
  const calls=profile.allowed.filter(call=>Object.values(call.parameters).includes('literal_assertion'));
- if(!expect?.operator){const declaration=runtimeBlocks(contract)?.default_assertion;const found=profile.block_model===true&&isRecord(declaration)?calls.filter(call=>call.object===declaration.object&&call.method===declaration.method):calls;const call=found.length===1?found[0]:null;const entry=call?runtimeMethod(contract,call.object,call.method):null;return call&&entry?{call,entry,matching:'literal'}:null;}
- const block=runtimeBlocks(contract);if(!block||profile.block_model!==true)return null;
+ const operator=expect?.operator??expect?.op;
+ if(!expect||!operator){const declaration=runtimeBlocks(contract)?.default_assertion;const found=isRecord(declaration)&&(profile.block_model===true||calls.length>1)?calls.filter(call=>call.object===declaration.object&&call.method===declaration.method):calls;const call=found.length===1?found[0]:null;const entry=call?runtimeMethod(contract,call.object,call.method):null;return call&&entry?{call,entry,matching:'literal'}:null;}
+ const block=runtimeBlocks(contract);if(!block||expect?.operator!==undefined&&profile.block_model!==true)return null;
  const source=expect.register?'register':'literal';
- const choices=expect.comparison==='differs'?(isRecord(block.differs)?[block.differs]:[]):Array.isArray(block.operators)?block.operators.filter((row:any)=>isRecord(row)&&row.op===expect.operator&&row.expected===source):[];
+ const choices=expect.comparison==='differs'?(isRecord(block.differs)?[block.differs]:[]):Array.isArray(block.operators)?block.operators.filter((row:any)=>isRecord(row)&&row.op===operator&&row.expected===source):[];
  if(choices.length!==1)return null;const row=choices[0];
  if(!TABLE.matching_modes.includes(row.matching)||expect.register&&row.matching==='escaped_literal'||expect.comparison==='differs'&&row.matching!=='exact_text'||expect.comparison!=='differs'&&row.matching==='exact_text')return null;
  const call=calls.find(call=>call.object===row.object&&call.method===row.method),entry=call?runtimeMethod(contract,call.object,call.method):null;
