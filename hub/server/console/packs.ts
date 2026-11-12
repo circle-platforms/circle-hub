@@ -22,7 +22,7 @@ import { box, button, type CommandDialog, type Tone } from './ui.ts';
 
 export function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {
   if (pack.withdrawn) return { text: uiLabelOf('pack_status', 'retired'), tone: 'unchecked' };
-  if (pack.kind === 'product' || pack.kind === 'skill' && pack.active) return pack.active ? { text: uiLabelOf('pack_status', 'enabled'), tone: 'pass' } : { text: uiLabelOf('pack_status', 'inactive'), tone: 'plain' };
+  if (pack.kind === 'product') return pack.active ? { text: uiLabelOf('pack_status', 'enabled'), tone: 'pass' } : { text: uiLabelOf('pack_status', 'inactive'), tone: 'plain' };
   return { text: uiLabelOf('pack_status', 'published'), tone: 'pass' };
 }
 
@@ -64,41 +64,6 @@ export async function packsPage(ctx: PageContext, kind: PlaceKind = 'workflow'):
     active: place.active, hint: packPurpose(kind)+'这里只列出当前账户可用的内容。',
     actions:html`${button('/console/packs/-/publish',`发布我的${noun}`,{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
-}
-
-/** What a skill offers and who uses it: the published modules and every workflow that embeds one or locks its parsers. */
-function usersOf(id: string, listings: readonly PackListing[]): PackListing[] {
-  return [...byId(listings).values()].map(shownVersion).filter((pack) => pack.kind === 'workflow' && (pack.embeds?.some((row) => row.pack === id) || pack.dependencies?.some((row) => row.pack === id)));
-}
-
-async function skillOffers(ctx: PageContext, pack: PackListing, listings: readonly PackListing[]): Promise<Html> {
-  const declared = await ctx.deps.packs.skillDeclaration?.(pack.id, pack.version) ?? null;
-  const users = usersOf(pack.id, listings);
-  return html`${card({ title: '提供的模块', hint: '工作流发布时内嵌，发布时 Hub 逐字节核对', meta: `${declared?.modules.length ?? 0} 个` }, table(['模块', '适用范围'], (declared?.modules ?? []).map((row) => [html`<b>${row.title}</b>${technical(code(row.id),'查看')}`, row.family]), declared === null ? '模块暂不可读' : `这个版本没有模块${declared.parsers ? `，提供 ${declared.parsers} 个解析器` : ''}`))}
-${card({ title: '使用它的工作流', meta: `${users.length} 个` }, table(['工作流', '方式'], users.map((row) => [link('/console/packs/' + row.id, row.title), [row.embeds?.some((v) => v.pack === pack.id) ? '内嵌模块' : '', row.dependencies?.some((v) => v.pack === pack.id) ? '解析器' : ''].filter(Boolean).join('、')]), '还没有工作流用它'))}`;
-}
-
-/** T01 R[6]: what a workflow is made of. Modules are checked at publication; connections and documents are what it declares. */
-function workflowComposition(pack: PackListing, loaded: LoadedWorkflow | null): Html {
-  const accepted = (loaded?.workflow.inputs ?? []).flatMap((slot) => slot.accepts.filter((type) => /^[a-z-]+:[a-z-]+$/.test(type)).map((type) => ({ slot: slot.slot, type })));
-  const systems = [...new Set(accepted.filter((row) => row.type !== 'doc:doc' && !row.type.startsWith('knowledge:')).map((row) => row.type))];
-  const knowledge = [...new Set([...accepted.filter((row) => row.type.startsWith('knowledge:')).map((row) => row.type), ...(loaded?.workflow.product?.catalogs ?? [])])];
-  const documents = accepted.filter((row) => row.type === 'doc:doc').map((row) => row.slot);
-  const skills = [...(pack.embeds ?? []).map((row) => html`<div>${link('/console/packs/' + row.pack, row.pack)} ${code(row.module)} <span class="ch-meta">内嵌 ${row.version}</span></div>`), ...(pack.dependencies ?? []).filter((row) => !pack.embeds?.some((v) => v.pack === row.pack)).map((row) => html`<div>${link('/console/packs/' + row.pack, row.pack)} <span class="ch-meta">解析器</span></div>`)];
-  const none = '—';
-  return card({ title: '组成', hint: '工作流 = 通用技能 + 验收要求 + 数据绑定；内嵌模块发布时核对过，其余是这个工作流声明的' }, kv([['通用技能', skills.length ? html`${skills}` : none], ['连接', systems.length ? html`${systems.map((type) => html`<div>${code(type)}</div>`)}` : none], ['知识', knowledge.length ? html`${knowledge.map((type) => html`<div>${code(type)}</div>`)}` : none], ['命名文档', documents.length ? html`${documents.map((slot) => html`<div>${code(slot)}</div>`)}` : none]]));
-}
-
-async function skillSummary(ctx: PageContext, pack: PackListing, listings: readonly PackListing[]): Promise<string> {
-  const declared = await ctx.deps.packs.skillDeclaration?.(pack.id, pack.version) ?? null;
-  const offers = [declared?.modules.length ? `${declared.modules.length} 个模块` : '', declared?.parsers ? `${declared.parsers} 个解析器` : ''].filter(Boolean);
-  return [...offers, `${usersOf(pack.id, listings).length} 个工作流在用`].join(' · ');
-}
-
-export async function skillsPage(ctx: PageContext): Promise<PageResult> {
-  const listings = await ctx.deps.packs.list(ctx.principal), scope = selectedScope(ctx);
-  const body = await spaceLayout(ctx, liveModule('skills', ['pack.published'], await packList(ctx, listings, scope, undefined, 'skill')), listings.filter((pack) => pack.kind === 'skill'));
-  return { status: 200, body: page(ctx.chrome(uiLabelOf('pack_kind', 'skill'), { active: 'skills', hint: '工作流由通用技能组成；不随 Hub 发布，按需安装' }), body) };
 }
 
 export const PACK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;

@@ -718,8 +718,6 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
   const parts = nodes.nodes.map((node) => {
     const cited = node === main ? citations : null;
     const byEntry = new Map((cited?.entries ?? []).map((entry) => [entry.entry, entry]));
-    // Decision 159: the column is there only when some entry of the node carries conditions.
-    const conditioned = node.entries.some((entry) => entry.applicability !== undefined);
     const grounds = (entry: string) => {
       const found = byEntry.get(entry);
       if (found === undefined || found.grounds === null) return '未记录';
@@ -737,12 +735,12 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
 ${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), technicalCode(child.path)]), '没有下级')}
 ${cited === null
   ? table(
-    ['类型', '陈述', ...(conditioned ? ['适用'] : []), '引用', '数据'],
-    node.entries.map((entry) => [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, ...(conditioned ? [entry.applicability ?? ''] : []), technicalCode(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
+    ['类型', '陈述', '适用', '引用', '数据'],
+    node.entries.map((entry) => [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, entry.applicability, technicalCode(entry.reference), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))]),
     '没有条目',
   )
   : table(
-    ['类型', '陈述', ...(conditioned ? ['适用'] : []), '引用', '来源', `近 ${cited.days} 天被引用`, '数据'],
+    ['类型', '陈述', '适用', '引用', '来源', `近 ${cited.days} 天被引用`, '数据'],
     node.entries.map((entry) => {
       const counted = byEntry.get(entry.entry);
       return [isEntryKind(entry.kind)?uiLabelOf('entry_kind',entry.kind):entry.kind, entry.statement, entry.applicability, technicalCode(entry.reference), grounds(entry.entry), counted === undefined ? '暂无数据' : countText(cited, counted.count, counted.capped), entry.data === undefined ? '' : pre(JSON.stringify(entry.data, null, 2))];
