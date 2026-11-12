@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { MANIFEST_FILE, layoutAt, listBackups } from '../../platform/api.ts';
-import type { TokenInfo, User } from '../../records/api.ts';
+import { maskPlaceholder, type TokenInfo, type User } from '../../records/api.ts';
 import type { CommandRun } from '../command-bridge.ts';
 import { commands } from './commands.ts';
 import { connectedClients, clientLabel } from './circles.ts';
@@ -184,6 +184,28 @@ export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Prom
   return { rows: null, text: run === null ? null : await run(['secret', 'list']) };
 }
 
+/**
+ * The masking dictionary, for an administrator (B02 R[11], decision 159): the rules in force, what each puts in place of a
+ * match, and the commands that change them. A pattern is not a secret and is shown; nothing a rule matched is kept anywhere.
+ */
+async function maskingCard(ctx: PageContext, dialogs: CommandDialog[]): Promise<Html | null> {
+  const store = ctx.deps.records.masking;
+  if (store === undefined) return null;
+  const set = commands.maskSet();
+  dialogs.push(set);
+  const hint = '读业务系统的文本内容时，命中规则的片段先换成方括号里的文字再保存；包函数、模型和页面看到的都是替换后的内容，被替换的值 Hub 不保存。只处理文本，表格、压缩包等文件原样保存。成员上传和写入的内容不替换。';
+  let body: Html;
+  try {
+    const state = await store.list(ctx.principal);
+    const removals = state.rules.map((rule) => commands.maskRemove(rule.name));
+    dialogs.push(...removals);
+    body = table(['规则', '替换成', '模式', '操作'], state.rules.map((rule, index) => [rule.name, maskPlaceholder(rule.label), html`${code(rule.pattern)}${rule.ignore_case ? html` <span class="ch-meta">不区分大小写</span>` : ''}`, commandLink(removals[index], '删除…', 'ch-btn ch-btn--sm ch-btn--ghost')]), { title: '还没有遮盖规则', text: '业务系统的内容原样保存。添加规则后，命中的密码、密钥等片段在保存前被替换。' });
+  } catch {
+    body = html`<p class="error">遮盖字典暂不可用</p>`;
+  }
+  return html`<section id="masking">${box({ title: '遮盖字典', hint, tail: commandLink(set, '添加规则…', 'ch-btn ch-btn--sm ch-btn--secondary') }, body, { flush: true })}</section>`;
+}
+
 export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
   return ctx.admin ? adminSettings(ctx, run) : memberSettings(ctx);
 }
@@ -225,13 +247,15 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   } else {
     secretBody = html`<pre class="error"><code>${[...secrets.text.stdout, ...secrets.text.stderr].join('\n')}</code></pre>`;
   }
+  // The masking dictionary stands under the credentials (B02 R[11]): what the Hub replaces in a business system's answer.
+  const masking = hub ? null : await maskingCard(ctx, dialogs);
   // The host operations and their dialogs are the Hub tab's; the credential tab carries no dialog nothing on it opens.
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
   if (hub) dialogs.push(...stopping);
   const content = hub
     ? html`${await hubState(ctx)}
 ${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
-    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>`;
+    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${masking ?? ''}`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
   return {

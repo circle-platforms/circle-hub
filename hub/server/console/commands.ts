@@ -49,6 +49,16 @@ export const commands = {
     id: dialogId('token-issue', user.id), title: `签发客户端访问令牌：${user.name}`,
     text: '新令牌仅在签发时显示一次，只用于连接客户端，不能登录控制台；所有账户都用用户名和密码登录控制台。', command: command('token', 'issue', user.id, '--label=客户端'),
   }),
+  // The masking dictionary (B02 R[11]): rules are set, tried and removed on the server; the page lists them.
+  maskSet: (): CommandDialog => ({
+    id: dialogId('mask-set', 'rule'), title: '添加或更新遮盖规则',
+    text: '规则名相同即更新。模式是正则表达式；写了名为 secret 的分组时只替换该分组，周围的文字保留。先用第一条命令在一份样本上试，确认替换结果后再用第二条命令保存。之后读到的业务系统应答按新规则替换，已经保存的内容不改写。',
+    command: `${command('mask', 'test', '--pattern=password=(?<secret>\\S+)', '--label=密码', '--file=样本文件')}\n${command('mask', 'set', '规则名', '--label=密码', '--pattern=password=(?<secret>\\S+)', REASON)}`,
+  }),
+  maskRemove: (name: string): CommandDialog => ({
+    id: dialogId('mask-remove', name), title: `删除遮盖规则 ${name}`,
+    text: '删除后读到的业务系统应答不再按这条规则替换；已经按它替换过的内容不恢复，被替换的值 Hub 没有保存。', command: command('mask', 'remove', name, REASON),
+  }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
     text: '新内容从标准输入读取，不出现在命令、记录和页面中；引用该凭据的业务系统与运行环境下次使用新版本。', command: command('secret', 'set', `--name=${name}`, REASON),
