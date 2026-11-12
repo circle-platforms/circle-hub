@@ -5,7 +5,8 @@ import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openConnectorKit } from './testing/kit.ts';
 import { writePack } from './testing/packs.ts';
-import { sha256Hex } from '../records/api.ts';
+import { setSyntheticCredential } from './testing/credentials.ts';
+import { MASKING_REFRESH_MS, MaskingRules, sha256Hex } from '../records/api.ts';
 import { maskAnswer } from './http.ts';
 import { compileMasking, MASKING_DICTIONARY_SCHEMA } from '../../contracts/src/masking.ts';
 
@@ -123,4 +124,50 @@ test('one answer: text by its media type, in the charset it names, and UTF-8 onc
   assert.equal(masked.mediaType, 'text/html; charset=utf-8');
   assert.deepEqual(masked.masking, { dictionary, rules: [{ rule: 'device-password', count: 1 }] });
   assert.equal(maskAnswer(masking, dictionary, Buffer.from(`password=${SECRET}`), 'text/plain; charset=UTF-8')!.mediaType, 'text/plain; charset=UTF-8');
+});
+
+test('a serving process picks up a rule another process set within the refresh time, without reading the dictionary on every answer', async (t) => {
+  const w = await world(t, json);
+  let clock = Date.parse('2026-11-12T00:00:00.000Z');
+  // Another process over the same records, as the serving Hub is to the command line.
+  const serving = new MaskingRules({ objects: w.kit.records.objects, principals: w.kit.records.principals, authorizations: w.kit.records.authorizations, now: () => new Date(clock) });
+  assert.deepEqual(await serving.compiled(), { masking: (await serving.compiled()).masking, dictionary: null });
+  assert.equal((await serving.compiled()).masking.rules.length, 0);
+  const set = await w.kit.records.masking!.set(w.kit.admin, RULE, '合成设备口令不进知识');
+  clock += MASKING_REFRESH_MS - 1;
+  assert.equal((await serving.compiled()).dictionary, null, 'within the refresh time the compiled dictionary is reused');
+  clock += 2;
+  const refreshed = await serving.compiled();
+  assert.equal(refreshed.dictionary, set.decision!.body.bound);
+  assert.deepEqual(refreshed.masking.rules, [RULE]);
+  // Unchanged after another refresh: the same compiled dictionary, by the digest of the decision in force.
+  clock += MASKING_REFRESH_MS + 1;
+  assert.equal((await serving.compiled()).masking, refreshed.masking);
+  await w.kit.records.masking!.remove(w.kit.admin, 'device-password', '合成规则不再需要');
+  clock += MASKING_REFRESH_MS + 1;
+  assert.equal((await serving.compiled()).masking.rules.length, 0);
+});
+
+test('an answer that echoes a credential the Hub sent is not touched by the dictionary: it is kept whole for an administrator only', async (t) => {
+  const token = 'Synthetic-Sent-Token-4242';
+  const body = JSON.stringify({ note: `debug: received X-Api-Key ${token}` });
+  const kit = await openConnectorKit(postgres, { fetch: async () => new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }) });
+  t.after(() => kit.close());
+  const handle = await writePack(kit.packRoot, { id: 'synthetic-masking-echo', system: { schema: 'system@1', title: '合成来源', roles: [{ name: 'source' }],
+    auth: { kind: 'static_header', header: { name: 'X-Api-Key', scheme: 'bearer' }, roles: ['source'], credential: 'token' },
+    routes: [{ id: 'one', role: 'source', method: 'GET', path: '/one', response: 'json', max_bytes: 4096, read: true }],
+    reads: [{ name: 'one', external: 'fixture:echo', request: { route: 'one' } }] } });
+  kit.packs.set(handle);
+  const resource = await kit.connectors.admin.addResource(kit.admin, { system_pack: handle.id, name: '合成来源', environment: 'test', origins: { source: 'http://192.0.2.1' }, credentials: { token: 'SYNTHETIC_TOKEN' }, allow_plaintext: ['http://192.0.2.1'] });
+  await setSyntheticCredential(kit.records, kit.connectors, kit.admin, resource.id, 'token', token);
+  // A rule that would replace only the tail of the token, leaving its head in a readable record.
+  await kit.records.masking!.set(kit.admin, { name: 'tail', label: '密钥', pattern: 'Token-[0-9]{4}', ignore_case: false }, '合成规则只命中密钥的一部分');
+  const result = await kit.connectors.executeRead(resource.id, 'one', { id: 'sample' }, { principal: kit.user, purpose: 'synthetic masking echo' });
+  assert.ok(kit.log.some((event) => event.event === 'secret_echoed'), 'the echo is still found and the administrator is told');
+  const stored = (await kit.records.store.list({ kind: 'source_artifact', limit: 50 })).items as Array<{ body: { sha256: string; read_tier: string; masking?: unknown; origin: object } }>;
+  const original = stored.find((record) => 'read' in record.body.origin && record.body.sha256 === sha256Hex(Buffer.from(body)));
+  assert.ok(original, 'the answer is kept as it was sent');
+  assert.equal(original.body.read_tier, 'retain_only'); assert.equal(original.body.masking, undefined);
+  assert.ok(stored.every((record) => record.body.masking === undefined), 'no replaced copy of it exists');
+  assert.ok(!JSON.stringify(result).includes(token.slice(0, 14)), 'and nothing of the value reaches the reader');
 });

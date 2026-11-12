@@ -593,7 +593,9 @@ export class ReadEngine {
               received: async (exchange) => {
                 received = { exchange, stored: await store(exchange, planned.key) };
               },
-              ...(dictionary === null ? {} : { mask: (answer: Uint8Array, mediaType: string) => maskAnswer(dictionary.masking, dictionary.dictionary, answer, mediaType) }),
+              // An answer that echoes a credential the Hub sent is not touched: it is kept whole, for an administrator only (B02 R[6]),
+              // and a rule that matched part of the value must not leave the rest of it in a readable record.
+              ...(dictionary === null ? {} : { mask: (answer: Uint8Array, mediaType: string) => this.#o.redactor.echoedIn(answer, mediaType) ? null : maskAnswer(dictionary.masking, dictionary.dictionary, answer, mediaType) }),
             },
           );
           const got = received as { exchange: HttpExchange; stored: Stored } | null;

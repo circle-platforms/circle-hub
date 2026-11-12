@@ -559,3 +559,13 @@ Shared-stop repair messages retain the actual secret names and the resource id s
 - **近 24 小时读取**（`statistics.ts`，`readStatistics`）：只读已有的 read-manifest@1 记录（action 类，索引 `connectors.resource`），新到旧每页 500 条，每个资源至多 2000 条，不加迁移、表或索引。
   - 统计开始时间落在 [现在−24 小时, 现在] 的读取，按 ActionResult 分开；中位与最慢耗时只取已完成的读取。
   - 扫到一条结束于窗口前超过 5 分钟的清单即停（容纳乱序写入）；碰到扫描上限时标 `partial`，页面写“至少 N 次”；存储出错时为 null（“暂不可用”）。尝试读取不写清单，不计入。
+
+## 遮盖字典（B02 R[11]，决定 159，2026-11-12）
+
+读业务系统时，每个应答在成为 `HttpExchange` 之前先过一遍遮盖字典（`http.ts` 的 `maskAnswer`，由读取引擎经 `RequestHooks.mask` 传入）。命中的片段换成“[标签已遮盖 *****]”，`bytes`、`sha256`、`mediaType` 都是替换后的那一份，`masking` 记下字典摘要、命中的规则和次数。之后保存原件、解释应答、交给系统包函数用的都是这同一份内容，被替换的值不进任何记录和日志。
+
+- 一次读取用同一份字典：读取开始时取一次（`ReadEngineOptions.masking`，来自记录存储的 `MaskingRules.compiled()`），这次读取的每个应答都按它替换。
+- 只处理文本：按媒体类型判断（`isMaskableMediaType`），按类型声明的字符集严格解码；解不出来的字节不是文本，原样保存。替换后的应答一律写成 UTF-8，媒体类型里的字符集随之改写。
+- 没有命中的应答原样返回同一份字节，记录和没有字典时相同。
+- 登录请求不传 `mask`：登录要用应答带回的令牌。
+- 应答回显了 Hub 自己发出的密钥时（`redactor.echoedIn`）不替换：这类应答照原来的规则整份只保留给管理员（B02 R[6]）。否则规则只命中密钥的一部分时，剩下的部分会留在可读的记录里。

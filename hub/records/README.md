@@ -1255,3 +1255,21 @@ History before model 38 is not backfilled: issuance, use and revocation before t
 which remain the record for that period. The console and the CLI still read token and invitation lists from those
 rows, unchanged. Records are read through the existing administrator-only branch of the record reader; members cannot
 read them by `rec:`.
+
+## The masking dictionary (B02 R[11], decision 159)
+
+`masking.ts` keeps the rules an administrator sets for what the Hub replaces in a business system's answer. The
+dictionary is one content-addressed definition (`masking-dictionary@1`, canonical JSON in the object store) put in force
+by a resource configuration with the object `masking-dictionary` for the whole Hub: every change is a new definition
+and a new decision, the history is the chain of decisions, and there is no table, record kind or permission kind of its
+own. `set` replaces the rule of the same name where it stands or appends a new one, `remove` drops one; both need an
+administrator and a reason, and `set` checks the rule first (`contracts/src/masking.ts`: the pattern compiles, does not
+match the empty text and finishes quickly on long runs). `compiled()` hands the reader of a business system the
+compiled dictionary and the digest of the definition in force; it looks for a newer decision after
+`MASKING_REFRESH_MS` (two seconds), so a serving process uses a change made by the command line without reading the
+dictionary on every answer.
+
+A source artifact whose bytes were replaced carries `masking` (`dictionary`, the digest of the definition in force, and
+`rules`, each rule that matched with its count; never what was matched). The store accepts it only on a read of a
+business system and only with at least one rule; it takes part in the dedupe key only when present, so every other
+ingest keeps the key and the record it always had. A copy of such an artifact into an archive keeps the mark.

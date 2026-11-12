@@ -663,3 +663,15 @@ display rule 17 calls the console's task page the complete record instead of 权
 `EXIT_NOT_RECORDED` (下一步处理安排未记录) and `MISSING_NOT_RECORDED` (未写明缺少什么), so that what writes them and what
 compares them share one text. No record kind, value code, protocol code, MCP tool or migration changes. V04, K02, B02,
 K01 and T02 `changes46` state the change; the four skill protocol mirrors are regenerated and their packs signed again.
+
+Decision 159 (owner, 2026-11-11 and 2026-11-12, issue 194, the second step) sets model 47: the masking dictionary. B02
+gains F[6] (masking) and R[11]: an administrator configures rules, each a name, a label for the reader and a regular
+expression; when the Hub reads a business system through a connector, what a rule matches in a text answer is replaced by
+`[<label>已遮盖 *****]` before the answer is stored (only the group named `secret` where the pattern has one), only the
+replaced bytes are kept, and the source artifact says so. An answer in which nothing matches is stored as it was sent,
+with the record it always had. Bytes that are not text, the answer of a login, uploads, what members write into a
+knowledge space or a memory, synchronised content, run parameters and dispatched content are not replaced. A rule changes
+later reads only. R[11] names this as the one exception to B02's "stored as they are", and R[4]'s last sentence now points
+to it. `contracts/src/masking.ts` holds the dictionary's schema (`masking-dictionary@1`), the check a rule passes when it
+is set and the replacement itself; the dictionary is put in force by a resource configuration (B04), so there is no new
+record kind, permission kind, protocol code or vocabulary axis. B02 `changes47` states the change.

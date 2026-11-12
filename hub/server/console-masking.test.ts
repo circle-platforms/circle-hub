@@ -29,3 +29,25 @@ test('the settings page lists the rules in force, what each puts in place of a m
  const own=await (await openConsole(hub,member.token)).get('/console/settings');assert.equal(own.status,200);assert.doesNotMatch(own.body,/遮盖字典|device-password/);
  assert.doesNotMatch((await console_.get('/console/settings?tab=hub')).body,/id="masking"/);
 });
+
+test('an original the dictionary replaced says so in its detail: how many places, and that this is not what the system sent', async t => {
+ const hub=await createTestHub({repositoryPacks:false,stubs:false,requireOsIsolation:false});t.after(()=>hub.close());
+ const reader=await hub.createUser('合成读者'),spaces=hub.hub.knowledge.spaces!,web=await openConsole(hub,reader.token);
+ const visibility={readers:[],admins:true,packs:[],shareable:false};
+ // As the connector stores an answer after the dictionary replaced two places in it.
+ const masked=await hub.records.artifacts.ingest({bytes:Buffer.from('合成工单：password=[密码已遮盖 *****]，备用 [密码已遮盖 *****]'),mediaType:'text/plain',name:'合成遮盖原文.txt',origin:{read:{object:'synthetic:record:masked-original'}},author:{user:null},provenanceType:'observed',visibility,masking:{dictionary:'a'.repeat(64),rules:[{rule:'device-password',count:2}]}});
+ const plain=await hub.records.artifacts.ingest({bytes:Buffer.from('合成工单：没有口令'),mediaType:'text/plain',name:'合成普通原文.txt',origin:{read:{object:'synthetic:record:plain-original'}},author:{user:null},provenanceType:'observed',visibility});
+ for(const artifact of [masked,plain])await spaces.archiveSource(hub.admin.principal,{artifact:artifact.digest,message:'archive:'+artifact.digest,space:'team',path:'/团队原文'});
+ const detail=async(sha256:string,artifact:string)=>web.get('/console/knowledge/source?'+new URLSearchParams({sha256,artifact}));
+ const shown=await detail(masked.body.sha256,masked.digest);assert.equal(shown.status,200);
+ assert.match(shown.body,/<dt><span class="ch-tip[^"]*"[^>]*title="读入时按管理员配置的遮盖字典替换过。这里保存和显示的是替换后的内容，不是业务系统给出的原样内容；被替换的值 Hub 没有保存。"[^>]*>遮盖/);
+ assert.match(shown.body,/已替换 2 处/);
+ assert.ok(shown.body.includes('password=[密码已遮盖 *****]'),'the preview is the replaced text');
+ // The rule's name and the dictionary's digest are not on the page: a reader needs to know that, not which.
+ assert.doesNotMatch(shown.body,/device-password|a{64}/);
+ const other=await detail(plain.body.sha256,plain.digest);assert.equal(other.status,200);assert.doesNotMatch(other.body,/遮盖|已替换/);
+ // The mark is a fact of the record, only on a read of a business system, and it names at least one rule.
+ assert.deepEqual(masked.body.masking,{dictionary:'a'.repeat(64),rules:[{rule:'device-password',count:2}]});assert.equal(plain.body.masking,undefined);
+ await assert.rejects(hub.records.artifacts.ingest({bytes:Buffer.from('合成上传'),mediaType:'text/plain',name:'合成上传.txt',origin:{upload:{session:null,message:null}},author:{user:reader.user.id},provenanceType:'declared',visibility:{readers:[reader.user.id],admins:true,packs:[],shareable:false},masking:{dictionary:'a'.repeat(64),rules:[{rule:'device-password',count:1}]}}),/masking is recorded on a read of a business system only/);
+ await assert.rejects(hub.records.artifacts.ingest({bytes:Buffer.from('合成空规则'),mediaType:'text/plain',name:'合成空规则.txt',origin:{read:{object:'synthetic:record:empty-rules'}},author:{user:null},provenanceType:'observed',visibility,masking:{dictionary:'a'.repeat(64),rules:[]}}),/names at least one rule/);
+});
