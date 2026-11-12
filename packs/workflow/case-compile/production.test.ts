@@ -88,7 +88,7 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const contractRequirement=rows[0].requirements.find(row=>row.requirement==='contract_methods')!;assert.equal(contractRequirement.status,'unsatisfied');
     const problems=contractRequirement.claims.flatMap(claim=>(claim.statement.data?.problems??[]) as Array<{document:string;pointer:string}>);
     assert.deepEqual(problems.map(problem=>[problem.document,problem.pointer]),[0,2,3,4].map(index=>['catalog',`/steps/${index}/args/0`]));
-    assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission:submitted,...inputBytes}),/计划仍有工作簿缺输入以外的错误/);
+    assert.throws(()=>satisfiedRecipes({run:first.answer,result:answer,submission:submitted,...inputBytes}),/自动化用例还有错误，请先改好再生成自动化用例 Excel/);
     const quotes=submitted.items.flatMap((item:{slots:{plan:Array<{quotes:Array<{reference:string;text:string}>}>}})=>item.slots.plan.flatMap(claim=>claim.quotes));
     for(const quote of quotes){const resolved=await hub.service.resolveReference(hub.alice,{run:plan.run,text:quote.text,expect:'quotation'},call());assert.equal(resolved.resolution,'resolved',JSON.stringify(resolved));assert.ok(JSON.stringify(resolved).includes(quote.reference));}
   });

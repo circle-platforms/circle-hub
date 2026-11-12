@@ -1,4 +1,6 @@
-# case-compile 3.18.1
+# case-compile 3.18.2
+
+本地合并候选 3.18.2（2026-11-12）：样例 runtime-profile-v2 补上 workbook.template；acceptsPack 接受 recompose 1.2.2 与 authority/adjudication 1.1.5/1.1.6；嵌套包同步升版重签。能力相对 3.18.1 不变。本次不发布。
 
 本地合并候选 3.18.1（2026-11-12）：主线并进后按规则 3 保留本线冲突内容并纳入未冲突主线改动；mindmap-format 升至 1.0.23，本包升版并重签清单与合成样例。能力相对 3.18.0 不变。本次不发布。
 
