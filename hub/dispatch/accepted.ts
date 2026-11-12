@@ -52,12 +52,15 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (!admin) return ready ? [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动派发；等管理员开通账号' }] : [];
   const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
-  // A job refused at the effect boundary before any remote call sent nothing and used nothing of the run's dispatch: once
-  // the cause is fixed (a lease covering the target, for example), a repeat of the ready submission tries again, as the reference compile skill
-  // resubmits a workbook its gateway refused. A job that reached the target, its precheck included, is only read.
-  const retry = ready && jobs.length > 0 && jobs.every((job) => job.ended === 'done' && job.boundary_refused && job.status.outcome === 'not_dispatched');
+  // Every job of the run ended without an effect that could repeat (see `retriable`): a repeat of the ready submission
+  // tries again, as the reference compile skill resubmits a workbook its gateway refused. Any other job is only read.
+  const retry = ready && jobs.length > 0 && jobs.every(retriable);
   if (jobs.length && !retry) { open.delete(run); return capped(jobs.map((job) => runnerNote(job, admin.id))); }
   if (!ready) return [];
+  // What the earlier jobs came to is told beside the new attempt: the runner learns why the last one ended before it reads
+  // that the Hub tried again. Keep our in-process Attempt map so a late refusal after the wait still reaches the next repeat.
+  const earlier = jobs.map((job) => runnerNote(job, admin.id, true));
+  const answer = (notes: DispatchNote[]) => capped([...earlier, ...notes]);
   let attempt = open.get(run);
   if (!attempt) { attempt = begin(service, run); open.set(run, attempt); }
   if (!attempt.settled && !attempt.reserved) {
@@ -65,9 +68,9 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     await Promise.race([attempt.woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
     clearTimeout(timer);
   }
-  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return [{ job, executor, text: clip(`Hub 已按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]; }
+  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, executor, text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行派发作业 ${job}（执行器 ${executor}）；${PROGRESS}，作业结束后同样的答复带结果引用`) }]); }
   const settled = attempt.settled;
-  if (!settled) return [{ text: `Hub 正在做派发前核对；${PROGRESS}` }];
+  if (!settled) return answer([{ text: `Hub 正在做派发前核对；${PROGRESS}` }]);
   // A settled attempt is answered once; a repeat after that tries again, as before (a cause the runner fixes, as a booking).
   open.delete(run);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
