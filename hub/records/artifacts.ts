@@ -215,7 +215,7 @@ export class RecordArtifacts implements Artifacts {
   readonly #authorizations: Authorizations;
   readonly #options: ArtifactsOptions;
   readonly #scans = new Map<string, CredentialScan>();
-  readonly #coverage = new WeakMap<DerivedCoverage,{context:CoverageContext;valid:boolean;origin:string;author:string;assess:DerivedCoverage['assess']}>();
+  readonly #coverage = new WeakMap<DerivedCoverage,{origin:string;author:string}>();
 
   constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, options: ArtifactsOptions) {
     this.#db = db;
@@ -496,24 +496,21 @@ export class RecordArtifacts implements Artifacts {
     }});
   }
 
+  /**
+   * The handle a generated view is assessed with. A view is content like its sources (B02 R[4], decisions 154 and 161):
+   * nothing in it is flagged, left out or covered for looking like a credential, so the assessment is the content scan's.
+   * The handle stays bound to one origin and author, as ingest checks.
+   */
   async prepareDerived(input: DerivedCoverageInput): Promise<DerivedCoverage> {
     const origin = validOrigin(input.origin), author = validAuthor(input.author);
     if (!Array.isArray(input.derivedSources) || input.derivedSources.some(sha => !isSha256(sha))) throw new TypeError('derivedSources must be source byte digests');
-    const context = this.#context();
-    if (fromHub(origin,author)) await context.load([origin]);
-    const {handle,valid} = await context.prepare({...input,origin,author});
     const assess: DerivedCoverage['assess'] = bytes => {
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > this.#options.maxBytes) throw new TypeError('coverage bytes exceed the artifact limit');
-      return handle.assess(bytes);
+      return { scan: scanContent(bytes), derived: null };
     };
     const checked: DerivedCoverage = {assess};
-    this.#coverage.set(checked,{context,valid,origin:digestOf(origin),author:digestOf(author),assess});
+    this.#coverage.set(checked,{origin:digestOf(origin),author:digestOf(author)});
     return checked;
-  }
-
-  async coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null> {
-    const coverage = await this.prepareDerived(input);
-    return coverage.assess(input.bytes).derived;
   }
 
 

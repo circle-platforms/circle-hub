@@ -87,7 +87,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
       const next_action=observation==='dispatch@1'&&layer.layer==='dynamic'
         ?gap.reason==='check_error'?'管理员核对观察记录和接口所缺字段；原件确未写的只记缺失事件，不回填过去的受众或期限；修复读取后重评，不重交原效果':gap.reason==='awaiting_step'?'原派发已证明没有执行；运行者以本运行为 predecessor 开新修订，重新核验并按允许效果表授权新一次执行和观察，不把原意图当新授权':'管理员用 circle-hub job resume <missing 中的原作业号> 核对原请求；补不齐完整性时重证基线，以本运行为 predecessor 重跑，原效果与冻结/解除记录不改写'
         :gap.exit.request_kind==='disposition'&&gap.exit.audience.user!==(run.runner??run.configurer)
-          ?'管理员核对只保留的来源，用 circle-hub source accept <原件摘要> --note <接受依据> 接受允许接受的来源，然后原样重交以便 Hub 重评；实际凭据回显原件不可接受，须脱敏后新修订重跑'
+          ?'只保留的来源此前按凭据扫描扣留，不放开：按原对象重新读取得到可读的新记录后，以本运行为 predecessor 开新修订重跑；Hub 发出的凭据被回显的原件只给管理员，须脱敏后新修订重跑'
           :EXIT_BY_REASON[gap.reason].next_action;
       const sources=requirement.claims.flatMap(claim=>{
         const rows=claim.statement.data?.unread_sources;

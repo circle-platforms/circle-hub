@@ -589,7 +589,6 @@ export interface Artifacts {
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */
   /** Resolve and verify the entire input graph once, select current accepted sources in bulk and scan only those bytes once. */
   prepareDerived(input: DerivedCoverageInput): Promise<DerivedCoverage>;
-  coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
   records(sha256: string): Promise<SourceArtifact[]>;
   /** B02 R[3] for one record; a request uses its initial reader permissions, otherwise current permissions. */
