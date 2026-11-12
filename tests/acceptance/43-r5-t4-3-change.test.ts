@@ -159,7 +159,7 @@ test('scenario 43: T4-3 records a declared device on its booked bed and rejects 
   const feeding = FedObservationSchema.parse(view.contribution.feeding);
   assert.equal(feeding.device, 'edge-a');
   assert.equal(feeding.bed, 'bench-a', 'the only bed of the frozen manifest that has the device');
-  assert.match(view.note ?? '', /设备 edge-a（台架 bench-a）/);
+  assert.match(view.note ?? '', /测试环境 edge-a，bench-a/);
 
   const foreign = await submit('edge-other', '清单外设备');
   assert.equal(foreign.out.acceptance, 'not_accepted');

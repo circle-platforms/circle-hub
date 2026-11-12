@@ -33,12 +33,12 @@ test('personal entry writes, scoped full-text search and revoked tree references
   const entry = saved.out.personal_entry;
   assert.ok(entry);
   assert.equal(entry.status, 'unverified');
-  assert.match(saved.text, /个人条目已保存/);
-  assert.ok(saved.text.includes(entry.reference));
+  assert.match(saved.text, /个人资料已保存/);
+  assert.doesNotMatch(saved.text, /tree:|rec:/);
   const read = await client.call('get_nodes', { space: owner.user.id, paths: ['/notes'] });
   assert.equal(read.isError, false, read.text);
   assert.equal(read.out.nodes?.[0].entries[0].entry, entry.entry);
-  assert.match(read.text, /未核验/);
+  assert.equal(read.out.nodes?.[0].entries[0].status, 'unverified');
   const search = await client.call('get_nodes', { search: '可检索观察', scope: 'personal' });
   assert.equal(search.isError, false, search.text);
   assert.equal(search.out.matches?.length, 1);
@@ -72,7 +72,8 @@ test('private source imports verify exact quotations and capacity errors keep th
   assert.equal(saved.out.personal_entry?.status, 'verified');
   const fullEntry = await client.call('get_nodes', { reference: saved.out.personal_entry!.reference });
   assert.match(fullEntry.text, /已验证/);
-  assert.ok(fullEntry.text.includes('处理两项'));
+  assert.equal(fullEntry.out.content?.structure?.entry_status, 'verified');
+  assert.deepEqual(fullEntry.out.content?.structure?.grounds, [{ reference: source.out.reference, quotation: '处理两项' }]);
   assert.equal((await client.call('resolve_reference', { root: saved.out.personal_entry!.root, text: '处理两项', expect: 'quotation' })).out.resolution, 'resolved');
   const bad = await client.call('upload_file', { personal_entry: { kind: 'observation', statement: '合成错误引文', grounds: [{ reference: source.out.reference, quotation: '处理三项' }] } });
   assert.equal(bad.out.errors[0].code, 'SPACE_ENTRY_INVALID');
@@ -338,7 +339,8 @@ test('MCP and console search report skipped over-limit scopes while retaining av
   try{
     const found=await client.call('get_nodes',{search:'降级检索',scope:'all'});
     assert.equal(found.isError,false,found.text);assert.ok(found.out.matches?.some(hit=>hit.statement===input.statement));
-    assert.equal(found.out.warnings?.[0].code,'SPACE_INDEX_LIMIT');assert.match(found.text,/部分范围未检索/);
+    assert.equal(found.out.warnings?.[0].code,'SPACE_INDEX_LIMIT');assert.match(found.text,/未检索该范围/);
+    assert.ok(found.text.includes(failure.fix!));
     const response=await browser.get('/console/search?'+new URLSearchParams({q:'降级检索',scope:'all'}));
     assert.equal(response.status,200,response.body);assert.match(response.body,/未检索该范围/);assert.ok(response.body.includes(input.statement));
     spaces.search=async()=>{throw failure;};
