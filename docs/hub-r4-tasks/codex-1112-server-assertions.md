@@ -9,6 +9,8 @@
 - `hub/server/source-readable-display.test.ts`
 - `hub/server/text-history.test.ts`
 - `tests/acceptance/support/mcp.ts`
+- `tests/acceptance/16-agile-mindmap-review.test.ts`
+- `tests/acceptance/17-hub-restart.test.ts`
 - `packs/workflow/case-compile/functions/workbook-input.test.ts`
 - `packs/workflow/case-compile/functions/workbook.test.ts`
 - `docs/hub-r4-tasks/codex-1112-server-assertions.md`
