@@ -100,8 +100,10 @@ export function compileMasking(dictionary: MaskingDictionary | null): CompiledMa
       compiled.forEach(({ expression }, order) => {
         expression.lastIndex = 0;
         for (let match = expression.exec(text); match !== null; match = expression.exec(text)) {
-          const whole = match.indices![0], group = match.indices!.groups?.[MASK_GROUP];
-          const [start, end] = group ?? whole;
+          // With the `d` flag every match carries its indices; the checks keep the types honest where the library types say they may be absent.
+          const whole = match.indices?.[0];
+          if (whole === undefined) break;
+          const [start, end] = match.indices?.groups?.[MASK_GROUP] ?? whole;
           if (end > start) spans.push({ start, end, order });
           // A match of no length cannot advance by itself (the group may be empty though the match is not).
           if (whole[1] === whole[0]) expression.lastIndex += 1;
