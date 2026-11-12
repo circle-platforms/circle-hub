@@ -567,6 +567,31 @@ function resolveText(v: ResolveOut): string {
 
 // ---------------------------------------------------------------- submit_result
 
+/**
+ * Decision 155 puts three dispatch outcomes in `dispatch[].text` (not sent, rejected by the target, sent without an
+ * answer). Keep each note verbatim — reader wording is owned by hub/dispatch/accepted.ts; do not rewrite at the exit.
+ */
+function dispatchNoteLine(note: { text: string; result?: string }): string {
+  if (note.result !== undefined) {
+    return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
+  }
+  const message = note.text;
+  // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.
+  if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
+    return `${message}；状态未知；原因还没查清；决定者程序`;
+  }
+  if (
+    message.includes('上机验证没有发出') ||
+    message.includes('什么都没有发到目标') ||
+    message.includes('目标没有接收') ||
+    /目标在“.+”阶段拒绝/.test(message) ||
+    message.includes('已证明目标没有执行')
+  ) {
+    return `${message}；状态已确认；判断错误；原因还没查清；决定者程序`;
+  }
+  return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
+}
+
 function submitText(v: SubmitOut, context: TextContext): string {
   const lines = [v.acceptance === 'accepted' ? '脚本合并已核对。' : '脚本合并有错误。'];
   const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
@@ -582,7 +607,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
       lines.push(`${original ? caseName(original, original.label) : '资料未保存'}，${rejected.reason}；状态已确认；判断错误；原因缺资料；下一步由使用者补齐资料。`);
     }
   }
-  if (v.dispatch?.length) lines.push(v.dispatch.some(note => note.result !== undefined) ? '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。' : '上机验证还没有结论；状态未知；原因还没查清；下一步由使用者继续读取设备输出。');
+  for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note));
   for (const error of v.errors) {
     if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find(item => item.id === error.item);
