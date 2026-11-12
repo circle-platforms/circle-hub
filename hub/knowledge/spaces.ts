@@ -1461,12 +1461,7 @@ export class KnowledgeSpaces {
       return artifact;
     }));
     }catch(error){
-      if(error instanceof RecordsError&&error.code==='CREDENTIAL_IN_UPLOAD'||error instanceof KnowledgeError&&(error.code==='SPACE_CREDENTIALS_DETECTED'||error.code==='SPACE_CONTENT_UNINSPECTABLE')){
-        const action=await this.#ctx.records.artifacts.recordUploadRefusal(upload,error.code!);
-        const detail={...error.detail,action:action.digest};
-        if(error instanceof KnowledgeError)throw new KnowledgeError(error.message,{code:error.code,fix:error.fix??undefined,detail});
-        throw new RecordsError(error.message,{code:error.code,fix:error.fix,detail});
-      }
+      // An upload is no longer refused for looking like a credential (decisions 154, 161), so no refusal is recorded here.
       throw error;
     }
   }

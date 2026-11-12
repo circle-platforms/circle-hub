@@ -1,5 +1,4 @@
 // Real HTTP and MCP boundaries over synthetic accounts and temporary storage only.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
 import {createTestHub} from './testing-real.ts';
@@ -61,14 +60,14 @@ test('a refused console memory write preserves a safe draft, remains uncommitted
  const saved=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(response.body),space:'personal',title:'合成恢复标题',path:'/draft',markdown:'合成修正正文',expected_version:'',client_key:key,enabled:'true'});assert.equal(saved.status,303,saved.body);assert.equal((await w.memory.items(w.owner.principal,'personal')).length,1);
 });
 
-test('knowledge format failures preserve draft fields and scanner refusals do not echo suspect memory content',async t=>{ credentialDetectorsFor(t);
+test('knowledge format failures preserve draft fields, and a memory that looks like a credential is saved like any other',async t=>{
  const w=await world();t.after(w.close);const own=await openConsole(w.hub,w.owner.token),home=await own.get('/console/knowledge/space?'+new URLSearchParams({space:w.owner.user.id,edit:'1'}));
  const values={csrf:csrf(home.body),space:w.owner.user.id,path:'/draft',kind:'observation',statement:'合成保留陈述',data:'{invalid',applicability:'null',reason:'合成修正'};
  const refused=await own.post('/console/knowledge/do/entry',values);assert.equal(refused.status,400,refused.body);assert.match(refused.body,/合成保留陈述/);assert.match(refused.body,/\{invalid/);assert.match(refused.body,/aria-describedby="editor-data-error"/);
  const saved=await own.post('/console/knowledge/do/entry',{...values,csrf:csrf(refused.body),data:'{}'});assert.equal(saved.status,303,saved.body);
  const secret='DB_PASSWORD='+['Synth3tic','!2948'].join('');
- const blocked=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(home.body),space:'personal',title:'合成安全标题',markdown:secret,path:'/',expected_version:'',client_key:'synthetic-secret-refusal'});
- assert.equal(blocked.status,400,blocked.body);assert.ok(!blocked.body.includes(secret));assert.match(blocked.body,/未回填/);assert.match(blocked.body,/合成安全标题/);
+ const kept=await own.post('/console/knowledge/do/memory-write',{csrf:csrf(home.body),space:'personal',title:'合成安全标题',markdown:secret,path:'/',expected_version:'',client_key:'synthetic-secret-kept'});
+ assert.equal(kept.status,303,kept.body);
 });
 
 test('memory sharing previews write nothing and confirmation rechecks capacity instead of trusting a green page',async t=>{
@@ -83,9 +82,9 @@ test('memory sharing previews write nothing and confirmation rechecks capacity i
  assert.equal((await w.hub.records.store.find({kind:'memory_share',key:'memory.share.by',value:w.owner.user.id})).items.length,1,'a cached refusal retains its cause and appends no second share receipt');
 });
 
-test('memory refusal audits and unchanged receipts are absent through every generic record reader',async t=>{ credentialDetectorsFor(t);
+test('memory refusal audits and unchanged receipts are absent through every generic record reader',async t=>{
  const w=await world();t.after(w.close);const store=w.hub.records.store;
- const refused=await w.client.call('upload_file',{memory:{title:'合成拒收',markdown:'合成说明\nDB_PASSWORD='+['Synth3tic','!2498'].join(''),expected_version:null,client_key:'private-audit'}});assert.equal(refused.out.errors[0]?.code,'MEMORY_CREDENTIALS_DETECTED');
+ const refused=await w.client.call('upload_file',{memory:{title:'合成超限',markdown:'合'.repeat(8001),expected_version:null,client_key:'private-audit'}});assert.equal(refused.out.errors[0]?.code,'MEMORY_DOCUMENT_LIMIT');
  const saved=await w.memory.write(w.owner.principal,{title:'合成回执',markdown:'合成说明',expected_version:null,client_key:'private-receipt'});
  const unchanged=await w.memory.write(w.owner.principal,{document:saved.document,expected_version:saved.version,markdown:'合成说明',client_key:'unchanged-receipt'});assert.equal(unchanged.unchanged,true);
  const audits=(await store.list({kind:'action',limit:100})).items.filter(record=>record.schema==='memory-refusal@1'||record.schema==='memory-unchanged@1');assert.equal(audits.length,2);

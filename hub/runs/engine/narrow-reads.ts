@@ -67,7 +67,7 @@ export async function narrowSubjectRead(declaration: NarrowCheckRead, subject: u
   try { read = await io.read(result.external); }
   catch { return gap('同一修订的收窄索引暂时读不到', '重读同一修订；修订已不可取时重新绑定并启动新修订核验', 'SOURCE_RETRYABLE'); }
   result.reference = read.reference; result.manifest = read.manifest;
-  if (read.text === null) return gap('收窄来源尚未获准给函数读取', '请求管理员接受来源后重读', 'credential_unreadable');
+  if (read.text === null) return gap('收窄来源此前按凭据扫描只保留，不给函数读取', '请管理员按原对象重新读取，得到可读的新记录后重读', 'credential_unreadable');
   if (Buffer.byteLength(read.text, 'utf8') > maxBytes)
     return gap(`收窄索引超过 ${maxBytes} 字节读取上限`, '调高 max_bytes（不超过核心上限）或减少每条目的键后重读', 'budget_exhausted');
   const view = parse(read.text);

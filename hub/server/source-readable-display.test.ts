@@ -25,8 +25,8 @@ test('source text shows two access outcomes while preserving the detailed tier a
   }
 });
 
-test('a source held back at retain_only names the administrator review as the next step; other tiers do not', () => {
-  const step=/下一步：请管理员核看这份来源为何只保留；凭据误报经管理员接受后，用同一引用重读；含真凭据或按策略只保留的不会放行/;
+test('a source held back at retain_only says it is not released and that reading the object again gives a readable record; other tiers do not', () => {
+  const step=/下一步：这份来源只保留，不会放开；需要其中的内容时，按原对象重新读取，得到一份可读的新记录/;
   const held=[
     {reference,read_tier:'retain_only',readable:false,note:'含凭据，原文不可读'},
     {reference,read_tier:'retain_only',readable:false,note:'含凭据，原文不可读',structure:{summary:{count:1}}},

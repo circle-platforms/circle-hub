@@ -40,7 +40,7 @@ export { newId, ulid, idTime, isId } from './ids.ts';
 export { INVITATION_TTL_MS, normalizeInvitation } from './principals.ts';
 export { initialPassword, validPassword } from './password.ts';
 export { RecordsError, IntegrityError, LimitError, AccessError, ConflictError, MigrationError, VaultError } from './errors.ts';
-export { scanContent, useContentDetectors, CONTENT_SCANNER } from './content-scan.ts';
+export { scanContent, CONTENT_SCANNER } from './content-scan.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
@@ -430,7 +430,8 @@ export interface CredentialFinding {
 
 /**
  * An admin's acceptance that the findings of a scan are no credentials (for example example URLs in a product manual):
- * the resource configuration `scanAcceptanceKey(sha256)` bound to `scanDigest(scan)` (B04; README decision 18).
+ * the resource configuration `scanAcceptanceKey(sha256)` bound to `scanDigest(scan)` (B04; README decision 18). No new
+ * one is made since decision 161; those recorded before are still honoured when the records they cover are read.
  */
 export interface ScanAcceptance {
   /** User id of the admin who decided. */
@@ -530,10 +531,9 @@ export interface IngestInput {
   provenanceType: ProvenanceType;
   visibility: Visibility;
   /**
-   * Default model_readable. A credential hit on a read or generated artifact forces retain_only, unless an admin accepted
-   * exactly these findings of exactly these bytes (acceptFindings), or all findings have verified derived coverage.
-   * Only entirely Hub-owned ancestry qualifies; an upload with a hit is refused whatever was accepted, and a record
-   * with a person as author keeps retain_only.
+   * Default model_readable. Content is not scanned for credentials (decisions 154 and 161), so the tier asked for is the
+   * tier stored; an answer echoing a credential the Hub sent is held by the connector (B02 R[6]). Records an older Hub
+   * held under credential-scan@3 keep their tier, and an acceptance recorded for one of them before is still honoured.
    */
   readTier?: ReadTier;
   name?: string | null;
@@ -562,45 +562,34 @@ export interface ArtifactSource {
   sha256: string;
   size: number;
   mediaType: string;
-  /** Effective tier: retain_only whenever the bytes have a credential hit that no acceptance in force covers for this record. */
+  /**
+   * Effective tier. A record made under the content scan reads at its stored tier. A record an older Hub scanned with the
+   * detectors is retain_only while the newest of those scans of its bytes found something that no acceptance recorded
+   * before covers (decision 161: a later read of the bytes changes neither).
+   */
   readTier: ReadTier;
   /** The verified original, or null when the tier withholds it from this consumer; `note` then says why. */
   bytes: Uint8Array | null;
   note?: string;
 }
 
-/** What acceptFindings decided: the configuration record and the fresh scan it covers (positions and detector ids only). */
-export interface CredentialFindingsPage {scanner:string;findings:CredentialFinding[];next:string|null;total:number;detectors:Record<string,number>}
-export interface FindingsAcceptance {
-  detectors?:string[];
-  complete?:boolean;
-  /** resource_config, subject WHOLE_HUB, object `scanAcceptanceKey(sha256)`, bound `scanDigest(scan)`. */
-  authorization: AuthorizationRecord;
-  scan: CredentialScan;
-}
 
 export interface Artifacts {
   /** Capture the reader's direct and pack-audience permissions for one request. */
   capturePermissionSnapshot?(principal: Principal): Promise<import('./request-permissions.ts').RequestPermissions>;
   /**
-   * Stores the bytes and a source_artifact record. An upload with a credential hit is refused with a RecordsError coded
-   * CREDENTIAL_IN_UPLOAD: no bytes are stored, only a validate action with the digest and the scan conclusion (B02 R[4]).
-   * A read or generated artifact with a hit is stored at retain_only, unless an acceptance in force covers these bytes and
-   * this finding set, or verified accepted inputs cover all derived findings: it keeps the requested tier and its scan
-   * names direct acceptance (`scan.accepted`) or source/decision-only derived coverage (`scan.derived`).
-   * Bytes the scanner cannot read as text are stored with `scan.inspected: false`. Repeating the same ingest (same bytes,
-   * origin, author, visibility, tier, name, acceptance) returns the existing record. Every check runs before any byte is
-   * written. An optional transaction is supported for uploads, including object registration.
+   * Stores the bytes and a source_artifact record. Nothing is refused, held or covered for looking like a credential
+   * (decisions 154 and 161): the scan written into the record is the content scan (credential-scan@4), which looks for
+   * nothing. Repeating the same ingest (same bytes, origin, author, visibility, tier, name, masking) returns the existing
+   * record. Every check runs before any byte is written. An optional transaction is supported for uploads, including
+   * object registration.
    */
   ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact>;
-  /** Audit a rejected upload after its enclosing transaction rolls back. Stores safe metadata only, never bytes. */
-  recordUploadRefusal(input:Pick<IngestInput,'bytes'|'mediaType'|'origin'|'author'|'run'>,code:import('../../contracts/generated/protocol.ts').ProtocolCode):Promise<StoredRecord<ActionBody>>;
   /** Consumes whole transferable buffers by detaching every caller alias; other buffers are snapshotted. Do not reuse the input. */
   ingestTransferred(input: IngestInput): Promise<SourceArtifact>;
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */
   /** Resolve and verify the entire input graph once, select current accepted sources in bulk and scan only those bytes once. */
   prepareDerived(input: DerivedCoverageInput): Promise<DerivedCoverage>;
-  coverDerived(input: DerivedScanInput): Promise<DerivedScanAcceptance | null>;
   /** Every source_artifact record of these bytes, oldest first. No access check: for trusted callers only. */
   records(sha256: string): Promise<SourceArtifact[]>;
   /** B02 R[3] for one record; a request uses its initial reader permissions, otherwise current permissions. */
@@ -615,7 +604,7 @@ export interface Artifacts {
   /**
    * Tier-aware read by reference (B02 F[5], R[4]): null when absent or forbidden; the bytes only when the effective tier
    * allows them to this consumer (default model): model_readable to anyone, function_bytes_only to `function` only,
-   * retain_only (every credential hit no acceptance in force covers) to no one. Throws IntegrityError when a recorded
+   * retain_only (a record held before, decision 161, or an echo of the Hub's own credential) to no one. Throws IntegrityError when a recorded
    * object's bytes are missing. `record` (the digest of one source_artifact record of these bytes, for example the record a
    * connector read returned) pins the read: that record decides instead of the rule of readable(), or null when it is not
    * a record of these bytes or the reader may not read it; the credential rule applies to it all the same.
@@ -634,27 +623,6 @@ export interface Artifacts {
   trustedBytes(sha256: string): Promise<Uint8Array | null>;
   /** Text for a reader: null when absent or forbidden; NUL stripped; the stored bytes are untouched. `record` pins it as for source(). */
   text(principal: Principal, sha256: string, options?: { maxBytes?: number; record?: string }): Promise<ArtifactText | null>;
-  /**
-   * An admin decides that the credential findings of these exact bytes are no credentials (README decision 18): the stored
-   * bytes are scanned again with the current scanner and a resource configuration `scanAcceptanceKey(sha256)` bound to
-   * `scanDigest` of that scan is recorded (B04, append-only). AccessError for anyone but an enabled admin; ConflictError
-   * when the bytes are not stored (a refused upload keeps none), when no record of them was read or made by the Hub (only
-   * uploads or records with a person as author), when the scan finds nothing, or when it found more than it keeps
-   * (`truncated`) without an explicit detector-class rescan. scanFindings pages positions only; selected classes add
-   * decisions, and effective access is lifted only when every actual class of the complete scan is covered. A note the credential scanner flags, or one that copies six or more consecutive characters from the
-   * lines carrying a finding, is refused (RecordsError) before anything is recorded. It takes effect for read and
-   * generated artifacts' effective reads, including a historical scan-imposed hold, never for what a person supplied.
-   * The stored tier stays historical; explicit requested retention is preserved. Other bytes, scanner versions or
-   * finding sets are not covered.
-   */
-  scanFindings(by:Principal,sha256:string,options?:{after?:string|null;limit?:number}):Promise<CredentialFindingsPage>;
-  acceptFindings(by: Principal, sha256: string, note?: string | null, options?:{detectors?:readonly string[];automatic?:boolean}): Promise<FindingsAcceptance>;
-  /**
-   * Withdraws an acceptance: a new decision in the same chain (the earlier ones stay). Admin only (AccessError); the note
-   * rule of acceptFindings applies. From then on the bytes read as retain_only again and new ingests are stored at
-   * retain_only.
-   */
-  revokeFindings(by: Principal, sha256: string, note?: string | null): Promise<AuthorizationRecord>;
 }
 
 // ---------------------------------------------------------------- vault

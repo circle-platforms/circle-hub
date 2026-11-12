@@ -70,14 +70,14 @@ describe('quote@1 over the graded source view', () => {
 });
 
 it('retain-only quotes wait for administrator acceptance with generated source evidence',()=>{
-  for(const sources of [graded({},()=> 'retain_only'),{text:()=>undefined,unread:()=>({reason:'credential_unreadable' as const,missing_fact:'管理员尚未接受此来源',next_action:'请求管理员接受来源，接受后重新核验'})}]) {
+  for(const sources of [graded({},()=> 'retain_only'),{text:()=>undefined,unread:()=>({reason:'credential_unreadable' as const,missing_fact:'此前按凭据扫描只保留的来源不放开',next_action:'请管理员按原对象重新读取，得到可读的新记录后重新核验'})}]) {
     const [out]=run(sources,{q:[{t:'合成引文',r:FRAGMENT}]});
     assert.equal(out.verdict,'unknown');assert.equal(out.reason,'awaiting_step');
     assert.equal(OutcomeSchema.safeParse(out).success,true);
     const unread=(out.data?.unread_sources as Array<Record<string,unknown>>)[0];
     assert.equal(unread.reference,FRAGMENT);assert.equal(unread.reason,'credential_unreadable');
-    assert.match(String(unread.missing_fact),/管理员.*接受/);assert.match(String(unread.next_action),/请求管理员.*接受.*重新核验/);
-    assert.match(out.statement,/含凭据，原文不可读.*管理员.*接受.*重新核验/);
+    assert.match(String(unread.missing_fact),/只保留的来源不放开/);assert.match(String(unread.next_action),/按原对象重新读取.*重新核验/);
+    assert.match(out.statement,/含凭据，原文不可读.*按原对象重新读取.*重新核验/);
   }
 });
 
@@ -93,6 +93,6 @@ it('permanent quote defects have distinct grades and actionable refutations', ()
  const out = run(graded({}, () => why), {q:[{t:'片段',r:FRAGMENT}]})[0];
  assert.equal(out.verdict,'refute'); assert.equal(out.code,'QUOTE_MISMATCH'); assert.equal(out.data?.why,why); assert.match(out.statement,remedy);
  }
- for (const [why,remedy] of [['retain_only',/管理员.*接受.*重评/],['unavailable',/重读/]] as const) assert.match(run(graded({},()=>why),{q:[{t:'片段',r:FRAGMENT}]})[0].statement,remedy);
+ for (const [why,remedy] of [['retain_only',/按原对象重新读取.*重新核验/],['unavailable',/重读/]] as const) assert.match(run(graded({},()=>why),{q:[{t:'片段',r:FRAGMENT}]})[0].statement,remedy);
  const malformed=run(graded({},()=> 'malformed'),{q:[{t:'片段',r:'src:bad'}]})[0]; assert.equal(malformed.verdict,'refute'); assert.equal(malformed.data?.why,'malformed');
 });

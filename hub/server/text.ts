@@ -1421,10 +1421,10 @@ function sourceAccess(c: Content): string {
   return c.readable && c.read_tier === 'model_readable' ? labelOf('read_tier', c.read_tier) : '原文不可读';
 }
 
-/** A source held back for credentials (B02 R[4]) names the way out: an administrator reviews the findings and may accept a
- * false hit; a real credential or a policy that requires retain_only is not lifted. */
+/** A source held under the old credential scan (B02 R[4], decision 161) names the way out: it is not released, and reading
+ * the object again stores a new record that is read as any other. */
 function heldStep(c: Content): string[] {
-  return !c.readable && c.read_tier === 'retain_only' ? ['下一步：请管理员核看这份来源为何只保留；凭据误报经管理员接受后，用同一引用重读；含真凭据或按策略只保留的不会放行'] : [];
+  return !c.readable && c.read_tier === 'retain_only' ? ['下一步：这份来源只保留，不会放开；需要其中的内容时，按原对象重新读取，得到一份可读的新记录'] : [];
 }
 
 /** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */

@@ -221,7 +221,7 @@ export function createDocs(deps: DocsDeps): Docs {
       ...(run === null ? {} : { run }),
     });
     if (artifact.body.read_tier !== 'model_readable') {
-      return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 的凭据扫描有命中（读取档位“${labelOf('read_tier', artifact.body.read_tier)}”），不交给工作流` };
+      return { ok: false, id: bare, reason: `命名文档 ${parsed.name} 的读取档位是“${labelOf('read_tier', artifact.body.read_tier)}”，不交给工作流` };
     }
     const meta = await records.artifacts.ingest({
       bytes: new TextEncoder().encode(JSON.stringify({ title: `命名文档 ${parsed.name}`, name: parsed.name, revision: target, size: bytes.byteLength })),

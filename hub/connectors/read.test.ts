@@ -1,4 +1,3 @@
-import { credentialDetectorsFor } from '../testing/records.ts';
 import {kityminderParser} from "../testing/parsers.ts";
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials, syntheticStoredCredential } from './testing/credentials.ts';
 // Reads end to end: the synthetic system packs' functions run in the real sandbox against loopback stubs; every response is
@@ -467,57 +466,6 @@ test('an answer that looks like it carries a credential reaches the functions an
   assert.equal(manifest!.body.coverage.complete, true, 'nothing was held, so the coverage is whole');
 });
 
-test('an answer stored retain_only reaches no function: no text, json or model in its view, nothing derived from it', async (t) => { credentialDetectorsFor(t);
-  const secret = ["Zq8-Hu","nter2-","Secret","-77"].join('');
-  const docs = {
-    ...DOCUMENTS,
-    '/spec/gadget-login.md': `# 登录\n\n| 参数 | 值 |\n| --- | --- |\n| password | ${secret} |\n`,
-    '/spec/gadget-plain.md': '# 小部件\n\n普通说明。\n',
-  };
-  const inputs: { kind: string; input: unknown }[] = [];
-  const wrapped: PackFunctionRunner = async (target, input, kind) => {
-    inputs.push({ kind, input });
-    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
-  };
-  const w = await world(t, { callFunction: wrapped }, { docs });
-  const search = success(await w.k.connectors.reader.read('manual:spec-search:gadget', w.ctx));
-  const projection = inputs.filter((call) => call.kind === 'project').at(-1)!.input as { responses: Record<string, ReadResponse> };
-  const flagged = Object.values(projection.responses).find((response) => response.path === '/spec/gadget-login.md')!;
-  assert.equal(flagged.ok, false);
-  assert.equal(flagged.error?.code, 'SOURCE_CREDENTIAL');
-  assert.ok(!('text' in flagged) && !('json' in flagged) && !('model' in flagged), 'the view carries no content');
-  assert.ok(!JSON.stringify(inputs).includes(secret), 'no planner or projection input carries the flagged text');
-  assert.deepEqual(search.artifacts.map((a) => a.name), ['original', 'content', 'file-2'], 'the readable file is still delivered');
-  const holders = (await w.k.allObjects()).filter((bytes) => bytes.includes(secret));
-  assert.equal(holders.length, 1, 'only the stored answer holds it');
-  const records = await w.k.records.artifacts.records(sha256Hex(holders[0]));
-  assert.ok(records.length > 0 && records.every((record) => record.body.read_tier === 'retain_only'));
-  const manifest = await w.k.records.store.get<ReadManifest>(search.manifest);
-  assert.equal(manifest!.body.coverage.complete, false, 'an answer the functions could not use lowers the coverage');
-});
-
-test('an original stored retain_only fails the read with its digest; the projection never runs, nothing derived exists', async (t) => { credentialDetectorsFor(t);
-  const secret = ["Zq8-Hu","nter2-","Secret","-77"].join('');
-  const docs = { ...DOCUMENTS, '/manuals/secret.md': `# 手册\n\n| 参数 | 值 |\n| --- | --- |\n| password | ${secret} |\n| port | 8080 |\n` };
-  let projections = 0;
-  const wrapped: PackFunctionRunner = async (target, input, kind) => {
-    if (kind === 'project') projections += 1;
-    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
-  };
-  const w = await world(t, { callFunction: wrapped }, { docs });
-  const reason = failure(await w.k.connectors.reader.read('manual:rows:manuals/secret.md', w.ctx), /SOURCE_CREDENTIAL/);
-  const sha = sha256Hex(Buffer.from(docs['/manuals/secret.md'], 'utf8'));
-  assert.ok(reason.includes(sha), 'the reason names the stored answer');
-  assert.equal(projections, 0);
-  assert.equal((await w.k.allObjects()).filter((bytes) => bytes.includes(secret)).length, 1);
-  assert.equal((await w.k.records.artifacts.text(w.k.user, sha))?.readable, false);
-  // Readable rows are projected as before.
-  const rows = success(await w.k.connectors.reader.read('manual:rows:manuals/line-2.1/cli.md', w.ctx));
-  assert.equal(projections, 1);
-  assert.deepEqual(rows.artifacts.map((a) => a.name), ['original', 'content']);
-  await manifestsParse(w);
-});
-
 test('an answer echoing the credential the Hub sent is kept retain_only; neither functions, records nor logs carry it', async (t) => {
   const w = await world(t);
   // A PLM-like source whose detail routes echo the request's Authorization header: a 500 debug page and a 200 answer.
@@ -670,38 +618,6 @@ test('a refused request with an oversized path is recorded within the manifest b
   assert.equal(stored.items.length, 0, 'no mislabelled read-manifest@1 record');
   await manifestsParse(w);
 });
-test('a projection inherits accepted findings only from its actual original', async t => { credentialDetectorsFor(t);
-  const secret = ["FtpSyn","thetic","7834"].join('');
-  const docs = {...DOCUMENTS,'/manuals/accepted.md':`# 手册\npassword = ${secret}\n\n| password | port |\n| --- | --- |\n| ${secret} | 8080 |\n`};
-  let projected = secret;
-  const wrapped: PackFunctionRunner = async (target,input,kind) => {
-    if (kind === 'project') return {artifacts:[{name:'content',media_type:'application/json',json:{password:projected}}]};
-    return (await callPackFunction(target,input,{}, {requireOsIsolation:false})).output;
-  };
-  const w = await world(t,{callFunction:wrapped}, {docs});
-  const id = 'manual:rows:manuals/accepted.md';
-  failure(await w.k.connectors.reader.read(id,w.ctx),/SOURCE_CREDENTIAL/);
-  const sha = sha256Hex(Buffer.from(docs['/manuals/accepted.md']));
-  await w.k.records.artifacts.acceptFindings(w.k.admin,sha,'合成手册中的虚构示例');
-  const result = success(await w.k.connectors.reader.read(id,w.ctx));
-  const outputs = result.artifacts.filter(a => a.name !== 'original');
-  assert.ok(outputs.length > 0);
-  assert.ok(outputs.some(a => a.artifact.body.scan.derived !== undefined));
-  for (const {artifact} of outputs) {
-    assert.equal(artifact.body.read_tier,'model_readable');
-    assert.ok(await w.k.records.artifacts.source(w.k.user,artifact.body.sha256));
-  }
-  projected = 'FtpUnrelated8902';
-  const other = {bytes:Buffer.from(`password = ${projected}`),mediaType:'text/plain',origin:{read:{object:'synthetic:manual:other'}},author:{user:null},provenanceType:'observed' as const,visibility:{readers:[],admins:true,packs:[],shareable:false}};
-  const unrelated = await w.k.records.artifacts.ingest(other);
-  await w.k.records.artifacts.acceptFindings(w.k.admin,unrelated.body.sha256,'无关合成来源的示例');
-  await w.k.records.artifacts.ingest(other);
-  const ungrounded = success(await w.k.connectors.reader.read(id,w.ctx));
-  assert.equal(ungrounded.artifacts.find(a => a.name === 'content')?.artifact.body.read_tier,'retain_only');
-  await w.k.records.artifacts.revokeFindings(w.k.admin,sha);
-  for (const {artifact} of outputs.filter(a => a.artifact.body.scan.findings.length > 0)) assert.equal((await w.k.records.artifacts.source(w.k.user,artifact.body.sha256))?.bytes,null);
-});
-
 for (const mode of ['sandbox exception', 'empty plan'] as const) {
   test(`${mode}: the missing setting reaches only the administrator note, never the receipt or tool text`, async (t) => {
     const diagnostic = `缺少设置 settings.repository_path；合成秘密 ${PASSWORD}`;
@@ -817,50 +733,6 @@ async function nestedEntry(w: World, manifest: string): Promise<ReadManifest['re
   return (await w.k.records.store.get<ReadManifest>(manifest))!.body.reads[0];
 }
 
-test('issue 109: an answer another record of its bytes holds back reaches no function; the effective tier decides, not the record the read wrote', async (t) => {
-  let projections = 0;
-  const wrapped: PackFunctionRunner = async (target, input, kind) => {
-    if (kind === 'project') projections += 1;
-    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
-  };
-  const w = await world(t, { callFunction: wrapped });
-  const id = 'manual:rows:manuals/line-2.1/cli.md';
-  const first = success(await w.k.connectors.reader.read(id, w.ctx));
-  assert.equal(projections, 1);
-  const original = first.artifacts[0].artifact;
-  assert.equal(original.body.read_tier, 'model_readable');
-  await newerScannerHit(w, original);
-  // The read stores the same answer again; its own record says model_readable, the bytes are retain_only.
-  const reason = failure(await w.k.connectors.reader.read(id, w.ctx), /SOURCE_CREDENTIAL/);
-  assert.ok(reason.includes(original.body.sha256), 'the reason names the held answer');
-  assert.equal(projections, 1, 'the projection never sees the held answer');
-});
-
-test('issue 109: a cached nested read is checked again against the effective tier; a newer scanner hit ends the entry', async (t) => {
-  const inputs: unknown[] = [];
-  const wrapped: PackFunctionRunner = async (target, input, kind) => {
-    inputs.push(input);
-    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
-  };
-  const w = await world(t, { callFunction: wrapped });
-  const subtrees = () => w.agile.count('/agile/get_child_node_task/');
-  const first = success(await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx));
-  const tree = (await w.k.records.store.get<ReadManifest>((await nestedEntry(w, first.manifest)).manifest!))!;
-  const subtree = tree.body.requests.find((request) => request.key === 'subtree')!;
-  const held = (await w.k.records.store.get<SourceArtifact['body']>(subtree.artifact!)) as unknown as SourceArtifact;
-  const cached = success(await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx));
-  assert.equal((await nestedEntry(w, cached.manifest)).cached, true, 'served from the cache while nothing changed');
-  assert.equal(subtrees(), 1);
-  await newerScannerHit(w, held);
-  inputs.length = 0;
-  const again = await w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx);
-  const entry = await nestedEntry(w, (again as { manifest: string }).manifest);
-  assert.equal(entry.cached, false, 'the entry is not served once its bytes are held');
-  assert.equal(entry.ok, false, 'the tree read again fails on its held original');
-  assert.equal(subtrees(), 2, 'the tree is read again');
-  assert.ok(!JSON.stringify(inputs).includes('030：演示测试项目'), 'no function gets the held tree content');
-});
-
 test('issue 109: per-capture retention is preserved without treating it as a global credential finding',async t=>{
  const inputs:unknown[]=[];
  const wrapped:PackFunctionRunner=async(target,input,kind)=>{inputs.push(input);return(await callPackFunction(target,input,{}, {requireOsIsolation:false})).output;};
@@ -876,40 +748,4 @@ test('issue 109: per-capture retention is preserved without treating it as a glo
  inputs.length=0;const again=await read(),entry=await nestedEntry(w,(again as {manifest:string}).manifest);
  assert.equal(entry.cached,true);assert.equal(entry.ok,true);assert.equal(w.agile.count('/agile/get_child_node_task/'),count);
  assert.ok(!JSON.stringify(inputs).includes(held.digest),'the retained capture is never substituted for the pinned original');
-});
-
-test('issue 109: a cached nested read whose accepted findings are revoked is not served again', async (t) => { credentialDetectorsFor(t);
-  // Built at run time so the repository holds no credential-shaped literal.
-  const secret = ['Ftp', 'Synthetic', '7834'].join('');
-  const inputs: unknown[] = [];
-  const wrapped: PackFunctionRunner = async (target, input, kind) => {
-    inputs.push(input);
-    return (await callPackFunction(target, input, {}, { requireOsIsolation: false })).output;
-  };
-  const w = await world(t, { callFunction: wrapped });
-  w.fixture.trees['7714'][0].children.push({ label: `password = ${secret}`, id: '8999', cases: [], children: [] });
-  const subtrees = () => w.agile.count('/agile/get_child_node_task/');
-  const read = () => w.k.connectors.reader.read(`agile:mindmap:${DOC}`, w.ctx);
-  const first = await read();
-  assert.equal((await nestedEntry(w, (first as { manifest: string }).manifest)).ok, false, 'the tree answer is held for its finding');
-  for (const bytes of (await w.k.allObjects()).filter((value) => value.includes(secret))) {
-    const records = await w.k.records.artifacts.records(sha256Hex(bytes));
-    if (records.some((record) => 'read' in record.body.origin)) await w.k.records.artifacts.acceptFindings(w.k.admin, sha256Hex(bytes), '合成目录树中的虚构示例');
-  }
-  const accepted = success(await read());
-  assert.equal((await nestedEntry(w, accepted.manifest)).ok, true);
-  const cached = success(await read());
-  assert.equal((await nestedEntry(w, cached.manifest)).cached, true, 'the accepted tree is cached');
-  const before = subtrees();
-  for (const bytes of (await w.k.allObjects()).filter((value) => value.includes(secret))) {
-    const records = await w.k.records.artifacts.records(sha256Hex(bytes));
-    if (records.some((record) => record.body.scan.accepted !== undefined)) await w.k.records.artifacts.revokeFindings(w.k.admin, sha256Hex(bytes));
-  }
-  inputs.length = 0;
-  const revoked = await read();
-  const entry = await nestedEntry(w, (revoked as { manifest: string }).manifest);
-  assert.equal(entry.cached, false, 'a revoked acceptance ends the entry');
-  assert.equal(entry.ok, false);
-  assert.equal(subtrees(), before + 1);
-  assert.ok(!JSON.stringify(inputs).includes(secret), 'no function gets the formerly accepted content');
 });

@@ -28,8 +28,8 @@ export async function assessProbes(records: RecordsKit, knowledge: BuildKnowledg
   const spec=d.probes!; const owner=await records.principals.get(binding.user);
   if(!owner || owner.disabled || !d.manifest_sha256)throw new PrecheckFactError('缺少有效探测主体或绑定清单','管理员恢复预订运行的有效主体，核对清单来源及摘要绑定后再采证');
   let source;
-  try{source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});}catch{throw new PrecheckFactError('绑定清单的读取前提未成立','管理员核对该清单的可见性、凭据扫描及受理状态，恢复允许函数读取的清单后再采证');}
-  if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new PrecheckFactError('绑定清单字节不可读或完整性未通过','管理员按绑定摘要恢复清单原件，核对可见性与受理状态并验证摘要后再采证');
+  try{source=await records.artifacts.source(owner,d.manifest_sha256,{consumer:'function'});}catch{throw new PrecheckFactError('绑定清单的读取前提未成立','管理员核对该清单的可见性和读取档位，恢复允许函数读取的清单后再采证');}
+  if(!source?.bytes || sha256Hex(source.bytes)!==d.manifest_sha256)throw new PrecheckFactError('绑定清单字节不可读或完整性未通过','管理员按绑定摘要恢复清单原件，核对可见性与读取档位并验证摘要后再采证');
   let manifest:unknown;
   try{manifest=parseStrictJson(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{throw new PrecheckFactError('绑定清单不是有效的 UTF-8 JSON','管理员读取受限清单原件，修复清单格式并重新发布正确摘要后再采证');}
   const devices=spec.devices!==undefined?at(manifest,spec.devices):undefined;

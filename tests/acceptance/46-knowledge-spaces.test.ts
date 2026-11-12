@@ -1,4 +1,3 @@
-import { credentialDetectorsFor } from '../../hub/testing/records.ts';
 import { RecordsError } from '../../hub/records/api.ts';
 // Decision 131 phase 2 over the real assembly and official MCP client, with no products or business systems.
 import assert from 'node:assert/strict';
@@ -163,7 +162,7 @@ test('run space locks survive later writes and administrator reads remain limite
 });
 const csrf = (body: string) => /name="csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
 const spacePath = (space: string, path = '/', root?: string) => '/console/knowledge/space?' + new URLSearchParams({ space, path, ...(root ? { root } : {}) });
-test('console password sessions browse the three spaces and owner forms enforce grants, CSRF and administrator boundaries', async (t) => { credentialDetectorsFor(t);
+test('console password sessions browse the three spaces and owner forms enforce grants, CSRF and administrator boundaries', async (t) => {
   const ownConsole = await openConsole(hub, owner.token), otherConsole = await openConsole(hub, other.token), adminConsole = await openConsole(hub, hub.admin.token);
   const home = await ownConsole.get('/console/knowledge');
   assert.equal(home.status, 200);
@@ -233,9 +232,9 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.ok(found.body.includes('合成控制台观察'));
   assert.equal((await ownConsole.post('/console/knowledge/do/revoke', { csrf: nonce, path: '/合成', audience: 'member', member_id: other.user.id })).status, 303);
   assert.equal((await otherConsole.get(spacePath(owner.user.id, '/合成/目录'))).status, 404);
-  const badEntry = await ownConsole.post('/console/knowledge/do/entry', { ...fields, statement: 'DB_PASSWORD=hunter22x' });
-  assert.equal(badEntry.status, 400);
-  assert.ok(!badEntry.body.includes('hunter22x'));
+  // Text that looks like a credential is written like any other (decisions 154, 161): the space does not refuse it.
+  const credentialLike = await ownConsole.post('/console/knowledge/do/entry', { ...fields, statement: 'DB_PASSWORD=hunter22x' });
+  assert.equal(credentialLike.status, 303);
   const adminPage = await adminConsole.get('/console/team/' + owner.user.id);
   assert.equal(adminPage.status, 200);
   assert.ok(adminPage.body.includes('私人空间容量'));

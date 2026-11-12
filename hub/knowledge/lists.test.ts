@@ -1,7 +1,6 @@
 // List slots (product@1 ProducerSource many): batches in list order, documents that cannot be read, checked, parsed or
 // that the producer fails on are skipped and listed while the rest is produced, optional and missing lists, list sources
 // used again within max_age_seconds or read again, fragments naming their element, and the per-node entry cap.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { TreeRootBody } from '../../contracts/src/knowledge.ts';
@@ -157,9 +156,10 @@ describe('list slots in batches', () => {
     ]);
   });
 
-  test('hostile documents are skipped one by one: a credential, no mind map, a crash, unparseable bytes; a foreign citation is refused', async (t) => { credentialDetectorsFor(t);
+  test('hostile documents are skipped one by one: no mind map, a crash, unparseable bytes; a foreign citation is refused', async (t) => {
     const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 3 })]);
-    // Nine documents, four of them hostile: under half of the list is skipped (more fails the production, review.test.ts).
+    // Nine documents, three of them hostile: under half of the list is skipped (more fails the production, review.test.ts).
+    // A fourth has text that looks like a credential and is read like any other (decisions 154, 161).
     const ids = documents(w, 1, 9);
     w.external.set(ids[1], { bytes: mindMap({ id: 'd2' }, [{ id: 'd2-c1', text: '[cmd: system show] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
     w.external.set(ids[2], { bytes: JSON.stringify({ cases: [1, 2, 3] }), mediaType: JSON_TYPE });
@@ -168,15 +168,14 @@ describe('list slots in batches', () => {
     const result = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
     assert.equal(result.ok, true, result.reason ?? '');
     const reasons = Object.fromEntries(result.skipped.map((s) => [s.external, s.reason]));
-    assert.deepEqual(Object.keys(reasons), [ids[1], ids[2], ids[3], ids[4]]);
-    assert.match(reasons[ids[1]], /凭据扫描有命中/);
+    assert.deepEqual(Object.keys(reasons), [ids[2], ids[3], ids[4]]);
     assert.match(reasons[ids[2]], /生产器 cases 处理这份源文件时失败：生产器 cases 运行失败（TypeError）：Cannot read properties of undefined/);
     assert.match(reasons[ids[3]], /生产器 cases 处理这份源文件时失败/);
     assert.match(reasons[ids[4]], /被 json@1 拒绝.*不是有效的 JSON/);
-    assert.equal(result.entries, 4 + 10, 'the cases of d1, d6, d7, d8 and d9');
+    assert.equal(result.entries, 4 + 10 + 1, 'the cases of d1, d2, d6, d7, d8 and d9');
     assert.ok(result.calls.made > 4, 'failing batches were split to find the document');
     const recorded = await detail(w, result.action);
-    assert.deepEqual(recorded.lists[0].skipped.map((s) => s.retry), [true, true, true, true], 'every skipped document remains eligible for the next sync');
+    assert.deepEqual(recorded.lists[0].skipped.map((s) => s.retry), [true, true, true], 'every skipped document remains eligible for the next sync');
 
     // A fragment naming a digest outside its batch is refused like any fragment that does not verify (K02 R[0]).
     const foreign = await world(t, [DEFAULT_PRODUCERS[0], casesProducer({ batch: 3, params: { foreign: 'f'.repeat(64) } })]);
@@ -280,24 +279,6 @@ describe('list sources used again within max_age_seconds', () => {
     assert.equal(older.root, second.root, 'equal content gives the same root whichever way the documents were loaded');
   });
 
-  test('stored loads use current acceptance without a re-read and become unreadable after withdrawal', async (t) => { credentialDetectorsFor(t);
-    const w = await world(t, [DEFAULT_PRODUCERS[0], casesProducer()]);
-    const ids = documents(w, 1, 2);
-    w.external.set(ids[1], { bytes: mindMap({ id: 'd2' }, [{ id: 'd2-c1', text: '[cmd: system show] 登录 password = Xy7#kq9Lm2', expected: ['ok'] }]), mediaType: JSON_TYPE });
-    const first = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
-    assert.equal(first.skippedCount, 1);
-    const sha = /源文件 ([0-9a-f]{64})/.exec(first.skipped[0].reason)?.[1];
-    assert.ok(sha);
-    await w.kit.artifacts.acceptFindings(w.admin, sha, '合成用例里的示例写法，不是真实凭据');
-    const second = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15', ids) });
-    assert.equal(second.ok, true, second.reason ?? '');
-    assert.equal(second.skippedCount,0,'the stored document is now effectively accepted');
-    assert.deepEqual(second.loads,{reused:2,read:0});
-    await w.kit.artifacts.revokeFindings(w.admin,sha,'撤回合成来源受理');
-    const third=await w.knowledge.produceTree({product:w.product,build:build('Rel_ACME_1_2_15',ids)});
-    assert.equal(third.skippedCount,1);
-    assert.deepEqual(third.loads,{reused:1,read:1},'the withdrawn cached source is re-read, remains held and is not admitted');
-  });
 });
 
 describe('the entry cap of a node', () => {

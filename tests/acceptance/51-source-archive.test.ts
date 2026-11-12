@@ -1,5 +1,4 @@
 // Decision 140 block 2: real loopback Hub, synthetic originals, sessions and current access checks.
-import { credentialDetectorsFor } from '../../hub/testing/records.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import pg from 'pg';
@@ -75,13 +74,14 @@ test('opening a knowledge original loads server quotes, displays every match and
   const unresolved=await spaces.original(member.principal,{sha256:file.body.sha256,artifact:file.digest,root:bad.root,path:'/',entry:bad.entry,ground:0});assert.equal(unresolved.status,'unresolved');assert.equal(unresolved.window,null);spaces.source=get;
  }finally{await hub.close();}
 });
-test('attachments preserve exact bytes, remain non-executable and refuse revoked, withheld and corrupt captures',async (t) => { credentialDetectorsFor(t);
+test('attachments preserve exact bytes, remain non-executable and refuse revoked, withheld and corrupt captures',async (t) => {
  const hub=await createTestHub(options);try{
   const member=await hub.createUser('合成下载成员'),peer=await hub.createUser('合成下载读者'),web=await openConsole(hub,member.token),reader=await openConsole(hub,peer.token),spaces=hub.hub.knowledge.spaces!;
   const bytes=Buffer.from([0x50,0x4b,0x03,0x04,0,255,0,128]),file=await spaces.importFile(member.principal,bytes,'application/zip','合成附件.zip','/下载');
   const reply=await fetch(hub.url+download(file.body.sha256,file.digest),{headers:{cookie:'circle_hub_session='+web.sessionCookie}});assert.equal(reply.status,200);assert.deepEqual(Buffer.from(await reply.arrayBuffer()),bytes);assert.match(reply.headers.get('content-disposition')??'',/^attachment;/);assert.equal(reply.headers.get('content-type'),'application/octet-stream');assert.equal(reply.headers.get('cache-control'),'no-store');assert.match(reply.headers.get('content-security-policy')??'',/sandbox/);assert.equal(reply.headers.get('x-content-type-options'),'nosniff');
   assert.equal((await web.send(download(file.body.sha256,file.digest),{method:'POST'})).status,405);assert.equal((await web.send(download(file.body.sha256,file.digest),{headers:{origin:'https://192.0.2.8'}})).status,403);
-  await spaces.grant(member.principal,{path:'/下载',audience:'member',member:peer.user.id}).then(()=>assert.fail('uninspectable binaries cannot be granted'),error=>assert.equal(error.code,'SPACE_CONTENT_UNINSPECTABLE'));
+  // A binary is shared like any other content (decisions 154, 161): nothing in it is scanned for credentials first.
+  await spaces.grant(member.principal,{path:'/下载',audience:'member',member:peer.user.id});assert.equal((await reader.get(download(file.body.sha256,file.digest))).status,200);
   const plain=await spaces.importFile(member.principal,Buffer.from('合成可撤回下载'),'text/plain','合成共享文本','/共享下载');await spaces.grant(member.principal,{path:'/共享下载',audience:'member',member:peer.user.id});assert.equal((await reader.get(download(plain.body.sha256,plain.digest))).status,200);
   await spaces.grant(member.principal,{path:'/共享下载',audience:'member',member:peer.user.id,revoke:true});const denied=await reader.get(download(plain.body.sha256,plain.digest)),missing=await reader.get(download('f'.repeat(64),'e'.repeat(64)));assert.equal(denied.status,404);assert.equal(missing.status,404);
   const nonces=[denied,missing].map(reply=>{const nonce=/script-src 'nonce-([^']+)'/.exec(String(reply.headers['content-security-policy']))?.[1];assert.ok(nonce);assert.ok(reply.body.includes('nonce="'+nonce+'"'),'the fresh nonce must match its actual CSP');return nonce;});assert.notEqual(nonces[0],nonces[1]);

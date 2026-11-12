@@ -9,10 +9,9 @@ import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { startPostgres } from '../testing/postgres.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
-import { openTestRecords } from '../testing/records.ts';
+import { openTestRecords, storeLegacyAcceptance, storeLegacyHeld } from '../testing/records.ts';
 import type { TestRecordsKit } from '../testing/records.ts';
-import { CONTENT_SCANNER,CREDENTIAL_SCANNER,scanForCredentials,useContentDetectors, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
-import { openRecords } from './index.ts';
+import { CONTENT_SCANNER,CREDENTIAL_SCANNER,scanForCredentials, type ActionBody, type IngestInput, type Principal, type SourceArtifactBody, type Visibility } from './api.ts';
 import { artifactShareKey, RECORD_SCHEMAS } from './constants.ts';
 import { digestOf, sha256Hex } from './digest.ts';
 import { runRecord } from '../../contracts/src/fixtures.ts';
@@ -183,54 +182,13 @@ test('content that looks like it carries a credential is stored and read like an
   assert.equal((await kit.artifacts.source(uploader, kept.body.sha256))?.bytes ?? null, null);
 });
 
-test('an upload with a plaintext credential is refused: no bytes kept, only the digest and the scan conclusion', async (t) => {
-  const kit = await openTestRecords({ postgres, detectors: true });
-  t.after(() => kit.close());
-  const { uploader } = await people(kit);
-  const secret = `Synth${randomBytes(6).toString('hex')}!9`;
-  const bytes = Buffer.from(`# 测试床\n\n登录用户：synthetic\npassword: ${secret}\n`);
-  const sha = sha256Hex(bytes);
-  await assert.rejects(kit.artifacts.ingest({ ...upload(uploader, bytes), run: null }), (error: unknown) => {
-    assert.ok(error instanceof RecordsError);
-    assert.equal(error.code, 'CREDENTIAL_IN_UPLOAD');
-    assert.equal(error.fix, PROTOCOL_CODES.CREDENTIAL_IN_UPLOAD.fix);
-    assert.match(error.message, /第 4 行第 1 列（password_assignment）/);
-    assert.equal(error.message.includes(secret), false);
-    assert.equal(error.detail.sha256, sha);
-    assert.deepEqual(error.detail.findings, [{ detector: 'password_assignment', offset: bytes.indexOf('password'), line: 4, column: 1 }]);
-    return true;
-  });
-  assert.equal(await kit.objects.has(sha), false);
-  assert.equal(await kit.artifacts.trustedBytes(sha), null);
-  assert.equal(await kit.artifacts.source(uploader, sha), null);
-  assert.deepEqual(await kit.artifacts.records(sha), []);
-  assert.deepEqual(await readdir(join(kit.dataDir, 'objects')), []);
-  const refusals = await kit.store.find<ActionBody>({ key: 'artifact.refused', value: sha, kind: 'action' });
-  assert.equal(refusals.items.length, 1);
-  const action = refusals.items[0].body;
-  assert.equal(action.action, 'validate');
-  assert.equal(action.acceptance, 'not_accepted');
-  assert.deepEqual(action.codes, ['CREDENTIAL_IN_UPLOAD']);
-  assert.deepEqual(action.detail.subject, { sha256: sha, size: bytes.byteLength, media_type: 'text/markdown' });
-  assert.equal((action.detail.scan as { clean: boolean }).clean, false);
-  const everything = await dump(kit);
-  assert.equal(everything.includes(secret), false);
-  assert.equal(everything.includes('登录用户'), false);
-});
-
-test('a connector read with a credential is kept at read tier retain_only and its text is not returned', async (t) => {
-  const kit = await openTestRecords({ postgres, detectors: true });
+test('a connector read an older Hub held for a credential stays retain_only and its text is not returned', async (t) => {
+  const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
   const { admin } = await people(kit);
   const bytes = Buffer.from(["config",":\n  ap","i_key ","= 'abc","123def","456ghi","'\n"].join(''));
-  const artifact = await kit.artifacts.ingest({
-    bytes,
-    mediaType: 'text/plain',
-    origin: { read: { object: 'manuals:file:spec/config.md@3', resource: 'manual-store', action: null } },
-    author: { user: null },
-    provenanceType: 'observed',
-    visibility: { readers: [], admins: true, packs: [], shareable: false },
-  });
+  // Held when it was read, under the detectors of credential-scan@3 (issue 194); no running Hub holds a read any more.
+  const artifact = await storeLegacyHeld(kit, { bytes, mediaType: 'text/plain', object: 'manuals:file:spec/config.md@3', visibility: { readers: [], admins: true, packs: [], shareable: false } });
   assert.equal(artifact.body.read_tier, 'retain_only');
   assert.equal(artifact.body.scan.clean, false);
   assert.equal(artifact.provenance, 'observed');
@@ -264,33 +222,56 @@ test('a connector read with a credential is kept at read tier retain_only and it
   assert.equal((await kit.artifacts.source(admin, restricted.body.sha256))?.artifact.digest, later.digest);
 });
 
-test('bytes held under the detectors are readable once they are read again, by the new record: the content scan is the newest scan of them', async (t) => {
-  const kit = await openTestRecords({ postgres, detectors: true });
+test('a read an older Hub held stays held for every reader, reaches an administrator\'s export only, and a new read of the object makes a readable record (decision 161)', async (t) => {
+  const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
   const { admin } = await people(kit);
   const bytes = Buffer.from('settings\nDB_PASS=Synth3tic9x\n');
   const sha = sha256Hex(bytes);
-  const input = (object: string): IngestInput => ({ bytes, mediaType: 'text/plain', origin: { read: { object } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
-  const held = await kit.artifacts.ingest(input('manuals:file:settings@1'));
-  assert.equal(held.body.read_tier, 'retain_only');
-  assert.equal((await kit.artifacts.source(admin, sha))?.readTier, 'retain_only');
-  // What a running Hub does now: the same bytes, read again, are scanned as content, and every record of them follows.
-  // A process of its own, as after a restart: a process keeps the scan it made of bytes.
-  useContentDetectors(false);
-  const now = await openRecords({ dataDir: kit.dataDir, logDir: kit.config.logDir, database: kit.database, limits: kit.config.limits }, { migrate: false, keyProvider: kit.keyProvider });
-  t.after(() => now.close());
-  const read = await now.artifacts.ingest(input('manuals:file:settings@2'));
+  const visibility = { readers: [], admins: true, packs: [], shareable: false };
+  const held = await storeLegacyHeld(kit, { bytes, mediaType: 'text/plain', object: 'manuals:file:settings@1', visibility });
+  assert.equal(held.body.scan.scanner, CREDENTIAL_SCANNER);
+  for (const consumer of ['model', 'function', 'human'] as const) {
+    const source = await kit.artifacts.source(admin, sha, { consumer });
+    assert.deepEqual({ bytes: source?.bytes, readTier: source?.readTier }, { bytes: null, readTier: 'retain_only' }, consumer);
+  }
+  assert.equal((await kit.artifacts.text(admin, sha))?.readable, false);
+  // What `circle-hub original export` hands an administrator, and no one else.
+  assert.deepEqual(Buffer.from((await kit.artifacts.trustedBytes(sha)) ?? []), bytes);
+  // Reading the same object again stores a new record under the content scan; reads of the bytes take that record.
+  const read = await kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'manuals:file:settings@1' } }, author: { user: null }, provenanceType: 'observed', visibility });
+  assert.notEqual(read.digest, held.digest);
   assert.equal(read.body.scan.scanner, CONTENT_SCANNER);
   assert.equal(read.body.read_tier, 'model_readable');
-  assert.deepEqual({ readable: (await now.artifacts.text(admin, sha))?.readable, tier: (await now.artifacts.source(admin, sha))?.readTier }, { readable: true, tier: 'model_readable' });
-  // A read that names the record made under the detectors still gets that record's own stored tier: records never change.
-  // No deployment holds such records, so nothing migrates them; a new read of the object makes a readable record.
-  assert.equal((await now.artifacts.source(admin, sha, { record: held.digest }))?.readTier, 'retain_only');
-  assert.deepEqual(Buffer.from((await now.artifacts.source(admin, sha, { record: read.digest }))?.bytes ?? []), bytes);
+  assert.deepEqual({ readable: (await kit.artifacts.text(admin, sha))?.readable, tier: (await kit.artifacts.source(admin, sha))?.readTier }, { readable: true, tier: 'model_readable' });
+  // The new record does not release the held one: a read that names it still gets retain_only, and nothing is rewritten.
+  assert.deepEqual({ tier: (await kit.artifacts.source(admin, sha, { record: held.digest }))?.readTier, stored: (await kit.store.get<SourceArtifactBody>(held.digest))?.body.read_tier }, { tier: 'retain_only', stored: 'retain_only' });
+  assert.deepEqual(Buffer.from((await kit.artifacts.source(admin, sha, { record: read.digest }))?.bytes ?? []), bytes);
+});
+
+test('an acceptance an older Hub recorded keeps a held read readable, also after a new read of the object (decision 161)', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { admin } = await people(kit);
+  const bytes = Buffer.from('copy ftp://user:Ftp4e5f6a7b9@192.0.2.10/images/system.bin flash:\n');
+  const sha = sha256Hex(bytes);
+  const visibility = { readers: [], admins: true, packs: [], shareable: false };
+  const held = await storeLegacyHeld(kit, { bytes, mediaType: 'text/plain', object: 'manuals:file:cli/copy.md@1', visibility });
+  assert.equal((await kit.artifacts.source(admin, sha))?.readTier, 'retain_only');
+  const accepted = await storeLegacyAcceptance(kit, admin, held);
+  const before = await kit.artifacts.source(admin, sha);
+  assert.deepEqual({ tier: before?.readTier, kind: before?.acceptance?.kind, bytes: Buffer.from(before?.bytes ?? []) }, { tier: 'model_readable', kind: 'direct', bytes });
+  assert.equal(before?.acceptance?.kind === 'direct' ? before.acceptance.acceptance.authorization : null, accepted.digest);
+  const read = await kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'manuals:file:cli/copy.md@1' } }, author: { user: null }, provenanceType: 'observed', visibility });
+  assert.equal(read.body.read_tier, 'model_readable');
+  // The newer record answers reads of the bytes; one that names the accepted record still reads it, as before.
+  assert.equal((await kit.artifacts.source(admin, sha))?.artifact.digest, read.digest);
+  const named = await kit.artifacts.source(admin, sha, { record: held.digest });
+  assert.deepEqual({ tier: named?.readTier, bytes: Buffer.from(named?.bytes ?? []) }, { tier: 'model_readable', bytes });
 });
 
 test('a credential hit by the newest scanner makes the bytes retain_only for every record of them', async (t) => {
-  const kit = await openTestRecords({ postgres, detectors: true });
+  const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
   const { admin } = await people(kit);
   const bytes = Buffer.from('settings\nDB_PASS=Synth3tic9x\n');
@@ -312,15 +293,20 @@ test('a credential hit by the newest scanner makes the bytes retain_only for eve
   };
   await kit.store.put({ kind: 'source_artifact', schema: 'source_artifact@1', provenance: 'observed', body: old, index: [{ key: 'artifact.sha256', value: sha }] });
   assert.equal((await kit.artifacts.text(admin, sha))?.readable, true);
-  // The current scanner finds it: a new record of the same bytes, and every view turns to retain_only.
-  const rescanned = await kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'manuals:file:settings@2' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
+  // A newer scanner found it (credential-scan@3, in a record an older Hub stored): every view turns to retain_only.
+  const rescanned = await storeLegacyHeld(kit, { bytes, mediaType: 'text/plain', object: 'manuals:file:settings@2', visibility: { readers: [], admins: true, packs: [], shareable: false } });
   assert.equal(rescanned.body.scan.findings.length, 1);
   assert.deepEqual({ readable: (await kit.artifacts.text(admin, sha))?.readable, tier: (await kit.artifacts.source(admin, sha))?.readTier }, { readable: false, tier: 'retain_only' });
   assert.equal((await kit.artifacts.source(admin, sha, { consumer: 'function' }))?.bytes, null);
+  // A read under the content scan makes a readable record of its own, and releases neither of the older ones (decision 161).
+  const read = await kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'manuals:file:settings@3' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
+  assert.equal((await kit.artifacts.source(admin, sha))?.artifact.digest, read.digest);
+  assert.equal((await kit.artifacts.source(admin, sha))?.readTier, 'model_readable');
+  for (const record of [rescanned.digest, (await kit.artifacts.records(sha))[0].digest]) assert.equal((await kit.artifacts.source(admin, sha, { record }))?.readTier, 'retain_only', record);
 });
 
 test('a run reading its bound generated record on its own authority takes the newest scan of the bytes into account (B02 R[4])', async (t) => {
-  const kit = await openTestRecords({ postgres, detectors: true });
+  const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
   const { uploader } = await people(kit);
   const bytes = Buffer.from('exported\nDB_PASS=Synth3tic9y\n');
@@ -340,8 +326,9 @@ test('a run reading its bound generated record on its own authority takes the ne
     items: [{ id: 'synthetic', label: '合成', location: `src:${sha}`, fields: {} }],
   } });
   assert.equal((await kit.artifacts.sourceForRun(uploader, sha, run, { consumer: 'function' }))?.readTier, 'model_readable');
-  // The current scanner finds the credential in a newer record of the same bytes: the run's read is held back too.
-  const rescanned = await kit.artifacts.ingest({ bytes, mediaType: 'text/plain', origin: { read: { object: 'exports:file:settings@2' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false } });
+  // A newer scanner found the credential in a newer record of the same bytes (credential-scan@3, stored by an older Hub):
+  // the run's read is held back too.
+  const rescanned = await storeLegacyHeld(kit, { bytes, mediaType: 'text/plain', object: 'exports:file:settings@2', visibility: { readers: [], admins: true, packs: [], shareable: false } });
   assert.equal(rescanned.body.scan.findings.length, 1);
   const held = await kit.artifacts.sourceForRun(uploader, sha, run, { consumer: 'function' });
   assert.equal(held?.artifact.digest, old.digest);
@@ -403,13 +390,13 @@ test('recorded bytes that went missing are reported as data loss, not as absent'
   assert.equal(await kit.objects.get(sha256Hex('never stored')), null);
 });
 
-test('bytes the scanner cannot read are accepted and recorded as not inspected', async (t) => {
-  const kit = await openTestRecords({ postgres, detectors: true });
+test('an archive is accepted readable and its scan is the content scan, which looks for nothing (decision 161)', async (t) => {
+  const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
   const { uploader } = await people(kit);
   const archive = gzipSync(Buffer.from('notes\npassword=Synth3tic9x\n'));
   const artifact = await kit.artifacts.ingest({ ...upload(uploader, archive), mediaType: 'application/gzip' });
-  assert.deepEqual(artifact.body.scan, { scanner: CREDENTIAL_SCANNER, inspected: false, clean: false, findings: [], truncated: false });
+  assert.deepEqual(artifact.body.scan, { scanner: CONTENT_SCANNER, inspected: true, clean: true, findings: [], truncated: false });
   assert.equal(artifact.body.read_tier, 'model_readable');
 });
 

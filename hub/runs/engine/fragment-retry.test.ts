@@ -39,14 +39,14 @@ for(const mode of ['recover','exhaust','retain','missing'])test(`data-only fragm
       assert.ok(claims.some(claim=>claim.statement.verdict==='unknown'));
       if(mode==='retain') {
         const requests=await h.service.listRequests!(h.admin,run.run);
-        assert.ok(requests.some(r=>r.kind==='disposition'&&r.audience===h.admin.id&&r.missing.includes('管理员尚未接受')));
+        assert.ok(requests.some(r=>r.kind==='disposition'&&r.audience===h.admin.id&&r.missing.includes('只保留的来源不放开')));
         const retained=claims.find(claim=>(claim.statement.data?.unread_sources as Array<{reference:string}>|undefined)?.some(source=>source.reference===ref));
         assert.ok(retained,'data-only retain-only references keep typed unread source evidence');
         assert.equal(retained.statement.reason,'awaiting_step');
         const unread=(retained.statement.data!.unread_sources as Array<Record<string,unknown>>)[0];
         assert.equal(unread.reason,'credential_unreadable');
-        assert.match(String(unread.missing_fact),/管理员.*接受/);assert.match(String(unread.next_action),/请求管理员.*接受.*重新核验/);
-        assert.match(retained.statement.text,/管理员.*接受.*重新核验/);
+        assert.match(String(unread.missing_fact),/只保留的来源不放开/);assert.match(String(unread.next_action),/按原对象重新读取.*重新核验/);
+        assert.match(retained.statement.text,/按原对象重新读取.*重新核验/);
         h.kit.artifacts.source=original;
         await h.service.maintain();
         const completed=await h.service.listRequests!(h.admin,run.run);

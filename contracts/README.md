@@ -683,3 +683,13 @@ it also names the notice of an older result by the words the code writes (下一
 is new: in the console and in the text returned to a model an absent value says why it is absent (未记录, 不适用, 暂无数据,
 or a more particular fact) and is never a dash; the columns of the command line and notes already written into records
 are outside it. Nothing generated changes but `MODEL_VERSION`.
+
+Decision 161 (issue 194, step three; the owner chose 保持扣留，重读取得 on 2026-11-12) sets model 49. B02 R[4] says the
+review, acceptance and withdrawal of credential findings are gone: records held under credential-scan@3 stay held and
+are not rewritten (an administrator alone can export their originals), records accepted before stay readable, a later
+read of the same bytes neither lifts nor withdraws anything, and reading the object again is the way to a readable
+record. B02 R[6] speaks of an acceptance recorded before instead of the acceptance channels. C04 R[6], D05 R[3] (no new
+“X 存在，内容待核看”; an observation stored before is read as it is), R02 R[0], V03 R[12] and display rule 9 follow. The
+protocol code `SOURCE_PENDING_REVIEW` keeps its code with new text (an observation stored before; read the object
+again), so `contracts/generated/protocol.ts` and the four skill packs' copies change with `MODEL_VERSION`; every code
+stays registered.

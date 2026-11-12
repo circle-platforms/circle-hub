@@ -1,7 +1,6 @@
 // Producing roots from synthetic producers (temporary PostgreSQL, real sandboxed pack functions): nodes, composition,
 // digest stability, sharing of unchanged subtrees, refusal of entries that fail verification, credential-hit sources,
 // catalogs and spans left unplaced without a typed-judgment model.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { after, before, describe, test } from 'node:test';
@@ -164,29 +163,6 @@ describe('producing a root', () => {
     assert.equal(note?.nodes[0].entries[0].applicability, '起止构建 Rel_ACME_1_2_15');
   });
 
-  test('a source whose credential scan found something is never parsed into the tree; the reason names its digest', async (t) => { credentialDetectorsFor(t);
-    const w = await world(t);
-    const secret = catalogXml({ system: [{ name: 'login', help: 'password = Xy7#kq9Lm2' }] });
-    w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: secret, mediaType: XML });
-    const result = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15') });
-    assert.equal(result.ok, false);
-    assert.equal(result.root, null);
-    const [artifact] = await w.kit.artifacts.records((await w.kit.store.find<{ sha256: string }>({ key: 'artifact.object', value: 'site:tree:Rel_ACME_1_2_15', kind: 'source_artifact' })).items[0].body.sha256);
-    assert.equal(artifact.body.read_tier, 'retain_only');
-    assert.ok(result.reason?.includes(artifact.body.sha256), result.reason ?? '');
-    assert.match(result.reason ?? '', /凭据扫描有命中/);
-    assert.match(result.reason ?? '', /管理员.*接受这份文件.*扫描命中项.*重新运行同步/);
-    const failed = await w.kit.store.get(result.action as string);
-    assert.equal((failed?.body as { result: string }).result, 'error');
-    assert.equal(await w.knowledge.rootOfBuild('acme', 'Rel_ACME_1_2_15'), null);
-
-    // An administrator accepts the findings of exactly this document; the next read stores it readable and the build produces.
-    await w.kit.artifacts.acceptFindings(w.admin, artifact.body.sha256, '合成目录里的示例写法，不是真实凭据');
-    const retried = await w.knowledge.produceTree({ product: w.product, build: build('Rel_ACME_1_2_15') });
-    assert.equal(retried.ok, true, retried.reason ?? '');
-    assert.equal(retried.sources[0].sha256, artifact.body.sha256);
-  });
-
   test('the catalog of a root is the closed view over its command entries (C07)', async (t) => {
     const w = await world(t);
     w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: XML });
@@ -233,12 +209,12 @@ describe('producing a root', () => {
     assert.ok(produced.warnings.some((warning) => warning.includes('store:manual:acme-1.2') && warning.includes('可选')));
   });
 
-  test('function-only bytes, a personal-credential read and bytes the scanner cannot inspect never enter the tree', async (t) => { credentialDetectorsFor(t);
+  test('function-only bytes, a personal-credential read and bytes no core parser reads never enter the tree', async (t) => {
     const w = await world(t);
     const cases: Array<[string, Parameters<World['external']['set']>[1], RegExp]> = [
       ['Rel_ACME_1_2_1', { bytes: catalogXml(BASE_CATALOG), mediaType: XML, readTier: 'function_bytes_only' }, /读取档位是“只许函数按引用读字节”/],
       ['Rel_ACME_1_2_2', { bytes: catalogXml(BASE_CATALOG), mediaType: XML, personal: true }, /个人凭据读到的源文件不进知识树/],
-      ['Rel_ACME_1_2_3', { bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]), mediaType: 'image/png' }, /不是凭据扫描能检查的文本/],
+      ['Rel_ACME_1_2_3', { bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]), mediaType: 'image/png' }, /没有支持此媒体类型的核心解析器/],
       ['Rel_ACME_1_2_4', { bytes: 'plain words, no structure', mediaType: 'application/x-unknown' }, /没有支持此媒体类型的核心解析器/],
     ];
     for (const [name, object, reason] of cases) {

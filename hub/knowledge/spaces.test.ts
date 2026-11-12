@@ -1,5 +1,4 @@
 // Space boundaries use synthetic records, a temporary PostgreSQL and the real reference verifier, never an external system.
-import { credentialDetectorsFor } from '../testing/records.ts';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { GetNodesOutput } from '../../contracts/src/tools.ts';
@@ -43,7 +42,7 @@ test('owners, directory grantees, administrators and revoked readers have indepe
   await spaces.grant(w.user, { path: '/', audience: 'administrators', revoke: true });
   assert.equal(await read(w.admin), null);
 });
-test('source quotes are checked, missing grounds stay unverified and private imports do not grant an administrator access', async (t) => { credentialDetectorsFor(t);
+test('source quotes are checked, missing grounds stay unverified and private imports do not grant an administrator access', async (t) => {
   const w = await makeWorld(postgres);
   t.after(w.close);
   const spaces = w.knowledge.spaces!;
@@ -58,8 +57,9 @@ test('source quotes are checked, missing grounds stay unverified and private imp
   assert.ok((await spaces.source(w.outsider, source.body.sha256))?.bytes);
   await spaces.grant(w.user, { path: '/notes', audience: 'member', member: w.outsider.id, revoke: true });
   assert.equal(await spaces.source(w.outsider, source.body.sha256), null);
-  await assert.rejects(spaces.write(w.user, note('DB_PASSWORD=hunter22x')), e => e instanceof KnowledgeError && e.code === 'SPACE_CREDENTIALS_DETECTED');
-    await assert.rejects(spaces.importFile(w.user,Buffer.from('合成安全原文'),'text/plain','DB_PASSWORD=hunter22x'),e=>e instanceof KnowledgeError&&e.code==='SPACE_CREDENTIALS_DETECTED');
+  // Text and names that look like a credential are written like any other (decisions 154, 161).
+  await spaces.write(w.user, note('DB_PASSWORD=hunter22x'));
+  await spaces.importFile(w.user, Buffer.from('合成安全原文'), 'text/plain', 'DB_PASSWORD=hunter22x');
 });
 test('versions preserve old references, show replacements and withdrawals, and compare entry paths', async (t) => {
   const w = await makeWorld(postgres);
