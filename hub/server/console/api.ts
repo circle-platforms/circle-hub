@@ -15,7 +15,7 @@ import type { CommandRun } from '../command-bridge.ts';
 import { nodeCitations } from './citations.ts';
 import { circlesOf, environmentState } from './connections.ts';
 import type { JobStore } from './manage.ts';
-import { PERIODS, RECENT_LIMIT, blockers, checkCounts, runsSince, startOfDay } from './overview.ts';
+import { PERIODS, RECENT_LIMIT, blockers, checkCounts, loadOverviewWindow, overviewDayBuckets } from './overview.ts';
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
 import { NEUTRAL, type PageContext } from './context.ts';
 import { readableLines, rootReadable } from './pages.ts';
@@ -25,7 +25,7 @@ import { TASKS_PER_PAGE } from './runs-pages.ts';
 import { searchHub } from './search.ts';
 import { authorityFingerprint, certificateFacts, secretsOf, storageFacts } from './settings.ts';
 import { pendingCount, primaryResult, taskResultOf } from './status.ts';
-import { TOOL_LABELS, loadTasks, packTitles, taskSteps, taskTitle } from './tasks.ts';
+import { TOOL_LABELS, loadTasks, packTitles, taskSteps, taskTitle, waitingRequests } from './tasks.ts';
 import { readsJson, systemReads } from './trial.ts';
 
 export interface ApiResult {
@@ -37,8 +37,6 @@ export interface ApiOptions {
   jobs: JobStore;
   run: ((argv: string[]) => Promise<CommandRun>) | null;
 }
-
-const DAY = 86_400_000;
 
 export const neutral = (): ApiResult => ({ status: 404, body: { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix } });
 const bad = (message: string, fix: string): ApiResult => ({ status: 400, body: { code: null, message, fix } });
@@ -75,26 +73,22 @@ async function overview(ctx: PageContext): Promise<ApiResult> {
   const raw = param(ctx, 'days') ?? '7';
   const days = Number(raw);
   if (!(PERIODS as readonly number[]).includes(days)) return bad('days 只能是 7、14 或 30', '改用 days=7、days=14 或 days=30');
-  const now = nowOf(ctx);
-  const since = startOfDay(now - (days - 1) * DAY);
-  const { runs, more } = await runsSince(ctx, since, RECENT_LIMIT);
-  const tasks = await loadTasks(ctx, runs);
-  const today = startOfDay(now);
+  const { now, since, more, tasks } = await loadOverviewWindow(ctx, days);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const todayStart = today.getTime();
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
-  const requests = (await ctx.deps.runs.listRequests?.(ctx.principal, undefined, { waiting: true }) ?? []).filter((r) => r.answered_by === null);
-  const daily = Array.from({ length: days }, (_, i) => {
-    const start = startOfDay(now - (days - 1 - i) * DAY);
-    const end = i + 1 < days ? startOfDay(now - (days - 2 - i) * DAY) : Infinity;
-    const inDay = tasks.filter((task) => { const t = Date.parse(task.run.started_at); return t >= start && t < end; });
-    return { day: dayKey(start), results: Object.fromEntries(TASK_RESULT.map((result) => [result, inDay.filter((task) => task.result === result).length])) };
-  });
+  const requests = await waitingRequests(ctx, tasks);
+  const daily = overviewDayBuckets(tasks, days, now).map(({ start, inDay }) => ({
+    day: dayKey(start),
+    results: Object.fromEntries(TASK_RESULT.map((result) => [result, inDay.filter((task) => task.result === result).length])),
+  }));
   return ok({
     days,
     since: new Date(since).toISOString(),
     at: new Date(now).toISOString(),
     scope: { tasks: tasks.length, limit: RECENT_LIMIT, more },
     kpis: {
-      today: tasks.filter((task) => Date.parse(task.run.started_at) >= today).length,
+      today: tasks.filter((task) => Date.parse(task.run.started_at) >= todayStart).length,
       settled: settled.length,
       passed: settled.filter((task) => task.result === 'passed').length,
       pending: tasks.reduce((n, task) => n + task.pending, 0),
