@@ -263,6 +263,8 @@ describe('pages', () => {
   test('a run page shows partitions with labels, not applicable layers, unknown with its own symbol and claims in display order', async () => {
     const user = await person();
     const run = await runWithResult(user);
+    // New runs always get a default submission_due (start/fakes); strip it to exercise the historical empty path (issue 239).
+    delete (server.fakes.runs.runs.get(run)!.record as { submission_due?: string }).submission_due;
     const session = await signIn(user.token);
     const list = await get('/console/runs', session);
     assert.ok(list.body.includes(run));
@@ -379,7 +381,8 @@ describe('pages', () => {
       assert.ok(page.body.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
       assert.ok(page.body.includes('&quot;&gt;&lt;img src=x onerror=alert(2)&gt;'));
       const admin = await signIn(server.admin.token);
-      const adminPage = await get('/console/team', admin);
+      // Default /console/team is collaborative teams; member names live on ?tab=members.
+      const adminPage = await get('/console/team?tab=members', admin);
       assert.ok(!adminPage.body.includes('<b>名字</b>') && adminPage.body.includes('&lt;b&gt;名字&lt;/b&gt;'));
     } finally {
       server.fakes.runs.items = null;
@@ -430,7 +433,7 @@ describe('pages', () => {
 
     const stranger = await person([]);
     const strangerSession = await signIn(stranger.token);
-    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的团队知识/);
+    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的公共知识/);
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
@@ -443,11 +446,12 @@ describe('pages', () => {
     const bare = await createTestServer({ postgres, withoutProducts: true });
     try {
       const admin = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(bare.admin.token, bare.port) } });
-      assert.ok(admin.body.includes('/console/packs/line-a'), 'the product pack id of the catalog');
+      // Product packs use packPath → /console/workflows/<id> (/console/packs paths retired).
+      assert.ok(admin.body.includes('/console/workflows/line-a'), 'the product pack id of the catalog');
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
-      assert.match(page.body, /没有可读的团队知识/);
+      assert.match(page.body, /没有可读的公共知识/);
     } finally {
       await bare.close();
     }
@@ -486,7 +490,7 @@ describe('pages', () => {
 
     const session = await signIn(server.admin.token);
     assert.equal((await get('/console/admin', session)).status, 404);
-    const admin = await get('/console/team', session);
+    const admin = await get('/console/team?tab=members', session);
     assert.equal(admin.status, 200);
     assert.ok(admin.body.includes(user.user.name));
     assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');

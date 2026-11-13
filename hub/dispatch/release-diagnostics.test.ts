@@ -53,7 +53,13 @@ for(const [condition,change]of cases)test('release inspection identifies '+condi
  const c=await setup();t.after(()=>c.close());const d=structuredClone(c.executor.definition);await change(c,d);
  const result=await inspectInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now());
  assert.equal(result.input,undefined);assert.ok(result.checks.some(check=>check.condition===condition&&check.satisfied!==true),JSON.stringify(result.checks));
- assert.ok(!JSON.stringify(result.checks).includes('private-source-marker'));
+ // C14: identity fields may disclose plain expected/actual for refusal wording; digests stay authoritative. Other fields stay digest-only.
+ const serialized=JSON.stringify(result.checks);
+ if(condition==='proof.executor_identity'){
+  const identity=result.checks.find(check=>check.condition===condition)!;
+  assert.ok(identity.fields.some(field=>field.expected==='private-source-marker'||field.actual==='private-source-marker'));
+  assert.ok(identity.fields.every(field=>field.expected_sha256.length===64&&field.actual_sha256.length===64));
+ }else assert.ok(!serialized.includes('private-source-marker'));
  for(const check of result.checks)if(check.satisfied===null)assert.ok(check.missing_fact&&check.next_action);
  for(const check of result.checks)for(const field of check.fields){assert.equal(field.expected_sha256.length,64);assert.equal(field.actual_sha256.length,64);}
  await assert.rejects(verifyInput(c.admin,c.run,d,c.kit,c.runs,c.workflows,c.now()),error=>error instanceof ReleaseDiagnosticError&&error.checks.some(check=>check.condition===condition&&check.satisfied!==true));

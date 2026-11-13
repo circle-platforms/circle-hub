@@ -53,7 +53,8 @@ test('received skills stay in their own group and team scopes disclose assignmen
  assert.ok(!body.includes('合成受权技能'));assert.ok(!skills.includes('合成团队工作流'));
  assert.match(skills,/href="\/console\/skills\/synthetic-shared\?/);assert.match(body,/href="\/console\/workflows\/synthetic-team\?/);
  const audience=(body:string)=>[...body.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]);
- assert.deepEqual(audience(body),['团队']);
+ // Members see knowledge_search_scope.team → 公共空间 (owner 11-13); admins see assignment names.
+ assert.deepEqual(audience(body),['公共空间']);
  ctx.admin=true;ctx.principal={...ctx.principal,role:'admin'};
  assert.deepEqual(audience(await render()),['合成作者']);
  assignments=[];assert.deepEqual(audience(await render()),['尚未指定成员']);
@@ -84,9 +85,9 @@ test('member team scopes reveal neither assignment counts nor member names on ca
  const ctx={principal,admin:false,url:new URL('http://127.0.0.1/console/workflows?scope=team'),userName:async(id:string)=>{assert.ok(!hidden.includes(id),'member rendering must not resolve assignment names');return id==='admin'?'合成管理员':principal.name;},chrome:(title:string)=>({title,user:{name:principal.name,role:'成员',admin:false}}),deps:{packs:{list:async()=>[{...pack,assigned_to:assigned}]},workflows:{byDigest:async()=>null},records:{principals:{list:async()=>[principal,{id:'admin',name:'合成管理员',role:'admin'}]},authorizations:{canPublish:async()=>false,usersOf:async()=>{assert.fail('member rendering must not query assignments');}}}}} as unknown as PageContext;
  for(const ids of [[],hidden.slice(0,1),hidden]){
   assigned=ids;const cards=String((await packsPage(ctx)).body);
-  assert.deepEqual([...cards.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]),['团队']);
+  assert.deepEqual([...cards.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]),['公共空间']);
   const detail=String((await packPage(ctx,pack.id)).body);
-  assert.deepEqual([...detail.matchAll(/使用范围：([^<]*)/g)].map(match=>match[1]),['团队']);
+  assert.deepEqual([...detail.matchAll(/使用范围：([^<]*)/g)].map(match=>match[1]),['公共空间']);
   for(const body of [cards,detail]){assert.doesNotMatch(body,/名成员|尚未指定成员/);for(const id of hidden)assert.ok(!body.includes(id));}
  }
 });

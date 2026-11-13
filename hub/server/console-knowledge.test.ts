@@ -28,11 +28,11 @@ test('knowledge empty states reflect the reader and import remains an administra
   const deps={products,knowledge:{}};
   const memberBody=String((await knowledgePage(context(deps))).body);
   const adminBody=String((await knowledgePage(context(deps,true))).body);
-  assert.match(memberBody,/没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线/);
-  assert.match(adminBody,/还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入/);
+  assert.match(memberBody,/没有可读的公共知识；成员可读分配给自己的工作流所绑定的产品线/);
+  assert.match(adminBody,/还没有公共知识；公共知识按产品线组织，发布产品知识来源后可在此浏览和导入/);
   for(const body of [memberBody,adminBody]) assert.doesNotMatch(body,/按产品线浏览|版本差异|name="from"|name="to"/);
-  assert.doesNotMatch(memberBody,/导入团队知识<\/a>/);
-  assert.match(adminBody,/title="从所选产品已配置的知识来源导入到团队知识库；产品文件夹沿用产品线的读取权限，仅管理员可用"/);
+  assert.doesNotMatch(memberBody,/导入公共知识<\/a>/);
+  assert.match(adminBody,/title="从所选产品已配置的知识来源导入到公共知识库；产品文件夹沿用产品线的读取权限，仅管理员可用"/);
 });
 test('version comparison offers only the product line builds and defaults to previous and current produced roots', async () => {
   const current='a'.repeat(64),previous='b'.repeat(64),foreign='c'.repeat(64);
