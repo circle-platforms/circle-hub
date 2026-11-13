@@ -3,6 +3,14 @@ import { axisUiLabel, isPackKind, uiLabelOf, type PackKind } from '../../../cont
 import { SKILLS_PLACE, type Html, type PageChrome } from './html.ts';
 import type { PageContext } from './context.ts';
 import { tooltip } from './presentation.ts';
+import {
+  knowledgeProductsPath,
+  operationsPackPath,
+  skillPath,
+  skillsPath,
+  workflowPath,
+  workflowsPath,
+} from './routes.ts';
 
 export function publishingKind(ctx: PageContext): PackKind {
   const kind = ctx.url.searchParams.get('kind');
@@ -10,24 +18,24 @@ export function publishingKind(ctx: PageContext): PackKind {
 }
 
 export function packHome(kind: PackKind): { active: NonNullable<PageChrome['active']>; path: string } {
-  if (kind === 'product') return { active: 'knowledge', path: '/console/knowledge/products' };
+  if (kind === 'product') return { active: 'knowledge', path: knowledgeProductsPath() };
   if (kind === 'system') return { active: 'connections', path: '/console/connections?tab=packs' };
-  return kind === 'skill' ? { active: 'skills', path: PACK_PLACES.skill.path } : { active: 'packs', path: PACK_PLACES.workflow.path };
+  return kind === 'skill' ? { active: 'skills', path: PACK_PLACES.skill.path } : { active: 'workflows', path: PACK_PLACES.workflow.path };
 }
 
 /** The kinds that have a place of their own in the navigation (decision 151), each with its place. */
 export const PACK_PLACES = {
-  workflow: { active: 'packs', path: '/console/workflows', title: uiLabelOf('pack_kind', 'workflow') },
-  skill: { active: 'skills', path: '/console/skills', title: SKILLS_PLACE },
+  workflow: { active: 'workflows', path: workflowsPath(), title: uiLabelOf('pack_kind', 'workflow') },
+  skill: { active: 'skills', path: skillsPath(), title: SKILLS_PLACE },
 } as const satisfies Partial<Record<PackKind, { active: NonNullable<PageChrome['active']>; path: string; title: string }>>;
 /** A kind with a place of its own: the keys of the table above, never a list of kinds written out again. */
 export type PlaceKind = keyof typeof PACK_PLACES;
 /** Personal zip staging and confirm (workflows and skills share one page under the workflows place). */
-export const PERSONAL_PUBLISH = '/console/workflows/-/publish';
+export const PERSONAL_PUBLISH = `${workflowsPath()}/-/publish`;
 /** POST actions for the owner's personal pack forms. */
-export const personalPackDo = (action: string): string => `/console/workflows/do/${action}`;
+export const personalPackDo = (action: string): string => `${workflowsPath()}/do/${encodeURIComponent(action)}`;
 /** The page of one pack: a skill under the skills place, every other kind under the workflows place. */
-export const packPath = (pack: { id: string; kind: PackKind }): string => (pack.kind === 'skill' ? PACK_PLACES.skill.path : PACK_PLACES.workflow.path) + '/' + pack.id;
+export const packPath = (pack: { id: string; kind: PackKind }): string => (pack.kind === 'skill' ? skillPath(pack.id) : workflowPath(pack.id));
 
 export function packPurpose(kind:PackKind):string{
  if(kind==='workflow')return '要完成一项有验收要求的任务，选择工作流；客户端依照做法执行，Hub 按声明的验收要求核验提交结果。';
@@ -39,7 +47,7 @@ export function packPurpose(kind:PackKind):string{
 export function publication(ctx: PageContext, kind: PackKind = publishingKind(ctx)) {
   return {
     title: `发布${uiLabelOf('pack_kind', kind)}`,
-    back: '/console/operations/pack' + (kind === 'workflow' ? '' : '?kind=' + encodeURIComponent(kind)),
+    back: operationsPackPath() + (kind === 'workflow' ? '' : '?kind=' + encodeURIComponent(kind)),
     active: packHome(kind).active,
   };
 }
@@ -50,4 +58,3 @@ export const DONE_RULE_NOTE='记账型：每个条目都有了结果就交付，
 export const ACCEPTED_PRODUCER_NOTE='这项要求认哪一类结论：事实是规则算出的；判断是模型给出的；独立判断是另一个模型给出的，不是起草者自己，是否独立按工作流的规定核对。';
 export const doneRuleHead=():Html=>tooltip(axisUiLabel('done_rule'),DONE_RULE_NOTE);
 export const acceptedProducerHead=():Html=>tooltip(axisUiLabel('accepted_producer'),ACCEPTED_PRODUCER_NOTE);
-
