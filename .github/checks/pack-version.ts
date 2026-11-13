@@ -2,8 +2,8 @@
 // or to a file it lists has to carry a new version in the same commit. The baseline is the newest commit whose pack.json
 // version differs from its parent. This reads only git; it does not ask Hub whether the version was published.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { digestOf } from '../../hub/records/digest.ts';
 
 interface ListedFile {
@@ -43,31 +43,71 @@ function show(root: string, rev: string, path: string): string | null {
   return git(root, ['show', `${rev}:${path}`]);
 }
 
+function shallowBoundaries(root: string): Set<string> | null {
+  const isShallow = git(root, ['rev-parse', '--is-shallow-repository'])?.trim();
+  if (isShallow === undefined) throw new Error('git rev-parse --is-shallow-repository failed');
+  if (isShallow !== 'true') return null;
+  const shallowGitPath = git(root, ['rev-parse', '--git-path', 'shallow'])?.trim();
+  if (!shallowGitPath) throw new Error('git rev-parse --git-path shallow failed');
+  // Resolve relative to `root` so both main checkouts and git worktrees locate the shared shallow file.
+  const shallowFile = resolve(root, shallowGitPath);
+  if (!existsSync(shallowFile)) throw new Error('shallow repository has no shallow boundary file');
+  const hashes = readFileSync(shallowFile, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (hashes.length === 0) throw new Error('shallow repository boundary file is empty');
+  return new Set(hashes);
+}
+
+function commitParents(root: string, rev: string, path: string): string[] {
+  const line = git(root, ['rev-list', '--parents', '-n', '1', rev])?.trim();
+  if (!line) throw new Error(`${path}: failed to read parents of ${rev.slice(0, 12)}`);
+  const parts = line.split(/\s+/);
+  if (parts[0] !== rev) throw new Error(`${path}: unexpected parent output for ${rev.slice(0, 12)}`);
+  return parts.slice(1);
+}
+
+function parentHasVersion(root: string, parent: string, path: string, version: string): boolean {
+  if (git(root, ['cat-file', '-e', `${parent}^{tree}`]) === null) {
+    throw new Error(`${path}: missing tree object for parent commit ${parent.slice(0, 12)}`);
+  }
+  const text = show(root, parent, path);
+  if (text === null) return false;
+  try {
+    return manifestFrom(text, path).version === version;
+  } catch {
+    return false;
+  }
+}
+
 /** Newest commit that introduced the version recorded at `head` for this manifest. */
 export function versionCommit(root: string, path: string, head = 'HEAD'): string {
-  const current = manifestFrom(show(root, head, path) ?? '', path).version;
-  const touched = git(root, ['log', '--format=%H', '-G', '"version":', head, '--', path])?.trim().split('\n').filter(Boolean) ?? [];
-  for (const rev of touched) {
+  const headText = show(root, head, path);
+  if (headText === null) throw new Error(`${path}: no manifest at ${head}`);
+  const current = manifestFrom(headText, path).version;
+  const shallow = shallowBoundaries(root);
+  const log = git(root, ['log', '--no-follow', '--format=%H', head, '--', path]);
+  if (log === null) throw new Error(`${path}: git log failed at ${head}`);
+  const commits = log.trim().split('\n').filter(Boolean);
+  if (commits.length === 0) throw new Error(`${path}: no commit records pack.json`);
+  for (const rev of commits) {
     const text = show(root, rev, path);
     if (text === null) continue;
     let version: string;
     try {
       version = manifestFrom(text, path).version;
     } catch {
-      return rev;
+      continue;
     }
     if (version !== current) continue;
-    const parent = show(root, `${rev}^`, path);
-    if (parent === null) return rev;
-    try {
-      if (manifestFrom(parent, path).version !== version) return rev;
-    } catch {
+    const parents = commitParents(root, rev, path);
+    if (parents.length === 0) {
+      if (shallow?.has(rev)) {
+        throw new Error(`${path}: cannot verify when version ${current} was introduced because commit ${rev.slice(0, 12)} is at a shallow boundary`);
+      }
       return rev;
     }
+    if (!parents.some((parent) => parentHasVersion(root, parent, path, current))) return rev;
   }
-  const added = git(root, ['log', '-1', '--format=%H', head, '--', path])?.trim();
-  if (added === undefined || added === '') throw new Error(`${path}: no commit records pack.json`);
-  return added;
+  throw new Error(`${path}: could not find commit introducing version ${current} in reachable git history`);
 }
 
 function blob(root: string, spec: string): string | null {
@@ -85,7 +125,13 @@ export function versionReuseProblems(root: string): string[] {
     if (head === null) continue;
     const committed = manifestFrom(head, path);
     if (onDisk.version !== committed.version) continue;
-    const baseline = versionCommit(root, path);
+    let baseline: string;
+    try {
+      baseline = versionCommit(root, path);
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : String(error));
+      continue;
+    }
     const baseText = show(root, baseline, path);
     if (baseText === null) {
       problems.push(`${path}: version ${onDisk.version} has no manifest at ${baseline.slice(0, 12)}`);
