@@ -32,7 +32,7 @@ test('resource variable references are required, settings merge by key, and cred
 });
 test('two resources share credential versions: rotation refreshes sessions and one refused version stops both processes', async (t) => {
     const { startAgileStub, agileFixture } = await import('./testing/agile.ts');
-    const { resourceConsumer } = await import('./resources.ts');
+
     const k = await openConnectorKit(pg);
     t.after(() => k.close());
     const stub = await startAgileStub(agileFixture('demo-document', { password: 'DEMO!Password42' }));
@@ -41,7 +41,7 @@ test('two resources share credential versions: rotation refreshes sessions and o
     await k.records.variables.setVariable(k.admin, 'DEMO_ROOT', 'demo-root', 'DEMO_REASON');
     const first = await k.connectors.admin.addResource(k.admin, common), second = await k.connectors.admin.addResource(k.admin, { ...common, name: 'DEMO_SECOND',environment:'production' });
     for (const resource of [first, second]) await k.records.authorizations.grant(k.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
-    const set = async (password: string) => k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'reader', short: true, consumers: [first, second].map(r => resourceConsumer(r, 'username')) }, { name: 'DEMO_PASSWORD', value: password, consumers: [first, second].map(r => resourceConsumer(r, 'password')) }], 'DEMO_ROTATION');
+    const set = async (password: string) => k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'reader', short: true }, { name: 'DEMO_PASSWORD', value: password }], 'DEMO_ROTATION');
     await set('DEMO!Password42');
     const other = k.make();
     const read = (r: typeof first, c = k.connectors) => c.executeRead(r.id, 'tree', { id: '7714' }, { principal: k.user, purpose: 'DEMO' });
@@ -89,18 +89,18 @@ test('legacy migration commits both decisions, rejects a destination change, and
     const changed = await k.connectors.admin.updateResource(k.admin, r.id, { credentials: { username: 'DEMO_USER' } });
     assert.equal(changed.credentials.username, '${secret:DEMO_USER}');
     assert.equal(await k.records.vault.has(old.credentials.username), false);
-    assert.equal((await k.records.variables.list(k.admin)).find(v => v.name === 'DEMO_USER')?.version, 1);
+    assert.equal((await k.records.variables.listSecrets(k.admin)).find(v => v.name === 'DEMO_USER')?.version, 1);
     const again = await k.connectors.admin.updateResource(k.admin, r.id, { credentials: { password: 'DEMO_PASSWORD' } });
     assert.equal(again.credentials.password, '${secret:DEMO_PASSWORD}');
 });
-test('migrations retain only the current and previous named secret entries', async (t) => {
+test('migrations retain only current and previous values inside the named vault', async (t) => {
     const { canonicalBytes } = await import('../records/api.ts');
-    const { resourceConsumer } = await import('./resources.ts');
+
     const k = await openConnectorKit(pg);
     t.after(() => k.close());
     const named = { ...input, credentials: { username: 'DEMO_USER', password: 'DEMO_PASSWORD' } };
     const first = await k.connectors.admin.addResource(k.admin, named);
-    await k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'demo-reader', consumers: [resourceConsumer(first, 'username')] }], 'DEMO_INITIAL');
+    await k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'demo-reader' }], 'DEMO_INITIAL');
     for (let index = 0; index < 2; index++) {
         const r = await k.connectors.admin.addResource(k.admin, { ...named, name: 'DEMO_MIGRATION_' + index,environment:ENVIRONMENT.filter(value=>value!=='test')[index] });
         const legacy = { ...r, credentials: { ...r.credentials, username: `connector.${r.id}.username` } };
@@ -109,10 +109,10 @@ test('migrations retain only the current and previous named secret entries', asy
         await k.records.vault.put(legacy.credentials.username, 'demo-reader');
         await k.connectors.admin.updateResource(k.admin, r.id, { credentials: { username: 'DEMO_USER' } });
     }
-    assert.equal((await k.records.vault.list()).filter(entry => entry.startsWith('secret.demo_user.')).length, 2);
-    const current = (await k.records.variables.list(k.admin)).find(v => v.name === 'DEMO_USER');
+    assert.equal((await k.records.vault.recentSecrets()).filter(material => material.name === 'DEMO_USER').length, 2);
+    const current = (await k.records.variables.listSecrets(k.admin)).find(v => v.name === 'DEMO_USER');
     assert.equal(current?.version, 3);
-    assert.equal(current?.definition?.schema === 'secret@1' ? current.definition.consumers.length : 0, 3);
+    assert.ok((await k.records.variables.readSecrets([{name:'DEMO_USER'}]))[0].value === 'demo-reader', 'the named material stays usable by its references');
 });
 test('a post-commit legacy deletion failure is explicitly recoverable by repeating the same update', async (t) => {
     const { canonicalBytes } = await import('../records/api.ts');
@@ -134,24 +134,24 @@ test('a post-commit legacy deletion failure is explicitly recoverable by repeati
     assert.equal(await k.records.vault.has(entry), true);
     await connector.admin.updateResource(k.admin, r.id, { credentials: { username: 'DEMO_USER' } });
     assert.equal(await k.records.vault.has(entry), false);
-    assert.equal((await k.records.variables.list(k.admin)).find(v => v.name === 'DEMO_USER')?.version, 1);
+    assert.equal((await k.records.variables.listSecrets(k.admin)).find(v => v.name === 'DEMO_USER')?.version, 1);
 });
 test('legacy digest migration compares under the credential rule and preserves an existing plain named value', async (t) => {
     const { createHash } = await import('node:crypto');
     const { canonicalBytes } = await import('../records/api.ts');
-    const { resourceConsumer } = await import('./resources.ts');
+
     const k = await openConnectorKit(pg);
     t.after(() => k.close());
     const value = 'DEMO!Password42';
     const r = await k.connectors.admin.addResource(k.admin, { ...input, credentials: { username: 'DEMO_USER', password: 'DEMO_PASSWORD' } });
-    await k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_PASSWORD', value, consumers: [resourceConsumer(r, 'password')] }], 'DEMO_INITIAL');
+    await k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_PASSWORD', value }], 'DEMO_INITIAL');
     const entry = `connector.${r.id}.password`, legacy = { ...r, credentials: { ...r.credentials, password: entry } };
     const bytes = await k.records.objects.put(canonicalBytes(legacy), 'application/json');
     await k.records.authorizations.configureResource(k.admin, r.id, bytes.sha256, 'DEMO_LEGACY');
     await k.records.vault.put(entry, createHash('sha512').update(value).digest('base64'));
     await k.connectors.admin.updateResource(k.admin, r.id, { credentials: { password: 'DEMO_PASSWORD' } });
-    const version = (await k.records.variables.list(k.admin)).find(v => v.name === 'DEMO_PASSWORD');
-    assert.equal(version?.definition?.schema === 'secret@1' ? version.definition.digest_rule : null, 'plain');
+    const version = (await k.records.variables.listSecrets(k.admin)).find(v => v.name === 'DEMO_PASSWORD');
+    assert.equal(version?.digest_rule, 'plain');
     assert.equal(version?.version, 2);
     assert.equal(await k.records.vault.has(entry), false);
 });
@@ -211,12 +211,12 @@ test('an actual second process sees new variable and credential decisions withou
         assert.ok(!stderr.includes(value));
 });
 
-test('credential descriptions distinguish wire rules, actual named storage rules and withdrawal metadata',async t=>{
- const {resourceConsumer}=await import('./resources.ts');const k=await openConnectorKit(pg);t.after(()=>k.close());
+test('credential descriptions distinguish wire rules and authenticated vault withdrawal metadata',async t=>{
+ const k=await openConnectorKit(pg);t.after(()=>k.close());
  const r=await k.connectors.admin.addResource(k.admin,{...input,credentials:{username:'DEMO_USER',password:'DEMO_PASSWORD'}});
- await k.records.variables.setSecrets(k.admin,[{name:'DEMO_PASSWORD',value:'Demo!Metadata42',consumers:[resourceConsumer(r,'password')]}],'DEMO_METADATA');
+ await k.records.variables.setSecrets(k.admin,[{name:'DEMO_PASSWORD',value:'Demo!Metadata42'}],'DEMO_METADATA');
  const active=(await k.connectors.admin.describe(k.admin,r.id))!.credentials.find(c=>c.name==='password')!;assert.equal(active.digest,'sha512_base64');assert.equal(active.stored_digest,'plain');assert.equal(active.version,1);assert.equal(active.length,15);
- await k.records.variables.unset(k.admin,'secret','DEMO_PASSWORD','DEMO_WITHDRAW');const withdrawn=(await k.connectors.admin.describe(k.admin,r.id))!.credentials.find(c=>c.name==='password')!;assert.equal(withdrawn.set,false);assert.equal(withdrawn.version,1);assert.equal(withdrawn.revoked,true);
+ await k.records.variables.unsetSecret(k.admin,'DEMO_PASSWORD','DEMO_WITHDRAW');const withdrawn=(await k.connectors.admin.describe(k.admin,r.id))!.credentials.find(c=>c.name==='password')!;assert.equal(withdrawn.set,false);assert.equal(withdrawn.version,2);assert.equal(withdrawn.revoked,true);
 });
 
 test('a new definition read never joins an older load after explicit invalidation',async t=>{
