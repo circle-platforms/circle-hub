@@ -86,14 +86,14 @@ test('item 7 selects error handling by exactly one code or generated reason',()=
 });
 
 
-test('item 5 gives fact publication a strict coverage boundary without hiding legacy omissions',()=>{
+test('item 5 requires the same fact coverage for every requirements file',()=>{
   const fact={key:'work',name:'合成要求',description:'合成事实',target:'item',required:true,done_rule:'gating',layers:['static'],accepted_producer:'fact',checks:[],error_handling:[]};
-  const body={schema:'requirements@1',requirements:[fact]};assert.ok(pack.RequirementsFile.safeParse(body).success);
-  assert.equal(pack.PublishableRequirementsFile.safeParse(body).success,false);
-  assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,checks:['shape']}]}).success);
-  assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,accepted_producer:'judgment'}]}).success);
-  assert.equal(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic']}]}).success,false);
-  assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic'],observation:'synthetic.observe@1'}]}).success);
+  const body={schema:'requirements@1',requirements:[fact]};
+  assert.equal(pack.RequirementsFile.safeParse(body).success,false);
+  assert.ok(pack.RequirementsFile.safeParse({...body,requirements:[{...fact,checks:['shape']}]}).success);
+  assert.ok(pack.RequirementsFile.safeParse({...body,requirements:[{...fact,accepted_producer:'judgment'}]}).success);
+  assert.equal(pack.RequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic']}]}).success,false);
+  assert.ok(pack.RequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic'],observation:'synthetic.observe@1'}]}).success);
 });
 test('item 5 per-check work limits stay within the sandbox maxima and exclude effect budgets',()=>{
   const check={tier:'blocking',id:'test',function:{module:'functions/check.ts'},applies:'item',judges:'subject',limits:{outputBytes:64*1024*1024,timeoutMs:120000}};
