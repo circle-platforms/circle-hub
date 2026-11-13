@@ -59,7 +59,7 @@ node --test ".github/checks/*.test.ts"   # docs checks
 
 ## Documentation
 
-- [Quickstart](docs/quickstart.md) · [editing a workflow or skill](docs/edit-pack.md) (in Chinese)
+- [Quickstart](docs/quickstart.md) · [editing a workflow or skill](docs/edit-pack.md) · [resetting and rebuilding](docs/reset.md) (in Chinese)
 - [Architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
 - [Generic model](docs/design/en/generic-model.md) · [the five-element checklist](docs/design/en/object-standard.md) · [design index](docs/design/en/README.md) (Chinese originals in [docs/design](docs/design/README.md))
 - [Compatibility matrix](docs/compatibility.en.md): what circle, circle-hub and circle-packs expect of each other.
