@@ -18,6 +18,7 @@ import type { JobStore } from './manage.ts';
 import { PERIODS, RECENT_LIMIT, blockers, checkCounts, loadOverviewWindow, overviewDayBuckets } from './overview.ts';
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
 import { NEUTRAL, type PageContext } from './context.ts';
+import { loadKnowledgeNode, loadKnowledgeNodes } from './knowledge-reads.ts';
 import { readableLines, rootReadable } from './pages.ts';
 import { RUN_ID, SHA256, USER_ID, param } from './params.ts';
 import { callLogFiltersFromUrl, queryCallLog, resolveCallLogFilters } from './record-reads.ts';
@@ -223,7 +224,7 @@ async function lines(ctx: PageContext): Promise<ApiResult> {
 async function nodes(ctx: PageContext): Promise<ApiResult> {
   const root = param(ctx, 'root') ?? '';
   if (!SHA256.test(root)) return neutral();
-  const page = await ctx.deps.knowledge.getNodes({ root, paths: [param(ctx, 'path') ?? '/'], depth: 1, cursor: param(ctx, 'cursor') ?? null }, ctx.principal);
+  const page = await loadKnowledgeNodes(ctx, root, param(ctx, 'path') ?? '/', param(ctx, 'cursor') ?? null);
   if (page === null) return neutral();
   return ok({ root, nodes: page.nodes, next: page.next, coverage: page.coverage });
 }
@@ -236,9 +237,8 @@ async function node(ctx: PageContext): Promise<ApiResult> {
   const root = param(ctx, 'root') ?? '';
   const path = param(ctx, 'path') ?? '/';
   if (!SHA256.test(root)) return neutral();
-  const page = await ctx.deps.knowledge.getNodes({ root, paths: [path], depth: 0 }, ctx.principal);
-  const found = page?.nodes.find((candidate) => candidate.path === path);
-  if (found === undefined) return neutral();
+  const found = await loadKnowledgeNode(ctx, root, path);
+  if (found === null) return neutral();
   const citations = await nodeCitations(ctx, root, found);
   return ok({
     root,
