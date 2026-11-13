@@ -1,4 +1,4 @@
-import { isAdmin } from '../records/api.ts';
+import { AccessError, systemActor } from '../records/api.ts';
 import type { RemoteLease, Heartbeat } from './session-types.ts';
 import { type ActionBody, type Principal } from '../records/api.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
@@ -164,7 +164,11 @@ export async function askSeat(this: DeviceContext, by: Principal, run: string, r
     try {
       await client.connect();
       // Certification is version-bound and precedes any gateway lease or typed text.
-      const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
+      let admin: Principal | undefined;
+      try { admin = await systemActor(this.options.records.principals); }
+      catch (error) {
+        if (!(error instanceof AccessError && error.code === 'SOURCE_UNAVAILABLE')) throw error;
+      }
       if (admin === undefined || !(await this.certified({ ...binding, acting_by: admin.id }, d, client, 'read_only'))) {
         return result([], { fact: `执行器 ${registered.id} 的目标这个版本（${client.serverVersion ?? '没有报版本'}）没有认证“问位置不按回车、输入行总是清掉”（premises.read_only），所以没有往设备发任何字`, next_action: '管理员核对目标这一版的问位置工具，把版本和证据登记到执行器的 premises.read_only 后再问' });
       }

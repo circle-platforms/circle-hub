@@ -40,6 +40,9 @@ test('without an enabled administrator, or when the release does not hold, the H
   c.kit.principals.list = async (...args: Parameters<typeof list>) => (await list(...args)).filter((p) => !isAdmin(p));
   const lonely = await c.service.dispatchAccepted(c.run);
   assert.equal(lonely.started, false); assert.match(lonely.reason ?? '', /没有在职管理员/);
+  assert.deepEqual(await acceptedDispatch(c.kit, c.service, c.run, true), [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动上机验证；等管理员开通账号' }]);
+  assert.deepEqual(await acceptedDispatch(c.kit, c.service, c.run, false), []);
+  assert.equal(c.calls.includes('send_blob'), false);
   c.kit.principals.list = list;
   c.detail.latest!.result.errors.push({ code: 'SOURCE_UNAVAILABLE', message: 'synthetic' });
   const held = await c.service.dispatchAccepted(c.run);

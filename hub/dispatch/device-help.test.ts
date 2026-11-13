@@ -133,6 +133,18 @@ test('without a certified premise for this version of the target no word is type
   }
 });
 
+test('without an enabled system actor device help keeps its existing refusal and takes no gateway lease', async t => {
+  const { c, asked, target } = await ready();
+  t.after(() => c.close());
+  c.kit.principals.list = async () => [];
+  const [result] = await c.service.askDevices(c.owner, 'run_synthetic', [target('widget')]);
+  assert.deepEqual(result!.positions, []);
+  assert.match(result!.missing!.fact, /premises\.read_only/);
+  assert.match(result!.missing!.fact, /没有往设备发任何字/);
+  assert.equal(asked.length, 0);
+  assert.equal(c.calls.includes('open_slot'), false);
+});
+
 test('an answer that does not confirm nothing was entered and the line cleared is not shown, and the questioning stops there', async (t) => {
   const { c, asked, logs, target } = await ready({ reply: (line) => ({ ...scripted(line), entered: line === 'widget set demo 5' }) });
   t.after(() => c.close());
