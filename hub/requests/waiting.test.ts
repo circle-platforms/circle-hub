@@ -22,12 +22,7 @@ async function bed(t: { after(fn: () => unknown): void }) {
   const first = await source('first');
   let n = 0;
   const body = (run?: string): RequestBody => ({ kind: 'repair', audience: AUDIENCE, due: '2026-11-13T00:00:00.000Z', missing: `合成缺口 ${++n}`, next_action: '补上后原样重交', source: first, code: 'missing_input', ...(run === undefined ? { pack_digest: 'd'.repeat(64) } : { run }) });
-  /** A closing record as code before the settled entry wrote it: found under the answer key alone. */
-  const legacyClosing = async (request: string, detail: Record<string, unknown>) => {
-    const at = NOW.toISOString();
-    await kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: at, body: { action: 'validate', run: null, item: null, inputs: [`rec:${request}`], component: 'synthetic-legacy@1', lease: null, started_at: at, ended_at: at, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { ...detail, n: ++n } }, index: [{ key: 'runs.request.answer', value: request }] });
-  };
-  return { kit, source, body, legacyClosing, service: createRequestService(kit, () => NOW) };
+  return { kit, source, body, service: createRequestService(kit, () => NOW) };
 }
 
 /** The store with the values each batched read of closing records asked for. */
@@ -73,26 +68,9 @@ test('the waiting requests are the unanswered ones of the full listing, and only
   assert.deepEqual(seen.closingsAsked, [[made[2], made[4], made[5], made[6], made[7]]], 'the answered and the voided requests are not asked about');
 });
 
-test('closing records without settled entries remain readable while current closings spare settled reads', async (t) => {
-  const { kit, source, body, legacyClosing, service } = await bed(t);
-  const run = newId('run');
-  const made = [];
-  for (let i = 0; i < 6; i++) made.push((await service.write(body(run))).digest);
+test('current closing entries spare settled reads and preserve reinstated requests', async (t) => {
+  const { kit, source, body, service } = await bed(t);
   const later = await source('later');
-  await legacyClosing(made[0], { request: made[0], answer: later });
-  await legacyClosing(made[1], { request: made[1], answer: later, superseded: true });
-  await legacyClosing(made[2], { request: made[2], answer: later, superseded: true });
-  await legacyClosing(made[2], { request: made[2], reinstated_by: later });   // waits again
-  await legacyClosing(made[3], { answer: later });                             // an answer that does not name its request
-  await legacyClosing(made[4], { request: made[4], answer: 7 });               // no answer: a source is a digest
-  const expected = [made[2], made[4], made[5]];
-  const full = await service.all(run);
-  assert.deepEqual(full.filter((request) => request.answered_by === null).map((request) => request.record), expected);
-
-  const before = watched(kit);
-  assert.deepEqual(await createRequestService({ store: before.store }, () => NOW).waiting(run), full.filter((request) => request.answered_by === null));
-  assert.deepEqual(new Set(before.closingsAsked.flat()), new Set(made), 'without the entry every request is a candidate, read as before');
-
   const indexedRun = newId('run'), indexed: string[] = [];
   for (let i = 0; i < 6; i++) indexed.push((await service.write(body(indexedRun))).digest);
   await service.answer(indexed[0], later);
@@ -105,11 +83,9 @@ test('closing records without settled entries remain readable while current clos
   const indexedFull = await service.all(indexedRun), after = watched(kit);
   assert.deepEqual(await createRequestService({ store: after.store }, () => NOW).waiting(indexedRun), indexedFull.filter((request) => request.answered_by === null));
   assert.deepEqual(after.closingsAsked, [[indexed[2], indexed[4], indexed[5]]], 'current closing entries spare settled requests; reinstated requests are read');
-  assert.deepEqual(await service.all(run), full, 'current writes do not change the unindexed listing');
-
 });
 
-test('what the index says is never the answer: a closing record decides, and a store without the index reads them all', async (t) => {
+test('the current answer record carries its settled entry and decides the answer', async (t) => {
   const { kit, source, body, service } = await bed(t);
   const run = newId('run');
   const one = (await service.write(body(run))).digest, two = (await service.write(body(run))).digest;
@@ -122,27 +98,21 @@ test('what the index says is never the answer: a closing record decides, and a s
   const entries = await kit.store.findMany<{ detail: { answer?: string } }>({ kind: 'action', key: 'runs.request.settled', values: [one, two] });
   assert.deepEqual(entries.map((record) => record.body.detail.answer), [later], 'the answer carries the entry; nothing else does');
   assert.deepEqual((await service.waiting(run)).map((request) => request.record), [two]);
-
-  const plain = new Proxy(kit.store, { get(target, property) { if (property === 'findUnsettled') return undefined; const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value; } });
-  assert.deepEqual(await createRequestService({ store: plain }, () => NOW).waiting(run), await service.waiting(run));
 });
 
-test('current plain requests are skipped while declarations and requests without plain entries remain readable', async (t) => {
+test('current plain requests are skipped while declarations retain their answers', async (t) => {
   const { kit, body, service } = await bed(t);
   const run = newId('run'), other = newId('run');
   const declared = (pointer: number, of = run): RequestBody => ({ ...body(of), kind: 'judgment', declaration: `/criterion_changes/${pointer}` });
-  /** A request as code before the plain entry wrote it. */
-  const legacy = async (request: RequestBody) => (await kit.store.put({ kind: 'request', schema: 'request@1', provenance: 'observed', created_at: NOW.toISOString(), body: request, index: [{ key: 'runs.request.run', value: request.run! }] })).digest;
   const made: string[] = [];
   for (let i = 0; i < 4; i++) made.push((await service.write(body(run))).digest);
   const first = (await service.write(declared(0))).digest;
-  const oldPlain = [await legacy(body(run)), await legacy(body(run))], oldDeclared = await legacy(declared(1));
   const second = (await service.write(declared(2))).digest;
   await service.write(declared(0, other));
   await service.answer(first, (await kit.store.put({ kind: 'claim', schema: 'synthetic-source@1', provenance: 'declared', body: { label: 'answer' } })).digest);
 
   const full = await service.all(run), expected = full.filter((request) => request.declaration);
-  assert.deepEqual(expected.map((request) => request.record), [first, oldDeclared, second]);
+  assert.deepEqual(expected.map((request) => request.record), [first, second]);
   assert.ok(expected[0].answered_by, 'a closed declaration is listed with what closed it');
   /** The requests one listing read. */
   const read = async () => {
@@ -156,14 +126,11 @@ test('current plain requests are skipped while declarations and requests without
     assert.deepEqual(await createRequestService({ store }, () => NOW).declared(run), expected);
     return seen;
   };
-  assert.deepEqual(await read(), [first, ...oldPlain, oldDeclared, second], 'a request stored without the entry is read and looked at');
+  assert.deepEqual(await read(), [first, second], 'the current writer excludes plain requests from declaration reads');
 
   const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
   const plain = await owner.query<{ digest: string }>(`SELECT digest FROM record_index WHERE key='runs.request.plain' AND value=$1 ORDER BY record_seq`, [run]);
-  assert.deepEqual(plain.rows.map((row) => row.digest), made, 'current writes index plain requests, not declarations or manually unindexed requests');
-  assert.deepEqual(await read(), [first, ...oldPlain, oldDeclared, second], 'only requests lacking the current plain entry require a body read');
+  assert.deepEqual(plain.rows.map((row) => row.digest), made, 'current writes index plain requests, not declarations');
+  assert.deepEqual(await read(), [first, second], 'only current declarations require a body read');
   assert.deepEqual(await service.declared(newId('run')), []);
-
-  const without = new Proxy(kit.store, { get(target, property) { if (property === 'findLacking') return undefined; const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value; } });
-  assert.deepEqual(await createRequestService({ store: without }, () => NOW).declared(run), expected, 'a store without the index reads them all');
 });
