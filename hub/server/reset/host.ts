@@ -1,27 +1,62 @@
+import { archiveResetDatabase, createResetDatabase } from '../../platform/api.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_LIMITS } from '../../config/index.ts';
 import { migrateRecords, FileVault } from '../../records/api.ts';
 import { VariableName } from '../../../contracts/src/variables.ts';
-import { CODE_ROOT, agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../context.ts';
-import { exists, sha256File, withLock, writeFileAtomic } from '../files.ts';
-import { guardSignals } from '../deploy.ts';
-import { portOccupied, waitForHealth } from '../health.ts';
-import { quoteIdentifier, withSession, type SqlSession } from '../sql.ts';
+import { CODE_ROOT, agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
+import { exists, sha256File, withLock, writeFileAtomic } from '../../platform/api.ts';
+import { guardSignals } from '../../platform/api.ts';
+import { portOccupied, waitForHealth } from '../../platform/api.ts';
+import { quoteIdentifier, withSession, type SqlSession } from '../../platform/api.ts';
 import { recoverPendingReset } from './recovery.ts';
-import { nativeResetBackup, type ResetBackup } from './backup.ts';
+import { nativeResetBackup, type ResetBackup } from '../../platform/api.ts';
 import { protectedFiles, assertProtectedFiles, type ProtectedFile } from './protected-files.ts';
 import { inspectCurrentState, clearOfflineSelection, assertCurrentForeignKeys, type CurrentResetState } from './current.ts';
+import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, type CurrentRecord } from './selection.ts';
 import { inspectReset, resetRequestProblems } from './inspection.ts';
 import { runReset, ResetFailure, type ResetHost } from './operation.ts';
-import { parseResetRequest, RESET_SCOPE, type ResetInspection, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport } from './types.ts';
+import { parseResetRequest, RESET_SCOPE, type ResetInspection, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetScope } from './types.ts';
 
 export class ResetBlocked extends Error {
   readonly problems: readonly ResetProblem[];
   constructor(problems: readonly ResetProblem[]) { super('重建条件尚未满足，未开始破坏性操作'); this.name = 'ResetBlocked'; this.problems = problems; }
 }
 export interface ResetExecutionOptions extends ResetPorts { hostTransform?: (host: ResetHost) => ResetHost; }
+
+/** Logical records per confirmed scope; shared records may occur in multiple scope rows. No table-state rows are added. */
+export interface ResetRecordTally {
+  countsUnit: 'records';
+  counts: readonly ResetCount[];
+  unclassifiedRetainedRecords: number;
+}
+export type CountedResetPlan = ResetPlan & { countsUnit: 'records'; unclassifiedRetainedRecords: number | null };
+export type CountedResetReport = ResetReport & ResetRecordTally;
+export function resetRecordTally(records: readonly CurrentRecord[], cleared: ReadonlySet<string> = new Set()): ResetRecordTally {
+  const aliases = new Map<string, string>();
+  const objectScopes = new Map<string, ResetScope[]>();
+  for (const record of records) {
+    for (const index of record.indices ?? []) if (['knowledge.node','knowledge.entry','knowledge.root','pack.digest'].includes(index.key)) aliases.set(index.value, record.digest);
+    const scope = classifyCurrentRecord(record);
+    if (scope) for (const edge of currentRecordReferences(record)) if (edge.kind === 'object') {
+      objectScopes.set(edge.digest, [...new Set([...objectScopes.get(edge.digest) ?? [], scope])]);
+    }
+  }
+  const owners = resolveCurrentRecordScopes(records, { recordAliases: aliases, objectScopes });
+  const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
+  let unclassifiedRetainedRecords = 0;
+  for (const record of records) {
+    const scopes = owners.get(record.digest);
+    if (!scopes?.length) { if (!cleared.has(record.digest)) unclassifiedRetainedRecords++; continue; }
+    for (const scope of scopes) {
+      const count = counts.find(count => count.scope === scope)!;
+      if (cleared.has(record.digest)) count.cleared++; else count.retained++;
+    }
+  }
+  return { countsUnit: 'records', counts, unclassifiedRetainedRecords };
+}
+
 async function objectReader(context: PlatformContext, session: SqlSession, hash: string): Promise<Uint8Array | null> {
   if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('对象引用身份无效');
   try {
@@ -45,14 +80,14 @@ async function currentState(context: PlatformContext, request: ResetRequest): Pr
     finally { await session.query('ROLLBACK'); }
   });
 }
-export async function previewReset(context: PlatformContext, input: ResetRequest, ports: ResetPorts = {}): Promise<ResetPlan> {
+export async function previewReset(context: PlatformContext, input: ResetRequest, ports: ResetPorts = {}): Promise<CountedResetPlan> {
   const request = parseResetRequest(input), inspection = await inspectReset(context);
   const blocked = resetRequestProblems(inspection, request, ports);
   const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: null as number | null }));
   // All means no business record survives. Incompatible or unknown shapes must not require a business reader.
-  if (request.scopes === 'all' || blocked.length) return { request, inspection, counts, blocked };
+  if (request.scopes === 'all' || blocked.length) return { request, inspection, counts, blocked, countsUnit: 'records', unclassifiedRetainedRecords: null };
   const state = await currentState(context, request);
-  return { request, inspection, counts: state.counts, blocked: state.blocked.map(problem => ({ ...problem, name: problem.name && /^[0-9a-f]{64}$/.test(problem.name) ? undefined : problem.name })) };
+  return { request, inspection, ...resetRecordTally(state.records, new Set(state.selection.cleared)), blocked: state.blocked.map(problem => ({ ...problem, name: problem.name && /^[0-9a-f]{64}$/.test(problem.name) ? undefined : problem.name })) };
 }
 
 async function vaultNotices(context: PlatformContext): Promise<ResetProblem[]> {
@@ -69,7 +104,7 @@ async function vaultNotices(context: PlatformContext): Promise<ResetProblem[]> {
   return notices;
 }
 
-export async function resetData(context: PlatformContext, input: ResetRequest, ports: ResetExecutionOptions = {}): Promise<ResetReport> {
+export async function resetData(context: PlatformContext, input: ResetRequest, ports: ResetExecutionOptions = {}): Promise<CountedResetReport> {
   const request = parseResetRequest(input);
   return withLock(platformLockPath(context), async () => {
     const settings = await settingsOf(context), postgres = postgresFor(context), agent = agentFor(context, settings);
@@ -79,6 +114,7 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
     const journal = join(context.layout.run, 'reset-operation.json');
     const resultPath = join(context.layout.logs, 'reset-' + id + '.json');
     const snapshot = request.keepConfig ? join(context.layout.root, 'private-config-snapshots', id + '.json') : undefined;
+    let observedTally: ResetRecordTally | undefined;
     let inspection: ResetInspection | undefined, state: CurrentResetState | undefined, plan: ResetPlan | undefined;
     let backup: ResetBackup | undefined, wasRunning = false, wasLoaded = false, archived = false, created = false;
     let originalOid = '';
@@ -91,8 +127,13 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       await session.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()', [name]);
     };
     const save = async () => writeFileAtomic(journal, JSON.stringify({ database, archive, failed, wasLoaded, wasRunning, archived, created, backup: backup?.directory, request, originalOid, originals }), 0o600);
-    const buildReport = (): ResetReport => ({ archive, backup: backup!.directory, ...(snapshot ? { configurationSnapshot: snapshot } : {}), counts: state?.counts ?? plan!.counts, notices,
-      archivedTables: backup!.tables.map(({ schema, table, rows }) => ({ schema, table, rows })) });
+    const buildReport = (): CountedResetReport => {
+      if (!observedTally) throw new Error('恢复后的记录数量尚未观测，不能生成完成报告');
+      const before = state ? resetRecordTally(state.records, new Set(state.selection.cleared)) : undefined;
+      const counts = observedTally.counts.map(count => ({ ...count, cleared: before?.counts.find(row => row.scope === count.scope)?.cleared ?? null }));
+      return { archive, backup: backup!.directory, ...(snapshot ? { configurationSnapshot: snapshot } : {}), ...observedTally, counts, notices,
+        archivedTables: backup!.tables.map(({ schema, table, rows }) => ({ schema, table, rows })) };
+    };
     const host: ResetHost = {
       async inspect() {
         checkpoint();
@@ -120,14 +161,12 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       async exportConfiguration() { checkpoint(); if (snapshot) { await ports.exportConfiguration!(snapshot); await assertProtectedFiles(context.layout, originals); } },
       async archive() {
         checkpoint();
-        await maintenance(async session => { await disconnect(session, database); await session.query(`ALTER DATABASE ${quoteIdentifier(database)} RENAME TO ${quoteIdentifier(archive)}`); archived = true; await save(); });
+        await archiveResetDatabase(postgres, database, archive); archived = true; await save();
       },
       async create() {
         checkpoint();
-        if (request.scopes === 'all') {
-          await postgres.ensureDatabase();
-          await migrateRecords({ database: { host: postgres.target.socketDir, port: postgres.target.port, user: postgres.target.user, database } }, { runtimeRole: postgres.application.user });
-        } else await maintenance(session => session.query(`CREATE DATABASE ${quoteIdentifier(database)} OWNER ${quoteIdentifier(postgres.target.user)} TEMPLATE ${quoteIdentifier(archive)}`).then(() => {}));
+        await createResetDatabase(postgres, database, request.scopes === 'all' ? {} : { template: archive });
+        if (request.scopes === 'all') await migrateRecords({ database: { host: postgres.target.socketDir, port: postgres.target.port, user: postgres.target.user, database } }, { runtimeRole: postgres.application.user });
         created = true; await save();
         await maintenance(session => session.query(`REVOKE CONNECT ON DATABASE ${quoteIdentifier(database)} FROM ${quoteIdentifier(postgres.application.user)}`).then(() => {}));
       },
@@ -155,6 +194,8 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
           const [retained] = await session.query('SELECT count(*)::text AS n FROM records WHERE digest=ANY($1::text[])', [state!.selection.retained]);
           if (Number(retained!.n) !== state!.selection.retained.length) throw new Error('未选记录的保留计数不符');
         });
+        // Recount the actual restored current database. Scope totals contain records only, not authentication/table row totals.
+        observedTally = resetRecordTally((await currentState(context, request)).records);
         await assertProtectedFiles(context.layout, originals);
         await maintenance(session => session.query(`GRANT CONNECT ON DATABASE ${quoteIdentifier(database)} TO ${quoteIdentifier(postgres.application.user)}`).then(() => {}));
       },

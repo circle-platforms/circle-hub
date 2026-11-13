@@ -102,6 +102,7 @@ export interface DispatchView {
 }
 
 export interface AppOptions {
+  reset?: { bridge(): Promise<import('./rebuild-http.ts').RebuildResetBridge>; render?: import('./rebuild-http.ts').RebuildPageRenderer };
   /** Runs the console's management actions as `circle-hub` commands (serve gives one); without it they are unavailable. */
   bridge?: import('./command-bridge.ts').CommandBridge;
   /** The server certificate and key of the built-in HTTPS (PEM); required when the configuration has `https`. */
@@ -217,3 +218,15 @@ export { renderRebuildPage } from './console/reset.ts';
 export async function createResetConfigurationPorts<State>(options: import('./cli-apply.ts').ResetConfigurationOptions<State>): Promise<import('./cli-apply.ts').ResetConfigurationPorts> {
   return (await import('./cli-apply.ts')).createResetConfigurationPorts(options);
 }
+
+// Reset entry points are lazy: serving the Hub never imports destructive data operations.
+export type { ResetRequest, ResetScope, ResetInspection, ResetPlan, ResetProblem, ResetPorts, ResetReport } from './reset/types.ts';
+export type { ResetWorkerStatus } from './reset/worker.ts';
+export async function inspectReset(...args: Parameters<typeof import('./reset/inspection.ts').inspectReset>) { return (await import('./reset/inspection.ts')).inspectReset(...args); }
+export async function previewReset(...args: Parameters<typeof import('./reset/host.ts').previewReset>) { return (await import('./reset/host.ts')).previewReset(...args); }
+export async function resetData(...args: Parameters<typeof import('./reset/host.ts').resetData>) { return (await import('./reset/host.ts')).resetData(...args); }
+export async function launchReset(...args: Parameters<typeof import('./reset/worker.ts').launchReset>) { return (await import('./reset/worker.ts')).launchReset(...args); }
+export async function acknowledgeReset(...args: Parameters<typeof import('./reset/worker.ts').acknowledgeReset>) { return (await import('./reset/worker.ts')).acknowledgeReset(...args); }
+export async function readResetStatus(...args: Parameters<typeof import('./reset/worker.ts').readResetStatus>) { return (await import('./reset/worker.ts')).readResetStatus(...args); }
+
+export { parseResetRequest } from './reset/types.ts';

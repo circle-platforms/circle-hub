@@ -1,7 +1,7 @@
 // Byte identities only: reset never reads a credential value, rewrites a key, or resets an external login state.
 import { join } from 'node:path';
-import { listFiles, sha256File } from '../files.ts';
-import type { Layout } from '../layout.ts';
+import { listFiles, sha256File } from '../../platform/api.ts';
+import type { Layout } from '../../platform/api.ts';
 
 export interface ProtectedFile { area: 'keys' | 'vault'; path: string; size: number; sha256: string; }
 export async function protectedFiles(layout: Layout): Promise<ProtectedFile[]> {

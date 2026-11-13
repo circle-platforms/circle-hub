@@ -4,11 +4,11 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { CODE_ROOT, identityOf, settingsOf, type PlatformContext } from '../context.ts';
-import { PlatformError } from '../errors.ts';
-import { withLock, writeFileAtomic } from '../files.ts';
-import { renderPlist, serviceEnvironment } from '../launchd.ts';
-import { toolEnvironment } from '../process.ts';
+import { CODE_ROOT, identityOf, settingsOf, type PlatformContext } from '../../platform/api.ts';
+import { PlatformError } from '../../platform/api.ts';
+import { withLock, writeFileAtomic } from '../../platform/api.ts';
+import { renderPlist, serviceEnvironment } from '../../platform/api.ts';
+import { toolEnvironment } from '../../platform/api.ts';
 import { parseResetRequest, type ResetRequest, type ResetReport } from './types.ts';
 
 export interface ResetWorkerStatus {

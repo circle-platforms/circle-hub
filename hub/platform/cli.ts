@@ -1,4 +1,3 @@
-import type { ResetPorts } from './reset/types.ts';
 // `circle-hub` platform commands. The server CLI delegates these to runPlatformCommand; bin/circle-hub falls back to
 // main() here when the server package is absent. All output is Chinese; the vault master key is never printed.
 // The vault is 密钥库 (the design standard's term); its key is named by VAULT_KEY_ITEM.label.
@@ -56,7 +55,7 @@ class UsageError extends Error {
   }
 }
 
-type Handler = (args: readonly string[], context: PlatformContext, io: PlatformIo, resetPorts?: ResetPorts) => Promise<number>;
+type Handler = (args: readonly string[], context: PlatformContext, io: PlatformIo) => Promise<number>;
 
 /** Exit code of a status command whose subject is not running. */
 const NOT_RUNNING = 3;
@@ -81,7 +80,6 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
     '  rehearse [--keep]                              在临时数据根里演练备份、销毁与恢复',
     '  tls init [--renew-authority]|issue|status      内置 HTTPS 的本地证书颁发机构和服务器证书（数据根的 tls 目录）',
     '  status                                         汇总状态',
-    ...PLATFORM_COMMAND_METADATA.filter(command => command.name === 'reset').map(command => `  ${command.name} --help                                   ${command.summary}`),
     '',
     `数据根默认是 ~/Library/Application Support/circle-hub，可用 ${DATA_ROOT_VARIABLE} 改。端口、数据库名与密钥文件名只来自部署设置；密钥库主密钥和操作令牌在数据根的 keys 目录里（0700，文件 0600），不进备份。`,
   ].join('\n');
@@ -608,10 +606,6 @@ const COMMANDS = [
   { name: 'rehearse', summary: '演练备份、销毁和恢复', handler: rehearseCommand },
   { name: 'status', summary: '汇总运行状态', handler: status },
   { name: 'tls', summary: '管理内置 HTTPS 证书', handler: tls },
-  { name: 'reset', summary: '按明确范围归档并重建数据，失败恢复原库和服务', handler: async (args: readonly string[], context: PlatformContext, io: PlatformIo, ports?: ResetPorts) => {
-    const { resetCommand } = await import('./reset/cli.ts');
-    return resetCommand(args, context, io, ports);
-  } },
 ].map((command): PlatformCommandDefinition => ({ ...command, bridge: false, step: `run-${command.name}` }));
 
 export type PlatformCommandMetadata = Omit<PlatformCommandDefinition, 'handler'>;
@@ -629,15 +623,15 @@ export function isPlatformCommand(name: string | undefined): boolean {
 }
 
 /** Binds command execution without starting services, creating a context or reading deployment settings. */
-export function platformCommands(io: PlatformIo, overrides: Partial<PlatformContext> = {}, resetPorts?: ResetPorts): readonly PlatformCommand[] {
+export function platformCommands(io: PlatformIo, overrides: Partial<PlatformContext> = {}): readonly PlatformCommand[] {
   return PLATFORM_COMMAND_METADATA.map((metadata) => ({
     ...metadata,
-    run: (args) => runPlatformCommand([metadata.name, ...args], io, overrides, resetPorts),
+    run: (args) => runPlatformCommand([metadata.name, ...args], io, overrides),
   }));
 }
 
 /** Runs one platform command; returns the exit code (0 ok, 1 failure, 2 usage, 3 not running for status commands). */
-export async function runPlatformCommand(argv: readonly string[], io: PlatformIo, overrides: Partial<PlatformContext> = {}, resetPorts?: ResetPorts): Promise<number> {
+export async function runPlatformCommand(argv: readonly string[], io: PlatformIo, overrides: Partial<PlatformContext> = {}): Promise<number> {
   const [command, ...rest] = argv;
   try {
     assertHubEnvironment(io.env);
@@ -650,7 +644,7 @@ export async function runPlatformCommand(argv: readonly string[], io: PlatformIo
     // A misspelled data root or port variable would silently act on the defaults.
     assertKnownHubVariables(io.env, io.allowVariables);
     const context = createContext(io.env, { log: (line) => io.stdout(line), ...overrides });
-    return await handler(rest, context, io, resetPorts);
+    return await handler(rest, context, io);
   } catch (error) {
     if (error instanceof UsageError) {
       io.stderr(error.message);
