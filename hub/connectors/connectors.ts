@@ -277,7 +277,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     }
     const runtime: ResourceRuntime = {
       resource,
-      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),kind:'secret' as const,name:m.name,version:m.version}))],
+      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),kind:'secret' as const,name:m.name,version:m.version,sealed_sha256:m.sealed_sha256}))],
       dependencies,
       gate,
       decision: state.decision,
@@ -472,8 +472,8 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       registry.invalidate();const state=await registry.get(id);
       if(state) {
         const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);
-        const metadata=await Promise.all(names.map(name=>records.vault.secretMetadata(name)));
-        const versions=metadata.filter(m=>m!==null).filter(m=>!m.revoked).map(secretVersionKey);
+        const identities=await Promise.all(names.map(name=>records.vault.secretIdentity(name)));
+        const versions=identities.filter(identity=>identity!==null).map(secretVersionKey);
         if(versions.length)await new CredentialStop(records.store,records.vault,versions,names,id).reset();
       }
       await registry.resetLogin(by,id,note);

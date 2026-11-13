@@ -1,3 +1,7 @@
+export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
+export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
+import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
+export { diagnoseRecordsSchema, currentRecordMigrations, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
 export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
 export { isAdmin, canSeeRun } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
@@ -652,13 +656,30 @@ export interface VaultVerification {
 }
 
 export type VaultSecretMetadata = import('../../contracts/src/variables.ts').SecretRecord;
-export interface VaultSecretMaterial {
-  name: string;
-  version: number;
+export interface VaultSecretMaterial extends SecretCipherIdentity {
   metadata: VaultSecretMetadata;
   value: string;
 }
+export interface VaultArchiveEntry {
+  readonly entry: string;
+  readonly archived_entry: string;
+  readonly sealed_sha256: string;
+}
+export interface VaultArchiveReceipt {
+  readonly name: string;
+  readonly by: string;
+  readonly at: string;
+  readonly directory: string;
+  readonly previous_version: number | null;
+  readonly new_version: number;
+  readonly entries: readonly VaultArchiveEntry[];
+}
+export interface VaultSecretWriteResult extends VaultSecretMetadata {
+  readonly archive?: VaultArchiveReceipt;
+}
 export interface VaultSecretWrite {
+  /** Used only for in-vault disclosure checks, never persisted in value metadata or archive receipts. */
+  reason?: string;
   name: string;
   value: string;
   digest_rule: import('../../contracts/generated/vocabulary.ts').DigestRule;
@@ -670,12 +691,16 @@ export interface VaultSecretWrite {
 export interface Vault {
   /** Explicit key creation through the key provider. The vault never creates a key on its own. */
   initKey(): Promise<void>;
-  putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata>;
+  putSecret(input: VaultSecretWrite): Promise<VaultSecretWriteResult>;
   secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
+  /** Authenticated identity only; does not open value ciphertext. Null when absent or revoked. */
+  secretIdentity(name: string): Promise<SecretCipherIdentity | null>;
+  /** Metadata-only identities newest first; absent ciphertext identities are not fabricated. */
+  secretHistoryIdentities(name: string): Promise<SecretCipherIdentity[]>;
   secretHistory(name: string): Promise<VaultSecretMetadata[]>;
   secretNames(): Promise<string[]>;
   readSecret(name: string): Promise<VaultSecretMaterial | null>;
-  recentSecrets(): Promise<VaultSecretMaterial[]>;
+  recentSecrets(names?: readonly string[]): Promise<VaultSecretMaterial[]>;
   unsetSecret(name: string, by: string, at: string): Promise<VaultSecretMetadata>;
   put(name: string, value: string | Uint8Array): Promise<void>;
   /** Null when there is no entry of that name. Throws VaultError when the key is wrong or the entry was altered or renamed. */

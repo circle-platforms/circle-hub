@@ -1,3 +1,4 @@
+import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
@@ -178,7 +179,9 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(options.resourceCacheMs === undefined ? {} : { resourceCacheMs: options.resourceCacheMs }),
   });
-  if(options.requireVaultKey !== false)await connectors.primeSecrets();
+  const startupSecretIssues = options.requireVaultKey !== false
+    ? await primeStartupSecrets(connectors, notices, line => notes.log(line))
+    : [];
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
@@ -247,6 +250,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
     records,

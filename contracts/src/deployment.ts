@@ -3,7 +3,20 @@ import { z } from 'zod';
 import { PermissionRoleSchema } from '../generated/vocabulary.ts';
 import { PackId, UserId, TeamId, IsoTime, Sha256 } from './common.ts';
 import { ExecutorSource, ResourceId, ResourceRecord, ExactPackRef } from './resources.ts';
-import { SecretReference, VariableName } from './variables.ts';
+import { SecretReference, VariableName, VariableRecord } from './variables.ts';
+
+import { LeaseRegistrationDetail } from './records.ts';
+
+export const DeploymentVariable = VariableRecord;
+export const DeploymentDocument = z.strictObject({
+  name: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+  sha256: Sha256,
+  size: z.number().int().nonnegative().max(2 * 1024 * 1024),
+  bytesBase64: z.string().max(4 * Math.ceil(2 * 1024 * 1024 / 3)).regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value => value.length % 4 === 0, 'base64 length is divisible by four'),
+  mediaType: z.string().min(1).max(200),
+  fileName: z.string().min(1).max(300),
+});
+export const DeploymentLeaseRegistration = LeaseRegistrationDetail.pick({ prefix: true, owner: true }).extend({ prefix: LeaseRegistrationDetail.shape.prefix.regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/) });
 
 const name = z.string().min(1).max(200);
 export const DeploymentResource = z.strictObject({
@@ -36,11 +49,17 @@ export const DeploymentDefinition = z.strictObject({
     z.strictObject({ resource: name, all: z.literal(true) }),
   ])).default([]),
   knowledgeSources: z.array(PackId).default([]),
+  variables: z.array(DeploymentVariable).default([]),
+  documents: z.array(DeploymentDocument).default([]),
+  leaseRegistrations: z.array(DeploymentLeaseRegistration).default([]),
+  missingConfiguration: z.array(z.string().min(1)).default([]),
 }).superRefine((value, ctx) => {
-  for (const key of ['accounts', 'teams'] as const) {
+  for (const key of ['accounts', 'teams', 'variables', 'documents'] as const) {
     const names = value[key].map(row => row.name);
     if (new Set(names).size !== names.length) ctx.addIssue({ code: 'custom', path: [key], message: '名字重复' });
   }
+  const prefixes = value.leaseRegistrations.map(row => row.prefix);
+  if (new Set(prefixes).size !== prefixes.length) ctx.addIssue({ code: 'custom', path: ['leaseRegistrations'], message: '预订登记前缀重复' });
   const resourceNames = value.resources.map(row => row.definition.name);
   if (new Set(resourceNames).size !== resourceNames.length) ctx.addIssue({ code: 'custom', path: ['resources'], message: '资源名字重复' });
   const targets = value.executors.map(row => row.target);

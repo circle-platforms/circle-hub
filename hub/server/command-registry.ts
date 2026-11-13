@@ -1,3 +1,4 @@
+import { APPLY_USAGE, EXPORT_USAGE } from './cli-apply.ts';
 import { teamCommand, TEAM_USAGE } from './cli-team.ts';
 import type { CliContext } from './api.ts';
 import type { CliOptions } from './cli.ts';
@@ -32,6 +33,8 @@ const builtins: { name: string; help: string[]; handler: BuiltinHandler; bridge:
  ];
 export const BUILTIN_COMMANDS = builtins.map(command => ({ ...command, summary: command.help[0].trim(), step: `run-${command.name}` as const }));
 const administrative: { name: string; summary: string; handler: AdminHandler; bridge?: boolean; reserved?: string }[] = [
+{ name: 'apply', summary: APPLY_USAGE.slice('apply '.length), handler: (session, args) => import('./cli-apply.ts').then(module => module.applyCommand(session, args)) },
+  { name: 'export', summary: EXPORT_USAGE, handler: (session, args) => import('./cli-apply.ts').then(module => module.exportCommand(session, args)) },
 {name:'share',summary:SHARE_USAGE.slice('share '.length),handler: (session,args) => import('./cli-admin.ts').then(module => module.sharingCommand(session,args))},
   {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>import('./cli-admin.ts').then(module=>module.sharingCommand(session,args,true))},
   {name:'records',summary:'verify [--kind <记录类型>] [--vault]（核存储摘要，可选核验密钥库解密，不输出正文）',handler: (session,args) => import('./cli-admin.ts').then(module => module.recordsCommand(session,args))},

@@ -28,11 +28,10 @@ export function normalizeSetupCode(text: string): string {
 const digest = (code: string): string => createHash('sha256').update(normalizeSetupCode(code), 'utf8').digest('hex');
 
 /** A new code (25 characters in five groups, 125 bits), replacing any earlier one. */
-export async function issueSetupCode(dataDir: string, now: Date = new Date()): Promise<string> {
+async function issueCode(path: string, now: Date): Promise<string> {
   const bytes = randomBytes(25);
   const plain = [...bytes].map((byte) => ALPHABET[byte % 32]).join('');
   const code = plain.match(/.{5}/g)!.join('-');
-  const path = setupCodePath(dataDir);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomBytes(6).toString('hex')}.tmp`;
   await writeFile(temporary, `${JSON.stringify({ schema: SETUP_CODE_SCHEMA, sha256: digest(code), created_at: now.toISOString() })}\n`, { flag: 'wx', mode: 0o600 });
@@ -43,10 +42,10 @@ export async function issueSetupCode(dataDir: string, now: Date = new Date()): P
 export type SetupCodeCheck = 'ok' | 'none' | 'expired' | 'wrong';
 
 /** Compares `code` with the kept digest in constant time; an expired code is never accepted. */
-export async function checkSetupCode(dataDir: string, code: string, now: Date = new Date()): Promise<SetupCodeCheck> {
+async function checkCode(path: string, code: string, now: Date): Promise<SetupCodeCheck> {
   let text: string;
   try {
-    text = await readFile(setupCodePath(dataDir), 'utf8');
+    text = await readFile(path, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'none';
     throw error;
@@ -63,3 +62,11 @@ export async function checkSetupCode(dataDir: string, code: string, now: Date = 
 export async function removeSetupCode(dataDir: string): Promise<void> {
   await rm(setupCodePath(dataDir), { force: true });
 }
+
+/** Separate file scopes a local maintenance capability to recovery, never first-admin bootstrap. */
+export function rebuildCodePath(dataDir: string): string { return join(dataDir, 'config', 'rebuild-code.json'); }
+export function issueSetupCode(dataDir: string, now: Date = new Date()): Promise<string> { return issueCode(setupCodePath(dataDir), now); }
+export function checkSetupCode(dataDir: string, code: string, now: Date = new Date()): Promise<SetupCodeCheck> { return checkCode(setupCodePath(dataDir), code, now); }
+export function issueRebuildCode(dataDir: string, now: Date = new Date()): Promise<string> { return issueCode(rebuildCodePath(dataDir), now); }
+export function checkRebuildCode(dataDir: string, code: string, now: Date = new Date()): Promise<SetupCodeCheck> { return checkCode(rebuildCodePath(dataDir), code, now); }
+export async function removeRebuildCode(dataDir: string): Promise<void> { await rm(rebuildCodePath(dataDir), { force: true }); }

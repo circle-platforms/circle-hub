@@ -1,14 +1,17 @@
-import { readFile, mkdir, open, lstat, realpath, unlink, link } from 'node:fs/promises';
+import { readFile, mkdir, open, lstat, realpath, unlink, link, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve, relative } from 'node:path';
 import { DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt, type DeploymentDefinition as Definition } from '../../contracts/src/deployment.ts';
 import { PackManifest } from '../../contracts/src/pack.ts';
 import { ResourceRecord } from '../../contracts/src/resources.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
-import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB } from '../records/api.ts';
+import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB, type RecordsConfig, type ConfigurationSnapshot } from '../records/api.ts';
 import { ExecutorRegistry } from '../dispatch/api.ts';
 import { jsonSafe } from './assemble/terminal.ts';
+import { variableCommand } from './variables.ts';
+import { docIdOf } from './docs.ts';
 import { packCommand } from './cli-pack.ts';
 import { CliError, UsageError } from './errors.ts';
 import type { Session } from './cli-session.ts';
@@ -19,6 +22,11 @@ export const EXPORT_USAGE = 'export（导出部署定义，不包含密钥值、
 export function parseDeployment(input: unknown): Definition {
   const parsed = DeploymentDefinition.safeParse(input);
   if (!parsed.success) throw new UsageError('部署定义不合格式：' + parsed.error.issues.map(issue => issue.path.join('/')).join('、'));
+  for (const document of parsed.data.documents) {
+    const bytes = Buffer.from(document.bytesBase64, 'base64');
+    if (bytes.toString('base64') !== document.bytesBase64 || bytes.byteLength !== document.size || sha256Hex(bytes) !== document.sha256)
+      throw new UsageError('命名文档的字节、长度或摘要不相同');
+  }
   return parsed.data;
 }
 
@@ -148,23 +156,39 @@ export async function exportDeployment(session: Session): Promise<Definition> {
       if (await records.authorizations.isActive('assign', user.id, pack.id)) workflowAssignments.push({ pack: pack.id, user: user.id });
     }
   }
+  const variables: Definition['variables'] = [];
+  for (const variable of await records.variables.list(by)) {
+    if (variable.kind !== 'var' || variable.decision.body.revoked) continue;
+    if (!variable.definition) throw new CliError('普通变量定义原件缺失，不能完整导出');
+    variables.push({ schema: 'variable@1', name: variable.name, value: variable.definition.value });
+  }
+  const documents: Definition['documents'] = [];
+  for (const document of await hub.docs.list()) {
+    const source = (await records.artifacts.records(document.sha256)).find(row => 'read' in row.body.origin && row.body.origin.read.object === docIdOf(document.name, document.sha256));
+    if (!source || source.body.scan.findings.length) throw new CliError('命名文档来源缺失或含待处理凭据，不能导出其字节');
+    const bytes = await records.artifacts.trustedBytes(document.sha256);
+    if (!bytes || bytes.byteLength !== document.size || sha256Hex(bytes) !== document.sha256) throw new CliError('命名文档原件缺失或完整性错误，不能导出');
+    documents.push({ name: document.name, sha256: document.sha256, size: document.size, bytesBase64: Buffer.from(bytes).toString('base64'), mediaType: source.body.media_type, fileName: source.body.name ?? `${document.name}.bin` });
+  }
+  const leaseRegistrations = await (await session.leases()).registrations('');
   return parseDeployment({ schema: 'deployment@1',
     accounts: users.map(({ id, name, role, disabled }) => ({ id, name, role, disabled })),
     teams: await Promise.all(teams.map(async team => ({ id: team.id, name: team.name, members: (await records.teams.members(by, team.id)).map(member => member.user.id) }))),
     packs: packDefinitions,
     resources, executors: (await new ExecutorRegistry(records).sources(by)).map(entry => entry.source),
     workflowAssignments, resourceAssignments, knowledgeSources: packs.filter(pack => pack.kind === 'product' && pack.active).map(pack => pack.id),
+    variables, documents, leaseRegistrations, missingConfiguration: ['知识同步产品线配置意图未知：当前版本没有持久读写配置的领域 API，不能从同步历史或知识根推断'],
   });
 }
 
-export interface DeploymentReport { created: number; skipped: number; differences: Array<{ section: string; index: number; fields: string[] }>; }
+export interface DeploymentReport { created: number; skipped: number; missingConfiguration: string[]; differences: Array<{ section: string; index: number; fields: string[] }>; }
 
 export async function applyDeployment(session: Session, input: unknown, base = session.ctx.io.cwd): Promise<DeploymentReport> {
   const definition = parseDeployment(input);
   const by = await session.admin(), records = await session.records(), hub = await session.hub(false, true);
   const packs = await loadPacks(session, definition, base);
   const current = await exportDeployment(session);
-  const report: DeploymentReport = { created: 0, skipped: 0, differences: [] };
+  const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration };
   try {
     const compare = (section: string, index: number, before: unknown, after: unknown): boolean => {
       const fields = differentFields(before, after);
@@ -227,6 +251,27 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       }
       if (pack.install) await installSkill(pack.ref);
     }
+    for (const [index, variable] of definition.variables.entries()) {
+      const found = current.variables.find(row => row.name === variable.name);
+      if (found) { compare('variables', index, found.value, variable.value); continue; }
+      const directory = await mkdtemp(join(tmpdir(), 'circle-hub-apply-variable-'));
+      try {
+        const file = join(directory, 'value.json');
+        await writeFile(file, canonicalBytes(variable.value), { mode: 0o600, flag: 'wx' });
+        const code = await variableCommand(session, ['set', variable.name, '--file', file, '--reason', '部署定义文件配置普通变量']);
+        if (code !== 0) throw new CliError('普通变量配置未完成');
+      } finally { await rm(directory, { recursive: true, force: true }); }
+      current.variables.push(variable); report.created++;
+    }
+    for (const [index, document] of definition.documents.entries()) {
+      const found = current.documents.find(row => row.name === document.name);
+      if (found) { compare('documents', index, { sha256: found.sha256, mediaType: found.mediaType, fileName: found.fileName }, { sha256: document.sha256, mediaType: document.mediaType, fileName: document.fileName }); continue; }
+      const result = await hub.docs.put(by, document.name, Buffer.from(document.bytesBase64, 'base64'), { fileName: document.fileName, mediaType: document.mediaType });
+      report.created += Number(result.created);
+      if (result.findings) throw new CliError('命名文档含待处理凭据，未确认可用；请管理员核对来源扫描');
+      if (!result.created) report.skipped++;
+      current.documents.push(document);
+    }
     for (const [index, resource] of definition.resources.entries()) {
       const rows = current.resources.map(row => ({ ...row, id: row.id! }));
       const found = exactMatch(rows, resource.id ?? resource.definition.name, row => row.definition.name);
@@ -257,6 +302,15 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       if (await records.authorizations.isActive('resource_assign', subject, resource.id)) { report.skipped++; continue; }
       await records.authorizations.assignResource(by, resource.id, subject); report.created++;
     }
+    for (const [index, registration] of definition.leaseRegistrations.entries()) {
+      const owner = userId(registration.owner);
+      const found = current.leaseRegistrations.find(row => row.prefix === registration.prefix);
+      if (found) { compare('leaseRegistrations', index, found.owner, owner); continue; }
+      const { leaseCommand } = await import('./cli-admin.ts');
+      const code = await leaseCommand(session, ['register', registration.prefix, '--owner', owner, '--reason', '部署定义文件登记测试环境']);
+      if (code !== 0) throw new CliError('测试环境预订登记未完成');
+      current.leaseRegistrations.push({ ...registration, owner }); report.created++;
+    }
     for (const pack of definition.knowledgeSources) {
       if (await hub.registry.isActive(pack)) report.skipped++;
       else { await hub.registry.activate(by, pack); report.created++; }
@@ -277,8 +331,9 @@ export async function applyCommand(session: Session, args: readonly string[]): P
   catch { throw new UsageError('部署定义不是可读取的严格 JSON 文件'); }
   const report = await applyDeployment(session, input, dirname(file));
   for (const difference of report.differences) session.out(`${difference.section}[${difference.index}] 与现状不同：${difference.fields.join('、')}；未覆盖`);
+  for (const missing of report.missingConfiguration) session.out(`缺少配置：${missing}`);
   session.out(`已配置 ${report.created} 项；相同跳过 ${report.skipped} 项；差异 ${report.differences.length} 项`);
-  return report.differences.length ? 1 : 0;
+  return report.differences.length || report.missingConfiguration.length ? 1 : 0;
 }
 
 export async function exportCommand(session: Session, args: readonly string[]): Promise<number> {
@@ -396,14 +451,32 @@ export interface ResetConfigurationPorts {
   restoreConfiguration(path: string): Promise<void>;
   applyDefinition(path: string): Promise<void>;
 }
-export interface ResetConfigurationOptions<State> extends ProtectedRoot {
+export interface DomainResetConfigurationOptions<State> extends ProtectedRoot {
   domain: ProtectedConfigurationDomain<State>;
   /** Existing public apply orchestration, bound to the new database and closed before resolving; reject on differences. */
   applyDefinition(path: string): Promise<void>;
 }
 
+/** Owner DSN for the same database name before and after reset; records opens and closes each operation's pool. */
+export interface CurrentResetConfigurationOptions {
+  config: RecordsConfig;
+  applyDefinition(path: string): Promise<void>;
+}
+export type ResetConfigurationOptions<State = ConfigurationSnapshot> = DomainResetConfigurationOptions<State> | CurrentResetConfigurationOptions;
+
 /** Composition entry for server/api: platform receives callbacks, and imports no server implementation. */
-export function createResetConfigurationPorts<State>(options: ResetConfigurationOptions<State>): ResetConfigurationPorts {
+export function createResetConfigurationPorts<State = ConfigurationSnapshot>(options: ResetConfigurationOptions<State>): ResetConfigurationPorts {
+  if ('config' in options) {
+    return createResetConfigurationPorts<ConfigurationSnapshot>({
+      dataDir: options.config.dataDir,
+      domain: {
+        capture: async () => (await import('../records/api.ts')).exportConfigurationSnapshot(options.config),
+        validate: async input => (await import('../records/api.ts')).validateConfigurationSnapshot(input),
+        restore: async snapshot => (await import('../records/api.ts')).restoreConfigurationSnapshot(options.config, snapshot),
+      },
+      applyDefinition: path => options.applyDefinition(path),
+    });
+  }
   return {
     exportConfiguration: async path => { await exportProtectedConfiguration(options, options.domain, path); },
     restoreConfiguration: async path => {

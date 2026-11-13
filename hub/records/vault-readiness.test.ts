@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { FileKeyProvider, FileVault } from './vault.ts';
-import { VaultReadinessError } from './errors.ts';
+import { RecordsError, VaultReadinessError } from './errors.ts';
 import { RecordVariables, type VariablePorts } from './variables.ts';
 import { newId } from './ids.ts';
 import type { SecretMetadataFile } from '../../contracts/src/variables.ts';
@@ -113,4 +113,88 @@ test('dictionary, login state and key-check namespaces remain opaque and are not
     assert.deepEqual(await f.variables.recentSecrets(), []);
     for (const [entry, bytes] of snapshots) assert.ok((await readFile(join(f.root, 'vault', entry + '.sealed'))).equals(bytes));
     assert.ok((await readFile(join(f.root, 'vault', 'key-check'))).equals(keyCheck));
+});
+
+
+test('unexpected sentinel failures remain non-readiness through RecordVariables and disclose no original payload or cause', async t => {
+    for (const ErrorType of [Error, ReferenceError, SyntaxError]) {
+        const f = await fixture(t), sentinel = value();
+        f.vault.recentSecrets = async () => { throw new ErrorType(sentinel, { cause: new Error(sentinel) }); };
+        await assert.rejects(f.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !JSON.stringify(error).includes(sentinel) && !Object.hasOwn(error, 'cause'));
+    }
+});
+
+test('unexpected inventory and per-name implementation failures cannot be reclassified as a degraded vault', async t => {
+    const f = await fixture(t), sentinel = value();
+    f.vault.secretNames = async () => { throw new ReferenceError(sentinel); };
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !Object.hasOwn(error, 'cause'));
+    const second = await fixture(t);
+    await second.raw('PRIVATE_SENTINEL', value(), 1);
+    const list = second.vault.list.bind(second.vault); let calls = 0;
+    second.vault.list = async () => { if (++calls > 1) throw new Error(sentinel); return list(); };
+    await assert.rejects(second.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !JSON.stringify(error).includes(sentinel) && !error.message.includes(sentinel));
+});
+
+test('a real filesystem error is still typed while missing metadata remains an explicit readiness issue', async t => {
+    const f = await fixture(t);
+    await f.raw('PRIVATE_IO', value(), 1);
+    await writeFile(join(f.root, 'vault', 'metadata'), 'synthetic non-directory');
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('inventory') || issue.missing.includes('metadata')));
+    const missing = await fixture(t);
+    await missing.raw('PRIVATE_MISSING', value(), 1);
+    await assert.rejects(missing.variables.recentSecrets(), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('metadata') && issue.missing.includes('version')));
+});
+
+
+test('an error code without a native errno identity and an unexpected single-value read remain non-readiness', async t => {
+    const f = await fixture(t), sentinel = value();
+    f.vault.recentSecrets = async () => { throw Object.assign(new Error(sentinel), { code: 'ENOENT' }); };
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !Object.hasOwn(error, 'cause'));
+    f.vault.readSecret = async () => { throw new Error(sentinel); };
+    await assert.rejects(f.variables.readSecrets([{ name: 'PRIVATE_SENTINEL' }]), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !JSON.stringify(error).includes(sentinel));
+});
+
+
+test('explicit names load only their current and previous authenticated values while the default remains a global hard gate', async t => {
+    const f = await fixture(t), first = value(), second = value(), foreign = value();
+    await f.vault.putSecret({ name: 'MY_KEY', value: first, digest_rule: 'plain', set_by: f.by, set_at: f.at });
+    await f.vault.putSecret({ name: 'MY_KEY', value: second, digest_rule: 'plain', set_by: f.by, set_at: f.at });
+    await f.raw('FOREIGN_KEY', foreign, 1);
+    const own = await f.variables.recentSecrets(['MY_KEY']);
+    assert.equal(own.length, 2);
+    assert.ok(own.some(material => material.value === first) && own.some(material => material.value === second));
+    assert.ok(own.every(material => material.name === 'MY_KEY' && /^[a-f0-9]{64}$/.test(material.sealed_sha256)));
+    assert.deepEqual(await f.variables.recentSecrets([]), []);
+    assert.deepEqual(await f.variables.recentSecrets(['NOT_SET']), []);
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.name === 'FOREIGN_KEY'));
+    await assert.rejects(f.variables.recentSecrets(['FOREIGN_KEY']), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.name === 'FOREIGN_KEY'));
+});
+
+
+test('metadata-only identity is stable without opening value ciphertext and revoked names have no active identity', async t => {
+    const f = await fixture(t), secret = value();
+    const row = await f.raw('MY_IDENTITY', secret, 1);
+    await f.vault.writeSecretMetadata({ name: 'MY_IDENTITY', versions: [row] });
+    const expected = { name: 'MY_IDENTITY', version: 1, sealed_sha256: row.sealed_sha256 };
+    assert.deepEqual(await f.vault.secretIdentity('MY_IDENTITY'), expected);
+    await rm(join(f.root, 'vault', row.sealed_entry + '.sealed'));
+    assert.deepEqual(await f.vault.secretIdentity('MY_IDENTITY'), expected);
+    await assert.rejects(f.vault.readSecret('MY_IDENTITY'), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('cipher')));
+    await f.vault.writeSecretMetadata({ name: 'MY_IDENTITY', versions: [{ ...row, metadata: { ...row.metadata, revoked: true }, sealed_sha256: null }] });
+    assert.equal(await f.vault.secretIdentity('MY_IDENTITY'), null);
+});
+
+
+test('history identities come only from authenticated metadata and cannot confuse an old version with different ciphertext', async t => {
+    const f = await fixture(t), first = value(), second = value();
+    const old = await f.raw('MY_HISTORY', first, 1), current = await f.raw('MY_HISTORY', second, 2);
+    await f.vault.writeSecretMetadata({ name: 'MY_HISTORY', versions: [{ ...old, current: false }, current] });
+    await rm(join(f.root, 'vault', old.sealed_entry + '.sealed'));
+    await rm(join(f.root, 'vault', current.sealed_entry + '.sealed'));
+    assert.deepEqual(await f.vault.secretHistoryIdentities('MY_HISTORY'), [current, old].map(row => ({ name: 'MY_HISTORY', version: row.metadata.version, sealed_sha256: row.sealed_sha256 })));
+    const replacement = await f.raw('MY_HISTORY', value(), 1);
+    await f.vault.writeSecretMetadata({ name: 'MY_HISTORY', versions: [replacement] });
+    const identities = await f.vault.secretHistoryIdentities('MY_HISTORY');
+    assert.equal(identities.length, 1);
+    assert.ok(identities[0].version === old.metadata.version && identities[0].sealed_sha256 !== old.sealed_sha256);
 });

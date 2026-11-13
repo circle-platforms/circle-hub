@@ -1,3 +1,8 @@
+import { createRebuildApp } from './rebuild-app.ts';
+import { createPlatformRebuildBridge } from './rebuild-platform.ts';
+import { rebuildRequiredState } from './rebuild-state.ts';
+import type { RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts';
+import { diagnoseRecordsSchema } from '../records/api.ts';
 // `circle-hub serve`: configuration from CIRCLE_HUB_* only (a retired CIRCLE_SERVER_* name refuses to start, and so does an
 // operator token in the environment: a server needs no admin token), the platform's cluster started when the database is the
 // data root's own socket (never initialised, never stopped on exit), records opened as the runtime role without migrating,
@@ -38,6 +43,7 @@ export interface ServeOptions {
   appOptions?: AppOptions;
   onListening?: (info: ListenInfo) => void;
   now?: () => Date;
+  rebuild?: { bridge?: RebuildResetBridge; render?: RebuildPageRenderer };
 }
 
 /** The longest one statement of the 运行状况 page may run; its part of the page then says 未知. */
@@ -162,6 +168,27 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
       ...(options.now ? { now: options.now } : {}),
     });
   } catch (error) {
+    const diagnosis = await diagnoseRecordsSchema(config);
+    const needed = rebuildRequiredState(diagnosis);
+    if (needed !== null) {
+      let maintenanceApp: HubApp | undefined;
+      try {
+        const bridge = options.rebuild?.bridge ?? await createPlatformRebuildBridge(config, io.env);
+        maintenanceApp = await createRebuildApp(config, {
+          dataDir: config.dataDir, rebuildNeeded: needed, bridge, render: options.rebuild?.render,
+          now: options.now, log: line => io.stderr(terminalSafe(line)), tls: options.appOptions?.tls,
+        });
+        const info = await maintenanceApp.listen();
+        io.stdout(`记录库需要重建；仅维护控制台和健康检查在 ${info.url} 上监听`);
+        options.onListening?.(info);
+        await (options.stopSignal ?? defaultStop)();
+        await maintenanceApp.close();
+        return 0;
+      } catch (maintenanceError) {
+        await maintenanceApp?.close().catch(() => {});
+        return reportFailure(io, maintenanceError);
+      }
+    }
     return reportFailure(io, error);
   }
   // The operator's log while serving (launchd's stderr file): one line each, made safe for a terminal, since a line may

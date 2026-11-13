@@ -110,7 +110,7 @@ describe('platform CLI', () => {
       assert.equal(entry.step, `run-${entry.name}`);
       assert.ok(entry.summary.length > 0);
     }
-    assert.deepEqual([...PLATFORM_COMMANDS].sort(), ['backup', 'db', 'deploy', 'init', 'key', 'rehearse', 'restore', 'rollback', 'service', 'status', 'tls']);
+    assert.deepEqual([...PLATFORM_COMMANDS].sort(), ['backup', 'db', 'deploy', 'init', 'key', 'rehearse', 'reset', 'restore', 'rollback', 'service', 'status', 'tls']);
     assert.equal((await run('db', 'explode')).code, 2);
     assert.equal((await run('service', 'explode')).code, 2, 'usage is checked before the settings are read');
     assert.equal((await run('key', 'explode')).code, 2);

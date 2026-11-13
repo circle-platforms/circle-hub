@@ -73,13 +73,25 @@ test('revocation is stored by the vault and deletes retained material without lo
     assert.equal(restored.version, 2);
 });
 
-test('old random-version files disclose missing facts without guessing a current version or writing a conversion', async t => {
-    const f = await fixture(t), secret = value();
-    for (const suffix of ['a'.repeat(24), 'b'.repeat(24)]) await f.vault.put('secret.demo_key.' + suffix, secret);
-    const before = await readdir(join(f.root, 'vault'));
+test('old ciphertext stays unreadable without facts and explicit same-name set archives it without guessing an old version', async t => {
+    const f = await fixture(t), secret = value(), replacement = value();
+    const originals = [];
+    for (const suffix of ['a'.repeat(24), 'b'.repeat(24)]) {
+        const entry = 'secret.demo_key.' + suffix;
+        await f.vault.put(entry, secret);
+        originals.push({ entry, bytes: await readFile(join(f.root, 'vault', entry + '.sealed')) });
+    }
     await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && /缺少认证元数据/.test(error.message) && !error.message.includes(secret));
-    await assert.rejects(f.vault.putSecret({ name: 'DEMO_KEY', value: value(), digest_rule: 'plain', set_by: f.by, set_at: f.at }), /缺少认证元数据/);
-    assert.deepEqual(await readdir(join(f.root, 'vault')), before);
+    const reset = await f.vault.putSecret({ name: 'DEMO_KEY', value: replacement, digest_rule: 'plain', set_by: f.by, set_at: f.at });
+    assert.equal(reset.version, 1);
+    assert.equal(reset.archive?.previous_version, null);
+    assert.equal(reset.archive?.entries.length, 2);
+    for (const original of originals) {
+        const row = reset.archive!.entries.find(item => item.entry === original.entry + '.sealed')!;
+        assert.ok((await readFile(join(f.root, 'vault', row.archived_entry))).equals(original.bytes));
+        assert.equal(await f.vault.has(original.entry), false);
+    }
+    assert.ok((await f.vault.readSecret('DEMO_KEY'))?.value === replacement);
 });
 
 test('wrong scratch keys, altered metadata and malformed payloads fail without raw values or JSON snippets', async t => {

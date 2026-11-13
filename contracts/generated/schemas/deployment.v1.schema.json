@@ -2636,6 +2636,114 @@
         "type": "string",
         "pattern": "^[a-z][a-z0-9-]{1,40}$"
       }
+    },
+    "variables": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "const": "variable@1"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+          },
+          "value": {}
+        },
+        "required": [
+          "schema",
+          "name",
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "documents": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2097152
+          },
+          "bytesBase64": {
+            "type": "string",
+            "maxLength": 2796204,
+            "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "fileName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "name",
+          "sha256",
+          "size",
+          "bytesBase64",
+          "mediaType",
+          "fileName"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "leaseRegistrations": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "minLength": 1,
+            "allOf": [
+              {
+                "pattern": ".*\\/$"
+              },
+              {
+                "pattern": "^[a-z0-9][a-z0-9:._/-]{0,199}$"
+              }
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "prefix",
+          "owner"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "missingConfiguration": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "required": [
@@ -2647,7 +2755,11 @@
     "executors",
     "workflowAssignments",
     "resourceAssignments",
-    "knowledgeSources"
+    "knowledgeSources",
+    "variables",
+    "documents",
+    "leaseRegistrations",
+    "missingConfiguration"
   ],
   "additionalProperties": false
 }

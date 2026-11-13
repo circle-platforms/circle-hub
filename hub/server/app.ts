@@ -139,6 +139,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const consoleOptions = {
     deps, sessions, ownOrigins: () => origins, log, jobs, live,
     staging,
+    ...(deps.rebuildNeeded === undefined ? {} : { rebuildNeeded: deps.rebuildNeeded }),
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.observation ? { observation: options.observation } : {}),
     ...(options.bridge ? { bridge: options.bridge } : {}),
