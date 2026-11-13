@@ -60,3 +60,18 @@ test('CLI adapters retain lexical option kinds, multiplicity and positional arit
   assert.ok(commandParameterHelp('knowledge.sync').includes('--max-age'));
   assert.equal(commandParameterShape('executor.add').fields.some(field => field.name === 'secret'), false);
 });
+
+test('resource add forms accept optional audiences with generated team validation and mutual exclusion', () => {
+  const input = { 'system-pack': 'synthetic-system', name: '合成资源', environment: ENVIRONMENT[0], origin: ['api=https://192.0.2.1'] };
+  for (const audience of [{}, { all: true }, { team }, { team, all: false }]) {
+    const argv = buildCommandArgv('resource.add', { ...input, ...audience });
+    const parsed = parseCommandParameters('resource.add', argv.slice(2));
+    assert.equal(parsed.values.team, 'team' in audience ? team : undefined);
+    assert.equal(parsed.values.all, 'all' in audience && audience.all ? true : undefined);
+  }
+  assert.throws(() => buildCommandArgv('resource.add', { ...input, team, all: true }), UsageError);
+  assert.throws(() => buildCommandArgv('resource.add', { ...input, team: 'team' }), UsageError);
+  assert.match(commandParameterHelp('resource.add'), /--all/);
+  assert.match(commandParameterHelp('resource.add'), /--team/);
+  assert.equal(commandParameterShape('resource.update').fields.some(field => field.name === 'all' || field.name === 'team'), false);
+});
