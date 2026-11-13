@@ -6,7 +6,7 @@ import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
 import { MIGRATIONS, migrate } from './migrations.ts';
 import { PgSpaceSearchIndex,knowledgeTokens,pathKey } from './space-index.ts';
-import { installTraceSink,startTrace,type SpanRow } from '../telemetry/usage.ts';
+import { installTraceSink,startTrace,type SpanRow } from './api.ts';
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(() => postgres?.stop());

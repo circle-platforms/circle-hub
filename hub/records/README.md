@@ -133,8 +133,9 @@ brief says.
 
 Migration 27 adds `trace_spans`, the diagnostic rows of [hub/telemetry](../telemetry/README.md) (B08 R[5]): not records, no
 digest, no append-only trigger; the runtime role has SELECT, INSERT and DELETE, and rows older than 14 days are deleted.
-`Database.query` and `FileObjectStore.get` add their usage to the current step through `hub/telemetry/usage.ts`, the only
-import of that package here; `Database` measures nothing outside a trace. `stagingSlots` keeps the async context of the
+`trace-usage.ts` owns the process trace context and counters, with its closed names in `trace-names.ts`.
+Telemetry imports them through `api.ts`; records never imports telemetry.
+`Database.query` and `FileObjectStore.get` add their usage to the current step through this local context; `Database` measures nothing outside a trace. `stagingSlots` keeps the async context of the
 call that asked, as the sandbox's slot pool does: a later call's pump starts the work.
 
 Migration 28 holds `resource_samples` and `process_events`, which belong to hub/health: diagnostic data, outside the append-only
@@ -1278,3 +1279,33 @@ A source artifact whose bytes were replaced carries `masking` (`dictionary`, the
 `rules`, each rule that matched with its count; never what was matched). The store accepts it only on a read of a
 business system and only with at least one rule; it takes part in the dedupe key only when present, so every other
 ingest keeps the key and the record it always had. A copy of such an artifact into an archive keeps the mark.
+
+## Shared permission and record-read implementation
+
+`permissions.ts` owns `isAdmin` and run ownership visibility (`canSeeRun`). Role checks use the current account loaded
+by the calling boundary; the helper does not authenticate an account or grant a system actor identity.
+`record-visibility.ts` declares one exhaustive `RECORD_ACCESS` entry per generated record kind and the generic record-read
+policy. Its ports require a current account, authorized run headers, source and contribution permissions, and the existing
+request, result and submission checks. Dedicated space, memory and personal-pack records remain behind their own readers.
+
+The two existing `runOfRecord` argument shapes are supported. Wrapped submission arguments must carry
+`submission-received@1`; a canonical top-level run takes precedence. The shared modules are exported through `api.ts`; server/runs adapter changes require interface coordination. Until those callers adopt `mayReadRecord`, their existing implementations have not been replaced. No system account or environment variable is introduced.
+
+
+## Teams and resource assignments
+
+`PgTeams(db,store,objects,principals,authorizations,now)` implements the approved `RecordsKit.teams` interface.
+`assign/*/TeamId` registers a team and binds canonical `{id,name}` bytes retained by ObjectStore. Members are the
+latest active `assign/UserId/TeamId` decisions; `teams` and `team_members` only project that history. Deleting a team
+appends a revocation for every active member, pack and resource assignment, then revokes registration and removes projected membership; reusing its name creates a different ID. A revoked ID cannot
+be registered again. Team writes lock user rows in ID order before the team and authorization locks.
+
+Pack assignment accepts direct users and teams through separate wrappers. Resource assignment uses `resource_assign`
+and accepts only a team or all enabled accounts. `canUseResource(userId,resourceId)` checks the current enabled account;
+administrator status alone does not grant business reads; administrators still manage unassigned resources. A single SQL permission snapshot collects the
+current account, direct decisions, team registrations, membership decisions, team grants and pack audiences. The same
+snapshot drives `canUse`, `packs`, resource grants and pack-user sharing. Batch pack/user queries use that implementation.
+Frozen runs, remote work and stored results are not cancelled or rewritten by team withdrawal.
+
+Wiring the kit's `teams` member belongs to the index.ts owner. System actor identity remains undecided; no new account,
+configuration or administrator bypass is introduced. Separate per-team knowledge spaces are outside this implementation.

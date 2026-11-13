@@ -686,3 +686,9 @@ rule 9 drop the review, acceptance, withdrawal and pending-review request of cre
 old acceptances stand, and reading the object again is the way out. Protocol code `SOURCE_PENDING_REVIEW` keeps its code
 with new text. Team spaces, skill-module composition, empty-applicability omission and `team_members` from model 50 stay.
 B02/C04/D05/R02/V03 `changes51` state the change.
+
+## Team identity and assignment boundaries
+
+The approved team identity contracts export `TeamId` and `TeamAssignmentSubject` through `contracts/api.ts`.
+Their generated schemas are `team-id@1` and `team-assignment-subject@1`; team IDs match
+`^tm_[0-7][0-9a-hjkmnp-tv-z]{25}$`. Resource use assignments use generated `resource_assign`.
