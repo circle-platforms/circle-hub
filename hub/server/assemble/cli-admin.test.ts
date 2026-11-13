@@ -1109,6 +1109,7 @@ describe('resource and secret', () => {
       'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
     const id = /已添加资源 (res_[0-9a-z]{26})：合成敏捷平台（业务系统接入 demo-agile@1\.0\.0，环境 测试）/.exec(added.text)?.[1];
     assert.ok(id, added.text);
+    await expectOk(admin, ['resource', 'assign', id, '--all']);
     assert.match(added.text,/密钥 DEMO_.*还没有设置/);assert.match(added.text,/secret set --name/);
     const listed = await expectOk(admin, ['resource', 'list']);
     assert.equal(listed.out.length, 1);
@@ -1279,6 +1280,7 @@ describe('resource and secret', () => {
         '--origin', `agile-oauth=${stub.origin}`, '--origin', `agile-api=${stub.origin}`,
         '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting-json', 'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
       const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+      await expectOk(admin, ['resource', 'assign', id, '--all']);
       admin.stdin.push('reader', WRONG_PASSWORD);
       await expectOk(admin, await setArgs(admin,id,'username'));
       await expectOk(admin, await setArgs(admin,id,'password'));
@@ -1367,7 +1369,9 @@ describe('knowledge', () => {
     await expectOk(admin, ['pack', 'install', 'html-format@' + await repositorySkillVersion('html-format')]);
     await expectOk(admin, ['pack', 'publish', packs.product]);
     await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
-    await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);
+    const resource = await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);
+    const resourceId = /已添加资源 (res_[0-9a-z]{26})/.exec(resource.text)![1];
+    await expectOk(admin, ['resource', 'assign', resourceId, '--all']);
 
     const first = await admin.run(['knowledge', 'sync', '--product', 'DEMO']);
     assert.equal(first.code, 1, first.text);
@@ -1751,6 +1755,7 @@ describe('reimport after key loss', () => {
 describe('resource read', () => {
   test('a read prints only declared names, outcome codes and artifact sizes and digests', async () => {
     const admin = await setup(); const id = await importResource(admin);
+  await expectOk(admin, ['resource', 'assign', id, '--all']);
     const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
     await expectOk(admin, await importArgs(admin,file,id));
     const result = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
@@ -1782,6 +1787,7 @@ describe('resource read', () => {
 
 test('review 1: resource read exposes connector diagnostics only with the explicit events flag', async () => {
   const admin = await setup(); const id = await importResource(admin);
+  await expectOk(admin, ['resource', 'assign', id, '--all']);
   const file = await importFile(admin, `PORTAL_USER=reader\nPORTAL_PASSWORD=${PASSWORD}`);
   await expectOk(admin, await importArgs(admin,file,id));
   const quiet = await expectOk(admin, ['resource', 'read', id, 'mindmap', DOCUMENT]);
@@ -1862,6 +1868,7 @@ test('review 8: Basic targets refuse before file access and a static authorizati
     const added = await expectOk(admin, ['resource', 'add', 'demo-basic', '--name', '合成认证', '--environment', 'test',
       '--origin', `repository=${stub.origin}`, '--allow-plaintext', 'repository', ...syntheticCredentialArgs('authorization')]);
     const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+    await expectOk(admin, ['resource', 'assign', id, '--all']);
     const args = async (file: string) => ['secret', 'import', '--env-file', file, '--basic', `USER:PASS=${await nameOf(admin,id,'authorization')}`, '--reason', 'DEMO_IMPORT'];
     const colonFile = await importFile(admin, `USER=has:colon\nPASS=${password}`); secrets.add('has:colon');
     const colon = await admin.run(await args(colonFile)); assert.equal(colon.code, 1); assert.match(colon.text, /用户名含冒号/);
