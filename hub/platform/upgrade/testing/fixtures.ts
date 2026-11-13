@@ -2,15 +2,19 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RecordEnvelope } from '../../../../contracts/src/records.ts';
-import { PackManifest } from '../../../../contracts/src/pack.ts';
+import { ChecksFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../../../../contracts/src/pack.ts';
 import { ProductDeclaration } from '../../../../contracts/src/product.ts';
 import { ResourceRecord, ExecutorSource, SystemProfile } from '../../../../contracts/src/resources.ts';
 import { KnowledgeEntryBody, TreeNodeBody, TreeRootBody, RootPointerBody } from '../../../../contracts/src/knowledge.ts';
 import { SpaceEntryBody, SpaceSourceBody, SpaceVersionBody } from '../../../../contracts/src/spaces.ts';
 import { MemoryDocumentBody, MemoryVersionBody } from '../../../../contracts/src/memory.ts';
+import { RunRecord } from '../../../../contracts/src/run.ts';
+import { Submission } from '../../../../contracts/src/submission.ts';
+import { Partitions, ValidationResult } from '../../../../contracts/src/validation.ts';
+import { RequestRecord } from '../../../../contracts/src/request.ts';
 import { SAMPLE_SOURCE, type PermissionKind } from '../../../../contracts/generated/vocabulary.ts';
 import { canonicalize, digestOf, sha256Hex, recordDigest } from '../../../records/api.ts';
-import type { AuthorizationBody, IndexEntry, SourceArtifactBody } from '../../../records/api.ts';
+import type { AuthorizationBody, CallLogEntry, IndexEntry, SourceArtifactBody } from '../../../records/api.ts';
 import type { PackVersionBody } from '../../../runs/api.ts';
 import type { SqlSession } from '../../sql.ts';
 
@@ -79,8 +83,9 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
     return item;
   };
   const record = <B>(kind: RecordEnvelope['kind'], schema: string, body: B, index: IndexEntry[] = [],
-    scope?: FixtureScope, archive = false, uniqueKey?: string): FixtureRecord<B> => {
-    const meta = { kind, schema, provenance: 'declared' as const, created_at: AT, body };
+    scope?: FixtureScope, archive = false, uniqueKey?: string,
+    provenance: RecordEnvelope['provenance'] = 'declared'): FixtureRecord<B> => {
+    const meta = { kind, schema, provenance, created_at: AT, body };
     const item = { id: id('rcd', records.length + 1), ...meta, digest: recordDigest(meta), index,
       ...(scope ? { scope } : {}), ...(uniqueKey ? { uniqueKey } : {}) };
     records.push(item);
@@ -153,8 +158,21 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
     producers: [{ id: 'synthetic', title: '合成知识', function: { module: 'functions/produce.ts' },
       inputs: { manual: { source: 'manual' } } }] }),
   'functions/produce.ts': 'export default function produce() { return { entries: [] }; }\n' });
+  const instructions = '# 合成升级归档验收\n';
+  const slots = SlotsFile.parse({ schema: 'slots@1', item: {}, run: {} });
+  publish('synthetic-upgrade-workflow', 'workflow', {
+    'SKILL.md': instructions,
+    'checks.json': ChecksFile.parse({ schema: 'checks@1', checks: [] }),
+    'requirements.json': RequirementsFile.parse({ schema: 'requirements@1', requirements: [] }),
+    'slots.schema.json': slots,
+    'workflow.json': WorkflowFile.parse({ schema: 'workflow@1',
+      inputs: [{ slot: 'target', role: 'subject', description: '合成原件', accepts: ['text/plain'], required: true, many: false }],
+      parameters: [], product: { id: product, catalogs: [] }, subject: 'target', projection: { module: 'functions/project.ts' } }),
+    'functions/project.ts': 'export default function project() { return { items: [{ id: "synthetic-upgrade-item", label: "合成条目", location: { slot: "target", parser: "text@1", selector: "l/1" }, fields: { label: "合成条目" } }], warnings: [] }; }\n',
+  });
   const systemPack = packs[1]!;
   const productPack = packs[2]!;
+  const workflowPack = packs[3]!;
   const resourceId = id('res', 1), executorId = id('exe', 1), origin = options.resourceOrigin ?? 'https://192.0.2.10';
   const resourceDefinition = ResourceRecord.parse({ schema: 'resource@1', id: resourceId,
     system_pack: systemPack.id + '@1.0.0', system_pack_digest: systemPack.digest, name: '合成升级资源',
@@ -268,14 +286,47 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
     token: 11, acquired_at: AT, expires_at: null, released_at: AT });
   row('leases', { key: 'synthetic/device/expired', lease_id: id('lse', 4), run_id: id('run', 92), user_id: member,
     token: 13, acquired_at: AT, expires_at: AT, released_at: null });
-  for (const kind of ['run', 'submission', 'validation_result', 'request'] as const) {
-    record(kind, 'synthetic-upgrade-history@1', { run, by: member, started_at: AT, pack: packs[0]!.id, sources: [] },
-      kind === 'run' ? [{ key: 'runs.id', value: run }, { key: 'runs.started', value: AT + ' ' + run }] : [], undefined, true);
-  }
-  const call = record('call_log', 'synthetic-upgrade-history@1', { at: AT, user: member, run, tool: 'list_task_packs' }, [], undefined, true);
-  row('call_logs', { digest: call.digest, at: AT, trace_id: '1'.repeat(32), span_id: '2'.repeat(16), user_id: member,
-    session_id: 'synthetic-upgrade', tool: 'list_task_packs', run_id: run, args_digest: digestOf({}), args_size: 2,
-    args_preview: null, call_result: 'completed', acceptance: null, error_code: null, duration_ms: 1 });
+  const item = { id: 'synthetic-upgrade-item', label: '合成条目', location: `src:${sourceObject.sha256}/text@1/l/1`,
+    fields: { label: '合成条目' }, digest: digestOf({ label: '合成条目' }) };
+  const runBody = RunRecord.parse({ run, pack: workflowPack.id + '@1.0.0', pack_digest: workflowPack.digest,
+    pack_space: 'team', skills: [], knowledge_spaces: { team: spaces[0]!.version, personal: spaces[1]!.version, owner: member },
+    product, product_pack_digest: productPack.digest, version: '1.0', build: 'synthetic-1', root,
+    feeding_offset: { schema: 'feeding-offset@1', run, root, offset: 0 }, target_basis: [],
+    sources: [{ role: 'subject', slot: 'target', reference: 'src:' + sourceObject.sha256, artifact: source.digest,
+      media_type: 'text/plain', coverage: { complete: true, examined: 1, total: 1 } }],
+    requirements: [], items: [item], slots: { schema: { type: 'object', properties: {}, additionalProperties: false }, sha256: digestOf(slots) },
+    instructions, instructions_digest: sha256Hex(instructions), session: 'synthetic-upgrade', started_at: AT,
+    submission_due: '2026-11-12T01:00:00.000Z', host: 'local_circle', trigger: 'session', runner: member, parameters: {},
+    leases: [{ lease, keys: [key], until: null }] });
+  record('run', 'run@1', runBody, [{ key: 'runs.id', value: run }, { key: 'runs.pack', value: workflowPack.id },
+    { key: 'runs.started', value: AT + ' ' + run }, { key: 'runs.user', value: member },
+    { key: 'runs.user_pack', value: member + ':' + workflowPack.id }], undefined, true, undefined, 'observed');
+  const submissionBody = Submission.parse({ run, model: 'synthetic-scripted-model@1',
+    items: [{ item: item.id, handling: 'handled', slots: {} }], cross_item: [] });
+  const submission = record('submission', 'submission@1', submissionBody, [{ key: 'runs.submission.run', value: run },
+    { key: 'runs.submission.digest', value: run + ':' + digestOf(submissionBody) },
+    { key: 'runs.submission.cites.indexed', value: '1' }], undefined, true);
+  const partitions = Partitions.parse({ delivered: [{ item: item.id, label: item.label, location: item.location, requirements: [] }],
+    rejected: [], quarantined: [], incomplete: [] });
+  const validationBody = ValidationResult.parse({ schema: 'validation@1', run, submission: submission.digest, acceptance: 'accepted',
+    errors: [], rounds: { used: 0, max: 0 }, partitions, cross_item: [], coverage: { complete: true, examined: 1, total: 1 },
+    locks: { pack: runBody.pack, pack_digest: workflowPack.digest, root, skills: [], feeding_offset: runBody.feeding_offset }, trace: '1'.repeat(32) });
+  const validation = record('validation_result', 'validation@1', validationBody, [{ key: 'runs.result.run', value: run },
+    { key: 'runs.result.submission', value: run + ':' + submission.digest }], undefined, true, undefined, 'projected');
+  const requestBody = RequestRecord.parse({ run, pack_digest: workflowPack.digest, kind: 'clarification', audience: admin,
+    due: '2026-11-12T02:00:00.000Z', missing: '合成下一轮所需的来源版本', next_action: '合成管理员补充下一轮来源版本',
+    source: validation.digest, sources: ['rec:' + validation.digest], code: 'SOURCE_UNAVAILABLE', item: item.id });
+  const { due: _due, ...requestIdentity } = requestBody;
+  record('request', 'request@1', requestBody, [{ key: 'runs.request.key', value: digestOf(requestIdentity) },
+    { key: 'runs.request.run', value: run }, { key: 'runs.request.pack', value: workflowPack.digest },
+    { key: 'runs.request.plain', value: run }], undefined, true, undefined, 'observed');
+  const callBody: CallLogEntry = { at: AT, trace_id: '1'.repeat(32), span_id: '2'.repeat(16), user: member,
+    session: 'synthetic-upgrade', tool: 'submit_result', run, args_digest: digestOf(submissionBody),
+    args_size: Buffer.byteLength(canonicalize(submissionBody)), args_preview: null,
+    call_result: 'ok', acceptance: 'accepted', error_code: null, duration_ms: 1 };
+  const call = record('call_log', 'call_log@1', callBody, [], undefined, true, undefined, 'observed');
+  const { user, session, run: callRun, ...physicalCall } = callBody;
+  row('call_logs', { digest: call.digest, ...physicalCall, user_id: user, session_id: session, run_id: callRun });
   row('call_notes', { digest: call.digest, note: '合成历史说明', at: AT });
   row('call_reasons', { digest: call.digest, ordinal: 0, note: '合成完整原因', at: AT });
   row('trace_spans', { trace_id: '1'.repeat(32), span_id: '2'.repeat(16), parent_span_id: null, is_root: true,

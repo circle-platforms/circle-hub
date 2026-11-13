@@ -5,7 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { RecordEnvelope } from '../../../contracts/src/records.ts';
+import { RunRecord } from '../../../contracts/src/run.ts';
+import { Submission } from '../../../contracts/src/submission.ts';
+import { ValidationResult } from '../../../contracts/src/validation.ts';
+import { RequestRecord } from '../../../contracts/src/request.ts';
 import { canonicalize, digestOf, recordDigest, sha256Hex } from '../../records/api.ts';
+import type { CallLogEntry } from '../../records/api.ts';
 import { OLD33_MIGRATIONS, old33Checksum } from './testing/old33.ts';
 import { buildOld33Fixture, writeOld33Objects } from './testing/fixtures.ts';
 
@@ -88,8 +93,33 @@ test('previous-release authentication hashes, secret versions, reservations and 
   assert.equal(fixture.records.some(record => record.kind === 'run' &&
     (record.body as { run: string }).run === timed.run_id), false, 'a lease identity does not require a task record');
   const archived = new Set(fixture.archived);
-  assert.deepEqual(fixture.records.filter(record => archived.has(record.digest)).map(record => record.kind),
+  const history = fixture.records.filter(record => archived.has(record.digest));
+  assert.deepEqual(history.map(record => record.kind),
     ['run', 'submission', 'validation_result', 'request', 'call_log']);
+  assert.deepEqual(history.map(record => record.schema),
+    ['run@1', 'submission@1', 'validation@1', 'request@1', 'call_log@1']);
+  const run = RunRecord.parse(history[0]!.body), submission = Submission.parse(history[1]!.body);
+  const validation = ValidationResult.parse(history[2]!.body), request = RequestRecord.parse(history[3]!.body);
+  assert.equal(run.run, submission.run);
+  assert.equal(validation.submission, history[1]!.digest);
+  assert.equal(validation.run, run.run);
+  assert.equal(request.source, history[2]!.digest);
+  assert.deepEqual(history.map(record => record.provenance), ['observed', 'declared', 'projected', 'observed', 'observed']);
+  const pack = fixture.records.find(record => record.kind === 'pack_version' &&
+    (record.body as { digest: string }).digest === run.pack_digest)!;
+  assert.equal((pack.body as { kind: string }).kind, 'workflow');
+  assert.deepEqual(submission.items.map(item => item.item), run.items.map(item => item.id));
+  assert.deepEqual(validation.partitions.delivered.map(item => item.item), run.items.map(item => item.id));
+  const call = history[4]!.body as CallLogEntry;
+  assert.equal(call.run, run.run);
+  assert.equal(call.tool, 'submit_result');
+  assert.equal(call.args_digest, digestOf(submission));
+  assert.equal(call.args_size, Buffer.byteLength(canonicalize(submission)));
+  const physical = fixture.rows.find(row => row.table === 'call_logs')!.values;
+  for (const [field, value] of Object.entries(call)) {
+    const column = field === 'user' ? 'user_id' : field === 'session' ? 'session_id' : field === 'run' ? 'run_id' : field;
+    assert.deepEqual(physical[column], value);
+  }
   assert.equal(fixture.rows.filter(row => row.table === 'trace_spans').length, 1);
   assert.equal(fixture.rows.filter(row => row.table === 'memory_heads').length, 2);
   const personal = fixture.records.filter(record => record.scope);
