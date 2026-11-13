@@ -290,7 +290,7 @@ test('the run of a run-scoped record, by the runs engine\'s shapes; other kinds 
   const run = 'run_0123456789abcdefghjkmnpqrs';
   assert.equal(runOfRecord('validation_result', { run }), run);
   assert.equal(runOfRecord('submission', { run, model: 'm' }), run);
-  assert.equal(runOfRecord('submission', { received: { object: 'a'.repeat(64), size: 3, non_canonical_path: '/x', run } }), run);
+  assert.equal(runOfRecord('submission', { received: { object: 'a'.repeat(64), size: 3, non_canonical_path: '/x', run } }, 'submission-received@1'), run);
   assert.equal(runOfRecord('submission', { run, received: { run: 'run_other' } }), run, 'a canonical submission names its run first');
   assert.equal(runOfRecord('claim', { run }), null);
   assert.equal(runOfRecord('call_log', { run }), null);

@@ -1,15 +1,12 @@
-import {isMemoryRecord} from '../../contracts/src/memory.ts';
 import {RunRecord} from '../../contracts/src/run.ts';
 import {parseReference} from '../refs/api.ts';
 import type { ProducerKind } from '../../contracts/generated/vocabulary.ts';
-import { isKnowledgeContributionSchema } from '../../contracts/src/contributions.ts';
 import type { ContributionLayer } from '../knowledge/api.ts';
 // The readers hub/refs resolves references with, built on the records kit for one caller (B02 R[3], R02). Absent and
 // forbidden are the same null everywhere; the real reason goes to the admin note through `note`.
-import { canSeeRun } from '../runs/engine/api.ts';
 import type { RunsService } from '../ports.ts';
-import { IntegrityError, disclosedExistence, recordExistence } from '../records/api.ts';
-import type { Principal, RecordKind, RecordsKit, SourceArtifact, StoredRecord } from '../records/api.ts';
+import { IntegrityError, disclosedExistence, recordExistence, mayReadRecord, type RecordVisibilityPorts } from '../records/api.ts';
+import type { Principal, RecordsKit } from '../records/api.ts';
 import type { RecordRead, RecordReader, SourceRead, SourceReader } from '../refs/api.ts';
 import { step } from '../telemetry/api.ts';
 
@@ -46,23 +43,7 @@ export function sourceReaderFor(
   };
 }
 
-/** Record kinds that belong to a run: the runs engine's rule (hub/runs/engine/readers.ts). */
-const RUN_KINDS: ReadonlySet<string> = new Set<RecordKind>(['run', 'submission', 'validation_result', 'action', 'request']);
-
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/**
- * The run a run-scoped record belongs to. A run, validation result or action names it as `run`; a submission is stored
- * as the arguments received (`run` among them) or, when they are not canonical JSON, as `{received: {object, size,
- * non_canonical_path, run}}` (hub/runs submit.ts). `run` is taken first: a canonical submission's arguments may carry a
- * member named `received` of their own.
- */
-export function runOfRecord(kind: string, body: unknown, schema?: string): string | null {
-  if (!(kind==='claim'&&schema==='hypothesis-set@1')&&!RUN_KINDS.has(kind) || !isObject(body)) return null;
-  if (typeof body.run === 'string') return body.run;
-  if (kind === 'submission' && isObject(body.received) && typeof body.received.run === 'string') return body.received.run;
-  return null;
-}
+export { runOfRecord } from '../records/api.ts';
 
 /**
  * Records by digest for one caller. Records decides source artifacts for everyone, admins included (a read with a
@@ -72,26 +53,17 @@ export function runOfRecord(kind: string, body: unknown, schema?: string): strin
  * other kind (the console and the tools give those views where they are allowed).
  */
 export function recordReaderFor(records: RecordsKit, runs: RunsService, principal: Principal, note: (reason: string) => void = () => {}, contributions?: Pick<ContributionLayer, 'read'>): RecordReader {
-  const mayRead = async (record: StoredRecord): Promise<boolean> => {
-    const account = await records.principals.get(principal.id);
-    if (account === null || account.disabled) return false;
-    // Space manifests may contain directories outside a partial grant; use the path-filtered space API instead.
-    if (record.kind==='member_deletion'||record.kind==='knowledge_team_source_attribution'||record.kind==='knowledge_source_attribution'||isMemoryRecord(record)||record.kind.startsWith('knowledge_space_')||record.kind==='knowledge_share'||record.kind.startsWith('personal_pack_')) return false;
-    if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema)||record.schema==='claim@1'&&isObject(record.body)&&isObject(record.body.statement)&&isObject(record.body.statement.data)&&record.body.statement.data.feeding!==undefined)) return (await contributions?.read(record.digest, account)) != null;
-    if (record.kind === 'source_artifact') return records.artifacts.canRead(principal, record as SourceArtifact);
-    const run = runOfRecord(record.kind, record.body, record.schema);
-    if (run === null) return account.role==='admin';
-    // The run header decides visibility and canSeeRun; only a submission read by someone other than its runner needs the receipts.
-    const header = runs.runHeader !== undefined ? await runs.runHeader(account, run) : (await runs.getRun(account, run))?.run ?? null;
-    if (header === null) return false;
-    if(record.kind==='request'&&runs.requestReadable&&!await runs.requestReadable(account,record.body as import('../requests/api.ts').RequestBody))return false;
-    if(record.kind==='validation_result'&&runs.resultState&&!(await runs.resultState(account,record.body as import('../../contracts/src/validation.ts').ValidationResult)).readable)return false;
-    if(record.kind==='submission'&&header.runner!==account.id){
-      const detail = await runs.getRun(account, run);
-      if(detail===null||!detail.submissions.some(row=>row.record===record.digest&&row.result!==null))return false;
-    }
-    if(!canSeeRun(account,header)&&(record.kind==='request'||record.kind==='claim'&&record.schema==='hypothesis-set@1'))return false;
-    return canSeeRun(account, header) || record.kind !== 'validation_result' || isObject(record.body) && record.body.acceptance === 'accepted';
+  const visibility: RecordVisibilityPorts = {
+    account: id => records.principals.get(id),
+    run: async (by, id) => runs.runHeader !== undefined ? runs.runHeader(by, id) : (await runs.getRun(by, id))?.run ?? null,
+    source: (by, record) => records.artifacts.canRead(by, record),
+    contribution: async (by, record) => (await contributions?.read(record.digest, by)) != null,
+    request: async (by, _run, record) => !runs.requestReadable || await runs.requestReadable(by, record.body as import('../requests/api.ts').RequestBody),
+    result: async (by, _run, record) => !runs.resultState || (await runs.resultState(by, record.body as import('../../contracts/src/validation.ts').ValidationResult)).readable,
+    submission: async (by, run, record) => {
+      const detail = await runs.getRun(by, run.run);
+      return detail !== null && detail.submissions.some(row => row.record === record.digest && row.result !== null);
+    },
   };
   return {
     async read(digest): Promise<RecordRead | null> {
@@ -100,7 +72,7 @@ export function recordReaderFor(records: RecordsKit, runs: RunsService, principa
         note(`record ${digest} does not exist`);
         return null;
       }
-      if (!(await mayRead(record))) {
+      if (!(await mayReadRecord(principal, record, visibility))) {
         note(`record ${digest} (${record.kind}) is not readable by ${principal.id}`);
         return null;
       }
