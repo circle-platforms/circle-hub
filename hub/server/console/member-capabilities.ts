@@ -9,10 +9,11 @@ import { mePath } from './routes.ts';
 const EMPTY_TEAM = '请管理员把你加入团队';
 
 function occupancyText(occupancy: MemberCapabilities['environments'][number]['occupancy']): Html {
-  if (occupancy === null) return html`未知`;
-  const who = occupancy.mine ? '本人' : occupancy.holder ?? '其他成员';
-  const until = occupancy.until ? when(occupancy.until) : '进行中';
-  return html`${who} · 自 ${when(occupancy.since)} · ${until}`;
+  if (occupancy === null) return html`未知（空租约不代表物理空闲）`;
+  const until = occupancy.until ? when(occupancy.until) : '到何时未知';
+  if (occupancy.mine) return html`本人占用 · 自 ${when(occupancy.since)} · ${until}`;
+  const who = occupancy.holder ?? '其他成员';
+  return html`被${who}的运行占用 · 自 ${when(occupancy.since)} · ${until}`;
 }
 
 function packRows(items: MemberCapabilities['workflows']): unknown[][] {

@@ -168,7 +168,7 @@ export function countsLine(acceptance: SubmitOut['acceptance'], partitions: Part
 }
 
 const SOURCE_READ_ERRORS = {
-  SOURCE_UNPARSEABLE: true, SOURCE_UNAVAILABLE: true, SOURCE_NOT_PERMITTED: true, SOURCE_RETRYABLE: true,
+  SOURCE_UNPARSEABLE: true, SOURCE_UNAVAILABLE: true, SOURCE_RETRYABLE: true,
   SOURCE_INTEGRITY_UNPROVEN: true, SOURCE_READ_FAILED: true, SOURCE_READ_LIMIT: true,
   SOURCE_REDIRECT_REFUSED: true, SOURCE_ABSENT: true, SOURCE_PENDING_REVIEW: true,
 } satisfies Partial<Record<ProtocolCode, true>>;
@@ -177,12 +177,23 @@ function unknownError(error: ProtocolError): boolean {
   return isReason(error.code) || Object.hasOwn(SOURCE_READ_ERRORS, error.code);
 }
 
+/** SOURCE_NOT_PERMITTED is a judged refusal (e.g. no pack assignment), not missing evidence — findings N1/N7. */
+function errorStatusParts(error: ProtocolError): string[] {
+  if (unknownError(error)) return ['状态未知', '原因缺资料'];
+  if (error.code === 'SOURCE_NOT_PERMITTED') return ['状态已确认', '判断错误'];
+  return ['状态已确认', '判断错误', '原因还没查清'];
+}
+
 function errorText(v: { errors: ProtocolError[]; trace: string }): string {
-  return [v.errors.every(unknownError) ? '资料尚未取得。' : '这次核对有错误。', ...v.errors.map(error => [
-    error.message, ...(unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清']),
+  const allUnknown = v.errors.every(unknownError);
+  const allDenied = v.errors.length > 0 && v.errors.every((error) => error.code === 'SOURCE_NOT_PERMITTED');
+  const lead = allDenied ? null : allUnknown ? '资料尚未取得。' : '这次核对有错误。';
+  const lines = v.errors.map((error) => [
+    error.message, ...errorStatusParts(error),
     error.fix ? `下一步${error.fix}` : '下一步由使用者核对输入资料',
     error.rounds_left === undefined ? null : `最多重交 ${error.rounds_left} 次`, '决定者程序',
-  ].filter(part => part !== null).join('；'))].join('\n');
+  ].filter((part) => part !== null).join('；'));
+  return [lead, ...lines].filter((part): part is string => part !== null && part.length > 0).join('\n');
 }
 
 // ---------------------------------------------------------------- page cursors (get_nodes with a reference)
