@@ -51,21 +51,24 @@ export const sha = (text: string): string => sha256Hex(text);
 /** The synthetic product line every fake pack is bound to. */
 export const PRODUCT = { id: 'line-a', title: '合成产品线', names: ['Line A', 'LA'] } as const;
 
-export interface FakePack {
+interface FakePackFields {
   id: string;
   version: string;
-  kind: PackKind;
   title: string;
   description: string;
   /** Digest of the pack content (synthetic). */
   digest: string;
-  owner: string | null;
   summary: PackSummary | null;
   /** The workflow binds expected sources at start_run (workflow `expected_sources`), so start_run reads outside. */
   expectedSources?: boolean;
   /** The workflow declares a hub_template effect row, so an accepted submit_result can make the Hub dispatch (decision 105). */
   hubTemplate?: boolean;
 }
+
+export type FakePack = FakePackFields & (
+  | { kind: 'workflow'; owner: string }
+  | { kind: Exclude<PackKind, 'workflow'>; owner: string | null }
+);
 
 const REQUIREMENTS: PackSummary['requirements'] = [
   { key: 'structure', name: '结构', description: '用例结构完整', layers: ['static'], done_rule: 'bookkeeping', accepted_producer: 'fact', repair_rounds: 2, rules: [], run_interpreters: [] },
@@ -179,7 +182,7 @@ export class FakeWorkflows implements WorkflowStore {
   }
 
   async byDigest(digest: string): Promise<LoadedWorkflow | null> {
-    const pack = this.packs.find((p) => p.digest === digest && p.kind === 'workflow');
+    const pack = this.packs.find((p): p is Extract<FakePack, { kind: 'workflow' }> => p.digest === digest && p.kind === 'workflow');
     return pack === undefined ? null : loaded(pack);
   }
 
@@ -190,7 +193,7 @@ export class FakeWorkflows implements WorkflowStore {
   }
 }
 
-function loaded(pack: FakePack): LoadedWorkflow {
+function loaded(pack: Extract<FakePack, { kind: 'workflow' }>): LoadedWorkflow {
   const handle: PackHandle = { id: pack.id, version: pack.version, digest: pack.digest, kind: 'workflow', directory: join(tmpdir(), 'circle-hub-fake-pack', pack.id) };
   const manifest: PackManifest = { schema: 'pack@1', id: pack.id, version: pack.version, kind: 'workflow', title: pack.title, description: pack.description, files: [] };
   const workflow: WorkflowFile = {
@@ -217,6 +220,7 @@ function loaded(pack: FakePack): LoadedWorkflow {
   const slots: SlotsFile = { schema: 'slots@1', item: { findings: { min: 0 } }, run: {} };
   const instructions = '按规程逐条评审每个合成用例。';
   return {
+    owner: pack.owner,
     pack: handle,
     manifest,
     workflow,
