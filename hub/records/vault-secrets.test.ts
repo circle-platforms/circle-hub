@@ -91,7 +91,7 @@ test('wrong scratch keys, altered metadata and malformed payloads fail without r
     await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && !error.message.includes(secret));
     await writeFile(path, bytes);
     await new FileVault(join(f.root, 'vault', 'metadata'), f.provider).put('secret.demo_bad', '{"bad":"' + secret);
-    await assert.rejects(f.vault.readSecret('DEMO_BAD'), error => error instanceof Error && /元数据无法认证/.test(error.message) && !error.message.includes(secret));
+    await assert.rejects(f.vault.readSecret('DEMO_BAD'), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('metadata')) && !error.adminMessage.includes(secret));
     await writeFile(join(f.root, 'scratch.key'), randomBytes(32));
     await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && !error.message.includes(secret));
 });
