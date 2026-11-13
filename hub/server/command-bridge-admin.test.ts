@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { buildCommandArgv, commandParameterShape } from './command-parameters.ts';
 import { createCommandBridge } from './command-bridge.ts';
 import { UsageError } from './errors.ts';
+import { commandStep } from '../telemetry/api.ts';
+import { COMMAND_METADATA } from './command-registry.ts';
 
 const reference = 'src:' + 'a'.repeat(64);
 test('executor and document upload forms retain exclusive source modes and reach the existing CLI bridge', async () => {
@@ -45,4 +47,12 @@ test('web command bridge requires upload references while local CLI paths remain
     assert.equal((await bridge.run(argv, { token: 'synthetic-token' })).code, 2);
   }
   assert.equal(calls, 0);
+});
+
+test('new administrator subcommands retain their registered command telemetry steps', () => {
+  for (const name of ['executor', 'doc', 'pack']) {
+    const command = COMMAND_METADATA.find(entry => entry.name === name);
+    assert.equal(command?.step, commandStep(name));
+    assert.equal(command?.bridge, true);
+  }
 });

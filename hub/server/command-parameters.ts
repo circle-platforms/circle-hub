@@ -120,6 +120,10 @@ const executorOptions = { secret: flag('退役参数', '原命令保留明确拒
 const uploadedReference = text('上传原件引用', '当前账户可读取的完整 src 引用，不接受片段；与本机文件互斥', { schema: { type: 'string', pattern: '^src:[0-9a-f]{64}$' } });
 const sourceRules: Schema[] = [{ oneOf: [{ required: ['file'], not: { required: ['reference'] } }, { required: ['reference'], not: { required: ['file'] } }] }];
 const sourceVariants = (names: readonly string[]): PositionalVariant[] => [{ option: 'reference', present: false, names: [...names, 'file'] }, { option: 'reference', present: true, names }];
+const executorAssign = (action: 'assign' | 'unassign') => define(['executor', action], action === 'assign' ? '分配测试环境' : '撤回测试环境分配', sources.executor,
+  [positional('executor', '执行器', '已登记的测试环境执行器编号', true, stringSchema, true)],
+  { team: text('团队', '现有团队编号；与账户互斥', { schema: teamSchema, dynamicChoices: true }), user: text('账户', '现有账户名或成员编号；与团队互斥', { dynamicChoices: true }) },
+  { rules: [{ oneOf: [{ required: ['team'], not: { required: ['user'] } }, { required: ['user'], not: { required: ['team'] } }] }] });
 
 export const COMMAND_PARAMETERS = {
   'init-admin': define(['init-admin'], '建立第一位管理员', { file: 'hub/server/cli-admin.ts', symbol: 'initAdminCommand' }, [{ ...memberName(), required: false }], { 'password-stdin': flag('从标准输入读密码', '不设置时由现有命令生成初始密码') }, { stdin: [{ key: '管理员密码', enabledByOption: 'password-stdin', sensitive: true, description: '12–256 字符，无控制字符；仅通过 readSecret/stdin 传递' }], sensitiveOutput: true }),
@@ -158,6 +162,7 @@ export const COMMAND_PARAMETERS = {
   'executor.update': define(['executor', 'update'], '更新执行器定义', sources.executor, [positional('executor', '执行器', '现有执行器编号', true, stringSchema, true), positional('file', '定义文件', '本机 CLI 的 JSON 文件；网页使用上传原件引用', false)], { ...executorOptions, reference: uploadedReference }, { rules: sourceRules, variants: sourceVariants(['executor']) }),
   'executor.list': define(['executor', 'list'], '列出执行器', sources.executor, [], executorOptions),
   'executor.disable': define(['executor', 'disable'], '停用执行器', sources.executor, [positional('executor', '执行器', '现有执行器编号', true, stringSchema, true)], executorOptions),
+  'executor.assign': executorAssign('assign'), 'executor.unassign': executorAssign('unassign'),
   'doc.put': define(['doc', 'put'], '登记命名文档', { file: 'hub/server/cli-admin.ts', symbol: 'docCommand' }, [positional('name', '文档名', '命名文档的固定名称，由既有文档服务校验'), positional('file', '文档文件', '本机 CLI 的文件；网页使用上传原件引用', false)], { reference: uploadedReference }, { rules: sourceRules, variants: sourceVariants(['name']) }),
   'knowledge.sync': define(['knowledge', 'sync'], '同步知识来源', { file: 'hub/knowledge/cli.ts', symbol: 'parseKnowledgeSyncArgs' }, [], { product, line, 'dry-run': flag('只检查', '不保存同步产物'), recheck: flag('重新检查', '重新核对已知来源'), 'include-unreleased': flag('包含未发布构建', '同步未标为已发布的构建'), 'max-age': text('来源缓存秒数', '原解析允许 0 或至多 10 位十进制非负整数秒；0 强制重新读取', { schema: { type: 'string', pattern: '^(0|[1-9][0-9]{0,9})$' } }) }),
   'knowledge.seed': define(['knowledge', 'seed'], '建立版本线知识树', { file: 'hub/knowledge/seed.ts', symbol: 'parseKnowledgeSeedArgs' }, [], { product, line: { ...line, required: true }, build: text('构建', '可选的实际构建名', { dynamicChoices: true }), basis: text('理由', '去除首尾空白后 1–500 字，单行；原知识解析器执行此校验', { required: true }), 'dry-run': flag('只检查', '不保存产物') }),
