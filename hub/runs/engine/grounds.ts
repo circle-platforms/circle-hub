@@ -8,7 +8,7 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { Principal } from '../../records/api.ts';
 import { createDocumentCache, parseReference, resolveReference, type RecordReader } from '../../refs/api.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
-import { canSeeRun, canViewRun, identityOf, principalOf, recordReader, sourceReader } from './readers.ts';
+import { canSeeRun, canViewRun, identityOf, principalOf, recordReader } from './readers.ts';
 import {isMemoryRecord} from '../../../contracts/src/memory.ts';
 import { resultFor,runById,submissionByDigest } from './store.ts';
 import {HubReadFailure,retryRead} from './retry-read.ts';
@@ -31,8 +31,8 @@ async function withdrawalReferences(ctx:EngineContext,value:unknown,trustedResul
   }
   return [...references];
 }
-export async function hasWithdrawnGrounds(ctx:EngineContext,value:unknown,trustedResult=false):Promise<boolean>{return ctx.deps.knowledge?.spaces?.hasWithdrawnGrounds(await withdrawalReferences(ctx,value,trustedResult))??false;}
-export async function withdrawalState(ctx:EngineContext,value:unknown,by:Principal,trustedResult=false):Promise<{grounds_withdrawn:string[];grounds_withdrawn_hidden_count:number}>{return ctx.deps.knowledge?.spaces?.withdrawalState(await withdrawalReferences(ctx,value,trustedResult),by)??{grounds_withdrawn:[],grounds_withdrawn_hidden_count:0};}
+export async function hasWithdrawnGrounds(ctx:EngineContext,value:unknown,trustedResult=false):Promise<boolean>{return ctx.deps.knowledge.spaces.hasWithdrawnGrounds(await withdrawalReferences(ctx,value,trustedResult));}
+export async function withdrawalState(ctx:EngineContext,value:unknown,by:Principal,trustedResult=false):Promise<{grounds_withdrawn:string[];grounds_withdrawn_hidden_count:number}>{return ctx.deps.knowledge.spaces.withdrawalState(await withdrawalReferences(ctx,value,trustedResult),by);}
 
 export async function groundsAudience(ctx:EngineContext,run:RunRecord,value:ValidationResult,options:{pending?:boolean;recorded?:boolean;submitter?:Principal}={}):Promise<ProtocolError|null>{
   const grounds=resultGrounds(value,run);if(!grounds.length)return null;
@@ -68,7 +68,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
   const documents=createDocumentCache(8);
   const check=async(reference:string,seen:Set<string>,depth:number,atRun=run,pending=options.pending===true,inheritedInput=false):Promise<boolean>=>{
     if(depth>64||seen.has(reference))return false;seen.add(reference);
-    const spaces=ctx.deps.knowledge?.spaces,legacy=sourceReader(ctx.deps.records.artifacts,'function',atRun.sources);
+    const spaces=ctx.deps.knowledge.spaces;
     const identity=identityOf(by,pending?undefined:atRun.run);
     const ref=parseReference(reference);
     const frozenInput=ref.scheme==='rec'&&atRun.sources.some(binding=>{const input=parseReference(binding.reference);return input.scheme==='rec'&&input.record===ref.record&&(input.pointer===undefined||ref.pointer===input.pointer||ref.pointer?.startsWith(input.pointer+'/'));});
@@ -80,10 +80,10 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     // Admission checks authority over the source, not whether a selector passed the earlier static check.
     // A public product tree is one permission scope; personal trees retain their path and underlying-source guards.
     if(ref.scheme==='tree'){
-      const version=await spaces?.version(ref.root);
+      const version=await spaces.version(ref.root);
       if(version){
-        if(!await spaces!.mayRead(by,version.body.space,ref.path))return false;
-        for(const row of version.body.entries.filter(row=>row.path===ref.path&&(!ref.entry||row.entry===ref.entry))){const entry=await spaces!.entry(by,ref.root,ref.path,row.entry);if(!entry)return false;for(const ground of entry.body.grounds)if(!await check(ground.reference,new Set(seen),depth+1,atRun,pending,inheritedInput))return false;}
+        if(!await spaces.mayRead(by,version.body.space,ref.path))return false;
+        for(const row of version.body.entries.filter(row=>row.path===ref.path&&(!ref.entry||row.entry===ref.entry))){const entry=await spaces.entry(by,ref.root,ref.path,row.entry);if(!entry)return false;for(const ground of entry.body.grounds)if(!await check(ground.reference,new Set(seen),depth+1,atRun,pending,inheritedInput))return false;}
         return true;
       }
       const knowledge=ctx.deps.knowledge;
@@ -101,7 +101,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
         for(const candidate of candidates)if(candidate?.kind==='source_artifact'&&candidate.body.sha256===ref.sha256&&await ctx.deps.records.artifacts.canRead(by,candidate)){readable=true;break;}
         if(!readable&&inheritedInput&&await canViewRun(by,run,ctx.deps.records.store))readable=candidates.some(candidate=>candidate?.kind==='source_artifact'&&candidate.body.sha256===ref.sha256&&(pins.length>0&&'read' in candidate.body.origin&&candidate.body.visibility.admins&&candidate.body.provenance_type==='observed'||'generated' in candidate.body.origin&&candidate.body.origin.generated.inputs.some(input=>atRun.sources.some(binding=>binding.reference===input))));
         if(!readable)readable=await ctx.deps.records.artifacts.canReadForRun?.(by,ref.sha256,atRun.run,{...(capture?{record:capture}:{}),...(pending?{pending:atRun}:{})})??false;
-        if(!readable)readable=await spaces?.mayReadSource(by,ref.sha256,pending?undefined:atRun.run,'function',capture)??false;
+        if(!readable)readable=await spaces.mayReadSource(by,ref.sha256,pending?undefined:atRun.run,'function',capture);
         if(!readable)readable=await ctx.deps.personalPacks?.mayReadSource(by,ref.sha256,pending?undefined:atRun.run,capture)??false;
         if(!readable&&!pins.length&&atRun.run!==run.run){const outer=new Set(seen);outer.delete(reference);readable=await check(reference,outer,depth+1,run,options.pending===true);}
         if(!readable)return false;
@@ -116,7 +116,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
       if(pins.length){
         let selected:Awaited<ReturnType<typeof ctx.deps.records.artifacts.source>>=null;
         for(const capture of pins){
-          const original=spaces?await spaces.source(by,hash,pending?undefined:atRun.run,'function',capture):await ctx.deps.records.artifacts.source(by,hash,{consumer:'function',record:capture})??(pending?null:await ctx.deps.records.artifacts.sourceForRun(by,hash,atRun.run,{consumer:'function',record:capture}));
+          const original=await spaces.source(by,hash,pending?undefined:atRun.run,'function',capture);
           const declared=pending?await ctx.deps.records.artifacts.sourceForRun(by,hash,atRun.run,{consumer:'function',record:capture,pending:atRun}):null;
           const source=original??declared??await ctx.deps.personalPacks?.source(by,hash,pending?undefined:atRun.run,capture);
           if(!source)return null;
@@ -124,7 +124,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
         }
         return selected;
       }
-      const original=spaces?await spaces.source(by,hash,pending?undefined:atRun.run,'function'):await legacy.read(hash,reader);
+      const original=await spaces.source(by,hash,pending?undefined:atRun.run,'function');
       return original??await ctx.deps.personalPacks?.source(by,hash,pending?undefined:atRun.run)??null;
     }},consumer:'function'});
     if(ref.scheme==='rec'){
@@ -143,7 +143,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
       if(!resolved.resolved||!resolved.readable)return false;
       for(const ground of resolved.grounds)if(!await check(ground,new Set(seen),depth+1,atRun,pending,inheritedInput))return false;
     }
-    if(ref.scheme==='tree'&&spaces){const version=await spaces.version(ref.root);if(version){
+    if(ref.scheme==='tree'){const version=await spaces.version(ref.root);if(version){
       const rows=version.body.entries.filter(row=>row.path===ref.path&&(!ref.entry||row.entry===ref.entry));
       for(const row of rows){const entry=await spaces.entry(by,ref.root,ref.path,row.entry);if(!entry)return false;for(const ground of entry.body.grounds)if(!await check(ground.reference,new Set(seen),depth+1,atRun,pending,inheritedInput))return false;}
     }}

@@ -1,3 +1,5 @@
+import {createKnowledge} from '../../../knowledge/api.ts';
+import {runById,canViewRun,readPackDirectory,packSchema} from '../../api.ts';
 import type { RunsEngineDeps } from '../deps.ts';
 import {createTestParserRegistry} from '../../../testing/parsers.ts';
 import type { PermissionRole } from '../../../../contracts/generated/vocabulary.ts';
@@ -102,7 +104,6 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     for (const pack of ['toy-review', 'toy-verify', 'toy-locate']) workflows.assign(alice.id, pack);
     const packs = new FakePacks();
     await packs.install(dir);
-    const knowledge = new FakeKnowledge();
     const external = new FakeExternal(kit.artifacts);
     external.put('toy:mindmap:docq7', { bytes: toyMap(standardDocument()), mediaType: 'application/json', meta: { title: '分区浇灌用例', document: 'docq7' } });
     external.put('toy:story:4021', { bytes: new TextEncoder().encode('# 需求 4021\n\n分区编号 1 到 8，每次浇灌 1 到 120 分钟。\n'), mediaType: 'text/markdown', meta: { title: '需求 4021 分区浇灌' } });
@@ -112,12 +113,15 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
       meta: { title: '分区命令手册' },
     });
     external.put('toy:history:zone-list', { bytes: new TextEncoder().encode('历史用例：设置 1 区浇灌 10 分钟。\n'), mediaType: 'text/plain' });
+    const parsers=options.parsers??createTestParserRegistry();
+    const spaces=createKnowledge({records:kit,parsers,packs,runReads:{runById,canViewRun},packReads:{readPackDirectory,packSchema},external,clock:now,sandbox:options.sandbox??{requireOsIsolation:false}}).spaces;
+    const knowledge = new FakeKnowledge(spaces);
     const logs: AdminLogEntry[] = [];
     const leases = options.leases === true ? new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }) : null;
     const service = createRunsService({
       sandbox: options.sandbox ?? { requireOsIsolation: await osIsolationAvailable() },
       records: kit,
-      parsers: options.parsers??createTestParserRegistry(),
+      parsers,
       workflows,
       packs,
       knowledge,

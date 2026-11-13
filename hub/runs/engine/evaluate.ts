@@ -33,7 +33,7 @@ import { putAction } from './store.ts';
 import { createFunctionBatches, splitInputBatches } from './function-batches.ts';
 import { SubjectCopyError, createSubjectBuilder, subjectKey } from './subjects.ts';
 import { describe, fixOf } from './errors.ts';
-import { declarationGroundsRefusal } from '../../knowledge/declaration-grade.ts';
+import { declarationGroundsRefusal } from '../../knowledge/api.ts';
 import { buildScope, scopeProblem, emptyEvidence, type ExactResult, type ItemEvidence } from './exact.ts';
 import { independenceOf, warrantIndependence, type AuthorOrigin, type ProducerOrigin } from './independence.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
