@@ -1,3 +1,4 @@
+export { previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE, type EnvironmentUpgradeSources, type EnvironmentUpgradeReadContext, type EnvironmentUpgradePreview, type EnvironmentUpgradeReceipt } from './environment-assignment-upgrade.ts';
 export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpgradeGrant } from './environment-upgrade-types.ts';
 export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
 export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
