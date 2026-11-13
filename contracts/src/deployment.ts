@@ -12,7 +12,7 @@ export const DeploymentDocument = z.strictObject({
   name: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
   sha256: Sha256,
   size: z.number().int().nonnegative().max(2 * 1024 * 1024),
-  bytesBase64: z.string().max(4 * Math.ceil(2 * 1024 * 1024 / 3)).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  bytesBase64: z.string().max(4 * Math.ceil(2 * 1024 * 1024 / 3)).regex(/^[A-Za-z0-9+/]*={0,2}$/).refine(value => value.length % 4 === 0, 'base64 length is divisible by four'),
   mediaType: z.string().min(1).max(200),
   fileName: z.string().min(1).max(300),
 });
