@@ -770,14 +770,18 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };
 }
 
-const HANDLERS: Record<ToolName, Handler> = {
-  list_task_packs: listTaskPacks,
-  upload_file: uploadFile,
-  start_run: startRun,
-  get_nodes: getNodes,
-  resolve_reference: resolveTool,
-  submit_result: submitResult,
+const HANDLERS: Record<ToolName, { run: Handler; cancellableRead: boolean }> = {
+  list_task_packs: { run: listTaskPacks, cancellableRead: true },
+  upload_file: { run: uploadFile, cancellableRead: false },
+  start_run: { run: startRun, cancellableRead: false },
+  get_nodes: { run: getNodes, cancellableRead: false },
+  resolve_reference: { run: resolveTool, cancellableRead: true },
+  submit_result: { run: submitResult, cancellableRead: false },
 };
+
+export function supportsReadCancellation(name: string): boolean {
+  return isToolName(name) && HANDLERS[name].cancellableRead;
+}
 
 function isToolName(name: string): name is ToolName {
   return Object.hasOwn(HANDLERS, name);
@@ -810,7 +814,7 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   }
   let reply: Reply;
   try {
-    reply = await HANDLERS[name](deps, call, args ?? {});
+    reply = await HANDLERS[name].run(deps, call, args ?? {});
   } catch (error) {
     call.state.callResult = 'error';
     if (error instanceof McpError) throw error;
