@@ -299,7 +299,8 @@ describe('init-admin and the operator token', () => {
     admin.stdin.push('synthetic-default-admin-password');
     const created = await admin.run(['init-admin', '--password-stdin']);
     assert.equal(created.code, 0, created.text);
-    assert.match(created.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}（usr_[0-9a-z]{26}）`));
+    assert.match(created.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}$`, 'm'));
+    assert.doesNotMatch(created.text, /usr_/);
     if (admin.tokens?.value) secrets.add(admin.tokens.value);
     await withKit(admin, async (kit) => {
       const signed = await kit.principals.verifyPassword(DEFAULT_ADMIN_NAME, 'synthetic-default-admin-password');

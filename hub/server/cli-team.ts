@@ -41,14 +41,14 @@ export async function teamCommand(session: TeamCommandSession, args: readonly st
       const { positionals } = parse(rest, {}, 1);
       const by = await session.admin(), records = await session.records();
       const team = await decided(() => records.teams.create(by, positionals[0]));
-      session.out(`已创建团队 ${team.name}（${team.id}）`);
+      session.out(`已创建团队 ${team.name}`);
       return 0;
     },
     delete: async () => {
       const { positionals } = parse(rest, {}, 1), id = teamId(positionals[0]);
       const by = await session.admin(), records = await session.records();
       const team = await decided(() => records.teams.delete(by, id));
-      session.out(`已删除团队 ${team.name}（${team.id}）；撤回工作流分配 ${team.revoked_packs} 条、资源分配 ${team.revoked_resources} 条`);
+      session.out(`已删除团队 ${team.name}；撤回工作流分配 ${team.revoked_packs} 条、资源分配 ${team.revoked_resources} 条`);
       return 0;
     },
     add: async () => membership(true),
@@ -57,12 +57,14 @@ export async function teamCommand(session: TeamCommandSession, args: readonly st
   async function membership(add: boolean): Promise<number> {
     const { positionals } = parse(rest, {}, 2), id = teamId(positionals[0]);
     const by = await session.admin(), records = await session.records(), user = await session.user(positionals[1]);
+    const team = await decided(() => records.teams.get(by, id));
+    const teamName = team?.name ?? '团队';
     if (add) {
       await decided(() => records.teams.add(by, id, user.id));
-      session.out(`已将 ${user.name} 加入团队 ${id}`);
+      session.out(`已将 ${user.name} 加入团队 ${teamName}`);
     } else {
       const removed = await decided(() => records.teams.remove(by, id, user.id));
-      session.out(removed ? `已将 ${user.name} 移出团队 ${id}` : `${user.name} 不在团队 ${id} 中`);
+      session.out(removed ? `已将 ${user.name} 移出团队 ${teamName}` : `${user.name} 不在团队 ${teamName} 中`);
     }
     return 0;
   }

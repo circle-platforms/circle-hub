@@ -7,10 +7,15 @@ import {
   commandFields,
   registeredActionForm,
 } from './command-form.ts';
-import { ACTIONS } from './manage.ts';
+import { ACTIONS, displayCommandLine, resultPage, scrubInternalIds } from './manage.ts';
 import { TEAM_ACTIONS } from './team-actions.ts';
+import type { PageContext } from './context.ts';
 
 const formOf = (entries: Record<string, string>) => ({ get: (name: string) => entries[name] ?? '' });
+const team = 'tm_0123456789abcdefghjkmnpqrs';
+const user = 'usr_0123456789abcdefghjkmnpqrs';
+const executor = 'exe_0123456789abcdefghjkmnpqrs';
+const resource = 'res_0123456789abcdefghjkmnpqrs';
 
 test('N2 registered actions cover member, pack install, and environment registration commands', () => {
   for (const action of [
@@ -72,4 +77,52 @@ test('operations page wording no longer claims only four actions', async () => {
   const source = await import('node:fs/promises').then((fs) => fs.readFile(new URL('./operations.ts', import.meta.url), 'utf8'));
   assert.doesNotMatch(source, /只执行这四种管理操作/);
   assert.match(source, /经同一命令通道写入/);
+});
+
+test('scrubInternalIds removes management-result identity prefixes', () => {
+  assert.equal(scrubInternalIds(`已建立用户 甲（${user}，成员）`), '已建立用户 甲（成员）');
+  assert.equal(scrubInternalIds(`已撤回团队 ${team} 的工作流分配`), '已撤回团队 的工作流分配');
+  assert.doesNotMatch(scrubInternalIds(`资源 ${resource}：合成；执行器 ${executor}`), /usr_|tm_|exe_|res_/);
+});
+
+test('displayCommandLine replaces team and account ids with form labels', async () => {
+  const ctx = {
+    principal: { id: user, name: '合成管理员', role: 'admin' },
+    userName: async () => '合成成员',
+    deps: {
+      records: { teams: { get: async () => ({ id: team, name: '合成团队' }) } },
+      resources: { list: async () => [{ id: resource, name: '合成资源' }] },
+      dispatch: { executors: async () => [{ id: executor, target: 'APV_1', endpoint: 'https://192.0.2.1', enabled: true, resources: [] }] },
+    },
+  } as unknown as PageContext;
+  const line = await displayCommandLine(ctx, ['pack', 'unassign', 'case-compile', `--team=${team}`], formOf({ team, team_label: '研发测试组' }));
+  assert.equal(line, 'circle-hub pack unassign case-compile --team=研发测试组');
+  assert.doesNotMatch(line, /tm_|usr_|exe_|res_/);
+  const assigned = await displayCommandLine(ctx, ['executor', 'assign', executor, `--team=${team}`], formOf({}));
+  assert.equal(assigned, 'circle-hub executor assign APV_1 --team=合成团队');
+  const resLine = await displayCommandLine(ctx, ['resource', 'assign', resource, `--team=${team}`], formOf({}));
+  assert.equal(resLine, 'circle-hub resource assign 合成资源 --team=合成团队');
+});
+
+test('resultPage command echo and stdout hide internal ids', async () => {
+  const ctx = {
+    principal: { id: user, name: '合成管理员', role: 'admin' },
+    userName: async () => '合成成员',
+    chrome: (title: string) => ({ title, user: { name: '合成管理员', role: '管理员', admin: true } }),
+    deps: {
+      records: { teams: { get: async () => ({ id: team, name: '合成团队' }) } },
+      resources: { list: async () => [] },
+    },
+    url: new URL('http://192.0.2.1/console/admin/do/pack-unassign-team'),
+  } as unknown as PageContext;
+  const page = await resultPage(
+    ctx,
+    TEAM_ACTIONS['pack-unassign-team'],
+    [{ argv: ['pack', 'unassign', 'case-compile', `--team=${team}`], run: { code: 0, stdout: ['已撤回团队 合成团队 的 case-compile 分配'], stderr: [] } }],
+    formOf({ team, team_label: '合成团队' }),
+  );
+  const body = String(page.body);
+  assert.match(body, /circle-hub pack unassign case-compile --team=合成团队/);
+  assert.match(body, /已撤回团队 合成团队/);
+  assert.doesNotMatch(body, /tm_|usr_|exe_|res_/);
 });

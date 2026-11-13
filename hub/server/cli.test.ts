@@ -259,7 +259,10 @@ describe('users, tokens and logs', () => {
     assert.ok(rootToken, 'the bootstrap token is printed once');
     // The deployment's operator token item holds the admin's token (init-admin or operator-token set write it).
     const operator = tokensIn(memoryOperatorTokens(rootToken, '测试令牌存储'));
-    assert.equal((await run(['user', 'create', '甲'], env, operator)).code, 0);
+    const created = await run(['user', 'create', '甲'], env, operator);
+    assert.equal(created.code, 0, created.text);
+    assert.match(created.text, /已建立用户 甲（用户）/);
+    assert.doesNotMatch(created.text, /usr_|token issue/);
     assert.equal((await run(['user', 'create', '乙', '--role', 'superuser'], env, operator)).code, 2);
     const issued = await run(['token', 'issue', '甲', '--label', '笔记本'], env, operator);
     assert.equal(issued.code, 0, issued.text);
@@ -314,7 +317,8 @@ describe('users, tokens and logs', () => {
     assert.match(early.text, new RegExp(`还没有管理员[\\s\\S]*省略名字时为 ${DEFAULT_ADMIN_NAME}`));
     const root = await run(['user', 'create', '--role', 'admin'], env);
     assert.equal(root.code, 0, root.text);
-    assert.match(root.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}（usr_[0-9a-z]{26}）`));
+    assert.match(root.text, new RegExp(`已建立第一位管理员 ${DEFAULT_ADMIN_NAME}$`, 'm'));
+    assert.doesNotMatch(root.text, /usr_/);
     const operator = tokensIn(memoryOperatorTokens(root.out.find((line) => /^[A-Za-z0-9_-]{43}$/.test(line))!, '测试令牌存储'));
     const unnamed = await run(['user', 'create'], env, operator);
     assert.equal(unnamed.code, 2, unnamed.text);

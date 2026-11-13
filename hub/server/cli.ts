@@ -218,7 +218,7 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
       const { user, token } = await kit.principals.bootstrapAdmin(positionals[0] ?? DEFAULT_ADMIN_NAME, {password,mustChange:true});
       io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
       io.stdout(password);
-      out(io, `已建立第一位管理员 ${user.name}（${user.id}）`);
+      out(io, `已建立第一位管理员 ${user.name}`);
       io.stdout(`它的令牌 ${token.id} 只显示这一次，请立即保存到只有你能读的地方：`);
       io.stdout(token.token);
       return 0;
@@ -229,7 +229,7 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     const user = await kit.principals.createUser(by, positionals[0], role, {password,mustChange:true});
     io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
     io.stdout(password);
-    out(io, `已建立用户 ${user.name}（${user.id}，${roleText(user.role)}）；令牌用 circle-hub token issue ${user.name} 签发`);
+    out(io, `已建立用户 ${user.name}（${roleText(user.role)}）`);
     return 0;
   },
     'list': async () => {
