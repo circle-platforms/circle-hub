@@ -1,3 +1,4 @@
+import { isAdmin as hasAdminRole } from '../records/api.ts';
 // In-memory fakes of the ports the server consumes (hub/ports.ts), for the server's own tests and createTestServer. They are
 // deterministic, synthetic (an invented product line, invented commands, 192.0.2.0/24 addresses) and use the real records
 // kit for what records owns: users, pack assignments, uploads and the stored run, submission and result records. Each fake
@@ -138,9 +139,9 @@ class Script {
   }
 }
 
-async function isAdmin(records: RecordsKit, user: Principal): Promise<boolean> {
+async function isCurrentAdmin(records: RecordsKit, user: Principal): Promise<boolean> {
   const stored = await records.principals.get(user.id);
-  return stored !== null && !stored.disabled && stored.role === 'admin';
+  return stored !== null && !stored.disabled && hasAdminRole(stored);
 }
 
 async function isActive(records: RecordsKit, user: Principal): Promise<boolean> {
@@ -245,7 +246,7 @@ export class FakeProducts implements Pick<PacksPort, 'products' | 'readableProdu
   }
   /** A user reads the lines bound by a pack assigned to them; admins read every line (R01 R[2]). */
   async readableProducts(user: Principal): Promise<ReadonlySet<string>> {
-    if (await isAdmin(this.#records, user)) return new Set([PRODUCT.id]);
+    if (await isCurrentAdmin(this.#records, user)) return new Set([PRODUCT.id]);
     const usable = await this.#workflows.usable(user);
     return new Set(usable.some((pack) => pack.summary?.products.some((name) => (PRODUCT.names as readonly string[]).includes(name))) ? [PRODUCT.id] : []);
   }
@@ -259,7 +260,7 @@ export class FakePackCatalog implements PackCatalogPort {
     this.#workflows = workflows;
   }
   async list(user: Principal): Promise<PackListing[]> {
-    const admin = await isAdmin(this.#records, user);
+    const admin = await isCurrentAdmin(this.#records, user);
     const visible = admin ? this.#workflows.packs : await this.#workflows.usable(user);
     const out: PackListing[] = [];
     for (const pack of visible) {
@@ -288,7 +289,7 @@ export class FakeResources implements ResourceCatalogPort {
     this.#records = records;
   }
   async list(user: Principal): Promise<ResourceListing[]> {
-    if (!(await isAdmin(this.#records, user))) return [];
+    if (!(await isCurrentAdmin(this.#records, user))) return [];
     return [
       {
         id: 'res-tracker',
@@ -681,7 +682,7 @@ export class FakeRuns implements RunsService {
     const stored = this.runs.get(run);
     if (stored === undefined) return null;
     if (stored.record.runner === user.id && (await isActive(this.#records, user))) return stored;
-    return (await isAdmin(this.#records, user)) ? stored : null;
+    return (await isCurrentAdmin(this.#records, user)) ? stored : null;
   }
 
   async submitResult(user: Principal, args: Record<string, unknown>, context: CallContext): Promise<SubmitOut> {
@@ -855,7 +856,7 @@ export class FakeRuns implements RunsService {
 
   async exportRun(user: Principal, run: string): Promise<{ run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
     const stored = await this.#visible(user, run);
-    if (stored === null || (stored.record.runner !== user.id && !(await isAdmin(this.#records, user)))) return null;
+    if (stored === null || (stored.record.runner !== user.id && !(await isCurrentAdmin(this.#records, user)))) return null;
     const result = stored.latest?.result.acceptance === 'accepted' ? stored.latest.result : null;
     return { run: stored.record, result, submission: result ? this.#bodies.get(`${run}:${result.submission}`) ?? null : null };
   }
@@ -863,7 +864,7 @@ export class FakeRuns implements RunsService {
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecordView>> {
     const scripted = this.script.take('listRuns');
     if (scripted !== undefined) return scripted.value as Page<RunRecordView>;
-    const admin = await isAdmin(this.#records, user);
+    const admin = await isCurrentAdmin(this.#records, user);
     const active = await isActive(this.#records, user);
     const all = [...this.runs.values()]
       .map((s) => s.record)
