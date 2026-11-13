@@ -1,7 +1,7 @@
 // Parser interface, typed parse errors and the parser registry (B03 F[0]: a parser@version declares the selector grammar).
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type {SkillDependency,SkillLock} from '../../contracts/src/skills.ts';
-import {step} from '../telemetry/usage.ts';
+import {step} from '../telemetry/api.ts';
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };

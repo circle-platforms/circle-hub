@@ -7,7 +7,7 @@ import {createSkillParserRegistry} from './skills.ts';
 import {createDocumentCache} from './resolve.ts';
 import type {PackRegistry} from '../runs/api.ts';
 import type {RecordsKit} from '../records/api.ts';
-import type {FunctionAttempt} from '../rules/sandbox/retry.ts';
+import type {FunctionAttempt} from '../rules/api.ts';
 
 // Runs the actual child sandbox. OS isolation is optional here so the same synthetic
 // protocol tests run in CI where sandbox-exec is unavailable; macOS can require it.

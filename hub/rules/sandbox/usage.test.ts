@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
-import { installTraceSink, startTrace, type SpanRow } from '../../telemetry/usage.ts';
+import { installTraceSink, startTrace, type SpanRow } from '../../telemetry/api.ts';
 import { SandboxError } from './errors.ts';
 import { MAX_CONCURRENT, callPackFunction } from './sandbox.ts';
 
