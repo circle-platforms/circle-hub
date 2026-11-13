@@ -274,20 +274,16 @@ export const RequirementsFile = z
       for(const key of row.release.requirements)if(!f.requirements.some(requirement=>requirement.key===key))ctx.addIssue({code:'custom',path:['effects',index,'release','requirements'],message:'release requirement is not declared'});
       if(!f.requirements.some(requirement=>requirement.key===row.release.artifact))ctx.addIssue({code:'custom',path:['effects',index,'release','artifact'],message:'artifact fact requirement is not declared'});
     });
+  f.requirements.forEach((requirement,index)=>{
+    if(requirement.accepted_producer!=='fact')return;
+    if(requirement.layers.includes('static')&&requirement.checks.length===0)ctx.addIssue({code:'custom',path:['requirements',index,'checks'],message:'a declared static fact layer has an installed check at publication'});
+    if(requirement.layers.includes('dynamic')&&requirement.observation===undefined)ctx.addIssue({code:'custom',path:['requirements',index,'observation'],message:'a dynamic fact layer names the P07 observation contract'});
+  });
     f.requirements.forEach((r, i) => {
       if (f.requirements.findIndex((x) => x.key === r.key) !== i) ctx.addIssue({ code: 'custom', path: ['requirements', i, 'key'], message: `requirement ${r.key} is declared twice` });
     });
   });
 export type RequirementsFile = z.infer<typeof RequirementsFile>;
-
-/** New publication boundary; the base file shape remains available for older frozen publications. */
-export const PublishableRequirementsFile=RequirementsFile.superRefine((file,ctx)=>{
-  file.requirements.forEach((requirement,index)=>{
-    if(requirement.accepted_producer!=='fact')return;
-    if(requirement.layers.includes('static')&&requirement.checks.length===0)ctx.addIssue({code:'custom',path:['requirements',index,'checks'],message:'a declared static fact layer has an installed check at publication'});
-    if(requirement.layers.includes('dynamic')&&requirement.observation===undefined)ctx.addIssue({code:'custom',path:['requirements',index,'observation'],message:'a dynamic fact layer names the P07 observation contract'});
-  });
-});
 
 /** These are the sandbox protocol capacities, not effect counts or effect durations. */
 export const CHECK_LIMITS_MAX={timeoutMs:120_000,memoryMb:4096,outputBytes:64*1024*1024,logBytes:1024*1024,inputBytes:128*1024*1024} as const;
