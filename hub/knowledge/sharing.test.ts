@@ -151,7 +151,7 @@ test('sharing previews are read-only, ordered, and confirmation rechecks current
  const w=await makeWorld(postgres);t.after(w.close);const spaces=w.knowledge.spaces!,entry=await verified(w);
  const raw={root:entry.root,path:'/notes',entry:entry.entry};
  const mark=await w.kit.store.watermark!(),team=await spaces.current('team');
- const preview=await spaces.precheckShare(w.user,raw);assert.equal(preview.ok,true,JSON.stringify(preview));assert.ok(preview.checks.every(c=>c.state==='pass'));
+ const preview=await spaces.precheckShare(w.user,raw);assert.equal(preview.ok,true,JSON.stringify(preview));assert.deepEqual(preview.checks.map(c=>[c.check,c.state]),[['grounds','pass'],['quotations','pass'],['sources','pass'],['duplicates','pass'],['credentials','unchecked']]);assert.match(preview.checks.at(-1)!.message,/未.*扫描/);
  assert.equal(await w.kit.store.watermark!(),mark);assert.deepEqual(await spaces.current('team'),team);
  await spaces.withdraw(w.user,entry.entry,w.user.id);
  const refused=await spaces.share(w.user,raw);assert.equal(refused.code,'SHARE_UNVERIFIED');

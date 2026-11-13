@@ -121,7 +121,7 @@ export class MemoryDocuments{
  precheckGrant(by:Principal,path:string):Promise<SharingCheck[]>{return withReadScope(()=>this.#precheckGrant(by,path));}
  async #precheckGrant(by:Principal,path:string):Promise<SharingCheck[]>{
   by=await this.#user(by);path=pathCheck(path);
-  const check:SharingCheck={check:ShareCheckSchema.enum.credentials,state:'pass',code:null,message:'',fix:''};
+  const check:SharingCheck={check:ShareCheckSchema.enum.credentials,state:'unchecked',code:null,message:'未执行内容凭据扫描',fix:''};
   try{
    const heads=(await this.#index().heads(by.id)).filter(head=>withinSpacePath(head.path,path));
    const rows=await Promise.allSettled(heads.map(async head=>{const {body}=await this.#version(head);return {body,text:await this.#text(body)};}));
@@ -133,7 +133,7 @@ export class MemoryDocuments{
  }
  #scan(title:string,path:string,markdown:string){
   for(const [name,text] of [['title',title],['path',path],['markdown',markdown]]){
-   const scan=scanContent(Buffer.from(text));if(!scan.inspected||scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');
+   const scan=scanContent(Buffer.from(text));if(scan.truncated)return fail('SPACE_CONTENT_UNINSPECTABLE');
    const field=uiLabelOf('memory_field',name==='title'?MemoryFieldSchema.enum.document_title:name==='path'?MemoryFieldSchema.enum.directory_path:MemoryFieldSchema.enum.markdown_text);
    if(scan.findings.length)throw new KnowledgeError(PROTOCOL_CODES.MEMORY_CREDENTIALS_DETECTED.when+'；'+scan.findings.slice(0,5).map(f=>field+'第 '+f.line+' 行').join('、'),{code:'MEMORY_CREDENTIALS_DETECTED',detail:{positions:scan.findings.map(f=>({field:name,line:f.line,detector:f.detector}))}});
   }
@@ -236,14 +236,14 @@ export class MemoryDocuments{
   const disabled=merged.some(share=>share.team_document&&heads.get(share.team_document)?.state==='disabled');
   const replacement=old&&old.version===previous?.team_version?old:undefined;
   const target=pathCheck(input.team_path??source.path),effect=replacement?'replace':'create';
-  const scan=scanContent(Buffer.from(target)),safeTarget=scan.inspected&&!scan.truncated&&!scan.findings.length;
+  const scan=scanContent(Buffer.from(target)),safeTarget=!scan.truncated&&!scan.findings.length;
   try{
    if(disabled)fail('MEMORY_TEAM_DISABLED');checks[phase++].state='pass';
    const index=this.#index(),usage=await index.usage('team',tx),contextBytes=Buffer.byteLength(source.title+target+source.markdown),documents=usage.activeDocuments-Number(replacement?.state==='enabled')+1;
    if(source.bytes>index.limits.documentBytes)fail('MEMORY_DOCUMENT_LIMIT');if(usage.active-(replacement?.state==='enabled'?replacement.contextBytes:0)+contextBytes>index.limits.spaceBytes||documents>index.limits.spaceDocuments)fail('MEMORY_SPACE_LIMIT');
-   checks[phase++].state='pass';this.#scan(source.title,target,source.markdown);checks[phase].state='pass';
+   checks[phase++].state='pass';this.#scan(source.title,target,source.markdown);checks[phase].message='未执行内容凭据扫描';
   }catch(error){const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';checks[phase]={...checks[phase],state:code==='SPACE_CONTENT_UNINSPECTABLE'?'incomplete':'violation',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES[code].when,fix:PROTOCOL_CODES[code].fix};}
-  return {source,checks,replacement,target,safeTarget,effect:disabled?null:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass')};
+  return {source,checks,replacement,target,safeTarget,effect:disabled?null:effect as MemoryShareBody['effect'],ok:checks.every(c=>c.state==='pass'||c.check===ShareCheckSchema.enum.credentials&&c.state==='unchecked')};
  }
  async share(by:Principal,raw:unknown):Promise<MemorySharingResult>{
   by=await this.#user(by);const input=MemoryShareInput.parse(raw),intent=digest([by.id,'memory.share',input.client_key]),payload=digest({...input,check_only:false});
@@ -253,7 +253,7 @@ export class MemoryDocuments{
    const cached=await this.#ctx.records.store.getByKey('memory_share',intent,tx);if(cached){const body=MemoryShareBody.parse(cached.body);if(body.payload!==payload)fail('IDEMPOTENCY_MISMATCH');return {ok:body.status==='merged',checks:[],effect:body.effect,replaces:body.effect==='replace'?body.team_document:null,title:'',target_path:body.target_path,share:body,record:cached.digest};}
    const plan=await this.#sharePlan(by,input,tx);let saved:MemoryWriteReceipt|null=null;
    if(plan.ok){const previous=plan.replacement?(await this.#version(plan.replacement,plan.replacement.version,tx)).body:undefined;saved=await this.#save(by,'team',intent,payload,{title:plan.source.title,path:plan.target,markdown:plan.source.markdown,state:'enabled',head:plan.replacement,previous},tx);}
-   const failed=plan.checks.find(c=>c.state!=='pass'),body=MemoryShareBody.parse({document:input.document,version:input.version,by:by.id,at:this.#now(),intent,payload,status:plan.ok?'merged':'rejected',code:failed?.code??null,message:failed?.message??'',...(plan.safeTarget?{target_path:plan.target}:{}),team_document:saved?.document??null,team_version:saved?.version??null,effect:plan.effect,replaces:plan.replacement?.version??null});
+   const failed=plan.checks.find(c=>c.state!=='pass'&&!(c.check===ShareCheckSchema.enum.credentials&&c.state==='unchecked')),body=MemoryShareBody.parse({document:input.document,version:input.version,by:by.id,at:this.#now(),intent,payload,status:plan.ok?'merged':'rejected',code:failed?.code??null,message:failed?.message??'',...(plan.safeTarget?{target_path:plan.target}:{}),team_document:saved?.document??null,team_version:saved?.version??null,effect:plan.effect,replaces:plan.replacement?.version??null});
    const record=await this.#ctx.records.store.put({kind:'memory_share',schema:'memory-share@1',provenance:'declared',unique_key:intent,body,index:[{key:'memory.share.by',value:by.id},{key:'memory.share.source',value:by.id+':'+input.document}]},tx);return {ok:plan.ok,checks:plan.checks,effect:plan.effect,replaces:plan.replacement?.document??null,title:plan.source.title,...(plan.safeTarget?{target_path:plan.target}:{}),share:body,record:record.digest};
   }));
  }

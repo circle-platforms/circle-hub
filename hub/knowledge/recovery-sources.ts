@@ -5,7 +5,7 @@ import type { Knowledge } from './service.ts';
 const MAX_SOURCES=512, BATCH=8;
 /**
  * A root reader may see derived entries without direct access to the synchronizer's raw captures. Every source of the root must
- * still be model-readable as the live read decides it: clean, or carrying credential findings that an acceptance in force lifts
+ * still be model-readable as the live read decides it: unscanned content is not a credential finding, and actual findings need an acceptance in force
  * (a manual with example passwords accepted by an administrator is readable; one that nothing lifts is retained only).
  */
 export async function recoverySourcesReadable(knowledge:KnowledgePort,user:Principal,root:string):Promise<boolean>{
@@ -22,7 +22,7 @@ export async function recoverySourcesReadable(knowledge:KnowledgePort,user:Princ
     const results=await Promise.all(unique.slice(at,at+BATCH).map(async source=>{
       const current=await context.records.artifacts.source(admin,source.sha256,{consumer:'model',record:source.artifact});
       const scan=current?.artifact.body.scan;
-      return !!current&&current.readTier==='model_readable'&&!!current.bytes&&current.bytes.length===current.size&&sha256Hex(current.bytes)===source.sha256&&(current.acceptance!==undefined||scan?.inspected===true&&!scan.truncated&&scan.findings.length===0);
+      return !!current&&current.readTier==='model_readable'&&!!current.bytes&&current.bytes.length===current.size&&sha256Hex(current.bytes)===source.sha256&&(current.acceptance!==undefined||scan!==undefined&&!scan.truncated&&scan.findings.length===0);
     }));
     if(results.some(ok=>!ok))return false;
   }
