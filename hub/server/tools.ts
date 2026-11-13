@@ -109,18 +109,8 @@ function loadPublished(): Map<string, PublishedTool> {
 export const PUBLISHED: ReadonlyMap<string, PublishedTool> = loadPublished();
 const DEFINITIONS: ReadonlyMap<string, ToolDefinition> = new Map(TOOLS.map((tool) => [tool.name, tool]));
 
-/** The tool's own empty shape for a protocol error (D05 R[3]): no invented run ids, locks or digests. */
-const EMPTY: Record<ToolName, Answer> = {
-  list_task_packs: { packs: [] },
-  upload_file: { acceptance: 'not_accepted' },
-  start_run: {},
-  get_nodes: {},
-  resolve_reference: { references: [], diagnostics: [] },
-  submit_result: { acceptance: 'not_accepted' },
-};
-
 export function errorAnswer(tool: ToolName, errors: ProtocolError[], extra: Answer = {}): Answer {
-  return { call_result: 'error', errors, ...EMPTY[tool], ...extra };
+  return { call_result: 'error', errors, ...HANDLERS[tool].empty, ...extra };
 }
 
 /** The neutral answer, for the credential and login classes only (D05 R[3]); the real reason goes to the admin note only. */
@@ -293,7 +283,7 @@ async function publishedTools(deps: ServerDeps, principal: Principal, note: (rea
       description: published.description,
       inputSchema: published.inputSchema,
       outputSchema: published.outputSchema,
-      annotations: annotationsFor(tool.name === 'submit_result' && dispatches ? 'job' : tool.effect, tool.writesHubRecords, { readsExternal: tool.readsExternal === true && external, idempotent: tool.idempotent === true }),
+      annotations: annotationsFor(HANDLERS[tool.name].dispatchesJobs && dispatches ? 'job' : tool.effect, tool.writesHubRecords, { readsExternal: tool.readsExternal === true && external, idempotent: tool.idempotent === true }),
     };
   });
 }
@@ -770,13 +760,14 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };
 }
 
-const HANDLERS: Record<ToolName, { run: Handler; cancellableRead: boolean }> = {
-  list_task_packs: { run: listTaskPacks, cancellableRead: true },
-  upload_file: { run: uploadFile, cancellableRead: false },
-  start_run: { run: startRun, cancellableRead: false },
-  get_nodes: { run: getNodes, cancellableRead: false },
-  resolve_reference: { run: resolveTool, cancellableRead: true },
-  submit_result: { run: submitResult, cancellableRead: false },
+/** Empty error envelopes and operational capabilities belong to the registered handler. */
+const HANDLERS: Record<ToolName, { run: Handler; empty: Answer; cancellableRead: boolean; dispatchesJobs?: true }> = {
+  list_task_packs: { run: listTaskPacks, empty: { packs: [] }, cancellableRead: true },
+  upload_file: { run: uploadFile, empty: { acceptance: 'not_accepted' }, cancellableRead: false },
+  start_run: { run: startRun, empty: {}, cancellableRead: false },
+  get_nodes: { run: getNodes, empty: {}, cancellableRead: false },
+  resolve_reference: { run: resolveTool, empty: { references: [], diagnostics: [] }, cancellableRead: true },
+  submit_result: { run: submitResult, empty: { acceptance: 'not_accepted' }, dispatchesJobs: true, cancellableRead: false },
 };
 
 export function supportsReadCancellation(name: string): boolean {

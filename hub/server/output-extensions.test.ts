@@ -1,8 +1,9 @@
+import { TOOLS } from '../../contracts/src/tools.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { ServerDeps } from './api.ts';
-import { callTool, type ToolCall } from './tools.ts';
+import { callTool, errorAnswer, type ToolCall } from './tools.ts';
 
 const run = 'run_0123456789abcdefghjkmnpqrs';
 function call(): ToolCall {
@@ -24,4 +25,12 @@ test('server validation preserves top-level and nested output extensions in stru
 test('output extensions do not bypass known field validation', async () => {
   const answer = { call_result: 'ok', errors: [], resolution: 'resolved', references: 'invalid', diagnostics: [], extension: true };
   await assert.rejects(callTool(deps(answer), call(), 'resolve_reference', { run, text: '合成原句' }), error => error instanceof McpError && error.code === ErrorCode.InternalError);
+});
+
+
+test('registered handler error envelopes satisfy every published tool output boundary', () => {
+  for (const tool of TOOLS) {
+    const answer = { ...errorAnswer(tool.name, [{ code: 'SOURCE_UNAVAILABLE', message: '合成资料不可用', fix: '提供合成资料' }]), trace: '1'.repeat(32) };
+    assert.ok(tool.output.safeParse(answer).success, tool.name);
+  }
 });
