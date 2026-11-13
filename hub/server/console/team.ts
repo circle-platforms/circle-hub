@@ -267,22 +267,22 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
   const assignedResources = assignments.resources.filter((row) => !row.body.revoked);
   const packRows = workflows.map((pack) => {
     const has = assignedPacks.has(pack.id);
-    const form = actionForm(has ? 'pack-unassign-team' : 'pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="pack" value="${pack.id}">`, has ? '撤回' : '分配', { inline: true });
+    const form = actionForm(has ? 'pack-unassign-team' : 'pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}"><input type="hidden" name="pack" value="${pack.id}">`, has ? '撤回' : '分配', { inline: true });
     return [pack.title, has ? '已分配' : '未分配', form];
   });
   const resourceRows = assignedResources.map((row) => {
     const id = row.body.object;
-    const form = actionForm('resource-unassign', ctx.csrf ?? '', html`<input type="hidden" name="resource" value="${id}"><input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}">`, '撤回', { inline: true });
+    const form = actionForm('resource-unassign', ctx.csrf ?? '', html`<input type="hidden" name="resource" value="${id}"><input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, '撤回', { inline: true });
     return [packName(id), when(row.body.decided_at), form];
   });
   const addCandidates = activeUsers.filter((user) => !memberIds.has(user.id));
-  const addMember = card({ title: '加入成员' }, actionForm('team-add', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}">${field('成员', selectControl(
+  const addMember = card({ title: '加入成员' }, actionForm('team-add', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${field('成员', selectControl(
     'user',
     addCandidates.map((user) => ({ value: user.id, label: user.name })),
     addCandidates.length === 0 ? { value: '', label: '没有可加入的账户' } : undefined,
     { required: true, disabled: addCandidates.length === 0 },
   ))}`, '加入'));
-  const assignResource = card({ title: '分配业务系统' }, actionForm('resource-assign', ctx.csrf ?? '', html`<input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}">${field('业务系统', selectControl(
+  const assignResource = card({ title: '分配业务系统' }, actionForm('resource-assign', ctx.csrf ?? '', html`<input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${field('业务系统', selectControl(
     'resource',
     resources.map((row) => ({ value: row.id, label: row.name })),
     resources.length === 0 ? { value: '', label: '尚无业务系统' } : undefined,
@@ -291,7 +291,7 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
   const packCount = assignedPacks.size;
   const resourceCount = assignedResources.length;
   const deleteId = 'delete-team-detail';
-  const deleteDialog = dialog(deleteId, '删除团队', html`<p>删除「${team.name}」会一并撤回它名下的分配：工作流 ${count(packCount)} 条，业务系统 ${count(resourceCount)} 条。</p>`, postForm({ action: '/console/admin/do/team-delete', csrf: ctx.csrf ?? '', fields: html`<input type="hidden" name="team" value="${team.id}">`, submit: '删除', danger: true }));
+  const deleteDialog = dialog(deleteId, '删除团队', html`<p>删除「${team.name}」会一并撤回它名下的分配：工作流 ${count(packCount)} 条，业务系统 ${count(resourceCount)} 条。</p>`, postForm({ action: '/console/admin/do/team-delete', csrf: ctx.csrf ?? '', fields: html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, submit: '删除', danger: true }));
   return {
     status: 200,
     body: page(ctx.chrome(team.name, {
@@ -303,7 +303,7 @@ ${card({ title: '概况' }, definitions([['名称', team.name], ['成员', count
 ${card({ title: '成员' }, table(['名字', '角色', '状态', '加入时间', ''], memberRows, '没有成员'))}
 ${addMember}
 ${card({ title: '工作流分配' }, table([uiLabelOf('pack_kind', 'workflow'), '状态', ''], packRows, '尚无工作流'))}
-${card({ title: '批量分配工作流', hint: '可一次勾选多个工作流分给本团队。' }, actionForm('pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}">${workflows.filter((pack) => !assignedPacks.has(pack.id)).length === 0 ? html`<p class="ch-meta">没有未分配的工作流。</p>` : html`<div data-fields>${workflows.filter((pack) => !assignedPacks.has(pack.id)).map((pack) => html`<label class="check" data-wide-field><input type="checkbox" name="packs" value="${pack.id}"> ${pack.title}</label>`)}</div>`}`, '分配选中的工作流', { primary: true }))}
+${card({ title: '批量分配工作流', hint: '可一次勾选多个工作流分给本团队。' }, actionForm('pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${workflows.filter((pack) => !assignedPacks.has(pack.id)).length === 0 ? html`<p class="ch-meta">没有未分配的工作流。</p>` : html`<div data-fields>${workflows.filter((pack) => !assignedPacks.has(pack.id)).map((pack) => html`<label class="check" data-wide-field><input type="checkbox" name="packs" value="${pack.id}"> ${pack.title}</label>`)}</div>`}`, '分配选中的工作流', { primary: true }))}
 ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], resourceRows, '尚未分配业务系统'))}
 ${assignResource}
 ${deleteDialog}

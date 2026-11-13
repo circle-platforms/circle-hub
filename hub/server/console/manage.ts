@@ -385,11 +385,77 @@ function onceNotice(argv: readonly string[]): string | null {
   return argv[0] === 'user' && argv[1] === 'invite' ? INVITATION_ONCE : null;
 }
 
+/** Internal identity prefixes that must not appear in management result pages (hub-terms §2). */
+const INTERNAL_ID = /(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}/g;
+const INTERNAL_ID_ONLY = /^(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}$/;
+
+/** Drop internal ids from CLI output shown on the result page; keep surrounding Chinese text. */
+export function scrubInternalIds(text: string): string {
+  return text
+    .replace(/（(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}）/g, '')
+    .replace(/（(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}，/g, '（')
+    .replace(/(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}：/g, '')
+    .replace(INTERNAL_ID, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ +\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
+
+/** Resolve an internal id to the name the form selected, or look it up from records/dispatch. */
+async function displayNameFor(ctx: PageContext, id: string, form?: Form): Promise<string> {
+  if (form) {
+    for (const [field, labelField] of [['team', 'team_label'], ['user', 'user_label'], ['resource', 'resource_label'], ['executor', 'executor_label']] as const) {
+      if (form.get(field) === id) {
+        const label = form.get(labelField);
+        if (label !== '') return label;
+      }
+    }
+  }
+  if (id.startsWith('usr_')) {
+    const name = await ctx.userName(id);
+    return name !== '' && name !== id ? name : '账户';
+  }
+  if (id.startsWith('tm_')) {
+    const team = await ctx.deps.records.teams.get(ctx.principal, id);
+    return team?.name ?? '团队';
+  }
+  if (id.startsWith('res_')) {
+    const rows = await ctx.deps.resources.list(ctx.principal);
+    return rows.find((row) => row.id === id)?.name ?? '资源';
+  }
+  if (id.startsWith('exe_')) {
+    const rows = await ctx.deps.dispatch?.executors(ctx.principal) ?? [];
+    return rows.find((row) => row.id === id)?.target ?? '测试环境';
+  }
+  return id;
+}
+
+/** Command echo for the result page: same argv, but internal ids replaced by display names. */
+export async function displayCommandLine(ctx: PageContext, argv: readonly string[], form?: Form): Promise<string> {
+  const parts: string[] = [];
+  for (const word of argv) {
+    const flag = /^--([^=]+)=(.*)$/.exec(word);
+    if (flag !== null && INTERNAL_ID_ONLY.test(flag[2])) {
+      parts.push(`--${flag[1]}=${await displayNameFor(ctx, flag[2], form)}`);
+      continue;
+    }
+    if (INTERNAL_ID_ONLY.test(word)) {
+      parts.push(await displayNameFor(ctx, word, form));
+      continue;
+    }
+    parts.push(word);
+  }
+  return ['circle-hub', ...parts].join(' ');
+}
+
 function runLines(run: CommandRun, notice: string | null): Html {
+  const stdout = scrubInternalIds(run.stdout.join('\n'));
+  const stderr = scrubInternalIds(run.stderr.join('\n'));
   return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${uiLabelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
-${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
-${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}</code></pre>` : ''}`;
+${stdout.length > 0 ? pre(stdout) : ''}
+${stderr.length > 0 ? html`<pre class="error"><code>${stderr}</code></pre>` : ''}`;
 }
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
@@ -398,13 +464,13 @@ function actionChrome(ctx: PageContext, action: Action) {
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
-export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | readonly { argv: readonly string[]; run: CommandRun }[], form?: Form): PageResult {
+export async function resultPage(ctx: PageContext, action: Action, runs: CommandRun | readonly { argv: readonly string[]; run: CommandRun }[], form?: Form): Promise<PageResult> {
   const steps = 'code' in runs ? [{ argv: [] as readonly string[], run: runs }] : runs;
   const last = steps[steps.length - 1].run;
   const several = !('code' in runs);
-  const body = steps.map((step, index) => several
-    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
-    : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
+  const body = html`${await Promise.all(steps.map(async (step, index) => several
+    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${await displayCommandLine(ctx, step.argv, form)}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
+    : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null))))}`;
   const trust = ctx.secure ? '把颁发机构证书加入 trust_cert_files。' : '';
   const connected = html`<p>${link('/console/team','查看团队')}</p>`;
   const afterMember = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
@@ -693,7 +759,7 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
     return { status: 202, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已在后台开始，${link(`/console/admin/jobs/${job.id}`, '查看进展')}。Hub 重启时，进行中的任务需重新发起，已写入的内容不受影响。</p>`)}<p>${link(action.back, '返回')}</p>`) };
   }
   const runs = await runBuiltSteps(bridge, built, token, deps.log, ctx.principal.name);
-  return resultPage(ctx, action, built.length === 1 ? runs[0].run : runs, form);
+  return await resultPage(ctx, action, built.length === 1 ? runs[0].run : runs, form);
 }
 
 // ---------------------------------------------------------------- setup
