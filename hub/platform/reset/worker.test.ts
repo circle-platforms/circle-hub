@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -116,4 +116,46 @@ test('worker waits for ACK and keeps running while the reset callback is rolling
   assert.equal(state.completed, true);
   assert.equal(state.report, undefined);
   assert.ok(!JSON.stringify(state).includes('synthetic secret'));
+});
+
+
+test('a confirmed dead worker is finalized privately and a new authorized action can recover', async t => {
+  const f = await fixture(t);
+  const { operationId: id } = await launchReset(f.context, request, AUTH);
+  await acknowledgeReset(f.context, id, AUTH);
+  const directory = join(f.context.layout.run, 'reset');
+  await writeFile(join(directory, `${id}.claim`), id, { mode: 0o600 });
+  await writeFile(join(directory, `${id}.status.json`), JSON.stringify({ operationId: id, acknowledged: true, running: true, completed: false, workerPid: 12345 }), { mode: 0o600 });
+  t.mock.method(process, 'kill', (pid, signal) => {
+    assert.equal(pid, 12345); assert.equal(signal, 0);
+    throw Object.assign(new Error('synthetic dead process'), { code: 'ESRCH' });
+  });
+  const state = await readResetStatus(f.context, id, AUTH);
+  assert.equal(state.completed, true);
+  assert.equal(state.running, false);
+  assert.match(state.error!.nextAction, /恢复/);
+  assert.equal('workerPid' in state, false);
+  let executed = false;
+  assert.equal(await runResetWorker(f.context, id, async () => { executed = true; return report; }), 1);
+  assert.equal(executed, false);
+  const next = await launchReset(f.context, request, 'admin:synthetic-user:recovery-action');
+  assert.notEqual(next.operationId, id);
+});
+
+test('EPERM does not declare a worker dead and a lost launch without a PID expires', async t => {
+  const f = await fixture(t);
+  const { operationId: id } = await launchReset(f.context, request, AUTH);
+  const path = join(f.context.layout.run, 'reset', `${id}.status.json`);
+  await writeFile(path, JSON.stringify({ operationId: id, acknowledged: true, running: true, completed: false, workerPid: 12345 }), { mode: 0o600 });
+  t.mock.method(process, 'kill', () => { throw Object.assign(new Error('synthetic inaccessible process'), { code: 'EPERM' }); });
+  const active = await readResetStatus(f.context, id, AUTH);
+  assert.equal(active.running, true); assert.equal(active.completed, false);
+  assert.equal('workerPid' in active, false);
+  await assert.rejects(launchReset(f.context, request, 'admin:synthetic-user:new-action'), /已有初始化/);
+  await writeFile(path, JSON.stringify({ operationId: id, acknowledged: false, running: false, completed: false }), { mode: 0o600 });
+  f.advance();
+  const lost = await readResetStatus(f.context, id, AUTH);
+  assert.equal(lost.completed, true); assert.equal(lost.running, false);
+  assert.match(lost.error!.reason, /未执行/);
+  assert.notEqual((await launchReset(f.context, request, 'admin:synthetic-user:new-action')).operationId, id);
 });
