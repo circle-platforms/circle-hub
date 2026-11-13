@@ -317,9 +317,9 @@ describe('init-admin and the operator token', () => {
       const actual=fileOperatorTokens(config.dataDir,service);
       return {...actual,write:async(token,options)=>{replacementFlags.push(options?.replace===true);await actual.write(token,options);}};
     }});
+    assert.deepEqual(await withKit(admin,kit=>kit.principals.list()),[]);
     const store=fileOperatorTokens(admin.deployment.dataDir,DEFAULT_KEY_SERVICE);
     await store.write(stale);
-    assert.deepEqual(await withKit(admin,kit=>kit.principals.list()),[]);
     const password='SyntheticFirstAdminPassword93#';secrets.add(password);
     admin.stdin.push(password);
     const result=await expectOk(admin,['init-admin','根管理员','--password-stdin']);
