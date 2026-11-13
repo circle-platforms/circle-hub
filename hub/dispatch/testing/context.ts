@@ -76,7 +76,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const environmentTeam=await kit.teams.create(admin,'合成环境使用团队');
   await kit.teams.add(admin,environmentTeam.id,owner.id);
   await kit.authorizations.assignResource(admin,executor.id,environmentTeam.id);
-  const environmentAccess=new MemberEnvironments(kit,registry,leases,(actor,id)=>canUseEnvironment(kit,actor,id));
+  const environmentAccess=new MemberEnvironments(kit,registry,leases,(actor,id,tx)=>canUseEnvironment(kit,actor,id,tx));
   const service = new DispatchService({ environmentAccess, recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策通过',grounds:[],tier:'blocking',data:{parameters:Object.fromEntries(Object.entries(effectDocument.effects[0].parameters.values).map(([key,values])=>[key,values[0]]))}}]])),records: kit, leases, runs, workflows, now });
   const server=endpoint;let closing:Promise<void>|undefined;
   return { environmentAccess,environmentTeam,effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,

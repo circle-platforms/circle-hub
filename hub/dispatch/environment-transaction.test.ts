@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { test } from 'node:test';
+import { Database, openRecords, type Transaction } from '../records/api.ts';
+import { canUseEnvironment } from '../records/environment-permissions.ts';
+import { requestPermissions, withRequestPermissions } from '../records/request-permissions.ts';
+import { DispatchService } from './service.ts';
+import { ExecutorRegistry } from './executors.ts';
+import { MemberEnvironments } from './member-environments.ts';
+import { setup } from './testing/context.ts';
+
+for (const revoke of [false, true]) test(`intent permission recheck uses one held client and ${revoke ? 'observes a new revocation' : 'admits a current assignment'}`, async t => {
+  const c = await setup(); t.after(() => c.close());
+  const records = await openRecords(c.kit.config, { migrate: false, maxConnections: 1, keyProvider: c.kit.keyProvider, now: c.now });
+  t.after(() => records.close());
+  assert.equal(records.poolStats().limit, 1, 'the permission and intent kit really has one connection');
+  const scope = new AsyncLocalStorage<Transaction>();
+  const originalTransaction = records.store.withTransaction.bind(records.store);
+  records.store.withTransaction = (run, outer) => originalTransaction(tx => scope.run(tx, () => run(tx)), outer);
+  let reborrows = 0, transactionChecks = 0, revoked = false;
+  const originalQuery = Database.prototype.query;
+  Database.prototype.query = function (this: Database, text, values, tx) {
+    const held = scope.getStore();
+    if (held && this.pool.options.max === 1 && this.pool.options.database === c.kit.database.database && tx !== held) {
+      reborrows++;
+      // Refuse the second lease deterministically instead of waiting for a pool timeout to imply a deadlock.
+      throw new Error('a held transaction attempted another client lease');
+    }
+    return Reflect.apply(originalQuery, this, [text, values, tx]);
+  };
+  t.after(() => { Database.prototype.query = originalQuery; });
+  const permission = async (actor: Parameters<typeof canUseEnvironment>[1], executor: string, tx?: Transaction) => {
+    if (tx) {
+      transactionChecks++;
+      assert.equal(tx, scope.getStore(), 'fresh permission query must receive the held outer transaction');
+      if (revoke && !revoked) {
+        // The independent fixture connection commits after the intent transaction began, before its fresh read.
+        await c.kit.authorizations.unassignResource(c.admin, c.executor.id, c.environmentTeam.id);
+        revoked = true;
+        const old = requestPermissions(c.owner.id);
+        assert.ok(old?.enabled(old.latest('resource_assign', c.environmentTeam.id, c.executor.id)), 'an older request snapshot still carries the grant');
+      }
+    }
+    return canUseEnvironment(records, actor, executor, tx);
+  };
+  const environmentAccess = new MemberEnvironments(records, new ExecutorRegistry(records), c.leases, permission);
+  const service = new DispatchService({ ...c.service.options, records, environmentAccess });
+  const result = await withRequestPermissions(records.artifacts, c.owner, () => service.dispatch(c.admin, c.run, c.executor.id));
+  assert.equal(reborrows, 0, 'no query in the held intent transaction may rent a second client');
+  assert.ok(transactionChecks > 0, 'the final check must remain fresh and run inside the intent transaction');
+  if (revoke) {
+    assert.equal(result.error_code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(result.outcome, 'not_dispatched');
+    assert.equal(c.calls.includes('send_blob'), false);
+    assert.ok(!(await service.journal.events(result.job)).some(event => event.body.detail.phase === 'intent'));
+  } else {
+    assert.equal(result.outcome, 'effective');
+    assert.equal(c.calls.filter(call => call === 'send_blob').length, 1);
+  }
+});
