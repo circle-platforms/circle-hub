@@ -51,7 +51,7 @@ export { scanContent, CONTENT_SCANNER } from './content-scan.ts';
 export { scanForCredentials, scanDigest, CREDENTIAL_SCANNER, CREDENTIAL_FINDING_LIMIT, MAX_ADMIN_FINDINGS, CREDENTIAL_DETECTORS } from './scan.ts';
 export { argumentDigest } from './calllog.ts';
 export { textPreview, stripNul } from './text.ts';
-export { maskedForDisplay, FileKeyProvider } from './vault.ts';
+export { maskedForDisplay, FileKeyProvider, FileVault } from './vault.ts';
 export { sharedWith, runIsSharedWith, productionShareKey, productionShareBinding } from './authorizations.ts';
 export { personalPackKey, personalPackGrants, mayUsePersonalPack } from './personal-packs.ts';
 export { withRequestPermissions, requestRead } from './request-permissions.ts';
