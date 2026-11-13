@@ -11,7 +11,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { DEFAULT_LIMITS } from '../config/index.ts';
-import type { CallLogInput } from '../records/api.ts';
+import type { CallLogInput, Principal } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
 import { createApp } from './app.ts';
 
@@ -38,6 +38,16 @@ async function bed(t: TestContext, closeGraceMs = 5000, initiallyIdle = false) {
       callLog: { append: async (input: CallLogInput) => { calls.push(input); logged.resolve(); } },
     },
     workflows: { summaries: () => { reads++; entered.resolve(); return blocked ? finish.promise : Promise.resolve([]); } },
+    memberCapabilities: async (actor: Principal, account?: string, summaries?: readonly unknown[]) => {
+      assert.deepEqual(actor, principal);
+      assert.equal(account, undefined);
+      assert.deepEqual(summaries, [], 'this fixture has an explicitly empty catalog');
+      return {
+        member: { name: actor.name, enabled: true }, teams: [], workflows: [], skills: [],
+        unassigned_workflows_count: 0, connections: [], environments: [],
+        environmentAccess: { ready: true, missing: null, nextAction: null }, denials: [],
+      };
+    },
     runs: {}, knowledge: {},
   } as unknown as ServerDeps;
   const app = createApp(deps, { codeRoot: root, closeTimeoutMs: 0, closeGraceMs, keepalive: { headersAfterMs: 0, keepaliveMs: 5 }, log: line => messages.push(line), health: {
