@@ -1,3 +1,7 @@
+import { createRebuildHandler } from './rebuild-http.ts';
+import { isAdmin } from '../records/api.ts';
+import { cookiesOf } from './http.ts';
+import { SESSION_COOKIE, SECURE_SESSION_COOKIE } from './console/session.ts';
 // The HTTP surface of the Hub: POST /mcp, the console under /console, the MCP standard authorization (the metadata under
 // /.well-known and the endpoints under /oauth, hub/server/oauth.ts) and GET /healthz, on a loopback address unless the
 // configuration declares the allowed hosts; the same routes also over the built-in HTTPS when it is configured (a second
@@ -146,6 +150,26 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     authorizations, secureRequest,
   };
 
+  let resetHandler: Promise<ReturnType<typeof createRebuildHandler>> | undefined;
+  const handleReset = async (request: IncomingMessage, response: ServerResponse, url: URL) => {
+    if (!options.reset) return sendText(response, 503, '重建执行端口未装配，请使用本机受控命令');
+    resetHandler ??= (async () => createRebuildHandler({
+      dataDir: deps.config.dataDir, rebuildNeeded: null, bridge: await options.reset.bridge(), render: options.reset.render,
+      originAllowed: request => originAllowed(request, origins), log, now: clock,
+      authenticateAdmin: async request => {
+        const secure = secureRequest(request);
+        const session = sessions.get(cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE), secure);
+        if (!session) return null;
+        const principal = await deps.records.principals.authenticate('Bearer ' + session.token);
+        if (!principal || !isAdmin(principal)) return null;
+        const password = await deps.records.principals.passwordState?.(principal.id);
+        if (password?.mustChange) return null;
+        return { session, principalId: principal.id };
+      },
+    }))();
+    return (await resetHandler)(request, response, url);
+  };
+
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
     if (stopping) response.setHeader('connection', 'close');
     // Each listener answers only to its own authorities: an HTTPS name sent over plain HTTP (or the reverse) is refused.
@@ -179,6 +203,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     if(url.pathname===SYNC_DISCOVERY_PATH)return handleSyncDiscovery(request,response,issuerOf(request,secureRequest(request)));
     if (isMcp) return handleMcp(request, response, mcpOptions, deps.config.limits.maxRequestBytes);
     if (oauthTarget(url.pathname)) return handleOAuth(request, response, url, oauthOptions, authorizeRefusal);
+    if (url.pathname === '/console/rebuild' || url.pathname.startsWith('/console/rebuild/') || url.pathname.startsWith('/console/reset/status/') || url.pathname === '/console/admin/do/reset') return handleReset(request, response, url);
     if (url.pathname === '/console' || url.pathname.startsWith('/console/')) return handleConsole(request, response, url, consoleOptions);
     request.resume();
     sendText(response, 404, '没有这个地址');
