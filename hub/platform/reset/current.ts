@@ -109,8 +109,8 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
 /** Existing FK constraints are facts. A retained child pointing at a cleared parent blocks before service stop. */
 export async function checkForeignKeySelection(session: SqlSession, state: CurrentResetState): Promise<void> {
   const keys = await session.query(`SELECT c.conrelid::regclass::text AS child,c.confrelid::regclass::text AS parent,
-    ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=x.attnum ORDER BY x.n) AS child_columns,
-    ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=x.attnum ORDER BY x.n) AS parent_columns
+    ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=x.attnum ORDER BY x.n) AS child_columns,
+    ARRAY(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=x.attnum ORDER BY x.n) AS parent_columns
     FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE c.contype='f' AND n.nspname='public'`);
   for (const key of keys) {
     const child = String(key.child).replace(/^public\./, ''), parent = String(key.parent).replace(/^public\./, '');
@@ -144,8 +144,8 @@ export async function clearOfflineSelection(session: SqlSession, state: CurrentR
 /** Check all actual composite foreign keys after constructing the offline destination, without disabling runtime checks. */
 export async function assertCurrentForeignKeys(session: SqlSession): Promise<void> {
   const keys = await session.query(`SELECT child.relname AS child,parent.relname AS parent,
-    ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=x.attnum ORDER BY x.n) AS child_columns,
-    ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=x.attnum ORDER BY x.n) AS parent_columns
+    ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=x.attnum ORDER BY x.n) AS child_columns,
+    ARRAY(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY x(attnum,n) JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=x.attnum ORDER BY x.n) AS parent_columns
     FROM pg_constraint c JOIN pg_class child ON child.oid=c.conrelid JOIN pg_class parent ON parent.oid=c.confrelid JOIN pg_namespace n ON n.oid=c.connamespace
     WHERE c.contype='f' AND n.nspname='public'`);
   for (const key of keys) {

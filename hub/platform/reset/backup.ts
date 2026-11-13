@@ -40,14 +40,14 @@ export async function nativeResetBackup(context: PlatformContext, postgres: Post
     const [snapshot] = await source.query('SELECT pg_export_snapshot() AS id');
     const tables = await summaries(source);
     const common = [`--host=${postgres.target.socketDir}`, `--port=${postgres.target.port}`, `--username=${postgres.target.user}`, '--no-password'];
-    const dumped = await context.runner(tools.pg_dump, ['--format=custom', `--file=${dump}`, ...common, `--dbname=${postgres.target.database}`, `--snapshot=${String(snapshot!.id)}`], { env: toolEnvironment(), timeoutMs: 15 * 60_000 });
+    const dumped = await context.runner(tools.pg_dump, ['--format=custom', `--file=${dump}`, ...common, `--dbname=${postgres.target.database}`, `--snapshot=${String(snapshot!.id)}`], { env: toolEnvironment({ HOME: context.home, USER: context.user }), timeoutMs: 15 * 60_000 });
     if (dumped.code !== 0) throw new Error('原生数据库备份失败；未停止服务，未输出数据库原始错误');
     await chmod(dump, 0o600);
     await withSession(postgres.connector, 'postgres', async session => {
       await session.query(`CREATE DATABASE ${quoteIdentifier(verifyName)} OWNER ${quoteIdentifier(postgres.target.user)} TEMPLATE template0`);
       verificationCreated = true;
     });
-    const restored = await context.runner(tools.pg_restore, ['--exit-on-error', '--no-owner', ...common, `--dbname=${verifyName}`, dump], { env: toolEnvironment(), timeoutMs: 15 * 60_000 });
+    const restored = await context.runner(tools.pg_restore, ['--exit-on-error', '--no-owner', ...common, `--dbname=${verifyName}`, dump], { env: toolEnvironment({ HOME: context.home, USER: context.user }), timeoutMs: 15 * 60_000 });
     if (restored.code !== 0) throw new Error('备份试恢复失败；未停止服务，未输出数据库原始错误');
     const actual = await withSession(postgres.connector, verifyName, summaries);
     if (compareSummaries(tables, actual).length) throw new Error('备份试恢复的表、行数或内容身份不同；未停止服务');
