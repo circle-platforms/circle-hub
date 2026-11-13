@@ -185,7 +185,7 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  * The ten places (decision 151: skills left the workflows place and the places stand in four groups); only the current
  * place may expand its authorized navigation.
  */
-/** Navigation place keys. The workflows place keeps the key `packs` until the packs agent switches callers to `workflows`. */
+/** Navigation place keys. The workflows place uses the key `workflows` (packs callers switched). */
 export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'workflows' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
 /** The name of the skills place. The kind it lists keeps its vocabulary name (pack_kind skill). */
 export const SKILLS_PLACE = '技能';
@@ -261,7 +261,7 @@ const NAV: readonly (readonly [NavKey, string, string, keyof typeof ICONS])[] = 
   ['overview', '总览', overviewPath(), 'home'],
   ['tasks', '任务', runsPath(), 'review'],
   ['knowledge', '知识库', knowledgePath(), 'book'],
-  ['packs', uiLabelOf('pack_kind', 'workflow'), workflowsPath(), 'pack'],
+  ['workflows', uiLabelOf('pack_kind', 'workflow'), workflowsPath(), 'pack'],
   ['skills', SKILLS_PLACE, skillsPath(), 'skill'],
   ['connections', '连接', connectionsPath(), 'sys'],
   ['team', '团队', teamPath(), 'users'],
