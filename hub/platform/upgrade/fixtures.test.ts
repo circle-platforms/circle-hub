@@ -9,6 +9,7 @@ import { RunRecord } from '../../../contracts/src/run.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RequestRecord } from '../../../contracts/src/request.ts';
+import { SpaceTreeNode, SpaceVersionBody } from '../../../contracts/src/spaces.ts';
 import { canonicalize, digestOf, recordDigest, sha256Hex } from '../../records/api.ts';
 import type { CallLogEntry } from '../../records/api.ts';
 import { OLD33_MIGRATIONS, old33Checksum } from './testing/old33.ts';
@@ -54,13 +55,28 @@ test('synthetic retained state has intact logical record, object and content-add
     assert.ok(objects.has(source.sha256));
   }
   for (const space of fixture.handles.spaces) {
-    const version = records.get(space.version)!.body as { space: string; tree: string; entries: { record: string }[]; sources: string[] };
+    const version = SpaceVersionBody.parse(records.get(space.version)!.body);
     assert.equal(version.space, space.space);
     assert.ok(objects.has(version.tree));
     assert.equal(version.entries[0]!.record, space.entry);
     assert.deepEqual(version.sources, [space.source]);
     assert.ok(records.has(space.memory));
     assert.ok(records.has(space.memoryVersion));
+    const tree = SpaceTreeNode.parse(JSON.parse(Buffer.from(objects.get(version.tree)!.bytes).toString()));
+    if (space.space === fixture.member) {
+      assert.deepEqual(version.directories, ['/', '/notes']);
+      assert.equal(version.entries[0]!.path, '/notes');
+      const child = tree.children.find(child => child.name === 'notes')!;
+      assert.ok(child);
+      const stored = objects.get(child.digest)!;
+      assert.equal(stored.scope!.owner, fixture.member);
+      assert.deepEqual(SpaceTreeNode.parse(JSON.parse(Buffer.from(stored.bytes).toString())).entries, [version.entries[0]!.entry]);
+    } else {
+      assert.deepEqual(version.products, [{ product: fixture.handles.product.id, line: '1.0',
+        path: '/' + fixture.handles.product.id, root: fixture.handles.product.root }]);
+      assert.deepEqual(tree.children, [{ name: fixture.handles.product.id, digest: fixture.handles.product.root }]);
+      assert.equal(objects.has(fixture.handles.product.root), false, 'a mounted product root is a tree-node record, not a space object');
+    }
   }
 });
 
