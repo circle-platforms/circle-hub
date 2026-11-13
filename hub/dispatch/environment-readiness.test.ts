@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sha256Hex, type User, type Principal } from '../records/api.ts';
+import { sha256Hex, type User, type Principal, type RecordsKit } from '../records/api.ts';
 import { ExecutorDefinition } from './definition.ts';
+import type { ExecutorRegistry, RegisteredExecutor } from './executors.ts';
 import { definition } from './testing/definition.ts';
-import { readEnvironmentReadiness, type EnvironmentReadinessSources } from './environment-readiness.ts';
+import { readEnvironmentReadiness, createEnvironmentReadiness, type EnvironmentReadinessSources } from './environment-readiness.ts';
 
 const member: Principal = { id: 'usr_' + '0'.repeat(26), role: 'user', name: '合成成员' };
 const instant = '2026-11-14T00:00:00.000Z';
@@ -119,4 +120,43 @@ test('missing configuration and permission reads stay neutral without disclosing
   const unknown = await readEnvironmentReadiness(f.sources, member, 'synthetic-target');
   assert.equal(unknown.target, null); assert.deepEqual(unknown.executors, []); assert.ok(unknown.missing_fact);
   assert.doesNotMatch(JSON.stringify(unknown), /private-config/);
+});
+
+test('assembly adapter paginates configuration identities and reads only actor-authorized source bytes', async () => {
+  const f = fixture(), calls: unknown[][] = [];
+  const current = f.candidates[0].definition;
+  current.bed_state = ExecutorDefinition.parse({ ...current, allowed_tools: [...current.allowed_tools, 'inspect_baseline'], bed_state: { items: [{ id: 'metadata-only', call: { tool: 'inspect_baseline', arguments: { ticket: { $value: 'lease_id' } } }, parser: { kind: 'address_table', rows: '/rows', address: '/address', manifest_devices: '/devices', manifest_lists: ['/addresses'] }, cleanup: { actor: 'private-owner', command: 'private-cleanup' } }] } }).bed_state;
+  Object.defineProperty(current, 'credential', { get() { throw new Error('credential must not be touched'); } });
+  Object.defineProperty(current, 'endpoint', { get() { throw new Error('no endpoint or network is needed'); } });
+  const records = {
+    principals: { get: f.sources.account },
+    authorizations: { history: async (query: { cursor: string | null; permission: string }) => {
+      calls.push(['history', query]);
+      return query.cursor === null ? { items: [{ body: { object: 'executor.exe-b' } }], next: 'second-page' } : { items: [{ body: { object: 'executor.exe-a' } }, { body: { object: 'executor.exe-b' } }, { body: { object: 'unrelated-resource' } }], next: null };
+    } },
+    artifacts: { source: async (...args: unknown[]) => { calls.push(['source', ...args]); return { bytes }; }, ingest: () => { throw new Error('must not write'); } },
+    get objects() { throw new Error('raw objects are forbidden'); },
+    get vault() { throw new Error('secret values are forbidden'); },
+  } as unknown as RecordsKit;
+  const registry: Pick<ExecutorRegistry, 'get'> = { get: async id => { calls.push(['get', id]); return { id, definition: current } as RegisteredExecutor; } };
+  const baseline = { getBaseline: async () => ({ created_at: instant, get text() { throw new Error('must not inspect baseline body'); } }) };
+  const read = createEnvironmentReadiness(records, registry, baseline, f.sources.leases, async (actor, id) => { calls.push(['permission', actor, id]); assert.equal(actor.role, 'user'); return true; }, f.sources.now);
+  const report = await read({ ...member, role: 'admin' }, 'synthetic-target');
+  assert.equal(report.executors.length, 2);
+  assert.deepEqual(calls.filter(call => call[0] === 'get'), [['get', 'exe-a'], ['get', 'exe-b']]);
+  assert.equal(calls.filter(call => call[0] === 'history').length, 2);
+  assert.equal(calls.filter(call => call[0] === 'source').length, 4);
+  for (const call of calls.filter(call => call[0] === 'source')) assert.deepEqual(call.slice(1), [{ ...member, disabled: false, deleted_at: null }, hash, { consumer: 'function' }]);
+  assert.deepEqual(report.executors.map(row => row.baseline_registrations), [[{ ordinal: 1, recorded_at: instant }], [{ ordinal: 1, recorded_at: instant }]]);
+  assert.doesNotMatch(JSON.stringify(report), /exe-a|exe-b|private-owner|private-cleanup/);
+});
+
+test('assembly adapter never turns an unresolved configuration into an empty successful report', async () => {
+  const f = fixture();
+  const records = { principals: { get: f.sources.account }, authorizations: { history: async () => ({ items: [{ body: { object: 'executor.exe-a' } }], next: null }) }, artifacts: { source: async () => { throw new Error('must not read sources'); } } } as unknown as RecordsKit;
+  const registry: Pick<ExecutorRegistry, 'get'> = { get: async () => { throw new Error('private-variable-name'); } };
+  const read = createEnvironmentReadiness(records, registry, { getBaseline: async () => null }, f.sources.leases, async () => true, f.sources.now);
+  const report = await read(member, 'synthetic-target');
+  assert.equal(report.target, null); assert.deepEqual(report.executors, []); assert.ok(report.missing_fact);
+  assert.doesNotMatch(JSON.stringify(report), /private-variable-name/);
 });

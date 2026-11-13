@@ -1,8 +1,10 @@
 // Local observations only. This report grants no use permission and is never an admission or dispatch gate.
-import { isAdmin, isSha256, sha256Hex, type Principal, type User } from '../records/api.ts';
+import { isAdmin, isSha256, sha256Hex, type Principal, type User, type RecordsKit } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
 import type { ExecutorDefinition } from './definition.ts';
 import type { ReleaseCheck } from './release-diagnostics.ts';
+import type { ExecutorRegistry } from './executors.ts';
+import type { EnvironmentPermission } from './member-environments.ts';
 
 export interface EnvironmentReadinessSources {
   account(id: string): Promise<User | null>;
@@ -32,6 +34,47 @@ export interface EnvironmentReadiness {
   missing_fact?: string;
   next_action?: string;
   limitations: string[];
+}
+
+export function createEnvironmentReadiness(
+  records: Pick<RecordsKit, 'principals' | 'authorizations' | 'artifacts'>,
+  registry: Pick<ExecutorRegistry, 'get'>,
+  baselines: { getBaseline(executor: string, probe: string): Promise<{ created_at: string } | null> },
+  leases: Pick<LeaseService, 'view'>,
+  permission: EnvironmentPermission,
+  now?: () => Date,
+): (caller: Principal, target: string) => Promise<EnvironmentReadiness> {
+  return (caller, target) => readEnvironmentReadiness({
+    account: id => records.principals.get(id),
+    executors: async () => {
+      const ids = new Set<string>();
+      let cursor: string | null = null;
+      do {
+        const page = await records.authorizations.history({ permission: 'resource_config', limit: 500, cursor });
+        for (const record of page.items) if (record.body.object.startsWith('executor.')) ids.add(record.body.object.slice('executor.'.length));
+        cursor = page.next;
+      } while (cursor !== null);
+      const entries: Awaited<ReturnType<EnvironmentReadinessSources['executors']>>[number][] = [];
+      for (const id of [...ids].sort()) {
+        const entry = await registry.get(id);
+        if (!entry) continue;
+        const { target, enabled, manifest_sha256, premises, bed_state, resources } = entry.definition;
+        entries.push({ id: entry.id, definition: { target, enabled, manifest_sha256, premises, bed_state, resources } });
+      }
+      return entries;
+    },
+    canUse: (actor, executor) => permission(actor, executor),
+    source: async (actor, hash) => {
+      const source = await records.artifacts.source(actor, hash, { consumer: 'function' });
+      return source ? { bytes: source.bytes } : null;
+    },
+    baseline: async (executor, probe) => {
+      const metadata = await baselines.getBaseline(executor, probe);
+      return metadata ? { recorded_at: metadata.created_at } : null;
+    },
+    leases,
+    ...(now ? { now } : {}),
+  }, caller, target);
 }
 
 export async function readEnvironmentReadiness(sources: EnvironmentReadinessSources, caller: Principal, target: string): Promise<EnvironmentReadiness> {
