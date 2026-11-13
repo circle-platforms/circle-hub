@@ -692,3 +692,15 @@ B02/C04/D05/R02/V03 `changes51` state the change.
 The approved team identity contracts export `TeamId` and `TeamAssignmentSubject` through `contracts/api.ts`.
 Their generated schemas are `team-id@1` and `team-assignment-subject@1`; team IDs match
 `^tm_[0-7][0-9a-hjkmnp-tv-z]{25}$`. Resource use assignments use generated `resource_assign`.
+
+## Whitepaper implementation boundary (2026-11-13)
+
+C5 exports `ToolName` and `TOOL_NAMES` from the existing `TOOLS` registration. Consumers use
+`Record<ToolName, Handler>` for exhaustive dispatch and rendering. `PACK_KIND_REGISTRY` registers
+required publication files and readable declaration files per generated `PackKind`; `REQUIRED_FILES`
+is derived from it. Server and runs owners adopt these exports in their own packages.
+
+C7 changes only output schemas; inputs and model-facing response text retain their bytes. The
+generator owner must enable deep output extensions and the server owner must preserve them during
+validation. Generation also writes pack mirrors; this task restores those generated mirror changes
+and leaves synchronization to the integrator. PostgreSQL and typecheck require a scheduled slot.
