@@ -32,7 +32,10 @@ test('team definitions have retained digest-bound bytes and projections never be
   await assert.rejects(w.teams.members(w.alice,team.id),AccessError);
   await assert.rejects(w.teams.memberships(w.alice,w.bob.id),AccessError);
   assert.deepEqual((await w.teams.members(w.admin,team.id)).map(row=>row.user.id),[w.alice.id]);
-  const deleted=await w.teams.delete(w.admin,team.id);assert.ok(deleted.deleted_at);
+  await w.kit.authorizations.assignTeam(w.admin,team.id,'synthetic-workflow');
+  await w.kit.authorizations.assignResource(w.admin,'synthetic-resource',team.id);
+  const deleted=await w.teams.delete(w.admin,team.id);
+  for(const [permission,subject,object]of [['assign',w.alice.id,team.id],['assign',team.id,'synthetic-workflow'],['resource_assign',team.id,'synthetic-resource']] as const)assert.equal((await w.kit.authorizations.latest(permission,subject,object))?.body.revoked,true);assert.ok(deleted.deleted_at);
   assert.equal(await w.teams.get(w.admin,team.id),null);
   const recreated=await w.teams.create(w.admin,'合成团队');assert.notEqual(recreated.id,team.id);
   assert.deepEqual(await w.teams.memberships(w.alice),[]);
@@ -64,13 +67,15 @@ test('multiple teams union with direct assignments in snapshots, batches and pac
 });
 
 test('resource team and all-account grants require current enabled accounts',async t=>{
-  const w=await world(t),team=await w.teams.create(w.admin,'合成资源组');await w.teams.add(w.admin,team.id,w.alice.id);
+  const w=await world(t),team=await w.teams.create(w.admin,'合成资源组');
+  assert.equal(await w.kit.authorizations.canUseResource(w.admin.id,'synthetic-system'),false);await w.teams.add(w.admin,team.id,w.alice.id);
   await w.kit.authorizations.assignResource(w.admin,'synthetic-system',team.id);
   assert.equal(await w.kit.authorizations.canUseResource(w.alice.id,'synthetic-system'),true);
   assert.equal(await w.kit.authorizations.canUseResource(w.bob.id,'synthetic-system'),false);
   assert.equal((await captureRequestPermissions(w.db,w.alice,new Date())).canUseResource('synthetic-system'),true);
   await w.kit.authorizations.assignResource(w.admin,'synthetic-system','*');
   assert.equal(await w.kit.authorizations.canUseResource(w.bob.id,'synthetic-system'),true);
+  assert.equal(await w.kit.authorizations.canUseResource(w.admin.id,'synthetic-system'),true);
   await w.kit.principals.setDisabled(w.admin,w.alice.id,true);
   assert.equal(await w.kit.authorizations.canUseResource(w.alice.id,'synthetic-system'),false);
   assert.deepEqual(await w.kit.authorizations.packsFor(w.alice.id),[]);

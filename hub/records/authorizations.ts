@@ -238,7 +238,7 @@ export class RecordAuthorizations implements Authorizations {
   async canUseResource(user: string, resource: string): Promise<boolean> {
     if (!UserId.safeParse(user).success || !isTerm(resource)) return false;
     const snapshot=requestPermissions(user)??await captureRequestPermissions(this.#db,{id:user,name:user,role:'user'},this.#now());
-    return !!snapshot.user&&!snapshot.user.disabled&&!snapshot.user.deleted_at&&(isAdmin(snapshot.user)||snapshot.canUseResource(resource));
+    return snapshot.canUseResource(resource);
   }
   async assignTeam(by: Principal, team: string, pack: string, options: {expiresAt?:string|null;note?:string|null} = {}): Promise<AuthorizationRecord> {
     return this.grant(by,{permission:ASSIGN,subject:TeamId.parse(team),object:packId(pack),...options});

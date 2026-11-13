@@ -1,6 +1,6 @@
 // Team tables are projections; verified authorization decisions and their bound definition bytes are authoritative.
 import { z } from 'zod';
-import { TeamId, UserId } from '../../contracts/api.ts';
+import { TeamId, UserId, PackId } from '../../contracts/api.ts';
 import type { Authorizations, AuthorizationRecord, ObjectStore, Principal, Principals, RecordStore, Transaction, User } from './api.ts';
 import { canonicalBytes } from './canonical.ts';
 import { iso, type Database, type Row } from './db.ts';
@@ -152,6 +152,19 @@ export class PgTeams implements Teams {
     return this.store.withTransaction(async tx => {
       await this.#writer(by, tx);
       const team = await this.#locked(id, tx);
+      const related=new Map<string,AuthorizationRecord>();
+      for(const key of ['authz.object-any','authz.subject-any']){
+        let cursor:string|null=null;
+        do{const page=await this.store.find<AuthorizationRecord['body']>({kind:'authorization',key,value:id,limit:500,cursor},tx);
+          for(const row of page.items)related.set(row.body.permission+'\0'+row.body.subject+'\0'+row.body.object,row);cursor=page.next;
+        }while(cursor!==null);
+      }
+      for(const row of related.values()){
+        const body=row.body;
+        const membership=body.permission==='assign'&&body.object===id&&UserId.safeParse(body.subject).success;
+        const assignment=body.subject===id&&(body.permission==='resource_assign'||body.permission==='assign'&&PackId.safeParse(body.object).success);
+        if(this.#active(row)&&(membership||assignment))await this.authorizations.revoke(by,{permission:body.permission,subject:body.subject,object:body.object,note:body.note},tx);
+      }
       const decision = await this.authorizations.revoke(by, { permission: 'assign', subject: '*', object: id }, tx);
       await this.db.query('DELETE FROM team_members WHERE team_id=$1', [id], tx);
       await this.db.query('UPDATE teams SET deleted_at=$2 WHERE id=$1', [id, decision.body.decided_at], tx);
