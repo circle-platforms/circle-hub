@@ -66,7 +66,14 @@ async function requestOf(config: HubConfig, id: string): Promise<Request> {
   return { id, actor, databaseOid: value.databaseOid, submittedAt: value.submittedAt, ...target };
 }
 async function statusOf(config: HubConfig, id: string): Promise<DeploymentSyncStatus> {
-  const request = await requestOf(config, id), value = object(await readPrivate(paths(config, id).status));
+  const request = await requestOf(config, id);
+  let value: Record<string, unknown>;
+  try { value = object(await readPrivate(paths(config,id).status)); }
+  catch (error) {
+    if (!absent(error)) throw error;
+    return { id,product:request.product,line:request.line,running:false,completed:true,probing:false,synchronized:false,current:false,
+      error:{reason:'任务状态没有完整持久化，未证实启动',nextAction:'检查私有任务目录后重新提交'}};
+  }
   if (value.id !== id || value.product !== request.product || value.line !== request.line) throw problem();
   for (const key of ['running', 'completed', 'probing', 'synchronized', 'current']) if (typeof value[key] !== 'boolean') throw problem();
   let stopped = false;
@@ -85,6 +92,8 @@ async function statusOf(config: HubConfig, id: string): Promise<DeploymentSyncSt
 }
 async function save(config: HubConfig, status: StoredStatus) {
   await writeFileAtomic(paths(config, status.id).status, JSON.stringify(status), 0o600);
+  const parent = await open(paths(config,status.id).directory,constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+  try { await parent.sync(); } finally { await parent.close(); }
 }
 async function databaseOid(config: HubConfig): Promise<string> {
   const db = new Database(createPool(config.database, 1));
@@ -128,7 +137,7 @@ async function launch(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Pr
   } else if (context.platform === 'darwin') {
     const plist = join(paths(config,id).directory, id + '.plist');
     const text = renderPlist({ label, programArguments: args, workingDirectory: CODE_ROOT, environment, standardOutPath: '/dev/null', standardErrorPath: '/dev/null' }).replace('<key>KeepAlive</key>\n\t<true/>', '<key>KeepAlive</key>\n\t<false/>');
-    await writeFile(plist, text, { flag: 'wx', mode: 0o600 });
+    await writeFile(plist, text, { flag: 'wx', mode: 0o600, flush:true });
     const result = await context.runner('/bin/launchctl', ['bootstrap', `gui/${context.uid}`, plist], { env: toolEnvironment({ HOME: context.home, USER: context.user }), timeoutMs: 15_000 });
     if (result.code !== 0) throw problem();
   } else throw new CliError('当前系统不支持后台知识同步');
@@ -164,7 +173,7 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
       if (!id) {
         id = randomUUID();
         const request: Request = { id, actor: actor.id, databaseOid: oid, submittedAt: Date.now(), ...target };
-        await writeFile(paths(config,id).request, JSON.stringify(request), { flag: 'wx', mode: 0o600 });
+        await writeFile(paths(config,id).request, JSON.stringify(request), { flag: 'wx', mode: 0o600, flush:true });
         const status: DeploymentSyncStatus = { id, ...target, running: false, completed: false, probing: false, synchronized: false, current: false };
         await save(config,status);
         try { await launch(config,id,session.ctx.io.env); }
@@ -183,7 +192,7 @@ export function unchangedDeploymentProbe(report: SyncReport): boolean {
   return roots.length > 0 && roots.every(root => root.outcome === 'skipped' && root.root !== null && root.composition !== null && root.would_produce !== true);
 }
 
-export async function deploymentSyncStatus(session: Session, id: string): Promise<DeploymentSyncStatus> {
+export async function deploymentSyncStatus(session: Pick<Session,'admin'|'config'>, id: string): Promise<DeploymentSyncStatus> {
   await session.admin();
   await directory(session.config());
   return statusOf(session.config(),id);
@@ -221,8 +230,8 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
     hub = await assembleHub(config,records,{command:true,leases:null});
     if (changed) throw problem();
     await save(config,{...state,probing:true});
-    const product = (await hub.packs.productByName(request.product)) ?? (await hub.packs.productById(request.product));
-    if (!product) throw problem();
+    const product = await hub.packs.productById(request.product);
+    if (!product || product.product.id !== request.product || !await hub.registry.isActive(product.id)) throw problem();
     const synchronize = (by: typeof actor, dryRun: boolean) => hub!.knowledge.syncProduct(product, {
       by, ...(request.line === null ? {} : { lines: [request.line] }), dryRun, recheck:true, includeUnreleased:false,maxAgeSeconds:0,signal:controller.signal,
     });
@@ -230,7 +239,7 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
     if (changed || probe.error !== null || !probe.plan.done || probe.plan.failed_reads.length || probe.counts.failed) throw problem();
     if (unchangedDeploymentProbe(probe)) { await save(config,{...state,running:false,completed:true,current:true}); return 0; }
     const freshActor = await records.principals.get(request.actor);
-    if (!freshActor || freshActor.disabled || freshActor.deleted_at || !isAdmin(freshActor) || changed) throw problem();
+    if (!freshActor || freshActor.disabled || freshActor.deleted_at || !isAdmin(freshActor) || changed || !await hub.registry.isActive(product.id)) throw problem();
     await save(config,{...state,probing:false});
     const result = await synchronize(freshActor,false);
     if (changed || result.error !== null || !result.plan.done || result.plan.failed_reads.length || result.counts.failed) throw problem();
@@ -250,7 +259,7 @@ export async function runDeploymentSyncWorker(config: HubConfig, id: string, env
   await directory(config);
   const request = await requestOf(config,id);
   if ((await statusOf(config,id)).completed) return 1;
-  try { await writeFile(paths(config,id).claim,id,{flag:'wx',mode:0o600}); }
+  try { await writeFile(paths(config,id).claim,id,{flag:'wx',mode:0o600,flush:true}); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 1; throw error; }
   await save(config,{id,product:request.product,line:request.line,running:false,completed:false,probing:false,synchronized:false,current:false,workerPid:process.pid});
   const lock = platformLockPath(createContext(env));
