@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { exportProtectedConfiguration, applyProtectedConfiguration, createResetConfigurationPorts, type ProtectedConfigurationDomain, applyCommand, applyDeployment, deploymentOrder, differentFields, exactMatch, exportCommand, exportDeployment, parseDeployment } from './cli-apply.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { ExecutorRegistry } from '../dispatch/api.ts';
-import { canonicalBytes, sha256Hex } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, type Principal } from '../records/api.ts';
 import type { Session } from './cli-session.ts';
 import type { DeploymentDefinition } from '../../contracts/src/deployment.ts';
 
@@ -205,7 +205,7 @@ function syntheticExecutor() {
 test('executor source API receives only named references and repeated apply does not add or resolve values', async t => {
   const f = fake(t), sources: Array<{ id: string; digest: string; source: DeploymentDefinition['executors'][number] }> = [];
   t.mock.method(ExecutorRegistry.prototype, 'sources', async () => sources);
-  t.mock.method(ExecutorRegistry.prototype, 'add', async (_by, input) => {
+  t.mock.method(ExecutorRegistry.prototype, 'add', async (_by: Principal, input: unknown) => {
     f.calls.push('executor');
     const source = { ...parseDeployment({ schema: 'deployment@1', executors: [input] }).executors[0], id: 'exe_00000000000000000000000001' };
     const entry = { id: source.id, digest: sha256Hex(canonicalBytes(source)), source };
