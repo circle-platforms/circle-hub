@@ -16,7 +16,7 @@ function fixture(admin: boolean) {
   const by: Principal = { ...member, role: admin ? 'admin' : 'user' }, out: string[] = [], writes: string[] = [];
   let restrictedReads = 0;
   const teams: Teams = {
-    list: async () => [team], get: async () => team, memberships: async () => [team],
+    list: async () => [{ ...team, member_count: 1, pack_count: 0, resource_count: 0, changed_at: team.created_at }], get: async () => team, memberships: async () => [team], membershipsMany: async () => new Map([[member.id, [team]]]),
     members: async () => { restrictedReads++; return []; }, assignments: async () => { restrictedReads++; return { packs: [], resources: [] }; },
     create: async () => { writes.push('create'); return team; }, delete: async () => { writes.push('delete'); return team; },
     add: async () => { writes.push('add'); return { team: id, user: member, added_at: member.created_at, added_by: by.id }; },
