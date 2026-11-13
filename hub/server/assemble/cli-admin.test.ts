@@ -1909,7 +1909,13 @@ test('administrator listings mask deleted owners, assignees, lease principals an
  const packsListed=await expectOk(admin,['pack','list']);assert.ok(packsListed.text.includes('所有者 '+expected),packsListed.text);assert.ok(packsListed.text.includes('分配给 无'),packsListed.text);assert.ok(!(await kit.authorizations.usersOf(REVIEW_PACK)).includes(member.id));
  for(const command of [['lease','list'],['share','list']]){const listed=await expectOk(admin,command);assert.ok(listed.text.includes(expected),listed.text);assert.ok(!listed.text.includes(name),listed.text);}
  assert.ok(!packsListed.text.includes(name));assert.equal((await kit.principals.get(member.id))?.name,name);
- for(const command of [['pack','revoke-publish',member.id],['pack','unassign',member.id,REVIEW_PACK]]){const changed=await expectOk(admin,command);assert.ok(changed.text.includes(uiLabelOf('account_display_name','deleted_member'))&&changed.text.includes(member.id));assert.ok(!changed.text.includes(name),changed.text);}
+ const changed=await expectOk(admin,['pack','revoke-publish',member.id]);assert.ok(changed.text.includes(uiLabelOf('account_display_name','deleted_member'))&&changed.text.includes(member.id));assert.ok(!changed.text.includes(name),changed.text);
+ const assignments=()=>kit.authorizations.history({permission:'assign',subject:member.id,object:REVIEW_PACK});
+ const before=(await assignments()).items.map(record=>record.digest);
+ const refused=await admin.run(['pack','unassign',member.id,REVIEW_PACK]);
+ assert.equal(refused.code,1);assert.equal(refused.text,'错误：分配对象不存在或未启用');
+ assert.deepEqual((await assignments()).items.map(record=>record.digest),before,'a deleted subject cannot append another assignment decision');
+ assert.ok(!refused.text.includes(name));
 });
 
 test('lease release refuses an unfinished dispatch job before changing the row',async t=>{
