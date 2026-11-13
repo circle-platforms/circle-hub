@@ -40,17 +40,19 @@ nav_order: 3
 2. 选择 **角色**：日常使用者选普通成员；仅运维管理者选管理员。
 3. 选择 **连接方式**：
    - **邀请码（MCP 标准连接确认，推荐）**：适合支持标准 MCP 授权的客户端（例如 Circle）。提交后在结果页得到：
-     - 成员控制台**初始密码**（仅显示一次，首次登录 `/console/login` 必须修改）；
-     - 24 小时有效的**一次性邀请码**（仅显示一次）；
-     - 可直接写入客户端配置的 `mcp_servers` 条目（只含 `/mcp` 地址）。
+     - 成员控制台**初始密码**（仅显示一次；无过期倒计时，但首次登录 `/console/login` 必须到 `/console/password` 改密，改密后当前会话失效须用新密码重登）；
+     - 24 小时有效的**一次性邀请码**（仅显示一次，用过一次即作废）；
+     - 一段 `mcp_servers` 示例片段。
+     - **发给终端版 Circle 成员时的注意**：在 `4a1fbdee57` 上，添加成员结果页与成员 `/console/settings#mine` 给出的片段名是 `"circle-hub"` 且**不带 `placeholders`**，结果页文字还会带有内部编号与 CLI 提示。如果成员用的是**终端版 Circle**（需运行技能本地工具），按该片段写入配置会导致 `%HUB_URL%`、`%HUB_TOKEN%` 无法展开；请指引成员改用 **Circle 桌面版 Hub 连接卡片**（自动带全配置），或在终端配置里改写为 `"name": "Hub"` 并加上 `"placeholders": {"url": "HUB_URL", "token": "HUB_TOKEN"}`（详见[成员手册](member-guide.md)）。
    - **访问令牌**：仅在客户端不支持标准 MCP 连接确认时选用（填「令牌标签」方便区分多台设备），提交后同样仅显示一次完整令牌。
-4. 把初始密码、MCP 地址与一次性邀请码发给成员本人（切勿写进仓库、群公共日志或命令行参数历史）。
+4. 把初始密码、MCP 地址、一次性邀请码及上述连接提示发给成员本人（切勿写进仓库、群公共日志或命令行参数历史）。
 
 ### 2. 邀请码过期、补发令牌、停用或改密
 
 - 在 `/console/team` 查看成员列表（所属团队、连接与启用状态）。
-- 若成员的 24 小时邀请码过期或换了新客户端需要补发令牌：
-  - *当前基线说明*：在 `4a1fbdee57` 上，`/console/team/<成员>` 详情页的「签发邀请码」「签发令牌」「调整工作流分配」按钮会弹出需要在服务器上运行的命令指引（向一键表单切换的工作已在开发对齐中）。管理员直接在运行 Hub 的主机执行对应命令即可：
+- **在 `4a1fbdee57` 上的实际操作边界**：
+  - `/console/operations` 页面标题虽然自称只执行四种操作，实际团队创建、加人、分工作流/连接、改密、设密钥、导知识等都已有控制台表单；
+  - 反过来，给**已有成员**重新签发 24 小时邀请码、补发访问令牌，以及安装技能、启用产品知识源、登记测试环境，`4a1fbdee57` 的 `/console/team/<成员>` 等详情页按钮目前只会弹出命令指引（向全表单切换的 N2 正在对齐），仍须管理员到运行 Hub 的主机执行：
     ```bash
     # 重新签发一次 24 小时一次性邀请码（仅标准输出显示一次）
     ./bin/circle-hub user invite <用户名>
@@ -77,15 +79,17 @@ nav_order: 3
 ./bin/circle-hub team show <团队ID>
 ```
 
-随后按团队需求分别分配四类能力（成员具体怎么使用见[成员手册](member-guide.md)）：
+> **实测核对提示（`4a1fbdee57`）**：控制台的加人与分工作流结果页目前还会直接写出内部 `usr_…` / `tm_…` 编号；且在团队详情页分配工作流和业务系统连接**一次只能提交一项**（10 个工作流要提交 10 次并每次返回，支持按组多选的 N2 表单在后续跟进中）。若要快速检查团队汇总，CLI `team list` 只显示编号与名字，需 `team show <团队ID>` 查看绑定项；另外使用管理员令牌执行 `resource list --as <成员>` 会被拒绝（有令牌时只读命令只以令牌所属账号读取），且控制台 `/console/team/<成员>` 在此基线上尚不展示有效连接、知识与测试环境。
 
-| 能力类别 | 分配/启用做法（控制台 + CLI） | 说明 |
+随后按团队需求分别分配能力（成员具体怎么使用见[成员手册](member-guide.md)）：
+
+| 能力类别 | 分配/启用做法（控制台 + CLI） | 实测限制与说明 |
 |---|---|---|
-| **工作流（`workflow`）** | 控制台 `/console/teams` 或 CLI：<br>`./bin/circle-hub pack assign <工作流ID> --team=<团队ID>`<br>（也可直接分给个人：`pack assign <用户名> <工作流ID>`） | 例如 `test-bed`、`case-compile`、`case-review` 等；不传 `@版本号`，成员自动看到该工作流当前在架版本 |
-| **通用技能（`skill`）** | 安装精确版本全站可见：<br>`./bin/circle-hub pack install <技能ID>@<版本>` | 通用技能（如 `mindmap-format`）仅发布还不生效，**必须 `install` 精确版本**；若采用包内 `tools/` 且未来转为团队范围核对时需按实际版本规矩维护 |
-| **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队ID>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队ID> \| --all)` | 新建业务系统**默认先不分配**，不对任何成员（含管理员个人跑任务）开放；必须显式分配团队或 `--all`；命名密钥通过 `/console/operations/system` 密码框或 `secret set` 写入 |
-| **产品知识库（`product`）** | 启用产品知识源 + 导入公共知识：<br>`./bin/circle-hub pack activate <产品ID>`<br>控制台 `/console/operations/knowledge` 或 CLI `knowledge sync --product <产品ID>` | 产品包须 `activate` 后才会出现在导入清单下拉里；工作流绑定的产品知识随工作流分配与产品启用对成员可用 |
-| **自动化测试环境（`executor` / `bed`）** | 见下节「登记测试环境」：先做好 `doc put bed-topology`、`executor add`、`secret set`、`lease register` 与 `bed baseline record` | **当前权限边界提醒**：在 `4a1fbdee57` 基线上，Hub 只按租约键互斥与 `lease register --owner` 登记归属，**尚无「把某台执行器/测试环境只分给某个团队使用」的硬隔离命令**；目前谁被分配了 `test-bed` / 编译工作流，谁就能按空闲互斥预订环境（按团队隔离执行器授权的统一入口已提审并将在后续合入） |
+| **工作流（`workflow`）** | 控制台 `/console/teams`（当前一次一条）或 CLI：<br>`./bin/circle-hub pack assign <工作流ID> --team=<团队ID>`<br>（也可直接分给个人：`pack assign <用户名> <工作流ID>`） | 例如 `test-bed`、`case-compile`、`case-compile-criterion-review` 等；不传 `@版本号`，成员自动看到在架版本；`pack list` 当前把团队分配展开成成员名而非团队名 |
+| **通用技能（`skill`）** | **当前不支持按团队分配，且控制台无安装表单**；管理员须在 Hub 主机执行：<br>`./bin/circle-hub pack install <技能ID>@<版本>` | 通用技能仅发布不生效，必须 `install` 精确版本；**一经安装对全站所有成员可见**（如 `mindmap-format` 等 8 个格式技能无团队隔离） |
+| **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队ID>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队ID> \| --all)` | 新建连接默认先不分配；**防坑提醒**：若连接已分给**全体**（`--all`），再追加分配给某团队**不会产生隔离效果**（未加入该团队的成员照样可见可用），且 `4a1fbdee57` 控制台尚无「撤回全体」表单，须在主机执行 `./bin/circle-hub resource unassign <资源ID> --all` |
+| **产品知识库（`product`）** | **当前不支持按团队分配，且控制台仅显示命令指引**；须在 Hub 主机启用整站产品源后，再到控制台 `/console/operations/knowledge` 或 CLI 导入：<br>`./bin/circle-hub pack activate <产品ID>`<br>`./bin/circle-hub knowledge sync --product <产品ID>` | 产品包 `activate` 对**整个 Hub 生效**；必须先在主机 `activate` 后才会出现在知识导入页面下拉里 |
+| **自动化测试环境（`executor` / `bed`）** | 见下节「登记测试环境」：先在主机做好 `doc put bed-topology`、`executor add`、`secret set`、`lease register` 与 `bed baseline record` | **当前权限边界（`4a1fbdee57`）**：Hub 此时尚无「按团队隔离测试环境」守卫，`lease register --owner` 只决定谁能注销和强释；**只要被分配了 `test-bed` 工作流，就能预订清单里的测试环境**（按团队隔离执行器授权与控制态表单正在合入中） |
 
 ---
 
@@ -164,7 +168,7 @@ printf '%s\n' '<值>' | ./bin/circle-hub var set <变量名> --text --not-secret
 
 #### 第三步：登记执行器
 
-准备好执行器定义 JSON（声明目标网关地址、写操作开关、只读版本探针、基线探针、前提认证证据等），执行：
+准备好执行器定义 JSON（当前基线无控制台上传表单或下载模板，可参照仓库 `hub/dispatch/testing/` 夹具写法自行整理约 40 个字段：声明目标网关地址、写操作开关、只读版本探针、基线探针、前提认证证据等；若网关采用 `https://` 端点，必须同时配置固定 CA 证书，且若格式被拒时当前 CLI 报错可能不带字段路径，须逐项核对 `endpoint` 与 CA 字段），执行：
 
 ```bash
 ./bin/circle-hub executor add <执行器定义.json>
@@ -201,33 +205,51 @@ Hub 当前明确区分「**同一数据库结构基线内的部署切换 / 回�
 > **重要现状诚实说明（`4a1fbdee57`）**：
 > 在当前基线上，支持「成员在途会话不断线、免重新授权、在途请求自动重试、旧版本读新记录兼容提示」的**原地零中断升级与降级（N5）仍在方案审定与开发中**。截至本版，标准部署变更仍遵循「停写核查 → 备份/升级 → 失败按备份回滚」或「不兼容重建」规程；请不要在仍有活跃写入作业期间直接重启替换进程并期待在途状态自动衔接。
 
-### 1. 同结构基线升级前核查与切换流程
+### 1. 先核清当前实例的部署方式，再选升级命令
 
-1. **停写前核查在途运行与作业**（避免切到一半留下无法自动续跑或未知的设备作业）：
-   ```bash
-   ./bin/circle-hub run list
-   ./bin/circle-hub lease list
-   ./bin/circle-hub job list --executor <exe_…>
-   ```
-   如果有未终态或处于 `unknown` 的上机作业，先等其结束或通过 `job status <摘要>` / `job dispose <摘要> …` 处置闭环（或按需核对远端网关作业）；通知成员暂缓新开需要长时派发的上机编译。
-2. **执行同机发行版升级（支持平台：macOS / Linux）**：
-   - 使用发行版 `install.sh` 的单机部署，重复运行同一安装脚本即进入升级流程：部署过程会先对当前数据备份、切换新二进制并重启服务，若迁移或健康检查失败会自动回滚。
-   - 如手工更新二进制并重启服务：停写 → 确保环境变量不含 `CIRCLE_HUB_TOKEN` → 更新文件并重新 `./bin/circle-hub serve --migrate-only`（或检查状态）→ 拉起服务。
-3. **升级后核验清单**：
-   ```bash
-   curl -sS http://127.0.0.1:7420/healthz
-   ./bin/circle-hub status
-   ./bin/circle-hub pack list
-   ./bin/circle-hub executor list
-   ```
-   若本次升级改动了仓库内工作流（如 `test-bed` 或 `case-compile`）或通用技能版本，按需额外运行 `pack publish --stage` + `pack install` / `pack retire` 让客户端重新拉取新版摘要。
+**重要前置事实（来自实机切换核查）**：`./bin/circle-hub deploy` 与 `./bin/circle-hub rollback` **只适用于由平台命令本身部署管理、且使用平台用户级服务单元的单机实例**：
+- 若用 `./bin/circle-hub status` 查得「`当前发布：没有`」且数据根下 `releases/` 为空（例如实例是通过手写系统级 systemd 单元指定外部发布目录部署的），**不要直接运行 `circle-hub deploy`**：`deploy` 会将其当成全新首次部署，尝试在同一系统账户下另建固定名字的用户级单元（`io.github.circle-platforms.circle-hub`）去争抢同一端口并执行全库备份；同时同一操作系统账户只能托管一个平台管理单元（且平台生成单元的 Node 堆内存上限为 8 GB，手写大内存单元不可直接盲替）。
+- 平台的 `rollback` 也是按 `deploy` 留下的**升级前备份**还原数据并切回旧版，**不是**「保持升级后数据不动直接装回上一版程序」，无 `deploy` 历史记录时会直接拒绝。
+
+#### 停写前核查在途运行与作业（所有部署方式必做）
+
+```bash
+./bin/circle-hub run list
+./bin/circle-hub lease list
+./bin/circle-hub job list --executor <exe_…>
+```
+
+如果有未终态或处于 `unknown` 的上机作业，先等其结束或通过 `job status <摘要>` / `job dispose <摘要> …` 处置闭环（或按需核对远端网关作业）；通知成员暂缓新开需要长时派发的上机编译。
+
+#### 路线 A：平台命令托管的单机实例（支持平台：macOS / Linux）
+
+使用发行版 `install.sh` / `circle-hub deploy` 建立的单机部署，按平台流程重复执行新版安装/部署即进入标准升级：流程会停服务 → 在停机窗口做 pre-deploy 备份 → 切换 `current` → 迁移并拉起服务，若迁移或 `/healthz` 失败自动回滚。
+
+#### 路线 B：系统级 systemd 单元 + 独立发布目录的同结构切换（无数据库迁移时）
+
+1. 先核对新旧版本[兼容矩阵](compatibility.md)确认**无结构迁移 / 不涉及 `needsRebuild`**，保留原有服务单元文件文本副本、数据目录、数据库与密钥库均不动；
+2. 停止服务（`systemctl stop <服务单元>`；实测进程停止会等待在途请求和已打开的长连接流收尾，最多可耗时约 30 秒，属 `closeTimeoutMs` + `closeGraceMs` 窗口）；
+3. 确认环境变量不含 `CIRCLE_HUB_TOKEN`，将单元内 `WorkingDirectory` 与 `ExecStart` 指向新版本发布目录（若该版带包内迁移可先核对状态/`--migrate-only`）；
+4. 执行 `systemctl daemon-reload && systemctl start <服务单元>`。
+
+#### 升级后核验清单与成员侧预期
+
+```bash
+curl -sS http://127.0.0.1:7420/healthz
+./bin/circle-hub status
+./bin/circle-hub pack list
+./bin/circle-hub executor list
+```
+
+- 确认 `/healthz` 返回的 `release` 与目标提交/版本一致；若改动了工作流或通用技能版本，按需补做 `pack publish --stage` + `pack install` / `pack retire`。
+- **实测重启影响预期**：在数十秒的停机切换窗口内，新 MCP 请求及技能本地下载工具（`download-run.ts` 等）会立即报 `ECONNREFUSED`（本地工具当前不会自动重试）；服务拉起后首轮维护期间首次读取会短暂变慢，随后恢复正常；**成员已持有的访问令牌全部有效、已连接的 Circle 会话无需重新登录或重新连接（仅内存中的控制台网页登录会话会被清空，网页端需重新登录）**。
 
 ### 2. 同结构降级 / 回退边界
 
-- **升级当场失败**：由发行版升级机制按升级前备份与上一版发布包目录恢复并重启服务后，再检查 `/healthz` 与 `./bin/circle-hub records verify`（核对记录摘要）及 `--vault`（核对密库加解密）。
-- **升级放写后想回退到上一个兼容版本**：
-  1. **不能在数据库结构已发生变化的情况下直接拿旧版程序读写新库**；若两次版本仅调整应用层而不涉及不兼容模型/迁移变更，先冻结所有写入与在途作业，切换回旧兼容版本二进制并启动；
-  2. 如果回退目标是升级前快照且升级后已有新增记录：请先用 `run list`、`job list` 与 `original list` 对账切分，确认是要丢弃增量恢复旧备份还是保留现有库继续往前修，切忌把两套时间线混成双写；
+- **由平台 `deploy` 管理的实例**：按升级前 `pre-deploy` 备份恢复到上一版后，再检查 `/healthz`、`./bin/circle-hub records verify`（核对记录摘要）及 `--vault`（核对密库加解密）。
+- **手写系统单元在不改数据结构的前提下原地回退**：
+  1. **不能在数据库结构已发生变化的情况下直接拿旧版程序读写新库**；若两版数据库结构完全兼容（例如回退两版仅界面或文字差异），停写并停服务后将单元的 `WorkingDirectory` 与 `ExecStart` 改回上一版发布目录、`daemon-reload` 并重启即可（不动库与密钥库，也不用 `rollback` 覆盖新产生的数据）；
+  2. 若回退目标是旧数据库快照且期间已有新增写入：先用 `run list`、`job list` 与 `original list` 对账切分，确认要丢弃增量恢复旧备份还是保留现有库继续往前修，切忌把两套时间线混成双写；
   3. 仅依赖恢复旧数据库备份时，同时核对 `keys/` 与 `vault/` 是否改动、在旧备份时刻之后新发布的任务包是否仍存在于对象存储。
 
 ### 3. 若遇不兼容变更进入「需要重建（`needsRebuild`）」
