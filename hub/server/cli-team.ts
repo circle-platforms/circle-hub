@@ -1,11 +1,11 @@
-import { TeamId, type PermissionRole } from '../../contracts/api.ts';
+import { TeamId } from '../../contracts/api.ts';
 import { isAdmin, type RecordsKit } from '../records/api.ts';
 import { parse, decided } from './cli-arguments.ts';
 import type { Session } from './cli-session.ts';
 import { CliError, UsageError } from './errors.ts';
 
 export const TEAM_USAGE = 'team list | show <团队ID> | create <名字> | delete <团队ID> | add <团队ID> <账户名或ID> | remove <团队ID> <账户名或ID>';
-export type TeamCommandSession = Pick<Session, 'member' | Extract<keyof Session, PermissionRole> | 'out'> & { records(): Promise<Pick<RecordsKit, 'teams'>> };
+export type TeamCommandSession = Pick<Session, 'member' | 'admin' | 'user' | 'out'> & { records(): Promise<Pick<RecordsKit, 'teams'>> };
 
 export function teamId(value: string): string {
   const parsed = TeamId.safeParse(value);
