@@ -90,7 +90,7 @@ test('empty lists say what appears there with one action, and knowledge actions 
  const team=await browser.get('/console/knowledge?scope=team');assert.equal(team.status,200);
  assert.match(team.body,/<div class="ch-empty"><p class="ch-empty-title">公共空间还没有知识<\/p><p class="ch-empty-text">[^<]+<\/p><div class="ch-actions"><a class="ch-btn ch-btn--primary" href="\/console\/knowledge\?scope=personal">打开我的知识<\/a><\/div><\/div>/);
  const submissions=await browser.get('/console/knowledge/submissions');assert.equal(submissions.status,200);
- assert.match(submissions.body,/<p class="ch-empty-title">还没有分享到团队的内容<\/p><p class="ch-empty-text">[^<]+<\/p><div class="ch-actions"><a class="ch-btn ch-btn--primary" href="\/console\/knowledge\?scope=personal">打开我的知识<\/a>/);
+ assert.match(submissions.body,/<p class="ch-empty-title">还没有分享到公共空间的内容<\/p><p class="ch-empty-text">[^<]+<\/p><div class="ch-actions"><a class="ch-btn ch-btn--primary" href="\/console\/knowledge\?scope=personal">打开我的知识<\/a>/);
  for(const body of [team.body,submissions.body])assert.deepEqual(wordingProblems(body),[]);
  const folder='/console/knowledge/space?'+new URLSearchParams({space:owner.user.id,path:'/'});
  const created=await browser.post('/console/knowledge/do/directory',{csrf:csrfOf((await browser.get(folder)).body),space:owner.user.id,path:'/合成文件夹'});assert.equal(created.status,303,created.body);
@@ -103,9 +103,9 @@ test('empty lists say what appears there with one action, and knowledge actions 
 });
 
 test('success messages count merged and refused shares and name the action',()=>{
- assert.equal(shareFeedback([{status:'merged'},{status:'merged'}]),'已分享到团队 · 2 条');
- assert.equal(shareFeedback([{status:'merged'},{status:'rejected'}]),'已分享到团队 · 1 条；已拒收 1 条');
- assert.equal(shareFeedback([{status:'rejected'}]),'未分享到团队 · 已拒收 1 条');
+ assert.equal(shareFeedback([{status:'merged'},{status:'merged'}]),'已分享到公共空间 · 2 条');
+ assert.equal(shareFeedback([{status:'merged'},{status:'rejected'}]),'已分享到公共空间 · 1 条；已拒收 1 条');
+ assert.equal(shareFeedback([{status:'rejected'}]),'未分享到公共空间 · 已拒收 1 条');
  const values=(fields:Record<string,string>)=>new URLSearchParams(fields);
  assert.equal(actionNotice('knowledge','withdraw',values({})),'已撤回条目');
  assert.equal(actionNotice('knowledge','entry',values({replaces:'a'.repeat(64)})),'已更新条目');

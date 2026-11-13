@@ -40,12 +40,13 @@ export async function resolveCallLogFilters(ctx: PageContext, input: CallLogFilt
   const now = input.now ?? (ctx.deps.now?.() ?? new Date()).getTime();
   let rangeFrom = from ?? undefined;
   let rangeTo = to ?? undefined;
-  if (input.defaultDays !== undefined && from === undefined && to === undefined) {
+  // Page default window: fill whichever bound the URL omitted (same as the old records page).
+  if (input.defaultDays !== undefined) {
     const beginning = new Date(now);
     beginning.setDate(beginning.getDate() - (input.defaultDays - 1));
     beginning.setHours(0, 0, 0, 0);
-    rangeFrom = beginning.toISOString();
-    rangeTo = new Date(now + 1).toISOString();
+    if (from === undefined) rangeFrom = beginning.toISOString();
+    if (to === undefined) rangeTo = new Date(now + 1).toISOString();
   }
   if (rangeFrom !== undefined && rangeTo !== undefined && Date.parse(rangeFrom) >= Date.parse(rangeTo)) {
     problems.push('结束时间须晚于开始时间');
