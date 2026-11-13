@@ -102,6 +102,10 @@ export interface DispatchView {
 }
 
 export interface AppOptions {
+  /**
+   * Ordinary-mode administrator reset (settings「重置和重建」and `/console/rebuild` when assembled).
+   * Uses the same RebuildResetBridge as maintenance mode; serve wires ResetPorts (apply/export) by default.
+   */
   reset?: { bridge(): Promise<import('./rebuild-http.ts').RebuildResetBridge>; render?: import('./rebuild-http.ts').RebuildPageRenderer };
   /** Runs the console's management actions as `circle-hub` commands (serve gives one); without it they are unavailable. */
   bridge?: import('./command-bridge.ts').CommandBridge;

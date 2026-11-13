@@ -230,7 +230,18 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
     const observation = { health: healthReader(observationDatabase), traces: new TraceReader(observationDatabase), writer: () => telemetry?.stats() ?? null };
-    app = createApp(deps, { log: operatorLog, health, observation, ...options.appOptions, bridge, reset: options.appOptions?.reset ?? { bridge: () => createPlatformRebuildBridge(config, io.env), ...(options.rebuild?.render ? { render: options.rebuild.render } : {}) }, ...(tls ? { tls } : {}) });
+    app = createApp(deps, {
+      log: operatorLog,
+      health,
+      observation,
+      ...options.appOptions,
+      bridge,
+      reset: options.appOptions?.reset ?? {
+        bridge: () => createPlatformRebuildBridge(config, io.env),
+        render: options.rebuild?.render ?? renderRebuildPage,
+      },
+      ...(tls ? { tls } : {}),
+    });
     // Requests, background rounds and console actions are traced from here on (B08, decision 146).
     telemetry = startTelemetry({ database: config.database, release: app.release, environment: await deploymentEnvironment(config.dataDir), log: operatorLog, retention: true });
     const info = await app.listen();

@@ -95,8 +95,9 @@ test('a disconnected execute response never acknowledges its queued worker', { t
   await call('/console/rebuild'); assert.ok(view?.loginNonce);
   await call('/console/rebuild/authorize', { nonce: view.loginNonce, setup_code: await issueRebuildCode(dataDir) });
   await call('/console/rebuild'); assert.ok(view?.actionId); const form = { csrf: view.csrf, actionId: view.actionId };
-  await call('/console/rebuild/preview', { ...form, scope: 'all', confirm: '重建' });
-  const pending = httpRequest(base + '/console/rebuild/execute', { method: 'POST', headers: headers() }); pending.on('error', () => {}); pending.end(new URLSearchParams(form).toString());
+  const previewed = await call('/console/rebuild/preview', { ...form, scope: 'all', confirm: '重建' });
+  assert.equal(previewed.status, 200);
+  const pending = httpRequest(base + '/console/rebuild/execute', { method: 'POST', headers: { ...headers(), origin: base } }); pending.on('error', () => {}); pending.end(new URLSearchParams(form).toString());
   await launchStarted.promise; pending.destroy(); await disconnected.promise; launchFinished.resolve({ operationId }); await handled.promise;
   assert.equal(acknowledgements, 0);
 });
