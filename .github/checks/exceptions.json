@@ -246,6 +246,20 @@
   },
   {
     "check": "package-boundaries",
+    "path": "hub/server/cli-session.ts",
+    "what": "entrypoint-bypass: hub/leases/service.ts",
+    "reason": "server bypasses hub/leases/api.ts by importing hub/leases/service.ts (split out from cli-admin.ts); route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-session.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts (split out from cli-admin.ts); route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
     "path": "hub/server/local-tools.ts",
     "what": "entrypoint-bypass: hub/runs/packs/versions.ts",
     "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/versions.ts; route through package entrypoint in C4",
