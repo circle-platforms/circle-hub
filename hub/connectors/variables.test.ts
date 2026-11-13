@@ -5,6 +5,7 @@ import { before, after, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openConnectorKit } from './testing/kit.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
+import { ReadManifest } from '../../contracts/src/resources.ts';
 let pg: TemporaryPostgres;
 before(async () => { pg = await startPostgres(); });
 after(() => pg?.stop());
@@ -59,10 +60,14 @@ test('two resources share credential versions: rotation refreshes sessions and o
     const outcome = await read(first);
     assert.equal(outcome.ok, true);
     if (outcome.ok) {
-        const row = await k.records.store.get<any>(outcome.manifest);
-        assert.equal(row?.body.variables[0].name, 'DEMO_ROOT');
-        assert.equal(row?.body.variables[0].at, first.id + '#/settings/root#');
-        assert.ok(row?.body.inputs.length >= 4);
+        const manifest = ReadManifest.parse((await k.records.store.get(outcome.manifest))!.body);
+        const ordinary = (manifest.variables ?? []).filter(use => use.kind === 'var');
+        assert.equal(ordinary.length, 1);
+        assert.equal(ordinary[0].name, 'DEMO_ROOT');
+        assert.equal(ordinary[0].at, first.id + '#/settings/root#');
+        const configuration = await k.records.authorizations.resourceConfig(first.id);
+        assert.ok(configuration);
+        assert.deepEqual(manifest.inputs, ['rec:' + configuration.digest, 'rec:' + ordinary[0].decision]);
     }
     await set('DEMO!Incorrect44');
     const before = stub.logins;
@@ -216,7 +221,7 @@ test('credential descriptions distinguish wire rules and authenticated vault wit
  const r=await k.connectors.admin.addResource(k.admin,{...input,credentials:{username:'DEMO_USER',password:'DEMO_PASSWORD'}});
  await k.records.variables.setSecrets(k.admin,[{name:'DEMO_PASSWORD',value:'Demo!Metadata42'}],'DEMO_METADATA');
  const active=(await k.connectors.admin.describe(k.admin,r.id))!.credentials.find(c=>c.name==='password')!;assert.equal(active.digest,'sha512_base64');assert.equal(active.stored_digest,'plain');assert.equal(active.version,1);assert.equal(active.length,15);
- await k.records.variables.unsetSecret(k.admin,'DEMO_PASSWORD','DEMO_WITHDRAW');const withdrawn=(await k.connectors.admin.describe(k.admin,r.id))!.credentials.find(c=>c.name==='password')!;assert.equal(withdrawn.set,false);assert.equal(withdrawn.version,2);assert.equal(withdrawn.revoked,true);
+ await k.records.variables.unsetSecret(k.admin,'DEMO_PASSWORD','DEMO_WITHDRAW');const withdrawn=(await k.connectors.admin.describe(k.admin,r.id))!.credentials.find(c=>c.name==='password')!;assert.equal(withdrawn.set,false);assert.equal(withdrawn.version,1);assert.equal(withdrawn.revoked,true);
 });
 
 test('a new definition read never joins an older load after explicit invalidation',async t=>{
