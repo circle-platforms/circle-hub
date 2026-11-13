@@ -210,16 +210,17 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
 
 ### 定义文件包含哪些顶层字段
 
-除了必填的 `"schema": "deployment@1"`，其余八个顶层数组字段均可选（默认视为空数组 `[]`）：
+除了必填的 `"schema": "deployment@1"`，其余顶层字段均可选（数组字段默认 `[]`，其中常用配置项包括）：
 
 - `accounts`：账号列表（`{ name, role: "admin" | "user", disabled?: false }`，新建条目省略 `id`；若指定 `id` 则必须与已有记录精确匹配）。
-- `teams`：团队列表（`{ name, members?: [...] }`，`members` 可填账号名或账号 `id`）。
+- `teams`：团队列表（`{ name, members?: [...] }`，`members` 填账号名；注：当前 `export` 在此字段可能输出内部 `usr_…` 编号）。
 - `packs`：包列表（`{ ref: "<id>@<x.y.z>", directory?: "<包目录>", install?: false, dependsOn?: [...] }`；按依赖顺序写入，首次发布可提供 `directory`，复用已发布包时可省略 `directory`，此时要求该版本已存在，且若清单或文件摘要不一致会拒绝覆盖）。
 - `resources`：业务系统资源列表（`{ definition: { system_pack: "<id>@<x.y.z>", name, environment, origins, allow_plaintext?, credentials?, settings?, limits? }, enabled?: true }`；注意在 `deployment@1` 中，`credentials` 直接写大写密钥名如 `"SYNTH_PLM_USER"`，不带 `${secret:...}` 外壳）。
 - `executors`：执行器列表（按 `target` 唯一标识，凭据字段使用 `${secret:<NAME>}` 引用格式）。
 - `workflowAssignments`：工作流分配（`{ pack: "<包ID>", team: "<团队名>" }` 或 `{ pack: "<包ID>", user: "<用户名>" }`；`pack` 写包 ID，不带 `@版本号`）。
 - `resourceAssignments`：资源分配（`{ resource: "<资源名>", team: "<团队名>" }` 或 `{ resource: "<资源名>", all: true }`）。
 - `knowledgeSources`：启用为知识源的包 ID 列表（`PackId[]`）。
+- `knowledgeSync`、`variables`、`documents`、`leaseRegistrations`：可选声明知识同步目标（`{ product, line }`）、普通变量、命名文档当前修订版与租约登记前缀（`prefix`、`owner`）；`missingConfiguration` 记录待人工确认的缺项提示。
 
 ### 最小合成示例（`deployment@1`）
 
@@ -264,11 +265,14 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
 }
 ```
 
-### `apply` 与 `export` 的行为差异
+### `apply` 与 `export` 的行为差异与重建恢复路径
 
-- **应用（`apply`）不盲目覆盖差异**：匹配到同 `id` 或同名的已有条目且内容完全一致时，直接计为「相同跳过」；若存在不同，只会逐条输出存在差异的字段路径（例如 `<section>[<index>] 与现状不同：<fields>；未覆盖`）并返回非零退出码，**不会自动覆盖**现有配置（同时汇总输出 `已配置 X 项；相同跳过 Y 项；差异 Z 项`）。如果应用过程在中途失败，前面已生效的创建操作不会自动回滚。
-- **导出（`export`）不含任何真实密钥**：`export` 只导出结构定义、分配关系与引用到的密钥名（资源凭据只含大写密钥名，执行器只含 `${secret:<NAME>}`），从不读取 `vault/` 密文、密码散列或明文令牌。因此在跨环境重装并 `apply` 后，仍需按密钥名补写（或沿用原有保留下来的）`vault/` 密钥值。
-- **CLI 接线现状提示**：当前 `hub/server/cli-apply.ts` 中的 `apply` / `export` 核心逻辑已经实现并通过单元测试，但 `hub/server/command-registry.ts` 尚未把这两个子命令正式挂入 `circle-hub` 主命令分发表。待接入合并到 `hub-final` 后，本节将补充并实测完整的命令行调用写法。
+- **应用（`apply`）不盲目覆盖差异**：匹配到同 `id` 或同名的已有条目且内容完全一致时，直接计为「相同跳过」；若存在不同，只会逐条输出存在差异的字段路径（例如 `<section>[<index>] 与现状不同：<fields>；未覆盖`；注：当前差异提示按数组下标输出，尚未附带实体名字，且遇到部分项差异时已生效的前序创建操作不会自动整文件回滚）并返回非零退出码。
+- **空库与重建后的三步恢复路径**：在空库或刚清空账户初始化后，若尚未建立管理员就直接执行 `circle-hub apply <定义.json>`，命令会在触碰任何配置前拒绝并提示先完成首次管理员初始化。清零或重建后请按以下三步顺序恢复：
+  1. `./bin/circle-hub reset --scope all`（所有**会清空账户**且未带 `--keep-config` 的重置都会在触碰数据库之前拒绝同时传入 `--definition`；若处于兼容基线且只想保留现有账号与配置重建，改用 `--keep-config`，流程会自动导出并在新库恢复，无需再走首次设置与 `init-admin`）
+  2. `./bin/circle-hub init-admin <账户名> --password-stdin`（或在 `/console/setup` 完成首次设置；`init-admin` 只检查数据库里是否已有管理员，并在无管理员时自动以原子方式替换上一个库遗留的 `operator-token` 文件，无需人工删除旧令牌文件）
+  3. `./bin/circle-hub apply <部署定义.json>`
+- **导出（`export`）不含任何真实密钥**：`export` 只导出结构定义、分配关系与引用到的密钥名（资源凭据只含大写密钥名，执行器只含 `${secret:<NAME>}`），从不读取 `vault/` 密文、密码散列或明文令牌（注：当前 `export` 在 `teams[].members` 中仍输出 `usr_…` 内部编号且未发布包缺 `directory`，跨库恢复请同步核对 [重置和重建 — 重建之后要补登记的东西](reset.md#重建之后要补登记的东西)）。因此在跨环境重装并 `apply` 后，仍需按密钥名补写（或沿用原有保留下来的）`vault/` 密钥值。
 
 ---
 
