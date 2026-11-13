@@ -1,3 +1,5 @@
+export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
+export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
 export { diagnoseRecordsSchema, currentRecordMigrations, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
 export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
 export { isAdmin, canSeeRun } from './permissions.ts';
