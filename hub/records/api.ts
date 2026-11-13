@@ -2,7 +2,7 @@ export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConf
 export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
 import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
 export { diagnoseRecordsSchema, currentRecordMigrations, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
-export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
+export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type TeamDeletion, type Teams } from './teams.ts';
 export { isAdmin, canSeeRun } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
 export { openRecords, migrateRecords } from './index.ts';

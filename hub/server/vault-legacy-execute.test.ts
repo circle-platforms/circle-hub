@@ -4,7 +4,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { cp, copyFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setup } from '../dispatch/testing/context.ts';
-import { FileVault } from '../records/vault.ts';
+import { FileVault } from '../records/api.ts';
 import { canonicalBytes } from '../records/api.ts';
 
 test('copied legacy v1 ciphertext and authenticated metadata execute under a new executor ID without a secret database decision', async t => {

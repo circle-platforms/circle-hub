@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { startPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
-import { createPool } from '../records/db.ts';
+import { createPool } from '../records/api.ts';
 import { diagnoseRecordsSchema } from '../records/api.ts';
 import { loadServerConfig, serve, type ServeOptions } from './main.ts';
 import type { CliIo, ListenInfo } from './api.ts';
