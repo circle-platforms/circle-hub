@@ -253,6 +253,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
+    close: () => dispatch?.close() ?? Promise.resolve(),
     records,
     memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
       canUsePack: (target, pack) => registry.canUse(target.id, pack),
