@@ -126,7 +126,7 @@ test('TEAM_ACTIONS build the argv shapes from interfaces §2', () => {
     argv: ['resource', 'assign', 'res_synthetic', `--team=${TEAM_A.id}`],
   });
   assert.throws(() => TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.none })), /先不分配/);
-  assert.equal(TEAMS, '/console/teams');
+  assert.equal(TEAMS, '/console/team');
   assert.deepEqual(RESOURCE_AUDIENCE_OPTIONS.map((row) => row.label), ['全体', '某团队', '先不分配']);
   assert.match(SYSTEM_ADD_AUDIENCE_HINT, /没有分配时对谁都不开放/);
 });

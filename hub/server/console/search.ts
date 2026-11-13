@@ -168,7 +168,7 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
     if (hit.kind === 'build') return ['构建', link('/console/knowledge/product', hit.build, { id: hit.product, line: hit.line }), `${hit.product} · 版本线 ${hit.line}`];
     return ['条目', link('/console/knowledge/tree', hit.path, { root: hit.root, path: hit.path }), `${hit.product} · 版本线 ${hit.line} 的当前版本`];
   };
-  const records = ctx.admin ? '/console/admin/calls' : '/console/records';
+  const records = '/console/records';
   const body = html`${spaceKnowledge}${card(null, form)}
 ${sectionHead('任务', `${results.tasks.length} 个`)}
 ${card(null, html`${table(['任务', uiLabelOf('pack_kind', 'workflow'), '执行人', '开始'], results.tasks.map((hit) => [link(`/console/runs/${hit.run}`, hit.title), technicalCode(hit.pack), hit.runner ?? '未记录', when(hit.started_at)]), '没有匹配的任务')}${partial(results.partial.tasks, `仅查找了最近的 ${RUNS_SCANNED} 个任务，或匹配多于 ${SEARCH_MAX_HITS} 个；可能还有其他匹配。`)}`)}

@@ -3,7 +3,7 @@ import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { FormError, registerActions, word, type Action, type Form } from './manage.ts';
 
 /** Result-page back link and nav highlight for team ACTIONS (interfaces §5.2). */
-export const TEAMS = '/console/teams';
+export const TEAMS = '/console/team';
 
 /** `--flag=value`: the value may start with `-`, it is never read as another flag. */
 function flag(name: string, value: string): string {

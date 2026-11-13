@@ -82,7 +82,8 @@ export interface Action {
   onceNotice?: string;
 }
 
-const USERS = '/console/admin';
+// Result-page back links: K3 removed /console/admin/* page entries; keep POST /console/admin/do.
+const USERS = '/console/team?tab=members';
 const OPERATIONS = '/console/operations';
 
 /** Up to three credentials of a business system, each a name and its content (the content is taken as typed). */
@@ -101,10 +102,10 @@ export function credentialValues(form: Form): Record<string, string> {
   }
   return out;
 }
-const PACKS = '/console/admin/packs';
-const RESOURCES = '/console/admin/resources';
-const SECRETS = '/console/admin/secrets';
-const KNOWLEDGE = '/console/admin/knowledge';
+const PACKS = '/console/workflows';
+const RESOURCES = '/console/connections';
+const SECRETS = '/console/settings';
+const KNOWLEDGE = '/console/operations/knowledge';
 
 /** Mutable so other console modules register their ACTIONS without editing this object's literals. */
 export const ACTIONS: Record<string, Action> = {
@@ -328,7 +329,7 @@ ${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
 function actionChrome(ctx: PageContext, action: Action) {
-  return ctx.chrome(action.title, { active: action.active ?? ((action.back.startsWith('/console/operations/member') || action.back === '/console/team') ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back === PACKS ? 'packs' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings'), hint: '与命令行执行相同的命令，写入相同的记录' });
+  return ctx.chrome(action.title, { active: action.active ?? ((action.back.startsWith('/console/operations/member') || action.back.startsWith('/console/team')) ? 'team' : action.back.startsWith('/console/operations/knowledge') || action.back === KNOWLEDGE || action.back.startsWith('/console/knowledge') ? 'knowledge' : action.back.startsWith('/console/operations/pack') || action.back.startsWith('/console/workflows') || action.back.startsWith('/console/skills') ? 'workflows' : action.back.startsWith('/console/operations/system') || action.back === RESOURCES ? 'connections' : 'settings'), hint: '与命令行执行相同的命令，写入相同的记录' });
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
