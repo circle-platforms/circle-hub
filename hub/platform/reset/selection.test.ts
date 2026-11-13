@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classifyCurrentRecord, currentRecordReferences, partitionRunOriginals, selectCurrentRecords, type CurrentRecord } from './selection.ts';
+import { classifyCurrentRecord, currentRecordReferences, partitionRunOriginals, RECORD_HOLDER_COLUMNS, resolveCurrentRecordScopes, selectCurrentRecords, type CurrentRecord } from './selection.ts';
 
 const hash = (n: number): string => n.toString(16).padStart(64, '0');
 const at = '2026-11-13T00:00:00.000Z';
@@ -17,6 +17,11 @@ const authorization = (n: number, permission: string, bound: string | null = nul
   permission, subject: user, object: permission === 'publish' ? 'synthetic-pack@1.0.0' : 'synthetic-pack', bound,
   revoked: false, decided_by: user, decided_at: at, expires_at: null, note: '合成决定', supersedes: null,
 });
+const artifact = (n: number, bytes: string, origin: unknown = { upload: { session: 'synthetic', message: 'source' } }): CurrentRecord =>
+  record(n, 'source_artifact', 'source_artifact@1', { sha256: bytes, size: 1, media_type: 'text/plain', name: '合成原件', origin,
+    author: { user }, captured_at: at, provenance_type: 'declared', read_tier: 'model_readable',
+    visibility: { readers: [user], admins: true, packs: [], shareable: false },
+    scan: { scanner: 'credential-scan@4', inspected: false, clean: false, findings: [], truncated: false } });
 
 test('current kind and exact schema classify the four scopes without matching prose', () => {
   assert.equal(classifyCurrentRecord(call(1)), 'history');
@@ -51,8 +56,9 @@ test('unknown records block selection instead of falling into history', () => {
 
 test('a retained current record formally referencing cleared history blocks without expanding scope', () => {
   const history = call(1);
-  const kept = record(2, 'source_artifact', 'source_artifact@1', { sha256: hash(40), origin: { read: { action: history.digest } } });
+  const kept = artifact(2, hash(40), { read: { object: 'synthetic:document:one', action: history.digest } });
   const selected = selectCurrentRecords([history, kept], new Set(['history']), {
+    sourceScopes: new Map([[kept.digest, ['knowledge']]]),
     objectScopes: new Map([[hash(40), ['knowledge']]]), objectReferences: new Map([[hash(40), []]]),
   });
   assert.deepEqual(selected.cleared, [history.digest]);
@@ -107,4 +113,60 @@ test('run_originals partitions by held_by including public knowledge holders', (
   assert.deepEqual(selected.retained, [rows[1]]);
   assert.equal(selected.blocked.length, 1);
   assert.equal(selected.blocked[0]!.row, 3);
+  assert.equal(RECORD_HOLDER_COLUMNS.run_upload_declarations, 'run_record');
+});
+
+test('named document moves use object targets and configuration while reads are history', () => {
+  const move = record(1, 'action', 'action@1', { ...action('server.docs@1', 'move_root', { pointer: 'doc:synthetic', expected: hash(30), next: hash(31), previous_action: hash(32) }), inputs: [hash(30), hash(31)] });
+  const read = record(2, 'action', 'action@1', action('server.docs@1', 'read', { external: 'doc:doc:synthetic', sha256: hash(31) }));
+  assert.equal(classifyCurrentRecord(move), 'config');
+  assert.equal(classifyCurrentRecord(read), 'history');
+  assert.equal(currentRecordReferences(move).find(edge => edge.field === '/inputs/0')!.kind, 'object');
+  assert.equal(currentRecordReferences(move).find(edge => edge.field === '/detail/previous_action')!.kind, 'record');
+  const arbitrary = record(3, 'action', 'action@1', { ...action('runs.engine@1'), inputs: [hash(90)] });
+  assert.deepEqual(currentRecordReferences(arbitrary), []);
+  assert.match(selectCurrentRecords([arbitrary], new Set()).blocked[0]!.reason, /裸摘要目标类型/);
+});
+
+test('ordinary sources inherit exact formal holders and shared holders prevent an overbroad clear', () => {
+  const source = artifact(1, hash(40));
+  const history = { ...call(2), references: [{ kind: 'record' as const, digest: source.digest, field: '/source' }] };
+  const knowledge = record(3, 'memory_document', 'memory-document@1', { space: 'team', by: user, at, intent: hash(50) });
+  knowledge.references = [{ kind: 'record', digest: source.digest, field: '/source' }];
+  assert.equal(classifyCurrentRecord(source), null);
+  const runtimeOwners = resolveCurrentRecordScopes([source, history]);
+  assert.deepEqual(runtimeOwners.get(source.digest), ['history']);
+  assert.deepEqual(selectCurrentRecords([source, history], new Set(['history'])).blocked, []);
+  const selected = selectCurrentRecords([source, history, knowledge], new Set(['history']), {
+    objectScopes: new Map([[hash(40), ['history', 'knowledge']]]), objectReferences: new Map([[hash(40), []]]),
+  });
+  assert.ok(selected.retained.includes(source.digest));
+  assert.deepEqual(selected.cleared, [history.digest]);
+  assert.deepEqual(selected.blocked, []);
+});
+
+test('document source provenance requires its current configuration holder and read copies stay history', () => {
+  const source = artifact(1, hash(40), { read: { object: 'doc:doc:synthetic@' + hash(40) } });
+  source.indices = [{ key: 'artifact.object', value: 'doc:doc:synthetic@' + hash(40) }];
+  const copy = artifact(2, hash(41), { generated: { generator: 'server.docs@1', inputs: ['src:' + hash(40)] } });
+  assert.deepEqual(resolveCurrentRecordScopes([source]).get(source.digest), undefined);
+  const owners = resolveCurrentRecordScopes([source, copy], { objectScopes: new Map([[hash(40), ['config']]]) });
+  assert.deepEqual(owners.get(source.digest), ['config']);
+  assert.deepEqual(owners.get(copy.digest), ['history']);
+});
+
+test('private pack captured files are record edges and manifest files are object edges', () => {
+  const value = record(1, 'personal_pack_version', 'personal-pack-version@1', { digest: hash(20),
+    manifest: { files: [{ path: 'SKILL.md', sha256: hash(21) }] }, files: { 'SKILL.md': hash(22) } });
+  assert.equal(currentRecordReferences(value).find(edge => edge.field === '/files/SKILL.md')!.kind, 'record');
+  assert.equal(currentRecordReferences(value).find(edge => edge.field === '/manifest/files/0/sha256')!.kind, 'object');
+});
+
+test('an unavailable current observation is not labelled as schema incompatibility', () => {
+  const unavailable = { ...call(1), available: false };
+  const selected = selectCurrentRecords([unavailable], new Set(['history']));
+  assert.equal(selected.blocked.length, 1);
+  assert.match(selected.blocked[0]!.reason, /不可读取/);
+  assert.doesNotMatch(selected.blocked[0]!.reason, /模式/);
+  assert.deepEqual(selected.cleared, []);
 });
