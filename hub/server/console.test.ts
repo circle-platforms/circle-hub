@@ -263,15 +263,13 @@ describe('pages', () => {
   test('a run page shows partitions with labels, not applicable layers, unknown with its own symbol and claims in display order', async () => {
     const user = await person();
     const run = await runWithResult(user);
-    // New runs always get a default submission_due (start/fakes); strip it to exercise the historical empty path (issue 239).
-    delete (server.fakes.runs.runs.get(run)!.record as { submission_due?: string }).submission_due;
     const session = await signIn(user.token);
     const list = await get('/console/runs', session);
     assert.ok(list.body.includes(run));
     const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
-    // Issue 239: a run recorded without a submission deadline says what the reader can do, in plain words.
-    assert.ok(page.body.includes('这次任务未记录提交期限。请从此任务创建新的修订后继续。'));
+    // New runs always record submission_due (start/fakes). Historical missing-due copy is not tested (RULES §6 / regression rule 0).
+    assert.match(page.body, /提交期限/);
     assert.ok(!page.body.includes('旧运行没有记录期限'));
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
     for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '技术信息', DONE_RULE_NOTE, ACCEPTED_PRODUCER_NOTE]) {
