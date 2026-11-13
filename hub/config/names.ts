@@ -6,11 +6,9 @@ export const HUB_PREFIX = 'CIRCLE_HUB_';
 /** Why the keychain names were retired and where the keys are now. Names the data root's variable, never its value. */
 const KEY_FILES_MOVED =
   'Hub 不再使用 macOS 钥匙串：密钥库主密钥和操作令牌在每个平台上都存在数据根下的私有密钥文件里，目录 $CIRCLE_HUB_DATA_DIR/keys（0700，文件 0600），文件名由部署设置决定；删掉这个变量';
-export const RETIRED_PREFIX = 'CIRCLE_SERVER_';
 
 /**
- * Single CIRCLE_HUB_* names that were retired, with the text a refusal gives for them. Like the retired prefix they are
- * never read: a process that carries one, even empty, refuses to start. hub/platform/environment.ts keeps a copy (a test
+ * Single CIRCLE_HUB_* names that were retired, with the text a refusal gives for them. They are never read: a process that carries one, even empty, refuses to start. hub/platform/environment.ts keeps a copy (a test
  * keeps the two equal).
  */
 export const RETIRED_NAMES = {

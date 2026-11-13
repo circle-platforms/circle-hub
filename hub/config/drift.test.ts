@@ -31,19 +31,9 @@ function refuses(check: () => void): boolean {
 
 test('hub/config refuses exactly the retired names hub/platform refuses', () => {
   const names = [
-    ...Object.keys(HUB_ENVIRONMENT).map((name) => name.replace(/^CIRCLE_HUB_/, 'CIRCLE_SERVER_')),
-    'CIRCLE_SERVER_DATABASE_CONFIG',
     ...Object.keys(RETIRED_NAMES),
     'CIRCLE_HUB_KEYCHAIN',
     'CIRCLE_HUB_KEYCHAIN_SERVICE_X',
-    'CIRCLE_SERVER_',
-    'CIRCLE_SERVER',
-    'CIRCLE_SERVERLESS',
-    'CIRCLE_SERVER_X_',
-    'circle_server_port',
-    'Circle_Server_PORT',
-    ' CIRCLE_SERVER_PORT',
-    'XCIRCLE_SERVER_PORT',
     'CIRCLE_HUB_PORT',
     'CIRCLE_HUB_SERVER_PORT',
     'PATH',

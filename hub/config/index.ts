@@ -4,7 +4,7 @@ import { HUB_ENVIRONMENT, HUB_PREFIX, isHubEnvironmentName, isPlatformOnlyName }
 import { assertNoRetiredEnvironment } from './retired.ts';
 import { validAllowedHosts, validListenAddress, validProxyOrigin } from '../listen.ts';
 
-export { HUB_ENVIRONMENT, HUB_PREFIX, PLATFORM_ONLY_ENVIRONMENT, RETIRED_NAMES, RETIRED_PREFIX, isHubEnvironmentName, isPlatformOnlyName, isRetiredName } from './names.ts';
+export { HUB_ENVIRONMENT, HUB_PREFIX, PLATFORM_ONLY_ENVIRONMENT, RETIRED_NAMES, isHubEnvironmentName, isPlatformOnlyName, isRetiredName } from './names.ts';
 export type { HubEnvironmentName, PlatformOnlyName, RetiredName } from './names.ts';
 export { HubEnvironmentError, assertNoRetiredEnvironment, retiredEnvironmentKeys } from './retired.ts';
 

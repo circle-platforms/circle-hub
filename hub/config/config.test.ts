@@ -162,28 +162,6 @@ test('the names only platform commands read are tolerated and never read; other 
   assert.match(home[0], /CIRCLE_HUB_HOME 不是 Hub 的配置项/);
 });
 
-test('retired CIRCLE_SERVER_* names refuse to start, even empty or beside the new name, and values never appear', () => {
-  assert.deepEqual(retiredEnvironmentKeys({ CIRCLE_SERVER_B: 'x', OTHER: 'y', CIRCLE_SERVER_A: '' }), ['CIRCLE_SERVER_A', 'CIRCLE_SERVER_B']);
-  assert.doesNotThrow(() => assertNoRetiredEnvironment({ CIRCLE_HUB_PORT: '1', CIRCLE_SERVERLESS: 'unrelated' }));
-  for (const env of [
-    { CIRCLE_SERVER_DATA_DIR: '/old/secret-path' },
-    { CIRCLE_SERVER_PORT: '' },
-    { ...BASE, CIRCLE_SERVER_DATA_DIR: '/old/secret-path' },
-  ]) {
-    assert.throws(
-      () => loadConfig(env),
-      (error: unknown) => error instanceof HubEnvironmentError && !error.message.includes('/old/secret-path') && error.keys.length === 1,
-    );
-  }
-  assert.throws(
-    () => assertNoRetiredEnvironment({ CIRCLE_SERVER_DATA_DIR: 'x', CIRCLE_SERVER_DATABASE_CONFIG: 'y' }),
-    (error: unknown) =>
-      error instanceof HubEnvironmentError &&
-      error.message.includes('CIRCLE_SERVER_DATA_DIR -> CIRCLE_HUB_DATA_DIR') &&
-      error.message.includes('CIRCLE_SERVER_DATABASE_CONFIG（没有同名的新变量'),
-  );
-});
-
 test('the retired keychain names refuse to start, even empty or beside the required variables, saying where the keys are now', () => {
   assert.deepEqual(Object.keys(RETIRED_NAMES).sort(), ['CIRCLE_HUB_KEYCHAIN_ACCOUNT', 'CIRCLE_HUB_KEYCHAIN_SERVICE']);
   assert.deepEqual(retiredEnvironmentKeys({ CIRCLE_HUB_KEYCHAIN_SERVICE: '', CIRCLE_HUB_PORT: '1' }), ['CIRCLE_HUB_KEYCHAIN_SERVICE']);
@@ -203,11 +181,7 @@ test('the retired keychain names refuse to start, even empty or beside the requi
       JSON.stringify(env),
     );
   }
-  // Both kinds of retired name in one environment are both named.
-  assert.throws(
-    () => assertNoRetiredEnvironment({ CIRCLE_SERVER_PORT: '1', CIRCLE_HUB_KEYCHAIN_ACCOUNT: 'x' }),
-    (error: unknown) => error instanceof HubEnvironmentError && error.keys.length === 2 && error.message.includes('CIRCLE_SERVER_PORT -> CIRCLE_HUB_PORT') && error.message.includes('CIRCLE_HUB_KEYCHAIN_ACCOUNT'),
-  );
+
 });
 
 test('the guard module stops a process that carries a retired name', () => {
@@ -219,13 +193,6 @@ test('the guard module stops a process that carries a retired name', () => {
   });
   assert.equal(clean.status, 0, clean.stderr);
   assert.match(clean.stdout, /started/);
-  const retired = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(guard)}); console.log('started')`], {
-    env: { ...environment, CIRCLE_SERVER_PORT: '1' },
-    encoding: 'utf8',
-  });
-  assert.notEqual(retired.status, 0);
-  assert.doesNotMatch(retired.stdout, /started/);
-  assert.match(retired.stderr, /HubEnvironmentError/);
   const keychain = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(guard)}); console.log('started')`], {
     env: { ...environment, CIRCLE_HUB_KEYCHAIN_SERVICE: 'circle-hub' },
     encoding: 'utf8',

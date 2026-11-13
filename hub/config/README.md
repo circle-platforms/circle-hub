@@ -4,8 +4,7 @@ Decision 130, second round item 3: user-facing configuration descriptions and er
 
 Part of the records package; decisions and tests are in [../records/README.md](../records/README.md) (decision 12).
 
-- `guard.ts`: side-effect module. Import it first in every Hub entry point: a process that sees any `CIRCLE_SERVER_*`
-  variable, or one of the retired single names of `RETIRED_NAMES`, refuses to start (`HubEnvironmentError`, names only,
+- `guard.ts`: side-effect module. Import it first in every Hub entry point: a process that sees one of the retired single names of `RETIRED_NAMES` refuses to start (`HubEnvironmentError`, names only,
   never values).
 - `index.ts`: `loadConfig(env, { allowUnknown })` returns a validated `HubConfig` or throws `HubConfigError` listing every
   problem in Chinese. It reads only the object it is given, never a file.
