@@ -5,8 +5,9 @@
  * judgment come from Codex (`interfaces-reset.md`); until that lands, pages and copy are ready and the
  * optional `rebuildNeeded` on the page context drives the banner and dedicated route.
  */
+import { RESET_ALL_LABEL, RESET_SCOPE, RESET_SCOPE_LABEL, type ResetScope } from '../../../contracts/src/reset.ts';
 import { adminDoPath, overviewPath, settingsPath, setupPath } from './routes.ts';
-import { errorLine, postForm, selectControl } from './components.ts';
+import { postForm, selectControl } from './components.ts';
 import { field } from './presentation.ts';
 import { code, html, link, page, type Html } from './html.ts';
 import { box, callout, card } from './ui.ts';
@@ -15,44 +16,45 @@ import type { PageContext, PageResult } from './context.ts';
 /** What the administrator types to confirm a destructive reset (plain language, not an internal code). */
 export const RESET_CONFIRM_WORD = '重建';
 
-/** Reset scopes offered on the settings page (aligned with answers-codex 17:15). */
-export const RESET_SCOPES = [
+/** Console choice: one owner scope or全部初始化 (`all` is a selector, never a category — contracts/src/reset.ts). */
+export type ResetChoice = ResetScope | 'all';
+
+/** Plain-language consequences for each choice (interfaces-reset.md / answers-codex 17:15). */
+export const RESET_SCOPES: readonly { value: ResetChoice; label: string; clears: string; keeps: string }[] = [
   {
-    value: 'runs',
-    label: '运行历史',
+    value: 'history',
+    label: RESET_SCOPE_LABEL.history,
     clears: '清掉任务运行、提交、检查结果和调用记录。',
     keeps: '留下账户、团队、分配、业务系统、执行器、知识和已发布的包。',
   },
   {
     value: 'knowledge',
-    label: '知识',
+    label: RESET_SCOPE_LABEL.knowledge,
     clears: '清掉知识库里的条目、原文、记忆和相关版本记录。',
     keeps: '留下账户、团队、分配、业务系统、执行器、包和运行历史。',
   },
   {
     value: 'packs',
-    label: '包',
+    label: RESET_SCOPE_LABEL.packs,
     clears: '清掉已发布的工作流与技能包及其分配。',
     keeps: '留下账户、团队、业务系统、执行器、知识和运行历史。',
   },
   {
     value: 'config',
-    label: '配置',
+    label: RESET_SCOPE_LABEL.config,
     clears: '清掉账户、团队、分配、业务系统、执行器和普通变量登记。',
     keeps: '留下知识、已发布的包和运行历史；凭据的加密内容仍在密钥库里，按名字接回。',
   },
   {
     value: 'all',
-    label: '全部初始化',
+    label: RESET_ALL_LABEL,
     clears: '清掉上述全部内容，回到首次设置前的空库。',
     keeps: '密钥库不动；归档里仍可查看重置前的库。',
   },
-] as const;
+];
 
-export type ResetScope = (typeof RESET_SCOPES)[number]['value'];
-
-export function isResetScope(value: string): value is ResetScope {
-  return RESET_SCOPES.some((row) => row.value === value);
+export function isResetScope(value: string): value is ResetChoice {
+  return value === 'all' || (RESET_SCOPE as readonly string[]).includes(value);
 }
 
 /** Why this Hub needs a rebuild; Codex fills this when the store shape does not match the binary. */
@@ -80,7 +82,7 @@ function scopeHelp(): Html {
  */
 export function resetRebuildSection(ctx: PageContext): Html {
   if (!ctx.admin) return html``;
-  const selected = ctx.url.searchParams.get('reset_scope') ?? 'runs';
+  const selected = ctx.url.searchParams.get('reset_scope') ?? 'history';
   const keepOn = ctx.url.searchParams.get('keep_config') === '1';
   const fields = html`${field(
     '范围',

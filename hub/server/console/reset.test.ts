@@ -30,13 +30,14 @@ function ctx(principal: Principal, path = '/console/settings?tab=hub'): PageCont
 
 test('reset ACTION builds argv from scope and keep-config after confirm word', () => {
   const form = (entries: Record<string, string>) => ({ get: (name: string) => entries[name] ?? '' });
-  assert.deepEqual(ACTIONS.reset.build(form({ scope: 'runs', confirm: RESET_CONFIRM_WORD })), {
-    argv: ['reset', '--scope=runs'],
+  assert.deepEqual(ACTIONS.reset.build(form({ scope: 'history', confirm: RESET_CONFIRM_WORD })), {
+    argv: ['reset', '--scope=history'],
   });
   assert.deepEqual(ACTIONS.reset.build(form({ scope: 'all', keep_config: '1', confirm: RESET_CONFIRM_WORD })), {
     argv: ['reset', '--scope=all', '--keep-config'],
   });
-  assert.throws(() => ACTIONS.reset.build(form({ scope: 'runs', confirm: 'wrong' })), /重建/);
+  assert.throws(() => ACTIONS.reset.build(form({ scope: 'history', confirm: 'wrong' })), /重建/);
+  assert.throws(() => ACTIONS.reset.build(form({ scope: 'runs', confirm: RESET_CONFIRM_WORD })), /范围/);
   assert.throws(() => ACTIONS.reset.build(form({ scope: 'nope', confirm: RESET_CONFIRM_WORD })), /范围/);
 });
 
