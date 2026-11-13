@@ -253,6 +253,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
+    close: () => dispatch?.close() ?? Promise.resolve(),
     records,
     runs,
     runsDetail: runs,
