@@ -60,6 +60,10 @@ test('emptyBlock, errorLine, submitButton and selectControl render once', () => 
   const select = selectControl('pack', [{ value: 'w1', label: '工作流一', selected: true }], { value: '', label: '全部' }).text;
   assert.match(select, /<select name="pack">/);
   assert.match(select, /selected/);
+  const required = selectControl('audience', [{ value: 'none', label: '先不分配' }], undefined, { required: true }).text;
+  assert.match(required, /<select name="audience" required>/);
+  const disabled = selectControl('team', [{ value: '', label: '尚无团队' }], undefined, { disabled: true }).text;
+  assert.match(disabled, /<select name="team" disabled>/);
 });
 
 test('figure formats numbers through count', () => {

@@ -19,15 +19,9 @@ import { box, pills, when } from './ui.ts';
 import { awaitingRequests, groupRequests } from './requests.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { count, errorLine, filterForm, nextPage, segments, selectControl } from './components.ts';
+import { RUN_ID, SHA256, param } from './params.ts';
 import { runPath, runsPath } from './routes.ts';
 
-const param = (ctx: PageContext, name: string): string | undefined => {
-  const value = ctx.url.searchParams.get(name);
-  return value === null || value === '' ? undefined : value;
-};
-
-const SHA256 = /^[0-9a-f]{64}$/;
-const RUN_ID = /^run_[0-9a-z]{26}$/;
 const yesNo = (value: boolean): string => (value ? '是' : '否');
 
 /** The formal names of a claim's fields stay; the two that read as jargon get a sentence beside them (wording table, W20 and W21). */

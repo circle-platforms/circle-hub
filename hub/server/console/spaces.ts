@@ -21,14 +21,36 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { treePage } from './pages.ts';
 import {button,sectionHead} from './ui.ts';
 import {evidence,panel as card,badge as chip,facts as kv,technical,sourceBlock,stat,field as inputField,dialog,actionLink,tooltip} from './presentation.ts';
+import { errorLine, filterForm, postForm, selectControl } from './components.ts';
 import {VERIFIED_SCOPE,knowledgeSearchScopeLabel,knowledgeSpaceKindLabel,knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
 import {sharingRows} from './sharing-history.ts';
 import {entryProvenance,entryClientName} from './client-provenance.ts';
 import {shareFeedback,NO_TEAM_SHARES} from './feedback.ts';
 const field = inputField;
 function form(ctx: PageContext, action: string, fields: Html, label: string, multipart = false, disabled=false, back?:string): Html {
-  const submit=html`<button type="submit" class="ch-btn ${action==='revoke'||action==='withdraw'?'ch-btn--danger':'ch-btn--primary'}"${disabled?html` disabled`:html``}>${label}</button>`;
-  return html `<form method="post" action="/console/knowledge/do/${action}"${back?html` data-entry-editor`:''}${multipart ? html ` enctype="multipart/form-data"` : ''}><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}<div data-fields>${fields}</div>${back?html`<div class="ch-editor-actions ch-actions">${submit}${actionLink(back,'取消并返回')}</div>`:submit}</form>`;
+  const danger = action === 'revoke' || action === 'withdraw';
+  // Editor keeps cancel after submit; postForm always appends the button last.
+  if (back) {
+    return postForm({
+      action: `/console/knowledge/do/${action}`,
+      csrf: ctx.csrf ?? '',
+      fields: html`<div data-fields>${fields}</div>`,
+      multipart,
+      personalEpoch: ctx.personalEpoch,
+      extra: ' data-entry-editor',
+      actions: html`<div class="ch-editor-actions ch-actions"><button type="submit" class="ch-btn ${danger ? 'ch-btn--danger' : 'ch-btn--primary'}"${disabled ? html` disabled` : html``}>${label}</button>${actionLink(back, '取消并返回')}</div>`,
+    });
+  }
+  return postForm({
+    action: `/console/knowledge/do/${action}`,
+    csrf: ctx.csrf ?? '',
+    fields: html`<div data-fields>${fields}</div>`,
+    submit: label,
+    multipart,
+    disabled,
+    danger,
+    personalEpoch: ctx.personalEpoch,
+  });
 }
 const spaceContent = (content: Html) => html `<div class="ch-section" data-area-content>${content}</div>`;
 const spaceLink = (space: string, root?: string, path = '/') => ({ space, ...(root ? { root } : {}), path });
@@ -58,7 +80,7 @@ async function editor(ctx: PageContext, space: string, path: string, draft?: Spa
   const content = draft?.body.content, grounds = draft?.body.grounds ?? [];
   const choices = await sourceChoices(ctx, space, path), picked = choices.find((choice) => choice.reference === grounds[0]?.reference);
   // The first source: an original of this folder chosen by its name, or any reference typed below it. A typed reference wins.
-  const picker = choices.length === 0 ? '' : field('来源 1（从这个文件夹的原文中选）', html`<select name="source_pick_0"><option value="">不从原文中选</option>${choices.map((choice) => html`<option value="${choice.reference}"${choice === picked ? html` selected` : ''}>${choice.name}</option>`)}</select>`, '选一份已上传到这个文件夹的原文作为来源；也可以在“来源引用 1”里填写别的引用，两处都填时以填写的引用为准');
+  const picker = choices.length === 0 ? '' : field('来源 1（从这个文件夹的原文中选）', selectControl('source_pick_0', choices.map((choice) => ({ value: choice.reference, label: choice.name, selected: choice === picked })), { value: '', label: '不从原文中选' }), '选一份已上传到这个文件夹的原文作为来源；也可以在“来源引用 1”里填写别的引用，两处都填时以填写的引用为准');
   const title = draft ? (space === 'team' ? '修改公共空间条目' : '修改我的条目') : (space === 'team' ? '导入公共知识条目' : '新建条目');
   const hint = space === 'team' ? '仅管理员可导入；条目及来源原文对全体成员可读。可供公共空间读取的来源，或管理员本人的普通上传；本次导入记录上传声明。私人空间原文及私人凭据来源仍受原有共享限制。' : '没有来源的笔记记为待验证；提供来源时逐字核对引文与路径，验证不代表陈述内容已被判为事实。修改会创建新条目并取代旧条目。';
   const back='/console/knowledge/space?'+new URLSearchParams({...spaceLink(space,draft?.root,path),...(draft?{entry:draft.row.entry}:{}),scope:ctx.url.searchParams.get('scope')??(space==='team'?'team':'personal')});
@@ -67,7 +89,7 @@ async function editor(ctx: PageContext, space: string, path: string, draft?: Spa
 <input type="hidden" name="space" value="${space}">
 ${draft ? html `<input type="hidden" name="replaces" value="${draft.row.entry}"><input type="hidden" name="expected_version" value="${draft.root}">` : ''}
 ${field('陈述', html `<textarea name="statement" required maxlength="262144" rows="4">${content?.statement ?? ''}</textarea>`)}
-${field('类型', html `<select name="kind">${ENTRY_KIND.map(kind => html `<option value="${kind}"${kind === (content?.kind ?? 'observation') ? html ` selected` : ''}>${uiLabelOf('entry_kind', kind)}</option>`)}</select>`)}
+${field('类型', selectControl('kind', ENTRY_KIND.map((kind) => ({ value: kind, label: uiLabelOf('entry_kind', kind), selected: kind === (content?.kind ?? 'observation') }))))}
 ${field('文件夹路径', html `<input name="path" value="${path}" required maxlength="2000">`)}
 <details data-editor-advanced data-wide-field${content&&(Object.keys(content.data).length||content.applicability)?html` open`:''}><summary>结构化数据与适用条件</summary><div data-fields>${field(DATA_FIELD.label, html `<textarea name="data" rows="2" placeholder="{}">${content ? JSON.stringify(content.data, null, 2) : ''}</textarea>`, DATA_FIELD.hint)}
 ${field(APPLICABILITY_FIELD.label, html `<textarea name="applicability" rows="2" placeholder="留空表示未声明">${content?.applicability ? JSON.stringify(content.applicability, null, 2) : ''}</textarea>`, APPLICABILITY_FIELD.hint)}
@@ -164,7 +186,7 @@ ${canWithdraw?dialog('withdraw-entry','撤回条目',html`<p>撤回后这个条�
   const history = await spaces.history(ctx.principal, space, ctx.url.searchParams.get('history_cursor'));
   const names=new Map(history.items.map((item,index)=>[item.root,versionName('知识版本',item.body.at,item.body.reason,history.next?undefined:history.items.length-index)]));
   const comparison = !own&&space!=='team'?html`<p class="ch-meta">版本记录仅本人可见</p>`:html`${table(['版本','记录人'],await Promise.all(history.items.map(async (item,index)=>[link('/console/knowledge/space',versionLabel('知识版本',item.body.at,item.body.reason,history.next?undefined:history.items.length-index),spaceLink(space,item.root,path)),item.body.by===null?uiLabelOf('execution_host','hub'):await ctx.userName(item.body.by)])),'没有更早的版本')}${history.next?link('/console/knowledge/space','更早的版本',{...spaceLink(space,undefined,path),history_cursor:history.next}):''}
-<form class="ch-actions" data-filters method="get" action="/console/knowledge/space-diff"><input type="hidden" name="space" value="${space}"><label>从<select name="from">${history.items.map((item,index)=>html`<option value="${item.root}"${index===Math.min(1,history.items.length-1)?html` selected`:''}>${names.get(item.root)}</option>`)}</select></label><label>到<select name="to">${history.items.map(item=>html`<option value="${item.root}">${names.get(item.root)}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">比较知识版本</button></form>`;
+${filterForm('/console/knowledge/space-diff', html`<input type="hidden" name="space" value="${space}"><label>从${selectControl('from', history.items.map((item, index) => ({ value: item.root, label: names.get(item.root), selected: index === Math.min(1, history.items.length - 1) })))}</label><label>到${selectControl('to', history.items.map((item) => ({ value: item.root, label: names.get(item.root) })))}</label>`, '比较知识版本')}`;
   const collapsedHistory=html`<details class="ch-section" id="knowledge-history"${ctx.url.searchParams.get('history')==='1'?html` open`:''}><summary title="知识版本是空间的版本快照；产品版本是条目的适用条件，两者分别选择">知识版本记录</summary>${comparison}</details>`;
   let controls:Html=html``,editors:Html=html``;
   if(own||space==='team'&&ctx.admin){
@@ -210,7 +232,7 @@ export async function spaceSearch(ctx: PageContext): Promise<Html> {
   const text = ctx.url.searchParams.get('q') ?? '', requested = ctx.url.searchParams.get('scope') ?? 'all';
   if (!isKnowledgeSearchScope(requested))
     throw new KnowledgeError('搜索范围不正确', { code: 'SPACE_ENTRY_INVALID' });
-  const form = html `<form class="ch-actions" data-filters method="get" action="/console/search"><label>关键词<input name="q" value="${text}" required maxlength="200"></label><label>知识范围<select name="scope">${KNOWLEDGE_SEARCH_SCOPE.map(scope => html `<option value="${scope}"${requested === scope ? html ` selected` : ''}>${knowledgeSearchScopeLabel(scope)}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">搜索</button></form>`;
+  const form = filterForm('/console/search', html`<label>关键词<input name="q" value="${text}" required maxlength="200"></label><label>知识范围${selectControl('scope', KNOWLEDGE_SEARCH_SCOPE.map((scope) => ({ value: scope, label: knowledgeSearchScopeLabel(scope), selected: requested === scope })))}</label>`, '搜索');
   if (!text.trim())
     return card({ title: '知识全文搜索', hint: '搜索陈述、结构化数据与已记录的引文；范围按当前分享权限过滤，结果只作为线索' }, form);
   let found:Awaited<ReturnType<typeof spaces.search>>;
@@ -344,7 +366,7 @@ export function spaceActionFailure(ctx: PageContext, error: unknown): PageResult
   const message = error instanceof KnowledgeError || error instanceof RecordsError&&(error.code==='SYNC_MODE_LOCAL'||error.code==='SYNC_EPOCH_CHANGED'||error.code==='SYNC_VERSION_CONFLICT') ? error.message : error instanceof z.ZodError || error instanceof SyntaxError ? '条目或表单格式不正确' : null;
   if (message === null)
     throw error;
-  return { status: 400, body: page(ctx.chrome('知识操作未完成', { active: 'knowledge' }), html `${capacityError(error)??html`<p class="error">${message}</p>`}<p>${link('/console/knowledge', '返回知识库')}</p>`) };
+  return { status: 400, body: page(ctx.chrome('知识操作未完成', { active: 'knowledge' }), html`${capacityError(error) ?? errorLine(message)}<p>${link('/console/knowledge', '返回知识库')}</p>`) };
 }
 
 export async function shareHistoryPage(ctx:PageContext):Promise<PageResult>{

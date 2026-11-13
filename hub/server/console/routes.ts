@@ -45,6 +45,8 @@ export const teamPath = (memberId?: string): string => (memberId === undefined ?
 export const teamsPath = (): string => '/console/teams';
 export const teamDetailPath = (teamId: string): string => `/console/teams/${enc(teamId)}`;
 export const settingsPath = (): string => '/console/settings';
+/** Dedicated page when the store shape does not match this binary (K11). */
+export const rebuildPath = (): string => '/console/rebuild';
 export const healthPath = (): string => '/console/health';
 
 export const operationsPath = (): string => '/console/operations';

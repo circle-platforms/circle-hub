@@ -43,6 +43,7 @@ export function areaPage(chrome:PageChrome,content:unknown,inspector?:Html):Html
   return page(chrome,pageLayout(html`<div class="ch-section" data-area-content>${content}</div>`,{...layout,...(inspector?{inspector}:{})}));
 }
 
+/** Simple figure tile; ui.kpi is the richer wrapper (unit/note/dot) — both call figure(). */
 export function stat(label: unknown, value: number | string): Html {
   return figure(label, value);
 }

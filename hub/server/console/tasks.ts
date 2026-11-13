@@ -1,5 +1,6 @@
 import {timeline,comparisons} from './charts.ts';
 import {technicalCode} from './presentation.ts';
+import { count } from './numbers.ts';
 // The tasks of the console (the design canvas's 任务 board): a run with the result display rule 20 derives, its head and the
 // waterfall of what happened, built only from what the Hub recorded: the call log lines of the run (each bar is the Hub's
 // time on one call; the gap before a submission is Circle's own time, which the Hub does not observe), the Hub's checks of
@@ -222,7 +223,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
     const many = group.rows.length > 1;
     steps.push({
       name: uiLabelOf('request_kind', group.kind),
-      sub: `接收人 ${audience} · ${many ? `${group.rows.length.toLocaleString('en-US')} 条 · 最早期限` : '期限'} ${fullTime(dues[0])} · ${uiLabelOf('request_status', group.state)}`,
+      sub: `接收人 ${audience} · ${many ? `${count(group.rows.length)} 条 · 最早期限` : '期限'} ${fullTime(dues[0])} · ${uiLabelOf('request_status', group.state)}`,
       fill: open ? 'fill-wait' : 'fill-pass',
       dot: open ? (group.state === 'overdue' ? 'down' : 'warn') : 'ok',
       start: Math.min(first, last),

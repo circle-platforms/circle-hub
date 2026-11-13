@@ -28,6 +28,7 @@ import { code, html, link, liveModule, page, pre, section, table, type Html, typ
 import { circleEntry, originOf } from './context.ts';
 import { callout, card, chip, stepper, when } from './ui.ts';
 import type { PageContext, PageResult } from './context.ts';
+import { errorLine, postForm } from './components.ts';
 import { UploadError, unpackZip } from './upload.ts';
 import { packHome, publication, publishingKind } from './pack-display.ts';
 import { buildRegisteredAction, type RegisteredActionName } from './command-form.ts';
@@ -334,8 +335,15 @@ export class JobStore {
 
 /** A POST form to an action of this console, with the session's CSRF token. */
 export function actionForm(name: string, csrf: string, fields: Html | string, submit: string, options: { multipart?: boolean; inline?: boolean; primary?: boolean; kind?: PackKind } = {}): Html {
-  const button = options.primary ? html`<div class="ch-actions"><button type="submit" class="ch-btn ch-btn--primary">${submit}</button></div>` : html`<button class="ch-btn ch-btn--secondary" type="submit">${submit}</button>`;
-  return html`<form method="post" action="/console/admin/do/${name}${options.kind&&options.kind!=='workflow'?'?kind='+encodeURIComponent(options.kind):''}"${options.multipart ? html` enctype="multipart/form-data"` : ''}${options.inline ? html`` : ''}><input type="hidden" name="csrf" value="${csrf}">${fields}${button}</form>`;
+  const kindQuery = options.kind && options.kind !== 'workflow' ? `?kind=${encodeURIComponent(options.kind)}` : '';
+  return postForm({
+    action: `/console/admin/do/${name}${kindQuery}`,
+    csrf,
+    fields,
+    submit,
+    primary: options.primary === true,
+    multipart: options.multipart,
+  });
 }
 
 const TOKEN_ONCE = '下面的令牌只显示这一次：现在复制，保存到只有使用者能读的地方。离开这页就再也看不到它。';
@@ -386,7 +394,7 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
 }
 
 export function formErrorPage(ctx: PageContext, action: Action, message: string): PageResult {
-  return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${message}</p>`)}<p>${link(action.back, '返回')}</p>`) };
+  return { status: 400, body: page(actionChrome(ctx, action), html`${card(null, errorLine(message))}<p>${link(action.back, '返回')}</p>`) };
 }
 
 const jobState = (job: Job): Html => chip(uiLabelOf('action_result', job.result === null ? 'unknown' : job.result.code === 0 ? 'completed' : 'error'), job.result === null ? 'unknown' : job.result.code === 0 ? 'pass' : 'fail');
@@ -538,7 +546,7 @@ export function stageForms(stage: StagedPack, csrf: string): Html {
 }
 
 function checkLines(run: CommandRun): Html {
-  const state = run.code === 0 ? html`<p class="ok">发布校验已通过（退出码 0）</p>` : run.code === 2 ? html`<p class="error">参数不正确，未执行（退出码 2）</p>` : html`<p class="error">未通过发布校验（退出码 ${run.code}）</p>`;
+  const state = run.code === 0 ? html`<p class="ok">发布校验已通过（退出码 0）</p>` : run.code === 2 ? errorLine('参数不正确，未执行（退出码 2）') : errorLine(html`未通过发布校验（退出码 ${run.code}）`);
   return html`${state}${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}</code></pre>` : ''}`;
 }
 
@@ -546,7 +554,7 @@ function refusedPage(ctx: PageContext, refusal: StepRefusal): PageResult {
   const action = publishAction(ctx);
   // A stage that ended, expired or belongs to someone else: the console's neutral answer.
   if (refusal.status === 404) return neutralPage(ctx);
-  return { status: refusal.status, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${refusal.message}</p>`)}<p>${link(action.back, '返回')}</p>`) };
+  return { status: refusal.status, body: page(actionChrome(ctx, action), html`${card(null, errorLine(refusal.message))}<p>${link(action.back, '返回')}</p>`) };
 }
 
 /** The check's page: every result of the dry run, then the 发布 step when the pack was staged. */
@@ -595,7 +603,7 @@ export async function runPackStep(ctx: PageContext, deps: ManageDeps, name: Pack
 export async function runAction(ctx: PageContext, deps: ManageDeps, name: string, form: Form, token: string, upload?: Buffer): Promise<PageResult> {
   if (isPackStep(name)) return runPackStep(ctx, deps, name, form, token, upload);
   const action = ACTIONS[name];
-  if (deps.bridge === undefined) return { status: 503, body: page(actionChrome(ctx, action), html`${card(null, html`<p class="error">${BRIDGE_MISSING}</p>`)}<p>${link(action.back, '返回')}</p>`) };
+  if (deps.bridge === undefined) return { status: 503, body: page(actionChrome(ctx, action), html`${card(null, errorLine(BRIDGE_MISSING))}<p>${link(action.back, '返回')}</p>`) };
   let built: Built[];
   try {
     const made = action.build(form);
