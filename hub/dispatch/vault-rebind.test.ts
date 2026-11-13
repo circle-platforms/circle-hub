@@ -26,7 +26,9 @@ test('a new executor and records database use copied named vault material withou
   assert.ok(fresh.endpoint.calls.every(call => call.headers.authorization === 'Bearer ' + value), 'all calls use the copied current version');
   const events = await fresh.service.journal.events(state.job);
   const used = events.find(event => event.body.detail.phase === 'credential_used')!;
-  assert.deepEqual(used.body.detail.variables, [{ kind: 'secret', at: fresh.executor.id + '#/credential', name, version: 2 }]);
+  const identity = await fresh.kit.vault.secretIdentity(name);
+  assert.ok(identity);
+  assert.deepEqual(used.body.detail.variables, [{ kind: 'secret', at: fresh.executor.id + '#/credential', ...identity }]);
   assert.deepEqual(used.body.inputs, []);
   assert.ok(!JSON.stringify({ state, events }).includes(value), 'status and journal expose no material');
 });
