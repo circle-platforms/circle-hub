@@ -31,12 +31,12 @@ test('named vault values and authenticated complete metadata survive an unchange
     await cp(join(f.root, 'vault'), join(target, 'vault'), { recursive: true });
     await cp(join(f.root, 'scratch.key'), join(target, 'scratch.key'));
     const copied = new FileVault(join(target, 'vault'), new FileKeyProvider(join(target, 'scratch.key')));
-    const before = createHash('sha256').update(await readFile(join(target, 'vault', 'secret.demo_password.sealed'))).digest('hex');
+    const before = createHash('sha256').update(await readFile(join(target, 'vault', 'metadata', 'secret.demo_password.sealed'))).digest('hex');
     assert.deepEqual(await copied.secretMetadata('DEMO_PASSWORD'), metadata);
     assert.ok((await copied.readSecret('DEMO_PASSWORD'))?.value === secret);
-    const after = createHash('sha256').update(await readFile(join(target, 'vault', 'secret.demo_password.sealed'))).digest('hex');
+    const after = createHash('sha256').update(await readFile(join(target, 'vault', 'metadata', 'secret.demo_password.sealed'))).digest('hex');
     assert.equal(after, before);
-    assert.ok(!(await readFile(join(target, 'vault', 'secret.demo_password.sealed'), 'utf8')).includes(secret));
+    assert.ok(!(await readFile(join(target, 'vault', 'metadata', 'secret.demo_password.sealed'), 'utf8')).includes(secret));
     const readOnlyPorts = new Proxy({}, { get() { throw new Error('不得读取记录库'); } });
     const variables = new RecordVariables({ vault: copied, store: readOnlyPorts, objects: readOnlyPorts, database: readOnlyPorts, authorizations: readOnlyPorts, principals: readOnlyPorts } as unknown as VariablePorts);
     assert.ok((await variables.readSecrets([{ name: 'DEMO_PASSWORD' }]))[0].value === secret);
@@ -62,35 +62,36 @@ test('revocation is stored by the vault and deletes retained material without lo
     await f.vault.putSecret({ name: 'DEMO_KEY', value: secret, digest_rule: 'plain', set_by: f.by, set_at: f.at });
     const revoked = await f.vault.unsetSecret('DEMO_KEY', f.by, '2026-11-13T07:01:00.000Z');
     assert.ok(revoked.revoked);
-    assert.equal(revoked.version, 2);
+    assert.equal(revoked.version, 1);
     assert.equal(await f.vault.readSecret('DEMO_KEY'), null);
     assert.equal((await f.vault.recentSecrets()).length, 0);
-    const payload = await f.vault.getText('secret.demo_key');
-    assert.ok(payload !== null && !payload.includes(secret));
+    assert.equal((await f.vault.list()).filter(entry => entry.startsWith('secret.demo_key.')).length, 0);
+    assert.equal(revoked.set_by, f.by);
+    assert.equal(revoked.set_at, f.at);
     const restored = await f.vault.putSecret({ name: 'DEMO_KEY', value: value(), digest_rule: 'plain', set_by: f.by, set_at: f.at });
-    assert.equal(restored.version, 3);
+    assert.equal(restored.version, 2);
 });
 
 test('old random-version files disclose missing facts without guessing a current version or writing a conversion', async t => {
     const f = await fixture(t), secret = value();
     for (const suffix of ['a'.repeat(24), 'b'.repeat(24)]) await f.vault.put('secret.demo_key.' + suffix, secret);
     const before = await readdir(join(f.root, 'vault'));
-    await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && /缺少版本、当前版本、摘要规则、设置人和设置时间/.test(error.message) && !error.message.includes(secret));
-    await assert.rejects(f.vault.putSecret({ name: 'DEMO_KEY', value: value(), digest_rule: 'plain', set_by: f.by, set_at: f.at }), /旧封存缺少/);
+    await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && /缺少认证元数据/.test(error.message) && !error.message.includes(secret));
+    await assert.rejects(f.vault.putSecret({ name: 'DEMO_KEY', value: value(), digest_rule: 'plain', set_by: f.by, set_at: f.at }), /缺少认证元数据/);
     assert.deepEqual(await readdir(join(f.root, 'vault')), before);
 });
 
 test('wrong scratch keys, altered metadata and malformed payloads fail without raw values or JSON snippets', async t => {
     const f = await fixture(t), secret = value();
     await f.vault.putSecret({ name: 'DEMO_KEY', value: secret, digest_rule: 'plain', set_by: f.by, set_at: f.at });
-    const path = join(f.root, 'vault', 'secret.demo_key.sealed');
+    const path = join(f.root, 'vault', 'metadata', 'secret.demo_key.sealed');
     const bytes = await readFile(path), sealed = JSON.parse(bytes.toString());
     sealed.data = sealed.data.slice(0, -4) + 'AAAA';
     await writeFile(path, JSON.stringify(sealed));
     await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && !error.message.includes(secret));
     await writeFile(path, bytes);
-    await f.vault.put('secret.demo_bad', '{"bad":"' + secret);
-    await assert.rejects(f.vault.readSecret('DEMO_BAD'), error => error instanceof Error && /元数据不完整/.test(error.message) && !error.message.includes(secret));
+    await new FileVault(join(f.root, 'vault', 'metadata'), f.provider).put('secret.demo_bad', '{"bad":"' + secret);
+    await assert.rejects(f.vault.readSecret('DEMO_BAD'), error => error instanceof Error && /元数据无法认证/.test(error.message) && !error.message.includes(secret));
     await writeFile(join(f.root, 'scratch.key'), randomBytes(32));
     await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof Error && !error.message.includes(secret));
 });

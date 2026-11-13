@@ -176,8 +176,8 @@ test('a plain-stored secret reason cannot reveal the derived credential sent by 
 test('secret history comes only from vault metadata and missing files are not reconstructed from audit records', async t => {
  const f=await setup(t);const args=['set','--name','DEMO_AUTH','--reason','DEMO_ENROLLMENT'];for(let i=0;i<3;i++)await namedSecretCommand(f.session,args);
  f.lines.length=0;await namedSecretCommand(f.session,['show','--name','DEMO_AUTH','--history']);assert.ok(f.lines.some(line=>line.includes('第 1 版')));assert.ok(f.lines.some(line=>line.includes('第 3 版')));
- const version=(await f.kit.variables.secretHistory(f.admin,'DEMO_AUTH'))[0];await f.kit.vault.remove(version.entry);
- f.lines.length=0;await assert.rejects(namedSecretCommand(f.session,['show','--name','DEMO_AUTH','--history']),/名字不存在/);assert.ok(!f.lines.join('\n').includes(f.value));
+ const version=(await f.kit.variables.secretHistory(f.admin,'DEMO_AUTH'))[0];const {FileVault}=await import('../records/vault.ts');await new FileVault(join(f.kit.dataDir,'vault','metadata'),f.kit.keyProvider).remove(version.entry);
+ f.lines.length=0;await assert.rejects(namedSecretCommand(f.session,['show','--name','DEMO_AUTH','--history']),/认证元数据/);assert.ok(!f.lines.join('\n').includes(f.value));
 });
 
 test('var set cannot change a binding selected through an older stored source reference',async t=>{

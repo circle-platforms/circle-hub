@@ -80,14 +80,17 @@ test('secret versions resolve by exact name, retain two values and never put val
 test('corrupted or missing vault metadata fails and a database audit cannot supply material', async t => {
     const { kit, admin } = await setup(t);
     const set = await kit.variables.setSecrets(admin, [{ name: 'DEMO_KEY', value: key() }], '合成设置');
-    const entry = set[0].entry;
+    const { FileVault } = await import('./vault.ts');
+    const metadataVault = new FileVault(join(kit.dataDir, 'vault', 'metadata'), kit.keyProvider);
+    const index = JSON.parse((await metadataVault.getText(set[0].entry))!);
+    const entry = index.versions[0].sealed_entry;
     const meta = await kit.vault.stat(entry);
     assert.ok(meta?.written_at);
     await kit.vault.put(entry, 'wrong');
     await assert.rejects(kit.variables.readSecrets([{ name: 'DEMO_KEY' }]), /没有取值/);
     await kit.vault.remove(entry);
-    await assert.rejects(kit.variables.readSecrets([{ name: 'DEMO_KEY' }]), /名字不存在/);
-    assert.equal((await kit.variables.secretHistory(admin, 'DEMO_KEY')).length, 0);
+    await assert.rejects(kit.variables.readSecrets([{ name: 'DEMO_KEY' }]), /原封存文件不存在/);
+    assert.equal((await kit.variables.secretHistory(admin, 'DEMO_KEY'))[0].version, 1);
     assert.ok(await kit.authorizations.resourceConfig('secret:DEMO_KEY'));
     assert.equal(await kit.vault.stat(entry), null);
 });
@@ -137,5 +140,5 @@ test('a later vault set survives a revocation audit committed afterwards', async
     assert.ok(interposed);
     const [latest] = await kit.variables.readSecrets([{ name: 'DEMO_AUTH' }]);
     assert.ok(latest.value === later);
-    assert.equal(latest.version, 3);
+    assert.equal(latest.version, 2);
 });

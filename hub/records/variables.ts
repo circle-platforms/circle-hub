@@ -7,7 +7,7 @@ import type { Principal, Principals, RecordStore, ObjectStore, Vault, Authorizat
 import { canonicalBytes, canonicalize } from './canonical.ts';
 import { parseStrictJson } from './strict-json.ts';
 import { scanForCredentials } from './scan.ts';
-import { AccessError, IntegrityError } from './errors.ts';
+import { AccessError, IntegrityError, VaultError } from './errors.ts';
 import { WHOLE_HUB } from './constants.ts';
 import type { Database } from './db.ts';
 import { verifiedRecord } from './store.ts';
@@ -148,7 +148,7 @@ export class RecordVariables {
         return prepared;
     }
     async #auditSecret(by: Principal, metadata: VaultSecretMetadata, reason: string, tx: Transaction): Promise<void> {
-        const audit = await this.#p.objects.put(canonicalBytes({ name: metadata.name, by: by.id, at: metadata.set_at }), 'application/json');
+        const audit = await this.#p.objects.put(canonicalBytes({ name: metadata.name, by: by.id, at: this.#now().toISOString() }), 'application/json');
         await this.#p.authorizations.configureResourceInTransaction(by, 'secret:' + metadata.name, audit.sha256, reason, tx, metadata.revoked);
     }
     async commitSecrets(by: Principal, prepared: PreparedSecrets, tx: Transaction, validate?: (tx: Transaction) => Promise<void>): Promise<VaultSecretMetadata[]> {
@@ -163,7 +163,7 @@ export class RecordVariables {
         for (const write of writes) {
             let metadata: VaultSecretMetadata;
             try { metadata = await this.#p.vault.putSecret({ name: write.name, value: write.value, digest_rule: write.digest_rule!, set_by: by.id, set_at: this.#now().toISOString() }); }
-            catch { throw new VariableError(out.length ? '部分密钥库已更新；本次审计未完成，请管理员核对密钥库元数据' : '密钥库写入未完成；请核对主密钥、封存文件及缺失元数据'); }
+            catch (error) { throw new VariableError((out.length ? '部分密钥库已更新；' : '') + (error instanceof VaultError ? error.message : '密钥库写入未完成；请核对主密钥、封存文件及缺失元数据')); }
             try { await this.#auditSecret(by, metadata, prepared.reason, tx); }
             catch { throw new VariableError('密钥库已更新，审计记录未完成；请管理员核对密钥库元数据，不要重输值'); }
             out.push(metadata);
@@ -259,7 +259,7 @@ export class RecordVariables {
             const name = this.#name(request.name, 'secret');
             let material: SecretMaterial | null;
             try { material = await this.#p.vault.readSecret(name); }
-            catch { throw new VariableError('密钥 ' + name + ' 的主密钥无法解开，或封存缺少版本、摘要规则、设置人和设置时间；没有取值', name); }
+            catch (error) { throw new VariableError('密钥 ' + name + '：' + (error instanceof VaultError ? error.message : '主密钥、封存或认证元数据不可核对；没有取值'), name); }
             if (!material) throw new VariableError('密钥 ' + name + ' 名字不存在或已撤回；请 circle-hub secret set --name ' + name, name);
             out.push(material);
         }
