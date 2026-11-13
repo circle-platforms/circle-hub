@@ -5,7 +5,7 @@ import {ValidationResult} from '../../../contracts/src/validation.ts';
 import {RunRecord,type RunRecordView} from '../../../contracts/src/run.ts';
 import type {RunSummary} from '../../ports.ts';
 import {newId} from '../../records/api.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {loadTasks,resultCell} from './tasks.ts';
 
 const runs=(count:number):RunRecordView[]=>Array.from({length:count},()=>({...RunRecord.parse({...runRecord,run:newId('run'),requirements:[]}),requirements:[]}));

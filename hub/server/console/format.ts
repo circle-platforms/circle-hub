@@ -23,3 +23,5 @@ export function size(bytes:number):string{
  if(!Number.isFinite(bytes)||bytes<0)return '未知';const units=['B','KB','MB','GB','TB'];let n=bytes,unit=0;
  while(n>=1024&&unit<units.length-1){n/=1024;unit++;}return n.toLocaleString('en-US',{minimumFractionDigits:unit?1:0,maximumFractionDigits:unit?1:0})+' '+units[unit];
 }
+
+export { count } from './numbers.ts';

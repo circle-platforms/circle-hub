@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
-import { NEUTRAL } from './console/pages.ts';
+import { NEUTRAL } from './console/context.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 

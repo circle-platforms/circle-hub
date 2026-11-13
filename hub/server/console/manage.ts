@@ -14,20 +14,20 @@ import {technicalCode} from './presentation.ts';
 // --stage` or discards it. Backup, restore, deploy and rollback stop the server and stay on the command line.
 //
 // The first administrator is created at /console/setup with the one-time setup code (`circle-hub setup-code`) while no
-// administrator exists; its token is shown once and opens a session.
+// administrator exists; its token is shown once and opens a session. Other modules call registerActions (team-actions.ts).
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import { initialPassword, validPassword } from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
-import { NEUTRAL, neutralPage } from './pages.ts';
+import { NEUTRAL, neutralPage } from './context.ts';
 import { stagedDigest, type PackStaging, type StagedPack } from './staging.ts';
 import { checkSetupCode, removeSetupCode } from '../setup-code.ts';
 import { code, html, link, liveModule, page, pre, section, table, type Html, type PageChrome } from './html.ts';
-import { circleEntry, originOf } from './settings.ts';
+import { circleEntry, originOf } from './context.ts';
 import { callout, card, chip, stepper, when } from './ui.ts';
-import type { PageContext, PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
 import { UploadError, unpackZip } from './upload.ts';
 import { packHome, publication, publishingKind } from './pack-display.ts';
 
@@ -106,7 +106,8 @@ const RESOURCES = '/console/admin/resources';
 const SECRETS = '/console/admin/secrets';
 const KNOWLEDGE = '/console/admin/knowledge';
 
-export const ACTIONS: Readonly<Record<string, Action>> = {
+/** Mutable so other console modules register their ACTIONS without editing this object's literals. */
+export const ACTIONS: Record<string, Action> = {
   'password-reset': {
     title: '重置密码',
     back: '/console/team',
@@ -148,6 +149,14 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
       const origins = pairs(form, 'origins', '地址');
       if (origins.length === 0) throw new FormError('至少写一行 角色=地址');
       const plaintext = form.get('plaintext').split(/[,，\s]+/).filter(Boolean);
+      // system-add audience (decision 1500 / interfaces §4.6): none omits flags; all → --all; team → --team=.
+      // Values are inlined so manage does not import team-actions (team-actions imports manage).
+      const audience = form.get('audience') || 'none';
+      const audienceFlags =
+        audience === 'none' ? [] :
+        audience === 'all' ? ['--all'] :
+        audience === 'team' ? [flag('team', word(form, 'team', '团队'))] :
+        (() => { throw new FormError('请选择使用对象'); })();
       return {
         argv: [
           'resource', 'add', word(form, 'system_pack', uiLabelOf('pack_kind', 'system')),
@@ -157,6 +166,7 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
           ...plaintext.map((role) => flag('allow-plaintext', role)),
           ...pairs(form, 'settings', '设置').map((line) => flag('setting', line)),
           ...pairs(form, 'credentials', '凭据').map((line) => flag('credential', line)),
+          ...audienceFlags,
         ],
       };
     },
@@ -221,6 +231,14 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
     }),
   },
 };
+
+/** Registers ACTIONS from another console module; refuses a key that is already present. */
+export function registerActions(extra: Readonly<Record<string, Action>>): void {
+  for (const [name, action] of Object.entries(extra)) {
+    if (Object.hasOwn(ACTIONS, name)) throw new Error(`action already registered: ${name}`);
+    ACTIONS[name] = action;
+  }
+}
 
 // ---------------------------------------------------------------- jobs
 
@@ -323,11 +341,16 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
     : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
   const trust = ctx.secure ? '把颁发机构证书加入 trust_cert_files。' : '';
   const connected = html`<p>${link('/console/team','查看团队')}</p>`;
-  const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
+  const afterMember = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
       ? card({ title: '写入成员的客户端',hint:'把令牌保存为成员客户端的密钥 CIRCLE_HUB_TOKEN，再按下面 mcp_servers 格式的条目填写 MCP 地址。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx))}</code></pre>${connected}`)
       : card({ title: '成员的客户端如何连接',hint:'按下面 mcp_servers 格式的条目在成员的客户端中填写 MCP 地址。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>${connected}`);
+  // interfaces §4.6: 先不分配 result says nobody can use it yet.
+  const afterSystem = last.code === 0 && action === ACTIONS['system-add'] && form !== undefined && (form.get('audience') === 'none' || form.get('audience') === '')
+    ? card({ title: '使用对象' }, html`<p>还没有分配，暂时谁都不能使用。可在连接页或团队页再分配。</p>`)
+    : '';
+  const after = html`${afterMember}${afterSystem}`;
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
     body: page({...actionChrome(ctx, action),...(last.code===0?{notice:doneNotice(action.title)}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
@@ -350,7 +373,7 @@ export function jobsSection(jobs: readonly Job[]): Html {
 }
 
 export function jobPage(ctx: PageContext, job: Job | undefined): PageResult {
-  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入团队知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
+  const chrome = ctx.chrome('后台任务', { active: 'knowledge', sub: html`${link('/console/operations/knowledge', '导入公共知识')} · 后台任务`, hint:'命令结果尚未返回时显示未知；结果返回后更新本页。服务重启后不再列出之前的后台任务，它们写下的记录保留。' });
   if (job === undefined) return { status: 404, body: page(chrome, html`${card(null, html`<p>没有这个任务</p>`)}<p>${link('/console/operations/knowledge', '返回')}</p>`) };
   const state = job.result === null
     ? html`<p class="notice">尚未收到命令执行结果</p>`

@@ -13,7 +13,7 @@ import { commands } from './commands.ts';
 import { connectedClients, connectionText, clientLabel, nameOrigin, type ConnectedClient } from './circles.ts';
 import {tokensForMembers} from './member-reads.ts';
 import { code, emptyAction, html, icon, link, liveModule, page, pageLayout, table, href, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
 import { box, button, callout, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
@@ -116,7 +116,8 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const listings=ctx.admin?await ctx.deps.packs.list(ctx.principal):[];
  const systemPacks=new Map([...byId(listings).values()].map(shownVersion).filter(pack=>pack.kind==='system').map(pack=>[pack.id,pack]));
  // A system names the access it was configured from by that access's title; its identifier stays in the pane's technical details.
- const systemPackTitle=(resource:ResourceListing)=>{const pack=systemPacks.get(resource.system_pack.split('@')[0]);return pack?link('/console/packs/'+pack.id,pack.title):'未找到';};
+ // System packs have no /console/packs page (K3); title only — management stays on 连接 / operations.
+ const systemPackTitle=(resource:ResourceListing)=>{const pack=systemPacks.get(resource.system_pack.split('@')[0]);return pack?pack.title:'未找到';};
  const counts:Partial<Record<ConnectionTab,number>>={systems:resources.length,packs:systemPacks.size,clients:circles.length,...(executors?{environments:executors.length}:{})};
  const tabs=ctx.admin?liveModule('connections',['member.connected','system.added','system.status','environment.status'],html`<nav class="ch-seg" aria-label="连接内容" data-connection-tabs>${CONNECTION_TABS.map(key=>html`<a href="${href('/console/connections',key==='systems'?{}:{tab:key})}"${key===tab?html` aria-current="page"`:''}>${CONNECTION_TAB_LABEL[key]}${counts[key]===undefined?'':html` <span class="ch-count">${counts[key]!.toLocaleString('en-US')}</span>`}</a>`)}</nav>`):html``;
  // The reads of the last day are worked out only where they show: the list of systems, or the pane of a selected one.

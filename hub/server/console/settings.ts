@@ -15,32 +15,11 @@ import { commands } from './commands.ts';
 import { connectedClients, clientLabel } from './circles.ts';
 import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
-/** What the console knows about the process serving it, for the Hub's state. */
-export interface HubFacts {
-  /** The release this process serves (release.json), null without one. */
-  release: string | null;
-  startedAt: Date;
-  /** PEM of the built-in HTTPS server certificate, null when HTTPS is off. */
-  certificate: string | null;
-}
-
-/** The Circle entry of this Hub (the `mcp_servers` block of Circle's settings), with the token as a secret reference. */
-/**
- * The Circle settings entry for this Hub: without headers for the MCP standard authorization (the client opens the
- * authorization page in a browser), or with the token kept as a Circle secret for a client without it.
- */
-export function circleEntry(origin: string, token = true): string {
-  const entry = { name: 'circle-hub', url: `${origin}/mcp`, transport: 'streamable_http' };
-  return JSON.stringify({ mcp_servers: [token ? { ...entry, headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } } : entry] }, null, 2);
-}
-
-/** The origin a browser reached this console on: the scheme of the channel and the Host it sent. */
-export function originOf(ctx: PageContext): string {
-  return ctx.origin ?? `${ctx.secure ? 'https' : 'http'}://${ctx.url.host}`;
-}
+export type { HubFacts } from './context.ts';
+export { circleEntry, originOf } from './context.ts';
 
 export function certificateFacts(pem: string | null, now: number): { fingerprint: string; daysLeft: number; validTo: string } | null {
   if (pem === null) return null;

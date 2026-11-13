@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {html} from './html.ts';
 import {grantDialog} from './grant-dialog.ts';
 import {wordingProblems} from './testing-wording.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 const MEMBER='usr_synthetic_reader',GRANT={audience:'member',member:MEMBER,at:'2026-11-10T01:00:00.000Z',path:'/合成目录'};
 const key=JSON.stringify([GRANT.audience,GRANT.member,GRANT.path]);
@@ -18,7 +18,7 @@ const open=async(selection?:string)=>String(await grantDialog(context(selection)
 test('the sharing dialog says what a setting decides and what it leaves alone, without set-theory wording',async()=>{
  const shown=await open();
  assert.match(shown,/一项内容可以有多项分享设置，收回其中一项后，仍可能通过其他有效的分享读取/);
- assert.match(shown,/分享只决定谁能读取，不会创建或删除已分享到团队的独立副本/);
+ assert.match(shown,/分享只决定谁能读取，不会创建或删除已分享到公共空间的独立副本/);
  assert.match(shown,/工作流的使用权限与它产生的结果的分享范围分别设置/);
  assert.doesNotMatch(shown,/取并集|分别判定/);
  assert.deepEqual(wordingProblems(shown),[]);

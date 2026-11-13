@@ -17,7 +17,8 @@ import { createApp } from './app.ts';
 import type { CommandBridge, CommandInput } from './command-bridge.ts';
 import { manifestDigest } from '../runs/api.ts';
 import { ACTIONS } from './console/manage.ts';
-import { NEUTRAL } from './console/pages.ts';
+import './console/team-actions.ts';
+import { NEUTRAL } from './console/context.ts';
 import { withoutNonces } from './console/testing-security.ts';
 import { issueSetupCode } from './setup-code.ts';
 import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
@@ -235,6 +236,7 @@ test('the first administrator is created with the setup code; the token shown on
 
 test('the four operation pages carry the management forms of the console, and every management page answers', async () => {
   // Proposal decision 6 (2026-10-31): the console runs four operations; every other one is a command for the Circle.
+  // K3 removed the /console/admin/* page entries; POST /console/admin/do/<action> remains.
   const forms = { member: 'member-add', system: 'system-add', pack: 'pack-stage', knowledge: 'knowledge-sync' } as const;
   for (const [operation, action] of Object.entries(forms)) {
     const page = await send('GET', `/console/operations/${operation}`, { cookie: `circle_hub_session=${session}` });
@@ -242,14 +244,12 @@ test('the four operation pages carry the management forms of the console, and ev
     assert.match(page.body, new RegExp(`action="/console/admin/do/${action}"`), operation);
     csrf = csrfOf(page.body);
   }
-  const admin = await send('GET', '/console/admin', { cookie: `circle_hub_session=${session}` });
-  assert.equal(admin.status, 200);
-  assert.doesNotMatch(admin.body, /action="\/console\/admin\/do\/(?:user-disable|token-revoke|token-issue)"/, 'no form for an operation the Circle runs');
+  // K3 removed the /console/admin second page entries; POST /console/admin/do stays. Secrets live under settings.
+  assert.equal((await send('GET', '/console/admin', { cookie: `circle_hub_session=${session}` })).status, 404);
   for (const path of ['packs', 'resources', 'secrets', 'knowledge']) {
-    const page = await send('GET', `/console/admin/${path}`, { cookie: `circle_hub_session=${session}` });
-    assert.equal(page.status, 200, path);
+    assert.equal((await send('GET', `/console/admin/${path}`, { cookie: `circle_hub_session=${session}` })).status, 404, path);
   }
-  assert.match((await send('GET', '/console/admin/secrets', { cookie: `circle_hub_session=${session}` })).body, /DEMO 第 1 版/);
+  assert.match((await send('GET', '/console/settings', { cookie: `circle_hub_session=${session}` })).body, /DEMO 第 1 版/);
 });
 
 test('actions become exact argv as the signed-in administrator; flag values cannot become flags', async () => {
@@ -292,12 +292,20 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   assert.equal((await post('member-add', { name: 'erin', role: 'user', connect: 'password' })).status, 400);
 
   // Connecting a business system adds the resource first, then sets its credential; the value never enters argv.
-  await post('system-add', { system_pack: 'synthetic-system', name: '合成系统', environment: 'shared', origins: 'api=https://192.0.2.20', plaintext: '', settings: '', credentials: 'token=DEMO', secret_name_1: 'DEMO', value_1: ' synthetic value ' });
+  // Default / 先不分配 omits --all and --team (decision 1500: unassigned opens to nobody).
+  const noneAdd = await post('system-add', { system_pack: 'synthetic-system', name: '合成系统', environment: 'shared', origins: 'api=https://192.0.2.20', plaintext: '', settings: '', credentials: 'token=DEMO', secret_name_1: 'DEMO', value_1: ' synthetic value ', audience: 'none' });
+  assert.equal(noneAdd.status, 200, noneAdd.body);
+  assert.match(noneAdd.body, /还没有分配，暂时谁都不能使用/);
   const [added, secretSet] = calls.slice(-2);
   assert.deepEqual(added.argv, ['resource', 'add', 'synthetic-system', '--name=合成系统', '--environment=shared', '--origin=api=https://192.0.2.20', '--credential=token=DEMO']);
   assert.deepEqual(secretSet.argv, ['secret', 'set', '--name=DEMO', '--reason=接入业务系统 合成系统']);
   assert.deepEqual(secretSet.input.secrets, { DEMO: ' synthetic value ' }, 'the content is taken as typed');
   assert.ok(!calls.some((call) => call.argv.join(' ').includes('synthetic value')));
+  await post('system-add', { system_pack: 'synthetic-system', name: '全体系统', environment: 'shared', origins: 'api=https://192.0.2.20', audience: 'all' });
+  assert.deepEqual(calls.at(-1)!.argv, ['resource', 'add', 'synthetic-system', '--name=全体系统', '--environment=shared', '--origin=api=https://192.0.2.20', '--all']);
+  await post('system-add', { system_pack: 'synthetic-system', name: '团队系统', environment: 'shared', origins: 'api=https://192.0.2.20', audience: 'team', team: 'tm_syntheticteam00000000000001' });
+  assert.deepEqual(calls.at(-1)!.argv, ['resource', 'add', 'synthetic-system', '--name=团队系统', '--environment=shared', '--origin=api=https://192.0.2.20', '--team=tm_syntheticteam00000000000001']);
+  assert.equal((await post('system-add', { system_pack: 'synthetic-system', name: '缺团队', environment: 'shared', origins: 'api=https://192.0.2.20', audience: 'team' })).status, 400);
   const halfSecret = await post('system-add', { system_pack: 'synthetic-system', name: '合成', environment: 'shared', origins: 'api=https://192.0.2.20', secret_name_1: 'DEMO', value_1: '' });
   assert.equal(halfSecret.status, 400, 'a credential needs both its name and its content');
 
@@ -468,7 +476,9 @@ test('a stage expires after 30 minutes: its 发布 step reads like an unknown st
 });
 
 test('every action is declared with a page to return to', () => {
-  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations|team)(?:\/|$)/.test(action.back), name);
+  for (const [name, action] of Object.entries(ACTIONS)) {
+    assert.ok(action.title && /^\/console\/(?:admin|operations|teams?|connections)(?:\/|$)/.test(action.back), name);
+  }
 });
 
 test('closing the app removes every staged directory', async () => {
