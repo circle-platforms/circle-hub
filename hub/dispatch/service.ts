@@ -35,8 +35,6 @@ import {
   missingProbeFact,
   parseReply,
   residueFact,
-  undeclaredBaselineFact,
-  undeclaredBaselineNext,
   unknownSteps,
   unrestoredFact,
   captureText,
@@ -1805,22 +1803,6 @@ export class DispatchService {
       return;
     }
 
-    // Fallback: legacy parser check for tests declaring parser and no registered baseline
-    if (declaration === undefined) {
-      const undeclared = spec.items.filter(item => {
-        if (!item.parser) return true;
-        if (item.parser.kind === 'address_table') return false;
-        if (item.parser.kind === 'text_table' && (item.parser.address || item.parser.manifest_lists || item.parser.manifest_device || item.parser.manifest_devices || item.parser.columns.some(c => c.cidr))) return false;
-        const snapshotOnly = 'snapshot_only' in item.parser && item.parser.snapshot_only;
-        if (snapshotOnly) return false;
-        const manifestRows = 'manifest_rows' in item.parser && item.parser.manifest_rows ? at(bed, item.parser.manifest_rows) : undefined;
-        return !Array.isArray(manifestRows);
-      });
-      if (undeclared.length) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-        throw new PrecheckFactError(undeclaredBaselineFact(undeclared.map(item => item.id)), undeclaredBaselineNext(spec.items, undeclared.map(item => item.id)));
-      }
-    }
     if (declaration !== undefined) {
       const unread = reads.filter(read => read.value === undefined).map(read => read.id);
       if (unread.length) {
