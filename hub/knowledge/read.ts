@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 import {applicabilityFields,applicabilityCriterion} from './applicability-fields.ts';
 // The reading side of the knowledge tree: permission (the reader is an admin, or a pack assigned to them binds the product of
 // the root; absent and forbidden are the same null, D05 R[3]), get_nodes pages with coverage, the TreeReader hub/refs resolves
@@ -169,7 +170,7 @@ export class TreeReading {
     if (wanted.length === 0 || typeof reader?.id !== 'string') return false;
     const account = await this.#context.records.principals.get(reader.id);
     if (account === null || account.disabled) return false;
-    if (account.role === 'admin') return true;
+    if (isAdmin(account)) return true;
     const readable = await readableProducts(this.#context.packs, { id: account.id, name: account.name, role: account.role });
     return wanted.some((product) => readable.has(product));
   }

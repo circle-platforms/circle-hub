@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 // Calibration of a typed-judgment chain (K04 R[1]): frozen samples per chain and exact model version; the threshold gates
 // descents, so it is the lowest probability at which the precision of the descents at or above it (answers that chose a
 // child; an abstention never descends and does not count) has a Wilson lower bound of at least 0.95 over at least 30 of
@@ -124,7 +125,7 @@ export class CalibrationStore {
   /** Owner-labelled samples (K04 R[1]): an administrator states the right answer for judged inputs. */
   async addLabelled(by: Principal, input: LabelledSamplesInput): Promise<string> {
     const account = await this.#principals.get(by?.id);
-    if (account === null || account.disabled || account.role !== 'admin') throw new KnowledgeError('只有管理员可以添加标注的校准样例');
+    if (account === null || account.disabled || !isAdmin(account)) throw new KnowledgeError('只有管理员可以添加标注的校准样例');
     if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(input.kind)) throw new KnowledgeError('校准链的名称不合格');
     if (typeof input.model !== 'string' || input.model === '') throw new KnowledgeError('校准样例要写明模型的确切版本');
     if (!input.model.isWellFormed()) throw new KnowledgeError('模型版本里有不成对的代理字符');
