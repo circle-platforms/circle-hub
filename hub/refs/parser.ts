@@ -91,9 +91,6 @@ export interface Parser<M extends JsonValue = JsonValue> {
 
 export interface ParserRegistry {
   skills?:readonly SkillLock[];
-  bindingRecord?:string;
-  bindingRecords?:readonly string[];
-  bindingDisclosure?:string;
   refresh?():Promise<void>;
   freeze?(dependencies:readonly SkillDependency[], context?:{principal:import('../records/api.ts').Principal;space?:string}):Promise<{parsers:ParserRegistry;skills:SkillLock[]}>;
   forRun?(run:string,reader?:import('./resolve.ts').ReaderIdentity):Promise<ParserRegistry>;
