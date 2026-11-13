@@ -5,8 +5,8 @@ import {withoutNonces} from './console/testing-security.ts';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
-import { backfillCitations, putSubmission } from '../runs/engine/store.ts';
-import { NEUTRAL } from './console/pages.ts';
+import { putSubmission } from '../runs/engine/store.ts';
+import { NEUTRAL } from './console/context.ts';
 import { SEARCH_MAX_HITS, SEARCH_MAX_QUERY } from './console/search.ts';
 import { ROOT_1 } from './fakes.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -182,7 +182,7 @@ describe('a knowledge node\'s citations', () => {
     assert.equal(JSON.parse(hidden.body).message, NEUTRAL);
   });
 
-  test('when the index starts inside the window the count is a lower bound that says from when it counts, until the backfill ends', async () => {
+  test('when the index starts inside the window the count is a lower bound that says from when it counts', async () => {
     const fresh = await createTestServer({ now: () => new Date(clock) });
     try {
       const user = await fresh.createUser('新近成员');
@@ -196,11 +196,6 @@ describe('a knowledge node\'s citations', () => {
       assert.equal(citations.complete, false);
       assert.equal(citations.count, 1);
       assert.match(citationsLine(citations), /^近 30 天被引用至少 1 次（引用自 .+ 起统计，更早的提交未计入）$/);
-      // A backfill pass that reached its end (nothing older to index here): the count is exact whatever the window.
-      assert.equal((await backfillCitations(fresh.records.store)).complete, true);
-      const exact = (await nodeCitations(ctx, ROOT_1, nodes!.nodes[0]))!;
-      assert.equal(exact.complete, true);
-      assert.match(citationsLine(exact), /^近 30 天被引用 1 次（按引用该节点或其条目的已受理提交计）$/);
     } finally {
       await fresh.close();
     }

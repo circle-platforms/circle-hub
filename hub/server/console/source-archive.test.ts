@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createTestHub} from '../testing-real.ts';
 import {originalInspector} from './source-archive.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {openConsole} from '../../../tests/acceptance/support/console.ts';
 test('the original inspector rechecks access after asynchronous account-name metadata',async()=>{
  const hub=await createTestHub({repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false});

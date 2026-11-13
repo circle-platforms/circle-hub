@@ -7,7 +7,7 @@ import {newId,scanForCredentials} from '../../records/api.ts';
 import {html,link,page,type Html} from './html.ts';
 import {capacityError} from './capacity.ts';
 import {field} from './presentation.ts';
-import type {PageContext,PageResult} from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
 
 type Values={get(key:string):string|null|undefined};
 

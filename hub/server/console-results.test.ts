@@ -5,7 +5,7 @@ import { request } from 'node:http';
 import { after, before, test } from 'node:test';
 import { PARTITION, STATIC_TERMINAL, uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { INTERFACE_LABELS } from './claims.ts';
-import { NEUTRAL } from './console/pages.ts';
+import { NEUTRAL } from './console/context.ts';
 import { partitionCountsOf } from '../../contracts/src/validation.ts';
 import { countsLine } from './text.ts';
 import { probeConsole } from '../../scripts/real/console-page.ts';

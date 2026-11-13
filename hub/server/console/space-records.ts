@@ -9,7 +9,7 @@ import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { pathSegments } from '../../refs/api.ts';
 import { html, link, table, code, type Html } from './html.ts';
 import { card, when } from './ui.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 
 const PAGE_SIZE = 50;
 /** Several lists stand on one tab: a list with nothing in it is one line under its title, not an empty card of its own. */

@@ -17,7 +17,11 @@ import { circlesOf, environmentState } from './connections.ts';
 import type { JobStore } from './manage.ts';
 import { PERIODS, RECENT_LIMIT, blockers, checkCounts, runsSince, startOfDay } from './overview.ts';
 import { PACK_ID, byId, shownVersion, stateOf } from './packs.ts';
-import { NEUTRAL, readableLines, rootReadable, type PageContext } from './pages.ts';
+import { NEUTRAL, type PageContext } from './context.ts';
+import { readableLines, rootReadable } from './pages.ts';
+import { RUN_ID, SHA256, USER_ID, param } from './params.ts';
+import { callLogFiltersFromUrl, queryCallLog, resolveCallLogFilters } from './record-reads.ts';
+import { TASKS_PER_PAGE } from './runs-pages.ts';
 import { searchHub } from './search.ts';
 import { authorityFingerprint, certificateFacts, secretsOf, storageFacts } from './settings.ts';
 import { pendingCount, primaryResult, taskResultOf } from './status.ts';
@@ -35,18 +39,10 @@ export interface ApiOptions {
 }
 
 const DAY = 86_400_000;
-const SHA256 = /^[0-9a-f]{64}$/;
-const RUN_ID = /^run_[0-9a-z]{26}$/;
-const USER_ID = /^usr_[0-9a-z]{26}$/;
 
 export const neutral = (): ApiResult => ({ status: 404, body: { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix } });
 const bad = (message: string, fix: string): ApiResult => ({ status: 400, body: { code: null, message, fix } });
 const ok = (body: unknown): ApiResult => ({ status: 200, body });
-
-const param = (ctx: PageContext, name: string): string | undefined => {
-  const value = ctx.url.searchParams.get(name);
-  return value === null || value === '' ? undefined : value;
-};
 
 const nowOf = (ctx: PageContext): number => (ctx.deps.now?.() ?? new Date()).getTime();
 
@@ -116,7 +112,7 @@ async function overview(ctx: PageContext): Promise<ApiResult> {
 async function tasks(ctx: PageContext): Promise<ApiResult> {
   const wanted = param(ctx, 'result');
   if (wanted !== undefined && !isTaskResult(wanted)) return bad('result 不是任务结果的取值', `改用 ${TASK_RESULT.join('、')} 之一`);
-  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack: param(ctx, 'pack'), limit: 30, cursor: param(ctx, 'cursor') ?? null, requests: false });
+  const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack: param(ctx, 'pack'), limit: TASKS_PER_PAGE, cursor: param(ctx, 'cursor') ?? null, requests: false });
   const [rows, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
   const items = [];
   for (const row of rows) {
@@ -364,25 +360,10 @@ async function circles(ctx: PageContext): Promise<ApiResult> {
   return ok({ circles: found.map((c) => ({ token: c.token.id, owner: c.owner, label: c.token.label, created_at: c.token.created_at, last_used_at: c.token.last_used_at })) });
 }
 
-function isoOrUndefined(value: string | undefined): string | undefined | null {
-  if (value === undefined) return undefined;
-  const time = Date.parse(value);
-  return Number.isNaN(time) ? null : new Date(time).toISOString();
-}
-
 async function records(ctx: PageContext): Promise<ApiResult> {
-  const from = isoOrUndefined(param(ctx, 'from'));
-  const to = isoOrUndefined(param(ctx, 'to'));
-  if (from === null || to === null) return bad('from 或 to 不是时间', '写成 ISO 8601 时间，例如 2026-11-01T00:00:00Z');
-  const user = ctx.admin ? param(ctx, 'user') : undefined;
-  let userId: string | undefined;
-  if (user !== undefined) userId = /^usr_[0-9a-z]{26}$/.test(user) ? user : ((await ctx.deps.records.principals.findByName(user))?.id ?? '');
-  const tool = param(ctx, 'tool');
-  const run = param(ctx, 'run');
-  const page = userId === '' ? { items: [], next: null } : await ctx.deps.records.callLog.query(ctx.principal, {
-    ...(userId === undefined ? {} : { userId }), ...(tool === undefined ? {} : { tool }), ...(run === undefined ? {} : { runId: run }),
-    ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), limit: 100, cursor: param(ctx, 'cursor') ?? null,
-  });
+  const ready = await resolveCallLogFilters(ctx, callLogFiltersFromUrl(ctx, 100));
+  if (ready.from === null || ready.to === null) return bad('from 或 to 不是时间', '写成 ISO 8601 时间，例如 2026-11-01T00:00:00Z');
+  const page = await queryCallLog(ctx, ready);
   const items = [];
   for (const line of page.items) {
     items.push({
