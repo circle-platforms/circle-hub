@@ -1,0 +1,576 @@
+[
+  {
+    "check": "package-boundaries",
+    "path": "hub/dispatch/rounds.ts",
+    "what": "disallowed-dependency: hub/runs/engine/repetition.ts",
+    "reason": "dispatch is not allowed to depend on runs (imports hub/runs/engine/repetition.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/dispatch/rounds.ts",
+    "what": "entrypoint-bypass: hub/runs/engine/repetition.ts",
+    "reason": "dispatch bypasses hub/runs/api.ts by importing hub/runs/engine/repetition.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/dispatch/service.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "dispatch is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/dispatch/service.ts",
+    "what": "pack-import: packs/workflow/test-bed/api.ts",
+    "reason": "Core production module imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/dispatch/service.ts",
+    "what": "disallowed-dependency: hub/runs/engine/terminals.ts",
+    "reason": "dispatch is not allowed to depend on runs (imports hub/runs/engine/terminals.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/dispatch/service.ts",
+    "what": "entrypoint-bypass: hub/runs/engine/terminals.ts",
+    "reason": "dispatch bypasses hub/runs/api.ts by importing hub/runs/engine/terminals.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/applicability-claims.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/contributions.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/feeding.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/feeding.ts",
+    "what": "pack-import: packs/workflow/test-bed/api.ts",
+    "reason": "Core production module imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/operation-device.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/operation-device.ts",
+    "what": "pack-import: packs/workflow/test-bed/api.ts",
+    "reason": "Core production module imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/knowledge/variables.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/leases/service.ts",
+    "what": "entrypoint-bypass: hub/records/ids.ts",
+    "reason": "leases bypasses hub/records/api.ts by importing hub/records/ids.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/leases/service.ts",
+    "what": "entrypoint-bypass: hub/records/constants.ts",
+    "reason": "leases bypasses hub/records/api.ts by importing hub/records/constants.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/leases/service.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "leases bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/ports.ts",
+    "what": "entrypoint-bypass: hub/knowledge/feeding.ts",
+    "reason": "shared interface hub/ports.ts bypasses hub/knowledge/api.ts by importing hub/knowledge/feeding.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/records/db.ts",
+    "what": "disallowed-dependency: hub/telemetry/usage.ts",
+    "reason": "records imports telemetry/usage.ts until low-level usage context moves out of telemetry (package-edges.md:149)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/records/objects.ts",
+    "what": "disallowed-dependency: hub/telemetry/usage.ts",
+    "reason": "records imports telemetry/usage.ts until low-level usage context moves out of telemetry (package-edges.md:149)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/records/request-permissions.ts",
+    "what": "disallowed-dependency: hub/telemetry/usage.ts",
+    "reason": "records imports telemetry/usage.ts until low-level usage context moves out of telemetry (package-edges.md:149)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/refs/skills.ts",
+    "what": "disallowed-dependency: hub/runs/api.ts",
+    "reason": "refs is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/deps.ts",
+    "what": "entrypoint-bypass: hub/leases/service.ts",
+    "reason": "runs bypasses hub/leases/api.ts by importing hub/leases/service.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/dispatch-results.ts",
+    "what": "entrypoint-bypass: hub/dispatch/rounds.ts",
+    "reason": "runs bypasses hub/dispatch/api.ts by importing hub/dispatch/rounds.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/evaluate.ts",
+    "what": "entrypoint-bypass: hub/knowledge/declaration-grade.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/declaration-grade.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/exact.ts",
+    "what": "entrypoint-bypass: hub/knowledge/declaration-grade.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/declaration-grade.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/index-default.ts",
+    "what": "entrypoint-bypass: hub/knowledge/complete-view.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/complete-view.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/index-default.ts",
+    "what": "entrypoint-bypass: hub/knowledge/digest.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/digest.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/index-default.ts",
+    "what": "entrypoint-bypass: hub/knowledge/store.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/store.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/index-default.ts",
+    "what": "entrypoint-bypass: hub/knowledge/views.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/views.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/inputs.ts",
+    "what": "entrypoint-bypass: hub/knowledge/feeding.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/feeding.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/submit.ts",
+    "what": "entrypoint-bypass: hub/knowledge/declaration-grade.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/declaration-grade.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/runs/engine/submit.ts",
+    "what": "entrypoint-bypass: hub/knowledge/contributions.ts",
+    "reason": "runs bypasses hub/knowledge/api.ts by importing hub/knowledge/contributions.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/assemble/hub.ts",
+    "what": "entrypoint-bypass: hub/leases/service.ts",
+    "reason": "server bypasses hub/leases/api.ts by importing hub/leases/service.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/assemble/hub.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-admin.ts",
+    "what": "entrypoint-bypass: hub/leases/service.ts",
+    "reason": "server bypasses hub/leases/api.ts by importing hub/leases/service.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-admin.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-local-tools.ts",
+    "what": "entrypoint-bypass: hub/platform/layout.ts",
+    "reason": "server bypasses hub/platform/api.ts by importing hub/platform/layout.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-local-tools.ts",
+    "what": "entrypoint-bypass: hub/platform/settings.ts",
+    "reason": "server bypasses hub/platform/api.ts by importing hub/platform/settings.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-local-tools.ts",
+    "what": "entrypoint-bypass: hub/runs/packs/directory.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/directory.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-local-tools.ts",
+    "what": "entrypoint-bypass: hub/runs/packs/types.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/types.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli-local-tools.ts",
+    "what": "entrypoint-bypass: hub/runs/packs/versions.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/versions.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/cli.ts",
+    "what": "entrypoint-bypass: hub/records/index.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/index.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/console/pages.ts",
+    "what": "entrypoint-bypass: hub/runs/engine/api.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/engine/api.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/local-tools.ts",
+    "what": "entrypoint-bypass: hub/runs/packs/versions.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/versions.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/main.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/main.ts",
+    "what": "entrypoint-bypass: hub/records/index.ts",
+    "reason": "server bypasses hub/records/api.ts by importing hub/records/index.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/readers.ts",
+    "what": "entrypoint-bypass: hub/runs/engine/api.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/engine/api.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/run-list.ts",
+    "what": "entrypoint-bypass: hub/runs/engine/store.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/engine/store.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/tools.ts",
+    "what": "entrypoint-bypass: hub/runs/packs/ports.ts",
+    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/ports.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/server/tools.ts",
+    "what": "entrypoint-bypass: hub/knowledge/feeding.ts",
+    "reason": "server bypasses hub/knowledge/api.ts by importing hub/knowledge/feeding.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/telemetry/api.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "telemetry bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/telemetry/reader.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "telemetry bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-boundaries",
+    "path": "hub/telemetry/retention.ts",
+    "what": "entrypoint-bypass: hub/records/db.ts",
+    "reason": "telemetry bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/records",
+    "what": "records -> telemetry",
+    "reason": "records instruments db/objects/request-permissions via hub/telemetry/usage.ts while telemetry imports records (SCC: records, telemetry)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/telemetry",
+    "what": "telemetry -> records",
+    "reason": "telemetry api/reader/retention import records while records still imports telemetry/usage.ts (SCC: records, telemetry)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/connectors",
+    "what": "connectors -> refs",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/dispatch",
+    "what": "dispatch -> connectors",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/dispatch",
+    "what": "dispatch -> refs",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/dispatch",
+    "what": "dispatch -> runs",
+    "reason": "3 cycle-closing imports into runs (rounds.ts:3, service.ts:4,61) to be inverted via hub/ports.ts",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/knowledge",
+    "what": "knowledge -> connectors",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/knowledge",
+    "what": "knowledge -> refs",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/knowledge",
+    "what": "knowledge -> runs",
+    "reason": "5 cycle-closing imports into runs (applicability-claims.ts:7, contributions.ts:4, feeding.ts:10, operation-device.ts:5, variables.ts:8) to be inverted via hub/ports.ts",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/refs",
+    "what": "refs -> runs",
+    "reason": "1 type-only cycle-closing import in hub/refs/skills.ts:2 to be inverted via hub/ports.ts",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/runs",
+    "what": "runs -> connectors",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/runs",
+    "what": "runs -> dispatch",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] (mutually imports dispatch)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/runs",
+    "what": "runs -> knowledge",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] (mutually imports knowledge)",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "package-cycles",
+    "path": "hub/runs",
+    "what": "runs -> refs",
+    "reason": "part of 5-package SCC [connectors, dispatch, knowledge, refs, runs] closed by 9 imports into runs",
+    "removeWhen": "C4"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "contracts/src/contributions.ts",
+    "what": "knowledge-contribution",
+    "reason": "False positive: versioned record schema literal 'knowledge-contribution@1' shares a token prefix with the workflow pack id",
+    "removeWhen": "never (schema identifier 'knowledge-contribution@1' overlaps pack id token)"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "contracts/src/pack.ts",
+    "what": "knowledge-contribution",
+    "reason": "Field schema .describe() text on line 674 names the 'knowledge-contribution' workflow pack",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/dispatch/service.ts",
+    "what": "import packs/workflow/test-bed/api.ts",
+    "reason": "Core dispatch imports judgeBedSurface from workflow pack test-bed (line 28; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/applicability-fields.ts",
+    "what": "knowledge-contribution",
+    "reason": "Applicability next_action guidance names 'knowledge-contribution' (line 11; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/directory-sources.ts",
+    "what": "import packs/skill/adoc-format/api.ts",
+    "reason": "Permitted by C02 R[3]: core document ingestion imports foundational format skill adoc-format/api.ts (line 8)",
+    "removeWhen": "never (unless adoc-format moves behind a generic format-skill port)"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/feeding.ts",
+    "what": "import packs/workflow/test-bed/api.ts",
+    "reason": "Core knowledge feeding imports workflow pack test-bed/api.ts (line 26; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/feeding.ts",
+    "what": "source-read",
+    "reason": "Next-action guidance literal names 'source-read' (line 520; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/operation-device.ts",
+    "what": "import packs/workflow/test-bed/api.ts",
+    "reason": "Core operation-device helper imports frozenBeds from workflow pack test-bed/api.ts (line 6; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/seed.ts",
+    "what": "svn",
+    "reason": "Seed helper hardcodes 'svn' system pack lookup and resource-add guidance (lines 244,316,318,322,323,327,357,372,424,444; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/knowledge/views.ts",
+    "what": "source-read",
+    "reason": "Knowledge views next_action templates name 'source-read' (lines 501, 719; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/runs/engine/criterion-changes.ts",
+    "what": "criterion-review",
+    "reason": "Criterion-change handler hardcodes pack 'criterion-review' and names it in guidance literal (lines 35, 37; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/runs/engine/index-default.ts",
+    "what": "source-read",
+    "reason": "Default run-index error template names 'source-read' (line 88; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/runs/engine/inputs.ts",
+    "what": "knowledge-contribution",
+    "reason": "Run input resolver branches on run.pack !== 'knowledge-contribution' (lines 164, 197; tracked in C6)",
+    "removeWhen": "C6"
+  },
+  {
+    "check": "core-names-no-pack",
+    "path": "hub/runs/engine/submit.ts",
+    "what": "knowledge-contribution",
+    "reason": "Run submission branches on packIdOf(run.pack) !== 'knowledge-contribution' (line 240; tracked in C6)",
+    "removeWhen": "C6"
+  }
+]
