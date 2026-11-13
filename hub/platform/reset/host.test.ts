@@ -14,7 +14,7 @@ import { ensureDatabaseRunning } from '../postgres.ts';
 import { withSession } from '../sql.ts';
 import { exit, recordingRunner, freePort, socketPort, libpqAvailable, LIBPQ_MISSING } from '../test-support.ts';
 import { createResetConfigurationPorts } from '../../server/api.ts';
-import { resetData, previewReset } from './host.ts';
+import { resetData, previewReset, resetRecordTally } from './host.ts';
 import { protectedFiles } from './protected-files.ts';
 import { ResetFailure, type ResetStage } from './operation.ts';
 import type { ResetScope } from './types.ts';
@@ -144,6 +144,9 @@ test('all keep-config uses the actual U1 factory and current records restore onc
   const actualPorts = await createResetConfigurationPorts({ config: f.ownerConfig, applyDefinition: async () => { definitionCalled = true; throw new Error('定义文件未在此请求中选择'); } });
   const report = await resetData(f.context, { scopes: 'all', keepConfig: true }, actualPorts);
   assert.ok(report.configurationSnapshot); assert.equal(definitionCalled, false);
+  assert.equal(report.countsUnit, 'records');
+  assert.ok((report.counts.find(count => count.scope === 'config')?.retained ?? 0) > 0, 'restored configuration records must be counted from the actual destination');
+  assert.equal(report.unclassifiedRetainedRecords, 0);
   assert.equal((await stat(report.configurationSnapshot)).mode & 0o777, 0o600);
   assert.equal((await readFile(report.configurationSnapshot, 'utf8')).includes(token!), false, 'the protected snapshot must contain a hash, never the raw client token');
   const after = await withSession(f.postgres.connector, f.postgres.target.database, session => session.query('SELECT u.id,u.password_hash,t.sha256 FROM users u JOIN tokens t ON t.user_id=u.id WHERE t.id=$1', [tokenId!]));
@@ -157,4 +160,17 @@ test('all keep-config uses the actual U1 factory and current records restore onc
     assert.deepEqual(await restored.authorizations.packsFor('*'), ['synthetic-reset-skill']);
   } finally { await restored.close(); }
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
+
+
+test('reset counts distinguish logical records from table rows and expose unclassified records', () => {
+  const user = 'usr_' + '0'.repeat(26), at = '2026-11-13T00:00:00.000Z';
+  const config = { digest: '1'.repeat(64), kind: 'authorization', schema: 'authorization@1', body: { permission: 'resource_config', subject: '*', object: 'var:SYNTHETIC_LABEL', revoked: true, bound: null, decided_by: user, decided_at: at, expires_at: null, note: null, supersedes: null } };
+  const knowledge = { digest: '2'.repeat(64), kind: 'tree_node', schema: 'tree_node@1', body: { name: '', height: 0, level: 'leaf', children: [], entries: [] } };
+  const unknown = { digest: '3'.repeat(64), kind: 'claim', schema: 'synthetic-unclassified@1', body: {} };
+  const result = resetRecordTally([config, knowledge, unknown], new Set([knowledge.digest]));
+  assert.equal(result.countsUnit, 'records');
+  assert.deepEqual(result.counts.find(count => count.scope === 'config'), { scope: 'config', retained: 1, cleared: 0 });
+  assert.deepEqual(result.counts.find(count => count.scope === 'knowledge'), { scope: 'knowledge', retained: 0, cleared: 1 });
+  assert.equal(result.unclassifiedRetainedRecords, 1);
 });
