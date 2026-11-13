@@ -128,6 +128,25 @@ export const SecretSidecar = z.strictObject({
     if (value.current && !value.metadata.revoked && value.sealed_sha256 === null) ctx.addIssue({code:'custom',path:['sealed_sha256'],message:'an active current version identifies its ciphertext'});
 });
 export type SecretSidecar = z.infer<typeof SecretSidecar>;
+/** The sole authenticated metadata file for one name; versions identify values, not audit events. */
+export const SecretMetadataFile = z.strictObject({
+    name: VariableName,
+    versions: z.array(SecretSidecar).min(1),
+}).superRefine((value, ctx) => {
+    const entries = new Set<string>();
+    let current = 0;
+    value.versions.forEach((row, index) => {
+        if (row.metadata.name !== value.name) ctx.addIssue({code:'custom',path:['versions',index,'metadata','name'],message:'every version belongs to this exact file name'});
+        if (index > 0 && row.metadata.version <= value.versions[index - 1].metadata.version) ctx.addIssue({code:'custom',path:['versions',index,'metadata','version'],message:'value versions are strictly increasing; historical gaps remain gaps'});
+        if (entries.has(row.sealed_entry)) ctx.addIssue({code:'custom',path:['versions',index,'sealed_entry'],message:'a sealed entry identifies only one value version'});
+        entries.add(row.sealed_entry);
+        if (row.current) current++;
+    });
+    if (current !== 1) ctx.addIssue({code:'custom',path:['versions'],message:'exactly one value version is current'});
+    if (value.versions.at(-1)?.current !== true) ctx.addIssue({code:'custom',path:['versions'],message:'the last value version is current'});
+});
+export type SecretMetadataFile = z.infer<typeof SecretMetadataFile>;
+
 
 const VariableUseAt = z.string().min(1).max(2000).refine(value => { const split = value.indexOf('#'); return split > 0 && JsonPointer.safeParse(value.slice(split + 1)).success; }, 'a definition or package followed by # and a JSON pointer');
 /** Ordinary variables retain the real records-database decision identity. */
@@ -140,4 +159,4 @@ export const VariableUse = z.discriminatedUnion('kind', [OrdinaryVariableUse, Se
 export type VariableUse = z.infer<typeof VariableUse>;
 export const VariableDeclaration = z.strictObject({ name: OrdinaryVariableName, description: z.string().min(1).max(2000), schema: z.record(z.string(), z.unknown()), default: VariableValue });
 export type VariableDeclaration = z.infer<typeof VariableDeclaration>;
-export const schemas: Record<string, z.ZodType> = { 'variable@1': VariableRecord, 'secret@1': SecretRecord, 'secret-sidecar@1': SecretSidecar };
+export const schemas: Record<string, z.ZodType> = { 'variable@1': VariableRecord, 'secret@1': SecretRecord, 'secret-sidecar@1': SecretSidecar, 'secret-metadata-file@1': SecretMetadataFile };
