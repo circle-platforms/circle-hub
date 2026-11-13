@@ -1,0 +1,159 @@
+{
+  "list_task_packs": {
+    "fields": {
+      "kind": "string",
+      "pack_id": "string",
+      "offset": "integer"
+    },
+    "required": []
+  },
+  "upload_file": {
+    "fields": {
+      "memory": "object",
+      "memory.space": "string",
+      "memory.document": "string",
+      "memory.expected_version": "any",
+      "memory.title": "string",
+      "memory.path": "string",
+      "memory.markdown": "string",
+      "memory.enabled": "boolean",
+      "memory.client_key": "string",
+      "memory_share": "object",
+      "memory_share.document": "string",
+      "memory_share.version": "string",
+      "memory_share.team_path": "string",
+      "memory_share.client_key": "string",
+      "memory_share.check_only": "boolean",
+      "file_path": "string",
+      "share_entry": "object",
+      "share_entry.root": "string",
+      "share_entry.path": "string",
+      "share_entry.entry": "string",
+      "share_entry.team_path": "string",
+      "withdraw_entry": "object",
+      "withdraw_entry.root": "string",
+      "withdraw_entry.path": "string",
+      "withdraw_entry.entry": "string",
+      "withdraw_entry.team_path": "string",
+      "personal_entry": "object",
+      "personal_entry.kind": "string",
+      "personal_entry.statement": "string",
+      "personal_entry.data": "object",
+      "personal_entry.applicability": "any",
+      "personal_entry.path": "string",
+      "personal_entry.grounds": "array",
+      "personal_entry.grounds[].reference": "string",
+      "personal_entry.grounds[].quotation": "string",
+      "personal_entry.replaces": "string",
+      "personal_entry.expected_version": "any",
+      "personal_entry.reason": "string",
+      "space": "string",
+      "media_type": "string",
+      "name": "string",
+      "provenance_type": "string",
+      "captured_at": "string"
+    },
+    "required": []
+  },
+  "start_run": {
+    "fields": {
+      "pack": "string",
+      "pack_space": "any",
+      "product": "string",
+      "version": "string",
+      "build": "string",
+      "model_identity": "object",
+      "model_identity.model_id": "string",
+      "model_identity.model_family_id": "string",
+      "model_identity.configuration_reference": "string",
+      "inputs": "object",
+      "parameters": "object",
+      "submission_due": "string",
+      "predecessor": "string",
+      "client_key": "string"
+    },
+    "required": [
+      "inputs",
+      "pack"
+    ]
+  },
+  "get_nodes": {
+    "fields": {
+      "memory": "object",
+      "memory.scope": "string",
+      "memory.document": "string",
+      "memory.version": "string",
+      "memory.for_session": "boolean",
+      "memory.cursor": "string",
+      "pack": "string",
+      "pack_space": "any",
+      "file": "string",
+      "space": "any",
+      "search": "string",
+      "scope": "string",
+      "run": "string",
+      "root": "string",
+      "paths": "array",
+      "depth": "integer",
+      "reference": "string",
+      "cursor": "string",
+      "call_query": "object",
+      "call_query.start_run": "object",
+      "call_query.get_nodes": "object",
+      "call_query.trace": "string"
+    },
+    "required": []
+  },
+  "resolve_reference": {
+    "fields": {
+      "run": "string",
+      "root": "string",
+      "text": "string",
+      "expect": "string"
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "submit_result": {
+    "fields": {
+      "run": "string",
+      "model": "string",
+      "model_identity": "object",
+      "model_identity.model_id": "string",
+      "model_identity.model_family_id": "string",
+      "model_identity.configuration_reference": "string",
+      "items": "array",
+      "cross_item": "array",
+      "notes": "string",
+      "task_outputs": "array",
+      "task_outputs[].output": "string",
+      "task_outputs[].value": "any",
+      "checks": "array",
+      "checks[].requirement": "string",
+      "checks[].interpreter": "string",
+      "checks[].table": "any",
+      "checks[].samples": "array",
+      "checks[].samples[].item": "string",
+      "checks[].samples[].expect": "array",
+      "checks[].samples[].expect[].verdict": "string",
+      "checks[].samples[].expect[].code": "string",
+      "checks[].samples[].expect[].reason": "string",
+      "checks[].samples[].expect[].tier": "string",
+      "checks[].samples[].expect[].item": "string",
+      "criterion_changes": "array",
+      "criterion_changes[].item": "string",
+      "criterion_changes[].criterion": "string",
+      "criterion_changes[].assertion": "string",
+      "criterion_changes[].old": "string",
+      "criterion_changes[].new": "string",
+      "criterion_changes[].grounds": "array",
+      "criterion_changes[].grounds[].reference": "string",
+      "criterion_changes[].grounds[].quote": "string"
+    },
+    "required": [
+      "items",
+      "run"
+    ]
+  }
+}
