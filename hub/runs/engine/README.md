@@ -660,8 +660,7 @@ New transitional layer results bind every missing fact to a named, finite exit b
 Check outcomes require top-level `missing`; `data.missing` remains refutation evidence, never its alias.
 The workflow port reads the recorded pack owner; the records account port selects an enabled administrator.
 Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
-Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
-The following commits connect these exits to durable requests and automatic maintenance.
+Stored results are never passed through this new-write binding. Current exits connect to durable requests and automatic maintenance.
 
 W07 R[2]–R[3]: skipped/omitted handling changes only judgment requirements and facts that judge the missing
 item artifact. Target-only facts retain the Hub-computed pass/violation, including fact-only workflows.
@@ -694,12 +693,7 @@ of `listRuns` read every request the reader may see, whichever page is listed, s
 rows retain an empty hypothesis set with the mandatory open residual and a named judgment request, without inventing
 hypotheses or predictions. The console lists unanswered requests with their named audience and deadline.
 
-Maintenance also checks accepted historical results whose layer already contains a complete named request exit. If the
-corresponding item/requirement request is absent, it uses the ordinary routing rules on a detached result copy to append
-the request with the recorded missing fact, audience, source and deadline. Existing or answered requests are retained,
-independent gaps are kept, and the old result is never rewritten. Non-request exits are not turned into human requests.
-For older results without those fields, the already-created repair requests are looked up by their existing exact
-identity in batches; repeated maintenance does not refresh their deadlines or issue one lookup per historical layer.
+Maintenance does not reconstruct missing requests from historical results. Current evaluation writes the named requests through the normal result routing path.
 
 Installed checks returning no outcome for an item are `check_error`, not `no_check`. Output failures retain
 `output_failed` on the dynamic not-run layer. Work-limit exhaustion is unchecked; it is distinct from an effect budget.
@@ -727,8 +721,7 @@ record of a source decides, the next full pass sees it. Work a round took in sta
 stops or fails leaves it to the next one. A visit is recorded before it runs and is not repeated after a failure until
 something happens to the run, as before. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
-A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
-named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.
+A late full submission remains possible. Every current run freezes its submission deadline at start. The console shows deadline and delivery state.
 
 Unexpected evaluation failures now append a validation action with null acceptance, a stable check-error code and a
 retry instruction; internal exception details go only to administrator notes. getRun distinguishes “未校验（中断）”
@@ -753,8 +746,7 @@ acceptance; the next step is a redacted source/new revision. Non-source requests
 
 Console product/diff arrays use snapshot-bound cursors (500 builds or 1000 paths per page), with explicit per-page and
 whole-list counts. Changed snapshots refuse stale cursors rather than silently skipping. Run call logs pass the existing
-stored cursor through `call_cursor`. Historical transitional layers show “出口未写” without backfilling an actor or due date;
-new exits and every retained gap remain visible as escaped read-only text.
+stored cursor through `call_cursor`. Exits and every retained gap remain visible as escaped read-only text.
 
 The shared core outcome constructor copies the existing concrete detail verbatim into top-level `missing`, without
 changing any interpreter verdict. trunk-fixes-4 may carry the same constructor fix; keep one equivalent version when
@@ -843,8 +835,7 @@ New transitional layer results bind every missing fact to a named, finite exit b
 Check outcomes require top-level `missing`; `data.missing` remains refutation evidence, never its alias.
 The workflow port reads the recorded pack owner; the records account port selects an enabled administrator.
 Missing identity wiring refuses evaluation rather than inventing a recipient. Requests use a 24-hour response window.
-Stored results are never passed through this new-write binding; missing historical exits remain “出口未写”.
-The following commits connect these exits to durable requests and automatic maintenance.
+Stored results are never passed through this new-write binding. Current exits connect to durable requests and automatic maintenance.
 
 Supplementary recovery gaps keep their own cause codes and receipt rows even beside a settled violation. Request
 projection fills remaining rounds and uses the received submission's actual item order for paths; it never treats a
@@ -1138,3 +1129,11 @@ and stored run bytes stay unchanged.
 ## Run visibility without history (B1)
 
 `runVisible(user, run)` answers whether `getRun` would answer for the run: it applies the same run-visibility rule (`visibleRun`: the account is enabled, the reader may view the run, and the run's grounds are readable) and reads neither submissions, results, requests nor withdrawal state. The console live stream asks it for every run event instead of reading the full detail once per subscriber and run; an engine without the port keeps the old `getRun(...) !== null` answer. The port keeps no verdict of its own (the stream's 30-second verdict cache is unchanged), so a revoked share is seen by the next question. It does not shorten the detail page, the export or the summary reads.
+
+## Package boundaries and current records
+
+Run ownership and generic record visibility use the records package's `canSeeRun` and `mayReadRecord`; engine readers supply current account, source, contribution and result guards. There is no second record-kind visibility implementation here. Knowledge spaces are required, including in synthetic harnesses, which receive real spaces over their scratch records. Cross-package production imports use public APIs and the declared ports. The run queries and dispatch rules consumed by other packages are exported from `hub/runs/api.ts`.
+
+Every current run stores `skills` and `submission_due`. Conditional pack-space, knowledge-space and feeding fields retain their actual absent semantics. Package checks declare `tier`; runtime inline checks use the existing interpreter-table tier rule. No historical parser binding, citation/summary background backfill, missing-request repair, ruling-array reconstruction or recovery test overload remains.
+
+Captured input admission uses the locked workflow's existing `contribution` declaration, followed by the existing contribution verification. A package name grants no exception. Criterion-review startup still names its current package: replacing that choice needs an approved declaration. This package does not change pack functions or model-facing wording for that remaining proposal.
