@@ -650,10 +650,32 @@ export interface VaultVerification {
   unknown: boolean;
 }
 
+export type VaultSecretMetadata = import('../../contracts/src/variables.ts').SecretRecord;
+export interface VaultSecretMaterial {
+  name: string;
+  version: number;
+  metadata: VaultSecretMetadata;
+  value: string;
+}
+export interface VaultSecretWrite {
+  name: string;
+  value: string;
+  digest_rule: import('../../contracts/generated/vocabulary.ts').DigestRule;
+  set_by: string;
+  set_at: string;
+}
+
 /** AES-256-GCM sealed entries under <data>/vault, the entry name bound as associated data. Values never leave except by get. */
 export interface Vault {
   /** Explicit key creation through the key provider. The vault never creates a key on its own. */
   initKey(): Promise<void>;
+  putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata>;
+  secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
+  secretHistory(name: string): Promise<VaultSecretMetadata[]>;
+  secretNames(): Promise<string[]>;
+  readSecret(name: string): Promise<VaultSecretMaterial | null>;
+  recentSecrets(): Promise<VaultSecretMaterial[]>;
+  unsetSecret(name: string, by: string, at: string): Promise<VaultSecretMetadata>;
   put(name: string, value: string | Uint8Array): Promise<void>;
   /** Null when there is no entry of that name. Throws VaultError when the key is wrong or the entry was altered or renamed. */
   get(name: string): Promise<Uint8Array | null>;

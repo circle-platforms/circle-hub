@@ -5,14 +5,13 @@ import { readFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHash } from 'node:crypto';
-import { OrdinaryVariableName, VariableName, secretLikeName, referencesIn, resolve as substitute, type SecretConsumer, type ValueReference, type VariableUse } from '../../contracts/src/variables.ts';
+import { OrdinaryVariableName, VariableName, secretLikeName, referencesIn, resolve as substitute, type ValueReference, type VariableUse } from '../../contracts/src/variables.ts';
 import { ResourceId, ResourceRecord } from '../../contracts/src/resources.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import { labelOf, isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
-import { readProfile } from '../connectors/api.ts';
 import type { PacksPort } from '../ports.ts';
 import { ExecutorDefinition, ExecutorSource } from '../dispatch/api.ts';
-import { canonicalize, digestOf, validateChangeReason, secretForms, isSha256, parseStrictJson, scanForCredentials, VariableError, type RecordsKit, type Principal, type Transaction, type NamedVersion, type AuthorizationRecord, type SecretWrite, type VariableSnapshot, WHOLE_HUB } from '../records/api.ts';
+import { canonicalize, validateChangeReason, secretForms, isSha256, parseStrictJson, scanForCredentials, VariableError, VaultError, type VaultSecretMetadata, type RecordsKit, type Principal, type Transaction, type NamedVersion, type AuthorizationRecord, type SecretWrite, type VariableSnapshot, WHOLE_HUB } from '../records/api.ts';
 import { requireVaultKey } from './assemble/vault.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
 import { readSecret, readSecrets } from './assemble/secret-input.ts';
@@ -83,31 +82,6 @@ export async function deploymentDefinitions(kit: RecordsKit, tx?: Transaction): 
     }
     return out;
 }
-export function sendsTo(definition: DeploymentDefinition): string { return definition.kind === 'resource' ? digestOf({ origins: definition.body.origins, allow_plaintext: [...(definition.body.allow_plaintext ?? [])].sort() }) : digestOf({ endpoint: definition.body.endpoint, ca: definition.body.ca }); }
-export function consumersOf(definitions: readonly DeploymentDefinition[], name: string): Array<SecretConsumer & {
-    required: DigestRule;
-    basic: boolean;
-}> {
-    const out: Array<SecretConsumer & {
-        required: DigestRule;
-        basic: boolean;
-    }> = [];
-    for (const definition of definitions.filter(v => v.body.enabled !== false))
-        for (const ref of definition.references)
-            if (ref.kind === 'secret' && ref.name === name) {
-                if (definition.kind === 'executor' && ref.at === '/credential')
-                    out.push({ definition: definition.id, item: 'credential', sends_to: sendsTo(definition), required: 'plain', basic: false });
-                else if (definition.kind === 'resource' && ref.at.startsWith('/credentials/')) {
-                    const item = ref.at.slice(13).replaceAll('~1', '/').replaceAll('~0', '~');
-                    const rule = definition.body.credential_digests?.[item];
-                    if (!isDigestRule(rule))
-                        throw new CliError('资源凭据项缺少生成的摘要规则；请管理员 update 改正');
-                    out.push({ definition: definition.id, item, sends_to: sendsTo(definition), required: rule, basic: false });
-                }
-            }
-    return out;
-}
-const publicConsumer = ({ definition, item, sends_to }: SecretConsumer) => ({ definition, item, sends_to });
 export async function unchangedDefinitions(kit: RecordsKit, definitions: readonly DeploymentDefinition[], tx: Transaction): Promise<void> {
     const current = await configurationRows(kit, tx);
     if (current.size !== definitions.length || definitions.some(def => current.get(def.key)?.digest !== def.decision))
@@ -244,7 +218,10 @@ async function variableText(s: VariableCommandSession, file: unknown): Promise<s
     }
     return (s.options.readSecret ?? readSecret)('普通变量的 JSON 值');
 }
-function versionsLine(v: NamedVersion): string { return `${v.name}；${labelOf('variable_kind', v.kind)}；第 ${v.version} 版；${v.decision.body.revoked ? '已撤回' : '已设置'}；长度 ${v.definition?.schema === 'secret@1' ? v.definition.length : v.definition ? Buffer.byteLength(canonicalize(v.definition.value)) : 0}；决定人 ${v.decision.body.decided_by}；时刻 ${v.decision.body.decided_at}；理由 ${v.decision.body.note ?? ''}`; }
+function secretVersionLine(v: VaultSecretMetadata): string {
+    return `${v.name}；第 ${v.version} 版；${v.revoked ? '已撤回' : '已设置'}；长度 ${v.length}；摘要规则 ${labelOf('digest_rule', v.digest_rule)}；设置人 ${v.set_by ?? '未知'}；时刻 ${v.set_at ?? '未知'}`;
+}
+function versionsLine(v: NamedVersion): string { return `${v.name}；${labelOf('variable_kind', v.kind)}；第 ${v.version} 版；${v.decision.body.revoked ? '已撤回' : '已设置'}；长度 ${v.definition ? Buffer.byteLength(canonicalize(v.definition.value)) : 0}；决定人 ${v.decision.body.decided_by}；时刻 ${v.decision.body.decided_at}；理由 ${v.decision.body.note ?? ''}`; }
 function hiddenPointer(pointer: string, value: string): string { return pointer.split('/').map(part => value.length >= 8 && part.includes(value) ? '<字段>' : part).join('/'); }
 function findPlain(value: unknown, secret: string, path = ''): string | null {
     if (typeof value === 'string')
@@ -432,12 +409,14 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
                 if(!roots.length)throw new CliError('找不到该根或组成记录；请核对同步回执里的摘要');
                 uses.push(...roots.flatMap(root=>root.variables.map(use=>({...use,composition:root.composition}))));
             }
-            for (const use of new Map(uses.map(use => [(use.composition??'')+'|'+use.at + '|' + use.decision, use])).values()) {
-                const decision = await kit.store.get<any>(use.decision);
-                const kind: VariableKind = decision?.body.object.startsWith('secret:') ? 'secret' : 'var';
-                const version = (await kit.variables.history(by, kind, use.name)).find(v => v.decision.digest === use.decision);
-                if (version)
-                    s.out(`${use.at}；${use.name}；第 ${version.version} 版${use.composition?`；组成 ${use.composition}`:''}`);
+            for (const use of new Map(uses.map(use => [(use.composition ?? '') + '|' + use.at + '|' + (use.kind === 'var' ? use.decision : 'secret:' + use.version), use])).values()) {
+                if (use.kind === 'secret') {
+                    const version = (await kit.variables.secretHistory(by, use.name)).find(v => v.version === use.version);
+                    if (version) s.out(`${use.at}；${use.name}；第 ${version.version} 版${use.composition ? `；组成 ${use.composition}` : ''}`);
+                } else {
+                    const version = (await kit.variables.history(by, 'var', use.name)).find(v => v.decision.digest === use.decision);
+                    if (version) s.out(`${use.at}；${use.name}；第 ${version.version} 版${use.composition ? `；组成 ${use.composition}` : ''}`);
+                }
             }
             if (!uses.length)
                 s.out('这份记录没有变量版本记录；需要带变量记录的新运行或新组成后再查');
@@ -490,47 +469,13 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
     await kit.variables.assertAdmin(by);
     try {
         if (sub === 'list' || sub === 'show') {
-            const rows = await kit.variables.list(by);
             const names = sub === 'show' ? (v.name ?? []).map((n: string, i: number) => nameInput(n, i, 'secret')) : null;
-            if (names && names.length !== 1)
-                throw new UsageError('secret show 须有一个 --name');
-            const known = new Set<string>();
-            for (const row of rows.filter(r => r.kind === 'secret' && (!names || names.includes(r.name)))) {
-                const history = await kit.variables.history(by, 'secret', row.name);
-                for (const item of history) {
-                    if (item.definition?.schema === 'secret@1')
-                        known.add(item.definition.entry);
-                }
-                for (const item of v.history ? history : [row]) {
-                    s.out(versionsLine(item));
-                    if (item.definition?.schema === 'secret@1') {
-                        const exists = await kit.vault.has(item.definition.entry);
-                        s.out(`摘要规则 ${labelOf('digest_rule', item.definition.digest_rule)}；使用者 ${item.definition.consumers.map(c => c.definition + '/' + c.item).join('、')}`);
-                        if (!exists && !item.decision.body.revoked) {
-                            const index = history.findIndex(row => row.decision.digest === item.decision.digest);
-                            const revokedSince = history.slice(0, index).some(row => row.decision.body.revoked);
-                            const retained = history.filter(row => !row.decision.body.revoked).slice(0, 2).some(row => row.decision.digest === item.decision.digest);
-                            if (revokedSince)
-                                s.out(`第 ${item.version} 版之后已有撤回决定；条目不在库中，历史登记保留`);
-                            else if (!retained)
-                                s.out(`第 ${item.version} 版已超出当前和上一版的保留范围；条目不在库中，历史登记保留`);
-                            else
-                                s.out(`登记了第 ${item.version} 版，密钥库里没有它的条目；下一步 circle-hub secret set --name ${item.name}`);
-                        }
-                    }
-                }
-            }
-            if (sub === 'list') {
-                const entries = await kit.vault.list();
-                for (const entry of entries.filter(n => n.startsWith('connector.') && !n.endsWith('.session')))
-                    s.out(`旧写法条目 ${entry}；用 resource update <资源> --credential <凭据项>=<密钥名> 迁移`);
-                for (const entry of entries.filter(n => n.startsWith('executor.') && n.endsWith('.bearer')))
-                    s.out(`旧写法条目 ${entry}；定义加 credential 后 executor update 迁移`);
-                for (const entry of entries.filter(n => n.endsWith('.session') || n.startsWith('login-stop.')))
-                    s.out('登录状态条目 ' + entry);
-                for (const entry of entries.filter(n => n.startsWith('secret.') && !known.has(n)))
-                    s.out('没有决定指向的条目 ' + entry);
-            }
+            if (names && names.length !== 1) throw new UsageError('secret show 须有一个 --name');
+            if (names) {
+                const history = await kit.variables.secretHistory(by, names[0]);
+                if (!history.length) throw new CliError('密钥名字不存在；请核对名字或先 secret set');
+                for (const item of v.history ? history : history.slice(0, 1)) s.out(secretVersionLine(item));
+            } else for (const item of await kit.variables.listSecrets(by)) s.out(secretVersionLine(item));
             return 0;
         }
         const mappings: Array<{
@@ -556,10 +501,10 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 mappings.push({ name: nameInput(name, index, 'secret'), keys: [], basic: false });
         if (!mappings.length || new Set(mappings.map(v => v.name)).size !== mappings.length || sub === 'unset' && mappings.length !== 1)
             throw new UsageError('密钥名字缺少、重复或数量不合子命令；请逐项核对 --name');
-        const reason = reasonInput(v.reason), definitions = await deploymentDefinitions(kit);
+        const reason = reasonInput(v.reason);
         if (sub === 'unset') {
-            await kit.variables.unset(by, 'secret', mappings[0].name, reason);
-            s.out(`已撤回密钥 ${mappings[0].name}；受影响使用者 ${consumersOf(definitions, mappings[0].name).map(v => v.definition).join('、')}`);
+            await kit.variables.unsetSecret(by, mappings[0].name, reason);
+            s.out(`已撤回密钥 ${mappings[0].name}`);
             s.out('下一步：在签发方吊销或换掉旧值；Hub 删掉条目只是自己不再用它，备份里还有');
             return 0;
         }
@@ -582,35 +527,6 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 throw new UsageError('第 ' + (index + 1) + ' 个 --short 没有对应名字或重复');
             short.add(name);
         }
-        const profileCache = new Map<string, boolean>();
-        for (const mapping of mappings.filter(v => v.basic))
-            for (const used of consumersOf(definitions, mapping.name)) {
-                if (used.item === 'credential')
-                    throw new CliError('Basic 只用于原样存整个 Authorization 头的凭据项');
-                const definition = definitions.find(d => d.id === used.definition)!;
-                const pack = await (await s.hub(false)).packs.pack(definition.body.system_pack);
-                if (!pack || pack.kind !== 'system' || pack.digest !== definition.body.system_pack_digest)
-                    throw new CliError('凭据使用者的业务系统接入不可核对；请先 update 绑定可用业务系统接入');
-                const profile = await readProfile(pack);
-                const auth = profile.auth;
-                profileCache.set(used.definition + '/' + used.item, auth.kind === 'static_header' && auth.header.name.toLowerCase() === 'authorization' && auth.header.scheme === 'raw' && auth.credential === used.item && used.required === 'plain');
-            }
-        const consumers = mappings.map(mapping => {
-            const used = consumersOf(definitions, mapping.name);
-            if (!used.length)
-                throw new CliError(`还没有部署定义引用这个名字：先在资源或执行器定义里写 \${secret:${mapping.name}}，再设置`);
-            if (digests.get(mapping.name) === 'sha512_base64' && used.some(c => c.required === 'plain'))
-                throw new CliError('有使用者需要原值，不能只存摘要；请给那一项换一个名字');
-            if (mapping.basic) {
-                const bad = used.find(c => profileCache.get(c.definition + '/' + c.item) !== true);
-                if (bad) {
-                    const definition = definitions.find(d => d.id === bad.definition)!;
-                    throw new CliError(`Basic 只用于原样存整个 Authorization 头；资源 ${bad.definition} 的凭据项 ${bad.item}（业务系统接入 ${String(definition.body.system_pack ?? '无')}）不合：按真实声明改用 --key，或给正确的原样 Authorization 凭据项换一个名字`);
-                }
-            }
-            s.out(`密钥 ${mapping.name} 的本版使用者：${used.map(c => c.definition + '/' + c.item).join('、')}`);
-            return used.map(publicConsumer);
-        });
         if (!v['dry-run'])
             await requireVaultKey(kit, { command: true });
         let values: string[];
@@ -647,23 +563,21 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             else
                 values = await readSecrets(mappings.map(v => v.name));
         }
-        const inputs: SecretWrite[] = mappings.map((mapping, index) => ({ name: mapping.name, value: values[index], consumers: consumers[index], digest_rule: digests.get(mapping.name), short: short.has(mapping.name) }));
+        const inputs: SecretWrite[] = mappings.map((mapping, index) => ({ name: mapping.name, value: values[index], digest_rule: digests.get(mapping.name), short: short.has(mapping.name) }));
         for (const input of inputs)
             validateSecretInput(input);
-        const derivedValues = mappings.flatMap((mapping, i) => digests.get(mapping.name) === 'sha512_base64' || consumersOf(definitions, mapping.name).some(c => c.required === 'sha512_base64') ? [createHash('sha512').update(values[i]).digest('base64')] : []);
+        const derivedValues = values.map(value => createHash('sha512').update(value).digest('base64'));
         validateChangeReason(reason, [...sourceSecrets, ...values, ...derivedValues]);
-        await checkPlainExposure(kit, by, definitions, [...values.map(value => ({ value })), ...basicPasswords.map(value => ({ value })), ...derivedValues.map(value => ({ value, derived: true }))]);
+        await checkPlainExposure(kit, by, [], [...values.map(value => ({ value })), ...basicPasswords.map(value => ({ value })), ...derivedValues.map(value => ({ value, derived: true }))]);
         if (v['dry-run']) {
             for (const input of inputs) {
                 s.out(`${input.name}：核对完成，未写入`);
             }
             return 0;
         }
-        const result = await kit.variables.setSecrets(by, inputs, reason, async tx => {await unchangedDefinitions(kit, definitions, tx);await checkProductNames(tx);});
+        const result = await kit.variables.setSecrets(by, inputs, reason, async tx => {await checkProductNames(tx);});
         for (const row of result) {
-            s.out(versionsLine(row));
-            if (row.definition?.schema === 'secret@1')
-                s.out(`摘要规则 ${labelOf('digest_rule', row.definition.digest_rule)}；使用者 ${row.definition.consumers.map(c => c.definition + '/' + c.item).join('、')}`);
+            s.out(secretVersionLine(row));
             if (short.has(row.name))
                 s.out(`${row.name} 使用短值；这样的值脱敏器遮不住、也找不出回显`);
         }
@@ -671,9 +585,9 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
         return 0;
     }
     catch (error) {
-        if (error instanceof VariableError)
-            throw new CliError(error.message);
-        throw error;
+        if (error instanceof CliError || error instanceof UsageError) throw error;
+        if (error instanceof VariableError || error instanceof VaultError) throw new CliError(error.message);
+        throw new CliError('密钥库操作未完成；主密钥、封存文件或完整元数据不可核对');
     }
 }
 function validateSecretInput(input: SecretWrite) {
@@ -688,7 +602,6 @@ import { validateSecret } from '../../contracts/src/variables.ts';
 
 /** Never reveals whether a collision is a secret or a deployment consumer. Called with the name locked. */
 export async function productVariableNameAvailable(kit: RecordsKit, name: string, tx: Transaction): Promise<boolean> {
- const secret=await kit.store.find({kind:'authorization',key:'authz.key',value:`resource_config|${WHOLE_HUB}|secret:${name}`,limit:1},tx);
- if(secret.items.length)return false;
+ if((await kit.vault.secretHistory(name)).length)return false;
  return !(await deploymentDefinitions(kit,tx)).some(d=>d.references.some(r=>r.name===name));
 }
