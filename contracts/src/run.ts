@@ -207,16 +207,6 @@ const CONFIGURED = TriggerSchema.extract(['event_or_schedule', 'standing_obligat
  * Body of a `run` record (run@1): the summary plus what only the Hub needs (W06 F[0]-F[10], W09 F[1], D05 R[4]-R[5]).
  * Phase is derived from records, never stored. A Hub-side run (a standing obligation the Hub executes) has no runner.
  */
-// Earlier run@1 snapshots contain only key/until/mine. They remain immutable and readable.
-const PersistedLeaseContextRow=LeaseContextRow.partial({since:true,run:true,jobs:true}).superRefine((row,ctx)=>{
-  const known=[row.since,row.run,row.jobs].filter(value=>value!==undefined).length;
-  if(known!==0&&known!==3||known===0&&row.holder!==undefined)ctx.addIssue({code:'custom',message:'lease snapshot has either all current facts or the historical key/until/mine shape'});
-});
-
-// Historical records keep their original bytes; only public summaries require ruling metadata.
-const PersistedRequirementSummary=RequirementSummary.partial({rules:true,run_interpreters:true}).superRefine((row,ctx)=>{
-  if((row.rules===undefined)!==(row.run_interpreters===undefined))ctx.addIssue({code:'custom',message:'ruling fields are either both present or both absent on a historical row'});
-});
 export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
   product_pack_digest:Sha256.optional().describe('Product package digest frozen at admission; absent on historical records'),
   command_policy:CommandPolicy.optional(),
@@ -224,7 +214,7 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
   criterion_requests:z.array(Sha256).optional(),
   criterion_review:z.strictObject({submission:Sha256,requests:z.array(Sha256)}).optional(),
   predecessor_access:z.literal('view').optional(),
-  requirements:z.array(PersistedRequirementSummary),
+  requirements:z.array(RequirementSummary),
   runner: UserId.optional().describe('the user the run is executed for; absent only when the Hub itself executes a standing obligation'),
   host: ExecutionHostSchema,
   trigger: TriggerSchema,
@@ -253,7 +243,7 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
   lease_registrations: z.array(LeaseRegistrationRow).optional(),
   observation_context: z.array(DeviceObservation).optional().describe('the latest device observations frozen at start_run for the projection and checks (workflow context observations)'),
   lease_context: z
-    .array(PersistedLeaseContextRow)
+    .array(LeaseContextRow)
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {
