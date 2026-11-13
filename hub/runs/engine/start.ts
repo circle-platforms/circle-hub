@@ -762,7 +762,7 @@ async function startFresh(
   try {
     const principals=ctx.deps.records.principals;
     if(principals?.lockActive){stored=await store.withTransaction(async tx=>{
-      const owners=[workflow.pack.space,...(record.skills??[]).map(skill=>skill.space)].filter((space):space is string=>typeof space==='string'&&isPersonalSpace(space));
+      const owners=[workflow.pack.space,...record.skills.map(skill=>skill.space)].filter((space):space is string=>typeof space==='string'&&isPersonalSpace(space));
       try{user=await principals.lockActive!(user,tx,owners);}catch(error){if(error instanceof AccessError)throw unavailable('/pack','the actor or a personal owner is disabled');throw error;}
       if(owners.length&&!await ctx.deps.workflows.forUser(user,record.pack,record.pack_space))throw unavailable('/pack','the personal workflow is no longer available');
       return putRun(store,record,startedAt,tx);

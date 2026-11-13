@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import {CheckReadBudget} from './read-budget.ts';
 import {replacedCriteria,frozenCriteria} from './criterion-changes.ts';
 import {authorAccountsOf} from './lineage.ts';
@@ -22,7 +23,7 @@ import type { Principal } from '../../records/api.ts';
 import { MAX_REFERENCE_LENGTH, parseReference, resolveReference, type ResolveContext, type Unresolved } from '../../refs/api.ts';
 import { SandboxError, callPackFunction, callPackFunctionBatch, DEFAULT_LIMITS, runCheck, sourcesFrom, type CatalogView, type CheckOutcome, type SourceView, type FragmentReadFailure, type UnreadSource, type SandboxOptions, type SandboxBatchItem, type PackFunctionTarget } from '../../rules/api.ts';
 import { mapLimited, receivedDigest } from './util.ts';
-import { getInterpreter } from '../../rules/api.ts';
+import { getInterpreter, tierOf } from '../../rules/api.ts';
 import { factClaim, judgmentClaim, sourceCoverage, rootDigest, statementOf, strongestRole } from './claims.ts';
 import { ENGINE_COMPONENT, type EngineContext } from './deps.ts';
 import { attemptEvidence } from './retry-evidence.ts';
@@ -159,7 +160,7 @@ export function builderFailure(check: CheckEntry, error: unknown): CheckOutcome 
     missing: residentMissing ?? `检查 ${check.id} 的被判对象；下一步：修复或重试构建后重核`,
     statement: `未知（检查 ${check.id} 的被判对象没有构建出来）：${sandbox ? error.message : '包内函数无法运行'}`,
     grounds: [],
-    tier: check.tier ?? (check.basis ? 'blocking' : 'advisory'),
+    tier: check.tier,
     data: { sandbox: sandbox ? error.code : 'FUNCTION_THREW', phase: 'subject', module: check.subject?.module ?? null },
   };
 }
@@ -185,7 +186,7 @@ function tableFailure(check: CheckEntry): CheckOutcome {
     missing: `检查 ${check.id} 的可读规则表 ${check.table ?? ''}；下一步：包主人补齐规则表后重跑`,
     statement: `未知（检查出错）：检查 ${check.id} 的表 ${check.table ?? ''} 读不到`,
     grounds: [],
-    tier: check.tier ?? (check.basis ? 'blocking' : 'advisory'),
+    tier: check.tier,
   };
 }
 
@@ -264,7 +265,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const submission=input.submission===null?null:{...input.submission,model:model!};
   const accountAuthors=workflow.requirements.some(t=>t.independence_by_account)?await authorAccountsOf(ctx,run.predecessor):null;
   const administrators = (await ctx.deps.records.principals?.list?.() ?? [])
-    .filter(user => user.role === 'admin' && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
+    .filter(user => isAdmin(user) && !user.disabled).sort((a, b) => a.id.localeCompare(b.id));
   const retryAttempts: Array<Record<string, unknown>> = [];
   let parentObservedSuccess=false;
   const sandboxFor = (_operation: string, module?: string, item?: string, extra: Record<string, unknown> = {}): SandboxOptions => ({
@@ -297,7 +298,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const runTemplates = templates.filter((t) => t.target === 'run');
   const checks = new Map(workflow.checks.map((c) => [c.id, c]));
   for(const [id,declared] of runtimeChecks){
-    const check:CheckEntry={id,interpreter:declared.interpreter,applies:'item',judges:'subject'};
+    const check:CheckEntry={id,interpreter:declared.interpreter,applies:'item',judges:'subject',tier:tierOf(declared.table as Parameters<typeof tierOf>[0])};
     if(declared.interpreter==='catalog@1'){
       const requirement=workflow.requirements.find(t=>t.key===declared.requirement)!;
       const catalogs=[...new Set(workflow.checks.filter(base=>requirement.checks.includes(base.id)).flatMap(base=>base.catalog?[base.catalog]:[]))];
@@ -313,7 +314,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const itemIds = new Set(items.map((it) => it.id));
   const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
   const skills=ctx.parsers.skills??run.skills;
-  const baseBound = [run.pack_digest,...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
+  const baseBound = [run.pack_digest,...skills.map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
@@ -666,7 +667,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       if(o.judgment_sources?.length){
         const declaration=item?entries.get(item)?.entry:undefined;
         const slots=declaration?.handling==='handled'?declaration.slots:null;
-        if(!submission||!item||o.judgment_sources.some(pointer=>{const value=valueAt(slots,pointer);return !isObject(value)||typeof value.text!=='string'||!value.text;}))return bounded(check,{verdict:'unknown',reason:'missing_input',missing:'缺少本条目原始提交中的模型主张节点及声明模型；下一步：包作者修正 judgment_sources 的槽位指针，运行者完整重交',statement:'无法把判断依据绑定到本条目的原始模型提交；先补原始节点再核验',grounds:[],tier:check.tier??'blocking'});
+        if(!submission||!item||o.judgment_sources.some(pointer=>{const value=valueAt(slots,pointer);return !isObject(value)||typeof value.text!=='string'||!value.text;}))return bounded(check,{verdict:'unknown',reason:'missing_input',missing:'缺少本条目原始提交中的模型主张节点及声明模型；下一步：包作者修正 judgment_sources 的槽位指针，运行者完整重交',statement:'无法把判断依据绑定到本条目的原始模型提交；先补原始节点再核验',grounds:[],tier:check.tier});
       }
       const outcome = check.reads?.narrow && unreadSources.length && o.verdict === 'support'
         ? { ...o, verdict: 'unknown' as const, reason: 'missing_input' as const, missing: unreadSources.map(row => `${row.missing_fact}；下一步：${row.next_action}`).join('；'), statement: `读取不完整：${unreadSources.map(row => `${row.missing_fact}；下一步：${row.next_action}`).join('；')}` }
@@ -979,7 +980,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         const administrator=administrators[0]?.id;if(!administrator)throw new Error('作者账号恢复请求缺少具名管理员');
         const next='管理员 '+administrator+' 从可信备份恢复缺失的运行记录与 runner/configurer 身份，再核验账号并重开复核；不能补造历史身份';
         const missing='缺少完整的作者账号血缘，无法证明复核者不是任一作者；下一步：'+next;
-        const gap={reason:'integrity_unproven' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:administrator},due:run.submission_due??new Date(ctx.now().getTime()+86400000).toISOString()}};
+        const gap={reason:'integrity_unproven' as const,missing,exit:{action:'request' as const,request_kind:'repair' as const,audience:{user:administrator},due:run.submission_due}};
         for(const layer of layers)layer.gaps=[...(layer.gaps??[]),gap];
         errors.push({code:'integrity_unproven',message:missing,item:it.id,requirement:t.key,fix:next});
       }
