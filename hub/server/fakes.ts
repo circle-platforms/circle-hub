@@ -601,6 +601,8 @@ export class FakeRuns implements RunsService {
       ...(input.predecessor === undefined ? {} : { predecessor: input.predecessor }),
       ...(context.sessionId === null ? {} : { session: context.sessionId }),
       ...(input.model_identity === undefined ? {} : { model_identity: input.model_identity }),
+      skills: [],
+      submission_due: input.submission_due ?? new Date(this.#now().getTime() + 86400000).toISOString(),
       started_at: this.#now().toISOString(),
       runner: user.id,
       host: 'local_circle',

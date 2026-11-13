@@ -40,7 +40,6 @@ test('an already cancelled reference read never starts its provider', async () =
 
 test('socket disconnect cancels a pending read before its next stage and still records the call', { timeout: 10_000 }, async t => {
   const { createServer, request } = await import('node:http');
-  const { once } = await import('node:events');
   const { handleMcp } = await import('./mcp.ts');
   const { BodyBudget } = await import('./http.ts');
   const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<[]>();
@@ -61,8 +60,7 @@ test('socket disconnect cancels a pending read before its next stage and still r
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const req = request({ hostname: '127.0.0.1', port: address.port, method: 'POST', headers: { authorization: 'Bearer synthetic-transport', 'content-type': 'application/json', accept: 'application/json, text/event-stream' } });
@@ -80,7 +78,6 @@ test('socket disconnect cancels a pending read before its next stage and still r
 
 test('cancellation notifications reach only the same authenticated token and client session across POSTs', { timeout: 10_000 }, async t => {
   const { createServer } = await import('node:http');
-  const { once } = await import('node:events');
   const { handleMcp } = await import('./mcp.ts');
   const { BodyBudget } = await import('./http.ts');
   for (const scope of [
@@ -96,8 +93,7 @@ test('cancellation notifications reach only the same authenticated token and cli
       runs: { packContext: async () => { contexts++; return null; } },
     } as unknown as ServerDeps;
     const server = createServer((req, res) => { void handleMcp(req, res, { deps, serverVersion: 'synthetic', budget: new BodyBudget(8192), log: () => {} }, 8192).catch(() => res.destroy()); });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     assert.ok(address && typeof address !== 'string');
     const url = `http://127.0.0.1:${address.port}/mcp`;
