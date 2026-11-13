@@ -589,7 +589,7 @@ export interface ArtifactSource {
 
 export interface Artifacts {
   /** Capture the reader's direct and pack-audience permissions for one request. */
-  capturePermissionSnapshot?(principal: Principal): Promise<import('./request-permissions.ts').RequestPermissions>;
+  capturePermissionSnapshot?(principal: Principal, tx?: Transaction): Promise<import('./request-permissions.ts').RequestPermissions>;
   /**
    * Stores the bytes and a source_artifact record. Nothing is refused, held or covered for looking like a credential
    * (decisions 154 and 161): the scan written into the record is the content scan (credential-scan@4), which looks for

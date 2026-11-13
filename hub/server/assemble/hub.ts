@@ -212,7 +212,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
-  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id) => canUseEnvironment(records, actor, id)) : null;
+  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id, tx) => canUseEnvironment(records, actor, id, tx)) : null;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     ...(environments ? { environmentAccess: environments } : {}),
