@@ -28,6 +28,7 @@ export const UNIT_PATTERNS = [
   'contracts/**/*.test.ts',
   'hub/**/*.test.ts',
   'packs/**/*.test.ts',
+  'tools/console-smoke.test.ts',
   'tools/gen-contracts*.test.ts',
   'tools/prepare-packs.test.ts',
   'tools/run-acceptance-tests.test.ts',
