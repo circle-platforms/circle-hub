@@ -7,8 +7,20 @@ import { card, chip, when } from './ui.ts';
 import { mePath } from './routes.ts';
 
 const EMPTY_TEAM = '请管理员把你加入团队';
+/** Boss 04:30 — occupied after assignment revoke; not 「未知」. */
+export const NO_ASSIGNMENT_LABEL = '已无分配';
 
 type OccupancyRow = { since: string; until: string | null; mine: boolean; name?: string; holder?: string };
+
+/** Console accepts Codex's assigned/can_use fields when present; older singular occupancy stays readable. */
+type EnvironmentRow = {
+  name: string;
+  assigned?: boolean;
+  can_use?: boolean;
+  canUse?: boolean;
+  occupancy: MemberCapabilities['environments'][number]['occupancy'] | OccupancyRow[] | null;
+  missing?: readonly string[];
+};
 
 function occupancyUntil(until: string | null): Html {
   return until ? when(until) : html`不限时长`;
@@ -22,13 +34,34 @@ function occupancyLine(row: OccupancyRow): Html {
 }
 
 /** Accepts the single-row shape and Codex's array of holders; empty local lease is not physical idleness. */
-function occupancyText(occupancy: MemberCapabilities['environments'][number]['occupancy'] | OccupancyRow[] | null): Html {
+function occupancyText(occupancy: EnvironmentRow['occupancy']): Html {
   if (occupancy === null) return html`未知（空租约不代表物理空闲）`;
   if (Array.isArray(occupancy)) {
     if (occupancy.length === 0) return html`本地无租约（不代表物理空闲）`;
     return html`${occupancy.map((row, index) => html`${index > 0 ? html`<br>` : ''}${occupancyLine(row)}`)}`;
   }
   return occupancyLine(occupancy);
+}
+
+export function environmentIsOccupied(occupancy: EnvironmentRow['occupancy']): boolean {
+  if (occupancy === null) return false;
+  if (Array.isArray(occupancy)) return occupancy.length > 0;
+  return true;
+}
+
+/** True when the projection confirms the caller may no longer use this environment. */
+export function environmentLacksAssignment(item: EnvironmentRow): boolean {
+  if (item.assigned === false) return true;
+  if (item.can_use === false || item.canUse === false) return true;
+  return (item.missing ?? []).some((line) => line.includes(NO_ASSIGNMENT_LABEL) || line.includes('占着但已无分配'));
+}
+
+function occupancyCell(item: EnvironmentRow): Html {
+  const text = occupancyText(item.occupancy);
+  if (environmentIsOccupied(item.occupancy) && environmentLacksAssignment(item)) {
+    return html`${text} ${chip(NO_ASSIGNMENT_LABEL, 'unchecked')}`;
+  }
+  return text;
 }
 
 /** Three steps for a logged-in member; invitation codes stay an administrator action (Boss 03:45 #1). */
@@ -70,7 +103,7 @@ function environmentSection(view: MemberCapabilities): Html {
     { title: '测试环境' },
     table(
       ['名称', '占用'],
-      view.environments.map((item) => [item.name, occupancyText(item.occupancy)]),
+      view.environments.map((item) => [item.name, occupancyCell(item as EnvironmentRow)]),
       { title: '当前没有已核对可占用的测试环境', text: '这只反映已核对的分配与本地租约，不证明物理空闲或无权。' },
     ),
   );
