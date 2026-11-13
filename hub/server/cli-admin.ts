@@ -54,9 +54,9 @@ async function secretCommand(session: Session, args: readonly string[]): Promise
  */
 const principalOf = (user: Pick<User, 'id' | 'name' | 'role'>): Principal => ({ id: user.id, name: user.name, role: user.role });
 
-async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pick<User, 'id' | 'name' | 'role'>, token: IssuedToken, done: string): Promise<void> {
+async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pick<User, 'id' | 'name' | 'role'>, token: IssuedToken, done: string, replace = false): Promise<void> {
   try {
-    await store.write(token.token);
+    await store.write(token.token, { replace });
   } catch (error) {
     let revoked: boolean;
     let why = '';
@@ -91,11 +91,10 @@ export async function initAdminCommand(session: Session, args: readonly string[]
     );
   }
   const store = await session.tokens();
-  if (await store.present()) {
-    throw new CliError(`${store.where}里已经有操作令牌`, `它属于另一个 Hub 时先${REMOVE_ITEM}，再运行 init-admin`);
-  }
+  const replacing = await store.present();
   const { user, token } = await decided(() => kit.principals.bootstrapAdmin(name, {password,mustChange:supplied === ''}));
-  await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`);
+  await storeUnseen(kit, store, user, token, `已建立第一位管理员 ${user.name}（${user.id}）`, true);
+  if (replacing) session.out('已原子替换上一个库留下的操作令牌文件');
   session.out(`已建立第一位管理员 ${user.name}（${user.id}）；它的令牌 ${token.id} 已存进${store.where}，没有显示`);
   if (supplied === '') { session.out('初始密码（仅显示一次，首次登录必须修改）：'); session.out(password); }
   session.out('之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个操作令牌文件读管理员令牌，不用另外给出令牌');
