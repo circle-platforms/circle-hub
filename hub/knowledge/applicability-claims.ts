@@ -53,7 +53,7 @@ export async function admitApplicability(context:KnowledgeContext,reading:TreeRe
   const allowed=snapshot.closed_sets[claim.field];if(!allowed)return missing('该字段没有冻结的部署闭集');
   if(names.some(name=>typeof name!=='string'||!name.trim().length||!allowed.includes(name)))return invalid('条件值不等于部署闭集的精确成员');
   if(claim.field==='components'&&checked.data.components?.with?.some(name=>checked.data.components?.without?.includes(name)))return invalid('部件 with/without 同时声明同一成员');
-  const variable=policy.closed_sets[claim.field];declarations.push(...(composition.body.variables??[]).filter(use=>use.name===variable).map(use=>use.decision));
+  const variable=policy.closed_sets[claim.field];declarations.push(...(composition.body.variables??[]).flatMap(use=>use.kind==='var'&&use.name===variable?[use.decision]:[]));
  }
  const evidence=claim.evidence,id=evidence.identity;
  if(input.source.quote!==evidence.text||!source.sources.includes(id.source_sha256))return invalid('引文文字或原件摘要与已核来源不一致');

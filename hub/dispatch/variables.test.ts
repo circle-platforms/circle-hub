@@ -41,7 +41,7 @@ test('a value changing between binding and intent causes zero submissions',async
 });
 
 test('resume keeps the resolved definition after drift and a withdrawn credential yields an explicit recoverable gap',async t=>{
- const {DispatchService}=await import('./api.ts');const {executorConsumer}=await import('./executors.ts');const {secretNameOf}=await import('../../contracts/src/variables.ts');
+ const {DispatchService}=await import('./api.ts');const {secretNameOf}=await import('../../contracts/src/variables.ts');
  const c=await setup({mode:'transient-status'});t.after(()=>c.close());
  await c.kit.variables.setVariable(c.admin,'DEMO_TARGET',c.executor.definition.target,'DEMO_REASON');
  const registered=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,target:'${var:DEMO_TARGET}'});
@@ -49,39 +49,37 @@ test('resume keeps the resolved definition after drift and a withdrawn credentia
  const first=await interrupted.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.submitted.length,1);
  const binding=await c.service.journal.binding(first.job);assert.equal(binding.executor_source_digest,registered.digest);assert.equal(binding.executor_digest,registered.resolved_digest);assert.equal(binding.variables?.[0].name,'DEMO_TARGET');
  await c.kit.variables.setVariable(c.admin,'DEMO_TARGET','DEMO_CHANGED_TARGET','DEMO_DRIFT');
- const name=secretNameOf(registered.definition.credential!)!;await c.kit.variables.unset(c.admin,'secret',name,'DEMO_REVOKE');
+ const name=secretNameOf(registered.definition.credential!)!;await c.kit.variables.unsetSecret(c.admin,name,'DEMO_REVOKE');
  const restarted=new DispatchService({...c.service.options});const before=c.calls.length;
  const missing=await restarted.resume(c.admin,first.job);assert.equal(c.calls.length,before);assert.match(missing.next_action??'',/secret set --name/);assert.match(missing.next_action??'',/job resume/);
- await c.kit.variables.setSecrets(c.admin,[{name,value:'synthetic-secret',consumers:[executorConsumer(registered.definition)]}],'DEMO_RESTORE');
+ await c.kit.variables.setSecrets(c.admin,[{name,value:'synthetic-secret'}],'DEMO_RESTORE');
  const result=await restarted.resume(c.admin,first.job);assert.equal(result.outcome,'effective');assert.equal(c.submitted.length,1);
  const events=await restarted.journal.events(first.job);assert.equal(events.filter(e=>e.body.detail.phase==='configuration_drift').length,1);
 });
 
-test('two executors share one enrolled name, rotate without restart, and refuse a changed destination before access',async t=>{
- const {executorConsumer}=await import('./executors.ts');const {secretNameOf}=await import('../../contracts/src/variables.ts');
+test('two executors share one vault name and rotate without re-enrolling a configured destination',async t=>{
+ const {secretNameOf}=await import('../../contracts/src/variables.ts');
  const c=await setup();t.after(()=>c.close());
  const first=c.executor;const second=await c.registry.add(c.admin,{...first.source,id:undefined});const name=secretNameOf(first.definition.credential!)!;
- const set=(value:string)=>c.kit.variables.setSecrets(c.admin,[{name,value,consumers:[first,second].map(e=>executorConsumer(e.definition))}],'DEMO_ROTATION');
+ const set=(value:string)=>c.kit.variables.setSecrets(c.admin,[{name,value}],'DEMO_ROTATION');
  await set('DEMO!Executor42');
  await c.service.precheck(c.admin,first.id);await c.service.precheck(c.admin,second.id);
  let init=c.endpoint.calls.filter(call=>call.method==='initialize');assert.equal(init.length,2);assert.ok(init.every(call=>call.headers.authorization==='Bearer DEMO!Executor42'));
  await set('DEMO!Executor43');await c.service.precheck(c.admin,first.id);await c.service.precheck(c.admin,second.id);
  init=c.endpoint.calls.filter(call=>call.method==='initialize');assert.ok(init.slice(-2).every(call=>call.headers.authorization==='Bearer DEMO!Executor43'));
  await c.registry.update(c.admin,second.id,{...second.source,endpoint:c.endpoint.endpoint+'/changed'});
- const count=c.endpoint.calls.length;const refused=await c.service.precheck(c.admin,second.id);assert.equal(c.endpoint.calls.length,count);assert.equal(refused.outcome,'not_dispatched');assert.match(refused.next_action??'',/secret set --name/);
+ const count=c.endpoint.calls.length;await c.service.precheck(c.admin,second.id);assert.ok(c.endpoint.calls.length>count);assert.ok(c.endpoint.calls.slice(count).every(call=>call.headers.authorization==='Bearer DEMO!Executor43'));
 });
 
-test('executor legacy migration is atomic and cannot change endpoint or CA in the same operation',async t=>{
+test('executor material migration uses the current administrator-approved endpoint',async t=>{
  const {canonicalBytes}=await import('../records/api.ts');
  const c=await setup();t.after(()=>c.close());const old={...c.executor.definition};delete old.credential;
  const stored=await c.kit.objects.put(canonicalBytes(old),'application/json');await c.kit.authorizations.configureResource(c.admin,'executor.'+c.executor.id,stored.sha256);
  await c.kit.vault.put('executor.'+c.executor.id+'.bearer','DEMO!Legacy42');
  const source={...old,credential:'${secret:DEMO_MIGRATION}'};
- await assert.rejects(c.registry.update(c.admin,c.executor.id,{...source,endpoint:c.endpoint.endpoint+'/changed'}),/分开做/);
- assert.equal(await c.kit.vault.has('executor.'+c.executor.id+'.bearer'),true);
- const migrated=await c.registry.update(c.admin,c.executor.id,source);assert.equal(await c.kit.vault.has('executor.'+c.executor.id+'.bearer'),false);
+ const migrated=await c.registry.update(c.admin,c.executor.id,{...source,endpoint:c.endpoint.endpoint+'/changed'});assert.equal(migrated.definition.endpoint,c.endpoint.endpoint+'/changed');assert.equal(await c.kit.vault.has('executor.'+c.executor.id+'.bearer'),false);
  assert.equal((await c.registry.material(migrated.id,migrated.definition)).value,'DEMO!Legacy42');
- const version=(await c.kit.variables.list(c.admin)).find(v=>v.name==='DEMO_MIGRATION');assert.equal(version?.version,1);
+ const version=(await c.kit.variables.listSecrets(c.admin)).find(v=>v.name==='DEMO_MIGRATION');assert.equal(version?.version,1);
 });
 
 test('compatible read repairs and certification use original variable decisions after current values drift',async t=>{
@@ -98,9 +96,9 @@ test('compatible read repairs and certification use original variable decisions 
 });
 
 test('foreign credential echoes share the connector redactor and raw hashes stay outside run-scoped actions',async t=>{
- const {executorConsumer}=await import('./executors.ts');const secret='DEMO!OtherCredential42';
+ const secret='DEMO!OtherCredential42';
  const c=await setup({alter:(name,value)=>name==='inspect_slot'?{...value,diagnostic:secret}:value});t.after(()=>c.close());
- await c.kit.variables.setSecrets(c.admin,[{name:'DEMO_OTHER_AUTH',value:secret,consumers:[executorConsumer(c.executor.definition)]}],'DEMO_OTHER_ENROLLMENT');
+ await c.kit.variables.setSecrets(c.admin,[{name:'DEMO_OTHER_AUTH',value:secret}],'DEMO_OTHER_ENROLLMENT');
  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.submitted.length,1);
  const actions=(await c.service.journal.events(result.job));
  const redacted=actions.filter(e=>e.body.detail.redacted===true&&e.body.run!==null);assert.ok(redacted.length);
@@ -130,16 +128,16 @@ for(const change of ['variable','definition'])test(`a late ${change} change imme
 });
 
 test('resume keeps the pinned credential name while permitting a new version of that same name',async t=>{
- const {DispatchService}=await import('./api.ts');const {executorConsumer}=await import('./executors.ts');const {secretNameOf}=await import('../../contracts/src/variables.ts');
+ const {DispatchService}=await import('./api.ts');const {secretNameOf}=await import('../../contracts/src/variables.ts');
  const c=await setup();t.after(()=>c.close());
  const interrupted=new DispatchService({...c.service.options,sleep:async()=>{throw new Error('DEMO_INTERRUPTED');}});
  const issued=await interrupted.dispatch(c.admin,c.run,c.executor.id);assert.equal(issued.outcome,'issued');assert.equal(c.submitted.length,1);
  const pinnedName=secretNameOf(c.executor.definition.credential!)!;
  const updated=await c.registry.update(c.admin,c.executor.id,{...c.executor.source,credential:'${secret:DEMO_OTHER_AUTH}'});
- await c.kit.variables.setSecrets(c.admin,[{name:'DEMO_OTHER_AUTH',value:'Demo!DifferentAuth42',consumers:[executorConsumer(updated.definition)]}],'DEMO_OTHER');
+ await c.kit.variables.setSecrets(c.admin,[{name:'DEMO_OTHER_AUTH',value:'Demo!DifferentAuth42'}],'DEMO_OTHER');
  const before=c.endpoint.calls.length;
  const resumed=await c.service.resume(c.admin,issued.job);assert.equal(resumed.outcome,'effective');
  assert.ok(c.endpoint.calls.slice(before).every(call=>call.headers.authorization==='Bearer synthetic-secret'),'a source edit cannot change the name used by the issued job');
- await c.kit.variables.setSecrets(c.admin,[{name:pinnedName,value:'Demo!SameNameNext42',consumers:[executorConsumer(c.executor.definition)]}],'DEMO_ROTATE');
+ await c.kit.variables.setSecrets(c.admin,[{name:pinnedName,value:'Demo!SameNameNext42'}],'DEMO_ROTATE');
  assert.equal((await c.registry.material(c.executor.id,c.executor.definition)).value,'Demo!SameNameNext42');assert.equal(c.submitted.length,1);
 });

@@ -1,11 +1,13 @@
 // Vault (adapted from the earlier private vault): AES-256-GCM sealed entries under <data>/vault. The entry name is bound as
 // associated data, so a renamed or copied entry does not open; replaces are atomic; the key comes only from a KeyProvider and
 // is never created implicitly. A key-check file tells a wrong key apart from an altered entry.
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { KeyProvider, Vault, VaultVerification } from './api.ts';
+import type { KeyProvider, Vault, VaultVerification, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWrite } from './api.ts';
+import { VariableName, SecretRecord, SecretSidecar, SecretMetadataFile } from '../../contracts/src/variables.ts';
+import { isDigestRule } from '../../contracts/generated/vocabulary.ts';
 import { VaultError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -74,6 +76,8 @@ interface Sealed {
   data: string;
 }
 
+const SECRET_QUEUES = new Map<string, Promise<unknown>>();
+
 export class FileVault implements Vault {
   readonly directory: string;
   readonly #provider: KeyProvider | undefined;
@@ -81,6 +85,167 @@ export class FileVault implements Vault {
   constructor(directory: string, provider?: KeyProvider) {
     this.directory = directory;
     this.#provider = provider;
+  }
+
+  #secretEntry(name: string): string {
+    if (!VariableName.safeParse(name).success) throw new VaultError('密钥名字不合规则');
+    return 'secret.' + name.toLowerCase();
+  }
+  #metadataVault(): FileVault { return new FileVault(join(this.directory, 'metadata'), this.#provider); }
+
+  async #metadataFile(name: string): Promise<SecretMetadataFile | null> {
+    const entry = this.#secretEntry(name), metadata = this.#metadataVault();
+    if (!await metadata.has(entry)) {
+      const values = (await this.list()).filter(candidate => candidate.startsWith(entry + '.') && /^[a-f0-9]{24}$/.test(candidate.slice(entry.length + 1)));
+      if (values.length) throw new VaultError('封存缺少认证元数据：版本、当前版本、摘要规则、设置人和设置时间不能从文件时间推断');
+      return null;
+    }
+    try {
+      const text = await metadata.getText(entry);
+      const parsed = SecretMetadataFile.safeParse(text === null ? null : JSON.parse(text));
+      if (!parsed.success || parsed.data.name !== name) throw new Error();
+      return parsed.data;
+    } catch { throw new VaultError('密钥元数据无法认证，或名字、版本、唯一当前标记不合；没有取值'); }
+  }
+
+  async #writeMetadata(input: SecretMetadataFile): Promise<void> {
+    const parsed = SecretMetadataFile.safeParse(input);
+    if (!parsed.success) throw new VaultError('密钥元数据缺少可核对的名字、版本、当前标记或密文身份');
+    await this.#key();
+    for (const row of parsed.data.versions) if (row.sealed_sha256 !== null) {
+      try {
+        const original = await readVerifiedFile(this.#path(row.sealed_entry), MAX_SEALED_BYTES);
+        if (createHash('sha256').update(original.bytes).digest('hex') !== row.sealed_sha256) throw new Error();
+      } catch { throw new VaultError('原封存密文不存在或与提供的身份不符；未写入元数据'); }
+    }
+    try { await this.#metadataVault().put(this.#secretEntry(parsed.data.name), JSON.stringify(parsed.data)); }
+    catch { throw new VaultError('认证元数据写入未完成；请核对主密钥、目录和容量'); }
+  }
+
+  /** Authenticates sourced non-value facts without modifying original value ciphertext or assigning a new setter. */
+  async writeSecretMetadata(input: SecretMetadataFile): Promise<void> {
+    const parsed = SecretMetadataFile.safeParse(input);
+    if (!parsed.success) throw new VaultError('密钥元数据缺少可核对的名字、版本、当前标记或密文身份');
+    await this.#changeSecret(parsed.data.name, () => this.#writeMetadata(parsed.data));
+  }
+
+  async #sidecarValue(row: SecretSidecar): Promise<string | undefined> {
+    if (row.sealed_sha256 === null || row.metadata.revoked) return undefined;
+    let plain: Uint8Array | undefined;
+    try {
+      const original = await readVerifiedFile(this.#path(row.sealed_entry), MAX_SEALED_BYTES);
+      if (createHash('sha256').update(original.bytes).digest('hex') !== row.sealed_sha256) throw new Error();
+      plain = openSealed(row.sealed_entry, original.bytes.toString('utf8'), await this.#key());
+      const value = new TextDecoder('utf-8', { fatal: true }).decode(plain);
+      if ([...value].length !== row.metadata.length) throw new Error();
+      return value;
+    } catch (error) {
+      if (errno(error) === 'ENOENT') throw new VaultError('引用的原封存文件不存在；没有取值');
+      throw new VaultError('原封存密文字节与认证身份不符、主密钥无法解开或长度不合；没有取值');
+    }
+    finally { plain?.fill(0); }
+  }
+
+  async #changeSecret<T>(name: string, change: () => Promise<T>): Promise<T> {
+    const entry = this.#secretEntry(name), identity = this.directory + '/' + entry;
+    const before = SECRET_QUEUES.get(identity) ?? Promise.resolve();
+    const pending = before.catch(() => {}).then(async () => {
+      const locks = this.directory + '.locks';
+      await mkdir(locks, { recursive: true, mode: 0o700 });
+      let lock;
+      try { lock = await open(join(locks, entry), 'wx', 0o600); }
+      catch { throw new VaultError('该名字的密钥正在修改，或上次操作未结束；请管理员核对后重试'); }
+      try { return await change(); }
+      finally { await lock.close(); await unlink(join(locks, entry)); }
+    });
+    SECRET_QUEUES.set(identity, pending);
+    try { return await pending; }
+    finally { if (SECRET_QUEUES.get(identity) === pending) SECRET_QUEUES.delete(identity); }
+  }
+
+  async secretNames(): Promise<string[]> {
+    const names = (await this.list()).flatMap(entry => {
+      const match = /^secret\.([a-z][a-z0-9_]{0,63})\.[a-f0-9]{24}$/.exec(entry);
+      return match ? [match[1].toUpperCase()] : [];
+    });
+    for (const entry of await this.#metadataVault().list()) {
+      const match = /^secret\.([a-z][a-z0-9_]{0,63})$/.exec(entry);
+      if (!match) throw new VaultError('密钥元数据文件名不合唯一格式；没有读取另一种格式');
+      names.push(match[1].toUpperCase());
+    }
+    return [...new Set(names)].sort();
+  }
+
+  async secretMetadata(name: string): Promise<VaultSecretMetadata | null> {
+    return (await this.#metadataFile(name))?.versions.at(-1)?.metadata ?? null;
+  }
+
+  async secretHistory(name: string): Promise<VaultSecretMetadata[]> {
+    return (await this.#metadataFile(name))?.versions.map(row => row.metadata).reverse() ?? [];
+  }
+
+  async readSecret(name: string): Promise<VaultSecretMaterial | null> {
+    const current = (await this.#metadataFile(name))?.versions.at(-1);
+    if (!current || current.metadata.revoked) return null;
+    const value = await this.#sidecarValue(current);
+    if (value === undefined) throw new VaultError('当前版本缺少封存值；没有取值');
+    return { name, version: current.metadata.version, metadata: current.metadata, value };
+  }
+
+  async recentSecrets(): Promise<VaultSecretMaterial[]> {
+    const out: VaultSecretMaterial[] = [];
+    for (const name of await this.secretNames()) {
+      const state = await this.#metadataFile(name);
+      if (state?.versions.at(-1)?.metadata.revoked) continue;
+      for (const row of (state?.versions ?? []).filter(row => row.sealed_sha256 !== null).slice(-2)) {
+        const value = await this.#sidecarValue(row);
+        if (value !== undefined) out.push({ name, version: row.metadata.version, metadata: row.metadata, value });
+      }
+    }
+    return out;
+  }
+
+  async putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata> {
+    const logical = this.#secretEntry(input.name);
+    if (!isDigestRule(input.digest_rule) || typeof input.value !== 'string' || !input.value.isWellFormed() || /[\x00-\x1f\x7f-\x9f]/.test(input.value) || [...input.value].length < 1 || [...input.value].length > 4096) throw new VaultError('密钥值或摘要规则不合规则');
+    return this.#changeSecret(input.name, async () => {
+      const previous = await this.#metadataFile(input.name);
+      const metadata: VaultSecretMetadata = { schema: 'secret@1', name: input.name, entry: logical, version: (previous?.versions.at(-1)?.metadata.version ?? 0) + 1, digest_rule: input.digest_rule, length: [...input.value].length, set_by: input.set_by, set_at: input.set_at, revoked: false };
+      if (!SecretRecord.safeParse(metadata).success || !metadata.set_by || !metadata.set_at) throw new VaultError('设置人的身份或时间不合认证元数据规则');
+      const entry = logical + '.' + randomBytes(12).toString('hex');
+      try { await this.put(entry, input.value); }
+      catch { throw new VaultError('密钥值封存未完成；请核对主密钥、目录和容量'); }
+      const cipher = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
+      const rows = (previous?.versions ?? []).map(row => ({ ...row, current: false }));
+      rows.push({ metadata, sealed_entry: entry, sealed_sha256: createHash('sha256').update(cipher.bytes).digest('hex'), current: true });
+      const retained = rows.filter(row => row.sealed_sha256 !== null && !row.metadata.revoked).slice(-2);
+      const removed = rows.filter(row => row.sealed_sha256 !== null && !retained.includes(row));
+      for (const row of removed) row.sealed_sha256 = null;
+      try { await this.#writeMetadata({ name: input.name, versions: rows }); }
+      catch (error) {
+        try { await this.remove(entry); }
+        catch { throw new VaultError('元数据未发布，新封存值清理未完成；请管理员核对密钥库'); }
+        throw error;
+      }
+      try { for (const row of removed) await this.remove(row.sealed_entry); }
+      catch { throw new VaultError('密钥元数据已更新，历史值清理未完成；请管理员核对密钥库'); }
+      return metadata;
+    });
+  }
+
+  async unsetSecret(name: string, by: string, at: string): Promise<VaultSecretMetadata> {
+    return this.#changeSecret(name, async () => {
+      const state = await this.#metadataFile(name), latest = state?.versions.at(-1);
+      if (!state || !latest) throw new VaultError('密钥名字不存在；没有可撤回的封存值');
+      if (!by || !Number.isFinite(Date.parse(at))) throw new VaultError('撤回操作者或时刻不合规则');
+      const removed = state.versions.filter(row => row.sealed_sha256 !== null).map(row => row.sealed_entry);
+      latest.metadata.revoked = true;
+      for (const row of state.versions) row.sealed_sha256 = null;
+      await this.#writeMetadata(state);
+      try { for (const entry of removed) await this.remove(entry); }
+      catch { throw new VaultError('密钥已撤回，历史值清理未完成；请管理员核对密钥库'); }
+      return latest.metadata;
+    });
   }
 
   async initKey(): Promise<void> {
@@ -178,7 +343,13 @@ export class FileVault implements Vault {
       if (!before.isDirectory() || before.isSymbolicLink()) throw new Error('invalid directory');
       const files = (await readdir(this.directory)).sort();
       const names = files.filter(file => file.endsWith(SUFFIX) && NAME.test(file.slice(0, -SUFFIX.length)));
-      result.failed += files.length - names.length - (files.includes(KEY_CHECK) ? 1 : 0);
+      result.failed += files.length - names.length - (files.includes(KEY_CHECK) ? 1 : 0) - (files.includes('metadata') ? 1 : 0);
+      if (files.includes('metadata')) {
+        const nested = await this.#metadataVault().verify();
+        result.checked += nested.checked;
+        result.failed += nested.failed;
+        result.unknown ||= nested.unknown;
+      }
       if (this.#provider === undefined) return { ...result, unknown: true };
       try { key = Buffer.from(await this.#provider.getKey()); }
       catch { return { ...result, unknown: true }; }
@@ -208,7 +379,7 @@ export class FileVault implements Vault {
         try { if (!sameFingerprint(identity, await fingerprint(join(this.directory, file)))) result.failed++; }
         catch { result.failed++; }
       }
-      result.unknown = result.checked === 0 && result.failed === 0;
+      result.unknown ||= result.checked === 0 && result.failed === 0;
       return result;
     } catch {
       // Filesystem errors can contain a path or an entry name: never return the original error.
