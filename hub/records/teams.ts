@@ -139,7 +139,7 @@ export class PgTeams implements Teams {
     if (!actor || actor.disabled || actor.deleted_at || !isAdmin(account(actor))) throw new AccessError('只有启用的管理员可以管理团队');
     if (userId === undefined) return null;
     const target = rows.find(row => row.id === userId);
-    if (!target || target.deleted_at || enabled && target.disabled) throw new ConflictError('成员不存在或未启用');
+    if (!target || enabled && (target.deleted_at || target.disabled)) throw new ConflictError('成员不存在或未启用');
     return account(target);
   }
   async #locked(id: string, tx: Transaction): Promise<Team> {

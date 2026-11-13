@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { TeamId } from '../../contracts/api.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
@@ -33,11 +34,13 @@ test('team definitions have retained digest-bound bytes and projections never be
   assert.deepEqual((await w.teams.members(w.admin,team.id)).map(row=>row.user.id),[w.alice.id]);
   await w.kit.authorizations.assignTeam(w.admin,team.id,'synthetic-workflow');
   await w.kit.authorizations.assignResource(w.admin,'synthetic-resource',team.id);
+  const preview=await w.kit.memberDeletions!.preview(w.admin,w.alice.id);
+  await w.kit.memberDeletions!.prepare(w.admin,{...preview,operation_id:randomUUID()});
   const deleted=await w.teams.delete(w.admin,team.id);
   for(const [permission,subject,object]of [['assign',w.alice.id,team.id],['assign',team.id,'synthetic-workflow'],['resource_assign',team.id,'synthetic-resource']] as const)assert.equal((await w.kit.authorizations.latest(permission,subject,object))?.body.revoked,true);assert.ok(deleted.deleted_at);
   assert.equal(await w.teams.get(w.admin,team.id),null);
   const recreated=await w.teams.create(w.admin,'合成团队');assert.notEqual(recreated.id,team.id);
-  assert.deepEqual(await w.teams.memberships(w.alice),[]);
+  assert.deepEqual(await w.teams.memberships(w.admin,w.alice.id),[]);
   await assert.rejects(w.kit.authorizations.grant(w.admin,{permission:'assign',subject:'*',object:team.id,bound:decision.body.bound}),ConflictError);
 });
 

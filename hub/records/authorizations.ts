@@ -342,10 +342,10 @@ export class RecordAuthorizations implements Authorizations {
     if (permission === PUBLISH && published === null) throw new TypeError('the object of a publish record is pack-id@x.y.z');
     if (permission === PUBLISH && !revoked && bound === null) throw new TypeError('a publication binds the SHA-256 of the exact pack content (B04 R[1])');
     return this.#store.withTransaction(async (tx) => {
-      const users=[...new Set([by.id,...(UserId.safeParse(subject).success?[subject]:[])])].sort();
+      const users=[...new Set([by.id,...(!revoked&&UserId.safeParse(subject).success?[subject]:[])])].sort();
       const accounts=(await this.#db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE',[users],tx)).rows;
       const target=accounts.find(row=>row.id===subject);
-      if ((permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||!revoked&&target.disabled)) throw new ConflictError('分配对象不存在或未启用');
+      if (!revoked&&(permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||target.disabled)) throw new ConflictError('分配对象不存在或未启用');
       const team=TeamId.safeParse(subject).success?subject:TeamId.safeParse(object).success?object:null;
       if(team!==null){
         await this.#store.lock('teams.id:'+team,tx);
