@@ -51,7 +51,9 @@ test('a fresh records database reads a newly configured resource using only copi
   assert.equal(calls, 1);
   if (!outcome.ok) return;
   const manifest = ReadManifest.parse((await kit.records.store.get(outcome.manifest))!.body);
-  assert.deepEqual(manifest.variables, [{ kind: 'secret', at: resource.id + '#/credentials/token', name, version: 1 }]);
+  const identity = await kit.records.vault.secretIdentity(name);
+  assert.ok(identity);
+  assert.deepEqual(manifest.variables, [{ kind: 'secret', at: resource.id + '#/credentials/token', ...identity }]);
   const configuration = await kit.records.authorizations.resourceConfig(resource.id);
   assert.deepEqual(manifest.inputs, ['rec:' + configuration!.digest]);
   const metadataVault = new Proxy(kit.records.vault, { get(target, key) {
