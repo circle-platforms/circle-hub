@@ -7,9 +7,9 @@ import { ResetFailure } from './operation.ts';
 import { runResetWorker } from './worker.ts';
 
 export function resetUsage(): string {
-  return `用法：circle-hub reset --scope <${[...RESET_DATA_SCOPE, 'all'].join('|')}> [--scope <范围>] [--keep-config] [--definition src:<已授权对象摘要>]\n${RESET_DATA_SCOPE.map(scope => `${scope}：${RESET_SCOPE_LABEL[scope]}`).join('；')}；all：${RESET_ALL_LABEL}\n本机定义文件请使用独立的 circle-hub apply <文件>；reset 不接受任意服务器文件路径。`;
+  return `用法：circle-hub reset --scope <${[...RESET_DATA_SCOPE, 'all'].join('|')}> [--scope <范围>] [--keep-config] [--definition <本机文件或src引用>]\n${RESET_DATA_SCOPE.map(scope => `${scope}：${RESET_SCOPE_LABEL[scope]}`).join('；')}；all：${RESET_ALL_LABEL}\n清除账户的重置不能同时应用定义；请先 reset，再 init-admin，最后 apply 本机定义文件。HTTP 只接受已授权的src引用。`;
 }
-export function parseResetArguments(args: readonly string[]): { worker?: string; request?: ResetRequest; help?: boolean } {
+export function parseResetArguments(args: readonly string[], cwd: string = process.cwd()): { worker?: string; request?: ResetRequest; help?: boolean } {
   try {
     const parsed = parseArgs({ args: [...args], allowPositionals: false, strict: true, options: {
       scope: { type: 'string', multiple: true }, 'keep-config': { type: 'boolean' }, definition: { type: 'string' }, worker: { type: 'string' }, help: { type: 'boolean' },
@@ -21,13 +21,13 @@ export function parseResetArguments(args: readonly string[]): { worker?: string;
     }
     if (value.help) return { help: true };
     if (!value.scope?.length || value.scope.includes('all') && value.scope.length !== 1) throw new Error();
-    return { request: parseResetRequest({ scopes: value.scope.length === 1 && value.scope[0] === 'all' ? 'all' : value.scope, keepConfig: value['keep-config'] === true, ...(value.definition ? { definitionFile: value.definition } : {}) }) };
-  } catch { throw new Error('reset 参数不合格式；范围必须明确，定义只接受已授权的src对象引用'); }
+    return { request: parseResetRequest({ scopes: value.scope.length === 1 && value.scope[0] === 'all' ? 'all' : value.scope, keepConfig: value['keep-config'] === true, ...(value.definition ? { definitionFile: /^src:[0-9a-f]{64}$/.test(value.definition) ? value.definition : process.getBuiltinModule('path').resolve(cwd, value.definition) } : {}) }) };
+  } catch { throw new Error('reset 参数不合格式；范围必须明确，定义应为本机文件路径或已授权的src引用'); }
 }
 
 export async function resetCommand(args: readonly string[], context: PlatformContext, io: PlatformIo, ports: ResetPorts = {}): Promise<number> {
   let parsed: ReturnType<typeof parseResetArguments>;
-  try { parsed = parseResetArguments(args); } catch { io.stderr(resetUsage()); return 2; }
+  try { parsed = parseResetArguments(args, io.cwd); } catch { io.stderr(resetUsage()); return 2; }
   if (parsed.help) { io.stdout(resetUsage()); return 0; }
   if (parsed.worker) return runResetWorker(context, parsed.worker, request => resetData(context, request, ports));
   try {
@@ -38,7 +38,7 @@ export async function resetCommand(args: readonly string[], context: PlatformCon
     for (const notice of report.notices) io.stdout(`${notice.name ? notice.name + '：' : ''}${notice.reason}；下一步：${notice.nextAction}`);
     return 0;
   } catch (error) {
-    if (error instanceof ResetBlocked) for (const problem of error.problems) io.stderr(`${problem.reason}；下一步：${problem.nextAction}`);
+    if (error instanceof ResetBlocked) for (const problem of error.problems) { io.stderr(problem.reason); io.stderr('下一步：'); io.stderr(problem.nextAction); }
     else if (error instanceof ResetFailure) io.stderr(error.message);
     else io.stderr('重建未完成：执行条件未能核对；检查私有备份和恢复状态后重试，未输出原始异常');
     return 1;
