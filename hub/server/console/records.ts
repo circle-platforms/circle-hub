@@ -12,6 +12,8 @@ import { href, html, link, page, pageLayout, table, type Html } from './html.ts'
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { callTable, names } from './pages.ts';
 import { TOOL_LABELS, toolName } from './tasks.ts';
+import { param } from './params.ts';
+import { queryCallLog, resolveCallLogFilters } from './record-reads.ts';
 import { box, card, count, duration, kpi, when } from './ui.ts';
 import { spaceRecords } from './space-records.ts';
 
@@ -43,17 +45,6 @@ async function trials(ctx: PageContext, path: string, user: string | undefined, 
     html`${table(['开始时间', '操作', '成员', uiLabelOf('pack_kind', 'system'), '环境', '登录', '接口结果'], rows, '本页没有尝试读取记录')}${next}`);
 }
 
-const param = (ctx: PageContext, name: string): string | undefined => {
-  const value = ctx.url.searchParams.get(name);
-  return value === null || value === '' ? undefined : value;
-};
-
-function isoOrUndefined(value: string | undefined): string | undefined | null {
-  if (value === undefined) return undefined;
-  const time = Date.parse(value);
-  return Number.isNaN(time) ? null : new Date(time).toISOString();
-}
-
 const STATS_LIMIT = 500;
 const RESULT_FILL: Readonly<Record<CallResult, string>> = { ok: 'fill-pass', error: 'fill-fail', transport_failure: 'fill-incomplete' };
 
@@ -83,7 +74,7 @@ type RecordTab = typeof RECORD_TABS[number];
 const RECORD_TAB_LABEL: Record<RecordTab, string> = { calls: '调用记录', stats: '统计', sharing: '分享记录', trials: `${uiLabelOf('action_kind', 'trial')}记录` };
 const ADMIN_TABS: readonly RecordTab[] = ['trials'];
 
-/** The records page at `path` (/console/records, or /console/admin/calls for administrators only). */
+/** The records page at `path` (/console/records; /console/admin/calls retired with K3). */
 export async function recordsPage(ctx: PageContext, path: '/console/records' | '/console/admin/calls'): Promise<PageResult> {
   if (path === '/console/admin/calls' && !ctx.admin) return neutralPage(ctx);
   const user = ctx.admin ? param(ctx, 'user') : undefined;
@@ -91,19 +82,10 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
   const run = param(ctx, 'run');
   const rawDays=Number(param(ctx,'days')??'14'),days=[7,14,30].includes(rawDays)?rawDays:14;
   const now=(ctx.deps.now?.()??new Date()).getTime();
-  const from = isoOrUndefined(param(ctx, 'from'));
-  const to = isoOrUndefined(param(ctx, 'to'));
-  const beginning=new Date(now);beginning.setDate(beginning.getDate()-(days-1));beginning.setHours(0,0,0,0);
-  const rangeFrom=from??beginning.toISOString(),rangeTo=to??new Date(now+1).toISOString();
-  const cursor = param(ctx, 'cursor');
-  const problems: string[] = [];
-  if (from === null) problems.push('“从”不是时间');
-  if (to === null) problems.push('“到”不是时间');
-  if(Date.parse(rangeFrom)>=Date.parse(rangeTo))problems.push('结束时间须晚于开始时间');
-  let userId: string | undefined;
-  if (user !== undefined) {
-    userId = /^usr_[0-9a-z]{26}$/.test(user) ? user : ((await ctx.deps.records.principals.findByName(user))?.id ?? '');
-  }
+  const ready = await resolveCallLogFilters(ctx, {
+    user, tool, run, from: param(ctx, 'from'), to: param(ctx, 'to'), cursor: param(ctx, 'cursor') ?? null, limit: 100, defaultDays: days, now,
+  });
+  const { from, to, userId, rangeFrom, rangeTo, problems } = ready;
   // Decision 151, step 7: one list a tab. A selected call opens the call list; the filters a tab does not use are not shown on it.
   const selectedDigest=param(ctx,'call');
   const tabsOf = RECORD_TABS.filter((key) => ctx.admin || !ADMIN_TABS.includes(key));
@@ -119,18 +101,7 @@ ${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></labe
   if (problems.length > 0 || from === null || to === null) {
     return { status: 400, body: page(chrome, html`${card(null, html`${filters}<p class="error">${problems.join('；')}</p>`)}`) };
   }
-  const lines =
-    userId === '' || tab !== 'calls'
-      ? { items: [], next: null }
-      : await ctx.deps.records.callLog.query(ctx.principal, {
-          ...(userId === undefined ? {} : { userId }),
-          ...(tool === undefined ? {} : { tool }),
-          ...(run === undefined ? {} : { runId: run }),
-          ...(rangeFrom?{from:rangeFrom}:{}),
-          ...(rangeTo?{to:rangeTo}:{}),
-          limit: 100,
-          cursor: cursor ?? null,
-        });
+  const lines = tab !== 'calls' ? { items: [], next: null } : await queryCallLog(ctx, ready);
   const next = lines.next === null ? html`` : html`<p>${link(path, '下一页', { ...kept, days, cursor: lines.next })}</p>`;
   const selected=selectedDigest?lines.items.find(line=>line.digest===selectedDigest):undefined;
   if(selectedDigest&&!selected)return neutralPage(ctx);

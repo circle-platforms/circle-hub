@@ -87,7 +87,7 @@ async function execute(ctx: PageContext, options: WriteOptions, name: string, fi
   }
   const last = steps[steps.length - 1];
   if (last.code !== 0) {
-    return { status: last.code === 2 ? 400 : 409, body: { code: null, message: last.code === 2 ? '参数不正确，未执行' : '操作未完成', fix: last.stderr[last.stderr.length - 1] ?? '按命令的输来源理后重试', steps } };
+    return { status: last.code === 2 ? 400 : 409, body: { code: null, message: last.code === 2 ? '参数不正确，未执行' : '操作未完成', fix: last.stderr[last.stderr.length - 1] ?? '按命令的输出处理后重试', steps } };
   }
   if (name !== 'member-add') return { status: 200, body: { steps } };
   // The value shown once: the invitation code (or the token), and the Circle entry that goes with it.
@@ -202,7 +202,7 @@ async function publish(ctx: PageContext, options: WriteOptions, id: string): Pro
   if (result.refused !== null) return refusal(result.refused);
   const run = result.run!;
   const steps = [{ command: 'circle-hub pack publish <文件夹> --stage', code: run.code, stdout: run.stdout, stderr: run.stderr }];
-  if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '操作未完成', fix: run.stderr[run.stderr.length - 1] ?? '按命令的输来源理后重新上传', steps } };
+  if (run.code !== 0) return { status: run.code === 2 ? 400 : 409, body: { code: null, message: '操作未完成', fix: run.stderr[run.stderr.length - 1] ?? '按命令的输出处理后重新上传', steps } };
   return { status: 200, body: { steps, pack: result.stage!.pack, version: result.stage!.version } };
 }
 

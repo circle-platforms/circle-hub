@@ -67,7 +67,7 @@ type TaskTab = typeof TASK_TABS[number];
 const TASK_TAB_LABEL: Record<TaskTab, string> = { requirements: '验收要求', items: '条目', requests: '请求', process: '过程', sources: '来源', record: '技术信息' };
 
 /** Tasks per page: each one's result needs its run read, so a page stays small. */
-const TASKS_PER_PAGE = 30;
+export const TASKS_PER_PAGE = 30;
 
 export async function runsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
