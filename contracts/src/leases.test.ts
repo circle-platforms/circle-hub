@@ -219,4 +219,3 @@ test('a force release preserves the user reason verbatim while rejecting whitesp
   const request=value.lease_requests![0]!;
   assert.equal('reason' in request?request.reason:undefined,'  合成原话  ');
 });
-
