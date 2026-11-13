@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
@@ -65,7 +66,7 @@ async function assertUnused(store: RecordStore, tx: Transaction, id: string, gua
 export class ExecutorRegistry {
     readonly records: RecordsKit;
     constructor(records: RecordsKit) { this.records = records; }
-    async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || user.role !== 'admin')
+    async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || !isAdmin(user))
         throw new Error('只有启用中的管理员能操作执行器和作业'); }
     async add(by: Principal, input: unknown): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); return this.configure(by, this.validate({ ...input as object, id: newId('exe') })); }
     async update(by: Principal, id: string, input: unknown): Promise<RegisteredExecutor> {
