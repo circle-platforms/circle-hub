@@ -12,7 +12,7 @@ after(()=>postgres?.stop());
 
 const skill=(version:string):PackDescription=>({
   id:'synthetic-global-skill',version,kind:'skill',title:'合成全局技能',description:'合成安装回读',
-  files:{'SKILL.md':'# 合成技能\n\n仅用于合成安装测试。\n','skill.json':{schema:'skill@1',kind:'skill',parsers:[],producers:[],effects:[]}},
+  files:{'SKILL.md':'# 合成技能\n\n仅用于合成安装测试。\n','skill.json':{schema:'skill@1',parsers:[]}},
 });
 
 test('activation is visible through global product discovery and a fresh registry, and disappears after deactivation',async t=>{
