@@ -22,9 +22,9 @@
   },
   {
     "check": "package-boundaries",
-    "path": "hub/dispatch/service.ts",
+    "path": "hub/dispatch/bed-lifecycle.ts",
     "what": "pack-import: packs/workflow/test-bed/api.ts",
-    "reason": "Core production module imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
+    "reason": "Core dispatch bed-lifecycle imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
     "removeWhen": "C6"
   },
   {
@@ -43,27 +43,6 @@
   },
   {
     "check": "package-boundaries",
-    "path": "hub/knowledge/applicability-claims.ts",
-    "what": "disallowed-dependency: hub/runs/api.ts",
-    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/knowledge/contributions.ts",
-    "what": "disallowed-dependency: hub/runs/api.ts",
-    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/knowledge/feeding.ts",
-    "what": "disallowed-dependency: hub/runs/api.ts",
-    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
     "path": "hub/knowledge/feeding.ts",
     "what": "pack-import: packs/workflow/test-bed/api.ts",
     "reason": "Core production module imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
@@ -72,23 +51,9 @@
   {
     "check": "package-boundaries",
     "path": "hub/knowledge/operation-device.ts",
-    "what": "disallowed-dependency: hub/runs/api.ts",
-    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/knowledge/operation-device.ts",
     "what": "pack-import: packs/workflow/test-bed/api.ts",
     "reason": "Core production module imports pack workflow test-bed directly; queued for C6 pack-reference cleanup",
     "removeWhen": "C6"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/knowledge/variables.ts",
-    "what": "disallowed-dependency: hub/runs/api.ts",
-    "reason": "knowledge is not allowed to depend on runs (imports hub/runs/api.ts); invert via hub/ports.ts in C4",
-    "removeWhen": "C4"
   },
   {
     "check": "package-boundaries",
@@ -351,13 +316,6 @@
   },
   {
     "check": "package-cycles",
-    "path": "hub/knowledge",
-    "what": "knowledge -> runs",
-    "reason": "5 cycle-closing imports into runs (applicability-claims.ts:7, contributions.ts:4, feeding.ts:10, operation-device.ts:5, variables.ts:8) to be inverted via hub/ports.ts",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-cycles",
     "path": "hub/refs",
     "what": "refs -> runs",
     "reason": "1 type-only cycle-closing import in hub/refs/skills.ts:2 to be inverted via hub/ports.ts",
@@ -407,9 +365,9 @@
   },
   {
     "check": "core-names-no-pack",
-    "path": "hub/dispatch/service.ts",
+    "path": "hub/dispatch/bed-lifecycle.ts",
     "what": "import packs/workflow/test-bed/api.ts",
-    "reason": "Core dispatch imports judgeBedSurface from workflow pack test-bed (line 28; tracked in C6)",
+    "reason": "Core dispatch bed-lifecycle imports judgeBedSurface from workflow pack test-bed (line 6; tracked in C6)",
     "removeWhen": "C6"
   },
   {
@@ -1016,20 +974,6 @@
   },
   {
     "check": "no-compat-paths",
-    "path": "hub/knowledge/service.ts",
-    "what": "word:legacy",
-    "reason": "Legacy/compatibility path (legacy on line(s) 318,319,320,321); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/knowledge/spaces.ts",
-    "what": "word:legacy",
-    "reason": "Legacy/compatibility path (#legacy, #legacyNodes, #legacyIndex, #legacyPaths on line(s) 96,98,99,101,105,108,748,762,820,956,1032,1120,1165,1250,1251,1252,1284,1563,1568,1578,1587); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
     "path": "hub/platform/api.ts",
     "what": "symbol:RETIRED_VARIABLES",
     "reason": "Legacy/compatibility path (RETIRED_VARIABLES on line(s) 8); remove in C3",
@@ -1201,27 +1145,6 @@
     "path": "hub/runs/api.ts",
     "what": "symbol:backfillCitations",
     "reason": "Legacy/compatibility path (backfillCitations on line(s) 79); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/runs/engine/evaluate.ts",
-    "what": "symbol:bindingDisclosure",
-    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 1213); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/runs/engine/evaluate.ts",
-    "what": "symbol:bindingRecord",
-    "reason": "Legacy/compatibility path (bindingRecord on line(s) 316); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/runs/engine/evaluate.ts",
-    "what": "symbol:bindingRecords",
-    "reason": "Legacy/compatibility path (bindingRecords on line(s) 316); remove in C3",
     "removeWhen": "C3"
   },
   {
