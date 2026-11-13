@@ -169,7 +169,7 @@ export async function syncProduct(context: KnowledgeContext, builds: Builds, pro
     report.error = '产品包没有声明 sync，无法同步';
     return finish();
   }
-  const resolved=await resolveProductVariables(product,context.records.variables,by,dryRun,{plan:{...DEFAULT_SANDBOX.plan,...context.sandbox.plan},producer:{...DEFAULT_SANDBOX.producer,...context.sandbox.producer}});
+  const resolved=await resolveProductVariables(context.packReads,product,context.records.variables,by,dryRun,{plan:{...DEFAULT_SANDBOX.plan,...context.sandbox.plan},producer:{...DEFAULT_SANDBOX.producer,...context.sandbox.producer}});
   if('problems' in resolved){report.error=resolved.problems.join('；');return finish();}
   product=resolved.product;
   report.variables=resolved.versions;

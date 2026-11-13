@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 // Batched feeding visibility (perf-n-plus-one). A frozen cut, a node page, a run's usages and the views over them must answer
 // exactly what the per-record checks answer: the reference is the same feeding layer over a store without the batched index
 // scan, which takes the record-by-record path. The single-key lookups must not grow with the feeding history.
@@ -138,7 +139,7 @@ test('facet and index views read through the batched cut are byte-identical to t
   const documents = [await document(w, 0, [w.user.id]), await document(w, 1, [w.user.id]), await document(w, 2, [w.user.id])];
   for (let r = 0; r < 3; r++) await readAll(w, w.user, documents);
   const frozen = await w.knowledge.feeding!.freeze(w.user, newId('run'), null);
-  const reference = createKnowledge({ records: w.kit, parsers: w.knowledge.__context.parsers, packs: w.packs, external: w.external, sandbox: { requireOsIsolation: w.knowledge.__context.sandbox.requireOsIsolation }, admin: w.admin, feeding: recordByRecord(w) });
+  const reference = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS, records: w.kit, parsers: w.knowledge.__context.parsers, packs: w.packs, external: w.external, sandbox: { requireOsIsolation: w.knowledge.__context.sandbox.requireOsIsolation }, admin: w.admin, feeding: recordByRecord(w) });
   for (const id of [
     `knowledge:facets:famx:${BUILD}?kind=case&by=line,module,has_expected,negative,test_type_status`,
     `knowledge:facets:famx:${BUILD}?kind=case&by=line,module,tags,resource_empty,tag_valid`,

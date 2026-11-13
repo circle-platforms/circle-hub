@@ -1810,3 +1810,11 @@ Business content is not scanned for credentials. An uninspected source is not re
 mean the content is clean. Credential sharing checks report `unchecked` with an explanation, while quotation, permission,
 structure, integrity, source eligibility and size checks still apply. Actual findings and truncated scan results retain their
 existing handling. Hub-generated diagnostic text continues to use the real credential scanner in `feeding-errors.ts`.
+
+### Run and pack read dependencies
+
+`createKnowledge` requires `runReads: KnowledgeRunReadPort` and `packReads: KnowledgePackReadPort`, both declared in
+`hub/ports.ts`. The server supplies the existing run lookup, visibility check, verified pack directory reader and schema
+compiler; knowledge has no default implementation and no production import from runs. Tests inject the same implementations
+explicitly through `testing/read-ports.ts`. The two workflow test-bed imports remain pending a declared pack capability;
+moving those imports into assembly alone would not remove that dependency.

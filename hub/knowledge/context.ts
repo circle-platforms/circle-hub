@@ -1,5 +1,5 @@
 // What every part of the knowledge service shares: the records it writes, the ports it consumes, the clock and the limits.
-import type { ExternalReaderPort, PacksPort } from '../ports.ts';
+import type { ExternalReaderPort, PacksPort, KnowledgeRunReadPort, KnowledgePackReadPort } from '../ports.ts';
 import type { Artifacts, ObjectStore, Pointers, Principal, Principals, RecordStore, RecordVariables, User } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { SandboxLimits } from '../rules/api.ts';
@@ -123,6 +123,8 @@ export interface KnowledgeContext {
   store: KnowledgeStore;
   parsers: ParserRegistry;
   packs: PacksPort;
+  runReads: KnowledgeRunReadPort;
+  packReads: KnowledgePackReadPort;
   external: ExternalReaderPort;
   placer: Placer;
   calibration: CalibrationStore;

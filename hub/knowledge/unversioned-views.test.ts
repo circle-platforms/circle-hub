@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import { after,before,test } from 'node:test';
@@ -62,13 +63,13 @@ test('scope totals survive detail truncation and callback roots must match produ
  const w=await makeUnversionedWorld(pg,false,{entries:5,statementBytes:1600});t.after(()=>w.close());
  const {createKnowledge}=await import('./api.ts');const {createDefaultRegistry}=await import('../refs/api.ts');
  const options={records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin};
- const impossible=createKnowledge({...options,limits:{maxViewBytes:1400}});
- const small=createKnowledge({...options,limits:{maxViewBytes:65536+2600}});
+ const impossible=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,...options,limits:{maxViewBytes:1400}});
+ const small=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,...options,limits:{maxViewBytes:65536+2600}});
  const at=(await small.rootOfBuild('acme','Synthetic_10_6'))!;
  await assert.rejects(impossible.views.index('acme',{build:at.build.name,root:at.root},'case','document',null),/单条.*超过.*上限/);
  const view=await small.views.index('acme',{build:at.build.name,root:at.root},'case','document',null);
  assert.equal(view.truncated,true);assert.equal(view.unversioned?.totals.documents,5);
  assert.equal(view.totals?.unversioned_entries,5);assert.ok(Object.keys(view.entries).length>0&&Object.keys(view.entries).length<5);assert.ok(view.next);
- const wrong=createKnowledge({records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin,additionalScopeRoots:async()=>[{root:"a".repeat(64),composition:at.composition}]});
+ const wrong=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin,additionalScopeRoots:async()=>[{root:"a".repeat(64),composition:at.composition}]});
  await assert.rejects(wrong.views.index('acme',{build:at.build.name,root:at.root},'case','document',null),/匹配的组成/);
 });

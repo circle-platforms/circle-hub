@@ -303,7 +303,7 @@ export async function knowledgeSeed(knowledge: Knowledge, packs: PacksPort, by: 
   let directoryMains: { cli: unknown; app: unknown } | undefined;
   if (directory === 'several' && manualBinding) report.missing.push(gap('cli-manual', `生产器 ${manualBinding.producer} 有多份列表来源`, PACK_ONE));
   else if (directory && manualProducer) {
-    const resolvedProduct = await resolveProductVariables(product, context.records.variables, by, args.dryRun, { plan: { ...DEFAULT_SANDBOX.plan, ...context.sandbox.plan }, producer: { ...DEFAULT_SANDBOX.producer, ...context.sandbox.producer } });
+    const resolvedProduct = await resolveProductVariables(context.packReads,product, context.records.variables, by, args.dryRun, { plan: { ...DEFAULT_SANDBOX.plan, ...context.sandbox.plan }, producer: { ...DEFAULT_SANDBOX.producer, ...context.sandbox.producer } });
     if ('problems' in resolvedProduct) report.missing.push(gap('cli-manual', resolvedProduct.problems.join('；'), againCommand(shown, args.line)));
     else {
       const params = resolvedProduct.product.product.producers.find((producer) => producer.id === manualProducer.id)?.params;
