@@ -68,6 +68,7 @@ test('multiple teams union with direct assignments in snapshots, batches and pac
     assert.equal(await w.kit.authorizations.canUse(w.alice.id,'shared-workflow'),true);
     await w.teams.remove(w.admin,two.id,w.alice.id);
     assert.equal(await w.kit.authorizations.canUse(w.alice.id,'shared-workflow'),true);
+    assert.deepEqual((await w.kit.authorizations.packsForMany!([w.alice.id])).get(w.alice.id),['direct-workflow','shared-workflow']);
   });
   assert.equal(await w.kit.authorizations.canUse(w.alice.id,'shared-workflow'),false);
   assert.equal(await w.kit.authorizations.isSharedWith(w.alice.id,'synthetic-shared-run'),false);

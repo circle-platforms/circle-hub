@@ -228,8 +228,9 @@ export class RecordAuthorizations implements Authorizations {
     return snapshot.packs();
   }
   async packsForMany(users: readonly string[]): Promise<Map<string,string[]>> {
-    const snapshots=await capturePermissionSnapshots(this.#db,users.filter(id=>UserId.safeParse(id).success),this.#now());
-    return new Map([...new Set(users)].map(id=>[id,snapshots.get(id)?.packs()??[]]));
+    const ids=[...new Set(users)],uncaptured=ids.filter(id=>UserId.safeParse(id).success&&!requestPermissions(id));
+    const snapshots=await capturePermissionSnapshots(this.#db,uncaptured,this.#now());
+    return new Map(ids.map(id=>[id,(requestPermissions(id)??snapshots.get(id))?.packs()??[]]));
   }
   async usersOfMany(packs: readonly string[]): Promise<Map<string,string[]>> {
     const users=(await this.#db.query('SELECT id FROM users WHERE NOT disabled AND deleted_at IS NULL')).rows.map(row=>String(row.id));
