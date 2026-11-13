@@ -14,6 +14,7 @@ import * as tableSchemas from './tables.ts';
 import * as viewSchemas from './views.ts';
 import * as variableSchemas from './variables.ts';
 import * as resetSchemas from './reset.ts';
+import * as deploymentSchemas from './deployment.ts';
 import * as tokenSchemas from './tokens.ts';
 import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
@@ -38,6 +39,7 @@ export * from './records.ts';
 export * from './variables.ts';
 export { RESET_SCOPE, ResetScopeSchema, ResetScopesSchema } from './reset.ts';
 export type { ResetScope, ResetScopes } from './reset.ts';
+export { DeploymentResource, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt } from './deployment.ts';
 export * from './annotations.ts';
 export * from './tools.ts';
 
@@ -84,6 +86,7 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'views.ts': viewSchemas.schemas,
   'variables.ts': variableSchemas.schemas,
   'reset.ts': resetSchemas.schemas,
+  'deployment.ts': deploymentSchemas.schemas,
   'tokens.ts': tokenSchemas.schemas,
   'result-summary.ts': resultSummarySchemas.schemas,
 });
