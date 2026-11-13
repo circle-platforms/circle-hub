@@ -18,6 +18,7 @@ import { variableCommand, namedSecretCommand, VAR_USAGE } from './variables.ts';
 import { maskCommand, MASK_USAGE } from './cli-mask.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
+import { commandParameterHelp } from './command-parameters.ts';
 type BuiltinHandler = (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>;
 type AdminHandler = (session: Session, args: readonly string[]) => Promise<number>;
 interface CommandMetadata { name: string; summary: string; bridge: boolean; step: `run-${string}`; reserved?: string }
@@ -40,7 +41,7 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
 {name:'share',summary:SHARE_USAGE.slice('share '.length),handler: (session,args) => import('./cli-admin.ts').then(module => module.sharingCommand(session,args))},
   {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>import('./cli-admin.ts').then(module=>module.sharingCommand(session,args,true))},
   {name:'records',summary:'verify [--kind <记录类型>] [--vault]（核存储摘要，可选核验密钥库解密，不输出正文）',handler: (session,args) => import('./cli-admin.ts').then(module => module.recordsCommand(session,args))},
-  { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
+  { name: 'executor', summary: EXECUTOR_USAGE, bridge: true, handler: executorCommand },
   { name: 'job', summary: JOB_USAGE, handler: jobCommand },
   { name: 'bed', summary: BED_USAGE, handler: bedCommand },
   { name: 'pack', reserved: '管理工作流', bridge: true, summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
@@ -53,7 +54,7 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'knowledge', reserved: '读取和管理知识树', bridge: true, summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
   { name: 'team', reserved: '管理团队', bridge: true, summary: TEAM_USAGE.slice('team '.length), handler: teamCommand },
   { name: 'trace', summary: TRACE_USAGE.slice('trace '.length), handler: traceCommand },
-  { name: 'doc', summary: DOC_USAGE.slice('doc '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.docCommand(session,args)) },
+  { name: 'doc', summary: commandParameterHelp('doc.put').slice('doc '.length) + ' | list | show <名字>', bridge: true, handler: (session,args) => import('./cli-admin.ts').then(module => module.docCommand(session,args)) },
   { name: 'init-admin', reserved: '初始化管理员', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.initAdminCommand(session,args)) },
   { name: 'operator-token', reserved: '管理操作令牌', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.operatorTokenCommand(session,args)) },
 ];
