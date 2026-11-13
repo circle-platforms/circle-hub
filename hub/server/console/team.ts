@@ -119,7 +119,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   if(ctx.admin)dialogs.push(toggle,publish,...(user.disabled?[]:[spare,invite]));
   const belonging=(teamsByUser.get(user.id)??[]).map(team=>team.name).join('、')||'无';
   const permissions:Array<[string,unknown]>=[['角色',uiLabelOf('permission_role',user.role)],['所属团队',belonging],['具有发布权',canPublish?'是':'否'],...await memberSpaceMetadata(ctx,user)];
-  if(ctx.admin&&spaces){const usage=await spaces.usage(ctx.principal,user.id);confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,user.id,usage)}`;permissions.push(['容量管理',actionLink('#adjust-member-capacity','调整容量…')]);}
+  if(ctx.admin&&spaces){try{const usage=await spaces.usage(ctx.principal,user.id);confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,user.id,usage)}`;permissions.push(['容量管理',actionLink('#adjust-member-capacity','调整容量…')]);}catch{/* usage failure stays unknown; do not block member management */}}
   const assignment=packs.find(pack=>pack.id===workflow);
   if(workflow&&!assignment)return neutralPage(ctx);
   const sources=await packSourcesFor(ctx,user.id);
@@ -139,7 +139,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   if(ctx.admin)confirmations=html`${confirmations}${dialog('reset-member-password','重置成员密码',html`<p>生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改。</p>`,postForm({action:'/console/admin/do/password-reset',csrf:ctx.csrf??'',fields:html`<input type="hidden" name="user" value="${user.id}">`,submit:'重置密码',danger:true}))}`;
   inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${commandLink(publish,'调整发布权…')}${actionLink('#reset-member-password','重置密码…','danger')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${commandLink(toggle,user.disabled?'启用…':'停用…',user.disabled?'ch-btn ch-btn--secondary':'ch-btn ch-btn--danger')}${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}${user.disabled?'':html`${commandLink(spare,'签发客户端访问令牌…')}${commandLink(invite,'签发邀请码…','ch-btn ch-btn--primary')}`}`:''}</footer></div>`;
  }else{
-  const usage=ctx.admin&&spaces?await spaces.usage(ctx.principal,'team'):null;
+  let usage=null;if(ctx.admin&&spaces){try{usage=await spaces.usage(ctx.principal,'team');}catch{usage=null;}}
   if(usage)confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,'team',usage)}`;
   // Decision 151: with nothing selected there is no pane. The member and client counts are the heads of the two lists; the
   // shared capacity, the one fact only the pane had, stands above them with the link that opens its dialog. Label is 公共空间
@@ -182,7 +182,10 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
   let confirmations = html``;
   let capacityLine = html``;
   if (ctx.admin) {
-    const usage = spaces ? await spaces.usage(ctx.principal, 'team') : null;
+    let usage = null;
+    if (spaces) {
+      try { usage = await spaces.usage(ctx.principal, 'team'); } catch { usage = null; }
+    }
     if (usage) {
       confirmations = html`${confirmations}${await spaceCapacityDialog(ctx, 'team', usage)}`;
       capacityLine = html`<p class="ch-meta" data-team-capacity>公共空间容量 ${capacitySummary(usage)} · <a href="#adjust-team-capacity">调整容量…</a></p>`;

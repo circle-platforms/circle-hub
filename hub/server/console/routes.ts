@@ -47,6 +47,13 @@ export const teamDetailPath = (teamId: string): string => `/console/teams/${enc(
 export const settingsPath = (): string => '/console/settings';
 /** Dedicated page when the store shape does not match this binary (K11). */
 export const rebuildPath = (): string => '/console/rebuild';
+/** Maintenance authorize / preview / execute (interfaces-reset.md 17:36–17:39); server owner wires them. */
+export const rebuildAuthorizePath = (): string => '/console/rebuild/authorize';
+export const rebuildPreviewPath = (): string => '/console/rebuild/preview';
+export const rebuildExecutePath = (): string => '/console/rebuild/execute';
+export const rebuildNewActionPath = (): string => '/console/rebuild/new-action';
+/** Reset worker status for a launched operation (same verified session; poll every 2s). */
+export const resetStatusPath = (operationId: string): string => `/console/reset-status/${enc(operationId)}`;
 export const healthPath = (): string => '/console/health';
 
 export const operationsPath = (): string => '/console/operations';
