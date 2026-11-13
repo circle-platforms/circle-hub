@@ -14,14 +14,14 @@ import {wordingProblems} from './testing-wording.ts';
 function upload(browser:ConsoleClient,bytes:Buffer,csrf:string){
  const boundary='synthetic-staging-boundary',body=Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="csrf"\r\n\r\n${csrf}\r\n--${boundary}\r\nContent-Disposition: form-data; name="archive"; filename="synthetic.zip"\r\nContent-Type: application/zip\r\n\r\n`),bytes,Buffer.from(`\r\n--${boundary}--\r\n`)]);
  return new Promise<{status:number;body:string}>((resolve,reject)=>{
-  const req=request({host:'127.0.0.1',port:browser.port,path:'/console/packs/do/stage',method:'POST',headers:{host:'127.0.0.1:'+browser.port,origin:'http://127.0.0.1:'+browser.port,cookie:'circle_hub_session='+browser.sessionCookie,'content-type':'multipart/form-data; boundary='+boundary,'content-length':String(body.length)}},res=>{const chunks:Buffer[]=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>resolve({status:res.statusCode??0,body:Buffer.concat(chunks).toString()}));});
+  const req=request({host:'127.0.0.1',port:browser.port,path:'/console/workflows/do/stage',method:'POST',headers:{host:'127.0.0.1:'+browser.port,origin:'http://127.0.0.1:'+browser.port,cookie:'circle_hub_session='+browser.sessionCookie,'content-type':'multipart/form-data; boundary='+boundary,'content-length':String(body.length)}},res=>{const chunks:Buffer[]=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>resolve({status:res.statusCode??0,body:Buffer.concat(chunks).toString()}));});
   req.on('error',reject);req.setTimeout(10000,()=>req.destroy(new Error('synthetic busy upload did not answer while other checks were held')));req.end(body);
  });
 }
 
 test('a refused personal upload returns a busy page and releases its files before held checks finish',async t=>{
  const hub=await createTestHub({repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false});t.after(()=>hub.close());
- const owner=await hub.createUser('合成繁忙发布成员'),browser=await openConsole(hub,owner.token),page=await browser.get('/console/packs/-/publish'),csrf=/name="csrf" value="([^"]+)"/.exec(page.body)?.[1];assert.equal(page.status,200);assert.ok(csrf);
+ const owner=await hub.createUser('合成繁忙发布成员'),browser=await openConsole(hub,owner.token),page=await browser.get('/console/workflows/-/publish'),csrf=/name="csrf" value="([^"]+)"/.exec(page.body)?.[1];assert.equal(page.status,200);assert.ok(csrf);
  const temp=await temporaryDirectory();t.after(()=>temp.remove());const written=await writePack(join(temp.path,'skill'),{id:'synthetic-bounded-upload',version:'1.0.0',kind:'skill',title:'合成排队技能',description:'合成队列回归',files:{'SKILL.md':'# 合成排队技能\n\n核对合成输入。\n','skill.json':{schema:'skill@1',parsers:[]}}}),entries:Record<string,Uint8Array>={};
  for(const path of ['pack.json',...written.manifest.files.map(file=>file.path)])entries[path]=await readFile(join(written.dir,path));const zip=Buffer.from(zipSync(entries));
  const personal=hub.hub.registry.personal!,check=personal.check.bind(personal),directories:string[]=[];

@@ -1,5 +1,5 @@
 // Published product and system integrations, within the catalog's existing visibility. Missing declaration metadata stays unknown.
-import {packPurpose} from './pack-display.ts';
+import {packPurpose,packPath} from './pack-display.ts';
 import { uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import type { PackListing, ResourceListing } from '../../ports.ts';
 import { code, html, link, liveModule, table, type Html } from './html.ts';
@@ -22,7 +22,7 @@ export async function packSources(ctx: PageContext, kind: Extract<PackKind, 'pro
     const systems = resources.filter(resource => resource.system_pack.split('@')[0] === pack.id);
     const scope = kind === 'product' ? (product === undefined ? '未声明' : product.title)
       : systems.length === 0 ? '尚未接入' : options.bare ? systems.map(resource => resource.name).join('、') : html`${systems.map(resource => html`<div>${resource.name}${technical(code(resource.system_pack),'查看接入包编号')}</div>`)}`;
-    return [link(`/console/packs/${pack.id}`, pack.title), ...(options.bare ? [] : [technical(code(pack.version),'查看版本号')]), chip(state.text, state.tone), scope];
+    return [link(packPath(pack), pack.title), ...(options.bare ? [] : [technical(code(pack.version),'查看版本号')]), chip(state.text, state.tone), scope];
   });
   const id = kind === 'product' ? 'product-sources' : 'system-sources';
   const empty = `当前账户没有可见的${uiLabelOf('pack_kind', kind)}`, last = kind === 'product' ? '产品线' : '对应的业务系统';
