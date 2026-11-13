@@ -6,15 +6,15 @@ import {field as sharedField,technicalCode} from './presentation.ts';
 // publishing a task pack is a check of the upload and then its 发布 step (manage.ts). Connecting a business system may be
 // tried first (尝试连接, trial.ts): a read-only trial that records its outcomes without saving the typed configuration.
 import { publication, publishingKind, packHome, packPurpose } from './pack-display.ts';
-import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT, PERMISSION_ROLE, isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { TRIAL_LOGIN_STOPPED } from '../../connectors/api.ts';
 import { code, href, html, link, liveModule, page, table, type Html } from './html.ts';
-import { actionForm, environmentOptions, jobsSection, roleOptions, stageForms, type Form, type JobStore } from './manage.ts';
+import { actionForm, jobsSection, stageForms, type Form, type JobStore } from './manage.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import type { PackStaging } from './staging.ts';
 import { forgetTrialMessage, trialCard, type ForgetOutcome, type TrialOutcome } from './trial.ts';
 import { card, chip, stepper as steps, when } from './ui.ts';
-import { segments } from './components.ts';
+import { errorLine, segments, selectControl } from './components.ts';
 import { commandFields } from './command-form.ts';
 import { adminDoPath, knowledgeSpacePath, operationsPackPath, operationsPath } from './routes.ts';
 import { RESOURCE_AUDIENCE, RESOURCE_AUDIENCE_OPTIONS, SYSTEM_ADD_AUDIENCE_HINT } from './team-actions.ts';
@@ -30,8 +30,8 @@ const field=(label:string,control:Html,options:{hint?:string;full?:boolean}={}):
 function memberPage(ctx: PageContext): Html {
   const form = actionForm('member-add', ctx.csrf ?? '', html`<div data-fields>
 ${field('用户名', html`<input name="name" required autocomplete="off" maxlength="200">`, { hint: '在控制台、记录与客户端中显示' })}
-${field('角色', html`<select name="role">${roleOptions()}</select>`, { hint: '管理员可管理团队、接入和发布，并查看其有权访问的管理与审计记录。私人内容仍按分享权限控制。' })}
-${field('连接方式', html`<select name="connect"><option value="invitation" selected>邀请码（MCP 标准连接确认）</option><option value="token">访问令牌</option></select>`, { hint: '客户端不支持 MCP 标准连接确认时选访问令牌' })}
+${field('角色', selectControl('role', PERMISSION_ROLE.map((value) => ({ value, label: uiLabelOf('permission_role', value) }))), { hint: '管理员可管理团队、接入和发布，并查看其有权访问的管理与审计记录。私人内容仍按分享权限控制。' })}
+${field('连接方式', selectControl('connect', [{ value: 'invitation', label: '邀请码（MCP 标准连接确认）', selected: true }, { value: 'token', label: '访问令牌' }]), { hint: '客户端不支持 MCP 标准连接确认时选访问令牌' })}
 ${field('令牌标签', html`<input name="label" autocomplete="off" maxlength="200" placeholder="办公电脑上的客户端">`, { hint: '选访问令牌时区分同一成员的多个客户端，可留空' })}
 </div>`, '添加成员', { primary: true });
   return html`${steps(['填写成员', '生成初始密码', '成员确认连接', '等待连接中'], 0)}
@@ -58,14 +58,14 @@ async function systemPage(ctx: PageContext, prefill?: Form, aside?: Html, canFor
   const teamId = prefilled(prefill, 'team');
   const teams = await listedTeams(ctx);
   const secretRows = [1, 2, 3].map((slot) => html`${field(`凭据名称 ${slot}`, html`<input name="secret_name_${slot}" autocomplete="off" placeholder="DEMO_TOKEN" pattern="[A-Z][A-Z0-9_]{0,63}" value="${prefilled(prefill, `secret_name_${slot}`)}">`)}${field(`凭据内容 ${slot}`, html`<input type="password" name="value_${slot}" autocomplete="off">`)}`);
-  const audienceSelect = html`<select name="audience" required>${RESOURCE_AUDIENCE_OPTIONS.map((row) => html`<option value="${row.value}"${row.value === audience ? html` selected` : ''}>${row.label}</option>`)}</select>`;
+  const audienceSelect = selectControl('audience', RESOURCE_AUDIENCE_OPTIONS.map((row) => ({ value: row.value, label: row.label, selected: row.value === audience })), undefined, { required: true });
   const teamSelect = teams.length === 0
-    ? html`<select name="team" disabled><option value="">尚无团队</option></select>`
-    : html`<select name="team">${html`<option value="">选择团队</option>`}${teams.map((row) => html`<option value="${row.id}"${row.id === teamId ? html` selected` : ''}>${row.name}</option>`)}</select>`;
+    ? selectControl('team', [{ value: '', label: '尚无团队' }], undefined, { disabled: true })
+    : selectControl('team', teams.map((row) => ({ value: row.id, label: row.name, selected: row.id === teamId })), { value: '', label: '选择团队' });
   const form = actionForm('system-add', ctx.csrf ?? '', html`<div data-fields>
-${field(uiLabelOf('pack_kind', 'system'), systems.length === 0 ? html`<select name="system_pack" required disabled><option>尚无业务系统接入</option></select>` : html`<select name="system_pack" required>${systems.map((id) => html`<option value="${id}"${id === chosen ? html` selected` : ''}>${id}</option>`)}</select>`, { hint: '业务系统接入声明访问方式与只读接口' })}
+${field(uiLabelOf('pack_kind', 'system'), systems.length === 0 ? selectControl('system_pack', [{ value: '', label: '尚无业务系统接入' }], undefined, { required: true, disabled: true }) : selectControl('system_pack', systems.map((id) => ({ value: id, label: id, selected: id === chosen })), undefined, { required: true }), { hint: '业务系统接入声明访问方式与只读接口' })}
 ${field('名称', html`<input name="name" required maxlength="200" value="${prefilled(prefill, 'name')}">`)}
-${field('环境', html`<select name="environment" required>${environmentOptions(prefilled(prefill, 'environment'))}</select>`)}
+${field('环境', selectControl('environment', ENVIRONMENT.map((value) => ({ value, label: uiLabelOf('environment', value), selected: value === prefilled(prefill, 'environment') })), undefined, { required: true }))}
 ${field('使用对象', audienceSelect, { hint: SYSTEM_ADD_AUDIENCE_HINT })}
 ${field('团队', teamSelect, { hint: '选「某团队」时填写；全体或先不分配可留空' })}
 ${field('允许明文 http 的角色', html`<input name="plaintext" placeholder="逗号分隔，可留空" value="${prefilled(prefill, 'plaintext')}">`)}
@@ -87,7 +87,7 @@ ${aside ?? card({ title: '尝试连接', meta: '可选', hint: '接入前以只�
 /** The system operation's page after a trial: the form as it was (without credential contents) and the trial's result. */
 export async function systemTrialPage(ctx: PageContext, form: Form, outcome: TrialOutcome): Promise<PageResult> {
   if ('status' in outcome && outcome.status === 404) return neutralPage(ctx);
-  const aside = 'report' in outcome ? trialCard(outcome.report) : card({ title: '尝试连接结果' }, html`<p class="error">${outcome.message}</p>`);
+  const aside = 'report' in outcome ? trialCard(outcome.report) : card({ title: '尝试连接结果' }, errorLine(outcome.message));
   const meta = TITLES.system;
   const canForget = 'report' in outcome && outcome.report.auth.reason === TRIAL_LOGIN_STOPPED;
   return { status: 'report' in outcome ? 200 : outcome.status, body: page(ctx.chrome(meta.title, { active: meta.active, hint: meta.hint }), await systemPage(ctx, form, aside, canForget)) };

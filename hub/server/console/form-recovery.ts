@@ -5,6 +5,7 @@ import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {newId,scanForCredentials} from '../../records/api.ts';
 import {html,link,page,type Html} from './html.ts';
+import { errorLine, postForm, selectControl } from './components.ts';
 import {capacityError} from './capacity.ts';
 import {field} from './presentation.ts';
 import type { PageContext, PageResult } from './context.ts';
@@ -43,18 +44,19 @@ export function recoverEditor(ctx:PageContext,action:string,values:Values,error:
  const area=(label:string,name:string,value:string,required=false,hint?:string)=>field(label,html`<textarea name="${name}" rows="${name==='markdown'?14:4}"${required?html` required`:''}${described(name)}>${value}</textarea>`,hint,inline(name));
  const identity=(name:string)=>Sha256.safeParse(values.get(name)).success?values.get(name)!:'';
  const space=memory?values.get('space')==='team'?'team':'personal':values.get('space')==='team'?'team':ctx.principal.id;
- const tokens=html`${hidden('csrf',ctx.csrf??'')}${hidden('space',space)}${hidden('personal_epoch',safe('personal_epoch'))}${hidden('expected_version',identity('expected_version'))}${memory?html`${hidden('document',identity('document'))}${hidden('client_key',newId('evt'))}`:hidden('replaces',identity('replaces'))}`;
+ const tokens=html`${hidden('space',space)}${hidden('personal_epoch',safe('personal_epoch'))}${hidden('expected_version',identity('expected_version'))}${memory?html`${hidden('document',identity('document'))}${hidden('client_key',newId('evt'))}`:hidden('replaces',identity('replaces'))}`;
  let fields:Html;
  if(memory){
   const enabled=values.get('enabled')!=='false';
-  fields=html`${input('标题','title',safe('title'),true)}${input('文件夹','path',safe('path'),true)}${field('状态',html`<select name="enabled"><option value="true"${enabled?html` selected`:''}>${uiLabelOf('memory_status','enabled')}</option><option value="false"${!enabled?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}${area(MARKDOWN_FIELD.label,'markdown',safe('markdown'),true,MARKDOWN_FIELD.hint)}`;
+  fields=html`${input('标题','title',safe('title'),true)}${input('文件夹','path',safe('path'),true)}${field('状态',selectControl('enabled',[{value:'true',label:uiLabelOf('memory_status','enabled'),selected:enabled},{value:'false',label:uiLabelOf('memory_status','disabled'),selected:!enabled}]))}${area(MARKDOWN_FIELD.label,'markdown',safe('markdown'),true,MARKDOWN_FIELD.hint)}`;
  }else{
   const kind=values.get('kind');let count=3;for(let i=0;i<100;i++)if(values.get('ground_'+i)||values.get('quotation_'+i))count=Math.max(count,i+1);
-  fields=html`${input('文件夹路径','path',safe('path'),true)}${field('类型',html`<select name="kind">${ENTRY_KIND.map(value=>html`<option value="${value}"${value===kind?html` selected`:''}>${uiLabelOf('entry_kind',value)}</option>`)}</select>`)}${area('陈述','statement',safe('statement'),true)}${area(DATA_FIELD.label,'data',safe('data'),false,DATA_FIELD.hint)}${area(APPLICABILITY_FIELD.label,'applicability',safe('applicability'),false,APPLICABILITY_FIELD.hint)}${Array.from({length:count},(_,i)=>html`${input('来源引用 '+(i+1),'ground_'+i,safe('ground_'+i)||(i===0?safe('source_pick_0'):''))}${area('逐字引文 '+(i+1),'quotation_'+i,safe('quotation_'+i))}`)}${input('修改原因','reason',safe('reason'),true)}`;
+  fields=html`${input('文件夹路径','path',safe('path'),true)}${field('类型',selectControl('kind',ENTRY_KIND.map(value=>({value,label:uiLabelOf('entry_kind',value),selected:value===kind}))))}${area('陈述','statement',safe('statement'),true)}${area(DATA_FIELD.label,'data',safe('data'),false,DATA_FIELD.hint)}${area(APPLICABILITY_FIELD.label,'applicability',safe('applicability'),false,APPLICABILITY_FIELD.hint)}${Array.from({length:count},(_,i)=>html`${input('来源引用 '+(i+1),'ground_'+i,safe('ground_'+i)||(i===0?safe('source_pick_0'):''))}${area('逐字引文 '+(i+1),'quotation_'+i,safe('quotation_'+i))}`)}${input('修改原因','reason',safe('reason'),true)}`;
  }
  const code=error instanceof KnowledgeError?error.code:null;
  const cleanMessage=(text:string,fallback:string)=>{const scan=scanForCredentials(Buffer.from(text));return scan.inspected&&!scan.truncated&&!scan.findings.length?text:fallback;};
  const message=error instanceof KnowledgeError?cleanMessage(error.message,code?PROTOCOL_CODES[code].when:'条目或表单格式不正确'):invalid.size?`${[...invalid].map(name=>FIELD_NAME[name]??name).join('、')}的格式不正确`:'条目或表单格式不正确',fix=error instanceof KnowledgeError?cleanMessage(error.fix??'',code?PROTOCOL_CODES[code].fix:'请核对输入。'):invalid.size?'请按下面标出的字段旁的说明修改后重新保存。':'请核对必填字段后重新保存。';
  const back=memory?'/console/knowledge?view=memory&scope='+space:'/console/knowledge/space?'+new URLSearchParams({space});
- return {status:400,body:page(ctx.chrome(memory?'记忆未保存':'条目未保存',{active:'knowledge'}),html`<section class="ch-section"><div role="alert" id="editor-error" tabindex="-1"><p class="error">${code?html`${code}：`:''}${message}</p>${capacityError(error)??''}<p>${fix}</p><p>本次保存已被拒绝；请修正输入。原版本条件保留，版本冲突时请先查看当前版本。</p>${omitted.length?html`<p>部分字段未回填：含疑似凭据或无法安全检查，请移除敏感内容后重新填写。</p>`:''}</div><form method="post" action="/console/knowledge/do/${action}" aria-describedby="editor-error">${tokens}<div data-fields>${fields}</div><button class="ch-btn ch-btn--primary" type="submit">${memory?'保存记忆':'保存条目'}</button></form><p>${link(back,'查看当前内容')}</p></section>`)};
+ const form=postForm({action:`/console/knowledge/do/${action}`,csrf:ctx.csrf??'',fields:html`${tokens}<div data-fields>${fields}</div>`,submit:memory?'保存记忆':'保存条目',extra:' aria-describedby="editor-error"'});
+ return {status:400,body:page(ctx.chrome(memory?'记忆未保存':'条目未保存',{active:'knowledge'}),html`<section class="ch-section"><div role="alert" id="editor-error" tabindex="-1">${errorLine(code?html`${code}：${message}`:message)}${capacityError(error)??''}<p>${fix}</p><p>本次保存已被拒绝；请修正输入。原版本条件保留，版本冲突时请先查看当前版本。</p>${omitted.length?html`<p>部分字段未回填：含疑似凭据或无法安全检查，请移除敏感内容后重新填写。</p>`:''}</div>${form}<p>${link(back,'查看当前内容')}</p></section>`)};
 }

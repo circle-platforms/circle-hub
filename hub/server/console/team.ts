@@ -10,7 +10,7 @@ import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
 import {CLIENT_COLUMNS,clientRow,clientInspector,noClients} from './connections.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
-import {emptyBlock} from './components.ts';
+import { count, emptyBlock, postForm, segments, selectControl } from './components.ts';
 import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
 import { registeredActionForm } from './command-form.ts';
 import {actionForm} from './manage.ts';
@@ -60,9 +60,9 @@ function workflowCell(titles: string[], sources: PackSource[] | null, packs: rea
       const title = packs.find((pack) => pack.id === row.pack)?.title ?? '名称暂不可读';
       return row.via === 'user' ? `${title}（直接）` : `${title}（${row.via.team}）`;
     });
-    return labels.length ? tooltip(`${labels.length.toLocaleString('en-US')} 个`, labels.join('、')) : '无';
+    return labels.length ? tooltip(`${count(labels.length)} 个`, labels.join('、')) : '无';
   }
-  return titles.length ? tooltip(`${titles.length.toLocaleString('en-US')} 个`, titles.join('、')) : '无';
+  return titles.length ? tooltip(`${count(titles.length)} 个`, titles.join('、')) : '无';
 }
 
 /** Selection is resolved exclusively from the same authorized member/device projection as the tables. */
@@ -97,7 +97,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   const titles=assigned.map(id=>packs.find(pack=>pack.id===id)?.title??'名称暂不可读'),clients=clientsOf.get(user.id)??0;
   const belonging=(teamsByUser.get(user.id)??[]).map(team=>team.name).join('、')||'无';
   // List cells stay on direct assignments; the selected member's pane uses packSources when present (decision 1).
-  members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),belonging,user.deleted_at?'不适用':workflowCell(titles,null,packs,user.role==='admin'),clients?`${clients.toLocaleString('en-US')} 个`:'无']);
+  members.push([link('/console/team/'+user.id,name),uiLabelOf('permission_role',user.role),chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass'),belonging,user.deleted_at?'不适用':workflowCell(titles,null,packs,user.role==='admin'),clients?`${count(clients)} 个`:'无']);
  }
  const devices:Array<ConnectedClient&{id:string}>=(await connectedClients(ctx.deps.records,connections)).map(client=>({...client,id:client.token.id}));
  for(const device of devices)circles.push(clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device))));
@@ -136,7 +136,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
    if(ctx.admin)dialogs.push(change);
    selectedAssignment=card({title:assignment.title},html`<p>${has?'可使用':'不可使用'}</p>${ctx.admin?commandLink(change,assigned.includes(assignment.id)?'移出使用范围…':'加入使用范围…',assigned.includes(assignment.id)?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary'):''}`);
   }
-  if(ctx.admin)confirmations=html`${confirmations}${dialog('reset-member-password','重置成员密码',html`<p>生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改。</p>`,html`<form method="post" action="/console/admin/do/password-reset"><input type="hidden" name="csrf" value="${ctx.csrf??''}"><input type="hidden" name="user" value="${user.id}"><button type="submit" class="ch-btn ch-btn--danger">重置密码</button></form>`)}`;
+  if(ctx.admin)confirmations=html`${confirmations}${dialog('reset-member-password','重置成员密码',html`<p>生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改。</p>`,postForm({action:'/console/admin/do/password-reset',csrf:ctx.csrf??'',fields:html`<input type="hidden" name="user" value="${user.id}">`,submit:'重置密码',danger:true}))}`;
   inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${commandLink(publish,'调整发布权…')}${actionLink('#reset-member-password','重置密码…','danger')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${commandLink(toggle,user.disabled?'启用…':'停用…',user.disabled?'ch-btn ch-btn--secondary':'ch-btn ch-btn--danger')}${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}${user.disabled?'':html`${commandLink(spare,'签发客户端访问令牌…')}${commandLink(invite,'签发邀请码…','ch-btn ch-btn--primary')}`}`:''}</footer></div>`;
  }else{
   const usage=ctx.admin&&spaces?await spaces.usage(ctx.principal,'team'):null;
@@ -151,12 +151,10 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  const asked=ctx.url.searchParams.get('tab');
  const tab:TeamTab=selectedDevice?'clients':selectedUser?'members':asked==='clients'?'clients':'members';
  const counts:Record<TeamTab,number|undefined>={members:users.length,teams:undefined,clients:devices.length};
- const tabs=liveModule('team-tabs',['member.connected'],html`<nav class="ch-seg" aria-label="成员与团队" data-team-tabs>${TEAM_TABS.map(key=>{
+ const tabs=liveModule('team-tabs',['member.connected'],segments('成员与团队',TEAM_TABS.map(key=>{
   const path=key==='teams'?'/console/team':href('/console/team',key==='members'?{tab:'members'}:{tab:key});
-  const current=key===tab;
-  const count=counts[key];
-  return html`<a href="${path}"${current?html` aria-current="page"`:''}>${TEAM_TAB_LABEL[key]}${count===undefined?'':html` <span class="ch-count">${count.toLocaleString('en-US')}</span>`}</a>`;
- })}</nav>`);
+  return {href:path,label:TEAM_TAB_LABEL[key],count:counts[key],current:key===tab};
+ }),'data-team-tabs'));
  const content=tab==='members'
   ?html`${capacityLine}${liveModule('members',['member.connected'],box(null,table(['名字','角色','状态','所属团队','可用的工作流','客户端'],members,'没有可读的成员',undefined,{selected:users.findIndex(user=>user.id===member),hrefs:users.map(user=>'/console/team/'+user.id)}),{flush:true}))}`
   :liveModule('member-circles',['member.connected'],box(null,table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))}),{flush:devices.length>0}));
@@ -164,7 +162,7 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
 }
 
 function countCell(value: number | undefined): string {
-  return value === undefined ? '—' : value.toLocaleString('en-US');
+  return value === undefined ? '—' : count(value);
 }
 
 /** `/console/team` default tab and `/console/teams`: admin overview; a member only names of teams they belong to. */
@@ -195,7 +193,7 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
       const packs = row.pack_count ?? 0;
       const resources = row.resource_count ?? 0;
       const id = `delete-team-${row.id}`;
-      confirmations = html`${confirmations}${dialog(id, '删除团队', html`<p>删除「${row.name}」会一并撤回它名下的分配：工作流 ${packs.toLocaleString('en-US')} 条，业务系统 ${resources.toLocaleString('en-US')} 条。名称可再用，编号不复用。</p>`, html`<form method="post" action="/console/admin/do/team-delete"><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><input type="hidden" name="team" value="${row.id}"><button type="submit" class="ch-btn ch-btn--danger">删除</button></form>`)}`;
+      confirmations = html`${confirmations}${dialog(id, '删除团队', html`<p>删除「${row.name}」会一并撤回它名下的分配：工作流 ${count(packs)} 条，业务系统 ${count(resources)} 条。名称可再用，编号不复用。</p>`, postForm({ action: '/console/admin/do/team-delete', csrf: ctx.csrf ?? '', fields: html`<input type="hidden" name="team" value="${row.id}">`, submit: '删除', danger: true }))}`;
     }
   }
   const list = rows.length === 0
@@ -207,10 +205,11 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
     ? html`<div class="ch-actions">${rows.map((row) => actionLink(`#delete-team-${row.id}`, `删除 ${row.name}…`, 'danger'))}</div>`
     : html``;
   const visibleTabs = ctx.admin ? TEAM_TABS : (['teams'] as const);
-  const tabs = html`<nav class="ch-seg" aria-label="成员与团队" data-team-tabs>${visibleTabs.map((key) => {
-    const path = key === 'teams' ? '/console/team' : href('/console/team', { tab: key });
-    return html`<a href="${path}"${key === 'teams' ? html` aria-current="page"` : ''}>${TEAM_TAB_LABEL[key]}</a>`;
-  })}</nav>`;
+  const tabs = segments('成员与团队', [...visibleTabs].map((key) => ({
+    href: key === 'teams' ? '/console/team' : href('/console/team', { tab: key }),
+    label: TEAM_TAB_LABEL[key],
+    current: key === 'teams',
+  })), 'data-team-tabs');
   return {
     status: 200,
     body: page(ctx.chrome('团队', {
@@ -267,12 +266,22 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     return [packName(id), when(row.body.decided_at), form];
   });
   const addCandidates = activeUsers.filter((user) => !memberIds.has(user.id));
-  const addMember = card({ title: '加入成员' }, actionForm('team-add', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}">${field('成员', addCandidates.length === 0 ? html`<select name="user" required disabled><option>没有可加入的账户</option></select>` : html`<select name="user" required>${addCandidates.map((user) => html`<option value="${user.id}">${user.name}</option>`)}</select>`)}`, '加入'));
-  const assignResource = card({ title: '分配业务系统' }, actionForm('resource-assign', ctx.csrf ?? '', html`<input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}">${field('业务系统', resources.length === 0 ? html`<select name="resource" required disabled><option>尚无业务系统</option></select>` : html`<select name="resource" required>${resources.map((row) => html`<option value="${row.id}">${row.name}</option>`)}</select>`)}`, '分配'));
+  const addMember = card({ title: '加入成员' }, actionForm('team-add', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}">${field('成员', selectControl(
+    'user',
+    addCandidates.map((user) => ({ value: user.id, label: user.name })),
+    addCandidates.length === 0 ? { value: '', label: '没有可加入的账户' } : undefined,
+    { required: true, disabled: addCandidates.length === 0 },
+  ))}`, '加入'));
+  const assignResource = card({ title: '分配业务系统' }, actionForm('resource-assign', ctx.csrf ?? '', html`<input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}">${field('业务系统', selectControl(
+    'resource',
+    resources.map((row) => ({ value: row.id, label: row.name })),
+    resources.length === 0 ? { value: '', label: '尚无业务系统' } : undefined,
+    { required: true, disabled: resources.length === 0 },
+  ))}`, '分配'));
   const packCount = assignedPacks.size;
   const resourceCount = assignedResources.length;
   const deleteId = 'delete-team-detail';
-  const deleteDialog = dialog(deleteId, '删除团队', html`<p>删除「${team.name}」会一并撤回它名下的分配：工作流 ${packCount.toLocaleString('en-US')} 条，业务系统 ${resourceCount.toLocaleString('en-US')} 条。</p>`, html`<form method="post" action="/console/admin/do/team-delete"><input type="hidden" name="csrf" value="${ctx.csrf ?? ''}"><input type="hidden" name="team" value="${team.id}"><button type="submit" class="ch-btn ch-btn--danger">删除</button></form>`);
+  const deleteDialog = dialog(deleteId, '删除团队', html`<p>删除「${team.name}」会一并撤回它名下的分配：工作流 ${count(packCount)} 条，业务系统 ${count(resourceCount)} 条。</p>`, postForm({ action: '/console/admin/do/team-delete', csrf: ctx.csrf ?? '', fields: html`<input type="hidden" name="team" value="${team.id}">`, submit: '删除', danger: true }));
   return {
     status: 200,
     body: page(ctx.chrome(team.name, {
@@ -280,7 +289,7 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
       hint: '成员继承所在团队的工作流分配；业务系统按团队或全体分配，没有分配不开放。',
       actions: html`${button('/console/team', '返回团队')}${actionLink(`#${deleteId}`, '删除团队…', 'danger')}`,
     }), pageLayout(html`<div class="ch-stack" data-team-detail>
-${card({ title: '概况' }, definitions([['名称', team.name], ['成员', members.length.toLocaleString('en-US')], [uiLabelOf('pack_kind', 'workflow'), packCount.toLocaleString('en-US')], ['业务系统', resourceCount.toLocaleString('en-US')], ['创建时间', when(team.created_at)]]))}
+${card({ title: '概况' }, definitions([['名称', team.name], ['成员', count(members.length)], [uiLabelOf('pack_kind', 'workflow'), count(packCount)], ['业务系统', count(resourceCount)], ['创建时间', when(team.created_at)]]))}
 ${card({ title: '成员' }, table(['名字', '角色', '状态', '加入时间', ''], memberRows, '没有成员'))}
 ${addMember}
 ${card({ title: '工作流分配' }, table([uiLabelOf('pack_kind', 'workflow'), '状态', ''], packRows, '尚无工作流'))}

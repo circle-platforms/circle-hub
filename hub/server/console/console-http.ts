@@ -5,11 +5,13 @@ import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { mediaTypeOf, readBody, setCommonHeaders } from '../http.ts';
 import type { AuthorizationStore } from '../oauth.ts';
+import { errorLine } from './components.ts';
 import { CONTENT_SECURITY_POLICY, secureConsoleResponse, html, page, type Html, type PageChrome } from './html.ts';
 import type { HealthPageSources } from './health.ts';
 import type { LiveEvents } from './live.ts';
 import type { Form, JobStore } from './manage.ts';
 import type { PageContext } from './context.ts';
+import type { RebuildNeeded } from './reset.ts';
 import type { HubFacts } from './settings.ts';
 import type { ConsoleSession, SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
@@ -32,6 +34,11 @@ export interface ConsoleOptions {
   live?: LiveEvents;
   /** The process serving the console, for the Hub's state on the settings and overview pages. */
   hub?: HubFacts;
+  /**
+   * Incompatibility judgment from the platform (K11). When set, overview banners and `/console/rebuild`
+   * explain the next step; other route gating lands with Codex's interfaces-reset.
+   */
+  rebuildNeeded?: RebuildNeeded | null;
   /** What the 运行状况 page reads; without it every reading on that page is unknown. */
   observation?: HealthPageSources;
   /** Open requests of the MCP standard authorization (hub/server/oauth.ts); without it /console/authorize is absent. */
@@ -80,7 +87,7 @@ export async function hasAdmin(deps: ServerDeps): Promise<boolean> {
 }
 
 export function forbidden(response: ServerResponse, message: string): void {
-  sendHtml(response, 403, page(anonymous('拒绝'), html`<p class="error">${message}</p><p><a href="/console/login">重新登录</a></p>`));
+  sendHtml(response, 403, page(anonymous('拒绝'), html`${errorLine(message)}<p><a href="/console/login">重新登录</a></p>`));
 }
 
 /** A console POST must come from this server's own pages: an Origin, when sent, is one of its own origins. */
@@ -126,6 +133,7 @@ export function pageContext(options: ConsoleOptions, request: IncomingMessage, u
     secure,
     origin: mcpOrigin(request, secure),
     ...(options.hub === undefined ? {} : { hub: options.hub }),
+    ...(options.rebuildNeeded === undefined ? {} : { rebuildNeeded: options.rebuildNeeded }),
     chrome: (title, extra = {}) => ({ title, notice, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
     userName: (userId) => {
       if (userId === null || userId === undefined) return Promise.resolve('未记录');

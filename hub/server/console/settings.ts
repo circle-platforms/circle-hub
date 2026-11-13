@@ -1,5 +1,5 @@
 import {tooltip} from './presentation.ts';
-import {stat,facts,technicalCode,technical} from './presentation.ts';
+import {facts,technicalCode,technical} from './presentation.ts';
 // 设置 (the design canvas's Admin board): members and the Circles connected with their tokens, credentials and the Hub's
 // state for administrators; a member sees their own Circles and the Hub's state. The console runs only adding a member
 // (proposal decision 6 of 2026-10-31); disabling, disconnecting, issuing a spare login token and changing a credential are
@@ -17,6 +17,8 @@ import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { registeredActionForm } from './command-form.ts';
+import { count, errorLine, segments } from './components.ts';
+import { resetRebuildSection } from './reset.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
 export type { HubFacts } from './context.ts';
@@ -240,7 +242,7 @@ async function maskingCard(ctx: PageContext, dialogs: CommandDialog[]): Promise<
     dialogs.push(...removals);
     body = table(['规则', '替换成', '模式', '操作'], state.rules.map((rule, index) => [rule.name, maskPlaceholder(rule.label), html`${code(rule.pattern)}${rule.ignore_case ? html` <span class="ch-meta">不区分大小写</span>` : ''}`, commandLink(removals[index], '删除…', 'ch-btn ch-btn--sm ch-btn--ghost')]), { title: '还没有遮盖规则', text: '业务系统的内容原样保存。添加规则后，命中的密码、密钥等片段在保存前被替换。' });
   } catch {
-    body = html`<p class="error">遮盖字典暂不可用</p>`;
+    body = errorLine('遮盖字典暂不可用');
   }
   return html`<section id="masking">${box({ title: '遮盖字典', hint, tail: commandLink(set, '添加规则…', 'ch-btn ch-btn--sm ch-btn--secondary') }, body, { flush: true })}</section>`;
 }
@@ -250,8 +252,11 @@ export async function settingsPage(ctx: PageContext, run: ((argv: string[]) => P
 }
 
 /** The two tabs of the settings page (decision 151, step 8): the first is the reader's own list, the second the Hub's state. */
-function settingsTabs(first: string, hub: boolean, count?: number): Html {
-  return html`<nav class="ch-seg" aria-label="设置内容" data-settings-tabs><a href="/console/settings"${hub ? '' : html` aria-current="page"`}>${first}${count === undefined ? '' : html` <span class="ch-count">${count.toLocaleString('en-US')}</span>`}</a><a href="${href('/console/settings', { tab: 'hub' })}"${hub ? html` aria-current="page"` : ''}>Hub 状态</a></nav>`;
+function settingsTabs(first: string, hub: boolean, total?: number): Html {
+  return segments('设置内容', [
+    { href: '/console/settings', label: first, count: total, current: !hub },
+    { href: href('/console/settings', { tab: 'hub' }), label: 'Hub 状态', current: hub },
+  ], 'data-settings-tabs');
 }
 
 async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<PageResult> {
@@ -276,7 +281,7 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
     // C12: no「使用者」column — consumers registration is gone; use is only from live resource/executor definitions.
     secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
-    secretBody = html`<p class="error">凭据列表暂不可用</p>`;
+    secretBody = errorLine('凭据列表暂不可用');
   } else if (secrets.text.code === 0) {
     secretBody = secrets.text.stdout.length > 0 ? pre(secrets.text.stdout.join('\n')) : html`<p class="empty">尚无凭据：接入业务系统时设置</p>`;
   } else {
@@ -293,7 +298,8 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   );
   const content = hub
     ? html`${await hubState(ctx)}
-${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
+${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}
+${resetRebuildSection(ctx)}`
     : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${setSecret}${masking ?? ''}`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;

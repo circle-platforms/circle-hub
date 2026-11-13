@@ -23,13 +23,7 @@ import {
   operationsKnowledgePath,
   operationsPackPath,
 } from './routes.ts';
-
-const param = (ctx: PageContext, name: string): string | undefined => {
-  const value = ctx.url.searchParams.get(name);
-  return value === null || value === '' ? undefined : value;
-};
-
-const SHA256 = /^[0-9a-f]{64}$/;
+import { SHA256, param } from './params.ts';
 
 export interface ProductLine {
   id: string;

@@ -1,4 +1,4 @@
-import {technicalCode,stat,facts} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 // Search for the console (the interface doc's GET /search?q): matches among the tasks, task packs, knowledge (product
 // lines, their builds and version lines, a tree path in the current roots), records (call-log lines) and, for
 // administrators, members, each with the visibility of its own page. Bounded: the query is at most SEARCH_MAX_QUERY
@@ -13,6 +13,7 @@ import { byId, shownVersion } from './packs.ts';
 import { spaceSearch } from './spaces.ts';
 import type { PageContext, PageResult } from './context.ts';
 import { readableLines } from './pages.ts';
+import { RUN_ID, USER_ID } from './params.ts';
 import { TOOL_LABELS, packTitles, taskTitle } from './tasks.ts';
 import { card, sectionHead, when } from './ui.ts';
 
@@ -23,8 +24,6 @@ const RUN_PAGE = 100;
 const CALLS_SCANNED = 300;
 const MAX_LINES = 20;
 const MAX_ROOTS = 20;
-const RUN_ID = /^run_[0-9a-z]{26}$/;
-const USER_ID = /^usr_[0-9a-z]{26}$/;
 
 export interface TaskHit { run: string; title: string; pack: string; product: string | null; started_at: string; runner: string | null }
 export interface PackHit { space?:string;id: string; title: string; kind: PackKind; kind_label: string }

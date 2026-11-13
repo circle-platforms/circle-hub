@@ -43,6 +43,7 @@ export function box(head:{title:unknown;hint?:string;meta?:unknown;tail?:unknown
 export function tile(figure:Html,path?:string,to?:string):Html{
  return html`<div class="ch-card ch-tile">${figure}${path===undefined?'':html`<a class="ch-tile-link" href="${path}" aria-label="${to??''}"></a>`}</div>`;
 }
+/** Richer figure tile (unit/note/state); presentation.stat is the simple wrapper — both call figure(). */
 export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
  return figure(label,value,{unit:options.unit,note:options.note,hint:options.hint,lead:options.state?dot(options.state):undefined,tip:tooltip});
 }
@@ -58,7 +59,7 @@ export function button(path: string, text: unknown, options: { primary?: boolean
   return html`<a class="ch-btn ${options.primary ? 'ch-btn--primary' : 'ch-btn--secondary'}" href="${href(path, options.params)}"${options.hint === undefined ? '' : html` title="${options.hint}"`}>${options.icon === undefined ? '' : icon(options.icon)}${text}</a>`;
 }
 
-export const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
+const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
 export const kv=facts;
 
 export interface Pill {
@@ -97,15 +98,6 @@ export interface CommandDialog {
 
 export const commandLink=sharedCommandLink;
 export const commandModal=sharedCommandModal;
-
-/**
- * Why a value is absent (issue 241): a bare dash does not say whether nothing was recorded, the field does not apply or
- * there is no data yet. A cell says which; where a more particular fact is known (未报告, 未声明, 无) the cell says that.
- */
-export const NOT_RECORDED = '未记录';
-export const DOES_NOT_APPLY = '不适用';
-export const NO_DATA_YET = '暂无数据';
-export const NONE = '无';
 
 /** Milliseconds as the design writes durations: 毫秒 below a second, 秒 below a minute, then 分 and 小时. */
 export function duration(ms: number): string {

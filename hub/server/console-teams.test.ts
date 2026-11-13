@@ -13,7 +13,7 @@ const MEMBER: Principal = { id: 'usr_synthetic_member', name: '合成成员', ro
 const OTHER: Principal = { id: 'usr_synthetic_other', name: '合成外人', role: 'user' };
 
 const TEAM_A: ConsoleTeamRow = {
-  id: 'tm_01syntheticteama00000000000',
+  id: 'tm_01aryz0123456789abcdefghjk',
   name: '合成甲组',
   created_at: '2026-11-13T00:00:00.000Z',
   created_by: ADMIN.id,
@@ -24,7 +24,7 @@ const TEAM_A: ConsoleTeamRow = {
   changed_at: '2026-11-13T03:00:00.000Z',
 };
 const TEAM_B: ConsoleTeamRow = {
-  id: 'tm_01syntheticteamb00000000000',
+  id: 'tm_01bryyz0123456789abcdefghjm',
   name: '合成乙组',
   created_at: '2026-11-13T01:00:00.000Z',
   created_by: ADMIN.id,

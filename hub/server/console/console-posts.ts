@@ -8,6 +8,7 @@ import { mediaTypeFor } from '../upload.ts';
 import { action } from './console-actions.ts';
 import { ROUTES } from './console-routes.ts';
 import { actionNotice } from './feedback.ts';
+import { errorLine } from './components.ts';
 import { html, link, page } from './html.ts';
 import { performPersonalPackAction } from './personal-packs.ts';
 import { recoverEditor } from './form-recovery.ts';
@@ -77,17 +78,17 @@ export async function handleAuthenticatedConsole(
   } catch (error) {
     if (error instanceof KnowledgeError && error.code) { result = spaceActionFailure(ctx, error); }
     else if (error instanceof LimitError && isKnowledgeAction && (segments[0] === 'workflows' || segments[0] === 'skills')) {
-      result = { status: 429, body: page(ctx.chrome('发布校验未完成', { active: 'packs' }), html`<p class="error">${error.message}</p><p>${link('/console/workflows/-/publish', '返回发布列表')}</p>`) };
+      result = { status: 429, body: page(ctx.chrome('发布校验未完成', { active: 'packs' }), html`${errorLine(error.message)}<p>${link('/console/workflows/-/publish', '返回发布列表')}</p>`) };
     }
-    else if (error instanceof UploadError && isKnowledgeAction) { result = { status: 400, body: page(ctx.chrome('原文上传未完成'), html`<p class="error">${error.message}</p>`) }; }
+    else if (error instanceof UploadError && isKnowledgeAction) { result = { status: 400, body: page(ctx.chrome('原文上传未完成'), html`${errorLine(error.message)}`) }; }
     else if (error instanceof RecordsError && (error.code === null || isKnowledgeAction && error.code === 'CREDENTIAL_IN_UPLOAD') && !(error.name === 'IntegrityError')) {
-      result = { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">${error.message}</p>`) };
+      result = { status: 400, body: page(ctx.chrome('请求有误'), html`${errorLine(error.message)}`) };
     } else if (error instanceof TypeError) {
       options.log(`控制台请求参数不对（${url.pathname}）：${error.message}`);
-      result = { status: 400, body: page(ctx.chrome('请求有误'), html`<p class="error">请求参数不对</p>`) };
+      result = { status: 400, body: page(ctx.chrome('请求有误'), html`${errorLine('请求参数不对')}`) };
     } else {
       options.log(`控制台页面出错（${url.pathname}）：${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
-      result = { status: 500, body: page(ctx.chrome('Hub 内部错误'), html`<p class="error">Hub 内部错误，原因已记入服务日志</p>`) };
+      result = { status: 500, body: page(ctx.chrome('Hub 内部错误'), html`${errorLine('Hub 内部错误，原因已记入服务日志')}`) };
     }
   }
   sendHtml(response, result.status, result.body);

@@ -10,6 +10,7 @@ import { knowledgePage, productPage, productSourcesPage, rootPage, runPage, runs
 import { recordsPage } from './records.ts';
 import { resultPage, resultsPage } from './results.ts';
 import { searchPage } from './search.ts';
+import { needsRebuildPage } from './reset.ts';
 import { settingsPage } from './settings.ts';
 import { sourceArchivePage } from './source-archive.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, shareHistoryPage, batchSharePage } from './spaces.ts';
@@ -38,6 +39,8 @@ export const ROUTES: Record<string, Route> = {
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
+  // K11: incompatible store — dedicated page (judgment on ctx.rebuildNeeded from ConsoleOptions).
+  rebuild: (ctx, rest) => (rest.length === 0 ? Promise.resolve(needsRebuildPage(ctx, ctx.rebuildNeeded ?? null)) : Promise.resolve(neutralPage(ctx))),
   health: (ctx, rest, options) => (rest.length === 0 && ctx.admin ? healthPage(ctx, options.observation, options.log) : Promise.resolve(neutralPage(ctx))),
   // interfaces §5.2: /console/team/<id> splits on prefix — tm_ → team detail, member id → member page.
   team: (ctx, rest) => {
