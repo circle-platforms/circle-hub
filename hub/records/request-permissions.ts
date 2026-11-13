@@ -2,7 +2,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { PackId } from '../../contracts/src/common.ts';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
-import { step } from '../telemetry/usage.ts';
+import { step } from './trace-usage.ts';
 import type { AuthorizationBody, AuthorizationRecord, Principal, User } from './api.ts';
 import { iso, type Database } from './db.ts';
 import { digestOf } from './digest.ts';

@@ -1,7 +1,7 @@
 // PostgreSQL access over pg: one pool, explicit transactions and the opaque Transaction handle other packages pass back in.
 import pg from 'pg';
 import type { DatabaseConfig } from '../config/index.ts';
-import { recordQuery, tracing } from '../telemetry/usage.ts';
+import { recordQuery, tracing } from './trace-usage.ts';
 import type { Transaction } from './api.ts';
 import { RecordsError } from './errors.ts';
 

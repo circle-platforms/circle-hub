@@ -133,8 +133,9 @@ brief says.
 
 Migration 27 adds `trace_spans`, the diagnostic rows of [hub/telemetry](../telemetry/README.md) (B08 R[5]): not records, no
 digest, no append-only trigger; the runtime role has SELECT, INSERT and DELETE, and rows older than 14 days are deleted.
-`Database.query` and `FileObjectStore.get` add their usage to the current step through `hub/telemetry/usage.ts`, the only
-import of that package here; `Database` measures nothing outside a trace. `stagingSlots` keeps the async context of the
+`trace-usage.ts` owns the process trace context and counters, with its closed names in `trace-names.ts`.
+Telemetry imports them through `api.ts`; records never imports telemetry.
+`Database.query` and `FileObjectStore.get` add their usage to the current step through this local context; `Database` measures nothing outside a trace. `stagingSlots` keeps the async context of the
 call that asked, as the sandbox's slot pool does: a later call's pump starts the work.
 
 Migration 28 holds `resource_samples` and `process_events`, which belong to hub/health: diagnostic data, outside the append-only
