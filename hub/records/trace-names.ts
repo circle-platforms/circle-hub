@@ -1,6 +1,6 @@
 // The names of steps and of usage (B08, decision 146). They are an interface: the CLI, the console and later the alerts
 // refer to them, so a name starts with a verb, holds no dynamic value and stays once it is published. This file is the
-// only list; a step or usage name that is not here does not compile. The tool names are the six of contracts/src/tools.ts
+// list for fixed names; commands are installed from their owner's catalog. Tool names come from contracts/src/tools.ts
 // and the commands those of the CLI (a test keeps both complete); a name a client or a URL sent never becomes a step name
 // by itself: the functions below map what arrives to an entry of this list.
 
@@ -32,13 +32,9 @@ export type BackgroundStep = (typeof BACKGROUND_STEPS)[number];
 /** Rounds a timer starts. The others run when something asks (a document job, a staged pack's expiry, a lease in use), so they have no interval to report. */
 export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'summarize-results', 'index-knowledge', 'poll-console', 'purge-traces'] as const satisfies readonly BackgroundStep[];
 
-/** The root step of a CLI command, by the command's name; `run-command` for a name the CLI does not know. */
-const COMMAND_STEPS = [
-  'run-command', 'run-user', 'run-token', 'run-logs', 'run-run', 'run-local-tools', 'run-setup-code',
-  'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-skill', 'run-pack', 'run-resource', 'run-var', 'run-mask', 'run-secret',
-  'run-original', 'run-lease', 'run-knowledge', 'run-doc', 'run-init-admin', 'run-operator-token', 'run-trace',
-  'run-init', 'run-db', 'run-key', 'run-service', 'run-backup', 'run-restore', 'run-deploy', 'run-rollback', 'run-rehearse', 'run-status', 'run-tls',
-] as const;
+/** Command metadata is supplied by the CLI owner; records has no dependency on server. */
+export type CommandStep = `run-${string}`;
+const commandSteps = new Map<string, CommandStep>();
 
 /** What a request or a round does inside: the steps worth a row of their own. */
 const INNER_STEPS = [
@@ -51,8 +47,17 @@ const INNER_STEPS = [
  * Every step name, in one list. `serve-http` is the root of an exchange that is no call: a request outside MCP, the console and
  * sync, or one on /mcp that gets no call-log line (a GET, a notification, a request refused before it was identified).
  */
-export const STEP_NAMES = [...MCP_STEPS, ...CONSOLE_STEPS, ...SYNC_STEPS, ...BACKGROUND_STEPS, ...COMMAND_STEPS, ...INNER_STEPS, 'serve-http'] as const;
-export type StepName = (typeof STEP_NAMES)[number];
+const BASE_STEP_NAMES = [...MCP_STEPS, ...CONSOLE_STEPS, ...SYNC_STEPS, ...BACKGROUND_STEPS, ...INNER_STEPS, 'run-command', 'serve-http'] as const;
+export type StepName = (typeof BASE_STEP_NAMES)[number] | CommandStep;
+const stepNames: StepName[] = [...BASE_STEP_NAMES];
+export const STEP_NAMES: readonly StepName[] = stepNames;
+
+/** Replaces the process command catalog with the complete authoritative registration. */
+export function installCommandSteps(entries: readonly {name: string; step: CommandStep}[]): void {
+  commandSteps.clear();
+  for (const entry of entries) commandSteps.set(entry.name,entry.step);
+  stepNames.splice(0,stepNames.length,...new Set<StepName>([...BASE_STEP_NAMES,...commandSteps.values()]));
+}
 
 /**
  * The usage of a step (decision 146, design section 5). `self.ms` is derived, not measured: the step's duration less the
@@ -92,5 +97,5 @@ export function syncStep(route: string): StepName {
 
 /** The root step of a CLI command. */
 export function commandStep(command: string): StepName {
-  return pick(COMMAND_STEPS, `run-${command}`, 'run-command');
+  return commandSteps.get(command) ?? 'run-command';
 }
