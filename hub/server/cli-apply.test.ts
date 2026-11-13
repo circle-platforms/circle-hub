@@ -602,7 +602,7 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
     HOME: parent, PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', NODE_NO_WARNINGS: '1',
     CIRCLE_HUB_DATA_DIR: layout.root, CIRCLE_HUB_LOG_DIR: layout.logs, CIRCLE_HUB_PORT: String(port),
     CIRCLE_HUB_DATABASE_SOCKET_DIR: database.host, CIRCLE_HUB_DATABASE_PORT: String(database.port),
-    CIRCLE_HUB_DATABASE_NAME: database.database, CIRCLE_HUB_DATABASE_USER: database.user,
+    CIRCLE_HUB_DATABASE_NAME: database.database, CIRCLE_HUB_DATABASE_USER: postgres.application.user,
   };
   const password = 'Synthetic-same-root-password-82!';
   const passwordFile = join(parent, 'synthetic-first-setup.input');
