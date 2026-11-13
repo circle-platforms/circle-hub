@@ -116,7 +116,15 @@ test('each case carries its mind-map path from the root, and the workbook shows 
 
 test('a workbook of several cases needs the plan run accepted result, and its plans are frozen in item order', () => {
   const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
-  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook])), 'case-compile.workbook_context');
+  const noPlanRun = projectItems(startInput(twoCaseModel(), { pipeline: 'legacy' }, [workbook])) as { error?: { code: string; pointer?: string; fix: string } };
+  assert.equal(noPlanRun.error?.code, 'case-compile.workbook_context');
+  assert.equal(noPlanRun.error?.pointer, '/parameters/plan_run');
+  assert.match(noPlanRun.error?.fix ?? '', /parameters\.plan_run/);
+  assert.match(noPlanRun.error?.fix ?? '', /predecessor/);
+  assert.match(noPlanRun.error?.fix ?? '', /inputs\.plan_result/);
+  const noPlanResult = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook])) as { error?: { code: string; pointer?: string; fix: string } };
+  assert.equal(noPlanResult.error?.code, 'case-compile.workbook_context');
+  assert.equal(noPlanResult.error?.pointer, '/inputs/plan_result');
   const ids = (projectItems(startInput(twoCaseModel())) as { items: Array<{ id: string }> }).items.map((item) => item.id);
   // The shapes the Hub records: the plan is the model's judgment claim (the plan slot's text and data, no rule verdict), the
   // catalog receipt the commands_known rule verdict.
@@ -129,7 +137,8 @@ test('a workbook of several cases needs the plan run accepted result, and its pl
   const result = (body: Record<string, unknown>) => ({ slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered }, ...body } } });
   const out = projectItems(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({})])) as { groups: Array<{ plan_set: Array<{ item: string; plan: unknown; fields: { autoid: string } }> }> };
   assert.deepEqual(out.groups[0].plan_set.map((entry) => [entry.item, entry.plan, entry.fields.autoid]), [[ids[0], { plan: 0 }, AUTOID], [ids[1], { plan: 1 }, SECOND]]);
-  assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_other', pipeline: 'legacy' }, [workbook, result({})])), 'case-compile.workbook_context');
+  const wrongRun = projectItems(startInput(twoCaseModel(), { plan_run: 'run_other', pipeline: 'legacy' }, [workbook, result({})])) as { error?: { code: string; pointer?: string } };
+  assert.equal(wrongRun.error?.code, 'case-compile.workbook_context'); assert.equal(wrongRun.error?.pointer, '/inputs/plan_result');
   assert.equal(errorCode(startInput(twoCaseModel(), { plan_run: 'run_plan', pipeline: 'legacy' }, [workbook, result({ partitions: { delivered: delivered.slice(0, 1) } })])), 'case-compile.workbook_context');
   // A plan claim without the plan's data, or a rule verdict standing in for the model's plan, freezes nothing.
   for (const plan of [(_k: number) => planClaim(undefined), (k: number) => planClaim({ plan: k }, { verdict: 'support' })])

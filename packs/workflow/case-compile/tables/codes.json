@@ -252,8 +252,8 @@
     },
     {
       "code": "case-compile.workbook_context",
-      "when": "绑定工作簿时没有合式的已满足计划运行号 plan_run；多于一个用例时缺计划运行的已受理结果 plan_result，或它没有受理每个用例的唯一计划和命令目录回执",
-      "fix": "从已满足的计划提交与结果复制运行号，以其为 predecessor，填写相同 plan_run 并开始绑定原件的新核验运行"
+      "when": "绑定工作簿时没有合式的已满足计划运行号 parameters.plan_run；多于一个用例时缺计划运行的已受理结果 inputs.plan_result，或它没有受理每个用例的唯一计划和命令目录回执",
+      "fix": "从已满足的计划编写运行复制运行号，将其同时填入顶层 predecessor 与 parameters.plan_run（多于一个用例时并在 inputs.plan_result 填 {\"run\": \"<同一运行号>\"}），再绑定 inputs.workbook 开始核验运行"
     },
     {
       "code": "case-compile.too_many_cases",

@@ -32,8 +32,8 @@ export interface PackWarning {
   message: string;
 }
 
-export function refusal(code: string, message: string, fix: string, warnings: PackWarning[] = []): { error: { code: string; message: string; fix: string }; warnings: PackWarning[] } {
-  return { error: { code: `${PACK}.${code}`, message, fix }, warnings };
+export function refusal(code: string, message: string, fix: string, warnings: PackWarning[] = [], pointer?: string): { error: { code: string; message: string; fix: string; pointer?: string }; warnings: PackWarning[] } {
+  return { error: { code: `${PACK}.${code}`, message, fix, ...(pointer !== undefined ? { pointer } : {}) }, warnings };
 }
 
 /** A check outcome, statement always closed by the two markers (the synthetic one only when the contract is synthetic). */
