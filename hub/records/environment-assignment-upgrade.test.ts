@@ -4,6 +4,14 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { createPackRegistry } from '../runs/api.ts';
+import { workflowPack, writePack } from '../runs/packs/testing/builder.ts';
+import { definition as executorDefinition } from '../dispatch/testing/definition.ts';
+import { LeaseService } from '../leases/api.ts';
+import { PgTeams } from './teams.ts';
+import { ExecutorSource } from '../../contracts/src/resources.ts';
+import { canonicalBytes } from './canonical.ts';
+import { environmentAssignmentUpgradeSources } from '../server/environment-assignment-upgrade-sources.ts';
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { Database, createPool } from './db.ts';
@@ -48,7 +56,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
     assert.deepEqual((await db.query('SELECT version FROM schema_migrations ORDER BY version')).rows.map(row => row.version), [1]);
     assert.equal(await auth.latest('resource_assign', user.id, executor), null);
   };
-  return { config, db, store, principals, auth, admin, user, executor, sources, setKeys: (value: string[]) => { keys = value; }, unchanged };
+  return { config, db, store, objects, principals, auth, admin, user, executor, sources, setKeys: (value: string[]) => { keys = value; }, unchanged };
 }
 
 test('partial keys and changed read sets are refused before any M2 DDL, grant or receipt', { timeout: 120000 }, async t => {
@@ -188,4 +196,86 @@ test('unknown migration receipts never enter the known-previous preview path', {
   await f.db.query('INSERT INTO schema_migrations(version,name,sha256) VALUES(3,$1,$2)', ['synthetic_unknown', 'f'.repeat(64)]);
   await assert.rejects(previewEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources), /不认识的迁移/);
   assert.equal((await f.db.query("SELECT to_regclass('public.environment_assignment_cutover') AS name")).rows[0].name, null);
+});
+
+
+async function publishActualWorkflow(f: Awaited<ReturnType<typeof fixture>>) {
+  const db = new Database(createPool(f.config.database, 4));
+  try {
+    const store = new PgRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
+    const objects = new FileObjectStore(join(f.config.dataDir, 'objects'), db, { maxBytes: DEFAULT_LIMITS.maxUploadBytes, now: () => new Date() });
+    const principals = new PgPrincipals(db, () => new Date(), store), auth = new RecordAuthorizations(db, store, () => new Date(), objects);
+    await auth.grantPublishRight(f.admin, f.admin.id);
+    const registry = createPackRegistry({ records: { store, objects, principals, authorizations: auth }, extractDir: join(f.config.dataDir, 'pack-extract'), sandbox: { requireOsIsolation: false } });
+    const description = workflowPack({ id: 'synthetic-upgrade-workflow', product: { catalogs: [] } });
+    description.files['workflow.json'] = { ...description.files['workflow.json'] as Record<string, unknown>, context: ['leases'], leases: { prefix: 'synthetic/' } };
+    const written = await writePack(join(f.config.dataDir, 'source-pack'), description);
+    const published = await registry.publish(f.admin, written.dir);
+    assert.ok(published.ok, JSON.stringify(published));
+    return { id: description.id, info: published.version };
+  } finally { await db.end(); }
+}
+async function registerActualExecutor(f: Awaited<ReturnType<typeof fixture>>, id: string, keys: string[]) {
+  const source = ExecutorSource.parse({ ...executorDefinition('http://127.0.0.1:9/mcp'), id, credential: '${secret:SYNTHETIC_UPGRADE_KEY}', resources: keys });
+  const stored = await f.objects.put(canonicalBytes(source), 'application/json');
+  await f.auth.configureResource(f.admin, 'executor.' + id, stored.sha256, '合成执行器登记');
+  return stored;
+}
+
+test('actual public catalog, team grants and executor source ports produce a real cutover and atomic writer result', { timeout: 180000 }, async t => {
+  const f = await fixture(t), workflow = await publishActualWorkflow(f);
+  await registerActualExecutor(f, f.executor, ['synthetic/device/a', 'synthetic/device/b']);
+  const teamDb = new Database(createPool(f.config.database, 4));
+  try {
+    const store = new PgRecordStore(teamDb, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
+    const objects = new FileObjectStore(join(f.config.dataDir, 'objects'), teamDb, { maxBytes: DEFAULT_LIMITS.maxUploadBytes, now: () => new Date() });
+    const auth = new RecordAuthorizations(teamDb, store, () => new Date(), objects), principals = new PgPrincipals(teamDb, () => new Date(), store);
+    const teams = new PgTeams(teamDb, store, objects, principals, auth, () => new Date());
+    const team = await teams.create(f.admin, '合成升级团队');
+    await teams.add(f.admin, team.id, f.user.id);
+    await auth.assignTeam(f.admin, team.id, workflow.id);
+  } finally { await teamDb.end(); }
+  const sources = environmentAssignmentUpgradeSources(), preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, sources);
+  assert.equal(preview.canApply, true, preview.problems.join(';'));
+  assert.deepEqual(preview.payload?.plan.grants.map(row => [row.user, row.executor]), [[f.user.id, f.executor]]);
+  assert.ok(preview.payload?.plan.grants[0].workflows.includes(workflow.info.digest));
+  const result = await applyEnvironmentAssignmentUpgrade(f.config, f.admin, sources, preview);
+  assert.equal(result.grants, 1);
+  assert.equal((await f.auth.latest('resource_assign', f.user.id, f.executor))?.body.decided_by, f.admin.id);
+});
+
+test('actual legacy workflow entitlement preserves a preexisting unbound lease without changing its bytes or expiry', { timeout: 180000 }, async t => {
+  const f = await fixture(t), workflow = await publishActualWorkflow(f);
+  await f.auth.grant(f.admin, { permission: 'assign', subject: f.user.id, object: workflow.id });
+  await registerActualExecutor(f, f.executor, ['synthetic/device/a', 'synthetic/device/b']);
+  const leases = new LeaseService(f.db, { records: f.store });
+  assert.ok((await leases.acquire({ keys: ['synthetic/device/a', 'synthetic/device/b'], holder: { user: f.user.id, run: newId('run') }, prefix: 'synthetic/' })).ok);
+  const before = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
+  const sources = environmentAssignmentUpgradeSources(), preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, sources);
+  assert.equal(preview.canApply, true, preview.problems.join(';'));
+  assert.deepEqual(preview.payload?.plan.grants[0].holdingRuns, []);
+  assert.ok(preview.payload?.plan.grants[0].workflows.includes(workflow.info.digest));
+  assert.equal((await applyEnvironmentAssignmentUpgrade(f.config, f.admin, sources, preview)).grants, 1);
+  assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, before);
+});
+
+test('actual held keys alone do not grant an overlapping executor and preflight failure leaves baseline intact', { timeout: 120000 }, async t => {
+  const f = await fixture(t);
+  await registerActualExecutor(f, f.executor, ['synthetic/device/a']);
+  await registerActualExecutor(f, newId('exe'), ['synthetic/device/a', 'synthetic/device/b']);
+  const leases = new LeaseService(f.db, { records: f.store });
+  assert.ok((await leases.acquire({ keys: ['synthetic/device/a'], holder: { user: f.user.id, run: newId('run') }, prefix: 'synthetic/' })).ok);
+  const sources = environmentAssignmentUpgradeSources(), preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, sources);
+  assert.equal(preview.canApply, false);
+  assert.deepEqual(preview.payload?.plan.grants, []);
+  assert.ok(preview.problems.some(problem => problem.includes('执行器归属')));
+  await assert.rejects(applyEnvironmentAssignmentUpgrade(f.config, f.admin, sources, preview), /预检/);
+  await f.unchanged();
+});
+
+test('actual collector refuses a missing source object instead of returning an empty executor catalog', { timeout: 120000 }, async t => {
+  const f = await fixture(t);
+  await f.auth.configureResource(f.admin, 'executor.' + f.executor, 'c'.repeat(64), '合成缺失源反例');
+  await assert.rejects(previewEnvironmentAssignmentUpgrade(f.config, f.admin, environmentAssignmentUpgradeSources()), /原件缺失/);
+  await f.unchanged();
 });

@@ -10,6 +10,7 @@ import { PgRecordStore } from './store.ts';
 import { FileObjectStore } from './objects.ts';
 import { RecordAuthorizations } from './authorizations.ts';
 import { isAdmin } from './permissions.ts';
+import { RequestPermissions } from './request-permissions.ts';
 import { AccessError, IntegrityError } from './errors.ts';
 import { MIGRATIONS, migrationChecksum, verifyMigrations, migrateEnvironmentAssignments, lockRecordMigrations } from './migrations.ts';
 import { EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE } from './environment-upgrade-errors.ts';
@@ -19,6 +20,9 @@ const BOUNDARY = 'environment-assignment-cutover';
 type Config = Pick<RecordsConfig, 'database' | 'dataDir' | 'limits'>;
 export interface EnvironmentUpgradeReadContext {
   principal: Principal; members: readonly User[]; boundary: string; at: string; tx: Transaction;
+  authorizations: readonly AuthorizationRecord[];
+  permissions: ReadonlyMap<string, Pick<RequestPermissions, 'packs' | 'teams' | 'latest' | 'enabled'>>;
+  holders: ReadonlyArray<{ key: string; lease: string; fencing: number; user: string; run: string; released: boolean; expires_at: string | null }>;
   store: Pick<RecordStore, 'get' | 'find' | 'list'>; objects: Pick<ObjectStore, 'get'>;
 }
 export interface EnvironmentUpgradeSources {
@@ -91,10 +95,31 @@ function services(db: Database, config: Config) {
   const objects = new FileObjectStore(join(config.dataDir, 'objects'), db, { maxBytes: config.limits.maxUploadBytes, now: () => new Date() });
   return { store, objects, authorizations: new RecordAuthorizations(db, store, () => new Date(), objects) };
 }
+async function sourceFacts(db: Database, store: RecordStore, members: readonly User[], at: string, tx: Transaction) {
+  const authorizations: AuthorizationRecord[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await store.list<AuthorizationRecord['body']>({ kind: 'authorization', limit: 500, newestFirst: false, cursor }, tx);
+    authorizations.push(...page.items); cursor = page.next;
+  } while (cursor !== null);
+  const permissions = new Map(members.map(member => {
+    const snapshot = new RequestPermissions(member.id, member, new Date(at), authorizations);
+    return [member.id, { packs: snapshot.packs.bind(snapshot), teams: snapshot.teams.bind(snapshot), latest: snapshot.latest.bind(snapshot), enabled: snapshot.enabled.bind(snapshot) }] as const;
+  }));
+  const rows = (await db.query('SELECT key,lease_id,token,user_id,run_id,released_at,expires_at FROM public.leases ORDER BY key', [], tx)).rows;
+  const holders = rows.map(row => {
+    const fencing = Number(row.token);
+    if (!Number.isSafeInteger(fencing) || fencing < 1) throw new IntegrityError('租约围栏不能精确表示，拒绝保权快照');
+    return { key: String(row.key), lease: String(row.lease_id), fencing, user: String(row.user_id), run: String(row.run_id), released: row.released_at !== null, expires_at: row.expires_at === null ? null : iso(row.expires_at) };
+  });
+  return { authorizations, permissions, holders };
+}
+
 async function capture(db: Database, config: Config, requested: Principal, sources: EnvironmentUpgradeSources, tx: Transaction, at: string, lock = false): Promise<Payload> {
   const members = await users(db, tx, lock), principal = actor(members, requested);
   const { store, objects } = services(db, config);
-  const found = await sources.collect({ principal, members, boundary: BOUNDARY, at, tx, store: { get: store.get.bind(store), find: store.find.bind(store), list: store.list.bind(store) }, objects: { get: objects.get.bind(objects) } });
+  const facts = await sourceFacts(db, store, members, at, tx);
+  const found = await sources.collect({ principal, members, boundary: BOUNDARY, at, tx, ...facts, store: { get: store.get.bind(store), find: store.find.bind(store), list: store.list.bind(store) }, objects: { get: objects.get.bind(objects) } });
   if (found.snapshot.boundary !== BOUNDARY || found.snapshot.at !== at) throw new IntegrityError('快照来源未采用真实数据库切点');
   const identity = (rows: readonly Pick<User, 'id' | 'disabled' | 'deleted_at' | 'created_at'>[]) => rows.map(({ id, disabled, deleted_at, created_at }) => ({ id, disabled, deleted_at: deleted_at ?? null, created_at })).sort((a, b) => a.id.localeCompare(b.id));
   if (sha256Hex(canonicalBytes(identity(found.snapshot.members))) !== sha256Hex(canonicalBytes(identity(members)))) throw new IntegrityError('快照账户事实与当前数据库不一致');
