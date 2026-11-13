@@ -353,16 +353,19 @@ test('the responsibility administrator cannot lend environment use to an unassig
   assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
 });
 
-test('revoking environment use during precheck is rechecked before the dispatch intent',async t=>{
+test('revoking environment use after precheck is rechecked in the intent transaction',async t=>{
   const c=await setup();t.after(()=>c.close());
-  const canUse=c.environmentAccess.canUse.bind(c.environmentAccess);let checks=0;
-  c.environmentAccess.canUse=async(actor,executor)=>{
-    checks++;
-    if(checks===2)await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
-    return canUse(actor,executor);
+  const permission=c.environmentAccess.permission;let checks=0;
+  c.service.options.environmentAccess={
+    canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
+    permission:async(actor,executor,tx)=>{
+      checks++;
+      await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+      return permission(actor,executor,tx);
+    },
   };
   const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.ok(checks>=2);assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(checks,1);assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
   assert.equal(c.calls.includes('send_blob'),false);
   assert.ok(!(await c.service.journal.events(denied.job)).some(event=>event.body.detail.phase==='intent'),'no intent authorizes the revoked environment use');
 });
@@ -376,4 +379,30 @@ test('an unexpected dispatch exception caught by the scheduler is not evidence o
     assert.match(note.next_action!,/不要重新发送/);assert.doesNotMatch(JSON.stringify(note),/private after-send|circle-hub/);
   }
   assert.equal(invoked,1,'a scheduler catch cannot authorize a blind retry');
+});
+
+test('a missing environment provider is unavailable evidence, never a claim of no assignment',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true,'this actor really has an assignment');
+  c.service.options.environmentAccess=undefined;
+  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(result.outcome,'not_dispatched');
+  assert.equal(c.calls.length,0);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
+  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
+  assert.doesNotMatch(JSON.stringify(note),/没有.*分配|usr_|exe_|circle-hub/);
+});
+
+test('an unreadable environment permission port is unavailable, not a negative permission verdict',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true);
+  c.service.options.environmentAccess={
+    canUse:async()=>{throw new Error('private connection failure');},
+    permission:c.environmentAccess.permission,
+  };
+  const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(c.calls.length,0);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
+  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
+  assert.doesNotMatch(JSON.stringify(note),/private connection|没有.*分配|usr_|exe_|circle-hub/);
 });
