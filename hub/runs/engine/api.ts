@@ -24,3 +24,6 @@ export { createRequestService } from './requests.ts';
 export { isAbandonedResult } from './management.ts';
 
 export { unruledShapes } from './queries.ts';
+
+export {withinCountBudget} from './repetition.ts';
+export {expectationFor} from './terminals.ts';
