@@ -3,12 +3,12 @@
 // sibling would run calls the call log never sees). The bearer token is checked on every request (a revoked token or a
 // disabled account stops at once); the body is bounded per request and over all requests. Every request of an authenticated
 // caller gets one call-log line (B08), refusals at the transport included, after its answer is ready and before it is sent.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, CancelledNotificationSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { SERVER_INSTRUCTIONS } from '../../contracts/src/tools.ts';
 import type { SessionTracker } from '../health/api.ts';
@@ -20,7 +20,7 @@ import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget 
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceContextFrom, traceIdFrom } from './trace.ts';
 import type { ClientDeclaration } from '../../contracts/src/spaces.ts';
-import { callTool, internalError, listTools, type CallState, type ToolCall } from './tools.ts';
+import { callTool, internalError, listTools, supportsReadCancellation, type CallState, type ToolCall } from './tools.ts';
 import { beginObservedCall } from './inflight-calls.ts';
 import { retainReadReply } from './read-replies.ts';
 import { identifyRequest } from './request-entry.ts';
@@ -45,6 +45,8 @@ export interface McpOptions {
   /** Counts open MCP sessions (hub/health); the Hub itself stays stateless. */
   sessions?: SessionTracker;
 }
+
+const readCancellations = new WeakMap<ServerDeps, Map<string, Set<AbortController>>>();
 
 const KEEPALIVE = { headersAfterMs: 20_000, keepaliveMs: 30_000 } as const;
 
@@ -318,6 +320,13 @@ async function answer(
   await traceClient(options, principal, tokenId, session, own?.state);
   if (own !== null) identifyRequest(request, { traceId, name: LOGGED_TOOL.test(own.state.tool) ? own.state.tool : own.state.method === 'tools/call' ? 'tools/call' : 'mcp' });
   let finishObserved:(()=>void)|undefined;
+  let releaseCancellation: (() => void) | undefined;
+  const credential = typeof request.headers.authorization === 'string' ? request.headers.authorization : '';
+  const cancellationKey = (id: string | number) => JSON.stringify([
+    principal.id, tokenId ?? createHash('sha256').update(credential).digest('hex'), session, sessionId, idKey(id),
+  ]);
+  let pending = readCancellations.get(deps);
+  if (!pending) { pending = new Map(); readCancellations.set(deps, pending); }
   const states: CallState[] = own === null ? [] : [own.state];
   const stateFor = (requestId: string | number): CallState => {
     if (own !== null && own.key === idKey(requestId)) return own.state;
@@ -351,15 +360,28 @@ async function answer(
   const onClose = () => { if (!response.writableFinished) disconnected.abort(); };
   response.once('close', onClose);
   if (response.destroyed) onClose();
+  server.setNotificationHandler(CancelledNotificationSchema, notification => {
+    const calls = pending!.get(cancellationKey(notification.params.requestId));
+    // Duplicate live request IDs cannot identify which call the client intends to cancel.
+    if (calls?.size === 1) calls.values().next().value!.abort();
+  });
   server.setRequestHandler(ListToolsRequestSchema, async (_message, extra) => {
     const state = stateFor(extra.requestId);
     return guarded(state, async () => ({ tools: await listTools(deps, principal, noteOn(state)) }));
   });
   server.setRequestHandler(CallToolRequestSchema, async (message, extra) => {
     const state = stateFor(extra.requestId);
+    const cancelled = new AbortController();
+    if (supportsReadCancellation(message.params.name)) {
+      const key = cancellationKey(extra.requestId);
+      let calls = pending!.get(key);
+      if (!calls) { calls = new Set(); pending!.set(key, calls); }
+      calls.add(cancelled);
+      releaseCancellation = () => { calls!.delete(cancelled); if (calls!.size === 0) pending!.delete(key); };
+    }
     const declared = deps.records.callLog.declaredClient;
     const client = declared ? () => declared.call(deps.records.callLog, principal.id, session, tokenId) : undefined;
-    const call: ToolCall = { principal, state, context: { traceId, sessionId, signal: AbortSignal.any([extra.signal, disconnected.signal]), adminNote: noteOn(state), ...(client ? { client } : {}) } };
+    const call: ToolCall = { principal, state, context: { traceId, sessionId, signal: AbortSignal.any([extra.signal, disconnected.signal, cancelled.signal]), adminNote: noteOn(state), ...(client ? { client } : {}) } };
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
     const args = isPlainObject(state.args) ? state.args : message.params.arguments;
@@ -446,6 +468,7 @@ async function answer(
       response.end(text);
     }
   } finally {
+    releaseCancellation?.();
     response.off('close', onClose);
     if (opening !== undefined) clearTimeout(opening);
     if (ticker !== undefined) clearInterval(ticker);
