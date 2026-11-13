@@ -173,3 +173,26 @@ test('a late metadata publication failure restores the exact untrusted metadata 
     assert.ok((await readFile(path)).equals(oldMetadata));
     assert.ok((await readFile(join(f.root, 'vault', original.entry + '.sealed'))).equals(original.bytes));
 });
+
+test('a reason containing authenticated old plaintext is refused before archive or audit and never echoed', async t => {
+    const f = await fixture(t), oldValue = 'Old material [synthetic] 17:45', replacement = secret();
+    const entry = 'secret.my_key.' + randomBytes(12).toString('hex');
+    await f.vault.put(entry, oldValue);
+    const original = await readFile(join(f.root, 'vault', entry + '.sealed'));
+    const admin = { id: f.by, role: 'admin', disabled: false };
+    const objects = new Map<string, Uint8Array>(); const audits: any[] = [];
+    const variables = new RecordVariables({
+        vault: f.vault, now: () => new Date(f.at), database: {}, principals: { get: async () => admin },
+        store: { lock: async () => {}, find: async () => ({ items: [], next: null }), withTransaction: async (fn: any) => fn({}) },
+        objects: { put: async (bytes: Uint8Array) => { const sha256 = createHash('sha256').update(bytes).digest('hex'); objects.set(sha256, bytes); return { sha256 }; } },
+        authorizations: { configureResourceInTransaction: async (...args: any[]) => { audits.push(args); } },
+    } as unknown as VariablePorts);
+    const reason = '管理员更换：' + oldValue;
+    await assert.rejects(variables.setSecrets(admin as any, [{ name: 'MY_KEY', value: replacement }], reason), error => error instanceof Error && error.message.includes('原封存值') && !error.message.includes(oldValue) && !error.message.includes(replacement));
+    assert.equal(audits.length, 0);
+    assert.equal(objects.size, 0);
+    assert.ok((await readFile(join(f.root, 'vault', entry + '.sealed'))).equals(original));
+    assert.equal(await f.vault.has(entry), true);
+    await assert.rejects(readdir(join(f.root, 'vault', 'archive')), error => (error as NodeJS.ErrnoException).code === 'ENOENT');
+    assert.ok(!JSON.stringify(audits).includes(oldValue));
+});

@@ -162,7 +162,7 @@ export class RecordVariables {
         const out: VaultSecretWriteResult[] = [];
         for (const write of writes) {
             let metadata: VaultSecretWriteResult;
-            try { metadata = await this.#p.vault.putSecret({ name: write.name, value: write.value, digest_rule: write.digest_rule!, set_by: by.id, set_at: this.#now().toISOString() }); }
+            try { metadata = await this.#p.vault.putSecret({ name: write.name, value: write.value, digest_rule: write.digest_rule!, set_by: by.id, set_at: this.#now().toISOString(), reason: prepared.reason }); }
             catch (error) { throw new VariableError((out.length ? '部分密钥库已更新；' : '') + (error instanceof VaultError ? error.message : '密钥库写入未完成；请核对主密钥、封存文件及缺失元数据')); }
             try { await this.#auditSecret(by, metadata, prepared.reason, tx); }
             catch { throw new VariableError('密钥库已更新，审计记录未完成；请管理员核对密钥库元数据，不要重输值'); }
