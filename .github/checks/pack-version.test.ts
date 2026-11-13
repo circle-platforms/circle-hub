@@ -177,3 +177,220 @@ test('non-standard JSON formatting around version still detects reuse in full hi
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('deleted or invalid tracked pack.json reports problems instead of throwing and still checks other packs', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pack-version-invalid-'));
+  try {
+    gitIn(root, 'init', '-b', 'main');
+    commitPack(root, '1.0.0', 'one', 'Add sample pack');
+    const secondDir = join(root, 'packs/workflow/other');
+    mkdirSync(secondDir, { recursive: true });
+    writeFileSync(join(secondDir, 'SKILL.md'), 'alpha');
+    const shaAlpha = createHash('sha256').update('alpha').digest('hex');
+    writeFileSync(
+      join(secondDir, 'pack.json'),
+      `${JSON.stringify({ schema: 'pack@1', id: 'other', version: '1.0.0', kind: 'workflow', title: 'Other', description: 'Synthetic', files: [{ path: 'SKILL.md', sha256: shaAlpha, size: Buffer.byteLength('alpha') }] }, null, 2)}\n`,
+    );
+    gitIn(root, 'add', 'packs/workflow/other/pack.json', 'packs/workflow/other/SKILL.md');
+    gitIn(root, 'commit', '-m', 'Add second pack');
+    writeFileSync(join(secondDir, 'SKILL.md'), 'beta');
+
+    // Malformed JSON on disk for the first pack must be reported as a problem, not crash before checking the second pack.
+    writeFileSync(join(root, PACK_PATH), '{broken json');
+    let problems = versionReuseProblems(root);
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /^packs\/workflow\/other\/pack\.json:.*SKILL\.md changed$/);
+    assert.match(problems[1], /^packs\/workflow\/sample\/pack\.json:/);
+
+    // Unstaged deletion on disk of a tracked pack.json must also be reported as a problem without throwing ENOENT.
+    rmSync(join(root, PACK_PATH));
+    problems = versionReuseProblems(root);
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /^packs\/workflow\/other\/pack\.json:.*SKILL\.md changed$/);
+    assert.match(problems[1], /^packs\/workflow\/sample\/pack\.json:/);
+
+    // Invalid manifest JSON committed in HEAD must also be reported in problems rather than crashing.
+    writeFileSync(join(root, PACK_PATH), '{broken head json');
+    gitIn(root, 'add', PACK_PATH);
+    gitIn(root, 'commit', '-m', 'Commit broken manifest');
+    problems = versionReuseProblems(root);
+    assert.equal(problems.length, 2);
+    assert.match(problems[0], /^packs\/workflow\/other\/pack\.json:.*SKILL\.md changed$/);
+    assert.match(problems[1], /^packs\/workflow\/sample\/pack\.json: invalid JSON/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('shallow clones fail closed when only a listed file changed at or before the boundary', () => {
+  const base = mkdtempSync(join(tmpdir(), 'pack-version-shallow-listed-'));
+  try {
+    const src = join(base, 'src');
+    const depth1 = join(base, 'depth1');
+    const depth2 = join(base, 'depth2');
+    mkdirSync(src, { recursive: true });
+    gitIn(src, 'init', '-b', 'main');
+    commitPack(src, '1.0.0', 'one', 'Add sample pack');
+    writeFileSync(join(src, 'packs/workflow/sample/SKILL.md'), 'two-without-manifest-edit');
+    gitIn(src, 'add', 'packs/workflow/sample/SKILL.md');
+    gitIn(src, 'commit', '-m', 'Edit skill without touching pack.json');
+
+    // depth=1 truncates right at the SKILL.md-only commit; pack.json is treated as boundary-added and fails closed.
+    cloneShallow(src, depth1, 1);
+    const problems1 = versionReuseProblems(depth1);
+    assert.equal(problems1.length, 1);
+    assert.match(problems1[0], /shallow boundary/);
+
+    writeFileSync(join(src, 'README.md'), 'unrelated');
+    gitIn(src, 'add', 'README.md');
+    gitIn(src, 'commit', '-m', 'Unrelated commit');
+    // depth=2 puts the SKILL.md-only commit on the shallow boundary.
+    cloneShallow(src, depth2, 2);
+    const problems2 = versionReuseProblems(depth2);
+    assert.equal(problems2.length, 1);
+    assert.match(problems2[0], /shallow boundary/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('shallow-since clones pass only when both the introducing commit and its parent are present', () => {
+  const base = mkdtempSync(join(tmpdir(), 'pack-version-shallow-since-'));
+  try {
+    const src = join(base, 'src');
+    const cutAtBump = join(base, 'cut-at-bump');
+    const keepsParent = join(base, 'keeps-parent');
+    mkdirSync(src, { recursive: true });
+    gitIn(src, 'init', '-b', 'main');
+
+    const commitDated = (date: string, msg: string) => {
+      execFileSync(
+        'git',
+        ['-c', 'user.name=Synthetic Pack', '-c', 'user.email=pack@example.com', '-c', 'commit.gpgsign=false', 'commit', '-m', msg],
+        { cwd: src, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date }, stdio: 'pipe' },
+      );
+    };
+
+    writePackFiles(src, '0.9.0', 'zero');
+    gitIn(src, 'add', 'packs/workflow/sample/pack.json', 'packs/workflow/sample/SKILL.md');
+    commitDated('2020-01-01T00:00:00Z', 'Initial 0.9.0');
+
+    writePackFiles(src, '1.0.0', 'one');
+    gitIn(src, 'add', 'packs/workflow/sample/pack.json', 'packs/workflow/sample/SKILL.md');
+    commitDated('2021-01-01T00:00:00Z', 'Bump to 1.0.0');
+
+    writePackFiles(src, '1.0.1', 'two');
+    gitIn(src, 'add', 'packs/workflow/sample/pack.json', 'packs/workflow/sample/SKILL.md');
+    commitDated('2022-01-01T00:00:00Z', 'Bump to 1.0.1');
+
+    // Cutoff omits 1.0.0 parent so 1.0.1 lands on the shallow boundary and must fail closed.
+    execFileSync('git', ['clone', '--no-local', '--shallow-since=2021-06-01T00:00:00Z', pathToFileURL(src).href, cutAtBump], { stdio: 'pipe' });
+    const cutProblems = versionReuseProblems(cutAtBump);
+    assert.equal(cutProblems.length, 1);
+    assert.match(cutProblems[0], /shallow boundary/);
+
+    // Cutoff keeps both 1.0.1 and its 1.0.0 parent, so introducing commit is provable.
+    execFileSync('git', ['clone', '--no-local', '--shallow-since=2020-06-01T00:00:00Z', pathToFileURL(src).href, keepsParent], { stdio: 'pipe' });
+    assert.deepEqual(versionReuseProblems(keepsParent), []);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('dirty working tree and staged listed-file edits without a bump fail in full and verifiable shallow clones', () => {
+  const base = mkdtempSync(join(tmpdir(), 'pack-version-dirty-'));
+  try {
+    const src = join(base, 'src');
+    const shallow = join(base, 'shallow');
+    mkdirSync(src, { recursive: true });
+    gitIn(src, 'init', '-b', 'main');
+    commitPack(src, '0.9.0', 'zero', 'Add 0.9.0');
+    commitPack(src, '1.0.0', 'one', 'Bump to 1.0.0');
+
+    cloneShallow(src, shallow, 2);
+    assert.deepEqual(versionReuseProblems(shallow), []);
+
+    // Unstaged working tree edit to a listed file without bumping pack.json.
+    writeFileSync(join(shallow, 'packs/workflow/sample/SKILL.md'), 'dirty-unstaged');
+    const unstagedProblems = versionReuseProblems(shallow);
+    assert.equal(unstagedProblems.length, 1);
+    assert.match(unstagedProblems[0], /version 1\.0\.0 is unchanged since [0-9a-f]{12} but SKILL\.md changed/);
+
+    // Staged edit to the listed file without bumping pack.json.
+    gitIn(shallow, 'add', 'packs/workflow/sample/SKILL.md');
+    const stagedProblems = versionReuseProblems(shallow);
+    assert.equal(stagedProblems.length, 1);
+    assert.match(stagedProblems[0], /version 1\.0\.0 is unchanged since [0-9a-f]{12} but SKILL\.md changed/);
+
+    // Full repo behaves identically for unstaged/staged dirty edits.
+    writeFileSync(join(src, 'packs/workflow/sample/SKILL.md'), 'dirty-full');
+    assert.equal(versionReuseProblems(src).length, 1);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('merge commits detect listed-file reuse and fail closed across shallow boundaries', () => {
+  const base = mkdtempSync(join(tmpdir(), 'pack-version-merge-'));
+  try {
+    const src = join(base, 'src');
+    const shallow = join(base, 'shallow');
+    mkdirSync(src, { recursive: true });
+    gitIn(src, 'init', '-b', 'main');
+    commitPack(src, '1.0.0', 'one', 'Add sample 1.0.0');
+    gitIn(src, 'checkout', '-b', 'side');
+    writeFileSync(join(src, 'packs/workflow/sample/SKILL.md'), 'side-edit-without-bump');
+    gitIn(src, 'add', 'packs/workflow/sample/SKILL.md');
+    gitIn(src, 'commit', '-m', 'Modify SKILL.md on side branch');
+    gitIn(src, 'checkout', 'main');
+    writeFileSync(join(src, 'README.md'), 'main');
+    gitIn(src, 'add', 'README.md');
+    gitIn(src, 'commit', '-m', 'Advance main');
+    gitIn(src, 'merge', '--no-ff', 'side', '-m', 'Merge side into main');
+
+    const fullProblems = versionReuseProblems(src);
+    assert.equal(fullProblems.length, 1);
+    assert.match(fullProblems[0], /version 1\.0\.0 is unchanged since [0-9a-f]{12} but SKILL\.md changed/);
+
+    cloneShallow(src, shallow, 2);
+    const shallowProblems = versionReuseProblems(shallow);
+    assert.equal(shallowProblems.length, 1);
+    assert.match(shallowProblems[0], /shallow boundary/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('renaming a listed file inside a pack without bumping version fails across shallow boundaries too', () => {
+  const base = mkdtempSync(join(tmpdir(), 'pack-version-rename-'));
+  try {
+    const src = join(base, 'src');
+    const shallow = join(base, 'shallow');
+    mkdirSync(src, { recursive: true });
+    gitIn(src, 'init', '-b', 'main');
+    commitPack(src, '1.0.0', 'one', 'Add sample 1.0.0');
+
+    const packDir = join(src, 'packs/workflow/sample');
+    const content = 'one';
+    rmSync(join(packDir, 'SKILL.md'));
+    writeFileSync(join(packDir, 'GUIDE.md'), content);
+    const sha256 = createHash('sha256').update(content).digest('hex');
+    writeFileSync(
+      join(packDir, 'pack.json'),
+      `${JSON.stringify({ schema: 'pack@1', id: 'sample', version: '1.0.0', kind: 'workflow', title: 'Sample', description: 'Synthetic', files: [{ path: 'GUIDE.md', sha256, size: Buffer.byteLength(content) }] }, null, 2)}\n`,
+    );
+    gitIn(src, 'add', '-A', 'packs/workflow/sample');
+    gitIn(src, 'commit', '-m', 'Rename SKILL.md to GUIDE.md keeping 1.0.0');
+
+    const fullProblems = versionReuseProblems(src);
+    assert.equal(fullProblems.length, 1);
+    assert.match(fullProblems[0], /version 1\.0\.0 is unchanged since [0-9a-f]{12} but manifest digest, GUIDE\.md changed/);
+
+    cloneShallow(src, shallow, 1);
+    const shallowProblems = versionReuseProblems(shallow);
+    assert.equal(shallowProblems.length, 1);
+    assert.match(shallowProblems[0], /shallow boundary/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});

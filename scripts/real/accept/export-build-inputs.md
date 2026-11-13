@@ -11,7 +11,7 @@ node scripts/real/accept/export-build-inputs.ts \
 
 令牌文件以 UTF-8 读取并去掉首尾空白；令牌不进入命令行、输出或证据文件。管理员 CLI 使用 `bin/circle-hub`，仅给该子进程设置 `CIRCLE_HUB_TOKEN`。它使用部署主机的现有数据库配置；脚本自己不连 MCP、不开端口，全部读取走这一个 CLI，因此也不会读到另一套部署。
 
-读取路线：新增的通用只读命令 `circle-hub knowledge view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <新文件>` 调用现有知识视图读取器，保留它的 JSON 字节。单独的 --only 使用与引用查询参数相同的逗号分隔、URI 百分号编码写法，不能与引用内的 only 重复。屏幕仅输出字节数、SHA-256、totals 数字计数和截断/跳过情况。无令牌且启用管理员不唯一时可用 --as 选择管理员；有令牌时 --as 必须与令牌账号一致。它只允许启用中的管理员，不加 MCP 工具，不借用业务包创建运行，也不生产知识。普通 `knowledge sync` 没有被调用。视图读取会保留现有的读取凭据和派生记录。
+读取路线：通用只读命令 `circle-hub knowledge view <knowledge外部标识> [--only <取值列表>] [--as <管理员>] --out <新文件>` 调用现有知识视图读取器，保留它的 JSON 字节。单独的 --only 使用与引用查询参数相同的逗号分隔、URI 百分号编码写法，不能与引用内的 only 重复。屏幕仅输出字节数、SHA-256、totals 数字计数和截断/跳过情况。无令牌且启用管理员不唯一时可用 --as 选择管理员；有令牌时 --as 必须与令牌账号一致。它只允许启用中的管理员，不加 MCP 工具，不借用业务包创建运行，也不生产知识。普通 `knowledge sync` 没有被调用。视图读取会保留现有的读取凭据和派生记录。
 
 导出索引是 `knowledge:index:<产品>:<构建>?kind=case&key=document&fields=commands,document,node`。首页就是完整视图（`truncated` 为否、`next` 为空）时直接保存为 `index-1.json`；否则脚本按视图自己给出的 `next` 续页标识一页页读下去，直到没有下一页，收齐全部文档键，再逐文档用 `only=` 补取完整分片，保存为 `index-*.json`（比较器要求每份视图自己完整，分页本身不能直接当输入）。续页读不出时不算完：脚本记下次数、改由分面视图补齐键集，并在屏幕上写明这一事实及下一步（核对视图截断、读取权限或快照与来源状态后重新导出）。
 
@@ -21,7 +21,7 @@ node scripts/real/accept/export-build-inputs.ts \
 
 按决定 161，现行知识视图不再因正文凭据扫描扣留或排除条目。若旧记录或兼容视图仍出现分片 `total_entries` 大于列出条目数的差额，脚本按差额计数并在屏幕首行写明“另有 N 条被凭据扫描排除，没有进输入”，导出仍照常完成；若某个文档分片列不出键或条目，脚本拒绝并提示核对视图截断、读取权限与来源后重新导出。
 
-文档原件用 `original list --external agile:case:<文档>` 查找，再严格比较完整标识，只取最新记录，使用 `original export` 导出为顺序编号的 `original-map-*.json`。命令树按 `buildsite:file:` 和 `/command_tree-<构建>.xml` 后缀定位。新增的通用 `original list --suffix` 在数量上限之前筛选，避免其他构建的原件占满列表；多个不同路径匹配同名命令树时拒绝猜选。每份原件导出后重新核对字节数和 SHA-256。
+文档原件用 `original list --external agile:case:<文档>` 查找，再严格比较完整标识，只取最新记录，使用 `original export` 导出为顺序编号的 `original-map-*.json`。命令树按 `buildsite:file:` 和 `/command_tree-<构建>.xml` 后缀定位。通用 `original list --suffix` 在数量上限之前筛选，避免其他构建的原件占满列表；多个不同路径匹配同名命令树时拒绝猜选。每份原件导出后重新核对字节数和 SHA-256。
 
 输出目录必须在所有 Git 仓库之外且为空，父路径经真实路径核对。文件权限为 0600，新建目录为 0700，不覆盖既有文件。产物：
 
