@@ -95,13 +95,23 @@ export const PackFileEntry = z.strictObject({
 });
 export type PackFileEntry = z.infer<typeof PackFileEntry>;
 
-/** Files a pack of each kind must contain besides pack.json. A kind added to the model fails to compile until it is listed. */
-export const REQUIRED_FILES = {
-  product: ['product.json'],
-  workflow: ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'],
-  system: ['system.json'],
-  skill: ['skill.json', 'SKILL.md'],
-} as const satisfies Record<PackKind, readonly string[]>;
+/** Kind-specific file declarations; a new model kind must register both boundaries. */
+export const PACK_KIND_REGISTRY = {
+  product: { requiredFiles: ['product.json'], declarationFiles: ['product.json'] },
+  workflow: {
+    requiredFiles: ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'],
+    declarationFiles: ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'knowledge.json', 'SKILL.md'],
+  },
+  system: { requiredFiles: ['system.json'], declarationFiles: ['system.json'] },
+  skill: {
+    requiredFiles: ['skill.json', 'SKILL.md'],
+    declarationFiles: ['skill.json', 'SKILL.md', 'workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'knowledge.json', 'ledger.json'],
+  },
+} as const satisfies Record<PackKind, { requiredFiles: readonly string[]; declarationFiles: readonly string[] }>;
+
+export const REQUIRED_FILES = Object.fromEntries(
+  Object.entries(PACK_KIND_REGISTRY).map(([kind, entry]) => [kind, entry.requiredFiles]),
+) as { readonly [K in PackKind]: (typeof PACK_KIND_REGISTRY)[K]['requiredFiles'] };
 
 /**
  * The pack identity and its file list with SHA-256 (T01 F[0]). The pack digest is the SHA-256 of the RFC 8785 canonical JSON of
