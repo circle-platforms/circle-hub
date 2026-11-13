@@ -1,0 +1,195 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { DEFAULT_LIMITS } from '../../config/index.ts';
+import { migrateRecords, FileVault } from '../../records/api.ts';
+import { VariableName } from '../../../contracts/src/variables.ts';
+import { CODE_ROOT, agentFor, platformLockPath, postgresFor, settingsOf, type PlatformContext } from '../context.ts';
+import { exists, sha256File, withLock, writeFileAtomic } from '../files.ts';
+import { guardSignals } from '../deploy.ts';
+import { portOccupied, waitForHealth } from '../health.ts';
+import { quoteIdentifier, withSession, type SqlSession } from '../sql.ts';
+import { recoverPendingReset } from './recovery.ts';
+import { nativeResetBackup, type ResetBackup } from './backup.ts';
+import { protectedFiles, assertProtectedFiles, type ProtectedFile } from './protected-files.ts';
+import { inspectCurrentState, clearOfflineSelection, assertCurrentForeignKeys, type CurrentResetState } from './current.ts';
+import { inspectReset, resetRequestProblems } from './inspection.ts';
+import { runReset, ResetFailure, type ResetHost } from './operation.ts';
+import { parseResetRequest, RESET_SCOPE, type ResetInspection, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport } from './types.ts';
+
+export class ResetBlocked extends Error {
+  readonly problems: readonly ResetProblem[];
+  constructor(problems: readonly ResetProblem[]) { super('重建条件尚未满足，未开始破坏性操作'); this.name = 'ResetBlocked'; this.problems = problems; }
+}
+export interface ResetExecutionOptions extends ResetPorts { hostTransform?: (host: ResetHost) => ResetHost; }
+async function objectReader(context: PlatformContext, session: SqlSession, hash: string): Promise<Uint8Array | null> {
+  if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error('对象引用身份无效');
+  try {
+    const path = join(context.layout.objects, hash.slice(0, 2), hash), bytes = await readFile(path);
+    if ((await sha256File(path)).sha256 !== hash) throw new Error('对象身份不同');
+    return bytes;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const [row] = await session.query(`SELECT data FROM held_objects WHERE sha256=$1 UNION ALL
+      SELECT data FROM run_originals WHERE sha256=$1 UNION ALL
+      SELECT p.data FROM personal_objects o JOIN personal_payloads p ON (p.owner,p.epoch,p.sha256)=(o.owner,o.epoch,o.sha256)
+      WHERE o.sha256=$1 AND NOT EXISTS(SELECT 1 FROM personal_purges x WHERE (x.owner,x.epoch)=(o.owner,o.epoch)) LIMIT 1`, [hash]);
+    return row ? row.data as Uint8Array : null;
+  }
+}
+async function currentState(context: PlatformContext, request: ResetRequest): Promise<CurrentResetState> {
+  const control = postgresFor(context);
+  return withSession(control.connector, control.target.database, async session => {
+    await session.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    try { return await inspectCurrentState(session, request, hash => objectReader(context, session, hash)); }
+    finally { await session.query('ROLLBACK'); }
+  });
+}
+export async function previewReset(context: PlatformContext, input: ResetRequest, ports: ResetPorts = {}): Promise<ResetPlan> {
+  const request = parseResetRequest(input), inspection = await inspectReset(context);
+  const blocked = resetRequestProblems(inspection, request, ports);
+  const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: null as number | null }));
+  // All means no business record survives. Incompatible or unknown shapes must not require a business reader.
+  if (request.scopes === 'all' || blocked.length) return { request, inspection, counts, blocked };
+  const state = await currentState(context, request);
+  return { request, inspection, counts: state.counts, blocked: state.blocked.map(problem => ({ ...problem, name: problem.name && /^[0-9a-f]{64}$/.test(problem.name) ? undefined : problem.name })) };
+}
+
+async function vaultNotices(context: PlatformContext): Promise<ResetProblem[]> {
+  const notices: ResetProblem[] = [], entries = await new FileVault(context.layout.vault).list();
+  const names = new Set<string>();
+  for (const entry of entries) {
+    const match = /^secret\.([a-z][a-z0-9_]{0,63})\.[a-f0-9]{24}$/.exec(entry);
+    if (!match) continue;
+    const name = VariableName.parse(match[1]!.toUpperCase()); if (names.has(name)) continue; names.add(name);
+    if (!await exists(join(context.layout.vault, 'metadata', 'secret.' + match[1] + '.sealed'))) notices.push({ name,
+      reason: '原封存存在但缺少认证元数据，重建没有读取、移动或修改该值',
+      nextAction: `运行 circle-hub secret set --name ${name}；程序按当前规则归档未认证原件并留审计，勿手工删除封存` });
+  }
+  return notices;
+}
+
+export async function resetData(context: PlatformContext, input: ResetRequest, ports: ResetExecutionOptions = {}): Promise<ResetReport> {
+  const request = parseResetRequest(input);
+  return withLock(platformLockPath(context), async () => {
+    const settings = await settingsOf(context), postgres = postgresFor(context), agent = agentFor(context, settings);
+    const id = randomUUID(), database = postgres.target.database;
+    const archive = database.slice(0, 20) + '_archive_' + id.replaceAll('-', '');
+    const failed = database.slice(0, 20) + '_failed_' + id.replaceAll('-', '');
+    const journal = join(context.layout.run, 'reset-operation.json');
+    const resultPath = join(context.layout.logs, 'reset-' + id + '.json');
+    const snapshot = request.keepConfig ? join(context.layout.root, 'private-config-snapshots', id + '.json') : undefined;
+    let inspection: ResetInspection | undefined, state: CurrentResetState | undefined, plan: ResetPlan | undefined;
+    let backup: ResetBackup | undefined, wasRunning = false, wasLoaded = false, archived = false, created = false;
+    let originalOid = '';
+    let originals: ProtectedFile[] = [], notices: ResetProblem[] = [], definitionPath: string | undefined;
+    const guard = guardSignals(context.log);
+    const checkpoint = () => { if (guard.received()) throw new Error('收到停止请求，自动恢复原状态'); };
+    const maintenance = <T>(fn: (session: SqlSession) => Promise<T>) => withSession(postgres.connector, 'postgres', fn);
+    const disconnect = async (session: SqlSession, name: string) => {
+      await session.query(`ALTER DATABASE ${quoteIdentifier(name)} ALLOW_CONNECTIONS false`);
+      await session.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1 AND pid<>pg_backend_pid()', [name]);
+    };
+    const save = async () => writeFileAtomic(journal, JSON.stringify({ database, archive, failed, wasLoaded, wasRunning, archived, created, backup: backup?.directory, request, originalOid, originals }), 0o600);
+    const buildReport = (): ResetReport => ({ archive, backup: backup!.directory, ...(snapshot ? { configurationSnapshot: snapshot } : {}), counts: state?.counts ?? plan!.counts, notices,
+      archivedTables: backup!.tables.map(({ schema, table, rows }) => ({ schema, table, rows })) });
+    const host: ResetHost = {
+      async inspect() {
+        checkpoint();
+        await recoverPendingReset(context);
+        plan = await previewReset(context, request, ports); inspection = plan.inspection;
+        if (plan.blocked.length) throw new ResetBlocked(plan.blocked);
+        if (request.definitionFile) {
+          const hash = request.definitionFile.slice(4); definitionPath = join(context.layout.objects, hash.slice(0, 2), hash);
+          if ((await sha256File(definitionPath)).sha256 !== hash) throw new ResetBlocked([{ reason: '受控定义对象缺失或字节身份不符', nextAction: '重新上传并授权该定义对象后重试' }]);
+        }
+        const [identity] = await maintenance(session => session.query('SELECT oid::text FROM pg_database WHERE datname=$1', [database]));
+        if (!identity) throw new Error('数据库身份未能核对'); originalOid = String(identity.oid);
+        originals = await protectedFiles(context.layout);
+        notices = await vaultNotices(context);
+        const service = await agent.status(); wasRunning = service.running; wasLoaded = service.loaded;
+      },
+      async backup() { checkpoint(); backup = await nativeResetBackup(context, postgres); },
+      async stop() {
+        checkpoint(); await save(); await agent.stop();
+        if ((await agent.status()).running || await portOccupied(settings.port)) throw new Error('原服务仍运行，不能归档数据');
+        // Re-select after stopping. Writes committed after the earlier backup are retained by the later archive clone.
+        if (request.scopes !== 'all') { state = await currentState(context, request); if (state.blocked.length) throw new ResetBlocked(state.blocked); }
+        await assertProtectedFiles(context.layout, originals);
+      },
+      async exportConfiguration() { checkpoint(); if (snapshot) { await ports.exportConfiguration!(snapshot); await assertProtectedFiles(context.layout, originals); } },
+      async archive() {
+        checkpoint();
+        await maintenance(async session => { await disconnect(session, database); await session.query(`ALTER DATABASE ${quoteIdentifier(database)} RENAME TO ${quoteIdentifier(archive)}`); archived = true; await save(); });
+      },
+      async create() {
+        checkpoint();
+        if (request.scopes === 'all') {
+          await postgres.ensureDatabase();
+          await migrateRecords({ database: { host: postgres.target.socketDir, port: postgres.target.port, user: postgres.target.user, database } }, { runtimeRole: postgres.application.user });
+        } else await maintenance(session => session.query(`CREATE DATABASE ${quoteIdentifier(database)} OWNER ${quoteIdentifier(postgres.target.user)} TEMPLATE ${quoteIdentifier(archive)}`).then(() => {}));
+        created = true; await save();
+        await maintenance(session => session.query(`REVOKE CONNECT ON DATABASE ${quoteIdentifier(database)} FROM ${quoteIdentifier(postgres.application.user)}`).then(() => {}));
+      },
+      async prepare() {
+        checkpoint();
+        if (request.scopes !== 'all') {
+          if (!state) throw new Error('停服后的选择不存在');
+          await withSession(postgres.connector, database, session => clearOfflineSelection(session, state!));
+        }
+      },
+      async restoreConfiguration() {
+        checkpoint();
+        // A selective clone already keeps config byte-for-byte; protected restore is used exactly once on a fresh baseline.
+        if (snapshot && request.scopes === 'all') await ports.restoreConfiguration!(snapshot);
+        if (definitionPath) await ports.applyDefinition!(definitionPath);
+        await assertProtectedFiles(context.layout, originals);
+      },
+      async preflight() {
+        checkpoint();
+        if (!(await inspectReset(context)).compatible) throw new Error('重建后的迁移身份未能核对');
+        await withSession(postgres.connector, database, assertCurrentForeignKeys);
+        if (state) await withSession(postgres.connector, database, async session => {
+          const [remaining] = await session.query('SELECT count(*)::text AS n FROM records WHERE digest=ANY($1::text[])', [state!.selection.cleared]);
+          if (Number(remaining!.n)) throw new Error('所选记录仍在当前库中');
+          const [retained] = await session.query('SELECT count(*)::text AS n FROM records WHERE digest=ANY($1::text[])', [state!.selection.retained]);
+          if (Number(retained!.n) !== state!.selection.retained.length) throw new Error('未选记录的保留计数不符');
+        });
+        await assertProtectedFiles(context.layout, originals);
+        await maintenance(session => session.query(`GRANT CONNECT ON DATABASE ${quoteIdentifier(database)} TO ${quoteIdentifier(postgres.application.user)}`).then(() => {}));
+      },
+      async restart() {
+        checkpoint();
+        if (wasLoaded || wasRunning) { await agent.start(); if (wasRunning) await waitForHealth(settings.port, { host: settings.listenHost, authority: settings.allowedHosts?.[0], timeoutMs: context.healthTimeoutMs }); }
+        await assertProtectedFiles(context.layout, originals);
+        const report = buildReport();
+        await writeFileAtomic(resultPath, JSON.stringify({ completed: true, report }), 0o600);
+        await rm(journal, { force: true });
+      },
+      async rollback() {
+        await agent.stop();
+        if ((await agent.status()).running || await portOccupied(settings.port)) throw new Error('服务仍运行，不能恢复数据库');
+        await maintenance(async session => {
+          const names = new Set((await session.query('SELECT datname FROM pg_database WHERE datname=ANY($1::text[])', [[database, archive]])).map(row => String(row.datname)));
+          if (names.has(archive)) {
+            if (names.has(database)) { await disconnect(session, database); await session.query(`ALTER DATABASE ${quoteIdentifier(database)} RENAME TO ${quoteIdentifier(failed)}`); }
+            await session.query(`ALTER DATABASE ${quoteIdentifier(archive)} RENAME TO ${quoteIdentifier(database)}`);
+          }
+          await session.query(`ALTER DATABASE ${quoteIdentifier(database)} ALLOW_CONNECTIONS true`);
+        });
+        await assertProtectedFiles(context.layout, originals);
+        if (wasLoaded || wasRunning) { await agent.start(); if (wasRunning) await waitForHealth(settings.port, { host: settings.listenHost, authority: settings.allowedHosts?.[0], timeoutMs: context.healthTimeoutMs }); }
+        await rm(journal, { force: true });
+      },
+    };
+    try {
+      await runReset(ports.hostTransform?.(host) ?? host);
+      const report = buildReport();
+      return report;
+    } catch (error) {
+      try { await writeFileAtomic(resultPath, JSON.stringify({ completed: false, restored: error instanceof ResetFailure && error.rollback === 'succeeded', notices }), 0o600); }
+      catch { try { context.log('重建报告未能写入；恢复结果以命令返回为准，不输出原始异常'); } catch {} }
+      throw error;
+    } finally { guard.release(); }
+  });
+}

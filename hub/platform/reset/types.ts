@@ -12,9 +12,9 @@ export const ResetRequest = z.strictObject({
 export type ResetRequest = z.infer<typeof ResetRequest>;
 export interface ResetProblem { scope?: ResetScope; table?: string; row?: number; name?: string; reason: string; nextAction: string; }
 export interface ResetInspection { available: boolean; compatible: boolean; needsRebuild: boolean; diagnostics: readonly ResetProblem[]; canKeepConfig: boolean; choices: readonly { scopes: readonly ResetScope[] | 'all'; keepConfig: boolean; definitionAllowed: boolean }[]; }
-export interface ResetCount { scope: ResetScope; retained: number; cleared: number; }
+export interface ResetCount { scope: ResetScope; retained: number; cleared: number | null; }
 export interface ResetPlan { request: ResetRequest; inspection: ResetInspection; counts: readonly ResetCount[]; blocked: readonly ResetProblem[]; }
-export interface ResetReport { archive: string; backup: string; configurationSnapshot?: string; counts: readonly ResetCount[]; notices: readonly ResetProblem[]; }
+export interface ResetReport { archive: string; backup: string; configurationSnapshot?: string; counts: readonly ResetCount[]; notices: readonly ResetProblem[]; archivedTables?: readonly { schema: string; table: string; rows: number }[]; }
 export interface ResetPorts {
   exportConfiguration?(path: string): Promise<void>;
   restoreConfiguration?(path: string): Promise<void>;

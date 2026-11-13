@@ -133,7 +133,7 @@ test('a synchronous exception while attempting to stop still triggers recovery',
 test('failure reporting never reads or serializes a thrown value', async () => {
   const { host, calls } = fakeHost();
   const thrown = {
-    get message() { assert.fail('the raw message must not be read'); },
+    get message(): never { return assert.fail('the raw message must not be read'); },
     toString() { assert.fail('the raw value must not be converted to text'); },
   };
   host.prepare = () => { calls.push('prepare'); throw thrown; };
