@@ -15,7 +15,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { Pool } from 'pg';
 import { RESET_SCOPE, type ResetScope } from '../../../contracts/src/reset.ts';
 import { definition as baseExecutorDefinition } from '../../../hub/dispatch/testing/definition.ts';
-import { BACKUP_SCHEMA, layoutAt, postgresFor, readSettingsFile, verifyBackup } from '../../../hub/platform/api.ts';
+import { BACKUP_SCHEMA, createContext, postgresFor, settingsOf, verifyBackup } from '../../../hub/platform/api.ts';
 import { checkAnswer, type Answer, type Outputs, type ToolName } from './mcp.ts';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -537,10 +537,13 @@ export async function withRootDb<T>(
   fn: (pool: Pool, meta: { database: string; appUser: string; ownerUser: string }) => Promise<T>,
   databaseOverride?: string,
 ): Promise<T> {
-  const layout = layoutAt(dataDir);
-  const settings = await readSettingsFile(layout.settings);
-  assert.ok(settings, `missing platform settings at ${layout.settings}`);
-  const pg = postgresFor(layout, settings);
+  const platformContext = createContext({
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+    CIRCLE_HUB_DATA_DIR: dataDir,
+  });
+  await settingsOf(platformContext);
+  const pg = postgresFor(platformContext);
   const ownerUser = userInfo().username;
   const pool = new Pool({
     host: pg.target.socketDir,
