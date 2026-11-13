@@ -161,7 +161,7 @@ export const RunSummary = z.strictObject({
   pack_space:SpaceId.optional().describe("Personal workflow owner or team; absent on historical runs"),
   team_shared:z.literal(true).optional().describe("Team publication from a personal workflow shares new results with its assigned readers"),
   knowledge_spaces: SpaceLocks.optional().describe('Team and initiator personal knowledge versions frozen at start; absent on historical runs'),
-  skills: SkillLocks.optional().describe('Skill package digests frozen at start; absent only on historical runs'),
+  skills: SkillLocks.describe('Skill package digests frozen at start; empty when no skills are used'),
   feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),
   feeding_objects:z.array(Sha256).optional().describe('Objects actually consumed by this run'),
   criterion_changes:z.array(CriterionNotice).optional(),
@@ -196,7 +196,7 @@ export const RunSummary = z.strictObject({
   session: z.string().optional().describe('client session id observed from the request header'),
   model_identity: ModelIdentitySchema.optional().describe('Explicit client declaration at start; a submission from the same observed session can reuse it'),
   started_at: IsoTime,
-  submission_due:IsoTime.optional().describe('Absolute submission deadline; absent only on historical runs, never inferred by readers'),
+  submission_due:IsoTime.describe('Absolute submission deadline frozen at start'),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
@@ -247,6 +247,7 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
     .optional()
     .describe('the frozen lease rows of the workflow\'s declared prefix at start_run (every holder\'s rows, no tokens), `mine` marking the rows held by this run\'s lineage (D04 R[0])'),
 }).superRefine((r, ctx) => {
+  if(Date.parse(r.submission_due)<=Date.parse(r.started_at))ctx.addIssue({code:'custom',path:['submission_due'],message:'the submission deadline is later than run creation'});
   if(r.feeding_offset&&(r.feeding_offset.run!==r.run||r.feeding_offset.root!==(r.root??null)))ctx.addIssue({code:'custom',path:['feeding_offset'],message:'feeding horizon belongs to the same run and locked root'});
   if (r.host === 'hub') {
     if(r.trigger==='standing_obligation'){
@@ -268,8 +269,6 @@ export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
     ctx.addIssue({ code: 'custom', path: ['client_key'], message: 'client_key, request_digest and client_key_expires_at go together' });
   }
 });
-/** Strict new-write shape; the base RunRecord remains a historical reader. */
-export const NewRunRecord=RunRecord.safeExtend({submission_due:IsoTime}).refine(value=>Date.parse(value.submission_due)>Date.parse(value.started_at),{path:['submission_due'],message:'the submission deadline is later than run creation'});
 export type RunRecord = z.infer<typeof RunRecord>;
 /** Derived read view: historical originals stay unchanged. */
 export type RunRecordView = RunRecord & {requirements:RequirementSummary[];criterion_changes?:z.infer<typeof CriterionNotice>[]};
