@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import assert from 'node:assert/strict';
 import {test,type TestContext} from 'node:test';
 import pgModule from 'pg';
@@ -157,7 +158,7 @@ test('a feeding append reads nothing through the pool once its transaction holds
  // would wait for the pool's ten-second timeout and fail.
  const narrow=await openRecords({dataDir:w.kit.dataDir,logDir:join(w.kit.dataDir,'one-connection-logs'),database:w.kit.database,limits:DEFAULT_LIMITS},{keyProvider:w.kit.keyProvider,maxConnections:1});
  t.after(()=>narrow.close());
- const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs:w.packs,external:w.external,jev:null,sandbox:{requireOsIsolation:false},admin:w.admin});
+ const knowledge=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:narrow,parsers:createTestParserRegistry(),packs:w.packs,external:w.external,jev:null,sandbox:{requireOsIsolation:false},admin:w.admin});
  const pool=onePoolWaits(t);
  const [stored]=await knowledge.feeding!.admit(w.user,[proposal],{});
  assert.ok(stored);
@@ -177,7 +178,7 @@ test('a source projection reads nothing through the pool once its transaction ho
   if(key==='productById')return async(id:string)=>{await narrow.store.find({key:'synthetic.pack-read',value:id,kind:'claim',limit:1});return target.productById(id);};
   const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
  }});
- const knowledge=createKnowledge({records:narrow,parsers:createTestParserRegistry(),packs,external:w.external,jev:null,sandbox:{requireOsIsolation:await sandboxIsolation()},admin:w.admin});
+ const knowledge=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:narrow,parsers:createTestParserRegistry(),packs,external:w.external,jev:null,sandbox:{requireOsIsolation:await sandboxIsolation()},admin:w.admin});
  const receipt=await knowledge.feeding!.observeSource(w.user,a.body.sha256,{product:w.product.id});
  assert.equal(receipt.objects.length,1,JSON.stringify(receipt));
 });

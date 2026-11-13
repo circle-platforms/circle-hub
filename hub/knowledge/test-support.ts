@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import type { Placement, ReadTier } from '../../contracts/generated/vocabulary.ts';
 // Test support for hub/knowledge: a synthetic product pack written to a temporary directory with real pack functions (run
 // in the sandbox), fakes of PacksPort and ExternalReaderPort, and a synthetic build site that mirrors the structure of the
@@ -557,7 +558,7 @@ export async function makeWorld(
   packs.add(product);
   packs.readers.set(user.id, new Set([product.product.id]));
   const external = new FakeExternal(kit);
-  const knowledge = createKnowledge({
+  const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,
     records: kit,
     parsers: createDefaultRegistry(),
     packs,

@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {before,after,test} from 'node:test';
@@ -9,7 +10,7 @@ let pg:Awaited<ReturnType<typeof startPostgres>>;
 before(async()=>{pg=await startPostgres();});after(()=>pg?.stop());
 for(const type of ['index','facets','impact'])test(`${type} collates bounded pages from the frozen unversioned composition`,async t=>{
  const w=await makeUnversionedWorld(pg,false,{entries:5,statementBytes:1600});t.after(()=>w.close());
- const knowledge=createKnowledge({records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin,limits:{maxViewBytes:65536+2600}});
+ const knowledge=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:w.kit,parsers:createDefaultRegistry(),packs:w.packs,external:w.external,admin:w.admin,limits:{maxViewBytes:65536+2600}});
  const build=(await knowledge.rootOfBuild('acme','Synthetic_10_6'))!,scope=(await knowledge.unversionedRoot!('acme'))!;
  const context={principal:w.admin,run:'run_0123456789abcdefghjkmnpqrs',purpose:'synthetic merged view',build:build.build.name,composition:build.composition,unversioned:{root:scope.root,composition:scope.composition}};
  const base=type==='impact'?'Synthetic_10_6..Synthetic_10_6':build.build.name;

@@ -8,7 +8,7 @@ import {requestKnowledgeFact} from './requests.ts';
 // createKnowledge: wires the knowledge service. It provides KnowledgePort exactly as hub/ports.ts declares it, plus the
 // production, sync, current-root, calibration, placement, provenance and layer operations of this package.
 import type { JevClient } from '../jev/api.ts';
-import type { EntryDiff, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, ReadRoot, ReadRootQuery, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
+import type { EntryDiff, KnowledgeRunReadPort, KnowledgePackReadPort, KnowledgePort, NodesPage, NodesQuery, PacksPort, ProductHandle, ReadRoot, ReadRootQuery, RootDiff, RootInfo, ExternalReaderPort } from '../ports.ts';
 import type { KnownBuild } from '../../contracts/src/product.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
 import type { EntryKind } from '../../contracts/generated/vocabulary.ts';
@@ -45,6 +45,8 @@ export interface KnowledgeOptions {
   records: KnowledgeRecords;
   parsers: ParserRegistry;
   packs: PacksPort;
+  runReads: KnowledgeRunReadPort;
+  packReads: KnowledgePackReadPort;
   external: ExternalReaderPort;
   /** Test injection point of the placement judge (a scripted judge in this package's tests). The production assembly never
    * passes one: the Hub calls no model, and spans the code cannot place stay unplaced at the root. */
@@ -131,6 +133,8 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     store,
     parsers: options.parsers,
     packs: options.packs,
+    runReads: options.runReads,
+    packReads: options.packReads,
     external: options.external,
     placer,
     calibration,
