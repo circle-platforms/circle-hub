@@ -23,7 +23,7 @@ test('an accepted run tries to dispatch only once the release requirements its i
   const ready: boolean[] = []; let flight: { jobs: string[]; notes: Array<{ job?: string; text: string }> } | null = null;
   const job = 'c'.repeat(64);
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external,
-    dispatch: { jobs: async () => [], reconcile: async () => { throw new Error('合成：不对账'); }, accepted: async (_run, value,caller) => {assert.equal(caller?.id,h.alice.id);callers.push(caller.id);if(failDispatch)throw new Error('private-target diagnostic');ready.push(value); return value ? [{ job, text: '合成：已派发' }] : []; }, inFlight: async (_run,caller) => {assert.equal(caller?.id,h.alice.id);callers.push(caller.id);return flight;} } });
+    dispatch: { jobs: async () => [], reconcile: async () => { throw new Error('合成：不对账'); }, accepted: async (_run, value,caller) => {assert.ok(caller);assert.equal(caller.id,h.alice.id);callers.push(caller.id);if(failDispatch)throw new Error('private-target diagnostic');ready.push(value); return value ? [{ job, text: '合成：已派发' }] : []; }, inFlight: async (_run,caller) => {assert.ok(caller);assert.equal(caller.id,h.alice.id);callers.push(caller.id);return flight;} } });
 
   // Which requirements the toy submission satisfies, read from a run without an effect row.
   const probe = await start();
