@@ -366,10 +366,12 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
       const shown = typeof id === 'string' ? id : String(id);
       try {
+        const readerId = context?.principal?.id;
+        const account = typeof readerId === 'string' ? await records.principals.get(readerId) : null;
+        if (account === null || account.disabled || account.deleted_at) throw new ConnectorError('READER_INVALID', '读取者不是有效的 Hub 账号');
         context={...context,variables:context.variables??await records.variables.snapshot()};
         const sizeReason = typeof id === 'string' ? externalSizeReason(id) : null;
         if (sizeReason !== null) {
-          const account = await records.principals.get(context.principal.id);
           return { ok: false, id: shown, reason: sizeReason,
             ...(account !== null && !account.disabled ? { inputError: {message:sizeReason,fix:'缩短读取键后重读'} } : {}) };
         }
