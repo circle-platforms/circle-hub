@@ -223,13 +223,25 @@ export class RecordAuthorizations implements Authorizations {
   }
 
   async packsFor(user: string): Promise<string[]> {
+    if (user === WHOLE_HUB) return this.#wholeHubPacks();
     if (!UserId.safeParse(user).success) return [];
     const snapshot = requestPermissions(user) ?? await captureRequestPermissions(this.#db,{id:user,name:user,role:'user'},this.#now());
     return snapshot.packs();
   }
   async packsForMany(users: readonly string[]): Promise<Map<string,string[]>> {
     const snapshots=await capturePermissionSnapshots(this.#db,users.filter(id=>UserId.safeParse(id).success),this.#now());
-    return new Map([...new Set(users)].map(id=>[id,snapshots.get(id)?.packs()??[]]));
+    const global = users.includes(WHOLE_HUB) ? await this.#wholeHubPacks() : [];
+    return new Map([...new Set(users)].map(id=>[id,id===WHOLE_HUB?global:snapshots.get(id)?.packs()??[]]));
+  }
+  async #wholeHubPacks(): Promise<string[]> {
+    const latest = new Map<string, AuthorizationRecord>();
+    let cursor: string | null = null;
+    do {
+      const page: Page<AuthorizationRecord> = await this.history({ permission: ASSIGN, subject: WHOLE_HUB, newestFirst: true, limit: 500, cursor });
+      for (const record of page.items) if (!latest.has(record.body.object)) latest.set(record.body.object, record);
+      cursor = page.next;
+    } while (cursor !== null);
+    return [...latest.values()].filter(record => PackId.safeParse(record.body.object).success && this.#active(record)).map(record => record.body.object).sort();
   }
   async usersOfMany(packs: readonly string[]): Promise<Map<string,string[]>> {
     const users=(await this.#db.query('SELECT id FROM users WHERE NOT disabled AND deleted_at IS NULL')).rows.map(row=>String(row.id));
