@@ -290,7 +290,7 @@ test('an exception after starting dispatch reports unknown and never starts a se
   c.service.dispatchAccepted=async()=>{attempts++;throw new Error('private-host usr_private');};
   for (let n=0;n<2;n++) {
     const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.owner);
-    assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.match(note.next_action!,/不要重新发送/);
+    assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.equal(note.frozen,undefined,'no journal observation proves a durable freeze');assert.match(note.next_action!,/不要重新发送/);
     assert.doesNotMatch(JSON.stringify(note),/private-host|usr_private|circle-hub/);
   }
   assert.equal(attempts,1,'an unobserved failure never authorizes a second dispatch');
