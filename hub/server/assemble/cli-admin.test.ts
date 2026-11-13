@@ -1831,14 +1831,9 @@ test('ordinary key import sets an independent vault name without a deployment co
   });
 });
 
-test('review 8: Basic targets refuse before file access and a static authorization header reaches the stub', async () => {
-  const admin = await setup(); const agileId = await importResource(admin);
-  for (const entry of ['password', 'username']) {
-    const refused = await admin.run(['secret', 'import', '--env-file', 'must-not-open', '--basic', `USER:PASS=${await nameOf(admin,agileId,entry)}`, '--reason', 'DEMO_IMPORT']);
-    assert.equal(refused.code, 1); assert.match(refused.text, /Basic.*原样.*Authorization/);
-    assert.ok(refused.text.includes(agileId));assert.ok(refused.text.includes(AGILE_PACK));assert.ok(refused.text.includes(entry));assert.match(refused.text,/--key/);
-    assert.doesNotMatch(refused.text, /环境文件/);
-  }
+test('Basic import validates encoding and sends the declared static Authorization header without echoing values', async () => {
+  const admin = await setup();
+  await expectOk(admin,['pack','grant-publish','根管理员']);
   const username = 'SyntheticBasicUser'; const password = 'SyntheticBasicPassword92';
   const header = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   for (const value of [username, password, header, header.slice(6)]) secrets.add(value);

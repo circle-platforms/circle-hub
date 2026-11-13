@@ -2,11 +2,11 @@ import { productVariableProblems, variableUsesOfRoot } from '../knowledge/api.ts
 import { readPackDirectory, packSchema, type PackRegistry } from '../runs/api.ts';
 // Administrator-only named deployment commands. Arguments never carry values and diagnostics never quote them.
 import { readFile } from 'node:fs/promises';
-import { join, resolve as resolvePath } from 'node:path';
+import { resolve as resolvePath } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHash } from 'node:crypto';
 import { OrdinaryVariableName, VariableName, secretLikeName, referencesIn, resolve as substitute, type ValueReference, type VariableUse } from '../../contracts/src/variables.ts';
-import { ResourceId, ResourceRecord, SystemProfile } from '../../contracts/src/resources.ts';
+import { ResourceId, ResourceRecord } from '../../contracts/src/resources.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import { labelOf, isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
 import type { PacksPort } from '../ports.ts';
@@ -510,8 +510,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             return 0;
         }
         if (!v['dry-run']) await requireVaultKey(kit, { command: true });
-        const hub = await s.hub(false);
-        const registry=hub.registry;
+        const registry=(await s.hub(false)).registry;
         const checkProductNames=async(tx?:Transaction)=>{
           const declarations=await registry.variableDeclarations(tx);
           if(declarations.some(p=>p.product.variables?.some(v=>mappings.some(m=>m.name===v.name))))throw new CliError('名字不可用；换一个密钥名字并 update 使用者定义后重跑');
@@ -530,28 +529,6 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 throw new UsageError('第 ' + (index + 1) + ' 个 --short 没有对应名字或重复');
             short.add(name);
         }
-        let importDefinitions: DeploymentDefinition[] | undefined;
-        const checkImportTargets = async () => {
-          const definitions = await deploymentDefinitions(kit);
-          for (const mapping of mappings) {
-            if (!mapping.basic) continue;
-            const uses = definitions.flatMap(definition => definition.references.filter(ref => ref.kind === 'secret' && ref.name === mapping.name).map(ref => ({definition,ref})));
-            for (const {definition,ref} of uses) {
-              let accepts = false;
-              if (definition.kind === 'resource' && typeof definition.body.system_pack === 'string') {
-                const pack = await hub.packs.pack(definition.body.system_pack);
-                if (pack?.kind === 'system') {
-                  const profile = SystemProfile.parse(parseStrictJson(await readFile(join(pack.directory,'system.json'),'utf8')));
-                  accepts = profile.auth.kind === 'static_header' && profile.auth.header.name.toLowerCase() === 'authorization' && profile.auth.header.scheme === 'raw' &&
-                    ref.at === '/credentials/' + profile.auth.credential.replaceAll('~','~0').replaceAll('/','~1') && !digests.has(mapping.name);
-                }
-              }
-              if (!accepts) throw new CliError(`Basic 导入目标 ${definition.id} ${definition.body.system_pack ?? ''} ${ref.at} 不接收原样 Authorization；请改用 --key 分别导入凭据`);
-            }
-          }
-          return definitions;
-        };
-        if (sub === 'import' && mappings.some(mapping => mapping.basic)) importDefinitions = await checkImportTargets();
         let values: string[];
         let sourceSecrets: string[] = [];
         const basicPasswords: string[] = [];
@@ -598,7 +575,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             }
             return 0;
         }
-        const result = await kit.variables.setSecrets(by, inputs, reason, async tx => {await checkProductNames(tx);if(importDefinitions)await unchangedDefinitions(kit,importDefinitions,tx);});
+        const result = await kit.variables.setSecrets(by, inputs, reason, async tx => {await checkProductNames(tx);});
         for (const row of result) {
             s.out(secretVersionLine(row));
             if (row.archive) s.out(`归档后重新设置：原条目 ${row.archive.entries.length} 个已保留于 ${row.archive.directory}；旧版本${row.archive.previous_version === null ? '无法核对，新序数从1开始' : '已核对'}，本次以新cipher身份记录`);
