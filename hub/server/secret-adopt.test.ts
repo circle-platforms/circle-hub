@@ -8,7 +8,7 @@ import { openTestRecords } from '../testing/records.ts';
 import { openConnectorKit } from '../connectors/testing/kit.ts';
 import { startAgileStub, agileFixture } from '../connectors/testing/agile.ts';
 import { FileVault } from '../records/vault.ts';
-import { canonicalBytes, newId, type Principal, type RecordsKit } from '../records/api.ts';
+import { canonicalBytes, newId, openRecords, type Principal, type RecordsKit } from '../records/api.ts';
 import { namedSecretCommand, type VariableCommandSession } from './variables.ts';
 
 let pg: TemporaryPostgres;
@@ -154,4 +154,50 @@ test('a batch reason containing another selected sealed value cannot leak throug
     assert.equal((await kit.variables.history(admin, 'secret', 'DEMO_A')).length, 0);
     assert.equal((await kit.variables.history(admin, 'secret', 'DEMO_Z')).length, 0);
     assert.ok(!lines.join('\n').includes(last));
+});
+
+
+test('a genuinely fresh database adopts the retained vault and master key for a newly created resource ID', { timeout: 60000 }, async t => {
+    const source = await openTestRecords({ postgres: pg });
+    t.after(() => source.close());
+    const sourceAdmin = (await source.principals.bootstrapAdmin('合成原库管理员')).user;
+    const value = randomBytes(24).toString('base64url');
+    const oldResource = await reference(source, sourceAdmin, 'DEMO_PASSWORD');
+    await source.variables.setSecrets(sourceAdmin, [
+        { name: 'DEMO_PASSWORD', value, consumers: [{ definition: oldResource, item: 'password', sends_to: 'a'.repeat(64) }] },
+        { name: 'DEMO_USER', value: 'reader', short: true, consumers: [{ definition: oldResource, item: 'username', sends_to: 'a'.repeat(64) }] },
+    ], '合成原库设置');
+    const oldVersion = (await source.variables.history(sourceAdmin, 'secret', 'DEMO_PASSWORD'))[0];
+    assert.equal(oldVersion.version, 1);
+    const target = await openConnectorKit(pg);
+    t.after(() => target.close());
+    // The database is fresh; only the original scratch data directory and key provider are retained.
+    const fresh = await openRecords({ ...source.config, database: target.records.database }, { keyProvider: source.keyProvider, migrate: false });
+    t.after(() => fresh.close());
+    assert.ok((fresh.vault as FileVault).directory === (source.vault as FileVault).directory);
+    assert.ok(source.database.database !== target.records.database.database);
+    assert.equal((await fresh.variables.history(target.admin, 'secret', 'DEMO_PASSWORD')).length, 0);
+    assert.equal((await fresh.variables.history(target.admin, 'secret', 'DEMO_USER')).length, 0);
+    assert.equal(await fresh.authorizations.resourceConfig(oldResource), null);
+    const stub = await startAgileStub(agileFixture('synthetic-fresh-db', { password: value }));
+    t.after(() => stub.close());
+    const connectors = target.make({ records: fresh });
+    const resource = await connectors.admin.addResource(target.admin, { system_pack: 'agile-test', name: 'DEMO_FRESH_RESOURCE', environment: 'test',
+        origins: { 'agile-api': stub.origin, 'agile-oauth': stub.origin }, allow_plaintext: [stub.origin],
+        credentials: { username: 'DEMO_USER', password: 'DEMO_PASSWORD' } });
+    assert.ok(resource.id !== oldResource);
+    await fresh.authorizations.assignResource(target.admin, resource.id, '*');
+    const lines: string[] = [];
+    assert.equal(await namedSecretCommand(session(fresh, target.admin, lines, target.packs), ['adopt', '--all', '--reason', '合成新库沿用封存']), 0);
+    const adopted = (await fresh.variables.history(target.admin, 'secret', 'DEMO_PASSWORD'))[0];
+    assert.equal(adopted.version, 1);
+    assert.ok(adopted.definition?.schema === 'secret@1' && adopted.definition.digest_rule === 'plain');
+    assert.ok(adopted.definition?.schema === 'secret@1' && adopted.definition.consumers.every(c => c.definition === resource.id && c.definition !== oldResource));
+    assert.ok(adopted.decision.body.decided_by === target.admin.id);
+    const result = await connectors.executeRead(resource.id, 'tree', { id: '7714' }, { principal: target.user, purpose: 'DEMO_FRESH_DB' });
+    assert.ok(result.ok);
+    assert.equal(stub.logins, 1);
+    assert.ok(!lines.join('\n').includes(value));
+    assert.ok(!JSON.stringify(target.log).includes(value));
+    assert.equal((await source.variables.history(sourceAdmin, 'secret', 'DEMO_PASSWORD')).length, 1);
 });
