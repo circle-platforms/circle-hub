@@ -23,7 +23,8 @@ import { cursorAfter, type Page, type Principal, type RecordKind, type RecordsKi
 import { setCommonHeaders } from '../http.ts';
 import { describeError } from '../notes.ts';
 import { background } from '../../telemetry/api.ts';
-import { readableLines, type PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
+import { readableLines } from './pages.ts';
 import type { ConsoleSession, SessionStore } from './session.ts';
 
 export const LIVE_EVENTS = ['task.updated', 'request.updated', 'environment.status', 'system.status', 'import.progress', 'member.connected', 'system.added', 'pack.published', 'knowledge.published'] as const;

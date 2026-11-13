@@ -17,7 +17,7 @@ function noEntries(ctx:PageContext,scope:string,local:boolean):EmptyState{
  if(scope==='personal')return {title:'我的知识还没有条目',text:'新建一条知识，或导入文件后从中摘录；每条知识都附带来源。',...(local?{}:{action:create})};
  return {title:'还没有可读的知识',text:'我的、团队和与我共享的知识都列在这里。',...(local?{}:{action:create})};
 }
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {currentAudience,inScope,knowledgeContext,knowledgeGuide,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 /** The knowledge home: the entries readable in the chosen scope, and under 全部 what the reader shared to the team. */

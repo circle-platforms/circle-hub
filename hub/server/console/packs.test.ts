@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {packsPage,packPage} from './packs.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 const detailContext=(kind:string,checks:unknown[]=[])=>{
  const principal={id:'reader',name:'合成成员',role:'user'};

@@ -9,7 +9,8 @@ import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, coverageText, statusText, terminalKind, terminalText } from '../claims.ts';
 import { countsLine } from '../text.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
-import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, neutralPage, missingProductionResult, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
+import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, missingProductionResult } from './pages.ts';
 /** What 生产结果 is: a product of the workflow, not a result from the production environment (issue 230). */
 const PRODUCTION_RESULT_HINT = '开始任务时由规则直接算出的结果，是工作流的产物，与生产环境无关';
 

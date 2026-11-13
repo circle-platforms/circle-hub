@@ -8,7 +8,7 @@ import { KNOWLEDGE_GRANTEE, KnowledgeGranteeSchema, isKnowledgeGrantAction, uiLa
 import { AccessError, RecordsError } from '../../records/api.ts';
 import type { PackListing } from '../../ports.ts';
 import { code, html, link, table, pageLayout, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import {when} from './ui.ts';
 import {panel as card,areaPage as page,field,technical,dialog,actionLink} from './presentation.ts';
 import { unpackZip } from './upload.ts';

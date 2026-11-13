@@ -10,7 +10,7 @@ import {html,link,page,pageLayout,pre,table,emptyAction,type Html} from './html.
 import {button} from './ui.ts';
 import {evidence,panel as card,field as inputField,actionLink,dialog} from './presentation.ts';
 import {exactSize,memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
-import {type PageContext,type PageResult,neutralPage} from './pages.ts';
+import { type PageContext, type PageResult, neutralPage } from './context.ts';
 import {currentAudience,inScope,knowledgeContext,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
 import {MARKDOWN_FIELD} from './form-recovery.ts';
 import {containsDirectory,directoryName} from './audience.ts';

@@ -6,7 +6,7 @@
 // from when it counts. Called only for a node the reader could read.
 import type { NodeViews } from '../../ports.ts';
 import { citationsComplete, citationsIndexedSince, countCitations } from '../../runs/api.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { when } from './ui.ts';
 
 export const CITATION_DAYS = 30;

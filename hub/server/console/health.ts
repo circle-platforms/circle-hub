@@ -16,7 +16,7 @@ import { BATCH_ROWS, FLUSH_MS, MAX_RELEASE_CALLS_READ, MAX_ROOTS_READ, MAX_ROUND
 import { curve, type Curve } from './charts.ts';
 import { hoverTime, size } from './format.ts';
 import { code, emptyBlock, href, html, page, table, type Html } from './html.ts';
-import type { PageContext, PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
 import type { HubFacts } from './settings.ts';
 import { card, chip, clock, count, dot, duration, kpi, when } from './ui.ts';

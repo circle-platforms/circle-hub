@@ -4,7 +4,7 @@ import {before,after,test} from 'node:test';
 import {startPostgres,type TemporaryPostgres} from '../../testing/postgres.ts';
 import {openTestRecords} from '../../testing/records.ts';
 import {spaceRecords} from './space-records.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import type {Principal} from '../../records/api.ts';
 
 let postgres:TemporaryPostgres;

@@ -11,7 +11,8 @@ import { packPath } from './pack-display.ts';
 import { code, html, link, page, table } from './html.ts';
 import { byId, shownVersion } from './packs.ts';
 import { spaceSearch } from './spaces.ts';
-import { readableLines, type PageContext, type PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
+import { readableLines } from './pages.ts';
 import { TOOL_LABELS, packTitles, taskTitle } from './tasks.ts';
 import { card, sectionHead, when } from './ui.ts';
 

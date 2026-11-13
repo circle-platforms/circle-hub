@@ -15,7 +15,7 @@ import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
 import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { environmentState } from './connections.ts';
 
 export interface TaskRow {

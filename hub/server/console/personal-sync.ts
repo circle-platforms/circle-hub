@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {axisUiLabel,uiLabelOf,SyncModeSchema,SyncStatusSchema} from '../../../contracts/generated/vocabulary.ts';
 import {RecordsError} from '../../records/api.ts';
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {html,href,type Html} from './html.ts';
 import {panel,facts,badge,dialog,actionLink,tooltip,stat,technical} from './presentation.ts';
 import {timestamp,size,number} from './knowledge-display.ts';

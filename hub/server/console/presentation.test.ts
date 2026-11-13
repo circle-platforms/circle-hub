@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {parse,type DefaultTreeAdapterMap} from 'parse5';
 import {html,table} from './html.ts';
 import {technical,sourceBlock} from './presentation.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 type Node=DefaultTreeAdapterMap['node'];
 const text=(node:Node):string=>'value' in node?node.value:'childNodes' in node?node.childNodes.map(text).join(''):'';
