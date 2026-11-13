@@ -1,13 +1,13 @@
 import { parseArgs } from 'node:util';
 import type { PlatformIo } from '../../platform/api.ts';
 import type { PlatformContext } from '../../platform/api.ts';
-import { RESET_SCOPE, RESET_SCOPE_LABEL, RESET_ALL_LABEL, parseResetRequest, type ResetPorts, type ResetRequest } from './types.ts';
+import { RESET_DATA_SCOPE, RESET_SCOPE_LABEL, RESET_ALL_LABEL, parseResetRequest, type ResetPorts, type ResetRequest } from './types.ts';
 import { resetData, ResetBlocked } from './host.ts';
 import { ResetFailure } from './operation.ts';
 import { runResetWorker } from './worker.ts';
 
 export function resetUsage(): string {
-  return `用法：circle-hub reset --scope <${[...RESET_SCOPE, 'all'].join('|')}> [--scope <范围>] [--keep-config] [--definition src:<已授权对象摘要>]\n${RESET_SCOPE.map(scope => `${scope}：${RESET_SCOPE_LABEL[scope]}`).join('；')}；all：${RESET_ALL_LABEL}\n本机定义文件请使用独立的 circle-hub apply <文件>；reset 不接受任意服务器文件路径。`;
+  return `用法：circle-hub reset --scope <${[...RESET_DATA_SCOPE, 'all'].join('|')}> [--scope <范围>] [--keep-config] [--definition src:<已授权对象摘要>]\n${RESET_DATA_SCOPE.map(scope => `${scope}：${RESET_SCOPE_LABEL[scope]}`).join('；')}；all：${RESET_ALL_LABEL}\n本机定义文件请使用独立的 circle-hub apply <文件>；reset 不接受任意服务器文件路径。`;
 }
 export function parseResetArguments(args: readonly string[]): { worker?: string; request?: ResetRequest; help?: boolean } {
   try {

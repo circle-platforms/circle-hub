@@ -118,6 +118,7 @@ export const AXES = {
   source_attribution_status: { label: '团队来源确认', owner: 'B02', values: [{ code: 'unsigned', label: '未确认' }, { code: 'attributed', label: '已确认为团队来源' }] },
   source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
+  reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1272,6 +1273,16 @@ export function isCapacityUnit(value: unknown): value is CapacityUnit {
   return (CAPACITY_UNIT as readonly unknown[]).includes(value);
 }
 
+/** 重置范围 (D04) */
+export const RESET_SCOPE = ['history', 'knowledge', 'packs', 'config', 'all'] as const;
+export type ResetScope = (typeof RESET_SCOPE)[number];
+export const RESET_SCOPE_LABEL = { 'history': '运行历史', 'knowledge': '知识', 'packs': '包', 'config': '配置', 'all': '全部' } as const satisfies { readonly [K in ResetScope]: string };
+export const RESET_SCOPE_UI = { 'history': '运行历史', 'knowledge': '知识', 'packs': '包', 'config': '配置', 'all': '全部' } as const satisfies { readonly [K in ResetScope]: string };
+export const ResetScopeSchema = z.enum(RESET_SCOPE);
+export function isResetScope(value: unknown): value is ResetScope {
+  return (RESET_SCOPE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1388,6 +1399,7 @@ export interface AxisValues {
   source_attribution_status: SourceAttributionStatus;
   source_location_status: SourceLocationStatus;
   capacity_unit: CapacityUnit;
+  reset_scope: ResetScope;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1506,6 +1518,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_LABEL,
   source_location_status: SOURCE_LOCATION_STATUS_LABEL,
   capacity_unit: CAPACITY_UNIT_LABEL,
+  reset_scope: RESET_SCOPE_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1624,6 +1637,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   source_attribution_status: SOURCE_ATTRIBUTION_STATUS_UI,
   source_location_status: SOURCE_LOCATION_STATUS_UI,
   capacity_unit: CAPACITY_UNIT_UI,
+  reset_scope: RESET_SCOPE_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

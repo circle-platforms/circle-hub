@@ -9,7 +9,7 @@ import { PackManifest } from '../../../contracts/src/pack.ts';
 import { ResourceRecord } from '../../../contracts/src/resources.ts';
 import { ProductId } from '../../../contracts/src/product.ts';
 import { ReferenceUri } from '../../../contracts/src/reference.ts';
-import type { ResetProblem, ResetScope } from './types.ts';
+import type { ResetProblem, ResetDataScope } from './types.ts';
 
 export interface CurrentReference {
   kind: 'record' | 'object'; digest: string; field: string;
@@ -32,17 +32,17 @@ export interface SelectionOptions {
   /** A content-addressed node/entry digest to its actual records.digest. */
   recordAliases?: ReadonlyMap<string, string>;
   /** Scopes with a current, verified holder of these exact object bytes. */
-  objectScopes?: ReadonlyMap<string, readonly ResetScope[]>;
+  objectScopes?: ReadonlyMap<string, readonly ResetDataScope[]>;
   /** Explicit empty lists are required for raw objects with no formal internal references. */
   objectReferences?: ReadonlyMap<string, readonly CurrentReference[]>;
   /** Verified source_artifact holders, including held_by ownership resolved from SQL foreign keys. */
-  sourceScopes?: ReadonlyMap<string, readonly ResetScope[]>;
+  sourceScopes?: ReadonlyMap<string, readonly ResetDataScope[]>;
   /** Verified object bytes that the host explicitly keeps regardless of the selected record scopes. */
   retainedObjects?: ReadonlySet<string>;
 }
 export interface RecordSelection { retained: string[]; cleared: string[]; blocked: ResetProblem[] }
 type Body = Record<string, unknown>;
-type Classifier = (record: CurrentRecord, body: Body) => ResetScope | null;
+type Classifier = (record: CurrentRecord, body: Body) => ResetDataScope | null;
 const object = (value: unknown): Body | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Body : null;
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 const sha256 = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
@@ -59,7 +59,7 @@ function artifactBody(record: CurrentRecord, body: Body): boolean {
     textArray(visibility.readers) && textArray(visibility.packs) && object(body.scan) !== null;
 }
 
-function classifyArtifact(record: CurrentRecord, body: Body, holders: readonly ResetScope[] = []): ResetScope | null {
+function classifyArtifact(record: CurrentRecord, body: Body, holders: readonly ResetDataScope[] = []): ResetDataScope | null {
   if (!artifactBody(record, body)) return null;
   const unique = [...new Set(holders)];
   return unique.length === 1 ? unique[0]! : null;
@@ -74,7 +74,7 @@ function documentRevision(record: CurrentRecord, body: Body): boolean {
     (record.indices === undefined || record.indices.some(entry => entry.key === 'artifact.object' && entry.value === external));
 }
 
-function artifactScopes(record: CurrentRecord, body: Body, options: SelectionOptions): ResetScope[] {
+function artifactScopes(record: CurrentRecord, body: Body, options: SelectionOptions): ResetDataScope[] {
   return [...new Set([...(options.sourceScopes?.get(record.digest) ?? []),
     ...(documentRevision(record, body) ? (options.objectScopes?.get(String(body.sha256)) ?? []).filter(scope => scope === 'config') : []),
     ...(object(object(body.origin)?.generated)?.generator === 'server.docs@1' ? ['history' as const] : [])])];
@@ -91,7 +91,7 @@ function moveTargetKind(body: Body): CurrentReference['kind'] | null {
     (line === undefined || line.length > 0) && (home !== 'seedling' || !!line) ? 'record' : null;
 }
 
-function classifyCall(record: CurrentRecord, body: Body): ResetScope | null {
+function classifyCall(record: CurrentRecord, body: Body): ResetDataScope | null {
   return record.schema === 'call_log@1' && IsoTime.safeParse(body.at).success && typeof body.trace_id === 'string' &&
     /^[0-9a-f]{32}$/.test(body.trace_id) && typeof body.span_id === 'string' && /^[0-9a-f]{16}$/.test(body.span_id) &&
     nullableText(body.user) && nullableText(body.session) && nullableText(body.run) && typeof body.tool === 'string' &&
@@ -100,18 +100,18 @@ function classifyCall(record: CurrentRecord, body: Body): ResetScope | null {
     nullableText(body.error_code) && Number.isSafeInteger(body.duration_ms) && Number(body.duration_ms) >= 0 ? 'history' : null;
 }
 
-function classifyPack(record: CurrentRecord, body: Body): ResetScope | null {
+function classifyPack(record: CurrentRecord, body: Body): ResetDataScope | null {
   if (record.schema !== 'pack_version@1') return null;
   const manifest = PackManifest.safeParse(body.manifest);
   return manifest.success && body.pack === manifest.data.id && body.version === manifest.data.version && body.kind === manifest.data.kind &&
     sha256(body.digest) && UserId.safeParse(body.publisher).success && object(body.report) !== null ? 'packs' : null;
 }
 
-function fixed(scope: ResetScope, ...schemas: string[]): Classifier {
+function fixed(scope: ResetDataScope, ...schemas: string[]): Classifier {
   return record => schemas.includes(record.schema) ? scope : null;
 }
 
-function classifyAuthorization(record: CurrentRecord, body: Body): ResetScope | null {
+function classifyAuthorization(record: CurrentRecord, body: Body): ResetDataScope | null {
   if (record.schema !== 'authorization@1' || !PermissionKindSchema.safeParse(body.permission).success ||
     typeof body.subject !== 'string' || typeof body.object !== 'string' || typeof body.revoked !== 'boolean' ||
     !(body.bound === null || sha256(body.bound)) || !UserId.safeParse(body.decided_by).success || !IsoTime.safeParse(body.decided_at).success ||
@@ -120,7 +120,7 @@ function classifyAuthorization(record: CurrentRecord, body: Body): ResetScope | 
   return body.permission === 'publish' ? 'packs' : 'config';
 }
 
-function classifyClaim(record: CurrentRecord, body: Body): ResetScope | null {
+function classifyClaim(record: CurrentRecord, body: Body): ResetDataScope | null {
   if (['knowledge-build@1', 'knowledge-calibration@1', 'knowledge-observation@1', KNOWLEDGE_CONTRIBUTION_SCHEMA, 'seedling@1'].includes(record.schema)) return 'knowledge';
   if (record.schema === 'hypothesis-set@1') return typeof body.question === 'string' && Array.isArray(body.hypotheses) ? 'history' : null;
   if (record.schema === 'feeding-offset@1') return 'history';
@@ -135,7 +135,7 @@ function classifyClaim(record: CurrentRecord, body: Body): ResetScope | null {
 }
 
 // Exact component identities emitted by the current writers; a new component needs an ownership decision.
-const ACTION_COMPONENTS: Readonly<Record<string, ResetScope>> = {
+const ACTION_COMPONENTS: Readonly<Record<string, ResetDataScope>> = {
   'runs.engine@1': 'history', 'dispatch@1': 'history', 'requests@1': 'history', 'criterion-change@1': 'history',
   'skill@1': 'history',
   'knowledge.produce@1': 'knowledge', 'knowledge.sync@1': 'knowledge', 'knowledge.placement@1': 'knowledge',
@@ -143,7 +143,7 @@ const ACTION_COMPONENTS: Readonly<Record<string, ResetScope>> = {
   'knowledge.views@1': 'knowledge', 'knowledge.seedling@1': 'knowledge', 'hub.feeding@1': 'knowledge',
   'hub.feeding@2': 'knowledge', 'connectors@1': 'knowledge',
 };
-function classifyAction(record: CurrentRecord, body: Body): ResetScope | null {
+function classifyAction(record: CurrentRecord, body: Body): ResetDataScope | null {
   if (['memory-refusal@1', 'memory-unchanged@1', 'personal-sync-mode@1', 'personal-sync-commit@1',
     'personal-sync-purge-request@1', 'personal-sync-http-audit@1'].includes(record.schema)) return 'knowledge';
   if (record.schema === 'mcp-client-declaration@1') return body.kind === 'read' && sha256(body.call) && object(body.client) !== null ? 'history' : null;
@@ -192,7 +192,7 @@ const CLASSIFIERS = {
   member_deletion: fixed('config', 'member-deletion@1'), token_issuance: fixed('config', 'token-issuance@1'),
 } satisfies Record<RecordKind, Classifier>;
 
-export function classifyCurrentRecord(record: CurrentRecord, options: SelectionOptions = {}): ResetScope | null {
+export function classifyCurrentRecord(record: CurrentRecord, options: SelectionOptions = {}): ResetDataScope | null {
   if (record.available === false) return null;
   if (!(RECORD_KINDS as readonly string[]).includes(record.kind)) return null;
   const body = object(record.body);
@@ -402,9 +402,9 @@ function untypedDigestFields(record: CurrentRecord): { digest: string; field: st
 }
 
 /** Sources inherit verified holder scopes; exact named-document provenance owns its configuration copies. */
-export function resolveCurrentRecordScopes(records: readonly CurrentRecord[], options: SelectionOptions = {}): ReadonlyMap<string, readonly ResetScope[]> {
+export function resolveCurrentRecordScopes(records: readonly CurrentRecord[], options: SelectionOptions = {}): ReadonlyMap<string, readonly ResetDataScope[]> {
   const byDigest = new Map(records.map(record => [record.digest, record]));
-  const owners = new Map<string, ResetScope[]>(), pending: string[] = [];
+  const owners = new Map<string, ResetDataScope[]>(), pending: string[] = [];
   for (const record of records) {
     if (record.kind === 'source_artifact' && record.available !== false && object(record.body) && artifactBody(record, object(record.body)!)) {
       const body = object(record.body)!;
@@ -434,7 +434,7 @@ export function resolveCurrentRecordScopes(records: readonly CurrentRecord[], op
   return owners;
 }
 
-export function selectCurrentRecords(records: readonly CurrentRecord[], scopes: ReadonlySet<ResetScope>, options: SelectionOptions = {}): RecordSelection {
+export function selectCurrentRecords(records: readonly CurrentRecord[], scopes: ReadonlySet<ResetDataScope>, options: SelectionOptions = {}): RecordSelection {
   const retained: string[] = [], cleared: string[] = [], blocked: ResetProblem[] = [];
   const owners = resolveCurrentRecordScopes(records, options);
   records.forEach((record, index) => {
