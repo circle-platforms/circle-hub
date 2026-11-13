@@ -68,7 +68,8 @@ export async function resourceCommand(session: Session, args: readonly string[])
       if (!resource) throw new CliError('资源不可用');
       if (sub === 'assign') await decided(() => hub.records.authorizations.assignResource(by, resource.id, subject, { note: values.note }));
       else await decided(() => hub.records.authorizations.unassignResource(by, resource.id, subject, values.note));
-      session.out(sub === 'assign' ? `资源 ${resource.name} 已分配给${values.all ? '全体成员' : '团队 ' + subject}` : `已撤回资源 ${resource.name} 给${values.all ? '全体成员' : '团队 ' + subject}的分配`);
+      const teamName = values.team === undefined ? null : (await hub.records.teams.get(by, subject))?.name ?? '团队';
+      session.out(sub === 'assign' ? `资源 ${resource.name} 已分配给${values.all ? '全体成员' : '团队 ' + teamName}` : `已撤回资源 ${resource.name} 给${values.all ? '全体成员' : '团队 ' + teamName}的分配`);
       return 0;
     }
     case 'add': {
@@ -135,7 +136,8 @@ export async function resourceCommand(session: Session, args: readonly string[])
         } catch (error) {
           throw new CliError(`资源 ${record.id} 已添加，但分配未确认；请先核对资源分配，再用 resource assign 分配，勿重复添加资源${error instanceof CliError ? '：' + error.message : ''}`, error instanceof CliError ? error.hint : null);
         }
-        session.out(`资源 ${record.name} 已分配给${subject === WHOLE_HUB ? '全体成员' : '团队 ' + subject}`);
+        const teamName = subject === WHOLE_HUB ? null : (await hub.records.teams.get(admin, subject))?.name ?? '团队';
+        session.out(`资源 ${record.name} 已分配给${subject === WHOLE_HUB ? '全体成员' : '团队 ' + teamName}`);
       } else {
         session.out('资源还没有分配，暂时谁都不能使用；用 resource assign 分配');
       }

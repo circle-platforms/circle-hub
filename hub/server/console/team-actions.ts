@@ -83,9 +83,12 @@ export const TEAM_ACTIONS: Readonly<Record<string, Action>> = {
     title: '分配工作流给团队',
     back: TEAMS,
     active: 'team',
-    build: (form) => ({
-      argv: ['pack', 'assign', word(form, 'pack', uiLabelOf('pack_kind', 'workflow')), flag('team', word(form, 'team', '团队'))],
-    }),
+    build: (form) => {
+      const team = flag('team', word(form, 'team', '团队'));
+      const packs = form.get('packs').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const list = packs.length > 0 ? packs : [word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))];
+      return list.map((pack) => ({ argv: ['pack', 'assign', pack, team] }));
+    },
   },
   'pack-unassign-team': {
     title: '撤回团队的工作流',

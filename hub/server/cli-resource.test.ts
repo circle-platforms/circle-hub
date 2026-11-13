@@ -21,7 +21,10 @@ function fixture(options: { denied?: boolean; addError?: Error; assignmentError?
       addResource: async (by: Principal, input: unknown) => { calls.push(['add', by, input]); if (options.addError) throw options.addError; return record; },
       describe: async () => ({ credentials: [] }),
     } },
-    records: { authorizations: { assignResource: async (...values: unknown[]) => { calls.push(['assign', ...values]); if (options.assignmentError) throw options.assignmentError; } } },
+    records: {
+      authorizations: { assignResource: async (...values: unknown[]) => { calls.push(['assign', ...values]); if (options.assignmentError) throw options.assignmentError; } },
+      teams: { get: async (_by: Principal, id: string) => id === team ? { id: team, name: '合成团队' } : null },
+    },
   };
   const session = new class extends Session {
     override async admin() { if (options.denied) throw new CliError('只有管理员可以接入资源'); return admin; }
@@ -37,7 +40,7 @@ test('resource add uses the created resource identity for explicit whole-Hub or 
     assert.deepEqual(f.calls.map(call => call[0]), ['add', 'assign']);
     assert.deepEqual(f.calls[1], ['assign', admin, record.id, subject]);
     assert.match(f.out[0], /已添加资源 synthetic-resource/);
-    assert.match(f.out[1], subject === WHOLE_HUB ? /已分配给全体成员/ : /已分配给团队 tm_/);
+    assert.match(f.out[1], subject === WHOLE_HUB ? /已分配给全体成员/ : /已分配给团队 合成团队/);
   }
 });
 

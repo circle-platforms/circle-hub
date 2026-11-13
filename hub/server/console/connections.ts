@@ -16,8 +16,10 @@ import { code, emptyAction, html, icon, link, liveModule, page, pageLayout, tabl
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
-import { box, button, callout, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
-import { count, errorLine, segments } from './components.ts';
+import { box, button, callout, card, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
+import { count, errorLine, segments, postForm } from './components.ts';
+import { registeredActionForm } from './command-form.ts';
+import { field } from './presentation.ts';
 import { byId, shownVersion } from './packs.ts';
 
 export type Circle = ConnectedClient;
@@ -101,6 +103,41 @@ function systemState(resource: ResourceListing): { text: string; tone: Tone; dot
   return resource.enabled ? { text: '启用', tone: 'pass', dot: 'ok' } : { text: '已停用', tone: 'unchecked', dot: 'idle' };
 }
 
+/** Registration forms for environments (N2). Do not claim team isolation until Boss/Codex env assignment is ready. */
+async function environmentAdminForms(ctx: PageContext, executors: readonly ExecutorView[] | null): Promise<Html> {
+  const csrf = ctx.csrf ?? '';
+  const teamsApi = (ctx.deps.records as { teams?: { list(by: PageContext['principal']): Promise<Array<{ id: string; name: string; deleted_at: string | null }>> } }).teams;
+  const teams = teamsApi === undefined ? [] : (await teamsApi.list(ctx.principal)).filter((row) => row.id !== 'team' && row.deleted_at === null);
+  const teamChoices = teams.map((row) => ({ value: row.id, label: row.name }));
+  const executorChoices = (executors ?? []).map((row) => ({ value: row.id, label: row.target }));
+  const docPut = card({ title: '登记或更新环境清单', hint: '上传 bed-topology JSON；经上传原件引用登记，不要求填写服务器本地路径。' },
+    postForm({
+      action: '/console/admin/do/doc-put',
+      csrf,
+      multipart: true,
+      fields: html`${field('文档名', html`<input name="name" value="bed-topology" required>`)}${field('清单文件', html`<input type="file" name="archive" accept=".json,application/json" required>`)}`,
+      submit: '登记清单',
+      primary: true,
+    }));
+  const executorAdd = card({ title: '登记测试环境执行器', hint: '上传执行器 JSON 定义；密钥另用密钥库设置。按团队隔离测试环境的权限规则仍待合入，本表单只做登记与分配命令。' },
+    postForm({
+      action: '/console/admin/do/executor-add',
+      csrf,
+      multipart: true,
+      fields: html`${field('定义文件', html`<input type="file" name="archive" accept=".json,application/json" required>`)}`,
+      submit: '登记执行器',
+      primary: true,
+    }));
+  const assign = card({ title: '分配测试环境给团队', hint: '调用 executor assign；成员侧是否按分配过滤，取决于环境授权是否已合入，当前不得宣称已按团队隔离。' },
+    executorChoices.length === 0 || teamChoices.length === 0
+      ? html`<p class="ch-meta">${executorChoices.length === 0 ? '尚无已登记的执行器。' : '尚无团队。'}</p>`
+      : registeredActionForm('executor-assign', csrf, '分配', {
+        choices: { executor: executorChoices, team: teamChoices },
+        primary: true,
+      }));
+  return html`<div class="ch-stack" data-environment-admin>${docPut}${executorAdd}${assign}</div>`;
+}
+
 /** Read-only lists and a single authorized selection share one inspector. */
 export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const now=(ctx.deps.now?.()??new Date()).getTime(),circles=await circlesOf(ctx),resources=ctx.admin?await ctx.deps.resources.list(ctx.principal):[];
@@ -143,7 +180,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const content=tab==='clients'?clients
   :tab==='systems'?liveModule('systems',['system.added','system.status'],html`${systemFacts}${box(null,systems,{flush:true})}`)
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})
-  :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${box(null,environments,{flush:true})}`);
+  :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${box(null,environments,{flush:true})}${ctx.admin?await environmentAdminForms(ctx,executors):''}`);
  const body=html`<div class="ch-stack" data-connections>${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
  return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境的占用与冻结取派发记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
 }

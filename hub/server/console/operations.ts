@@ -147,7 +147,7 @@ export async function operationsPage(ctx: PageContext, operation: string | undef
   if (!ctx.admin) return neutralPage(ctx);
   if (operation === undefined) {
     const cards = OPERATIONS.map((name) => card({ title: link(`${operationsPath()}/${name}`, TITLES[name].title), hint:TITLES[name].hint }, html``));
-    return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '控制台只执行这四种管理操作；其余操作在相关页面生成命令，在运行 Hub 的服务器上执行' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
+    return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '从这里进入加人、接入业务系统、发布任务包和导入知识；团队分配、安装技能、登记测试环境等在对应页面用表单完成，经同一命令通道写入。' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
   }
   if (!isOperation(operation)) return neutralPage(ctx);
   const body = operation === 'member' ? memberPage(ctx) : operation === 'system' ? await systemPage(ctx) : operation === 'pack' ? packPage(ctx, staging) : await knowledgePage(ctx, jobs);

@@ -115,8 +115,9 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   const deletion=ctx.admin&&ctx.url.searchParams.get('deletion')==='preview'?await memberDeletionDialog(ctx,selectedUser.id):html``;
   confirmations=html`${confirmations}${deletion}`;
   const user=selectedUser,assigned=assignedByUser.get(user.id)??[],canPublish=await authorizations.canPublish(user.id);
-  const toggle=user.disabled?commands.userEnable(user):commands.userDisable(user),spare=commands.tokenIssue(user),invite=commands.userInvite(user),publish=commands.memberPublish(user.id,canPublish);
-  if(ctx.admin)dialogs.push(toggle,publish,...(user.disabled?[]:[spare,invite]));
+  const csrf=ctx.csrf??'';
+  const publish=commands.memberPublish(user.id,canPublish);
+  if(ctx.admin)dialogs.push(publish);
   const belonging=(teamsByUser.get(user.id)??[]).map(team=>team.name).join('、')||'无';
   const permissions:Array<[string,unknown]>=[['角色',uiLabelOf('permission_role',user.role)],['所属团队',belonging],['具有发布权',canPublish?'是':'否'],...await memberSpaceMetadata(ctx,user)];
   if(ctx.admin&&spaces){try{const usage=await spaces.usage(ctx.principal,user.id);confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,user.id,usage)}`;permissions.push(['容量管理',actionLink('#adjust-member-capacity','调整容量…')]);}catch{/* usage failure stays unknown; do not block member management */}}
@@ -127,17 +128,23 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
   const rows=packs.map(pack=>{
    const via=sources?.find(row=>row.pack===pack.id);
    const mark=usable(pack.id)?'是':'否';
-   const note=via?via.via==='user'?'直接':`团队 ${via.via.team}`:assigned.includes(pack.id)?'直接':'';
+   const note=via?via.via==='user'?'直接':`团队 ${via.via.team}`:assigned.includes(pack.id)?'直接':'无';
    return [link('/console/team/'+user.id,pack.title,{workflow:pack.id}),note?`${mark} · ${note}`:mark];
   });
   let selectedAssignment=html``;
-  if(assignment){
-   const has=usable(assignment.id),change=commands.memberPack(user.id,assignment.id,assigned.includes(assignment.id));
-   if(ctx.admin)dialogs.push(change);
-   selectedAssignment=card({title:assignment.title},html`<p>${has?'可使用':'不可使用'}</p>${ctx.admin?commandLink(change,assigned.includes(assignment.id)?'移出使用范围…':'加入使用范围…',assigned.includes(assignment.id)?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary'):''}`);
+  if(assignment&&ctx.admin){
+   const hasDirect=assigned.includes(assignment.id);
+   selectedAssignment=card({title:assignment.title},html`<p>${usable(assignment.id)?'可使用':'不可使用'}</p>${registeredActionForm(hasDirect?'pack-unassign':'pack-assign',csrf,hasDirect?'移出使用范围':'加入使用范围',{values:{user:user.id,pack:assignment.id},primary:!hasDirect})}`);
+  }else if(assignment){
+   selectedAssignment=card({title:assignment.title},html`<p>${usable(assignment.id)?'可使用':'不可使用'}</p>`);
   }
-  if(ctx.admin)confirmations=html`${confirmations}${dialog('reset-member-password','重置成员密码',html`<p>生成仅显示一次的初始密码，使该账户的控制台会话失效；下次登录必须修改。</p>`,postForm({action:'/console/admin/do/password-reset',csrf:ctx.csrf??'',fields:html`<input type="hidden" name="user" value="${user.id}">`,submit:'重置密码',danger:true}))}`;
-  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${commandLink(publish,'调整发布权…')}${actionLink('#reset-member-password','重置密码…','danger')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${commandLink(toggle,user.disabled?'启用…':'停用…',user.disabled?'ch-btn ch-btn--secondary':'ch-btn ch-btn--danger')}${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}${user.disabled?'':html`${commandLink(spare,'签发客户端访问令牌…')}${commandLink(invite,'签发邀请码…','ch-btn ch-btn--primary')}`}`:''}</footer></div>`;
+  const memberOps=ctx.admin?html`<div class="ch-stack" data-member-ops>
+${card({title:user.disabled?'启用账户':'停用账户'},registeredActionForm(user.disabled?'user-enable':'user-disable',csrf,user.disabled?'启用':'停用',{values:{user:user.id},primary:!!user.disabled}))}
+${user.disabled?'':html`${card({title:'签发邀请码',hint:'邀请码 24 小时内有效，仅可使用一次，只在结果页显示。'},registeredActionForm('user-invite',csrf,'签发邀请码',{values:{user:user.id},primary:true}))}
+${card({title:'签发客户端访问令牌',hint:'新令牌仅在结果页显示一次，只用于连接客户端。'},registeredActionForm('token-issue',csrf,'签发令牌',{values:{user:user.id,label:'客户端'},primary:true}))}`}
+${card({title:'重置密码',hint:'生成仅显示一次的初始密码；下次登录必须修改。'},registeredActionForm('password-reset',csrf,'重置密码',{values:{user:user.id}}))}
+</div>`:'';
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">成员</span>${chip(uiLabelOf('account_status',user.deleted_at?'deleted':user.disabled?'disabled':'enabled'),user.disabled?'plain':'pass')}</div><h2 class="ch-panel-title">${user.name}</h2>${card({title:'权限'},definitions(permissions))}${ctx.admin?html`<div class="ch-actions">${commandLink(publish,'调整发布权…')}</div>`:''}${card({title:'工作流分配'},table([uiLabelOf('pack_kind','workflow'),'可使用'],rows,'尚无工作流',undefined,{selected:packs.findIndex(pack=>pack.id===workflow),hrefs:packs.map(pack=>href('/console/team/'+user.id,{workflow:pack.id}))}))}${selectedAssignment}${memberOps}${card({title:'已连接的客户端'},table(CLIENT_COLUMNS,devices.filter(device=>device.token.user===user.id).map(device=>clientRow(device,link(href('/console/team',{circle:device.id}),clientLabel(device)))),noClients(ctx.admin)))}<footer class="ch-inspector-actions">${ctx.admin?html`${actionLink('/console/team/'+user.id+'?deletion=preview#'+deletionDialogId,'删除成员…','danger')}`:''}</footer></div>`;
  }else{
   let usage=null;if(ctx.admin&&spaces){try{usage=await spaces.usage(ctx.principal,'team');}catch{usage=null;}}
   if(usage)confirmations=html`${confirmations}${await spaceCapacityDialog(ctx,'team',usage)}`;
@@ -296,6 +303,7 @@ ${card({ title: '概况' }, definitions([['名称', team.name], ['成员', count
 ${card({ title: '成员' }, table(['名字', '角色', '状态', '加入时间', ''], memberRows, '没有成员'))}
 ${addMember}
 ${card({ title: '工作流分配' }, table([uiLabelOf('pack_kind', 'workflow'), '状态', ''], packRows, '尚无工作流'))}
+${card({ title: '批量分配工作流', hint: '可一次勾选多个工作流分给本团队。' }, actionForm('pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}">${workflows.filter((pack) => !assignedPacks.has(pack.id)).length === 0 ? html`<p class="ch-meta">没有未分配的工作流。</p>` : html`<div data-fields>${workflows.filter((pack) => !assignedPacks.has(pack.id)).map((pack) => html`<label class="check" data-wide-field><input type="checkbox" name="packs" value="${pack.id}"> ${pack.title}</label>`)}</div>`}`, '分配选中的工作流', { primary: true }))}
 ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], resourceRows, '尚未分配业务系统'))}
 ${assignResource}
 ${deleteDialog}

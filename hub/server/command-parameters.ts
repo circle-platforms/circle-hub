@@ -117,6 +117,18 @@ const secretOptions = {
   'dry-run': flag('只检查', '核对输入但不写入'),
 };
 const executorOptions = { secret: flag('退役参数', '原命令保留明确拒绝 --secret；密钥值不得作为 argv', true) };
+const uploadedReference = text('上传原件引用', '当前账户可读取的完整 src 引用，不接受片段；与本机文件互斥', { schema: { type: 'string', pattern: '^src:[0-9a-f]{64}$' } });
+const sourceRules: Schema[] = [{ oneOf: [{ required: ['file'], not: { required: ['reference'] } }, { required: ['reference'], not: { required: ['file'] } }] }];
+const sourceVariants = (names: readonly string[]): PositionalVariant[] => [{ option: 'reference', present: false, names: [...names, 'file'] }, { option: 'reference', present: true, names }];
+const executorAssign = (action: 'assign' | 'unassign') => define(['executor', action], action === 'assign' ? '分配测试环境' : '撤回测试环境分配', sources.executor,
+  [positional('executor', '执行器', '已登记的测试环境执行器编号', true, stringSchema, true)],
+  { team: text('团队', '现有团队编号；与账户互斥', { schema: teamSchema, dynamicChoices: true }), user: text('账户', '现有账户名或成员编号；与团队互斥', { dynamicChoices: true }) },
+  { rules: [{ oneOf: [{ required: ['team'], not: { required: ['user'] } }, { required: ['user'], not: { required: ['team'] } }] }] });
+const leaseSource = { file: 'hub/server/cli-admin.ts', symbol: 'leaseCommand' };
+const bedSource = { file: 'hub/server/cli-job.ts', symbol: 'bedCommand' };
+const maintenanceReason = text('理由', '必填；由原命令与服务核验并写入动作记录', { required: true });
+const leasePrefix = () => positional('prefix', '租约前缀', '已发布工作流声明下的登记前缀，原命令核对归属', true, stringSchema, true);
+const bedExecutor = () => positional('executor', '执行器', '已登记的测试环境执行器编号', true, stringSchema, true);
 
 export const COMMAND_PARAMETERS = {
   'init-admin': define(['init-admin'], '建立第一位管理员', { file: 'hub/server/cli-admin.ts', symbol: 'initAdminCommand' }, [{ ...memberName(), required: false }], { 'password-stdin': flag('从标准输入读密码', '不设置时由现有命令生成初始密码') }, { stdin: [{ key: '管理员密码', enabledByOption: 'password-stdin', sensitive: true, description: '12–256 字符，无控制字符；仅通过 readSecret/stdin 传递' }], sensitiveOutput: true }),
@@ -139,6 +151,11 @@ export const COMMAND_PARAMETERS = {
   'token.list': define(['token', 'list'], '列出令牌', sources.token, [{ ...user(), required: false }], {}),
   'pack.publish': define(['pack', 'publish'], '发布包目录', sources.pack, [positional('directory', '目录', 'Hub 所在机器上的包目录')], { stage: flag('按清单暂存', '只复制 pack.json 列出的文件'), 'dry-run': flag('只检查', '执行发布检查但不保存发布记录'), 'answer-request': repeated('作答请求', '可重复，值为待作答的请求摘要') }),
   'pack.assign': assign('assign'), 'pack.unassign': assign('unassign'),
+  'pack.install': define(['pack', 'install'], '安装通用技能', sources.pack, [positional('pack', '通用技能版本', '已发布的技能包号@精确版本，安装后沿现有全员规则可用', true, stringSchema, true)], {}),
+  'pack.uninstall': define(['pack', 'uninstall'], '卸载通用技能', sources.pack, [positional('pack', '通用技能', '包号，不带版本；旧运行仍按冻结摘要复核', true, packSchema, true)], {}),
+  'pack.activate': define(['pack', 'activate'], '启用产品知识来源', sources.pack, [positional('pack', '产品知识来源', '已发布的产品包号，不带版本；由原 registry 核验', true, packSchema, true)], {}),
+  'pack.deactivate': define(['pack', 'deactivate'], '停用产品知识来源', sources.pack, [positional('pack', '产品知识来源', '已启用的产品包号，不带版本', true, packSchema, true)], {}),
+  'pack.retire': define(['pack', 'retire'], '退役包版本', sources.pack, [positional('pack', '包版本', '已发布的包号@精确版本；已有运行仍可读取和完成，由原 registry 核验', true, stringSchema, true)], {}),
   'pack.grant-publish': define(['pack', 'grant-publish'], '授予发布权', sources.pack, [user()], {}),
   'pack.revoke-publish': define(['pack', 'revoke-publish'], '撤回发布权', sources.pack, [user()], {}),
   'resource.add': define(['resource', 'add'], '接入业务系统资源', sources.resource, [positional('system-pack', '业务系统接入包', '已发布的系统包号或号@版本', true, stringSchema, true)], { ...resourceOptions, ...resourceAudienceOptions, name: { ...resourceOptions.name, required: true }, environment: { ...resourceOptions.environment, required: true }, origin: { ...resourceOptions.origin, required: true } }, { rules: [{ not: { required: Object.keys(resourceAudienceOptions), properties: { all: { const: true } } } }], validationNotes: ['所需角色、凭据项和设置来自选定系统包；不预设产品字段', '未指定 --all 或 --team 时不分配；接入和分配分步执行，分配未确认时资源仍已添加'] }),
@@ -149,10 +166,17 @@ export const COMMAND_PARAMETERS = {
   'secret.show': define(['secret', 'show'], '查看密钥登记', sources.secret, [], { name: { ...secretOptions.name, required: true, maxItems: 1 }, history: secretOptions.history }, { validationNotes: ['只允许一个 --name；不显示密钥值'] }),
   'secret.list': define(['secret', 'list'], '列出密钥登记', sources.secret, [], {}),
   'secret.import': define(['secret', 'import'], '从显式环境文件导入密钥', sources.secret, [], { 'env-file': { ...secretOptions['env-file'], required: true }, key: secretOptions.key, basic: secretOptions.basic, digest: secretOptions.digest, short: secretOptions.short, reason, 'dry-run': secretOptions['dry-run'] }, { rules: [{ anyOf: [{ required: ['key'] }, { required: ['basic'] }] }], validationNotes: ['环境文件只由原导入命令显式读取；不会导出文件内容'] }),
-  'executor.add': define(['executor', 'add'], '登记执行器', sources.executor, [positional('file', '定义文件', 'Hub 所在机器上的执行器 JSON 定义文件；credential 为命名密钥引用')], executorOptions),
-  'executor.update': define(['executor', 'update'], '更新执行器定义', sources.executor, [positional('executor', '执行器', '现有执行器编号', true, stringSchema, true), positional('file', '定义文件', 'Hub 所在机器上的 JSON 定义文件')], executorOptions),
+  'executor.add': define(['executor', 'add'], '登记执行器', sources.executor, [positional('file', '定义文件', '本机 CLI 的 JSON 文件；网页使用上传原件引用，credential 为命名密钥引用', false)], { ...executorOptions, reference: uploadedReference }, { rules: sourceRules, variants: sourceVariants([]) }),
+  'executor.update': define(['executor', 'update'], '更新执行器定义', sources.executor, [positional('executor', '执行器', '现有执行器编号', true, stringSchema, true), positional('file', '定义文件', '本机 CLI 的 JSON 文件；网页使用上传原件引用', false)], { ...executorOptions, reference: uploadedReference }, { rules: sourceRules, variants: sourceVariants(['executor']) }),
   'executor.list': define(['executor', 'list'], '列出执行器', sources.executor, [], executorOptions),
   'executor.disable': define(['executor', 'disable'], '停用执行器', sources.executor, [positional('executor', '执行器', '现有执行器编号', true, stringSchema, true)], executorOptions),
+  'executor.assign': executorAssign('assign'), 'executor.unassign': executorAssign('unassign'),
+  'doc.put': define(['doc', 'put'], '登记命名文档', { file: 'hub/server/cli-admin.ts', symbol: 'docCommand' }, [positional('name', '文档名', '命名文档的固定名称，由既有文档服务校验'), positional('file', '文档文件', '本机 CLI 的文件；网页使用上传原件引用', false)], { reference: uploadedReference }, { rules: sourceRules, variants: sourceVariants(['name']) }),
+  'lease.register': define(['lease', 'register'], '登记租约前缀归属', leaseSource, [leasePrefix()], { owner: text('登记所有者', '启用的账户名或编号；由原命令核对', { required: true, dynamicChoices: true }), reason: maintenanceReason, as }),
+  'lease.unregister': define(['lease', 'unregister'], '注销租约前缀登记', leaseSource, [leasePrefix()], { reason: maintenanceReason, as }),
+  'lease.release': define(['lease', 'release'], '强制释放租约键', leaseSource, [positional('key', '租约键', '原命令在释放前及事务守卫内核对未终态作业；本地释放不证明远端停止', true, stringSchema, true)], { reason: maintenanceReason, as }),
+  'bed.baseline.record': define(['bed', 'baseline', 'record'], '登记干净基线', bedSource, [bedExecutor()], { probe: text('探针', '执行器声明的探针编号，由原服务核验', { required: true, dynamicChoices: true }), reason: text('说明', '可选的登记说明') }),
+  'bed.hold.clear': define(['bed', 'hold', 'clear'], '结清运行环境占用', bedSource, [bedExecutor()], { reason: maintenanceReason }),
   'knowledge.sync': define(['knowledge', 'sync'], '同步知识来源', { file: 'hub/knowledge/cli.ts', symbol: 'parseKnowledgeSyncArgs' }, [], { product, line, 'dry-run': flag('只检查', '不保存同步产物'), recheck: flag('重新检查', '重新核对已知来源'), 'include-unreleased': flag('包含未发布构建', '同步未标为已发布的构建'), 'max-age': text('来源缓存秒数', '原解析允许 0 或至多 10 位十进制非负整数秒；0 强制重新读取', { schema: { type: 'string', pattern: '^(0|[1-9][0-9]{0,9})$' } }) }),
   'knowledge.seed': define(['knowledge', 'seed'], '建立版本线知识树', { file: 'hub/knowledge/seed.ts', symbol: 'parseKnowledgeSeedArgs' }, [], { product, line: { ...line, required: true }, build: text('构建', '可选的实际构建名', { dynamicChoices: true }), basis: text('理由', '去除首尾空白后 1–500 字，单行；原知识解析器执行此校验', { required: true }), 'dry-run': flag('只检查', '不保存产物') }),
   'knowledge.reproject': define(['knowledge', 'reproject'], '重做已有知识投影', { file: 'hub/knowledge/reproject.ts', symbol: 'parseKnowledgeReprojectArgs' }, [positional('product', '产品', '产品名或产品号', true, stringSchema, true), positional('line', '版本线', '已有版本线', true, stringSchema, true)], {}),

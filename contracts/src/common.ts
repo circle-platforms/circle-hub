@@ -23,6 +23,8 @@ export const UserId = idOf('usr');
 export const TeamId = idOf('tm');
 /** Team-scoped assignment or all enabled accounts, never a direct account grant. */
 export const TeamAssignmentSubject = z.union([TeamId, z.literal('*')]);
+/** Environment resources also allow a direct account assignment. */
+export const ResourceAssignmentSubject = z.union([TeamAssignmentSubject, UserId]);
 export const TokenId = idOf('tok');
 export const RecordId = idOf('rcd');
 /** A lease identity: `lse_` plus a 26 character lowercase ULID (the identity the keys of one grant are held under). */
@@ -31,6 +33,7 @@ export type RunId = z.infer<typeof RunId>;
 export type UserId = z.infer<typeof UserId>;
 export type TeamId = z.infer<typeof TeamId>;
 export type TeamAssignmentSubject = z.infer<typeof TeamAssignmentSubject>;
+export type ResourceAssignmentSubject = z.infer<typeof ResourceAssignmentSubject>;
 export type TokenId = z.infer<typeof TokenId>;
 export type RecordId = z.infer<typeof RecordId>;
 export type LeaseId = z.infer<typeof LeaseId>;
