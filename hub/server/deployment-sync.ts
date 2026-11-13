@@ -86,9 +86,15 @@ async function statusOf(config: HubConfig, id: string): Promise<DeploymentSyncSt
   }
   if (stopped) return {id,product:request.product,line:request.line,running:false,completed:true,probing:false,synchronized:false,current:false,
     error:{reason:'独立同步进程未确认运行，结果未知',nextAction:'检查用户服务管理器后重新提交'}};
+  let error: DeploymentSyncStatus['error'];
+  if (value.error !== undefined) {
+    const detail=object(value.error);
+    if (typeof detail.reason !== 'string' || typeof detail.nextAction !== 'string') throw problem();
+    error={reason:detail.reason,nextAction:detail.nextAction};
+  }
   return { id, product: request.product, line: request.line, running: value.running as boolean, completed: value.completed as boolean,
     probing: value.probing as boolean, synchronized: value.synchronized as boolean, current: value.current as boolean,
-    ...(value.error === undefined ? {} : { error: { reason: '同步尚未证实完成', nextAction: '核对来源、管理员权限及数据库身份后重新提交' } }) };
+    ...(error === undefined ? {} : {error}) };
 }
 async function save(config: HubConfig, status: StoredStatus) {
   await writeFileAtomic(paths(config, status.id).status, JSON.stringify(status), 0o600);
@@ -186,8 +192,15 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
   });
 }
 
+/** A declared line must occur exactly in this report, even when a product plan ignores the requested selection. */
+export function deploymentSyncReportCoversLine(report: Pick<SyncReport,'builds'>, line: string | null): boolean {
+  return line === null || report.builds.some(build => build.line === line);
+}
+const uncoveredLine = { reason:'本次报告未确认请求的版本线',nextAction:'核对产品计划是否按请求的版本线返回构建，再重新提交' };
+
 /** A fresh, complete report may establish unchanged roots. No timestamps or human reason strings are evidence. */
-export function unchangedDeploymentProbe(report: SyncReport): boolean {
+export function unchangedDeploymentProbe(report: SyncReport, line: string | null): boolean {
+  if (!deploymentSyncReportCoversLine(report,line)) return false;
   if (!report.dry_run || report.error !== null || !report.plan.done || report.plan.failed_reads.length || report.plan.limits.rounds || report.plan.limits.reads || report.counts.failed) return false;
   const roots = [...report.builds, ...(report.scope ? [report.scope] : [])];
   return roots.length > 0 && roots.every(root => root.outcome === 'skipped' && root.root !== null && root.composition !== null && root.would_produce !== true);
@@ -209,6 +222,7 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
   let records: Awaited<ReturnType<typeof openRecords>> | undefined;
   let hub: Awaited<ReturnType<typeof assembleHub>> | undefined;
   let changed = false;
+  let failure: DeploymentSyncStatus['error'];
   const monitor = async () => {
     try {
       while (!finished.signal.aborted) {
@@ -238,16 +252,18 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
     });
     const probe = await synchronize(actor,true);
     if (changed || probe.error !== null || !probe.plan.done || probe.plan.failed_reads.length || probe.counts.failed) throw problem();
-    if (unchangedDeploymentProbe(probe)) { await save(config,{...state,running:false,completed:true,current:true}); return 0; }
+    if (!deploymentSyncReportCoversLine(probe,request.line)) { failure=uncoveredLine; throw problem(); }
+    if (unchangedDeploymentProbe(probe,request.line)) { await save(config,{...state,running:false,completed:true,current:true}); return 0; }
     const freshActor = await records.principals.get(request.actor);
     if (!freshActor || freshActor.disabled || freshActor.deleted_at || !isAdmin(freshActor) || changed || !await hub.registry.isActive(product.id)) throw problem();
     await save(config,{...state,probing:false});
     const result = await synchronize(freshActor,false);
     if (changed || result.error !== null || !result.plan.done || result.plan.failed_reads.length || result.counts.failed) throw problem();
+    if (!deploymentSyncReportCoversLine(result,request.line)) { failure=uncoveredLine; throw problem(); }
     await save(config,{...state,running:false,completed:true,synchronized:true});
     return 0;
   } catch {
-    await save(config,{...state,running:false,completed:true,error:{reason:'同步未完成或数据库身份已改变',nextAction:'初始化结束后核对数据库、管理员和来源，再重新提交'}});
+    await save(config,{...state,running:false,completed:true,error:failure??{reason:'同步未完成或数据库身份已改变',nextAction:'初始化结束后核对数据库、管理员和来源，再重新提交'}});
     return 1;
   } finally {
     finished.abort(); await observing;
