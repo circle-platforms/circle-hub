@@ -30,6 +30,8 @@ import { callout, card, chip, stepper, when } from './ui.ts';
 import type { PageContext, PageResult } from './context.ts';
 import { UploadError, unpackZip } from './upload.ts';
 import { packHome, publication, publishingKind } from './pack-display.ts';
+import { buildRegisteredAction, type RegisteredActionName } from './command-form.ts';
+import { UsageError } from '../errors.ts';
 
 /** A form's fields, trimmed; absent fields are the empty string. */
 export type Form = { get(name: string): string };
@@ -64,6 +66,16 @@ export class FormError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'FormError';
+  }
+}
+
+/** Build from the U2 command registration; UsageError becomes a form message. */
+function fromRegistration(action: RegisteredActionName, form: Form): Built {
+  try {
+    return buildRegisteredAction(action, form);
+  } catch (error) {
+    if (error instanceof UsageError) throw new FormError(error.message);
+    throw error;
   }
 }
 
@@ -135,33 +147,38 @@ export const ACTIONS: Record<string, Action> = {
     back: '/console/team',
     once: true,
     onceNotice: '初始密码仅显示一次；首次登录必须修改，请交给该账户的使用者。',
-    build: (form) => ({ argv: ['user', 'password-reset', word(form, 'user', '成员')] }),
+    build: (form) => fromRegistration('password-reset', form),
   },
   'user-create': {
     title: '新建用户',
     back: USERS,
-    build: (form) => {
-      const role = form.get('role') || 'user';
-      if (!(PERMISSION_ROLE as readonly string[]).includes(role)) throw new FormError('角色不对');
-      return { argv: ['user', 'create', word(form, 'name', '用户名'), flag('role', role)] };
-    },
+    build: (form) => fromRegistration('user-create', form),
   },
-  'user-disable': { title: '停用用户', back: USERS, build: (form) => ({ argv: ['user', 'disable', word(form, 'user', '用户')] }) },
-  'user-enable': { title: '恢复用户', back: USERS, build: (form) => ({ argv: ['user', 'enable', word(form, 'user', '用户')] }) },
+  'user-disable': { title: '停用用户', back: USERS, build: (form) => fromRegistration('user-disable', form) },
+  'user-enable': { title: '恢复用户', back: USERS, build: (form) => fromRegistration('user-enable', form) },
+  'user-rename': { title: '修改账户名', back: USERS, build: (form) => fromRegistration('user-rename', form) },
+  'user-invite': {
+    title: '签发邀请码',
+    back: USERS,
+    once: true,
+    onceNotice: '下面的邀请码只显示这一次：现在复制并交给该成员。邀请码 24 小时内有效，仅可使用一次。',
+    build: (form) => fromRegistration('user-invite', form),
+  },
   'token-issue': {
     title: '签发令牌',
     back: USERS,
     once: true,
-    build: (form) => ({ argv: ['token', 'issue', word(form, 'user', '用户'), ...(form.get('label') ? [flag('label', form.get('label'))] : [])] }),
+    build: (form) => fromRegistration('token-issue', form),
   },
-  'token-revoke': { title: '撤销令牌', back: USERS, build: (form) => ({ argv: ['token', 'revoke', word(form, 'token', '令牌编号')] }) },
-  'pack-grant': { title: '授予发布权', back: PACKS, build: (form) => ({ argv: ['pack', 'grant-publish', word(form, 'user', '用户')] }) },
-  'pack-revoke': { title: '撤销发布权', back: PACKS, build: (form) => ({ argv: ['pack', 'revoke-publish', word(form, 'user', '用户')] }) },
-  'pack-assign': { title: '分配工作流', back: PACKS, build: (form) => ({ argv: ['pack', 'assign', word(form, 'user', '用户'), word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))] }) },
-  'pack-unassign': { title: '取消分配', back: PACKS, build: (form) => ({ argv: ['pack', 'unassign', word(form, 'user', '用户'), word(form, 'pack', uiLabelOf('pack_kind', 'workflow'))] }) },
+  'token-revoke': { title: '撤销令牌', back: USERS, build: (form) => fromRegistration('token-revoke', form) },
+  'pack-grant': { title: '授予发布权', back: PACKS, build: (form) => fromRegistration('pack-grant', form) },
+  'pack-revoke': { title: '撤销发布权', back: PACKS, build: (form) => fromRegistration('pack-revoke', form) },
+  'pack-assign': { title: '分配工作流', back: PACKS, build: (form) => fromRegistration('pack-assign', form) },
+  'pack-unassign': { title: '取消分配', back: PACKS, build: (form) => fromRegistration('pack-unassign', form) },
   'pack-retire': { title: '退役工作流版本', back: PACKS, build: (form) => ({ argv: ['pack', 'retire', word(form, 'ref', '包号@版本')] }) },
   'pack-activate': { title: '启用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'activate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
   'pack-deactivate': { title: '停用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'deactivate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
+  'executor-disable': { title: '停用执行器', back: RESOURCES, build: (form) => fromRegistration('executor-disable', form) },
   'resource-add': {
     title: '添加资源',
     back: RESOURCES,
@@ -199,17 +216,12 @@ export const ACTIONS: Record<string, Action> = {
   'secret-set': {
     title: '设置密钥',
     back: SECRETS,
-    build: (form) => {
-      const name = word(form, 'name', '密钥名');
-      const value = form.get('value');
-      if (value === '') throw new FormError('请填写密钥的值');
-      return { argv: ['secret', 'set', flag('name', name), flag('reason', word(form, 'reason', '理由'))], secrets: { [name]: value } };
-    },
+    build: (form) => fromRegistration('secret-set', form),
   },
   'secret-unset': {
     title: '撤回密钥',
     back: SECRETS,
-    build: (form) => ({ argv: ['secret', 'unset', flag('name', word(form, 'name', '密钥名')), flag('reason', word(form, 'reason', '理由'))] }),
+    build: (form) => fromRegistration('secret-unset', form),
   },
   'member-add': {
     title: '添加成员',
@@ -244,13 +256,7 @@ export const ACTIONS: Record<string, Action> = {
     title: '知识同步',
     back: KNOWLEDGE,
     background: true,
-    build: (form) => ({
-      argv: [
-        'knowledge', 'sync', flag('product', word(form, 'product', '产品')),
-        ...(form.get('line') ? [flag('line', word(form, 'line', '版本线'))] : []),
-        ...(form.get('dry_run') ? ['--dry-run'] : []),
-      ],
-    }),
+    build: (form) => fromRegistration('knowledge-sync', form),
   },
 };
 

@@ -16,6 +16,7 @@ import { connectedClients, clientLabel } from './circles.ts';
 import { CLIENT_COLUMNS, clientRow } from './connections.ts';
 import { code, href, html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
+import { registeredActionForm } from './command-form.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
 export type { HubFacts } from './context.ts';
@@ -286,10 +287,14 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   // The host operations and their dialogs are the Hub tab's; the credential tab carries no dialog nothing on it opens.
   const stopping = [commands.backup(), commands.restore(), commands.tlsIssue()];
   if (hub) dialogs.push(...stopping);
+  const setSecret = hub || selectedSecret ? '' : card(
+    { title: '设置凭据', hint: '不必先有资源或执行器引用这个名字；内容只进密钥库，不进命令参数和页面。' },
+    registeredActionForm('secret-set', ctx.csrf ?? '', '设置', { primary: true }),
+  );
   const content = hub
     ? html`${await hubState(ctx)}
 ${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
-    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${masking ?? ''}`;
+    : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${setSecret}${masking ?? ''}`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
   const inspectorFacts: Array<readonly [string, string | Html]> = selectedSecret ? [
