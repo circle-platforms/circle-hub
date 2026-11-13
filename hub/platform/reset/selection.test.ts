@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { scanDigest } from '../../records/api.ts';
 import { classifyCurrentRecord, currentRecordReferences, partitionRunOriginals, RECORD_HOLDER_COLUMNS, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord } from './selection.ts';
 
 const hash = (n: number): string => n.toString(16).padStart(64, '0');
@@ -235,4 +236,21 @@ test('resource definitions yield a pack registry alias instead of only a manifes
     allow_plaintext: [], credentials: {}, credential_digests: {}, settings: {}, created_by: user, created_at: at };
   assert.deepEqual(resourceDefinitionReferences(resource), [{ kind: 'record', digest: hash(20), field: '/system_pack_digest', recordAlias: true }]);
   assert.equal(resourceDefinitionReferences({ ...resource, schema: 'resource@2' }), null);
+});
+
+test('scan acceptance binds a computed scan signature while definition and manifest bindings remain objects', () => {
+  const signature = scanDigest({ scanner: 'credential-scan@3', inspected: true, clean: true, findings: [], truncated: false });
+  const scan = authorization(1, 'resource_config', signature);
+  scan.body = { ...(scan.body as Record<string, unknown>), subject: '*', object: 'scan:' + hash(20) };
+  assert.equal(currentRecordReferences(scan).some(edge => edge.field === '/bound'), false);
+  assert.deepEqual(selectCurrentRecords([scan], new Set(['history'])).blocked, []);
+  const definition = authorization(2, 'resource_config', hash(21));
+  const publication = authorization(3, 'publish', hash(22));
+  assert.equal(currentRecordReferences(definition).find(edge => edge.field === '/bound')!.kind, 'object');
+  assert.equal(currentRecordReferences(publication).find(edge => edge.field === '/bound')!.kind, 'object');
+  const otherKey = { ...scan, body: { ...(scan.body as Record<string, unknown>), object: 'scan:' + hash(20) + 'x' } };
+  assert.equal(currentRecordReferences(otherKey).find(edge => edge.field === '/bound')!.kind, 'object');
+  const share = authorization(4, 'share', signature);
+  share.body = { ...(share.body as Record<string, unknown>), object: 'production:synthetic-pack' };
+  assert.equal(currentRecordReferences(share).some(edge => edge.field === '/bound'), false);
 });

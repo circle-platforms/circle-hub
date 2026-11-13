@@ -249,10 +249,13 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
     rows(frozen?.skills).forEach((skill, n) => add('record', skill.digest, field + '/skills/' + n + '/digest', true));
   };
   switch (record.kind) {
-    case 'authorization':
-      if (body.permission === 'publish' || body.permission === 'resource_config' || body.permission === 'assign') add('object', body.bound, '/bound');
+    case 'authorization': {
+      // scanAcceptanceKey binds scanDigest(scan), a computed signature rather than stored object bytes.
+      const scanAcceptance = body.permission === 'resource_config' && typeof body.object === 'string' && /^scan:[0-9a-f]{64}$/.test(body.object);
+      if (body.permission === 'publish' || body.permission === 'assign' || body.permission === 'resource_config' && !scanAcceptance) add('object', body.bound, '/bound');
       add('record', body.supersedes, '/supersedes');
       if (body.permission === 'share') ref(body.object, '/object'); break;
+    }
     case 'source_artifact': {
       add('object', body.sha256, '/sha256');
       const origin = object(body.origin), read = object(origin?.read), generated = object(origin?.generated);
