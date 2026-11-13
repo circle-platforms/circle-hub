@@ -20,6 +20,7 @@ export interface ResetWorkerStatus {
   error?: { reason: string; nextAction: string };
 }
 interface Envelope { operationId: string; authorizationContext: string; request: ResetRequest; ackDeadline: number }
+interface PrivateStatus extends ResetWorkerStatus { workerPid?: number }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ACK_WAIT_MS = 30_000;
 const failed = { reason: '初始化操作未完成', nextAction: '检查私有备份与恢复状态后重试；不要删除归档' };
@@ -52,12 +53,31 @@ async function envelope(context: PlatformContext, id: string, authorizationConte
   if (authorizationContext !== undefined && value.authorizationContext !== authorizationContext) throw new PlatformError('对象不存在或无权读取');
   return { ...value, request: parseResetRequest(value.request) };
 }
-async function status(context: PlatformContext, id: string): Promise<ResetWorkerStatus> {
-  const value = JSON.parse(await privateText(paths(context, id).status)) as ResetWorkerStatus;
+async function status(context: PlatformContext, id: string): Promise<PrivateStatus> {
+  const value = JSON.parse(await privateText(paths(context, id).status)) as PrivateStatus;
   if (value.operationId !== id || typeof value.completed !== 'boolean' || typeof value.running !== 'boolean' || typeof value.acknowledged !== 'boolean') throw new PlatformError('初始化状态无法核对');
+  if (!value.completed) {
+    let error: ResetWorkerStatus['error'];
+    if (value.workerPid !== undefined) {
+      if (!Number.isSafeInteger(value.workerPid) || value.workerPid < 1) throw new PlatformError('初始化进程编号无法核对');
+      try { process.kill(value.workerPid, 0); }
+      catch (cause) {
+        const code = (cause as NodeJS.ErrnoException).code;
+        if (code === 'ESRCH') error = { reason: '初始化进程已停止，结果尚未确认', nextAction: '以新授权操作重试，由初始化入口先恢复未完成的操作；不要删除归档' };
+        else if (code !== 'EPERM') throw cause;
+      }
+    } else if (!value.running && context.now().getTime() >= (await envelope(context, id)).ackDeadline) {
+      error = { reason: '初始化工作进程未确认启动，未执行初始化', nextAction: '以新授权操作重新预览并确认初始化' };
+    }
+    if (error) {
+      const stopped: PrivateStatus = { operationId: id, acknowledged: value.acknowledged, running: false, completed: true, error };
+      await save(context, stopped);
+      return stopped;
+    }
+  }
   return value;
 }
-async function save(context: PlatformContext, value: ResetWorkerStatus): Promise<void> {
+async function save(context: PlatformContext, value: PrivateStatus): Promise<void> {
   await writeFileAtomic(paths(context, value.operationId).status, JSON.stringify(value), 0o600);
 }
 async function acknowledged(context: PlatformContext, id: string): Promise<boolean> {
@@ -127,7 +147,7 @@ export async function acknowledgeReset(context: PlatformContext, id: string, aut
 export async function readResetStatus(context: PlatformContext, id: string, authorizationContext: string): Promise<ResetWorkerStatus> {
   auth(authorizationContext);
   await envelope(context, id, authorizationContext);
-  const value = await status(context, id);
+  const { workerPid: _workerPid, ...value } = await status(context, id);
   return { ...value, acknowledged: value.acknowledged || await acknowledged(context, id) };
 }
 
@@ -138,6 +158,7 @@ export async function runResetWorker(context: PlatformContext, id: string, execu
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 1; throw error; }
   let ack = false;
   try {
+    await save(context, { operationId: id, acknowledged: false, running: false, completed: false, workerPid: process.pid });
     while (!(ack = await acknowledged(context, id))) {
       if (context.now().getTime() >= value.ackDeadline) {
         await save(context, { operationId: id, acknowledged: false, running: false, completed: true, error: { reason: '未收到响应完成确认，未执行初始化', nextAction: '重新预览并确认初始化' } });
@@ -145,7 +166,7 @@ export async function runResetWorker(context: PlatformContext, id: string, execu
       }
       await delay(50);
     }
-    await save(context, { operationId: id, acknowledged: true, running: true, completed: false });
+    await save(context, { operationId: id, acknowledged: true, running: true, completed: false, workerPid: process.pid });
     const report = await execute(value.request);
     await save(context, { operationId: id, acknowledged: true, running: false, completed: true, report });
     return 0;
