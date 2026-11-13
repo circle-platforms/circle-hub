@@ -159,26 +159,28 @@ export async function locateAll(document: ParsedDocument, attempts: FunctionAtte
 
 type Eager = ParsedDocument & { locate(selector: string): Fragment | null; listSelectors(prefix?: string, options?: { properties?: boolean }): string[] };
 
-/** Cover the full selector span without requesting every workbook cell in one operation. */
-async function locateWorkbookSample(document: ParsedDocument, eager: Eager, attempts: FunctionAttempt[]) {
+/** Exercise every workbook selector through bounded operations instead of one deadline-sharing load. */
+async function locateWorkbookBatches(document: ParsedDocument, eager: Eager, attempts: FunctionAttempt[]) {
   const selectors = document.listSelectors('');
-  const count = 96, batchSize = 32;
-  assert.ok(selectors.length >= count);
-  const chosen = Array.from({ length: count }, (_, index) => selectors[Math.floor(index * (selectors.length - 1) / (count - 1))]);
-  assert.equal(new Set(chosen).size, count);
+  const batchSize = 256;
+  assert.ok(selectors.length >= 20000);
+  assert.equal(new Set(selectors).size, selectors.length);
   assert.equal(typeof document.prefetch, 'function');
   const before = attempts.length;
-  for (let at = 0; at < chosen.length; at += batchSize) {
-    const batch = chosen.slice(at, at + batchSize), start = attempts.length;
+  for (let at = 0; at < selectors.length; at += batchSize) {
+    const batch = selectors.slice(at, at + batchSize), start = attempts.length;
     await document.prefetch!(batch);
-    assert.equal(attempts.slice(start).filter(attempt => attempt.attempt === 1).length, 1, 'one sandbox invocation per prefetch batch');
+    assert.equal(attempts.slice(start).filter(attempt => attempt.attempt === 1).length, 1, 'one sandbox invocation per bounded prefetch batch');
     for (const selector of batch) await sameFragment(document.locate(selector), await eager.locate(selector), selector);
+    const loaded = attempts.length;
+    await document.prefetch!(batch);
+    assert.equal(attempts.length, loaded, 'the same batch is not requested again');
   }
-  assert.equal(attempts.slice(before).filter(attempt => attempt.attempt === 1).length, 3, '96 sampled selectors use three batches');
+  assert.equal(attempts.slice(before).filter(attempt => attempt.attempt === 1).length, Math.ceil(selectors.length / batchSize));
   const loaded = attempts.length;
-  await document.prefetch!(chosen);
-  for (const selector of chosen) await sameFragment(document.locate(selector), await eager.locate(selector), selector);
-  assert.equal(attempts.length, loaded, 'repeated prefetch and locate use cached fragments');
+  await document.prefetch!(selectors);
+  for (const selector of selectors) await sameFragment(document.locate(selector), await eager.locate(selector), selector);
+  assert.equal(attempts.length, loaded, 'all previously loaded selectors remain cached');
 }
 
 /** The per-document comparisons that used to run one after another in a single test. */
@@ -202,7 +204,7 @@ export async function compareDocument(wire: ParsedDocument, eager: Eager, kind: 
       assert.deepEqual((wire as ParsedDocument & QuotationSource)[QUOTATION_UNITS]({ properties }), { stream: '', units: expectedWorkbookUnits });
     }
   }
-  if (kind === 'workbook') await locateWorkbookSample(wire, eager, attempts);
+  if (kind === 'workbook') await locateWorkbookBatches(wire, eager, attempts);
   else {
     await sampleLocate(wire, eager, ranges);
     await locateAll(wire, attempts);
