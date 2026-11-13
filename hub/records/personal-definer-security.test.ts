@@ -28,7 +28,9 @@ test('every definer pins pg_temp last and a malicious temporary text domain cann
  await rt.query('SELECT hub_collect_personal_sync($1,$2,now())',[user.id,INITIAL_PERSONAL_EPOCH]);
  await rt.query('SELECT hub_account_scope($1,$2)',[user.id,'00000000-0000-4000-8000-000000000004']);
  await rt.query('SELECT hub_finish_independent_objects($1)',[user.id]);
- await assert.rejects(rt.query('SELECT hub_restore_legacy_object($1,$2,$3)',[victim.digest,'b'.repeat(64),Buffer.from('synthetic')]),(error:unknown)=>(error as {code:string}).code==='P0001');
+ // C1 removed the one-time legacy converter; the retired definer must not reappear as an executable escape hatch.
+ assert.equal((await db.query("SELECT to_regprocedure('public.hub_restore_legacy_object(text,text,bytea)') AS legacy")).rows[0].legacy,null);
+ await assert.rejects(rt.query('SELECT hub_restore_legacy_object($1,$2,$3)',[victim.digest,'b'.repeat(64),Buffer.from('synthetic')]),(error:unknown)=>(error as {code:string}).code==='42883');
  const counts={records:0,payloads:0,objects:0,attributions:0,archives:0,private_versions:0};
  await assert.rejects(rt.query('SELECT hub_begin_member_deletion($1,$1,$2,$3,$4,$5,now(),$6)',[user.id,INITIAL_PERSONAL_EPOCH,'00000000-0000-4000-8000-000000000003','a'.repeat(64),JSON.stringify(counts),user.updated_at]),(error:unknown)=>(error as {code:string}).code==='P0001');
  await assert.rejects(rt.query('SELECT hub_finish_member_deletion($1,$2)',[user.id,'00000000-0000-4000-8000-000000000003']),(error:unknown)=>(error as {code:string}).code==='P0001');
