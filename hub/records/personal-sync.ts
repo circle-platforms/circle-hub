@@ -17,7 +17,6 @@ import {iso} from './db.ts';
 import {canonicalize} from './canonical.ts';
 import {sha256Hex} from './digest.ts';
 import {RecordsError,IntegrityError} from './errors.ts';
-import {scanContent} from './content-scan.ts';
 import {INITIAL_PERSONAL_EPOCH,type PersonalScope,type PgPersonalPayloads} from './personal-payloads.ts';
 
 type State=z.infer<typeof PersonalSyncState>;
@@ -208,7 +207,6 @@ export class PgPersonalSync {
    await this.#collect(scope,tx);
    const parsed=PersonalSyncClient.safeParse(input);if(!parsed.success)return fail('SYNC_OBJECT_INVALID');
    const normalized=PersonalSyncClient.safeParse({...parsed.data,name:normalizePersonalSyncText(parsed.data.name)});if(!normalized.success)return fail('SYNC_OBJECT_INVALID');const client=normalized.data;
-   this.#scan(Buffer.from(client.name),'SPACE_CREDENTIALS_DETECTED',true);
    const bytes=Buffer.from(canonicalize(client)),id=sha256Hex(bytes);
    const old=(await this.#db.query('SELECT name_payload FROM personal_sync_clients WHERE owner=$1 AND epoch=$2 AND client_id=$3',[scope.owner,scope.epoch,client.client_id],tx)).rows[0];
    if(old&&old.name_payload!==id)return fail('IDEMPOTENCY_MISMATCH');
@@ -259,12 +257,6 @@ export class PgPersonalSync {
    return {missing:request.data.objects.filter(id=>!owned.has(id))};
   });
  }
- #scan(bytes:Uint8Array,code:ProtocolCode,requireText=false){const scan=scanContent(bytes);if(scan.findings.length||scan.truncated)fail(code);if(requireText&&!scan.inspected)fail('SPACE_CONTENT_UNINSPECTABLE');}
- #scanText(value:unknown,code:ProtocolCode):void{
-  if(typeof value==='string'){this.#scan(Buffer.from(value),code,true);return;}
-  if(Array.isArray(value)){for(const item of value)this.#scanText(item,code);return;}
-  if(value&&typeof value==='object')for(const [key,item]of Object.entries(value)){this.#scanText(key,code);this.#scanText(item,code);}
- }
  #decode(id:string,bytes:Uint8Array):PersonalSyncObject{
   if(sha256Hex(bytes)!==id)return fail('SYNC_OBJECT_HASH_MISMATCH');
   try{return decodePersonalSyncObject(bytes,id);}catch{return fail('SYNC_OBJECT_INVALID');}
@@ -308,8 +300,6 @@ export class PgPersonalSync {
    for(const input of batch.objects){const size=input.bytes_base64.length/4*3-(input.bytes_base64.endsWith('==')?2:input.bytes_base64.endsWith('=')?1:0);total+=size;if(size>this.limits.object_bytes||total>this.limits.batch_bytes)return fail('SYNC_BATCH_LIMIT');
     const bytes=Buffer.from(input.bytes_base64,'base64'),object=this.#decode(input.id,bytes);
     const memory=object.kind===objectKinds.memory_revision;
-    if(object.kind!==objectKinds.bytes)this.#scanText(object,memory?'MEMORY_CREDENTIALS_DETECTED':'SPACE_CREDENTIALS_DETECTED');
-    if(object.kind===objectKinds.bytes)this.#scan(Buffer.from(object.body.bytes_base64,'base64'),'SPACE_CREDENTIALS_DETECTED');
     if(memory&&Buffer.byteLength(object.body.markdown)>this.#limits.maxMemoryDocumentBytes)return fail('MEMORY_DOCUMENT_LIMIT');
     if(object.kind===objectKinds.source_revision&&object.body.size>this.#limits.maxUploadBytes)return fail('SYNC_OBJECT_INVALID');
     admitted.push({id:input.id,bytes,object});
@@ -358,7 +348,7 @@ export class PgPersonalSync {
  },tx,true);}
  async head(by:Principal,epoch:string,tx:Transaction){return this.#scope(by,epoch,async(scope,t)=>(await this.#db.query('SELECT snapshot,native_state,memory_projection,conflicts FROM personal_sync_heads WHERE owner=$1 AND epoch=$2',[scope.owner,scope.epoch],t)).rows[0],tx);}
  async stage(by:Principal,epoch:string,objects:readonly PersonalSyncObject[],tx:Transaction,native=false){return this.#scope(by,epoch,async(scope,t)=>{
-  const ids:string[]=[];for(const object of objects){const bytes=encodePersonalSyncObject(object),id=sha256Hex(bytes);if(bytes.length>this.limits.object_bytes)return fail('SYNC_BATCH_LIMIT');if(object.kind===objectKinds.bytes)this.#scan(Buffer.from(object.body.bytes_base64,'base64'),'SPACE_CREDENTIALS_DETECTED');else this.#scanText(object,object.kind===objectKinds.memory_revision?'MEMORY_CREDENTIALS_DETECTED':'SPACE_CREDENTIALS_DETECTED');await this.#saveObject(scope,id,bytes,object.kind,t);ids.push(id);
+  const ids:string[]=[];for(const object of objects){const bytes=encodePersonalSyncObject(object),id=sha256Hex(bytes);if(bytes.length>this.limits.object_bytes)return fail('SYNC_BATCH_LIMIT');await this.#saveObject(scope,id,bytes,object.kind,t);ids.push(id);
    if(native)await this.#db.query('INSERT INTO personal_sync_exports VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[by.id,epoch,id],t);
   }return ids;
  },tx);}
