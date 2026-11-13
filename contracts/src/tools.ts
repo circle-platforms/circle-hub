@@ -419,7 +419,29 @@ const TOOL_DEFINITIONS = [
 ] as const satisfies readonly ToolDefinition[];
 
 export type ToolName = (typeof TOOL_DEFINITIONS)[number]['name'];
-export const TOOLS: readonly (ToolDefinition & { name: ToolName })[] = TOOL_DEFINITIONS;
+/** Clone output objects recursively; shared input and record shapes remain strict. */
+function extensibleOutput(schema: z.ZodType): z.ZodType {
+  const copies = new Map<z.ZodType, z.ZodType>();
+  const visit = (value: unknown): unknown => {
+    if (value instanceof z.ZodType) {
+      const previous = copies.get(value);
+      if (previous) return previous;
+      const definition = Object.fromEntries(Object.entries(value._zod.def).map(([key, child]) => [key, visit(child)]));
+      if (definition.type === 'object') definition.catchall = z.unknown();
+      const copy = z.core.clone(value, definition as typeof value._zod.def, { parent: true });
+      copies.set(value, copy);
+      return copy;
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (z.core.util.isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child)]));
+    return value;
+  };
+  return visit(schema) as z.ZodType;
+}
+
+export const TOOLS: readonly (ToolDefinition & { name: ToolName })[] = TOOL_DEFINITIONS.map(
+  tool => ({ ...tool, output: extensibleOutput(tool.output) }),
+);
 export const TOOL_NAMES: readonly ToolName[] = TOOLS.map(tool => tool.name);
 
 export { Coverage, ItemId, PackId, ExternalObjectId, Fields };
