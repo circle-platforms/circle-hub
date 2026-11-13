@@ -678,6 +678,8 @@ export interface VaultSecretWriteResult extends VaultSecretMetadata {
   readonly archive?: VaultArchiveReceipt;
 }
 export interface VaultSecretWrite {
+  /** Used only for in-vault disclosure checks, never persisted in value metadata or archive receipts. */
+  reason?: string;
   name: string;
   value: string;
   digest_rule: import('../../contracts/generated/vocabulary.ts').DigestRule;

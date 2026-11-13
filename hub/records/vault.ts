@@ -7,6 +7,7 @@ import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile 
 import { dirname, join } from 'node:path';
 import type { KeyProvider, Vault, VaultVerification, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWrite, VaultSecretWriteResult, VaultArchiveReceipt } from './api.ts';
 import { VariableName, SecretRecord, SecretSidecar, SecretMetadataFile } from '../../contracts/src/variables.ts';
+import { validateChangeReason, VariableError } from './variables.ts';
 import { isDigestRule } from '../../contracts/generated/vocabulary.ts';
 import { VaultError, VaultReadinessError, type VaultReadinessIssue, isVaultReadBoundaryError, unexpectedVaultReadError } from './errors.ts';
 
@@ -365,10 +366,31 @@ export class FileVault implements Vault {
     }
   }
 
+  async #checkPriorValueDisclosure(name: string, reason: string | undefined): Promise<void> {
+    if (reason === undefined) return;
+    const logical = this.#secretEntry(name), key = await this.#key();
+    try {
+      for (const entry of (await this.list()).filter(candidate => candidate.startsWith(logical + '.') && /^[a-f0-9]{24}$/.test(candidate.slice(logical.length + 1)))) {
+        const original = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
+        let plain: Uint8Array | undefined;
+        try {
+          try { plain = openSealed(entry, original.bytes.toString('utf8'), key); }
+          catch (error) { if (error instanceof VaultError) continue; throw error; }
+          let value: string;
+          try { value = new TextDecoder('utf-8', { fatal: true }).decode(plain); }
+          catch (error) { if (error instanceof TypeError && (error as NodeJS.ErrnoException).code === 'ERR_ENCODING_INVALID_ENCODED_DATA') continue; throw error; }
+          try { validateChangeReason(reason, [value]); }
+          catch (error) { if (error instanceof VariableError) throw new VaultError('理由含同名原封存值或其可逆表示；归档和设置均未执行，请重写理由'); throw error; }
+        } finally { plain?.fill(0); }
+      }
+    } finally { key.fill(0); }
+  }
+
   async putSecret(input: VaultSecretWrite): Promise<VaultSecretWriteResult> {
     const logical = this.#secretEntry(input.name);
     if (!isDigestRule(input.digest_rule) || typeof input.value !== 'string' || !input.value.isWellFormed() || /[\x00-\x1f\x7f-\x9f]/.test(input.value) || [...input.value].length < 1 || [...input.value].length > 4096) throw new VaultError('密钥值或摘要规则不合规则');
     return this.#changeSecret(input.name, async () => {
+      await this.#checkPriorValueDisclosure(input.name, input.reason);
       let previous: SecretMetadataFile | null = null;
       try { previous = await this.#metadataFile(input.name); if (previous) await this.recentSecrets([input.name]); }
       catch (error) {
