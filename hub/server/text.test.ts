@@ -103,6 +103,8 @@ function runOf(list: ItemProjection[], options: { production?: boolean; instruct
     run: RUN,
     pack: options.production ? 'toy-locate@1.0.0' : 'toy-review@1.0.0',
     pack_digest: H('c'),
+    skills: [],
+    submission_due: '2026-10-23T08:00:00.000Z',
     product: 'meadow',
     version: '2.1',
     build: 'b-2.1-7',
