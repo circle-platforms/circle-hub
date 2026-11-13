@@ -1,5 +1,5 @@
 // Shared V03 recovery rules. Intent binding never creates a request or performs an action.
-import {labelOf,ReasonSchema,type Reason} from '../../../contracts/generated/vocabulary.ts';
+import {labelOf,type Reason} from '../../../contracts/generated/vocabulary.ts';
 import {UnknownExit,isUnknownTerminal,type LayerResult} from '../../../contracts/src/validation.ts';
 import type {CheckOutcome} from '../../../contracts/src/tables.ts';
 
@@ -26,8 +26,8 @@ export interface NamedRecoveryContext {
   location: string;
 }
 
-/** Bind new results only. Stored results are read through readStoredValidationResult, never passed here. */
-function bindNamedRecovery(layer: LayerResult, context: NamedRecoveryContext, outcomes: readonly CheckOutcome[] = []): LayerResult {
+/** Bind named recovery to a newly evaluated result. */
+export function bindRecovery(layer: LayerResult, context: NamedRecoveryContext, outcomes: readonly CheckOutcome[] = []): LayerResult {
   const reason = layer.reason ?? 'check_error';
   const gap = (cause: Reason, missing: string) => {
     const policy = EXIT_BY_REASON[cause];
@@ -46,33 +46,4 @@ function bindNamedRecovery(layer: LayerResult, context: NamedRecoveryContext, ou
     ?? gap(reason, `${context.location}：缺少${EXIT_BY_REASON[reason].missing}（${labelOf('reason',reason)}）`);
   const rest = [...distinct.values()].filter(g => g !== selected);
   return { ...layer, ...selected, ...(rest.length ? { gaps: rest } : {}) };
-}
-
-/** Compatibility input for the earlier pure-intent helper, not an execution context. */
-export interface RecoveryContext {now:Date;runner:string;owner:string|null;admin:string|null;trustedCore?:boolean}
-const heldInputReasons=ReasonSchema.extract(['awaiting_step','missing_input']);
-export function bindRecovery(layer:LayerResult,context:NamedRecoveryContext,outcomes?:readonly CheckOutcome[]):LayerResult;
-export function bindRecovery(layer:LayerResult,outcomes:readonly CheckOutcome[],context:RecoveryContext):LayerResult;
-export function bindRecovery(layer:LayerResult,second:NamedRecoveryContext|readonly CheckOutcome[],third?:RecoveryContext|readonly CheckOutcome[]):LayerResult{
-  if(!Array.isArray(second))return bindNamedRecovery(layer,second as NamedRecoveryContext,Array.isArray(third)?third:[]);
-  const context=third as RecoveryContext;
-  if(!context.owner||!context.admin)throw new Error('无法绑定未知出口：缺少 owner 或具名管理员身份读取接线');
-  const due=new Date(context.now.getTime()+72*60*60*1000).toISOString();
-  const bound=bindNamedRecovery(layer,{runner:context.runner,owner:context.owner,administrator:context.admin,due,location:'判定'},second);
-  const decorate=(gap:{reason:Reason;missing:string;exit:unknown})=>{
-    const outcome=second.find(o=>o.verdict==='unknown'&&o.reason===gap.reason&&o.missing===gap.missing);
-    let procedure:string=EXIT_BY_REASON[gap.reason].next_action;
-    // Only parent-observed evidence can propose automatic recovery. Pack data and authored exits grant no authority.
-    if(context.trustedCore&&outcome){
-      const held=Array.isArray(outcome.data?.unread_sources)&&outcome.data.unread_sources.some((row:unknown)=>row!==null&&typeof row==='object'&&'reason'in row&&row.reason==='credential_unreadable');
-      if(outcome.data?.sandbox==='SANDBOX_UNAVAILABLE'){gap.exit={action:'reevaluate',audience:{hub:true},due};procedure='Hub 在沙箱恢复后自动重评';}
-      else if(outcome.reason==='missing_input'&&outcome.data?.why==='unavailable'){gap.exit={action:'reread',audience:{hub:true},due};procedure='Hub 重读已绑定的来源片段后自动重评';}
-      else if(heldInputReasons.safeParse(outcome.reason).success&&held){gap.exit={action:'request',request_kind:'disposition',audience:{user:context.admin},due};procedure='具名管理员按原对象重新读取这份来源，得到可读的新记录后 Hub 自动重评';}
-      else if(outcome.reason==='integrity_unproven'&&outcome.data?.why==='integrity_unproven'){gap.exit={action:'request',request_kind:'repair',audience:{user:context.admin},due};procedure='具名管理员从可信备份恢复与摘要一致的字节后重新核验，不重读损坏的原件';}
-    }
-    gap.missing+='；下一步：'+procedure;
-  };
-  if(bound.missing&&bound.exit&&bound.reason)decorate(bound as LayerResult&{reason:Reason;missing:string;exit:unknown});
-  for(const gap of bound.gaps??[])decorate(gap);
-  return bound;
 }
