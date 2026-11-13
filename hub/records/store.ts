@@ -1,3 +1,4 @@
+import {RECORD_ACCESS} from './record-kinds.ts';
 import {verifiedReadValue} from './read-scope.ts';
 import {PgPersonalPayloads,personalRecordOwner,isPersonalPackRecord,captureRecordOwner} from './personal-payloads.ts';
 import { RecordsError } from './errors.ts';
@@ -70,7 +71,7 @@ export class PgRecordStore implements RecordStore {
         const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);
         if (existing !== null) return { ...existing, created: false };
       }
-      const capturedOwner=kind.data==='source_artifact'?captureRecordOwner(input.body):null;
+      const capturedOwner=RECORD_ACCESS[kind.data].personal==='capture'?captureRecordOwner(input.body):null;
       const registered=capturedOwner?(await this.#db.query('SELECT id FROM users WHERE id=$1',[capturedOwner],t)).rows[0]:null;
       const personalOwner=input.personalOwner??personalRecordOwner(kind.data,input.body)??(registered?capturedOwner:null);
       const accountOwned=input.accountOwned||isPersonalPackRecord(kind.data)||!!(registered&&!(input.body as {personal_scope?:unknown})?.personal_scope&&input.personalOwner===undefined);

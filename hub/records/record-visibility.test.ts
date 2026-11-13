@@ -1,3 +1,4 @@
+import {isPersonalPackRecord,personalRecordOwner,personalOwnerOf} from './personal-payloads.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RunRecord } from '../../contracts/src/run.ts';
@@ -45,7 +46,7 @@ test('the current stored account decides, with disabled and deleted accounts ref
 
 test('dedicated records and source artifacts never gain a generic administrator bypass', async () => {
   const activeAdmin = ports({ account: async () => ({ ...alice, role: 'admin' }) });
-  for (const kind of RECORD_KINDS.filter(kind => RECORD_ACCESS[kind] === 'dedicated')) assert.equal(await mayReadRecord(admin, record(kind), activeAdmin), false, kind);
+  for (const kind of RECORD_KINDS.filter(kind => RECORD_ACCESS[kind].visibility === 'dedicated')) assert.equal(await mayReadRecord(admin, record(kind), activeAdmin), false, kind);
   assert.equal(await mayReadRecord(admin, record('source_artifact'), activeAdmin), false);
   assert.equal(await mayReadRecord(admin, record('source_artifact'), { ...activeAdmin, source: async () => true }), true);
 });
@@ -73,4 +74,17 @@ test('contribution reads always use product permissions and memory action audits
   assert.equal(await mayReadRecord(admin, contribution, activeAdmin), false);
   assert.equal(await mayReadRecord(admin, contribution, { ...activeAdmin, contribution: async () => true }), true);
   assert.equal(await mayReadRecord(admin, record('action', {}, 'memory-refusal@1'), activeAdmin), false);
+});
+
+
+test('personal storage and generic visibility share the same kind registration',()=>{
+  const owner='usr_'+'0'.repeat(26);
+  assert.equal(personalRecordOwner('personal_pack_transfer',{space:owner}),owner);
+  assert.equal(isPersonalPackRecord('personal_pack_transfer'),true);
+  assert.equal(isPersonalPackRecord('pack_version'),false);
+  assert.equal(personalRecordOwner('knowledge_space_quota',{space:owner}),null);
+  assert.equal(personalOwnerOf({kind:'run',body:{pack_space:owner}}),owner);
+  assert.equal(personalOwnerOf({kind:'source_artifact',body:{personal_scope:{owner}}}),owner);
+  assert.equal(personalOwnerOf({kind:'action',schema:'memory-refusal@1',body:{by:owner}}),owner);
+  assert.equal(personalOwnerOf({kind:'action',schema:'action@1',body:{by:owner}}),null);
 });

@@ -2,7 +2,7 @@ import {retireReadScope} from './read-scope.ts';
 import {randomUUID} from 'node:crypto';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {SyncModeSchema,type SyncMode} from '../../contracts/generated/vocabulary.ts';
-import {RecordKindSchema} from '../../contracts/src/records.ts';
+import {RECORD_ACCESS} from './record-kinds.ts';
 // Account/epoch-scoped, physically removable payloads. Audit capsules contain no plaintext.
 import type {Database} from './db.ts';
 import {iso} from './db.ts';
@@ -13,9 +13,9 @@ import {IntegrityError,RecordsError} from './errors.ts';
 import {stagingSlots} from './staging-slots.ts';
 export const INITIAL_PERSONAL_EPOCH='00000000-0000-4000-8000-000000000001';
 export interface PersonalScope {owner:string;epoch:string}
-export const isPersonalPackRecord=(kind:RecordKind)=>RecordKindSchema.extract(['personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer']).safeParse(kind).success;
+export const isPersonalPackRecord=(kind:RecordKind)=>RECORD_ACCESS[kind].personalPack;
 export function personalRecordOwner(kind:RecordKind,body:unknown):string|null{
- if(!RecordKindSchema.extract(['knowledge_space_entry','knowledge_space_version','knowledge_space_source','knowledge_space_grant','memory_document','memory_version','memory_grant','knowledge_source_attribution','personal_pack_version','personal_pack_grant','personal_pack_retirement','personal_pack_transfer']).safeParse(kind).success)return null;
+ if(RECORD_ACCESS[kind].personal!=='space')return null;
  const space=(body as {space?:unknown})?.space;
  return typeof space==='string'&&/^usr_[0-9a-z]{26}$/.test(space)?space:null;
 }
@@ -33,15 +33,15 @@ const USER=/^usr_[0-9a-z]{26}$/;
 export function personalOwnerOf(record:{kind:RecordKind;schema?:string;body:unknown}):string|null{
  const owner=personalRecordOwner(record.kind,record.body);if(owner)return owner;
  const body=record.body as Record<string,unknown>|null;
- if(record.kind==='action'&&typeof record.schema==='string'&&/^memory-(refusal|unchanged)@/.test(record.schema)){const by=body?.by;return typeof by==='string'&&USER.test(by)?by:null;}
- if(record.kind==='run'){const space=body?.pack_space;return typeof space==='string'&&USER.test(space)?space:null;}
- if(record.kind!=='source_artifact')return null;
+ if(RECORD_ACCESS[record.kind].personal==='memory_action'&&typeof record.schema==='string'&&/^memory-(refusal|unchanged)@/.test(record.schema)){const by=body?.by;return typeof by==='string'&&USER.test(by)?by:null;}
+ if(RECORD_ACCESS[record.kind].personal==='run'){const space=body?.pack_space;return typeof space==='string'&&USER.test(space)?space:null;}
+ if(RECORD_ACCESS[record.kind].personal!=='capture')return null;
  const scoped=(body as {personal_scope?:{owner?:unknown}}|null)?.personal_scope?.owner;
  return typeof scoped==='string'?scoped:captureRecordOwner(record.body);
 }
 /** The run a run-bound record (submission, result, action, request) belongs to, by its body. */
 function runOf(record:{kind:RecordKind;body:unknown}):string|null{
- if(record.kind==='run')return null;
+ if(RECORD_ACCESS[record.kind].personal==='run')return null;
  const body=record.body as {run?:unknown;received?:{run?:unknown}}|null;
  const run=typeof body?.run==='string'?body.run:typeof body?.received?.run==='string'?body.received.run:null;
  return run!==null&&/^run_[0-9a-z]{26}$/.test(run)?run:null;
@@ -71,7 +71,7 @@ async function personalRun(store:ExistenceStore,run:{kind:RecordKind;schema?:str
 export async function recordExistence(store:ExistenceStore,reader:string,record:{kind:RecordKind;schema?:string;body:unknown}|null):Promise<'absent'|'exists'|'neutral'>{
  if(record===null)return 'absent';
  const direct=disclosedExistence(reader,[record]);if(direct!=='exists')return direct;
- if(record.kind==='run')return await personalRun(store,record)?'neutral':direct;
+ if(RECORD_ACCESS[record.kind].personal==='run')return await personalRun(store,record)?'neutral':direct;
  const run=runOf(record);if(run===null)return direct;
  const found=(await store.find({kind:'run',key:'runs.id',value:run,limit:1})).items[0];
  if(!found)return direct;

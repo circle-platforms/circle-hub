@@ -6,18 +6,8 @@ import type { RecordKind } from '../../contracts/generated/protocol.ts';
 import type { Principal, SourceArtifact, StoredRecord, User } from './api.ts';
 import { canSeeRun, isAdmin } from './permissions.ts';
 
-type Access = 'admin' | 'run' | 'source' | 'dedicated';
-export const RECORD_ACCESS = {
-  claim: 'admin', source_artifact: 'source', authorization: 'admin', action: 'run', effect: 'admin',
-  request: 'run', call_log: 'admin', run: 'run', submission: 'run', validation_result: 'run',
-  pack_version: 'admin', tree_node: 'admin', tree_root: 'admin', root_pointer: 'admin',
-  knowledge_space_version: 'dedicated', knowledge_space_entry: 'dedicated', knowledge_space_grant: 'dedicated',
-  knowledge_space_source: 'dedicated', knowledge_space_quota: 'dedicated', knowledge_share: 'dedicated',
-  personal_pack_version: 'dedicated', personal_pack_grant: 'dedicated', personal_pack_retirement: 'dedicated',
-  personal_pack_transfer: 'dedicated', memory_document: 'dedicated', memory_version: 'dedicated',
-  memory_grant: 'dedicated', memory_share: 'dedicated', knowledge_source_attribution: 'dedicated',
-  member_deletion: 'dedicated', knowledge_team_source_attribution: 'dedicated', token_issuance: 'admin', result_summary: 'admin',
-} as const satisfies Record<RecordKind, Access>;
+import { RECORD_ACCESS } from './record-kinds.ts';
+export { RECORD_ACCESS, type RecordAccess } from './record-kinds.ts';
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 type RecordHeader = Pick<StoredRecord, 'kind' | 'schema' | 'body'>;
@@ -28,7 +18,7 @@ export function runOfRecord(kind: string, body: unknown, schema?: string): strin
 export function runOfRecord(record: RecordHeader | string, body?: unknown, schema?: string): string | null {
   const kind = typeof record === 'string' ? record : record.kind;
   if (typeof record !== 'string') { body = record.body; schema = record.schema; }
-  const runScoped = Object.hasOwn(RECORD_ACCESS, kind) && RECORD_ACCESS[kind as RecordKind] === 'run';
+  const runScoped = Object.hasOwn(RECORD_ACCESS, kind) && RECORD_ACCESS[kind as RecordKind].visibility === 'run';
   if (!runScoped && !(kind === 'claim' && schema === 'hypothesis-set@1') || !object(body)) return null;
   if (typeof body.run === 'string') return body.run;
   if (kind === 'submission' && schema === 'submission-received@1' && object(body.received) && typeof body.received.run === 'string') return body.received.run;
@@ -50,7 +40,7 @@ export interface RecordVisibilityPorts {
 export async function mayReadRecord(by: Principal, record: StoredRecord, ports: RecordVisibilityPorts): Promise<boolean> {
   const account = await ports.account(by.id);
   if (!account || account.disabled || account.deleted_at) return false;
-  const access = RECORD_ACCESS[record.kind];
+  const access = RECORD_ACCESS[record.kind].visibility;
   if (access === 'dedicated' || isMemoryRecord(record)) return false;
   if (record.kind === 'claim' && (isKnowledgeContributionSchema(record.schema) || record.schema === 'claim@1' && object(record.body) && object(record.body.statement) && object(record.body.statement.data) && record.body.statement.data.feeding !== undefined)) return ports.contribution(account, record);
   if (access === 'source') return ports.source(account, record as SourceArtifact);

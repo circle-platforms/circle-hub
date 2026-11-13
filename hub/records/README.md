@@ -1284,8 +1284,8 @@ ingest keeps the key and the record it always had. A copy of such an artifact in
 
 `permissions.ts` owns `isAdmin` and run ownership visibility (`canSeeRun`). Role checks use the current account loaded
 by the calling boundary; the helper does not authenticate an account or grant a system actor identity.
-`record-visibility.ts` declares one exhaustive `RECORD_ACCESS` entry per generated record kind and the generic record-read
-policy. Its ports require a current account, authorized run headers, source and contribution permissions, and the existing
+`record-kinds.ts` declares one exhaustive `RECORD_ACCESS` entry per generated record kind: visibility, personal-owner
+strategy and personal-pack behavior. Both `personal-payloads.ts` and `record-visibility.ts` derive their behavior from it. Its ports require a current account, authorized run headers, source and contribution permissions, and the existing
 request, result and submission checks. Dedicated space, memory and personal-pack records remain behind their own readers.
 
 The two existing `runOfRecord` argument shapes are supported. Wrapped submission arguments must carry
