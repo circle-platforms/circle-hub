@@ -25,7 +25,12 @@ function git(root: string, args: readonly string[]): string | null {
 }
 
 function manifestFrom(text: string, path: string): ManifestText {
-  const value: unknown = JSON.parse(text);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${path}: invalid JSON (${error instanceof Error ? error.message : String(error)})`);
+  }
   if (typeof value !== 'object' || value === null) throw new Error(`${path}: pack.json is not an object`);
   const version = (value as { version?: unknown }).version;
   const files = (value as { files?: unknown }).files;
@@ -105,7 +110,9 @@ export function versionCommit(root: string, path: string, head = 'HEAD'): string
       }
       return rev;
     }
-    if (!parents.some((parent) => parentHasVersion(root, parent, path, current))) return rev;
+    // Evaluate every parent instead of short-circuiting so missing trees on any merge parent still fail closed.
+    const parentMatches = parents.map((parent) => parentHasVersion(root, parent, path, current));
+    if (!parentMatches.some(Boolean)) return rev;
   }
   throw new Error(`${path}: could not find commit introducing version ${current} in reachable git history`);
 }
@@ -114,16 +121,28 @@ function blob(root: string, spec: string): string | null {
   return git(root, ['rev-parse', '--verify', spec])?.trim() ?? null;
 }
 
+function formatManifestError(path: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith(`${path}:`) ? message : `${path}: ${message}`;
+}
+
 /** Packs whose listed bytes or manifest digest moved since the commit that set the current version. */
 export function versionReuseProblems(root: string): string[] {
   const listed = git(root, ['ls-files', '-z', '--', 'packs/**/pack.json']);
   if (listed === null) return ['git file list failed'];
   const problems: string[] = [];
   for (const path of listed.split('\0').filter(Boolean)) {
-    const onDisk = manifestFrom(readFileSync(join(root, path), 'utf8'), path);
     const head = show(root, 'HEAD', path);
     if (head === null) continue;
-    const committed = manifestFrom(head, path);
+    let onDisk: ManifestText;
+    let committed: ManifestText;
+    try {
+      onDisk = manifestFrom(readFileSync(join(root, path), 'utf8'), path);
+      committed = manifestFrom(head, path);
+    } catch (error) {
+      problems.push(formatManifestError(path, error));
+      continue;
+    }
     if (onDisk.version !== committed.version) continue;
     let baseline: string;
     try {
