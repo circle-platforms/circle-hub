@@ -190,8 +190,8 @@ export function secureConsoleResponse(body:Html,policy=CONTENT_SECURITY_POLICY):
  * The ten places (decision 151: skills left the workflows place and the places stand in four groups); only the current
  * place may expand its authorized navigation.
  */
-/** Navigation place keys. The workflows place uses the key `workflows` (packs callers switched). */
-export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'packs' | 'workflows' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
+/** Navigation place keys. The workflows place uses the key `workflows`. */
+export type NavKey = 'overview' | 'tasks' | 'knowledge' | 'workflows' | 'skills' | 'connections' | 'records' | 'team' | 'settings' | 'health';
 /** The name of the skills place. The kind it lists keeps its vocabulary name (pack_kind skill). */
 export const SKILLS_PLACE = '技能';
 
@@ -331,12 +331,12 @@ function themeSwitch(): Html {
 }
 
 function areaClass(active?: NavKey): string {
-  return active === 'knowledge' ? 'area-knowledge' : active === 'packs' || active === 'workflows' || active === 'skills' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
+  return active === 'knowledge' ? 'area-knowledge' : active === 'workflows' || active === 'skills' ? 'area-workflow' : active === 'tasks' ? 'area-task' : '';
 }
 
 /** Detail pages without a directory projection still offer scope links, without inventing counts or a selected scope. */
 function scopeNavigation(active: NavKey): Html {
-  if (active !== 'knowledge' && active !== 'packs' && active !== 'workflows' && active !== 'skills') return html``;
+  if (active !== 'knowledge' && active !== 'workflows' && active !== 'skills') return html``;
   const base = active === 'knowledge' ? knowledgePath() : active === 'skills' ? skillsPath() : workflowsPath();
   const values = KnowledgeSearchScopeSchema.enum;
   return html`<div class="ch-nav-sub" aria-label="空间">${[values.all, values.personal, values.shared, values.team].map((scope) => link(base, uiLabelOf('knowledge_search_scope', scope), {scope}))}</div>`;

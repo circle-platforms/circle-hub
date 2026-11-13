@@ -78,7 +78,7 @@ export async function handleAuthenticatedConsole(
   } catch (error) {
     if (error instanceof KnowledgeError && error.code) { result = spaceActionFailure(ctx, error); }
     else if (error instanceof LimitError && isKnowledgeAction && (segments[0] === 'workflows' || segments[0] === 'skills')) {
-      result = { status: 429, body: page(ctx.chrome('发布校验未完成', { active: 'packs' }), html`${errorLine(error.message)}<p>${link('/console/workflows/-/publish', '返回发布列表')}</p>`) };
+      result = { status: 429, body: page(ctx.chrome('发布校验未完成', { active: 'workflows' }), html`${errorLine(error.message)}<p>${link('/console/workflows/-/publish', '返回发布列表')}</p>`) };
     }
     else if (error instanceof UploadError && isKnowledgeAction) { result = { status: 400, body: page(ctx.chrome('原文上传未完成'), html`${errorLine(error.message)}`) }; }
     else if (error instanceof RecordsError && (error.code === null || isKnowledgeAction && error.code === 'CREDENTIAL_IN_UPLOAD') && !(error.name === 'IntegrityError')) {
