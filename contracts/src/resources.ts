@@ -911,7 +911,7 @@ export const ReadManifest = z.strictObject({
     z.strictObject({ name: z.string(), record: Sha256, sha256: Sha256, media_type: z.string(), size: z.number().int().nonnegative() }),
   ),
   coverage: Coverage,
-  variables: z.array(VariableUse).optional().describe('exact named deployment decisions used by this read'),
+  variables: z.array(VariableUse).optional().describe('ordinary variable decision references and authenticated secret vault versions used by this read'),
   reason: z.string().max(2000).nullable().describe('why the read failed, for the admin log'),
   warnings: z.array(z.string().max(500)).max(50),
 });

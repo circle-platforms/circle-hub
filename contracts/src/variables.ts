@@ -1,7 +1,7 @@
 // Named deployment data. Values are never interpolated; only complete references are replaced once.
 import { z } from 'zod';
-import { VARIABLE_KIND, isVariableKind, DigestRuleSchema, type VariableKind } from '../generated/vocabulary.ts';
-import { idOf, JsonPointer, Sha256 } from './common.ts';
+import { VARIABLE_KIND, isVariableKind, DigestRuleSchema, VariableKindSchema, type VariableKind } from '../generated/vocabulary.ts';
+import { IsoTime, JsonPointer, Sha256, UserId } from './common.ts';
 export const SECRET_NAME_SEGMENTS = ['KEY', 'PASS', 'PWD', 'PIN', 'OTP', 'AUTH', 'CERT', 'SALT', 'HMAC', 'COOKIE', 'BEARER', 'SIGNATURE', 'AUTHORIZATION'] as const;
 export const SECRET_NAME_PARTS = ['PASSWORD', 'PASSWD', 'SECRET', 'TOKEN', 'CREDENTIAL', 'PRIVATE', 'API_KEY'] as const;
 export function secretLikeName(name: string): boolean { return name.split('_').some(part => (SECRET_NAME_SEGMENTS as readonly string[]).includes(part)) || SECRET_NAME_PARTS.some(part => name.includes(part)); }
@@ -103,11 +103,28 @@ export function validateSecret(value: unknown, short = false): string {
 }
 export const VariableRecord = z.strictObject({ schema: z.literal('variable@1'), name: OrdinaryVariableName, value: VariableValue });
 export type VariableRecord = z.infer<typeof VariableRecord>;
-export const SecretConsumer = z.strictObject({ definition: z.union([idOf('res'), idOf('exe')]), item: z.string().min(1).max(100), sends_to: Sha256 });
-export type SecretConsumer = z.infer<typeof SecretConsumer>;
-export const SecretRecord = z.strictObject({ schema: z.literal('secret@1'), name: VariableName, entry: z.string().regex(/^secret\.[a-z][a-z0-9_]{0,63}\.[a-f0-9]{24}$/), digest_rule: DigestRuleSchema, length: z.number().int().min(1).max(4096), consumers: z.array(SecretConsumer).min(1) });
+/** Authenticated vault metadata, independent of the records database; never contains a value or value digest. */
+export const SecretVersion = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+export const SecretRecord = z.strictObject({
+    schema: z.literal('secret@1'),
+    name: VariableName,
+    entry: z.string().regex(/^secret\.[a-z][a-z0-9_]{0,63}$/),
+    digest_rule: DigestRuleSchema,
+    length: z.number().int().min(1).max(4096),
+    version: SecretVersion,
+    set_by: UserId.nullable().describe('Authenticated setter identity; null when unknown'),
+    set_at: IsoTime.nullable().describe('Authenticated setting time; null when unknown'),
+    revoked: z.boolean(),
+}).refine(value => value.entry === 'secret.' + value.name.toLowerCase(), 'the vault entry belongs to this exact name');
 export type SecretRecord = z.infer<typeof SecretRecord>;
-export const VariableUse = z.strictObject({ at: z.string().min(1).max(2000).refine(value => { const split = value.indexOf('#'); return split > 0 && JsonPointer.safeParse(value.slice(split + 1)).success; }, 'a definition or package followed by # and a JSON pointer'), name: VariableName, decision: Sha256 });
+const VariableUseAt = z.string().min(1).max(2000).refine(value => { const split = value.indexOf('#'); return split > 0 && JsonPointer.safeParse(value.slice(split + 1)).success; }, 'a definition or package followed by # and a JSON pointer');
+/** Ordinary variables retain the real records-database decision identity. */
+export const OrdinaryVariableUse = z.strictObject({ kind: VariableKindSchema.extract(['var']), at: VariableUseAt, name: VariableName, decision: Sha256 });
+export type OrdinaryVariableUse = z.infer<typeof OrdinaryVariableUse>;
+/** A secret use identifies an authenticated vault version, never a rec: or src: reference. */
+export const SecretUse = z.strictObject({ kind: VariableKindSchema.extract(['secret']), at: VariableUseAt, name: VariableName, version: SecretVersion });
+export type SecretUse = z.infer<typeof SecretUse>;
+export const VariableUse = z.discriminatedUnion('kind', [OrdinaryVariableUse, SecretUse]);
 export type VariableUse = z.infer<typeof VariableUse>;
 export const VariableDeclaration = z.strictObject({ name: OrdinaryVariableName, description: z.string().min(1).max(2000), schema: z.record(z.string(), z.unknown()), default: VariableValue });
 export type VariableDeclaration = z.infer<typeof VariableDeclaration>;
