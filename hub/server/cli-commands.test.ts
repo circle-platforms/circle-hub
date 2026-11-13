@@ -28,3 +28,14 @@ test('command bridge derives allowed commands from registration and refuses plat
   }
   assert.equal(executions, COMMAND_METADATA.filter(command => command.bridge).length);
 });
+
+
+test('subcommand tables reject unknown and inherited names without opening records', async () => {
+  const { userCommand, tokenCommand } = await import('./cli.ts');
+  const { UsageError } = await import('./errors.ts');
+  const context = { io: {}, records: async () => { throw new Error('must not open records'); } } as unknown as import('./api.ts').CliContext;
+  const options = {} as import('./cli.ts').CliOptions;
+  for (const command of [userCommand, tokenCommand]) {
+    for (const name of ['unknown', 'constructor', 'toString', '__proto__']) await assert.rejects(command([name], context, options), UsageError);
+  }
+});

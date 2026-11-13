@@ -17,9 +17,9 @@ import { parseArgs } from 'node:util';
 import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, type HubConfig } from '../config/index.ts';
 import { DEFAULT_EVENT_LIMIT, DEFAULT_SINCE_MS, MAX_EVENT_LIMIT, eventLines, healthLines, healthReader, parseSince, type HealthReader } from '../health/api.ts';
-import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, liveKeyPipe, runPlatformCommand } from '../platform/api.ts';
-import { Database, createPool } from '../records/db.ts';
-import { RecordsError, openRecords, type CallLogLine, type Principal, type RecordsKit, type User } from '../records/index.ts';
+import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, liveKeyPipe, platformCommands } from '../platform/api.ts';
+import { Database, createPool } from '../records/api.ts';
+import { RecordsError, openRecords, type CallLogLine, type Principal, type RecordsKit, type User } from '../records/api.ts';
 import type { AssemblyModule, CliCommand, CliContext, CliIo, RegisterCommand, ServerDeps } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE, takeEnvironmentToken, type OperatorTokenStore } from './assemble/operator-token.ts';
 import { jsonSafe, terminalSafe } from './assemble/terminal.ts';
@@ -191,7 +191,20 @@ const roleText = (role: PermissionRole) => labelOf('permission_role', role);
 export async function userCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   const io = ctx.io;
-  if (sub === 'create') {
+    const disable_enable = async (): Promise<number> => {
+    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
+    noAs(values.as);
+    const act = await (await tokenRules(options)).act(ctx);
+    const kit = await ctx.records();
+    const user = await requireUser(kit, positionals[0]);
+    const changed = await kit.principals.setDisabled(act.admin, user.id, sub === 'disable');
+    out(io, `${changed.name}（${changed.id}）${labelOf('account_status', changed.disabled ? 'disabled' : 'enabled')}${changed.disabled ? '：它的令牌立即失效' : ''}`);
+    // Disabling the operator token's own account cuts it off: say so, and how to recover (records keep an enabled admin).
+    if (changed.disabled) await sayIfLost(io, act);
+    return 0;
+  };
+  const handlers: Record<string, () => Promise<number>> = {
+    'create': async () => {
     const { values, positionals } = parse(rest, { role: { type: 'string' }, as: { type: 'string' } }, 0, 1);
     noAs(values.as);
     const role = values.role ?? 'user';
@@ -217,8 +230,8 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     io.stdout(password);
     out(io, `已建立用户 ${user.name}（${user.id}，${roleText(user.role)}）；令牌用 circle-hub token issue ${user.name} 签发`);
     return 0;
-  }
-  if (sub === 'list') {
+  },
+    'list': async () => {
     const { values } = parse(rest, { json: { type: 'boolean' } }, 0);
     const kit = await ctx.records();
     const users = (await kit.principals.list()).map(user=>user.deleted_at?{...user,name:uiLabelOf('account_display_name','deleted_member')}:user);
@@ -226,8 +239,8 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     if (users.length === 0) io.stdout('还没有用户');
     for (const user of users) out(io, [user.id, user.name, roleText(user.role), labelOf('account_status', user.deleted_at?'deleted':user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
     return 0;
-  }
-  if(sub==='delete'){
+  },
+    'delete': async () => {
     const {values,positionals}=parse(rest,{'dry-run':{type:'boolean'},json:{type:'boolean'},confirm:{type:'boolean'},'operation-id':{type:'string'},'expected-state':{type:'string'},epoch:{type:'string'},as:{type:'string'}},1);noAs(values.as);
     const member=positionals[0];if(!/^usr_[0-9a-z]{26}$/.test(member))throw new UsageError('永久删除须使用成员编号，不能使用名字');
     if(values.confirm&&values['dry-run'])throw new UsageError('检查与确认不能同时执行');
@@ -236,8 +249,8 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     if(!values['operation-id'])throw new UsageError('确认须带上检查结果中的 --operation-id');
     const receipt=await deleteMember(kit,by,member,values['operation-id'],values['expected-state'],values.epoch);
     if(values.json)io.stdout(JSON.stringify(receipt));else out(io,`${labelOf('account_status','deleted')}（${member}）；私人内容已清除，私人工作流和技能按检查结果转给执行删除的管理员，审计记录 ${receipt.record}`);return 0;
-  }
-  if (sub === 'password-reset') {
+  },
+    'password-reset': async () => {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     noAs(values.as);
     const by = await operatorOf(ctx, options);
@@ -248,20 +261,10 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
     io.stdout(password);
     return 0;
-  }
-  if (sub === 'disable' || sub === 'enable') {
-    const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
-    noAs(values.as);
-    const act = await (await tokenRules(options)).act(ctx);
-    const kit = await ctx.records();
-    const user = await requireUser(kit, positionals[0]);
-    const changed = await kit.principals.setDisabled(act.admin, user.id, sub === 'disable');
-    out(io, `${changed.name}（${changed.id}）${labelOf('account_status', changed.disabled ? 'disabled' : 'enabled')}${changed.disabled ? '：它的令牌立即失效' : ''}`);
-    // Disabling the operator token's own account cuts it off: say so, and how to recover (records keep an enabled admin).
-    if (changed.disabled) await sayIfLost(io, act);
-    return 0;
-  }
-  if (sub === 'rename') {
+  },
+    'disable': disable_enable,
+    'enable': disable_enable,
+    'rename': async () => {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 2);
     noAs(values.as);
     const by = await operatorOf(ctx, options);
@@ -270,8 +273,8 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     const renamed = await kit.principals.rename(by, user.id, positionals[1]);
     out(io, `已把 ${user.name}（${user.id}）改名为 ${renamed.name}；登录控制台和 --as 从现在起用新名字，旧名字不再可用；记录按成员编号引用，不受影响`);
     return 0;
-  }
-  if (sub === 'invite') {
+  },
+    'invite': async () => {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     noAs(values.as);
     const by = await operatorOf(ctx, options);
@@ -282,14 +285,19 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     io.stdout(invitation.code);
     io.stdout('成员的 Circle 连接这个 Hub 时，浏览器打开授权页，在授权页输入邀请码');
     return 0;
-  }
-  throw new UsageError('user 的子命令是 create、list、disable、enable、rename、delete、password-reset 或 invite');
+  },
+  };
+  const handler = sub !== undefined && Object.hasOwn(handlers, sub) ? handlers[sub] : undefined;
+  if (handler === undefined) throw new UsageError('user 的子命令是 create、list、disable、enable、rename、delete、password-reset 或 invite');
+  return handler();
 }
 
 export async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   const io = ctx.io;
-  if (sub === 'issue') {
+
+  const handlers: Record<string, () => Promise<number>> = {
+    'issue': async () => {
     const { values, positionals } = parse(rest, { label: { type: 'string' }, raw: { type: 'boolean' }, as: { type: 'string' } }, 1);
     noAs(values.as);
     const by = await operatorOf(ctx, options);
@@ -306,8 +314,8 @@ export async function tokenCommand(args: readonly string[], ctx: CliContext, opt
     io.stdout(`${issued}。令牌只显示这一次，请立即保存到只有使用者能读的地方：`);
     io.stdout(token.token);
     return 0;
-  }
-  if (sub === 'revoke') {
+  },
+    'revoke': async () => {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     noAs(values.as);
     const act = await (await tokenRules(options)).act(ctx);
@@ -319,8 +327,8 @@ export async function tokenCommand(args: readonly string[], ctx: CliContext, opt
     // the way back (operator-token reissue), since nothing else then holds an admin token.
     await sayIfLost(io, act);
     return 0;
-  }
-  if (sub === 'list') {
+  },
+    'list': async () => {
     const { positionals } = parse(rest, {}, rest.length === 0 ? 0 : 1);
     const kit = await ctx.records();
     const users = positionals.length === 0 ? await kit.principals.list() : [await requireUser(kit, positionals[0])];
@@ -333,8 +341,11 @@ export async function tokenCommand(args: readonly string[], ctx: CliContext, opt
     }
     if (count === 0) io.stdout('没有令牌');
     return 0;
-  }
-  throw new UsageError('token 的子命令是 issue、revoke 或 list');
+  },
+  };
+  const handler = sub !== undefined && Object.hasOwn(handlers, sub) ? handlers[sub] : undefined;
+  if (handler === undefined) throw new UsageError('token 的子命令是 issue、revoke 或 list');
+  return handler();
 }
 
 function isoTime(value: string | undefined, flag: string): string | undefined {
@@ -720,7 +731,8 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
   }
   if (isPlatformCommand(command)) {
     // allowVariables names what the server CLI reads itself (hub/platform); the token is not passed on at all.
-    return traced(options, command, () => runPlatformCommand(argv, { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE], ...(overrides.io === undefined ? { keyPipe: liveKeyPipe() } : {}) }));
+    const registered = platformCommands({ stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE], ...(overrides.io === undefined ? { keyPipe: liveKeyPipe() } : {}) }).find(entry => entry.name === command)!;
+    return traced(options, command, () => registered.run(rest));
   }
   if (command === 'serve') return serve(rest, options);
   const ctx = contextFor(options, assembly);
