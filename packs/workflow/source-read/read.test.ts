@@ -167,7 +167,7 @@ async function openWorld(postgres: TemporaryPostgres): Promise<TestWorld> {
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),
-      knowledge: Object.assign(new FakeKnowledge(), { spaces }),
+      knowledge: new FakeKnowledge(spaces),
       external,
       now,
       adminLog: (entry) => logs.push(entry),
