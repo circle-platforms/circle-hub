@@ -41,15 +41,15 @@ afterEach(async () => {
 });
 
 /** Helper to run CLI list assertions across users, teams, packs, resources, executors, vars, and docs. */
-async function readConfigCliSnapshot(dataDir: string, asAdmin = 'admin') {
+async function readConfigCliSnapshot(dataDir: string) {
   const usersRes = await runCli(dataDir, ['user', 'list', '--json'], { expectOk: true });
   const users = JSON.parse(usersRes.stdout) as Array<{ id: string; name: string; role: string; disabled?: boolean }>;
-  const teams = (await runCli(dataDir, ['team', 'list', '--as', asAdmin], { expectOk: true })).stdout;
-  const packs = (await runCli(dataDir, ['pack', 'list', '--as', asAdmin], { expectOk: true })).stdout;
-  const resources = (await runCli(dataDir, ['resource', 'list', '--as', asAdmin], { expectOk: true })).stdout;
-  const executors = (await runCli(dataDir, ['executor', 'list', '--as', asAdmin], { expectOk: true })).stdout;
-  const vars = (await runCli(dataDir, ['var', 'list', '--as', asAdmin], { expectOk: true })).stdout;
-  const docs = (await runCli(dataDir, ['doc', 'list', '--as', asAdmin], { expectOk: true })).stdout;
+  const teams = (await runCli(dataDir, ['team', 'list'], { expectOk: true })).stdout;
+  const packs = (await runCli(dataDir, ['pack', 'list'], { expectOk: true })).stdout;
+  const resources = (await runCli(dataDir, ['resource', 'list'], { expectOk: true })).stdout;
+  const executors = (await runCli(dataDir, ['executor', 'list'], { expectOk: true })).stdout;
+  const vars = (await runCli(dataDir, ['var', 'list'], { expectOk: true })).stdout;
+  const docs = (await runCli(dataDir, ['doc', 'list'], { expectOk: true })).stdout;
   return { users, teams, packs, resources, executors, vars, docs };
 }
 
@@ -115,12 +115,18 @@ describe('deployment definition export excludes all secret values (spec item 7)'
     }
 
     // Secret reference names and non-secret structural configuration must still be exported.
-    assert.ok(parsed.accounts.some((a) => a.name === 'alice' && a.role === 'user' && a.disabled === false));
-    assert.ok(parsed.accounts.some((a) => a.name === 'bob' && a.disabled === true));
-    assert.ok(
-      parsed.teams.some((t) => t.name === '研发测试组' && t.members.includes('alice')),
-      `exported teams must retain '研发测试组' with member 'alice'; got teams=${JSON.stringify(parsed.teams)}`,
-    );
+    const exportFailures: string[] = [];
+    if (!parsed.accounts.some((a) => a.name === 'alice' && a.role === 'user' && a.disabled === false)) {
+      exportFailures.push(`exported accounts missing active user 'alice': ${JSON.stringify(parsed.accounts)}`);
+    }
+    if (!parsed.accounts.some((a) => a.name === 'bob' && a.disabled === true)) {
+      exportFailures.push(`exported accounts missing disabled 'bob': ${JSON.stringify(parsed.accounts)}`);
+    }
+    if (!parsed.teams.some((t) => t.name === '研发测试组' && t.members.includes('alice'))) {
+      exportFailures.push(
+        `exported teams must retain '研发测试组' with member account name 'alice' (not UserId); got teams=${JSON.stringify(parsed.teams)}`,
+      );
+    }
     const exportedPlm = parsed.resources.find((r) => r.definition.name === 'synth-plm');
     assert.ok(exportedPlm, 'exported definition must contain synth-plm resource');
     assert.equal(exportedPlm.definition.credentials.username, 'SYNTH_PLM_USER');
@@ -129,6 +135,7 @@ describe('deployment definition export excludes all secret values (spec item 7)'
     const exportedExec = parsed.executors.find((e) => e.target === state.executorTarget);
     assert.ok(exportedExec, 'exported definition must contain synthetic executor');
     assert.equal(exportedExec.credential, '${secret:SYNTH_EXEC_TOKEN}');
+    assert.equal(exportFailures.length, 0, exportFailures.join('\n'));
   });
 });
 
@@ -280,16 +287,25 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     const teamShow = (await runCli(state.dataDir, ['team', 'show', state.teamAlphaId], { expectOk: true })).stdout;
     assert.ok(teamShow.includes('alice'), 'alice must remain in 研发测试组 after refused apply');
     const resShow = (await runCli(state.dataDir, ['resource', 'show', state.plmResourceId], { expectOk: true })).stdout;
-    assert.ok(resShow.includes(RFC5737_PLM_API), 'plm-api origin must remain unchanged');
-    assert.equal(resShow.includes(RFC5737_PLM_ALT), false, 'mutated plm-api origin must not overwrite existing resource');
+    const resListAfter = (await runCli(state.dataDir, ['resource', 'list'], { expectOk: true })).stdout;
+    if (!resShow.includes(RFC5737_PLM_API)) {
+      diffFailures.push(
+        `plm-api origin changed/missing after refused apply (expected ${RFC5737_PLM_API}):\n` +
+          `resource show=${resShow}\nresource list=${resListAfter}\n` +
+          `diff-resource output=${resourceRes.combined}`,
+      );
+    }
+    assert.equal(resShow.includes(RFC5737_PLM_ALT), false, `mutated plm-api origin must not overwrite existing resource:\n${resShow}`);
     const execShow = (await runCli(state.dataDir, ['executor', 'list'], { expectOk: true })).stdout;
-    assert.ok(execShow.includes(LOOPBACK_EXEC_ENDPOINT) || !execShow.includes(LOOPBACK_EXEC_ALT));
+    if (!execShow.includes(LOOPBACK_EXEC_ENDPOINT) || execShow.includes(LOOPBACK_EXEC_ALT)) {
+      diffFailures.push(`executor list unexpected after refused apply:\n${execShow}`);
+    }
     const varVal = (await runCli(state.dataDir, ['var', 'show', state.plainVarName, '--value'], { expectOk: true })).stdout;
     assert.ok(varVal.includes(state.plainVarValue));
     const docVal = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
     assert.equal(docVal.trim(), state.docNoteText.trim());
 
-    assert.equal(diffFailures.length, 0, `apply diff refusals omitted human-readable entity/field details:\n${diffFailures.join('\n---\n')}`);
+    assert.equal(diffFailures.length, 0, `apply diff refusal / immutability checks failed:\n${diffFailures.join('\n---\n')}`);
   });
 });
 
@@ -324,7 +340,7 @@ describe('export -> reset --scope all -> apply round-trip rebuild & vault invari
     }
 
     // Inspect accounts, teams, packs (including whole-Hub activation), assignments, resources, executors, variables, docs.
-    const snap = await readConfigCliSnapshot(state.dataDir, 'admin');
+    const snap = await readConfigCliSnapshot(state.dataDir);
     const adminAfter = snap.users.find((u) => u.name === 'admin');
     const aliceAfter = snap.users.find((u) => u.name === 'alice');
     const bobAfter = snap.users.find((u) => u.name === 'bob');
@@ -338,7 +354,7 @@ describe('export -> reset --scope all -> apply round-trip rebuild & vault invari
     const alphaTeamId = /tm_[0-7][0-9a-hjkmnp-tv-z]{25}/.exec(
       snap.teams.split('\n').find((l) => l.includes('研发测试组')) ?? snap.teams,
     )?.[0] ?? state.teamAlphaId;
-    const teamDetail = (await runCli(state.dataDir, ['team', 'show', alphaTeamId, '--as', 'admin'], { expectOk: true })).stdout;
+    const teamDetail = (await runCli(state.dataDir, ['team', 'show', alphaTeamId], { expectOk: true })).stdout;
     assert.ok(teamDetail.includes('alice'), `team membership for alice must be restored:\n${teamDetail}`);
 
     assert.ok(snap.packs.includes('mindmap-format'));
@@ -348,7 +364,7 @@ describe('export -> reset --scope all -> apply round-trip rebuild & vault invari
     assert.ok(snap.packs.includes(state.overlayPackId));
     assert.ok(snap.resources.includes('synth-plm'));
     const restoredPlmId = /res_[0-9a-hjkmnp-tv-z]{26}/.exec(snap.resources) ?? [state.plmResourceId];
-    const plmDetail = (await runCli(state.dataDir, ['resource', 'show', restoredPlmId[0], '--as', 'admin'], { expectOk: true })).stdout;
+    const plmDetail = (await runCli(state.dataDir, ['resource', 'show', restoredPlmId[0]], { expectOk: true })).stdout;
     assert.ok(plmDetail.includes('192.0.2.10') && plmDetail.includes('192.0.2.11'), `restored plm origins missing RFC 5737 addresses:\n${plmDetail}`);
     assert.ok(plmDetail.includes('SYNTH_PLM_USER') && plmDetail.includes('SYNTH_PLM_PASS'), `restored plm credential names missing:\n${plmDetail}`);
     assert.ok(plmDetail.includes(alphaTeamId) || snap.resources.includes('研发测试组') || plmDetail.includes('研发测试组'), 'restored plm resource assignment should remain visible');
@@ -356,16 +372,16 @@ describe('export -> reset --scope all -> apply round-trip rebuild & vault invari
     assert.ok(snap.vars.includes(state.plainVarName) && snap.vars.includes(state.secretVarName));
     assert.ok(snap.docs.includes(state.docBedName) && snap.docs.includes(state.docNoteName));
 
-    const varValAfter = (await runCli(state.dataDir, ['var', 'show', state.plainVarName, '--value', '--as', 'admin'], { expectOk: true })).stdout;
+    const varValAfter = (await runCli(state.dataDir, ['var', 'show', state.plainVarName, '--value'], { expectOk: true })).stdout;
     assert.ok(varValAfter.includes(state.plainVarValue));
 
-    const noteAfter = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName, '--as', 'admin'], { expectOk: true })).stdout;
+    const noteAfter = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
     const noteShaAfter = createHash('sha256').update(Buffer.from(noteAfter, 'utf8')).digest('hex');
     assert.ok(
       noteShaAfter === state.docNoteSha256 || noteAfter.trim() === state.docNoteText.trim(),
       'named doc content must match pre-reset content losslessly',
     );
-    const bedAfter = (await runCli(state.dataDir, ['doc', 'show', state.docBedName, '--as', 'admin'], { expectOk: true })).stdout;
+    const bedAfter = (await runCli(state.dataDir, ['doc', 'show', state.docBedName], { expectOk: true })).stdout;
     const expectedBedBytes = await readFile(new URL('../../../packs/workflow/test-bed/examples/bed-topology.json', import.meta.url), 'utf8');
     const bedShaAfter = createHash('sha256').update(Buffer.from(bedAfter, 'utf8')).digest('hex');
     assert.ok(
@@ -374,12 +390,12 @@ describe('export -> reset --scope all -> apply round-trip rebuild & vault invari
     );
 
     // Verify whole-Hub product activation state via knowledge roots/sync acceptance check without erroring on missing activation.
-    const kbList = await runCli(state.dataDir, ['knowledge', 'roots', state.productId, '--as', 'admin']);
+    const kbList = await runCli(state.dataDir, ['knowledge', 'roots', state.productId]);
     assert.equal(kbList.code, 0, `activated product ${state.productId} should be queryable cleanly after apply:\n${kbList.combined}`);
 
     // Vault entries decrypt cleanly without re-entering plaintext secrets.
-    await runCli(state.dataDir, ['records', 'verify', '--vault', '--as', 'admin'], { expectOk: true });
-    const secretListAfter = (await runCli(state.dataDir, ['secret', 'list', '--as', 'admin'], { expectOk: true })).stdout;
+    await runCli(state.dataDir, ['records', 'verify', '--vault'], { expectOk: true });
+    const secretListAfter = (await runCli(state.dataDir, ['secret', 'list'], { expectOk: true })).stdout;
     assert.ok(secretListAfter.includes('SYNTH_PLM_USER') && secretListAfter.includes('SYNTH_PLM_PASS'));
 
     // Issue fresh token for alice after full rebuild and verify live Hub MCP usability.

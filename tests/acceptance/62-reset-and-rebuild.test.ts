@@ -162,8 +162,15 @@ describe('incompatible DB schema/version degraded startup vs unreachable DB (spe
     ];
     for (const probe of degradedPaths) {
       const reply = await httpCall(state.port, probe.path, probe);
-      assert.equal(reply.status, 503, `${probe.path} must return 503 during needsRebuild, got ${reply.status}: ${reply.body.slice(0, 300)}`);
-      assert.ok(reply.body.length > 0, `${probe.path} 503 response should carry an actionable rebuild message`);
+      if (reply.status !== 503) {
+        healthFailures.push(
+          `${probe.path} expected 503 during needsRebuild, got ${reply.status}` +
+            (reply.headers.location ? ` location=${reply.headers.location}` : '') +
+            ` body=${reply.body.slice(0, 180)}`,
+        );
+      } else {
+        assert.ok(reply.body.length > 0, `${probe.path} 503 response should carry an actionable rebuild message`);
+      }
       assertNoInternalDbLeak(reply.body, probe.path);
       assert.equal(reply.body.includes('0001_prior_release'), false, `${probe.path} 503 must not leak raw migration identity`);
     }

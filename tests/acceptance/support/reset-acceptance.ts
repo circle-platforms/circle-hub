@@ -976,7 +976,7 @@ export async function seedHistoryAndKnowledgeViaMcp(state: SeededHubState): Prom
         parameters: {
           action: 'acquire',
           bed: 'bed-a',
-          need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }], hours: 2 },
+          need: { devices: [{ type: 'load-balancer', count: 1 }, { type: 'client', count: 1 }] },
         },
       });
       assert.equal(acquireRun.isError, false, acquireRun.text);
