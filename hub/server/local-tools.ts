@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PackManifest, packPathProblem } from '../../contracts/src/pack.ts';
 import { canonicalBytes, sha256Hex, type CallLogInput, type Principal } from '../records/api.ts';
-import { parsePackRef } from '../runs/packs/versions.ts';
+import { parsePackRef } from '../runs/api.ts';
 import type { ServerDeps } from './api.ts';
 import { setCommonHeaders } from './http.ts';
 import { newTraceId } from './trace.ts';

@@ -11,7 +11,7 @@ import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, loadCo
 import type { Environment } from '../../contracts/generated/vocabulary.ts';
 import { createHealth, healthReader } from '../health/api.ts';
 import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls, readSettingsFile, reportsDirectory } from '../platform/api.ts';
-import { Database, createPool } from '../records/db.ts';
+import { Database, createPool } from '../records/api.ts';
 import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
 import { sandboxStats, stopAll, sweepOrphans } from '../rules/api.ts';
 import { TraceReader, startTelemetry, type Telemetry } from '../telemetry/api.ts';
