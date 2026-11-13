@@ -133,6 +133,7 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
       'hub/connectors/resource-access.test.ts',
     ],
     acceptanceFiles: [
+      'tests/acceptance/06-user-without-pack.test.ts',
       'tests/acceptance/46-knowledge-spaces.test.ts',
       'tests/acceptance/54-member-deletion.test.ts',
     ],
