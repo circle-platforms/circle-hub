@@ -83,7 +83,7 @@ function fakeTeams(options: {
     memberships,
     membershipsMany: async (by, userIds) => new Map(await Promise.all(userIds.map(async (id) => [id, await memberships(by, id)] as const))),
     create: async () => TEAM_A,
-    delete: async (_by, id) => all.find((row) => row.id === id) ?? TEAM_A,
+    delete: async (_by, id) => ({ ...(all.find((row) => row.id === id) ?? TEAM_A), revoked_packs: 0, revoked_resources: 0 }),
     add: async () => ({
       team: TEAM_A.id,
       user: { id: MEMBER.id, name: MEMBER.name, role: 'user', disabled: false, deleted_at: null, created_at: '2026-11-01T00:00:00.000Z', updated_at: '2026-11-01T00:00:00.000Z' },
