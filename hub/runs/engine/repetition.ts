@@ -41,11 +41,8 @@ export interface RoundOutcome {
 }
 
 /** Frozen repetition: count, aggregation, and k only for k-of-n (V07 DEF). */
-export interface RepetitionPolicy {
-  count: number;
-  aggregation: Aggregation;
-  k?: number;
-}
+export type {RepetitionPolicy} from '../../ports.ts';
+import type {RepetitionPolicy} from '../../ports.ts';
 
 export interface ObservedRound {
   round: number;
