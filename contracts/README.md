@@ -701,3 +701,16 @@ Missing cipher identity is refused rather than using a name/version fallback. Th
 supplies the same authenticated row identity in material; cache/stop callers consume the whole tuple.
 Model wording remains untouched pending separate Boss review; runtime cache behavior is tested by
 its owners, while contracts tests cover required identity and unchanged metadata/ordinary bytes.
+
+## C7：六工具输出扩展（2026-11-13）
+
+现有 `TOOLS: ToolDefinition[]` 只克隆各工具的 `output`，根对象和嵌套对象均接受并保留额外字段；
+已知字段、union 分支与 refinement 仍校验。输入及共享 record schema 保持严格；六工具输入 JSON、
+标题、描述、`SERVER_INSTRUCTIONS` 和 `hub/server/text.ts` 的基线 SHA 在 `tool-shapes.test.ts` 校验。
+不引入工具名 registry、枚举或 C5 依赖，也不更改模型文本。
+
+克隆依据锁定的 Zod 4.6.7 源码：`core/util.ts` 的 `clone` 保留构造器，`parent: true` 保留描述元数据，
+`core/schemas.ts` 从 `def.checks` 执行 refinement。当前六输出图有 220 个对象、62 个 union，
+没有 lazy 或递归 schema；本实现不宣称支持将来的 lazy/递归输出，增加此类形状时须重新核验克隆。
+旧 C7 的 lazy getter 不会深克隆、递归后才登记副本的问题不在当前图上。生成使用当前 210 文件集，
+仅 `tools.json` 的输出对象 `additionalProperties` 改为开放。AJV 无法表达的 refinement 仍明确只由 Zod 拒绝。
