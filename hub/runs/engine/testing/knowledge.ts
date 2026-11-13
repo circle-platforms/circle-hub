@@ -127,7 +127,8 @@ export class FakePacks implements PacksPort {
 }
 
 export class FakeKnowledge implements KnowledgePort {
-  constructor(readonly spaces: KnowledgePort['spaces']) {}
+  readonly spaces: KnowledgePort['spaces'];
+  constructor(spaces: KnowledgePort['spaces']) {this.spaces=spaces;}
 
   /** Roots whose catalog is missing (to show a check without its catalog). */
   readonly withoutCatalog = new Set<string>();

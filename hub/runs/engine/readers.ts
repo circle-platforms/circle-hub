@@ -7,7 +7,7 @@ import {parseReference} from '../../refs/api.ts';
 import type {SourceBinding} from '../../../contracts/src/run.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import { disclosedExistence, recordExistence, requestRead, runIsSharedWith, canSeeRun, mayReadRecord } from '../../records/api.ts';
-import type { Artifacts, Principal, RecordStore, RecordsKit } from '../../records/api.ts';
+import type { Artifacts, Principal, RecordStore, RecordsKit, Principals } from '../../records/api.ts';
 import type { ReaderIdentity, RecordReader, SourceReader } from '../../refs/api.ts';
 import { step } from '../../telemetry/api.ts';
 import { runById, actionOfSubmission } from './store.ts';
@@ -51,7 +51,7 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
 }
 
 /** Records for reference resolution: run, submission, validation result and action records through their run; contributions through their product. */
-export function recordReader(kit: Pick<RecordsKit, 'store' | 'principals' | 'artifacts'>, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>,readSubmission?:(by:Principal,run:RunRecord,digest:string)=>Promise<boolean>): RecordReader {
+export function recordReader(kit: Pick<RecordsKit, 'store' | 'artifacts'> & {principals:Pick<Principals,'get'>}, contributions?: Pick<ContributionLayer, 'read'>,readRun?:(by:Principal,run:RunRecord)=>Promise<boolean>,readResult?:(by:Principal,run:RunRecord,result:unknown)=>Promise<boolean>,readRequest?:(by:Principal,request:unknown)=>Promise<boolean>,readSubmission?:(by:Principal,run:RunRecord,digest:string)=>Promise<boolean>): RecordReader {
   const {store}=kit;
   return {
     async read(digest, reader) {
