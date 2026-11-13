@@ -4,6 +4,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { cp, mkdtemp, readFile, writeFile, rm, utimes, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { VaultReadinessError } from './errors.ts';
 import { FileKeyProvider, FileVault } from './vault.ts';
 import { RecordVariables, type VariablePorts } from './variables.ts';
 import { newId } from './ids.ts';
@@ -63,7 +64,7 @@ test('the authenticated current flag selects the exact old version independently
     const recent = await f.vault.recentSecrets();
     assert.ok(recent.some(m => m.value === first) && recent.some(m => m.value === second));
     await new FileVault(join(f.root, 'vault', 'metadata'), f.provider).put('secret.demo_key', JSON.stringify({ name: 'DEMO_KEY', versions: [{ ...old, current: true }, current] }));
-    await assert.rejects(f.vault.readSecret('DEMO_KEY'), /唯一当前标记不合/);
+    await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('current')));
 });
 
 test('unknown original setter and time remain unknown and do not become the importing administrator', async t => {
@@ -90,7 +91,7 @@ test('unauthenticated sidecars, missing current facts and exact-name mismatches 
     const sidecar = await f.sealed('DEMO_KEY', value, 1, true, 'a');
     const metadataVault = new FileVault(join(f.root, 'vault', 'metadata'), f.provider);
     await metadataVault.put('secret.demo_key', JSON.stringify({ name: 'DEMO_KEY', versions: [{ ...sidecar, current: false }] }));
-    await assert.rejects(f.vault.readSecret('DEMO_KEY'), /唯一当前标记不合/);
+    await assert.rejects(f.vault.readSecret('DEMO_KEY'), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('current')));
     await assert.rejects(f.vault.writeSecretMetadata({ name: 'DEMO_KEY', versions: [{ ...sidecar, sealed_entry: 'secret.demo_other.' + 'a'.repeat(24) }] }), /密钥元数据缺少/);
     await f.vault.writeSecretMetadata({ name: 'DEMO_KEY', versions: [sidecar] });
     const filename = 'secret.demo_key.sealed';
