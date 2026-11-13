@@ -39,7 +39,13 @@ export const ROUTES: Record<string, Route> = {
   search: (ctx, rest) => (rest.length === 0 ? searchPage(ctx) : Promise.resolve(neutralPage(ctx))),
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
   health: (ctx, rest, options) => (rest.length === 0 && ctx.admin ? healthPage(ctx, options.observation, options.log) : Promise.resolve(neutralPage(ctx))),
-  team: (ctx, rest) => rest.length <= 1 ? teamPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx)),
+  // interfaces §5.2: /console/team/<id> splits on prefix — tm_ → team detail, member id → member page.
+  team: (ctx, rest) => {
+    if (rest.length === 0) return teamPage(ctx);
+    if (rest.length === 1) return rest[0].startsWith('tm_') ? teamDetailPage(ctx, rest[0]) : teamPage(ctx, rest[0]);
+    return Promise.resolve(neutralPage(ctx));
+  },
+  // Alias kept for the 团队 tab list and older links; same pages as /console/team?tab=teams and /console/team/tm_….
   teams: (ctx, rest) => (rest.length === 0 ? teamsPage(ctx) : rest.length === 1 ? teamDetailPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   // Job progress pages only; bare /console/admin is no longer the team page.

@@ -27,9 +27,11 @@ test('team and member management stay available without the knowledge port or it
   try{
    const anonymous=await openConsole({port}),refused=await anonymous.get('/console/operations/member');assert.equal(refused.status,303);assert.match(String(refused.headers.location),/^\/console\/login\?/);
    const manager=await openConsole({port},hub.admin.token),reader=await openConsole({port},member.token);
-   for(const path of ['/console/team','/console/admin','/console/team?capacity=team','/console/team/'+member.user.id]){
+   // K3: bare /console/admin is gone (404); team pages and operations/member stay.
+   for(const path of ['/console/team','/console/team?capacity=team','/console/team/'+member.user.id,'/console/team?tab=members']){
     const page=await manager.get(path);assert.equal(page.status,200,path);assert.equal(page.headers.location,undefined,path);assert.doesNotMatch(page.body,/公共空间容量|私人空间容量|adjust-(?:team|member)-capacity|团队容量…/);
    }
+   assert.equal((await manager.get('/console/admin')).status,404);
    const operation=await manager.get('/console/operations/member');assert.equal(operation.status,200);assert.match(operation.body,/action="\/console\/admin\/do\/member-add"/);
    assert.equal((await reader.get('/console/team/'+member.user.id)).status,200);
    assert.equal((await reader.get('/console/admin')).status,404);

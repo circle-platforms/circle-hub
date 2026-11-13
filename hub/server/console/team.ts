@@ -13,7 +13,7 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import {emptyBlock} from './components.ts';
 import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
 import {actionForm} from './manage.ts';
-import {RESOURCE_AUDIENCE,TEAMS} from './team-actions.ts';
+import {RESOURCE_AUDIENCE} from './team-actions.ts';
 import type {Principal,User} from '../../records/api.ts';
 
 /** The two tabs of the members page (decision 151, step 7): the members, and the clients they connected. One list each. */
@@ -41,7 +41,9 @@ export interface ConsoleTeamAssignments {
   resources: readonly { body: { object: string; subject: string; revoked: boolean; decided_at: string; decided_by: string; note: string | null } }[];
 }
 export interface ConsoleTeams {
-  list(by: Principal): Promise<ConsoleTeamRow[]>;
+  list(by: Principal): Promise<ConsoleTeam[]>;
+  /** Admin list with counts (interfaces §1); fall back to list when absent. */
+  overview?(by: Principal): Promise<ConsoleTeamRow[]>;
   get(by: Principal, id: string): Promise<ConsoleTeam | null>;
   members(by: Principal, id: string): Promise<ConsoleTeamMember[]>;
   assignments(by: Principal, id: string): Promise<ConsoleTeamAssignments>;
@@ -56,7 +58,7 @@ function teamsApi(ctx: PageContext): ConsoleTeams | undefined {
 }
 
 /** list must not treat the built-in knowledge space id `team` as a team row (decision 3). */
-function listedTeams(rows: readonly ConsoleTeamRow[]): ConsoleTeamRow[] {
+function listedTeams(rows: readonly ConsoleTeam[]): ConsoleTeamRow[] {
   return rows.filter((row) => row.id !== 'team' && row.deleted_at === null);
 }
 
@@ -87,6 +89,11 @@ function workflowCell(titles: string[], sources: PackSource[] | null, packs: rea
 export async function teamPage(ctx:PageContext,member?:string):Promise<PageResult>{
  const {principals,authorizations}=ctx.deps.records,spaces=ctx.deps.knowledge?.spaces;
  if(member!==undefined&&!ctx.admin&&member!==ctx.principal.id)return neutralPage(ctx);
+ // interfaces §5.2: default tab is 团队 (list); members/clients only when asked (admin).
+ if(member===undefined&&!ctx.url.searchParams.get('circle')){
+  const asked=ctx.url.searchParams.get('tab');
+  if(!ctx.admin||(asked!=='members'&&asked!=='clients'))return teamsPage(ctx);
+ }
  const users=ctx.admin?await principals.list():[await principals.get(ctx.principal.id)].filter(user=>user!==null);
  const selectedUser=member?users.find(user=>user.id===member):undefined;
  if(member&&!selectedUser)return neutralPage(ctx);
@@ -162,39 +169,47 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  }
  const selected=!!selectedUser||!!selectedDevice;
  const asked=ctx.url.searchParams.get('tab');
- // The 团队 tab is /console/teams; this page only hosts 成员 and 已连接的客户端.
  const tab:TeamTab=selectedDevice?'clients':selectedUser?'members':asked==='clients'?'clients':'members';
  const counts:Record<TeamTab,number|undefined>={members:users.length,teams:undefined,clients:devices.length};
  const tabs=liveModule('team-tabs',['member.connected'],html`<nav class="ch-seg" aria-label="成员与团队" data-team-tabs>${TEAM_TABS.map(key=>{
-  const path=key==='teams'?TEAMS:href('/console/team',key==='members'?{}:{tab:key});
-  const current=key==='teams'?false:key===tab;
+  const path=key==='teams'?'/console/team':href('/console/team',key==='members'?{tab:'members'}:{tab:key});
+  const current=key===tab;
   const count=counts[key];
   return html`<a href="${path}"${current?html` aria-current="page"`:''}>${TEAM_TAB_LABEL[key]}${count===undefined?'':html` <span class="ch-count">${count.toLocaleString('en-US')}</span>`}</a>`;
  })}</nav>`);
  const content=tab==='members'
   ?html`${capacityLine}${liveModule('members',['member.connected'],box(null,table(['名字','角色','状态','所属团队','可用的工作流','客户端'],members,'没有可读的成员',undefined,{selected:users.findIndex(user=>user.id===member),hrefs:users.map(user=>'/console/team/'+user.id)}),{flush:true}))}`
   :liveModule('member-circles',['member.connected'],box(null,table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))}),{flush:devices.length>0}));
- const teamListLink=ctx.admin||teams?button(TEAMS,'团队列表'):html``;
- return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${teamListLink}${button('/console/password','修改密码')}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`<div class="ch-stack" data-team>${tabs}<div class="ch-stack" data-team-tab="${tab}">${content}</div>${selected||tab!=='members'?'':confirmations}</div>`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回成员',tab==='members'?{}:{tab})}))};
+ return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${button('/console/password','修改密码')}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`<div class="ch-stack" data-team>${tabs}<div class="ch-stack" data-team-tab="${tab}">${content}</div>${selected||tab!=='members'?'':confirmations}</div>`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回团队',tab==='members'?{tab:'members'}:{tab})}))};
 }
 
 function countCell(value: number | undefined): string {
   return value === undefined ? '—' : value.toLocaleString('en-US');
 }
 
-/** `/console/teams`: admin sees every live team; a member only the names of teams they belong to. */
+/** `/console/team` default tab and `/console/teams`: admin overview; a member only names of teams they belong to. */
 export async function teamsPage(ctx: PageContext): Promise<PageResult> {
   const teams = teamsApi(ctx);
-  const rows = teams ? listedTeams(await teams.list(ctx.principal)) : [];
+  const spaces = ctx.deps.knowledge?.spaces;
+  const rows = teams
+    ? listedTeams(ctx.admin && teams.overview ? await teams.overview(ctx.principal) : await teams.list(ctx.principal))
+    : [];
+  const detailPath = (id: string) => `/console/team/${id}`;
   const tableRows = rows.map((row) => {
-    const name = link(`${TEAMS}/${row.id}`, row.name);
+    const name = link(detailPath(row.id), row.name);
     if (!ctx.admin) return [name];
     return [name, countCell(row.member_count), countCell(row.pack_count), countCell(row.resource_count)];
   });
   const columns = ctx.admin ? ['名称', '成员', uiLabelOf('pack_kind', 'workflow'), '业务系统'] : ['名称'];
   let create = html``;
   let confirmations = html``;
+  let capacityLine = html``;
   if (ctx.admin) {
+    const usage = spaces ? await spaces.usage(ctx.principal, 'team') : null;
+    if (usage) {
+      confirmations = html`${confirmations}${await spaceCapacityDialog(ctx, 'team', usage)}`;
+      capacityLine = html`<p class="ch-meta" data-team-capacity>公共空间容量 ${capacitySummary(usage)} · <a href="#adjust-team-capacity">调整容量…</a></p>`;
+    }
     create = card({ title: '新建团队', hint: '只有管理员能建团队和管成员。删除时一并撤回该团队名下的分配。' },
       actionForm('team-create', ctx.csrf ?? '', html`${field('名称', html`<input name="name" required maxlength="100" autocomplete="off">`)}`, '新建', { primary: true }));
     for (const row of rows) {
@@ -206,12 +221,17 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
   }
   const list = rows.length === 0
     ? emptyBlock({title:'尚无团队',text: ctx.admin ? '新建一个团队后，再把成员、工作流和业务系统分给它。' : '管理员尚未把当前账户加入任何团队。'})
-    : box(null, table(columns, tableRows, '尚无团队', undefined, ctx.admin ? {
-        hrefs: rows.map((row) => `${TEAMS}/${row.id}`),
-      } : { hrefs: rows.map((row) => `${TEAMS}/${row.id}`) }), { flush: true });
+    : box(null, table(columns, tableRows, '尚无团队', undefined, {
+        hrefs: rows.map((row) => detailPath(row.id)),
+      }), { flush: true });
   const adminActions = ctx.admin && rows.length > 0
     ? html`<div class="ch-actions">${rows.map((row) => actionLink(`#delete-team-${row.id}`, `删除 ${row.name}…`, 'danger'))}</div>`
     : html``;
+  const visibleTabs = ctx.admin ? TEAM_TABS : (['teams'] as const);
+  const tabs = html`<nav class="ch-seg" aria-label="成员与团队" data-team-tabs>${visibleTabs.map((key) => {
+    const path = key === 'teams' ? '/console/team' : href('/console/team', { tab: key });
+    return html`<a href="${path}"${key === 'teams' ? html` aria-current="page"` : ''}>${TEAM_TAB_LABEL[key]}</a>`;
+  })}</nav>`;
   return {
     status: 200,
     body: page(ctx.chrome('团队', {
@@ -219,13 +239,14 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
       hint: ctx.admin
         ? '管理员新建团队、加减成员、分配工作流与业务系统；删除时撤回该团队名下的分配。'
         : '只显示当前账户所属团队的名字。',
-      actions: html`${button('/console/team', '成员')}${ctx.admin ? button('/console/operations/member', '添加成员') : button('/console/password', '修改密码')}`,
-    }), pageLayout(html`<div class="ch-stack" data-teams>${list}${adminActions}${create}${confirmations}</div>`, {})),
+      actions: html`${button('/console/password', '修改密码')}${ctx.admin ? button('/console/operations/member', '添加成员', { primary: true, icon: 'plus' }) : ''}`,
+    }), pageLayout(html`<div class="ch-stack" data-teams>${tabs}${capacityLine}${list}${adminActions}${create}${confirmations}</div>`, {})),
   };
 }
 
-/** `/console/teams/<teamId>`: admin sees members and assignments; a member with no access gets the neutral page. */
+/** `/console/team/tm_…` (and `/console/teams/<id>` alias): admin sees members and assignments; a member with no access gets the neutral page. */
 export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<PageResult> {
+  if (!teamId.startsWith('tm_') || teamId === 'team') return neutralPage(ctx);
   const teams = teamsApi(ctx);
   if (!teams) return neutralPage(ctx);
   const team = await teams.get(ctx.principal, teamId);
@@ -233,8 +254,8 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
   if (!ctx.admin) {
     return {
       status: 200,
-      body: page(ctx.chrome(team.name, { active: 'team', hint: '普通成员只看到自己所属团队的名字。', actions: button(TEAMS, '返回团队列表') }),
-        pageLayout(html`<div class="ch-stack" data-team-detail>${card({ title: team.name }, definitions([['名称', team.name]]))}</div>`, { back: link(TEAMS, '返回团队列表') })),
+      body: page(ctx.chrome(team.name, { active: 'team', hint: '普通成员只看到自己所属团队的名字。', actions: button('/console/team', '返回团队') }),
+        pageLayout(html`<div class="ch-stack" data-team-detail>${card({ title: team.name }, definitions([['名称', team.name]]))}</div>`, { back: link('/console/team', '返回团队') })),
     };
   }
   const [members, assignments, packs, resources, users] = await Promise.all([
@@ -278,7 +299,7 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     body: page(ctx.chrome(team.name, {
       active: 'team',
       hint: '成员继承所在团队的工作流分配；业务系统按团队或全体分配，没有分配不开放。',
-      actions: html`${button(TEAMS, '返回团队列表')}${actionLink(`#${deleteId}`, '删除团队…', 'danger')}`,
+      actions: html`${button('/console/team', '返回团队')}${actionLink(`#${deleteId}`, '删除团队…', 'danger')}`,
     }), pageLayout(html`<div class="ch-stack" data-team-detail>
 ${card({ title: '概况' }, definitions([['名称', team.name], ['成员', members.length.toLocaleString('en-US')], [uiLabelOf('pack_kind', 'workflow'), packCount.toLocaleString('en-US')], ['业务系统', resourceCount.toLocaleString('en-US')], ['创建时间', when(team.created_at)]]))}
 ${card({ title: '成员' }, table(['名字', '角色', '状态', '加入时间', ''], memberRows, '没有成员'))}
@@ -287,7 +308,7 @@ ${card({ title: '工作流分配' }, table([uiLabelOf('pack_kind', 'workflow'), 
 ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], resourceRows, '尚未分配业务系统'))}
 ${assignResource}
 ${deleteDialog}
-</div>`, { back: link(TEAMS, '返回团队列表') })),
+</div>`, { back: link('/console/team', '返回团队') })),
   };
 }
 

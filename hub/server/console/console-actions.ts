@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readBody } from '../http.ts';
 import { html, page } from './html.ts';
 import { ACTIONS, isPackStep, runAction, type Form } from './manage.ts';
+// Side effect: team ACTIONS register into manage.ACTIONS before HTML /console/admin/do runs.
+import './team-actions.ts';
 import { systemForgetPage, systemTrialPage } from './operations.ts';
 import { publication } from './pack-display.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
