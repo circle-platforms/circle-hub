@@ -307,7 +307,8 @@ export class FileVault implements Vault {
     await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, ...receipt }), { mode: 0o600 });
     const moved: typeof planned = [];
     const entry = logical + '.' + randomBytes(12).toString('hex');
-    let published = false;
+    let metadataWriteCompleted = false;
+    let newCipherIdentity: string | null = null;
     try {
       for (const file of planned) {
         await this.#move(file.source, file.destination);
@@ -317,22 +318,50 @@ export class FileVault implements Vault {
       }
       await this.put(entry, input.value);
       const cipher = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
+      newCipherIdentity = createHash('sha256').update(cipher.bytes).digest('hex');
       const rows: SecretMetadataFile['versions'] = (previous?.versions ?? []).map(row => ({ ...row, current: false, sealed_sha256: null }));
-      rows.push({ metadata, sealed_entry: entry, sealed_sha256: createHash('sha256').update(cipher.bytes).digest('hex'), current: true });
+      rows.push({ metadata, sealed_entry: entry, sealed_sha256: newCipherIdentity, current: true });
       await this.#writeMetadata({ name: input.name, versions: rows });
-      published = true;
+      metadataWriteCompleted = true;
       await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: true, ...receipt }), { mode: 0o600 });
       return { ...metadata, archive: receipt };
     } catch {
-      if (published) throw new VaultError(`新值与认证元数据已发布，但归档收据完成标记未写成；原件保留于 ${directory}，本次未完成审计，不得视为成功`);
-      let restored = true;
-      try { await this.remove(entry); } catch { restored = false; }
-      for (const file of [...moved].reverse()) {
-        try { await this.#move(file.destination, file.source); } catch { restored = false; }
+      const activeMetadata = this.#metadataVault();
+      let observedNewPublication = false;
+      try {
+        const text = await activeMetadata.getText(logical);
+        const parsed = SecretMetadataFile.safeParse(text === null ? null : JSON.parse(text));
+        const current = parsed.success ? parsed.data.versions.at(-1) : null;
+        if (current?.sealed_entry === entry && current.sealed_sha256 === newCipherIdentity && newCipherIdentity !== null) {
+          const actual = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
+          observedNewPublication = createHash('sha256').update(actual.bytes).digest('hex') === newCipherIdentity;
+        }
+      } catch { /* Rollback below checks the original bytes independently. */ }
+      if (metadataWriteCompleted && observedNewPublication) {
+        try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, published: true, ...receipt }), { mode: 0o600 }); } catch { /* The original pending receipt remains. */ }
+        throw new VaultError(`新值与认证元数据已发布，但归档收据完成标记未写成；原件保留于 ${directory}，本次未完成审计，不得视为成功`);
       }
-      try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, restored, ...receipt }), { mode: 0o600 }); } catch { restored = false; }
+      const originalMetadata = planned.find(file => file.folder === 'metadata');
+      if (!originalMetadata || moved.includes(originalMetadata)) {
+        try { await activeMetadata.remove(logical); } catch { /* The final identity checks decide whether recovery succeeded. */ }
+      }
+      try { await this.remove(entry); } catch { /* Check actual absence below, not the await result. */ }
+      for (const file of [...moved].reverse()) {
+        try { await this.#move(file.destination, file.source); } catch { /* Check every original identity below. */ }
+      }
+      let restored = true;
+      for (const file of planned) {
+        try {
+          const actual = await readVerifiedFile(file.source, MAX_SEALED_BYTES);
+          if (createHash('sha256').update(actual.bytes).digest('hex') !== file.sealed_sha256) restored = false;
+        } catch { restored = false; }
+      }
+      try { if (await this.has(entry) || !originalMetadata && await activeMetadata.has(logical)) restored = false; } catch { restored = false; }
+      let receiptRecorded = true;
+      try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, published: observedNewPublication, restored, ...receipt }), { mode: 0o600 }); } catch { receiptRecorded = false; }
+      if (restored && !receiptRecorded) throw new VaultError(`归档后重新设置未完成；原active文件已逐项核对SHA恢复，但失败收据未更新，请管理员核对 ${directory}/receipt.json；不得视为成功`);
       if (!restored) throw new VaultError(`归档后重新设置未完成，原active条目未全部恢复；请管理员依据 ${directory}/receipt.json 恢复，原件未删除，不得视为成功`);
-      throw new VaultError('归档后重新设置未完成；已恢复同名原active文件，未发布新元数据，请修复故障后重试');
+      throw new VaultError('归档后重新设置未完成；已恢复同名原active文件，本次新元数据已撤销，请修复故障后重试');
     }
   }
 
