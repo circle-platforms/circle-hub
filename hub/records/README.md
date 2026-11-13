@@ -1289,6 +1289,23 @@ policy. Its ports require a current account, authorized run headers, source and 
 request, result and submission checks. Dedicated space, memory and personal-pack records remain behind their own readers.
 
 The two existing `runOfRecord` argument shapes are supported. Wrapped submission arguments must carry
-`submission-received@1`; a canonical top-level run takes precedence. These modules are prepared internally; public exports
-and the server/runs adapter changes still require interface coordination. Until those callers adopt `mayReadRecord`, their
-existing implementations have not been replaced. No system account or environment variable is introduced.
+`submission-received@1`; a canonical top-level run takes precedence. The shared modules are exported through `api.ts`; server/runs adapter changes require interface coordination. Until those callers adopt `mayReadRecord`, their existing implementations have not been replaced. No system account or environment variable is introduced.
+
+
+## Teams and resource assignments
+
+`PgTeams(db,store,objects,principals,authorizations,now)` implements the approved `RecordsKit.teams` interface.
+`assign/*/TeamId` registers a team and binds canonical `{id,name}` bytes retained by ObjectStore. Members are the
+latest active `assign/UserId/TeamId` decisions; `teams` and `team_members` only project that history. Deleting a team
+revokes its registration and removes projected membership; reusing its name creates a different ID. A revoked ID cannot
+be registered again. Team writes lock user rows in ID order before the team and authorization locks.
+
+Pack assignment accepts direct users and teams through separate wrappers. Resource assignment uses `resource_assign`
+and accepts only a team or all enabled accounts. `canUseResource(userId,resourceId)` checks the current enabled account;
+active administrators retain the model's default resource read permission. A single SQL permission snapshot collects the
+current account, direct decisions, team registrations, membership decisions, team grants and pack audiences. The same
+snapshot drives `canUse`, `packs`, resource grants and pack-user sharing. Batch pack/user queries use that implementation.
+Frozen runs, remote work and stored results are not cancelled or rewritten by team withdrawal.
+
+Wiring the kit's `teams` member belongs to the index.ts owner. System actor identity remains undecided; no new account,
+configuration or administrator bypass is introduced. Separate per-team knowledge spaces are outside this implementation.

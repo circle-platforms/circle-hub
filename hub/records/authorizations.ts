@@ -6,6 +6,7 @@ import {mayUsePersonalPack} from './personal-packs.ts';
 // (permission, subject, object) wins. Every decision names the record it follows (`supersedes`), so it is a distinct record
 // even when it repeats an earlier one in the same millisecond. A permission is not evidence, and a passed check is not a
 // permission (B04 R[0]).
+import { TeamId, TeamAssignmentSubject } from '../../contracts/api.ts';
 import { PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
@@ -30,7 +31,7 @@ import type { Database } from './db.ts';
 import { digestOf, isSha256 } from './digest.ts';
 import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
-import { requestPermissions } from './request-permissions.ts';
+import { captureRequestPermissions, capturePermissionSnapshots, requestPermissions } from './request-permissions.ts';
 
 const PUBLISH: PermissionKind = 'publish';
 const ASSIGN: PermissionKind = 'assign';
@@ -96,8 +97,8 @@ export class RecordAuthorizations implements Authorizations {
     return this.#decide(by, input, false, tx);
   }
 
-  async revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord> {
-    return this.#decide(by, { ...input, bound: null, expiresAt: null }, true);
+  async revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>, tx?: Transaction): Promise<AuthorizationRecord> {
+    return this.#decide(by, { ...input, bound: null, expiresAt: null }, true, tx);
   }
 
   async latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null> {
@@ -218,28 +219,38 @@ export class RecordAuthorizations implements Authorizations {
   }
 
   async packsFor(user: string): Promise<string[]> {
-    if (!isTerm(user)) return [];
-    const snapshot = requestPermissions(user); if (snapshot) return snapshot.packs();
-    return this.#activeTerms({ key: 'authz.subject', value: `${ASSIGN}|${user}` }, (body) => body.object);
+    if (!UserId.safeParse(user).success) return [];
+    const snapshot = requestPermissions(user) ?? await captureRequestPermissions(this.#db,{id:user,name:user,role:'user'},this.#now());
+    return snapshot.packs();
   }
-
-  packsForMany(users:readonly string[]):Promise<Map<string,string[]>>{
-    return this.#activeTermsMany('authz.subject',users,body=>body.object);
+  async packsForMany(users: readonly string[]): Promise<Map<string,string[]>> {
+    const snapshots=await capturePermissionSnapshots(this.#db,users.filter(id=>UserId.safeParse(id).success),this.#now());
+    return new Map([...new Set(users)].map(id=>[id,snapshots.get(id)?.packs()??[]]));
   }
-  usersOfMany(packs:readonly string[]):Promise<Map<string,string[]>>{
-    return this.#activeTermsMany('authz.object',packs,body=>body.subject);
+  async usersOfMany(packs: readonly string[]): Promise<Map<string,string[]>> {
+    const users=(await this.#db.query('SELECT id FROM users WHERE NOT disabled AND deleted_at IS NULL')).rows.map(row=>String(row.id));
+    const assignments=await this.packsForMany(users);
+    return new Map([...new Set(packs)].map(pack=>[pack,[...assignments].filter(([,assigned])=>assigned.includes(pack)).map(([id])=>id).sort()]));
   }
-  async #activeTermsMany(key:string,terms:readonly string[],pick:(body:AuthorizationBody)=>string):Promise<Map<string,string[]>>{
-    const ids=[...new Set(terms.filter(isTerm))],out=new Map(ids.map(id=>[id,[] as string[]]));if(!ids.length)return out;
-    const values=ids.map(id=>`${ASSIGN}|${id}`),latest=new Map(values.map(value=>[value,new Map<string,AuthorizationRecord>()]));
-    const rows=await this.#db.query(`SELECT i.value AS wanted,r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
-      FROM record_index i JOIN records r ON r.digest=i.digest WHERE i.key=$1 AND i.value=ANY($2::text[]) AND r.kind='authorization' ORDER BY r.seq`,[key,values]);
-    for(const row of rows.rows){const record=verifiedRecord<AuthorizationBody>(row);latest.get(String(row.wanted))!.set(`${record.body.permission}|${record.body.subject}|${record.body.object}`,record);}
-    ids.forEach((id,i)=>out.set(id,[...latest.get(values[i])!.values()].filter(record=>this.#active(record)).map(record=>pick(record.body)).sort()));return out;
-  }
-
   async canUse(user: string, pack: string): Promise<boolean> {
-    return this.isActive(ASSIGN, user, pack);
+    return (await this.packsFor(user)).includes(pack);
+  }
+  async canUseResource(user: string, resource: string): Promise<boolean> {
+    if (!UserId.safeParse(user).success || !isTerm(resource)) return false;
+    const snapshot=requestPermissions(user)??await captureRequestPermissions(this.#db,{id:user,name:user,role:'user'},this.#now());
+    return !!snapshot.user&&!snapshot.user.disabled&&!snapshot.user.deleted_at&&(isAdmin(snapshot.user)||snapshot.canUseResource(resource));
+  }
+  async assignTeam(by: Principal, team: string, pack: string, options: {expiresAt?:string|null;note?:string|null} = {}): Promise<AuthorizationRecord> {
+    return this.grant(by,{permission:ASSIGN,subject:TeamId.parse(team),object:packId(pack),...options});
+  }
+  async unassignTeam(by: Principal, team: string, pack: string, reason?:string|null): Promise<AuthorizationRecord> {
+    return this.revoke(by,{permission:ASSIGN,subject:TeamId.parse(team),object:packId(pack),note:reason});
+  }
+  async assignResource(by: Principal, resource: string, subject: string, options: {expiresAt?:string|null;note?:string|null} = {}): Promise<AuthorizationRecord> {
+    return this.grant(by,{permission:'resource_assign',subject:TeamAssignmentSubject.parse(subject),object:term(resource,'resource'),...options});
+  }
+  async unassignResource(by: Principal, resource: string, subject: string, reason?:string|null): Promise<AuthorizationRecord> {
+    return this.revoke(by,{permission:'resource_assign',subject:TeamAssignmentSubject.parse(subject),object:term(resource,'resource'),note:reason});
   }
 
   async canPublish(user: string): Promise<boolean> {
@@ -247,12 +258,12 @@ export class RecordAuthorizations implements Authorizations {
   }
 
   async usersOf(pack: string): Promise<string[]> {
-    if (!isTerm(pack)) return [];
-    return this.#activeTerms({ key: 'authz.object', value: `${ASSIGN}|${pack}` }, (body) => body.subject);
+    return (await this.usersOfMany([pack])).get(pack)??[];
   }
 
   async isSharedWith(user: string, object: string): Promise<boolean> {
-    return sharedWith(this.#store, user, object, this.#now());
+    const snapshot=requestPermissions(user)??await captureRequestPermissions(this.#db,{id:user,name:user,role:'user'},this.#now());
+    return snapshot.shared(object);
   }
 
   async ownerOf(pack: string): Promise<string | null> {
@@ -293,18 +304,6 @@ export class RecordAuthorizations implements Authorizations {
     return first.items[0]?.body.subject ?? null;
   }
 
-  /** Latest record per triple among all records under one index entry; returns the chosen term of the active ones, sorted. */
-  async #activeTerms(index: IndexEntry, pick: (body: AuthorizationBody) => string): Promise<string[]> {
-    const latest = new Map<string, AuthorizationRecord>();
-    let cursor: string | null = null;
-    do {
-      const page: Page<AuthorizationRecord> = await this.#store.find<AuthorizationBody>({ ...index, kind: 'authorization', limit: 500, cursor });
-      for (const record of page.items) latest.set(`${record.body.permission}|${record.body.subject}|${record.body.object}`, record);
-      cursor = page.next;
-    } while (cursor !== null);
-    return [...latest.values()].filter((record) => this.#active(record)).map((record) => pick(record.body)).sort();
-  }
-
   async #existingUser(id: string): Promise<void> {
     const row = (await this.#db.query('SELECT 1 FROM users WHERE id = $1', [id])).rows[0];
     if (row === undefined) throw new ConflictError('没有这个用户');
@@ -324,6 +323,28 @@ export class RecordAuthorizations implements Authorizations {
     if (permission === PUBLISH && published === null) throw new TypeError('the object of a publish record is pack-id@x.y.z');
     if (permission === PUBLISH && !revoked && bound === null) throw new TypeError('a publication binds the SHA-256 of the exact pack content (B04 R[1])');
     return this.#store.withTransaction(async (tx) => {
+      const users=[...new Set([by.id,...(UserId.safeParse(subject).success?[subject]:[])])].sort();
+      const accounts=(await this.#db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE',[users],tx)).rows;
+      const target=accounts.find(row=>row.id===subject);
+      if ((permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||!revoked&&target.disabled)) throw new ConflictError('分配对象不存在或未启用');
+      const team=TeamId.safeParse(subject).success?subject:TeamId.safeParse(object).success?object:null;
+      if(team!==null){
+        await this.#store.lock('teams.id:'+team,tx);
+        const registration=await this.#latest(ASSIGN,'*',team,tx);
+        const registering=permission===ASSIGN&&subject==='*'&&object===team;
+        if(registering){
+          if(!revoked&&(bound===null||expiresAt!==null))throw new TypeError('team registration binds its definition without an expiry');
+          if(!revoked&&registration?.body.revoked)throw new ConflictError('已删除的团队不能重新登记');
+          if(!revoked&&registration?.body.bound&&registration.body.bound!==bound)throw new ConflictError('团队定义不能通过重新登记改写');
+        }else if(!registration||!this.#active(registration))throw new ConflictError('没有这个团队');
+      }
+      if(permission===ASSIGN){
+        const registration=subject==='*'&&TeamId.safeParse(object).success;
+        const membership=UserId.safeParse(subject).success&&TeamId.safeParse(object).success;
+        const assignment=(UserId.safeParse(subject).success||TeamId.safeParse(subject).success)&&PackId.safeParse(object).success;
+        if(!registration&&!membership&&!assignment)throw new TypeError('invalid assignment tuple');
+      }
+      if(permission==='resource_assign')TeamAssignmentSubject.parse(subject);
       const decider = await this.#decider(by, tx);
       if (published !== null) {
         if (revoked) {
@@ -412,6 +433,20 @@ export function productionShareKey(pack: string): string { return `production:${
 export function productionShareBinding(pack: string): string { return digestOf({ pack: packId(pack), accepted_producer: 'fact' }); }
 const activeAt = (record: AuthorizationRecord, now: Date): boolean => !record.body.revoked && (record.body.expires_at === null || Date.parse(record.body.expires_at) > now.getTime());
 
+async function assignedPack(store: RecordStore, user: string, pack: string, now: Date): Promise<boolean> {
+  const snapshot=requestPermissions(user);if(snapshot)return snapshot.canUse(pack);
+  const latest=async(subject:string,object:string)=>(await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${subject}|${object}`,newestFirst:true,limit:1})).items[0];
+  const direct=await latest(user,pack);if(direct&&activeAt(direct,now))return true;
+  const members=new Map<string,AuthorizationRecord>();let cursor:string|null=null;
+  do{const page:Page<AuthorizationRecord>=await store.find<AuthorizationBody>({kind:'authorization',key:'authz.subject',value:`assign|${user}`,cursor,limit:500});for(const row of page.items)members.set(row.body.object,row);cursor=page.next;}while(cursor!==null);
+  for(const [team,membership]of members){
+    if(!TeamId.safeParse(team).success||!activeAt(membership,now))continue;
+    const registration=await latest('*',team);if(!registration||!activeAt(registration,now))continue;
+    const grant=await latest(team,pack);if(grant&&activeAt(grant,now))return true;
+  }
+  return false;
+}
+
 async function activeShares(store: RecordStore, object: string | undefined, now: Date): Promise<AuthorizationRecord[]> {
   const latest = new Map<string, AuthorizationRecord>();
   let cursor: string | null = null;
@@ -442,8 +477,7 @@ export async function sharedWith(store: RecordStore, user: string, object: strin
     if (body.share_audience === 'pack_users' && body.subject.startsWith('pack_users:')) {
       const pack = body.subject.slice('pack_users:'.length);
       if (!PackId.safeParse(pack).success || expectedPack !== undefined && pack !== expectedPack) continue;
-      const assignment = (await store.find<AuthorizationBody>({ kind:'authorization', key:'authz.key', value:`assign|${user}|${pack}`, newestFirst:true, limit:1 })).items[0];
-      if (assignment && activeAt(assignment, now)) return true;
+      if (await assignedPack(store,user,pack,now)) return true;
     }
   }
   return false;
@@ -456,10 +490,9 @@ export async function runIsSharedWith(store: RecordStore, user: string, run: Pic
   if(run.pack_space&&run.pack_space!=='team')return mayUsePersonalPack(store,{id:user,name:user,role},run.pack_space,pack);
   // Within one request the permissions captured at its start decide (decision 82); personal packs keep their own check.
   const snapshot = requestPermissions(user);
-  if(run.team_shared){if(isAdmin({role}))return true;if(snapshot)return snapshot.canUse(pack);const assignment=(await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];return !!assignment&&activeAt(assignment,now);}
+  if(run.team_shared){if(isAdmin({role}))return true;if(snapshot)return snapshot.canUse(pack);return assignedPack(store,user,pack,now);}
   if (snapshot) return snapshot.runShared(run);
   if (await sharedWith(store, user, run.run, now, pack)) return true;
   if (!PackId.safeParse(pack).success || !run.requirements.length || !run.requirements.every(r => r.accepted_producer === 'fact')) return false;
-  const assignment = (await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];
-  return !!assignment && activeAt(assignment,now) && sharedWith(store,user,productionShareKey(pack),now,pack);
+  return await assignedPack(store,user,pack,now) && sharedWith(store,user,productionShareKey(pack),now,pack);
 }

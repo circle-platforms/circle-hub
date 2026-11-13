@@ -1,3 +1,4 @@
+export { PgTeams, type Team, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
 export { isAdmin, canSeeRun } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
 export { openRecords, migrateRecords } from './index.ts';
@@ -722,13 +723,18 @@ export interface Authorizations {
    * publication is the owner or an admin. Every other permission is decided by an admin.
    */
   grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord>;
-  revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord>;
+  revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>, tx?: Transaction): Promise<AuthorizationRecord>;
   /** Latest record for the triple, revoked or not. */
   latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null>;
   /** True when the latest record is a grant that has not expired. */
   isActive(permission: PermissionKind, subject: string, object: string): Promise<boolean>;
   history(query: { permission?: PermissionKind; subject?: string; object?: string } & PageQuery): Promise<Page<AuthorizationRecord>>;
 
+  assignTeam(by: Principal, teamId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignTeam(by: Principal, teamId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
+  assignResource(by: Principal, resourceId: string, subject: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignResource(by: Principal, resourceId: string, subject: string, note?: string | null): Promise<AuthorizationRecord>;
+  canUseResource(userId: string, resourceId: string): Promise<boolean>;
   assign(by: Principal, userId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
   unassign(by: Principal, userId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   grantPublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
@@ -950,6 +956,7 @@ export interface RecordsKit {
   /** The masking dictionary (B02 R[11]); absent on a fake that reads no business system. */
   masking?: import('./masking.ts').MaskingRules;
   principals: Principals;
+  teams: import('./teams.ts').Teams;
   authorizations: Authorizations;
   pointers: Pointers;
   callLog: CallLog;
