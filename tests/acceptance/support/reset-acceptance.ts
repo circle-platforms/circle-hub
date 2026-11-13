@@ -956,7 +956,7 @@ export async function seedHistoryAndKnowledgeViaMcp(state: SeededHubState): Prom
     assert.equal(listed.isError, false, listed.text);
     const nodes = await mcp.call('get_nodes', { pack: state.workflowId });
     assert.equal(nodes.isError, false, nodes.text);
-    const personalNodes = await mcp.call('get_nodes', { scope: 'personal' });
+    const personalNodes = await mcp.call('get_nodes', { scope: 'personal', search: '合成' });
     assert.equal(personalNodes.isError, false, personalNodes.text);
 
     // 6. When OS pack-function sandbox is available, run test-bed facts + acquire (creates real runs + booking lease).

@@ -42,7 +42,7 @@ afterEach(async () => {
 
 /** Helper to run CLI list assertions across users, teams, packs, resources, executors, vars, and docs. */
 async function readConfigCliSnapshot(dataDir: string, asAdmin = 'admin') {
-  const usersRes = await runCli(dataDir, ['user', 'list', '--json', '--as', asAdmin], { expectOk: true });
+  const usersRes = await runCli(dataDir, ['user', 'list', '--json'], { expectOk: true });
   const users = JSON.parse(usersRes.stdout) as Array<{ id: string; name: string; role: string; disabled?: boolean }>;
   const teams = (await runCli(dataDir, ['team', 'list', '--as', asAdmin], { expectOk: true })).stdout;
   const packs = (await runCli(dataDir, ['pack', 'list', '--as', asAdmin], { expectOk: true })).stdout;
@@ -117,7 +117,10 @@ describe('deployment definition export excludes all secret values (spec item 7)'
     // Secret reference names and non-secret structural configuration must still be exported.
     assert.ok(parsed.accounts.some((a) => a.name === 'alice' && a.role === 'user' && a.disabled === false));
     assert.ok(parsed.accounts.some((a) => a.name === 'bob' && a.disabled === true));
-    assert.ok(parsed.teams.some((t) => t.name === '研发测试组' && t.members.includes('alice')));
+    assert.ok(
+      parsed.teams.some((t) => t.name === '研发测试组' && t.members.includes('alice')),
+      `exported teams must retain '研发测试组' with member 'alice'; got teams=${JSON.stringify(parsed.teams)}`,
+    );
     const exportedPlm = parsed.resources.find((r) => r.definition.name === 'synth-plm');
     assert.ok(exportedPlm, 'exported definition must contain synth-plm resource');
     assert.equal(exportedPlm.definition.credentials.username, 'SYNTH_PLM_USER');
@@ -172,6 +175,8 @@ describe('deployment definition apply idempotency and field-level diff refusal (
       return p;
     };
 
+    const diffFailures: string[] = [];
+
     // 1. Account role change (alice: user -> admin).
     const diffAccount = structuredClone(baseParsed);
     const aliceEntry = diffAccount.accounts.find((a) => a.name === 'alice');
@@ -179,8 +184,8 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     aliceEntry.role = 'admin';
     const accountRes = await runApplyCli(state.dataDir, await writeMutated('diff-account.json', diffAccount));
     assert.notEqual(accountRes.code, 0, `mutated account role must be rejected:\n${accountRes.combined}`);
-    assert.ok(accountRes.combined.includes('alice'), `refusal output must name 'alice':\n${accountRes.combined}`);
-    assert.match(accountRes.combined, /role|角色/i, `refusal output must name role field:\n${accountRes.combined}`);
+    if (!accountRes.combined.includes('alice')) diffFailures.push(`account diff missing 'alice':\n${accountRes.combined}`);
+    if (!/role|角色/i.test(accountRes.combined)) diffFailures.push(`account diff missing role field:\n${accountRes.combined}`);
 
     // 2. Team membership change (remove alice from 研发测试组).
     const diffTeam = structuredClone(baseParsed);
@@ -189,8 +194,10 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     teamEntry.members = [];
     const teamRes = await runApplyCli(state.dataDir, await writeMutated('diff-team.json', diffTeam));
     assert.notEqual(teamRes.code, 0, `mutated team members must be rejected:\n${teamRes.combined}`);
-    assert.ok(teamRes.combined.includes('研发测试组') || teamRes.combined.includes(state.teamAlphaId), `refusal output must name team '研发测试组' or '${state.teamAlphaId}':\n${teamRes.combined}`);
-    assert.match(teamRes.combined, /member|成员/i, `refusal output must name members field:\n${teamRes.combined}`);
+    if (!teamRes.combined.includes('研发测试组') && !teamRes.combined.includes(state.teamAlphaId)) {
+      diffFailures.push(`team diff missing '研发测试组' / '${state.teamAlphaId}':\n${teamRes.combined}`);
+    }
+    if (!/member|成员/i.test(teamRes.combined)) diffFailures.push(`team diff missing members field:\n${teamRes.combined}`);
 
     // 3. Resource origin change (synth-plm plm-api -> RFC 5737 alternate).
     const diffResource = structuredClone(baseParsed);
@@ -199,8 +206,12 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     resEntry.definition.origins['plm-api'] = RFC5737_PLM_ALT;
     const resourceRes = await runApplyCli(state.dataDir, await writeMutated('diff-resource.json', diffResource));
     assert.notEqual(resourceRes.code, 0, `mutated resource origin must be rejected:\n${resourceRes.combined}`);
-    assert.ok(resourceRes.combined.includes('synth-plm') || resourceRes.combined.includes(state.plmResourceId), `refusal output must name 'synth-plm' or '${state.plmResourceId}':\n${resourceRes.combined}`);
-    assert.match(resourceRes.combined, /origin|plm-api|地址|192\.0\.2/i, `refusal output must name differing origin field:\n${resourceRes.combined}`);
+    if (!resourceRes.combined.includes('synth-plm') && !resourceRes.combined.includes(state.plmResourceId)) {
+      diffFailures.push(`resource diff missing 'synth-plm' / '${state.plmResourceId}':\n${resourceRes.combined}`);
+    }
+    if (!/origin|plm-api|地址|192\.0\.2/i.test(resourceRes.combined)) {
+      diffFailures.push(`resource diff missing origin field:\n${resourceRes.combined}`);
+    }
 
     // 4. Executor endpoint change (synthetic-bed endpoint port 19201 -> 19299).
     const diffExecutor = structuredClone(baseParsed);
@@ -209,8 +220,10 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     execEntry.endpoint = LOOPBACK_EXEC_ALT;
     const execRes = await runApplyCli(state.dataDir, await writeMutated('diff-executor.json', diffExecutor));
     assert.notEqual(execRes.code, 0, `mutated executor endpoint must be rejected:\n${execRes.combined}`);
-    assert.ok(execRes.combined.includes(state.executorTarget), `refusal output must name executor '${state.executorTarget}':\n${execRes.combined}`);
-    assert.match(execRes.combined, /endpoint|端点/i, `refusal output must name endpoint field:\n${execRes.combined}`);
+    if (!execRes.combined.includes(state.executorTarget)) {
+      diffFailures.push(`executor diff missing '${state.executorTarget}':\n${execRes.combined}`);
+    }
+    if (!/endpoint|端点/i.test(execRes.combined)) diffFailures.push(`executor diff missing endpoint field:\n${execRes.combined}`);
 
     // 5. Workflow assignment diff (remove alice assignment).
     const diffAssign = structuredClone(baseParsed);
@@ -219,7 +232,9 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     );
     const assignRes = await runApplyCli(state.dataDir, await writeMutated('diff-assign.json', diffAssign));
     assert.notEqual(assignRes.code, 0, `mutated workflowAssignments must be rejected:\n${assignRes.combined}`);
-    assert.match(assignRes.combined, /test-bed|alice|assignment|分配/i);
+    if (!/test-bed|alice|assignment|workflowAssignments|分配/i.test(assignRes.combined)) {
+      diffFailures.push(`workflowAssignments diff missing entity/field:\n${assignRes.combined}`);
+    }
 
     // 6. Variable or named-document content diff if present in exported JSON.
     const rawVarClone = JSON.parse(baseRaw) as Record<string, unknown>;
@@ -232,16 +247,23 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     })) {
       const varRes = await runApplyCli(state.dataDir, await writeMutated('diff-var.json', rawVarClone));
       assert.notEqual(varRes.code, 0, `mutated variable value must be rejected:\n${varRes.combined}`);
-      assert.ok(varRes.combined.includes(state.plainVarName), `refusal output must name '${state.plainVarName}':\n${varRes.combined}`);
+      if (!varRes.combined.includes(state.plainVarName)) diffFailures.push(`variable diff missing '${state.plainVarName}':\n${varRes.combined}`);
     }
 
     const rawDocClone = JSON.parse(baseRaw) as Record<string, unknown>;
     if (mutateOptionalSectionField(rawDocClone, ['documents', 'namedDocuments', 'docs'], state.docNoteName, (rec) => {
-      for (const field of ['content', 'text', 'body', 'bytes_base64', 'content_base64', 'base64']) {
+      for (const field of ['bytesBase64', 'content', 'text', 'body', 'bytes_base64', 'content_base64', 'base64']) {
         if (typeof rec[field] === 'string') {
-          rec[field] = field.includes('base64')
+          const updated = field.toLowerCase().includes('base64')
             ? Buffer.from('mutated-doc-bytes-conflict', 'utf8').toString('base64')
             : 'mutated-doc-bytes-conflict';
+          rec[field] = updated;
+          if (typeof rec.sha256 === 'string') {
+            rec.sha256 = createHash('sha256').update(Buffer.from('mutated-doc-bytes-conflict', 'utf8')).digest('hex');
+          }
+          if (typeof rec.size === 'number') {
+            rec.size = Buffer.byteLength('mutated-doc-bytes-conflict', 'utf8');
+          }
           return true;
         }
       }
@@ -249,7 +271,7 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     })) {
       const docRes = await runApplyCli(state.dataDir, await writeMutated('diff-doc.json', rawDocClone));
       assert.notEqual(docRes.code, 0, `mutated document bytes must be rejected:\n${docRes.combined}`);
-      assert.ok(docRes.combined.includes(state.docNoteName), `refusal output must name '${state.docNoteName}':\n${docRes.combined}`);
+      if (!docRes.combined.includes(state.docNoteName)) diffFailures.push(`document diff missing '${state.docNoteName}':\n${docRes.combined}`);
     }
 
     // Confirm none of the refused applies mutated any existing live configuration.
@@ -266,6 +288,8 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     assert.ok(varVal.includes(state.plainVarValue));
     const docVal = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
     assert.equal(docVal.trim(), state.docNoteText.trim());
+
+    assert.equal(diffFailures.length, 0, `apply diff refusals omitted human-readable entity/field details:\n${diffFailures.join('\n---\n')}`);
   });
 });
 
