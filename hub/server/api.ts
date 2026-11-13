@@ -102,6 +102,7 @@ export interface DispatchView {
 }
 
 export interface AppOptions {
+  reset?: { bridge(): Promise<import('./rebuild-http.ts').RebuildResetBridge>; render?: import('./rebuild-http.ts').RebuildPageRenderer };
   /** Runs the console's management actions as `circle-hub` commands (serve gives one); without it they are unavailable. */
   bridge?: import('./command-bridge.ts').CommandBridge;
   /** The server certificate and key of the built-in HTTPS (PEM); required when the configuration has `https`. */

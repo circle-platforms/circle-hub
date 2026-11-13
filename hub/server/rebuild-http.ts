@@ -27,7 +27,8 @@ export interface RebuildConsoleContext {
 export type RebuildPageRenderer = (context: RebuildConsoleContext) => string | Promise<string>;
 export interface RebuildHttpOptions {
   dataDir: string;
-  rebuildNeeded: RebuildNeeded;
+  rebuildNeeded: RebuildNeeded | null;
+  authenticateAdmin?(request: IncomingMessage): Promise<{ session: ConsoleSession; principalId: string } | null>;
   bridge: RebuildResetBridge;
   originAllowed(request: IncomingMessage): boolean;
   render?: RebuildPageRenderer;
@@ -51,10 +52,11 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
   const sessions = new SessionStore(() => (options.now?.() ?? new Date()).getTime());
   const actions = new WeakMap<ConsoleSession, Action>();
   let redemption = Promise.resolve();
-  const authContext = (session: ConsoleSession, action: Action) => `setup:${hash(session.id)}:${action.id}`;
+  const identities = new WeakMap<ConsoleSession, string>();
+  const authContext = (session: ConsoleSession, action: Action) => options.authenticateAdmin ? `admin:${identities.get(session)}:${action.id}` : `setup:${hash(session.id)}:${action.id}`;
   const page = async (response: ServerResponse, context: RebuildConsoleContext) => {
-    if (!options.render) return sendText(response, context.authorized ? 200 : 401, context.authorized ? '记录库需要重建；请在本机执行 circle-hub reset，或使用控制台重建表单' : '需要本机 setup-code 维护授权');
-    const body = await options.render(context);
+    const render = options.render ?? (await import('./console/reset.ts')).renderRebuildPage;
+    const body = await render(context);
     response.writeHead(context.authorized ? 200 : 401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-length': String(Buffer.byteLength(body)) });
     response.end(body);
   };
@@ -70,8 +72,14 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
   };
   return async (request: IncomingMessage, response: ServerResponse, url: URL): Promise<void> => {
     const secure = secureRequest(request), cookies = cookiesOf(request);
-    const session = sessions.get(cookies.get(SESSION), secure);
+    const verified = options.authenticateAdmin ? await options.authenticateAdmin(request) : null;
+    const session = options.authenticateAdmin ? verified?.session ?? null : sessions.get(cookies.get(SESSION), secure);
+    if (verified) {
+      identities.set(verified.session, verified.principalId);
+      if (!actions.has(verified.session)) actions.set(verified.session, { id: randomUUID() });
+    }
     const action = session ? actions.get(session) : undefined;
+    if (options.authenticateAdmin && !verified) return sendText(response, 403, '需要当前有效且已完成密码设置的管理员会话');
     if (request.method === 'GET' && url.pathname === ROOT) {
       if (!session || !action) {
         const nonce = sessions.issueNonce(secure);
@@ -88,15 +96,17 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
       if (!UUID.test(operationId) || action.operationId !== operationId) return sendText(response, 404, '操作不可用');
       return sendJson(response, 200, await options.bridge.status(operationId, authContext(session, action)));
     }
-    if (request.method !== 'POST' || ![ROOT + '/authorize', ROOT + '/preview', ROOT + '/execute', ROOT + '/new-action'].includes(url.pathname)) return sendText(response, 503, '记录库需要重建；业务入口未开放，请由本机操作账户授权后重建');
+    const settingsPreview = Boolean(options.authenticateAdmin && url.pathname === '/console/admin/do/reset');
+    if (request.method !== 'POST' || ![ROOT + '/authorize', ROOT + '/preview', ROOT + '/execute', ROOT + '/new-action'].includes(url.pathname) && !settingsPreview) return sendText(response, 503, '记录库需要重建；业务入口未开放，请由本机操作账户授权后重建');
     if (!options.originAllowed(request)) return sendText(response, 403, '请求来源不允许');
     if (request.headers['content-type']?.split(';')[0].trim() !== 'application/x-www-form-urlencoded') return sendText(response, 415, '请提交控制台表单');
     const read = await readBody(request, 16 * 1024);
     if (!read.ok) return sendText(response, read.reason === 'too_large' ? 413 : 400, '表单未完整接收');
     const form = new URLSearchParams(read.bytes.toString('utf8'));
-    const allowedFields = new Set(url.pathname === ROOT + '/authorize' ? ['setup_code', 'nonce'] : url.pathname === ROOT + '/preview' ? ['csrf', 'actionId', 'scope', 'keep-config', 'definition'] : ['csrf', 'actionId']);
+    const allowedFields = new Set(settingsPreview ? ['csrf', 'confirm', 'scope', 'keep_config'] : url.pathname === ROOT + '/authorize' ? ['setup_code', 'nonce', 'csrf'] : url.pathname === ROOT + '/preview' ? ['csrf', 'actionId', 'scope', 'keep-config', 'definition', 'confirm'] : ['csrf', 'actionId']);
     if ([...form.keys()].some(name => !allowedFields.has(name))) return sendText(response, 400, '表单字段不符合重建动作；请重新打开控制台');
     if (url.pathname === ROOT + '/authorize') {
+      if (options.authenticateAdmin) return sendText(response, 403, '普通模式不接受维护码授权');
       const nonce = form.get('nonce');
       if (!sessions.takeLoginAttempt(request.socket.remoteAddress ?? 'unknown')) return sendText(response, 429, '尝试过多，请稍后重试');
       if (!nonce || nonce !== cookies.get(NONCE) || !sessions.takeNonce(nonce, secure)) return sendText(response, 403, '授权表单已失效，请重新打开');
@@ -108,19 +118,20 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
       response.writeHead(303, { location: ROOT }); response.end(); return;
     }
     if (!session || !action) return sendText(response, 401, '需要当前有效的维护授权');
-    if (form.get('csrf') !== session.csrf || form.get('actionId') !== action.id) return sendText(response, 403, '动作或 CSRF 验证失败');
+    if (form.get('csrf') !== session.csrf || (!settingsPreview && form.get('actionId') !== action.id)) return sendText(response, 403, '动作或 CSRF 验证失败');
     const context = authContext(session, action);
     if (url.pathname === ROOT + '/new-action') {
       if (action.launching && !action.operationId) return sendText(response, 409, '当前动作正在接受中');
       if (action.operationId && !(await options.bridge.status(action.operationId, context)).completed) return sendText(response, 409, '当前重建尚未结束');
       actions.set(session, { id: randomUUID() }); response.writeHead(303, { location: ROOT }); response.end(); return;
     }
-    if (url.pathname === ROOT + '/preview') {
+    if (url.pathname === ROOT + '/preview' || settingsPreview) {
+      if (form.get('confirm') !== '重建') return sendText(response, 400, '请输入重建以确认归档操作');
       if (action.operationId || action.launching) return sendText(response, 409, '当前动作已启动，请查询其状态');
       const scopes = form.getAll('scope'), definitionFile = form.get('definition');
       const canonical = await options.bridge.validate({ scopes: scopes.length === 1 && scopes[0] === 'all' ? 'all' : scopes,
-        keepConfig: form.has('keep-config'), ...(definitionFile ? { definitionFile } : {}) });
-      if (!canonical || canonical.scopes !== 'all' || canonical.keepConfig) return sendText(response, 400, '不兼容记录库只允许明确选择 all 归档初始化，不可保留无法核对的配置');
+        keepConfig: settingsPreview ? form.get('keep_config') === '1' : form.has('keep-config'), ...(definitionFile ? { definitionFile } : {}) });
+      if (!canonical || options.rebuildNeeded !== null && (canonical.scopes !== 'all' || canonical.keepConfig)) return sendText(response, 400, '不兼容记录库只允许明确选择 all 归档初始化，不可保留无法核对的配置');
       const plan = await options.bridge.preview(canonical);
       if (action.operationId || action.launching) return sendText(response, 409, '当前动作已启动，请查询其状态');
       action.plan = plan;

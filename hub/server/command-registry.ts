@@ -56,6 +56,6 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'operator-token', reserved: '管理操作令牌', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.operatorTokenCommand(session,args)) },
 ];
 export const ADMIN_COMMANDS = administrative.map(command => ({ ...command, bridge: command.bridge ?? false, step: `run-${command.name}` as const }));
-export const COMMAND_METADATA: readonly CommandMetadata[] = [...BUILTIN_COMMANDS, ...ADMIN_COMMANDS, ...PLATFORM_COMMAND_METADATA];
+export const COMMAND_METADATA: readonly CommandMetadata[] = [...BUILTIN_COMMANDS, ...ADMIN_COMMANDS, ...PLATFORM_COMMAND_METADATA.map(command => command.name === 'reset' ? { ...command, bridge: true } : command)];
 export const RESERVED_DESCRIPTIONS = Object.fromEntries(ADMIN_COMMANDS.filter(command => command.reserved !== undefined).map(command => [command.name, command.reserved!]));
 export const BRIDGED_COMMANDS: ReadonlySet<string> = new Set(COMMAND_METADATA.filter(command => command.bridge).map(command => command.name));

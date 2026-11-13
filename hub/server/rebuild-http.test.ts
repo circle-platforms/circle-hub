@@ -55,7 +55,7 @@ test('restricted startup isolates bootstrap codes, requires maintenance grant an
   await request('/console/rebuild'); assert.ok(view?.authorized && view.actionId);
   const action = view.actionId, csrf = view.csrf;
   assert.equal((await request('/console/rebuild/execute', { csrf: 'wrong', actionId: action })).status, 403);
-  assert.equal((await request('/console/rebuild/preview', { csrf, actionId: action, scope: 'all' })).status, 200);
+  assert.equal((await request('/console/rebuild/preview', { csrf, actionId: action, scope: 'all', confirm: '重建' })).status, 200);
   const accepted = await request('/console/rebuild/execute', { csrf, actionId: action }); assert.equal(accepted.status, 202);
   assert.deepEqual(await accepted.json(), { operationId, statusUrl: '/console/reset/status/' + operationId });
   const retried = await request('/console/rebuild/execute', { csrf, actionId: action }); assert.equal(retried.status, 202); await retried.text();
@@ -95,7 +95,7 @@ test('a disconnected execute response never acknowledges its queued worker', { t
   await call('/console/rebuild'); assert.ok(view?.loginNonce);
   await call('/console/rebuild/authorize', { nonce: view.loginNonce, setup_code: await issueRebuildCode(dataDir) });
   await call('/console/rebuild'); assert.ok(view?.actionId); const form = { csrf: view.csrf, actionId: view.actionId };
-  await call('/console/rebuild/preview', { ...form, scope: 'all' });
+  await call('/console/rebuild/preview', { ...form, scope: 'all', confirm: '重建' });
   const pending = httpRequest(base + '/console/rebuild/execute', { method: 'POST', headers: headers() }); pending.on('error', () => {}); pending.end(new URLSearchParams(form).toString());
   await launchStarted.promise; pending.destroy(); await disconnected.promise; launchFinished.resolve({ operationId }); await handled.promise;
   assert.equal(acknowledgements, 0);
