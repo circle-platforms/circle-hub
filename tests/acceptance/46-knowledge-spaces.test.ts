@@ -167,7 +167,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const ownConsole = await openConsole(hub, owner.token), otherConsole = await openConsole(hub, other.token), adminConsole = await openConsole(hub, hub.admin.token);
   const home = await ownConsole.get('/console/knowledge');
   assert.equal(home.status, 200);
-  for (const text of ['全部', '我的', '团队', '服务器备份', '最近变化', '分享到团队记录'])
+  for (const text of ['全部', '我的', '公共空间', '服务器备份', '最近变化', '分享到公共空间记录'])
     assert.ok(home.body.includes(text), text);
   assert.ok(!home.body.includes('与我共享'),'the empty received group is hidden');
   assert.match((await ownConsole.get('/console/knowledge?scope=personal')).body,/导入我的知识/);
@@ -221,11 +221,16 @@ test('console password sessions browse the three spaces and owner forms enforce 
   const citation={reference:`tree:${cited.root}/合成/目录@${currentEntry.entry}`};
   await hub.records.store.put({kind:'submission',schema:'submission@1',provenance:'declared',body:citation,index:citationIndex(citation,'1',new Map([[cited.root,owner.user.id]]))});
   const nodeQuery='?'+new URLSearchParams({root:cited.root,path:'/合成/目录'});
-  const ownNode=await ownConsole.get('/console/api/knowledge/node'+nodeQuery);
-  assert.equal(ownNode.status,200,ownNode.body);assert.equal(JSON.parse(ownNode.body).citations.entries[0].count,1);
-  const sharedNode=await otherConsole.get('/console/api/knowledge/node'+nodeQuery);
-  assert.equal(sharedNode.status,200,sharedNode.body);assert.equal(JSON.parse(sharedNode.body).citations,null);
-  assert.ok(JSON.parse(sharedNode.body).entries[0].cited_count==null);
+  const entryPage=spacePath(owner.user.id,'/合成/目录',cited.root)+'&entry='+currentEntry.entry;
+  const ownNode=await ownConsole.get(entryPage);
+  assert.equal(ownNode.status,200,ownNode.body);
+  assert.match(ownNode.body,/合成控制台观察（修订）/);
+  assert.match(ownNode.body,/class="ch-stat-label">被引用次数<\/span><span class="ch-stat-value">1<\/span>/);
+  const sharedNode=await otherConsole.get(entryPage);
+  assert.equal(sharedNode.status,200,sharedNode.body);
+  assert.match(sharedNode.body,/合成控制台观察（修订）/);
+  assert.doesNotMatch(sharedNode.body,/被引用次数|data-label="被引用"/);
+  assert.equal((await adminConsole.get(entryPage)).status,404);
   const sharedTree=await otherConsole.get('/console/knowledge/tree'+nodeQuery);
   assert.equal(sharedTree.status,200,sharedTree.body);assert.ok(!sharedTree.body.includes('被引用'));
   const found = await otherConsole.get('/console/search?q=' + encodeURIComponent('控制台观察') + '&scope=shared');
@@ -233,6 +238,7 @@ test('console password sessions browse the three spaces and owner forms enforce 
   assert.ok(found.body.includes('合成控制台观察'));
   assert.equal((await ownConsole.post('/console/knowledge/do/revoke', { csrf: nonce, path: '/合成', audience: 'member', member_id: other.user.id })).status, 303);
   assert.equal((await otherConsole.get(spacePath(owner.user.id, '/合成/目录'))).status, 404);
+  assert.equal((await otherConsole.get(entryPage)).status,404);
   // Text that looks like a credential is written like any other (decisions 154, 161): the space does not refuse it.
   const credentialLike = await ownConsole.post('/console/knowledge/do/entry', { ...fields, statement: 'DB_PASSWORD=hunter22x' });
   assert.equal(credentialLike.status, 303);
