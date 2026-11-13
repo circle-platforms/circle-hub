@@ -14,6 +14,7 @@ export const DeploymentSyncTarget = z.strictObject({
 });
 export type DeploymentSyncTarget = z.infer<typeof DeploymentSyncTarget>;
 export const DeploymentSyncTargets = z.array(DeploymentSyncTarget).max(100).refine(targets => new Set(targets.map(target => JSON.stringify([target.product, target.line]))).size === targets.length, 'product and version line pairs are unique');
+export const DEPLOYMENT_SYNC_CONFIGURATION_KEY = 'deployment-sync';
 export const DEPLOYMENT_SYNC_INTENT_SCHEMA = 'deployment-sync-intent@1';
 export const DeploymentSyncIntent = z.strictObject({ schema: z.literal(DEPLOYMENT_SYNC_INTENT_SCHEMA), targets: DeploymentSyncTargets });
 export type DeploymentSyncIntent = z.infer<typeof DeploymentSyncIntent>;
