@@ -1,16 +1,19 @@
 import type { z } from 'zod';
 import { argumentDigest, isSha256, type Principal } from '../records/api.ts';
 import { runById } from '../runs/api.ts';
-import type { GetNodesOutput } from '../../contracts/src/tools.ts';
+import { GetNodesInput, TOOL_NAMES, type GetNodesOutput, type ToolName } from '../../contracts/src/tools.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import type { ServerDeps } from './api.ts';
 import { observedCalls } from './inflight-calls.ts';
 
 type Status=NonNullable<z.infer<typeof GetNodesOutput>['call_status']>;
+type QueryTool = Extract<keyof NonNullable<z.infer<typeof GetNodesInput>['call_query']>, ToolName>;
+const QUERY_TOOLS: ReadonlySet<string> = new Set(TOOL_NAMES.filter(name => Object.hasOwn(GetNodesInput.shape.call_query.unwrap().shape, name)));
+export const isCallQueryTool = (name: string): name is QueryTool => QUERY_TOOLS.has(name);
 const LOG_WINDOW=500, RETURNED=20;
 
 /** Only the caller's own matching arguments are observed; no arguments or source text are retained here. */
-export async function callStatus(deps:ServerDeps,user:Principal,tool:'start_run'|'get_nodes',args:Record<string,unknown>,trace?:string):Promise<Status> {
+export async function callStatus(deps:ServerDeps,user:Principal,tool:QueryTool,args:Record<string,unknown>,trace?:string):Promise<Status> {
   const digest=argumentDigest(args).digest;
   let logUnavailable=false;
   const logs=await deps.records.callLog.query(user,{userId:user.id,tool,argsDigest:digest,...(trace===undefined?{}:{traceId:trace}),limit:LOG_WINDOW,newestFirst:true}).catch(()=>{logUnavailable=true;return {items:[],next:null};});

@@ -1,3 +1,4 @@
+import { isCallQueryTool } from './call-status.ts';
 // POST /mcp: the streamable HTTP transport of the official SDK in stateless JSON mode, one Server and one JSON-RPC request per
 // HTTP request. Batches are refused (MCP 2025-06-18 removed them; in a batch, requests sharing an id or a cancellation of a
 // sibling would run calls the call log never sees). The bearer token is checked on every request (a revoked token or a
@@ -386,7 +387,7 @@ async function answer(
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
     const args = isPlainObject(state.args) ? state.args : message.params.arguments;
-    if ((message.params.name==='start_run'||message.params.name==='get_nodes') && !(message.params.name==='get_nodes' && isPlainObject(args) && Object.hasOwn(args,'call_query'))) {
+    if (isCallQueryTool(message.params.name) && !(message.params.name==='get_nodes' && isPlainObject(args) && Object.hasOwn(args,'call_query'))) {
       finishObserved=beginObservedCall(deps,principal.id,message.params.name,state.args,traceId);
     }
     const result=await guarded(state, () => callTool(deps, call, message.params.name, args));
