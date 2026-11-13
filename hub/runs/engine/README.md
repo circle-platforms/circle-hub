@@ -27,8 +27,7 @@ alone stays as it is), so that a run reads the team spaces its initiator belonge
 implemented yet: until the commits that keep a space for each team land, a run locks the one team root.
 
 The citation index classifies space roots before indexing accepted submissions. Personal entries use an owner-scoped key;
-equal content cannot enter the team entry count through a private reference. The same classification applies during
-background backfill. Existing legacy node/entry counts and their limits stay compatible.
+equal content cannot enter the team entry count through a private reference. Node and entry counts keep their existing limits.
 
 Ordinary own uploads bound as inputs carry a frozen `upload_declaration`, visible in the console and MCP run text.
 Only actual current run readers inherit that exact capture's run-scoped read right; no global artifact grant is added.
@@ -960,11 +959,7 @@ requirement's template checks. Samples and actual evaluation share callCheck and
 source context. Missing or ambiguous bindings remain unknown: the runner asks the package owner to publish an unambiguous
 binding and then starts a new run. A catalog declared only by another requirement is never guessed as the binding.
 
-Historical run@1 requirements may omit both ruling arrays; a half-written pair is refused. Public RunSummary fields stay
-required. Reading, listing and idempotent start reuse derive missing arrays from the run's locked package, retaining the
-original labels and all stored bytes. A missing locked package or requirement raises MissingRulingSummaryError with the
-fixed SOURCE_UNAVAILABLE code and an instruction to restore the locked package from backup before rereading or reusing the
-run. Current summaries do not acquire a dependency on reloading the package; list hydration shares a load per digest.
+Run requirements store both ruling arrays at creation. Reading, listing and idempotent reuse return the frozen arrays without reconstructing them from a package.
 
 ## Criterion changes (W10)
 
