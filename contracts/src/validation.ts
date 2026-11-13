@@ -64,14 +64,14 @@ function ruleOf(rules: Record<string, TerminalRule>, terminal: string): Terminal
   return Object.hasOwn(rules, terminal) ? rules[terminal] : undefined;
 }
 
-function checkTerminal(rules: Record<string, TerminalRule>, r: LayerFields, ctx: z.core.$RefinementCtx<LayerFields>,requireExit=true): void {
+function checkTerminal(rules: Record<string, TerminalRule>, r: LayerFields, ctx: z.core.$RefinementCtx<LayerFields>): void {
   const rule = ruleOf(rules, r.terminal);
   if (rule === undefined) return;
   for (const field of ['code', 'reason'] as const) {
     if (rule[field] === 'required' && r[field] === undefined) ctx.addIssue({ code: 'custom', path: [field], message: `a ${r.terminal} terminal needs a ${field}` });
     if (rule[field] === 'forbidden' && r[field] !== undefined) ctx.addIssue({ code: 'custom', path: [field], message: `a ${r.terminal} terminal carries no ${field}` });
   }
-  if(requireExit&&rule.reason==='required')for(const field of ['missing','exit'] as const)if(r[field]===undefined)ctx.addIssue({code:'custom',path:[field],message:'a transitional layer needs '+field});
+  if(rule.reason==='required')for(const field of ['missing','exit'] as const)if(r[field]===undefined)ctx.addIssue({code:'custom',path:[field],message:'a transitional layer needs '+field});
   if (!rule.attribution && r.attribution !== undefined) {
     ctx.addIssue({ code: 'custom', path: ['attribution'], message: 'attribution hangs only on a non-pass terminal that is not a judgment (V04 R[1])' });
   }
@@ -280,38 +280,4 @@ export function partitionCountsOf(partitions: Partitions): PartitionCounts {
   }
   const pending_unknown=PARTITION.reduce((sum,p)=>sum+partitions[p].filter(it=>it.requirements.some(r=>r.layers.some(l=>(l.gaps?.length??0)>0))).length,0);
   return { ...counts, unknown, ...(pending_unknown>0?{pending_unknown}:{}) };
-}
-
-
-/** Read-only historical shape: omissions are preserved, not backfilled into old append-only records. */
-export const StoredLayerResult=z.discriminatedUnion('layer',[
-  z.strictObject({layer:z.literal('static' satisfies Layer),terminal:StaticTerminalSchema,...layerFields}).superRefine((r,ctx)=>checkTerminal(STATIC_TERMINAL_RULES,r,ctx,false)),
-  z.strictObject({layer:z.literal('dynamic' satisfies Layer),terminal:DynamicTerminalSchema,...layerFields,...repetitionFields}).superRefine((r,ctx)=>checkTerminal(DYNAMIC_TERMINAL_RULES,r,ctx,false)),
-]);
-const StoredRequirementResult=RequirementResult.safeExtend({layers:z.array(StoredLayerResult)});
-const storedRequirementFields={requirements:z.array(StoredRequirementResult)};
-export const StoredPartitionItem={
-  delivered:PartitionItem.delivered.safeExtend(storedRequirementFields),
-  rejected:PartitionItem.rejected.safeExtend(storedRequirementFields),
-  quarantined:PartitionItem.quarantined.safeExtend(storedRequirementFields),
-  incomplete:PartitionItem.incomplete.safeExtend(storedRequirementFields),
-} satisfies Record<Partition,z.ZodType>;
-const storedArrays=Object.fromEntries(PARTITION.map(p=>[p,z.array(StoredPartitionItem[p])])) as PartitionArrays;
-export const StoredValidationResult=ValidationResult.safeExtend({partitions:Partitions.safeExtend(storedArrays)});
-/** Missing recovery facts on one immutable historical item; paths are relative to the supplied prefix. */
-export function storedItemNotices(item:Pick<z.infer<typeof StoredPartitionItem.delivered>,'requirements'>,prefix=''){
-  const notices:Array<{path:string;message:string}>=[];
-  item.requirements.forEach((requirement,j)=>requirement.layers.forEach((layer,k)=>{
-    const rules=layer.layer==='static'?STATIC_TERMINAL_RULES:DYNAMIC_TERMINAL_RULES;
-    if(ruleOf(rules,layer.terminal)?.reason!=='required')return;
-    const path=prefix+'/requirements/'+j+'/layers/'+k;
-    if(layer.exit===undefined)notices.push({path:path+'/exit',message:EXIT_NOT_RECORDED});
-    if(layer.missing===undefined)notices.push({path:path+'/missing',message:MISSING_NOT_RECORDED});
-  }));
-  return notices;
-}
-export function readStoredValidationResult(value:unknown){
-  const result=StoredValidationResult.parse(value),notices:Array<{path:string;message:string}>=[];
-  for(const p of PARTITION)result.partitions[p].forEach((item,i)=>notices.push(...storedItemNotices(item,'/partitions/'+p+'/'+i)));
-  return {result,notices};
 }
