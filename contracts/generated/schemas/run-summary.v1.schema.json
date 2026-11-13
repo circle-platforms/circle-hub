@@ -53,7 +53,6 @@
       "additionalProperties": false
     },
     "skills": {
-      "description": "Skill package digests frozen at start; absent only on historical runs",
       "maxItems": 64,
       "type": "array",
       "items": {
@@ -82,7 +81,8 @@
           "digest"
         ],
         "additionalProperties": false
-      }
+      },
+      "description": "Skill package digests frozen at start; empty when no skills are used"
     },
     "feeding_offset": {
       "description": "Append-only feeding horizon frozen with the root; missing on a historical run remains unknown",
@@ -1789,13 +1789,14 @@
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
     },
     "submission_due": {
-      "description": "Absolute submission deadline; absent only on historical runs, never inferred by readers",
       "type": "string",
       "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+      "description": "Absolute submission deadline frozen at start"
     }
   },
   "required": [
+    "skills",
     "run",
     "pack",
     "pack_digest",
@@ -1805,7 +1806,8 @@
     "items",
     "instructions",
     "instructions_digest",
-    "started_at"
+    "started_at",
+    "submission_due"
   ],
   "additionalProperties": false
 }
