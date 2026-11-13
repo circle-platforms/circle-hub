@@ -23,7 +23,8 @@ export interface DeploymentSyncStatus extends DeploymentSyncTarget {
   id: string; running: boolean; completed: boolean; probing: boolean; synchronized: boolean; current: boolean;
   error?: { reason: string; nextAction: string };
 }
-interface Request extends DeploymentSyncTarget { id: string; actor: string; databaseOid: string }
+interface Request extends DeploymentSyncTarget { id: string; actor: string; databaseOid: string; submittedAt: number }
+type StoredStatus = DeploymentSyncStatus & { workerPid?: number };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const intentKey = 'deployment-sync';
 const problem = () => new CliError('后台知识同步未完成', '使用 knowledge sync-status 查询任务；修复来源、权限或初始化状态后重新提交');
@@ -59,21 +60,31 @@ function object(input: unknown): Record<string, unknown> {
 }
 async function requestOf(config: HubConfig, id: string): Promise<Request> {
   const value = object(await readPrivate(paths(config, id).request));
-  if (value.id !== id || typeof value.databaseOid !== 'string' || !/^[1-9][0-9]*$/.test(value.databaseOid)) throw problem();
+  if (value.id !== id || typeof value.submittedAt !== 'number' || !Number.isSafeInteger(value.submittedAt) || value.submittedAt < 0 || typeof value.databaseOid !== 'string' || !/^[1-9][0-9]*$/.test(value.databaseOid)) throw problem();
   const actor = UserId.parse(value.actor);
   const [target] = (await parseIntent({ schema: 'deployment-sync-intent@1', targets: [{ product: value.product, line: value.line }] })).targets;
   if (!target) throw problem();
-  return { id, actor, databaseOid: value.databaseOid, ...target };
+  return { id, actor, databaseOid: value.databaseOid, submittedAt: value.submittedAt, ...target };
 }
 async function statusOf(config: HubConfig, id: string): Promise<DeploymentSyncStatus> {
   const request = await requestOf(config, id), value = object(await readPrivate(paths(config, id).status));
   if (value.id !== id || value.product !== request.product || value.line !== request.line) throw problem();
   for (const key of ['running', 'completed', 'probing', 'synchronized', 'current']) if (typeof value[key] !== 'boolean') throw problem();
+  let stopped = false;
+  if (!value.completed) {
+    if (value.workerPid !== undefined) {
+      if (typeof value.workerPid !== 'number' || !Number.isSafeInteger(value.workerPid) || value.workerPid < 1) throw problem();
+      try { process.kill(value.workerPid,0); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') stopped=true; else if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error; }
+    } else if (Date.now() - request.submittedAt >= 60_000) stopped=true;
+  }
+  if (stopped) return {id,product:request.product,line:request.line,running:false,completed:true,probing:false,synchronized:false,current:false,
+    error:{reason:'独立同步进程未确认运行，结果未知',nextAction:'检查用户服务管理器后重新提交'}};
   return { id, product: request.product, line: request.line, running: value.running as boolean, completed: value.completed as boolean,
     probing: value.probing as boolean, synchronized: value.synchronized as boolean, current: value.current as boolean,
     ...(value.error === undefined ? {} : { error: { reason: '同步尚未证实完成', nextAction: '核对来源、管理员权限及数据库身份后重新提交' } }) };
 }
-async function save(config: HubConfig, status: DeploymentSyncStatus) {
+async function save(config: HubConfig, status: StoredStatus) {
   await writeFileAtomic(paths(config, status.id).status, JSON.stringify(status), 0o600);
 }
 async function databaseOid(config: HubConfig): Promise<string> {
@@ -146,7 +157,7 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
       }
       if (!id) {
         id = randomUUID();
-        const request: Request = { id, actor: actor.id, databaseOid: oid, ...target };
+        const request: Request = { id, actor: actor.id, databaseOid: oid, submittedAt: Date.now(), ...target };
         await writeFile(paths(config,id).request, JSON.stringify(request), { flag: 'wx', mode: 0o600 });
         const status: DeploymentSyncStatus = { id, ...target, running: false, completed: false, probing: false, synchronized: false, current: false };
         await save(config,status);
@@ -175,11 +186,9 @@ export async function deploymentSyncStatus(session: Session, id: string): Promis
 /** Fixed internal CLI branch. Uses neither the submitting Session nor any of its pools or token material. */
 async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Promise<number> {
   await directory(config);
-  const request = await requestOf(config,id), file = paths(config,id);
+  const request = await requestOf(config,id);
   if ((await statusOf(config,id)).completed) return 1;
-  try { await writeFile(file.claim,id,{flag:'wx',mode:0o600}); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 1; throw error; }
-  const state: DeploymentSyncStatus = { id, product: request.product, line: request.line, running:true,completed:false,probing:false,synchronized:false,current:false };
+  const state: StoredStatus = { workerPid:process.pid, id, product: request.product, line: request.line, running:true,completed:false,probing:false,synchronized:false,current:false };
   const controller = new AbortController(), finished = new AbortController();
   let records: Awaited<ReturnType<typeof openRecords>> | undefined;
   let hub: Awaited<ReturnType<typeof assembleHub>> | undefined;
@@ -226,8 +235,7 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
     return 1;
   } finally {
     finished.abort(); await observing;
-    await hub?.dispatch?.close();
-    await records?.close();
+    try { await hub?.dispatch?.close(); } finally { await records?.close(); }
   }
 }
 
@@ -235,6 +243,10 @@ async function executeDeploymentSyncWorker(config: HubConfig, id: string, env: N
 export async function runDeploymentSyncWorker(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Promise<number> {
   await directory(config);
   const request = await requestOf(config,id);
+  if ((await statusOf(config,id)).completed) return 1;
+  try { await writeFile(paths(config,id).claim,id,{flag:'wx',mode:0o600}); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') return 1; throw error; }
+  await save(config,{id,product:request.product,line:request.line,running:false,completed:false,probing:false,synchronized:false,current:false,workerPid:process.pid});
   const lock = platformLockPath(createContext(env));
   const occupied = async () => {
     try { await lstat(lock); return true; }
