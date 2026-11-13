@@ -1,3 +1,4 @@
+import { VaultReadinessError } from './errors.ts';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { randomBytes, createHash } from 'node:crypto';

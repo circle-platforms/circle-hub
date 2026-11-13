@@ -94,7 +94,7 @@ export class FileVault implements Vault {
   #metadataVault(): FileVault { return new FileVault(join(this.directory, 'metadata'), this.#provider); }
 
   #metadataFailure(name: string, entry: string, missing: readonly string[], reason: string): VaultReadinessError {
-    return new VaultReadinessError([{ name, entry, missing, reason, next_action: `请管理员依据原设置事实恢复 vault/metadata/${this.#secretEntry(name)}.sealed，再重试；版本、current和摘要规则不能从文件时间猜测；原设置人或时间确实未知时保留null，不新建主密钥` }]);
+    return new VaultReadinessError([{ name, entry, missing, reason, next_action: `请管理员依据原设置事实恢复 vault/metadata/${this.#secretEntry(name)}.sealed，再重试；若管理员持有值且版本事实可核对，可用 circle-hub secret set --name ${name} --reason <理由> 重新设置，产生新值版本；版本/current/摘要规则不能猜，未知原人/时刻保留null，不新建主密钥` }]);
   }
 
   async #metadataFile(name: string): Promise<SecretMetadataFile | null> {
@@ -106,7 +106,7 @@ export class FileVault implements Vault {
       let values: string[];
       try { values = (await this.list()).filter(candidate => candidate.startsWith(entry + '.') && /^[a-f0-9]{24}$/.test(candidate.slice(entry.length + 1))); }
       catch { throw this.#metadataFailure(name, entry, ['inventory'], '无法列出该名字的封存条目'); }
-      if (values.length) throw new VaultReadinessError(values.map(value => ({ name, entry: value + '.sealed', missing: ['metadata', 'version', 'current', 'digest_rule', 'set_by', 'set_at'], reason: '封存缺少认证元数据；不能从文件时间推断版本或原设置事实', next_action: `请管理员依据原设置事实恢复 vault/metadata/${entry}.sealed；需提供version、current、digest_rule及原设置人/时间（确实未知才null），然后重试；不要新建主密钥` })));
+      if (values.length) throw new VaultReadinessError(values.map(value => ({ name, entry: value + '.sealed', missing: ['metadata', 'version', 'current', 'digest_rule', 'set_by', 'set_at'], reason: '封存缺少认证元数据；不能从文件时间推断版本或原设置事实', next_action: `请管理员依据原设置事实恢复 vault/metadata/${entry}.sealed；需提供version、current、digest_rule及原设置人/时间（确实未知才null），然后重试；若管理员持有值并已恢复可信版本依据，可用 circle-hub secret set --name ${name} --reason <理由> 重新设置并产生新值版本；不要新建主密钥` })));
       return null;
     }
     let text: string | null;
