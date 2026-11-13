@@ -4,10 +4,10 @@ import type {SourceAbsent} from '../contracts/src/resources.ts';
 // from its api.ts; a package that needs one takes it as an argument and imports nothing else of the provider. Tests use fakes.
 // A port answers only what its consumers need; whatever else a provider offers stays in the provider's own api.ts.
 import type { z } from 'zod';
-import type { EntryKind, PackKind, RequestKind, ExitAction } from '../contracts/generated/vocabulary.ts';
+import type { EntryKind, PackKind, RequestKind, ExitAction, Aggregation, Verdict } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
-import type { ChecksFile, LedgerFile, KnowledgeFile, SkillDeclaration, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
+import type { ChecksFile, LedgerFile, KnowledgeFile, SkillDeclaration, PackManifest, RequirementTemplate, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
 import type { PackSummary } from '../contracts/src/run.ts';
 import type { ProductDeclaration, KnownBuild } from '../contracts/src/product.ts';
 import type { ProtocolError } from '../contracts/src/common.ts';
@@ -20,6 +20,31 @@ import type { TreeReader } from './refs/api.ts';
 import type { CatalogView } from './rules/api.ts';
 
 // ---------------------------------------------------------------- packs (provided by runs)
+
+/** A diagnostic for administrators, never a caller-visible permission or outcome. */
+export interface AdminLogEntry {
+  traceId: string | null;
+  run: string | null;
+  what: string;
+  detail: string;
+}
+
+export interface RepetitionPolicy {
+  count: number;
+  aggregation: Aggregation;
+  k?: number;
+}
+
+export interface Expectation {
+  outcome: Extract<Verdict, 'support' | 'refute'>;
+  codes: string[];
+}
+
+/** The existing run rules used by dispatch; implementations remain with the run engine. */
+export interface DispatchRunRulesPort {
+  withinCountBudget(round: number, policy: RepetitionPolicy, budget: number): boolean;
+  expectationFor(template: RequirementTemplate, fields: Record<string, unknown>): Expectation;
+}
 
 /** Run facts consumed by knowledge without importing the run engine. */
 export interface KnowledgeRunReadPort {
