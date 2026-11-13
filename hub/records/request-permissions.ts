@@ -8,7 +8,7 @@ import type { AuthorizationBody, AuthorizationRecord, Principal, User } from './
 import { iso, type Database } from './db.ts';
 import { digestOf } from './digest.ts';
 import { verifiedRecord } from './store.ts';
-import { readScopeValue } from './read-scope.ts';
+import { readScopeValue, withReadRetirement } from './read-scope.ts';
 
 export class RequestPermissions {
   active = true;
@@ -141,10 +141,10 @@ export async function withRequestPermissions<T>(source: {capturePermissionSnapsh
   const shared = readScopeValue(source, principal.id, () => capture(principal), pending => { void pending.then(snapshot => { snapshot.active = false; snapshot.cache.clear(); }, () => {}); });
   if (shared) {
     const snapshot = await shared;
-    if (snapshot.active) return storage.run(snapshot, run);
+    if (snapshot.active) return withReadRetirement(() => { snapshot.active = false; snapshot.cache.clear(); }, () => storage.run(snapshot, run));
   }
   const snapshot = await capture(principal);
-  return storage.run(snapshot, async () => { try { return await run(); } finally { snapshot.active = false; snapshot.cache.clear(); } });
+  return withReadRetirement(() => { snapshot.active = false; snapshot.cache.clear(); }, () => storage.run(snapshot, async () => { try { return await run(); } finally { snapshot.active = false; snapshot.cache.clear(); } }));
 }
 
 /** Reuse successful source reads only inside the request, retaining at most 64 MiB of raw bytes. */
