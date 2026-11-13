@@ -492,3 +492,87 @@ test('[PG] a fresh database requires standard init-admin before definition apply
   assert.equal(output.join('\n').includes(password), false);
   assert.equal(output.join('\n').includes(tokens.value!), false);
 });
+
+test('[PG] actual CLI children perform fresh init-admin stdin then apply and export without another identity step', { timeout: 180000 }, async t => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const { open } = await import('node:fs/promises');
+  const { startPostgres } = await import('../testing/postgres.ts');
+  const { openTestRecords } = await import('../testing/records.ts');
+  const { fileOperatorTokens } = await import('./assemble/operator-token.ts');
+  const { DEFAULT_KEY_SERVICE } = await import('../platform/api.ts');
+  const { removeTree } = await import('./assemble/files.ts');
+  const postgres = await startPostgres({ socket: true, passwordless: true, private: true });
+  let kit: Awaited<ReturnType<typeof openTestRecords>> | undefined;
+  t.after(async () => {
+    try {
+      if (kit) {
+        try { await removeTree(join(kit.dataDir, 'packs')); }
+        finally { await kit.close(); }
+      }
+    } finally { await postgres.stop(); }
+  });
+  kit = await openTestRecords({ postgres, initKey: false });
+  assert.equal((await kit.principals.list()).length, 0);
+  const home = join(kit.dataDir, 'synthetic-home'); await mkdir(home, { mode: 0o700 });
+  const env: NodeJS.ProcessEnv = {
+    HOME: home, PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', NODE_NO_WARNINGS: '1',
+    CIRCLE_HUB_DATA_DIR: kit.dataDir, CIRCLE_HUB_LOG_DIR: kit.config.logDir, CIRCLE_HUB_PORT: '0',
+    CIRCLE_HUB_DATABASE_SOCKET_DIR: kit.database.host, CIRCLE_HUB_DATABASE_PORT: String(kit.database.port),
+    CIRCLE_HUB_DATABASE_NAME: kit.database.database, CIRCLE_HUB_DATABASE_USER: kit.database.user,
+  };
+  const documentBytes = Buffer.from('{"topology":"synthetic-fresh"}\r\n');
+  const definition = {
+    schema: 'deployment@1',
+    accounts: [{ name: '合成脚本管理员', role: 'admin' }, { name: '合成脚本成员', role: 'user' }],
+    teams: [{ name: '合成脚本团队', members: ['合成脚本成员'] }],
+    variables: [{ schema: 'variable@1', name: 'SYNTHETIC_SCRIPT_COUNT', value: 17 }],
+    documents: [{ name: 'synthetic-script-topology', sha256: sha256Hex(documentBytes), size: documentBytes.length, bytesBase64: documentBytes.toString('base64'), mediaType: 'application/json', fileName: 'synthetic-topology.json' }],
+    knowledgeSync: [],
+  };
+  const definitionFile = join(kit.dataDir, 'synthetic-definition.json');
+  await writeFile(definitionFile, JSON.stringify(definition), { mode: 0o600, flag: 'wx' });
+  const password = 'Synthetic-script-initial-password-93!';
+  const passwordFile = join(kit.dataDir, 'synthetic-initial-password.input');
+  await writeFile(passwordFile, password + '\n', { mode: 0o600, flag: 'wx' });
+  assert.equal((await stat(passwordFile)).mode & 0o777, 0o600);
+  const entry = fileURLToPath(new URL('../../bin/circle-hub', import.meta.url));
+  const child = async (args: string[], inputFd?: number): Promise<{ code: number; stdout: string; stderr: string }> => {
+    return new Promise((resolve, reject) => {
+      const processChild = spawn(process.execPath, [entry, ...args], { cwd: home, env, stdio: [inputFd ?? 'ignore', 'pipe', 'pipe'], signal: t.signal });
+      let stdout = '', stderr = '';
+      processChild.stdout?.on('data', chunk => { stdout += String(chunk); });
+      processChild.stderr?.on('data', chunk => { stderr += String(chunk); });
+      processChild.once('error', () => reject(new Error('Synthetic CLI child could not start')));
+      processChild.once('close', code => resolve({ code: code ?? -1, stdout, stderr }));
+    });
+  };
+  const input = await open(passwordFile, 'r');
+  let initialized: Awaited<ReturnType<typeof child>>;
+  try { initialized = await child(['init-admin', '合成脚本管理员', '--password-stdin'], input.fd); }
+  finally { await input.close(); }
+  assert.equal(initialized.code, 0, 'Fresh init-admin child failed; diagnostics must not print stdin material');
+  const applied = await child(['apply', definitionFile]);
+  assert.equal(applied.code, 0, 'Definition apply child failed after standard first setup');
+  const exported = await child(['export']);
+  assert.equal(exported.code, 0, 'Definition export child failed');
+  const actual = parseDeployment(JSON.parse(exported.stdout));
+  const names = new Map(actual.accounts.map(account => [account.id, account.name]));
+  const normalized = {
+    ...actual,
+    accounts: actual.accounts.map(({ id: _id, ...account }) => account).sort((a, b) => a.name.localeCompare(b.name)),
+    teams: actual.teams.map(({ id: _id, ...team }) => ({ ...team, members: team.members.map(id => names.get(id) ?? id).sort() })).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+  const expected = parseDeployment(definition);
+  expected.accounts.sort((a, b) => a.name.localeCompare(b.name));
+  assert.deepEqual(normalized, expected);
+  const administrator = await kit.principals.findByName('合成脚本管理员');
+  assert.ok(administrator);
+  assert.ok(await kit.principals.verifyPassword(administrator.name, password));
+  const storedToken = await fileOperatorTokens(kit.dataDir, DEFAULT_KEY_SERVICE).read();
+  assert.ok(storedToken);
+  const output = initialized.stdout + initialized.stderr + applied.stdout + applied.stderr + exported.stdout + exported.stderr;
+  assert.equal(output.includes(password), false);
+  assert.equal(output.includes(storedToken), false);
+  assert.doesNotMatch(initialized.stdout, /初始密码（仅显示一次/);
+});
