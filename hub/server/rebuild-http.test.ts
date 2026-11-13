@@ -24,7 +24,7 @@ test('restricted startup isolates bootstrap codes, requires maintenance grant an
   const contexts: string[] = [];
   const bridge: RebuildResetBridge = {
     validate: input => typeof input === 'object' && input !== null && 'scopes' in input && input.scopes === 'all' ? { scopes: 'all', keepConfig: false } : null,
-    inspect: async () => ({ compatible: false, needsRebuild: true, diagnostics: [], canKeepConfig: false, choices: [{ scopes: 'all', keepConfig: false, definitionAllowed: false }] }),
+    inspect: async () => ({ available: true, compatible: false, needsRebuild: true, diagnostics: [], canKeepConfig: false, choices: [{ scopes: 'all', keepConfig: false, definitionAllowed: false }] }),
     preview: async request => ({ request, inspection: await bridge.inspect(), counts: [], blocked: [] }),
     launch: async (_request, context) => { launches++; contexts.push(context); return { operationId }; },
     acknowledge: async (_id, context) => { acknowledgements++; contexts.push(context); },
@@ -74,7 +74,7 @@ test('a disconnected execute response never acknowledges its queued worker', { t
   let view: RebuildConsoleContext | undefined, acknowledgements = 0;
   const bridge: RebuildResetBridge = {
     validate: () => ({ scopes: 'all', keepConfig: false }),
-    inspect: async () => ({ compatible: false, needsRebuild: true, diagnostics: [], canKeepConfig: false, choices: [] }),
+    inspect: async () => ({ available: true, compatible: false, needsRebuild: true, diagnostics: [], canKeepConfig: false, choices: [] }),
     preview: async request => ({ request, inspection: await bridge.inspect(), counts: [], blocked: [] }),
     launch: async () => { launchStarted.resolve(); return launchFinished.promise; },
     acknowledge: async () => { acknowledgements++; },
