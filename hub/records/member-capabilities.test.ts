@@ -19,6 +19,7 @@ test('member capabilities union assignments without leaking installed or other-t
   await records.authorizations.assignResource(admin, 'assigned-resource', one.id);
   const seen: string[] = [];
   const sources: MemberCapabilitySources = {
+    unattributedHoldings: async () => null,
     publicWorkflowIds: async () => ['assigned-workflow', 'unassigned-workflow', 'unassigned-workflow'],
     canUsePack: async (by, pack) => {
       assert.equal(requestPermissions(by.id)?.principalId, by.id, 'projection uses the target request snapshot');
