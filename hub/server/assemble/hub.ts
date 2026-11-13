@@ -1,3 +1,4 @@
+import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
@@ -20,7 +21,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import { VaultReadinessError, type Principal, type RecordsKit } from '../../records/api.ts';
+import type { Principal, RecordsKit } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -178,13 +179,9 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(options.resourceCacheMs === undefined ? {} : { resourceCacheMs: options.resourceCacheMs }),
   });
-  if (options.requireVaultKey !== false) {
-    try { await connectors.primeSecrets(); }
-    catch (error) {
-      if (!(error instanceof VaultReadinessError)) throw error;
-      notices.push('密钥库脱敏材料尚未就绪；受影响的读取将拒绝执行。' + error.adminMessage);
-    }
-  }
+  const startupSecretIssues = options.requireVaultKey !== false
+    ? await primeStartupSecrets(connectors, notices, line => notes.log(line))
+    : [];
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
@@ -253,6 +250,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
     records,
