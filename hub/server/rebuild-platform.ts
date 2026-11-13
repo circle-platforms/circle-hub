@@ -18,10 +18,10 @@ export async function createPlatformRebuildBridge(config: HubConfig, env: NodeJS
   };
   const configurationPorts = async () => {
     checkedContext();
-    const { boundResetConfigurationPorts, resetOwnerEnvironment } = await import('./reset-configuration.ts');
+    const { boundResetConfigurationPorts, resetOwnerDatabase } = await import('./reset-configuration.ts');
     return boundResetConfigurationPorts(config, context, async path => {
       const { main } = await import('./cli.ts');
-      const code = await main(['apply', path], { io: { env: resetOwnerEnvironment(config,context,env), cwd: process.cwd(), stdout: () => {}, stderr: () => {} } });
+      const code = await main(['apply', path], { offlineDatabase:resetOwnerDatabase(config,context), io: { env: { ...env }, cwd: process.cwd(), stdout: () => {}, stderr: () => {} } });
       if (code !== 0) throw new Error('部署定义应用未完成，重建必须恢复原状态');
     });
   };

@@ -37,6 +37,8 @@ import { issueSetupCode, issueRebuildCode } from './setup-code.ts';
 import { BATCH_DEFAULT_CONCURRENCY, BATCH_MAX_CONCURRENCY, BATCH_MAX_INTERVAL_MS, BATCH_MAX_OBJECTS, BATCH_MAX_PER_RUN, RUN_BATCH_USAGE, batchLines, boundedOption, labelOfRow, objectsOf, startBatch } from './cli-run-batch.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
+  /** Internal reset apply transport; never an argv/environment flag or a substitute for Session.admin authentication. */
+  offlineDatabase?: HubConfig['database'];
   io: CliIo;
   /**
    * Where the built-in state-changing commands find the operator token when CIRCLE_HUB_TOKEN is not set; default the
@@ -139,13 +141,23 @@ function contextFor(options: CliOptions, assembly: () => Promise<AssemblyModule>
   const ctx = {
     io: options.io,
     config(): HubConfig {
-      config ??= loadServerConfig(options.io.env, { command: true });
+      if (!config) {
+        config = loadServerConfig(options.io.env, { command: true });
+        if (options.offlineDatabase) {
+          const owner = options.offlineDatabase, current = config.database;
+          if (owner.host !== current.host || owner.port !== current.port || owner.database !== current.database) throw new CliError('离线配置连接目标不一致，未执行');
+          config = { ...config,database:owner };
+        }
+      }
       return config;
     },
     records(): Promise<RecordsKit> {
       records ??= (async () => {
         const loaded = ctx.config();
-        await prepareDatabase(loaded, options);
+        if (options.offlineDatabase) {
+          const availability = new Database(createPool(loaded.database,1));
+          try { await availability.query('SELECT 1'); } finally { await availability.end(); }
+        } else await prepareDatabase(loaded, options);
         return openRecords(loaded, { keyProvider: (options.keyProvider ?? hubKeyProvider)(options.io.env), migrate: false, ...(options.now ? { now: options.now } : {}) });
       })();
       return records;
