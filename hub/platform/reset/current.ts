@@ -5,7 +5,7 @@ import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { SpaceTreeNode } from '../../../contracts/src/spaces.ts';
 import { sha256Hex, canonicalize } from '../../records/api.ts';
 import { quoteIdentifier, type SqlSession } from '../sql.ts';
-import { classifyCurrentRecord, selectCurrentRecords, type CurrentRecord, type CurrentReference, type RecordSelection } from './selection.ts';
+import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord, type CurrentReference, type RecordSelection } from './selection.ts';
 import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetScope } from './types.ts';
 
 // Each whole-table choice comes from the current table's responsibility, never its spelling.
@@ -60,7 +60,7 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
   }
   const objectScopes = new Map<string, readonly ResetScope[]>(), objectReferences = new Map<string, readonly CurrentReference[]>();
   for (const row of await session.query('SELECT sha256 FROM objects')) {
-    objectScopes.set(String(row.sha256), RESET_SCOPE);
+    objectScopes.set(String(row.sha256), []);
     objectReferences.set(String(row.sha256), []); // Immutable object bytes are retained; typed containers below add their formal edges.
   }
   const blocked: ResetProblem[] = [];
@@ -74,18 +74,29 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
         const value = JSON.parse(Buffer.from(bytes).toString('utf8'));
         const parsed = ResourceId.safeParse(body.object).success ? ResourceRecord.parse(value) : ExecutorSource.parse(value);
         const resource = rowObject(parsed);
-        if (typeof resource.system_pack_digest === 'string') objectReferences.set(body.bound, [{ kind: 'record', digest: resource.system_pack_digest, field: '/system_pack_digest' }]);
+        if (ResourceId.safeParse(body.object).success) { const edges = resourceDefinitionReferences(parsed); if (edges === null) throw new Error(); objectReferences.set(body.bound, edges); }
       } catch { blocked.push({ table: 'records', row: position + 1, reason: '配置定义的当前模式或对象身份不能核对', nextAction: '恢复当前定义对象后重试；程序不会猜测引用' }); }
     }
   }
-  const selection = selectCurrentRecords(records, selectedScopes, { recordAliases: aliases, objectScopes, objectReferences });
+  const retainedObjects = new Set(objectScopes.keys());
+  const addOwner = (hash: string, scope: ResetScope) => objectScopes.set(hash, [...new Set([...objectScopes.get(hash) ?? [], scope])]);
+  for (const record of records) {
+    const scope = classifyCurrentRecord(record);
+    if (scope) for (const reference of currentRecordReferences(record)) if (reference.kind === 'object') addOwner(reference.digest, scope);
+  }
+  const recordOwners = resolveCurrentRecordScopes(records, { recordAliases: aliases, objectScopes, objectReferences, retainedObjects });
+  for (const record of records) for (const scope of recordOwners.get(record.digest) ?? []) {
+    for (const reference of currentRecordReferences(record)) if (reference.kind === 'object') addOwner(reference.digest, scope);
+  }
+  const selection = selectCurrentRecords(records, selectedScopes, { recordAliases: aliases, objectScopes, objectReferences, retainedObjects });
   blocked.push(...selection.blocked);
   const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
   const clearedSet = new Set(selection.cleared);
   records.forEach(record => {
-    const scope = classifyCurrentRecord(record); if (!scope) return;
-    const count = counts.find(count => count.scope === scope)!;
-    if (clearedSet.has(record.digest)) count.cleared++; else count.retained++;
+    for (const scope of recordOwners.get(record.digest) ?? []) {
+      const count = counts.find(count => count.scope === scope)!;
+      if (clearedSet.has(record.digest)) count.cleared++; else count.retained++;
+    }
   });
   const tables = await tableNames(session);
   const clearTables = tables.filter(table => TABLE_SCOPES[table] && selectedScopes.has(TABLE_SCOPES[table]!));
