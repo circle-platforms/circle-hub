@@ -237,7 +237,8 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
 
   if(parserError){await action({acceptance:'not_accepted',codes:[parserError.code],repair:[],result:null});return {call_result:'error',acceptance:'not_accepted',errors:[parserError]};}
 
-  if (packIdOf(run.pack) !== 'knowledge-contribution') {
+  const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):frozenWorkflow;
+  if (workflow?.workflow.contribution === undefined) {
     for (const binding of run.sources) {
       const ref = parseReference(binding.reference);
       if (ref.scheme !== 'src') continue;
@@ -265,7 +266,6 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     await action({acceptance:'not_accepted',codes:['RUN_ABANDONED'],repair:[],result:saved.digest,extra:{refusal:'RUN_ABANDONED'}});
     return answerOf(saved.body);
   }
-  const workflow = frozenWorkflow===undefined?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):frozenWorkflow;
   if (workflow === null) {
     ctx.log({ traceId: call.traceId, run: run.run, what: 'submit_result', detail: `pack version ${run.pack} (${run.pack_digest}) is no longer loadable` });
     await action({ acceptance: 'not_accepted', codes: ['SOURCE_READ_FAILED'], repair: [], result: null });

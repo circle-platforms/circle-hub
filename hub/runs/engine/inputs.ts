@@ -161,7 +161,7 @@ export async function bindInputs(
         schemaError(path, `输入槽 ${slot.slot} 不接受媒体类型 ${source.mediaType}（接受：${slot.accepts.join('、')}）`);
         return null;
       }
-      if (source.artifact.body.provenance_type === 'client_captured' && workflow.pack.id !== 'knowledge-contribution') {
+      if (source.artifact.body.provenance_type === 'client_captured' && workflow.workflow.contribution === undefined) {
         schemaError(path, '客户端捕获的原件只能随操作记录进入回注层，不能作其他工作流的输入或核验根据（决定 73）');
         return null;
       }
@@ -194,7 +194,7 @@ export async function bindInputs(
         const artifact=await store.get(ref.record);
         if(!artifact||!await artifacts.canRead(user,artifact as import('../../records/api.ts').SourceArtifact)){gone(path,'source metadata absent or not readable by the caller');return null;}
       }
-      if (record.provenance === 'client_captured' && workflow.pack.id !== 'knowledge-contribution') {
+      if (record.provenance === 'client_captured' && workflow.workflow.contribution === undefined) {
         schemaError(path, '客户端捕获的原件只能随操作记录进入回注层，不能作其他工作流的输入或核验根据（决定 73）');
         return null;
       }
