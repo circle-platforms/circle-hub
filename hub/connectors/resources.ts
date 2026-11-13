@@ -461,6 +461,8 @@ export class ResourceRegistry {
     }));
   }
   async #configure(admin: User, record: ResourceRecord, note: string | null, prepared?: PreparedSecrets): Promise<void> {
+    const names = [...new Set(Object.values(record.credentials).map(secretNameOf).filter((name): name is string => name !== null))];
+    await this.#o.variables.recentSecrets(names);
     const refs = referencesIn(record.settings);
     const snapshot = await this.#o.variables.snapshot();
     const resolved = await this.#o.variables.resolveVariables(record.settings,record.id,snapshot);
