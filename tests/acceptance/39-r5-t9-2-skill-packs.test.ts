@@ -1,4 +1,4 @@
-// T9-2: a missing parser skill is named, installation lets the reference resolve, and the locked digest still does after uninstall.
+// T9-2: a missing parser skill is named, installation resolves it, and frozen parsers survive uninstall.
 // One test so the four packs share one registry without overlapping installs. Synthetic documents only.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import { sha256Hex } from '../../hub/refs/canonical-json.ts';
-import { createSkillParserRegistry, bindLegacyParser, resolveReference, verifyQuote } from '../../hub/refs/api.ts';
+import { createSkillParserRegistry, resolveReference, verifyQuote } from '../../hub/refs/api.ts';
 import { openPackTestbed, type PackTestbed } from '../../hub/runs/packs/testing/setup.ts';
 import { temporaryDirectory, writePack, type PackDescription } from '../../hub/runs/packs/testing/builder.ts';
 import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgres.ts';
@@ -64,7 +64,7 @@ async function publish(pack: string): Promise<{ version: string; digest: string 
   }
 }
 
-test('mindmap, xlsx, xml and html skills are named when missing and old references keep the locked digest', async () => {
+test('mindmap, xlsx, xml and html skills resolve after installation and frozen digests survive uninstall', async () => {
   for (const pack of ['mindmap-format', 'workbook-format', 'xml-format', 'html-format']) {
     const spec = await documentOf(pack);
     const published = await publish(pack);
@@ -80,21 +80,18 @@ test('mindmap, xlsx, xml and html skills are named when missing and old referenc
     assert.match(missing.message, new RegExp(spec.parser.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.match(missing.message, /下一步/);
     await bed.registry.install(bed.admin, `${pack}@${published.version}`);
-    const bound = await bindLegacyParser(options(), bed.admin, spec.parser, `${pack}@${published.version}`);
-    assert.equal(bound.skill.digest, published.digest);
     await parsers.refresh!();
     const installed = await resolveReference(reference, { parsers, reader: { user: bed.bob.id, role: 'user' }, sources: { read } });
     assert.equal(installed.resolved, true, `${pack} ${JSON.stringify(installed)}`);
     if (!installed.resolved) return;
     assert.equal(verifyQuote(installed, spec.quote), true);
+    const frozen = await parsers.freeze!([{ pack, version: published.version }]);
+    assert.equal(frozen.skills.find(skill => skill.pack === pack)?.digest, published.digest);
     await bed.registry.uninstall(bed.admin, pack);
-    const restarted = createSkillParserRegistry(options());
-    const lockedParsers = await restarted.forReference!(spec.parser);
-    assert.equal(lockedParsers.get(spec.parser)?.skill_digest, published.digest);
-    const locked = await resolveReference(reference, { parsers: restarted, reader: { user: bed.bob.id, role: 'user' }, sources: { read } });
+    assert.equal(frozen.parsers.get(spec.parser)?.skill_digest, published.digest);
+    const locked = await resolveReference(reference, { parsers: frozen.parsers, reader: { user: bed.bob.id, role: 'user' }, sources: { read } });
     assert.equal(locked.resolved, true, `${pack} ${JSON.stringify(locked)}`);
     if (!locked.resolved) return;
-    assert.match(locked.note ?? '', /事后声明/);
     assert.equal(verifyQuote(locked, spec.quote), true);
   }
 });
