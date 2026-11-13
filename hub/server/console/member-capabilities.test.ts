@@ -70,7 +70,23 @@ test('assigned member sees team-a content without internal ids', async () => {
   assert.match(text, /合成连接/);
   assert.match(text, /未知/);
   assert.match(text, /测试环境使用权限尚未接线/);
+  assert.match(text, /连接新的客户端/);
+  assert.match(text, /确认码/);
+  assert.match(text, /&quot;name&quot;: &quot;Hub&quot;/);
   assert.doesNotMatch(text.replace(/href="[^"]*"/g, ''), INTERNAL_ID);
+});
+
+test('occupancy without until shows unlimited duration', () => {
+  const html = renderMemberCapabilities(sample({
+    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environments: [{
+      name: '合成实验室',
+      occupancy: { since: '2026-11-09T02:00:00.000Z', until: null, mine: false, holder: '合成成员乙' },
+    }],
+  })).text;
+  assert.match(html, /不限时长/);
+  assert.match(html, /被合成成员乙的运行占用/);
+  assert.doesNotMatch(html, /到何时未知/);
 });
 
 test('unassigned member sees empty team guidance', async () => {

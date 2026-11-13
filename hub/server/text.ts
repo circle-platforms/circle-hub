@@ -256,7 +256,13 @@ function localMinute(value: string): string {
 function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v);
   const index = v.index ?? v.packs;
-  const lines = [`可用的工作流和技能共 ${index.length} 个。`, ...index.map(pack => pack.title)];
+  // Boss 03:45 #4: when Codex projects unassigned_workflows_count, disclose that Hub has more packs than this member can use.
+  const unassigned = (v as ListOut & { member_capabilities?: { unassigned_workflows_count?: number } })
+    .member_capabilities?.unassigned_workflows_count;
+  const head = typeof unassigned === 'number' && unassigned > 0
+    ? `你能用的 ${index.length} 个；Hub 上另有 ${unassigned} 个没有分配给你（名字不列出），需要哪个请管理员分配。`
+    : `你能用的工作流和技能共 ${index.length} 个。`;
+  const lines = [head, ...index.map(pack => pack.title)];
   for (const observation of v.context?.observations ?? []) {
     lines.push(`测试环境 ${observation.label}，${observation.build === null ? '构建未知' : `构建 ${observation.build}`}；读取时间 ${localMinute(observation.observed_at)}`);
   }

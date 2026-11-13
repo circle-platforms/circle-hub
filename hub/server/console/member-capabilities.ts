@@ -2,18 +2,48 @@ import type { MemberCapabilities } from '../../records/api.ts';
 import { AccessError } from '../../records/errors.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { emptyBlock, definitions, html, href, link, page, pageLayout, table, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './context.ts';
+import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { card, chip, when } from './ui.ts';
 import { mePath } from './routes.ts';
 
 const EMPTY_TEAM = '请管理员把你加入团队';
 
-function occupancyText(occupancy: MemberCapabilities['environments'][number]['occupancy']): Html {
+type OccupancyRow = { since: string; until: string | null; mine: boolean; name?: string; holder?: string };
+
+function occupancyUntil(until: string | null): Html {
+  return until ? when(until) : html`不限时长`;
+}
+
+function occupancyLine(row: OccupancyRow): Html {
+  const until = occupancyUntil(row.until);
+  if (row.mine) return html`本人占用 · 自 ${when(row.since)} · ${until}`;
+  const who = row.name ?? row.holder ?? '其他成员';
+  return html`被${who}的运行占用 · 自 ${when(row.since)} · ${until}`;
+}
+
+/** Accepts the single-row shape and Codex's array of holders; empty local lease is not physical idleness. */
+function occupancyText(occupancy: MemberCapabilities['environments'][number]['occupancy'] | OccupancyRow[] | null): Html {
   if (occupancy === null) return html`未知（空租约不代表物理空闲）`;
-  const until = occupancy.until ? when(occupancy.until) : '到何时未知';
-  if (occupancy.mine) return html`本人占用 · 自 ${when(occupancy.since)} · ${until}`;
-  const who = occupancy.holder ?? '其他成员';
-  return html`被${who}的运行占用 · 自 ${when(occupancy.since)} · ${until}`;
+  if (Array.isArray(occupancy)) {
+    if (occupancy.length === 0) return html`本地无租约（不代表物理空闲）`;
+    return html`${occupancy.map((row, index) => html`${index > 0 ? html`<br>` : ''}${occupancyLine(row)}`)}`;
+  }
+  return occupancyLine(occupancy);
+}
+
+/** Three steps for a logged-in member; invitation codes stay an administrator action (Boss 03:45 #1). */
+function connectClientSection(ctx: PageContext): Html {
+  const entry = circleEntry(originOf(ctx), false);
+  return card(
+    { title: '连接新的客户端', meta: 'MCP 标准连接确认', hint: '你已能登录控制台时，用下面三步把新客户端接到这个 Hub；不要自己签发邀请码。' },
+    html`<ol class="ch-meta">
+<li>把下面的条目写入客户端的 MCP 配置（名字与占位符须与 Circle 的 /hub 说明一致）。</li>
+<li>在客户端发起连接；它会打开本 Hub 的浏览器连接确认页，并显示一串确认码。</li>
+<li>在该确认页输入客户端显示的确认码并确认；也可先登录本控制台，再在打开的确认页完成确认。</li>
+</ol>
+<pre class="ch-quote"><code>${entry}</code></pre>
+<p class="ch-meta">还没有控制台登录的成员，由管理员在团队页签发一次性邀请码；邀请码只在签发结果页显示一次。</p>`,
+  );
 }
 
 function packRows(items: MemberCapabilities['workflows']): unknown[][] {
@@ -46,7 +76,10 @@ function environmentSection(view: MemberCapabilities): Html {
   );
 }
 
-export function renderMemberCapabilities(view: MemberCapabilities, options: { viewingOther?: boolean } = {}): Html {
+export function renderMemberCapabilities(
+  view: MemberCapabilities,
+  options: { viewingOther?: boolean; connect?: Html } = {},
+): Html {
   const status = view.member.enabled
     ? chip(uiLabelOf('account_status', 'enabled'), 'pass')
     : chip(uiLabelOf('account_status', 'disabled'), 'plain');
@@ -67,6 +100,7 @@ ${card({ title: uiLabelOf('pack_kind', 'workflow') }, table(['名称', '引用',
 ${card({ title: uiLabelOf('pack_kind', 'skill') }, table(['名称', '引用', '归属'], packRows(view.skills), '尚无可用的通用技能'))}
 ${card({ title: '连接' }, table(['名称', '系统包', '测试环境'], view.connections.map((item) => [item.name, item.systemPack, item.environment]), '尚无可用的已分配连接'))}
 ${environmentSection(view)}
+${options.connect ?? ''}
 ${card({ title: '当前不能做的事' }, denials)}
 </div>`;
 }
@@ -93,7 +127,10 @@ export async function memberCapabilitiesPage(ctx: PageContext): Promise<PageResu
         hint: viewingOther ? '只读投影，与 list_task_packs 同源；不改对方权限。' : '按当前账户的团队与分配列出可做的事；内部编号不在此页展示。',
         actions: viewingOther ? undefined : html`${link('/console/team', '打开团队')}`,
       }),
-      pageLayout(renderMemberCapabilities(view, { viewingOther }), {
+      pageLayout(renderMemberCapabilities(view, {
+        viewingOther,
+        connect: viewingOther ? undefined : connectClientSection(ctx),
+      }), {
         ...(viewingOther ? { back: link(`/console/team/${targetId}`, '返回成员') } : {}),
       }),
     ),
