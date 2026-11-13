@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
-import type { PlatformIo } from '../cli.ts';
-import type { PlatformContext } from '../context.ts';
+import type { PlatformIo } from '../../platform/api.ts';
+import type { PlatformContext } from '../../platform/api.ts';
 import { RESET_SCOPE, RESET_SCOPE_LABEL, RESET_ALL_LABEL, parseResetRequest, type ResetPorts, type ResetRequest } from './types.ts';
 import { resetData, ResetBlocked } from './host.ts';
 import { ResetFailure } from './operation.ts';

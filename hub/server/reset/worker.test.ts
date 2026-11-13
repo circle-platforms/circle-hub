@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
-import { CODE_ROOT, createContext } from '../context.ts';
-import { ensureLayout, layoutAt } from '../layout.ts';
-import { newSettingsFile, writeSettingsFile } from '../settings.ts';
-import type { CommandOptions } from '../process.ts';
+import { CODE_ROOT, createContext } from '../../platform/api.ts';
+import { ensureLayout, layoutAt } from '../../platform/api.ts';
+import { newSettingsFile, writeSettingsFile } from '../../platform/api.ts';
+import type { CommandOptions } from '../../platform/api.ts';
 import { launchReset, acknowledgeReset, readResetStatus, runResetWorker } from './worker.ts';
 import type { ResetReport } from './types.ts';
 

@@ -4,7 +4,7 @@ import { ResourceRecord, ResourceId, ExecutorSource } from '../../../contracts/s
 import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { SpaceTreeNode } from '../../../contracts/src/spaces.ts';
 import { sha256Hex, canonicalize } from '../../records/api.ts';
-import { quoteIdentifier, type SqlSession } from '../sql.ts';
+import { quoteIdentifier, type SqlSession } from '../../platform/api.ts';
 import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord, type CurrentReference, type RecordSelection } from './selection.ts';
 import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetScope } from './types.ts';
 
