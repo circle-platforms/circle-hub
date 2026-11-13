@@ -433,3 +433,8 @@ Independent Linux RSS review: Antigravity reviewed fixed merge `23ec924d` and fo
 bounded thread-tree retries or the distinction between measured excess and unavailable observation. The review did not
 run tests. Linux synthetic pair and fault-injection results remain separate evidence; unusual system load may still make
 observation unavailable and must not be reported as a measured excess.
+
+## Package boundaries (C4)
+
+Sandbox tracing imports only telemetry/api.ts; records owns the lightweight tracing context and telemetry re-exports it.
+FunctionAttempt is exported by rules/api.ts so consumers do not import the internal retry implementation.

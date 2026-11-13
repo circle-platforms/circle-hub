@@ -30,6 +30,7 @@ export type { EntryReference, RecReference, Reference, SrcReference, TreeReferen
 
 export {
   DEFAULT_MAX_SELECTOR_CHARS,
+  QUOTATION_UNITS,
   ParseEncodingError,
   ParseError,
   ParseForbiddenError,
@@ -45,7 +46,7 @@ export {
   parseDocument,
   parserCacheKey,
 } from './parser.ts';
-export type { ByteRange, Fragment, JsonObject, JsonValue, ListOptions, ParsedDocument, ParseLimits, ParseOptions, Parser, ParserRegistry } from './parser.ts';
+export type { QuotationSource, QuotationUnit, QuotationUnits, ByteRange, Fragment, JsonObject, JsonValue, ListOptions, ParsedDocument, ParseLimits, ParseOptions, Parser, ParserRegistry } from './parser.ts';
 
 export { createDefaultRegistry, defaultParsers, jsonParser, markdownParser, textParser } from './parsers/index.ts';
 export type { MarkdownBlock, MarkdownModel, MarkdownSection } from './parsers/markdown.ts';

@@ -36,3 +36,5 @@ export function sourcesFrom(texts: Readonly<Record<string, string>> | ReadonlyMa
 }
 
 export { isExhaustedFunctionFailure } from './sandbox/retry.ts';
+
+export type { FunctionAttempt } from './sandbox/retry.ts';
