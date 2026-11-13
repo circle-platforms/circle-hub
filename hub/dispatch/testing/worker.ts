@@ -3,9 +3,7 @@ import {effectsDocument} from './effects.ts';
 // Synthetic child-process harness; credentials and database locations arrive over stdin, never argv or stdout.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { openRecords } from '../../records/index.ts';
-import { FileKeyProvider } from '../../records/api.ts';
-import { Database, createPool } from '../../records/db.ts';
+import { openRecords, FileKeyProvider, Database, createPool } from '../../records/api.ts';
 import { LeaseService } from '../../leases/api.ts';
 import { DispatchService } from '../api.ts';
 import type { RunDetail, LoadedWorkflow } from '../../ports.ts';
