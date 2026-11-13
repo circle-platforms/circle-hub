@@ -1,8 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { DEFAULT_ADMIN_NAME, LimitError, validPassword, type Principal } from '../../records/api.ts';
-import { cookiesOf, mediaTypeOf, readBody, sendJson } from '../http.ts';
-import { issuerOf } from '../oauth.ts';
+import { cookiesOf } from '../http.ts';
 import { tooltip, technical } from './presentation.ts';
 import { code, html, link, page, pre } from './html.ts';
 import { completeSetup } from './manage.ts';
@@ -14,7 +12,7 @@ import {
 } from './session.ts';
 import { stepper } from './ui.ts';
 import {
-  type ConsoleOptions, LOGIN_FORM_LIMIT, SETUP_COOKIE, SECURE_SETUP_COOKIE,
+  type ConsoleOptions, SETUP_COOKIE, SECURE_SETUP_COOKIE,
   ENDED_COOKIE, SECURE_ENDED_COOKIE, HOME,
   sendHtml, redirect, anonymous, hasAdmin, forbidden, sameOrigin, formOf, fields, mcpOrigin,
 } from './console-http.ts';
@@ -124,87 +122,6 @@ export async function passwordPage(request: IncomingMessage, response: ServerRes
     if (error instanceof TypeError) return show(400, '密码格式不正确');
     throw error;
   }
-}
-
-const LINK_INVALID = '登录链接已失效：该链接已使用或已过期。请在客户端中重新获取。';
-
-/**
- * A link from Circle leads to the password sign-in at its page (owner, 2026-11-02: every account signs in with username and
- * password). It signs nobody in, so a prefetch or a planted link cannot either; POST still consumes it.
- */
-export async function loginLink(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, secure: boolean, code: string): Promise<void> {
-  const links = options.loginLinks;
-  if (links === undefined) {
-    request.resume();
-    return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
-  }
-  if (request.method === 'GET') {
-    const found = links.peek(code);
-    const principal = found === null ? null : await options.deps.records.principals.authenticate(`Bearer ${found.token}`);
-    if (found === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p>${LINK_INVALID}</p><p>${link('/console/login', '前往登录页')}</p>`));
-    // A link from Circle leads every account to the password sign-in at the requested page; it never opens a session.
-    return redirect(response, '/console/login?next=' + encodeURIComponent(found.next));
-  }
-  if (request.method !== 'POST') {
-    request.resume();
-    return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>只接受 GET 和 POST</p>`), { allow: 'GET, POST' });
-  }
-  if (!sameOrigin(request, options.ownOrigins())) {
-    request.resume();
-    return forbidden(response, '登录表单只能从本控制台的页面提交');
-  }
-  const form = await formOf(request);
-  if (form === 'aborted') return void response.destroy();
-  const nonce = typeof form === 'string' ? '' : (form.get('csrf') ?? '');
-  if (nonce.length === 0 || cookiesOf(request).get(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE) !== nonce || !options.sessions.takeNonce(nonce, secure)) {
-    return forbidden(response, '表单已过期或不是本控制台发出的，请重新打开登录链接');
-  }
-  const taken = links.take(code);
-  const principal = taken === null ? null : await options.deps.records.principals.authenticate(`Bearer ${taken.token}`);
-  if (taken === null || principal === null) return sendHtml(response, 410, page(anonymous('登录链接已失效'), html`<p>${LINK_INVALID}</p>`));
-  redirect(response, '/console/login?next=' + encodeURIComponent(taken.next));
-}
-
-/**
- * POST /console/api/login-links: a client asks with its Bearer token for a one-time link to the console, optionally at
- * `next` (a console path). The link only leads to the password sign-in there; it never opens a session (owner, 2026-11-02).
- */
-export async function loginLinks(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, secure: boolean): Promise<void> {
-  const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'", 'cache-control': 'no-store' };
-  if (options.loginLinks === undefined) {
-    request.resume();
-    return sendJson(response, 404, { code: 'SOURCE_UNAVAILABLE', message: NEUTRAL, fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix }, headers);
-  }
-  if (request.method !== 'POST') {
-    request.resume();
-    return sendJson(response, 405, { code: null, message: '登录链接只接受 POST', fix: '以 Bearer 令牌 POST 本地址' }, { ...headers, allow: 'POST' });
-  }
-  const authorization = request.headers.authorization;
-  const principal = await options.deps.records.principals.authenticate(typeof authorization === 'string' ? authorization : null);
-  const match = typeof authorization === 'string' ? /^Bearer[ \t]+([A-Za-z0-9_-]{43})[ \t]*$/i.exec(authorization) : null;
-  if (principal === null || match === null) {
-    request.resume();
-    return sendJson(response, 401, { code: null, message: '需要有效的 Bearer 令牌', fix: '以已连接客户端的令牌请求登录链接' }, { ...headers, 'www-authenticate': 'Bearer realm="circle-hub"' });
-  }
-  let next: string | null = null;
-  if (mediaTypeOf(request) === 'application/json') {
-    const body = await readBody(request, LOGIN_FORM_LIMIT);
-    if (!body.ok) return body.reason === 'aborted' ? void response.destroy() : sendJson(response, 413, { code: null, message: '请求正文太大', fix: '正文只写 {"next": "/console/…"}' }, headers);
-    try {
-      const parsed: unknown = body.bytes.length === 0 ? {} : JSON.parse(body.bytes.toString('utf8'));
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new TypeError('not an object');
-      const value = (parsed as Record<string, unknown>).next;
-      if (value !== undefined && typeof value !== 'string') throw new TypeError('next is a string');
-      next = value ?? null;
-    } catch {
-      return sendJson(response, 400, { code: null, message: '请求正文不正确', fix: '正文写成 {"next": "/console/…"}，或不带正文' }, headers);
-    }
-  } else {
-    request.resume();
-  }
-  const issued = options.loginLinks.issue(match[1], next ?? HOME);
-  options.log(`${principal.name} 获取了一次性登录链接`);
-  sendJson(response, 201, { url: `${issuerOf(request, secure)}/console/login/${issued.code}`, expires_at: new Date(issued.expires).toISOString() }, headers);
 }
 
 export async function logout(request: IncomingMessage, response: ServerResponse, options: ConsoleOptions, session: ConsoleSession | null): Promise<void> {

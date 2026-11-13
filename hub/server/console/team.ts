@@ -12,6 +12,7 @@ import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} f
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import {emptyBlock} from './components.ts';
 import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
+import { registeredActionForm } from './command-form.ts';
 import {actionForm} from './manage.ts';
 import {RESOURCE_AUDIENCE} from './team-actions.ts';
 import type {Principal,Team,TeamAssignments,TeamMember,TeamRow,Teams,User} from '../../records/api.ts';
@@ -46,6 +47,8 @@ async function membershipsForUsers(ctx: PageContext, teams: Teams | undefined, u
 }
 
 async function packSourcesFor(ctx: PageContext, userId: string): Promise<PackSource[] | null> {
+  // packSources is administrator-only (authorizations.ts); members fall back to direct assignments.
+  if (!ctx.admin) return null;
   const auth = ctx.deps.records.authorizations;
   return auth.packSources ? auth.packSources(ctx.principal, userId) : null;
 }
@@ -187,7 +190,7 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
       capacityLine = html`<p class="ch-meta" data-team-capacity>公共空间容量 ${capacitySummary(usage)} · <a href="#adjust-team-capacity">调整容量…</a></p>`;
     }
     create = card({ title: '新建团队', hint: '只有管理员能建团队和管成员。删除时一并撤回该团队名下的分配。' },
-      actionForm('team-create', ctx.csrf ?? '', html`${field('名称', html`<input name="name" required maxlength="100" autocomplete="off">`)}`, '新建', { primary: true }));
+      registeredActionForm('team-create', ctx.csrf ?? '', '新建', { primary: true }));
     for (const row of rows) {
       const packs = row.pack_count ?? 0;
       const resources = row.resource_count ?? 0;

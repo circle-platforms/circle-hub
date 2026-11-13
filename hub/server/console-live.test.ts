@@ -238,8 +238,9 @@ describe('the event stream', () => {
     const user = await member();
     const session = await signIn(user.token);
     const first = await openStream('/console/api/stream', session);
-    const me = JSON.parse((await send(server.port, '/console/api/me', { headers: { cookie: session } })).body) as { csrf: string };
-    const out = await send(server.port, '/console/logout', { method: 'POST', headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: me.csrf }).toString() });
+    const overview = await send(server.port, '/console/overview', { headers: { cookie: session } });
+    const csrf = /name="csrf" value="([^"]+)"/.exec(overview.body)![1];
+    const out = await send(server.port, '/console/logout', { method: 'POST', headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf }).toString() });
     assert.equal(out.status, 303);
     await until(first.isEnded, 'the end after sign-out', 2_000);
 
@@ -324,8 +325,9 @@ describe('knowledge imports and closing', () => {
       const adminSession = await signIn(server.admin.token, port);
       const admin = await openStream('/console/api/stream?events=import.progress', adminSession, port);
       const user = await openStream('/console/api/stream?events=import.progress', await signIn((await member()).token, port), port);
-      const me = JSON.parse((await send(port, '/console/api/me', { headers: { cookie: adminSession } })).body) as { csrf: string };
-      const started = await send(port, '/console/admin/do/knowledge-sync', { method: 'POST', headers: { cookie: adminSession, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf: me.csrf, product: 'line-a' }).toString() });
+      const knowledge = await send(port, '/console/knowledge', { headers: { cookie: adminSession } });
+      const csrf = /name="csrf" value="([^"]+)"/.exec(knowledge.body)![1];
+      const started = await send(port, '/console/admin/do/knowledge-sync', { method: 'POST', headers: { cookie: adminSession, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, product: 'line-a' }).toString() });
       assert.equal(started.status, 202, started.body);
       await until(() => admin.events.filter((e) => e.name === 'import.progress').length >= 2, 'the start and end of the import');
       const jobs = new Set(admin.events.map((e) => e.data.job));

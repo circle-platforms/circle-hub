@@ -1,4 +1,4 @@
-// Knowledge node reads shared by the tree page and /console/api/knowledge/node (K4).
+// Knowledge node reads for the tree page (K4; U5 retired the JSON twin).
 import type { NodeViews } from '../../ports.ts';
 import type { PageContext } from './context.ts';
 

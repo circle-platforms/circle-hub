@@ -247,7 +247,7 @@ RFC 8414, 7591, 8707, 9728, 7009, 9207), in `oauth.ts`, with no new dependency.
   handled and spends no invitation.
 - **Invitations**: `circle-hub user invite <user>` (an administrator; the console's 添加成员) prints a twelve-character
   code once; the records keep its SHA-256 (`invitations`, migration 7), valid 24 hours, used once by the client it
-  authorized. Requests, codes and login links live in memory and end with the process, like console sessions.
+  authorized. Requests and codes live in memory and end with the process, like console sessions.
 
 Wire errors and descriptions are OAuth's own (ASCII, RFC 6749 5.2), not Hub codes. Circle's own client (the frozen
 baseline) has no OAuth yet; until the generic MCP-client improvement lands in the Circle repository, Circle connects with
@@ -641,15 +641,13 @@ The pages follow the design canvas (version 25) and the owner's choices in the s
   (`form-action 'self' <origin>`). Approving takes the invitation (if one named the account), issues the code and sends the
   browser to the redirect URI with `code`, `state` and `iss`; refusing sends `access_denied`. Back on the page, the browser
   sees that the request ended.
-- **One-time login links** (decisions 125 and 130): the existing Bearer endpoint and five-minute lifetime remain.
-  An administrator can confirm a link as a backup sign-in, still subject to a forced password change. A member's link
-  leads to username/password sign-in at the requested console path and never opens a token-authenticated browser session.
-  Spent and expired links disclose no account. Return paths remain local to this console.
+- **One-time login links** (decisions 125 and 130): retired with U5 — no production caller for
+  `POST /console/api/login-links` or `/console/login/<code>`; both answer as absent.
 
 - **Sign-in**: `GET /console/login` issues a one-time nonce (server-side, 15 minutes) in the form and in a cookie
   scoped to `/console/login`; `POST /console/login` (form encoding, at most 8 KiB, from this server's own origin) needs
   the nonce in both and a username and password. Every account, administrators included, signs in this way; the console
-  never accepts a token (owner, 2026-11-02), and a one-time link from Circle only leads to this form at its page. The session cookie `circle_hub_session` is a random id,
+  never accepts a token (owner, 2026-11-02). The session cookie `circle_hub_session` is a random id,
   `Path=/console; HttpOnly; SameSite=Strict` (no `Secure`: plain HTTP on loopback); the token stays in server memory and
   every page re-authenticates it, so a revoked token or a disabled account ends the session at the next page. Sessions
   end after 2 hours idle or 12 hours. Password changes/resets revoke password sessions; Circle disconnects do not.

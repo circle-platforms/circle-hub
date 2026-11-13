@@ -1,6 +1,17 @@
 // Team management ACTIONS for the command bridge (interfaces §2). Shapes stay here; manage.registerActions installs them.
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
+import { UsageError } from '../errors.ts';
+import { buildRegisteredAction } from './command-form.ts';
 import { FormError, registerActions, word, type Action, type Form } from './manage.ts';
+
+function fromRegistration(action: 'team-create' | 'team-delete' | 'team-add' | 'team-remove', form: Form) {
+  try {
+    return buildRegisteredAction(action, form);
+  } catch (error) {
+    if (error instanceof UsageError) throw new FormError(error.message);
+    throw error;
+  }
+}
 
 /** Result-page back link and nav highlight for team ACTIONS (interfaces §5.2). */
 export const TEAMS = '/console/team';
@@ -42,25 +53,25 @@ export const TEAM_ACTIONS: Readonly<Record<string, Action>> = {
     title: '新建团队',
     back: TEAMS,
     active: 'team',
-    build: (form) => ({ argv: ['team', 'create', word(form, 'name', '名称')] }),
+    build: (form) => fromRegistration('team-create', form),
   },
   'team-delete': {
     title: '删除团队',
     back: TEAMS,
     active: 'team',
-    build: (form) => ({ argv: ['team', 'delete', word(form, 'team', '团队')] }),
+    build: (form) => fromRegistration('team-delete', form),
   },
   'team-add': {
     title: '加入成员',
     back: TEAMS,
     active: 'team',
-    build: (form) => ({ argv: ['team', 'add', word(form, 'team', '团队'), word(form, 'user', '成员')] }),
+    build: (form) => fromRegistration('team-add', form),
   },
   'team-remove': {
     title: '移出成员',
     back: TEAMS,
     active: 'team',
-    build: (form) => ({ argv: ['team', 'remove', word(form, 'team', '团队'), word(form, 'user', '成员')] }),
+    build: (form) => fromRegistration('team-remove', form),
   },
   'pack-assign-team': {
     title: '分配工作流给团队',
