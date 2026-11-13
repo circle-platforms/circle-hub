@@ -5,6 +5,7 @@ import type {PackListing} from '../../ports.ts';
 import {PACK_PLACES,packPath,type PlaceKind} from './pack-display.ts';
 import type { PageContext } from './context.ts';
 import {html,link,pageLayout,type Html} from './html.ts';
+import { count, segments } from './components.ts';
 import {containsDirectory,directoryName,describeAudience} from './audience.ts';
 import {knowledgeSearchScopeLabel} from './knowledge-display.ts';
 
@@ -34,7 +35,18 @@ export function knowledgeGuide():Html{
 }
 export function knowledgeTabs(ctx:PageContext):Html{
  const scope=selectedScope(ctx),products=ctx.url.pathname===PRODUCT_SOURCES_PATH,current=products?null:ctx.url.pathname.endsWith('/sources')?'sources':KnowledgeViewSchema.safeParse(ctx.url.searchParams.get('view')).data??'knowledge';
- return html`<nav class="ch-seg" aria-label="知识库内容">${KnowledgeViewSchema.options.map(view=>html`<a href="${'/console/knowledge?'+new URLSearchParams({scope,...(view==='knowledge'?{}:{view})})}"${current===view?html` aria-current="page"`:''}>${uiLabelOf('knowledge_view',view)}</a>`)}<a href="${PRODUCT_SOURCES_PATH+'?'+new URLSearchParams({scope})}"${products?html` aria-current="page"`:''}>${uiLabelOf('pack_kind','product')}</a></nav>`;
+ return segments('知识库内容', [
+  ...KnowledgeViewSchema.options.map((view) => ({
+   href: '/console/knowledge?' + new URLSearchParams({ scope, ...(view === 'knowledge' ? {} : { view }) }),
+   label: uiLabelOf('knowledge_view', view),
+   current: current === view,
+  })),
+  {
+   href: PRODUCT_SOURCES_PATH + '?' + new URLSearchParams({ scope }),
+   label: uiLabelOf('pack_kind', 'product'),
+   current: products,
+  },
+ ]);
 }
 export async function currentAudience(ctx:PageContext,space:string,path='/',product=false,pack?:string,memory=false){
  const own=space===ctx.principal.id;
@@ -71,7 +83,7 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
  const values=KnowledgeSearchScopeSchema.enum,scopes=[values.all,values.personal,values.shared,values.team];
  const nav=html`<div class="ch-nav-sub" aria-label="空间">${scopes.filter(s=>s!=='shared'||shared).map(s=>{
   const subset=packs?.filter(p=>inScope(s,p.space??'team',ctx.principal.id));
-  const count=(kind:PackListing['kind'])=>new Set(subset?.filter(p=>p.kind===kind).map(p=>(p.space??'team')+':'+p.id)).size;
+  const packCount=(kind:PackListing['kind'])=>new Set(subset?.filter(p=>p.kind===kind).map(p=>(p.space??'team')+':'+p.id)).size;
   const memoryOwners=[...new Set(memories.filter(v=>inScope(s,v.space,ctx.principal.id)).map(v=>v.space))];
   const memoryGroups=memory&&s!=='all'?memoryOwners.map(owner=>{
    const paths=ancestors(memories.filter(v=>v.space===owner).map(v=>v.path));
@@ -91,9 +103,9 @@ export async function spaceLayout(ctx:PageContext,content:Html,packs?:readonly P
    const tree=allowed.includes('/')?directoryTree(allowed,url,'/',label,3,selected):treeList(roots.map(root=>treeItem(html`<a href="${url(root)}" title="${label(root)}"${root===selected?html` aria-current="page"`:''}>${label(root)}</a>`,directoryTree(allowed,url,root,label,2,selected))));
    return v.space===ctx.principal.id||v.space==='team'?tree:treeList([treeItem(link(sources?'/console/knowledge':'/console/knowledge/space',names.get(v.space),{...(sources?{view:'sources'}:{}),space:v.space,path:v.paths[0],scope:s}),tree)]);
   });
-  const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((count,v)=>count+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
+  const total=sources?archive?.counts[s]??0:memory?memories.filter(item=>inScope(s,item.space,ctx.principal.id)).length:visible.filter(v=>inScope(s,v.space,ctx.principal.id)).reduce((sum,v)=>sum+v.version.body.entries.filter(row=>v.paths.some(path=>containsDirectory(path,row.path))).length,0);
   const href=base+'?'+new URLSearchParams({scope:s,...(memory?{view:'memory'}:sources?{view:'sources'}:{})});
-  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${knowledgeSearchScopeLabel(s)} <span class="ch-count">${(subset?count(place):total).toLocaleString('en-US')}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
+  return html`<section><a href="${href}"${scope===s?html` aria-current="page"`:''}>${knowledgeSearchScopeLabel(s)} <span class="ch-count">${count(subset?packCount(place):total)}</span></a>${scope===s?html`<div class="ch-nav-tree">${memoryGroups}${knowledgeGroups}</div>`:''}</section>`;
  })}</div>`;
  // Decision 151: a place's list is not repeated in a side pane. A page that selects one thing passes its own pane.
  return pageLayout(html`<div class="ch-section" data-page-content data-area-content>${content}</div>`,{...content.layout,sidebar:nav,inspector:content.layout.inspector??null});

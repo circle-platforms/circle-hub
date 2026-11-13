@@ -19,6 +19,7 @@ import { code, emptyBlock, href, html, page, table, type Html } from './html.ts'
 import type { PageContext, PageResult } from './context.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
 import type { HubFacts } from './settings.ts';
+import { segments } from './components.ts';
 import { card, chip, clock, count, dot, duration, kpi, when } from './ui.ts';
 
 /** What the page reads; `serve` gives one. A Hub without it says 未知 everywhere, not 0. */
@@ -521,7 +522,11 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
     content = html`${observation(sources?.writer() ?? null, summary, await curveOf())}
 ${SLOW_QUERIES}`;
   }
-  const tabs = html`<nav class="ch-seg" aria-label="运行状况内容" data-health-tabs>${HEALTH_TABS.map((key) => html`<a href="${href('/console/health', key === 'resources' ? {} : { tab: key })}"${key === tab ? html` aria-current="page"` : ''}>${HEALTH_TAB_LABEL[key]}</a>`)}</nav>`;
+  const tabs = segments('运行状况内容', HEALTH_TABS.map((key) => ({
+    href: href('/console/health', key === 'resources' ? {} : { tab: key }),
+    label: HEALTH_TAB_LABEL[key],
+    current: key === tab,
+  })), 'data-health-tabs');
   const body = html`<div class="ch-stack" data-health>${tabs}<div data-health-tab="${tab}">${content}</div></div>`;
   return { status: 200, body: page(ctx.chrome('运行状况', { active: 'health', hint: HINT, sub }), body) };
 }

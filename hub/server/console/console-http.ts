@@ -5,6 +5,7 @@ import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { mediaTypeOf, readBody, setCommonHeaders } from '../http.ts';
 import type { AuthorizationStore } from '../oauth.ts';
+import { errorLine } from './components.ts';
 import { CONTENT_SECURITY_POLICY, secureConsoleResponse, html, page, type Html, type PageChrome } from './html.ts';
 import type { HealthPageSources } from './health.ts';
 import type { LiveEvents } from './live.ts';
@@ -80,7 +81,7 @@ export async function hasAdmin(deps: ServerDeps): Promise<boolean> {
 }
 
 export function forbidden(response: ServerResponse, message: string): void {
-  sendHtml(response, 403, page(anonymous('拒绝'), html`<p class="error">${message}</p><p><a href="/console/login">重新登录</a></p>`));
+  sendHtml(response, 403, page(anonymous('拒绝'), html`${errorLine(message)}<p><a href="/console/login">重新登录</a></p>`));
 }
 
 /** A console POST must come from this server's own pages: an Origin, when sent, is one of its own origins. */

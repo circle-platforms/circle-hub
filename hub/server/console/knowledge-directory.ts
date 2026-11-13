@@ -9,6 +9,7 @@ import type {NodesPage} from '../../ports.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {parseReference} from '../../refs/api.ts';
 import {html,href,link,page,table,emptyAction,type Html} from './html.ts';
+import { postForm } from './components.ts';
 import {shareFeedback} from './feedback.ts';
 import {sectionHead} from './ui.ts';
 import {evidence,panel as card} from './presentation.ts';
@@ -66,7 +67,8 @@ export async function batchSharePage(ctx:PageContext):Promise<PageResult>{
  }
  const fields=html`<input type="hidden" name="root" value="${input.root}"><input type="hidden" name="path" value="${input.path}">${input.entries.map(entry=>html`<input type="hidden" name="selected_entry" value="${entry}">`)}`;
  const safe=plans.every(plan=>plan.result.ok),target=plans[0]?.result.target_path??'';
- const body=html`<p>我的：保留不变 · ${uiLabelOf('knowledge_space_kind','personal')}</p><p>公共空间：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/share-batch">${fields}<label>公共空间文件夹<input name="team_path" value="${target}" maxlength="2000"></label><button class="ch-btn ch-btn--secondary" type="submit">重新预检</button></form>${plans.map(plan=>card({title:plan.title,hint:'检查停止后，其余项目保持未检查；确认时逐条重查并分别记录实际结果'},html`${checkTable(plan.result.checks)}${plan.result.duplicate?existingTeamLink(plan.result.duplicate):''}`))}<form method="post" action="/console/knowledge/do/share-batch"><input type="hidden" name="csrf" value="${ctx.csrf??''}">${fields}<input type="hidden" name="team_path" value="${target}"><button class="ch-btn ch-btn--primary" type="submit"${safe?'':html` disabled`}>确认分享到公共空间</button></form>`;
+ const confirm=postForm({action:'/console/knowledge/do/share-batch',csrf:ctx.csrf??'',fields:html`${fields}<input type="hidden" name="team_path" value="${target}">`,submit:'确认分享到公共空间',disabled:!safe});
+ const body=html`<p>我的：保留不变 · ${uiLabelOf('knowledge_space_kind','personal')}</p><p>公共空间：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/share-batch">${fields}<label>公共空间文件夹<input name="team_path" value="${target}" maxlength="2000"></label><button class="ch-btn ch-btn--secondary" type="submit">重新预检</button></form>${plans.map(plan=>card({title:plan.title,hint:'检查停止后，其余项目保持未检查；确认时逐条重查并分别记录实际结果'},html`${checkTable(plan.result.checks)}${plan.result.duplicate?existingTeamLink(plan.result.duplicate):''}`))}${confirm}`;
  return {status:200,body:page(ctx.chrome('分享到公共空间预检',{active:'knowledge',hint:'预检不写入知识或回执；我的原条目保留，确认结果逐条进入分享到公共空间记录'}),await spaceLayout(ctx,body))};
 }
 export async function shareBatch(ctx:PageContext,values:URLSearchParams|Map<string,string>):Promise<string>{

@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readBody } from '../http.ts';
+import { errorLine } from './components.ts';
 import { html, page } from './html.ts';
 import { ACTIONS, isPackStep, runAction, type Form } from './manage.ts';
 // Side effect: team ACTIONS register into manage.ACTIONS before HTML /console/admin/do runs.
@@ -43,7 +44,7 @@ export async function action(request: IncomingMessage, response: ServerResponse,
     const body = await readBody(request, options.deps.config.limits.maxUploadBytes + ACTION_FORM_LIMIT);
     if (!body.ok) {
       if (body.reason === 'aborted') response.destroy();
-      else sendHtml(response, 413, page(ctx.chrome(publication(ctx).title, { active: publication(ctx).active }), html`<p class="error">上传的文件太大（上限 ${options.deps.config.limits.maxUploadBytes} 字节）</p>`));
+      else sendHtml(response, 413, page(ctx.chrome(publication(ctx).title, { active: publication(ctx).active }), errorLine(`上传的文件太大（上限 ${options.deps.config.limits.maxUploadBytes} 字节）`)));
       return null;
     }
     let parsed;

@@ -14,6 +14,7 @@ import { callTable, names } from './pages.ts';
 import { TOOL_LABELS, toolName } from './tasks.ts';
 import { param } from './params.ts';
 import { queryCallLog, resolveCallLogFilters } from './record-reads.ts';
+import { errorLine, filterForm, segments, selectControl } from './components.ts';
 import { box, card, count, duration, kpi, when } from './ui.ts';
 import { spaceRecords } from './space-records.ts';
 
@@ -50,7 +51,7 @@ const RESULT_FILL: Readonly<Record<CallResult, string>> = { ok: 'fill-pass', err
 
 /** The figures of the period and its charts, from one read of the call log: the figures head two tabs, the charts are one. */
 async function statistics(ctx:PageContext,now:number,daysCount:number,query:Parameters<PageContext['deps']['records']['callLog']['query']>[1]):Promise<{figures:Html;charts:Html}>{
- let found:Page<CallLogLine>;try{found=query?.userId===''?{items:[],next:null}:await ctx.deps.records.callLog.query(ctx.principal,{...query,limit:STATS_LIMIT,cursor:null});}catch{return {figures:card({title:'统计'},html`<p class="error">统计暂不可用</p>`),charts:html``};}
+ let found:Page<CallLogLine>;try{found=query?.userId===''?{items:[],next:null}:await ctx.deps.records.callLog.query(ctx.principal,{...query,limit:STATS_LIMIT,cursor:null});}catch{return {figures:card({title:'统计'},errorLine('统计暂不可用')),charts:html``};}
  const items=found.items,scope=found.next?`所选时段最近 ${STATS_LIMIT} 次调用`:'所选时段',errors=items.filter(line=>line.call_result!=='ok').length,refused=items.filter(line=>line.acceptance==='not_accepted').length;
  const kpis=html`<section class="ch-stats">${kpi('工具调用',items.length,{note:scope})}${kpi('提交结果',items.filter(line=>line.tool==='submit_result').length,{note:'其中未受理 '+refused+' 次'})}${kpi('调用出错',errors)}${kpi(ctx.admin?'成员':'本人',new Set(items.map(line=>line.user).filter(Boolean)).size)}</section>`;
  const end=query?.to?Date.parse(query.to):now,start=query?.from?Date.parse(query.from):end-daysCount*86400000;
@@ -92,24 +93,35 @@ export async function recordsPage(ctx: PageContext, path: '/console/records' | '
   const tab: RecordTab = selectedDigest ? 'calls' : tabsOf.find((key) => key === param(ctx, 'tab')) ?? 'calls';
   const byCall = tab === 'calls' || tab === 'stats';
   const kept = { ...(ctx.admin ? { user } : {}), ...(byCall ? { tool, run } : {}), from: param(ctx, 'from'), to: param(ctx, 'to') };
-  const toolOptions = html`<option value="">全部工具</option>${TOOLS.map((t) => html`<option value="${t.name}"${t.name === tool ? html` selected` : ''}>${t.label}</option>`)}${tool !== undefined && !TOOL_LABELS.has(tool) ? html`<option value="${tool}" selected>${tool}</option>` : ''}`;
-  const filters = html`<form class="ch-actions" data-filters method="get" action="${path}"><input type="hidden" name="days" value="${days}">${tab === 'calls' ? '' : html`<input type="hidden" name="tab" value="${tab}">`}
-${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></label>` : ''}${byCall ? html`<label>工具 <select name="tool">${toolOptions}</select></label>
+  const toolOptions = [
+    ...TOOLS.map((t) => ({ value: t.name, label: t.label, selected: t.name === tool })),
+    ...(tool !== undefined && !TOOL_LABELS.has(tool) ? [{ value: tool, label: tool, selected: true }] : []),
+  ];
+  const filters = filterForm(path, html`<input type="hidden" name="days" value="${days}">${tab === 'calls' ? '' : html`<input type="hidden" name="tab" value="${tab}">`}
+${ctx.admin ? html`<label>成员 <input name="user" value="${user ?? ''}"></label>` : ''}${byCall ? html`<label>工具 ${selectControl('tool', toolOptions, { value: '', label: '全部工具', selected: tool === undefined })}</label>
 <label>任务 <input name="run" value="${run ?? ''}"></label>` : ''}<label>从 <input name="from" value="${param(ctx, 'from') ?? ''}" placeholder="2026-11-01"></label>
-<label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
+<label>到 <input name="to" value="${param(ctx, 'to') ?? ''}"></label>`);
   const chrome = ctx.chrome('记录', { active: 'records', hint: ctx.admin ? '操作与校验记录仅追加、不可修改，可按成员、工具、任务与时间筛选' : '仅显示与本人相关的调用；记录仅追加、不可修改' });
   if (problems.length > 0 || from === null || to === null) {
-    return { status: 400, body: page(chrome, html`${card(null, html`${filters}<p class="error">${problems.join('；')}</p>`)}`) };
+    return { status: 400, body: page(chrome, html`${card(null, html`${filters}${errorLine(problems.join('；'))}`)}`) };
   }
   const lines = tab !== 'calls' ? { items: [], next: null } : await queryCallLog(ctx, ready);
   const next = lines.next === null ? html`` : html`<p>${link(path, '下一页', { ...kept, days, cursor: lines.next })}</p>`;
   const selected=selectedDigest?lines.items.find(line=>line.digest===selectedDigest):undefined;
   if(selectedDigest&&!selected)return neutralPage(ctx);
   const inspector=selected?html`<div data-inspector-content><span class="ch-tag">调用记录</span><h2 class="ch-panel-title">${toolName(selected.tool)}</h2>${facts([['时间',when(selected.at)],['成员',await ctx.userName(selected.user)],['调用结果',uiLabelOf('call_result',selected.call_result)],['受理结果',selected.acceptance?uiLabelOf('acceptance',selected.acceptance):'不适用'],['错误码',selected.error_code??'无'],['耗时',duration(selected.duration_ms)],['任务',selected.run?link('/console/runs/'+selected.run,'查看任务'):'无']])}${ctx.admin&&selected.admin_note?card({title:'管理员备注'},html`<p>${selected.admin_note}</p>`):''}${technicalCode(JSON.stringify(selected,null,2))}</div>`:null;
-  const tabs = html`<nav class="ch-seg" aria-label="记录内容" data-record-tabs>${tabsOf.map((key) => html`<a href="${href(path, { ...kept, ...(key === 'calls' || key === 'stats' ? {} : { tool: undefined, run: undefined }), ...(days === 14 ? {} : { days }), ...(key === 'calls' ? {} : { tab: key }) })}"${key === tab ? html` aria-current="page"` : ''}>${RECORD_TAB_LABEL[key]}</a>`)}</nav>`;
-  const period = html`<nav class="ch-seg" aria-label="时间范围">${[7,14,30].map(value=>html`<a href="${href(path,{...(ctx.admin?{user}:{}),...(byCall?{tool,run}:{}),days:value,...(tab==='calls'?{}:{tab})})}"${value===days&&!from&&!to?html` aria-current="page"`:''}>近 ${value} 天</a>`)}</nav>`;
+  const tabs = segments('记录内容', tabsOf.map((key) => ({
+    href: href(path, { ...kept, ...(key === 'calls' || key === 'stats' ? {} : { tool: undefined, run: undefined }), ...(days === 14 ? {} : { days }), ...(key === 'calls' ? {} : { tab: key }) }),
+    label: RECORD_TAB_LABEL[key],
+    current: key === tab,
+  })), 'data-record-tabs');
+  const period = segments('时间范围', [7, 14, 30].map((value) => ({
+    href: href(path, { ...(ctx.admin ? { user } : {}), ...(byCall ? { tool, run } : {}), days: value, ...(tab === 'calls' ? {} : { tab }) }),
+    label: `近 ${value} 天`,
+    current: value === days && !from && !to,
+  })));
   const stats = byCall ? await statistics(ctx,now,days,{userId,tool,runId:run,from:rangeFrom,to:rangeTo}) : null;
-  const content = tab === 'calls' ? html`${stats!.figures}<p class="ch-meta" data-tab-facts>本页 ${lines.items.length.toLocaleString('en-US')} 条 · 新的在前</p>${box(null, html`${callTable(lines.items, ctx.admin, await names(ctx, lines.items),{path,params:Object.fromEntries(ctx.url.searchParams),selected:selected?.digest,compact:true})}${next}`, { flush: true })}`
+  const content = tab === 'calls' ? html`${stats!.figures}<p class="ch-meta" data-tab-facts>本页 ${count(lines.items.length)} 条 · 新的在前</p>${box(null, html`${callTable(lines.items, ctx.admin, await names(ctx, lines.items),{path,params:Object.fromEntries(ctx.url.searchParams),selected:selected?.digest,compact:true})}${next}`, { flush: true })}`
     : tab === 'stats' ? html`${stats!.figures}${stats!.charts}`
     : tab === 'sharing' ? await spaceRecords(ctx,path,userId,rangeFrom,rangeTo)
     : await trials(ctx,path,userId,rangeFrom,rangeTo);
