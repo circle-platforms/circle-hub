@@ -1,1 +1,1 @@
-export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, commandStep, type BackgroundStep, type StepName, type UsageName } from '../records/api.ts';
+export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, installCommandSteps, commandStep, type CommandStep, type BackgroundStep, type StepName, type UsageName } from '../records/api.ts';

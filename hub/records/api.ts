@@ -3,7 +3,7 @@ export { isAdmin, canSeeRun } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
 export { openRecords, migrateRecords } from './index.ts';
 export { SLOW_QUERY_MS, MAX_TRACE_STEPS, MAX_STATUS_LENGTH, installTraceSink, traceSinkInstalled, tracing, currentTrace, addUsage, startTrace, background, step, addEvent, updateTrace, setTraceStatus, withoutTrace, recordQuery, recordSourceRead, type Usage, type SpanRow, type TraceSink, type TraceOptions, type TraceFields } from './trace-usage.ts';
-export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, commandStep, type BackgroundStep, type StepName, type UsageName } from './trace-names.ts';
+export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, installCommandSteps, commandStep, type CommandStep, type BackgroundStep, type StepName, type UsageName } from './trace-names.ts';
 export { createPool, Database, iso, normalizeTime, pageLimit, type Row, type PgTransaction } from './db.ts';
 export {historyUsage,chargedBytes,safeBytes,forgetCapacityCharges,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';

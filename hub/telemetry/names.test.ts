@@ -6,7 +6,7 @@ import { PERSONAL_SYNC_CAPABILITY_ROUTES, PERSONAL_SYNC_HTTP_ROUTES } from '../.
 import { TOOLS } from '../../contracts/src/tools.ts';
 import { PLATFORM_COMMANDS } from '../platform/api.ts';
 import { adminCommands } from '../server/cli-admin.ts';
-import { ACCOUNTED_USAGE, STEP_NAMES, USAGE_NAMES, commandStep, consoleStep, isUsageName, mcpStep, syncStep } from '../records/api.ts';
+import { ACCOUNTED_USAGE, STEP_NAMES, USAGE_NAMES, installCommandSteps, commandStep, consoleStep, isUsageName, mcpStep, syncStep } from '../records/api.ts';
 
 test('step names are unique lowercase words with no room for a dynamic value', () => {
   assert.equal(new Set(STEP_NAMES).size, STEP_NAMES.length);
@@ -33,9 +33,12 @@ test('every tool has its own root name; what a client writes never becomes a nam
   assert.equal(mcpStep('ping', undefined), 'handle-mcp');
 });
 
-test('every command of the CLI has its own root name; an unknown one does not', () => {
+test('every installed command of the CLI has its own root name; an unknown one does not', (t) => {
   const commands = [...PLATFORM_COMMANDS, ...adminCommands().map((command) => command.name), 'user', 'token', 'logs', 'run', 'local-tools', 'setup-code'];
+  installCommandSteps(commands.map(name=>({name,step:`run-${name}` as const})));
+  t.after(()=>installCommandSteps([]));
   for (const command of commands) assert.equal(commandStep(command), `run-${command}`, command);
+  assert.equal(new Set(STEP_NAMES).size,STEP_NAMES.length);
   assert.equal(commandStep('no-such-command'), 'run-command');
   assert.equal(commandStep('check'), 'run-command', 'an inner step is not a command');
 });

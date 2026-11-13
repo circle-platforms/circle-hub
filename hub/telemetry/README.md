@@ -184,3 +184,11 @@ nothing else (decision 147: all MCP calls, not per tool). A task's gap is the me
 `hub/server/assemble/cli-trace.test.ts`, `hub/rules/sandbox/usage.test.ts`, `hub/runs/engine/trace-steps.test.ts` and one
 test each in `hub/connectors/http.test.ts`, `hub/knowledge/sync-schedule.test.ts`, `hub/knowledge/feeding-bounds.test.ts`,
 `hub/dispatch/results.test.ts` and `hub/server/console/staging.test.ts`. No test asserts a duration.
+
+
+## Command registration
+
+The CLI owner installs its complete command metadata through `installCommandSteps(entries)` from `records/api.ts`
+(or the telemetry public surface). Each entry supplies `name` and its explicit `run-*` step. Registration replaces the
+process catalog; `commandStep` maps only installed names, with `run-command` for everything else. `STEP_NAMES` retains
+its array identity and reflects the installed steps. Records imports no server or platform command registration.
