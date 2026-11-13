@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 // Administrative run disposition is a record-backed view, never a change to old technical evidence or remote effects.
 import {randomBytes} from 'node:crypto';
 import {z} from 'zod';
@@ -30,7 +31,7 @@ export async function abandonRun(ctx:EngineContext,by:Principal,runId:string,req
   return ctx.lock('submit:'+runId,async()=>{
     const requests=createRequestService(ctx.deps.records,ctx.now);
     const question=await requests.inspect(requestId);
-    if(!question||question.run!==runId||question.kind!=='disposition'||question.job||question.pack_digest||question.sources?.length||account.role!=='admin'&&question.audience!==account.id)throw unavailable();
+    if(!question||question.run!==runId||question.kind!=='disposition'||question.job||question.pack_digest||question.sources?.length||!isAdmin(account)&&question.audience!==account.id)throw unavailable();
     if(question.answered_by!==null){const source=await ctx.deps.records.store.get<ActionBody>(question.answered_by);if(source?.kind!=='action'||source.body.detail.run_disposition!=='abandon')throw new RecordsError('这个请求已有其他作答，不改写原回答',{fix:'查看原作答；继续工作需以原运行为前驱开新修订'});}
     const old=await ctx.deps.records.store.find<ActionBody>({kind:'action',key:'runs.disposition.request',value:requestId,limit:1});
     let decision=old.items[0];

@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import {parentUnavailable,needsParentRecovery} from './parent-recovery.ts';
 import {ENGINE_COMPONENT} from './deps.ts';
 import { abandonDecision,finishAbandon } from './management.ts';
@@ -125,7 +126,7 @@ async function recoverManagement(ctx:EngineContext,stored:StoredRecord<RunRecord
   const failures=Math.max(actions.filter(a=>a.body.detail.management_interrupted===decision.digest).length,actions.filter(a=>a.body.detail.management_recovery_started===decision.digest).length);
   const projected=await ctx.deps.records.store.find({kind:'validation_result',key:'runs.result.system_input',value:'rec:'+decision.digest,limit:1});
   if(failures>=3&&!projected.items.length){
-    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);
     if(!admin)throw new Error('管理交付恢复缺少具名管理员');
     await putRequest(ctx,{run:stored.body.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:decision.digest,code:'check_error',missing:'管理选择 rec:'+decision.digest+' 已记录，但三次自动恢复仍未形成交付投影',next_action:'管理员修复记录写入或投影故障后，核对原管理选择，用 circle-hub run abandon '+stored.body.run+' --answer-request <原处置请求摘要> --reason <原理由> 原样重试；只补交付，不重做人的选择、不改旧件'});
     return;
@@ -168,7 +169,7 @@ async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Prom
   const run=stored.body;
   const account=await ctx.deps.records.principals?.get(run.runner??run.configurer??'');
   if(!account||account.disabled||!canSeeRun(account,run)){
-    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);
     if(!admin)throw new Error('维护缺少可确认的运行者和具名启用管理员');
     await putRequest(ctx,{run:run.run,kind:'disposition',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:stored.digest,code:'awaiting_step',missing:account?.disabled?'原运行者已停用，不能按其身份自动重验':account?'原运行者当前无权读取冻结的运行，不能按其身份自动重验':'缺少原运行者账号或 principals.get 读取接线',next_action:'管理员补齐身份接线或按既有管理步骤恢复账号，再由原运行者以原运行为 predecessor 续跑；不代填原会话'});
     return;
@@ -179,7 +180,7 @@ async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Prom
       const history=await actionsOf(ctx.deps.records.store,run.run);
       const failures=Math.max(history.filter(a=>a.body.detail.production_interrupted===true).length,history.filter(a=>a.body.detail.production_recovery_started===stored.digest).length);
       if(failures>=3){
-        const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+        const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);
         if(!admin)throw new Error('事实生产重验缺少具名管理员');
         await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:stored.digest,code:'check_error',missing:'事实生产缺少完整校验结果，三次有限重验均未完成',next_action:'管理员按本运行的中断动作修复核验能力或拆分输入，再以本运行为 predecessor 重跑；不补造旧结果'});
         return;
@@ -203,7 +204,7 @@ async function recoverRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Prom
     const history=await actionsOf(ctx.deps.records.store,run.run);
     const failures=Math.max(history.filter(a=>a.body.detail.hub_error===true&&a.body.detail.submission===(isObject(submission.body)?receivedDigest(submission.body).digest:null)).length,history.filter(a=>a.body.detail.recovery_submission===submission.digest).length);
     if(isVerbatimObject(submission)||!isObject(submission.body)||independent&&historicalSession===null||failures>=3){
-      const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+      const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);
       if(!admin)throw new Error('中断重验缺少具名管理员');
       const missing=independent&&historicalSession===null?`提交记录 ${submission.digest} 当时没有记录会话 id`:`提交记录 ${submission.digest} 的核验仍未完成（自动恢复至多三次，包含进程终止前已预约的尝试）`;
       await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing,source:submission.digest,code:'check_error',next_action:independent&&historicalSession===null?'请原提交者带 Circle-Session-Id 原样 submit_result；不能补造历史会话':'管理员修复核验故障后，请原提交者带原会话原样 submit_result'});
@@ -256,7 +257,7 @@ async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<Reque
     const run=stored.body;
     const admin=await ctx.deps.records.principals?.get(request.audience);
     const runner=await ctx.deps.records.principals?.get(run.runner??run.configurer??'');
-    if(!admin||admin.disabled||admin.role!=='admin'||!runner||runner.disabled)continue;
+    if(!admin||admin.disabled||!isAdmin(admin)||!runner||runner.disabled)continue;
     let available=true;
     const proofInputs:string[]=[];
     for(const reference of request.sources){
@@ -293,7 +294,7 @@ async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<Reque
 async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
   if(!ctx.deps.dispatch)return;
   const run=stored.body;
-  const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+  const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);
   if(!admin)throw new Error('派发核对缺少具名管理员');
   const by={id:admin.id,name:admin.name,role:admin.role};
   const reading=await reservations();
@@ -387,7 +388,7 @@ async function recoverParent(ctx:EngineContext,stored:StoredRecord<RunRecord>):P
   }
   await ctx.lock('submit:'+run.run,async()=>{
     const result=await latestAccepted(store,run.run);if(!result||!needsParentRecovery(result.body))return;
-    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);if(!admin)throw new Error('父级核验恢复缺少具名管理员');
+    const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);if(!admin)throw new Error('父级核验恢复缺少具名管理员');
     const input={run:run.run,source_result:result.digest,source_submission:source,automatic_rechecks:superseded?attempts:3,...(superseded?{successors:successors.map(s=>s.body.run)}:{}),observed_at:ctx.now().toISOString()};
     const action=await putAction(store,{action:'validate',run:run.run,inputs:['rec:'+result.digest],startedAt:ctx.now().toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:['check_error'],detail:{input,parent_recovery_exhausted:source}});
     const question=await putRequest(ctx,{run:run.run,kind:'repair',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:action.digest,code:'check_error',missing:superseded?'父级核验失败后已有同包后继，旧运行不能再自动重交，缺少可用的宿主沙箱执行观察':'父级核验能力在三次自动重评后仍未恢复，缺少可用的宿主沙箱执行观察',next_action:superseded?'管理员核对并修复宿主沙箱及进程资源，请原运行者在同包后继运行带原会话提交；新的可信父级执行成功观察才关闭本请求，旧技术结果不改写':'管理员核对宿主沙箱及进程资源并修复；恢复后请原运行者带原会话用 submit_result 原样重交，实际父级执行成功后关闭本请求；不修改旧结果、不声称包作者已发布修复版本'});
@@ -421,7 +422,7 @@ async function escalateOverdueRequests(ctx:EngineContext,listed:()=>Promise<Requ
     const answer=answerOf(request);
     if(answer){await answerRequest(ctx,request.record,answer);continue;}
     if(Date.parse(request.due)>ctx.now().getTime())continue;
-    const admins=((await ctx.deps.records.principals?.list?.())??[]).filter(p=>p.role==='admin'&&!p.disabled);
+    const admins=((await ctx.deps.records.principals?.list?.())??[]).filter(p=>isAdmin(p)&&!p.disabled);
     if(byId.has(request.source)&&admins.some(p=>p.id===request.audience))continue;
     const admin=admins[0];
     if(!admin)throw new Error('到期请求升级缺少具名管理员');

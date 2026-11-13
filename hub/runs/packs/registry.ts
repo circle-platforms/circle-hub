@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import { PACK_KIND_REGISTRY } from '../../../contracts/src/pack.ts';
 import {scopedRecordStore,memoReadPort,memoReadValue} from '../../records/api.ts';
 import {defaultParsers} from '../../refs/api.ts';
@@ -262,7 +263,7 @@ class Registry implements PackRegistry {
 
   async #admin(by: Principal, message: string): Promise<Principal> {
     const account = await this.account(by);
-    if (account === null || account.role !== 'admin') throw new AccessError(message);
+    if (account === null || !isAdmin(account)) throw new AccessError(message);
     return account;
   }
 
@@ -648,7 +649,7 @@ class Registry implements PackRegistry {
     const authorizations = this.#records.authorizations;
     const out: AssignmentInfo[] = [];
     for (const pack of await this.#packIds()) {
-      const users = account.role === 'admin' ? await authorizations.usersOf(pack) : (await authorizations.canUse(account.id, pack)) ? [account.id] : [];
+      const users = isAdmin(account) ? await authorizations.usersOf(pack) : (await authorizations.canUse(account.id, pack)) ? [account.id] : [];
       for (const user of users) {
         if (user === WHOLE_HUB) continue;
         const record = await authorizations.latest('assign', user, pack);

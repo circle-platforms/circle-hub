@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import { requestRecords } from './requests.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 // Read existing dispatch observations only. No planning, dispatching or resubmission lives here.
@@ -20,7 +21,7 @@ const RoundNote=z.object({round:z.number().int(),terminal:DynamicTerminalSchema,
 const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row),rounds:z.array(RoundNote).optional()});
 export function appliesTo(job:RunJob,run:string,item:string):boolean{return job.verification_run===run?job.verification_item===item:job.plan_run===run&&job.items.includes(item);}
 type Admin={id:string;name:string;role:'admin'};
-async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
+async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
 /** The job's result projection when it is the dispatch service's own, bound to this job and its workbook, one row per item; else null. */
 async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<z.infer<typeof Projection>|null>{
   if(!job.status.result)return null;

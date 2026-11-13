@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 // The ports runs-packs provides (hub/ports.ts) over the registry: PacksPort (packs and the active product lines),
 // WorkflowStore (what a run needs of a workflow pack) and PackCatalogPort (the console listing). Absent, unassigned,
 // withdrawn and unknown give the same null or empty answer; the account is re-read on every call.
@@ -121,7 +122,7 @@ export function createPacksPort(registry: PackRegistry): PacksPort {
       const account = await registry.account(user);
       if (account === null) return new Set();
       const active = await registry.activeProducts();
-      if (account.role === 'admin') return new Set(active.map((a) => a.product.id));
+      if (isAdmin(account)) return new Set(active.map((a) => a.product.id));
       const out = new Set<string>();
       for (const id of await registry.packsFor(account.id)) {
         const info = await registry.latestVersion(id);
@@ -261,7 +262,7 @@ export function createPackCatalog(registry: PackRegistry): PackCatalogPort {
      return withReadScope(async()=>{
       const account = await registry.account(user);
       if (account === null) return [];
-      if (account.role === 'admin') {
+      if (isAdmin(account)) {
         const out: PackListing[] = [];
         const packs=await registry.listPacks(),ids=packs.filter(pack=>pack.kind==='workflow').map(pack=>pack.id);
         const assignments=registry.usersOfMany?await registry.usersOfMany(ids):new Map(await Promise.all(ids.map(async id=>[id,await registry.usersOf(id)] as const)));

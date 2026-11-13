@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 // Personal namespaces reuse the pack publisher's validators, sample runner and immutable extractor. Team records stay separate.
 import { join, extname } from 'node:path';
 import { embeddedProblems } from './embedded.ts';
@@ -77,7 +78,7 @@ export class PersonalPacks {
   }
   async list(by:Principal):Promise<PackVersionInfo[]>{
     by=await this.#account(by);const owners=new Set([by.id]);
-    const grants=await this.#options.records.store.findMany({kind:'personal_pack_grant',key:'personal.pack.grantee',values:[by.id,...(by.role==='admin'?['administrators']:[])]});
+    const grants=await this.#options.records.store.findMany({kind:'personal_pack_grant',key:'personal.pack.grantee',values:[by.id,...(isAdmin(by)?['administrators']:[])]});
     for(const record of grants)owners.add(PersonalPackGrantBody.parse(record.body).space);
     const out:PackVersionInfo[]=[];
     for(const owner of owners)for(const record of await this.#all('personal_pack_version','personal.pack.owner',owner)){const body=PersonalPackVersionBody.parse(record.body);if(await this.mayUse(by,owner,body.pack))out.push(await this.#info(record));}
@@ -89,7 +90,7 @@ export class PersonalPacks {
     by=await this.#own(by);if(!(await this.versions(by.id,pack)).length)throw new AccessError('对象不存在或无权读取');
     if(input.member){const target=await this.#options.records.principals.get(input.member);if(!target||!input.revoke&&target.deleted_at)throw new AccessError('对象不存在或无权读取');}
     const body=PersonalPackGrantBody.parse({space:by.id,pack,audience:input.audience,member:input.member??null,action:input.revoke?'revoke':'grant',by:by.id,at:this.#now()});
-    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);by=await this.#options.records.principals.lockActive(by,tx);if(!input.revoke){const targets=body.member?[await this.#options.records.principals.get(body.member)]:await this.#options.records.principals.list();const checks=await this.precheckGrant(by,pack,targets.filter((u):u is NonNullable<typeof u>=>!!u&&!u.disabled&&(body.member!==null||u.role==='admin')));if(checks.some(check=>check.state!=='pass'))throw new AccessError('授权前检查未通过');}return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
+    return this.#options.records.store.withTransaction(async tx=>{await this.#options.records.store.lock('personal-pack:'+personalPackKey(by.id,pack),tx);by=await this.#options.records.principals.lockActive(by,tx);if(!input.revoke){const targets=body.member?[await this.#options.records.principals.get(body.member)]:await this.#options.records.principals.list();const checks=await this.precheckGrant(by,pack,targets.filter((u):u is NonNullable<typeof u>=>!!u&&!u.disabled&&(body.member!==null||isAdmin(u))));if(checks.some(check=>check.state!=='pass'))throw new AccessError('授权前检查未通过');}return this.#options.records.store.put({kind:'personal_pack_grant',schema:'personal-pack-grant@1',provenance:'declared',body,index:[{key:'personal.pack.grant',value:personalPackKey(by.id,pack)},{key:'personal.pack.grantee',value:body.member??'administrators'},{key:'personal.pack.grant_owner',value:by.id}]},tx);});
   }
   async retire(by:Principal,pack:string,version:string){
     by=await this.#own(by);const info=(await this.versions(by.id,pack)).find(info=>info.version===version);if(!info)throw new AccessError('对象不存在或无权读取');

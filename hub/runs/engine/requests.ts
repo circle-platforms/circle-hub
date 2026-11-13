@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import {isReason} from '../../../contracts/generated/vocabulary.ts';
 import { isAbandonedResult } from './management.ts';
 // Run-specific B07 routing. Shared storage is owned by hub/requests.
@@ -54,7 +55,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
   for(const claim of result.cross_item){
     if(claim.qualifier.nature!=='unknown'||!claim.requirement)continue;
     const owner=await ctx.deps.workflows.ownerOf?.(run.pack_digest,run.pack_space);
-    const administrator=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled)?.id;
+    const administrator=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled)?.id;
     const runner=run.runner??run.configurer;
     if(!owner||!administrator||!runner)throw new Error('整份检查未知缺少具名出口身份');
     const reason=claim.statement.reason??'check_error';
@@ -96,8 +97,8 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
       const request=await putRequest(ctx,{run:run.run,...(EXIT_BY_REASON[gap.reason].recipient==='owner'&&observation!=='dispatch@1'&&gap.exit.request_kind==='repair'?{pack_digest:run.pack_digest}:{}),...(sources.length?{sources:[...new Set(sources)]}:{}),kind:gap.exit.request_kind!,audience:gap.exit.audience.user,due:gap.exit.due,missing:gap.missing,next_action,source:result.submission,code:gap===primary?layer.code??gap.reason:gap.reason,item:item.item,requirement:requirement.requirement});
       gap.exit.due=request.body.due;
       const recipient=await ctx.deps.records.principals?.get(request.body.audience);
-      if(recipient&&recipient.role!=='admin'&&recipient.id!==run.runner){
-        const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
+      if(recipient&&!isAdmin(recipient)&&recipient.id!==run.runner){
+        const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>isAdmin(p)&&!p.disabled);
         if(!admin)throw new Error('请求送达缺少具名管理员');
         await putRequest(ctx,{run:run.run,kind:'clarification',audience:admin.id,due:gap.exit.due,missing:'包作者 '+recipient.id+' 不在本运行可见范围内，缺少经审核可交给作者的最小复现',next_action:'管理员用 get_nodes 核对请求 rec:'+request.digest+'，在 Circle 中制作经许可的最小复现后交给具名包作者；由作者发布修复版本。原运行和原件不自动分享',source:result.submission,code:'awaiting_step',item:item.item,requirement:requirement.requirement});
       }

@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import {withdrawalState,groundsReadableBy,runReadableBy,resultReadableBy,summaryReadableBy} from './grounds.ts';
 import {resultSummaryOf,type ResultSummary} from './result-summary.ts';
 import {runStatistics,statisticsFor} from '../statistics.ts';
@@ -289,7 +290,7 @@ function publicReceiptErrors(codes:readonly string[]){
 
 /** W04 R[2]: the administrator's inventory, across locked versions; tables never leave storage. */
 export async function unruledShapes(store: RecordStore, user: Principal, pack: string): Promise<Array<{requirement:string;interpreter:string;count:number;latest_run:string}>> {
-  if (user.role !== 'admin') throw new RecordsError('未裁定的形状存在，只有管理员能查看', {code:'SOURCE_NOT_PERMITTED'});
+  if (!isAdmin(user)) throw new RecordsError('未裁定的形状存在，只有管理员能查看', {code:'SOURCE_NOT_PERMITTED'});
   const rows = new Map<string,{requirement:string;interpreter:string;count:number;latest_run:string}>();
   const seen = new Set<string>();
   let cursor: string | null = null;

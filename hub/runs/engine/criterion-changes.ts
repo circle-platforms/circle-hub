@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 // W10 lifecycle: append requests and their safe answers; never rewrite source bytes or accepted results.
 import {Submission,type CriterionChange} from '../../../contracts/src/submission.ts';
 import { labelOf } from '../../../contracts/generated/vocabulary.ts';
@@ -40,8 +41,8 @@ export function criterionReviewInstruction(run:string,source:string,change:Crite
 export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,source:string,changes:readonly import('./exact.ts').AcceptedCriterionChange[],result:ValidationResult,tx:Transaction):Promise<void>{
  if(!changes.length)return;
  const authors=await authorAccountsOf(ctx,run.run),people=(await ctx.deps.records.principals?.list?.()??[]).filter(user=>!user.disabled).sort((a,b)=>a.id.localeCompare(b.id));
- const eligible=[] as Principal[];for(const user of people)if(!authors?.accounts.has(user.id)&&(user.role==='admin'||await canViewRun(user,run,ctx.deps.records.store)))eligible.push(user);
- const audience=eligible[0]??people.find(user=>user.role==='admin');
+ const eligible=[] as Principal[];for(const user of people)if(!authors?.accounts.has(user.id)&&(isAdmin(user)||await canViewRun(user,run,ctx.deps.records.store)))eligible.push(user);
+ const audience=eligible[0]??people.find(user=>isAdmin(user));
  if(!audience)throw new Error('判据复核请求缺少具名管理员');
  const service=requestService(ctx,tx),old=await service.all(run.run);
  for(const {index,change,ground_roles} of changes){
@@ -56,7 +57,7 @@ export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,s
     if(last?.kind==='submission'&&last.digest===source)continue;
     await safeAnswer(ctx,previous,source,{message:'由后一份提交的同名声明取代',replacement:'rec:'+source},tx,true);
    }
-   const instruction=criterionReviewInstruction(run.run,source,change,people.find(user=>user.role==='admin')?.id??audience.id);
+   const instruction=criterionReviewInstruction(run.run,source,change,people.find(user=>isAdmin(user))?.id??audience.id);
    const created=await service.write({run:run.run,kind:'judgment',audience:audience.id,due:run.submission_due,missing:(instruction.unsupported.length?'复核入口缺少锁定知识树片段的只读绑定能力；':'')+'判据变更声明尚未由作者以外的账号复核：'+change.assertion+(marked?'（'+marked+'）':''),next_action:(eligible.length?'':'管理员先创建非作者账号并明确分享本运行；')+instruction.next_action,source,code:'awaiting_step',item:change.item,declaration:pointer});
    request={...created.body,record:created.digest,answered_by:null};
   }
