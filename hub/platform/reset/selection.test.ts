@@ -170,3 +170,61 @@ test('an unavailable current observation is not labelled as schema incompatibili
   assert.doesNotMatch(selected.blocked[0]!.reason, /模式/);
   assert.deepEqual(selected.cleared, []);
 });
+
+test('memory content is knowledge while directory grants, memory grants and quota are configuration', () => {
+  const grant = { space: user, path: '/', audience: 'member', member: user, action: 'grant', by: user, at };
+  assert.equal(classifyCurrentRecord(record(1, 'knowledge_space_grant', 'knowledge-space-grant@1', grant)), 'config');
+  assert.equal(classifyCurrentRecord(record(2, 'knowledge_space_quota', 'knowledge-space-quota@1', { space: 'team', bytes: 1000, by: user, at })), 'config');
+  assert.equal(classifyCurrentRecord(record(3, 'memory_grant', 'memory-grant@1', { ...grant, intent: hash(20) })), 'config');
+  assert.equal(classifyCurrentRecord(record(4, 'memory_document', 'memory-document@1', { space: 'team', by: user, at, intent: hash(21) })), 'knowledge');
+});
+
+test('current feeding claims validate their exact nested schema instead of matching a run field', () => {
+  const claim = (feeding: unknown) => ({ statement: { text: '合成声明', data: { feeding, run: 'run_' + '0'.repeat(26) } },
+    grounds: [], warrant: { producer: 'function', id: 'synthetic@1', independence: 'judge_not_author' },
+    qualifier: { nature: 'fact', provenance: 'projected', basis_rank: 'rule_over_observation', marks: [] },
+    validity: { status: 'valid', bound: [], premises: [] } });
+  assert.equal(classifyCurrentRecord(record(1, 'claim', 'claim@1', claim({ schema: 'usage@1', object: hash(20), run: 'run_' + '0'.repeat(26), line: null, at }))), 'history');
+  assert.equal(classifyCurrentRecord(record(2, 'claim', 'claim@1', claim({ schema: 'fed-note@1', object: hash(20), product: null,
+    root: null, path: null, source: { system: 'upload', bytes: hash(20) }, by: user, run: 'run_' + '0'.repeat(26) }))), 'knowledge');
+  assert.equal(classifyCurrentRecord(record(3, 'claim', 'claim@1', claim({ schema: 'feeding-offset@1', run: 'run_' + '0'.repeat(26), root: null, offset: 0 }))), null);
+  assert.equal(classifyCurrentRecord(record(4, 'claim', 'feeding-offset@1', { schema: 'feeding-offset@1', run: 'run_' + '0'.repeat(26), root: null, offset: 0 })), 'history');
+});
+
+test('knowledge references include parts, producer records and non-placeholder build records', () => {
+  const value = record(1, 'tree_root', 'tree_root@1', { root: hash(20), producer: { digest: hash(21) },
+    known_builds: [{ name: 'synthetic-placeholder', record: hash(0) }, { name: 'synthetic-build', record: hash(22) }],
+    variables: [{ decision: hash(23) }], composition: [{ entry: hash(24), fragments: ['src:' + hash(25) + '/text@1/l/1'] }],
+    unplaced: [], sources: [], parts: { composition: [{ record: hash(26) }], unplaced: [], sources: [] } });
+  const references = currentRecordReferences(value);
+  assert.equal(references.find(edge => edge.field === '/root')!.recordAlias, true);
+  assert.equal(references.find(edge => edge.field === '/producer/digest')!.recordAlias, true);
+  assert.equal(references.some(edge => edge.field === '/known_builds/0/record'), false);
+  assert.equal(references.find(edge => edge.field === '/known_builds/1/record')!.digest, hash(22));
+  assert.equal(references.find(edge => edge.field === '/parts/composition/0/record')!.digest, hash(26));
+  assert.equal(references.find(edge => edge.field === '/composition/0/fragments/0')!.kind, 'object');
+  const pointer = record(2, 'root_pointer', 'root_pointer@1', { root: hash(20), expected: hash(0), composition: hash(30), move: hash(31), cause: 'run_' + '0'.repeat(26) });
+  assert.equal(currentRecordReferences(pointer).find(edge => edge.field === '/composition')!.recordAlias, false);
+  assert.ok(currentRecordReferences(pointer).some(edge => edge.field === '/expected' && edge.digest === hash(0)), 'zero is special only in known_builds[].record');
+});
+
+test('explicitly retained physical objects still expose their typed pack record dependencies', () => {
+  const config = authorization(1, 'resource_config', hash(20));
+  const pack = record(2, 'pack_version', 'pack_version@1', { pack: 'synthetic-pack', version: '1.0.0', kind: 'skill', digest: hash(21),
+    publisher: user, report: {}, manifest: { schema: 'pack@1', id: 'synthetic-pack', version: '1.0.0', kind: 'skill',
+      title: '合成包', description: '合成范围测试', files: [{ path: 'SKILL.md', sha256: hash(22), size: 1 }, { path: 'skill.json', sha256: hash(23), size: 1 }] } });
+  const selected = selectCurrentRecords([config, pack], new Set(['packs']), {
+    retainedObjects: new Set([hash(20), hash(21)]),
+    objectReferences: new Map([[hash(20), [{ kind: 'record', digest: hash(21), field: '/system_pack_digest', recordAlias: true }]], [hash(21), []]]),
+    recordAliases: new Map([[hash(21), pack.digest]]),
+  });
+  assert.equal(selected.blocked.length, 1);
+  assert.match(selected.blocked[0]!.reason, /\/system_pack_digest/);
+});
+
+test('content identities require an alias even if the same string is a current record digest', () => {
+  const config = authorization(1, 'assign'), history = call(2);
+  config.references = [{ kind: 'record', digest: history.digest, field: '/declared-content', recordAlias: true }];
+  assert.equal(selectCurrentRecords([config, history], new Set()).blocked.length, 1);
+  assert.deepEqual(selectCurrentRecords([config, history], new Set(), { recordAliases: new Map([[history.digest, history.digest]]) }).blocked, []);
+});
