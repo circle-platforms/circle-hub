@@ -8,7 +8,7 @@ import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation } from '../.
 import {commandPolicyForRoot} from './command-policy.ts';
 import {criterionNotices,freezeCriteria,prepareCriterionReview} from './criterion-changes.ts';
 import {defaultPredecessorInputs} from './predecessor-defaults.ts';
-import { PublishableRequirementsFile } from '../../../contracts/src/pack.ts';
+import { RequirementsFile } from '../../../contracts/src/pack.ts';
 import { recordResultRequests, putRequest, answerSuccessorRequests } from './requests.ts';
 import { authorOriginOf } from './lineage.ts';
 import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
@@ -25,10 +25,10 @@ import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
 import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } from '../../../contracts/src/pack.ts';
-import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
+import { RunRecord, RunSummary, type RequirementSummary } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, RecordsError, AccessError, LimitError, scanContent, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, AccessError, LimitError, scanContent, canonicalize, newId, type VariableSnapshot, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, prefetchReferences, recReference, resolveReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -98,25 +98,9 @@ export function requirementSummary(t: RequirementTemplate, ledger?: import('../.
 }
 
 /** The summary part of a run record, as start_run returns it (the frozen context extras — groups, builds — stay out). */
-export class MissingRulingSummaryError extends RecordsError {
-  constructor(record:RunRecord,requirement:string){
-    super(`旧运行的要求项 ${requirement} 缺少锁定任务包的判定声明`,{code:'SOURCE_READ_FAILED',fix:'请管理员从备份恢复该运行锁定的任务包原件，再重新读取或复用运行',detail:{pack_digest:record.pack_digest,requirement}});
-    this.name='MissingRulingSummaryError';
-  }
-}
-export function hasRulingSummary(record:RunRecord):record is RunRecordView {
-  return record.requirements.every(row=>row.rules!==undefined && row.run_interpreters!==undefined);
-}
-export function summaryOf(record: RunRecord, workflow?:Pick<LoadedWorkflow,'pack'|'requirements'|'checks'|'ledger'> & { workflow?: Pick<import('../../../contracts/src/pack.ts').WorkflowFile,'work_class'>; effects?: LoadedWorkflow['effects'] }): RunSummary {
+export function summaryOf(record: RunRecord): RunSummary {
   const {product_pack_digest:_productPackDigest,command_policy:_commandPolicy,accepted_criteria:_ac,criterion_requests:_cr,criterion_review:_cv,predecessor_access:_pa, runner: _r, host: _h, trigger: _t, configurer: _c, parameters: _p, policy: _po, executors: _e, groups: _g, builds: _b, client_key: _k, request_digest: _d, client_key_expires_at: _x, leases: _l, lease_context: _lc, lease_registrations: _lr, observation_context: _oc, ...summary } = record;
-  const requirements=record.requirements.map(row=>{
-    if(row.rules!==undefined && row.run_interpreters!==undefined)return row;
-    const template=workflow?.requirements.find(t=>t.key===row.key);
-    if(!workflow || !template || workflow.pack.digest!==record.pack_digest || `${workflow.pack.id}@${workflow.pack.version}`!==record.pack)throw new MissingRulingSummaryError(record,row.key);
-    const ruling=requirementSummary(template,workflow.ledger,workflow.checks,`${workflow.pack.id}@${workflow.pack.version}`,{workClass:workflow.workflow?.work_class,effects:workflow.effects ?? []});
-    return {...row,rules:ruling.rules,run_interpreters:ruling.run_interpreters};
-  });
-  return RunSummary.parse({...summary,requirements});
+  return RunSummary.parse(summary);
 }
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -319,8 +303,8 @@ export function refused(errors: ProtocolError[]): StartRunDetail {
 const MAX_WARNINGS = 100;
 
 /** The ok answer of a run: its summary and, for a production run, the result the Hub computed (StartRunOutput.result). */
-function okAnswer(record: RunRecord, production: ProductionResult | null, workflow?:LoadedWorkflow): StartRunAnswer {
-  return { call_result: 'ok', errors: [], run: summaryOf(record,workflow), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
+function okAnswer(record: RunRecord, production: ProductionResult | null): StartRunAnswer {
+  return { call_result: 'ok', errors: [], run: summaryOf(record), ...(production !== null ? { result: { reference: production.reference, counts: production.counts } } : {}) };
 }
 
 /** Why a client key cannot be an index value of the records (no NUL, at most 1000 UTF-8 bytes with its owner), or null. */
@@ -441,14 +425,13 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
           throw new Refusal([protocolError('IDEMPOTENCY_MISMATCH', `客户端键 ${key} 已经用于内容不同的 start_run（运行 ${existing.body.run}）`, { path: '/client_key' })]);
         }
         const production = await productionOf(ctx, existing);
-        const answer=okAnswer(existing.body, production, hasRulingSummary(existing.body)?undefined:(await ctx.deps.workflows.byDigest(existing.body.pack_digest,existing.body.pack_space))??undefined),notices=await criterionNotices(ctx,existing.body);
+        const answer=okAnswer(existing.body, production),notices=await criterionNotices(ctx,existing.body);
         if(notices.length)answer.run!.criterion_changes=notices;
         return {answer,production,runRecord:existing.digest,...await gapsOf(ctx,existing.body)};
       }
       return fresh();
     });
   } catch (error) {
-    if(error instanceof MissingRulingSummaryError)return refused([protocolError('SOURCE_READ_FAILED',error.message,{path:'/pack',fix:error.fix!})]);
     if (!(error instanceof Refusal)) throw error;
     if (error.adminNote !== null) ctx.log({ traceId: call.traceId, run: null, what: 'start_run', detail: error.adminNote });
     return refused(error.errors);
@@ -494,7 +477,7 @@ async function authorizedStart(
   const workflow = await step('load-workflow', () => ctx.deps.workflows.forUser(user, input.pack,input.pack_space));
   if (workflow === null || workflow.pack.kind !== 'workflow') throw await packMissing(ctx, user, input.pack, workflow, input.pack_space);
   if(isPersonalSpace(workflow.pack.space)&&personalWorkflowProblems(workflow.workflow,workflow.effects).length)throw new Refusal([personalCapabilityError()]);
-  const declaration=PublishableRequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
+  const declaration=RequirementsFile.safeParse({schema:'requirements@1',requirements:workflow.requirements});
   if(!declaration.success){
     const owner=await ctx.deps.workflows.ownerOf?.(workflow.pack.digest,workflow.pack.space);
     if(!owner)throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION','任务包声明有误，且没有包作者身份读取接线',{path:'/pack',fix:'管理员补齐 ownerOf 接线并修复包声明后重新开始'})]);
