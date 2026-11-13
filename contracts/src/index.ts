@@ -18,7 +18,7 @@ import * as deploymentSchemas from './deployment.ts';
 import * as tokenSchemas from './tokens.ts';
 import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
-import { SchemaId, TeamId, TeamAssignmentSubject } from './common.ts';
+import { SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
 import { RecordEnvelope } from './records.ts';
 import { RunRecord, RunSummary, PackSummary } from './run.ts';
 import { ReceivedSubmission, Submission } from './submission.ts';
@@ -62,6 +62,7 @@ export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
     'team-id@1': TeamId,
     'team-assignment-subject@1': TeamAssignmentSubject,
+    'resource-assignment-subject@1': ResourceAssignmentSubject,
     'contribution-input@1':ContributionInput,
     'claim@1': Claim,
     'record@1': RecordEnvelope,
