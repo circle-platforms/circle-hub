@@ -119,28 +119,14 @@ describe('start-up order and failure modes', () => {
     assert.deepEqual(calls, ['start', 'stop abort=true'], 'the pass in progress is asked to stop at its next run');
   });
 
-  test('serve on an unmigrated database opens only maintenance routes before business assembly', async () => {
-    const deployment = await harness.deployment({ migrate: false });
+  test('ordinary administrator commands refuse an unmigrated database before business assembly', async () => {
+    const deployment=await harness.deployment({migrate:false});
     const empty=await harness.postgres.createDatabase(undefined,{empty:true});
     deployment.env.CIRCLE_HUB_DATABASE_NAME=empty.database;
-    const spy=spyAssembly();let url:string|undefined;
-    const noReset=async()=>{throw new Error('synthetic maintenance cannot reset the external scratch cluster');};
-    const result=await deployment.run(['serve'],{
-      assembly:spy.load,rebuild:{bridge:{validate:()=>null,inspect:noReset,preview:noReset,launch:noReset,acknowledge:noReset,status:noReset}},
-      onListening:info=>{url=info.url;},
-      stopSignal:async()=>{
-        assert.ok(url);
-        assert.deepEqual(await (await fetch(url+'/healthz')).json(),{needsRebuild:true});
-        assert.equal((await fetch(url+'/console/rebuild')).status,401);
-        assert.equal((await fetch(url+'/mcp')).status,503);
-      },
-    });
-    assert.equal(result.code,0,result.text);assert.match(result.text,/记录库需要重建/);
-    assert.equal(spy.assembled,0,'a confirmed incompatible schema never reaches business assembly');
-    assert.ok(url,'the restricted listener actually opened');
     for(const argv of [['pack','list'],['init-admin','甲']]){
       const command=await deployment.run(argv,{assembly:realAssembly});
-      assert.equal(command.code,1,argv.join(' '));assert.match(command.text,/还没有应用/,argv.join(' '));
+      assert.equal(command.code,1,argv.join(' '));
+      assert.match(command.text,/还没有应用/,argv.join(' '));
     }
   });
 

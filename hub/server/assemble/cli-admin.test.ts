@@ -309,6 +309,34 @@ describe('init-admin and the operator token', () => {
     assert.match((await admin.run(['help'])).text, new RegExp(`init-admin +\\[<用户名>\\] \\[--password-stdin\\] +建第一位管理员（省略用户名时为 ${DEFAULT_ADMIN_NAME}）`));
   });
 
+  test('init-admin uses the empty database and atomically replaces a previous database operator file without exposing credentials', async () => {
+    const previous=await setup();
+    const stale=previous.tokens!.value!;assert.ok(stale);
+    const replacementFlags:boolean[]=[];
+    const admin=await setup({initAdmin:false,store:(config,service)=>{
+      const actual=fileOperatorTokens(config.dataDir,service);
+      return {...actual,write:async(token,options)=>{replacementFlags.push(options?.replace===true);await actual.write(token,options);}};
+    }});
+    const store=fileOperatorTokens(admin.deployment.dataDir,DEFAULT_KEY_SERVICE);
+    await store.write(stale);
+    assert.deepEqual(await withKit(admin,kit=>kit.principals.list()),[]);
+    const password='SyntheticFirstAdminPassword93#';secrets.add(password);
+    admin.stdin.push(password);
+    const result=await expectOk(admin,['init-admin','根管理员','--password-stdin']);
+    assert.deepEqual(replacementFlags,[true]);
+    assert.match(result.text,/已原子替换上一个库留下的操作令牌文件/);
+    const current=await store.read();assert.ok(current && current!==stale);secrets.add(current);
+    for(const value of [stale,current,password])assert.ok(!result.text.includes(value),'credentials never appear in CLI output');
+    assert.deepEqual(admin.stdin,[]);
+    await withKit(admin,async kit=>{
+      const users=await kit.principals.list();assert.equal(users.length,1);assert.equal(users[0].role,'admin');
+      assert.equal((await kit.principals.authenticate('Bearer '+current))?.id,users[0].id);
+      assert.equal(await kit.principals.authenticate('Bearer '+stale),null);
+      const signed=await kit.principals.verifyPassword('根管理员',password);
+      assert.equal(signed?.user.id,users[0].id);assert.equal(signed?.mustChange,false);
+    });
+  });
+
   test('when the token cannot be stored, the admin exists, its token is revoked and the fix is operator-token reissue, which needs no token', async () => {
     const failing = Object.assign(memoryOperatorTokens(null, '测试令牌存储'), {
       async write() {
