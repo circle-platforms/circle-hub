@@ -19,6 +19,8 @@ import { commands } from './commands.ts';
 import { code, html, href, link, liveModule, page, pageLayout, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { box, button, type CommandDialog, type Tone } from './ui.ts';
+import { segments } from './components.ts';
+import { connectionsPath, knowledgePath, knowledgeProductsPath, operationsPackPath } from './routes.ts';
 
 export function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {
   if (pack.withdrawn) return { text: uiLabelOf('pack_status', 'retired'), tone: 'unchecked' };
@@ -62,7 +64,7 @@ export async function packsPage(ctx: PageContext, kind: PlaceKind = 'workflow'):
   const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope,kind)),listings,kind);
   return { status: 200, body: page(ctx.chrome(place.title, {
     active: place.active, hint: packPurpose(kind)+'这里只列出当前账户可用的内容。',
-    actions:html`${button(PERSONAL_PUBLISH,`发布我的${noun}`,{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
+    actions:html`${button(PERSONAL_PUBLISH,`发布我的${noun}`,{icon:'upload'})}${canPublish?button(operationsPackPath(), '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
 
@@ -123,7 +125,12 @@ export async function packPage(ctx: PageContext, id: string): Promise<PageResult
   const asked = ctx.url.searchParams.get('tab'), tab = tabsOf.find((key) => key === asked) ?? tabsOf[0];
   const counts: Partial<Record<PackTab, number>> = { ...(loaded === null ? {} : { requirements: loaded.requirements.length, checks: loaded.checks.length }), versions: versions.length };
   const kindTitle=uiLabelOf('pack_kind',pack.kind);
-  const tabs = html`<nav class="ch-seg" aria-label="${kindTitle}内容" data-pack-tabs>${tabsOf.map((key) => html`<a href="${href(path, { ...kept, ...(key === tabsOf[0] ? {} : { tab: key }) })}"${key === tab ? html` aria-current="page"` : ''}>${PACK_TAB_LABEL[key]}${counts[key] === undefined ? '' : html` <span class="ch-count">${counts[key]!.toLocaleString('en-US')}</span>`}</a>`)}</nav>`;
+  const tabs = segments(`${kindTitle}内容`, tabsOf.map((key) => ({
+    href: href(path, { ...kept, ...(key === tabsOf[0] ? {} : { tab: key }) }),
+    label: PACK_TAB_LABEL[key],
+    count: counts[key],
+    current: key === tab,
+  })), 'data-pack-tabs');
   const unreadable = box(null, html`<p class="notice">该版本的验收要求与检查项暂不可读；版本记录照常显示。</p>`);
   let content: Html;
   if (tab === 'requirements') {
@@ -163,11 +170,11 @@ ${table(['发布时间', '版本', '内容哈希'], versions.map((v) => [timesta
   const head = html`<section class="ch-section" data-pack-head><p class="ch-meta" data-pack-facts>${chip(state.text, state.tone)} ${uiLabelOf('knowledge_search_scope', scopeOf(ctx, pack))} · 所有者 ${await ctx.userName(pack.owner)} · 发布于 ${timestamp(pack.published_at)}</p>
 ${pack === current ? '' : html`<p class="notice" data-pack-earlier>这里显示的是较早的版本。${link(path, '查看当前版本', place)}</p>`}
 <div class="ch-toolbar">${personalControls.body.text ? personalControls.body : html`<p>使用范围：${await usageAudience(ctx, pack)}</p>`}${access.length === 0 ? '' : html`<div class="ch-actions">${access}</div>`}</div></section>`;
-  const actions = html`${personalControls.actions}${retire ? commandLink(retire, '退役…', 'ch-btn ch-btn--danger') : ''}${ctx.admin&&!pack.space?button('/console/operations/pack','发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
+  const actions = html`${personalControls.actions}${retire ? commandLink(retire, '退役…', 'ch-btn ch-btn--danger') : ''}${ctx.admin&&!pack.space?button(operationsPackPath(),'发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
   const body = html`<div class="ch-stack" data-pack-page>${head}${tabs}<div data-pack-tab="${tab}">${content}</div>${dialogs.map(commandModal)}</div>`;
   // Where the kind is listed: a section of the knowledge page, a tab of the connections page, or a place of its own.
-  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:'/console/knowledge',list:'/console/knowledge/products'}
-    : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:'/console/connections',list:'/console/connections?tab=packs'}
+  const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:knowledgePath(),list:knowledgeProductsPath()}
+    : pack.kind === 'system' ? {active:'connections' as const,title:'连接',path:connectionsPath(),list:connectionsPath()+'?tab=packs'}
     : {...PACK_PLACES[pack.kind],list:PACK_PLACES[pack.kind].path};
   // A place that lists one kind is not followed by that kind's name again.
   // The page itself, the pack's title, is the last place of the trail: page() adds it.

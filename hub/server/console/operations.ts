@@ -14,6 +14,8 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import type { PackStaging } from './staging.ts';
 import { forgetTrialMessage, trialCard, type ForgetOutcome, type TrialOutcome } from './trial.ts';
 import { card, chip, stepper as steps, when } from './ui.ts';
+import { segments } from './components.ts';
+import { adminDoPath, knowledgeSpacePath, operationsPackPath, operationsPath } from './routes.ts';
 
 const OPERATIONS = ['member', 'system', 'pack', 'knowledge'] as const;
 type Operation = (typeof OPERATIONS)[number];
@@ -52,8 +54,8 @@ ${field('访问地址', html`<textarea name="origins" rows="3" required placehol
 ${field('设置', html`<textarea name="settings" rows="2" placeholder="tenant=demo">${prefilled(prefill, 'settings')}</textarea>`, { hint: '每行 键=值，可留空', full: true })}
 ${field('凭据项', html`<textarea name="credentials" rows="2" placeholder="token=DEMO_TOKEN">${prefilled(prefill, 'credentials')}</textarea>`, { hint: '每行 凭据项=凭据名称；内容在下面填写，或之后在运行 Hub 的服务器上设置', full: true })}
 ${secretRows}
-<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="/console/admin/do/system-test" formnovalidate title="只尝试读取接口并记录结果，不保存配置与凭据内容">尝试连接</button> </div>
-${canForget ? html`<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="/console/admin/do/system-test-forget" formnovalidate title="确认业务系统账户已解锁后，重新填写同一组凭据再清除，不会发送登录或自动重试。">清除这组凭据的失败记录</button></div>` : ''}
+<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="${adminDoPath('system-test')}" formnovalidate title="只尝试读取接口并记录结果，不保存配置与凭据内容">尝试连接</button> </div>
+${canForget ? html`<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="${adminDoPath('system-test-forget')}" formnovalidate title="确认业务系统账户已解锁后，重新填写同一组凭据再清除，不会发送登录或自动重试。">清除这组凭据的失败记录</button></div>` : ''}
 </div>`, '接入', { primary: true });
   const trialStep = aside === undefined ? 1 : 2;
   return html`${steps(['选择业务系统接入', '访问地址与凭据', '尝试连接', '完成'], trialStep)}
@@ -87,7 +89,8 @@ function packPage(ctx: PageContext, staging: PackStaging): Html {
   const form = actionForm('pack-stage', ctx.csrf ?? '', html`<div data-fields>${field(`${label} zip 文件`, html`<input type="file" name="archive" accept=".zip,application/zip" required>`, { hint: '发布文件夹压缩成的 zip，文件夹中要有 pack.json', full: true })}</div>`, '上传并校验', { multipart: true, primary: true, kind });
   const staged = staging.list(ctx.principal.id).filter(stage=>!stage.space&&(stage.kind??'workflow')===kind);
   const waiting = staged.length === 0 ? '' : html`<div>${card({ title: `暂存的${label}`, tail: chip('等待发布中', 'judgment'), hint: '仅暂存人可见，30 分钟内有效' }, html`<div class="ch-section">${staged.map((stage) => html`<div><p>${technicalCode(`${stage.pack}@${stage.version} · ${stage.digest}`)} <span class="ch-meta">暂存至 ${when(new Date(stage.expires).toISOString())}</span></p>${stageForms(stage, ctx.csrf ?? '')}</div>`)}</div>`)}</div>`;
-  return html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose(kind)}</p><nav class="ch-seg" aria-label="发布用途">${([['workflow','完成有验收要求的任务'],['skill','提供通用做法'],...(ctx.admin?[['system','接入业务系统'],['product','提供产品知识来源']]:[])] as const).map(([value,text])=>html`<a href="${href('/console/operations/pack',{kind:value})}"${value===kind?html` aria-current="page"`:''}>${text}</a>`)}</nav><p class="ch-meta">选择的是发布入口；上传内容的类型仍由 pack.json 声明并按原规则校验。</p></section>${steps(['上传', '发布校验', '发布', '完成'], 0)}
+  const kinds = ([['workflow', '完成有验收要求的任务'], ['skill', '提供通用做法'], ...(ctx.admin ? [['system', '接入业务系统'], ['product', '提供产品知识来源']] as const : [])] as const);
+  return html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose(kind)}</p>${segments('发布用途', kinds.map(([value, text]) => ({ href: href(operationsPackPath(), { kind: value }), label: text, current: value === kind })))}<p class="ch-meta">选择的是发布入口；上传内容的类型仍由 pack.json 声明并按原规则校验。</p></section>${steps(['上传', '发布校验', '发布', '完成'], 0)}
 <section class="ch-section" data-columns="2">
 ${card({ title: `上传${label}`, hint: '上传人需为维护人；先检查结构、样例和来源，通过后暂存 30 分钟，确认发布时重新检查，相同内容不重复发布。' }, html`${form}`)}
 ${card({ title: '在运行 Hub 的服务器上发布',hint:'维护人在运行 Hub 的服务器上先检查再发布，检查与记录和控制台相同。' }, html`<pre class="ch-quote"><code>${'circle-hub pack publish <文件夹> --dry-run\ncircle-hub pack publish <文件夹>'}</code></pre><p>${link(packHome(kind).path,'查看已发布版本')}</p>`)}
@@ -109,16 +112,16 @@ ${field('版本线', html`<input name="line" placeholder="可留空">`, { hint: 
   return html`${steps(['选择来源', '试运行', '导入', '发布新版本'], 0)}
 <section class="ch-section" data-columns="2">
 ${card({ title: '按产品来源导入', hint: '从所选产品已配置的知识来源，在后台只读导入公共知识，每条附来源；Hub 重启时需重新发起，已导入的内容保留。' }, html`${form}${materials}`)}
-${ctx.deps.knowledge?.spaces ? card({title:'按公共空间读取原文导入',hint:'无须产品包；管理员填写陈述、文件夹与团队连接读取原文的引用，引文逐条核对'},html`${link('/console/knowledge/space','导入公共知识条目',{space:'team'})}`) : ''}
+${ctx.deps.knowledge?.spaces ? card({title:'按公共空间读取原文导入',hint:'无须产品包；管理员填写陈述、文件夹与团队连接读取原文的引用，引文逐条核对'},html`${link(knowledgeSpacePath(),'导入公共知识条目',{space:'team'})}`) : ''}
 </section>
 <div>${liveModule('imports', ['import.progress', 'knowledge.published'], card(null, jobsSection(jobs.list())))}</div>
 `;
 }
 
-const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 'team' | 'settings' | 'connections' | 'packs' | 'knowledge' }>> = {
+const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 'team' | 'settings' | 'connections' | 'workflows' | 'knowledge' }>> = {
   member: { title: '添加成员', hint: '创建密码账户，初始密码仅显示一次且首次登录须修改；客户端连接绑定该成员账户', active: 'team' },
   system: { title: '接入业务系统', hint: 'Hub 以只读方式访问业务系统；凭据加密保存，页面与模型只可见名称', active: 'connections' },
-  pack: { title: `发布${uiLabelOf('pack_kind','workflow')}`, hint: '上传发布内容，发布校验通过后确认发布，成为新版本', active: 'packs' },
+  pack: { title: `发布${uiLabelOf('pack_kind','workflow')}`, hint: '上传发布内容，发布校验通过后确认发布，成为新版本', active: 'workflows' },
   knowledge: { title: '导入公共知识', hint: '从所选产品已配置的知识来源导入公共知识，每条附来源；导入完成后成为该版本线的当前版本', active: 'knowledge' },
 };
 
@@ -126,7 +129,7 @@ const TITLES: Readonly<Record<Operation, { title: string; hint: string; active: 
 export async function operationsPage(ctx: PageContext, operation: string | undefined, jobs: JobStore, staging: PackStaging): Promise<PageResult> {
   if (!ctx.admin) return neutralPage(ctx);
   if (operation === undefined) {
-    const cards = OPERATIONS.map((name) => card({ title: link(`/console/operations/${name}`, TITLES[name].title), hint:TITLES[name].hint }, html``));
+    const cards = OPERATIONS.map((name) => card({ title: link(`${operationsPath()}/${name}`, TITLES[name].title), hint:TITLES[name].hint }, html``));
     return { status: 200, body: page(ctx.chrome('管理操作', { active: 'settings', hint: '控制台只执行这四种管理操作；其余操作在相关页面生成命令，在运行 Hub 的服务器上执行' }), html`<section class="ch-section" data-columns="2">${cards}</section>`) };
   }
   if (!isOperation(operation)) return neutralPage(ctx);
