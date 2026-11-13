@@ -265,8 +265,8 @@ export class RecordVariables {
         }
         return out;
     }
-    async recentSecrets(): Promise<SecretMaterial[]> {
-        try { return await this.#p.vault.recentSecrets(); }
+    async recentSecrets(names?: readonly string[]): Promise<SecretMaterial[]> {
+        try { return await this.#p.vault.recentSecrets(names); }
         catch (error) {
             if (error instanceof VaultReadinessError) throw error;
             if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError();

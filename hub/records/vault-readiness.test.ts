@@ -153,3 +153,33 @@ test('an error code without a native errno identity and an unexpected single-val
     f.vault.readSecret = async () => { throw new Error(sentinel); };
     await assert.rejects(f.variables.readSecrets([{ name: 'PRIVATE_SENTINEL' }]), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !JSON.stringify(error).includes(sentinel));
 });
+
+
+test('explicit names load only their current and previous authenticated values while the default remains a global hard gate', async t => {
+    const f = await fixture(t), first = value(), second = value(), foreign = value();
+    await f.vault.putSecret({ name: 'MY_KEY', value: first, digest_rule: 'plain', set_by: f.by, set_at: f.at });
+    await f.vault.putSecret({ name: 'MY_KEY', value: second, digest_rule: 'plain', set_by: f.by, set_at: f.at });
+    await f.raw('FOREIGN_KEY', foreign, 1);
+    const own = await f.variables.recentSecrets(['MY_KEY']);
+    assert.equal(own.length, 2);
+    assert.ok(own.some(material => material.value === first) && own.some(material => material.value === second));
+    assert.ok(own.every(material => material.name === 'MY_KEY' && /^[a-f0-9]{64}$/.test(material.sealed_sha256)));
+    assert.deepEqual(await f.variables.recentSecrets([]), []);
+    assert.deepEqual(await f.variables.recentSecrets(['NOT_SET']), []);
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.name === 'FOREIGN_KEY'));
+    await assert.rejects(f.variables.recentSecrets(['FOREIGN_KEY']), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.name === 'FOREIGN_KEY'));
+});
+
+
+test('metadata-only identity is stable without opening value ciphertext and revoked names have no active identity', async t => {
+    const f = await fixture(t), secret = value();
+    const row = await f.raw('MY_IDENTITY', secret, 1);
+    await f.vault.writeSecretMetadata({ name: 'MY_IDENTITY', versions: [row] });
+    const expected = { name: 'MY_IDENTITY', version: 1, sealed_sha256: row.sealed_sha256 };
+    assert.deepEqual(await f.vault.secretIdentity('MY_IDENTITY'), expected);
+    await rm(join(f.root, 'vault', row.sealed_entry + '.sealed'));
+    assert.deepEqual(await f.vault.secretIdentity('MY_IDENTITY'), expected);
+    await assert.rejects(f.vault.readSecret('MY_IDENTITY'), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('cipher')));
+    await f.vault.writeSecretMetadata({ name: 'MY_IDENTITY', versions: [{ ...row, metadata: { ...row.metadata, revoked: true }, sealed_sha256: null }] });
+    assert.equal(await f.vault.secretIdentity('MY_IDENTITY'), null);
+});
