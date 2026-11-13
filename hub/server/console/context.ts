@@ -1,6 +1,7 @@
 import type { Principal } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import { html, link, page, type Html, type PageChrome } from './html.ts';
+import { overviewPath } from './routes.ts';
 
 /** What the console knows about the process serving it, for the Hub's state. */
 export interface HubFacts {
@@ -46,7 +47,7 @@ export interface PageResult {
 export const NEUTRAL = '该内容不存在或无权查看';
 
 export function neutralPage(ctx: PageContext): PageResult {
-  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'内容可能已删除，或当前账号没有查看权限，两种情况的显示相同。请返回总览或列表重新进入；仍需要时联系内容所有者或管理员确认。'}), html`<p>${link('/console/overview', '返回总览')}</p>`) };
+  return { status: 404, body: page(ctx.chrome(NEUTRAL, {hint:'内容可能已删除，或当前账号没有查看权限，两种情况的显示相同。请返回总览或列表重新进入；仍需要时联系内容所有者或管理员确认。'}), html`<p>${link(overviewPath(), '返回总览')}</p>`) };
 }
 
 /**

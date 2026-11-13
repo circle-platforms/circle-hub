@@ -270,7 +270,7 @@ describe('operations and commands', () => {
     assert.doesNotMatch(list.body,/class="ch-empty"/,'a group with nothing in it takes no room');
     // Decision 151: the workflows place lists workflows only; skills have their own place.
     assert.doesNotMatch(list.body,/id="skill"/);assert.ok(!list.body.includes(skill.title));
-    assert.match(list.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
+    assert.match(list.body,/<a class="ch-nav-item[^"]*" href="\/console\/workflows" aria-current="page">/);
     const skills=await get('/console/skills',admin);
     assert.equal(skills.status,200);
     const group=/<section class="ch-section" id="skill" aria-label="通用技能"[^>]*>([\s\S]*?)<\/section>/.exec(skills.body)?.[1];
@@ -290,7 +290,7 @@ describe('operations and commands', () => {
       assert.match(page.body,/<nav class="ch-crumbs" aria-label="位置"><ol><li><a href="\/console\/skills">技能<\/a><\/li><li><a href="" aria-current="page">合成通用技能<\/a><\/li><\/ol><\/nav>/,path);
     }
     const detail=await get('/console/packs/review',admin);
-    assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/packs" aria-current="page">/);
+    assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/workflows" aria-current="page">/);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
     // A pack is a page of its own: its name is the title, no pane stands beside it, and its content is in tabs.
     assert.match(detail.body,/<h1 class="ch-title">[\s\S]*?合成评审/);assert.doesNotMatch(detail.body,/<aside class="ch-inspector"/);

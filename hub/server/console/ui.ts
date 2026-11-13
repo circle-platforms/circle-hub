@@ -5,6 +5,8 @@ import type { DynamicTerminal, Nature, StaticTerminal } from '../../../contracts
 import { html, href, icon, type Html, type ICONS } from './html.ts';
 
 import {time,fullTime} from './format.ts';
+import {count} from './numbers.ts';
+import {figure} from './components.ts';
 import {tooltip,panel, badge, facts, commandLink as sharedCommandLink,commandModal as sharedCommandModal} from './presentation.ts';
 
 /** The colour families of states, named after the terminals they colour (display rule 5: unknown has its own). */
@@ -42,7 +44,7 @@ export function tile(figure:Html,path?:string,to?:string):Html{
  return html`<div class="ch-card ch-tile">${figure}${path===undefined?'':html`<a class="ch-tile-link" href="${path}" aria-label="${to??''}"></a>`}</div>`;
 }
 export function kpi(label:unknown,value:unknown,options:{unit?:unknown;note?:unknown;state?:DotState;tone?:'bad'|'unk';hint?:string}={}):Html{
- return html`<div class="ch-stat"><span class="ch-stat-label">${options.state?dot(options.state):''}${options.hint?tooltip(label,options.hint):label}</span><span class="ch-stat-value">${value}${options.unit?html`<span class="ch-stat-unit"> ${options.unit}</span>`:''}</span>${options.note?html`<span class="ch-stat-note">${options.note}</span>`:''}</div>`;
+ return figure(label,value,{unit:options.unit,note:options.note,hint:options.hint,lead:options.state?dot(options.state):undefined,tip:tooltip});
 }
 export function callout(tone:'info'|'warn'|'unknown',body:unknown):Html{
  return html`<div class="ch-toast" role="status">${dot(tone==='info'?'info':tone==='warn'?'warn':'unknown')}<span>${body}</span></div>`;
@@ -58,9 +60,6 @@ export function button(path: string, text: unknown, options: { primary?: boolean
 
 export const planned=(text='规划中')=>html`<span class="ch-tag">${text}</span>`;
 export const kv=facts;
-export function emptyState(title:unknown,text:unknown,action?:Html):Html{
- return html`<div class="ch-empty"><h2 class="ch-empty-title">${title}</h2><p class="ch-empty-text">${text}</p>${action??''}</div>`;
-}
 
 export interface Pill {
   label: unknown;
@@ -72,14 +71,8 @@ export interface Pill {
 
 /** Filters as links: the current one is marked, each with its count. */
 export function pills(items: readonly Pill[], label: string): Html {
-  return html`<nav class="ch-actions" aria-label="${label}">${items.map((p) => html`<a class="ch-chip" href="${href(p.path, p.params)}"${p.on ? html` aria-current="true"` : ''}>${p.label}${p.count === undefined ? '' : html` <span class="ch-count">${p.count}</span>`}</a>`)}</nav>`;
+  return html`<nav class="ch-actions" aria-label="${label}">${items.map((p) => html`<a class="ch-chip" href="${href(p.path, p.params)}"${p.on ? html` aria-current="true"` : ''}>${p.label}${p.count === undefined ? '' : html` <span class="ch-count">${count(p.count)}</span>`}</a>`)}</nav>`;
 }
-
-export function pageContents(items:readonly (readonly [string,unknown])[],label:string):Html{
- return html`<nav class="ch-page-toc" data-page-toc aria-label="${label}"><span class="ch-page-toc-label">本页内容</span><div>${items.map(([anchor,text])=>html`<a href="#${anchor}">${text}</a>`)}</div></nav>`;
-}
-
-/** Anchors within the page, as the segmented control of the design. */
 
 /** The steps of an operation, the current one marked; a step the backend does not have yet is marked as planned. */
 export function stepper(names: readonly (string | readonly [string, true])[], current: number): Html {
@@ -139,7 +132,4 @@ export function clock(iso: string | number): string {
   return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }
 
-/** Thousands grouped, as the figures of the design. */
-export function count(n: number): string {
-  return n.toLocaleString('en-US');
-}
+export { count };

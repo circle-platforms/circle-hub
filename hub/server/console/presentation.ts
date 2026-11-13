@@ -1,10 +1,12 @@
 import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts';
 // Shared component compositions for knowledge and workflow pages. No business decisions or writes.
-import { html, link, code, page, pageLayout, nameTables, Html, type PageChrome } from './html.ts';
+import { html, link, code, page, pageLayout, nameTables, section as titledSection, Html, type PageChrome } from './html.ts';
 import type { CardHead, CommandDialog, Tone } from './ui.ts';
 import type { PageContext } from './context.ts';
 import { parseReference } from '../../refs/api.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
+import { figure } from './components.ts';
+import { knowledgeSourcePath, knowledgeSpacePath } from './routes.ts';
 
 /** Original names, quotations and returned diagnostics are data, not editable interface copy. */
 export const evidence=(value:unknown)=>html`<span data-evidence>${value}</span>`;
@@ -34,14 +36,15 @@ export function technical(body: unknown, label = '查看技术信息'): Html {
 
 /** A technical value behind a disclosure that says what it opens (wording table, W25): never the bare word 查看. */
 export const technicalCode=(value:unknown)=>technical(code(value),'查看编号');
-export const section=(title:string,body:unknown,hint?:string)=>panel({title,hint},body);
+/** Same titled section as html.section (one markup). Prefer panel() when the head needs actions or a meta line. */
+export const section = titledSection;
 export function areaPage(chrome:PageChrome,content:unknown,inspector?:Html):Html{
   const layout=content instanceof Html?content.layout:{};
   return page(chrome,pageLayout(html`<div class="ch-section" data-area-content>${content}</div>`,{...layout,...(inspector?{inspector}:{})}));
 }
 
 export function stat(label: unknown, value: number | string): Html {
-  return html`<div class="ch-stat"><span class="ch-stat-label">${label}</span><span class="ch-stat-value">${typeof value === 'number' ? value.toLocaleString('en-US') : value}</span></div>`;
+  return figure(label, value);
 }
 
 export function field(label: string, control: Html, hint?: string, error?: Html): Html {
@@ -72,11 +75,11 @@ export async function sourceBlock(ctx: PageContext, reference: string, quotation
         if(view?.status&&view.status!=='resolved')state=badge(uiLabelOf('source_location_status',view.status),view.status==='ambiguous'?'incomplete':'plain');
         const params=new URLSearchParams(Object.entries({sha256:ref.sha256,artifact:source.artifact.digest,...location}).map(([key,value])=>[key,String(value)]));
         // Several sources on a page carry this link: to a screen reader each says which original it opens.
-        action = link('/console/knowledge/source?'+params+(view?.status==='resolved'?'#quoted-text':''),html`${view?.status==='ambiguous'?'选择位置':'打开原文'}<span class="ch-visually-hidden">：${title}</span>`);
+        action = link(knowledgeSourcePath()+'?'+params+(view?.status==='resolved'?'#quoted-text':''),html`${view?.status==='ambiguous'?'选择位置':'打开原文'}<span class="ch-visually-hidden">：${title}</span>`);
       }
     } else if (ref.scheme === 'tree' && ref.entry) {
       const entry = await ctx.deps.knowledge.spaces?.entry(ctx.principal, ref.root, ref.path, ref.entry);
-      if (entry) { title = entry.body.content.statement; action = link('/console/knowledge/space', html`查看条目<span class="ch-visually-hidden">：${title}</span>`, { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }
+      if (entry) { title = entry.body.content.statement; action = link(knowledgeSpacePath(), html`查看条目<span class="ch-visually-hidden">：${title}</span>`, { space: entry.body.space, root: ref.root, path: ref.path, entry: ref.entry }); }
     }
   } catch { /* Reference diagnostics remain behind the explicit technical disclosure. */ }
   return html`<div class="ch-source"><div class="ch-source-head"><span data-evidence>${title}</span>${state??''}${action ?? html`<span class="ch-meta">无法打开</span>`}</div>${quotation ? html`<p class="ch-quote" data-evidence>${quotation}</p>` : ''}${technical(code(reference), '查看引用')}</div>`;

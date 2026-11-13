@@ -12,6 +12,16 @@ import {knowledgeHome} from './knowledge-home.ts';
 import {sourceArchivePage} from './source-archive.ts';
 import {memoryPage} from './memory.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
+import { filterForm, nextPage, selectControl } from './components.ts';
+import {
+  knowledgeDiffPath,
+  knowledgePath,
+  knowledgeProductPath,
+  knowledgeRootPath,
+  knowledgeTreePath,
+  operationsKnowledgePath,
+  operationsPackPath,
+} from './routes.ts';
 
 const param = (ctx: PageContext, name: string): string | undefined => {
   const value = ctx.url.searchParams.get(name);
@@ -101,29 +111,34 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         entry.total,
         entry.released,
         entry.produced,
-        current === null ? '尚未产出' : html`${link('/console/knowledge/tree', current.build.name, { root: current.root, path: '/' })}`,
+        current === null ? '尚未产出' : html`${link(knowledgeTreePath(), current.build.name, { root: current.root, path: '/' })}`,
       ]);
     }
     const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
     rows.push(['不分版本', '不适用', '构建未声明', '不适用', unversioned === null ? '尚未产出' : `1（来源 ${unversioned.source_count} 个）`,
-      unversioned === null ? '尚未产出' : link('/console/knowledge/root', '查看知识版本', {root:unversioned.root})]);
+      unversioned === null ? '尚未产出' : link(knowledgeRootPath(), '查看知识版本', {root:unversioned.root})]);
     const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
     if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
     const options = versions;
-    const diff = options.length === 0 ? html`` : html`<form class="ch-actions" data-filters method="get" action="/console/knowledge/diff" aria-label="${line.title}版本差异"><h3 title="两个版本之间新增、删除与修改的条目">产品版本差异</h3><label>从 <select name="from">${options.map((version, i) => html`<option value="${version.root}"${i === Math.min(1, options.length - 1) ? html` selected` : ''}>${version.label}</option>`)}</select></label><label>到 <select name="to">${options.map((version, i) => html`<option value="${version.root}"${i === 0 ? html` selected` : ''}>${version.label}</option>`)}</select></label><button class="ch-btn ch-btn--secondary" type="submit">比较</button></form>`;
+    const diff = options.length === 0 ? html`` : filterForm(
+      knowledgeDiffPath(),
+      html`<h3 title="两个版本之间新增、删除与修改的条目">产品版本差异</h3><label>从 ${selectControl('from', options.map((version, i) => ({ value: version.root, label: version.label, selected: i === Math.min(1, options.length - 1) })))}</label><label>到 ${selectControl('to', options.map((version, i) => ({ value: version.root, label: version.label, selected: i === 0 })))}</label>`,
+      '比较',
+      `${line.title}版本差异`,
+    );
     blocks.push(
       knowledgePanel(
         { title: line.title, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '未声明'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
-        html`${table(['产品版本', '名称族', '构建', '已发布', '已产出版本', '当前知识版本'], rows, '还没有构建')}<div class="ch-actions">${link('/console/knowledge/product', '全部构建', { id: line.id })}</div>${diff}`,
+        html`${table(['产品版本', '名称族', '构建', '已发布', '已产出版本', '当前知识版本'], rows, '还没有构建')}<div class="ch-actions">${link(knowledgeProductPath(), '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
   }
   const flow = html``;
-  const actions = ctx.admin ? html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button('/console/operations/knowledge', '导入团队知识', { primary: true, icon: 'upload', hint: '从所选产品已配置的知识来源导入到团队知识库；产品文件夹沿用产品线的读取权限，仅管理员可用' })}` : undefined;
+  const actions = ctx.admin ? html`${button(operationsPackPath(),`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button(operationsKnowledgePath(), '导入团队知识', { primary: true, icon: 'upload', hint: '从所选产品已配置的知识来源导入到团队知识库；产品文件夹沿用产品线的读取权限，仅管理员可用' })}` : undefined;
   return {
     status: 200,
     body: knowledgeShell(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'我的、团队与与本账户共享的知识；已验证与待验证内容分别标示':'统一的知识库：每条知识均附来源，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
-${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品文件夹':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品文件夹':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">团队知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link('/console/knowledge/product',line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品文件夹':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品文件夹':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">团队知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link(knowledgeProductPath(),line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {
@@ -159,13 +174,13 @@ export async function productPage(ctx: PageContext): Promise<PageResult> {
     b.platform ?? '主平台',
     b.built_at ?? '未记录',
     b.released_at ?? '未发布',
-    b.root === null ? '尚未产出' : link('/console/knowledge/root', '查看知识版本', { root: b.root }),
+    b.root === null ? '尚未产出' : link(knowledgeRootPath(), '查看知识版本', { root: b.root }),
   ]);
-  const more = html`<p>分页：本页 ${shown.length?listing.start+1:0} 至 ${listing.start+shown.length}，共 ${builds.length} 个${listing.next?html`；${link('/console/knowledge/product','下一页',{id:line.id,line:versionLine,cursor:listing.next})}`:''}</p>`;
+  const more = html`<p>分页：本页 ${shown.length?listing.start+1:0} 至 ${listing.start+shown.length}，共 ${builds.length} 个${listing.next?html`；${link(knowledgeProductPath(),'下一页',{id:line.id,line:versionLine,cursor:listing.next})}`:''}</p>`;
   return {
     status: 200,
     body: knowledgeShell(
-      ctx.chrome(`${line.title}${versionLine ? ` ${versionLine}` : ''}`, { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · 构建` }),
+      ctx.chrome(`${line.title}${versionLine ? ` ${versionLine}` : ''}`, { active: 'knowledge', sub: html`${link(knowledgePath(), '知识库')} · 构建` }),
       html`<p>名称：${line.names.join('、') || '未声明'}</p>${table(['构建', '名称族', '版本线', '别名', '平台', '构建时间', '发布时间', '根'], rows, '没有构建')}${more}`,
     ),
   };
@@ -178,8 +193,8 @@ export async function rootPage(ctx: PageContext): Promise<PageResult> {
   return {
     status: 200,
     body: knowledgeShell(
-      ctx.chrome('知识版本', { active: 'knowledge', crumbs: [link('/console/knowledge','知识库')] }),
-      html`<p>${link('/console/knowledge/tree', '浏览条目', { root, path: '/' })}</p>${technicalCode(root)}
+      ctx.chrome('知识版本', { active: 'knowledge', crumbs: [link(knowledgePath(),'知识库')] }),
+      html`<p>${link(knowledgeTreePath(), '浏览条目', { root, path: '/' })}</p>${technicalCode(root)}
 ${table(
   ['组成记录', '产品线', '构建', '名称族', '版本线', '产出时间'],
   infos.map((info) => [technicalCode(info.composition), info.product, info.build?.name ?? '构建未声明', info.build?.family ?? '未声明', info.build?.line ?? '不分版本', info.produced_at]),
@@ -215,7 +230,7 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
         ['内容哈希', technicalCode(node.digest)],
         ...(cited === null ? [] : [['被引用', citationsLine(cited)] as [string, string]]),
       ])}
-${table(['下级', '路径'], node.children.map((child) => [link('/console/knowledge/tree', child.name, { root, path: child.path }), technicalCode(child.path)]), '没有下级')}
+${table(['下级', '路径'], node.children.map((child) => [link(knowledgeTreePath(), child.name, { root, path: child.path }), technicalCode(child.path)]), '没有下级')}
 ${cited === null
   ? table(
     ['类型', '陈述', '适用', '引用', '数据'],
@@ -233,12 +248,12 @@ ${cited === null
     );
   });
   const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
-  const next = nodes.next === null ? html`` : html`<p>${link('/console/knowledge/tree', '下一页', { root, path, cursor: nodes.next })}</p>`;
+  const next = nodes.next === null ? html`` : nextPage(knowledgeTreePath(), { root, path, cursor: nodes.next });
   return {
     status: 200,
     body: knowledgeShell(
-      ctx.chrome('知识条目', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')} · ${path}` }),
-      html`<div class="ch-actions">知识版本 ${technicalCode(root)}${parent === null ? '' : html` · ${link('/console/knowledge/tree', '上一级', { root, path: parent })}`}</div>
+      ctx.chrome('知识条目', { active: 'knowledge', sub: html`${link(knowledgePath(), '知识库')} · ${path}` }),
+      html`<div class="ch-actions">知识版本 ${technicalCode(root)}${parent === null ? '' : html` · ${link(knowledgeTreePath(), '上一级', { root, path: parent })}`}</div>
 <p>覆盖：${coverageText(nodes.coverage) ?? '未记录'}</p>${parts}${next}`,
     ),
   };
@@ -258,12 +273,12 @@ export async function diffPage(ctx: PageContext): Promise<PageResult> {
     const parameters:Record<string,string>={from,to};
     for(const [name] of lists){const value=param(ctx,`${name}_cursor`);if(value!==undefined)parameters[`${name}_cursor`]=value;}
     if(listing.next)parameters[`${key}_cursor`]=listing.next;
-    return html`${table(['路径'],listing.items.map(p=>[link('/console/knowledge/tree',p,{root,path:p})]),'没有')}<p>分页：本页 ${listing.items.length} 条，共 ${paths.length} 条${listing.next?html`；${link('/console/knowledge/diff','下一页',parameters)}`:''}</p>`;
+    return html`${table(['路径'],listing.items.map(p=>[link(knowledgeTreePath(),p,{root,path:p})]),'没有')}<p>分页：本页 ${listing.items.length} 条，共 ${paths.length} 条${listing.next?html`；${link(knowledgeDiffPath(),'下一页',parameters)}`:''}</p>`;
   };
   return {
     status: 200,
     body: knowledgeShell(
-      ctx.chrome('版本差异', { active: 'knowledge', sub: html`${link('/console/knowledge', '知识库')}` }),
+      ctx.chrome('版本差异', { active: 'knowledge', sub: html`${link(knowledgePath(), '知识库')}` }),
       html`<div class="ch-actions">从 ${technicalCode(from)} 到 ${technicalCode(to)}</div>
 ${knowledgeSection(`只在新根里（${diff.added.length}）`, listOf(0))}
 ${knowledgeSection(`只在旧根里（${diff.removed.length}）`, listOf(1))}
