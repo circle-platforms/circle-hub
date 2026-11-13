@@ -167,8 +167,8 @@ export function formatReleaseRefusal(input: RefusalTextInput): string {
   const first = errors[0];
   const firstSpec = specFor(first.condition);
   const next = (input.callerIsAdmin ? firstSpec?.nextAdmin : firstSpec?.nextCaller)?.(input) ?? nextGeneric(input);
-  const body = [`放行未通过：${errorLines.join('')}`, uncheckedLine, `现在可以做：${next}`].filter((part) => part.length > 0).join('');
-  return body.endsWith('。') ? body : `${body}。`;
+  // No trailing period: dispatchNoteLine joins with「；状态已确认…」.
+  return [`放行未通过：${errorLines.join('')}`, uncheckedLine, `现在可以做：${next}`].filter((part) => part.length > 0).join('');
 }
 
 /** True when the note already states a diagnosed refusal (no「原因还没查清」suffix). */
