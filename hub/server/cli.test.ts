@@ -122,13 +122,23 @@ describe('retired names and startup', () => {
     assert.match(result.text, /CIRCLE_HUB_TYPO 不是 Hub 的配置项/);
   });
 
-  test('serve as the runtime role before the migrations refuses to start; an unknown flag is a usage error', async () => {
-    const env = await environment();
-    const result = await run(['serve'], env);
-    assert.equal(result.code, 1);
-    assert.match(result.text, /还没有应用/);
-    assert.equal((await run(['serve', '--bogus'], env)).code, 2);
-    assert.equal((await run(['serve', '--migrate-only', '--migrate'], env)).code, 2);
+  test('serve before migrations exposes maintenance only; invalid flags remain usage errors', async () => {
+    const env=await environment();
+    env.CIRCLE_HUB_DATABASE_NAME=(await postgres.createDatabase(undefined,{empty:true})).database;
+    let url:string|undefined;
+    const noReset=async()=>{throw new Error('synthetic maintenance has no reset authority');};
+    const result=await run(['serve'],env,{
+      rebuild:{bridge:{validate:()=>null,inspect:noReset,preview:noReset,launch:noReset,acknowledge:noReset,status:noReset}},
+      assembly:async()=>{throw new Error('business assembly must not run');},
+      onListening:(info:import('./api.ts').ListenInfo)=>{url=info.url;},
+      stopSignal:async()=>{
+        assert.ok(url);assert.deepEqual(await (await fetch(url+'/healthz')).json(),{needsRebuild:true});
+        assert.equal((await fetch(url+'/mcp')).status,503);
+      },
+    });
+    assert.equal(result.code,0,result.text);assert.match(result.text,/记录库需要重建/);assert.ok(url);
+    assert.equal((await run(['serve','--bogus'],env)).code,2);
+    assert.equal((await run(['serve','--migrate-only','--migrate'],env)).code,2);
   });
 });
 
