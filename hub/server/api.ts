@@ -5,7 +5,7 @@ import type { VaultReadinessIssue } from '../records/api.ts';
 // CLI commands that need them.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentCalls, EnvironmentFacts } from '../dispatch/api.ts';
+import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness } from '../dispatch/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { SystemTrialInput, SystemTrialReport, SystemTrialForget } from '../connectors/api.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
@@ -98,10 +98,11 @@ export interface JobView {
   next_action?: string;
 }
 
-/** Read-only dispatch facts for the console; every method rechecks that the reader is an enabled administrator. */
+/** Read-only dispatch facts. Readiness also permits an assigned member; other methods require an active administrator. */
 export interface DispatchView {
   executors(by: Principal): Promise<ExecutorView[]>;
   jobs(by: Principal, run: string): Promise<JobView[]>;
+  readiness?(by: Principal, target: string): Promise<EnvironmentReadiness>;
 }
 
 export interface AppOptions {

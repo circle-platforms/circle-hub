@@ -33,3 +33,4 @@ export {
 export { holdsPhysicalTarget } from './journal.ts';
 
 export { MemberEnvironments, type MemberEnvironment, type EnvironmentPermission } from './member-environments.ts';
+export { readEnvironmentReadiness, type EnvironmentReadinessSources, type EnvironmentReadiness, type EnvironmentReadinessExecutor, type EnvironmentReadinessCheck } from './environment-readiness.ts';

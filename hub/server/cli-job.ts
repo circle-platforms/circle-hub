@@ -11,6 +11,7 @@ import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts';
 import { CliError, UsageError } from './errors.ts';
 import { decided } from './cli-arguments.ts';
+import type { DispatchView } from './api.ts';
 export const EXECUTOR_USAGE = 'add (<定义文件> | --reference=src:<摘要>) | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
@@ -20,7 +21,7 @@ export interface JobCommandSession {
   err(line: string): void;
   admin(): Promise<Principal>;
   records(): Promise<RecordsKit>;
-  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge }>;
+  hub(requireVaultKey?: boolean): Promise<{ dispatch: DispatchService | null; records: RecordsKit; knowledge?: BuildKnowledge; deps?: { dispatch?: Pick<DispatchView, 'readiness'> } }>;
 }
 async function service(s: JobCommandSession, requireKey = true): Promise<DispatchService> {
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
@@ -190,6 +191,15 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   }
   if (sub === 'precheck' && values.executor && positionals.length === 0) {
     const state = await dispatch.precheck(by, values.executor, values.booking); output(s, state);
+    try {
+      const view = (await s.hub(false)).deps?.dispatch;
+      if (!view?.readiness) s.out('本地只读就绪报告未知：报告尚未接线；原预检结论不变');
+      else {
+        const entry = await dispatch.registry.get(values.executor);
+        if (!entry) s.out('本地只读就绪报告未知：目标配置不可读取；原预检结论不变');
+        else s.out('本地只读就绪报告（不作许可或拒绝）：' + JSON.stringify(await view.readiness(by, entry.definition.target)));
+      }
+    } catch { s.out('本地只读就绪报告未知：读取未完成；原预检结论不变'); }
     if (values.save) s.out(`已导出观察 ${await exportPrecheck(s, dispatch, state.job, values.save)} 份`);
     const events = await dispatch.journal.events(state.job); return events.some(e => e.body.detail.readonly_verified === true) ? 0 : 1;
   }
