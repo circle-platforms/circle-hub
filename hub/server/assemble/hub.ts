@@ -10,7 +10,7 @@ import { productVariableNameAvailable } from '../variables.ts';
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
-import { DispatchService, ExecutorRegistry, freezeEffectRegistry } from '../../dispatch/api.ts';
+import { DispatchService, ExecutorRegistry, MemberEnvironments, freezeEffectRegistry } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -21,7 +21,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import { memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
+import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -212,8 +212,10 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
+  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id) => canUseEnvironment(records, actor, id)) : null;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
+    ...(environments ? { environmentAccess: environments } : {}),
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
     dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready,caller)=>dispatch?acceptedDispatch(records,dispatch,run,ready,undefined,caller):Promise.resolve([]),inFlight:(run,caller)=>dispatch?runInFlight(records,dispatch,run,caller):Promise.resolve(null)},
     records,
@@ -247,7 +249,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ records, leases, runs, workflows, knowledge, ...(environments ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     startupSecretIssues: () => startupSecretIssues,
@@ -261,10 +263,10 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
       })),
       personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
-      environments: async () => ({
-        ready: false, items: [], missing: '测试环境使用权限尚未接线',
-        nextAction: '请管理员完成测试环境分配与使用权限接线后重新查询',
-      }),
+      environments: async target => environments === null ? {
+        ready: false, items: [], missing: '测试环境租约服务未接线',
+        nextAction: '请管理员恢复测试环境租约服务后重新查询',
+      } : { ready: true, items: await environments.list(target), missing: null, nextAction: null },
     }, by, userId),
     runs,
     runsDetail: runs,

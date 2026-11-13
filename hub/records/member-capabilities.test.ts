@@ -34,7 +34,7 @@ test('member capabilities union assignments without leaking installed or other-t
       { id: 'hidden-resource', name: '其他团队秘密连接', systemPack: 'synthetic-system', environment: '合成环境', enabled: false },
     ]; },
     personalPackUse: async () => false,
-    environments: async () => ({ ready: false, items: [{ name: '不该枚举的环境', occupancy: null }], missing: '权限接线未就绪', nextAction: '请管理员完成接线' }),
+    environments: async () => ({ ready: false, items: [{ name: '不该枚举的环境', enabled: true, occupancy: null, missing: [] }], missing: '权限接线未就绪', nextAction: '请管理员完成接线' }),
   };
   const view = await withRequestPermissions(records.artifacts, admin, () => memberCapabilities(records, sources, admin, alice.id));
   assert.deepEqual(view.teams, ['乙组', '甲组'].sort());

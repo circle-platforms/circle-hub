@@ -20,7 +20,10 @@ export interface MemberPackCapability { name: string; ref: string; owner?: strin
 export interface MemberConnectionCapability { name: string; systemPack: string; environment: string }
 export interface MemberEnvironmentCapability {
   name: string;
-  occupancy: null | { since: string; until: string | null; mine: boolean; holder?: string };
+  enabled: boolean;
+  /** null is unknown; [] means no local lease is recorded, never physical idleness. */
+  occupancy: Array<{ name: string; since: string; until: string | null; mine: boolean }> | null;
+  missing: string[];
 }
 export interface MemberCapabilities {
   member: { name: string; enabled: boolean };
@@ -92,10 +95,11 @@ export async function memberCapabilities(
     result.environmentAccess = { ready: environment.ready, missing: environment.missing, nextAction: environment.nextAction };
     if (environment.ready) result.environments = environment.items.map(item => ({
       name: item.name,
-      occupancy: item.occupancy === null ? null : {
-        since: item.occupancy.since, until: item.occupancy.until, mine: item.occupancy.mine,
-        ...(item.occupancy.holder === undefined ? {} : { holder: item.occupancy.holder }),
-      },
+      enabled: item.enabled,
+      occupancy: item.occupancy === null ? null : item.occupancy.map(holder => ({
+        name: holder.name, since: holder.since, until: holder.until, mine: holder.mine,
+      })),
+      missing: [...item.missing],
     }));
     result.workflows.sort((a, b) => a.ref.localeCompare(b.ref));
     result.skills.sort((a, b) => a.ref.localeCompare(b.ref));
@@ -103,6 +107,7 @@ export async function memberCapabilities(
     if (!result.workflows.length) result.denials.push({ reason: '尚无可用的已分配工作流', nextAction: '请管理员把你加入团队并分配工作流，或直接向账户分配工作流' });
     if (!result.skills.length) result.denials.push({ reason: '尚无可用的通用技能', nextAction: '请管理员核对通用技能的安装与使用权限' });
     if (!result.connections.length) result.denials.push({ reason: '尚无可用的已分配连接', nextAction: '请管理员向你所属团队或全体账户分配所需连接' });
+    if (environment.ready && !result.environments.length) result.denials.push({ reason: '尚无已分配的运行环境', nextAction: '请管理员向账户或所属团队分配运行环境' });
     return result;
   });
 }
