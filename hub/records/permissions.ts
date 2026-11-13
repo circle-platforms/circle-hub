@@ -21,6 +21,8 @@ export interface MemberConnectionCapability { name: string; systemPack: string; 
 export interface MemberEnvironmentCapability {
   name: string;
   enabled: boolean;
+  assigned: boolean;
+  can_use: boolean;
   /** null is unknown; [] means no local lease is recorded, never physical idleness. */
   occupancy: Array<{ name: string; since: string; until: string | null; mine: boolean }> | null;
   missing: string[];
@@ -102,6 +104,8 @@ export async function memberCapabilities(
     if (environment.ready) result.environments = environment.items.map(item => ({
       name: item.name,
       enabled: item.enabled,
+      assigned: item.assigned,
+      can_use: item.can_use,
       occupancy: item.occupancy === null ? null : item.occupancy.map(holder => ({
         name: holder.name, since: holder.since, until: holder.until, mine: holder.mine,
       })),
@@ -113,7 +117,7 @@ export async function memberCapabilities(
     if (!result.workflows.length) result.denials.push({ reason: '尚无可用的已分配工作流', nextAction: '请管理员把你加入团队并分配工作流，或直接向账户分配工作流' });
     if (!result.skills.length) result.denials.push({ reason: '尚无可用的通用技能', nextAction: '请管理员核对通用技能的安装与使用权限' });
     if (!result.connections.length) result.denials.push({ reason: '尚无可用的已分配连接', nextAction: '请管理员向你所属团队或全体账户分配所需连接' });
-    if (environment.ready && !result.environments.length) result.denials.push({ reason: '尚无已分配的运行环境', nextAction: '请管理员向账户或所属团队分配运行环境' });
+    if (environment.ready && !result.environments.some(item => item.assigned)) result.denials.push({ reason: '尚无已分配的运行环境', nextAction: '请管理员向账户或所属团队分配运行环境' });
     return result;
   });
 }
