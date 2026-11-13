@@ -5,24 +5,6 @@ import { HUB_ENVIRONMENT } from '../config/index.ts';
 import { assertHubEnvironment, assertKnownHubVariables, HUB_CONFIG_VARIABLES, PLATFORM_VARIABLES, RETIRED_VARIABLES, retiredEnvironmentKeys, unknownHubVariables, variable } from './environment.ts';
 import { PlatformError } from './errors.ts';
 
-test('retired CIRCLE_SERVER_* names refuse to start, even empty or beside the new name, naming keys only', () => {
-  assert.deepEqual(retiredEnvironmentKeys({ CIRCLE_SERVER_PORT: '1', CIRCLE_HUB_PORT: '2', CIRCLE_SERVER_DATA_DIR: '' }), [
-    'CIRCLE_SERVER_DATA_DIR',
-    'CIRCLE_SERVER_PORT',
-  ]);
-  assert.throws(
-    () => assertHubEnvironment({ CIRCLE_SERVER_DATABASE_CONFIG: 'secret-looking-value', CIRCLE_HUB_PORT: '7420' }),
-    (error: unknown) => {
-      assert.ok(error instanceof PlatformError);
-      assert.match(error.message, /不再读取 CIRCLE_SERVER_\*/);
-      assert.match(error.hint ?? '', /CIRCLE_SERVER_DATABASE_CONFIG -> CIRCLE_HUB_DATABASE_CONFIG/);
-      assert.doesNotMatch(`${error.message}${error.hint}`, /secret-looking-value/);
-      return true;
-    },
-  );
-  assert.doesNotThrow(() => assertHubEnvironment({ CIRCLE_HUB_PORT: '7420', HOME: '/synthetic-homes/x' }));
-});
-
 test('variable treats empty as unset', () => {
   assert.equal(variable({ A: '' }, 'A'), undefined);
   assert.equal(variable({ A: 'x' }, 'A'), 'x');
@@ -52,11 +34,7 @@ test('the retired keychain names refuse to start, even empty, saying the keys ar
       );
     }
   }
-  // Beside a retired prefix name, both are named.
-  assert.throws(
-    () => assertHubEnvironment({ CIRCLE_SERVER_PORT: '1', CIRCLE_HUB_KEYCHAIN_SERVICE: 'x' }),
-    (error: unknown) => error instanceof PlatformError && /CIRCLE_SERVER_PORT -> CIRCLE_HUB_PORT/.test(error.hint ?? '') && /CIRCLE_HUB_KEYCHAIN_SERVICE 也已停用/.test(error.hint ?? ''),
-  );
+
 });
 
 test('a misspelled or unknown CIRCLE_HUB_* name is refused by name, with the list of real ones', () => {

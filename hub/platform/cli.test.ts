@@ -119,13 +119,6 @@ describe('platform CLI', () => {
     assert.equal((await run('restore')).code, 2);
   });
 
-  test('a retired CIRCLE_SERVER_* variable stops every command before it runs anything', async () => {
-    const before = system.calls.length;
-    const captured = captureIo({ ...env, CIRCLE_SERVER_PORT: '7420' }, parent);
-    assert.equal(await runPlatformCommand(['status'], captured.io, overrides), 1);
-    assert.match(captured.err.join('\n'), /不再读取 CIRCLE_SERVER_\*/);
-    assert.equal(system.calls.length, before);
-  });
 
   test('a misspelled or unknown CIRCLE_HUB_* name stops every command before it runs anything', async () => {
     const before = system.calls.length;

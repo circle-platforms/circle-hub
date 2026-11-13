@@ -1,5 +1,5 @@
-// Hub configuration comes only from CIRCLE_HUB_* variables. The retired CIRCLE_SERVER_* names and the retired keychain
-// names (RETIRED_VARIABLES) are never read or aliased: a process that still carries one, even empty, refuses to start.
+// Hub configuration comes only from CIRCLE_HUB_* variables. Retired keychain names (RETIRED_VARIABLES)
+// are never read or aliased: a process that still carries one, even empty, refuses to start.
 // Errors name keys only, never values.
 import { PlatformError } from './errors.ts';
 
@@ -60,7 +60,6 @@ export const HUB_CONFIG_VARIABLES: readonly string[] = [
 /** Names only platform commands read; hub/config does not know them. */
 export const PLATFORM_ONLY_VARIABLES: readonly string[] = [PLATFORM_VARIABLES.libpqBin];
 
-const RETIRED_PREFIX = 'CIRCLE_SERVER_';
 const HUB_PREFIX = 'CIRCLE_HUB_';
 
 /** Why the keychain names were retired and where the keys are now (decision 137). Names the variable, never its value. */
@@ -75,19 +74,14 @@ export const RETIRED_VARIABLES: Readonly<Record<string, string>> = {
 
 export function retiredEnvironmentKeys(env: NodeJS.ProcessEnv = process.env): string[] {
   return Object.keys(env)
-    .filter((key) => (key.startsWith(RETIRED_PREFIX) || Object.hasOwn(RETIRED_VARIABLES, key)) && env[key] !== undefined)
+    .filter((key) => Object.hasOwn(RETIRED_VARIABLES, key) && env[key] !== undefined)
     .sort();
 }
 
 export function assertHubEnvironment(env: NodeJS.ProcessEnv = process.env): void {
   const keys = retiredEnvironmentKeys(env);
   if (keys.length === 0) return;
-  const prefixed = keys.filter((key) => key.startsWith(RETIRED_PREFIX));
-  const single = keys.filter((key) => !key.startsWith(RETIRED_PREFIX));
-  if (prefixed.length === 0) throw new PlatformError(`circle-hub 不再读取 ${single.join('、')}，设置了就不启动`, RETIRED_VARIABLES[single[0]!]);
-  const renames = prefixed.map((key) => `${key} -> ${HUB_PREFIX}${key.slice(RETIRED_PREFIX.length)}`).join('，');
-  const also = single.length === 0 ? '' : `；${single.join('、')} 也已停用：${RETIRED_VARIABLES[single[0]!]}`;
-  throw new PlatformError(`circle-hub 不再读取 ${RETIRED_PREFIX}* 配置，设置了这些变量就不启动`, `删掉它们，改用 ${HUB_PREFIX}* 名字：${renames}${also}`);
+  throw new PlatformError(`circle-hub 不再读取 ${keys.join('、')}，设置了就不启动`, RETIRED_VARIABLES[keys[0]!]);
 }
 
 /** CIRCLE_HUB_* names that neither hub/config nor the platform knows, sorted. */

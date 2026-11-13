@@ -61,13 +61,6 @@ test('without a server CLI the platform CLI runs, and it too must export main', 
   assert.match(result.err, /hub\/platform\/cli\.ts 没有导出 main\(argv\)/);
 });
 
-test('a retired CIRCLE_SERVER_* variable stops the command before any CLI is loaded', async () => {
-  await serverCli('throw new Error("must not be loaded");\n');
-  const result = run(['status'], { CIRCLE_SERVER_PORT: '7420' });
-  assert.equal(result.code, 1);
-  assert.match(result.err, /不再读取 CIRCLE_SERVER_\*/);
-  assert.doesNotMatch(result.err, /must not be loaded/);
-});
 
 test('a Node older than 24 stops the command at once, naming the version, the binary and what to do (issue 291)', async () => {
   await serverCli('export async function main() { console.log("ran"); return 0; }\n');
