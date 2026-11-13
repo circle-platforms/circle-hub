@@ -2,10 +2,10 @@
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { agentFor, postgresFor, settingsOf, type PlatformContext } from '../context.ts';
-import { exists } from '../files.ts';
-import { portOccupied, waitForHealth } from '../health.ts';
-import { quoteIdentifier, withSession } from '../sql.ts';
+import { agentFor, postgresFor, settingsOf, type PlatformContext } from '../../platform/api.ts';
+import { exists } from '../../platform/api.ts';
+import { portOccupied, waitForHealth } from '../../platform/api.ts';
+import { quoteIdentifier, withSession } from '../../platform/api.ts';
 import { assertProtectedFiles } from './protected-files.ts';
 
 const Journal = z.object({

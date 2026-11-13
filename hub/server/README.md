@@ -1360,3 +1360,7 @@ reported as zero usage. Errors from a present capacity service still propagate r
 
 控制台的“通用技能”是独立入口（`/console/skills`），工作流页只列工作流。技能页写它提供的模块、解析器和用到它的工作流；工作流详情的“组成”列内嵌的模块（发布时核对过）、声明的连接、知识和命名文档。技能的安装和卸载是对应 `pack install`、`pack uninstall` 的命令对话框。命名文档列在“连接”页，只给管理员看，写入仍用 `circle-hub doc put`。界面不用“插件”一词。
 
+
+## Reset orchestration ownership (2026-11-13)
+
+The owner's 18:40 decision moves reset orchestration into `hub/server/reset`. The server classifies current records, checks references, invokes migrations and protected export/apply, controls the dedicated worker and restores the original database after a failed operation. The CLI and console use these same operations. Platform provides only verified native backup, database archival and empty-database creation; no platform module reads Hub records or configuration shapes. Protocol schema identities use their declared contract constants, including `KNOWLEDGE_CONTRIBUTION_SCHEMA`. No dependency exception is added for reset.

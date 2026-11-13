@@ -1,5 +1,5 @@
 import { diagnoseRecordsSchema, type RecordsSchemaCompatibility } from '../../records/api.ts';
-import { settingsOf, postgresFor, type PlatformContext } from '../context.ts';
+import { settingsOf, postgresFor, type PlatformContext } from '../../platform/api.ts';
 import { RESET_SCOPE, parseResetRequest, type ResetInspection, type ResetPorts, type ResetProblem, type ResetRequest } from './types.ts';
 
 export function resetInspection(diagnostic: RecordsSchemaCompatibility): ResetInspection {

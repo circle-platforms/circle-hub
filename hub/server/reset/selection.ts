@@ -1,3 +1,4 @@
+import { KNOWLEDGE_CONTRIBUTION_SCHEMA } from '../../../contracts/src/contributions.ts';
 // Current-schema reset ownership. Unknown shapes block a reset instead of acquiring a default scope.
 import { RECORD_KINDS, type RecordKind } from '../../../contracts/generated/protocol.ts';
 import { AcceptanceSchema, ActionKindSchema, ActionResultSchema, CallResultSchema, LeaseOpSchema, PermissionKindSchema } from '../../../contracts/generated/vocabulary.ts';
@@ -120,7 +121,7 @@ function classifyAuthorization(record: CurrentRecord, body: Body): ResetScope | 
 }
 
 function classifyClaim(record: CurrentRecord, body: Body): ResetScope | null {
-  if (['knowledge-build@1', 'knowledge-calibration@1', 'knowledge-observation@1', 'knowledge-contribution@1', 'seedling@1'].includes(record.schema)) return 'knowledge';
+  if (['knowledge-build@1', 'knowledge-calibration@1', 'knowledge-observation@1', KNOWLEDGE_CONTRIBUTION_SCHEMA, 'seedling@1'].includes(record.schema)) return 'knowledge';
   if (record.schema === 'hypothesis-set@1') return typeof body.question === 'string' && Array.isArray(body.hypotheses) ? 'history' : null;
   if (record.schema === 'feeding-offset@1') return 'history';
   if (record.schema !== 'claim@1') return null;
@@ -364,7 +365,7 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
         add('record', feeding?.root, '/statement/data/feeding/root', true);
         add('record', feeding?.object, '/statement/data/feeding/object', true);
         strings(feeding?.entries).forEach((digest, n) => add('record', digest, '/statement/data/feeding/entries/' + n));
-      } else if (record.schema === 'knowledge-contribution@1') {
+      } else if (record.schema === KNOWLEDGE_CONTRIBUTION_SCHEMA) {
         add('record', body.root, '/root', true); add('record', body.feeding_record, '/feeding_record');
         for (const [path, source] of [['/source', object(body.source)], ['/relation/other', object(object(body.relation)?.other)]] as const) {
           strings(source?.records).forEach((digest, n) => add('record', digest, path + '/records/' + n));

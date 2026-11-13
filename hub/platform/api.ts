@@ -77,14 +77,13 @@ export { RENEW_WITHIN_DAYS, daysLeft, readServerTls, tlsPaths, type ServerTls, t
 export { runCommand, type CommandResult, type CommandRunner } from './process.ts';
 
 
-// Reset entry points are lazy: serving the Hub never imports destructive data operations.
-export type { ResetRequest, ResetScope, ResetInspection, ResetPlan, ResetProblem, ResetPorts, ResetReport } from './reset/types.ts';
-export type { ResetWorkerStatus } from './reset/worker.ts';
-export async function inspectReset(...args: Parameters<typeof import('./reset/inspection.ts').inspectReset>) { return (await import('./reset/inspection.ts')).inspectReset(...args); }
-export async function previewReset(...args: Parameters<typeof import('./reset/host.ts').previewReset>) { return (await import('./reset/host.ts')).previewReset(...args); }
-export async function resetData(...args: Parameters<typeof import('./reset/host.ts').resetData>) { return (await import('./reset/host.ts')).resetData(...args); }
-export async function launchReset(...args: Parameters<typeof import('./reset/worker.ts').launchReset>) { return (await import('./reset/worker.ts')).launchReset(...args); }
-export async function acknowledgeReset(...args: Parameters<typeof import('./reset/worker.ts').acknowledgeReset>) { return (await import('./reset/worker.ts')).acknowledgeReset(...args); }
-export async function readResetStatus(...args: Parameters<typeof import('./reset/worker.ts').readResetStatus>) { return (await import('./reset/worker.ts')).readResetStatus(...args); }
+export { nativeResetBackup, type ResetBackup } from './reset/backup.ts';
+export { CODE_ROOT, agentFor, platformLockPath } from './context.ts';
+export { exists, listFiles, sha256File, withLock, writeFileAtomic } from './files.ts';
+export { guardSignals } from './deploy.ts';
+export { portOccupied } from './health.ts';
+export { quoteIdentifier, withSession, type SqlSession } from './sql.ts';
+export { toolEnvironment, type CommandOptions } from './process.ts';
+export { newSettingsFile, writeSettingsFile } from './settings.ts';
 
-export { parseResetRequest } from './reset/types.ts';
+export { archiveResetDatabase, createResetDatabase, type ResetDatabaseControl, type CreateResetDatabaseOptions } from './reset/database.ts';
