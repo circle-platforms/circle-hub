@@ -25,6 +25,8 @@ const libpq = await libpqAvailable();
 /** A column per table that a statement may name; for users, tokens and pointers one the runtime role may not update. */
 const COLUMN: Record<string, string> = {
   schema_migrations: 'sha256',
+  teams: 'id',
+  team_members: 'team_id',
   member_deletion_intents:'member',
   personal_cache_installs:'owner',run_upload_declarations:'run_record',run_pack_records:'record',held_objects:'sha256',held_object_targets:'sha256',original_targets:'artifact',
   records: 'body',
@@ -84,9 +86,8 @@ function tamperingStatements(): string[] {
     const column = COLUMN[table];
     assert.ok(column, `a column for ${table}`);
     out.push(
-      // The ownership registry is mutable derived state; registered clients that never led to a token and diagnostic rows
-      // past their retention are removed (still never updated); every other table keeps its original forbidden-row probes.
-      ...(table === 'lease_registrations' ? [] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
+      // Team and lease tables are mutable projections, not the append-only authorization history.
+      ...(table === 'lease_registrations' ? [] : table === 'teams' ? [`DELETE FROM ${table}`] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,
@@ -142,6 +143,10 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
   /** The statements the application role ran or that failed with another SQLSTATE than 42501. */
   const notRefused = () =>
     withSession(control.applicationConnector, control.target.database, async (session) => {
+      assert.equal(RUNTIME_GRANTS.teams, 'SELECT, INSERT, UPDATE', 'the approved projection grant, never a history grant');
+      assert.equal(RUNTIME_GRANTS.team_members, 'SELECT, INSERT, DELETE', 'membership projection cannot be updated');
+      assert.equal(await sqlState(session, 'UPDATE teams SET deleted_at = deleted_at'), null);
+      assert.equal(await sqlState(session, 'DELETE FROM team_members WHERE false'), null);
       // The registered-prefix projection must remain writable before and after restoration, without granting DDL.
       await session.query("INSERT INTO lease_registrations (prefix, owner, registered_at) VALUES ('test/ownership/', 'synthetic-owner', now())");
       await session.query("UPDATE lease_registrations SET owner = 'synthetic-next' WHERE prefix = 'test/ownership/'");
@@ -201,6 +206,26 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await kit.vault.initKey();
       const { user } = await kit.principals.bootstrapAdmin('管理员');
       privateOwner=user;
+      const team = await kit.teams.create(user, '合成权限团队');
+      const member = await kit.principals.createUser(user, '合成权限成员');
+      const outsider = await kit.principals.createUser(user, '合成未授权成员');
+      const membership = await kit.teams.add(user, team.id, member.id);
+      await kit.authorizations.assignResource(user, 'synthetic-team-resource', team.id);
+      await withSession(control.applicationConnector, control.target.database, async session => {
+        try {
+          await session.query('UPDATE teams SET name=$2,deleted_at=now() WHERE id=$1', [team.id, '合成投影改写']);
+          await session.query('DELETE FROM team_members WHERE team_id=$1 AND user_id=$2', [team.id, member.id]);
+          await session.query('INSERT INTO team_members(team_id,user_id,added_at,added_by) VALUES($1,$2,$3,$4)', [team.id, outsider.id, membership.added_at, user.id]);
+          assert.equal((await kit.teams.get(user, team.id))?.name, team.name, 'mutable projection cannot rewrite the verified team definition');
+          assert.deepEqual((await kit.teams.members(user, team.id)).map(row => row.user.id), [member.id], 'projection writes cannot grant or revoke membership');
+          assert.equal(await kit.authorizations.canUseResource(member.id, 'synthetic-team-resource'), true);
+          assert.equal(await kit.authorizations.canUseResource(outsider.id, 'synthetic-team-resource'), false, 'inserting a projection row cannot mint authority');
+        } finally {
+          await session.query('DELETE FROM team_members WHERE team_id=$1 AND user_id=$2', [team.id, outsider.id]);
+          await session.query('INSERT INTO team_members(team_id,user_id,added_at,added_by) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING', [team.id, member.id, membership.added_at, user.id]);
+          await session.query('UPDATE teams SET name=$2,deleted_at=NULL WHERE id=$1', [team.id, team.name]);
+        }
+      });
       await kit.store.withTransaction(async tx=>{
         const source=await kit.artifacts.ingest({personalOwner:user.id,bytes:runOriginalBytes,mediaType:'text/plain',name:'synthetic-held.txt',origin:{upload:{session:null,message:null}},author:{user:user.id},provenanceType:'declared',visibility:{readers:[user.id],admins:false,packs:[],shareable:false}},tx);
         heldOriginal=source.digest;heldOriginalSha=source.body.sha256;
