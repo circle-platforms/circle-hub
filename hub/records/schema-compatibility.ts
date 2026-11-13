@@ -5,7 +5,8 @@ import { MIGRATIONS, migrationChecksum } from './migrations.ts';
 
 export interface RecordMigrationReceipt { version:number; name:string; sha256:string }
 export interface RecordsSchemaCompatibility {
-  compatible:boolean;
+  status:'compatible'|'incompatible'|'unavailable';
+  compatible:boolean|null;
   expected:RecordMigrationReceipt[];
   applied:RecordMigrationReceipt[] | null;
   problems:string[];
@@ -21,7 +22,13 @@ export function compareRecordMigrations(applied:RecordMigrationReceipt[]|null):R
   const compatible=applied!==null&&applied.length===expected.length&&expected.every((migration,index)=>{
     const row=applied[index];return row.version===migration.version&&row.name===migration.name&&row.sha256===migration.sha256;
   });
-  return {compatible,expected,applied,problems:compatible?[]:[applied===null?'记录库没有可读的迁移登记；请归档并初始化，或用定义文件恢复':'记录库的迁移登记与当前程序不一致；请归档并初始化，或用定义文件恢复']};
+  return {status:compatible?'compatible':'incompatible',compatible,expected,applied,problems:compatible?[]:[applied===null?'记录库没有可读的迁移登记；请归档并初始化，或用定义文件恢复':'记录库的迁移登记与当前程序不一致；请归档并初始化，或用定义文件恢复']};
+}
+
+/** A failed observation proves no schema incompatibility and must never enable destructive recovery. */
+export function unavailableRecordsSchema():RecordsSchemaCompatibility {
+  return {status:'unavailable',compatible:null,expected:currentRecordMigrations(),applied:null,
+    problems:['无法读取迁移登记，尚不能确认记录库是否兼容；请检查连接与读取权限后重试，当前不能执行重建']};
 }
 
 export async function diagnoseRecordsSchema(config:Pick<RecordsConfig,'database'>):Promise<RecordsSchemaCompatibility> {
@@ -35,8 +42,6 @@ export async function diagnoseRecordsSchema(config:Pick<RecordsConfig,'database'
       return compareRecordMigrations(rows.map(row=>({version:Number(row.version),name:row.name,sha256:row.sha256})));
     });
   } catch {
-    const result=compareRecordMigrations(null);
-    result.problems=['无法读取记录库的迁移登记；请检查连接与权限，恢复后重试；不能导出时可归档并初始化或用定义文件恢复'];
-    return result;
+    return unavailableRecordsSchema();
   } finally { await db.end(); }
 }
