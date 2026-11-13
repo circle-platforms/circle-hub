@@ -704,3 +704,21 @@ C7 changes only output schemas; inputs and model-facing response text retain the
 fields at every depth while preserving refinements and leaving shared input and record schemas strict.
 The existing generator and server validation consume these registered schemas without further changes.
 Generation can also write pack mirrors; any such changes remain outside this task and go to the integrator. PostgreSQL and typecheck require a scheduled slot.
+
+
+C9 adds the ownership questions to C02 and marks T03, all V elements and all K elements as currently
+retained in the Hub pending decision 172's migration. Each element has its own model/source commit.
+Approval is the Boss's 2026-11-13 response under the owner's authorization, as recorded in
+`codex-brief` and the Boss's response on the three questions. R01/K01 explicitly distinguish today's
+team membership and assignments from the unimplemented per-team knowledge spaces and memory.
+
+C3 removes historical ruling/lease/result readers and the separate publication requirements shape.
+Current runs always write skill locks (possibly empty) and a submission deadline; both are required.
+Conditional metadata stays optional: publication namespace, configured knowledge-space locks,
+configured feeding horizon and selected product digest. Their absence is not filled with a guessed
+value. Runs/server owners must adopt the removed symbols and update their synthetic fixtures.
+The resource-assignment permission and team registration tuples remain a proposal pending Boss approval.
+
+The authorized typecheck returned exit 2 with one contracts clone-definition diagnostic and downstream
+tier/console diagnostics. The local definition has been corrected and output tests rerun; a new
+typecheck has not been scheduled. No PostgreSQL tests, full-suite checks, push or CI ran in this task.
