@@ -215,6 +215,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   let app: HubApp | undefined;
   let telemetry: Telemetry | undefined;
   let maintenance: import('./api.ts').ServerDeps['maintenance'];
+  let closeAssembly: (() => Promise<void>) | undefined;
   try {
     // The built-in HTTPS certificate is read before anything starts: a missing, loose or expired one stops serve here.
     let tls = options.appOptions?.tls;
@@ -226,6 +227,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     }
     const assembly = await (options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>))();
     const deps = await assembly.assemble(config, records);
+    closeAssembly = deps.close?.bind(deps);
     maintenance=deps.maintenance;
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
     const bridge = options.appOptions?.bridge ?? createCommandBridge({ env: io.env, cwd: io.cwd, ...(options.keyProvider ? { overrides: { keyProvider: options.keyProvider } } : {}) });
@@ -258,6 +260,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
   } catch (error) {
     await maintenance?.stopMaintenance({ abort: true }).catch(() => {});
     await app?.close().catch(() => {});
+    await closeAssembly?.().catch(error => operatorLog(`关闭装配资源时出错：${describeError(error)}`));
     health.abandon();
     await healthDatabase.end().catch(() => {});
     await observationDatabase.end().catch(() => {});
@@ -284,14 +287,20 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     io.stdout(`收到${typeof signal === 'string' ? ` ${signal}` : '停止请求'}，正在停止：等进行中的请求结束`);
     // A maintenance pass in progress stops at its next run; the next start goes on from there.
     await maintenance?.stopMaintenance({ abort: true }).catch((error: unknown) => operatorLog(`停止运行维护时出错：${describeError(error)}`));
-    await running.close();
-    // Pack-function children still running after the requests ended are stopped (hub/rules README).
-    stopAll();
-    await health.stop();
-    await healthDatabase.end().catch(() => {});
-    await observationDatabase.end().catch(() => {});
-    await telemetry?.close();
-    await records.close();
+    try {
+      await running.close();
+    } finally {
+      // Assembly cleanup must not skip the caller-owned connections when it fails.
+      stopAll();
+      try { await closeAssembly?.(); }
+      finally {
+        await health.stop();
+        await healthDatabase.end().catch(() => {});
+        await observationDatabase.end().catch(() => {});
+        await telemetry?.close();
+        await records.close();
+      }
+    }
   } finally {
     process.off('unhandledRejection', onRejection);
   }
