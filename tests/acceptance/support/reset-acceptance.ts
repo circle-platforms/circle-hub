@@ -617,12 +617,11 @@ async function readRepoPackMeta(relDir: string): Promise<{ id: string; version: 
 /** Creates a minimal clean temporary workflow pack directory for overlay/published pack checks. */
 async function writeSyntheticOverlayPack(parentDir: string, packId: string): Promise<string> {
   const dir = join(parentDir, packId);
-  await mkdir(join(dir, 'samples', 'positive'), { recursive: true });
-  await mkdir(join(dir, 'samples', 'negative'), { recursive: true });
+  await mkdir(join(dir, 'functions'), { recursive: true });
   await writeFile(join(dir, 'SKILL.md'), `# ${packId}\n合成辅助工作流说明。\n`, 'utf8');
   await writeFile(
     join(dir, 'slots.schema.json'),
-    JSON.stringify({ schema: 'slots@1', item: { findings: { codes: [{ code: 'literal_issue', label: '字面问题' }] } } }, null, 2),
+    JSON.stringify({ schema: 'slots@1', item: {}, run: {} }, null, 2),
   );
   await writeFile(
     join(dir, 'checks.json'),
@@ -633,28 +632,39 @@ async function writeSyntheticOverlayPack(parentDir: string, packId: string): Pro
     JSON.stringify({ schema: 'requirements@1', requirements: [] }, null, 2),
   );
   await writeFile(
-    join(dir, 'knowledge.json'),
-    JSON.stringify({ schema: 'knowledge@1', requires: [] }, null, 2),
+    join(dir, 'functions', 'project.ts'),
+    [
+      'export default function project(): { items: unknown[]; groups: unknown[]; warnings: unknown[] } {',
+      '  return { items: [], groups: [], warnings: [] };',
+      '}',
+      '',
+    ].join('\n'),
   );
   await writeFile(
     join(dir, 'workflow.json'),
-    JSON.stringify({ schema: 'workflow@1', inputs: { note: { kind: 'source', title: '合成输入', required: true } }, parameters: [] }, null, 2),
-  );
-  await writeFile(
-    join(dir, 'samples', 'positive', 'good.json'),
-    JSON.stringify({ items: [{ id: 'case-1', findings: [] }] }, null, 2),
-  );
-  await writeFile(
-    join(dir, 'samples', 'negative', 'bad.json'),
-    JSON.stringify({ items: [] }, null, 2),
+    JSON.stringify({
+      schema: 'workflow@1',
+      inputs: [
+        {
+          slot: 'defect',
+          role: 'subject',
+          description: '合成缺陷输入',
+          accepts: ['plm:bug'],
+          required: false,
+          many: false,
+        },
+      ],
+      parameters: [],
+      product: { catalogs: [] },
+      subject: 'defect',
+      projection: { module: 'functions/project.ts' },
+    }, null, 2),
   );
   const trackedFiles = [
     'SKILL.md',
     'checks.json',
-    'knowledge.json',
+    'functions/project.ts',
     'requirements.json',
-    'samples/negative/bad.json',
-    'samples/positive/good.json',
     'slots.schema.json',
     'workflow.json',
   ];
