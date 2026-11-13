@@ -1,5 +1,5 @@
 // Package lifecycle stays in the platform; parser algorithms execute only in the package sandbox.
-import type {PackRegistry,OpenedPack} from '../runs/api.ts';
+import type {SkillParserRegistryPort,OpenedSkillPack} from '../ports.ts';
 import {SkillLocks,type SkillDependency,type SkillLock} from '../../contracts/src/skills.ts';
 import type {SkillDeclaration} from '../../contracts/src/pack.ts';
 import type {RecordsKit,Principal} from '../records/api.ts';
@@ -13,7 +13,7 @@ import {withParserSite} from './sandbox-diagnostic.ts';
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v);
 const missing=(message:string)=>new ConflictError(message,{fix:'管理员安装所需通用技能包，并使用已冻结技能摘要的运行重读'});
 const readRun=async(records:RecordsKit,run:string)=>(await records.store.find<RunRecord>({kind:'run',key:'runs.id',value:run,limit:1})).items[0]??null;
-export interface SkillParserOptions {registry:PackRegistry;records:RecordsKit;sandbox?:SandboxOptions;now?:()=>Date;/** Optional output-size instrumentation; never receives package data. */onWireOutput?:(bytes:number)=>void}
+export interface SkillParserOptions {registry:SkillParserRegistryPort;records:RecordsKit;sandbox?:SandboxOptions;now?:()=>Date;/** Optional output-size instrumentation; never receives package data. */onWireOutput?:(bytes:number)=>void}
 
 const LOCATE_BATCH=256;
 /**
@@ -205,7 +205,7 @@ function hydrate(value:unknown,parser:string,fetchFragments?:(selectors:string[]
     ...(object(d.quotation)?{[QUOTATION_UNITS]:(options:{properties:boolean})=>(options.properties?(d.quotation as Record<string,unknown>).properties:(d.quotation as Record<string,unknown>).plain) as QuotationUnits}:{})};
 }
 
-function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],options:SkillParserOptions):Parser{
+function parserOf(opened:OpenedSkillPack,row:SkillDeclaration['parsers'][number],options:SkillParserOptions):Parser{
   const split=row.parser.lastIndexOf('@'),id=row.parser.slice(0,split),version=Number(row.parser.slice(split+1));
   return {id,version,mediaTypes:row.media_types,limits:row.limits,skill_digest:opened.info.digest,
     parse(){throw new ParseError(row.parser,'技能包解析必须经平台异步沙箱调用');},
