@@ -768,3 +768,12 @@ the value version and original setter/time; its actor/time belong only to the au
 remain opaque secret.<lower-name>.<24hex>.sealed files. The product reads only this metadata format,
 with no alternate legacy-metadata fallback. Cross-version constraints are enforced by the Zod
 SecretMetadataFile parser; generated JSON Schema describes the structural part.
+
+The approved cipher-identity completion adds mandatory sealed_sha256 to SecretUse and exposes
+SecretCipherIdentity (name, version, sealed_sha256) for vault material and cache-key consumers.
+It identifies authenticated ciphertext bytes, not a digest of the value; it never becomes rec: or
+src:. Metadata schemas and ordinary variable uses stay unchanged. No sequence/UUID field is added.
+Missing cipher identity is refused rather than using a name/version fallback. The records owner
+supplies the same authenticated row identity in material; cache/stop callers consume the whole tuple.
+Model wording remains untouched pending separate Boss review; runtime cache behavior is tested by
+its owners, while contracts tests cover required identity and unchanged metadata/ordinary bytes.

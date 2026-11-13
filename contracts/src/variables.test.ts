@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { VariableName, VariableValue, VariableRecord, SecretRecord, SecretSidecar, SecretMetadataFile, VariableUse, SecretUse, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
+import { VariableName, VariableValue, VariableRecord, SecretRecord, SecretSidecar, SecretMetadataFile, VariableUse, SecretUse, SecretCipherIdentity, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
 test('names are exact and reserved prefixes refuse without echo or rewriting', () => {
     assert.equal(VariableName.parse('A'.repeat(64)).length, 64);
     for (const name of ['A'.repeat(65), 'demo', '1DEMO', 'CIRCLE_HUB_X', 'CIRCLE_SERVER_X']) {
@@ -71,8 +71,9 @@ test('vault metadata represents unknown setters without inventing identity or ti
 
 test('ordinary variable decisions and secret vault versions have distinct evidence identities', () => {
     const ordinary = {kind:'var',at:'res_synthetic#/settings/path',name:'DEMO_PATH',decision:'a'.repeat(64)};
-    const secret = {kind:'secret',at:'res_synthetic#/credentials/password',name:'DEMO_KEY',version:2};
+    const secret = {kind:'secret',at:'res_synthetic#/credentials/password',name:'DEMO_KEY',version:2,sealed_sha256:'b'.repeat(64)};
     assert.deepEqual(VariableUse.parse(ordinary),ordinary);
+    assert.equal(JSON.stringify(VariableUse.parse(ordinary)),JSON.stringify(ordinary),'ordinary variable use bytes do not change');
     assert.deepEqual(VariableUse.parse(secret),secret);
     assert.deepEqual(OrdinaryVariableUse.parse(ordinary),ordinary);
     assert.deepEqual(SecretUse.parse(secret),secret);
@@ -114,9 +115,28 @@ test('one metadata file keeps exact value-version order and a single explicit cu
     const first = row(2,'a',false), last = row(7,'b',true);
     const file = {name:'DEMO_KEY',versions:[first,last]};
     assert.deepEqual(SecretMetadataFile.parse(file),file,'historical version gaps are not filled');
+    assert.equal(JSON.stringify(SecretMetadataFile.parse(file)),JSON.stringify(file),'existing authenticated metadata format bytes do not change');
     for (const versions of [[],[first],[last,{...first,current:true}],[{...first,current:true},last],[last,first],[first,{...last,metadata:{...last.metadata,version:2}}],[first,{...last,sealed_entry:first.sealed_entry}]]) assert.equal(SecretMetadataFile.safeParse({...file,versions}).success,false);
     const other = {...last,metadata:{...last.metadata,name:'OTHER_KEY',entry:'secret.other_key'},sealed_entry:'secret.other_key.'+'b'.repeat(24)};
     assert.equal(SecretMetadataFile.safeParse({...file,versions:[first,other]}).success,false);
     const revoked = {...last,metadata:{...last.metadata,revoked:true},sealed_sha256:null};
     assert.deepEqual(SecretMetadataFile.parse({...file,versions:[{...first,sealed_sha256:null},revoked]}),{...file,versions:[{...first,sealed_sha256:null},revoked]},'revocation keeps the value version and unknown setter metadata');
+});
+
+
+test('secret uses require authenticated ciphertext identity without changing metadata or ordinary decisions', () => {
+    const prior = {name:'DEMO_KEY',version:1,sealed_sha256:'a'.repeat(64)};
+    const replacement = {...prior,sealed_sha256:'b'.repeat(64)};
+    assert.deepEqual(SecretCipherIdentity.parse(prior),prior);
+    assert.deepEqual(SecretCipherIdentity.parse(replacement),replacement);
+    const use = {kind:'secret',at:'exe_synthetic#/credential',...replacement};
+    assert.deepEqual(SecretUse.parse(use),use);
+    const {sealed_sha256,...withoutCipherIdentity} = use;
+    assert.equal(SecretUse.safeParse(withoutCipherIdentity).success,false);
+    for (const digest of [null,'','A'.repeat(64),'a'.repeat(63)]) assert.equal(SecretUse.safeParse({...use,sealed_sha256:digest}).success,false);
+    assert.equal(VariableUse.safeParse({kind:'var',at:use.at,name:'DEMO_PATH',decision:'c'.repeat(64),sealed_sha256:replacement.sealed_sha256}).success,false);
+    const metadata = {schema:'secret@1',name:'DEMO_KEY',entry:'secret.demo_key',digest_rule:'plain',length:20,version:1,set_by:null,set_at:null,revoked:false};
+    assert.deepEqual(SecretRecord.parse(metadata),metadata);
+    assert.equal(SecretRecord.safeParse({...metadata,sealed_sha256:replacement.sealed_sha256}).success,false);
+    assert.equal(SecretUse.safeParse({...use,sequence:'synthetic'}).success,false);
 });
