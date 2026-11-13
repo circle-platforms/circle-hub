@@ -10,7 +10,8 @@ import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
 import {CLIENT_COLUMNS,clientRow,clientInspector,noClients} from './connections.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
-import {box,button,card,chip,commandLink,commandModal,emptyState,when,type CommandDialog} from './ui.ts';
+import {emptyBlock} from './components.ts';
+import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
 import {actionForm} from './manage.ts';
 import {RESOURCE_AUDIENCE,TEAMS} from './team-actions.ts';
 import type {Principal,User} from '../../records/api.ts';
@@ -198,7 +199,7 @@ export async function teamsPage(ctx: PageContext): Promise<PageResult> {
     }
   }
   const list = rows.length === 0
-    ? emptyState('尚无团队', ctx.admin ? '新建一个团队后，再把成员、工作流和业务系统分给它。' : '管理员尚未把当前账户加入任何团队。')
+    ? emptyBlock({title:'尚无团队',text: ctx.admin ? '新建一个团队后，再把成员、工作流和业务系统分给它。' : '管理员尚未把当前账户加入任何团队。'})
     : box(null, table(columns, tableRows, '尚无团队', undefined, ctx.admin ? {
         hrefs: rows.map((row) => `${TEAMS}/${row.id}`),
       } : { hrefs: rows.map((row) => `${TEAMS}/${row.id}`) }), { flush: true });

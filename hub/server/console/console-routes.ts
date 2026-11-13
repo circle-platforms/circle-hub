@@ -13,7 +13,7 @@ import { searchPage } from './search.ts';
 import { settingsPage } from './settings.ts';
 import { sourceArchivePage } from './source-archive.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, shareHistoryPage, batchSharePage } from './spaces.ts';
-import { teamPage } from './team.ts';
+import { teamPage, teamsPage, teamDetailPage } from './team.ts';
 import type { ConsoleSession } from './session.ts';
 import { type ConsoleOptions, bridgeRun } from './console-http.ts';
 
@@ -40,6 +40,7 @@ export const ROUTES: Record<string, Route> = {
   settings: (ctx, rest, options, session) => (rest.length === 0 ? settingsPage(ctx, bridgeRun(options, session)) : Promise.resolve(neutralPage(ctx))),
   health: (ctx, rest, options) => (rest.length === 0 && ctx.admin ? healthPage(ctx, options.observation, options.log) : Promise.resolve(neutralPage(ctx))),
   team: (ctx, rest) => rest.length <= 1 ? teamPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx)),
+  teams: (ctx, rest) => (rest.length === 0 ? teamsPage(ctx) : rest.length === 1 ? teamDetailPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
   // Job progress pages only; bare /console/admin is no longer the team page.
   admin: (ctx, rest, options) => {
