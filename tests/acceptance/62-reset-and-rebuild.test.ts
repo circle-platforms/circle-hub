@@ -129,9 +129,9 @@ describe('incompatible DB schema/version degraded startup vs unreachable DB (spe
     const health = await serve.healthz();
     assert.equal(health.status, 200);
     const healthJson = JSON.parse(health.body) as Record<string, unknown>;
-    assert.equal(healthJson.status, 'ok');
-    assert.equal(healthJson.needsRebuild, true);
-    assert.ok(Object.hasOwn(healthJson, 'release'), '/healthz must include release property');
+    assert.equal(healthJson.status, 'ok', `/healthz must report status='ok', got: ${health.body}`);
+    assert.equal(healthJson.needsRebuild, true, `/healthz must report needsRebuild=true, got: ${health.body}`);
+    assert.ok(Object.hasOwn(healthJson, 'release'), `/healthz must include release property, got: ${health.body}`);
     for (const forbiddenKey of ['accounts', 'counts', 'snapshot', 'configurationSnapshot', 'archive', 'backup', 'reason', 'detail', 'users']) {
       assert.equal(Object.hasOwn(healthJson, forbiddenKey), false, `/healthz must not expose ${forbiddenKey}`);
     }

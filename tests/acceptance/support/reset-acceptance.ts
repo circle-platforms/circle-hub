@@ -263,22 +263,26 @@ export async function discoverCliSyntax(dataDir: string): Promise<ParsedCliSynta
   if (cachedCliSyntax) return cachedCliSyntax;
   const rootUsage = await runCli(dataDir, [], { timeoutMs: 20_000 });
   const text = `${rootUsage.stdout}\n${rootUsage.stderr}`;
-  const findLine = (cmd: string): string => {
-    const lines = text.split('\n').filter((line) => new RegExp(`^\\s*${cmd}\\b`).test(line));
-    return lines.join(' ');
-  };
-  let resetLine = findLine('reset');
-  let exportLine = findLine('export');
-  let applyLine = findLine('apply');
+  const extractCommandLines = (output: string, cmd: string): string =>
+    output
+      .split('\n')
+      .filter((line) => new RegExp(`^\\s*(?:用法：circle-hub\\s+)?${cmd}\\b`).test(line))
+      .join(' ');
+  let resetLine = extractCommandLines(text, 'reset');
+  let exportLine = extractCommandLines(text, 'export');
+  let applyLine = extractCommandLines(text, 'apply');
 
-  // If subcommand help gives richer flags, check --help briefly.
+  // If subcommand help gives richer flags (without dumping the entire root usage menu), inspect matching lines only.
   for (const [cmd, setter] of [
     ['reset', (v: string) => { resetLine = `${resetLine} ${v}`; }],
     ['export', (v: string) => { exportLine = `${exportLine} ${v}`; }],
     ['apply', (v: string) => { applyLine = `${applyLine} ${v}`; }],
   ] as const) {
     const sub = await runCli(dataDir, [cmd, '--help'], { timeoutMs: 15_000 }).catch(() => null);
-    if (sub && !/未知命令|unknown command/i.test(sub.combined)) setter(sub.combined);
+    if (sub && !/未知命令|unknown command/i.test(sub.combined)) {
+      const scoped = sub.code === 0 ? sub.combined : extractCommandLines(sub.combined, cmd);
+      if (scoped.trim().length > 0) setter(scoped);
+    }
   }
 
   const hasReset = resetLine.trim().length > 0 && !/未知命令/.test(resetLine);
@@ -947,13 +951,13 @@ export async function seedHistoryAndKnowledgeViaMcp(state: SeededHubState): Prom
     assert.equal(memWrite.isError, false, memWrite.text);
     state.memoryDocId = memWrite.out.memory_write?.document;
 
-    // 5. Read pack docs + resolve reference -> adds call_logs.
+    // 5. Read pack docs + personal knowledge space -> adds call_logs.
     const listed = await mcp.call('list_task_packs', {});
     assert.equal(listed.isError, false, listed.text);
     const nodes = await mcp.call('get_nodes', { pack: state.workflowId });
     assert.equal(nodes.isError, false, nodes.text);
-    const resolved = await mcp.call('resolve_reference', { reference: state.runArtifactRef! });
-    assert.equal(resolved.isError, false, resolved.text);
+    const personalNodes = await mcp.call('get_nodes', { scope: 'personal' });
+    assert.equal(personalNodes.isError, false, personalNodes.text);
 
     // 6. When OS pack-function sandbox is available, run test-bed facts + acquire (creates real runs + booking lease).
     if (state.canRunSandboxedPacks) {
