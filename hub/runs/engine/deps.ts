@@ -36,7 +36,7 @@ export interface RunsEngineDeps {
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;
     config?: Pick<RecordsKit['config'], 'limits'>;
-    principals?: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'lockActive'>>;
+    principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'lockActive'>>;
     /** Purge facts of run-held personal copies (owner ruling 3, issue 141); absent in kits without personal payloads. */
     personalPayloads?: Pick<NonNullable<RecordsKit['personalPayloads']>,'purgedRunOriginals'>;
   };
