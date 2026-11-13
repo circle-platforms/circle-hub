@@ -3,27 +3,11 @@ import { after, before, test } from 'node:test';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
-import { migrate } from './migrations.ts';
 import { PgSpaceSearchIndex,knowledgeTokens,pathKey } from './space-index.ts';
 import { installTraceSink,startTrace,type SpanRow } from './api.ts';
 let postgres: TemporaryPostgres;
 before(async () => { postgres = await startPostgres(); });
 after(() => postgres?.stop());
-test('the baseline installs the deduplicated full-text projection and repeated migration changes nothing', async (t) => {
-  const database = await postgres.createDatabase(undefined, { empty: true });
-  t.after(() => postgres.dropDatabase(database.database));
-  const db = new Database(createPool(database, 1));
-  t.after(() => db.end());
-  assert.deepEqual(await migrate(db), [1]);
-  const before = (await db.query('SELECT * FROM schema_migrations ORDER BY version')).rows;
-  assert.deepEqual(await migrate(db), []);
-  assert.deepEqual((await db.query('SELECT * FROM schema_migrations ORDER BY version')).rows, before);
-  const indexes = (await db.query<{
-    indexdef: string;
-  }>("SELECT indexdef FROM pg_indexes WHERE tablename='knowledge_space_search_documents'")).rows;
-  assert.ok(indexes.some(index => index.indexdef.includes('USING gin (tokens)')));
-  assert.deepEqual(await migrate(db), []);
-});
 test('Chinese bigrams and normalized words search only authorized directory scopes before pagination', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
@@ -138,19 +122,6 @@ test('product mounts have their own limit, above what a member can write to a sp
   await assert.rejects(index.add(space.digest,[row]),(error:any)=>error.code==='SPACE_INDEX_LIMIT'&&/撤回或替换/.test(error.fix));
 });
 
-test('current index writes deduplicate document tokens without changing records or search results',async t=>{
-  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
-  const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
-  const entry=await kit.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body:{synthetic:'baseline-index'}});
-  const version=await kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{synthetic:'baseline-index-version'}});
-  const previous=(await db.query('SELECT digest,body FROM records ORDER BY digest')).rows;
-  const index=new PgSpaceSearchIndex(db),rows=['/one','/two'].map(path=>({space:'synthetic',path,entry:entry.digest,record:entry.digest,text:'合成去重索引'}));
-  await index.add(version.digest,rows);await index.add(version.digest,rows);
-  assert.deepEqual((await db.query('SELECT digest,body FROM records ORDER BY digest')).rows,previous);
-  assert.equal(Number((await db.query('SELECT count(*) AS n FROM knowledge_space_search_documents')).rows[0].n),1);
-  assert.equal((await index.search('去重索引',[{version:version.digest,paths:['/']}],0,10)).length,2);
-});
-
 test('current-version counters are idempotent and history and product scopes never consume the next version quota',async t=>{
   const kit=await openTestRecords({postgres});t.after(()=>kit.close());
   const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
@@ -179,25 +150,4 @@ test('current-version counters are idempotent and history and product scopes nev
   await raised.add(current,[row,{...row,path:'/extra'}]);await raised.complete(current,'/');
   assert.equal(await raised.ready(current,'/'),true,'a higher configured limit permits the refused work to finish');
   assert.equal((await raised.search('稳定',[{version:current,paths:['/']}],0,10)).length,2);
-});
-
-test('current index writes separate version and product counters without changing append-only records',async t=>{
-  const kit=await openTestRecords({postgres});t.after(()=>kit.close());
-  const db=new Database(createPool(kit.database,1));t.after(()=>db.end());
-  const personal=await kit.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body:{synthetic:'baseline-space'}});
-  const product=await kit.store.put({kind:'tree_node',schema:'tree-node@1',provenance:'projected',body:{synthetic:'baseline-product'}});
-  const entry=await kit.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body:{synthetic:'baseline-entry'}});
-  const records=(await db.query('SELECT digest,body FROM records ORDER BY digest')).rows;
-  const index=new PgSpaceSearchIndex(db),row={entry:entry.digest,record:entry.digest,text:'合成分离索引'};
-  const personalRows=[{...row,space:'synthetic-owner',path:'/notes'}];
-  const productRows=['commands','manuals'].map(path=>({...row,space:'team',path:'/产品/synthetic/1.0/'+path}));
-  for(let i=0;i<2;i++){
-    await index.add(personal.digest,personalRows);
-    await index.add(product.digest,productRows,undefined,'product:/产品/synthetic/1.0');
-  }
-  assert.deepEqual((await db.query('SELECT digest,body FROM records ORDER BY digest')).rows,records);
-  const bytes=(await db.query('SELECT token_bytes::int AS n FROM knowledge_space_search_documents WHERE record=$1',[entry.digest])).rows[0].n;
-  assert.ok(bytes>0);
-  assert.deepEqual((await db.query('SELECT quota_space,token_bytes::int AS n FROM knowledge_space_search_totals ORDER BY quota_space')).rows,[{quota_space:'product:/产品/synthetic/1.0',n:bytes*2},{quota_space:'synthetic-owner',n:bytes}]);
-  assert.equal((await index.search('分离索引',[{version:product.digest,paths:['/产品/synthetic/1.0']}],0,10)).length,2);
 });

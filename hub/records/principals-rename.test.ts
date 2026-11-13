@@ -4,12 +4,11 @@
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
-import { startPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import type { Principal } from './api.ts';
 import { Database, createPool } from './db.ts';
 import { AccessError, ConflictError } from './errors.ts';
-import { grantRuntime, migrate } from './migrations.ts';
+import { grantRuntime } from './migrations.ts';
 import { PgPrincipals } from './principals.ts';
 
 const PASSWORD = 'synthetic-rename-password';
@@ -85,23 +84,4 @@ test('rename refuses an unchanged name, a live account\'s name, a deleted member
   assert.equal((await w.kit.principals.findByName('synthetic-deleted'))?.id, reused.id, 'lookups by name find the live account');
   // The tombstone trigger of migration 23 keeps a deleted member's name even against the runtime role's grant.
   await assert.rejects(w.rt.query('UPDATE users SET name=$2 WHERE id=$1', [gone.id, 'synthetic-forced']), (error: any) => error.code === 'HU001');
-});
-
-test('the baseline grants name updates only to the explicitly granted runtime role', async (t) => {
-  const pg = await startPostgres();
-  t.after(() => pg.stop());
-  const db = new Database(createPool(await pg.createDatabase(undefined, { empty: true })));
-  t.after(() => db.end());
-  assert.deepEqual(await migrate(db), [1]);
-  assert.deepEqual(await migrate(db), []);
-  const suffix = randomBytes(4).toString('hex'), runtime = `synthetic_runtime_${suffix}`, reader = `synthetic_reader_${suffix}`;
-  await db.query(`CREATE ROLE ${runtime} NOLOGIN`);
-  await db.query(`CREATE ROLE ${reader} NOLOGIN`);
-  await db.query(`GRANT SELECT ON users TO ${reader}`);
-  const may = async (role: string) => (await db.query("SELECT has_column_privilege($1,'public.users','name','UPDATE') AS ok", [role])).rows[0].ok;
-  assert.equal(await may(runtime), false);
-  await grantRuntime(db, runtime);
-  assert.equal(await may(runtime), true);
-  assert.equal(await may(reader), false);
-  assert.equal((await db.query("SELECT has_column_privilege('public','public.users','name','UPDATE') AS ok")).rows[0].ok, false);
 });

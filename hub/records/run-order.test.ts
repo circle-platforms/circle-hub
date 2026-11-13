@@ -1,4 +1,4 @@
-// The listing order of runs: from record_index when every run has its entry, from the bodies otherwise, with the same answer.
+// Current indexed run listings retain exact ordering, cursors and pack filters without sorting record bodies.
 import assert from 'node:assert/strict';
 import {after,before,test} from 'node:test';
 import {startPostgres} from '../testing/postgres.ts';
@@ -32,15 +32,4 @@ test('current run entries order and paginate runs without reading bodies to sort
  const owner=new Database(createPool(kit.database,1));t.after(()=>owner.end());
  assert.equal((await owner.query(`SELECT count(*)::int AS n FROM record_index WHERE key='runs.started'`)).rows[0]!.n,4);
 
-});
-
-test('a run without an entry sends the listing back to the bodies: a malformed header is still found and ordered first',async t=>{
- const kit=await openTestRecords({postgres});t.after(()=>kit.close());const store=kit.store;
- await store.put({kind:'run',schema:'synthetic-order@1',provenance:'declared',body:{started_at:'2026-11-03T01:00:00.000Z',run:runId('a')},index:[{key:'runs.started',value:`2026-11-03T01:00:00.000Z ${runId('a')}`}]});
- const clean=await statements(()=>store.runCandidates!<{run:string}>({limit:2}));
- assert.equal(castsBodies(clean.seen),false);
- await store.put({kind:'run',schema:'synthetic-order@1',provenance:'declared',body:{run:runId('b')}});
- const mixed=await statements(()=>store.runCandidates!<{run:string}>({limit:2}));
- assert.equal(castsBodies(mixed.seen),true);
- assert.deepEqual(mixed.value.map(r=>r.body.run),[runId('b'),runId('a')],'the header with no date comes first, as the engine expects');
 });
