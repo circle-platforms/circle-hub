@@ -1,5 +1,5 @@
 {
-  "version": 71,
+  "version": 72,
   "elements": [
     {
       "id": "B01",
@@ -271,7 +271,7 @@
         "不经独立审批人，没有两人规则（10-21）；处置不是许可（见 B07）",
         "不设基线指定：没有发布记录的规格类文档进产品线不分版本的范围（K01 R[5]），依据是产品包的声明，不另定基线，也就没有这种许可",
         "内核对应：发布记录归变更集（T02），其余四种许可归操作",
-        "团队登记、成员关系与分配以 authorization@1 记录为权威：assign 的 subject=*、object=TeamId 表示团队登记或撤回，subject=UserId、object=TeamId 表示成员加入或移出，subject=TeamId、object=PackId 表示团队工作流分配；resource_assign 的 subject=TeamId 或 *、object=ResourceId 表示资源使用范围，不代替 resource_config。TeamId 采用 tm_ 加小写 ULID，首位为 0-7，其余 25 位为小写 Crockford 字符。teams 与 team_members 只是可从记录重建的投影，与决定记录在同一事务中更新；历史表不能代替授权记录。今天不新增每团队知识空间与记忆。（来源：决定 150；Boss 2026-11-13 按所有者授权批准修正方案，见 answers-codex.md）"
+        "团队登记、成员关系与分配以 authorization@1 记录为权威：assign 的 subject=*、object=TeamId 表示团队登记或撤回，subject=UserId、object=TeamId 表示成员加入或移出，subject=TeamId、object=PackId 表示团队工作流分配；resource_assign 的 subject=TeamId 或 *、object=ResourceId 表示资源使用范围，不代替 resource_config。TeamId 采用 tm_ 加小写 ULID，首位为 0-7，其余 25 位为小写 Crockford 字符。teams 与 team_members 只是可从记录重建的投影，与决定记录在同一事务中更新；历史表不能代替授权记录。删除团队时，对该团队名下每一条工作流分配和资源分配逐条追加 revoked=true 的撤回记录，再撤回团队登记与成员关系；不能仅保留原分配并依赖团队已删除来判为不生效。既有决定记录不改写，团队删除与相关撤回在同一事务提交。今天不新增每团队知识空间与记忆。（来源：决定 150；所有者 2026-11-13 15:00 决定，见 decisions-1500.md；接口见 interfaces.md）"
       ],
       "tracedTo": [
         "E1-15",
@@ -331,6 +331,9 @@
       ],
       "changes71": [
         "登记 resource_assign 资源分配许可；明确团队登记与成员关系沿用 assign、authorization 权威和两个可重建投影，不新增团队 permission；来源：决定 150、Boss 2026-11-13 批准修正方案，见 answers-codex.md。"
+      ],
+      "changes72": [
+        "删除团队时逐条撤回其工作流和资源分配并追加 revoked=true 记录，取代仅保留但不生效的方案；授权记录仍为权威，同事务更新投影；来源：所有者 decisions-1500.md 第1条②，2026-11-13 15:00。"
       ]
     },
     {
