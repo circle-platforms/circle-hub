@@ -1802,3 +1802,11 @@ the last page decides. A pack that opts in must say the unknown entries as unkno
 the view's notes name, and must not count them as zero or fail on them. In a facet view `total` counts only the entries in the
 lists, so `total + unknown_entries` is the population of the root for the query. Impact and links views do not carry the fields
 and keep the refusal.
+
+
+### Content scan status
+
+Business content is not scanned for credentials. An uninspected source is not refused solely for that status; it does not
+mean the content is clean. Credential sharing checks report `unchecked` with an explanation, while quotation, permission,
+structure, integrity, source eligibility and size checks still apply. Actual findings and truncated scan results retain their
+existing handling. Hub-generated diagnostic text continues to use the real credential scanner in `feeding-errors.ts`.
