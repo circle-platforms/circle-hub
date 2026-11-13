@@ -200,3 +200,16 @@ describe('secret input', () => {
     }
   });
 });
+
+test('only explicit initial-setup writes replace an operator token', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'hub-operator-setup-replace-'));
+  t.after(() => removeTree(root));
+  for (const store of [fileOperatorTokens(root, 'synthetic'), memoryOperatorTokens()]) {
+    const old = newToken(), next = newToken();
+    await store.write(old);
+    await assert.rejects(store.write(next), /不覆盖|已有/);
+    assert.equal(await store.read(), old);
+    await store.write(next, {replace:true});
+    assert.equal(await store.read(), next);
+  }
+});
