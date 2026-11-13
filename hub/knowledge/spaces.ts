@@ -8,7 +8,7 @@ import { KnowledgeShareInput, KnowledgeShareBody, type KnowledgeShareReceipt } f
 import { SpaceId, SpaceEntryInput, SpaceEntryContent, SpaceEntryBody, SpaceVersionBody, SpaceGrantBody, SpaceQuotaBody, SpaceSourceBody, SpaceTreeNode, TeamSourceAttributionBody,SourceAttributionBody, type SpaceRow, type ClientDeclaration, } from '../../contracts/src/spaces.ts';
 import { SyncModeSchema, KnowledgeEntryStatusSchema, ShareCheckSchema, labelOf, type ShareCheck, type StaticTerminal, type KnowledgeSearchScope, type KnowledgeGrantee, type SourceAttributionStatus } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, type ProtocolCode, type RecordKind } from '../../contracts/generated/protocol.ts';
-import { noteRecordIntegrity,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanContent, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
+import { noteRecordIntegrity,requestRead,withReadScope,scopedRecordStore,memoReadPort, canonicalize, isSha256, sha256Hex, scanContent, RecordsError, PRODUCT_QUOTA_PREFIX, type Principal, type Transaction, type StoredRecord, type ArtifactSource, type Page, type IngestInput, type SpaceIndexScope, type SpaceIndexState } from '../records/api.ts';
 import { pathOf, pathSegments, parseReference, resolveReference, verifyQuote, type TreeReader, type ReaderIdentity, type TreeRead } from '../refs/api.ts';
 import type { NodesPage, NodesQuery } from '../ports.ts';
 import { WriteQueue, type KnowledgeContext } from './context.ts';
@@ -1467,6 +1467,13 @@ export class KnowledgeSpaces {
   }
   /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
   async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
+    return requestRead(by.id, JSON.stringify(['knowledge.space.source',sha256,by.role,runId??null,consumer,capture??null]),
+      () => this.#source(by,sha256,runId,consumer,capture), source => {
+        const scan=source?.artifact?.body?.scan;
+        return source?.bytes!==null && source?.bytes!==undefined && source.acceptance===undefined && scan?.inspected===true && !scan.truncated && scan.findings.length===0 ? source.bytes.byteLength : -1;
+      });
+  }
+  async #source(by: Principal, sha256: string, runId: string | undefined,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind,capture:string | undefined): Promise<ArtifactSource | null> {
     const artifacts=this.#ctx.records.artifacts;
     const records=await this.#records<z.infer<typeof SpaceSourceBody>>('knowledge.space.source_hash',sha256,'knowledge_space_source');
     const captures=new Set(records.filter(row=>row.body.space!=='team').map(row=>row.body.artifact));

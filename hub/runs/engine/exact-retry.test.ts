@@ -19,16 +19,14 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
     const source = await h.upload(h.alice, toyMap(document));
     const started = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '10.6.1', build: 'Rel_MEADOW_10_6_1_7', inputs: { map: { reference: source } } }, h.call());
     assert.ok(started.run, JSON.stringify(started.errors)); const run = started.run; const item = run.items[0];
-    const original = h.kit.artifacts.source.bind(h.kit.artifacts); let reads = 0; let recoveredAt: number | null = null; let broken = true;
+    const original = h.kit.artifacts.source.bind(h.kit.artifacts); let reads = 0; let broken = true;
     h.kit.artifacts.source = async (reader, digest, options) => {
       if (digest === source.slice(4)) {
         reads++;
         if (broken && mode === 'absence') return null;
         if (broken && (mode === 'exhaust' || reads < 3)) throw new Error('SyntheticPrivateReadFailure');
       }
-      const value = await original(reader, digest, options);
-      if (digest === source.slice(4) && mode === 'recover' && value !== null && recoveredAt === null) recoveredAt = reads;
-      return value;
+      return original(reader, digest, options);
     };
     const submission = { run: run.run, model: 'synthetic-model', items: [{ item: item.id, handling: 'handled', slots: { findings: [{
       text: '合成核对', code: 'edge_case_gap', rank: 'major', location: item.location,
@@ -41,10 +39,8 @@ for (const mode of ['recover', 'exhaust', 'absence']) test(`exact source ${mode}
       assert.equal(answer.acceptance, 'not_accepted'); assert.equal(answer.errors[0].code, 'REFERENCE_UNRESOLVED');
       assert.ok(reads >= 4, 'prefetch and later resolves each recheck current authorization; a previous absence is not an authorization cache'); assert.ok(!(await actions())[0].body.detail.hub_error); return;
     }
-    if (mode === 'recover') {
-      assert.equal(recoveredAt, 3, 'the source recovers on the third bounded attempt');
-      assert.ok(reads > recoveredAt!, 'later exact reference uses recheck source access instead of treating a prior read as authority');
-    } else assert.equal(reads, 3, 'a failed prefetch retries only three times before reporting an unfinished Hub check');
+    if (mode === 'recover') assert.equal(reads, 3, 'after bounded recovery the successful read is reused within this request');
+    else assert.equal(reads, 3, 'a failed prefetch retries only three times before reporting an unfinished Hub check');
     if (mode === 'recover') {
       assert.equal(answer.acceptance, 'accepted'); assert.equal(answer.result?.rounds.used, 0);
       const attempts = ((await actions())[0].body.detail.retry_attempts as Array<Record<string, unknown>>).filter(attempt => attempt.operation === 'read');
