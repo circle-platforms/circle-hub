@@ -1,6 +1,7 @@
 // Team management ACTIONS for the command bridge (interfaces §2). Shapes stay here; manage.registerActions installs them.
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { UsageError } from '../errors.ts';
+import { COMMAND_PARAMETERS } from '../command-parameters.ts';
 import { buildRegisteredAction } from './command-form.ts';
 import { FormError, registerActions, word, type Action, type Form } from './manage.ts';
 
@@ -22,10 +23,15 @@ function flag(name: string, value: string): string {
   return `--${name}=${value}`;
 }
 
+/** CLI option names of resource.assign; form audience keys must come from this registration, not a handwritten axis. */
+const resourceAssignOptions = COMMAND_PARAMETERS['resource.assign'].options;
+type ResourceAssignOption = keyof typeof resourceAssignOptions;
+const assignOption = <K extends ResourceAssignOption>(name: K): K => name;
+
 /** Audience choices for assigning a newly connected business system (decision 6). Packs owns system-add; copy lives here. */
 export const RESOURCE_AUDIENCE = {
-  all: 'all',
-  team: 'team',
+  all: assignOption('all'),
+  team: assignOption('team'),
   none: 'none',
 } as const;
 export type ResourceAudience = (typeof RESOURCE_AUDIENCE)[keyof typeof RESOURCE_AUDIENCE];
