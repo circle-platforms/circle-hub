@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { TeamId } from '../../contracts/api.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
-import { PgTeams } from './teams.ts';
 import { AccessError, ConflictError } from './errors.ts';
 import { captureRequestPermissions, withRequestPermissions } from './request-permissions.ts';
 import { sha256Hex } from './digest.ts';
@@ -13,7 +12,7 @@ async function world(t: import('node:test').TestContext) {
   const db=new Database(createPool(kit.database));t.after(()=>db.end());
   const {user:admin}=await kit.principals.bootstrapAdmin('synthetic-admin');
   const alice=await kit.principals.createUser(admin,'synthetic-alice'),bob=await kit.principals.createUser(admin,'synthetic-bob');
-  const teams=new PgTeams(db,kit.store,kit.objects,kit.principals,kit.authorizations,()=>new Date());
+  const teams=kit.teams;assert.ok(teams,'openRecords wires the real team service');
   return {kit,db,admin,alice,bob,teams};
 }
 
@@ -96,4 +95,20 @@ test('resource team and all-account grants require current enabled accounts',asy
   await w.teams.delete(w.admin,team.id);
   assert.equal(await w.kit.authorizations.canUseResource(w.alice.id,'synthetic-system'),false);
   await assert.rejects(w.kit.authorizations.assignResource(w.admin,'synthetic-system',w.bob.id));
+});
+
+test('membership started behind deactivation cannot commit from a stale enabled account',{timeout:60000},async t=>{
+  const w=await world(t),team=await w.teams.create(w.admin,'合成定序组');
+  const writer=(w.teams as import('./teams.ts').PgTeams).db;
+  let held!:()=>void,release!:()=>void,started!:()=>void;
+  const locked=new Promise<void>(resolve=>{held=resolve;}),continueUpdate=new Promise<void>(resolve=>{release=resolve;}),attempted=new Promise<void>(resolve=>{started=resolve;});
+  const original=writer.query.bind(writer);
+  writer.query=(async(...args:Parameters<typeof original>)=>{if(args[0].includes('ORDER BY id FOR SHARE'))started();return original(...args);}) as typeof writer.query;
+  const blocker=w.db.transaction(async tx=>{await w.db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE',[w.alice.id],tx);held();await continueUpdate;await w.db.query('UPDATE users SET disabled=true WHERE id=$1',[w.alice.id],tx);});
+  await locked;
+  const adding=w.teams.add(w.admin,team.id,w.alice.id).then(()=>null,error=>error);
+  try{await attempted;}finally{release();}
+  await blocker;assert.ok(await adding instanceof ConflictError);
+  assert.equal(await w.kit.authorizations.latest('assign',w.alice.id,team.id),null);
+  assert.equal((await w.db.query('SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2',[team.id,w.alice.id])).rowCount,0);
 });
