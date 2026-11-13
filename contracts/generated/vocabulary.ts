@@ -95,9 +95,9 @@ export const AXES = {
   composition_basis: { label: '组成依据', ui: '组成来源', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
   binding_status: { label: '版本绑定状态', owner: 'K03', values: [{ code: 'bound', label: '已绑定' }, { code: 'undeclared', label: '未声明' }, { code: 'conflict', label: '冲突' }] },
   binding_basis: { label: '版本绑定依据', ui: '版本绑定来源', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
-  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }] },
+  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '公共空间' }] },
   knowledge_entry_status: { label: '条目状态', owner: 'K02', values: [{ code: 'verified', label: '已核验', ui: '已验证' }, { code: 'unverified', label: '未核验', ui: '待验证' }, { code: 'withdrawn', label: '已撤回' }, { code: 'superseded', label: '被取代' }] },
-  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
+  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '公共空间' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
   knowledge_grantee: { label: '授权对象', ui: '分享对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
   knowledge_grant_action: { label: '授权操作', ui: '分享操作', owner: 'R01', values: [{ code: 'grant', label: '授权', ui: '已分享' }, { code: 'revoke', label: '收回授权', ui: '已收回分享' }] },
   knowledge_share_status: { label: '提交共享状态', ui: '分享到团队状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
@@ -1045,8 +1045,8 @@ export function isBindingBasis(value: unknown): value is BindingBasis {
 /** 知识空间 (K01) */
 export const KNOWLEDGE_SPACE_KIND = ['personal', 'team'] as const;
 export type KnowledgeSpaceKind = (typeof KNOWLEDGE_SPACE_KIND)[number];
-export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
-export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '公共空间' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '公共空间' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
 export const KnowledgeSpaceKindSchema = z.enum(KNOWLEDGE_SPACE_KIND);
 export function isKnowledgeSpaceKind(value: unknown): value is KnowledgeSpaceKind {
   return (KNOWLEDGE_SPACE_KIND as readonly unknown[]).includes(value);
@@ -1065,8 +1065,8 @@ export function isKnowledgeEntryStatus(value: unknown): value is KnowledgeEntryS
 /** 搜索范围 (K01) */
 export const KNOWLEDGE_SEARCH_SCOPE = ['personal', 'team', 'shared', 'all'] as const;
 export type KnowledgeSearchScope = (typeof KNOWLEDGE_SEARCH_SCOPE)[number];
-export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
-export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '团队', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '公共空间', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '公共空间', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
 export const KnowledgeSearchScopeSchema = z.enum(KNOWLEDGE_SEARCH_SCOPE);
 export function isKnowledgeSearchScope(value: unknown): value is KnowledgeSearchScope {
   return (KNOWLEDGE_SEARCH_SCOPE as readonly unknown[]).includes(value);
