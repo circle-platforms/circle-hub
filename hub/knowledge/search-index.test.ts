@@ -101,7 +101,7 @@ test('a read that registers a new team version leaves its index to the backgroun
   assert.deepEqual(await counts(w.db), unchanged, 'and wrote nothing of the index');
   assert.deepEqual(hidden.matches, []);
   assert.deepEqual(hidden.warnings?.map((warning) => warning.path), ['/', previous.body.products[0].path]);
-  assert.match(hidden.warnings?.[0].message ?? '', /^团队知识索引：正在后台建立；未检索该范围$/);
+  assert.match(hidden.warnings?.[0].message ?? '', /^公共空间知识索引：正在后台建立；未检索该范围$/);
   assert.deepEqual(await spaces.indexRound(), { built: 2, refused: 0, failed: 0 });
   const shown = await spaces.search(w.user, '合成团队条目', 'team');
   assert.equal(shown.matches.length, 1);
