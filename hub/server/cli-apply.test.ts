@@ -576,3 +576,70 @@ test('[PG] actual CLI children perform fresh init-admin stdin then apply and exp
   assert.equal(output.includes(storedToken), false);
   assert.doesNotMatch(initialized.stdout, /初始密码（仅显示一次/);
 });
+
+test('[PG] same-root all reset preserves old operator bytes and the standard CLI first setup remains usable', { timeout: 180000 }, async t => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const { open } = await import('node:fs/promises');
+  const { migrateRecords } = await import('../records/api.ts');
+  const { createContext, postgresFor, layoutAt, ensureLayout, newSettingsFile, writeSettingsFile, ensureDatabaseRunning, withSession } = await import('../platform/api.ts');
+  const { recordingRunner, exit, freePort, socketPort, libpqAvailable } = await import('../platform/test-support.ts');
+  const { resetData } = await import('./reset/host.ts');
+  const { protectedFiles } = await import('./reset/protected-files.ts');
+  const { removeTree } = await import('./assemble/files.ts');
+  const libpq = await libpqAvailable(); assert.ok(libpq, 'Real reset regression needs the existing PostgreSQL 18 backup tools');
+  const parent = await mkdtemp(join(tmpdir(), 'chu1-reset-')), layout = layoutAt(join(parent, 'data'));
+  await ensureLayout(layout);
+  const port = await freePort(), databasePort = socketPort();
+  await writeSettingsFile(layout, newSettingsFile({ environment: 'test', port, database: { port: databasePort } }));
+  const runner = recordingRunner(call => /(?:launchctl|systemctl)$/.test(call.command) ? exit(113, 'synthetic service not loaded') : undefined).runner;
+  const context = createContext({ CIRCLE_HUB_DATA_DIR: layout.root }, { platform: 'darwin', home: parent, launchAgentsDir: join(parent, 'agents'), layout, runner, libpqBin: libpq });
+  const postgres = postgresFor(context);
+  t.after(async () => { try { await postgres.stop(); } finally { await removeTree(parent); } });
+  await postgres.initialise(); await ensureDatabaseRunning(postgres, { create: true });
+  const database = { host: postgres.target.socketDir, port: databasePort, user: postgres.target.user, database: postgres.target.database };
+  await migrateRecords({ database }, { runtimeRole: postgres.application.user });
+  const env: NodeJS.ProcessEnv = {
+    HOME: parent, PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', NODE_NO_WARNINGS: '1',
+    CIRCLE_HUB_DATA_DIR: layout.root, CIRCLE_HUB_LOG_DIR: layout.logs, CIRCLE_HUB_PORT: String(port),
+    CIRCLE_HUB_DATABASE_SOCKET_DIR: database.host, CIRCLE_HUB_DATABASE_PORT: String(database.port),
+    CIRCLE_HUB_DATABASE_NAME: database.database, CIRCLE_HUB_DATABASE_USER: database.user,
+  };
+  const password = 'Synthetic-same-root-password-82!';
+  const passwordFile = join(parent, 'synthetic-first-setup.input');
+  await writeFile(passwordFile, password + '\n', { mode: 0o600, flag: 'wx' });
+  const entry = fileURLToPath(new URL('../../bin/circle-hub', import.meta.url));
+  const child = async (args: string[], stdin = false): Promise<{ code: number; stdout: string; stderr: string }> => {
+    const input = stdin ? await open(passwordFile, 'r') : null;
+    try {
+      return await new Promise((resolve, reject) => {
+        const subprocess = spawn(process.execPath, [entry, ...args], { cwd: parent, env, stdio: [input?.fd ?? 'ignore', 'pipe', 'pipe'], signal: t.signal });
+        let stdout = '', stderr = '';
+        subprocess.stdout?.on('data', chunk => { stdout += String(chunk); });
+        subprocess.stderr?.on('data', chunk => { stderr += String(chunk); });
+        subprocess.once('error', () => reject(new Error('Synthetic same-root CLI child could not start')));
+        subprocess.once('close', code => resolve({ code: code ?? -1, stdout, stderr }));
+      });
+    } finally { await input?.close(); }
+  };
+  const oldSetup = await child(['init-admin', '合成原管理员', '--password-stdin'], true);
+  assert.equal(oldSetup.code, 0, 'Original current-schema setup failed');
+  assert.equal(oldSetup.stdout.includes(password), false);
+  const originals = await protectedFiles(layout);
+  assert.ok(originals.some(file => file.area === 'keys'));
+  const report = await resetData(context, { scopes: 'all', keepConfig: false });
+  assert.ok(report.archive); assert.ok(report.backup);
+  assert.deepEqual(await protectedFiles(layout), originals);
+  const [empty] = await withSession(postgres.connector, postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM users'));
+  assert.equal(empty!.n, 0);
+  const freshSetup = await child(['init-admin', '合成新管理员', '--password-stdin'], true);
+  assert.equal(freshSetup.stdout.includes(password) || freshSetup.stderr.includes(password), false);
+  if (freshSetup.code !== 0) assert.match(freshSetup.stderr, /已经有操作令牌/);
+  assert.equal(freshSetup.code, 0, 'Known first-setup blocker: reset preserved the stale operator token; no remove or other identity step was inserted');
+  const definition = { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }], knowledgeSync: [] };
+  const file = join(parent, 'synthetic-after-reset-definition.json'); await writeFile(file, JSON.stringify(definition), { mode: 0o600, flag: 'wx' });
+  const applied = await child(['apply', file]); assert.equal(applied.code, 0, 'Same-root apply failed after standard first setup');
+  const exported = await child(['export']); assert.equal(exported.code, 0);
+  const actual = parseDeployment(JSON.parse(exported.stdout));
+  assert.deepEqual({ ...actual, accounts: actual.accounts.map(({ id: _id, ...account }) => account) }, parseDeployment(definition));
+});
