@@ -1,3 +1,4 @@
+import { CliError } from './errors.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ResetRequest, ResetInspection, ResetPlan, ResetWorkerStatus } from '../platform/api.ts';
@@ -87,8 +88,16 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
         return page(response, { authorized: false, csrf: '', loginNonce: nonce });
       }
       const operation = action.operationId ? await options.bridge.status(action.operationId, authContext(session, action)) : undefined;
+      let inspection: ResetInspection | undefined;
+      if (!operation) {
+        try { inspection = await options.bridge.inspect(); }
+        catch (error) {
+          if (error instanceof CliError) return sendText(response, 409, error.message);
+          throw error;
+        }
+      }
       return page(response, { authorized: true, rebuildNeeded: options.rebuildNeeded, csrf: session.csrf, actionId: action.id,
-        ...(operation ? { operation } : { inspection: await options.bridge.inspect() }), ...(action.plan ? { plan: action.plan } : {}) });
+        ...(operation ? { operation } : { inspection }), ...(action.plan ? { plan: action.plan } : {}) });
     }
     if (request.method === 'GET' && url.pathname.startsWith(STATUS)) {
       const operationId = url.pathname.slice(STATUS.length);
