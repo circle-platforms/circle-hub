@@ -221,6 +221,32 @@ describe('initialize and tools/list', () => {
 });
 
 describe('list_task_packs', () => {
+  test('shares the member projection and reads the candidate catalog only once without exposing unassigned packs', async t => {
+    const user = await person(['review']);
+    const admin = server.admin.principal;
+    const team = await server.records.teams.create(admin, '投影团队');
+    await server.records.teams.add(admin, team.id, user.principal.id);
+    await server.records.authorizations.assignTeam(admin, team.id, 'local-review');
+    const client = await connect(user); t.after(() => client.close());
+    const original = server.fakes.workflows.summaries.bind(server.fakes.workflows);
+    let reads = 0;
+    server.fakes.workflows.summaries = async by => {
+      reads += 1;
+      return [...await original(by), fakeWorkflowPack('hidden-pack', '不应泄露的候选', ['application/json']).summary!];
+    };
+    t.after(() => { server.fakes.workflows.summaries = original; });
+    const result = await client.call('list_task_packs', {});
+    assert.equal(result.isError, false);
+    assert.equal(reads, 1);
+    const view = result.structuredContent.member_capabilities as import('../records/api.ts').MemberCapabilities;
+    assert.deepEqual(view.teams, ['投影团队']);
+    assert.deepEqual(view.workflows.map(item => item.ref).sort(), ['local-review@1.0.0', 'review@1.0.0']);
+    assert.deepEqual((result.structuredContent.packs as { id: string }[]).map(item => item.id).sort(), ['local-review', 'review']);
+    assert.equal(JSON.stringify(result).includes('hidden-pack'), false);
+    assert.equal(JSON.stringify(result).includes('不应泄露的候选'), false);
+    assert.equal(JSON.stringify(view).includes(team.id), false);
+  });
+
   test('the MCP text gives every assigned pack in full in one answer (decision 158)', { timeout: 360_000 }, async t => {
     // The old 80-pack case took 27.7 s alone and 82.5 s under load. The ceiling is only a hang guard;
     // fewer assignments keep at least 128 KiB of descriptions, and the request's actual SQL/answer counts are recorded.

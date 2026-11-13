@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { openTestRecords } from '../testing/records.ts';
 import { memberCapabilities, type MemberCapabilitySources } from './api.ts';
 import { AccessError } from './errors.ts';
+import { requestPermissions, withRequestPermissions } from './request-permissions.ts';
 
 test('member capabilities union assignments without leaking installed or other-team candidates', async t => {
   const records = await openTestRecords(); t.after(() => records.close());
@@ -18,7 +19,10 @@ test('member capabilities union assignments without leaking installed or other-t
   await records.authorizations.assignResource(admin, 'assigned-resource', one.id);
   const seen: string[] = [];
   const sources: MemberCapabilitySources = {
-    canUsePack: async (by, pack) => pack === 'generic-skill' || await records.authorizations.canUse(by.id, pack),
+    canUsePack: async (by, pack) => {
+      assert.equal(requestPermissions(by.id)?.principalId, by.id, 'projection uses the target request snapshot');
+      return pack === 'generic-skill' || await records.authorizations.canUse(by.id, pack);
+    },
     packs: async by => { seen.push(by.id); return [
       { id: 'assigned-workflow', version: '1.0.0', title: '可用工作流', kind: 'workflow' },
       { id: 'assigned-skill', version: '1.0.0', title: '可用技能', kind: 'skill' },
@@ -32,7 +36,7 @@ test('member capabilities union assignments without leaking installed or other-t
     personalPackUse: async () => false,
     environments: async () => ({ ready: false, items: [{ name: '不该枚举的环境', occupancy: null }], missing: '权限接线未就绪', nextAction: '请管理员完成接线' }),
   };
-  const view = await memberCapabilities(records, sources, admin, alice.id);
+  const view = await withRequestPermissions(records.artifacts, admin, () => memberCapabilities(records, sources, admin, alice.id));
   assert.deepEqual(view.teams, ['乙组', '甲组'].sort());
   assert.deepEqual(view.workflows.map(item => item.ref), ['assigned-workflow@1.0.0']);
   assert.deepEqual(view.skills.map(item => item.ref), ['assigned-skill@1.0.0', 'generic-skill@1.0.0']);
@@ -47,6 +51,13 @@ test('member capabilities union assignments without leaking installed or other-t
   const revoked = await memberCapabilities(records, sources, alice);
   assert.deepEqual(revoked.skills.map(item => item.ref), ['generic-skill@1.0.0']);
   assert.deepEqual(revoked.connections, []);
+  const unassigned = await records.principals.createUser(admin, '仅全局技能成员');
+  const genericOnly = await memberCapabilities(records, sources, unassigned);
+  assert.deepEqual(genericOnly.teams, []);
+  assert.deepEqual(genericOnly.workflows, []);
+  assert.deepEqual(genericOnly.skills.map(item => item.ref), ['generic-skill@1.0.0']);
+  assert.ok(genericOnly.denials.some(item => item.reason.includes('工作流') && item.nextAction.includes('加入团队')));
+  assert.equal(genericOnly.denials.some(item => item.reason.includes('技能')), false, 'global skill must not be reported missing');
   await records.principals.setDisabled(admin, alice.id, true);
   const disabled = await memberCapabilities(records, sources, admin, alice.id);
   assert.equal(disabled.member.enabled, false);

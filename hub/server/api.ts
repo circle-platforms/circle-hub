@@ -12,6 +12,7 @@ import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, Ru
 import type { Principal, RecordsKit, MemberCapabilities } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { RunsEngine } from '../runs/api.ts';
+import type { PackSummary } from '../../contracts/src/run.ts';
 
 export { createApp } from './app.ts';
 export { main, registerCommand, registeredCommands, RESERVED_COMMANDS } from './cli.ts';
@@ -31,7 +32,7 @@ export interface ServerDeps {
   documents?: { list(): Promise<Array<{ name: string; sha256: string; size: number }>> };
   records: RecordsKit;
   /** Current member view, shared by the console and list_task_packs; only self or an active administrator. */
-  memberCapabilities(by: Principal, userId?: string): Promise<MemberCapabilities>;
+  memberCapabilities(by: Principal, userId?: string, packSummaries?: readonly PackSummary[]): Promise<MemberCapabilities>;
   runs: RunsService;
   maintenance?: Pick<RunsEngine, 'startMaintenance' | 'stopMaintenance'>;
   /**

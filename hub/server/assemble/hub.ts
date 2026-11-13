@@ -254,9 +254,9 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     documents: docs,
     config,
     records,
-    memberCapabilities: (by, userId) => memberCapabilities(records, {
+    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
       canUsePack: (target, pack) => registry.canUse(target.id, pack),
-      packs: target => workflows.summaries(target),
+      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
       connections: async target => (await resources.list(target)).map(item => ({
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
       })),
