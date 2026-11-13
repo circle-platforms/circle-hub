@@ -37,7 +37,7 @@ export function sourceReader(artifacts: Artifacts, consumer: ProducerKind,bindin
         if (source === null || consumer === 'model' && source.bytes === null && source.readTier !== 'retain_only') return null;
         const scan=source.artifact?.body?.scan;
         // Accepted findings can come from a different capture of the same bytes, so never cache them as clean.
-        const cacheable=source.acceptance===undefined&&scan?.inspected===true&&!scan.truncated&&scan.findings.length===0;
+        const cacheable=source.acceptance===undefined&&scan!==undefined&&!scan.truncated&&scan.findings.length===0;
         return { bytes: source.bytes, mediaType: source.mediaType, size: source.size, readTier: source.readTier, cacheable };
       },{type:'retriever'}),source=>source?.cacheable ? source.bytes?.byteLength??0 : -1);
     },
