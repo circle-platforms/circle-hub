@@ -2,8 +2,8 @@ import {personalLocal,personalSyncNotice,syncSelected} from './personal-sync.ts'
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {capacitySummary} from './capacity.ts';
 import {html,link,table,pageLayout,emptyAction,type Html} from './html.ts';
-import { count } from './components.ts';
-import {evidence} from './presentation.ts';
+import { count, filterForm } from './components.ts';
+import { actionLink, evidence } from './presentation.ts';
 import {box,button} from './ui.ts';
 import {knowledgeSearchScopeLabel,knowledgeState,timestamp} from './knowledge-display.ts';
 import {sharingRows} from './sharing-history.ts';
@@ -36,9 +36,9 @@ export async function knowledgeHome(ctx:PageContext):Promise<Html>{
    rows.push({at:entry.body.at,cells:[link('/console/knowledge/space',evidence(entry.body.content.statement),{space,path,entry:entry.row.entry,scope}),location,audience.text,knowledgeState(entry.row.status),timestamp(entry.body.at)]});
  }
  const history=await spaces.shareHistory(ctx.principal);
- const search=html`<form class="ch-actions" data-filters method="get" action="/console/search"><input type="hidden" name="scope" value="${scope}"><label>关键词<input name="q" required maxlength="200"></label><button class="ch-btn ch-btn--secondary" type="submit">搜索</button></form>`;
+ const search=filterForm('/console/search', html`<input type="hidden" name="scope" value="${scope}"><label>关键词<input name="q" required maxlength="200"></label>`, '搜索');
  const capacity=scope==='personal'?await spaces.usage(ctx.principal):null;
- const controls=scope==='personal'&&!local?html`<div class="ch-actions">${button('/console/knowledge/space','导入我的知识',{params:{space:ctx.principal.id,path:'/',import:'1',scope},hint:'上传本人原文进入私人空间'})}<a class="ch-btn ch-btn--secondary" href="${'/console/knowledge/space?'+new URLSearchParams({space:ctx.principal.id,path:'/',scope})+'#grant-knowledge'}">分享…</a>${button('/console/knowledge/space','新建',{primary:true,params:{space:ctx.principal.id,path:'/',edit:'1',scope}})}</div>`:scope==='team'&&ctx.admin?button('/console/operations/knowledge','导入公共知识',{primary:true}):html``;
+ const controls=scope==='personal'&&!local?html`<div class="ch-actions">${button('/console/knowledge/space','导入我的知识',{params:{space:ctx.principal.id,path:'/',import:'1',scope},hint:'上传本人原文进入私人空间'})}${actionLink('/console/knowledge/space?'+new URLSearchParams({space:ctx.principal.id,path:'/',scope})+'#grant-knowledge','分享…')}${button('/console/knowledge/space','新建',{primary:true,params:{space:ctx.principal.id,path:'/',edit:'1',scope}})}</div>`:scope==='team'&&ctx.admin?button('/console/operations/knowledge','导入公共知识',{primary:true}):html``;
  const submissions=box({title:'分享到公共空间记录',hint:'显示本人提交的检查结果；我的原条目与分享保留'},table(['条目','提交时间','结果','公共空间位置或原因'],await sharingRows(ctx,history.items),NO_TEAM_SHARES),{flush:history.items.length>0});
  // One list per page (decision 151): what is readable in this scope, newest change first, with its count in the head. No
  // side pane repeats the list; the pane is only the place where the sync setting opens.

@@ -11,7 +11,8 @@ import type { PageContext } from './context.ts';
 
 export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Array<[string,unknown]>>{
  const spaces=ctx.deps.knowledge?.spaces;if(!ctx.admin||!spaces)return [];
- const usage=await spaces.usage(ctx.principal,user.id);
+ let usage:Awaited<ReturnType<NonNullable<typeof spaces>['usage']>>|null=null;
+ try{usage=await spaces.usage(ctx.principal,user.id);}catch{usage=null;}
  const counts=[];
  for(const source of [
   {kind:'knowledge_space_grant',key:'knowledge.space.grantee',schema:SpaceGrantBody,label:uiLabelOf('knowledge_view','knowledge')},
@@ -27,5 +28,5 @@ export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Arr
   counts.push(source.label+' '+(user.disabled?0:[...latest.values()].filter(Boolean).length));
  }
  const sync=await ctx.deps.records.personalSync?.memberMetadata(ctx.principal,user.id);
- return [...(sync?[[axisUiLabel('sync_mode'),uiLabelOf('sync_mode',sync.mode)],[uiLabelOf('sync_field','last_synced_at'),sync.last_synced_at?timestamp(sync.last_synced_at):'尚未同步']] as Array<[string,unknown]>:[]),['私人空间容量',capacitySummary(usage)],['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
+ return [...(sync?[[axisUiLabel('sync_mode'),uiLabelOf('sync_mode',sync.mode)],[uiLabelOf('sync_field','last_synced_at'),sync.last_synced_at?timestamp(sync.last_synced_at):'尚未同步']] as Array<[string,unknown]>:[]),...(usage?[['私人空间容量',capacitySummary(usage)] as [string,unknown]]:[]),['分享给全体管理员的文件夹与工作流',counts.join(' · ')]];
 }

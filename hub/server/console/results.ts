@@ -8,7 +8,7 @@ import type { RunRecord } from '../../../contracts/src/run.ts';
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
 import { INTERFACE_LABELS, NOT_APPLICABLE, coverageText, statusText, terminalKind, terminalText } from '../claims.ts';
 import { countsLine } from '../text.ts';
-import { errorLine, filterForm, selectControl } from './components.ts';
+import { errorLine, filterForm, nextPage, selectControl } from './components.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, missingProductionResult } from './pages.ts';
@@ -25,9 +25,9 @@ export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const runs = listing.items.filter((run) => production(run) && (build === undefined || run.build === build));
   const partial=listing.next !== null || param(ctx,'cursor') !== undefined;
   const empty=partial ? `这一页的 ${listing.items.length} 个任务里没有符合筛选的生产结果` : '没有符合筛选的生产结果';
-  const filter = html`<form class="ch-actions" data-filters method="get" action="/console/results"><label>工作流 <input name="pack" value="${pack ?? ''}"></label><label>构建 <input name="build" value="${build ?? ''}"></label><button class="ch-btn ch-btn--secondary" type="submit">筛选</button></form>`;
+  const filter = filterForm('/console/results', html`<label>工作流 <input name="pack" value="${pack ?? ''}"></label><label>构建 <input name="build" value="${build ?? ''}"></label>`);
   const titles=await packTitles(ctx);
-  const next = listing.next === null ? '' : html`<p>${link('/console/results', '下一页', { pack, build, cursor: listing.next })}</p>`;
+  const next = listing.next === null ? '' : nextPage('/console/results', { pack, build, cursor: listing.next });
   return { status: 200, body: page(ctx.chrome('生产结果', { active: 'tasks', sub: link('/console/runs', '任务'), hint: PRODUCTION_RESULT_HINT }), html`${filter}${partial || runs.length !== listing.items.length ? html`<p class="notice">${partial?'部分：':''}本页检查了 ${listing.items.length} 个任务，列出 ${runs.length} 个有生产结果且符合筛选的任务${listing.next !== null ? '；继续查看下一页' : ''}</p>` : ''}${table(
     ['任务', uiLabelOf('pack_kind', 'workflow'), '产品 / 版本 / 构建', '开始时间', '条目'],
     runs.map((run) => [html`${link(`/console/results/${run.run}`,taskTitle(run,titles))}${sharedRunNotice(ctx,run)}`, taskTitle(run,titles), [run.product, run.version, run.build].filter(Boolean).join(' / '), time(run.started_at), run.items.length]),

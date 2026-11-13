@@ -22,7 +22,11 @@ test('team and member management stay available without the knowledge port or it
  const hub=await createTestHub(options);t.after(()=>hub.close());const member=await hub.createUser('合成无知识端口成员'),{createApp}=await import('./app.ts');
  for(const missingPort of [true,false]){
   // Management-only hosts may omit knowledge entirely; others have not enabled personal spaces.
-  const deps={...hub.deps};if(missingPort)Reflect.deleteProperty(deps,'knowledge');else deps.knowledge={...deps.knowledge,spaces:undefined};
+  const deps={...hub.deps};if(missingPort)Reflect.deleteProperty(deps,'knowledge');else{
+   // Spaces stay present (C3); a failing usage call keeps capacity unknown without dropping the port.
+   const spaces=deps.knowledge.spaces!;
+   deps.knowledge={...deps.knowledge,spaces:new Proxy(spaces,{get(target,prop,receiver){return prop==='usage'?async()=>{throw new Error('synthetic capacity unavailable');}:Reflect.get(target,prop,receiver);}})};
+  }
   const app=createApp(deps,{log:()=>{}}),listener=await app.listen(),port=Number(new URL(listener.url).port);
   try{
    const anonymous=await openConsole({port}),refused=await anonymous.get('/console/operations/member');assert.equal(refused.status,303);assert.match(String(refused.headers.location),/^\/console\/login\?/);

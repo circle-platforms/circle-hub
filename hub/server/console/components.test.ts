@@ -57,6 +57,8 @@ test('emptyBlock, errorLine, submitButton and selectControl render once', () => 
   assert.match(emptyBlock({ title: '尚无任务', text: '客户端启动任务后在此列出。' }).text, /ch-empty-title/);
   assert.match(errorLine('筛选的任务结果不对').text, /class="error"/);
   assert.match(submitButton('保存', { danger: true }).text, /ch-btn--danger/);
+  assert.match(submitButton('预检', { secondary: true, name: 'preview_grant', value: '1' }).text, /name="preview_grant" value="1"/);
+  assert.match(submitButton('尝试连接', { secondary: true, formaction: '/console/admin/do/system-test', formnovalidate: true, title: '只读' }).text, /formaction="\/console\/admin\/do\/system-test"/);
   const select = selectControl('pack', [{ value: 'w1', label: '工作流一', selected: true }], { value: '', label: '全部' }).text;
   assert.match(select, /<select name="pack">/);
   assert.match(select, /selected/);

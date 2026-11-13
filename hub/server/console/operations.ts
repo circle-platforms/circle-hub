@@ -14,7 +14,7 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import type { PackStaging } from './staging.ts';
 import { forgetTrialMessage, trialCard, type ForgetOutcome, type TrialOutcome } from './trial.ts';
 import { card, chip, stepper as steps, when } from './ui.ts';
-import { errorLine, segments, selectControl } from './components.ts';
+import { errorLine, segments, selectControl, submitButton } from './components.ts';
 import { commandFields } from './command-form.ts';
 import { adminDoPath, knowledgeSpacePath, operationsPackPath, operationsPath } from './routes.ts';
 import { RESOURCE_AUDIENCE, RESOURCE_AUDIENCE_OPTIONS, SYSTEM_ADD_AUDIENCE_HINT } from './team-actions.ts';
@@ -73,8 +73,8 @@ ${field('访问地址', html`<textarea name="origins" rows="3" required placehol
 ${field('设置', html`<textarea name="settings" rows="2" placeholder="tenant=demo">${prefilled(prefill, 'settings')}</textarea>`, { hint: '每行 键=值，可留空', full: true })}
 ${field('凭据项', html`<textarea name="credentials" rows="2" placeholder="token=DEMO_TOKEN">${prefilled(prefill, 'credentials')}</textarea>`, { hint: '每行 凭据项=凭据名称；内容在下面填写，或之后在运行 Hub 的服务器上设置', full: true })}
 ${secretRows}
-<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="${adminDoPath('system-test')}" formnovalidate title="只尝试读取接口并记录结果，不保存配置与凭据内容">尝试连接</button> </div>
-${canForget ? html`<div data-wide-field><button type="submit" class="ch-btn ch-btn--secondary" formaction="${adminDoPath('system-test-forget')}" formnovalidate title="确认业务系统账户已解锁后，重新填写同一组凭据再清除，不会发送登录或自动重试。">清除这组凭据的失败记录</button></div>` : ''}
+<div data-wide-field>${submitButton('尝试连接', { secondary: true, formaction: adminDoPath('system-test'), formnovalidate: true, title: '只尝试读取接口并记录结果，不保存配置与凭据内容' })} </div>
+${canForget ? html`<div data-wide-field>${submitButton('清除这组凭据的失败记录', { secondary: true, formaction: adminDoPath('system-test-forget'), formnovalidate: true, title: '确认业务系统账户已解锁后，重新填写同一组凭据再清除，不会发送登录或自动重试。' })}</div>` : ''}
 </div>`, '接入', { primary: true });
   const trialStep = aside === undefined ? 1 : 2;
   return html`${steps(['选择业务系统接入', '访问地址与凭据', '尝试连接', '完成'], trialStep)}

@@ -21,7 +21,7 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { treePage } from './pages.ts';
 import {button,sectionHead} from './ui.ts';
 import {evidence,panel as card,badge as chip,facts as kv,technical,sourceBlock,stat,field as inputField,dialog,actionLink,tooltip} from './presentation.ts';
-import { errorLine, filterForm, postForm, selectControl } from './components.ts';
+import { errorLine, filterForm, postForm, selectControl, submitButton } from './components.ts';
 import {VERIFIED_SCOPE,knowledgeSearchScopeLabel,knowledgeSpaceKindLabel,knowledgeState,number,size,timestamp,versionName,versionLabel} from './knowledge-display.ts';
 import {sharingRows} from './sharing-history.ts';
 import {entryProvenance,entryClientName} from './client-provenance.ts';
@@ -38,7 +38,7 @@ function form(ctx: PageContext, action: string, fields: Html, label: string, mul
       multipart,
       personalEpoch: ctx.personalEpoch,
       extra: ' data-entry-editor',
-      actions: html`<div class="ch-editor-actions ch-actions"><button type="submit" class="ch-btn ${danger ? 'ch-btn--danger' : 'ch-btn--primary'}"${disabled ? html` disabled` : html``}>${label}</button>${actionLink(back, '取消并返回')}</div>`,
+      actions: html`<div class="ch-editor-actions ch-actions">${submitButton(label, { danger, disabled })}${actionLink(back, '取消并返回')}</div>`,
     });
   }
   return postForm({
@@ -152,7 +152,7 @@ export async function spacePage(ctx: PageContext): Promise<PageResult> {
       const target=ctx.url.searchParams.get('team_path')??path;
       const preview=ctx.url.searchParams.get('share')==='1'?await spaces.precheckShare(ctx.principal,{root:entry.root,path,entry:digest,team_path:target}):null;
       const destination=preview?preview.target_path??'':target;
-      share=preview?card({title:'分享到公共空间预检',hint:'分享到公共空间是提交一份独立的公共空间副本，不是开放我的条目的访问权限。我的原条目与分享保留；公共空间条目标明提交人，本人和管理员可撤回，撤回不能追回已读内容。确认时重新执行全部检查。'},html`<p>我的：保留不变 · ${audience.text}</p><p>公共空间：新写入一条 · ${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/space"><input type="hidden" name="space" value="${space}"><input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="share" value="1"><label>公共空间文件夹<input name="team_path" value="${destination}"></label><button class="ch-btn ch-btn--secondary" type="submit">重新预检</button></form>${checkTable(preview.checks)}${preview.duplicate?existingTeamLink(preview.duplicate):''}${form(ctx,'share',html`<input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="team_path" value="${destination}">`,'确认分享到公共空间',false,!preview.ok)}`):html``;
+      share=preview?card({title:'分享到公共空间预检',hint:'分享到公共空间是提交一份独立的公共空间副本，不是开放我的条目的访问权限。我的原条目与分享保留；公共空间条目标明提交人，本人和管理员可撤回，撤回不能追回已读内容。确认时重新执行全部检查。'},html`<p>我的：保留不变 · ${audience.text}</p><p>公共空间：新写入一条 · ${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/space"><input type="hidden" name="space" value="${space}"><input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="share" value="1"><label>公共空间文件夹<input name="team_path" value="${destination}"></label>${submitButton('重新预检', { secondary: true })}</form>${checkTable(preview.checks)}${preview.duplicate?existingTeamLink(preview.duplicate):''}${form(ctx,'share',html`<input type="hidden" name="root" value="${entry.root}"><input type="hidden" name="path" value="${path}"><input type="hidden" name="entry" value="${digest}"><input type="hidden" name="team_path" value="${destination}">`,'确认分享到公共空间',false,!preview.ok)}`):html``;
     }
     const attributions=await spaces.entryAttributions(ctx.principal,entry.root,path,digest);
     const sources:Html[]=[];for(const [groundIndex,ground] of entry.body.grounds.entries()){const pinned=attributions.find(row=>ground.reference==='src:'+row.sha256);sources.push(await sourceBlock(ctx,ground.reference,ground.quotation,pinned?.artifact,{root:entry.root,path,entry:digest,ground:groundIndex}));}
@@ -190,7 +190,7 @@ ${filterForm('/console/knowledge/space-diff', html`<input type="hidden" name="sp
   const collapsedHistory=html`<details class="ch-section" id="knowledge-history"${ctx.url.searchParams.get('history')==='1'?html` open`:''}><summary title="知识版本是空间的版本快照；产品版本是条目的适用条件，两者分别选择">知识版本记录</summary>${comparison}</details>`;
   let controls:Html=html``,editors:Html=html``;
   if(own||space==='team'&&ctx.admin){
-    controls=html`<div class="ch-actions">${own?button('/console/knowledge/space','导入我的知识',{params:{space,path,import:'1'},hint:'上传本人原文到私人空间，条目单独写入'}):''}${own?html`<a class="ch-btn ch-btn--secondary" href="#grant-knowledge">分享…</a>`:''}${button('/console/knowledge/space','新建文件夹…',{params:{space,path,directory:'1'}})}${own?button('/console/knowledge/space','新建',{primary:true,params:{space,path,edit:'1'}}):button('/console/operations/knowledge','导入公共知识',{primary:true})}</div>`;
+    controls=html`<div class="ch-actions">${own?button('/console/knowledge/space','导入我的知识',{params:{space,path,import:'1'},hint:'上传本人原文到私人空间，条目单独写入'}):''}${own?actionLink('#grant-knowledge','分享…'):''}${button('/console/knowledge/space','新建文件夹…',{params:{space,path,directory:'1'}})}${own?button('/console/knowledge/space','新建',{primary:true,params:{space,path,edit:'1'}}):button('/console/operations/knowledge','导入公共知识',{primary:true})}</div>`;
     editors=html`${ctx.url.searchParams.get('directory')==='1'?form(ctx,'directory',html`<input type="hidden" name="space" value="${space}">${field('新文件夹路径',html`<input name="path" required value="${path==='/'?'/notes':path+'/notes'}">`)}`,'建立文件夹'):''}${ctx.url.searchParams.get('edit')==='1'?editor(ctx,space,path):''}`;
   }
   const directory=await knowledgeDirectory(ctx,nodes,version,space,own,showCitations);
