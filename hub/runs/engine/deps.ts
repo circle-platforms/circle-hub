@@ -4,7 +4,7 @@ import type { ContributionLayer } from '../../knowledge/api.ts';
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
 import type { Principal, Principals, RecordsKit } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
-import type { LeaseService } from '../../leases/service.ts';
+import type { LeaseService } from '../../leases/api.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
 import type { SandboxLimits, SandboxOptions } from '../../rules/api.ts';
 import { createKeyedLock, wellFormed } from './util.ts';
