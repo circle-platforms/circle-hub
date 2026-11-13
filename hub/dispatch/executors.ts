@@ -87,8 +87,6 @@ export class ExecutorRegistry {
         let migration: SecretWrite | undefined;
         const name = source.credential ? secretNameOf(source.credential) : null;
         if (!current.source.credential && name) {
-            if (current.source.endpoint !== source.endpoint || current.source.ca !== source.ca)
-                throw new Error('迁移密钥与修改 endpoint、ca 须分开做；改地址后要重新输入密钥');
             const value = await this.records.vault.getText(`executor.${id}.bearer`);
             if (value !== null) {
                 const previous = await this.records.vault.readSecret(name);

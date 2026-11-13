@@ -71,15 +71,13 @@ test('two executors share one vault name and rotate without re-enrolling a confi
  const count=c.endpoint.calls.length;await c.service.precheck(c.admin,second.id);assert.ok(c.endpoint.calls.length>count);assert.ok(c.endpoint.calls.slice(count).every(call=>call.headers.authorization==='Bearer DEMO!Executor43'));
 });
 
-test('executor legacy migration is atomic and cannot change endpoint or CA in the same operation',async t=>{
+test('executor material migration uses the current administrator-approved endpoint',async t=>{
  const {canonicalBytes}=await import('../records/api.ts');
  const c=await setup();t.after(()=>c.close());const old={...c.executor.definition};delete old.credential;
  const stored=await c.kit.objects.put(canonicalBytes(old),'application/json');await c.kit.authorizations.configureResource(c.admin,'executor.'+c.executor.id,stored.sha256);
  await c.kit.vault.put('executor.'+c.executor.id+'.bearer','DEMO!Legacy42');
  const source={...old,credential:'${secret:DEMO_MIGRATION}'};
- await assert.rejects(c.registry.update(c.admin,c.executor.id,{...source,endpoint:c.endpoint.endpoint+'/changed'}),/分开做/);
- assert.equal(await c.kit.vault.has('executor.'+c.executor.id+'.bearer'),true);
- const migrated=await c.registry.update(c.admin,c.executor.id,source);assert.equal(await c.kit.vault.has('executor.'+c.executor.id+'.bearer'),false);
+ const migrated=await c.registry.update(c.admin,c.executor.id,{...source,endpoint:c.endpoint.endpoint+'/changed'});assert.equal(migrated.definition.endpoint,c.endpoint.endpoint+'/changed');assert.equal(await c.kit.vault.has('executor.'+c.executor.id+'.bearer'),false);
  assert.equal((await c.registry.material(migrated.id,migrated.definition)).value,'DEMO!Legacy42');
  const version=(await c.kit.variables.listSecrets(c.admin)).find(v=>v.name==='DEMO_MIGRATION');assert.equal(version?.version,1);
 });
