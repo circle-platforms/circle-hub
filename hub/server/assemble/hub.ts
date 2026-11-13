@@ -1,5 +1,5 @@
 import { primeStartupSecrets } from './secret-readiness.ts';
-import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
+import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readEnvironmentReadiness, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
 // assembleHub: the Hub built from the real packages over an opened configuration and records kit. Order: the vault master
 // key (when required: a missing or wrong key stops here, before anything listens), the core parsers, the pack registry and
@@ -287,6 +287,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     // The trial of a business system before it is connected: the connectors recheck the administrator.
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
+    // readiness is display-only (N3-readiness); it never feeds start/grantLeases or DispatchService admission.
     dispatch: {
       executors: async (by) => {
         const views: ExecutorView[] = [];
@@ -305,6 +306,58 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         ...(job.status.missing_fact === undefined ? {} : { missing_fact: job.status.missing_fact }),
         ...(job.status.next_action === undefined ? {} : { next_action: job.status.next_action }),
       }))),
+      ...(leases ? {
+        readiness: async (by, target) => {
+          const registry = new ExecutorRegistry(records);
+          return readEnvironmentReadiness({
+            account: (id) => records.principals.get(id),
+            executors: async () => {
+              const ids = new Set<string>();
+              let cursor: string | null = null;
+              do {
+                const page = await records.authorizations.history({ permission: 'resource_config', limit: 500, cursor });
+                for (const row of page.items) if (row.body.object.startsWith('executor.')) ids.add(row.body.object.slice('executor.'.length));
+                cursor = page.next;
+              } while (cursor !== null);
+              const rows = [];
+              for (const id of [...ids].sort()) {
+                try {
+                  // Resolve ordinary variables only (credential stays a reference). Unresolvable rows stay out — never guess target.
+                  const registered = await registry.get(id);
+                  if (!registered) continue;
+                  const definition = registered.definition;
+                  rows.push({
+                    id,
+                    definition: {
+                      target: definition.target,
+                      enabled: definition.enabled,
+                      manifest_sha256: definition.manifest_sha256,
+                      premises: definition.premises,
+                      bed_state: definition.bed_state,
+                      resources: [...definition.resources],
+                    },
+                  });
+                } catch {
+                  // Keep a safe missing: omit the row rather than inventing a target or first match.
+                }
+              }
+              return rows;
+            },
+            canUse: (actor, executor) => canUseEnvironment(records, actor, executor),
+            source: async (actor, sha) => {
+              const found = await records.artifacts.source(actor, sha, { consumer: 'function' });
+              return found ? { bytes: found.bytes ?? null } : null;
+            },
+            baseline: async (executor, probe) => {
+              if (dispatch === null) return null;
+              const row = await dispatch.getBaseline(executor, probe);
+              return row ? { recorded_at: row.created_at } : null;
+            },
+            leases,
+            ...(now === undefined ? {} : { now }),
+          }, by, target);
+        },
+      } : {}),
     },
   };
   return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
