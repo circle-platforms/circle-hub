@@ -8,7 +8,7 @@
 
 | 部件 | 版本 / 提交 | 以什么为准 | 说明 |
 |---|---|---|---|
-| circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；发行 0.3.0（2026-11-04）是重建后的第一个发行，带安装包；此前的 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md)、[当前状态](hub-status-2026-11.md) | 所有者的持久部署自 2026-11-04 起从 main 部署（决定 145），私有集成分支已封存 |
+| circle-hub | 公开 main：网页控制台（管理员也在这里管理 Hub）、自带 HTTPS、一键安装脚本、个人与团队知识空间；发行 0.3.0（2026-11-04）是重建后的第一个发行，带安装包；此前的 0.2.0 是已退役的服务器 | [Hub r4 进度](hub-r4-progress.md) | 所有者的持久部署自 2026-11-04 起从 main 部署（决定 145），私有集成分支已封存 |
 | 合约 | 通用模型第 51 版（`MODEL_VERSION`） | `contracts/model.json`、`contracts/codes.json`，生成物在 `contracts/generated` | `npm run verify:contracts` 核对生成物与来源一致 |
 | MCP | `@modelcontextprotocol/sdk` 1.32.2 | 根 `package.json` | 六个工具，streamable HTTP；MCP 标准授权（授权码或设备码）或 Bearer 令牌 |
 | Circle | 作为普通 MCP 客户端连接，不需要 hub 扩展 | MCP 协议与工具的 schema | Circle main 已合入六项通用 MCP 客户端改进并删去内置 Hub（circle#309，2026-10-26）和按 MCP 标准授权在浏览器登录（circle#396，2026-11-02）；Circle 里不出现 Hub 专用的界面或标签（D06 R[1]）；修改 Circle 需要所有者明确授权，范围见 [AGENTS.md](https://github.com/circle-platforms/circle-hub/blob/main/AGENTS.md) |
@@ -44,7 +44,7 @@
 
 ## 已退役
 
-下列内容属于已退役的任务与审批服务器（截至 0.2.0），对重建后的 Hub 不再成立或不再相关，原表见 [ca66002 的本页](https://github.com/circle-platforms/circle-hub/blob/ca66002fb6bfc3220547d0fdd895bfae83345943/docs/compatibility.md)：验收用的 Circle 运行时 fd8524a 及 `CIRCLE_BIN` / `CIRCLE_COMMIT` 门禁；Circle 发行绑定 v1.7.3 和 hub 扩展的目标基线；hub 扩展所用的客户端接口（[客户端接口交接](client-api-handoff.md)）；hub 验收用的 circle-packs 原件，以及 circle-packs CI 固定的 hub 依赖集；执行网关 cexg；产品包 Tool/Hook 的 macOS seatbelt 进程隔离及其验收路径；`circle-packs/modules/1`、`product-line/1`、`hub-*/1` 与 `/mcp` 端点这些 schema 和契约；“hub 先、circle 的 hub 扩展随后、packs 最后”的旧发布顺序。
+下列内容属于已退役的任务与审批服务器（截至 0.2.0），对重建后的 Hub 不再成立或不再相关，原表见 Git 提交 `ca66002fb6bfc3220547d0fdd895bfae83345943` 的本页：验收用的 Circle 运行时 fd8524a 及 `CIRCLE_BIN` / `CIRCLE_COMMIT` 门禁；Circle 发行绑定 v1.7.3 和 hub 扩展的目标基线；hub 扩展所用的客户端接口（客户端接口交接，见 Git 历史）；hub 验收用的 circle-packs 原件，以及 circle-packs CI 固定的 hub 依赖集；执行网关 cexg；产品包 Tool/Hook 的 macOS seatbelt 进程隔离及其验收路径；`circle-packs/modules/1`、`product-line/1`、`hub-*/1` 与 `/mcp` 端点这些 schema 和契约；“hub 先、circle 的 hub 扩展随后、packs 最后”的旧发布顺序。
 
 自 2026-11-13 起退役并移除的参考与归档内容：`foundation/circle`（Circle 1.0.4 源基线，原上游提交 `9d23c09a0f8de2f71920b32b23db9af6c9a41100`；`NOTICE` 与 `THIRD_PARTY_NOTICES.md` 改为指向该上游仓库与许可链接以保留署名）、`references/`（含 `source-manifest.json`）、`tools/verify-reference-archive.ts` 与 `.test.ts`、`npm run verify:references` / `test:references` 脚本，以及公开 CI 的 `Reference archive` 检查任务。
 

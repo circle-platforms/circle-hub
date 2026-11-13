@@ -24,6 +24,7 @@ import {
   type Site,
 } from './docs-rules.ts';
 import { SYNC_SPEC_PAGE, TABLE_BEGIN, TABLE_END, syncErrorTableProblems, withSyncErrorTable } from '../../tools/gen-sync-error-table.ts';
+import { docSetProblems } from './doc-set.ts';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
@@ -102,8 +103,8 @@ describe('links the docs site can serve', () => {
   it('finds the current published pages and leaves out the records', () => {
     assert.ok(CURRENT_PAGES.includes('docs/index.md'));
     assert.ok(CURRENT_PAGES.includes('docs/design/generic-model.md'));
-    assert.ok(!CURRENT_PAGES.includes('docs/server-s2-progress.md'), 'historical pages keep their original links');
     assert.ok(!PUBLISHED_PAGES.includes('docs/README.md'), 'docs/README.md is the GitHub index and not on the site');
+    assert.deepEqual(docSetProblems(ROOT), []);
   });
 
   for (const page of CURRENT_PAGES) {
