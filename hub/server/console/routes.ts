@@ -9,6 +9,8 @@
 const enc = (segment: string): string => encodeURIComponent(segment);
 
 export const overviewPath = (): string => '/console/overview';
+/** Member capability home（我能做的事）; administrators may add ?user= for view-as. */
+export const mePath = (): string => '/console/me';
 export const searchPath = (): string => '/console/search';
 
 export const runsPath = (): string => '/console/runs';

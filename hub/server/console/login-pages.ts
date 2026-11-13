@@ -82,7 +82,9 @@ export async function login(request: IncomingMessage, response: ServerResponse, 
   const principal = await principals.authenticate('Bearer ' + token);
   const state = principal ? await principals.passwordState?.(principal.id) : null;
   const next = safeNext(form.get('next'));
-  redirect(response, state?.mustChange ? '/console/password?next=' + encodeURIComponent(next) : next, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+  const home = principal?.role === 'admin' ? HOME : '/console/me';
+  const destination = next === HOME && principal?.role !== 'admin' ? home : next;
+  redirect(response, state?.mustChange ? '/console/password?next=' + encodeURIComponent(destination) : destination, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
 }
 
 /** Password forms have no data navigation until the forced first change is complete. */

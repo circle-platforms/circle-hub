@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { HubConfig, Limits } from '../config/index.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import type { Principal, RecordsKit, User } from '../records/api.ts';
+import { memberCapabilities, type Principal, type RecordsKit, type User } from '../records/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
@@ -123,6 +123,15 @@ export function fakeDeps(
   const deps: ServerDeps = {
     config,
     records,
+    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
+      canUsePack: (target, pack) => records.authorizations.canUse(target.id, pack),
+      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
+      connections: async target => (await fakes.resources.list(target)).map(item => ({
+        id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
+      })),
+      personalPackUse: async () => false,
+      environments: async () => ({ ready: false, items: [], missing: '合成环境权限端口未配置', nextAction: '配置合成环境权限端口后查询' }),
+    }, by, userId),
     runs: fakes.runs,
     knowledge: fakes.knowledge,
     workflows,

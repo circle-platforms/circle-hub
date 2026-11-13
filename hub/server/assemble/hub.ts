@@ -21,7 +21,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import type { Principal, RecordsKit } from '../../records/api.ts';
+import { memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -254,6 +254,18 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     documents: docs,
     config,
     records,
+    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
+      canUsePack: (target, pack) => registry.canUse(target.id, pack),
+      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
+      connections: async target => (await resources.list(target)).map(item => ({
+        id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
+      })),
+      personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
+      environments: async () => ({
+        ready: false, items: [], missing: '测试环境使用权限尚未接线',
+        nextAction: '请管理员完成测试环境分配与使用权限接线后重新查询',
+      }),
+    }, by, userId),
     runs,
     runsDetail: runs,
     registry,
