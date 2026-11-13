@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 // What every part of the knowledge service shares: the records it writes, the ports it consumes, the clock and the limits.
 import type { ExternalReaderPort, PacksPort, KnowledgeRunReadPort, KnowledgePackReadPort } from '../ports.ts';
 import type { Artifacts, ObjectStore, Pointers, Principal, Principals, RecordStore, RecordVariables, User } from '../records/api.ts';
@@ -140,6 +141,6 @@ export interface KnowledgeContext {
 export async function requireAdmin(context: KnowledgeContext, by: Principal | null | undefined, what: string): Promise<User> {
   const principal = by ?? context.admin;
   const account = principal === null || principal === undefined ? null : await context.records.principals.get(principal.id);
-  if (account === null || account.disabled || account.role !== 'admin') throw new KnowledgeError(`只有管理员可以${what}`);
+  if (account === null || account.disabled || !isAdmin(account)) throw new KnowledgeError(`只有管理员可以${what}`);
   return account;
 }

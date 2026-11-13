@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import type { Placement, ReadTier } from '../../contracts/generated/vocabulary.ts';
 // Test support for hub/knowledge: a synthetic product pack written to a temporary directory with real pack functions (run
@@ -387,7 +388,7 @@ export class FakePacks implements PacksPort {
   }
 
   async readableProducts(user: Principal): Promise<ReadonlySet<string>> {
-    if (user.role === 'admin') return new Set(this.handles.keys());
+    if (isAdmin(user)) return new Set(this.handles.keys());
     return this.readers.get(user.id) ?? new Set();
   }
 }

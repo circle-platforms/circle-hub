@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 import {personalEpoch,guardPersonalEpoch} from './personal-sync/guard.ts';
 // Personal/team knowledge uses immutable versions and shared content-addressed objects. Every read rechecks current grants.
 import { z } from 'zod';
@@ -168,7 +169,7 @@ export class KnowledgeSpaces {
       bytes=safeBytes(total);
     }
     const body=this.#draft(space,previous,entries,directories,by,reason,bytes,sources,products,facts.knowledge,epoch);
-    if(!sync)requireCapacity(facts,body.used_bytes-facts.knowledge,space==='team'?{admin:by?.role==='admin'}:undefined);
+    if(!sync)requireCapacity(facts,body.used_bytes-facts.knowledge,space==='team'?{admin:(by!==null&&by!==undefined&&isAdmin(by))}:undefined);
     body.tree=await this.#tree(body.directories,entries,products,tx,space==='team'?undefined:space);
     const record=await this.#ctx.records.store.put({kind:'knowledge_space_version',schema:'knowledge-space-version@1',provenance:'projected',body,index:[{key:VERSION_KEY,value:space}]},tx);
     const version={root:record.digest,body};if(!deferIndex)await this.#index(version,tx);
@@ -206,16 +207,16 @@ export class KnowledgeSpaces {
   /** Internal accounting port for committing writers; callers hold the space transaction lock. */
   async capacityFacts(space:string,tx?:Transaction):Promise<CapacityUsage>{if(space==='team')return capacityUsage(await historyUsage(this.#ctx.records.store,space,tx),await this.capacity(space,tx));return this.#ctx.records.personalSync?this.#ctx.records.personalSync.usageForSpace(space,tx):capacityUsage(await historyUsage(this.#ctx.records.store,space,tx),await this.capacity(space,tx));}
   async usage(by:Principal,space=by.id):Promise<CapacityUsage>{
-    by=await this.#user(by);if(space!==by.id&&by.role!=='admin'||space!=='team'&&!await this.#ctx.records.principals.get(space))fail('SOURCE_UNAVAILABLE');
-    return this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await lockActive(this.#ctx,by,tx);if(space!==by.id&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');return this.capacityFacts(space,tx);});
+    by=await this.#user(by);if(space!==by.id&&!isAdmin(by)||space!=='team'&&!await this.#ctx.records.principals.get(space))fail('SOURCE_UNAVAILABLE');
+    return this.#ctx.records.store.withTransaction(async tx=>{await this.#ctx.records.store.lock('knowledge-space:'+space,tx);by=await lockActive(this.#ctx,by,tx);if(space!==by.id&&!isAdmin(by))fail('SOURCE_UNAVAILABLE');return this.capacityFacts(space,tx);});
   }
   async setCapacity(by: Principal, space: string, bytes: number): Promise<void> {
     by = await this.#user(by);
-    if (by.role !== 'admin' || space!=='team'&&!(await this.#ctx.records.principals.get(space)))
+    if (!isAdmin(by) || space!=='team'&&!(await this.#ctx.records.principals.get(space)))
       fail('SOURCE_UNAVAILABLE');
     const body = SpaceQuotaBody.parse({ space, bytes, by: by.id, at: this.#ctx.now().toISOString() });
     await this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => { await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
-      by=await lockActive(this.#ctx,by,tx);if(by.role!=='admin'||space!=='team'&&(await this.#ctx.records.principals.get(space))?.deleted_at)fail('SOURCE_UNAVAILABLE'); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
+      by=await lockActive(this.#ctx,by,tx);if(!isAdmin(by)||space!=='team'&&(await this.#ctx.records.principals.get(space))?.deleted_at)fail('SOURCE_UNAVAILABLE'); await this.#ctx.records.store.put({ kind: 'knowledge_space_quota', schema: 'knowledge-space-quota@1', provenance: 'declared', body, index: [{ key: QUOTA_KEY, value: space }] }, tx); }));
   }
   async grants(by: Principal): Promise<SpaceGrantBody[]> {
     by = await this.#user(by);
@@ -239,7 +240,7 @@ export class KnowledgeSpaces {
     if (!owner || owner.disabled)
       return [];
     const grants = this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY, space, 'knowledge_space_grant'));
-    return grants.filter(g => g.audience === 'member' ? g.member === by.id : by.role === 'admin').map(g => g.path);
+    return grants.filter(g => g.audience === 'member' ? g.member === by.id : isAdmin(by)).map(g => g.path);
   }
   async mayRead(by: Principal, space: string, path = '/'): Promise<boolean> { return (await this.paths(by, space)).some(parent => withinSpacePath(path, parent)); }
   async visible(by: Principal, scope: KnowledgeSearchScope = 'all',onUnavailable?:(space:string,error:unknown)=>void,options:{initialize?:boolean}={}): Promise<VisibleSpace[]> {
@@ -250,7 +251,7 @@ export class KnowledgeSpaces {
     if (scope === 'team' || scope === 'all')
       ids.add('team');
     if (scope === 'shared' || scope === 'all') {
-      const keys = [by.id, ...(by.role === 'admin' ? ['administrators'] : [])];
+      const keys = [by.id, ...(isAdmin(by) ? ['administrators'] : [])];
       const rows = await this.#ctx.records.store.findMany<SpaceGrantBody>({ key: 'knowledge.space.grantee', values: keys, kind: 'knowledge_space_grant' });
       for (const row of rows)
         if (row.body.space !== by.id)
@@ -386,7 +387,7 @@ export class KnowledgeSpaces {
     const epoch=space===by.id?await personalEpoch(this.#ctx,by.id):undefined;
     const input = SpaceEntryInput.parse(raw);
     input.path = pathCheck(input.path);
-    if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
+    if (space !== by.id && (space !== 'team' || !isAdmin(by)))
       fail('SOURCE_UNAVAILABLE');
     if (space === 'team' && !input.grounds.length)
       fail('SPACE_ENTRY_INVALID', '团队知识导入须有可核验的依据');
@@ -422,7 +423,7 @@ export class KnowledgeSpaces {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       by=await lockActive(this.#ctx,by,tx);
-      if(space==='team'&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');
+      if(space==='team'&&!isAdmin(by))fail('SOURCE_UNAVAILABLE');
       const previous = await this.current(space, tx);
       const grants = space === 'team' ? [] : this.#latestGrants(await this.#records<SpaceGrantBody>(GRANT_KEY, by.id, 'knowledge_space_grant', tx));
       if (grants.some(g => withinSpacePath(input.path, g.path)))
@@ -487,13 +488,13 @@ export class KnowledgeSpaces {
     this.#scan(path);
     if (space === 'team' && withinSpacePath(path, PRODUCTS_PATH))
       fail('SPACE_ENTRY_INVALID', '产品目录由产品知识来源维护');
-    if (space !== by.id && (space !== 'team' || by.role !== 'admin'))
+    if (space !== by.id && (space !== 'team' || !isAdmin(by)))
       fail('SOURCE_UNAVAILABLE');
     return this.#write(space,() => this.#ctx.records.store.withTransaction(async (tx) => {
       await this.#ctx.records.store.lock('knowledge-space:' + space, tx);
       await guardPersonalEpoch(this.#ctx,by.id,epoch,tx);
       by=await lockActive(this.#ctx,by,tx);
-      if(space==='team'&&by.role!=='admin')fail('SOURCE_UNAVAILABLE');
+      if(space==='team'&&!isAdmin(by))fail('SOURCE_UNAVAILABLE');
       const previous = await this.current(space, tx);
       if (previous?.body.directories.includes(path))
         return previous;
@@ -515,7 +516,7 @@ export class KnowledgeSpaces {
       const row = rows.find(r => r.entry === entry && active(r));
       if (!row)
         fail('SOURCE_UNAVAILABLE');
-      if(space==='team'&&by.role!=='admin'){const body=await this.#entry(row,tx);if(!body?.shared_from||body.by!==by.id)fail('SOURCE_UNAVAILABLE');}
+      if(space==='team'&&!isAdmin(by)){const body=await this.#entry(row,tx);if(!body?.shared_from||body.by!==by.id)fail('SOURCE_UNAVAILABLE');}
       row.status = 'withdrawn';
       await this.#save(space, previous, rows, previous.body.directories, by, space === 'team' ? '撤回团队条目' : '撤回个人条目', 0, tx);
     }));
@@ -866,7 +867,7 @@ export class KnowledgeSpaces {
       const {client:_personalClient,...shared}=view.body;const body=SpaceEntryBody.parse({...shared,space:'team',grounds,by:by.id,at,session,replaces:replacement?.entry??null,shared_from:source,...(client?{client}:{}),...([...sources.values()].some(source=>source.attribution)?{source_attributions:[...new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[]))]}:{})});
       const plannedRows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row),facts=await this.capacityFacts('team',tx);
       const planned=this.#draft('team',previous,[...plannedRows,{path:teamPath,entry:input.entry,record:'0'.repeat(64),status:'verified'}],previous.body.directories,by,'提交共享',safeBytes(BigInt(chargedBytes(body))+[...sources.values()].reduce((sum,source)=>sum+BigInt(source.size),0n)),[...previous.body.sources,...[...sources.values()].map(()=>'0'.repeat(64))],undefined,facts.knowledge);
-      requireCapacity(facts,planned.used_bytes-facts.knowledge,{admin:by.role==='admin'});
+      requireCapacity(facts,planned.used_bytes-facts.knowledge,{admin:isAdmin(by)});
       const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:body.entry},{key:'knowledge.space.entry_owner',value:'team'}]},tx);
       const sourceRecords=[...previous.body.sources];
       for(const source of sources.values()){
@@ -959,7 +960,7 @@ export class KnowledgeSpaces {
       const plannedRows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row),facts=await this.capacityFacts('team',tx),sent=[...input.sources.values()];
       const added=[...sources.values()].reduce((sum,source)=>sum+BigInt(source.size),0n)+sent.reduce((sum,source)=>sum+BigInt(source.bytes.length),0n);
       const planned=this.#draft('team',previous,[...plannedRows,{path:teamPath,entry,record:'0'.repeat(64),status:'verified'}],previous.body.directories,by,'提交共享',safeBytes(BigInt(chargedBytes(body))+added),[...previous.body.sources,...[...sources.values(),...sent].map(()=>'0'.repeat(64))],undefined,facts.knowledge);
-      requireCapacity(facts,planned.used_bytes-facts.knowledge,{admin:by.role==='admin'});
+      requireCapacity(facts,planned.used_bytes-facts.knowledge,{admin:isAdmin(by)});
       const record=await this.#ctx.records.store.put({kind:'knowledge_space_entry',schema:'knowledge-space-entry@1',provenance:'declared',body,index:[{key:'knowledge.space.entry',value:body.entry},{key:'knowledge.space.entry_owner',value:'team'}]},tx);
       const sourceRecords=[...previous.body.sources];
       const associate=async(sha256:string,artifact:string,size:number,attribution?:string)=>{const stored=await this.#ctx.records.store.put({kind:'knowledge_space_source',schema:'knowledge-space-source@1',provenance:'declared',body:SpaceSourceBody.parse({sha256,artifact,size,...(attribution?{attribution}:{}),space:'team',path:teamPath,by:by.id,at}),index:[{key:SOURCE_KEY,value:'team'},{key:'knowledge.space.source_hash',value:sha256}]},tx);sourceRecords.push(stored.digest);};
@@ -1391,7 +1392,7 @@ export class KnowledgeSpaces {
     if(original?.kind!=='source_artifact'||!await this.source(by,original.body.sha256,undefined,'model',artifact))return {personal:false,team:false};
     const body=original.body,upload='upload'in body.origin&&body.author.user===by.id&&body.provenance_type==='declared'&&original.provenance==='declared';
     const read='read'in body.origin&&body.provenance_type==='observed'&&original.provenance==='observed';
-    return {personal:upload||read&&body.visibility.readers.includes(by.id),team:by.role==='admin'&&read&&body.visibility.admins};
+    return {personal:upload||read&&body.visibility.readers.includes(by.id),team:isAdmin(by)&&read&&body.visibility.admins};
   }
   /** Explicit save only. A private copy of a run upload never changes that old capture's declaration eligibility. */
   async archiveSource(by:Principal,input:{artifact:string;space:string;path:string;message:string}){
@@ -1423,7 +1424,7 @@ export class KnowledgeSpaces {
         this.#inspectSource(source.bytes);
       }
       const facts=await this.capacityFacts(space,tx),planned=this.#draft(space,previous,previous?.body.entries??[],[...previous?.body.directories??[],path],by,'保存原文',source.size,[...previous?.body.sources??[],'0'.repeat(64)],undefined,facts?.knowledge??previous?.body.used_bytes??0,space==='team'?undefined:await personalEpoch(this.#ctx,space,tx));
-      requireCapacity(facts,planned.used_bytes-facts.knowledge,space==='team'?{admin:by.role==='admin'}:undefined);
+      requireCapacity(facts,planned.used_bytes-facts.knowledge,space==='team'?{admin:isAdmin(by)}:undefined);
       let artifact=input.artifact;
       if(ownUpload){const metadata=source.artifact.body;const copy=await this.#ctx.records.artifacts.ingest({...(space===by.id?{personalOwner:by.id}:{}),bytes:source.bytes,mediaType:source.mediaType,name:metadata.name,origin:{upload:{session:null,message:input.message}},author:{user:by.id,declared:metadata.author.declared},provenanceType:'declared',visibility:{readers:[by.id],admins:false,packs:[],shareable:false},readTier:'model_readable'},tx);artifact=copy.digest;}
       // Saving an observed snapshot preserves its original read time; it is not a new system read.
@@ -1498,7 +1499,7 @@ export class KnowledgeSpaces {
         continue;
       let owner = await this.#ctx.records.principals.get(body.space === 'team' ? body.by : body.space);
       if (body.space === 'team' && (!owner || owner.disabled))
-        owner = (await this.#ctx.records.principals.list?.() ?? []).find(user => !user.disabled && user.role === 'admin') ?? null;
+        owner = (await this.#ctx.records.principals.list?.() ?? []).find(user => !user.disabled && isAdmin(user)) ?? null;
       if (!owner || owner.disabled)
         continue;
       if (runId) {
@@ -1534,7 +1535,7 @@ export class KnowledgeSpaces {
         continue;
       let owner = await this.#ctx.records.principals.get(body.space === 'team' ? body.by : body.space);
       if (body.space === 'team' && (!owner || owner.disabled))
-        owner = (await this.#ctx.records.principals.list?.() ?? []).find(user => !user.disabled && user.role === 'admin') ?? null;
+        owner = (await this.#ctx.records.principals.list?.() ?? []).find(user => !user.disabled && isAdmin(user)) ?? null;
       if (!owner || owner.disabled)
         continue;
       if (runId) {

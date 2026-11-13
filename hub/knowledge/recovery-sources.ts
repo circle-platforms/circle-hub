@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 import type { KnowledgePort } from '../ports.ts';
 import { sha256Hex, type Principal } from '../records/api.ts';
 import type { Knowledge } from './service.ts';
@@ -29,8 +30,8 @@ export async function recoverySourcesReadable(knowledge:KnowledgePort,user:Princ
   return true;
 }
 
-async function enabledAdmin(principals:{list?:()=>Promise<Array<{id:string;name:string;role:string;disabled:boolean}>>}):Promise<Principal|null>{
+async function enabledAdmin(principals:{list?:()=>Promise<Array<{id:string;name:string;role:Principal['role'];disabled:boolean}>>}):Promise<Principal|null>{
   const users=await principals.list?.();
-  const admin=users?.find(user=>user.role==='admin'&&!user.disabled);
+  const admin=users?.find(user=>isAdmin(user)&&!user.disabled);
   return admin?{id:admin.id,name:admin.name,role:'admin'}:null;
 }
