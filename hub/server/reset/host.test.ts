@@ -17,7 +17,7 @@ import { createResetConfigurationPorts } from '../api.ts';
 import { resetData, previewReset, resetRecordTally } from './host.ts';
 import { protectedFiles } from './protected-files.ts';
 import { ResetFailure, type ResetStage } from './operation.ts';
-import type { ResetScope } from './types.ts';
+import type { ResetDataScope } from './types.ts';
 
 const libpq = await libpqAvailable();
 async function fixture(incompatible = false) {
@@ -75,7 +75,7 @@ async function fixture(incompatible = false) {
   } catch (error) { await postgres.stop().catch(() => {}); await rm(parent, { recursive: true, force: true }); throw error; }
 }
 
-for (const scope of ['history','knowledge','packs','config'] as const satisfies readonly ResetScope[]) test(`current ${scope} reset clears only that selection and leaves every protected file byte unchanged`, { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+for (const scope of ['history','knowledge','packs','config'] as const satisfies readonly ResetDataScope[]) test(`current ${scope} reset clears only that selection and leaves every protected file byte unchanged`, { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
   const f = await fixture(); t.after(() => f.close());
   const request = { scopes: [scope], keepConfig: false };
   const preview = await previewReset(f.context, request);
