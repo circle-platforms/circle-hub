@@ -73,3 +73,44 @@ test('an incomplete submission or unconfirmed supervisor is terminal unknown rat
   status=await deploymentSyncStatus(f.session,f.id);
   assert.equal(status.completed,true);assert.equal(status.current,false);assert.ok(status.error);
 });
+
+import { readFile } from 'node:fs/promises';
+import { CODE_ROOT, createContext, ensureLayout, layoutAt, newSettingsFile, writeSettingsFile, settingsOf, serviceEnvironment, identityOf, type CommandOptions } from '../platform/api.ts';
+import { loadServerConfig } from './main.ts';
+import { launchDeploymentSyncSupervisor } from './deployment-sync.ts';
+async function supervisorFixture(t:{after(fn:()=>Promise<void>):void},platform:NodeJS.Platform) {
+  const root=await mkdtemp(join(tmpdir(),'circle-hub-sync-supervisor-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const layout=layoutAt(root);await ensureLayout(layout);
+  await writeSettingsFile(layout,newSettingsFile({environment:'test'}));
+  const calls:Array<{command:string;args:readonly string[];options?:CommandOptions}>=[];
+  const context=createContext({CIRCLE_HUB_TOKEN:'synthetic-sensitive-never-child'}, {layout,platform,home:root,user:'synthetic',uid:501,
+    runner:async(command,args,options)=>{calls.push({command,args,options});return {code:0,stdout:'',stderr:''};}});
+  const config=loadServerConfig(serviceEnvironment(layout,await settingsOf(context),identityOf(context)));
+  return {root,context,config,calls,id:'550e8400-e29b-41d4-a716-446655440000'};
+}
+test('Linux supervisor launch fixes Node/CLI/UUID and excludes parent token material',async t=>{
+  const f=await supervisorFixture(t,'linux');
+  await launchDeploymentSyncSupervisor(f.config,f.id,f.context);
+  assert.equal(f.calls.length,1);const call=f.calls[0];
+  assert.equal(call.command,'/usr/bin/systemd-run');
+  assert.deepEqual(call.args.slice(-5),[process.execPath,join(CODE_ROOT,'bin','circle-hub'),'knowledge','sync-worker',f.id]);
+  assert.ok(call.args.includes('--property=Type=exec'));assert.ok(call.args.includes('--property=StandardOutput=null'));
+  assert.ok(!JSON.stringify(call).includes('synthetic-sensitive-never-child'));
+  assert.equal(call.options?.env?.XDG_RUNTIME_DIR,'/run/user/501');
+});
+test('macOS supervisor is a one-shot independent launchd job',async t=>{
+  const f=await supervisorFixture(t,'darwin');
+  await launchDeploymentSyncSupervisor(f.config,f.id,f.context);
+  assert.equal(f.calls[0].command,'/bin/launchctl');
+  const plist=await readFile(join(f.root,'run','deployment-sync',f.id+'.plist'),'utf8');
+  assert.match(plist,/<key>KeepAlive<\/key>\s*<false\/>/);
+  assert.match(plist,/<key>RunAtLoad<\/key>\s*<true\/>/);
+  assert.ok(plist.includes('sync-worker'));assert.ok(!plist.includes('synthetic-sensitive-never-child'));
+});
+test('supervisor refuses an arbitrary id or a different database before any OS command',async t=>{
+  const f=await supervisorFixture(t,'linux');
+  await assert.rejects(launchDeploymentSyncSupervisor(f.config,'../escape',f.context));
+  await assert.rejects(launchDeploymentSyncSupervisor({...f.config,database:{...f.config.database,database:'another'}},f.id,f.context),/不一致/);
+  assert.equal(f.calls.length,0);
+});
