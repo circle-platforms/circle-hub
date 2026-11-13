@@ -9,9 +9,10 @@ import type { EnvironmentCalls, EnvironmentFacts } from '../dispatch/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { SystemTrialInput, SystemTrialReport, SystemTrialForget } from '../connectors/api.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
-import type { Principal, RecordsKit } from '../records/api.ts';
+import type { Principal, RecordsKit, MemberCapabilities } from '../records/api.ts';
 import type { ParserRegistry } from '../refs/api.ts';
 import type { RunsEngine } from '../runs/api.ts';
+import type { PackSummary } from '../../contracts/src/run.ts';
 
 export { createApp } from './app.ts';
 export { main, registerCommand, registeredCommands, RESERVED_COMMANDS } from './cli.ts';
@@ -30,6 +31,8 @@ export interface ServerDeps {
   /** Named documents, for the administrators' console; `circle-hub doc` writes them. */
   documents?: { list(): Promise<Array<{ name: string; sha256: string; size: number }>> };
   records: RecordsKit;
+  /** Current member view, shared by the console and list_task_packs; only self or an active administrator. */
+  memberCapabilities(by: Principal, userId?: string, packSummaries?: readonly PackSummary[]): Promise<MemberCapabilities>;
   runs: RunsService;
   maintenance?: Pick<RunsEngine, 'startMaintenance' | 'stopMaintenance'>;
   /**
