@@ -48,9 +48,9 @@ export function createCommandBridge(options: BridgeOptions): CommandBridge {
     async run(argv, input) {
       const stdout: string[] = [];
       const stderr: string[] = [];
-      if (argv.length === 0 || !BRIDGED_COMMANDS.has(argv[0])) return { code: 2, stdout, stderr: ['控制台不执行这个命令'] };
       // Reset is handled by the authenticated HTTP launch/finish/ACK path, never by synchronous CLI dispatch.
       if (argv[0] === 'reset') return { code: 2, stdout, stderr: ['请使用控制台重建预览和确认入口；不能在服务进程同步执行 reset'] };
+      if (argv.length === 0 || !BRIDGED_COMMANDS.has(argv[0])) return { code: 2, stdout, stderr: ['控制台不执行这个命令'] };
       // Imported here, not at the top: the CLI imports serve, and serve builds the app that holds this bridge.
       const main = options.main ?? ((await import('./cli.ts')).main as unknown as CliMain);
       const loadAssembly = options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>);
