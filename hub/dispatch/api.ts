@@ -31,3 +31,4 @@ export {
 } from './bed-state.ts';
 
 export { holdsPhysicalTarget } from './journal.ts';
+export { earlyStopSentence } from './rounds.ts';

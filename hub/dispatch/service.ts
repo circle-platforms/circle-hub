@@ -7,7 +7,7 @@ import { environmentOf, runBound } from './precheck-context.ts';
 import { reportOutcome } from './report-outcome.ts';
 import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
 import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
-import type { AdminLogEntry } from '../runs/api.ts';
+import type { AdminLogEntry, DispatchRunRulesPort } from '../ports.ts';
 import { RETRY_RULES } from './retry-policy.ts';
 import { prepareEffectGate, EffectBoundaryError } from './effect-gate.ts';
 import { checkEffectBoundary, incompleteEffectBoundary, deny, refusalText, type BoundaryFailure } from './boundary.ts';
@@ -34,7 +34,6 @@ import { dynamicDisposition, DISPATCH_QUALIFICATIONS, missingOwnershipCertificat
 
 import { type BedBaselineRecord, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
-import { expectationFor } from '../runs/engine/terminals.ts';
 import { RunId, Sha256 } from '../../contracts/src/common.ts';
 import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort, type VerifiedInput } from './proof.ts';
 
@@ -47,6 +46,7 @@ function retrySafeOutcome(value:unknown):boolean {
 const projectedResult=(events:readonly Event[])=>{const intent=events.findLastIndex(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');return events.findLast((event,index)=>index>intent&&event.body.detail.phase==='result'&&typeof event.body.detail.reference==='string');};
 const roundRecords=(events:readonly Event[])=>[...new Map(events.filter(event=>event.body.detail.phase==='round'&&typeof event.body.detail.round==='number').map(event=>[Number(event.body.detail.round),event])).values()];
 export interface DispatchOptions {
+  runRules: DispatchRunRulesPort;
   adminLog?:(entry:AdminLogEntry)=>void;
   recheckChecks?:import('../ports.ts').EffectCheckReplay;
   redactor?:Redactor;
@@ -539,7 +539,7 @@ export class DispatchService {
         content:async proof=>!!source?.bytes&&proof.sha256===input.sha256&&verifiedContent(source.bytes,input.sha256,source.mediaType),audience:async()=>!d.calls.submit.write?.audience} satisfies import('./boundary.ts').BoundaryContext;
       const boundary=await checkEffectBoundary(finalBoundary);
       if(!boundary.ok||boundary.checked!==9){const failure=boundary.ok?incompleteEffectBoundary(boundary):boundary;await stop();await this.release(binding,session,remote);return this.boundaryRefused(by,binding,failure);}
-      if(multi && !roundAllowed(round, policy)){await stop();await this.release(binding,session,remote);return this.boundaryRefused(by,binding,deny(4,'EFFECT_BUDGET_EXHAUSTED',`第 ${round} 轮超过冻结次数或效果行的重复预算；请开始新修订`,boundary.row));}
+      if(multi && !roundAllowed(round, policy, this.options.runRules)){await stop();await this.release(binding,session,remote);return this.boundaryRefused(by,binding,deny(4,'EFFECT_BUDGET_EXHAUSTED',`第 ${round} 轮超过冻结次数或效果行的重复预算；请开始新修订`,boundary.row));}
       const intentSemantics:{effect_class:EffectClass;retry_safety:RetrySafety;signing:Signing}={effect_class:d.calls.submit.write?.effect_class??'job',retry_safety:d.calls.submit.write?.retry_safety??'unsafe',signing:d.calls.submit.write?.signing??'service_on_behalf'};
       const precheckSources=[...new Set((await this.journal.events(binding.job)).filter(e=>e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase)) || e.body.detail.phase==='device_probe').flatMap(e=>e.body.inputs))];
       const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
@@ -1396,7 +1396,7 @@ export class DispatchService {
     const detail = binding.input ? await this.options.runs.getRun(by, binding.input.run) : null;
     const workflow = detail ? await this.options.workflows.byDigest(detail.run.pack_digest) : null;
     const template = workflow?.requirements.find(row => row.key === d.proof.requirement);
-    const expectation = template ? expectationFor(template, {}) : { outcome: 'support' as const, codes: [] as string[] };
+    const expectation = template ? this.options.runRules.expectationFor(template, {}) : { outcome: 'support' as const, codes: [] as string[] };
     const met = roundMeets(terminal, code, expectation);
     await this.noteRound(binding, { round, terminal, ...(code ? { code } : {}), meets: terminal === 'pass' || terminal === 'fail' ? met : null, rows:projected,...(pendingReport?{report_pending:true,pending:true,reason:'missing_input'}:{}),...(complete?{}:{lost:true}) });
   }
@@ -1494,7 +1494,7 @@ export class DispatchService {
         for (let skipped = next; skipped <= policy.count; skipped++) await this.noteRound(binding, { round: skipped, terminal: 'not_run', meets: null, reason: 'budget_exhausted' });
         break;
       }
-      if (!roundAllowed(next, policy)) return this.boundaryRefused(by, binding, deny(4, 'EFFECT_BUDGET_EXHAUSTED', `第 ${next} 轮超过冻结次数或效果行的重复预算；请开始新修订`, args.gate.context.effects.find(row => row.release.requirements.includes(d.proof.requirement))));
+      if (!roundAllowed(next, policy, this.options.runRules)) return this.boundaryRefused(by, binding, deny(4, 'EFFECT_BUDGET_EXHAUSTED', `第 ${next} 轮超过冻结次数或效果行的重复预算；请开始新修订`, args.gate.context.effects.find(row => row.release.requirements.includes(d.proof.requirement))));
       if (policy.fresh_context) {
         await pulse.stop();
         await this.release(binding, session, remote);
