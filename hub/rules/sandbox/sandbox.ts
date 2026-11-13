@@ -11,7 +11,7 @@ import { createServer } from 'node:net';
 import { availableParallelism, tmpdir } from 'node:os';
 import { extname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { addUsage, step } from '../../telemetry/usage.ts';
+import { addUsage, step } from '../../telemetry/api.ts';
 import { SandboxError, isSandboxErrorCode, type SandboxErrorCode } from './errors.ts';
 import { BOOTSTRAP, declaredDependencies, isolatedCommand, osIsolationAvailable, osIsolationFailure, isolationFailureText } from './isolation.ts';
 import { ENTRY_EXTENSIONS } from './policy.ts';

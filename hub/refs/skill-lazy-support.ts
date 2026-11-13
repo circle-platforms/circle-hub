@@ -6,7 +6,7 @@ import { openPackTestbed, type PackTestbed } from '../runs/packs/testing/setup.t
 import { createSkillParserRegistry, PARSE_SANDBOX_LIMITS } from './skills.ts';
 import { installHtmlFixture, installMindmapFixture, installWorkbookFixture, installXmlFixture } from '../testing/skills.ts';
 import { callPackFunction } from '../rules/api.ts';
-import type { FunctionAttempt } from '../rules/sandbox/retry.ts';
+import type { FunctionAttempt } from '../rules/api.ts';
 import { selectorSegment } from '../../packs/skill/xml-format/functions/selectors.ts';
 import { QUOTATION_UNITS, type Fragment, type ParsedDocument, type QuotationSource } from './parser.ts';
 import { QUOTATION_UNITS as XML_QUOTATION } from '../../packs/skill/xml-format/functions/format.ts';

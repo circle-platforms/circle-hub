@@ -561,3 +561,9 @@ Historical skill binding commands and their action-record lookup paths are remov
 skill locks. Standalone references use installed skills or currently granted personal skills. Parsing, quotation, lazy
 lookup and sandbox limits are unchanged. Tests dedicated to historical binding declarations were removed; current-run
 freezing and published digest retention tests remain. PostgreSQL tests and type checking await a coordinator serial slot.
+
+## Package boundaries (C4)
+
+Parser usage tracing imports only telemetry/api.ts. QUOTATION_UNITS and quotation types are available through refs/api.ts
+for synthetic parser fixtures. The skill adapter still needs the server-owned registry port before its runs type import
+can be removed.
