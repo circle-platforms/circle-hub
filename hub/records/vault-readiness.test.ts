@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { FileKeyProvider, FileVault } from './vault.ts';
-import { VaultReadinessError } from './errors.ts';
+import { RecordsError, VaultReadinessError } from './errors.ts';
 import { RecordVariables, type VariablePorts } from './variables.ts';
 import { newId } from './ids.ts';
 import type { SecretMetadataFile } from '../../contracts/src/variables.ts';
@@ -113,4 +113,43 @@ test('dictionary, login state and key-check namespaces remain opaque and are not
     assert.deepEqual(await f.variables.recentSecrets(), []);
     for (const [entry, bytes] of snapshots) assert.ok((await readFile(join(f.root, 'vault', entry + '.sealed'))).equals(bytes));
     assert.ok((await readFile(join(f.root, 'vault', 'key-check'))).equals(keyCheck));
+});
+
+
+test('unexpected sentinel failures remain non-readiness through RecordVariables and disclose no original payload or cause', async t => {
+    for (const ErrorType of [Error, ReferenceError, SyntaxError]) {
+        const f = await fixture(t), sentinel = value();
+        f.vault.recentSecrets = async () => { throw new ErrorType(sentinel, { cause: new Error(sentinel) }); };
+        await assert.rejects(f.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !JSON.stringify(error).includes(sentinel) && !Object.hasOwn(error, 'cause'));
+    }
+});
+
+test('unexpected inventory and per-name implementation failures cannot be reclassified as a degraded vault', async t => {
+    const f = await fixture(t), sentinel = value();
+    f.vault.secretNames = async () => { throw new ReferenceError(sentinel); };
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !Object.hasOwn(error, 'cause'));
+    const second = await fixture(t);
+    await second.raw('PRIVATE_SENTINEL', value(), 1);
+    const list = second.vault.list.bind(second.vault); let calls = 0;
+    second.vault.list = async () => { if (++calls > 1) throw new Error(sentinel); return list(); };
+    await assert.rejects(second.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !JSON.stringify(error).includes(sentinel) && !error.message.includes(sentinel));
+});
+
+test('a real filesystem error is still typed while missing metadata remains an explicit readiness issue', async t => {
+    const f = await fixture(t);
+    await f.raw('PRIVATE_IO', value(), 1);
+    await writeFile(join(f.root, 'vault', 'metadata'), 'synthetic non-directory');
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('inventory') || issue.missing.includes('metadata')));
+    const missing = await fixture(t);
+    await missing.raw('PRIVATE_MISSING', value(), 1);
+    await assert.rejects(missing.variables.recentSecrets(), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('metadata') && issue.missing.includes('version')));
+});
+
+
+test('an error code without a native errno identity and an unexpected single-value read remain non-readiness', async t => {
+    const f = await fixture(t), sentinel = value();
+    f.vault.recentSecrets = async () => { throw Object.assign(new Error(sentinel), { code: 'ENOENT' }); };
+    await assert.rejects(f.variables.recentSecrets(), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !Object.hasOwn(error, 'cause'));
+    f.vault.readSecret = async () => { throw new Error(sentinel); };
+    await assert.rejects(f.variables.readSecrets([{ name: 'PRIVATE_SENTINEL' }]), error => error instanceof RecordsError && !(error instanceof VaultReadinessError) && !error.message.includes(sentinel) && !JSON.stringify(error).includes(sentinel));
 });

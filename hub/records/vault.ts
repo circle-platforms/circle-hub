@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import type { KeyProvider, Vault, VaultVerification, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWrite } from './api.ts';
 import { VariableName, SecretRecord, SecretSidecar, SecretMetadataFile } from '../../contracts/src/variables.ts';
 import { isDigestRule } from '../../contracts/generated/vocabulary.ts';
-import { VaultError, VaultReadinessError, type VaultReadinessIssue } from './errors.ts';
+import { VaultError, VaultReadinessError, type VaultReadinessIssue, isVaultReadBoundaryError, unexpectedVaultReadError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
 const SUFFIX = '.sealed';
@@ -94,27 +94,27 @@ export class FileVault implements Vault {
   #metadataVault(): FileVault { return new FileVault(join(this.directory, 'metadata'), this.#provider); }
 
   #metadataFailure(name: string, entry: string, missing: readonly string[], reason: string): VaultReadinessError {
-    return new VaultReadinessError([{ name, entry, missing, reason, next_action: `请管理员依据原设置事实恢复 vault/metadata/${this.#secretEntry(name)}.sealed，再重试；若管理员持有值且版本事实可核对，可用 circle-hub secret set --name ${name} --reason <理由> 重新设置，产生新值版本；版本/current/摘要规则不能猜，未知原人/时刻保留null，不新建主密钥` }]);
+    return new VaultReadinessError([{ name, entry, missing, reason, next_action: `缺少可信元数据会阻断完整脱敏；请联系数据所有者或从旧备份恢复原设置事实，恢复 vault/metadata/${this.#secretEntry(name)}.sealed 后重试；完全无依据时不要猜版本、重设同名或新建主密钥` }]);
   }
 
   async #metadataFile(name: string): Promise<SecretMetadataFile | null> {
     const entry = this.#secretEntry(name), metadata = this.#metadataVault();
     let present: boolean;
     try { present = await metadata.has(entry); }
-    catch { throw this.#metadataFailure(name, 'metadata/' + entry + '.sealed', ['metadata'], '认证元数据文件无法访问；请核对目录和读取权限'); }
+    catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw this.#metadataFailure(name, 'metadata/' + entry + '.sealed', ['metadata'], '认证元数据文件无法访问；请核对目录和读取权限'); }
     if (!present) {
       let values: string[];
       try { values = (await this.list()).filter(candidate => candidate.startsWith(entry + '.') && /^[a-f0-9]{24}$/.test(candidate.slice(entry.length + 1))); }
-      catch { throw this.#metadataFailure(name, entry, ['inventory'], '无法列出该名字的封存条目'); }
-      if (values.length) throw new VaultReadinessError(values.map(value => ({ name, entry: value + '.sealed', missing: ['metadata', 'version', 'current', 'digest_rule', 'set_by', 'set_at'], reason: '封存缺少认证元数据；不能从文件时间推断版本或原设置事实', next_action: `请管理员依据原设置事实恢复 vault/metadata/${entry}.sealed；需提供version、current、digest_rule及原设置人/时间（确实未知才null），然后重试；若管理员持有值并已恢复可信版本依据，可用 circle-hub secret set --name ${name} --reason <理由> 重新设置并产生新值版本；不要新建主密钥` })));
+      catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw this.#metadataFailure(name, entry, ['inventory'], '无法列出该名字的封存条目'); }
+      if (values.length) throw new VaultReadinessError(values.map(value => ({ name, entry: value + '.sealed', missing: ['metadata', 'version', 'current', 'digest_rule', 'set_by', 'set_at'], reason: '封存缺少认证元数据；不能从文件时间推断版本或原设置事实', next_action: `请联系数据所有者或从旧备份恢复可信原设置事实，再恢复 vault/metadata/${entry}.sealed（version/current/digest_rule，原人/时刻确实未知才null）；完全无依据时仍阻断完整脱敏，不猜版本、不用新名set冒充已恢复、不新建主密钥` })));
       return null;
     }
     let text: string | null;
     try { text = await metadata.getText(entry); }
-    catch { throw new VaultReadinessError([{ name, entry: 'metadata/' + entry + '.sealed', missing: ['authentication'], reason: '密钥元数据无法认证；当前主密钥不可用、原件或认证标签不合', next_action: '请管理员运行 circle-hub key status 核对主密钥，并恢复匹配的原主密钥或经过核验的认证元数据备份；不要运行 key init' }]); }
+    catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw new VaultReadinessError([{ name, entry: 'metadata/' + entry + '.sealed', missing: ['authentication'], reason: '密钥元数据无法认证；当前主密钥不可用、原件或认证标签不合', next_action: '请管理员运行 circle-hub key status 核对主密钥，并恢复匹配的原主密钥或经过核验的认证元数据备份；不要运行 key init' }]); }
     let input: unknown;
     try { input = text === null ? null : JSON.parse(text); }
-    catch { throw this.#metadataFailure(name, 'metadata/' + entry + '.sealed', ['metadata'], '认证内容不是可解析的元数据JSON；没有使用其中任何值'); }
+    catch (error) { if (!(error instanceof SyntaxError)) throw unexpectedVaultReadError(); throw this.#metadataFailure(name, 'metadata/' + entry + '.sealed', ['metadata'], '认证内容不是可解析的元数据JSON；没有使用其中任何值'); }
     const parsed = SecretMetadataFile.safeParse(input);
     if (!parsed.success) {
       const allowed = new Set([...Object.keys(SecretMetadataFile.shape), ...Object.keys(SecretSidecar.shape), ...Object.keys(SecretRecord.shape)]);
@@ -167,20 +167,21 @@ export class FileVault implements Vault {
     let original: Awaited<ReturnType<typeof readVerifiedFile>>;
     try { original = await readVerifiedFile(this.#path(row.sealed_entry), MAX_SEALED_BYTES); }
     catch (error) {
+      if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError();
       if (errno(error) === 'ENOENT') throw fail(['cipher'], '引用的原封存文件不存在；没有取值', '请管理员从校验过的备份恢复该原sealed文件；保留原文件名和字节，再重试');
       throw fail(['cipher'], '原封存文件无法安全读取；没有取值', '请管理员核对该sealed文件的类型、属主和读取权限，或恢复校验过的原件后重试');
     }
     if (createHash('sha256').update(original.bytes).digest('hex') !== row.sealed_sha256) throw fail(['sealed_sha256'], '原封存密文字节与认证身份不符；没有取值', '请管理员恢复与认证元数据中cipher身份一致的原sealed文件；不要重新计算摘要掩盖原件变化');
     let key: Buffer;
     try { key = await this.#key(); }
-    catch { throw fail(['authentication'], '当前主密钥不可用或与密钥库不符；没有取值', '请管理员运行 circle-hub key status 核对并恢复本数据根对应的原主密钥；不要运行 key init'); }
+    catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw fail(['authentication'], '当前主密钥不可用或与密钥库不符；没有取值', '请管理员运行 circle-hub key status 核对并恢复本数据根对应的原主密钥；不要运行 key init'); }
     let plain: Uint8Array;
     try { plain = openSealed(row.sealed_entry, original.bytes.toString('utf8'), key); }
-    catch { throw fail(['authentication'], '原封存认证失败；主密钥或原件不匹配；没有取值', '请管理员核对原主密钥和原sealed文件来自同一备份，并恢复核验过的原件'); }
+    catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw fail(['authentication'], '原封存认证失败；主密钥或原件不匹配；没有取值', '请管理员核对原主密钥和原sealed文件来自同一备份，并恢复核验过的原件'); }
     try {
       let value: string;
       try { value = new TextDecoder('utf-8', { fatal: true }).decode(plain); }
-      catch { throw fail(['cipher'], '原封存不是有效UTF-8凭据文本；没有取值', '请管理员核对该条目是否确为命名密钥；不要把登录状态或脱敏字典作为密钥导入'); }
+      catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw fail(['cipher'], '原封存不是有效UTF-8凭据文本；没有取值', '请管理员核对该条目是否确为命名密钥；不要把登录状态或脱敏字典作为密钥导入'); }
       if ([...value].length !== row.metadata.length) throw fail(['length'], '封存值字符长度与认证元数据不等；没有取值', '请管理员根据原设置记录核对length并恢复相匹配的原sealed文件或认证元数据，不推断或输出值');
       return value;
     } finally { plain.fill(0); }
@@ -238,6 +239,7 @@ export class FileVault implements Vault {
     try { names = await this.secretNames(); }
     catch (error) {
       if (error instanceof VaultReadinessError) throw error;
+      if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError();
       throw new VaultReadinessError([{ name: null, entry: 'vault/', missing: ['inventory'], reason: '无法列出密钥库的正式命名条目', next_action: '请管理员核对vault与metadata目录的属主和读取权限，再重试；不要改动或解释其他命名空间的opaque状态文件' }]);
     }
     for (const name of names) {
@@ -255,7 +257,8 @@ export class FileVault implements Vault {
         }
       } catch (error) {
         if (error instanceof VaultReadinessError) issues.push(...error.issues);
-        else issues.push({ name, entry: this.#secretEntry(name), missing: ['metadata'], reason: '该名字的认证元数据未能核对', next_action: '请管理员依据原设置事实恢复该名字的认证元数据，并核对目录读取权限；不会从旧数据库或文件时间补造事实' });
+        else if (isVaultReadBoundaryError(error)) issues.push({ name, entry: this.#secretEntry(name), missing: ['metadata'], reason: '该名字的认证元数据未能核对', next_action: '请管理员依据原设置事实恢复该名字的认证元数据，并核对目录读取权限；不会从旧数据库或文件时间补造事实' });
+        else throw unexpectedVaultReadError();
       }
     }
     if (issues.length) throw new VaultReadinessError(issues);
@@ -511,7 +514,8 @@ export class FileVault implements Vault {
       try {
         openSealed(name, await readFile(this.#path(name), 'utf8'), key);
         return true;
-      } catch {
+      } catch (error) {
+        if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError();
         // An altered entry or another key; try the next one.
       }
     }
@@ -530,7 +534,7 @@ async function readVerifiedFile(path: string, limit: number): Promise<{ bytes: B
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await handle.stat({ bigint: true });
-    if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(limit)) throw new Error('invalid file');
+    if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(limit)) throw new VaultError('封存不是可安全读取的普通单链接文件');
     // Bound the read itself as well as the initial size check: another writer can grow a file after fstat.
     const buffer = Buffer.allocUnsafe(limit + 1);
     let offset = 0;
@@ -539,11 +543,11 @@ async function readVerifiedFile(path: string, limit: number): Promise<{ bytes: B
       if (read.bytesRead === 0) break;
       offset += read.bytesRead;
     }
-    if (offset > limit) throw new Error('oversized file');
+    if (offset > limit) throw new VaultError('封存文件超过读取上限');
     const bytes = buffer.subarray(0, offset);
     const after = await handle.stat({ bigint: true });
     const named = await fingerprint(path);
-    if (!sameFingerprint(before, after) || !sameFingerprint(before, named)) throw new Error('changed file');
+    if (!sameFingerprint(before, after) || !sameFingerprint(before, named)) throw new VaultError('封存文件在读取期间改变');
     return { bytes, fingerprint: named };
   } finally { await handle.close(); }
 }
@@ -553,7 +557,8 @@ function openSealed(name: string, text: string, key: Buffer): Uint8Array {
   let sealed: Sealed;
   try {
     sealed = JSON.parse(text) as Sealed;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw unexpectedVaultReadError();
     throw new VaultError(`密钥库条目 ${name} 已损坏`);
   }
   if (sealed?.v !== FORMAT || typeof sealed.iv !== 'string' || typeof sealed.tag !== 'string' || typeof sealed.data !== 'string') {
@@ -562,14 +567,17 @@ function openSealed(name: string, text: string, key: Buffer): Uint8Array {
   const iv = Buffer.from(sealed.iv, 'base64');
   const tag = Buffer.from(sealed.tag, 'base64');
   if (iv.byteLength !== IV_BYTES || tag.byteLength !== TAG_BYTES) throw new VaultError(`密钥库条目 ${name} 的格式不对：初始向量或认证标签长度不对`);
-  try {
-    const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
-    decipher.setAAD(associatedData(name));
-    decipher.setAuthTag(tag);
-    return new Uint8Array(Buffer.concat([decipher.update(Buffer.from(sealed.data, 'base64')), decipher.final()]));
-  } catch {
+  const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
+  decipher.setAAD(associatedData(name));
+  decipher.setAuthTag(tag);
+  const first = decipher.update(Buffer.from(sealed.data, 'base64'));
+  let last: Buffer;
+  try { last = decipher.final(); }
+  catch (error) {
+    if (!(error instanceof Error) || error.constructor !== Error || Object.hasOwn(error, 'code')) throw unexpectedVaultReadError();
     throw new VaultError(`密钥库条目 ${name} 无法解开：内容被改动过，或文件名与封存时不同`);
   }
+  return new Uint8Array(Buffer.concat([first, last]));
 }
 
 function associatedData(name: string): Buffer {
