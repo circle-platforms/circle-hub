@@ -347,6 +347,10 @@ async function answer(
       throw internalError(traceId);
     }
   };
+  const disconnected = new AbortController();
+  const onClose = () => { if (!response.writableFinished) disconnected.abort(); };
+  response.once('close', onClose);
+  if (response.destroyed) onClose();
   server.setRequestHandler(ListToolsRequestSchema, async (_message, extra) => {
     const state = stateFor(extra.requestId);
     return guarded(state, async () => ({ tools: await listTools(deps, principal, noteOn(state)) }));
@@ -355,7 +359,7 @@ async function answer(
     const state = stateFor(extra.requestId);
     const declared = deps.records.callLog.declaredClient;
     const client = declared ? () => declared.call(deps.records.callLog, principal.id, session, tokenId) : undefined;
-    const call: ToolCall = { principal, state, context: { traceId, sessionId, adminNote: noteOn(state), ...(client ? { client } : {}) } };
+    const call: ToolCall = { principal, state, context: { traceId, sessionId, signal: AbortSignal.any([extra.signal, disconnected.signal]), adminNote: noteOn(state), ...(client ? { client } : {}) } };
     // The arguments as received (the server's own parse), not the SDK's validated copy: its record schema drops members
     // such as `__proto__`, and submit_result must reach the runs service exactly as sent (W07).
     const args = isPlainObject(state.args) ? state.args : message.params.arguments;
@@ -442,6 +446,7 @@ async function answer(
       response.end(text);
     }
   } finally {
+    response.off('close', onClose);
     if (opening !== undefined) clearTimeout(opening);
     if (ticker !== undefined) clearInterval(ticker);
     finishObserved?.();
