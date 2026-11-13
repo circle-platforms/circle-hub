@@ -129,6 +129,13 @@ export async function transferState(source: SqlSession, destination: SqlSession,
     visiting.delete(table); done.add(table); sorted.push(table);
   };
   wanted.forEach(visit);
+  for (const session of [source, destination]) {
+    await session.query("SET TimeZone TO 'UTC'");
+    await session.query("SET DateStyle TO 'ISO, YMD'");
+    await session.query("SET IntervalStyle TO 'postgres'");
+    await session.query('SET extra_float_digits TO 1');
+    await session.query("SET bytea_output TO 'hex'");
+  }
   await destination.query('BEGIN');
   try {
     for (const table of sorted) await destination.query(`ALTER TABLE ${quoteIdentifier(table)} DISABLE TRIGGER USER`);
@@ -140,18 +147,33 @@ export async function transferState(source: SqlSession, destination: SqlSession,
       const params = where.includes('$2') ? [objectIds] : where.includes('$1') ? [selected] : [];
       const selectionWhere = where.replaceAll('$2', '$1');
       // The cursor bounds memory and keeps values out of SQL text and diagnostic output.
-      await source.query(`DECLARE upgrade_rows NO SCROLL CURSOR FOR SELECT ${names} FROM ${quoteIdentifier(table)} WHERE ${selectionWhere}`, params);
+      const selectedColumns = toColumns.map(column => `${quoteIdentifier(column)}::text AS ${quoteIdentifier(column)}`).join(',');
+      const fingerprint = (alias: string) => `encode(sha256(convert_to(ROW(${alias}.*)::text,'UTF8')),'hex')`;
+      await source.query(`DECLARE upgrade_rows NO SCROLL CURSOR FOR SELECT ${selectedColumns},${fingerprint('t')} AS upgrade_fingerprint FROM ${quoteIdentifier(table)} t WHERE ${selectionWhere}`, params);
       let count = 0;
       try {
         for (;;) {
           const batch = await source.query('FETCH FORWARD 128 FROM upgrade_rows');
           if (!batch.length) break;
-          for (const row of batch) {
-            count++;
-            try {
-              await destination.query(`INSERT INTO ${quoteIdentifier(table)} (${names}) OVERRIDING SYSTEM VALUE VALUES (${toColumns.map((_, i) => '$' + (i + 1)).join(',')})`, toColumns.map(column => row[column]));
-            } catch { throw new StateTransferFailure([{ table, row: count, reason: '目标约束拒绝此行，未输出行内容或原始数据库错误' }]); }
+          const insert = async (rows: Record<string, unknown>[]) => {
+            const values = rows.flatMap(row => toColumns.map(column => row[column]));
+            const groups = rows.map((_, offset) => '(' + toColumns.map((_, index) => '$' + (offset * toColumns.length + index + 1)).join(',') + ')').join(',');
+            const result = await destination.query(`INSERT INTO ${quoteIdentifier(table)} (${names}) OVERRIDING SYSTEM VALUE VALUES ${groups} RETURNING ${fingerprint(quoteIdentifier(table))} AS upgrade_fingerprint`, values);
+            const expected = rows.map(row => String(row.upgrade_fingerprint)).sort();
+            const actual = result.map(row => String(row.upgrade_fingerprint)).sort();
+            if (expected.length !== actual.length || expected.some((hash, index) => hash !== actual[index])) throw new Error('行身份不同');
+          };
+          await destination.query('SAVEPOINT upgrade_batch');
+          try { await insert(batch); }
+          catch {
+            await destination.query('ROLLBACK TO SAVEPOINT upgrade_batch');
+            for (let index = 0; index < batch.length; index++) {
+              try { await insert([batch[index]!]); }
+              catch { throw new StateTransferFailure([{ table, row: count + index + 1, reason: '目标约束或行身份核对拒绝此行，未输出行内容或原始数据库错误' }]); }
+            }
           }
+          await destination.query('RELEASE SAVEPOINT upgrade_batch');
+          count += batch.length;
         }
       } finally { await source.query('CLOSE upgrade_rows'); }
       const tally = plan.tables.find(row => row.table === table)!;

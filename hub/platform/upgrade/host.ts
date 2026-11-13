@@ -15,6 +15,7 @@ import { schemaGeneration, type MigrationIdentity } from './signatures.ts';
 import { fileMetadataSource, exportSecretMetadata, type UpgradeSecretFile } from './metadata.ts';
 import { readState, transferState, StateTransferFailure, type TransferPlan } from './transfer.ts';
 import type { UpgradeIssue } from './state.ts';
+import { remoteUpgradeIssues } from './remote.ts';
 
 export interface UpgradeMetadataWriter {
   /** Authenticates metadata only. It must not decrypt sealed credential values or modify their original files. */
@@ -131,11 +132,7 @@ export async function upgradeDatabase(context: PlatformContext, options: Upgrade
         const rows = await source.query('SELECT version,name,sha256 FROM schema_migrations ORDER BY version');
         if (schemaGeneration(rows as unknown as MigrationIdentity[]) !== 'previous') throw new Error('冻结旧库身份变化');
         plan = await readState(source);
-        if (options.remoteSafe) issues.push(...await options.remoteSafe(source));
-        else {
-          const [row] = await source.query("SELECT count(*)::text AS n FROM record_index WHERE key='dispatch.job'");
-          if (Number(row!.n)) issues.push({ table: 'records', row: 0, reason: '缺少远端作业安全状态核对接口，不能把本地停止当远端停止' });
-        }
+        issues.push(...await (options.remoteSafe ?? remoteUpgradeIssues)(source));
         const exported = await exportSecretMetadata(plan.selection.secretDecisions, fileMetadataSource(context.layout.objects, context.layout.vault));
         metadata = exported.files; issues.push(...plan.issues, ...exported.issues);
         if (metadata.length && !options.metadata) issues.push({ table: 'vault_metadata', row: 0, reason: 'C12认证元数据写入接口尚未接入，未伪造成功' });
