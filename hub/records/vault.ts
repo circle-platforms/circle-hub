@@ -227,6 +227,11 @@ export class FileVault implements Vault {
     return { name, version: current.metadata.version, sealed_sha256: current.sealed_sha256 };
   }
 
+  async secretHistoryIdentities(name: string): Promise<import('../../contracts/src/variables.ts').SecretCipherIdentity[]> {
+    const rows = (await this.#metadataFile(name))?.versions ?? [];
+    return rows.flatMap(row => row.sealed_sha256 === null ? [] : [{ name, version: row.metadata.version, sealed_sha256: row.sealed_sha256 }]).reverse();
+  }
+
   async secretHistory(name: string): Promise<VaultSecretMetadata[]> {
     return (await this.#metadataFile(name))?.versions.map(row => row.metadata).reverse() ?? [];
   }

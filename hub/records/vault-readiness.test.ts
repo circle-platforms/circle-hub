@@ -183,3 +183,18 @@ test('metadata-only identity is stable without opening value ciphertext and revo
     await f.vault.writeSecretMetadata({ name: 'MY_IDENTITY', versions: [{ ...row, metadata: { ...row.metadata, revoked: true }, sealed_sha256: null }] });
     assert.equal(await f.vault.secretIdentity('MY_IDENTITY'), null);
 });
+
+
+test('history identities come only from authenticated metadata and cannot confuse an old version with different ciphertext', async t => {
+    const f = await fixture(t), first = value(), second = value();
+    const old = await f.raw('MY_HISTORY', first, 1), current = await f.raw('MY_HISTORY', second, 2);
+    await f.vault.writeSecretMetadata({ name: 'MY_HISTORY', versions: [{ ...old, current: false }, current] });
+    await rm(join(f.root, 'vault', old.sealed_entry + '.sealed'));
+    await rm(join(f.root, 'vault', current.sealed_entry + '.sealed'));
+    assert.deepEqual(await f.vault.secretHistoryIdentities('MY_HISTORY'), [current, old].map(row => ({ name: 'MY_HISTORY', version: row.metadata.version, sealed_sha256: row.sealed_sha256 })));
+    const replacement = await f.raw('MY_HISTORY', value(), 1);
+    await f.vault.writeSecretMetadata({ name: 'MY_HISTORY', versions: [replacement] });
+    const identities = await f.vault.secretHistoryIdentities('MY_HISTORY');
+    assert.equal(identities.length, 1);
+    assert.ok(identities[0].version === old.metadata.version && identities[0].sealed_sha256 !== old.sealed_sha256);
+});

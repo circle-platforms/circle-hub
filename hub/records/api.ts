@@ -676,6 +676,8 @@ export interface Vault {
   secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
   /** Authenticated identity only; does not open value ciphertext. Null when absent or revoked. */
   secretIdentity(name: string): Promise<SecretCipherIdentity | null>;
+  /** Metadata-only identities newest first; absent ciphertext identities are not fabricated. */
+  secretHistoryIdentities(name: string): Promise<SecretCipherIdentity[]>;
   secretHistory(name: string): Promise<VaultSecretMetadata[]>;
   secretNames(): Promise<string[]>;
   readSecret(name: string): Promise<VaultSecretMaterial | null>;
