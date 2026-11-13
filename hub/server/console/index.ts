@@ -1,11 +1,11 @@
-// /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 任务包, 连接, 记录,
+// /console: sign-in with username and password (every account; a token only connects a Circle), then the places of the design canvas (总览, 任务, 知识库, 工作流, 技能, 连接, 记录,
 // 设置, and 运行状况 for administrators) and the four management operations of proposal decision 6 (2026-10-31), which post to the actions of owner
-// decision 122; the older paths (/console/results, /console/admin/...) stay. The
-// session cookie is HttpOnly, SameSite=Strict and scoped to /console. Every POST form (sign-in, sign-out, first-admin
-// setup and the management actions under /console/admin/do/) carries a CSRF token the server issued and must come from
-// this server's own origin; a management action also needs an administrator's session. Every request re-authenticates the
-// session's token, so revoking it or disabling the account ends the session. Everything that is not one of those forms is
-// GET only.
+// decision 122. Workflows live at /console/workflows; skills at /console/skills; second admin page entries are gone.
+// /console/results and POST /console/admin/do/<action> remain. The session cookie is HttpOnly, SameSite=Strict and scoped to
+// /console. Every POST form (sign-in, sign-out, first-admin setup and the management actions under /console/admin/do/)
+// carries a CSRF token the server issued and must come from this server's own origin; a management action also needs an
+// administrator's session. Every request re-authenticates the session's token, so revoking it or disabling the account
+// ends the session. Everything that is not one of those forms is GET only.
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { type Principal } from '../../records/api.ts';
@@ -84,7 +84,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);
   if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';
-  const isKnowledgeAction = segments.length === 3 && (segments[0] === 'knowledge' || segments[0] === 'packs') && segments[1] === 'do';
+  const isKnowledgeAction = segments.length === 3 && (segments[0] === 'knowledge' || segments[0] === 'workflows' || segments[0] === 'skills') && segments[1] === 'do';
   if (isAction || isKnowledgeAction ? request.method !== 'POST' : request.method !== 'GET') {
     request.resume();
     return isAction || isKnowledgeAction

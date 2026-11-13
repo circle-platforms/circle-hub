@@ -453,23 +453,24 @@ describe('pages', () => {
     }
   });
 
-  test('packs: a user sees the assigned packs, an admin every pack with the users it is assigned to', async () => {
+  test('workflows: a user sees the assigned packs, an admin every pack with the users it is assigned to', async () => {
     const user = await person(['local-review']);
     const session = await signIn(user.token);
-    const packs = await get('/console/packs', session);
-    assert.ok(packs.body.includes('href="/console/packs/local-review?scope='));
-    assert.ok(!packs.body.includes('href="/console/packs/review?scope='), 'an unassigned pack is not listed');
+    const packs = await get('/console/workflows', session);
+    assert.ok(packs.body.includes('href="/console/packs/local-review?scope=') || packs.body.includes('href="/console/workflows/local-review?scope='));
+    assert.ok(!packs.body.includes('href="/console/packs/review?scope=') && !packs.body.includes('href="/console/workflows/review?scope='), 'an unassigned pack is not listed');
     assert.ok(!packs.body.includes('分配给'));
     const admin = await signIn(server.admin.token);
-    const all = await get('/console/packs', admin);
-    for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope='), id);
-    for (const id of ['line-a', 'tracker-system']) assert.ok(!all.body.includes('href="/console/packs/'+id+'?scope='), id);
+    const all = await get('/console/workflows', admin);
+    for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope=') || all.body.includes('href="/console/workflows/'+id+'?scope='), id);
+    for (const id of ['line-a', 'tracker-system']) assert.ok(!all.body.includes('href="/console/packs/'+id+'?scope=') && !all.body.includes('href="/console/workflows/'+id+'?scope='), id);
     assert.ok((await get('/console/knowledge', admin)).body.includes('line-a'));
     assert.ok((await get('/console/connections?tab=packs', admin)).body.includes('tracker-system'));
     assert.ok(all.body.includes(user.user.name), 'assignments are shown to admins');
+    assert.equal((await get('/console/packs', session)).status, 404);
   });
 
-  test('admin pages: users, tokens without values, assignments, resources with addresses and filtered call logs; neutral for a user', async () => {
+  test('team, connections and filtered call logs; bare /console/admin is gone; neutral for a user', async () => {
     const user = await person(['review']);
     const userSession = await signIn(user.token);
     const refused = await get('/console/admin', userSession);
@@ -484,27 +485,26 @@ describe('pages', () => {
     for (const token of await server.records.principals.tokens(user.user.id)) assert.ok(!mine.body.includes(token.id), 'device rows do not expose token identifiers');
 
     const session = await signIn(server.admin.token);
-    for (const path of ['/console/admin', '/console/team']) {
-      const admin = await get(path, session);
-      assert.equal(admin.status, 200, path);
-      assert.ok(admin.body.includes(user.user.name));
-      assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
-      for(const row of admin.body.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)??[])assert.doesNotMatch(row,/<button|<form|ch-btn/);
-      const selected=await get('/console/team/'+user.user.id,session);
-      assert.ok(selected.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a selected member is a command for the Circle');
-    }
+    assert.equal((await get('/console/admin', session)).status, 404);
+    const admin = await get('/console/team', session);
+    assert.equal(admin.status, 200);
+    assert.ok(admin.body.includes(user.user.name));
+    assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
+    for(const row of admin.body.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)??[])assert.doesNotMatch(row,/<button|<form|ch-btn/);
+    const selected=await get('/console/team/'+user.user.id,session);
+    assert.ok(selected.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a selected member is a command for the Circle');
     const connections = await get('/console/connections', session);
     assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
     assert.ok(!(await get('/console/connections', userSession)).body.includes('http://192.0.2.10:8080'), 'not for a member');
-    const packs = await get('/console/packs', session);
+    const packs = await get('/console/workflows', session);
     assert.match(packs.body, new RegExp(`<span data-pack-audience>[^<]*${user.user.name}`), 'assignments');
     await runWithResult(user);
-    const calls = await get(`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`, session);
+    const calls = await get(`/console/records?user=${encodeURIComponent(user.user.name)}&tool=submit_result`, session);
     assert.equal(calls.status, 200);
     assert.ok(calls.body.includes('submit_result'));
     assert.ok(calls.body.includes('管理员备注'));
-    assert.equal((await get('/console/admin/calls?from=not-a-time', session)).status, 400);
-    assert.equal((await get('/console/admin/calls?cursor=%21%21', session)).status, 400);
+    assert.equal((await get('/console/records?from=not-a-time', session)).status, 400);
+    assert.equal((await get('/console/records?cursor=%21%21', session)).status, 400);
   });
 });
 
@@ -527,9 +527,11 @@ test('knowledge console lists product-wide roots and renders undeclared builds s
 test('full administrator reasons are escaped in console details and unavailable to an ordinary reader',async()=>{
  const user=await person();
  await server.records.callLog.append({traceId:'4bf92f3577b34da6a3ce929d0e0e4736',sessionId:null,runId:null,userId:user.user.id,tool:'submit_result',arguments:{},callResult:'ok',durationMs:1,adminNote:'摘要',adminReasons:['合成完整理由 <script>unsafe</script>']});
- const session=await signIn(server.admin.token);const path=`/console/admin/calls?user=${encodeURIComponent(user.user.name)}&tool=submit_result`;
+ const session=await signIn(server.admin.token);const path=`/console/records?user=${encodeURIComponent(user.user.name)}&tool=submit_result`;
  const calls=await get(path,session);assert.equal(calls.status,200);assert.match(calls.body,/完整理由（1 条）/);assert.match(calls.body,/合成完整理由 &lt;script&gt;unsafe&lt;\/script&gt;/);assert.ok(!calls.body.includes('<script>unsafe</script>'));
- assert.equal((await get(path,await signIn(user.token))).status,404);
+ // Members still reach /console/records but only see their own calls; the admin-only note/reasons stay out of the row.
+ assert.equal((await get(path,await signIn(user.token))).status,200);
+ assert.ok(!(await get(path,await signIn(user.token))).body.includes('完整理由'));
 });
 
 describe('immutable console assets',()=>{

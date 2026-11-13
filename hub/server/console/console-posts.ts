@@ -55,12 +55,13 @@ export async function handleAuthenticatedConsole(
       } else { const parsed = await formOf(request, ACTION_FORM_LIMIT); if (parsed === 'aborted') return void response.destroy(); if (parsed === 'too_large') return sendHtml(response, 413, page(ctx.chrome('表单超出大小上限'), html`<p>表单超出 ${ACTION_FORM_LIMIT} 字节上限</p>`)); if (typeof parsed === 'string') return forbidden(response, '表单格式不正确'); values = parsed; }
       if (values.get('csrf') !== session.csrf) return forbidden(response, '表单已过期或不是本控制台发出的');
       try {
-        const target = segments[0] === 'packs' ? await performPersonalPackAction(ctx, segments[2], values, options.staging, upload) : segments[2].startsWith('memory-') ? await performMemoryAction(ctx, segments[2].slice(7), values) : await performSpaceAction(ctx, segments[2], values, upload);
+        const personalPack = segments[0] === 'workflows' || segments[0] === 'skills';
+        const target = personalPack ? await performPersonalPackAction(ctx, segments[2], values, options.staging, upload) : segments[2].startsWith('memory-') ? await performMemoryAction(ctx, segments[2].slice(7), values) : await performSpaceAction(ctx, segments[2], values, upload);
         if (ctx.feedback) session.notice = ctx.feedback;
         else if (values.get('preview_grant') !== '1' && segments[2] !== 'share-batch' && segments[2] !== 'memory-share') {
           // A replay may return an earlier mode receipt; feedback reports the current state, never a new purge.
           const state = segments[2] === 'sync-mode' || segments[2] === 'sync-resume' || segments[2] === 'sync-confirm-purge' ? await ctx.deps.records.personalSync?.state(ctx.principal) : undefined;
-          const done = segments[0] === 'packs' ? actionNotice('packs', segments[2], values) : segments[2].startsWith('memory-') ? actionNotice('memory', segments[2].slice(7), values) : actionNotice('knowledge', segments[2], values, upload);
+          const done = personalPack ? actionNotice('packs', segments[2], values) : segments[2].startsWith('memory-') ? actionNotice('memory', segments[2].slice(7), values) : actionNotice('knowledge', segments[2], values, upload);
           session.notice = state ? (segments[2] === 'sync-confirm-purge' ? '已确认清除 · ' : '') + axisUiLabel('sync_mode') + '：' + uiLabelOf('sync_mode', state.mode) : done ?? '已保存';
         }
         return request.headers['circle-hub-form'] === 'enhanced' ? sendJson(response, 200, { location: target }, { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" }) : redirect(response, target);
@@ -75,8 +76,8 @@ export async function handleAuthenticatedConsole(
     }
   } catch (error) {
     if (error instanceof KnowledgeError && error.code) { result = spaceActionFailure(ctx, error); }
-    else if (error instanceof LimitError && isKnowledgeAction && segments[0] === 'packs') {
-      result = { status: 429, body: page(ctx.chrome('发布校验未完成', { active: 'packs' }), html`<p class="error">${error.message}</p><p>${link('/console/packs/-/publish', '返回发布列表')}</p>`) };
+    else if (error instanceof LimitError && isKnowledgeAction && (segments[0] === 'workflows' || segments[0] === 'skills')) {
+      result = { status: 429, body: page(ctx.chrome('发布校验未完成', { active: 'packs' }), html`<p class="error">${error.message}</p><p>${link('/console/workflows/-/publish', '返回发布列表')}</p>`) };
     }
     else if (error instanceof UploadError && isKnowledgeAction) { result = { status: 400, body: page(ctx.chrome('原文上传未完成'), html`<p class="error">${error.message}</p>`) }; }
     else if (error instanceof RecordsError && (error.code === null || isKnowledgeAction && error.code === 'CREDENTIAL_IN_UPLOAD') && !(error.name === 'IntegrityError')) {

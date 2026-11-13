@@ -19,15 +19,8 @@ import { type ConsoleOptions, bridgeRun } from './console-http.ts';
 
 type Route = (ctx: PageContext, rest: string[], options: ConsoleOptions, session: ConsoleSession) => Promise<PageResult>;
 
-/** The management pages of decision 122, each now part of one of the seven places; administrators only, as before. */
-const ADMIN_PAGES: Record<string, Route> = {
-  calls: (ctx) => recordsPage(ctx, '/console/admin/calls'),
-  packs: (ctx) => packsPage(ctx),
-  resources: (ctx) => connectionsPage(ctx),
-  secrets: (ctx, _rest, options, session) => settingsPage(ctx, bridgeRun(options, session)),
-  knowledge: (ctx, _rest, options) => operationsPage(ctx, 'knowledge', options.jobs, options.staging),
-};
-
+// Path literals until kit lands routes.ts (K3). Second admin page entries (calls/packs/resources/secrets/knowledge
+// and bare /console/admin as the team page) are gone; POST /console/admin/do/<action> stays in index.ts.
 export const ROUTES: Record<string, Route> = {
   overview: (ctx, rest) => (rest.length === 0 ? overviewPage(ctx) : Promise.resolve(neutralPage(ctx))),
   results: (ctx, rest) => (rest.length === 0 ? resultsPage(ctx) : rest.length === 1 ? resultPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
@@ -38,8 +31,8 @@ export const ROUTES: Record<string, Route> = {
     const pages: Record<string, (c: PageContext) => Promise<PageResult>> = { product: productPage, root: rootPage, tree: treePage, diff: diffPage, space: spacePage, submissions: shareHistoryPage, 'space-diff': spaceDiffPage, source: spaceSourcePage, sources: sourceArchivePage, 'share-batch': batchSharePage, products: productSourcesPage };
     return Object.hasOwn(pages, rest[0]) ? pages[rest[0]](ctx) : Promise.resolve(neutralPage(ctx));
   },
-  packs: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/') === '-/publish' ? personalPublishPage(ctx, options.staging) : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
-  // The skills place (decision 151). A pack's page answers under either path and shows the place of its own kind.
+  workflows: (ctx, rest, options) => (rest.length === 0 ? packsPage(ctx) : rest.join('/') === '-/publish' ? personalPublishPage(ctx, options.staging) : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
+  // The skills place (decision 151). List and detail both live under /console/skills (no packs fallback).
   skills: (ctx, rest) => (rest.length === 0 ? packsPage(ctx, 'skill') : rest.length === 1 ? packPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   connections: (ctx, rest) => (rest.length === 0 ? connectionsPage(ctx) : Promise.resolve(neutralPage(ctx))),
   records: (ctx, rest) => (rest.length === 0 ? recordsPage(ctx, '/console/records') : Promise.resolve(neutralPage(ctx))),
@@ -48,11 +41,10 @@ export const ROUTES: Record<string, Route> = {
   health: (ctx, rest, options) => (rest.length === 0 && ctx.admin ? healthPage(ctx, options.observation, options.log) : Promise.resolve(neutralPage(ctx))),
   team: (ctx, rest) => rest.length <= 1 ? teamPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx)),
   operations: (ctx, rest, options) => (rest.length <= 1 ? operationsPage(ctx, rest[0], options.jobs, options.staging) : Promise.resolve(neutralPage(ctx))),
-  admin: (ctx, rest, options, session) => {
+  // Job progress pages only; bare /console/admin is no longer the team page.
+  admin: (ctx, rest, options) => {
     if (!ctx.admin) return Promise.resolve(neutralPage(ctx));
-    if (rest.length === 0) return teamPage(ctx);
     if (rest.length === 2 && rest[0] === 'jobs') return Promise.resolve(jobPage(ctx, options.jobs.get(rest[1])));
-    if (rest.length === 1 && Object.hasOwn(ADMIN_PAGES, rest[0])) return ADMIN_PAGES[rest[0]](ctx, [], options, session);
     return Promise.resolve(neutralPage(ctx));
   },
 };

@@ -111,7 +111,7 @@ describe('the eight places', () => {
     const admin = await signIn(server.admin.token);
     const pages: Record<string, string> = {
       '/console/overview': '总览', '/console/runs': '任务', [`/console/runs/${run}`]: '任务', '/console/knowledge': '知识库',
-      '/console/packs': uiLabelOf('pack_kind', 'workflow'), '/console/packs/review': uiLabelOf('pack_kind', 'workflow'), '/console/connections': '连接', '/console/records': '记录',
+      '/console/workflows': uiLabelOf('pack_kind', 'workflow'), '/console/workflows/review': uiLabelOf('pack_kind', 'workflow'), '/console/connections': '连接', '/console/records': '记录',
       '/console/settings': '设置', '/console/team': '团队', '/console/operations': '设置', '/console/operations/member': '团队', '/console/operations/system': '连接',
       '/console/operations/pack': uiLabelOf('pack_kind', 'workflow'), '/console/operations/knowledge': '知识库', '/console/overview?days=30': '总览',
     };
@@ -129,8 +129,8 @@ describe('the eight places', () => {
     await runWithResult(user);
     const otherRun = await runWithResult(other);
     const session = await signIn(user.token);
-    for (const path of ['/console/overview', '/console/runs', '/console/knowledge', '/console/packs', '/console/connections', '/console/records', '/console/team', '/console/settings']) assertPage(await get(path, session), path);
-    for (const path of ['/console/operations', '/console/operations/member', '/console/admin', '/console/admin/calls']) {
+    for (const path of ['/console/overview', '/console/runs', '/console/knowledge', '/console/workflows', '/console/connections', '/console/records', '/console/team', '/console/settings']) assertPage(await get(path, session), path);
+    for (const path of ['/console/operations', '/console/operations/member', '/console/admin', '/console/admin/calls', '/console/packs']) {
       const refused = await get(path, session);
       assert.equal(refused.status, 404, path);
       assert.ok(refused.body.includes(NEUTRAL), path);
@@ -225,10 +225,10 @@ describe('operations and commands', () => {
     assert.match(connections.body,/id="live-system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
     assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
     for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
-      const detail=await get('/console/packs/'+id,admin);
+      const detail=await get('/console/workflows/'+id,admin);
       assert.equal(detail.status,200);assert.match(detail.body,new RegExp(`<ol><li><a[^>]*>${place}</a></li><li><a[^>]*>${uiLabelOf('pack_kind',kind)}</a></li><li><a href="" aria-current="page">`));
       const user=await member(), session=await signIn(user.token);
-      assert.equal((await get('/console/packs/'+id,session)).status,404);
+      assert.equal((await get('/console/workflows/'+id,session)).status,404);
     }
     const user=await member(), session=await signIn(user.token), mine=await get('/console/knowledge',session);
     assert.doesNotMatch(mine.body,/href="\/console\/packs\/line-a"/,'moving source configuration does not grant new catalog access');
@@ -262,11 +262,12 @@ describe('operations and commands', () => {
     const skill={id:'synthetic-skill',version:'1.0.0',kind:'skill' as const,title:'合成通用技能',description:'合成说明',digest:'f'.repeat(64),owner:null,summary:null};
     server.fakes.workflows.packs.push(skill);
     t.after(()=>{server.fakes.workflows.packs.splice(server.fakes.workflows.packs.indexOf(skill),1);});
-    const admin=await signIn(server.admin.token), list=await get('/console/packs',admin);
+    const admin=await signIn(server.admin.token), list=await get('/console/workflows',admin);
     assert.equal(list.status,200);
     // Decision 151, step 6: the place is one table; under 全部 a column says whose each row is.
     const workflow=/<section class="ch-section" id="workflow" aria-label="工作流"[^>]*>([\s\S]*?)<\/section>/.exec(list.body)?.[1];
-    assert.ok(workflow);assert.match(workflow,/<table class="ch-table" data-view="packs">/);assert.match(workflow,/href="\/console\/packs\/review\?scope=all"/);assert.match(workflow,/data-pack-scope="team"/);
+    assert.ok(workflow);assert.match(workflow,/<table class="ch-table" data-view="packs">/);
+    assert.match(workflow,/href="\/console\/(?:packs|workflows)\/review\?scope=all"/);assert.match(workflow,/data-pack-scope="team"/);
     assert.doesNotMatch(list.body,/class="ch-empty"/,'a group with nothing in it takes no room');
     // Decision 151: the workflows place lists workflows only; skills have their own place.
     assert.doesNotMatch(list.body,/id="skill"/);assert.ok(!list.body.includes(skill.title));
@@ -275,38 +276,37 @@ describe('operations and commands', () => {
     assert.equal(skills.status,200);
     const group=/<section class="ch-section" id="skill" aria-label="通用技能"[^>]*>([\s\S]*?)<\/section>/.exec(skills.body)?.[1];
     assert.ok(group);assert.ok(group.includes(skill.title));assert.match(group,/href="\/console\/skills\/synthetic-skill\?scope=all"/);
-    assert.doesNotMatch(skills.body,/id="workflow"/);assert.doesNotMatch(skills.body,/href="\/console\/packs\/review/);
+    assert.doesNotMatch(skills.body,/id="workflow"/);assert.doesNotMatch(skills.body,/href="\/console\/(?:packs|workflows)\/review/);
     assert.match(skills.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/);
     assert.match(skills.body,/<h1 class="ch-title">[\s\S]*?技能/);
     // What each kind is for is the hint of its place's title: one place, one kind, one purpose.
     assert.match(list.body,/要完成一项有验收要求的任务，选择工作流/);assert.doesNotMatch(list.body,/要让客户端遵循一套通用做法/);
     assert.match(skills.body,/要让客户端遵循一套通用做法，选择通用技能；技能不设验收要求/);assert.doesNotMatch(skills.body,/要完成一项有验收要求的任务/);
     assert.doesNotMatch(workflow,/title="规定做法与验收要求/);
-    assert.doesNotMatch(list.body,/href="\/console\/packs\/(?:line-a|tracker-system)"/);
-    // A skill's page answers under either path and stands in the skills place; its trail does not repeat the kind.
-    for(const path of ['/console/skills/synthetic-skill','/console/packs/synthetic-skill']){
-      const page=await get(path,admin);assert.equal(page.status,200,path);
-      assert.match(page.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/,path);
-      assert.match(page.body,/<nav class="ch-crumbs" aria-label="位置"><ol><li><a href="\/console\/skills">技能<\/a><\/li><li><a href="" aria-current="page">合成通用技能<\/a><\/li><\/ol><\/nav>/,path);
-    }
-    const detail=await get('/console/packs/review',admin);
+    assert.doesNotMatch(list.body,/href="\/console\/(?:packs|workflows)\/(?:line-a|tracker-system)"/);
+    // Skill detail answers only under /console/skills (packs path removed).
+    const skillDetail=await get('/console/skills/synthetic-skill',admin);assert.equal(skillDetail.status,200);
+    assert.match(skillDetail.body,/<a class="ch-nav-item[^"]*" href="\/console\/skills" aria-current="page">/);
+    assert.match(skillDetail.body,/<nav class="ch-crumbs" aria-label="位置"><ol><li><a href="\/console\/skills">技能<\/a><\/li><li><a href="" aria-current="page">合成通用技能<\/a><\/li><\/ol><\/nav>/);
+    assert.equal((await get('/console/packs/synthetic-skill',admin)).status,404);
+    const detail=await get('/console/workflows/review',admin);
     assert.match(detail.body,/<a class="ch-nav-item[^"]*" href="\/console\/workflows" aria-current="page">/);
     assert.ok(detail.body.indexOf('验收要求')<detail.body.indexOf('版本记录'));
     // A pack is a page of its own: its name is the title, no pane stands beside it, and its content is in tabs.
     assert.match(detail.body,/<h1 class="ch-title">[\s\S]*?合成评审/);assert.doesNotMatch(detail.body,/<aside class="ch-inspector"/);
-    assert.deepEqual([...(/<nav class="ch-seg" aria-label="工作流内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(detail.body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]),
-      [['/console/packs/review',true,'验收要求'],['/console/packs/review?tab=checks',false,'检查项'],['/console/packs/review?tab=versions',false,'版本记录'],['/console/packs/review?tab=technical',false,'技术信息']]);
+    assert.deepEqual([...(/<nav class="ch-seg" aria-label="工作流内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(detail.body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1].replace('/console/packs/','/console/workflows/'),!!match[2],match[3].trim()]),
+      [['/console/workflows/review',true,'验收要求'],['/console/workflows/review?tab=checks',false,'检查项'],['/console/workflows/review?tab=versions',false,'版本记录'],['/console/workflows/review?tab=technical',false,'技术信息']]);
     // Identifiers, digests and version numbers stand on the last tab only.
     assert.doesNotMatch(detail.body,/<code>review@1\.0\.0<\/code>|内容哈希/);
-    const technical=await get('/console/packs/review?tab=technical',admin);assert.match(technical.body,/<code>review@1\.0\.0<\/code>/);assert.match(technical.body,/内容哈希/);
-    const history=await get('/console/packs/review?tab=versions',admin);assert.match(history.body,/当前显示/);assert.doesNotMatch(history.body,/这里显示的是较早的版本/);
+    const technical=await get('/console/workflows/review?tab=technical',admin);assert.match(technical.body,/<code>review@1\.0\.0<\/code>/);assert.match(technical.body,/内容哈希/);
+    const history=await get('/console/workflows/review?tab=versions',admin);assert.match(history.body,/当前显示/);assert.doesNotMatch(history.body,/这里显示的是较早的版本/);
     const skillPage=await get('/console/skills/synthetic-skill',admin);
     assert.deepEqual([...(/<nav class="ch-seg" aria-label="通用技能内容" data-pack-tabs>([\s\S]*?)<\/nav>/.exec(skillPage.body)?.[1]??'').matchAll(/<a href="[^"]+"(?: aria-current="page")?>([^<]+)/g)].map(match=>match[1].trim()),['版本记录','技术信息'],'a skill declares no acceptance');
     // Issue 229: the abstract column heads of the requirement table say what they mean.
     assert.ok(detail.body.includes(DONE_RULE_NOTE)&&detail.body.includes(ACCEPTED_PRODUCER_NOTE),'the workflow page explains the delivery rule and the accepted producer');
     assert.match(detail.body,/结构/);assert.doesNotMatch(detail.body,/class="stages"/);
     const memberSession=await signIn((await member()).token);
-    for(const path of ['/console/packs','/console/skills'])assert.ok(!(await get(path,memberSession)).body.includes(skill.title),path);
+    for(const path of ['/console/workflows','/console/skills'])assert.ok(!(await get(path,memberSession)).body.includes(skill.title),path);
   });
 
   test('client tables show registered client names or direct-token labels without token identifiers', async () => {
@@ -390,10 +390,10 @@ describe('operations and commands', () => {
     assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
     assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
-    const pack = await get('/console/packs/review', admin);
+    const pack = await get('/console/workflows/review', admin);
     assert.ok(pack.body.includes('circle-hub pack retire review@1.0.0'));
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
-    for (const path of ['/console/packs/absent', '/console/packs/__proto__', '/console/operations/backup']) assert.equal((await get(path, admin)).status, 404, path);
+    for (const path of ['/console/workflows/absent', '/console/workflows/__proto__', '/console/packs', '/console/operations/backup']) assert.equal((await get(path, admin)).status, 404, path);
     assert.match(CSS, /\.ch-dialog:target/);
   });
 
