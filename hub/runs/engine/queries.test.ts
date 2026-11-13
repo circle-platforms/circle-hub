@@ -216,7 +216,7 @@ test('sharing grants read queries and preview but never submission or predecesso
   assert.deepEqual(view.run,stored.body);
   assert.ok(await h.service.getResult(h.bob,run.run));
   assert.ok((await h.service.listRuns(h.bob,{limit:1})).items.some(row=>row.run===run.run));
-  const records = recordReader(h.kit.store);
+  const records = recordReader(h.kit);
   assert.ok(await records.read(stored.digest,identityOf(h.bob)));
   assert.ok(await records.read(view.latest!.record,identityOf(h.bob)));
   assert.ok(await records.read(view.submissions.find(s=>s.acceptance==='accepted')!.record,identityOf(h.bob)));
