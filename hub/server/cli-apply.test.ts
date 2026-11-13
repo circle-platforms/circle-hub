@@ -45,11 +45,12 @@ function fake(t: TestContext) {
     },
     objects: { get: async (digest: string) => objects.get(digest) ?? null },
     get vault(): never { throw new Error('must not read vault'); },
-    get variables(): never { throw new Error('must not resolve variable values'); },
+    variables: { list: async () => [] },
   };
   const hub = {
     records,
     resources: { list: async () => resources },
+    docs: { list: async () => [] },
     registry: {
       listPacks: async () => [...publications.values()],
       installedSkills: async () => [...installed].map(ref => ({ info: { id: ref.split('@')[0], version: ref.split('@')[1] } })),
@@ -83,7 +84,7 @@ function fake(t: TestContext) {
     } },
   };
   t.mock.method(ExecutorRegistry.prototype, 'sources', async () => []);
-  const session = { ctx: { io: { cwd: tmpdir(), stdout: (line: string) => output.push(line) } }, admin: async () => admin, records: async () => records, hub: async () => hub,
+  const session = { ctx: { io: { cwd: tmpdir(), stdout: (line: string) => output.push(line) } }, admin: async () => admin, leases: async () => ({ registrations: async () => [] }), records: async () => records, hub: async () => hub,
     out: (line: string) => output.push(terminalSafe(line)), err: (line: string) => output.push(line) } as unknown as Session;
   return { session, calls, output, accounts, teams, publications, resources, objects, configs, installed };
 }
@@ -335,4 +336,62 @@ test('reset restore verifies persisted payload checksum even without an in-memor
   await writeFile(path, JSON.stringify(envelope));
   await assert.rejects(ports.restoreConfiguration(path));
   assert.equal(f.calls.includes('restore'), false);
+});
+
+test('[PG] real product variables, named document bytes and booking registrations survive export and repeated apply', { timeout: 180000 }, async t => {
+  const { openTestRecords } = await import('../testing/records.ts');
+  const { createPackRegistry, createWorkflowStore, writePack } = await import('../runs/api.ts');
+  const { productPack, docsPack } = await import('./assemble/test-packs.ts');
+  const { createDocs } = await import('./docs.ts');
+  const { Database, createPool } = await import('../records/api.ts');
+  const { LeaseService } = await import('../leases/api.ts');
+  const kit = await openTestRecords(); t.after(() => kit.close());
+  const database = new Database(createPool(kit.database, 2)); t.after(() => database.end());
+  const by = (await kit.principals.bootstrapAdmin('合成覆盖管理员')).user;
+  await kit.authorizations.grantPublishRight(by, by.id);
+  const { productVariableNameAvailable } = await import('./variables.ts');
+  const registry = createPackRegistry({ records: kit, extractDir: join(kit.dataDir, 'packs'), sandbox: { requireOsIsolation: false }, variableNameAvailable: (name, tx) => productVariableNameAvailable(kit, name, tx) });
+  const product = productPack();
+  const productFile = product.files['product.json'] as Record<string, unknown>;
+  productFile.variables = Array.from({ length: 17 }, (_, index) => ({ name: `DEMO_ROOT_${index}`, description: '合成产品变量', schema: { type: 'string' }, default: `default-${index}` }));
+  const productDirectory = await writePack(join(kit.dataDir, 'product-source'), product);
+  const productOutcome = await registry.publish(by, productDirectory.dir);
+  assert.equal(productOutcome.ok, true);
+  const workflow = docsPack();
+  const workflowFile = workflow.files['workflow.json'] as Record<string, unknown>;
+  workflowFile.leases = { prefix: 'synthetic-environments/' }; workflowFile.context = ['leases'];
+  const workflowDirectory = await writePack(join(kit.dataDir, 'workflow-source'), workflow);
+  const workflowOutcome = await registry.publish(by, workflowDirectory.dir);
+  assert.equal(workflowOutcome.ok, true);
+  const workflows = createWorkflowStore(registry), docs = createDocs({ records: kit, workflows });
+  const leases = new LeaseService(database, { records: kit.store });
+  const output: string[] = [];
+  const hub = { records: kit, registry, workflows, docs, resources: { list: async () => [] } };
+  const session = { ctx: { io: { cwd: kit.dataDir, stdout: (line: string) => output.push(line) } }, options: {},
+    admin: async () => by, viewer: async () => by, records: async () => kit, hub: async () => hub, leases: async () => leases,
+    user: async (name: string) => { const found = name === by.id ? await kit.principals.get(name) : await kit.principals.findByName(name); if (!found) throw new Error('synthetic account missing'); return found; },
+    out: (line: string) => output.push(terminalSafe(line)), err: (line: string) => output.push(terminalSafe(line)),
+  } as unknown as Session;
+  const variables = Array.from({ length: 17 }, (_, index) => ({ schema: 'variable@1', name: `DEMO_ROOT_${index}`, value: `synthetic-root-${index}` }));
+  const documents = Array.from({ length: 12 }, (_, index) => {
+    const bytes = Buffer.from(JSON.stringify({ topology: `synthetic-${index}`, empty: '' }) + '\r\n');
+    return { name: `synthetic-document-${index}`, bytesBase64: bytes.toString('base64'), size: bytes.byteLength, sha256: sha256Hex(bytes), mediaType: 'application/json', fileName: `synthetic-${index}.json` };
+  });
+  const definition = { schema: 'deployment@1', variables, documents, leaseRegistrations: [{ prefix: 'synthetic-environments/one/', owner: by.id }], knowledgeSources: [product.id] };
+  const applied = await applyDeployment(session, definition);
+  assert.deepEqual(applied.differences, []);
+  assert.equal((await kit.variables.list(by)).length, 17);
+  assert.equal((await docs.list()).length, 12);
+  assert.deepEqual(await leases.registrations(''), definition.leaseRegistrations);
+  const exported = await exportDeployment(session);
+  assert.deepEqual(exported.variables, [...variables].sort((a, b) => a.name.localeCompare(b.name)));
+  assert.deepEqual(exported.documents.map(document => document.sha256).sort(), documents.map(document => document.sha256).sort());
+  for (const document of exported.documents) assert.deepEqual(Buffer.from(document.bytesBase64, 'base64'), await kit.artifacts.trustedBytes(document.sha256));
+  assert.equal(exported.missingConfiguration.length, 1);
+  const repeated = await applyDeployment(session, definition);
+  assert.equal(repeated.created, 0); assert.deepEqual(repeated.differences, []);
+  assert.equal((await kit.variables.list(by)).every(variable => variable.version === 1), true);
+  const failedDocument = { ...documents[0], bytesBase64: Buffer.from('synthetic-changed').toString('base64') };
+  await assert.rejects(applyDeployment(session, { schema: 'deployment@1', documents: [failedDocument] }), /字节、长度或摘要/);
+  assert.equal((await docs.show(documents[0].name))?.sha256, documents[0].sha256);
 });
