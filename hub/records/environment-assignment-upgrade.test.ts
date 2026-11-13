@@ -13,7 +13,7 @@ import { PgPrincipals } from './principals.ts';
 import { RecordAuthorizations } from './authorizations.ts';
 import { FileObjectStore } from './objects.ts';
 import { newId } from './ids.ts';
-import { previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, requireEnvironmentAssignmentActivation, type EnvironmentUpgradeSources } from './environment-assignment-upgrade.ts';
+import { previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, requireEnvironmentAssignmentActivation, verifyEnvironmentUpgradeOpenSchema, type EnvironmentUpgradeSources } from './environment-assignment-upgrade.ts';
 import { planEnvironmentAssignmentUpgrade } from '../server/environment-assignment-upgrade.ts';
 
 let postgres: TemporaryPostgres;
@@ -108,6 +108,12 @@ test('preview is SQL read-only and never accepts a forged admin role or a missin
     return f.sources.collect(ctx);
   } };
   await assert.rejects(previewEnvironmentAssignmentUpgrade(f.config, f.admin, writable), /read-only/);
+  const readersOnly: EnvironmentUpgradeSources = { ...f.sources, collect: async ctx => {
+    assert.equal('put' in ctx.objects, false, 'preview must not expose an object writer that can write files before a SQL refusal');
+    assert.equal('put' in ctx.store, false);
+    return f.sources.collect(ctx);
+  } };
+  assert.equal((await previewEnvironmentAssignmentUpgrade(f.config, f.admin, readersOnly)).canApply, true);
   const lost: EnvironmentUpgradeSources = { ...f.sources, collect: async ctx => ({ ...await f.sources.collect(ctx), sourceRecords: ['e'.repeat(64)] }) };
   await assert.rejects(previewEnvironmentAssignmentUpgrade(f.config, f.admin, lost), /来源原件缺失/);
   await f.unchanged();
@@ -122,6 +128,7 @@ test('a real member state change after preview is rejected with no migration or 
 
 test('known previous checksums stay strict and normal migration cannot bypass preservation', { timeout: 120000 }, async t => {
   const f = await fixture(t);
+  await assert.rejects(verifyEnvironmentUpgradeOpenSchema(f.db), /先只读预检/);
   await assert.rejects(migrate(f.db), /先只读预检/);
   await f.unchanged();
   await f.db.query("UPDATE schema_migrations SET sha256=repeat('a',64) WHERE version=1");
@@ -172,5 +179,13 @@ test('an actual administrator revocation after preview is never replaced by an a
   await assert.rejects(applyEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources, preview), /已有明确决定/);
   assert.deepEqual((await f.db.query('SELECT version FROM schema_migrations ORDER BY version')).rows.map(row => row.version), [1]);
   assert.equal((await f.auth.latest('resource_assign', f.user.id, f.executor))?.body.revoked, true);
+  assert.equal((await f.db.query("SELECT to_regclass('public.environment_assignment_cutover') AS name")).rows[0].name, null);
+});
+
+
+test('unknown migration receipts never enter the known-previous preview path', { timeout: 120000 }, async t => {
+  const f = await fixture(t);
+  await f.db.query('INSERT INTO schema_migrations(version,name,sha256) VALUES(3,$1,$2)', ['synthetic_unknown', 'f'.repeat(64)]);
+  await assert.rejects(previewEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources), /不认识的迁移/);
   assert.equal((await f.db.query("SELECT to_regclass('public.environment_assignment_cutover') AS name")).rows[0].name, null);
 });
