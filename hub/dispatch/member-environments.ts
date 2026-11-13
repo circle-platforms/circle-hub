@@ -1,10 +1,10 @@
 // Member-visible environment assignments and booking admission; source identities stay inside the Hub.
 import type { ProtocolError } from '../../contracts/src/common.ts';
-import { isAdmin, type Principal, type RecordsKit } from '../records/api.ts';
+import { isAdmin, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
 import type { ExecutorRegistry } from './executors.ts';
 
-export type EnvironmentPermission = (actor: Principal, executor: string) => Promise<boolean>;
+export type EnvironmentPermission = (actor: Principal, executor: string, tx?: Transaction) => Promise<boolean>;
 export interface MemberEnvironment {
   name: string;
   enabled: boolean;

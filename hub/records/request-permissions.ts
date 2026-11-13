@@ -4,7 +4,7 @@ import { TeamId } from '../../contracts/api.ts';
 import { PackId } from '../../contracts/src/common.ts';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { step } from './trace-usage.ts';
-import type { AuthorizationBody, AuthorizationRecord, Principal, User } from './api.ts';
+import type { AuthorizationBody, AuthorizationRecord, Principal, User, Transaction } from './api.ts';
 import { iso, type Database } from './db.ts';
 import { digestOf } from './digest.ts';
 import { verifiedRecord } from './store.ts';
@@ -78,7 +78,7 @@ export function requestPermissions(user: string): RequestPermissions | null {
 }
 
 /** Accounts, memberships, team assignments and pack audiences come from one PostgreSQL statement snapshot. */
-export async function capturePermissionSnapshots(db: Database, userIds: readonly string[], at: Date): Promise<Map<string, RequestPermissions>> {
+export async function capturePermissionSnapshots(db: Database, userIds: readonly string[], at: Date, tx?: Transaction): Promise<Map<string, RequestPermissions>> {
   const ids = [...new Set(userIds)];
   const snapshots = new Map(ids.map(id => [id,new RequestPermissions(id,null,at,[])]));
   if (!ids.length) return snapshots;
@@ -116,7 +116,7 @@ export async function capturePermissionSnapshots(db: Database, userIds: readonly
     ORDER BY s.reader,(r.body::jsonb)->>'permission',(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object',i.record_seq DESC
   ) SELECT u.id AS user_id,u.name AS user_name,u.role AS user_role,u.disabled AS user_disabled,u.deleted_at AS user_deleted_at,
       u.created_at AS user_created_at,u.updated_at AS user_updated_at,grants.*
-    FROM accounts u LEFT JOIN grants ON grants.reader=u.id`, [ids,at.toISOString()]);
+    FROM accounts u LEFT JOIN grants ON grants.reader=u.id`, [ids,at.toISOString()],tx);
   const grouped = new Map<string, typeof rows.rows>();
   for (const row of rows.rows) { const id=String(row.user_id); const group=grouped.get(id)??[];group.push(row);grouped.set(id,group); }
   for (const [id,group] of grouped) {
@@ -128,8 +128,8 @@ export async function capturePermissionSnapshots(db: Database, userIds: readonly
   }
   return snapshots;
 }
-export async function captureRequestPermissions(db: Database, principal: Principal, at: Date): Promise<RequestPermissions> {
-  return (await capturePermissionSnapshots(db,[principal.id],at)).get(principal.id)!;
+export async function captureRequestPermissions(db: Database, principal: Principal, at: Date, tx?: Transaction): Promise<RequestPermissions> {
+  return (await capturePermissionSnapshots(db,[principal.id],at,tx)).get(principal.id)!;
 }
 
 /** Keep a snapshot only for the request; detached background work reverts to current permissions after it ends. */
