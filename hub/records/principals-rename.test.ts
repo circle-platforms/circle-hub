@@ -101,6 +101,8 @@ test('runtime grants permit name updates without granting them to readers or pub
   await db.query(`GRANT SELECT ON users TO ${reader}`);
   const may = async (role: string) => (await db.query("SELECT has_column_privilege($1,'public.users','name','UPDATE') AS ok", [role])).rows[0].ok;
   assert.equal(await may(runtime), false);
+  const database=String((await db.query('SELECT current_database() AS name')).rows[0].name);
+  await db.query('REVOKE TEMPORARY ON DATABASE "'+database.replaceAll('"','""')+'" FROM PUBLIC');
   await grantRuntime(db,runtime);
   assert.equal(await may(runtime), true);
   assert.equal(await may(reader), false);
