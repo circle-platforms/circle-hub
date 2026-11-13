@@ -1,3 +1,4 @@
+import { ADMIN_COMMANDS } from './command-registry.ts';
 // The administrator commands the assembly registers with the server CLI: pack, resource, secret, knowledge, init-admin and
 // operator-token. Every command that changes state acts as the admin of the operator token: CIRCLE_HUB_TOKEN, or when it is
 // not set the private key file of the deployment (account operator-token beside the vault master key, hub/platform
@@ -36,21 +37,8 @@ export { PACK_USAGE } from './cli-pack.ts';
 export { RESOURCE_USAGE } from './cli-resource.ts';
 export { KNOWLEDGE_USAGE, writeKnowledgeViewFile, runContributionEntries } from './cli-knowledge.ts';
 
-export const SECRET_USAGE = NAMED_SECRET_USAGE;
-export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
-export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
-export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <工作流> [--reason <理由>] | list [--object <对象>]';
-export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
-export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
-export const INIT_ADMIN_USAGE = `init-admin [<用户名>] [--password-stdin]   建第一位管理员（省略用户名时为 ${DEFAULT_ADMIN_NAME}），密码从标准输入读取或随机生成；操作令牌存进私有密钥文件，不显示`;
-export const OPERATOR_TOKEN_USAGE =
-  'operator-token set   从标准输入读一个启用中的管理员的令牌，存进私有密钥文件（账户 operator-token）；令牌文件丢失时用，已有的不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进私有密钥文件，不显示；已有的不覆盖 | remove --confirm-only-operator-token   仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
-
-// ---------------------------------------------------------------- pack
-
-// ---------------------------------------------------------------- resource
-
-// ---------------------------------------------------------------- secret
+export { SECRET_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
+import { ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
 
 async function secretCommand(session: Session, args: readonly string[]): Promise<number> { return namedSecretCommand(session, args); }
 
@@ -87,7 +75,7 @@ async function storeUnseen(kit: RecordsKit, store: OperatorTokenStore, admin: Pi
   }
 }
 
-async function initAdminCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function initAdminCommand(session: Session, args: readonly string[]): Promise<number> {
   const { positionals, values } = parse(args, { 'password-stdin': { type: 'boolean' } }, 0, 1);
   const name = positionals[0] ?? DEFAULT_ADMIN_NAME;
   const supplied = values['password-stdin'] === true ? await (session.options.readSecret ?? readSecretFromStdin)('管理员密码') : '';
@@ -123,7 +111,7 @@ async function initAdminCommand(session: Session, args: readonly string[]): Prom
  * needs no token because the CLI is no access boundary against whoever can run it against the database (that account can
  * change the database directly); what it gives exists only in the deployment's token file.
  */
-async function operatorTokenCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function operatorTokenCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'reissue') return reissueCommand(session, rest);
   if (sub === 'remove') {
@@ -180,7 +168,7 @@ async function reissueCommand(session: Session, args: readonly string[]): Promis
  * The read originals a gold script needs as input: every stored `source_artifact` whose origin is a read, by external id.
  * Only the external id, the digest, the size and the read time reach the screen — never the content.
  */
-async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function originalCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') {
     const { values } = parse(rest, { external: { type: 'string' }, suffix: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
@@ -247,7 +235,7 @@ async function originalCommand(session: Session, args: readonly string[]): Promi
  * prefix — never the fencing token or the lease id; `lease release` force-frees a key with a reason that lands in the
  * action record. Only administrators; a non-administrator gets the same answer as for a row that does not exist.
  */
-async function leaseCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function leaseCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') {
     const { values } = parse(rest, { prefix: { type: 'string' }, as: { type: 'string' } }, 0);
@@ -324,7 +312,7 @@ async function leaseCommand(session: Session, args: readonly string[]): Promise<
  * source pipeline, the pointer moved by compare-and-set); `doc list` and `doc show` print name, digest and size only.
  * Everyone who is not an admin gets the same answer as for a doc that does not exist.
  */
-async function docCommand(session: Session, args: readonly string[]): Promise<number> {
+export async function docCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'put') {
     const { positionals } = parse(rest, {}, 2);
@@ -370,7 +358,7 @@ async function docCommand(session: Session, args: readonly string[]): Promise<nu
   throw new UsageError(`doc 的子命令：${DOC_USAGE}`);
 }
 
-async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
+export async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
   const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>] [--vault]');
   const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'},vault:{type:'boolean'}},0);
   const viewer=await session.viewer(values.as);if(viewer.role!=='admin')throw new CliError('只有管理员能核对记录完整性');
@@ -394,7 +382,7 @@ async function recordsCommand(session:Session,args:readonly string[]):Promise<nu
 }
 
 // ---------------------------------------------------------------- sharing (B04, R02): a read capability only
-async function sharingCommand(session: Session, args: readonly string[], withdraw = false): Promise<number> {
+export async function sharingCommand(session: Session, args: readonly string[], withdraw = false): Promise<number> {
   const admin = await session.admin();
   const kit = await session.records();
   const [sub, ...rest] = args;
@@ -439,29 +427,6 @@ async function sharingCommand(session: Session, args: readonly string[], withdra
 
 // ---------------------------------------------------------------- registration
 
-type Handler = (session: Session, args: readonly string[]) => Promise<number>;
-
-const COMMANDS: { name: string; summary: string; handler: Handler }[] = [
-  {name:'share',summary:SHARE_USAGE.slice('share '.length),handler:sharingCommand},
-  {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>sharingCommand(session,args,true)},
-  {name:'records',summary:'verify [--kind <记录类型>] [--vault]（核存储摘要，可选核验密钥库解密，不输出正文）',handler:recordsCommand},
-  { name: 'executor', summary: EXECUTOR_USAGE, handler: executorCommand },
-  { name: 'job', summary: JOB_USAGE, handler: jobCommand },
-  { name: 'bed', summary: BED_USAGE, handler: bedCommand },
-  { name: 'pack', summary: PACK_USAGE.slice('pack '.length), handler: packCommand },
-  { name: 'resource', summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
-  { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },
-  { name: 'mask', summary: MASK_USAGE.slice('mask '.length), handler: maskCommand },
-  { name: 'secret', summary: SECRET_USAGE.slice('secret '.length), handler: secretCommand },
-  { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: originalCommand },
-  { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: leaseCommand },
-  { name: 'knowledge', summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
-  { name: 'trace', summary: TRACE_USAGE.slice('trace '.length), handler: traceCommand },
-  { name: 'doc', summary: DOC_USAGE.slice('doc '.length), handler: docCommand },
-  { name: 'init-admin', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: initAdminCommand },
-  { name: 'operator-token', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: operatorTokenCommand },
-];
-
 /**
  * An error a command ends with, made safe for a terminal (a message or a hint may quote a pack, a resource or a remote
  * system). The configuration's own errors pass unchanged: the server CLI prints them as they are.
@@ -500,7 +465,7 @@ export function operatorViewer(ctx: CliContext, options: AdminCommandOptions = {
 
 /** The administrator commands, for the assembly's registerCommands (tests inject the token store, stdin and the assembly). */
 export function adminCommands(options: AdminCommandOptions = {}): CliCommand[] {
-  return COMMANDS.map(({ name, summary, handler }) => ({
+  return ADMIN_COMMANDS.map(({ name, summary, handler }) => ({
     name,
     summary,
     run: async (args, ctx) => {

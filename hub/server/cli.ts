@@ -1,3 +1,4 @@
+import { BUILTIN_COMMANDS, RESERVED_DESCRIPTIONS } from './command-registry.ts';
 import {deletionCheck,deleteMember,DELETION_EFFECT,handoverLines} from './member-deletion.ts';
 // `circle-hub <command>`: the server's commands. main(argv) returns the exit code and never runs on import (bin/circle-hub
 // calls it). Platform commands go to hub/platform's runPlatformCommand; serve is main.ts; user, token, logs and run need only
@@ -43,24 +44,9 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
 }
 
 /** Commands the assembly module registers; while the module in use does not, they print a clear message. */
-interface ReservedCommandDescriptions {
-  readonly pack:string;
-  readonly resource:string;
-  readonly secret:string;
-  readonly knowledge:string;
-  readonly 'init-admin':string;
-  readonly 'operator-token':string;
-}
-const RESERVED_COMMAND_DESCRIPTIONS: ReservedCommandDescriptions = {
-  pack: '管理工作流',
-  resource: '管理资源声明',
-  secret: '管理密钥库条目',
-  knowledge: '读取和管理知识树',
-  'init-admin': '初始化管理员',
-  'operator-token': '管理操作令牌',
-};
+const RESERVED_COMMAND_DESCRIPTIONS = RESERVED_DESCRIPTIONS;
 export const RESERVED_COMMANDS: readonly string[] = Object.keys(RESERVED_COMMAND_DESCRIPTIONS);
-const BUILT_IN = new Set(['help', 'serve', 'user', 'token', 'logs', 'run', 'local-tools', 'setup-code', 'health', 'crashes']);
+const BUILT_IN = new Set(['help', ...BUILTIN_COMMANDS.map(command => command.name)]);
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
 const registry = new Map<string, CliCommand>();
@@ -81,26 +67,7 @@ function usage(extra: readonly CliCommand[]): string {
   const lines = [
     '用法：circle-hub <命令>',
     '',
-    `  ${SERVE_USAGE}`,
-    `  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先用 --role admin 建第一位管理员（省略名字时为 ${DEFAULT_ADMIN_NAME}），并只显示一次它的令牌`,
-    '  user list [--json]                           列出用户（JSON 不含密码摘要或令牌）',
-    '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）',
-    '  user rename <用户> <新名字>                    给账号改名；记录按成员编号引用账号，改名后登录和 --as 用新名字',
-    '  user delete <成员编号> [--dry-run] [--json]    先检查清除范围；按显示的确认命令永久删除，失败后重试同一操作',
-    '  user password-reset <用户>                   重置初始密码，只显示一次；首次登录须修改，控制台会话立即失效',
-    '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它',
-    '  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误',
-    '  token revoke <令牌编号>                        撤销令牌（立即生效）',
-    '  token list [<用户>]                           列出令牌（不显示令牌值）',
-    '  logs export [--from <时间>] [--to <时间>] [--user <用户>] [--tool <工具>] [--run <运行>] [--out <文件>] [--as <管理员>]   导出调用日志（JSON Lines）',
-    `  ${LOCAL_TOOLS_USAGE}`,
-    '  setup-code                                   还没有管理员时，给网页控制台发一个设置码（24 小时内有效，只显示一次），在 /console/setup 用它建第一位管理员',
-    '  run abandon <运行> --answer-request <摘要> --reason <理由>  管理放弃目标，原效果与冻结不改',
-    `  ${RUN_BATCH_USAGE}  管理员为文件里每个外部对象各开始一次运行（只用于开始时由 Hub 直接算出结果的工作流）`,
-    '  run list [--pack <包>] [--user <用户>] [--state 受理|未受理|进行中] [--since <ISO时间>] [--unknown] [--limit <N>] [--cursor <游标>] [--json] [--as <管理员>]  列出运行（仅管理员；默认 50 条，新到旧，超出给下一页游标）',
-    '  run show <运行> [--json] [--as <管理员>]        显示一次运行',
-    '  health [--since <时长或时间>] [--json] [--as <管理员>]   资源的当前值和窗口内的最小、最大值（仅管理员；--since 写 30m、6h、7d 或 ISO 时间，默认 1 小时）',
-    `  crashes [--limit <N>] [--json] [--as <管理员>]   进程的启动、停止和异常退出，异常退出带当时在处理的请求和崩溃报告摘要（仅管理员；默认 ${DEFAULT_EVENT_LIMIT} 条，新到旧）`,
+    ...BUILTIN_COMMANDS.flatMap(command => command.help),
     ...extra.map((command) => `  ${command.name.padEnd(44)} ${command.summary}`),
     ...Object.entries(RESERVED_COMMAND_DESCRIPTIONS).filter(([name]) => !extra.some((command) => command.name === name)).map(([name, description]) => `  ${name.padEnd(44)} ${description}；由装配模块注册；这个装配模块没有注册它`),
     '',
@@ -220,7 +187,7 @@ async function requireUser(kit: RecordsKit, nameOrId: string): Promise<User> {
 
 const roleText = (role: PermissionRole) => labelOf('permission_role', role);
 
-async function userCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+export async function userCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   const io = ctx.io;
   if (sub === 'create') {
@@ -318,7 +285,7 @@ async function userCommand(args: readonly string[], ctx: CliContext, options: Cl
   throw new UsageError('user 的子命令是 create、list、disable、enable、rename、delete、password-reset 或 invite');
 }
 
-async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+export async function tokenCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   const io = ctx.io;
   if (sub === 'issue') {
@@ -376,7 +343,7 @@ function isoTime(value: string | undefined, flag: string): string | undefined {
   return new Date(time).toISOString();
 }
 
-async function logsCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+export async function logsCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   if (sub !== 'export') throw new UsageError('logs 的子命令是 export');
   const { values } = parse(
@@ -541,7 +508,7 @@ async function runBatchCommand(args: readonly string[], ctx: CliContext, options
   return summary.failed === 0 ? 0 : 1;
 }
 
-async function runCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+export async function runCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'list') return runListCommand(rest, ctx, options);
   if (sub === 'batch') return runBatchCommand(rest, ctx, options);
@@ -607,7 +574,7 @@ async function withHealthReader<T>(ctx: CliContext, use: (reader: HealthReader) 
   }
 }
 
-async function healthCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+export async function healthCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const { values } = parse(args, { since: { type: 'string' }, json: { type: 'boolean' }, as: { type: 'string' } }, 0);
   const now = (options.now ?? (() => new Date()))();
   const since = values.since === undefined ? new Date(now.getTime() - DEFAULT_SINCE_MS) : parseSince(values.since, now);
@@ -622,7 +589,7 @@ async function healthCommand(args: readonly string[], ctx: CliContext, options: 
   return 0;
 }
 
-async function crashesCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
+export async function crashesCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const { values } = parse(args, { limit: { type: 'string' }, json: { type: 'boolean' }, as: { type: 'string' } }, 0);
   if (values.limit !== undefined && (!/^[1-9][0-9]*$/.test(values.limit) || Number(values.limit) > MAX_EVENT_LIMIT)) throw new UsageError(`--limit 要 1 到 ${MAX_EVENT_LIMIT} 的整数`);
   const limit = values.limit === undefined ? DEFAULT_EVENT_LIMIT : Number(values.limit);
@@ -637,7 +604,7 @@ async function crashesCommand(args: readonly string[], ctx: CliContext, options:
 }
 
 /** A one-time code for /console/setup; refused once an administrator exists (they add users in the console). */
-async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promise<number> {
+export async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promise<number> {
   parse(args, {}, 0);
   const kit = await ctx.records();
   if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
@@ -649,17 +616,6 @@ async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promi
   ctx.io.stdout('在浏览器打开控制台的 /console/setup，输入设置码，建立第一位管理员');
   return 0;
 }
-
-const BUILT_IN_HANDLERS: Record<string, (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>> = {
-  'local-tools': (args, ctx) => localToolsCommand(args, ctx.io),
-  user: userCommand,
-  token: tokenCommand,
-  logs: logsCommand,
-  run: runCommand,
-  'setup-code': setupCodeCommand,
-  health: healthCommand,
-  crashes: crashesCommand,
-};
 
 /**
  * The environment a platform command gets: without the operator token. The platform never acts as a Hub admin, and what it
@@ -769,7 +725,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
   const ctx = contextFor(options, assembly);
   return traced(options, command, async () => {
     try {
-      const builtIn = Object.hasOwn(BUILT_IN_HANDLERS, command) ? BUILT_IN_HANDLERS[command] : undefined;
+      const builtIn = BUILTIN_COMMANDS.find(entry => entry.name === command)?.handler;
       if (builtIn !== undefined) return await builtIn(rest, ctx, options);
       if (!local.has(command)) {
         const module = await assembly();

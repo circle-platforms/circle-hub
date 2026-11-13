@@ -14,3 +14,17 @@ test('reserved command help carries command descriptions rather than home-axis m
   assert.match(help, /knowledge\s+读取和管理知识树；由装配模块注册/);
   assert.match(KNOWLEDGE_USAGE, /retract \(--entry <记录摘要> \| --run <运行> \| --object <对象摘要>\)… --reason <一行原因>/);
 });
+
+
+test('command bridge derives allowed commands from registration and refuses platform commands before execution', async () => {
+  const { COMMAND_METADATA } = await import('./command-registry.ts');
+  const { createCommandBridge } = await import('./command-bridge.ts');
+  let executions = 0;
+  const bridge = createCommandBridge({ env: {}, cwd: tmpdir(), main: async () => { executions++; return 0; } });
+  assert.equal(new Set(COMMAND_METADATA.map(command => command.name)).size, COMMAND_METADATA.length);
+  for (const command of COMMAND_METADATA) {
+    const result = await bridge.run([command.name], { token: 'synthetic' });
+    assert.equal(result.code, command.bridge ? 0 : 2, command.name);
+  }
+  assert.equal(executions, COMMAND_METADATA.filter(command => command.bridge).length);
+});
