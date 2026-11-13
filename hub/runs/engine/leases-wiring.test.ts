@@ -6,6 +6,10 @@
 // and rebuilt from it, so a check function sees the same rows after a restart. An acquisition that finds a key busy
 // is a definite negative answer (LEASE_UNAVAILABLE with the earliest free moment) — not an unknown, not a schema
 // error, and no run is stored. Synthetic namespace: keys live under `meadow/`.
+import { MemberEnvironments } from '../../dispatch/member-environments.ts';
+import { ExecutorRegistry } from '../../dispatch/executors.ts';
+import { definition as executorDefinition } from '../../dispatch/testing/definition.ts';
+import { canUseEnvironment } from '../../records/environment-permissions.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -33,6 +37,7 @@ const OBSERVE_PROJECTION = `export default function project(input: unknown): unk
 `;
 let postgres: TemporaryPostgres;
 let h: Harness;
+let environments: MemberEnvironments;
 let leases: LeaseService;
 let map: string;
 let packRoot: string;
@@ -133,11 +138,26 @@ function leasesPack(
 before(async () => {
   postgres = await startPostgres();
   // Later functional cases are not OS-isolation tests and still need their synthetic harness.
-  h = await openHarness(postgres, { leases: true, leaseJobs: async keys => keys.filter(key=>key===["meadow","/visib","ility/","k"].join('')||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})), observations: {
+  h = await openHarness(postgres, { leases: true, environmentAccess: { authorizeKeys: (actor, keys) => environments.authorizeKeys(actor, keys) }, leaseJobs: async keys => keys.filter(key=>key===["meadow","/visib","ility/","k"].join('')||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})), observations: {
     latest: async () => [OBSERVED_BEFORE],
     observe: async (user, run, targets) => { observeCalls.push({ user: user.id, run, targets: [...targets] }); return { observed: [{ ...OBSERVED_BEFORE, build: 'synthetic-build-now', base: 'synthetic-build-now', values: ['synthetic-build-now'], observed_at: '2026-10-22T08:00:30.000Z', run, reference: `src:${'d'.repeat(64)}` }], missing: null }; },
   } });
   leases = h.leases!;
+  const registry = new ExecutorRegistry(h.kit);
+  const environment = await registry.add(h.admin, {
+    ...executorDefinition('http://127.0.0.1:1/mcp'), target: 'synthetic-lease-wiring',
+    resources: [
+      'meadow/obs/1', 'meadow/held/1', 'meadow/lin/1',
+      'meadow/zone-1/target-3', 'meadow/zone-1/target-4', 'meadow/zone-1/target-5',
+      'meadow/zone-1/target-6', 'meadow/zone-1/target-9', 'river/zone-1/target-1',
+      'meadow/zone-2/target-1', 'meadow/zone-2/target-2',
+      'meadow/t1/x', 'meadow/t2/x', 'meadow/t3/x', 'meadow/t4/x',
+      'meadow/t5/x', 'meadow/t6/x', 'meadow/t6/y', 'meadow/t7/x',
+      'meadow/endless/k', 'meadow/endless/untouched',
+    ],
+  });
+  for (const actor of [h.alice, h.bob]) await h.kit.authorizations.assignResource(h.admin, environment.id, actor.id);
+  environments = new MemberEnvironments(h.kit, registry, leases, (actor, id) => canUseEnvironment(h.kit, actor, id));
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-leases-engine-'));
   const specs: Array<[string, PackSpec]> = [
