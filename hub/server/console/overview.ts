@@ -8,7 +8,8 @@ import { TASK_RESULT, uiLabelOf, type TaskResult } from '../../../contracts/gene
 import type { RunRecordView } from '../../../contracts/src/run.ts';
 import { step } from '../../telemetry/api.ts';
 import { html, table, link, liveModule, page, pageLayout, type Html } from './html.ts';
-import { readableLines, type PageContext, type PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
+import { readableLines } from './pages.ts';
 import { taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';

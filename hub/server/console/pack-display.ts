@@ -1,7 +1,7 @@
 // Navigation and publication presentation only; kind selection never changes the uploaded manifest or its validation.
 import { axisUiLabel, isPackKind, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import { SKILLS_PLACE, type Html, type PageChrome } from './html.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { tooltip } from './presentation.ts';
 
 export function publishingKind(ctx: PageContext): PackKind {

@@ -3,7 +3,7 @@ import {memoReadPort} from '../../records/api.ts';
 import {KnowledgeSearchScopeSchema,KnowledgeViewSchema,isKnowledgeSearchScope,uiLabelOf,type KnowledgeSearchScope,type KnowledgeView} from '../../../contracts/generated/vocabulary.ts';
 import type {PackListing} from '../../ports.ts';
 import {PACK_PLACES,packPath,type PlaceKind} from './pack-display.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {html,link,pageLayout,type Html} from './html.ts';
 import {containsDirectory,directoryName,describeAudience} from './audience.ts';
 

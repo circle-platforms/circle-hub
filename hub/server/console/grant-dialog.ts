@@ -1,6 +1,6 @@
 import {KNOWLEDGE_GRANTEE,KnowledgeGranteeSchema,uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import type {SharingCheck} from '../../knowledge/api.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {html,href,table,link,type Html} from './html.ts';
 import {timestamp} from './knowledge-display.ts';
 import {evidence,tooltip,badge,field,dialog,actionLink} from './presentation.ts';

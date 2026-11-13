@@ -16,7 +16,7 @@ import type { RunDetail } from '../ports.ts';
 import { shellWord } from './console/commands.ts';
 import { escapeHtml } from './console/html.ts';
 import { CSS } from './console/style.ts';
-import { NEUTRAL } from './console/pages.ts';
+import { NEUTRAL } from './console/context.ts';
 import { taskResultOf } from './console/status.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 

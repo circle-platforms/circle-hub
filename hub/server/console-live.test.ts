@@ -17,7 +17,7 @@ import { createApp } from './app.ts';
 import type { CommandBridge } from './command-bridge.ts';
 import { CONTENT_SECURITY_POLICY, SCRIPT_HASH, THEME_SCRIPT_HASH } from './console/html.ts';
 import { LIVE_EVENTS, environmentTransition, eventsOf, visibleTo, wantedEvents, type LiveEvent } from './console/live.ts';
-import type { PageContext } from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
 import { LIVE_SCRIPT } from './console/script.ts';
 import { SessionStore } from './console/session.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';

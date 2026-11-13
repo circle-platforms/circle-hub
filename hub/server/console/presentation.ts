@@ -2,7 +2,7 @@ import {personalOriginCleared,clearedPersonalFolder} from './personal-origin.ts'
 // Shared component compositions for knowledge and workflow pages. No business decisions or writes.
 import { html, link, code, page, pageLayout, nameTables, Html, type PageChrome } from './html.ts';
 import type { CardHead, CommandDialog, Tone } from './ui.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { parseReference } from '../../refs/api.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 

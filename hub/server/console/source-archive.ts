@@ -7,7 +7,7 @@ import {attributionBadge,sourceTypeLabel} from './knowledge-display.ts';
 import {selectedScope,spaceLayout,knowledgeContext,knowledgeTabs} from './space-layout.ts';
 import {size as bytes,time} from './format.ts';
 import {directoryName} from './audience.ts';
-import {neutralPage,type PageContext,type PageResult} from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import {KnowledgeError,PRODUCTS_PATH,withinSpacePath} from '../../knowledge/api.ts';
 import type {OriginalQuery} from '../../knowledge/api.ts';
 const numberParam=(ctx:PageContext,name:string)=>{const value=ctx.url.searchParams.get(name);if(value===null)return undefined;if(!/^(?:0|[1-9]\d*)$/.test(value)||!Number.isSafeInteger(Number(value)))throw new TypeError('invalid source page');return Number(value);};

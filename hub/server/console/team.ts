@@ -9,7 +9,7 @@ import {tokensForMembers,assignmentsForMembers} from './member-reads.ts';
 import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
 import {CLIENT_COLUMNS,clientRow,clientInspector,noClients} from './connections.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
-import {neutralPage,type PageContext,type PageResult} from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
 
 /** The two tabs of the team page (decision 151, step 7): the members, and the clients they connected. One list each. */

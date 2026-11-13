@@ -10,7 +10,7 @@ import { isPackKind, uiLabelOf } from '../../../contracts/generated/vocabulary.t
 import { TRIAL_LOGIN_STOPPED } from '../../connectors/api.ts';
 import { code, href, html, link, liveModule, page, table, type Html } from './html.ts';
 import { actionForm, environmentOptions, jobsSection, roleOptions, stageForms, type Form, type JobStore } from './manage.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import type { PackStaging } from './staging.ts';
 import { forgetTrialMessage, trialCard, type ForgetOutcome, type TrialOutcome } from './trial.ts';
 import { card, chip, stepper as steps, when } from './ui.ts';

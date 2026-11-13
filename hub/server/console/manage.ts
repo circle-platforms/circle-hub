@@ -21,13 +21,13 @@ import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, uiLabelOf, type PackKind }
 import { initialPassword, validPassword } from '../../records/api.ts';
 import type { Principal } from '../../records/api.ts';
 import type { CommandBridge, CommandRun } from '../command-bridge.ts';
-import { NEUTRAL, neutralPage } from './pages.ts';
+import { NEUTRAL, neutralPage } from './context.ts';
 import { stagedDigest, type PackStaging, type StagedPack } from './staging.ts';
 import { checkSetupCode, removeSetupCode } from '../setup-code.ts';
 import { code, html, link, liveModule, page, pre, section, table, type Html, type PageChrome } from './html.ts';
-import { circleEntry, originOf } from './settings.ts';
+import { circleEntry, originOf } from './context.ts';
 import { callout, card, chip, stepper, when } from './ui.ts';
-import type { PageContext, PageResult } from './pages.ts';
+import type { PageContext, PageResult } from './context.ts';
 import { UploadError, unpackZip } from './upload.ts';
 import { packHome, publication, publishingKind } from './pack-display.ts';
 

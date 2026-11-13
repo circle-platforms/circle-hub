@@ -3,7 +3,7 @@ import {packPurpose} from './pack-display.ts';
 import { uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import type { PackListing, ResourceListing } from '../../ports.ts';
 import { code, html, link, liveModule, table, type Html } from './html.ts';
-import type { PageContext } from './pages.ts';
+import type { PageContext } from './context.ts';
 import { byId, shownVersion, stateOf } from './packs.ts';
 import {box,sectionHead} from './ui.ts';
 import {panel as card,badge as chip,technical,tooltip} from './presentation.ts';

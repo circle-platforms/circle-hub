@@ -16,7 +16,7 @@ import {knowledgeState,number,timestamp} from './knowledge-display.ts';
 import {containsDirectory,directoryName} from './audience.ts';
 import {currentAudience,spaceLayout} from './space-layout.ts';
 import {checkTable} from './grant-dialog.ts';
-import {type PageContext,type PageResult,neutralPage} from './pages.ts';
+import { type PageContext, type PageResult, neutralPage } from './context.ts';
 
 // A cell that names its column for the narrow layout, where the table becomes a list of rows and the header row is hidden.
 const labelled=(label:string,value:unknown):Html=>html`<span data-label="${label}">${value}</span>`;

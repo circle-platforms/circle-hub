@@ -7,7 +7,7 @@ import {KnowledgeGranteeSchema,KnowledgeGrantActionSchema,uiLabelOf} from '../..
 import {timestamp,size} from './knowledge-display.ts';
 import {axisUiLabel} from '../../../contracts/generated/vocabulary.ts';
 import type {User} from '../../records/api.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 export async function memberSpaceMetadata(ctx:PageContext,user:User):Promise<Array<[string,unknown]>>{
  const spaces=ctx.deps.knowledge?.spaces;if(!ctx.admin||!spaces)return [];

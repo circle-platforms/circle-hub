@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {html} from './html.ts';
 import {grantDialog} from './grant-dialog.ts';
 import {wordingProblems} from './testing-wording.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 
 const MEMBER='usr_synthetic_reader',GRANT={audience:'member',member:MEMBER,at:'2026-11-10T01:00:00.000Z',path:'/合成目录'};
 const key=JSON.stringify([GRANT.audience,GRANT.member,GRANT.path]);

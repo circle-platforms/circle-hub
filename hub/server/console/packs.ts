@@ -17,7 +17,7 @@ import {badge as chip,facts as kv,commandLink,commandModal,tooltip} from './pres
 import { compareVersions } from '../../runs/api.ts';
 import { commands } from './commands.ts';
 import { code, html, href, link, liveModule, page, pageLayout, table, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { box, button, type CommandDialog, type Tone } from './ui.ts';
 
 export function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {

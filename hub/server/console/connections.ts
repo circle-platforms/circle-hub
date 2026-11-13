@@ -13,7 +13,7 @@ import { commands } from './commands.ts';
 import { connectedClients, connectionText, clientLabel, nameOrigin, type ConnectedClient } from './circles.ts';
 import {tokensForMembers} from './member-reads.ts';
 import { code, emptyAction, html, icon, link, liveModule, page, pageLayout, table, href, type Html } from './html.ts';
-import { neutralPage, type PageContext, type PageResult } from './pages.ts';
+import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
 import { box, button, callout, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';

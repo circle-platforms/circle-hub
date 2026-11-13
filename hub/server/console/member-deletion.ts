@@ -2,7 +2,7 @@
 import {deletionCheck,deletionRetryCommand,DELETION_EFFECT_GROUPS,handoverLines} from '../member-deletion.ts';
 import {RecordsError} from '../../records/api.ts';
 import type {MemberDeletionBody} from '../../../contracts/src/spaces.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {html,definitions,code,type Html} from './html.ts';
 import {dialog,technical,actionLink,tooltip} from './presentation.ts';
 export const deletionDialogId='delete-member-confirm';

@@ -5,7 +5,7 @@ import {createTestHub} from './testing-real.ts';
 import {openConsole} from '../../tests/acceptance/support/console.ts';
 import {packPurpose,publishingKind} from './console/pack-display.ts';
 import {PACK_KIND} from '../../contracts/generated/vocabulary.ts';
-import type {PageContext} from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
 import {INTERACTION_SCRIPT} from './console/interaction.ts';
 
 test('the connections page is one list a tab, each tab an address of its own, and members see their clients only',async t=>{

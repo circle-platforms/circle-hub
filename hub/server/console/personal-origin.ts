@@ -1,7 +1,7 @@
 // Source-directory names remain personal after sharing; the team's copy and safe receipt facts remain visible.
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {parseReference} from '../../refs/api.ts';
-import type {PageContext} from './pages.ts';
+import type { PageContext } from './context.ts';
 import {code} from './html.ts';
 const flags=new WeakMap<PageContext,Map<string,Promise<boolean>>>();
 export function personalOriginCleared(ctx:PageContext,root:string):Promise<boolean>{

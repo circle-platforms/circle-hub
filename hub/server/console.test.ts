@@ -10,7 +10,7 @@ import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { DISPLAY_ORDER } from '../../contracts/generated/protocol.ts';
 import { uiLabelOf, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
-import { NEUTRAL } from './console/pages.ts';
+import { NEUTRAL } from './console/context.ts';
 import { ACCEPTED_PRODUCER_NOTE, DONE_RULE_NOTE } from './console/pack-display.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ROOT_1, ROOT_2 } from './fakes.ts';

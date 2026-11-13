@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runRecord, accepted } from '../../contracts/src/fixtures.ts';
 import type { ServerDeps } from './api.ts';
-import { productPage, diffPage, runPage, runsPage, type PageContext } from './console/pages.ts';
+import type { PageContext } from './console/context.ts';
+import { productPage, diffPage, runPage, runsPage } from './console/pages.ts';
 const root='a'.repeat(64),other='b'.repeat(64);
 function context(deps:unknown,url:string):PageContext{return{deps:deps as ServerDeps,principal:{id:runRecord.runner,name:'合成用户',role:'user'},admin:false,url:new URL(url,'http://127.0.0.1'),userName:async()=> '合成用户',chrome:title=>({title,user:{name:'合成用户',role:'用户',admin:false},csrf:null})};}
 const products={products:async()=>[{product:{id:'demo',title:'合成产品',names:['Demo']}}],readableProducts:async()=>new Set(['demo'])};
