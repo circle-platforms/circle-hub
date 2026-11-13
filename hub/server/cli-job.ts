@@ -8,8 +8,10 @@ import type { BuildKnowledge } from '../dispatch/api.ts';
 import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
 import { isSha256, sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
+import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts';
 import { CliError, UsageError } from './errors.ts';
-export const EXECUTOR_USAGE = 'add (<定义文件> | --reference=src:<摘要>) | update <执行器> (<定义文件> | --reference=src:<摘要>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
+import { decided } from './cli-arguments.ts';
+export const EXECUTOR_USAGE = 'add (<定义文件> | --reference=src:<摘要>) | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
@@ -69,14 +71,31 @@ async function executorLine(s:JobCommandSession,registry:ExecutorRegistry,by:imp
 export async function executorCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   let parsed;
-  try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' }, reference: { type: 'string' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
+  try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' }, reference: { type: 'string' }, team: { type: 'string' }, user: { type: 'string' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   if(parsed.values.secret)throw new UsageError('--secret 已退役：用 circle-hub secret set --name <名字> 换钥匙，引用它的执行器下次开会话用新版本');
+  const assignment = sub === 'assign' || sub === 'unassign';
+  if (assignment) {
+    if (parsed.positionals.length !== 1 || parsed.values.reference !== undefined || (parsed.values.team !== undefined) === (parsed.values.user !== undefined)) throw new UsageError('执行器分配须且只能指定 --team=<团队> 或 --user=<账户>');
+  } else if (parsed.values.team !== undefined || parsed.values.user !== undefined) throw new UsageError('团队和账户参数只用于 assign/unassign');
   const reference = parsed.values.reference;
   const fileCount = sub === 'add' ? 1 : sub === 'update' ? 2 : null;
   if (reference !== undefined && (fileCount === null || parsed.positionals.length !== fileCount - 1) || fileCount !== null && reference === undefined && parsed.positionals.length !== fileCount) throw new UsageError('定义文件和 --reference 必须且只能提供一种；引用只用于 add/update');
   if (reference !== undefined && (!reference.startsWith('src:') || !isSha256(reference.slice(4)))) throw new UsageError('上传引用须为 src:<完整摘要>');
   const by = await s.admin();
   const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = new ExecutorRegistry(hub.records);
+  if (assignment) {
+    const current = await registry.readSource(parsed.positionals[0]);
+    if (!current) throw new CliError('执行器不可用');
+    const recipient = parsed.values.team !== undefined
+      ? await hub.records.teams.get(by, parsed.values.team)
+      : UserId.safeParse(parsed.values.user).success ? await hub.records.principals.get(parsed.values.user!) : await hub.records.principals.findByName(parsed.values.user!);
+    if (!recipient) throw new CliError(parsed.values.team !== undefined ? '团队不可用' : '账户不可用');
+    const subject = ResourceAssignmentSubject.parse(recipient.id);
+    if (sub === 'assign') await decided(() => hub.records.authorizations.assignResource(by, current.id, subject));
+    else await decided(() => hub.records.authorizations.unassignResource(by, current.id, subject));
+    s.out(sub === 'assign' ? `测试环境 ${current.source.target} 已分配给 ${recipient.name}` : `已撤回测试环境 ${current.source.target} 给 ${recipient.name} 的分配`);
+    return 0;
+  }
   if (sub === 'list' && !parsed.positionals.length) {
     const entries=await registry.sources(by);
     for(const source of entries){
