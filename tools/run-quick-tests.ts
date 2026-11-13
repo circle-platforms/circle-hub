@@ -91,11 +91,12 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
   {
     id: 'six-tools',
     title: '六个工具',
-    rationale: '通过 MCP SDK 全工具端到端契约、tools/list、客户端声明、读取恢复、本地工具、调用状态、命令参数与追加调用日志覆盖六个 MCP 工具边界。',
+    rationale: '通过 MCP SDK 全工具端到端契约、tools/list、包目录与端口、客户端声明、读取恢复、本地工具、调用状态、命令参数与追加调用日志覆盖六个 MCP 工具边界。',
     commands: [],
     unitFiles: [
       'hub/server/mcp.test.ts',
       'hub/server/list-tools.test.ts',
+      'hub/runs/packs/ports.test.ts',
       'hub/server/declared-clients.test.ts',
       'hub/server/model-declaration-mcp.test.ts',
       'hub/server/read-recovery-mcp.test.ts',
@@ -111,7 +112,7 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
   {
     id: 'teams-permissions',
     title: '团队和权限',
-    rationale: '覆盖团队成员记录、包与资源授权边界、OAuth/RFC8628 标准授权、请求级权限快照、读范围、控制台团队配额/授权视图与成员删退隔离。',
+    rationale: '覆盖团队成员记录、包与资源授权边界、OAuth/RFC8628 标准授权、请求级权限快照、读范围、控制台团队管理与配额/授权视图、无包访问隔离与成员删退隔离。',
     commands: [],
     unitFiles: [
       'hub/records/teams.test.ts',
@@ -123,6 +124,7 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
       'hub/server/standard-authorization.test.ts',
       'hub/server/request-permissions.test.ts',
       'hub/server/console-clients.test.ts',
+      'hub/server/console-teams.test.ts',
       'hub/server/console-team-capacity.test.ts',
       'hub/server/console/audience.test.ts',
       'hub/server/console/grant-dialog.test.ts',
@@ -130,7 +132,9 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
       'hub/server/member-deletion-effect.test.ts',
       'hub/connectors/resource-access.test.ts',
     ],
-    acceptanceFiles: [],
+    acceptanceFiles: [
+      'tests/acceptance/06-user-without-pack.test.ts',
+    ],
   },
   {
     id: 'named-secrets',
@@ -162,11 +166,12 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
   {
     id: 'mindmap-compile-acceptance',
     title: '脑图编译路径上的验收',
-    rationale: '覆盖 case-compile 任务包发布契约、全脑图解析、函数生成/绑定/分块工作簿/保真与重组，以及块用例、重投影、技能包、调度规则、重启恢复、容量与覆盖路径验收。',
+    rationale: '覆盖 case-compile 任务包发布与评审端到端契约、全脑图解析、函数生成/绑定/分块工作簿/保真与重组，以及块用例、重投影、技能包、调度规则、重启恢复、容量与覆盖路径验收。',
     commands: [],
     unitFiles: [
       'packs/workflow/case-compile/pack.test.ts',
       'packs/workflow/case-compile/publish.test.ts',
+      'packs/workflow/case-compile/review/end-to-end.test.ts',
       'packs/workflow/case-compile/functions/whole-mindmap.test.ts',
       'packs/workflow/case-compile/functions/generate.test.ts',
       'packs/workflow/case-compile/functions/cases.test.ts',
