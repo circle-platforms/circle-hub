@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { PlatformContext } from '../context.ts';
 import type { PostgresControl } from '../postgres.ts';
 import { BACKUP_SCHEMA, BackupManifest, FILE_AREAS, checkToolMajor, isTransientName, keptMode, libpqToolsForMajor, verifyBackup } from '../backup.ts';
-import { rolePrivileges } from '../roles.ts';
+import { assertApplicationRole, rolePrivileges } from '../roles.ts';
 import { copyFileIfPresent, listFiles, sha256File, writeFileExclusive } from '../files.ts';
 import { toolEnvironment } from '../process.ts';
 import { quoteIdentifier, summarizeTables, compareSummaries, withSession, type SqlSession, type TableSummary } from '../sql.ts';
@@ -26,6 +26,7 @@ async function summaries(session: SqlSession): Promise<TableSummary[]> {
 
 /** Restores the dump into a disposable database and compares snapshot counts/digests before accepting the backup. */
 export async function nativeResetBackup(context: PlatformContext, postgres: PostgresControl): Promise<ResetBackup> {
+  await assertApplicationRole(postgres, '重置前备份，');
   const id = randomUUID(), partial = join(context.layout.backups, '.reset-' + id), directory = join(context.layout.backups, 'reset-' + id);
   const verifyName = 'circle_hub_reset_verify_' + id.replaceAll('-', '').slice(0, 24);
   const dump = join(partial, 'database.dump');
