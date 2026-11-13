@@ -362,3 +362,7 @@ platform lock's conservative policy. Failed stage writes clean their partial tre
 Private check/publication waiting is bounded too: two queued per member, eight overall. The existing one-per-member,
 two-overall execution bound stays. Overflow never starts the publisher's directory read, validators or extractor; callers release the
 unpacked upload in their existing awaited `finally`. No new refusal code or permission rule is introduced.
+
+## Kind registration
+
+Declaration file lists come from `PACK_KIND_REGISTRY` in the contracts package. The reader and publication validator dispatch through exhaustive `PackKind` handler tables; no unrecognized kind falls through to the system handler. Kind-specific validation remains in this package.
