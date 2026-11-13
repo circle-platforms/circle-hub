@@ -47,10 +47,8 @@ const COLUMN: Record<string, string> = {
   personal_record_bindings:'owner',
   personal_objects:'owner',
   personal_purges:'owner',
-  personal_legacy_ready:'record',
-  personal_legacy_candidates:'record',
-  personal_legacy_retire:'sha256',
-  personal_legacy_retired:'sha256',
+  teams: 'id',
+  team_members: 'team_id',
   record_index: 'value',
   record_keys: 'key',
   objects: 'media_type',
@@ -84,9 +82,8 @@ function tamperingStatements(): string[] {
     const column = COLUMN[table];
     assert.ok(column, `a column for ${table}`);
     out.push(
-      // The ownership registry is mutable derived state; registered clients that never led to a token and diagnostic rows
-      // past their retention are removed (still never updated); every other table keeps its original forbidden-row probes.
-      ...(table === 'lease_registrations' ? [] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
+      // Mutable projections keep their granted operations; history and schema tampering remain forbidden.
+      ...(table === 'lease_registrations' ? [] : table === 'teams' ? [`DELETE FROM ${table}`] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,
