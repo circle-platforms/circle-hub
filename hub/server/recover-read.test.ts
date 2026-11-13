@@ -6,16 +6,15 @@ import { recoverRead } from './recover-read.ts';
 
 const user={id:'usr_01hzzzzzzzzzzzzzzzzzzzzzza',name:'synthetic',role:'user' as const};
 const trace='1'.repeat(32),at='2035-01-01T00:00:00.000Z',bytes=Buffer.from('合成原文'),sha=sha256Hex(bytes);
-test('source recovery accepts uninspected captures while enforcing current access, tier and recorded findings',async()=>{
+test('source reply recovery requires current access, the same tier and clean source captures',async()=>{
   let allowed=true,tier='model_readable',clean=true;
-  const artifact={body:{scan:{inspected:false,truncated:false,findings:[] as unknown[]}}};
+  const artifact={body:{scan:{inspected:true,truncated:false,findings:[] as unknown[]}}};
   const deps={records:{artifacts:{source:async()=>allowed?{bytes:tier==='retain_only'?null:bytes,size:bytes.length,mediaType:'text/plain',readTier:tier}:null,records:async()=>[{body:{scan:{...artifact.body.scan,findings:clean?[]:[{}]}}}]}},knowledge:{},runs:{}} as unknown as ServerDeps;
   const args={reference:`src:${sha}`},answer={call_result:'ok',errors:[],trace,content:{reference:args.reference,read_tier:'model_readable',readable:true,text:'合成原文'}};
   const recovered=await recoverRead(deps,user,args,answer,trace,at);assert.equal(recovered?.content?.text,'合成原文');assert.match(recovered!.content!.note!,/历史快照/);
   allowed=false;assert.equal(await recoverRead(deps,user,args,answer,trace,at),null);
   allowed=true;tier='retain_only';assert.equal(await recoverRead(deps,user,args,answer,trace,at),null);
   tier='model_readable';clean=false;assert.equal(await recoverRead(deps,user,args,answer,trace,at),null);
-  clean=true;artifact.body.scan.truncated=true;assert.equal(await recoverRead(deps,user,args,answer,trace,at),null);
 });
 
 test('a tree reply is recovered only while its root, source captures and dynamic records remain readable',async()=>{

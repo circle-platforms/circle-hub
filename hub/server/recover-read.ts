@@ -31,7 +31,7 @@ export async function recoverRead(deps:ServerDeps,user:Principal,args:Record<str
         if(source.bytes!==null&&source.bytes!==undefined){
           if(source.bytes.length!==source.size||sha256Hex(source.bytes)!==ref.sha256)return null;
           const captures=await deps.records.artifacts.records(ref.sha256);
-          if(!captures.length||captures.some(row=>row.body.scan.truncated||row.body.scan.findings.length>0))return null;
+          if(!captures.length||captures.some(row=>!row.body.scan.inspected||row.body.scan.truncated||row.body.scan.findings.length>0))return null;
         }else if(answer.content.text!==undefined||answer.content.structure!==undefined)return null;
       }else if(ref.scheme==='rec'){
         const current=await recordReaderFor(deps.records,deps.runs,user,()=>{},layer).read(ref.record,reader);if(!current)return null;
