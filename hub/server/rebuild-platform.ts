@@ -1,3 +1,4 @@
+import { assertResetTarget } from './reset-target.ts';
 import { ZodError } from 'zod';
 import type { HubConfig } from '../config/index.ts';
 import type { RebuildResetBridge } from './rebuild-http.ts';
@@ -6,6 +7,7 @@ import type { RebuildResetBridge } from './rebuild-http.ts';
 export async function createPlatformRebuildBridge(config: HubConfig, env: NodeJS.ProcessEnv): Promise<RebuildResetBridge> {
   const platform = await import('../platform/api.ts');
   const context = platform.createContext({ ...env, [platform.DATA_ROOT_VARIABLE]: config.dataDir });
+  assertResetTarget(config.database, platform.postgresFor(context).target);
   return {
     async validate(input) {
       try { return await platform.parseResetRequest(input); }
