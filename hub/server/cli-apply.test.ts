@@ -477,7 +477,13 @@ test('[PG] a fresh database requires standard init-admin before definition apply
     finally { await kit.close(); }
   });
   const definition = { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }] };
-  await assert.rejects(applyDeployment(session, definition), /管理员令牌/);
+  await assert.rejects(applyDeployment(session, definition), error => {
+    const failure = error as Error & { hint?: string };
+    assert.match(failure.message, /数据库里还没有管理员/);
+    assert.match(failure.hint!, /circle-hub init-admin/);
+    assert.doesNotMatch(failure.hint!, /operator-token remove|operator-token reissue/);
+    return true;
+  });
   assert.equal((await kit.principals.list()).length, 0);
   tokens.value = 'synthetic-old-operator-token';
   assert.equal((await kit.principals.list()).length, 0);
@@ -632,6 +638,14 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
   assert.deepEqual(await protectedFiles(layout), originals);
   const [empty] = await withSession(postgres.connector, postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM users'));
   assert.equal(empty!.n, 0);
+  const prematureFile = join(parent, 'synthetic-premature-definition.json');
+  await writeFile(prematureFile, JSON.stringify({ schema: 'deployment@1' }), { mode: 0o600, flag: 'wx' });
+  const premature = await child(['apply', prematureFile]);
+  assert.equal(premature.code, 1);
+  assert.match(premature.stderr, /数据库里还没有管理员/);
+  assert.match(premature.stderr, /circle-hub init-admin/);
+  assert.doesNotMatch(premature.stderr, /operator-token remove|operator-token reissue/);
+  assert.deepEqual(await protectedFiles(layout), originals);
   const freshSetup = await child(['init-admin', '合成新管理员', '--password-stdin'], true);
   assert.equal(freshSetup.stdout.includes(password) || freshSetup.stderr.includes(password), false);
   if (freshSetup.code !== 0) assert.match(freshSetup.stderr, /已经有操作令牌/);
@@ -652,4 +666,19 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
   const output = oldSetup.stdout + oldSetup.stderr + freshSetup.stdout + freshSetup.stderr + applied.stdout + applied.stderr + exported.stdout + exported.stderr;
   assert.equal(output.includes(password), false);
   assert.equal(output.includes(token), false);
+});
+
+
+test('empty-database apply directs initial setup before reading a stale or absent operator token', async t => {
+  const f = fake(t); f.accounts.length = 0;
+  t.mock.method(f.session, 'admin', async () => { throw new Error('must not read stale operator token'); });
+  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@1' }), error => {
+    const failure = error as Error & { hint?: string };
+    assert.match(failure.message, /数据库里还没有管理员/);
+    assert.match(failure.hint!, /circle-hub init-admin/);
+    assert.match(failure.hint!, /circle-hub apply/);
+    assert.doesNotMatch(failure.hint!, /operator-token remove|operator-token reissue/);
+    return true;
+  });
+  assert.deepEqual(f.calls, []);
 });

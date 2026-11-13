@@ -4,8 +4,9 @@ import { mkdir, chmod, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PlatformContext } from '../context.ts';
 import type { PostgresControl } from '../postgres.ts';
-import { libpqToolsForMajor } from '../backup.ts';
-import { sha256File, writeFileExclusive } from '../files.ts';
+import { BACKUP_SCHEMA, BackupManifest, FILE_AREAS, checkToolMajor, isTransientName, keptMode, libpqToolsForMajor, verifyBackup } from '../backup.ts';
+import { assertApplicationRole, rolePrivileges } from '../roles.ts';
+import { copyFileIfPresent, listFiles, sha256File, writeFileExclusive } from '../files.ts';
 import { toolEnvironment } from '../process.ts';
 import { quoteIdentifier, summarizeTables, compareSummaries, withSession, type SqlSession, type TableSummary } from '../sql.ts';
 
@@ -25,6 +26,7 @@ async function summaries(session: SqlSession): Promise<TableSummary[]> {
 
 /** Restores the dump into a disposable database and compares snapshot counts/digests before accepting the backup. */
 export async function nativeResetBackup(context: PlatformContext, postgres: PostgresControl): Promise<ResetBackup> {
+  await assertApplicationRole(postgres, '重置前备份，');
   const id = randomUUID(), partial = join(context.layout.backups, '.reset-' + id), directory = join(context.layout.backups, 'reset-' + id);
   const verifyName = 'circle_hub_reset_verify_' + id.replaceAll('-', '').slice(0, 24);
   const dump = join(partial, 'database.dump');
@@ -33,12 +35,15 @@ export async function nativeResetBackup(context: PlatformContext, postgres: Post
   const source = await postgres.connector(postgres.target.database);
   try {
     await source.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const [version] = await source.query("SELECT current_setting('server_version_num')::int AS version");
+    const [version] = await source.query("SELECT current_setting('server_version_num')::int AS version, current_setting('server_version') AS text");
     const major = Math.floor(Number(version!.version) / 10000);
     const tools = await libpqToolsForMajor(context.libpqBin, major, 'pg_dump', context.runner, context.env, context.platform);
     await libpqToolsForMajor(tools.dir, major, 'pg_restore', context.runner, context.env, context.platform);
     const [snapshot] = await source.query('SELECT pg_export_snapshot() AS id');
+    const standardTables = await summarizeTables(source);
     const tables = await summaries(source);
+    const privileges = await rolePrivileges(source, postgres.application.user);
+    const dumpTool = await checkToolMajor(tools.pg_dump, major, context.runner);
     const common = [`--host=${postgres.target.socketDir}`, `--port=${postgres.target.port}`, `--username=${postgres.target.user}`, '--no-password'];
     const dumped = await context.runner(tools.pg_dump, ['--format=custom', `--file=${dump}`, ...common, `--dbname=${postgres.target.database}`, `--snapshot=${String(snapshot!.id)}`], { env: toolEnvironment({ HOME: context.home, USER: context.user }), timeoutMs: 15 * 60_000 });
     if (dumped.code !== 0) throw new Error('原生数据库备份失败；未停止服务，未输出数据库原始错误');
@@ -52,7 +57,21 @@ export async function nativeResetBackup(context: PlatformContext, postgres: Post
     const actual = await withSession(postgres.connector, verifyName, summaries);
     if (compareSummaries(tables, actual).length) throw new Error('备份试恢复的表、行数或内容身份不同；未停止服务');
     const fingerprint = await sha256File(dump);
-    await writeFileExclusive(join(partial, 'manifest.json'), JSON.stringify({ verified: true, database: postgres.target.database, dump: { size: fingerprint.size, sha256: fingerprint.sha256 }, tables }, null, 2), 0o600);
+    const files: BackupManifest['files'] = [{ path: 'database.dump', ...fingerprint }];
+    for (const area of FILE_AREAS) {
+      for (const path of await listFiles(context.layout[area], [], { exclude: isTransientName })) {
+        const copied = await copyFileIfPresent(join(context.layout[area], path), join(partial, area, path), keptMode);
+        if (!copied) throw new Error('重置前备份文件在复制时消失；未停止服务');
+        files.push({ path: `${area}/${path}`, ...copied });
+      }
+    }
+    files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+    // The public restore compares the standard (non-diagnostic) table set. The native trial above also checks diagnostics.
+    const manifest = BackupManifest.parse({ schema: BACKUP_SCHEMA, created_at: context.now().toISOString(), label: 'reset',
+      database: { name: postgres.target.database, server_version: String(version!.text), dump_tool: dumpTool,
+        tables: standardTables, application_role: { name: postgres.application.user, privileges } }, files });
+    await writeFileExclusive(join(partial, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 0o600);
+    await verifyBackup(partial);
     await source.query('COMMIT');
     await rename(partial, directory);
     return { directory, tables };
