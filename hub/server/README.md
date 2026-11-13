@@ -255,7 +255,7 @@ an issued token, while any client with the standard authorization connects with 
 
 ## MCP (D05, D06)
 
-Official SDK 1.32.1, streamable HTTP in stateless JSON mode: one low-level `Server` and one
+Official SDK 1.32.2, streamable HTTP in stateless JSON mode: one low-level `Server` and one
 `WebStandardStreamableHTTPServerTransport` per HTTP request; the body is read by the server (cap
 `limits.maxRequestBytes`, declared or streamed; over it is 413 before parsing, `connection: close`), decoded as strict
 UTF-8 (anything else is 400 / -32700, never decoded with replacement characters: RFC 8259), parsed, and handed to the
@@ -876,9 +876,10 @@ pages and tools described elsewhere in this README are what exists.
    not JSON-RPC -32602, as the brief asks; unknown tool names are -32602.
 3. An answer that would violate its output schema, and an untyped exception, are JSON-RPC -32603: an internal failure is
    not a tool result, and no registered code exists for it.
-4. The content is one plain-text block (D05 R[0] and display rule 11 outrank the MCP specification's SHOULD of a second
-   block with the serialized JSON for clients that ignore structuredContent); the text is written to be enough on its
-   own. Open question for the owner below.
+4. The content carries two plain-text blocks alongside `structuredContent` (`tools.ts`): first the reader-facing summary
+   from `toolText` (or `fallbackText`), followed by the `modelReferencesText` JSON block (`供模型引用\n...` with
+   `original_cases` and `source_context` when present), matching the MCP specification's backwards-compatibility SHOULD
+   for clients that ignore `structuredContent`. Open question for the owner below.
 5. One SDK `Server` per request and one JSON-RPC message per POST: stateless mode, no session state, no batches, no
    server-initiated notifications (`listChanged: false`); a client re-lists tools to see assignment changes.
 6. Console sessions live in memory: a restart signs everyone out. The token is kept server-side, the cookie is a random id.
@@ -1039,9 +1040,9 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
   and grants `CIRCLE_HUB_DATABASE_USER`.
 - **records/contracts**: a protocol code for an upload over the size limit (already requested by records); the server
   answers `SUBMISSION_SCHEMA_VIOLATION` at `/file_path` until then.
-- **owner**: confirm decision 4 (content is plain text only, no second block with the JSON of the answer) against the MCP
-  specification's backwards-compatibility SHOULD; if clients that ignore structuredContent must be served, a size-capped
-  JSON block can be added back. Measured on the real Circle client: only the text reaches the model.
+- **owner**: confirm decision 4 (returning two text blocks — reader-facing plain text plus the `供模型引用` serialized
+  JSON block alongside `structuredContent` — measured on the real Circle client where only text blocks reach the model)
+  or whether to cap the size of the second block.
 
 ## 包内本地工具的原字节下载
 
