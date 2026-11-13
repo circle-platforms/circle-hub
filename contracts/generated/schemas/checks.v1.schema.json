@@ -109,12 +109,12 @@
             "description": "the role of what the check judges (A03): the target, an expected source or the artifact under verification"
           },
           "tier": {
-            "description": "replaces the tier of every outcome; required on publication, legacy published packs fall back to basis",
             "type": "string",
             "enum": [
               "blocking",
               "advisory"
-            ]
+            ],
+            "description": "replaces the tier of every outcome; every check declares its tier"
           },
           "basis": {
             "description": "the acceptance contract clause a blocking check relies on (C05 R[1])",
@@ -244,7 +244,8 @@
         "required": [
           "id",
           "applies",
-          "judges"
+          "judges",
+          "tier"
         ],
         "additionalProperties": false
       }
