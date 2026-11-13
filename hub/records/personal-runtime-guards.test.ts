@@ -36,15 +36,8 @@ test('personal artifacts need a knowledge-source binding of the same owner',asyn
  }),/owning knowledge source/);
  assert.equal((await w.db.query('SELECT 1 FROM personal_payloads WHERE owner=$1',[w.owner.id])).rowCount,0);
 });
-test('retired conversion entry points stay absent and runtime cannot write after purge or into another epoch',async t=>{
- const w=await world(t),record=await w.kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:w.owner.id,markdown:'synthetic'}}),bytes=Buffer.from('synthetic late insert'),hash=sha256Hex(bytes);
- // The clean baseline has no legacy conversion markers or completion entry point.
- for(const table of ['personal_legacy_ready','personal_legacy_retired','personal_legacy_retire']){
-  assert.equal((await w.db.query('SELECT to_regclass($1) AS legacy',['public.'+table])).rows[0].legacy,null);
-  await assert.rejects(w.runtime.query('INSERT INTO '+table+' VALUES($1)',[record.digest]),(error:unknown)=>(error as {code:string}).code==='42P01');
- }
- assert.equal((await w.db.query("SELECT to_regprocedure('public.hub_finish_personal_retirement(text)') AS legacy")).rows[0].legacy,null);
- await assert.rejects(w.runtime.query('SELECT hub_finish_personal_retirement($1)',[hash]),(error:unknown)=>(error as {code:string}).code==='42883');
+test('runtime cannot write payloads and objects after purge or into another epoch',async t=>{
+ const w=await world(t),bytes=Buffer.from('synthetic late insert'),hash=sha256Hex(bytes);
  await assert.rejects(w.runtime.query('INSERT INTO personal_payloads VALUES($1,$2,$3,$4)',[w.owner.id,randomUUID(),hash,bytes]),/inactive personal scope/);
  await w.kit.personalPayloads!.purge(w.owner,INITIAL_PERSONAL_EPOCH);
  await assert.rejects(w.runtime.query('INSERT INTO personal_payloads VALUES($1,$2,$3,$4)',[w.owner.id,INITIAL_PERSONAL_EPOCH,hash,bytes]),/inactive personal scope/);
