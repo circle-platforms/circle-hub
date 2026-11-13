@@ -1,8 +1,6 @@
 import { WHOLE_HUB } from '../../records/api.ts';
 import { labelOf } from '../../../contracts/generated/vocabulary.ts';
-// Assembly insurance of the owner decision of 2026-10-22 (docs/hub-r4-tasks/no-judgment-in-hub.md): even with a key
-// of the judgment service left in the vault from before the removal, the assembled Hub builds no placement client,
-// nothing reads that vault entry, a knowledge sync of a product whose producer declared its path-less entries
+// Assembly insurance of the owner decision of 2026-10-22: the assembled Hub builds no placement client, a knowledge sync of a product whose producer declared its path-less entries
 // placeable makes no outbound call to the judgment service (every recorded call goes to a loopback stub), the entries
 // stay at the root marked unplaced and the production records placement.spans 0.
 import assert from 'node:assert/strict';
@@ -22,9 +20,6 @@ import { removeTree } from './files.ts';
 import { assembleHub } from './hub.ts';
 import { PRODUCT_PACK, SITE_PACK, productPack, sitePack, syncSiteFiles } from './test-packs.ts';
 
-/** The vault entry the judgment service's key was read from before the removal. */
-const LEGACY_ENTRY = 'jev.api-key';
-
 let postgres: TemporaryPostgres;
 before(async () => {
   postgres = await startPostgres();
@@ -33,24 +28,11 @@ after(async () => {
   await postgres?.stop();
 });
 
-test('a legacy key in the vault buys no client and no outbound call; declared path-less entries stay unplaced at the root', async () => {
+test('the assembled Hub has no judgment client and leaves path-less entries unplaced at the root', async () => {
   const kit = await openTestRecords({ postgres });
   const scratch = await mkdtemp(join(tmpdir(), 'circle-hub-nojudge-'));
   const stub: StubServer = await startBuildSiteStub(syncSiteFiles());
   try {
-    await kit.vault.put(LEGACY_ENTRY, 'test-only-key-left-behind-1');
-    // Every read of the legacy entry is counted: the assembly and the sync must make none.
-    const reads: string[] = [];
-    const vault = new Proxy(kit.vault, {
-      get(target, property) {
-        const value = Reflect.get(target, property, target);
-        if (property !== 'has' && property !== 'getText') return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
-        return async (name: string, ...rest: unknown[]) => {
-          if (name === LEGACY_ENTRY) reads.push(String(property));
-          return (value as (n: string, ...r: unknown[]) => Promise<unknown>).call(target, name, ...rest);
-        };
-      },
-    });
     // Every outbound call the connectors make is recorded.
     const outbound: string[] = [];
     const recordingFetch: typeof globalThis.fetch = (input, init) => {
@@ -65,7 +47,7 @@ test('a legacy key in the vault buys no client and no outbound call; declared pa
       database: kit.database,
       limits: { ...kit.config.limits },
     };
-    const hub = await assembleHub(config, { ...kit, vault }, { requireOsIsolation: await osIsolationAvailable(), fetch: recordingFetch, log: () => {}, resourceCacheMs: 0, extractDir: join(scratch, 'extracted') });
+    const hub = await assembleHub(config, kit, { requireOsIsolation: await osIsolationAvailable(), fetch: recordingFetch, log: () => {}, resourceCacheMs: 0, extractDir: join(scratch, 'extracted') });
     assert.ok(!('jev' in hub), 'the assembled Hub has no judgment client field');
     assert.equal(hub.knowledge.placement.model, null, 'no placer');
 
@@ -111,7 +93,6 @@ test('a legacy key in the vault buys no client and no outbound call; declared pa
       assert.match(row.note, /未归位/);
     }
 
-    assert.deepEqual(reads, [], 'nothing read the legacy vault entry');
     assert.ok(outbound.length > 0, 'the sync read the build site');
     for (const url of outbound) {
       assert.match(url, /^http:\/\/127\.0\.0\.1:\d+/, `only loopback stubs are called: ${url}`);

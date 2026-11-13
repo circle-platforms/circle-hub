@@ -534,9 +534,8 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
         const checkImportTargets = async () => {
           const definitions = await deploymentDefinitions(kit);
           for (const mapping of mappings) {
-            const uses = definitions.flatMap(definition => definition.references.filter(ref => ref.kind === 'secret' && ref.name === mapping.name).map(ref => ({definition,ref})));
-            if (!uses.length) throw new CliError(`密钥 ${mapping.name} 还没有部署定义引用；请先登记当前使用目标`);
             if (!mapping.basic) continue;
+            const uses = definitions.flatMap(definition => definition.references.filter(ref => ref.kind === 'secret' && ref.name === mapping.name).map(ref => ({definition,ref})));
             for (const {definition,ref} of uses) {
               let accepts = false;
               if (definition.kind === 'resource' && typeof definition.body.system_pack === 'string') {
@@ -552,7 +551,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
           }
           return definitions;
         };
-        if (sub === 'import') importDefinitions = await checkImportTargets();
+        if (sub === 'import' && mappings.some(mapping => mapping.basic)) importDefinitions = await checkImportTargets();
         let values: string[];
         let sourceSecrets: string[] = [];
         const basicPasswords: string[] = [];
