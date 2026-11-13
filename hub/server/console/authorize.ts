@@ -10,7 +10,7 @@ import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import type { InvitationCheck } from '../../records/api.ts';
 import type { AuthorizationRequest } from '../oauth.ts';
 import { AUTHORIZATION_REQUEST_TTL_MS, DEVICE_PAGE, UNNAMED_CLIENT, formatUserCode, redirectIsLocal } from '../oauth.ts';
-import { errorLine, postForm } from './components.ts';
+import { errorLine, postForm, submitButton } from './components.ts';
 import { CONTENT_SECURITY_POLICY, code, definitions, html, page, type Html } from './html.ts';
 import { stepper } from './ui.ts';
 
@@ -103,8 +103,8 @@ export function confirmPage(request: AuthorizationRequest, account: { id: string
     csrf,
     formClass: 'ch-actions',
     fields: html`<input type="hidden" name="step" value="decide"><input type="hidden" name="account" value="${account.id}">`,
-    actions: html`<button type="submit" class="ch-btn ch-btn--secondary" name="decision" value="deny">拒绝</button>
-<button type="submit" class="ch-btn ch-btn--primary" name="decision" value="approve">允许连接</button>`,
+    actions: html`${submitButton('拒绝', { secondary: true, name: 'decision', value: 'deny' })}
+${submitButton('允许连接', { name: 'decision', value: 'approve' })}`,
   });
   const other = via === 'session'
     ? html`<details><summary>以其他账号连接</summary><div>${invitationForm(request, null, false)}</div></details>`

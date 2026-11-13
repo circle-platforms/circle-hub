@@ -9,7 +9,7 @@ import type {NodesPage} from '../../ports.ts';
 import {KnowledgeError} from '../../knowledge/api.ts';
 import {parseReference} from '../../refs/api.ts';
 import {html,href,link,page,table,emptyAction,type Html} from './html.ts';
-import { postForm } from './components.ts';
+import { postForm, submitButton } from './components.ts';
 import {shareFeedback} from './feedback.ts';
 import {sectionHead} from './ui.ts';
 import {evidence,panel as card} from './presentation.ts';
@@ -45,7 +45,7 @@ export async function knowledgeDirectory(ctx:PageContext,nodes:NodesPage,version
   }
   const selectedIndex=node.entries.findIndex(entry=>entry.entry===ctx.url.searchParams.get('entry'));
   const listing=table(headers,rows,{title:`${folder} 中还没有知识`,text:own?'可以在此新建笔记；提供来源时需附逐字引文，没有来源的笔记记为待验证。':'此处显示当前账户可读的知识；没有条目不代表其他文件夹也为空。',...(own?{action:emptyAction('/console/knowledge/space','在此新建知识',{...location,edit:'1'})}:{})},'knowledge-entries',{selected:selectedIndex,hrefs:rowLinks});
-  const selected=own?html`<form data-knowledge-selection method="get" action="/console/knowledge/share-batch"><input type="hidden" name="root" value="${version.root}"><input type="hidden" name="path" value="${node.path}"><div class="ch-bulkbar"><span data-bulk-count>已选条目</span><button class="ch-btn ch-btn--primary" type="submit">分享到公共空间…</button></div>${listing}</form>`:listing;
+  const selected=own?html`<form data-knowledge-selection method="get" action="/console/knowledge/share-batch"><input type="hidden" name="root" value="${version.root}"><input type="hidden" name="path" value="${node.path}"><div class="ch-bulkbar"><span data-bulk-count>已选条目</span>${submitButton('分享到公共空间…')}</div>${listing}</form>`:listing;
   blocks.push(html`${current?'':sectionHead(folder)}${node.children.length?table(['子文件夹'],node.children.map(child=>[link('/console/knowledge/space',child.name,{space,root:version.root,path:child.path})])):''}${selected}`);
  }
  return card({title:'知识',tail:actions,hint:own?'只有本人的已验证条目可以选择；每条独立预检并在确认时重新检查':'按当前权限显示文件夹、条目和合并来源'},html`${blocks}${nodes.next?link('/console/knowledge/space','下一页',{space,root:version.root,path:ctx.url.searchParams.get('path')??'/',node_cursor:nodes.next}):''}`,'knowledge-directory');
@@ -68,7 +68,7 @@ export async function batchSharePage(ctx:PageContext):Promise<PageResult>{
  const fields=html`<input type="hidden" name="root" value="${input.root}"><input type="hidden" name="path" value="${input.path}">${input.entries.map(entry=>html`<input type="hidden" name="selected_entry" value="${entry}">`)}`;
  const safe=plans.every(plan=>plan.result.ok),target=plans[0]?.result.target_path??'';
  const confirm=postForm({action:'/console/knowledge/do/share-batch',csrf:ctx.csrf??'',fields:html`${fields}<input type="hidden" name="team_path" value="${target}">`,submit:'确认分享到公共空间',disabled:!safe});
- const body=html`<p>我的：保留不变 · ${uiLabelOf('knowledge_space_kind','personal')}</p><p>公共空间：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/share-batch">${fields}<label>公共空间文件夹<input name="team_path" value="${target}" maxlength="2000"></label><button class="ch-btn ch-btn--secondary" type="submit">重新预检</button></form>${plans.map(plan=>card({title:plan.title,hint:'检查停止后，其余项目保持未检查；确认时逐条重查并分别记录实际结果'},html`${checkTable(plan.result.checks)}${plan.result.duplicate?existingTeamLink(plan.result.duplicate):''}`))}${confirm}`;
+ const body=html`<p>我的：保留不变 · ${uiLabelOf('knowledge_space_kind','personal')}</p><p>公共空间：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/share-batch">${fields}<label>公共空间文件夹<input name="team_path" value="${target}" maxlength="2000"></label>${submitButton('重新预检', { secondary: true })}</form>${plans.map(plan=>card({title:plan.title,hint:'检查停止后，其余项目保持未检查；确认时逐条重查并分别记录实际结果'},html`${checkTable(plan.result.checks)}${plan.result.duplicate?existingTeamLink(plan.result.duplicate):''}`))}${confirm}`;
  return {status:200,body:page(ctx.chrome('分享到公共空间预检',{active:'knowledge',hint:'预检不写入知识或回执；我的原条目保留，确认结果逐条进入分享到公共空间记录'}),await spaceLayout(ctx,body))};
 }
 export async function shareBatch(ctx:PageContext,values:URLSearchParams|Map<string,string>):Promise<string>{

@@ -91,6 +91,6 @@ export function dialog(id:string,title:string,body:Html,actions:Html=html``,form
  const content=html`<div class="ch-dialog-head"><h2 class="ch-dialog-title">${title}</h2></div><div class="ch-dialog-body">${body}</div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a>${actions}</div>`;
  return html`<div class="ch-dialog" id="${id}" role="dialog" aria-modal="true" aria-label="${title}">${form?html`<form class="ch-dialog-panel" method="post" action="${form.action}"${form.multipart?html` enctype="multipart/form-data"`:''}>${content}</form>`:html`<div class="ch-dialog-panel">${content}</div>`}</div>`;
 }
-export function actionLink(url:string,label:unknown,kind:'ghost'|'danger'|'secondary'|'primary'='secondary'):Html{
- return html`<a class="ch-btn ch-btn--${kind}" href="${url}">${label}</a>`;
+export function actionLink(url:string,label:unknown,kind:'ghost'|'danger'|'secondary'|'primary'='secondary',options:{download?:boolean}={}):Html{
+ return html`<a class="ch-btn ch-btn--${kind}" href="${url}"${options.download?html` download`:''}>${label}</a>`;
 }

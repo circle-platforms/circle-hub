@@ -28,8 +28,11 @@ export function postForm(input: {
   /** Extra class on the form element (for example `ch-actions`). */
   formClass?: string;
 }): Html {
-  const kind = input.danger ? 'ch-btn--danger' : input.primary === false ? 'ch-btn--secondary' : 'ch-btn--primary';
-  const button = input.actions ?? html`<button type="submit" class="ch-btn ${kind}"${input.disabled ? html` disabled` : ''}>${input.submit ?? '提交'}</button>`;
+  const button = input.actions ?? submitButton(input.submit ?? '提交', {
+    danger: input.danger,
+    secondary: input.primary === false,
+    disabled: input.disabled,
+  });
   return html`<form method="post" action="${input.action}"${input.formClass ? html` class="${input.formClass}"` : ''}${input.multipart ? html` enctype="multipart/form-data"` : ''}${input.extra ? new Html(input.extra) : ''}>${csrfField(input.csrf)}${input.personalEpoch === undefined ? '' : html`<input type="hidden" name="personal_epoch" value="${input.personalEpoch}">`}${input.fields}${button}</form>`;
 }
 
@@ -44,7 +47,7 @@ export function nextPage(
 
 /** A GET filter form marked data-filters. */
 export function filterForm(action: string, fields: unknown, submit = '筛选', label?: string): Html {
-  return html`<form class="ch-actions" data-filters method="get" action="${action}"${label === undefined ? '' : html` aria-label="${label}"`}>${fields}<button class="ch-btn ch-btn--secondary" type="submit">${submit}</button></form>`;
+  return html`<form class="ch-actions" data-filters method="get" action="${action}"${label === undefined ? '' : html` aria-label="${label}"`}>${fields}${submitButton(submit, { secondary: true })}</form>`;
 }
 
 export interface SegmentItem {
@@ -62,10 +65,21 @@ export function segments(ariaLabel: string, items: readonly SegmentItem[], dataN
 /** A submit control styled as a console button. */
 export function submitButton(
   label: unknown,
-  options: { primary?: boolean; danger?: boolean; secondary?: boolean; disabled?: boolean; type?: 'submit' | 'button' } = {},
+  options: {
+    primary?: boolean;
+    danger?: boolean;
+    secondary?: boolean;
+    disabled?: boolean;
+    type?: 'submit' | 'button';
+    name?: string;
+    value?: string;
+    title?: string;
+    formaction?: string;
+    formnovalidate?: boolean;
+  } = {},
 ): Html {
   const kind = options.danger ? 'ch-btn--danger' : options.secondary || options.primary === false ? 'ch-btn--secondary' : 'ch-btn--primary';
-  return html`<button type="${options.type ?? 'submit'}" class="ch-btn ${kind}"${options.disabled ? html` disabled` : ''}>${label}</button>`;
+  return html`<button type="${options.type ?? 'submit'}" class="ch-btn ${kind}"${options.name ? html` name="${options.name}"` : ''}${options.value !== undefined ? html` value="${options.value}"` : ''}${options.title ? html` title="${options.title}"` : ''}${options.formaction ? html` formaction="${options.formaction}"` : ''}${options.formnovalidate ? html` formnovalidate` : ''}${options.disabled ? html` disabled` : ''}>${label}</button>`;
 }
 
 /** An error line under a form or action. */
