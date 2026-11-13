@@ -9,7 +9,7 @@ import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress } from '../listen.ts';
 import { resolveLayout } from '../platform/api.ts';
-import { readSettingsFileSync, resolveSettings, type PlatformSettings } from '../platform/settings.ts';
+import { readSettingsFileSync, resolveSettings, type PlatformSettings } from '../platform/api.ts';
 import { readPackDirectory, DEFAULT_PACK_LIMITS, parsePackRef } from '../runs/api.ts';
 import { readSecret, type SecretInput } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
