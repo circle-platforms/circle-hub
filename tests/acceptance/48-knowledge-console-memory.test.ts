@@ -43,7 +43,7 @@ after(async()=>{await client?.close();await other?.close();await admin?.close();
 
 test('space panels show all four readable scopes and only verified own knowledge can be selected', {skip},async()=>{
  const home=await browser.get('/console/knowledge');assert.equal(home.status,200,home.body);
- for(const scope of ['all','personal','shared','team'] as const)assert.ok(home.body.includes(uiLabelOf('knowledge_search_scope',scope)));
+ for(const scope of ['all','personal','shared','team'] as const)assert.ok(home.body.includes(scope==='team'?'公共空间':uiLabelOf('knowledge_search_scope',scope)));
  assert.match(home.body,/最近变化/);assert.doesNotMatch(home.body,/知识入库流程/);
  assert.match(home.body,/与我共享 › 合成控制台接收人 › 共享经验/);
  const own=await browser.get(space({space:owner.user.id,path:verified.path}));assert.equal(own.status,200,own.body);
@@ -88,7 +88,7 @@ test('a duplicate stops the preview before credential scanning and team rows ret
  assert.match(home.body,/<a href="\/console\/knowledge\/space\?space=team[^\"]+">合成重复预检观察<\/a>/);
  assert.doesNotMatch(home.body,new RegExp('>'+saved.entry.slice(0,12)+'</a>'));
  const preview=await browser.get(space({space:owner.user.id,root:saved.root,path:verified.path,entry:saved.entry,team_path:input.team_path,share:'1'}));assert.equal(preview.status,200,preview.body);
- const checks=rowTexts(parse(preview.body));assert.ok(checks.some(row=>row.startsWith('与团队条目不重复未通过')));assert.ok(checks.some(row=>row.startsWith('凭据扫描未检查')));assert.match(preview.body,/已有团队条目/);
+ const checks=rowTexts(parse(preview.body));assert.ok(checks.some(row=>row.startsWith('与团队条目不重复未通过')));assert.ok(checks.some(row=>row.startsWith('凭据扫描未检查')));assert.match(preview.body,/已有公共空间条目/);
  const team=await received.get(space({space:'team',path:input.team_path}));assert.equal(team.status,200,team.body);for(const field of ['提交人','来源','合并时间'])assert.ok(team.body.includes(field));assert.doesNotMatch(team.body,/<input[^>]+name="selected_entry"/);
 });
 
@@ -99,8 +99,8 @@ test('knowledge batch previews stop honestly and confirmation rechecks a withdra
  const params=new URLSearchParams({root:current.root,path:verified.path,selected_entry:verified.entry,team_path:'/共享/认证'});
  params.append('selected_entry',second.entry);
  const before=await hub.records.store.watermark!(),preview=await browser.get('/console/knowledge/share-batch?'+params);
- assert.equal(preview.status,200,preview.body);assert.match(preview.body,/确认分享到团队/);assert.equal(await hub.records.store.watermark!(),before);
- assert.doesNotMatch(preview.body,/<button[^>]+disabled[^>]*>确认分享到团队/);
+ assert.equal(preview.status,200,preview.body);assert.match(preview.body,/确认分享到公共空间/);assert.equal(await hub.records.store.watermark!(),before);
+ assert.doesNotMatch(preview.body,/<button[^>]+disabled[^>]*>确认分享到公共空间/);
  await hub.hub.knowledge.spaces!.withdraw(owner.principal,verified.entry,owner.user.id);
  params.set('csrf',csrf(preview.body));
  const confirmed=await browser.send('/console/knowledge/do/share-batch',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',origin:'http://127.0.0.1:'+browser.port},body:params.toString()});
@@ -185,7 +185,7 @@ test('entry inspectors keep counts with labels and one ordered action row; openi
  assert.equal(reply.status,200,reply.body);
  assert.match(reply.body,/<h2 class="ch-section-label"[^>]*>来源 · 1<\/h2>/);
  const foot=/<footer class="ch-inspector-actions">([\s\S]*?)<\/footer>/.exec(reply.body)?.[1]??'';
- assert.match(foot,/ch-btn--ghost[^>]*>知识版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到团队…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
+ assert.match(foot,/ch-btn--ghost[^>]*>知识版本记录<\/a>[\s\S]*ch-btn--danger[^>]*>撤回…<\/a>[\s\S]*ch-btn--secondary[^>]*>分享到公共空间…<\/a>[\s\S]*ch-btn--primary[^>]*>编辑<\/a>/);
  assert.doesNotMatch(foot,/<details|<summary|<form/);
  assert.match(reply.body,/<div class="ch-dialog" id="withdraw-entry"[\s\S]*action="\/console\/knowledge\/do\/withdraw"/);
  const confirmation=await browser.get(path+'#withdraw-entry');assert.equal(confirmation.status,200);
