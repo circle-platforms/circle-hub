@@ -5,7 +5,9 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { KeyProvider, Vault, VaultVerification } from './api.ts';
+import type { KeyProvider, Vault, VaultVerification, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWrite } from './api.ts';
+import { VariableName, SecretRecord } from '../../contracts/src/variables.ts';
+import { isDigestRule } from '../../contracts/generated/vocabulary.ts';
 import { VaultError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -74,6 +76,12 @@ interface Sealed {
   data: string;
 }
 
+interface SecretEnvelope {
+  name: string;
+  versions: Array<{ metadata: VaultSecretMetadata; value?: string }>;
+}
+const SECRET_QUEUES = new Map<string, Promise<unknown>>();
+
 export class FileVault implements Vault {
   readonly directory: string;
   readonly #provider: KeyProvider | undefined;
@@ -81,6 +89,116 @@ export class FileVault implements Vault {
   constructor(directory: string, provider?: KeyProvider) {
     this.directory = directory;
     this.#provider = provider;
+  }
+
+  #secretEntry(name: string): string {
+    if (!VariableName.safeParse(name).success) throw new VaultError('密钥名字不合规则');
+    return 'secret.' + name.toLowerCase();
+  }
+
+  async #secretEnvelope(name: string): Promise<SecretEnvelope | null> {
+    const entry = this.#secretEntry(name);
+    if (!await this.has(entry)) {
+      const old = (await this.list()).filter(candidate => candidate.startsWith(entry + '.') && /^[a-f0-9]{24}$/.test(candidate.slice(entry.length + 1)));
+      if (old.length) throw new VaultError('旧封存缺少版本、当前版本、摘要规则、设置人和设置时间；无法确认，未使用文件时间推断');
+      return null;
+    }
+    let text: string | null;
+    try { text = await this.getText(entry); }
+    catch { throw new VaultError('密钥封存无法解开或不可读；请核对当前主密钥和封存文件'); }
+    if (text === null) throw new VaultError('已观察到的密钥封存文件丢失；没有取值');
+    try {
+      const envelope = JSON.parse(text) as SecretEnvelope;
+      if (envelope.name !== name || !Array.isArray(envelope.versions) || envelope.versions.length === 0) throw new Error();
+      for (const [index, item] of envelope.versions.entries()) {
+        const parsed = SecretRecord.safeParse(item.metadata);
+        if (!parsed.success || parsed.data.name !== name || parsed.data.entry !== entry || parsed.data.version !== index + 1) throw new Error();
+        const m = parsed.data;
+        item.metadata = m;
+        if (item.value !== undefined && (typeof item.value !== 'string' || [...item.value].length !== m.length || m.revoked)) throw new Error();
+      }
+      return envelope;
+    } catch { throw new VaultError('密钥封存元数据不完整或不可核对；没有取值'); }
+  }
+
+  async #changeSecret<T>(name: string, change: () => Promise<T>): Promise<T> {
+    const entry = this.#secretEntry(name), identity = this.directory + '/' + entry;
+    const before = SECRET_QUEUES.get(identity) ?? Promise.resolve();
+    const pending = before.catch(() => {}).then(async () => {
+      const locks = this.directory + '.locks';
+      await mkdir(locks, { recursive: true, mode: 0o700 });
+      let lock;
+      try { lock = await open(join(locks, entry), 'wx', 0o600); }
+      catch { throw new VaultError('该名字的密钥正在修改，或上次操作未结束；请管理员核对后重试'); }
+      try { return await change(); }
+      finally { await lock.close(); await unlink(join(locks, entry)); }
+    });
+    SECRET_QUEUES.set(identity, pending);
+    try { return await pending; }
+    finally { if (SECRET_QUEUES.get(identity) === pending) SECRET_QUEUES.delete(identity); }
+  }
+
+  async secretNames(): Promise<string[]> {
+    return [...new Set((await this.list()).flatMap(entry => {
+      const match = /^secret\.([a-z][a-z0-9_]{0,63})(?:\.[a-f0-9]{24})?$/.exec(entry);
+      return match ? [match[1].toUpperCase()] : [];
+    }))].sort();
+  }
+
+  async secretMetadata(name: string): Promise<VaultSecretMetadata | null> {
+    return (await this.#secretEnvelope(name))?.versions.at(-1)?.metadata ?? null;
+  }
+
+  async secretHistory(name: string): Promise<VaultSecretMetadata[]> {
+    return (await this.#secretEnvelope(name))?.versions.map(item => item.metadata).reverse() ?? [];
+  }
+
+  async readSecret(name: string): Promise<VaultSecretMaterial | null> {
+    const current = (await this.#secretEnvelope(name))?.versions.at(-1);
+    if (!current || current.metadata.revoked) return null;
+    if (current.value === undefined) throw new VaultError('当前版本缺少封存值；没有取值');
+    return { name, version: current.metadata.version, metadata: current.metadata, value: current.value };
+  }
+
+  async recentSecrets(): Promise<VaultSecretMaterial[]> {
+    const out: VaultSecretMaterial[] = [];
+    for (const name of await this.secretNames()) {
+      const envelope = await this.#secretEnvelope(name);
+      for (const item of envelope?.versions ?? []) if (item.value !== undefined && !item.metadata.revoked)
+        out.push({ name, version: item.metadata.version, metadata: item.metadata, value: item.value });
+    }
+    return out;
+  }
+
+  async putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata> {
+    const entry = this.#secretEntry(input.name);
+    if (!isDigestRule(input.digest_rule) || typeof input.value !== 'string' || !input.value.isWellFormed() || /[\x00-\x1f\x7f-\x9f]/.test(input.value) || [...input.value].length < 1 || [...input.value].length > 4096 || !input.set_by || !Number.isFinite(Date.parse(input.set_at))) throw new VaultError('密钥值或设置元数据不合规则');
+    return this.#changeSecret(input.name, async () => {
+      const envelope = await this.#secretEnvelope(input.name) ?? { name: input.name, versions: [] };
+      const metadata: VaultSecretMetadata = { schema: 'secret@1', name: input.name, entry, version: envelope.versions.length + 1, digest_rule: input.digest_rule, length: [...input.value].length, set_by: input.set_by, set_at: input.set_at, revoked: false };
+      if (!SecretRecord.safeParse(metadata).success) throw new VaultError('设置人的身份或时间不合认证元数据规则');
+      envelope.versions.push({ metadata, value: input.value });
+      const retained = envelope.versions.filter(item => item.value !== undefined).slice(-2);
+      for (const item of envelope.versions) if (!retained.includes(item)) delete item.value;
+      try { await this.put(entry, JSON.stringify(envelope)); }
+      catch { throw new VaultError('密钥库写入未完成；请核对封存目录和容量'); }
+      return metadata;
+    });
+  }
+
+  async unsetSecret(name: string, by: string, at: string): Promise<VaultSecretMetadata> {
+    return this.#changeSecret(name, async () => {
+      const envelope = await this.#secretEnvelope(name), previous = envelope?.versions.at(-1)?.metadata;
+      if (!envelope || !previous) throw new VaultError('密钥名字不存在；没有可撤回的封存值');
+      if (!by || !Number.isFinite(Date.parse(at))) throw new VaultError('撤回元数据不合规则');
+      const metadata = { ...previous, version: envelope.versions.length + 1, set_by: by, set_at: at, revoked: true };
+      if (!SecretRecord.safeParse(metadata).success) throw new VaultError('撤回人的身份或时间不合认证元数据规则');
+      for (const item of envelope.versions) delete item.value;
+      envelope.versions.push({ metadata });
+      try { await this.put(this.#secretEntry(name), JSON.stringify(envelope)); }
+      catch { throw new VaultError('密钥库撤回未完成；请核对封存目录和容量'); }
+      return metadata;
+    });
   }
 
   async initKey(): Promise<void> {
