@@ -522,9 +522,10 @@ async function runBatchCommand(args: readonly string[], ctx: CliContext, options
 
 export async function runCommand(args: readonly string[], ctx: CliContext, options: CliOptions): Promise<number> {
   const [sub, ...rest] = args;
-  if (sub === 'list') return runListCommand(rest, ctx, options);
-  if (sub === 'batch') return runBatchCommand(rest, ctx, options);
-  if(sub==='abandon'){
+  const handlers: Record<string, () => Promise<number>> = {
+    'list': async () => { return runListCommand(rest, ctx, options); },
+    'batch': async () => { return runBatchCommand(rest, ctx, options); },
+    'abandon': async () => {
     const {values,positionals}=parse(rest,{'answer-request':{type:'string'},reason:{type:'string'}},1);
     if(!values['answer-request']||!values.reason)throw new UsageError('需要 --answer-request 和 --reason；此命令管理放弃整个运行，不停止远端执行或解除冻结');
     const by=await (await tokenRules(options)).member(ctx);
@@ -534,39 +535,43 @@ export async function runCommand(args: readonly string[], ctx: CliContext, optio
     out(ctx.io,'已记录管理放弃：运行 '+positionals[0]+'；处置来源 rec:'+receipt.decision+'；交付投影 rec:'+receipt.record+(receipt.created?'':'（已有回执，未增写）'));
     out(ctx.io,'技术层只保留来源判定，未重新核验；要求项未满足（已放弃）；原效果和冻结记录不改写。');
     return 0;
-  }
-  if (sub !== 'show') throw new UsageError('run 的子命令是 list、show、abandon 或 batch');
-  const { values, positionals } = parse(rest, { json: { type: 'boolean' }, as: { type: 'string' } }, 1);
-  const by = await (await tokenRules(options)).viewer(ctx, values.as);
-  let deps: ServerDeps;
-  try {
+  },
+    show: async () => {
+      const { values, positionals } = parse(rest, { json: { type: 'boolean' }, as: { type: 'string' } }, 1);
+      const by = await (await tokenRules(options)).viewer(ctx, values.as);
+      let deps: ServerDeps;
+      try {
     deps = await ctx.deps();
   } catch (error) {
     if (isAssemblyMissing(error)) throw new CliError('run show 要用运行模块，这个装配模块没有提供', (error as Error).message);
     throw error;
   }
-  const detail = await deps.runs.getRun(by, positionals[0]);
-  if (detail === null) throw new CliError(`没有运行 ${terminalSafe(positionals[0])}`);
-  const io = ctx.io;
-  if (values.json === true) {
+      const detail = await deps.runs.getRun(by, positionals[0]);
+      if (detail === null) throw new CliError(`没有运行 ${terminalSafe(positionals[0])}`);
+      const io = ctx.io;
+      if (values.json === true) {
     io.stdout(jsonSafe(JSON.stringify(detail, null, 2)));
     return 0;
   }
-  // Item ids and labels come from users' documents, build names from the build site: every line is made safe.
-  const run = detail.run;
-  out(io, `运行 ${run.run}：工作流 ${run.pack}，开始于 ${run.started_at}`);
-  out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
-  out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
-  if(detail.management)out(io,'管理状态：已放弃；选择来源 rec:'+detail.management.record+(detail.management.result?'':'；管理投影等待 Hub 自动补齐')) ;
-  out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
-  const latest = detail.latest;
-  if (latest === null) io.stdout('还没有校验结果');
+      const run = detail.run;
+      out(io, `运行 ${run.run}：工作流 ${run.pack}，开始于 ${run.started_at}`);
+      out(io, [run.product && `产品 ${run.product}`, run.version && `版本 ${run.version}`, run.build && `构建 ${run.build}`, run.root && `知识根 ${run.root}`].filter(Boolean).join('，') || '没有锁定产品版本');
+      out(io, `条目 ${run.items.length} 个，要求项 ${run.requirements.map((r) => r.key).join('、')}`);
+      if(detail.management)out(io,'管理状态：已放弃；选择来源 rec:'+detail.management.record+(detail.management.result?'':'；管理投影等待 Hub 自动补齐')) ;
+      out(io, `提交 ${detail.submissions.length} 份：${detail.submissions.map((s) => s.acceptance === null ? '未校验（Hub 中断）' : labelOf('acceptance', s.acceptance)).join('、') || '还没有'}`);
+      const latest = detail.latest;
+      if (latest === null) io.stdout('还没有校验结果');
   else {
     out(io, (latest.result.system_input?'系统交付；':'')+countsLine(latest.result.acceptance, latest.result.acceptance === 'accepted' ? latest.result.partitions : undefined));
     if(latest.result.system_input)out(io,'系统交付输入摘要 '+latest.result.submission+'；来源 '+latest.result.system_input);
     for (const p of PARTITION) for (const item of latest.result.partitions[p]) out(io, `- ${labelOf('partition', p)} ${item.item} ${item.label}`);
   }
-  return 0;
+      return 0;
+    },
+  };
+  const handler = sub !== undefined && Object.hasOwn(handlers, sub) ? handlers[sub] : undefined;
+  if (handler === undefined) throw new UsageError('run 的子命令是 list、show、abandon 或 batch');
+  return handler();
 }
 
 /** Who a health command reads as; administrators only, as `run list`. */
