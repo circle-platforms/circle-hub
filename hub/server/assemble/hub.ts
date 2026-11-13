@@ -20,7 +20,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import type { Principal, RecordsKit } from '../../records/api.ts';
+import { VaultReadinessError, type Principal, type RecordsKit } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -178,7 +178,13 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     parsers,
     ...(options.resourceCacheMs === undefined ? {} : { resourceCacheMs: options.resourceCacheMs }),
   });
-  if(options.requireVaultKey !== false)await connectors.primeSecrets();
+  if (options.requireVaultKey !== false) {
+    try { await connectors.primeSecrets(); }
+    catch (error) {
+      if (!(error instanceof VaultReadinessError)) throw error;
+      notices.push('密钥库脱敏材料尚未就绪；受影响的读取将拒绝执行。' + error.adminMessage);
+    }
+  }
   const external = createExternalReader(connectors);
   const resources = createResourceCatalog(connectors);
 
