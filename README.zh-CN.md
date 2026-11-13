@@ -52,8 +52,7 @@ npm run typecheck
 npm run verify:contracts   # contracts/generated 与 contracts/model.json、contracts/codes.json、contracts/src 一致
 npm run test:unit
 npm run test:acceptance    # 临时 PostgreSQL、合成夹具、脚本化模型
-npm run verify:references  # 按 SHA 核对冻结的 Circle 基线
-npm test                   # 合约检查、单元、验收与参考测试
+npm test                   # 合约检查、单元、文档与验收测试
 node --test ".github/checks/*.test.ts"   # 文档检查
 ```
 
@@ -64,7 +63,6 @@ node --test ".github/checks/*.test.ts"   # 文档检查
 - [第一个里程碑简报](docs/hub-r4-brief.md) · [架构](docs/hub-r4-architecture.md) · [进度与决定](docs/hub-r4-progress.md)
 - [通用模型](docs/design/generic-model.md) · [五要素检查单](docs/design/object-standard.md) · [设计索引](docs/design/README.md)
 - [兼容矩阵](docs/compatibility.md)：circle、circle-hub、circle-packs 三个仓库彼此的要求。
-- [来源清单](references/README.md)：`foundation/circle` 里冻结的 Circle 源基线；按 SHA 核验、运行时从不导入。
 
 ## 参与与安全
 
@@ -74,4 +72,4 @@ circle-hub 与 [circle](https://github.com/circle-platforms/circle) 配合使用
 
 ## 许可
 
-circle-hub 以 [Apache License 2.0](LICENSE) 发布。[NOTICE](NOTICE) 写明著作权人，并保留商标：本开源许可仅授予代码与相关文档的使用权，未经明确书面许可，不授予任何使用 Circle、Circle Hub 或相关商标、Logo 及图标的权利。[docs/design](docs/design/README.md) 里的设计规范按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权，引用、借鉴须保留署名并注明原始出处链接。2026-10-13 之前本仓库以 MIT 许可证发布。`foundation/circle` 里冻结的 Circle 源基线保留其 MIT 许可；它、`references/` 里的归档平台和各依赖见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。贡献按 [CONTRIBUTING.md](CONTRIBUTING.md#contributor-terms) 的贡献者条款接受。
+circle-hub 以 [Apache License 2.0](LICENSE) 发布。[NOTICE](NOTICE) 写明著作权人，并保留商标：本开源许可仅授予代码与相关文档的使用权，未经明确书面许可，不授予任何使用 Circle、Circle Hub 或相关商标、Logo 及图标的权利。[docs/design](docs/design/README.md) 里的设计规范按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.zh-hans) 授权，引用、借鉴须保留署名并注明原始出处链接。2026-10-13 之前本仓库以 MIT 许可证发布。各第三方依赖及其许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。贡献按 [CONTRIBUTING.md](CONTRIBUTING.md#contributor-terms) 的贡献者条款接受。

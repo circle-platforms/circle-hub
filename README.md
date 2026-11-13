@@ -52,8 +52,7 @@ npm run typecheck
 npm run verify:contracts   # contracts/generated matches contracts/model.json, contracts/codes.json and contracts/src
 npm run test:unit
 npm run test:acceptance    # temporary PostgreSQL, synthetic fixtures, scripted models
-npm run verify:references  # frozen Circle baseline, checked by SHA
-npm test                   # contracts check, unit, docs, acceptance and reference tests
+npm test                   # contracts check, unit, docs and acceptance tests
 node --test ".github/checks/*.test.ts"   # docs checks
 ```
 
@@ -64,7 +63,6 @@ node --test ".github/checks/*.test.ts"   # docs checks
 - [Milestone 1 brief](docs/hub-r4-brief.md) · [architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
 - [Generic model](docs/design/en/generic-model.md) · [the five-element checklist](docs/design/en/object-standard.md) · [design index](docs/design/en/README.md) (Chinese originals in [docs/design](docs/design/README.md))
 - [Compatibility matrix](docs/compatibility.en.md): what circle, circle-hub and circle-packs expect of each other.
-- [Source manifest](references/README.md): the frozen Circle source baseline in `foundation/circle`, verified by SHA, never imported at runtime.
 
 ## Contributing and security
 
@@ -74,4 +72,4 @@ circle-hub works with [circle](https://github.com/circle-platforms/circle): Circ
 
 ## License
 
-circle-hub is released under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file names the copyright holder and reserves the Circle and Circle Hub names, logos and icons: the license covers the code and its documentation, not the marks. The design specifications in [docs/design](docs/design/README.md) are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and must be credited, with a link to the original, when reused. Until 2026-10-13 the repository was under the MIT License. The frozen Circle source baseline in `foundation/circle` keeps its MIT license; it, the archived platform in `references/` and the dependencies are described in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the [contributor terms](CONTRIBUTING.md#contributor-terms).
+circle-hub is released under the [Apache License 2.0](LICENSE). The [NOTICE](NOTICE) file names the copyright holder and reserves the Circle and Circle Hub names, logos and icons: the license covers the code and its documentation, not the marks. The design specifications in [docs/design](docs/design/README.md) are under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and must be credited, with a link to the original, when reused. Until 2026-10-13 the repository was under the MIT License. Code adapted from the upstream Circle source baseline keeps its MIT license; it and the dependencies are described in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the [contributor terms](CONTRIBUTING.md#contributor-terms).
