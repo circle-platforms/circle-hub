@@ -35,6 +35,8 @@ test('every tool has its own root name; what a client writes never becomes a nam
 test('every command of the CLI has its own root name; an unknown one does not', () => {
   const commands = COMMAND_METADATA.map((command) => command.name);
   for (const command of commands) assert.equal(commandStep(command), `run-${command}`, command);
+  const roots = STEP_NAMES.filter(name => name.startsWith('run-') && name !== 'run-command' && commandStep(name.slice(4)) === name);
+  assert.deepEqual(roots.sort(), commands.map(command => `run-${command}`).sort(), 'only registered CLI commands own command roots');
   assert.equal(commandStep('no-such-command'), 'run-command');
   assert.equal(commandStep('check'), 'run-command', 'an inner step is not a command');
 });

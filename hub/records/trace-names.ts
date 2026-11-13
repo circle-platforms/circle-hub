@@ -33,7 +33,7 @@ export const TIMED_BACKGROUND_STEPS = ['maintain-runs', 'index-citations', 'summ
 /** The root step of a CLI command, by the command's name; `run-command` for a name the CLI does not know. */
 const COMMAND_STEPS = [
   'run-command', 'run-serve', 'run-reset', 'run-user', 'run-token', 'run-logs', 'run-run', 'run-local-tools', 'run-setup-code',
-  'run-apply', 'run-export', 'run-team', 'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-skill', 'run-pack', 'run-resource', 'run-var', 'run-mask', 'run-secret',
+  'run-apply', 'run-export', 'run-team', 'run-share', 'run-unshare', 'run-records', 'run-executor', 'run-job', 'run-bed', 'run-pack', 'run-resource', 'run-var', 'run-mask', 'run-secret',
   'run-original', 'run-lease', 'run-knowledge', 'run-doc', 'run-init-admin', 'run-operator-token', 'run-trace', 'run-health', 'run-crashes',
   'run-init', 'run-db', 'run-key', 'run-service', 'run-backup', 'run-restore', 'run-deploy', 'run-rollback', 'run-rehearse', 'run-status', 'run-tls',
 ] as const;
