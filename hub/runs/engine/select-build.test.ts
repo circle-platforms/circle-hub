@@ -70,7 +70,7 @@ describe('select_build candidates', () => {
     });
     const packs = new FakePacks();
     packs.handles.push(...h.packs.handles.map((handle) => (handle.product.id === 'meadow' ? { ...handle, directory: echo } : handle)));
-    const service = createRunsService({ parsers:createTestParserRegistry(),records: h.kit, workflows: h.workflows, packs, knowledge: new ListingKnowledge(), external: h.external });
+    const service = createRunsService({ parsers:createTestParserRegistry(),records: h.kit, workflows: h.workflows, packs, knowledge: new ListingKnowledge(h.knowledge.spaces), external: h.external });
     const map = await h.upload(h.alice, toyMap(standardDocument()));
     const answer = await service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: map } } }, h.call());
     assert.equal(answer.call_result, 'ok', JSON.stringify(answer.errors));
