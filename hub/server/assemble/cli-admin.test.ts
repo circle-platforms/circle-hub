@@ -1533,7 +1533,7 @@ async function nameOf(admin:Admin,id:string,item:string):Promise<string>{
 async function setArgs(admin:Admin,id:string,item:string):Promise<string[]>{const name=await nameOf(admin,id,item);return ['secret','set','--name',name,'--reason','DEMO_ROTATE',...(item==='username'?['--short',name]:[]),...(item==='password'?['--digest',name+'=sha512_base64']:[])];}
 async function storedNamed(kit:RecordsKit,id:string,item:string):Promise<string|null>{
  const config=await kit.authorizations.resourceConfig(id);assert.ok(config?.body.bound);const source=JSON.parse(Buffer.from((await kit.objects.get(config.body.bound))!).toString());const name=secretNameOf(source.credentials[item]);assert.ok(name);
- const admin=(await kit.principals.findByName('根管理员'))!;const version=(await kit.variables.list(admin)).find(v=>v.name===name&&v.kind==='secret');return version?.definition?.schema==='secret@1'?kit.vault.getText(version.definition.entry):null;
+ return (await kit.vault.readSecret(name))?.value ?? null;
 }
 async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
@@ -1565,7 +1565,7 @@ describe('secret import', () => {
     await withKit(admin, async (kit) => {
       assert.equal(await storedNamed(kit,id,'password'), passwordDigest(PASSWORD));
       assert.equal(await storedNamed(kit,second,'username'), 'reader');
-      for (const name of await kit.vault.list()) assert.ok(!(await kit.vault.getText(name))?.includes(unrelated));
+      for (const material of await kit.vault.recentSecrets()) assert.ok(!material.value.includes(unrelated));
       const hub = await assembleHub(loadServerConfig(admin.deployment.env), kit, { requireOsIsolation, log: (line) => admin.deployment.printed.push(line) });
       const by = (await kit.principals.findByName('根管理员'))!;
       assert.equal((await hub.connectors.executeRead(id, 'mindmap', { id: DOCUMENT }, { principal: by, purpose: '合成导入核对' })).ok, true);
