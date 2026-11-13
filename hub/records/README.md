@@ -1307,5 +1307,5 @@ current account, direct decisions, team registrations, membership decisions, tea
 snapshot drives `canUse`, `packs`, resource grants and pack-user sharing. Batch pack/user queries use that implementation.
 Frozen runs, remote work and stored results are not cancelled or rewritten by team withdrawal.
 
-Wiring the kit's `teams` member belongs to the index.ts owner. System actor identity remains undecided; no new account,
-configuration or administrator bypass is introduced. Separate per-team knowledge spaces are outside this implementation.
+Wiring the kit's `teams` member belongs to the index.ts owner. `systemActor(principals)` selects the earliest enabled administrator by creation time and ID and revalidates it
+outside request snapshots; no new account, configuration or administrator bypass is introduced. Separate per-team knowledge spaces are outside this implementation.

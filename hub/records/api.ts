@@ -1,5 +1,5 @@
 export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
-export { isAdmin, canSeeRun } from './permissions.ts';
+export { isAdmin, canSeeRun, systemActor } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordAccess, type RecordVisibilityPorts } from './record-visibility.ts';
 export { openRecords, migrateRecords } from './index.ts';
 export { SLOW_QUERY_MS, MAX_TRACE_STEPS, MAX_STATUS_LENGTH, installTraceSink, traceSinkInstalled, tracing, currentTrace, addUsage, startTrace, background, step, addEvent, updateTrace, setTraceStatus, withoutTrace, recordQuery, recordSourceRead, type Usage, type SpanRow, type TraceSink, type TraceOptions, type TraceFields } from './trace-usage.ts';

@@ -72,6 +72,8 @@ export class RequestPermissions {
 }
 
 const storage = new AsyncLocalStorage<RequestPermissions>();
+/** Internal actors are resolved from current accounts, outside a caller's permission snapshot. */
+export function withoutRequestPermissions<T>(run: () => T): T { return storage.exit(run); }
 export function requestPermissions(user: string): RequestPermissions | null {
   const snapshot = storage.getStore();
   return snapshot?.active && snapshot.principalId === user ? snapshot : null;
