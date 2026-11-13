@@ -1,3 +1,4 @@
+import { isSha256 } from '../records/api.ts';
 import { CliError } from './errors.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -7,6 +8,11 @@ import { checkRebuildCode, normalizeSetupCode, removeRebuildCode } from './setup
 import { SessionStore, cookie, type ConsoleSession } from './console/session.ts';
 import { cookiesOf, readBody, sendJson, sendText } from './http.ts';
 import type { RebuildNeeded } from './rebuild-state.ts';
+
+/** Network reset never accepts the local filesystem definition option of the maintenance CLI. */
+export function httpResetDefinitionAllowed(value: unknown): boolean {
+  return value === undefined || typeof value === 'string' && value.startsWith('src:') && isSha256(value.slice(4));
+}
 
 export interface RebuildResetBridge {
   validate(input: unknown): ResetRequest | null | Promise<ResetRequest | null>;
@@ -139,6 +145,7 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
       if (form.get('confirm') !== '重建') return sendText(response, 400, '请输入重建以确认归档操作');
       if (action.operationId || action.launching) return sendText(response, 409, '当前动作已启动，请查询其状态');
       const scopes = form.getAll('scope'), definitionFile = form.get('definition');
+      if (definitionFile && !httpResetDefinitionAllowed(definitionFile)) return sendText(response,400,'网页初始化定义只接受已授权的 src 对象引用，不接受本机文件路径');
       const canonical = await options.bridge.validate({ scopes: scopes.length === 1 && scopes[0] === 'all' ? 'all' : scopes,
         keepConfig: settingsPreview ? form.get('keep_config') === '1' : form.has('keep-config'), ...(definitionFile ? { definitionFile } : {}) });
       if (!canonical || options.rebuildNeeded !== null && (canonical.scopes !== 'all' || canonical.keepConfig)) return sendText(response, 400, '不兼容记录库只允许明确选择 all 归档初始化，不可保留无法核对的配置');

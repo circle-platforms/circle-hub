@@ -15,3 +15,16 @@ export function boundResetConfigurationPorts(config: HubConfig, context: Platfor
     applyDefinition,
   });
 }
+
+/** Owner transport for offline apply; identity remains the original standard Session administrator token. */
+export function resetOwnerEnvironment(config: HubConfig, context: PlatformContext, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const target = postgresFor(context).target;
+  assertResetTarget(config.database,target);
+  const result = { ...env };
+  delete result.CIRCLE_HUB_DATABASE_HOST;
+  result.CIRCLE_HUB_DATABASE_SOCKET_DIR = target.socketDir;
+  result.CIRCLE_HUB_DATABASE_PORT = String(target.port);
+  result.CIRCLE_HUB_DATABASE_NAME = target.database;
+  result.CIRCLE_HUB_DATABASE_USER = target.user;
+  return result;
+}

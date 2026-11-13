@@ -55,6 +55,7 @@ test('restricted startup isolates bootstrap codes, requires maintenance grant an
   await request('/console/rebuild'); assert.ok(view?.authorized && view.actionId);
   const action = view.actionId, csrf = view.csrf;
   assert.equal((await request('/console/rebuild/execute', { csrf: 'wrong', actionId: action })).status, 403);
+  assert.equal((await request('/console/rebuild/preview', { csrf, actionId: action, scope: 'all', confirm: '重建', definition: '/synthetic/deployment.json' })).status, 400);
   assert.equal((await request('/console/rebuild/preview', { csrf, actionId: action, scope: 'all', confirm: '重建' })).status, 200);
   const accepted = await request('/console/rebuild/execute', { csrf, actionId: action }); assert.equal(accepted.status, 202);
   assert.deepEqual(await accepted.json(), { operationId, statusUrl: '/console/reset/status/' + operationId });

@@ -1,7 +1,7 @@
 import type { CliOptions } from './cli.ts';
 import { loadServerConfig } from './main.ts';
 import { createContext } from '../platform/api.ts';
-import { boundResetConfigurationPorts } from './reset-configuration.ts';
+import { boundResetConfigurationPorts, resetOwnerEnvironment } from './reset-configuration.ts';
 import { CliError } from './errors.ts';
 import { takeEnvironmentToken } from './assemble/operator-token.ts';
 
@@ -18,7 +18,7 @@ export async function dispatchReset(args: readonly string[], options: CliOptions
   const context = createContext(workerEnvironment);
   const ports = boundResetConfigurationPorts(config, context, async path => {
     const { main } = await import('./cli.ts');
-    const code = await main(['apply', path], { ...options, io: { ...options.io, env: { ...options.io.env } } });
+    const code = await main(['apply', path], { ...options, io: { ...options.io, env: resetOwnerEnvironment(config,context,options.io.env) } });
     if (code !== 0) throw new CliError('部署定义应用未完成，重建必须恢复原状态');
   });
   return resetCommand(args, context, options.io, ports);
