@@ -2,8 +2,8 @@
  * Typed path constructors for every console page. Pages and navigation build links from these;
  * tests that assert addresses keep string literals so the constants stay checked.
  * Workflow list/detail: /console/workflows[/<id>]. Skills: /console/skills[/<id>].
- * /console/packs page paths are retired. Under /console/api only stream (and login-links in index) stay (U5).
- * /console/results and POST /console/admin/do/* remain today.
+ * /console/packs page paths are retired. Under /console/api only stream stays (U5); login-links and
+ * /console/login/<code> are retired. /console/results and POST /console/admin/do/* remain today.
  */
 
 const enc = (segment: string): string => encodeURIComponent(segment);

@@ -17,7 +17,7 @@ import type { AppOptions, HubApp, ListenInfo, ServerDeps } from './api.ts';
 import { authorizeRefusal, handleConsole } from './console/index.ts';
 import { LiveEvents } from './console/live.ts';
 import { JobStore } from './console/manage.ts';
-import { LoginLinkStore, SessionStore } from './console/session.ts';
+import { SessionStore } from './console/session.ts';
 import { PackStaging } from './console/staging.ts';
 import { BodyBudget, allowedHosts, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
@@ -111,7 +111,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
   const sessions = new SessionStore(() => clock().getTime());
   const authorizations = new AuthorizationStore(() => clock().getTime());
   const registrations = new RegistrationWindow(() => clock().getTime());
-  const loginLinks = new LoginLinkStore(() => clock().getTime());
   const staging = new PackStaging(() => clock().getTime());
   const syncAdmission=new SyncAdmission();
   const budget = new BodyBudget(options.maxInflightBodyBytes ?? 4 * deps.config.limits.maxRequestBytes);
@@ -143,7 +142,7 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     hub: { release, startedAt: clock(), certificate: options.tls?.cert ?? null },
     ...(options.observation ? { observation: options.observation } : {}),
     ...(options.bridge ? { bridge: options.bridge } : {}),
-    authorizations, loginLinks, secureRequest,
+    authorizations, secureRequest,
   };
 
   const route = async (request: IncomingMessage, response: ServerResponse, target: RequestTarget | null): Promise<void> => {
@@ -301,7 +300,6 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       sessions.clear();
       authorizations.clear();
       registrations.clear();
-      loginLinks.clear();
       await staging.clear();
     })());
 

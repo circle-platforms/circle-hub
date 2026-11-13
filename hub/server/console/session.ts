@@ -1,7 +1,7 @@
 // Console sign-in state, in memory only: a session id (the cookie) maps to the token it was opened with, so every page
 // re-authenticates that token and a revoked token or a disabled account ends the session at once. The token never goes into
 // the browser after sign-in. Login forms carry a one-time nonce the server issued (also in a cookie scoped to the login path).
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 export interface ConsoleSession {
   id: string;
@@ -131,10 +131,6 @@ export function cookie(name: string, value: string, path: string, maxAgeSeconds?
   return `${name}=${value}; Path=${path}; HttpOnly; SameSite=${lax ? 'Lax' : 'Strict'}${maxAgeSeconds === undefined ? '' : `; Max-Age=${maxAgeSeconds}`}${secure ? '; Secure' : ''}`;
 }
 
-export const LOGIN_LINK_TTL_MS = 5 * 60 * 1000;
-const MAX_LOGIN_LINKS = 1000;
-/** Open links of one token: a new one beyond this drops that token's oldest, never another account's. */
-const LINKS_PER_TOKEN = 5;
 const HOME = '/console/overview';
 
 /**
@@ -151,48 +147,3 @@ export function safeNext(value: string | null | undefined): string {
     return HOME;
   }
 }
-
-/**
- * One-time login links (decision 125), in memory like the sessions: a client asks for one with its Bearer token
- * (POST /console/api/login-links); opened within LOGIN_LINK_TTL_MS, it leads to the password sign-in at its page and
- * never opens a session (owner, 2026-11-02). Only the SHA-256 of a link's code is kept; a code works once.
- */
-export class LoginLinkStore {
-  readonly #links = new Map<string, { token: string; next: string; expires: number }>();
-  readonly #now: () => number;
-
-  constructor(now: () => number = Date.now) {
-    this.#now = now;
-  }
-
-  issue(token: string, next: string): { code: string; expires: number } {
-    const at = this.#now();
-    for (const [key, link] of this.#links) if (link.expires <= at) this.#links.delete(key);
-    const own = [...this.#links].filter(([, link]) => link.token === token);
-    if (own.length >= LINKS_PER_TOKEN) this.#links.delete(own[0][0]);
-    const code = secret();
-    const expires = at + LOGIN_LINK_TTL_MS;
-    this.#links.set(digest(code), { token, next: safeNext(next), expires });
-    while (this.#links.size > MAX_LOGIN_LINKS) this.#links.delete(this.#links.keys().next().value!);
-    return { code, expires };
-  }
-
-  /** The link of a code that has not been used or expired, without using it. */
-  peek(code: string): { token: string; next: string } | null {
-    const link = this.#links.get(digest(code));
-    if (link === undefined || link.expires <= this.#now()) return null;
-    return { token: link.token, next: link.next };
-  }
-
-  take(code: string): { token: string; next: string } | null {
-    const link = this.peek(code);
-    this.#links.delete(digest(code));
-    return link;
-  }
-
-  clear(): void {
-    this.#links.clear();
-  }
-}
-
-const digest = (code: string): string => createHash('sha256').update(code, 'utf8').digest('hex');

@@ -1,5 +1,5 @@
-// Live updates and (elsewhere) login-links only (decisions-1600 U5): the JSON read/write management
-// interfaces under /console/api are retired — no Circle, Harness, or production caller. GET /console/api/stream stays.
+// Live updates only (decisions-1600 U5): the JSON read/write management interfaces under /console/api
+// are retired — no Circle, Harness, or production caller (login-links included). GET /console/api/stream stays.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import type { Principal } from '../../records/api.ts';
@@ -10,8 +10,8 @@ import type { ConsoleSession } from './session.ts';
 import { type ConsoleOptions, pageContext } from './console-http.ts';
 
 /**
- * Console JSON under /console/api: only the live event stream remains. Other paths answer 404 with
- * SOURCE_UNAVAILABLE (same as a removed page). POST /console/api/login-links is handled in index.ts.
+ * Console JSON under /console/api: only the live event stream remains. Other paths (including the
+ * retired login-links endpoint) answer 404 with SOURCE_UNAVAILABLE (same as a removed page).
  */
 export async function api(request: IncomingMessage, response: ServerResponse, url: URL, options: ConsoleOptions, session: ConsoleSession | null, secure: boolean, rest: string[]): Promise<void> {
   const headers = { 'content-security-policy': "default-src 'none'; frame-ancestors 'none'" };

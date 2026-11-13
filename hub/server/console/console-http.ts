@@ -11,7 +11,7 @@ import type { LiveEvents } from './live.ts';
 import type { Form, JobStore } from './manage.ts';
 import type { PageContext } from './context.ts';
 import type { HubFacts } from './settings.ts';
-import type { ConsoleSession, LoginLinkStore, SessionStore } from './session.ts';
+import type { ConsoleSession, SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
 
 export interface ConsoleOptions {
@@ -36,8 +36,6 @@ export interface ConsoleOptions {
   observation?: HealthPageSources;
   /** Open requests of the MCP standard authorization (hub/server/oauth.ts); without it /console/authorize is absent. */
   authorizations?: AuthorizationStore;
-  /** One-time login links; without it POST /console/api/login-links and /console/login/<code> are absent. */
-  loginLinks?: LoginLinkStore;
 }
 
 export const LOGIN_FORM_LIMIT = 8 * 1024;
