@@ -9,11 +9,14 @@ import { ExecutorRegistry } from './executors.ts';
 import { MemberEnvironments } from './member-environments.ts';
 import { setup } from './testing/context.ts';
 
-for (const revoke of [false, true]) test(`intent permission recheck uses one held client and ${revoke ? 'observes a new revocation' : 'admits a current assignment'}`, async t => {
+for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single-client intent permission recheck: ${mode}`, async t => {
+  const revoke=mode==='revoked';
   const c = await setup(); t.after(() => c.close());
-  const records = await openRecords(c.kit.config, { migrate: false, maxConnections: 1, keyProvider: c.kit.keyProvider, now: c.now });
+  const records = await openRecords({ ...c.kit.config, database: c.kit.database }, { migrate: false, maxConnections: 1, keyProvider: c.kit.keyProvider, now: c.now });
   t.after(() => records.close());
   assert.equal(records.poolStats().limit, 1, 'the permission and intent kit really has one connection');
+  // Keep the real observation advisory lock on a separate session: it lives for the whole job, not just its intent TX.
+  records.store.tryHold=c.kit.store.tryHold.bind(c.kit.store);
   const scope = new AsyncLocalStorage<Transaction>();
   const originalTransaction = records.store.withTransaction.bind(records.store);
   records.store.withTransaction = (run, outer) => originalTransaction(tx => scope.run(tx, () => run(tx)), outer);
@@ -41,11 +44,16 @@ for (const revoke of [false, true]) test(`intent permission recheck uses one hel
         assert.ok(old?.enabled(old.latest('resource_assign', c.environmentTeam.id, c.executor.id)), 'an older request snapshot still carries the grant');
       }
     }
-    return canUseEnvironment(records, actor, executor, tx);
+    return canUseEnvironment(records, actor, executor, mode==='broken-port'?undefined:tx);
   };
   const environmentAccess = new MemberEnvironments(records, new ExecutorRegistry(records), c.leases, permission);
   const service = new DispatchService({ ...c.service.options, records, environmentAccess });
   const result = await withRequestPermissions(records.artifacts, c.owner, () => service.dispatch(c.admin, c.run, c.executor.id));
+  if(mode==='broken-port'){
+    assert.ok(reborrows>0,'the negative control actually attempts a second client lease');
+    assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(c.calls.includes('send_blob'),false);
+    return;
+  }
   assert.equal(reborrows, 0, 'no query in the held intent transaction may rent a second client');
   assert.ok(transactionChecks > 0, 'the final check must remain fresh and run inside the intent transaction');
   if (revoke) {
