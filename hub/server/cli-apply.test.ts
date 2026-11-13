@@ -345,8 +345,13 @@ test('[PG] real product variables, named document bytes and booking registration
   const { createDocs } = await import('./docs.ts');
   const { Database, createPool } = await import('../records/api.ts');
   const { LeaseService } = await import('../leases/api.ts');
-  const kit = await openTestRecords(); t.after(() => kit.close());
-  const database = new Database(createPool(kit.database, 2)); t.after(() => database.end());
+  const { removeTree } = await import('./assemble/files.ts');
+  const kit = await openTestRecords();
+  const database = new Database(createPool(kit.database, 2));
+  t.after(async () => {
+    try { await database.end(); await removeTree(join(kit.dataDir, 'packs')); }
+    finally { await kit.close(); }
+  });
   const by = (await kit.principals.bootstrapAdmin('合成覆盖管理员')).user;
   await kit.authorizations.grantPublishRight(by, by.id);
   const { productVariableNameAvailable } = await import('./variables.ts');
