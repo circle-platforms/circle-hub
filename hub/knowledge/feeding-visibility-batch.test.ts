@@ -13,6 +13,7 @@ import { putRun } from '../runs/engine/store.ts';
 import { createKnowledge, createKnowledgeReader, FeedingLayer } from './api.ts';
 import type { FeedingCut } from './feeding-types.ts';
 import { TreeReading } from './read.ts';
+import { NODE } from './feeding.ts';
 import { startPostgres } from './test-support.ts';
 import { world } from './testing/feeding-bounds-fixture.ts';
 
@@ -209,4 +210,31 @@ test('the usages of a run ask the first record of each object and read no other 
   assert.equal(listed.length, 80, 'forty cases of each of two documents');
   assert.deepEqual(firsts, [80], 'one lookup of the first record of each object');
   assert.ok(!scans.includes('knowledge.feeding.object'), `no scan of every record of the objects: ${scans.join(', ')}`);
+});
+
+test('a current node page reads its node index instead of product history and agrees with per-record checks', { timeout: 300_000 }, async t => {
+  const postgres = await startPostgres();
+  let close = async (): Promise<void> => {};
+  t.after(async () => { await close(); await postgres.stop(); });
+  const w = await world(postgres, false, undefined, TREE);
+  const layer = w.knowledge.feeding!;
+  close = async () => { await layer.drain(); await w.close(); };
+  const context = w.knowledge.__context;
+  await readAll(w, w.user, [await document(w, 0, [w.user.id])]);
+  const reference = recordByRecord(w);
+  const paths = ['/', '/system/show', '/system'];
+  const first = await reference.entriesAtNodes(w.user, 'famx', w.root.root, paths);
+  assert.ok(first.length >= 40, `the first document contributes ${first.length} records on these nodes`);
+  await readAll(w, w.user, [await document(w, 1, [w.user.id])]);
+  const scans: string[] = [];
+  const spied = new Proxy(context.records.store, { get(target, key) {
+    const value = Reflect.get(target, key, target);
+    if (key === 'findIndexed') return (query: { key: string }, tx?: unknown) => { scans.push(query.key); return (value as Function).call(target, query, tx); };
+    return typeof value === 'function' ? value.bind(target) : value;
+  } }) as RecordStore;
+  const watchedContext = { ...context, records: { ...context.records, store: spied } };
+  const seen = await new FeedingLayer(watchedContext, new TreeReading(watchedContext)).entriesAtNodes(w.user, 'famx', w.root.root, paths);
+  assert.deepEqual(seen, await reference.entriesAtNodes(w.user, 'famx', w.root.root, paths));
+  assert.ok(seen.length > first.length, 'both documents show');
+  assert.ok(scans.includes(NODE) && !scans.includes('knowledge.feeding.product'), `index scans of a node page: ${[...new Set(scans)].join(', ')}`);
 });

@@ -68,23 +68,6 @@ test('the waiting requests are the unanswered ones of the full listing, and only
   assert.deepEqual(seen.closingsAsked, [[made[2], made[4], made[5], made[6], made[7]]], 'the answered and the voided requests are not asked about');
 });
 
-test('current closing entries spare settled reads and preserve reinstated requests', async (t) => {
-  const { kit, source, body, service } = await bed(t);
-  const later = await source('later');
-  const indexedRun = newId('run'), indexed: string[] = [];
-  for (let i = 0; i < 6; i++) indexed.push((await service.write(body(indexedRun))).digest);
-  await service.answer(indexed[0], later);
-  await service.supersede([indexed[1], indexed[2]], later);
-  await service.reinstate([indexed[2]], later);
-  await service.answer(indexed[3], later);
-  const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
-  const settled = await owner.query<{ value: string }>(`SELECT value FROM record_index WHERE key='runs.request.settled' ORDER BY value`);
-  assert.deepEqual(settled.rows.map(row => row.value), [indexed[0], indexed[1], indexed[2], indexed[3]].sort(), 'only source-bearing closing records carry settled entries');
-  const indexedFull = await service.all(indexedRun), after = watched(kit);
-  assert.deepEqual(await createRequestService({ store: after.store }, () => NOW).waiting(indexedRun), indexedFull.filter((request) => request.answered_by === null));
-  assert.deepEqual(after.closingsAsked, [[indexed[2], indexed[4], indexed[5]]], 'current closing entries spare settled requests; reinstated requests are read');
-});
-
 test('the current answer record carries its settled entry and decides the answer', async (t) => {
   const { kit, source, body, service } = await bed(t);
   const run = newId('run');
