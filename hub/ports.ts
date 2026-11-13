@@ -15,11 +15,26 @@ import type { RunRecord, RunRecordView } from '../contracts/src/run.ts';
 import type { PackContextView, ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
 import type { ValidationResult } from '../contracts/src/validation.ts';
 import type { Acceptance } from '../contracts/generated/vocabulary.ts';
-import type { Page, Principal, SourceArtifact } from './records/api.ts';
+import type { Page, Principal, SourceArtifact, RecordStore, StoredRecord } from './records/api.ts';
 import type { TreeReader } from './refs/api.ts';
 import type { CatalogView } from './rules/api.ts';
 
 // ---------------------------------------------------------------- packs (provided by runs)
+
+/** Run facts consumed by knowledge without importing the run engine. */
+export interface KnowledgeRunReadPort {
+  runById(store: RecordStore, id: string): Promise<StoredRecord<RunRecord> | null>;
+  canViewRun(user: Principal, run: RunRecord, store: RecordStore): Promise<boolean>;
+}
+
+/** Pack bytes and the existing schema compiler consumed by knowledge. */
+export interface KnowledgePackReadPort {
+  readPackDirectory(directory: string): Promise<
+    | { ok: true; pack: { digest: string; manifest: Pick<PackManifest, 'id' | 'version' | 'kind'>; files: Array<{ path: string; bytes: Uint8Array }> } }
+    | { ok: false }
+  >;
+  packSchema(json: Record<string, unknown>): { ok: true; schema: z.ZodType } | { ok: false; problem: string };
+}
 
 /** The published identity and dependencies needed by generic skill parsers. */
 export interface SkillPackInfo {
