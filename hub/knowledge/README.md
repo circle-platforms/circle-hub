@@ -1810,3 +1810,9 @@ and keep the refusal.
 compiler; knowledge has no default implementation and no production import from runs. Tests inject the same implementations
 explicitly through `testing/read-ports.ts`. The two workflow test-bed imports remain pending a declared pack capability;
 moving those imports into assembly alone would not remove that dependency.
+
+### Role checks
+
+Administrator role comparisons use `isAdmin` from `records/api.ts`; account activation, resource ownership and sharing
+conditions remain at their current permission boundaries. Selecting a system operator is still pending the records interface;
+this change does not replace that selection with a new identity.

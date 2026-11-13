@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 // A durable, deduplicated question for a named administrator, with a concrete recovery action.
 import type { RequestKind,Attribution,Reason } from '../../contracts/generated/vocabulary.ts';
 import {canonicalize,sha256Hex,scanForCredentials,isSha256,type Principal,type Page,type ActionBody,type SourceArtifactBody} from '../records/api.ts';
@@ -9,7 +10,7 @@ import {ACTION,COMPONENTS} from './store.ts';
 /** The administrator a request names: the configured one while enabled, else any enabled administrator. */
 export async function namedAdmin(context:KnowledgeContext){
  const preferred=context.admin===null?null:await context.records.principals.get(context.admin.id);
- return preferred?.role==='admin'&&!preferred.disabled?preferred:(await context.records.principals.list?.()??[]).find(user=>user.role==='admin'&&!user.disabled);
+ return (preferred!==null&&isAdmin(preferred))&&!preferred.disabled?preferred:(await context.records.principals.list?.()??[]).find(user=>isAdmin(user)&&!user.disabled);
 }
 
 export async function requestKnowledgeFact(context:KnowledgeContext,input:{subject:string;missing:string;action:string;inputs:string[];kind?:RequestKind;deadlineHours?:number;attribution?:Attribution;reason?:Reason}):Promise<{reference:string;audience_user:string;deadline:string}>{

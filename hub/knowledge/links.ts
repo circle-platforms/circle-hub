@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 // Declarative literal relations over immutable tree content, with interpretation pinned to a composition.
 import { LINK_MATCH,REASON,type Reason } from '../../contracts/generated/vocabulary.ts';
 import { LinkDeclaration, type LinkDeclaration as Rule } from '../../contracts/src/product.ts';
@@ -144,7 +145,7 @@ export class LinkReading {
   }
   async #allowed(product:string,reader:Principal):Promise<boolean>{
     const user=await this.#context.records.principals.get(reader.id);if(!user||user.disabled)return false;
-    return user.role==='admin'||(await readableProducts(this.#context.packs,reader)).has(product);
+    return isAdmin(user)||(await readableProducts(this.#context.packs,reader)).has(product);
   }
   async runLock(run:string,reader:Principal):Promise<{found:boolean;root:string|null;composition:string|null;build?:string;product?:string;unversioned?:{root:string;composition:string}|null}>{
     if(!RunId.safeParse(run).success)throw new LinkRefusal('运行编号写法不对');
@@ -152,7 +153,7 @@ export class LinkReading {
     const page=await this.#context.records.store.find({key:'runs.id',value:run,kind:'run',limit:1});
     const record=page.items[0];if(!record)return {found:false,root:null,composition:null};
     const user=await this.#context.records.principals.get(reader.id),parsed=RunRecord.safeParse(record.body);
-    if(record.schema!=='run@1'||!parsed.success||parsed.data.run!==run||!user||user.disabled||user.role!=='admin'&&parsed.data.runner!==user.id&&parsed.data.configurer!==user.id)throw new LinkRefusal('运行记录不存在或不可读');
+    if(record.schema!=='run@1'||!parsed.success||parsed.data.run!==run||!user||user.disabled||!isAdmin(user)&&parsed.data.runner!==user.id&&parsed.data.configurer!==user.id)throw new LinkRefusal('运行记录不存在或不可读');
     const body=parsed.data,candidates=body.target_basis.flatMap(claim=>{
       const data=claim.statement.data;
       return data?.field==='build'&&data.root===body.root&&Sha256.safeParse(data.composition).success&&claim.validity.bound.includes(String(data.composition))?[String(data.composition)]:[];

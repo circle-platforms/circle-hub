@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 import type {ProductHandle, KnowledgeRunReadPort} from '../ports.ts';
 import {CompositionView} from './composition.ts';
 import {feedingFunctionCall,FeedingFunctionFailure,type FeedingErrorDetail} from './feeding-errors.ts';
@@ -161,7 +162,7 @@ export class FeedingLayer {
  private body(record:StoredRecord<ClaimBody>):Record<string,any>|null{const claim=Claim.safeParse(record.body);if(!claim.success||!object(claim.data.statement.data))return null;return KnowledgeStructureSchema.safeParse(claim.data.statement.data.feeding??claim.data.statement.data).data as Record<string,any>??null;}
  private async manifestOrigin(principal:Principal,artifact:SourceArtifact,digest:string){
   const record=await this.context.records.store.get(digest);if(record?.kind!=='action'||record.schema!=='read-manifest@1'||record.provenance!=='observed')return null;
-  const parsed=ReadManifest.safeParse(record.body);if(!parsed.success||parsed.data.result!=='completed'||parsed.data.error_code!==null||principal.role!=='admin'&&parsed.data.principal!==principal.id)return null;
+  const parsed=ReadManifest.safeParse(record.body);if(!parsed.success||parsed.data.result!=='completed'||parsed.data.error_code!==null||!isAdmin(principal)&&parsed.data.principal!==principal.id)return null;
   if(!parsed.data.artifacts.some(row=>row.record===artifact.digest&&row.sha256===artifact.body.sha256&&row.media_type===artifact.body.media_type))return null;
   return parseExternal(parsed.data.revision===null?parsed.data.external:parsed.data.external+'@'+parsed.data.revision);
  }
@@ -200,7 +201,7 @@ export class FeedingLayer {
  private async commandSource(principal:Principal,seed:import('../../contracts/src/knowledge.ts').SeedlingBody){
   const origin=seed.origin.find(row=>row.role==='command-tree');if(!origin)fail('树苗缺命令原件');const body=await this.context.store.composition(seed.composition);if(!body||body.root!==seed.root||body.product!==seed.product)fail('树苗组成与锁定根不匹配');
   const composition=new CompositionView(this.context.store,seed.composition,body);const captures=(await composition.sources()).filter(row=>row.producer===origin.producer&&row.slot===origin.slot&&row.external===origin.external&&row.sha256===origin.sha256);if(!captures.length)fail('锁定组成缺命令树采集记录；管理员恢复树苗组成后重读');
-  const configured=this.context.admin?await this.context.records.principals.get(this.context.admin.id):null;const custodian=configured&&!configured.disabled&&configured.role==='admin'?configured:(await this.context.records.principals.list?.()??[]).find(row=>row.role==='admin'&&!row.disabled)??principal;
+  const configured=this.context.admin?await this.context.records.principals.get(this.context.admin.id):null;const custodian=configured&&!configured.disabled&&isAdmin(configured)?configured:(await this.context.records.principals.list?.()??[]).find(row=>isAdmin(row)&&!row.disabled)??principal;
   return this.source(custodian,origin.sha256,captures[0].artifact,undefined,'command_tree');
  }
  private async currentPack(pack?:ProductHandle|null){return !pack||(await this.context.packs.productById(pack.product.id))?.digest===pack.digest;}
@@ -470,7 +471,7 @@ export class FeedingLayer {
   if(record?.kind==='source_artifact'&&record.body.sha256===sha){if(scope.readManifest&&Sha256.safeParse(scope.readManifest).success)external=await this.manifestOrigin(principal,record as SourceArtifact,scope.readManifest);else if('read'in record.body.origin)external=parseExternal(record.body.origin.read.object);}
   // Administrative todo identity may name the verified read request even when its capture pin is broken.
   // This labels the failure; it never substitutes another artifact for the failed read.
-  if(!external&&scope.readManifest){const action=await this.context.records.store.get(scope.readManifest);const parsed=action?.kind==='action'&&action.schema==='read-manifest@1'&&action.provenance==='observed'?ReadManifest.safeParse(action.body):null;if(parsed?.success&&(principal.role==='admin'||parsed.data.principal===principal.id)&&parsed.data.artifacts.some(item=>item.sha256===sha))external=parseExternal(parsed.data.external);}
+  if(!external&&scope.readManifest){const action=await this.context.records.store.get(scope.readManifest);const parsed=action?.kind==='action'&&action.schema==='read-manifest@1'&&action.provenance==='observed'?ReadManifest.safeParse(action.body):null;if(parsed?.success&&(isAdmin(principal)||parsed.data.principal===principal.id)&&parsed.data.artifacts.some(item=>item.sha256===sha))external=parseExternal(parsed.data.external);}
   const missing=error instanceof Error?error.message:'喂入读取或投影没有完成回执',next='核对本次原件、目录元数据及锁定命令树各自的采集记录和读取身份后，按当前包重读；不把失败缓存当终局';
   await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.usage(principal,sha,scope,tx);await this.todo(principal,{system:external?.system??'capture',document:external?.key??scope.sourceRecord??sha},scope.product??null,missing,next,tx,error instanceof FeedingFunctionFailure?error.detail:undefined);});
   return {objects:[],offset:await this.offset(),pending:[{source:sha,missing,next_action:next}]};
@@ -526,7 +527,7 @@ export class FeedingLayer {
  private async sourceHead(body:Record<string,any>,source:Source,tx:Transaction){const key=this.sourceKey(body);if(!key)return;await this.context.records.store.lock('knowledge.feeding.head:'+key,tx);const old=(await this.context.records.store.find<any>({key:'knowledge.feeding.head',value:key,kind:'action',limit:1,newestFirst:true},tx)).items[0];if(old?.body.detail?.object===body.object)return;await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:null,item:null,component:'hub.feeding@1',inputs:['src:'+source.artifact.body.sha256],lease:null,started_at:this.context.now().toISOString(),ended_at:this.context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{object:body.object,source_record:source.artifact.digest,parent:old?.digest??null}},index:[{key:'knowledge.feeding.head',value:key}]},tx);}
  private async changed(body:Record<string,any>,offset=Number.MAX_SAFE_INTEGER){const key=this.sourceKey(body);if(!key)return [];let head:StoredRecord<any>|undefined;for(const row of await this.context.store.all<any>({key:'knowledge.feeding.head',value:key,kind:'action'}))if(await this.position(row.digest)<=offset)head=row;return head&&head.body.detail?.object!==body.object?[head.digest]:[];}
  async upload(principal:Principal,artifact:SourceArtifact,scope:FeedingScope={}):Promise<FeedingReceipt>{
-  if(!('upload'in artifact.body.origin)||artifact.body.author.user===null||artifact.body.author.user!==principal.id&&principal.role!=='admin')fail('上传出处必须是当前上传者的 Hub 原件');
+  if(!('upload'in artifact.body.origin)||artifact.body.author.user===null||artifact.body.author.user!==principal.id&&!isAdmin(principal))fail('上传出处必须是当前上传者的 Hub 原件');
   const body={schema:'fed-note@1',object:artifact.body.sha256,product:null,root:null,path:null,source:{system:'upload',bytes:artifact.body.sha256,artifact:artifact.digest},by:artifact.body.author.user,run:null,...noteCapture(artifact)};
   await this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);await this.put(body,principal,'hub.upload@1',['src:'+artifact.body.sha256],[artifact.body.sha256,artifact.digest],'note:'+artifact.digest,[{key:OBJECT,value:body.object},{key:'knowledge.feeding.product',value:principal.id}],tx,false,scope.run??null);await this.usage(principal,body.object,scope,tx);});return {objects:[body.object],offset:await this.offset(),pending:[]};
  }
@@ -546,7 +547,7 @@ export class FeedingLayer {
   * own count as one, as InfoTest merges equal facts that carry no id of their own.
   */
  private async uploadedSource(principal:Principal,body:Record<string,any>){
-  if(typeof body.by!=='string'||body.by!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
+  if(typeof body.by!=='string'||body.by!==principal.id&&!isAdmin(principal))fail('声明来源只允许上传者和管理员');
   const named=typeof body.source?.artifact==='string'?body.source.artifact as string:undefined;
   const artifact=named??(await this.context.records.artifacts.records(body.source.bytes)).find(row=>'upload'in row.body.origin&&row.body.author.user===body.by&&row.body.captured_at===body.at)?.digest;
   const written=artifact===undefined?null:await this.uploadNote(artifact);
@@ -576,7 +577,7 @@ export class FeedingLayer {
  private async recordVisible(record:StoredRecord<ClaimBody>,principal:Principal):Promise<boolean>{
   const original=this.reprojected(record);
   if(original!==null){const stored=await this.context.records.store.get<any>(original);return this.standsFor(record,stored)?this.recordVisible(stored,principal):false;}
-  const account=await this.context.records.principals.get(principal.id);if(!account||account.disabled)return false;const body=this.body(record);if(!body)return false;if(body.schema==='fed-note@1'&&principal.role!=='admin'&&body.by!==principal.id)return false;
+  const account=await this.context.records.principals.get(principal.id);if(!account||account.disabled)return false;const body=this.body(record);if(!body)return false;if(body.schema==='fed-note@1'&&!isAdmin(principal)&&body.by!==principal.id)return false;
   if(body.product&&!await this.reading.mayReadProducts(principal,[body.product]))return false;
   for(const digest of record.body.validity.bound){const original=await this.context.records.store.get<any>(digest);if(original?.kind!=='source_artifact'||original.body.sha256!==body.source?.bytes)continue;let source=await this.context.records.artifacts.source(principal,original.body.sha256,{consumer:'model',record:original.digest});const run=record.body.statement.data?.run;if(!source&&typeof run==='string'){const scoped=await this.context.records.artifacts.sourceForRun(principal,original.body.sha256,run,{consumer:'model',record:original.digest});if(scoped?.artifact.digest===original.digest)source=scoped;}return Boolean(source?.bytes&&source.readTier==='model_readable');}
   return false;
@@ -624,7 +625,7 @@ export class FeedingLayer {
   if(!await session.account)return shown;
   let open:Array<{at:number;record:StoredRecord<ClaimBody>;body:Record<string,any>;next:number}>=[];
   for(const [at,{record,body}] of items.entries()){
-   if(!body||body.schema==='fed-note@1'&&session.principal.role!=='admin'&&body.by!==session.principal.id)continue;
+   if(!body||body.schema==='fed-note@1'&&!isAdmin(session.principal)&&body.by!==session.principal.id)continue;
    if(body.product&&!await once(session.products,body.product,()=>this.reading.mayReadProducts(session.principal,[body.product])))continue;
    if(record.body.validity.bound.length)open.push({at,record,body,next:0});
   }
@@ -751,10 +752,10 @@ export class FeedingLayer {
  private contribution(record:StoredRecord<unknown>){return record.kind==='claim'&&record.schema===SCHEMAS.contribution;}
  private async retractionTargets(body:FeedingRetraction){for(const id of 'objects'in body?body.objects:[]){if(!(await this.all(OBJECT,id)).length)fail('撤回对象不存在；按喂入清单的对象摘要修正');}for(const id of 'entries'in body?body.entries:[]){const record=await this.context.records.store.get(id);if(!record||!this.body(record as StoredRecord<ClaimBody>)&&!this.contribution(record))fail('撤回目标不是已登记的喂入或回注条目；按喂入清单中的记录摘要修正');}for(const id of 'runs'in body?body.runs:[]){if(!await this.context.runReads.runById(this.context.records.store,id))fail('撤回运行不存在');}}
  /** Same target check as retract, without appending. */
- async screenRetraction(principal:Principal,raw:unknown):Promise<void>{if(principal.role!=='admin')fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);}
+ async screenRetraction(principal:Principal,raw:unknown):Promise<void>{if(!isAdmin(principal))fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);}
  /** Retraction records that already cover this target, using the same match as withdrawals. */
  async retractionCover(principal:Principal,kind:'entry'|'run'|'object',id:string):Promise<string[]>{
-  if(principal.role!=='admin')fail('只有管理员能追加撤回记录');
+  if(!isAdmin(principal))fail('只有管理员能追加撤回记录');
   if(kind==='object')return this.withdrawals(id,'',null,[]);
   if(kind==='run')return this.withdrawals('','',id,[]);
   const stored=await this.context.records.store.get(id);if(!stored)return [];
@@ -775,13 +776,13 @@ export class FeedingLayer {
   * retracted itself, with or without a feeding record; callers read it once per view, not once per contribution.
   */
  async retractedEntries():Promise<ReadonlySet<string>>{const out=new Set<string>();for(const row of await this.all(RETRACT,'1')){const body=this.body(row);if(Array.isArray(body?.entries))for(const id of body.entries)if(typeof id==='string')out.add(id);}return out;}
- async retract(principal:Principal,raw:unknown):Promise<string>{if(principal.role!=='admin')fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;});}
+ async retract(principal:Principal,raw:unknown):Promise<string>{if(!isAdmin(principal))fail('只有管理员能追加撤回记录');const body=FeedingRetractionSchema.parse(raw);if(body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回人或一行原因不合格');await this.retractionTargets(body);return this.context.records.store.withTransaction(async tx=>{await this.context.records.store.lock('knowledge.feeding.log',tx);return (await this.put(body,principal,'hub.retraction@1',[],[],'retraction:'+this.key(body),[{key:RETRACT,value:'1'}],tx)).digest;});}
  private async todoState(key:string,resolved:boolean,tx:Transaction){
   await this.context.records.store.lock('knowledge.feeding.todo:'+key,tx);
   const old=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.state',value:key,kind:'action',newestFirst:true,limit:1},tx)).items[0];if(old?.body.detail?.resolved===resolved)return;
   await this.context.records.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:null,item:null,component:'hub.feeding@1',inputs:old?['rec:'+old.digest]:[],lease:null,started_at:this.context.now().toISOString(),ended_at:this.context.now().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{key,resolved}},index:[{key:'knowledge.feeding.todo.state',value:key}]},tx);
  }
- async todos(principal:Principal):Promise<Array<Record<string,any>>>{if(principal.role!=='admin')return [];await this.refreshRetractionTodos();const rows=await this.context.store.all<any>({key:TODO,value:'1',kind:'action'}),out=[];for(const row of rows){const value=row.body.detail?.feeding_todo;if(!value)continue;const state=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.state',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];if(state?.body.detail?.resolved!==true){const latest=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.detail',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];out.push({record:row.digest,...value,...latest?.body.detail?.feeding_todo});}}return out;}
+ async todos(principal:Principal):Promise<Array<Record<string,any>>>{if(!isAdmin(principal))return [];await this.refreshRetractionTodos();const rows=await this.context.store.all<any>({key:TODO,value:'1',kind:'action'}),out=[];for(const row of rows){const value=row.body.detail?.feeding_todo;if(!value)continue;const state=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.state',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];if(state?.body.detail?.resolved!==true){const latest=(await this.context.records.store.find<any>({key:'knowledge.feeding.todo.detail',value:value.key,kind:'action',newestFirst:true,limit:1})).items[0];out.push({record:row.digest,...value,...latest?.body.detail?.feeding_todo});}}return out;}
  private async originalSource(principal:Principal,body:Record<string,any>,scope:FeedingScope={}):Promise<Source>{
   if(body.schema==='fed-note@1')return this.uploadedSource(principal,body);
   if(operationRecord(body.schema)){const artifact=await this.operationArtifact(principal,body.source.bytes,scope.run??null,body.source.artifact);return this.source(principal,body.source.bytes,artifact.digest);}
@@ -816,7 +817,7 @@ export class FeedingLayer {
   return {source:'undeclared',build:null,line:null,missing:'运行没有锁定构建，预订自动化测试环境时也没有在设备上看到在装构建',next_action:'用锁定了构建的运行重交，或以预订了这台设备的运行作前序再交（预订时 Hub 在设备上看一次装的构建；看不到的原因写在那次预订的结果里）；不要在提交里写版本'};
  }
  private async operationArtifact(principal:Principal,bytes:string,runId:string|null,requested?:unknown):Promise<SourceArtifact>{
-  const candidates=(await this.context.records.artifacts.records(bytes)).filter(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||principal.role==='admin'));
+  const candidates=(await this.context.records.artifacts.records(bytes)).filter(row=>'upload' in row.body.origin&&row.body.provenance_type==='client_captured'&&row.body.author.user!==null&&(row.body.author.user===principal.id||isAdmin(principal)));
   if(runId){
    const run=await this.context.runReads.runById(this.context.records.store,runId);
    const bound=run?.body.sources.filter(binding=>{
@@ -858,11 +859,11 @@ export class FeedingLayer {
   const scan=scanContent(new TextEncoder().encode(canonicalize(filled)));if(scan.truncated||scan.findings.length)fail('喂入主张没有通过完整凭据防护扫描；管理员核对原件后修正重交');const checked=KnowledgeStructureSchema.safeParse(filled);if(!checked.success)fail('喂入结构不合格：'+checked.error.issues.map(issue=>issue.path.join('/')).join('、'));const body=checked.data as Record<string,any>;
   if(body.schema==='version-binding@1')fail('模型不能推断或提交版本绑定；绑定只由原始结构或包声明的用户参数生成');
   if(body.schema==='usage@1'||body.schema==='feeding-offset@1')fail('使用和冻结序号由 Hub 观察并填写，客户端不得自报');
-  if(body.schema==='retraction@1'){if(principal.role!=='admin'||body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回只允许管理员，并且原因必须是一行');await this.retractionTargets(FeedingRetractionSchema.parse(body));return body;}
+  if(body.schema==='retraction@1'){if(!isAdmin(principal)||body.by!==principal.id||body.reason.includes('\n')||body.reason.includes('\r'))fail('撤回只允许管理员，并且原因必须是一行');await this.retractionTargets(FeedingRetractionSchema.parse(body));return body;}
   if(!object(body.source)||typeof body.source.bytes!=='string')fail('缺喂入原件');
   const source=await this.originalSource(principal,body,scope);
   if(body.schema==='fed-note@1'){
-   if(!('upload'in source.artifact.body.origin)||source.artifact.body.author.user!==principal.id&&principal.role!=='admin')fail('声明来源只允许上传者和管理员');
+   if(!('upload'in source.artifact.body.origin)||source.artifact.body.author.user!==principal.id&&!isAdmin(principal))fail('声明来源只允许上传者和管理员');
    const written=await this.uploadNote(source.artifact.digest);
    const base=Object.fromEntries(Object.entries(body).filter(([key])=>!annotations.includes(key as never)));if(written===null||canonicalize(base)!==canonicalize(written))fail('上传对象的采集事实或摘要被改写');
   }else if(operationRecord(body.schema)){
@@ -998,7 +999,7 @@ export class FeedingLayer {
   if(body.schema==='usage@1'){const run=await this.context.runReads.runById(this.context.records.store,body.run);if(!run||!await this.context.runReads.canViewRun(principal,run.body,this.context.records.store))return null;}
   if(body.schema==='version-binding@1'&&!await this.proofReadable(record,principal))return null;
   if(body.object&&!await this.visible(body.object,principal))return null;
-  return principal.role==='admin'||body.object?record:null;
+  return isAdmin(principal)||body.object?record:null;
  }
  async recordState(digest:string,principal:Principal,parent?:string){const record=await this.readRecord(digest,principal) as StoredRecord<ClaimBody>|null;if(!record)return null;const body=this.body(record)!;const retractions=[...await this.withdrawals(body.object??'',digest,record.body.statement.data?.run as string|null,[...record.body.validity.bound,...(parent?[parent]:[])]),...await this.changed(body)];return {validity:retractions.length?'invalid':'valid',retractions};}
 

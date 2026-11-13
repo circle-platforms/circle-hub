@@ -1,3 +1,4 @@
+import {isAdmin} from '../records/api.ts';
 import {admitApplicability} from './applicability-claims.ts';
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
@@ -117,8 +118,8 @@ export class ContributionLayer {
 
   async #custodian(reader: Principal): Promise<Principal> {
     const configured = this.#context.admin === null ? null : await this.#context.records.principals.get(this.#context.admin.id);
-    if (configured !== null && !configured.disabled && configured.role === 'admin') return configured;
-    return (await this.#context.records.principals.list?.() ?? []).find(p => p.role === 'admin' && !p.disabled) ?? reader;
+    if (configured !== null && !configured.disabled && isAdmin(configured)) return configured;
+    return (await this.#context.records.principals.list?.() ?? []).find(p => isAdmin(p) && !p.disabled) ?? reader;
   }
 
   async #preparation(scope: ContributionScope, reader: Principal, cacheScope = scope): Promise<Preparation> {
@@ -396,7 +397,7 @@ export class ContributionLayer {
             if (record.kind !== 'source_artifact') return {visible:tree,held:false};
             const original = record as SourceArtifact;
             if (!original.body.visibility.admins) return {visible:false,held:false};
-            if(body.feeding?.schema==='fed-note@1'&&reader.role!=='admin'&&body.feeding.by!==reader.id)return {visible:false,held:false};
+            if(body.feeding?.schema==='fed-note@1'&&!isAdmin(reader)&&body.feeding.by!==reader.id)return {visible:false,held:false};
             const principal = tree ? await this.#custodian(reader) : reader;
             const current = await this.#context.records.artifacts.source(principal, original.body.sha256, {consumer:tree?'function':'model',record:digest});
             if(current===null)return {visible:false,held:false};
