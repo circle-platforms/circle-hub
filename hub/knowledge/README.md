@@ -1832,3 +1832,9 @@ create knowledge spaces or memory stores in this milestone. This label change do
 Shared-space labels in capacity refusals, import/refusal messages, withdrawal and creation action labels use
 `labelOf('knowledge_space_kind', 'team')`. Credential audience wording and package/model declarations are unchanged.
 The generated label update belongs to contracts and must be integrated with these consumers.
+
+### Ordinary variable provenance
+
+Product knowledge inputs carry `OrdinaryVariableUse` with `kind: 'var'` and the actual immutable variable decision digest.
+Composition readers narrow the shared variable-use union before reading that decision; secret versions are not converted to
+record references or interpreted as ordinary variable decisions. This caller requires the C12 discriminated variable-use contract.
