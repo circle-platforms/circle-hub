@@ -1,4 +1,4 @@
-import {packPurpose,packPath,PACK_PLACES,type PlaceKind} from './pack-display.ts';
+import {packPurpose,packPath,PACK_PLACES,PERSONAL_PUBLISH,type PlaceKind} from './pack-display.ts';
 import {memoReadPort} from '../../records/api.ts';
 import {currentAudience,spaceLayout,selectedScope,inScope} from './space-layout.ts';
 import {personalPackControls} from './personal-packs.ts';
@@ -62,7 +62,7 @@ export async function packsPage(ctx: PageContext, kind: PlaceKind = 'workflow'):
   const body=await spaceLayout(ctx,liveModule('packs',['pack.published'],await packList(ctx,listings,scope,kind)),listings,kind);
   return { status: 200, body: page(ctx.chrome(place.title, {
     active: place.active, hint: packPurpose(kind)+'这里只列出当前账户可用的内容。',
-    actions:html`${button('/console/packs/-/publish',`发布我的${noun}`,{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
+    actions:html`${button(PERSONAL_PUBLISH,`发布我的${noun}`,{icon:'upload'})}${canPublish?button('/console/operations/pack', '发布到团队', {primary:true,icon:'upload',...(kind==='workflow'?{}:{params:{kind}})}):html`<button class="ch-btn ch-btn--secondary" disabled title="没有发布权。可以先把我的${noun}分享给指定成员使用；发布权由管理员在团队页设置">发布到团队</button>`}`,
   }), body) };
 }
 
