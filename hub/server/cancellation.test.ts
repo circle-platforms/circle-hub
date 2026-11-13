@@ -37,3 +37,43 @@ test('an already cancelled reference read never starts its provider', async () =
   await assert.rejects(callTool(deps, call(AbortSignal.abort()), 'resolve_reference', { text: '合成原句' }), cancelled);
   assert.equal(reads, 0);
 });
+
+test('socket disconnect cancels a pending read before its next stage and still records the call', { timeout: 10_000 }, async t => {
+  const { createServer, request } = await import('node:http');
+  const { once } = await import('node:events');
+  const { handleMcp } = await import('./mcp.ts');
+  const { BodyBudget } = await import('./http.ts');
+  const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<[]>();
+  const closed = Promise.withResolvers<void>(), completed = Promise.withResolvers<void>();
+  let contexts = 0;
+  const logs: Array<{ callResult: string }> = [];
+  const deps = {
+    records: { principals: { authenticate: async () => principal }, callLog: { append: async (line: { callResult: string }) => { logs.push(line); } } },
+    workflows: { summaries: () => { started.resolve(); return finish.promise; } },
+    runs: { packContext: async () => { contexts++; return null; } },
+  } as unknown as ServerDeps;
+  const server = createServer((req, res) => {
+    res.once('close', () => closed.resolve());
+    void handleMcp(req, res, { deps, serverVersion: 'synthetic', budget: new BodyBudget(8192), log: () => {} }, 8192).then(completed.resolve, completed.reject);
+  });
+  t.after(async () => {
+    finish.resolve([]);
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const req = request({ hostname: '127.0.0.1', port: address.port, method: 'POST', headers: { authorization: 'Bearer synthetic-transport', 'content-type': 'application/json', accept: 'application/json, text/event-stream' } });
+  req.on('error', () => {});
+  req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_task_packs', arguments: {} } }));
+  await started.promise;
+  req.destroy();
+  await closed.promise;
+  finish.resolve([]);
+  await completed.promise;
+  assert.equal(contexts, 0);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].callResult, 'error');
+});
