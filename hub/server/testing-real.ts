@@ -1,4 +1,3 @@
-import {bindLegacyParser} from '../refs/api.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../connectors/testing/credentials.ts';
 // createTestHub(): the Hub assembled from the REAL packages in-process (hub/server/assemble/hub.ts: pack registry, run
 // engine, knowledge, connectors) on a temporary PostgreSQL, listening on a loopback port. The external systems are the
@@ -277,22 +276,18 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
     if(options.mindmapSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/mindmap-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'kityminder@1',skill.id+'@'+skill.version);
     }
     if(options.workbookSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/workbook-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xlsx@1',skill.id+'@'+skill.version);
     }
     if(options.xmlSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/xml-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'xml@1',skill.id+'@'+skill.version);
     }
     if(options.htmlSkill!==false){
       const skill=await publishPack(fileURLToPath(new URL('../../packs/skill/html-format/',import.meta.url)));
       await hub.registry.install(admin.principal,skill.id+'@'+skill.version);
-      await bindLegacyParser({registry:hub.registry,records},admin.principal,'html@1',skill.id+'@'+skill.version);
     }
     await hub.deps.parsers.refresh?.();
     const published: PackVersionInfo[] = [];
