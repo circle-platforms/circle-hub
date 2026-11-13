@@ -10,10 +10,10 @@ function probe(): SyncReport {
     pointers:[],counts:{produced:0,registered:0,skipped:1,failed:0},warnings:[],error:null };
 }
 test('only a complete fresh probe with every existing root unchanged skips actual synchronization', () => {
-  assert.equal(unchangedDeploymentProbe(probe()),true);
-  const changed=probe();changed.builds[0].would_produce=true;assert.equal(unchangedDeploymentProbe(changed),false);
-  const missing=probe();missing.builds[0].root=null;assert.equal(unchangedDeploymentProbe(missing),false);
-  const scope=probe();scope.scope={outcome:'skipped',reason:'synthetic',root:null,composition:null,would_produce:true};assert.equal(unchangedDeploymentProbe(scope),false);
+  assert.equal(unchangedDeploymentProbe(probe(),'synthetic-line'),true);
+  const changed=probe();changed.builds[0].would_produce=true;assert.equal(unchangedDeploymentProbe(changed,'synthetic-line'),false);
+  const missing=probe();missing.builds[0].root=null;assert.equal(unchangedDeploymentProbe(missing,'synthetic-line'),false);
+  const scope=probe();scope.scope={outcome:'skipped',reason:'synthetic',root:null,composition:null,would_produce:true};assert.equal(unchangedDeploymentProbe(scope,'synthetic-line'),false);
 });
 test('unknown, partial, failed, or non-probe results never claim current', () => {
   const reports: SyncReport[]=[];
@@ -26,7 +26,7 @@ test('unknown, partial, failed, or non-probe results never claim current', () =>
   report=probe();report.builds=[];reports.push(report);
   report=probe();report.builds[0].outcome='registered';reports.push(report);
   report=probe();report.builds[0].composition=null;reports.push(report);
-  for (const result of reports) assert.equal(unchangedDeploymentProbe(result),false);
+  for (const result of reports) assert.equal(unchangedDeploymentProbe(result,'synthetic-line'),false);
 });
 
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
@@ -121,4 +121,26 @@ test('offline owner submission may launch the same database runtime worker witho
   assert.equal(f.calls.length,1);
   assert.ok(f.calls[0].args.includes('--setenv=CIRCLE_HUB_DATABASE_USER='+f.context.database.role));
   assert.ok(!f.calls[0].args.includes('--setenv=CIRCLE_HUB_DATABASE_USER='+f.context.user));
+});
+
+import { deploymentSyncReportCoversLine } from './deployment-sync.ts';
+test('an unchanged report for another line never covers the explicit requested line',()=>{
+  const other=probe();
+  assert.equal(unchangedDeploymentProbe(other,'synthetic-line'),true);
+  assert.equal(unchangedDeploymentProbe(other,'missing-line'),false);
+  assert.equal(unchangedDeploymentProbe(other,null),true);
+  assert.equal(deploymentSyncReportCoversLine(other,'missing-line'),false);
+  assert.equal(deploymentSyncReportCoversLine(other,'synthetic-line '),false);
+  assert.equal(deploymentSyncReportCoversLine(other,'SYNTHETIC-LINE'),false);
+  assert.equal(deploymentSyncReportCoversLine(other,'synthetic-line'),true);
+  assert.equal(deploymentSyncReportCoversLine(other,null),true);
+});
+test('actual synchronization also requires target coverage while a null selection imposes no line match',()=>{
+  const actual=probe();actual.dry_run=false;
+  actual.builds[0].outcome='produced';
+  assert.equal(deploymentSyncReportCoversLine(actual,'missing-line'),false);
+  assert.equal(deploymentSyncReportCoversLine(actual,'synthetic-line'),true);
+  actual.builds=[];
+  assert.equal(deploymentSyncReportCoversLine(actual,'synthetic-line'),false);
+  assert.equal(deploymentSyncReportCoversLine(actual,null),true);
 });
