@@ -523,7 +523,7 @@ export async function produceTree(context: KnowledgeContext, input: ProduceInput
   });
 
   if(input.variables===undefined){
-    const resolved=await resolveProductVariables(product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
+    const resolved=await resolveProductVariables(context.packReads,product,context.records.variables,by,false,{plan:context.sandbox.plan,producer:context.sandbox.producer});
     if('problems' in resolved)return result({reason:resolved.problems.join('；')});
     product=resolved.product;
     input={...input,product,variables:resolved.uses,loader:input.loader??knowledgeSourceLoader(context,by,'knowledge production',resolved.snapshot)};

@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {after, before, test, type TestContext} from 'node:test';
@@ -319,7 +320,7 @@ test('a contribution with an operation record is stored on a pool of one connect
   // the pool, or it waits for the pool's ten-second timeout.
   const narrow = await openRecords({dataDir:ctx.w.kit.dataDir, logDir:join(ctx.w.kit.dataDir, 'one-connection-logs'), database:ctx.w.kit.database, limits:DEFAULT_LIMITS}, {keyProvider:ctx.w.kit.keyProvider, maxConnections:1});
   t.after(() => narrow.close());
-  const knowledge = createKnowledge({records:narrow, parsers:createDefaultRegistry(), packs:ctx.w.packs, external:ctx.w.external, jev:null, sandbox:{requireOsIsolation:await sandboxIsolation()}, admin:ctx.w.admin});
+  const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:narrow, parsers:createDefaultRegistry(), packs:ctx.w.packs, external:ctx.w.external, jev:null, sandbox:{requireOsIsolation:await sandboxIsolation()}, admin:ctx.w.admin});
   const workflows = new FakeWorkflowStore();
   await workflows.add(fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/', import.meta.url)));
   const service = createRunsService({records:narrow, packs:ctx.w.packs, knowledge, external:ctx.w.external, workflows, parsers:createDefaultRegistry()});

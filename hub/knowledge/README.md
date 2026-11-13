@@ -1802,3 +1802,11 @@ the last page decides. A pack that opts in must say the unknown entries as unkno
 the view's notes name, and must not count them as zero or fail on them. In a facet view `total` counts only the entries in the
 lists, so `total + unknown_entries` is the population of the root for the query. Impact and links views do not carry the fields
 and keep the refusal.
+
+### Run and pack read dependencies
+
+`createKnowledge` requires `runReads: KnowledgeRunReadPort` and `packReads: KnowledgePackReadPort`, both declared in
+`hub/ports.ts`. The server supplies the existing run lookup, visibility check, verified pack directory reader and schema
+compiler; knowledge has no default implementation and no production import from runs. Tests inject the same implementations
+explicitly through `testing/read-ports.ts`. The two workflow test-bed imports remain pending a declared pack capability;
+moving those imports into assembly alone would not remove that dependency.
