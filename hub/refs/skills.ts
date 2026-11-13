@@ -3,21 +3,17 @@ import type {PackRegistry,OpenedPack} from '../runs/api.ts';
 import {SkillLocks,type SkillDependency,type SkillLock} from '../../contracts/src/skills.ts';
 import type {SkillDeclaration} from '../../contracts/src/pack.ts';
 import type {RecordsKit,Principal} from '../records/api.ts';
-import {AccessError,ConflictError,IntegrityError} from '../records/api.ts';
+import {ConflictError,IntegrityError} from '../records/api.ts';
 import type {RunRecord} from '../../contracts/src/run.ts';
 import {callPackFunction,SandboxError,type SandboxOptions} from '../rules/api.ts';
 import {createDefaultRegistry} from './parsers/index.ts';
-import {parseReference,ReferenceSyntaxError} from './reference.ts';
-import type {RecordStore,Transaction,StoredRecord,Page} from '../records/api.ts';
-import type {RecordKind} from '../../contracts/generated/protocol.ts';
 import {createParserRegistry,ParseError,ParseLimitError,ParseSyntaxError,ParseEncodingError,QUOTATION_UNITS,DEFAULT_MAX_SELECTOR_CHARS,type ParserRegistry,type Parser,type ParsedDocument,type Fragment,type JsonValue,type JsonObject,type ParseLimits,type QuotationUnits} from './parser.ts';
 import {withParserSite} from './sandbox-diagnostic.ts';
 
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v);
-const missing=(message:string)=>new ConflictError(message,{fix:'管理员安装所需通用技能包；缺历史锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明，再按原引用重读'});
+const missing=(message:string)=>new ConflictError(message,{fix:'管理员安装所需通用技能包，并使用已冻结技能摘要的运行重读'});
 const readRun=async(records:RecordsKit,run:string)=>(await records.store.find<RunRecord>({kind:'run',key:'runs.id',value:run,limit:1})).items[0]??null;
 export interface SkillParserOptions {registry:PackRegistry;records:RecordsKit;sandbox?:SandboxOptions;now?:()=>Date;/** Optional output-size instrumentation; never receives package data. */onWireOutput?:(bytes:number)=>void}
-export interface LegacySkillBinding {run:string;skills:SkillLock[];decided_by:string;reason:string;run_record:string}
 
 const LOCATE_BATCH=256;
 /**
@@ -247,7 +243,7 @@ export function createSkillParserRegistry(options:SkillParserOptions):ParserRegi
     // Installed format parsers precede the generic transitional JSON parser. Duplicate parser@version is refused.
     const out=createParserRegistry([...parsed,...createDefaultRegistry().list()]);
     out.skills=locks.map(lock=>({...lock}));
-    out.unavailable=key=>`缺少解析器 ${key} 的已安装/冻结通用技能包；下一步：管理员安装所需技能并重开运行，或用 circle-hub skill bind-legacy ${key} <技能包 id@版本> 为历史引用追加迁移声明`;
+    out.unavailable=key=>`缺少解析器 ${key} 的已安装/冻结通用技能包；下一步：管理员安装所需技能并重开运行`;
     return out;
   };
   const freeze=async(dependencies:readonly SkillDependency[],context?:{principal:Principal;space?:string})=>{
@@ -292,9 +288,6 @@ export function createSkillParserRegistry(options:SkillParserOptions):ParserRegi
     async forReference(parser,reader,options){
       const scoped=await freeze([]);
       const selected=scoped.parsers;
-      const binding=(await records.store.find<any>({kind:'action',key:'refs.legacy-parser',value:parser,limit:1,newestFirst:false})).items[0];
-      if(binding){const lock=SkillLocks.parse([binding.body.detail?.migration?.skill]);const out=await load(lock);out.bindingRecords=[binding.digest];out.bindingDisclosure='迁移时点事后声明；rec:'+binding.digest+'；按所列摘要复核，不证明旧执行当时使用该包';return out;}
-      if(selected.get(parser)?.migration_test){const out=await load([]);out.unavailable=key=>'缺少旧解析器 '+key+' 的迁移时点事后声明；下一步：circle-hub skill bind-legacy '+key+' <技能包 id@版本>；也可给出已锁定技能摘要的运行号';return out;}
       if(selected.get(parser))return selected;
       if(options?.teamOnly)return selected;
       if(reader?.user&&registry.personal){
@@ -315,110 +308,10 @@ export function createSkillParserRegistry(options:SkillParserOptions):ParserRegi
           for(const id of ids){const account=id?await records.principals.get(id):null;if(!account||account.disabled||!await registry.personal?.mayUse(account,lock.space,lock.pack))throw missing('冻结通用技能的使用授权已收回或不可读取；由所有者补齐授权后重读');}
         }
       };
-      const bindings=await records.store.find<any>({kind:'action',key:'runs.skills',value:run,limit:65,newestFirst:false});
-      if(bindings.next||bindings.items.length>64)throw missing('运行的技能绑定记录超过有界读取上限');
-      const valid=bindings.items.filter(row=>row.body.detail?.run_record===stored.digest);
-      if(valid.length){
-        const locks:SkillLock[]=SkillLocks.parse(stored.body.skills??[]);
-        for(const row of valid)for(const lock of SkillLocks.parse(row.body.detail.skills)){
-          const prior=locks.find(value=>value.pack===lock.pack&&value.space===lock.space);
-          if(prior&&prior.digest!==lock.digest)throw missing('运行的技能摘要声明冲突，不能选择一条');
-          if(!prior)locks.push(lock);
-        }
-        await authorize(locks);const out=await load(locks);out.bindingRecords=valid.map(row=>row.digest);out.bindingRecord=valid[0].digest;
-        out.bindingDisclosure='迁移时点事后声明（历史解析技能由管理员追加绑定）；按所列包摘要复核，不证明旧执行当时使用；'+valid.map(row=>'rec:'+row.digest).join('；');out.unavailable=key=>`历史运行 ${run} 未锁定技能包摘要（解析器 ${key}）；下一步：管理员执行 circle-hub skill bind-legacy ${key} <技能包 id@版本>；原运行和结果不改`;return out;
-      }
-      await authorize(stored.body.skills??[]);const out=await load(stored.body.skills??[]);if(stored.body.skills===undefined)delete out.skills;out.unavailable=key=>`历史运行 ${run} 未锁定技能包摘要（解析器 ${key}）；下一步：管理员用 circle-hub skill bind-legacy ${key} <技能包 id@版本> 追加迁移时点事后声明后重读；原运行和结果不改`;
+      const locks=SkillLocks.parse(stored.body.skills);
+      await authorize(locks);const out=await load(locks);
+      out.unavailable=key=>`运行 ${run} 未锁定解析器 ${key} 所需的技能包摘要；下一步：管理员安装所需技能并重新开始运行`;
       return out;
     }};
   return facade;
-}
-
-/** Explicit, append-only administrator declaration; never pretends to reconstruct old execution history. */
-export async function bindLegacySkills(options:SkillParserOptions,by:Principal,run:string,refs:readonly string[],reason:string):Promise<string>{
-  const account=await options.registry.account(by);if(account?.role!=='admin')throw new AccessError('只有管理员可以追加历史技能包绑定');
-  if(!reason.trim()||!refs.length)throw missing('历史绑定必须给出技能包精确版本及理由');
-  const skills:SkillLock[]=[];const publications:string[]=[];
-  for(const ref of refs){const at=ref.lastIndexOf('@');if(at<1)throw missing('历史绑定必须声明精确技能包版本');const info=await options.registry.getVersion(ref.slice(0,at),ref.slice(at+1));if(info?.kind!=='skill')throw missing('没有该技能包的已发布版本');skills.push({pack:info.id,version:info.version,digest:info.digest});publications.push('rec:'+info.record);}
-  SkillLocks.parse(skills);
-  return options.records.store.withTransaction(async tx=>{
-    await options.records.store.lock('run-skills:'+run,tx);
-    const stored=await readRun(options.records,run);if(!stored)throw missing('没有该历史运行');
-    if(stored.body.skills!==undefined)throw missing('运行已有冻结技能包摘要，不接受事后改绑');
-    const prior=await options.records.store.find({kind:'action',key:'runs.skills',value:run,limit:1},tx);if(prior.items.length)throw missing('历史运行已有追加绑定，不接受改绑');
-    const at=(options.now?.()??new Date()).toISOString();
-    const saved=await options.records.store.put({kind:'action',schema:'action@1',provenance:'declared',created_at:at,body:{action:'validate',run,item:null,inputs:['rec:'+stored.digest,...publications],component:'skill@1',lease:null,started_at:at,ended_at:at,result:'completed',error_code:null,acceptance:null,codes:[],detail:{run_record:stored.digest,skills,decided_by:account.id,reason,provenance:'declared'}},index:[{key:'runs.skills',value:run}]},tx);
-    return saved.digest;
-  });
-}
-
-/** Only whole, structurally valid references count; prose is never searched for embedded commands or references. */
-function referencesParser(value:unknown,parser:string):boolean{
- const pending:unknown[]=[value];
- while(pending.length){const next=pending.pop();if(typeof next==='string'){
-   try{const reference=parseReference(next);if(reference.scheme==='src'&&reference.parser===parser)return true;}catch(error){if(!(error instanceof ReferenceSyntaxError))throw error;/* Not a reference value. */}
-  }else if(next&&typeof next==='object')for(const child of Object.values(next))pending.push(child);
- }return false;
-}
-async function runReferencesParser(store:RecordStore,record:StoredRecord<RunRecord>,parser:string,tx:Transaction):Promise<boolean>{
- if(referencesParser(record.body,parser))return true;
- const indexes:Array<{kind:RecordKind;key:string}>=[{kind:'submission',key:'runs.submission.run'},{kind:'validation_result',key:'runs.result.run'},{kind:'action',key:'runs.action.run'}];
- for(const index of indexes){let cursor:string|null=null;const seen=new Set<string>();do{
-   const page:Page<StoredRecord>=await store.find({...index,value:record.body.run,limit:32,cursor},tx);
-   if(page.items.some(row=>referencesParser(row.body,parser)))return true;
-   cursor=page.next;if(cursor){if(seen.has(cursor))throw missing('历史引用记录分页重复，不能完成补绑范围');seen.add(cursor);}
-  }while(cursor);}
- return false;
-}
-
-/** One administrator command materializes a separate immutable binding for every eligible historical run. */
-export async function bindLegacyParser(options:SkillParserOptions,by:Principal,parser:string,ref:string){
- const account=await options.registry.account(by);if(account?.role!=='admin')throw new AccessError('只有管理员可以追加迁移时点声明');
- const at=ref.lastIndexOf('@');if(at<1)throw missing('迁移声明必须指定技能包精确版本');
- const info=await options.registry.getVersion(ref.slice(0,at),ref.slice(at+1));
- if(info?.kind!=='skill')throw missing('没有该技能包已发布版本');
- const opened=await options.registry.open(info.digest);const row=opened?.declarations.kind==='skill'?opened.declarations.skill.parsers.find(row=>row.parser===parser):undefined;
- if(!row?.migration_test)throw missing('技能包缺少该解析器的精确声明或迁移等价测试名；包作者补声明并发布后再绑定');
- return options.records.store.withTransaction(async tx=>{
-  await options.records.store.lock('skills.legacy-migration',tx);
-  const prior=await options.records.store.find<any>({kind:'action',key:'refs.legacy-migration',value:'1',limit:65},tx);
-  const existing=prior.items.find(item=>item.body.detail?.migration?.parser===parser);
-  if(existing&&existing.body.detail.migration.skill.digest!==info.digest)throw missing('该解析器已有迁移时点声明，不能改绑');
-  if(!existing&&(prior.next||prior.items.length>=64))throw missing('迁移声明达到 64 条上限');
-  if(prior.items.some(item=>item.body.detail?.migration?.skill?.pack===info.id&&item.body.detail.migration.skill.digest!==info.digest))throw missing('同一技能包已有另一固定摘要，不能在迁移声明里混用版本；使用独立包或显式运行绑定');
-  const cutoff=await options.records.store.watermark?.(tx);if(cutoff===undefined)throw missing('缺记录追加序号，不能划定迁移时点');
-  const time=(options.now?.()??new Date()).toISOString(),skill={pack:info.id,version:info.version,digest:info.digest};
-  const migration={label:'迁移时点事后声明',parser,skill,decided_by:account.id,at:time,test:row.migration_test,cutoff};
-  const declaration=existing??await options.records.store.put({kind:'action',schema:'action@1',provenance:'declared',created_at:time,body:{action:'validate',run:null,item:null,inputs:['rec:'+info.record],component:'skill@1',lease:null,started_at:time,ended_at:time,result:'completed',error_code:null,acceptance:null,codes:[],detail:{migration}},index:[{key:'refs.legacy-migration',value:'1'},{key:'refs.legacy-parser',value:parser}]},tx);
-  const lockedParsers=new Map<string,Set<string>>();
-  const alreadyLocked=async(run:RunRecord)=>{
-   for(const lock of SkillLocks.parse(run.skills??[])){
-    const identity=lock.pack+'@'+lock.version+':'+lock.digest;let parsers=lockedParsers.get(identity);
-    if(!parsers){const pack=await options.registry.open(lock.digest);if(!pack||pack.info.id!==lock.pack||pack.info.version!==lock.version||pack.declarations.kind!=='skill')throw missing('缺少历史运行已锁技能包，不能判断是否需要补绑；管理员恢复原包后重试');parsers=new Set(pack.declarations.skill.parsers.map(value=>value.parser));lockedParsers.set(identity,parsers);}
-    if(parsers.has(parser))return true;
-    if(lock.pack===skill.pack&&lock.digest!==skill.digest)throw missing('运行已有同包另一摘要，不能用迁移声明覆盖；保持原锁并由管理员核对');
-   }return false;
-  };
-  let cursor:string|null=null,bound_runs=0,already_bound_runs=0,scanned_runs=0;const seen=new Set<string>();
-  do{
-   const page:Page<StoredRecord<RunRecord>>=await options.records.store.list<RunRecord>({kind:'run',limit:32,cursor},tx);
-   for(const run of page.items){
-    const position=await options.records.store.position?.(run.digest,tx);if(position===null||position===undefined)throw missing('历史运行缺追加序号，不能核对补绑范围');
-    if(position>cutoff)continue;scanned_runs++;
-    if(!await runReferencesParser(options.records.store,run,parser,tx)||await alreadyLocked(run.body))continue;
-    await options.records.store.lock('run-skills:'+run.body.run,tx);
-    const bindings=await options.records.store.find<any>({kind:'action',key:'runs.skills',value:run.body.run,limit:65},tx);
-    if(bindings.next||bindings.items.length>64)throw missing('运行的技能绑定记录超过有界读取上限');
-    const locks=SkillLocks.parse(run.body.skills??[]);
-    for(const binding of bindings.items.filter(binding=>binding.body.detail?.run_record===run.digest))for(const lock of SkillLocks.parse(binding.body.detail.skills)){
-      const existing=locks.find(value=>value.pack===lock.pack&&value.space===lock.space);if(existing&&existing.digest!==lock.digest)throw missing('运行的技能摘要声明冲突，不能选择一条');if(!existing)locks.push(lock);
-    }
-    if(await alreadyLocked({...run.body,skills:locks})){already_bound_runs++;continue;}
-
-    await options.records.store.put({kind:'action',schema:'action@1',provenance:'declared',created_at:time,body:{action:'validate',run:run.body.run,item:null,inputs:['rec:'+run.digest,'rec:'+info.record,'rec:'+declaration.digest],component:'skill@1',lease:null,started_at:time,ended_at:time,result:'completed',error_code:null,acceptance:null,codes:[],detail:{run_record:run.digest,skills:[skill],...migration,migration_record:declaration.digest}},index:[{key:'runs.skills',value:run.body.run},{key:'runs.skill-parser',value:run.body.run+'/'+parser}]},tx);bound_runs++;
-   }
-   cursor=page.next;if(cursor){if(seen.has(cursor))throw missing('历史运行分页重复，不能完成补绑范围');seen.add(cursor);}
-  }while(cursor);
-  return {...migration,record:declaration.digest,bound_runs,already_bound_runs,scanned_runs};
- });
 }

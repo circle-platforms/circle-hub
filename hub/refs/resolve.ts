@@ -395,7 +395,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
     }catch(error){
       ctx.onDiagnostic?.({reference:canonical,scheme:ref.scheme,message:'locked parser package could not be loaded'});
       const failed=unavailable(canonical,ctx,error instanceof IntegrityError?'integrity_unproven':'check_error');
-      return Object.assign(failed,{parser_missing:ref.parser,message:'缺少解析器 '+ref.parser+' 的已核验技能包摘要，当前不能复核这条引用',fix:'管理员恢复运行锁定的已发布包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明，再按原引用重读'});
+      return Object.assign(failed,{parser_missing:ref.parser,message:'缺少解析器 '+ref.parser+' 的已核验技能包摘要，当前不能复核这条引用',fix:'管理员恢复运行锁定的已发布包；运行缺少技能锁时，安装所需技能并重新开始运行'});
     }
   }
   if (ctx.visited?.has(canonical)) {
