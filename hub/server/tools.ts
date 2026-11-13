@@ -308,7 +308,15 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
-  const packs = await deps.workflows.summaries(call.principal);
+  const capabilities = await deps.memberCapabilities(call.principal);
+  const available = [...capabilities.workflows, ...capabilities.skills];
+  const packs = [];
+  for (const pack of await deps.workflows.summaries(call.principal)) {
+    const personal = pack.space !== undefined && pack.space !== 'team';
+    const owner = personal ? await deps.records.principals.get(pack.space!) : null;
+    if (available.some(item => item.ref === `${pack.id}@${pack.version}` &&
+      (personal ? owner !== null && item.owner === owner.name : item.owner === undefined))) packs.push(pack);
+  }
   checkReadCancellation(call);
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
@@ -326,7 +334,7 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   }
   checkReadCancellation(call);
   return {
-    answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
+    answer: { call_result: 'ok', errors: [], member_capabilities: capabilities, packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
     text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}) } },
   };
 };

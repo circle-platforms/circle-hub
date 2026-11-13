@@ -372,7 +372,7 @@ export interface ResourceListing {
   allow_plaintext?: string[];
 }
 
-/** Provided by connectors. Admins only: any other principal gets an empty list. */
+/** Provided by connectors. Enabled members see assigned resources without connection addresses; admins see the catalog. */
 export interface ResourceCatalogPort {
   list(user: Principal): Promise<ResourceListing[]>;
 }
