@@ -81,6 +81,7 @@ export function usage(platform: NodeJS.Platform = process.platform): string {
     '  rehearse [--keep]                              在临时数据根里演练备份、销毁与恢复',
     '  tls init [--renew-authority]|issue|status      内置 HTTPS 的本地证书颁发机构和服务器证书（数据根的 tls 目录）',
     '  status                                         汇总状态',
+    ...PLATFORM_COMMAND_METADATA.filter(command => command.name === 'reset').map(command => `  ${command.name} --help                                   ${command.summary}`),
     '',
     `数据根默认是 ~/Library/Application Support/circle-hub，可用 ${DATA_ROOT_VARIABLE} 改。端口、数据库名与密钥文件名只来自部署设置；密钥库主密钥和操作令牌在数据根的 keys 目录里（0700，文件 0600），不进备份。`,
   ].join('\n');
