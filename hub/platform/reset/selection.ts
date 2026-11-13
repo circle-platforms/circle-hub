@@ -269,6 +269,9 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
     }
     case 'personal_pack_retirement': add('object', body.digest, '/digest'); break;
     case 'personal_pack_transfer': add('object', body.digest, '/digest'); add('record', body.source, '/source'); add('record', body.target, '/target'); break;
+    case 'effect':
+      add('record', body.action_digest, '/action_digest'); add('record', body.previous, '/previous');
+      ref(object(body.before_state)?.reference, '/before_state/reference'); break;
     case 'validation_result':
       if (body.system_input === undefined) add('record', body.submission, '/submission');
       ref(body.system_input, '/system_input'); locks(body.locks, '/locks');
@@ -346,9 +349,15 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
         if (body.component === 'server.docs@1' && body.action === 'read') add('object', detail?.sha256, '/detail/sha256');
         if (typeof body.component === 'string' && Object.hasOwn(ACTION_COMPONENTS, body.component) && ACTION_COMPONENTS[body.component] === 'knowledge') {
           add('record', detail?.root, '/detail/root', true); add('record', detail?.composition, '/detail/composition');
+          add('record', object(detail?.pack)?.digest, '/detail/pack/digest', true);
           add('record', detail?.artifact, '/detail/artifact'); add('object', object(detail?.output)?.sha256, '/detail/output/sha256');
           if (body.component === 'hub.feeding@2' || body.component === 'knowledge.sync@1') add('object', detail?.sha256, '/detail/sha256');
           rows(detail?.lists).forEach((list, n) => add('object', list.externals, '/detail/lists/' + n + '/externals'));
+          rows(detail?.source_failures).forEach((failure, n) => add('record', failure.manifest, '/detail/source_failures/' + n + '/manifest'));
+          for (const [key, chunks] of Object.entries(object(detail?.problem_chunks) ?? {})) rows(chunks).forEach((chunk, n) => {
+            add('record', chunk.record, '/detail/problem_chunks/' + key + '/' + n + '/record');
+            add('object', chunk.sha256, '/detail/problem_chunks/' + key + '/' + n + '/sha256');
+          });
         }
       }
       break;
