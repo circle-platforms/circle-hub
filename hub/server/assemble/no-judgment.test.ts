@@ -1,3 +1,4 @@
+import { WHOLE_HUB } from '../../records/api.ts';
 import { labelOf } from '../../../contracts/generated/vocabulary.ts';
 // Assembly insurance of the owner decision of 2026-10-22 (docs/hub-r4-tasks/no-judgment-in-hub.md): even with a key
 // of the judgment service left in the vault from before the removal, the assembled Hub builds no placement client,
@@ -80,13 +81,14 @@ test('a legacy key in the vault buys no client and no outbound call; declared pa
       assert.ok(outcome.ok, JSON.stringify(outcome.ok ? [] : outcome.problems).slice(0, 400));
     }
     await hub.registry.activate(admin, PRODUCT_PACK);
-    await hub.connectors.admin.addResource(admin, {
+    const resource = await hub.connectors.admin.addResource(admin, {
       system_pack: SITE_PACK,
       name: '合成构建站',
       environment: 'test',
       origins: { 'build-site': stub.origin },
     });
 
+    await kit.authorizations.assignResource(admin,resource.id,WHOLE_HUB);
     const handle = await hub.packs.productByName('DEMO');
     assert.ok(handle !== null, 'the product is published');
     const report = await hub.knowledge.syncProduct(handle, { by: admin });
