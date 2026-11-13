@@ -42,6 +42,8 @@ export { describeError, describeInternalError } from './notes.ts';
 
 /** The call context handed to the services: CallContext plus a way to put the real reason of a neutral answer in the admin note. */
 export interface ServerCallContext extends CallContext {
+  /** Cancellation observed at safe read boundaries; writers do not consume it. */
+  signal?: AbortSignal;
   /** The real reason behind a neutral answer (absent, forbidden, failed): admins see it in the call log, the caller never does. */
   adminNote(reason: string): void;
   /** What this session's client reported in MCP initialize (clientInfo), read only by writers; null when nothing was reported. */
@@ -298,10 +300,16 @@ async function publishedTools(deps: ServerDeps, principal: Principal, note: (rea
 
 // ---------------------------------------------------------------- handlers
 
+function checkReadCancellation(call: ToolCall): void {
+  if (call.context.signal?.aborted) throw new McpError(ErrorCode.ConnectionClosed, '请求已取消');
+}
+
 const listTaskPacks: Handler = async (deps, call, args) => {
+  checkReadCancellation(call);
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
   const packs = await deps.workflows.summaries(call.principal);
+  checkReadCancellation(call);
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
   // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
@@ -316,6 +324,7 @@ const listTaskPacks: Handler = async (deps, call, args) => {
       call.context.adminNote(`list_task_packs: the run context of the listed packs was not read: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000));
     }
   }
+  checkReadCancellation(call);
   return {
     answer: { call_result: 'ok', errors: [], packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
     text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}) } },
@@ -505,10 +514,13 @@ export async function acceptedBy(deps: Pick<ServerDeps, 'workflows'>, principal:
 }
 
 const resolveTool: Handler = async (deps, call, args) => {
+  checkReadCancellation(call);
   const parsed = ResolveReferenceInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error)) };
   call.state.runId = parsed.data.run ?? null;
-  return { answer: (await deps.runs.resolveReference(call.principal, parsed.data, call.context)) as Answer };
+  const answer = await deps.runs.resolveReference(call.principal, parsed.data, call.context);
+  checkReadCancellation(call);
+  return { answer: answer as Answer };
 };
 
 /**
@@ -758,14 +770,18 @@ async function readReference(deps: ServerDeps, call: ToolCall, reference: string
   return { answer: { call_result: 'ok', errors: [], content,...(feedingReceipt?{feeding_objects:feedingReceipt.objects,feeding_pending:feedingReceipt.pending}:{}) }, text: { cursor } };
 }
 
-const HANDLERS: Record<ToolName, Handler> = {
-  list_task_packs: listTaskPacks,
-  upload_file: uploadFile,
-  start_run: startRun,
-  get_nodes: getNodes,
-  resolve_reference: resolveTool,
-  submit_result: submitResult,
+const HANDLERS: Record<ToolName, { run: Handler; cancellableRead: boolean }> = {
+  list_task_packs: { run: listTaskPacks, cancellableRead: true },
+  upload_file: { run: uploadFile, cancellableRead: false },
+  start_run: { run: startRun, cancellableRead: false },
+  get_nodes: { run: getNodes, cancellableRead: false },
+  resolve_reference: { run: resolveTool, cancellableRead: true },
+  submit_result: { run: submitResult, cancellableRead: false },
 };
+
+export function supportsReadCancellation(name: string): boolean {
+  return isToolName(name) && HANDLERS[name].cancellableRead;
+}
 
 function isToolName(name: string): name is ToolName {
   return Object.hasOwn(HANDLERS, name);
@@ -798,7 +814,7 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   }
   let reply: Reply;
   try {
-    reply = await HANDLERS[name](deps, call, args ?? {});
+    reply = await HANDLERS[name].run(deps, call, args ?? {});
   } catch (error) {
     call.state.callResult = 'error';
     if (error instanceof McpError) throw error;
