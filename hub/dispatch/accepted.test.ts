@@ -3,7 +3,7 @@ import { isAdmin } from '../records/api.ts';
 // administrator responsible for unknown outcomes, at most once; the runner reads the jobs' progress. Synthetic executor only.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SubmitResultOutput } from '../../contracts/src/tools.ts';
+import { SubmitResultOutput, TOOLS } from '../../contracts/src/tools.ts';
 import { setup } from './testing/context.ts';
 import { setupJournal } from './testing/journal.ts';
 import { acceptedDispatch, MAX_NOTE_TEXT, MAX_NOTES, runnerNote } from './accepted.ts';
@@ -81,10 +81,10 @@ test('the runner note names no administrator command in any job state', () => {
   const status = (extra: Record<string, unknown>) => ({ job, phase: 'synthetic', outcome: 'unknown', frozen: false, events: 3, next_action: `circle-hub job resume ${job}`, ...extra }) as unknown as JobStatus;
   const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
     { ended: null, status: status({}), expect: /还在进行/ },
-    { ended: 'unknown', status: status({ frozen: true, request_id: 'synthetic-intent:1' }), expect: /上机验证结果未知.*请求号 synthetic-intent:1.*不要重交.*管理员 admin-1 处置/ },
+    { ended: 'unknown', status: status({ frozen: true, request_id: 'synthetic-intent:1' }), expect: /上机验证结果未知.*不要重交.*管理员处置/ },
     { ended: 'done', status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /不会再做上机验证/ },
     { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', reason: '合成：缺整个自动化测试环境的租约' }), expect: /Hub 会再试一次/ },
-    { ended: 'done', status: status({ outcome: 'not_dispatched', not_sent: true, reason: '合成：目标没有给出租约' }), expect: /未发出.*原因：合成：目标没有给出租约.*什么都没有发到目标.*Hub 会再试一次/ },
+    { ended: 'done', status: status({ outcome: 'not_dispatched', not_sent: true, reason: '合成：目标没有给出租约' }), expect: /未发出.*原因：本次上机前条件尚未满足.*什么都没有发到目标.*Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'target_rejected', rejection_stage: 'admission' }), expect: /目标拒绝.*目标在“admission”阶段拒绝.*修正后原样重交，Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'proven_not_executed' }), expect: /已证明目标没有执行；原样重交，Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'target_rejected', decided_by: 'admin-1' }), expect: /管理员已处置这个作业/ },
@@ -93,7 +93,7 @@ test('the runner note names no administrator command in any job state', () => {
   ];
   for (const row of rows) {
     const note = runnerNote({ job, boundary_refused: row.boundary_refused ?? false, ended: row.ended, status: row.status }, 'admin-1');
-    assert.match(note.text, row.expect); assert.doesNotMatch(note.text, /circle-hub|job resume|job dispose/);
+    assert.match(note.text, row.expect); assert.doesNotMatch(JSON.stringify(note), /circle-hub|job resume|job dispose|synthetic-intent:1|admin-1/);
   }
 });
 
@@ -111,8 +111,9 @@ test('a dispatch refused at the effect boundary before any reservation says that
   // The lease on the target belongs to another lineage, as when the run's own booking does not cover the executor's target.
   const c = await setup({ mode: 'lineage' }); t.after(() => c.close());
   const [note] = await acceptedDispatch(c.kit, c.service, c.run, true);
-  assert.ok(note?.job, JSON.stringify(note)); assert.match(note.text, /^上机验证没有发出：/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
-  for (const key of definition('x').resources) assert.ok(note.text.includes(key), `the refusal names the uncovered key ${key}: ${note.text}`);
+  assert.ok(note?.job, JSON.stringify(note)); assert.equal(note.outcome, 'not_dispatched'); assert.match(note.text, /未发出/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+  assert.ok(note.missing_facts?.length, 'the member receives a missing prerequisite without raw administrator resource diagnostics');
+  assert.doesNotMatch(JSON.stringify(note), /circle-hub|usr_|exe_/);
   assert.equal(c.calls.includes('send_blob'), false);
   const [again] = await acceptedDispatch(c.kit, c.service, c.run, false);
   assert.equal(again.job, note.job, JSON.stringify(again)); assert.match(again.text, /已结束/); assert.match(again.text, /原因：/);
@@ -152,7 +153,9 @@ test('a finished job points at the device return and judges nothing itself; the 
   const note = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, device_return: returned }) }, 'admin-1');
   assert.ok(note.text.includes(`设备返回 ${returned}`)); assert.match(note.text, /读设备返回，读完再判断/);
   assert.ok(note.text.length <= MAX_NOTE_TEXT);
-  assert.deepEqual(SubmitResultOutput.shape.dispatch.safeParse([note]).error?.issues ?? [], []);
+  assert.deepEqual(SubmitResultOutput.shape.dispatch.safeParse([{job:note.job,result:note.result,text:note.text}]).error?.issues ?? [], []);
+  const output=TOOLS.find(tool=>tool.name==='submit_result')!.output;
+  assert.equal(output.safeParse({call_result:'error',acceptance:'not_accepted',errors:[{code:'SOURCE_UNAVAILABLE',message:'synthetic'}],trace:'a'.repeat(32),dispatch:[note]}).success,true,'published output preserves structured extensions');
 });
 
 test('the pre-dispatch reference is no device return, and an older job without one keeps the old answer', () => {
@@ -174,7 +177,7 @@ test('a repeat reads the attempt still running instead of starting another, and 
   assert.equal(started, 1, 'a repeat does not start a second attempt');
   release({ started: false, executor: c.executor.id, reason: '合成：这份产物已经由作业 x 派发过，作业已结束；同一份字节只派发一次' });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^上机验证没有发出：合成：这份产物已经由作业 x 派发过/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^上机验证没有发出：上机前的放行条件尚未满足/);
   assert.equal(started, 1);
 });
 
@@ -184,7 +187,7 @@ test('a refusal the runner can remove is answered once, and the repeat after it 
   c.service.dispatchAccepted = async () => { started++; await new Promise((resolve) => setTimeout(resolve, 30)); return { started: false, reason: '合成：自动化测试环境正被作业占用' }; };
   assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^Hub 正在做上机验证前核对/);
   await new Promise((resolve) => setTimeout(resolve, 80));
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^上机验证没有发出：合成：自动化测试环境正被作业占用/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^上机验证没有发出：上机前的放行条件尚未满足/);
   assert.equal(started, 1);
   await acceptedDispatch(c.kit, c.service, c.run, true, 1);
   assert.equal(started, 2, 'the repeat after the answer tries again');
@@ -206,7 +209,7 @@ async function ended(c: C, count: number) {
   throw new Error('the dispatched jobs did not end');
 }
 
-for (const [mode, reason] of [['busy', /原因：目标拒绝了提交之前的调用（取得租约或只读核对）/], ['build', /未满足的条件：\/build equals/]] as const) {
+for (const [mode, reason] of [['busy', /原因：目标拒绝了提交之前的调用（取得租约或只读核对）/], ['build', /主环境只读核对的声明条件未满足/]] as const) {
   test(`not sent (${mode}): the next answer says why and the same submission dispatches again`, async (t) => {
     const c = await setup({ mode }); t.after(() => c.close());
     const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
@@ -226,7 +229,7 @@ for (const [mode, reason] of [['busy', /原因：目标拒绝了提交之前的�
     assert.equal(c.calls.includes('send_blob'), false);
     // A submission that is not ready only reads: it starts nothing.
     const read = await acceptedDispatch(c.kit, c.service, c.run, false);
-    assert.equal(read.length, 2); assert.match(read[1].text, /什么都没有发到目标；原因消除后原样重交，Hub 会再试一次/);
+    assert.equal(read.length, 2); assert.equal(read[1].not_sent,true); assert.match(read[1].next_action!,/核对|恢复/); assert.doesNotMatch(read[1].next_action!,/circle-hub/);
   });
 }
 
@@ -272,12 +275,67 @@ test('sent without an answer: the note gives the request id, forbids a resend an
   for (const ready of [true, false]) {
     const again = await acceptedDispatch(c.kit, c.service, c.run, ready);
     assert.equal(again.length, 1, JSON.stringify(again)); assert.equal(again[0].job, first.job);
-    assert.match(again[0].text, /上机验证结果未知/); assert.ok(again[0].text.includes(`请求号 ${job.status.request_id}`));
+    assert.match(again[0].text, /上机验证结果未知/); assert.equal(again[0].outcome,'unknown'); assert.equal(again[0].not_sent,undefined); assert.ok(!again[0].text.includes(job.status.request_id!));
     assert.match(again[0].text, /不要重交，也不要另开运行重发，目标可能已经执行过一次/);
-    assert.ok(again[0].text.includes(`管理员 ${c.admin.id} 处置（期限 ${job.status.requests![0].deadline}）`));
+    assert.match(again[0].text,/管理员处置/); assert.ok(!JSON.stringify(again[0]).includes(c.admin.id));
     assert.doesNotMatch(again[0].text, /circle-hub|job resume|job dispose/);
   }
   assert.equal(c.calls.filter((name) => name === 'send_blob').length, sent, 'nothing is sent again');
   assert.equal(c.calls.length, reached, 'and a read of the progress does not reach the target');
   assert.equal((await readRunJobs(c.kit, c.service, c.admin, c.run, { unbound: true })).length, 1);
+});
+
+test('an exception after starting dispatch reports unknown and never starts a second attempt', async t => {
+  const c = await setup(); t.after(()=>c.close()); let attempts=0;
+  c.service.dispatchAccepted=async()=>{attempts++;throw new Error('private-host usr_private');};
+  for (let n=0;n<2;n++) {
+    const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.owner);
+    assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.match(note.next_action!,/不要重新发送/);
+    assert.doesNotMatch(JSON.stringify(note),/private-host|usr_private|circle-hub/);
+  }
+  assert.equal(attempts,1,'an unobserved failure never authorizes a second dispatch');
+});
+
+test('the actual caller role is reread and cannot borrow the responsibility administrator identity', async t=>{
+  const c=await setup({mode:'lost'});t.after(()=>c.close());
+  await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);const [job]=await ended(c,1);
+  const [member]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,{...c.owner,role:'admin'});
+  assert.equal(member.outcome,'unknown');assert.doesNotMatch(JSON.stringify(member),/circle-hub|usr_|exe_/);
+  const [administrator]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.admin);
+  assert.match(administrator.next_action!,/circle-hub job resume/);assert.ok(administrator.text.includes(job.status.request_id!));
+  assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
+});
+
+test('members see a stale manifest binding as a distinct release prerequisite with no administrator identifiers',async t=>{
+  const c=await setup({mode:'manifest'});t.after(()=>c.close());
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.equal(note.outcome,'not_dispatched');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('清单摘要')));
+  assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub|192\.0\.2\./);
+  assert.equal(c.calls.includes('send_blob'),false);
+});
+
+test('missing baseline facts reach members from the actual pre-dispatch producer',async t=>{
+  const c=await setup({extraTools:['show_bed'],alter:(name,value)=>name==='show_bed'?{output:'synthetic empty bed'}:value});t.after(()=>c.close());
+  const definition={...c.executor.definition,allowed_tools:[...c.executor.definition.allowed_tools,'show_bed'],bed_state:{items:[{id:'synthetic_raw',call:{tool:'show_bed',arguments:{ticket:{$value:'lease_id'}},timeout_ms:30000},output:'/output',lead:[],trail:[],cleanup:{actor:'合成管理员',command:'private-admin-cleanup'}}]}};
+  await c.registry.update(c.admin,c.executor.id,definition);await c.freezeExecutor();
+  await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);await ended(c,1);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
+  assert.equal(note.outcome,'not_dispatched');assert.equal(note.not_sent,true);
+  assert.ok(note.missing_facts?.some(fact=>fact.fact==='本次测试环境尚未登记所需基线'));
+  assert.doesNotMatch(JSON.stringify(note),/private-admin-cleanup|usr_|exe_|circle-hub/);
+  assert.equal(c.calls.includes('send_blob'),false);
+});
+
+test('unreadable certification evidence remains no_verdict and gives members its real safe cause',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  const proof=await c.kit.artifacts.ingest({bytes:Buffer.from('synthetic certification'),mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:c.admin.id},provenanceType:'declared',visibility:{readers:[c.admin.id],admins:true,packs:[],shareable:false}});
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,premises:{result_ownership:{version:'1',evidence:[`src:${proof.body.sha256}`]}}});await c.freezeExecutor();
+  const source=c.kit.artifacts.source.bind(c.kit.artifacts);c.kit.artifacts.source=async(...args)=>args[1]===proof.body.sha256?null:source(...args);
+  await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);await ended(c,1);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
+  assert.equal(note.no_verdict,true);assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('证据文件不可读取')));
+  assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub|synthetic-secret/);
+  assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
+  await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.equal(c.calls.filter(call=>call==='send_blob').length,1,'missing evidence never causes another submission');
 });

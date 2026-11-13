@@ -1,3 +1,4 @@
+import type { DispatchNote } from '../../dispatch/api.ts';
 import {groundsAudience} from './grounds.ts';
 
 import {firstDeclarationGrowth,unknownOnlyRequirement} from './incremental.ts';
@@ -48,7 +49,7 @@ import {saveResult} from './result-summary.ts';
 import { repairRounds, isUnsettled } from './terminals.ts';
 import { clipPointer, clipText, isObject, pointerOf, receivedDigest, sessionOf, tooDeep, unique, wellFormed } from './util.ts';
 
-export type SubmitAnswer = Untraced<z.infer<typeof SubmitResultOutput>>;
+export type SubmitAnswer = Omit<Untraced<z.infer<typeof SubmitResultOutput>>, 'dispatch'> & { dispatch?: DispatchNote[] };
 
 /** Deepest nesting a submission may have (the root is level 0); slot data sits six levels down (`/items/<n>/slots/<key>/<j>/data`). */
 export const MAX_SUBMISSION_DEPTH = 64;
@@ -215,9 +216,9 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   const frozenWorkflow=eligible&&sessionNow===null?await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space):undefined;
   const useCached=eligible&&(sessionNow!==null||frozenWorkflow!==undefined&&frozenWorkflow!==null&&frozenWorkflow.requirements.every(t=>t.independent_of===undefined));
   const repeat = !useCached ? null : await resultForObserver(ctx, run.run, received.digest, sessionNow, modelNow);
-  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(repeat), call.traceId);}
+  if(repeat!==null){const refusal=repeat.acceptance==='accepted'?await groundsAudience(ctx,run,repeat,{recorded:true,submitter:user}):null;return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(repeat), call.traceId, user);}
   const previous=useCached?await resultFor(store,run.run,received.digest):null;
-  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(previous.body), call.traceId);}
+  if (useCached && effective !== null && previous !== null && previous.body.acceptance==='accepted' && !transitional(previous.body) && (previous.body.contributions !== undefined || (frozenWorkflow??await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space))?.workflow.contribution !== undefined)) {const refusal=await groundsAudience(ctx,run,previous.body,{recorded:true,submitter:user});return refusal?{call_result:'error',acceptance:'not_accepted',errors:[refusal]}:withDispatch(ctx, run, answerOf(previous.body), call.traceId, user);}
 
   const model = parsed?.success ? effective?.model ?? null : typeof args.model === 'string' ? wellFormed(args.model) : null;
   const session = sessionOf(call);
@@ -275,7 +276,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   // the same submission reads progress from the stored result, and a different one is kept as received but not validated,
   // so the job goes on (the reference compile skill reads a running task by its id and never resubmits it).
   if (!refresh && workflow.effects?.some((row) => row.trigger === 'hub_template') && ctx.deps.dispatch?.inFlight) {
-    const flight = await ctx.deps.dispatch.inFlight(run.run);
+    const flight = await ctx.deps.dispatch.inFlight(run.run, user);
     if (flight !== null) {
       const dispatched = await latestAccepted(store, run.run);
       if (dispatched !== null && dispatched.body.submission === received.digest) return { ...answerOf(dispatched.body), dispatch: flight.notes };
@@ -326,14 +327,14 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     result: saved.result.digest,
     extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
-  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId);
+  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId, user);
 }
 
 /** Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row carries the jobs the Hub dispatched
  * for it. An accepted answer whose result is ready lets the Hub dispatch when the run has no job yet; a repeat of the same
  * submission reads the jobs' progress. Ready is every item delivered without error with every release requirement of the
  * hub_template rows that the item lists satisfied, so a run whose artifact is not verified yet (a plan run) does not try. */
-async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null): Promise<SubmitAnswer> {
+async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null, user: Principal): Promise<SubmitAnswer> {
   if (answer.acceptance !== 'accepted' || !answer.result || !ctx.deps.dispatch?.accepted) return answer;
   const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
   const rows = workflow?.effects?.filter((row) => row.trigger === 'hub_template') ?? [];
@@ -343,11 +344,11 @@ async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAn
   const released = result.partitions.delivered.every((item) => item.requirements.every((row) => !release.has(row.requirement) || row.status === 'satisfied'));
   const ready = result.errors.length === 0 && Object.entries(result.partitions).every(([key, list]) => key === 'delivered' || list.length === 0) && result.partitions.delivered.length === run.items.length && released;
   try {
-    const notes = await ctx.deps.dispatch.accepted(run.run, ready);
+    const notes = await ctx.deps.dispatch.accepted(run.run, ready, user);
     return notes.length ? { ...answer, dispatch: notes } : answer;
   } catch (error) {
     ctx.log({ traceId, run: run.run, what: 'hub dispatch', detail: describe(error) });
-    return { ...answer, dispatch: [{ text: 'Hub 读取或发起派发时出错，没有派发；等管理员处理（已记下）后原样重交' }] };
+    return { ...answer, dispatch: [{ outcome: 'unknown', missing_facts: [{fact:'本次调用未能取得可核对的作业状态',next_action:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对'}], next_action:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对', text: '上机验证状态尚未确认：本次未取得可核对的作业状态；不要重新发送或另开运行重发，请稍后原样重交原提交只读记录，或联系管理员核对' }] };
   }
 }
 

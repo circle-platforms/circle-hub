@@ -169,7 +169,7 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
         }
         if (compared.outcome === 'no_baseline') {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
-          throw new PrecheckFactError(withNote(holdMissingBaselineFact(compared.missingBaseline), compared.ignored), unregisteredBaselineNext(binding.executor, compared.missingBaseline));
+          throw new PrecheckFactError(withNote(holdMissingBaselineFact(compared.missingBaseline), compared.ignored), unregisteredBaselineNext(binding.executor, compared.missingBaseline), {fact:'本次测试环境尚未登记所需基线',next_action:'联系管理员登记本次环境所需基线，完成后重新核对本次环境'});
         }
         if (compared.outcome === 'unrestored') {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
@@ -204,7 +204,7 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
         }
         if (missingBaseline.length) {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
-          throw new PrecheckFactError(withNote(holdMissingBaselineFact(missingBaseline), ignored), unregisteredBaselineNext(binding.executor, missingBaseline));
+          throw new PrecheckFactError(withNote(holdMissingBaselineFact(missingBaseline), ignored), unregisteredBaselineNext(binding.executor, missingBaseline), {fact:'本次测试环境尚未登记所需基线',next_action:'联系管理员登记本次环境所需基线，完成后重新核对本次环境'});
         }
         if (outstanding.length) {
           await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
@@ -230,7 +230,8 @@ export async function gateBed(this: BedContext, binding: JobBinding, d: Executor
         await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
         throw new PrecheckFactError(
           unregisteredBaselineFact(unregistered),
-          unregisteredBaselineNext(binding.executor, unregistered)
+          unregisteredBaselineNext(binding.executor, unregistered),
+          {fact:'本次测试环境尚未登记所需基线',next_action:'联系管理员登记本次环境所需基线，完成后重新核对本次环境'}
         );
       }
 

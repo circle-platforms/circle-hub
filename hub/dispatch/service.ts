@@ -57,7 +57,7 @@ export interface DispatchOptions {
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus {/** The source holding what the target returned, word for word: see deviceReturn. */device_return?:string;/** The request id of the submit intent (issue 142): what the Hub asks the target about when no answer came. */request_id?:string;/** The stage at which the target refused, as the target names it, when the refusal is certified. */rejection_stage?:string;/** Ended before the submit was called: nothing was sent, and the cause may pass. */not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus { member_missing_facts?:Array<{fact:string;next_action:string}>;/** The source holding what the target returned, word for word: see deviceReturn. */device_return?:string;/** The request id of the submit intent (issue 142): what the Hub asks the target about when no answer came. */request_id?:string;/** The stage at which the target refused, as the target names it, when the refusal is certified. */rejection_stage?:string;/** Ended before the submit was called: nothing was sent, and the cause may pass. */not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 /** One piece of what the target returned for a row; text is null when the credential scan holds it back. */
 interface ReturnedPiece {name:string;text:string|null;}
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
@@ -163,6 +163,11 @@ export class DispatchService {
     const lastCredential=[...events].reverse().find(e=>e.body.detail.phase==='session_unavailable'||e.body.detail.phase==='credential_used');
     const gap=!riskDisposed&&lastCredential?.body.detail.phase==='session_unavailable'?lastCredential.body.detail:undefined;
     const failedChecks=precheckIssues(events),unjudged=precheckUnjudged(events);
+    const ownershipPremise=[...events].reverse().find(event=>event.body.detail.phase==='premise'&&event.body.detail.premise==='result_ownership');
+    const latestMemberFailure=[...events].reverse().find(event=>Array.isArray(event.body.detail.member_missing_facts)&&event.body.detail.member_missing_facts.length>0&&event.body.detail.phase!=='premise');
+    const memberDetails=[...(Array.isArray(end?.body.detail.member_missing_facts)&&end.body.detail.member_missing_facts.length?end.body.detail.member_missing_facts:latestMemberFailure?.body.detail.member_missing_facts as unknown[]??[]),
+      ...(ownershipPremise?.body.detail.certified===false&&Array.isArray(ownershipPremise.body.detail.member_missing_facts)?ownershipPremise.body.detail.member_missing_facts:[])];
+    const memberFacts=memberDetails.filter(object).filter(fact=>typeof fact.fact==='string'&&typeof fact.next_action==='string').map(fact=>({fact:String(fact.fact),next_action:String(fact.next_action)}));
     // Manifest devices that are not declared dispatch targets: listed by manifest position and declared type, never probed
     // and never dispatched to (P07 R[1], C07 R[4]).
     const unprobed=[...events].reverse().find(e=>Array.isArray(e.body.detail.unprobed_non_targets))?.body.detail.unprobed_non_targets as Array<{index:number;type:string|null}>|undefined;
@@ -173,7 +178,7 @@ export class DispatchService {
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=roundRecords(events).filter(e=>typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
     const deviceReturn=projectedResult(events)?.body.detail.device_return;
-    return { job,...(typeof deviceReturn==='string'?{device_return:deviceReturn}:{}),...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}),...(typeof intent?.body.detail.request_id==='string'?{request_id:intent.body.detail.request_id}:{}),...(rejectionStage!==undefined?{rejection_stage:rejectionStage}:{}),...(end?.body.detail.phase==='complete'&&end.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?{not_sent:true}:{}), phase: String(events.at(-1)!.body.detail.phase),
+    return { job,...(memberFacts.length?{member_missing_facts:memberFacts}:{}),...(typeof deviceReturn==='string'?{device_return:deviceReturn}:{}),...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}),...(typeof intent?.body.detail.request_id==='string'?{request_id:intent.body.detail.request_id}:{}),...(rejectionStage!==undefined?{rejection_stage:rejectionStage}:{}),...(end?.body.detail.phase==='complete'&&end.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?{not_sent:true}:{}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:pendingReport&&!unknown&&!missingReceipt?{next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:`circle-hub job resume ${job}；只读补报告，不重交`}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
@@ -406,7 +411,7 @@ export class DispatchService {
    * The Hub's own dispatch of an accepted run for its runner (decision 105). Refusal wording (C14) lists only conditions
    * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
    */
-  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; checks?: ReleaseCheck[] }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
@@ -440,6 +445,7 @@ export class DispatchService {
       return {
         started: false,
         ...(refusalExecutor ? { executor: refusalExecutor } : {}),
+        ...(refusalChecks ? {checks:refusalChecks} : {}),
         reason: formatReleaseRefusal({
           checks: refusalChecks ?? [],
           run,
@@ -649,7 +655,7 @@ export class DispatchService {
         else await this.unknown(binding, '提交未取得完整可信回执；缺远端作业身份或结果，必须管理员对账');
       }
       else {
-        await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(error instanceof CapabilityPolicyError || error instanceof InvocationDefinitionError || error instanceof InputVerificationError || error instanceof PrecheckFactError ? {public_reason:error.message} : notSentReason(error)!==undefined ? {public_reason:notSentReason(error)} : {}),...(error instanceof PrecheckFactError?{missing_fact:error.missing_fact}:{}), submit_invoked:false, reason: session.redact(error instanceof Error ? error.message.toWellFormed().slice(0, 1000) : '前提核对出错'), next_action:error instanceof PrecheckFactError?error.next_action:'核对只读条件、租约和执行器定义后重新核验；没有提交' });
+        await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(error instanceof CapabilityPolicyError || error instanceof InvocationDefinitionError || error instanceof InputVerificationError || error instanceof PrecheckFactError ? {public_reason:error.message} : notSentReason(error)!==undefined ? {public_reason:notSentReason(error)} : {}),...(error instanceof PrecheckFactError?{missing_fact:error.missing_fact,member_missing_facts:error.member_missing_facts}:notSentReason(error)!==undefined?{member_missing_facts:[{fact:notSentReason(error)!,next_action:'联系管理员恢复目标连接或租约前提后，原样重交原提交；未取得新的核对结果前不要另开运行'}]}:{}), submit_invoked:false, reason: session.redact(error instanceof Error ? error.message.toWellFormed().slice(0, 1000) : '前提核对出错'), next_action:error instanceof PrecheckFactError?error.next_action:'核对只读条件、租约和执行器定义后重新核验；没有提交' });
         if (remote) await this.release(binding, session, remote);
       }
       return await this.status(by, binding.job);
@@ -876,17 +882,18 @@ export class DispatchService {
   }
 
   private async certified(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, premise: keyof ExecutorDefinition['premises'],delivery?:{version:unknown}): Promise<boolean> {
+    const reject = async (fact:string,next_action:string):Promise<boolean> => {await this.journal.append(binding,'premise','validate','completed',{premise,certified:false,member_missing_facts:[{fact,next_action}]}).catch(()=>{});return false;};
     const current = await this.registry.get(binding.executor);
-    if (!current || current.definition.target !== d.target || current.definition.endpoint !== d.endpoint || current.definition.ca !== d.ca) return false;
+    if (!current || current.definition.target !== d.target || current.definition.endpoint !== d.endpoint || current.definition.ca !== d.ca) return reject('本次认证绑定的目标或连接声明已经改变','联系管理员核对当前目标声明与认证，再只读核对原作业；不要重新发送');
     const proof = current.definition.premises[premise];
     const version=delivery?delivery.version:client.serverVersion;
-    if (!proof || typeof version!=='string' || proof.version !== version || delivery && version!==client.serverVersion || delivery && !current.definition.reconciliation?.protocol_versions.includes(version)) return false;
+    if (!proof || typeof version!=='string' || proof.version !== version || delivery && version!==client.serverVersion || delivery && !current.definition.reconciliation?.protocol_versions.includes(version)) return reject('本次目标版本缺少匹配的前提认证','联系管理员核对本次目标版本及前提认证，再只读核对原作业；不要重新发送');
     const by = await this.options.records.principals.get(binding.acting_by ?? binding.initiated_by);
-    if (!by || by.disabled) return false;
+    if (!by || by.disabled) return reject('本次认证证据缺少有效的读取主体','联系管理员恢复合法的证据读取主体后只读核对原作业；不要重新发送');
     for (const ref of proof.evidence) {
       try { const source = await this.options.records.artifacts.source(by,ref.slice(4),{consumer:'function'});
-        if (!source?.bytes || sha256Hex(source.bytes) !== ref.slice(4)) return false;
-      } catch { return false; }
+        if (!source?.bytes || sha256Hex(source.bytes) !== ref.slice(4)) { await this.journal.append(binding,'premise','validate','completed',{premise,certified:false,member_missing_facts:[{fact:'认证所需的证据文件不可读取或摘要未能核对',next_action:'联系管理员恢复本次认证证据的合法读取及完整性后，再只读核对原作业；不要重新发送'}]}).catch(()=>{}); return false; }
+      } catch { await this.journal.append(binding,'premise','validate','completed',{premise,certified:false,member_missing_facts:[{fact:'认证所需的证据文件当前不可读取',next_action:'联系管理员恢复本次认证证据的合法读取后，再只读核对原作业；不要重新发送'}]}).catch(()=>{}); return false; }
     }
     const events=await this.journal.events(binding.job);
     const origin=delivery?eventOf(events,'intent') ?? eventOf(events,'probe_intent'):eventOf(events,'initialize.response');
@@ -1115,7 +1122,7 @@ export class DispatchService {
       return {pointer:c.pointer,operator,expected_sha256:expected===undefined?null:digestOfValue(expected),matched};
     });
     const matched=checks.length>0 && checks.every(c=>c.matched===true || 'judged' in c);
-    await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
+    await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{member_missing_facts:[{fact:'主环境只读核对的声明条件未满足',next_action:'联系管理员核对本次环境的声明条件，恢复一致后重新核验'}],missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
     return matched;
   }
   private conditions(conditions: ExecutorDefinition['conditions'], value: unknown, context: Record<string, unknown>): boolean {

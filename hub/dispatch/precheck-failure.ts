@@ -2,10 +2,11 @@
 export class PrecheckFactError extends Error {
   readonly missing_fact:string;
   readonly next_action:string;
-  constructor(missing_fact:string,next_action:string){super(missing_fact);this.missing_fact=missing_fact;this.next_action=next_action;}
+  readonly member_missing_facts: readonly {fact:string;next_action:string}[];
+  constructor(missing_fact:string,next_action:string,memberFact?:{fact:string;next_action:string}){super(missing_fact);this.missing_fact=missing_fact;this.next_action=next_action;this.member_missing_facts=memberFact?[memberFact]:[];}
 }
-export function precheckFailure(error:unknown,stage:string):{missing_fact:string;next_action:string} {
-  if(error instanceof PrecheckFactError)return {missing_fact:error.missing_fact,next_action:error.next_action};
+export function precheckFailure(error:unknown,stage:string):{missing_fact:string;next_action:string;member_missing_facts?:readonly {fact:string;next_action:string}[]} {
+  if(error instanceof PrecheckFactError)return {missing_fact:error.missing_fact,next_action:error.next_action,member_missing_facts:error.member_missing_facts};
   if(stage==='connect')return {missing_fact:'缺少通过认证、协议和工具目录校验的目标连接或会话',next_action:'管理员核对受限连接原件、证书、认证及允许/拒绝工具目录；恢复符合声明的会话后再采证'};
   if(stage==='acquire')return {missing_fact:'未取得具有有效身份、确认标记和期限的目标租约',next_action:'管理员核对租约调用原件、占用状态及租约字段声明，恢复本次租约确认后再采证'};
   if(stage==='precheck')return {missing_fact:'主只读核对未取得完整且可保存的应答',next_action:'管理员核对受限主读取原件、权限、调用声明和本地存储，恢复读取后再采证'};
