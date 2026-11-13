@@ -72,10 +72,8 @@ function everyLayer(reason: Reason | undefined): reason is keyof typeof EVERY_LA
 export type Handling = ItemHandling | Extract<Reason, 'not_covered'>;
 
 /** What the check contract expects for one (item, requirement): support, or a refutation with one of some codes. */
-export interface Expectation {
-  outcome: Extract<Verdict, 'support' | 'refute'>;
-  codes: string[];
-}
+export type {Expectation} from '../../ports.ts';
+import type {Expectation} from '../../ports.ts';
 
 /** RequirementTemplate.expected: a negative case whose item field matches an override expects that refutation. */
 export function expectationFor(template: RequirementTemplate, fields: Record<string, unknown>): Expectation {
