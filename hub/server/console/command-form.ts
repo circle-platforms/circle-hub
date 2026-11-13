@@ -41,13 +41,31 @@ export const REGISTERED_ACTIONS = {
   'pack-unassign': 'pack.unassign',
   'pack-grant': 'pack.grant-publish',
   'pack-revoke': 'pack.revoke-publish',
+  'pack-install': 'pack.install',
+  'pack-uninstall': 'pack.uninstall',
+  'pack-activate': 'pack.activate',
+  'pack-deactivate': 'pack.deactivate',
+  'pack-retire': 'pack.retire',
   'secret-set': 'secret.set',
   'secret-unset': 'secret.unset',
   'knowledge-sync': 'knowledge.sync',
   'executor-disable': 'executor.disable',
+  'executor-add': 'executor.add',
+  'executor-update': 'executor.update',
+  'executor-assign': 'executor.assign',
+  'executor-unassign': 'executor.unassign',
+  'doc-put': 'doc.put',
+  'lease-register': 'lease.register',
+  'lease-unregister': 'lease.unregister',
+  'lease-release': 'lease.release',
+  'bed-baseline-record': 'bed.baseline.record',
+  'bed-hold-clear': 'bed.hold.clear',
 } as const satisfies Record<string, CommandParameterId>;
 
 export type RegisteredActionName = keyof typeof REGISTERED_ACTIONS;
+
+/** Management POSTs that accept a file and turn it into `--reference=src:…` before the bridge. */
+export const UPLOAD_REFERENCE_ACTIONS = new Set<RegisteredActionName>(['executor-add', 'executor-update', 'doc-put']);
 
 const isBooleanSchema = (schema: Record<string, unknown>): boolean => schema.type === 'boolean';
 

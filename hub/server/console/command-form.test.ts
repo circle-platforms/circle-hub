@@ -13,10 +13,13 @@ import {
 const formOf = (entries: Record<string, string>) => ({ get: (name: string) => entries[name] ?? '' });
 
 test('registered actions cover the onboarding commands that map 1:1', () => {
-  assert.ok(Object.keys(REGISTERED_ACTIONS).length >= 18);
+  assert.ok(Object.keys(REGISTERED_ACTIONS).length >= 30);
   assert.equal(REGISTERED_ACTIONS['knowledge-sync'], 'knowledge.sync');
   assert.equal(REGISTERED_ACTIONS['secret-set'], 'secret.set');
   assert.equal(REGISTERED_ACTIONS['team-create'], 'team.create');
+  assert.equal(REGISTERED_ACTIONS['pack-install'], 'pack.install');
+  assert.equal(REGISTERED_ACTIONS['executor-assign'], 'executor.assign');
+  assert.equal(REGISTERED_ACTIONS['doc-put'], 'doc.put');
 });
 
 test('commandFields render labels and keep secret values out of the argument shape', () => {

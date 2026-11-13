@@ -16,8 +16,9 @@ import { code, emptyAction, html, icon, link, liveModule, page, pageLayout, tabl
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { readsText, systemReads } from './trial.ts';
 import { packSources } from './pack-sources.ts';
-import { box, button, callout, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
-import { count, errorLine, segments } from './components.ts';
+import { box, button, callout, card, chip, commandLink, commandModal, duration, when, type CommandDialog, type DotState, type Tone } from './ui.ts';
+import { count, errorLine, segments, postForm } from './components.ts';
+import { field } from './presentation.ts';
 import { byId, shownVersion } from './packs.ts';
 
 export type Circle = ConnectedClient;
@@ -101,6 +102,93 @@ function systemState(resource: ResourceListing): { text: string; tone: Tone; dot
   return resource.enabled ? { text: '启用', tone: 'pass', dot: 'ok' } : { text: '已停用', tone: 'unchecked', dot: 'idle' };
 }
 
+/** Group registered executors by their declared target (Boss 03:45 #3); permission unit remains the executor. */
+function executorsByTarget(executors: readonly ExecutorView[]): Array<{ target: string; rows: ExecutorView[] }> {
+  const order: string[] = [];
+  const map = new Map<string, ExecutorView[]>();
+  for (const row of executors) {
+    const list = map.get(row.target);
+    if (list === undefined) {
+      order.push(row.target);
+      map.set(row.target, [row]);
+    } else {
+      list.push(row);
+    }
+  }
+  return order.map((target) => ({ target, rows: map.get(target)! }));
+}
+
+/** One assign form for several executors under the same target (team or account). */
+function targetAssignForm(
+  csrf: string,
+  target: string,
+  rows: readonly ExecutorView[],
+  teamChoices: Array<{ value: string; label: string }>,
+  userChoices: Array<{ value: string; label: string }>,
+): Html {
+  if (teamChoices.length === 0 && userChoices.length === 0) {
+    return html`<p class="ch-meta">尚无团队或启用账户，无法分配。</p>`;
+  }
+  const boxes = rows.map((row) => html`<label class="check" data-wide-field><input type="checkbox" name="executors" value="${row.id}" checked> ${technicalCode(row.id)}${row.enabled ? '' : html` <span class="ch-meta">已停用</span>`}</label>`);
+  const teamField = teamChoices.length === 0
+    ? html``
+    : field('团队', html`<select name="team"><option value="">（不填）</option>${teamChoices.map((row) => html`<option value="${row.value}">${row.label}</option>`)}</select>`, '与账户互斥');
+  const userField = userChoices.length === 0
+    ? html``
+    : field('账户', html`<select name="user"><option value="">（不填）</option>${userChoices.map((row) => html`<option value="${row.value}">${row.label}</option>`)}</select>`, '与团队互斥');
+  return postForm({
+    action: '/console/admin/do/executor-assign',
+    csrf,
+    fields: html`<p class="ch-meta">目标 ${target}：勾选要一起分配的执行器，再选团队或账户之一。</p>${boxes}${teamField}${userField}`,
+    submit: '分配所选',
+    primary: true,
+  });
+}
+
+/** Registration forms for environments (N2). Upload → src: reference; do not claim isolation until Codex guards merge. */
+async function environmentAdminForms(ctx: PageContext, executors: readonly ExecutorView[] | null): Promise<Html> {
+  const csrf = ctx.csrf ?? '';
+  const teamsApi = (ctx.deps.records as { teams?: { list(by: PageContext['principal']): Promise<Array<{ id: string; name: string; deleted_at: string | null }>> } }).teams;
+  const teams = teamsApi === undefined ? [] : (await teamsApi.list(ctx.principal)).filter((row) => row.id !== 'team' && row.deleted_at === null);
+  const teamChoices = teams.map((row) => ({ value: row.id, label: row.name }));
+  const users = (await ctx.deps.records.principals.list()).filter((row) => !row.disabled && !row.deleted_at);
+  const userChoices = users.map((row) => ({ value: row.id, label: row.name }));
+  const docPut = card({ title: '登记或更新环境清单', hint: '上传 bed-topology JSON；经已有上传得到原件引用后交给命令，不在服务器落临时文件，也不要求填写主机路径。' },
+    postForm({
+      action: '/console/admin/do/doc-put',
+      csrf,
+      multipart: true,
+      fields: html`${field('文档名', html`<input name="name" value="bed-topology" required>`)}${field('清单文件', html`<input type="file" name="archive" accept=".json,application/json" required>`)}`,
+      submit: '登记清单',
+      primary: true,
+    }));
+  const executorAdd = card({ title: '登记测试环境执行器', hint: '上传执行器 JSON 定义；经上传原件引用登记。密钥另用密钥库设置。' },
+    postForm({
+      action: '/console/admin/do/executor-add',
+      csrf,
+      multipart: true,
+      fields: html`${field('定义文件', html`<input type="file" name="archive" accept=".json,application/json" required>`)}`,
+      submit: '登记执行器',
+      primary: true,
+    }));
+  const groups = executorsByTarget(executors ?? []);
+  const grouped = groups.length === 0
+    ? html`<p class="ch-meta">尚无已登记的执行器。</p>`
+    : html`${groups.map(({ target, rows }) => card(
+      { title: `测试环境 ${target}`, hint: '按执行器目标归组；权限单位是执行器，一次可把同组多个执行器分给同一团队或账户。成员侧是否按分配过滤，取决于环境授权是否已合入。' },
+      html`${table(
+        ['执行器', '网关', '资源', '状态'],
+        rows.map((row) => {
+          const state = environmentState(row);
+          let gateway = row.endpoint;
+          try { gateway = new URL(gateway).origin; } catch { /* keep */ }
+          return [technicalCode(row.id), gateway, row.resources.length, chip(state.text, state.tone)];
+        }),
+      )}${targetAssignForm(csrf, target, rows, teamChoices, userChoices)}`,
+    ))}`;
+  return html`<div class="ch-stack" data-environment-admin>${docPut}${executorAdd}${grouped}</div>`;
+}
+
 /** Read-only lists and a single authorized selection share one inspector. */
 export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const now=(ctx.deps.now?.()??new Date()).getTime(),circles=await circlesOf(ctx),resources=ctx.admin?await ctx.deps.resources.list(ctx.principal):[];
@@ -126,8 +214,9 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const systems=ctx.admin?table(['系统',uiLabelOf('pack_kind','system'),'环境','访问地址','访问方式','状态',tooltip('近 24 小时读取','读取次数取自读取清单，耗时为已完成读取从开始到结束的时间中位数。')],resources.map(resource=>{const state=systemState(resource);return [link('/console/connections',resource.name,{system:resource.id}),systemPackTitle(resource),isEnvironment(resource.environment)?uiLabelOf('environment',resource.environment):resource.environment,resource.origins?html`${Object.entries(resource.origins).map(([role,origin])=>html`<div>${role}：${origin}${resource.allow_plaintext?.includes(origin)?html` <span class="ch-meta">明文 http</span>`:''}</div>`)}`:'未配置',html`${chip('只读','judgment')}${plaintextElsewhere(resource).length?html`<p class="ch-meta">明文 http：${plaintextElsewhere(resource).join('、')}</p>`:''}`,html`${chip(state.text,state.tone)}${resource.binding_error?errorLine(resource.binding_error.message):''}`,reads===null?'暂不可用':readsText(reads.get(resource.id))];}),'尚无业务系统',undefined,{selected:resources.findIndex(resource=>resource.id===systemId),hrefs:resources.map(resource=>href('/console/connections',{system:resource.id}))}):html`<p class="ch-meta">业务系统的配置仅管理员可见；任务中的读取显示在各任务的执行过程中。</p>`;
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
- const environmentRows=(executors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
- const environments=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见。</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['运行环境','执行器','执行器版本','网关','资源','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:executors.findIndex(executor=>executor.id===environmentId),hrefs:executors.map(executor=>href('/console/connections',{environment:executor.id}))});
+ const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environments=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const dialogs:CommandDialog[]=[];let inspector:Html;
  if(chosen){const toggle=commands.resourceToggle(chosen),relogin=commands.resourceResetLogin(chosen);dialogs.push(toggle,relogin);inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">业务系统</span>${chip(systemState(chosen).text,systemState(chosen).tone)}</div><h2 class="ch-panel-title">${chosen.name}</h2>${facts([['环境',isEnvironment(chosen.environment)?uiLabelOf('environment',chosen.environment):chosen.environment],['访问方式','只读'],['访问地址',html`${Object.values(chosen.origins??{}).map(origin=>html`<p>${origin}</p>`)}`],['近 24 小时读取',reads===null?'暂不可用':readsText(reads.get(chosen.id))]])}${technical(html`${code(chosen.id)} ${code(chosen.system_pack)}`)}<footer class="ch-inspector-actions">${commandLink(toggle,chosen.enabled?'停用…':'启用…',chosen.enabled?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary')}${commandLink(relogin,'重新认证…')}</footer></div>`;
  }else if(circle){const revoke=commands.tokenRevoke(circle.token,circle.owner);if(ctx.admin)dialogs.push(revoke);inspector=html`<div data-inspector-content>${clientInspector(circle)}<footer class="ch-inspector-actions">${ctx.admin?commandLink(revoke,'断开…','ch-btn ch-btn--danger'):'由管理员断开'}</footer></div>`;
@@ -143,7 +232,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const content=tab==='clients'?clients
   :tab==='systems'?liveModule('systems',['system.added','system.status'],html`${systemFacts}${box(null,systems,{flush:true})}`)
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})
-  :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${box(null,environments,{flush:true})}`);
+  :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${box(null,environments,{flush:true})}${ctx.admin?await environmentAdminForms(ctx,executors):''}`);
  const body=html`<div class="ch-stack" data-connections>${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
  return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境的占用与冻结取派发记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
 }
