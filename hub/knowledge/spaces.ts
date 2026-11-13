@@ -1467,8 +1467,9 @@ export class KnowledgeSpaces {
   }
   /** Preserve independently authorized captures; a space import never takes authority over equal bytes. */
   async source(by: Principal, sha256: string, runId?: string,consumer:import('../../contracts/generated/vocabulary.ts').ProducerKind='model',capture?:string): Promise<ArtifactSource | null> {
-    return requestRead(by.id, JSON.stringify(['knowledge.space.source',sha256,by.role,runId??null,consumer,capture??null]),
-      () => this.#source(by,sha256,runId,consumer,capture), source => {
+    const reader:Principal={id:by.id,name:by.name,role:by.role};
+    return requestRead(reader.id, JSON.stringify(['knowledge.space.source',sha256,reader.role,runId??null,consumer,capture??null]),
+      () => this.#source(reader,sha256,runId,consumer,capture), source => {
         const scan=source?.artifact?.body?.scan;
         return source?.bytes!==null && source?.bytes!==undefined && source.acceptance===undefined && scan?.inspected===true && !scan.truncated && scan.findings.length===0 ? source.bytes.byteLength : -1;
       });
