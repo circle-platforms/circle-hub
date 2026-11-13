@@ -16,7 +16,7 @@ export interface OldRecord {
   created_at: string;
   body: unknown;
 }
-export interface UpgradeIssue { table: string; row: number; reason: string; }
+export interface UpgradeIssue { table: string; row: number; reason: string; name?: string; missing?: readonly string[]; nextAction?: string; }
 export interface Selection {
   selected: Set<string>;
   unhydrated: Set<string>;

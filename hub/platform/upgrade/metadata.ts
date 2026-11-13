@@ -36,7 +36,7 @@ export function fileMetadataSource(objects: string, vault: string): MetadataSour
 /** The old decision chain defines version/current; missing facts never become filesystem guesses. */
 export async function exportSecretMetadata(decisions: readonly OldRecord[], source: MetadataSource): Promise<MetadataResult> {
   const grouped = new Map<string, OldRecord[]>(), issues: UpgradeIssue[] = [], files: UpgradeSecretFile[] = [];
-  const issue = (row: OldRecord, reason: string) => issues.push({ table: 'records', row: decisions.indexOf(row) + 1, reason });
+  const issue = (row: OldRecord, reason: string, name?: string, missing?: readonly string[]) => issues.push({ table: 'records', row: decisions.indexOf(row) + 1, reason, ...(name ? { name } : {}), ...(missing ? { missing } : {}), nextAction: '运行 circle-hub upgrade 自动认证旧设置事实；原设置记录或密文确已缺失时，从已核对备份恢复后重试' });
   for (const row of decisions) {
     try {
       const body = fields(row.body);
@@ -51,32 +51,34 @@ export async function exportSecretMetadata(decisions: readonly OldRecord[], sour
     let previous: string | null = null;
     let revoked = false;
     for (const row of rows) {
+      let missing: string[] = [];
       try {
         const decision = fields(row.body);
-        if (decision.supersedes !== previous || typeof decision.revoked !== 'boolean') throw new Error();
+        if (decision.supersedes !== previous || typeof decision.revoked !== 'boolean') { missing = ['supersedes', 'current']; throw new Error(); }
         previous = row.digest;
         if (decision.revoked) {
           if (!versions.length) throw new Error();
           revoked = true; versions.at(-1)!.metadata.revoked = true; continue;
         }
-        if (typeof decision.bound !== 'string') throw new Error();
+        if (typeof decision.bound !== 'string') { missing = ['bound']; throw new Error(); }
         const bytes = await source.definition(decision.bound);
         if (createHash('sha256').update(bytes).digest('hex') !== decision.bound) throw new Error();
         const old = fields(JSON.parse(Buffer.from(bytes).toString('utf8')));
         if (old.schema !== 'secret@1' || old.name !== name || typeof old.entry !== 'string' || !new RegExp('^secret\\.' + name.toLowerCase() + '\\.[a-f0-9]{24}$').test(old.entry) || !DigestRuleSchema.safeParse(old.digest_rule).success || !Number.isInteger(old.length) || Number(old.length) < 1 || Number(old.length) > 4096) throw new Error();
-        if (!UserId.safeParse(decision.decided_by).success || !IsoTime.safeParse(decision.decided_at).success) throw new Error();
+        missing = [!UserId.safeParse(decision.decided_by).success ? 'set_by' : '', !IsoTime.safeParse(decision.decided_at).success ? 'set_at' : ''].filter(Boolean);
+        if (missing.length) throw new Error();
         const fingerprint = await source.sealedFingerprint(old.entry);
         versions.push({ metadata: { schema: 'secret@1', name, entry: 'secret.' + name.toLowerCase(), digest_rule: DigestRuleSchema.parse(old.digest_rule), length: Number(old.length), version: versions.length + 1, set_by: String(decision.decided_by), set_at: String(decision.decided_at), revoked: false }, sealed_entry: old.entry, sealed_sha256: fingerprint, current: false });
         revoked = false;
-      } catch { issue(row, '旧密钥的版本、摘要规则、设置事实或原件身份不完整'); }
+      } catch { issue(row, '旧密钥的版本、摘要规则、设置事实或原件身份不完整', name, missing.length ? missing : ['version', 'digest_rule', 'sealed_entry']); }
     }
     if (!versions.length) continue;
     const last = versions.at(-1)!;
     last.current = true; last.metadata.revoked = revoked;
-    if (!revoked && last.sealed_sha256 === null) { issue(rows.at(-1)!, '现行密钥原密文文件缺失'); continue; }
+    if (!revoked && last.sealed_sha256 === null) { issue(rows.at(-1)!, '现行密钥原密文文件缺失', name, ['sealed_entry']); continue; }
     const file = SecretMetadataFile.safeParse({ name, versions });
     if (file.success) files.push(file.data);
-    else issue(rows.at(-1)!, '派生元数据不合C12唯一格式');
+    else issue(rows.at(-1)!, '派生元数据不合C12唯一格式', name, ['versions', 'current']);
   }
   return { files, issues };
 }
