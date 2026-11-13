@@ -126,7 +126,7 @@ test('a confirmed dead worker is finalized privately and a new authorized action
   const directory = join(f.context.layout.run, 'reset');
   await writeFile(join(directory, `${id}.claim`), id, { mode: 0o600 });
   await writeFile(join(directory, `${id}.status.json`), JSON.stringify({ operationId: id, acknowledged: true, running: true, completed: false, workerPid: 12345 }), { mode: 0o600 });
-  t.mock.method(process, 'kill', (pid, signal) => {
+  t.mock.method(process, 'kill', (pid: number, signal?: NodeJS.Signals | number) => {
     assert.equal(pid, 12345); assert.equal(signal, 0);
     throw Object.assign(new Error('synthetic dead process'), { code: 'ESRCH' });
   });
