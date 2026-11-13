@@ -146,6 +146,13 @@ describe('尝试连接', () => {
     const page = await send('/console/operations/system', { headers: { cookie: admin.cookie } });
     assert.match(page.body, /formaction="\/console\/admin\/do\/system-test"/);
     assert.match(page.body, />尝试连接<\/button>/);
+    assert.match(page.body, /使用对象/);
+    assert.match(page.body, /name="audience"/);
+    assert.match(page.body, /value="none" selected/);
+    assert.match(page.body, />先不分配</);
+    assert.match(page.body, /全体/);
+    assert.match(page.body, /某团队/);
+    assert.match(page.body, /没有分配时对谁都不开放/);
     assert.doesNotMatch(page.body, /测试连接|未试读|试读记录/, 'the page uses only the approved current labels');
     assert.doesNotMatch(page.body, /规划中/);
     const tried = await send('/console/admin/do/system-test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields('wrong-password'), csrf: admin.csrf }).toString() });
