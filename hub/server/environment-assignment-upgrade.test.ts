@@ -54,7 +54,7 @@ test('new executors and new members are outside the immutable cutover', () => {
 
 test('active holdings preserve their existing executor even without a currently assigned leasing workflow', () => {
   const input = snapshot(), run = 'synthetic-held-run';
-  const plan = planEnvironmentAssignmentUpgrade({ ...input, members: [{ ...input.members[0], packs: [] }], holdings: input.executors[0].keys.map(key => ({ key, user: input.members[0].id, run, released: false, expires_at: null })) });
+  const plan = planEnvironmentAssignmentUpgrade({ ...input, members: [{ ...input.members[0], packs: [] }], holdingBindings: [{ user: input.members[0].id, run, executor: input.executors[0].id, record: 'b'.repeat(64) }], holdings: input.executors[0].keys.map(key => ({ key, user: input.members[0].id, run, released: false, expires_at: null })) });
   assert.equal(plan.canApply, true);
   assert.deepEqual(plan.grants[0].holdingRuns, [run]);
   assert.deepEqual(plan.grants[0].workflows, []);
@@ -115,4 +115,31 @@ test('plans are deterministic, duplicate keys and evidence are collapsed, and in
   assert.deepEqual(planEnvironmentAssignmentUpgrade(duplicated), planEnvironmentAssignmentUpgrade(input));
   assert.equal(JSON.stringify(duplicated), before);
   assert.throws(() => planEnvironmentAssignmentUpgrade({ ...input, at: 'invalid' }), /时间无效/);
+});
+
+
+test('legacy holdings without executor identity never infer ownership from overlapping keys or previous grants', () => {
+  const input = snapshot(), holding = { key: 'synthetic/first', user: input.members[0].id, run: 'synthetic-held-run', released: false, expires_at: null };
+  const plan = planEnvironmentAssignmentUpgrade({ ...input, members: [{ ...input.members[0], packs: [] }],
+    executors: [{ ...input.executors[0], keys: [holding.key] }, { ...input.executors[0], id: 'synthetic-never-assigned', keys: [holding.key] }],
+    holdings: [holding], effectiveAssignments: [{ user: input.members[0].id, executor: input.executors[0].id }],
+  });
+  assert.equal(plan.canApply, false);
+  assert.deepEqual(plan.grants, []);
+  assert.match(plan.missing[0].fact, /归属/);
+});
+
+test('only a verified unique run-executor binding can preserve held use, never the overlapping executor', () => {
+  const input = snapshot(), run = 'synthetic-held-run', key = 'synthetic/first';
+  const data = { ...input, members: [{ ...input.members[0], packs: [] }],
+    executors: [{ ...input.executors[0], keys: [key] }, { ...input.executors[0], id: 'synthetic-never-assigned', keys: [key] }],
+    holdings: [{ key, user: input.members[0].id, run, released: false, expires_at: null }],
+    holdingBindings: [{ user: input.members[0].id, run, executor: input.executors[0].id, record: 'b'.repeat(64) }],
+  };
+  const plan = planEnvironmentAssignmentUpgrade(data);
+  assert.equal(plan.canApply, true);
+  assert.deepEqual(plan.grants.map(row => row.executor), [input.executors[0].id]);
+  const ambiguous = planEnvironmentAssignmentUpgrade({ ...data, holdingBindings: [...data.holdingBindings, { ...data.holdingBindings[0], executor: 'synthetic-never-assigned' }] });
+  assert.equal(ambiguous.canApply, false);
+  assert.deepEqual(ambiguous.grants, []);
 });
