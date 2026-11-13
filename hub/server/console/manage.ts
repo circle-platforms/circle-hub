@@ -14,7 +14,7 @@ import {technicalCode} from './presentation.ts';
 // --stage` or discards it. Backup, restore, deploy and rollback stop the server and stay on the command line.
 //
 // The first administrator is created at /console/setup with the one-time setup code (`circle-hub setup-code`) while no
-// administrator exists; its token is shown once and opens a session.
+// administrator exists; its token is shown once and opens a session. Other modules call registerActions (team-actions.ts).
 import { randomBytes } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { ENVIRONMENT, PERMISSION_ROLE, isEnvironment, uiLabelOf, type PackKind } from '../../../contracts/generated/vocabulary.ts';
@@ -106,7 +106,8 @@ const RESOURCES = '/console/admin/resources';
 const SECRETS = '/console/admin/secrets';
 const KNOWLEDGE = '/console/admin/knowledge';
 
-export const ACTIONS: Readonly<Record<string, Action>> = {
+/** Mutable so other console modules register their ACTIONS without editing this object's literals. */
+export const ACTIONS: Record<string, Action> = {
   'password-reset': {
     title: '重置密码',
     back: '/console/team',
@@ -230,6 +231,14 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
     }),
   },
 };
+
+/** Registers ACTIONS from another console module; refuses a key that is already present. */
+export function registerActions(extra: Readonly<Record<string, Action>>): void {
+  for (const [name, action] of Object.entries(extra)) {
+    if (Object.hasOwn(ACTIONS, name)) throw new Error(`action already registered: ${name}`);
+    ACTIONS[name] = action;
+  }
+}
 
 // ---------------------------------------------------------------- jobs
 

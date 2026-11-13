@@ -17,6 +17,7 @@ import { createApp } from './app.ts';
 import type { CommandBridge, CommandInput } from './command-bridge.ts';
 import { manifestDigest } from '../runs/api.ts';
 import { ACTIONS } from './console/manage.ts';
+import './console/team-actions.ts';
 import { NEUTRAL } from './console/context.ts';
 import { withoutNonces } from './console/testing-security.ts';
 import { issueSetupCode } from './setup-code.ts';
@@ -235,6 +236,7 @@ test('the first administrator is created with the setup code; the token shown on
 
 test('the four operation pages carry the management forms of the console, and every management page answers', async () => {
   // Proposal decision 6 (2026-10-31): the console runs four operations; every other one is a command for the Circle.
+  // K3 removed the /console/admin/* page entries; POST /console/admin/do/<action> remains.
   const forms = { member: 'member-add', system: 'system-add', pack: 'pack-stage', knowledge: 'knowledge-sync' } as const;
   for (const [operation, action] of Object.entries(forms)) {
     const page = await send('GET', `/console/operations/${operation}`, { cookie: `circle_hub_session=${session}` });
@@ -474,7 +476,9 @@ test('a stage expires after 30 minutes: its 发布 step reads like an unknown st
 });
 
 test('every action is declared with a page to return to', () => {
-  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations|team)(?:\/|$)/.test(action.back), name);
+  for (const [name, action] of Object.entries(ACTIONS)) {
+    assert.ok(action.title && /^\/console\/(?:admin|operations|teams?|connections)(?:\/|$)/.test(action.back), name);
+  }
 });
 
 test('closing the app removes every staged directory', async () => {
