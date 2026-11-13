@@ -373,7 +373,8 @@ test('[PG] real product variables, named document bytes and booking registration
   const leases = new LeaseService(database, { records: kit.store });
   const output: string[] = [];
   const hub = { records: kit, registry, workflows, docs, resources: { list: async () => [] } };
-  const session = { ctx: { io: { cwd: kit.dataDir, stdout: (line: string) => output.push(line) } }, options: {},
+  const session = { ctx: { io: { cwd: kit.dataDir, env: {}, stdout: (line: string) => output.push(line) } }, options: {},
+    config: () => ({ ...kit.config, database: kit.database, host: '127.0.0.1', port: 0 }),
     admin: async () => by, viewer: async () => by, records: async () => kit, hub: async () => hub, leases: async () => leases,
     user: async (name: string) => { const found = name === by.id ? await kit.principals.get(name) : await kit.principals.findByName(name); if (!found) throw new Error('synthetic account missing'); return found; },
     out: (line: string) => output.push(terminalSafe(line)), err: (line: string) => output.push(terminalSafe(line)),
@@ -400,6 +401,13 @@ test('[PG] real product variables, named document bytes and booking registration
   const failedDocument = { ...documents[0], bytesBase64: Buffer.from('synthetic-changed').toString('base64') };
   await assert.rejects(applyDeployment(session, { schema: 'deployment@1', documents: [failedDocument] }), /字节、长度或摘要/);
   assert.equal((await docs.show(documents[0].name))?.sha256, documents[0].sha256);
+  assert.equal((await applyDeployment(session, { schema: 'deployment@1', knowledgeSync: [] })).created, 1);
+  const emptyIntent = await kit.authorizations.resourceConfig('deployment-sync');
+  assert.ok(emptyIntent?.body.bound);
+  assert.deepEqual((await exportDeployment(session)).knowledgeSync, []);
+  assert.equal((await applyDeployment(session, { schema: 'deployment@1', knowledgeSync: [] })).created, 0);
+  assert.equal((await kit.authorizations.resourceConfig('deployment-sync'))?.digest, emptyIntent!.digest);
+
 });
 
 test('document base64 accepts the 2 MiB boundary and rejects malformed or noncanonical input before writing', () => {
@@ -414,4 +422,73 @@ test('document base64 accepts the 2 MiB boundary and rejects malformed or noncan
     assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...valid, bytesBase64 }] }));
   }
   assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...document, size: bytes.byteLength + 1 }] }));
+});
+
+test('sync targets distinguish omitted and explicit empty intents and retain exact product and line spellings', async () => {
+  const { DeploymentSyncIntent } = await import('../../contracts/src/deployment.ts');
+  assert.equal(parseDeployment({ schema: 'deployment@1' }).knowledgeSync, undefined);
+  assert.deepEqual(parseDeployment({ schema: 'deployment@1', knowledgeSync: [] }).knowledgeSync, []);
+  const targets = [{ product: 'synthetic-product', line: 'Version-A' }, { product: 'synthetic-product', line: 'version-a' }, { product: 'synthetic-product', line: '版本-甲' }, { product: 'synthetic-product', line: null }];
+  assert.deepEqual(parseDeployment({ schema: 'deployment@1', knowledgeSync: targets }).knowledgeSync, targets);
+  assert.deepEqual(DeploymentSyncIntent.parse({ schema: 'deployment-sync-intent@1', targets }).targets, targets);
+  for (const invalid of [
+    [{ product: 'synthetic-product' }],
+    [{ product: 'synthetic-product', line: '' }],
+    [{ product: 'synthetic-product', line: 'same' }, { product: 'synthetic-product', line: 'same' }],
+    [{ product: 'Synthetic-Product', line: 'one' }],
+  ]) assert.throws(() => parseDeployment({ schema: 'deployment@1', knowledgeSync: invalid }));
+});
+
+test('fresh database definition apply rejects before mutations when no administrator session exists', async t => {
+  const f = fake(t);
+  const { Session: ActualSession } = await import('./cli-session.ts');
+  const { memoryOperatorTokens } = await import('./assemble/operator-token.ts');
+  const records = await f.session.records();
+  const actual = new ActualSession({
+    ...f.session.ctx,
+    io: { ...f.session.ctx.io, env: {}, stderr: () => {} },
+    records: async () => records,
+    config: () => ({ dataDir: join(tmpdir(), 'circle-hub-synthetic-config') }),
+  } as unknown as import('./api.ts').CliContext, { tokens: () => memoryOperatorTokens(null) });
+  await assert.rejects(applyDeployment(actual, { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }] }), /管理员令牌/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('[PG] a fresh database requires standard init-admin before definition apply and never auto-creates an administrator', { timeout: 120000 }, async t => {
+  const { openTestRecords } = await import('../testing/records.ts');
+  const { Session: ActualSession } = await import('./cli-session.ts');
+  const { initAdminCommand, operatorTokenCommand } = await import('./cli-admin.ts');
+  const { memoryOperatorTokens } = await import('./assemble/operator-token.ts');
+  const { removeTree } = await import('./assemble/files.ts');
+  const kit = await openTestRecords();
+  const config: import('../config/index.ts').HubConfig = { ...kit.config, database: kit.database, host: '127.0.0.1', port: 0 };
+  const output: string[] = [];
+  const tokens = memoryOperatorTokens(null, '合成首次设置令牌库');
+  const password = 'Synthetic-initial-password-58!';
+  const context: import('./api.ts').CliContext = {
+    io: { env: {}, cwd: kit.dataDir, stdout: line => output.push(line), stderr: line => output.push(line) },
+    config: () => config, records: async () => kit,
+    deps: async () => { throw new Error('synthetic context does not expose unrelated deps'); },
+    actingAdmin: async () => { throw new Error('first setup must not infer an administrator'); },
+  };
+  const session = new ActualSession(context, { tokens: () => tokens, readSecret: async () => password, assembly: { requireOsIsolation: false } });
+  t.after(async () => {
+    try { await session.close(); await removeTree(join(kit.dataDir, 'packs')); }
+    finally { await kit.close(); }
+  });
+  const definition = { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }] };
+  await assert.rejects(applyDeployment(session, definition), /管理员令牌/);
+  assert.equal((await kit.principals.list()).length, 0);
+  tokens.value = 'synthetic-old-operator-token';
+  await assert.rejects(initAdminCommand(session, ['合成初始管理员', '--password-stdin']), /已经有操作令牌/);
+  assert.equal((await kit.principals.list()).length, 0);
+  assert.equal(await operatorTokenCommand(session, ['remove', '--confirm-only-operator-token']), 0);
+  assert.equal(await initAdminCommand(session, ['合成初始管理员', '--password-stdin']), 0);
+  assert.ok(tokens.value);
+  const applied = await applyDeployment(session, definition);
+  assert.equal(applied.created, 1);
+  assert.deepEqual(applied.differences, []);
+  assert.equal((await kit.principals.list()).length, 2);
+  assert.equal(output.join('\n').includes(password), false);
+  assert.equal(output.join('\n').includes(tokens.value!), false);
 });
