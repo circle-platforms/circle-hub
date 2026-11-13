@@ -11,7 +11,7 @@ import type { ProtocolError } from '../../contracts/src/common.ts';
 import { ItemProjection, type PackSummary, type RequirementSummary, type RunSummary, type SlotSchema } from '../../contracts/src/run.ts';
 import { Submission } from '../../contracts/src/submission.ts';
 import { StartRunInput, type ToolName, type GetNodesOutput, type ListTaskPacksOutput, type ResolveReferenceOutput, type StartRunOutput, type SubmitResultOutput, type UploadFileOutput } from '../../contracts/src/tools.ts';
-import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { PartitionCounts, PartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
 
@@ -538,9 +538,9 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
     let value: unknown;
     try { value = JSON.parse(c.text); } catch { return c.text; }
     if (typeof value === 'string') return value;
-    const result = StoredValidationResult.safeParse(value);
+    const result = ValidationResult.safeParse(value);
     if (result.success) return [...resultConclusions(result.data, context.items), ...result.data.cross_item.map(claimLine)].join('\n');
-    const shape = z.union(PARTITION.map(partition => StoredPartitionItem[partition]));
+    const shape = z.union(PARTITION.map(partition => PartitionItem[partition]));
     const item = shape.safeParse(value);
     if (item.success) return itemConclusion(item.data, context.items?.find(original => original.id === item.data.item));
     const items = shape.array().safeParse(value);
