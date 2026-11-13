@@ -352,7 +352,30 @@ export const SubmitResultOutput = Envelope.safeExtend({
   if (Object.entries(derived).some(([key, value]) => counts[key] !== value)) issue(ctx, ['counts'], 'counts are derived from result.partitions (W08 R[0])');
 });
 
-export const TOOLS: ToolDefinition[] = [
+/** Clone output objects without changing shared input or record schemas. */
+function extensibleOutput(schema: z.ZodType): z.ZodType {
+  const copies = new Map<z.ZodType, z.ZodType>();
+  const visit = (value: unknown): unknown => {
+    if (value instanceof z.ZodType) {
+      const previous = copies.get(value);
+      if (previous) return previous;
+      const definition: z.core.$ZodTypeDef & Record<string, unknown> = {
+        ...Object.fromEntries(Object.entries(value._zod.def).map(([key, child]) => [key, visit(child)])),
+        type: value._zod.def.type,
+      };
+      if (definition.type === 'object') definition.catchall = z.unknown();
+      const clone = z.core.clone(value, definition, { parent: true });
+      copies.set(value, clone);
+      return clone;
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (z.core.util.isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child)]));
+    return value;
+  };
+  return visit(schema) as z.ZodType;
+}
+
+export const TOOLS: ToolDefinition[] = ([
   {
     name: 'list_task_packs',
     label: '查询工作流',
@@ -416,6 +439,6 @@ export const TOOLS: ToolDefinition[] = [
     writesHubRecords: true,
     idempotent: true,
   },
-];
+] satisfies ToolDefinition[]).map(tool => ({ ...tool, output: extensibleOutput(tool.output) }));
 
 export { Coverage, ItemId, PackId, ExternalObjectId, Fields };
