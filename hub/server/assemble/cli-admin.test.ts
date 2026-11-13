@@ -2062,3 +2062,61 @@ test('mask: an administrator sets, lists, tries and removes rules; a sample\'s m
   const token = await userWithToken(admin, '普通读者');
   for (const argv of [['mask', 'list'], ['mask', 'set', 'x', '--label', '密码', '--pattern', 'x', '--reason', '合成']]) { const denied = await admin.run(argv, { [OPERATOR_TOKEN_VARIABLE]: token }); assert.equal(denied.code, 1); assert.match(denied.text, /管理员/); }
 });
+
+test('team CLI preserves direct grants, unions team grants and explicitly assigns resources', async () => {
+  const admin = await setup();
+  await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
+  await expectOk(admin, ['pack', 'publish', packs.review]);
+  await expectOk(admin, ['pack', 'publish', packs.agile]);
+  const token = await userWithToken(admin, '合成团队成员');
+  await expectOk(admin, ['team', 'create', '合成一队']);
+  await expectOk(admin, ['team', 'create', '合成二队']);
+  const state = await withKit(admin, async kit => {
+    const root = await kit.principals.findByName('根管理员'), member = await kit.principals.findByName('合成团队成员');
+    assert.ok(root); assert.ok(member);
+    const teams = await kit.teams.list(root), first = teams.find(team => team.name === '合成一队'), second = teams.find(team => team.name === '合成二队');
+    assert.ok(first); assert.ok(second);
+    return { root, member, first, second };
+  });
+  for (const team of [state.first, state.second]) {
+    await expectOk(admin, ['team', 'add', team.id, state.member.name]);
+    await expectOk(admin, ['pack', 'assign', REVIEW_PACK, '--team=' + team.id]);
+  }
+  const listed = await admin.run(['team', 'list'], { [OPERATOR_TOKEN_VARIABLE]: token });
+  assert.equal(listed.code, 0, listed.text);
+  assert.deepEqual([...listed.out].sort(), [state.first.name, state.second.name].sort());
+  const mayUse = () => withKit(admin, kit => kit.authorizations.canUse(state.member.id, REVIEW_PACK));
+  assert.equal(await mayUse(), true);
+  await expectOk(admin, ['pack', 'unassign', REVIEW_PACK, '--team=' + state.first.id]);
+  assert.equal(await mayUse(), true, 'the other team still grants access');
+  await expectOk(admin, ['team', 'remove', state.second.id, state.member.name]);
+  assert.equal(await mayUse(), false);
+  await expectOk(admin, ['pack', 'assign', state.member.name, REVIEW_PACK]);
+  assert.equal(await mayUse(), true, 'direct member grants remain supported');
+  await expectOk(admin, ['pack', 'unassign', state.member.name, REVIEW_PACK]);
+  await expectOk(admin, ['team', 'add', state.second.id, state.member.name]);
+
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成团队资源', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, ...syntheticCredentialArgs('username','password')]);
+  const resource = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
+  assert.ok(resource, added.text);
+  const mayRead = (user: string) => withKit(admin, kit => kit.authorizations.canUseResource(user, resource));
+  assert.equal(await mayRead(state.root.id), false, 'configuration administration is not business read permission');
+  assert.equal(await mayRead(state.member.id), false, 'new resources start unassigned');
+  await expectOk(admin, ['resource', 'assign', resource, '--team=' + state.second.id]);
+  assert.equal(await mayRead(state.member.id), true);
+  assert.equal(await mayRead(state.root.id), false);
+  await expectOk(admin, ['resource', 'unassign', resource, '--team=' + state.second.id]);
+  assert.equal(await mayRead(state.member.id), false);
+  await expectOk(admin, ['resource', 'assign', resource, '--all']);
+  assert.equal(await mayRead(state.member.id), true);
+  assert.equal(await mayRead(state.root.id), true);
+  await expectOk(admin, ['resource', 'unassign', resource, '--all']);
+  await expectOk(admin, ['resource', 'assign', resource, '--team=' + state.second.id]);
+  await expectOk(admin, ['team', 'delete', state.second.id]);
+  assert.equal(await mayUse(), false);
+  assert.equal(await mayRead(state.member.id), false);
+  await withKit(admin, async kit => {
+    assert.equal((await kit.authorizations.latest('assign', state.second.id, REVIEW_PACK))?.body.revoked, true);
+    assert.equal((await kit.authorizations.latest('resource_assign', state.second.id, resource))?.body.revoked, true);
+  });
+});
