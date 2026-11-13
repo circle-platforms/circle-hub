@@ -183,13 +183,14 @@ export class ExecutorRegistry {
     } if (scanForCredentials(bytes).findings.length)
         throw new Error('执行器定义不能含凭据原文；请使用 credential 密钥引用'); return structuredClone(parsed.data); }
     private async configure(by: Principal, source: ExecutorSource, migration?: SecretWrite, guard?: UpdateGuard): Promise<RegisteredExecutor> {
-        for (const m of await this.records.variables.recentSecrets())
+        const names = referencesIn(source).filter(ref => ref.kind === 'secret').map(ref => ref.name);
+        for (const m of await this.records.variables.recentSecrets(names))
             if (containsSecret(source, m.value))
-                throw new Error('执行器定义不能含任何当前或上一版密钥的原文');
+                throw new Error('执行器定义不能含所引用密钥的当前或上一版原文');
         const snapshot = await this.records.variables.snapshot(), resolved = await resolveExecutor(this.records, source, snapshot);
-        for (const m of await this.records.variables.recentSecrets())
+        for (const m of await this.records.variables.recentSecrets(names))
             if (containsSecret(resolved.definition, m.value))
-                throw new Error('解析后的执行器定义不能包含任何当前或上一版密钥的原文');
+                throw new Error('解析后的执行器定义不能包含所引用密钥的当前或上一版原文');
         const stored = await this.records.objects.put(canonicalBytes(source), 'application/json');
         const pinned = await this.records.objects.put(canonicalBytes(resolved.definition), 'application/json');
         const prepared = migration ? await this.records.variables.prepareSecrets(by, [migration], `从执行器 ${source.id} 迁移来`) : undefined;

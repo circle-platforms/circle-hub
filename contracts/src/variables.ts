@@ -152,8 +152,11 @@ const VariableUseAt = z.string().min(1).max(2000).refine(value => { const split 
 /** Ordinary variables retain the real records-database decision identity. */
 export const OrdinaryVariableUse = z.strictObject({ kind: VariableKindSchema.extract(['var']), at: VariableUseAt, name: VariableName, decision: Sha256 });
 export type OrdinaryVariableUse = z.infer<typeof OrdinaryVariableUse>;
-/** A secret use identifies an authenticated vault version, never a rec: or src: reference. */
-export const SecretUse = z.strictObject({ kind: VariableKindSchema.extract(['secret']), at: VariableUseAt, name: VariableName, version: SecretVersion });
+/** Ciphertext identity from the authenticated sidecar; no value hash or records-database identity. */
+export const SecretCipherIdentity = z.strictObject({ name: VariableName, version: SecretVersion, sealed_sha256: Sha256 });
+export type SecretCipherIdentity = z.infer<typeof SecretCipherIdentity>;
+/** A secret use identifies the authenticated ciphertext, even when a newly set value restarts at version one. */
+export const SecretUse = z.strictObject({ kind: VariableKindSchema.extract(['secret']), at: VariableUseAt, ...SecretCipherIdentity.shape });
 export type SecretUse = z.infer<typeof SecretUse>;
 export const VariableUse = z.discriminatedUnion('kind', [OrdinaryVariableUse, SecretUse]);
 export type VariableUse = z.infer<typeof VariableUse>;
