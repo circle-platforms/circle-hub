@@ -5,10 +5,8 @@
 // action record (B05, action kind `lease`) in the same transaction. Keys are sorted before they are touched, so two
 // acquires of the same key set in opposite orders cannot deadlock. The vocabulary stays neutral: keys are strings
 // under a prefix; this module names no device, bench or product.
-import { isId, newId } from '../records/ids.ts';
-import { createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord, type Transaction } from '../records/api.ts';
+import { isId, newId, RECORD_SCHEMAS, createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord, type Transaction } from '../records/api.ts';
 import { DEFAULT_LIMITS } from '../config/index.ts';
-import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/api.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
 import { LeaseRegistrationDetail, LeaseDetail } from '../../contracts/src/records.ts';
