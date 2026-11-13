@@ -1,7 +1,7 @@
 // Request-local source reuse must preserve the deciding capture, consumer and current request's permissions.
 import assert from 'node:assert/strict';
 import { after, before, test, type TestContext } from 'node:test';
-import { artifactShareKey, newId, withRequestPermissions, type ArtifactSource, type IngestInput, type Principal } from '../records/api.ts';
+import { artifactShareKey, newId, withReadScope, withRequestPermissions, type ArtifactSource, type IngestInput, type Principal } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import type { KnowledgeContext } from './context.ts';
@@ -87,6 +87,55 @@ test('a finished permission scope cannot lend a shared source to detached work a
   });
   assert.equal(calls.length, 4);
 });
+
+for (const readScope of [false, true]) {
+  const scope = readScope ? 'a read scope and request permissions' : 'request permissions without a read scope';
+
+  test(`an explicit account disable retires readable source bytes inside ${scope}`, async t => {
+    const w = await fixture(t);
+    const read = () => w.spaces.source(w.owner, w.artifact.body.sha256, undefined, 'model', w.artifact.digest);
+    const request = () => withRequestPermissions(w.kit.artifacts, w.owner, async () => {
+      assert.ok((await read())?.bytes, 'establish a successful source proof before the destructive write');
+      const disabled = await w.kit.principals.setDisabled(w.admin, w.owner.id, true);
+      assert.equal(disabled.disabled, true, 'the explicit write completed in this same async context');
+      assert.equal(await read(), null, 'a disabled subject must not regain cached bytes before this request ends');
+    });
+    if (readScope) await withReadScope(request);
+    else await request();
+  });
+
+  test(`an explicit personal purge retires readable source bytes inside ${scope}`, async t => {
+    const w = await fixture(t);
+    assert.ok(w.kit.personalPayloads);
+    const artifact = await w.kit.store.withTransaction(async tx => {
+      const stored = await w.kit.artifacts.ingest({
+        personalOwner: w.owner.id, bytes: Buffer.from('合成可清除私人原文，与独立捕获不同。'),
+        mediaType: 'text/plain', name: 'synthetic-purge.txt', origin: { upload: { session: 'synthetic-purge' } },
+        author: { user: w.owner.id }, provenanceType: 'declared',
+        visibility: { readers: [w.owner.id], admins: false, packs: [], shareable: false },
+      }, tx);
+      await w.kit.store.put({
+        kind: 'knowledge_space_source', schema: 'knowledge-space-source@1', provenance: 'declared',
+        body: { space: w.owner.id, path: '/', sha256: stored.body.sha256, artifact: stored.digest,
+          size: stored.body.size, by: w.owner.id, at: stored.created_at },
+        index: [{ key: 'knowledge.space.source_hash', value: stored.body.sha256 }],
+      }, tx);
+      return stored;
+    });
+    const payloads = w.kit.personalPayloads;
+    const { epoch } = await payloads.scope(w.owner.id);
+    const read = () => w.spaces.source(w.owner, artifact.body.sha256, undefined, 'model', artifact.digest);
+    const request = () => withRequestPermissions(w.kit.artifacts, w.owner, async () => {
+      assert.ok((await read())?.bytes, 'establish the private capture proof before purge');
+      await payloads.purge(w.owner, epoch);
+      assert.equal(await w.kit.store.get(artifact.digest), null, 'purge really removed the logical personal capture');
+      assert.equal(await w.kit.objects.get(artifact.body.sha256), null, 'no independent holder preserves these bytes');
+      assert.equal(await read(), null, 'cleared private bytes must not survive in this live request cache');
+    });
+    if (readScope) await withReadScope(request);
+    else await request();
+  });
+}
 
 test('equal bytes in private captures do not share a proof across captures or actors', async t => {
   const w = await fixture(t);
