@@ -740,19 +740,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
     io.stdout(usage(commands()));
     return command === undefined ? 2 : 0;
   }
+  if (command === 'reset') {
+    try { return await (await import('./cli-reset.ts')).dispatchReset(rest, options); }
+    catch (error) { return report(io, error, commands()); }
+  }
   if (isPlatformCommand(command)) {
-    // allowVariables names what the server CLI reads itself (hub/platform); the token is not passed on at all.
+    // The server owns reset; platform commands here perform only platform operations.
     const platformIo = { stdout: io.stdout, stderr: io.stderr, env: platformEnvironment(io.env), cwd: io.cwd, allowVariables: [OPERATOR_TOKEN_VARIABLE], ...(overrides.io === undefined ? { keyPipe: liveKeyPipe() } : {}) };
-    let resetPorts;
-    if (command === 'reset') {
-      const { createContext } = await import('../platform/api.ts');
-      const { boundResetConfigurationPorts } = await import('./reset-configuration.ts');
-      resetPorts = boundResetConfigurationPorts(loadServerConfig(platformIo.env, { command: true }), createContext(platformIo.env), async path => {
-        const code = await main(['apply', path], { ...overrides, io: { ...io, env: { ...io.env } } });
-        if (code !== 0) throw new CliError('部署定义应用未完成，重建必须恢复原状态');
-      });
-    }
-    const registered = platformCommands(platformIo, {}, resetPorts).find(entry => entry.name === command)!;
+    const registered = platformCommands(platformIo).find(entry => entry.name === command)!;
     return traced(options, command, () => registered.run(rest));
   }
   if (command === 'serve') return serve(rest, options);

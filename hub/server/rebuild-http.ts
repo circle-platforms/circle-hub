@@ -1,7 +1,8 @@
 import { CliError } from './errors.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { ResetRequest, ResetInspection, ResetPlan, ResetWorkerStatus } from '../platform/api.ts';
+import type { ResetRequest, ResetInspection, ResetPlan } from './reset/types.ts';
+import type { ResetWorkerStatus } from './reset/worker.ts';
 import { checkRebuildCode, normalizeSetupCode, removeRebuildCode } from './setup-code.ts';
 import { SessionStore, cookie, type ConsoleSession } from './console/session.ts';
 import { cookiesOf, readBody, sendJson, sendText } from './http.ts';

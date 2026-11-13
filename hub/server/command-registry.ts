@@ -1,3 +1,4 @@
+import { resetUsage } from './reset/cli.ts';
 import { APPLY_USAGE, EXPORT_USAGE } from './cli-apply.ts';
 import { teamCommand, TEAM_USAGE } from './cli-team.ts';
 import type { CliContext } from './api.ts';
@@ -21,6 +22,7 @@ type BuiltinHandler = (args: readonly string[], ctx: CliContext, options: CliOpt
 type AdminHandler = (session: Session, args: readonly string[]) => Promise<number>;
 interface CommandMetadata { name: string; summary: string; bridge: boolean; step: `run-${string}`; reserved?: string }
 const builtins: { name: string; help: string[]; handler: BuiltinHandler; bridge: boolean }[] = [
+  { name: 'reset', help: [resetUsage()], handler: (args, _ctx, options) => import('./cli-reset.ts').then(module => module.dispatchReset(args, options)), bridge: true },
   { name: 'serve', help: [`  ${SERVE_USAGE}`], handler: (args, _ctx, options) => import('./main.ts').then(module => module.serve(args, options)), bridge: false },
   { name: 'user', help: [`  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先用 --role admin 建第一位管理员（省略名字时为 ${DEFAULT_ADMIN_NAME}），并只显示一次它的令牌`, '  user list [--json]                           列出用户（JSON 不含密码摘要或令牌）', '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）', '  user rename <用户> <新名字>                    给账号改名；记录按成员编号引用账号，改名后登录和 --as 用新名字', '  user delete <成员编号> [--dry-run] [--json]    先检查清除范围；按显示的确认命令永久删除，失败后重试同一操作', '  user password-reset <用户>                   重置初始密码，只显示一次；首次登录须修改，控制台会话立即失效', '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.userCommand(args, ctx, options)), bridge: true },
   { name: 'token', help: ['  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误', '  token revoke <令牌编号>                        撤销令牌（立即生效）', '  token list [<用户>]                           列出令牌（不显示令牌值）'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.tokenCommand(args, ctx, options)), bridge: true },
@@ -56,6 +58,6 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'operator-token', reserved: '管理操作令牌', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.operatorTokenCommand(session,args)) },
 ];
 export const ADMIN_COMMANDS = administrative.map(command => ({ ...command, bridge: command.bridge ?? false, step: `run-${command.name}` as const }));
-export const COMMAND_METADATA: readonly CommandMetadata[] = [...BUILTIN_COMMANDS, ...ADMIN_COMMANDS, ...PLATFORM_COMMAND_METADATA.map(command => command.name === 'reset' ? { ...command, bridge: true } : command)];
+export const COMMAND_METADATA: readonly CommandMetadata[] = [...BUILTIN_COMMANDS, ...ADMIN_COMMANDS, ...PLATFORM_COMMAND_METADATA];
 export const RESERVED_DESCRIPTIONS = Object.fromEntries(ADMIN_COMMANDS.filter(command => command.reserved !== undefined).map(command => [command.name, command.reserved!]));
 export const BRIDGED_COMMANDS: ReadonlySet<string> = new Set(COMMAND_METADATA.filter(command => command.bridge).map(command => command.name));
