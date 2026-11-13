@@ -1,4 +1,4 @@
-import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials, syntheticStoredCredential } from './testing/credentials.ts';
+import { addSyntheticResource, setSyntheticCredential, syntheticStoredCredential } from './testing/credentials.ts';
 // Login (D01 R[9]) through real reads against the agile-like stub: one login, the token reused from memory and from the
 // vault, one login after an explicit expired answer, a refused login never retried (stopped until an admin acts), a token
 // refused right after its login, shared logins, renewal at a known expiry and none at an unusable one, resource updates that
@@ -67,11 +67,14 @@ test('one login; the token is reused from memory, and from the vault after a res
   ok(await read(k.make()));
   assert.equal(agile.logins, 1, 'a restarted Hub takes the token from the vault');
   const token = [...agile.tokens][0];
-  const vaultFiles = await readdir(join(k.records.dataDir, 'vault'));
+  const vaultFiles = await readdir(join(k.records.dataDir, 'vault'), { recursive: true, withFileTypes: true });
+  assert.ok(vaultFiles.some(file => file.isFile() && file.parentPath === join(k.records.dataDir, 'vault', 'metadata')), 'authenticated credential metadata is included in the scan');
   for (const file of vaultFiles) {
-    const bytes = await readFile(join(k.records.dataDir, 'vault', file));
-    assert.ok(!bytes.includes(Buffer.from(token)), `${file} holds the token in the clear`);
-    assert.ok(!bytes.includes(Buffer.from(PASSWORD)), `${file} holds the password in the clear`);
+    if (file.isDirectory()) continue;
+    assert.ok(file.isFile(), 'the vault contains only regular files and directories');
+    const bytes = await readFile(join(file.parentPath, file.name));
+    assert.ok(!bytes.includes(Buffer.from(token)), `${file.name} holds the token in the clear`);
+    assert.ok(!bytes.includes(Buffer.from(PASSWORD)), `${file.name} holds the password in the clear`);
   }
 });
 
@@ -161,14 +164,18 @@ test('moving a resource to other origins: the cached token never goes there; the
   const oldToken = [...agile.tokens][0];
   const moved = await startAgileStub({ ...agileFixture(DOC, { password: PASSWORD }), now: () => k.clock.now().getTime() });
   t.after(() => moved.close());
+  const username = await syntheticStoredCredential(k.records, resource, 'username');
+  const password = await syntheticStoredCredential(k.records, resource, 'password');
   await k.connectors.admin.updateResource(k.admin, resource.id, { origins: { 'agile-oauth': moved.origin, 'agile-api': moved.origin }, allow_plaintext: [moved.origin] });
-  assert.equal((await read()).ok,false,'old enrollment cannot send to a new origin');
-  assert.equal(moved.requests.length,0);
-  await setSyntheticCredentials(k.records,k.connectors,k.admin,resource.id,{username:'reader',password:PASSWORD});
   assert.equal((await k.connectors.admin.loginStatus(k.admin, resource.id))?.token,false);
   ok(await read());
   assert.equal(moved.logins, 1);
+  assert.equal(moved.requests[0].path, '/oauth/login/', 'the new origin receives a fresh login before any authenticated read');
   assert.ok(moved.requests.every((r) => r.headers.authorization !== oldToken), 'the old token is never sent to the new origin');
+  assert.equal(await syntheticStoredCredential(k.records, resource, 'username'), username);
+  assert.equal(await syntheticStoredCredential(k.records, resource, 'password'), password);
+  ok(await read(k.make()));
+  assert.equal(moved.logins, 1, 'a restarted connector reuses only the session for the new origin');
   assert.equal(agile.logins, 1);
 });
 
