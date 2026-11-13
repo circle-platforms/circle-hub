@@ -266,8 +266,9 @@ export class PgRecordStore implements RecordStore {
     const limit=pageLimit(query.limit);if(!Number.isSafeInteger(query.offset)||query.offset<0)throw new TypeError('entry offset must be a nonnegative safe integer');
     if(query.spaces&&query.spaces.length!==query.digests.length)throw new TypeError('entry spaces must match candidate digests');
     if(!query.digests.length)return {items:[],total:0};
-    const result=await this.#db.query<{items:{index:number;at:string}[];total:string;legacy:string[]}>(`WITH headers AS MATERIALIZED (
-      SELECT (wanted.n-1)::int AS n,r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
+    const result=await this.#db.query<{items:{index:number;at:string}[];total:string;capsules:string[];invalid:string[]}>(`WITH headers AS MATERIALIZED (
+      SELECT (wanted.n-1)::int AS n,r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at,
+        EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest AND b.marker=r.body) AS capsule
       FROM unnest($1::text[], $4::text[]) WITH ORDINALITY AS wanted(digest,space,n) JOIN hub_read_records() r ON r.digest=wanted.digest
       WHERE r.kind='knowledge_space_entry' AND (wanted.space IS NULL OR replace(r.body,'\\u0000','\\uFFFD')::json->>'space'=wanted.space
         OR (replace(r.body,'\\u0000','\\uFFFD')::json->>'owner'=wanted.space
@@ -277,9 +278,11 @@ export class PgRecordStore implements RecordStore {
     ), selected AS (SELECT n,at FROM headers ORDER BY at COLLATE "C" DESC NULLS FIRST,n OFFSET $2 LIMIT $3)
     SELECT (SELECT count(*) FROM headers)::text AS total,
       COALESCE((SELECT json_agg(json_build_object('index',n,'at',at) ORDER BY at COLLATE "C" DESC NULLS FIRST,n) FROM selected),'[]'::json) AS items,
-      ARRAY(SELECT digest FROM headers WHERE at IS NULL) AS legacy`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit,query.spaces??query.digests.map(()=>null),query.reader??null],tx);
+      ARRAY(SELECT digest FROM headers WHERE at IS NULL AND capsule) AS capsules,
+      ARRAY(SELECT digest FROM headers WHERE at IS NULL AND NOT capsule) AS invalid`,[query.digests.map(d=>isSha256(d)?d:null),query.offset,limit,query.spaces??query.digests.map(()=>null),query.reader??null],tx);
     const row=result.rows[0];
-    if(row.legacy.length){
+    if(row.invalid.length)throw new IntegrityError('知识条目时间字段不完整');
+    if(row.capsules.length){
       // An active capsule without its body must reach verified hydration and fail integrity, never look like empty space.
       const times=await this.entryTimes(query.digests,tx);
       const bodies=query.spaces||query.reader?await this.getMany<{space:string;sync_private?:boolean}>(query.digests,tx):null;
@@ -293,12 +296,17 @@ export class PgRecordStore implements RecordStore {
   async entryTimes(digests:readonly string[],tx?:Transaction):Promise<Map<string,string>>{
     const wanted=[...new Set(digests.filter(isSha256))];if(!wanted.length)return new Map();
     // JCS puts the strict entry body's ASCII `at` header first. Read only that header, including bodies with escaped NUL.
-    const rows=await this.#db.query<{digest:string;at:string}>(`SELECT digest,substring(body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at
-      FROM hub_read_records() WHERE kind='knowledge_space_entry' AND digest=ANY($1::text[])`,[wanted],tx);
-    const times=new Map<string,string>(),legacy:string[]=[];
-    for(const row of rows.rows)if(IsoTime.safeParse(row.at).success)times.set(row.digest,row.at);else legacy.push(row.digest);
-    // Equivalent noncanonical JSON has always been readable. Fall back to its original verified parse, never rewrite it.
-    if(legacy.length)for(const [digest,record]of await this.getMany<{at:string}>(legacy,tx)){
+    const rows=await this.#db.query<{digest:string;at:string;capsule:boolean}>(`SELECT r.digest,substring(r.body FROM '^[{]"at":"([0-9T:.Z-]+)"') AS at,
+      EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest AND b.marker=r.body) AS capsule
+      FROM hub_read_records() r WHERE r.kind='knowledge_space_entry' AND r.digest=ANY($1::text[])`,[wanted],tx);
+    const times=new Map<string,string>(),capsules:string[]=[];
+    for(const row of rows.rows){
+      if(IsoTime.safeParse(row.at).success)times.set(row.digest,row.at);
+      else if(row.capsule)capsules.push(row.digest);
+      else throw new IntegrityError('知识条目时间字段不完整');
+    }
+    // Current personal capsules must hydrate and verify their bound body; ordinary headers have no fallback.
+    if(capsules.length)for(const [digest,record]of await this.getMany<{at:string}>(capsules,tx)){
       if(!IsoTime.safeParse(record.body?.at).success)throw new IntegrityError('知识条目时间字段不完整');times.set(digest,record.body.at);
     }
     return times;
