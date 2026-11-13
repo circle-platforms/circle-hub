@@ -6,7 +6,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pg from 'pg';
-import { FileKeyProvider } from '../../records/index.ts';
+import { FileKeyProvider } from '../../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../../testing/postgres.ts';
 import type { CliIo } from '../api.ts';
 import { main, type CliOptions } from '../cli.ts';

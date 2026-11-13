@@ -8,11 +8,9 @@ import { PackManifest, type PackManifest as Manifest } from '../../contracts/src
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { isLoopbackAddress } from '../config/index.ts';
 import { validAllowedHosts, validListenAddress } from '../listen.ts';
-import { resolveLayout } from '../platform/layout.ts';
+import { resolveLayout } from '../platform/api.ts';
 import { readSettingsFileSync, resolveSettings, type PlatformSettings } from '../platform/settings.ts';
-import { readPackDirectory } from '../runs/api.ts';
-import { DEFAULT_PACK_LIMITS } from '../runs/api.ts';
-import { parsePackRef } from '../runs/api.ts';
+import { readPackDirectory, DEFAULT_PACK_LIMITS, parsePackRef } from '../runs/api.ts';
 import { readSecret, type SecretInput } from './assemble/secret-input.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import type { CliIo } from './api.ts';
