@@ -14,6 +14,7 @@ import { readTeamDefinitions, type Team } from './team-definitions.ts';
 export interface TeamRow extends Team { member_count:number; pack_count:number; resource_count:number; changed_at:string }
 export interface TeamMember { team: string; user: User; added_at: string; added_by: string }
 export interface TeamAssignments { packs: AuthorizationRecord[]; resources: AuthorizationRecord[] }
+export interface TeamDeletion extends Team { revoked_packs: number; revoked_resources: number }
 export interface Teams {
   list(by: Principal): Promise<TeamRow[]>;
   get(by: Principal, id: string): Promise<Team | null>;
@@ -22,7 +23,7 @@ export interface Teams {
   memberships(by: Principal, userId?: string): Promise<Team[]>;
   membershipsMany(by: Principal, userIds: readonly string[]): Promise<Map<string,Team[]>>;
   create(by: Principal, name: string): Promise<Team>;
-  delete(by: Principal, id: string): Promise<Team>;
+  delete(by: Principal, id: string): Promise<TeamDeletion>;
   add(by: Principal, id: string, userId: string): Promise<TeamMember>;
   remove(by: Principal, id: string, userId: string): Promise<boolean>;
 }
@@ -162,7 +163,7 @@ export class PgTeams implements Teams {
       return { id, name, created_at: decision.body.decided_at, created_by: by.id, deleted_at: null };
     });
   }
-  async delete(by: Principal, id: string): Promise<Team> {
+  async delete(by: Principal, id: string): Promise<TeamDeletion> {
     return this.store.withTransaction(async tx => {
       await this.#writer(by, tx);
       const team = await this.#locked(id, tx);
@@ -173,16 +174,21 @@ export class PgTeams implements Teams {
           for(const row of page.items)related.set(row.body.permission+'\0'+row.body.subject+'\0'+row.body.object,row);cursor=page.next;
         }while(cursor!==null);
       }
+      let revoked_packs = 0, revoked_resources = 0;
       for(const row of related.values()){
         const body=row.body;
         const membership=body.permission==='assign'&&body.object===id&&UserId.safeParse(body.subject).success;
         const assignment=body.subject===id&&(body.permission==='resource_assign'||body.permission==='assign'&&PackId.safeParse(body.object).success);
-        if(this.#active(row)&&(membership||assignment))await this.authorizations.revoke(by,{permission:body.permission,subject:body.subject,object:body.object,note:body.note},tx);
+        if(this.#active(row)&&(membership||assignment)) {
+          await this.authorizations.revoke(by,{permission:body.permission,subject:body.subject,object:body.object,note:body.note},tx);
+          if (assignment && body.permission === 'assign') revoked_packs++;
+          if (assignment && body.permission === 'resource_assign') revoked_resources++;
+        }
       }
       const decision = await this.authorizations.revoke(by, { permission: 'assign', subject: '*', object: id }, tx);
       await this.db.query('DELETE FROM team_members WHERE team_id=$1', [id], tx);
       await this.db.query('UPDATE teams SET deleted_at=$2 WHERE id=$1', [id, decision.body.decided_at], tx);
-      return { ...team, deleted_at: decision.body.decided_at };
+      return { ...team, deleted_at: decision.body.decided_at, revoked_packs, revoked_resources };
     });
   }
   async add(by: Principal, id: string, userId: string): Promise<TeamMember> {
