@@ -113,6 +113,8 @@ export interface PackRegistry {
   /** Admin: assigns a workflow pack to a user; WHOLE_HUB as the user activates a product pack. */
   assign(by: Principal, userId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
   unassign(by: Principal, userId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
+  assignTeam(by: Principal, teamId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignTeam(by: Principal, teamId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   /** Admin: a product pack is inert until it is assigned to the whole Hub; names colliding with an active one are refused. */
   activate(by: Principal, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   install(by: Principal, ref: string, note?: string | null): Promise<AuthorizationRecord>;
@@ -456,6 +458,11 @@ class Registry implements PackRegistry {
 
   async assign(by: Principal, userId: string, packId: string, options: { expiresAt?: string | null; note?: string | null } = {}): Promise<AuthorizationRecord> {
     if (userId === WHOLE_HUB) return this.activate(by, packId, options.note);
+    await this.#assignable(by,packId);
+    return this.#records.authorizations.assign(by, userId, packId, options);
+  }
+
+  async #assignable(by:Principal,packId:string):Promise<void>{
     await this.#admin(by, '只有管理员可以分配包');
     const kind = await this.#kindOf(packId);
     if (kind === 'skill') throw new ConflictError('通用技能包由管理员安装，不按用户分配', { fix: '用 pack install 安装技能包' });
@@ -463,7 +470,15 @@ class Registry implements PackRegistry {
     const label = labelOf('pack_kind', kind);
     if (kind === 'system') throw new ConflictError(`${packId} 是${label}；${label}由管理员实例化为资源，不分配给用户（T01 R[3]）`, { fix: `在资源配置里实例化这个${label}` });
     if (kind === 'product') throw new ConflictError(`${packId} 是${label}；${label}不分配给单个用户，而是对整个 Hub 启用`, { fix: `用 activate 启用这个${label}` });
-    return this.#records.authorizations.assign(by, userId, packId, options);
+  }
+
+  async assignTeam(by:Principal,teamId:string,packId:string,options:{expiresAt?:string|null;note?:string|null}={}):Promise<AuthorizationRecord>{
+    await this.#assignable(by,packId);
+    return this.#records.authorizations.assignTeam(by,teamId,packId,options);
+  }
+
+  async unassignTeam(by:Principal,teamId:string,packId:string,note?:string|null):Promise<AuthorizationRecord>{
+    return this.#records.authorizations.unassignTeam(by,teamId,packId,note);
   }
 
   async unassign(by: Principal, userId: string, packId: string, note?: string | null): Promise<AuthorizationRecord> {
