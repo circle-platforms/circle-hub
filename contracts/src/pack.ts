@@ -513,7 +513,7 @@ export const CheckEntry = z
     catalog: Versioned.optional().describe('the catalog of the locked root the check consults'),
     catalog_select: PackFunctionRef.optional().describe('derives {base, lines} from frozen item inputs before any catalog is read; only exact grammar paths along those token sequences are fetched'),
     judges: SourceRoleSchema.describe('the role of what the check judges (A03): the target, an expected source or the artifact under verification'),
-    tier: CheckTierSchema.optional().describe('replaces the tier of every outcome; required on publication, legacy published packs fall back to basis'),
+    tier: CheckTierSchema.describe('replaces the tier of every outcome; every check declares its tier'),
     basis: z.string().min(1).optional().describe('the acceptance contract clause a blocking check relies on (C05 R[1])'),
     limits:CheckWorkLimits.optional().describe('Per-check work limits within sandbox capacity; omission inherits service defaults, never an effect budget'),
     reads: CheckReads.optional().describe('bound sources of these roles are read into sources for this check'),

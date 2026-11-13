@@ -109,6 +109,8 @@ test('checks: a check names an interpreter with a table, or a function, never bo
   assert.ok(!ChecksFile.safeParse({ ...checks, checks: [{ id: 'x', applies: 'run', judges: 'subject' }] }).success, 'neither');
   assert.ok(!ChecksFile.safeParse({ ...checks, checks: [{ id: 'x', interpreter: 'structure@1', applies: 'run', judges: 'subject' }] }).success, 'an interpreter needs its table');
   assert.ok(!ChecksFile.safeParse({ ...checks, checks: [checks.checks[0], checks.checks[0]] }).success, 'duplicate ids');
+  const { tier, ...withoutTier } = checks.checks[0];
+  assert.ok(!ChecksFile.safeParse({ ...checks, checks: [withoutTier] }).success, 'every check declares its tier');
   assert.ok(!ChecksFile.safeParse({ ...checks, checks: [{ ...checks.checks[0], table: '../tables/x.json' }] }).success, 'table paths are pack paths');
   assert.ok(!ChecksFile.safeParse({ ...checks, checks: [{ ...checks.checks[0], judges: 'everything' }] }).success, 'roles come from the vocabulary');
 });
