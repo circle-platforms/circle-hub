@@ -33,3 +33,30 @@ describe('withRevision', () => {
     assert.equal(withRevision('not an id', '1'), 'not an id');
   });
 });
+
+import {bindInputs} from './inputs.ts';
+import {createDefaultRegistry} from '../../refs/api.ts';
+import type {EngineContext} from './deps.ts';
+import type {LoadedWorkflow} from '../../ports.ts';
+
+test('captured input admission follows the locked contribution declaration rather than the pack name',async()=>{
+  const user={id:'usr_'+'1'.repeat(26),name:'合成使用者',role:'user' as const};
+  const bytes=Buffer.from('{"synthetic":true}');
+  const ctx={
+    deps:{records:{artifacts:{
+      source:async()=>({bytes,mediaType:'application/json',size:bytes.length,readTier:'model_readable',artifact:{digest:TO,body:{origin:{upload:{session:null}},provenance_type:'client_captured'}}}),
+      mayDeclareUpload:async()=>false,
+    },store:{}}},
+    parsers:createDefaultRegistry(),
+  } as unknown as EngineContext;
+  const workflow=(id:string,contribution?:{slot:string;requirement:string})=>({
+    pack:{id},workflow:{inputs:[{slot:'capture',role:'subject',description:'合成捕获原件',accepts:['application/json'],required:true,many:false}],...(contribution?{contribution}:{})},
+  }) as unknown as LoadedWorkflow;
+  const inputs={capture:{reference:'src:'+FROM}};
+  const accepted=await bindInputs(ctx,user,workflow('synthetic-renamed-contribution',{slot:'claims',requirement:'verified'}),inputs,'run_'+'1'.repeat(26),'0'.repeat(32));
+  assert.equal(accepted.length,1);
+  assert.equal(accepted[0].binding.reference,'src:'+FROM);
+  for(const id of ['synthetic-ordinary','knowledge-contribution']){
+    await assert.rejects(bindInputs(ctx,user,workflow(id),inputs,'run_'+'1'.repeat(26),'0'.repeat(32)),error=>error instanceof Error&&'errors'in error&&JSON.stringify(error.errors).includes('客户端捕获'));
+  }
+});
