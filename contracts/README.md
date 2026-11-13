@@ -725,3 +725,11 @@ The Boss approved the resource-assignment permission and team registration tuple
 The authorized typecheck returned exit 2 with one contracts clone-definition diagnostic and downstream
 tier/console diagnostics. The local definition has been corrected and output tests rerun; a new
 typecheck has not been scheduled. No PostgreSQL tests, full-suite checks, push or CI ran in this task.
+
+
+The owner's 2026-11-13 15:00 decision (decisions-1500.md, implemented with interfaces.md) requires
+one revoked authorization record per workflow/resource assignment when deleting a team. R01 records
+the six team rules, including direct user grants, membership unions, member-only team names and
+no resource access for any unassigned account. The existing shared knowledge-space kind and search
+scope display 公共空间; their internal code remains team. Other terminology and pack skill text
+are outside this change. No independent team spaces or new schemas are introduced here.
