@@ -1824,3 +1824,10 @@ moving those imports into assembly alone would not remove that dependency.
 Administrator role comparisons use `isAdmin` from `records/api.ts`; account activation, resource ownership and sharing
 conditions remain at their current permission boundaries. Selecting a system operator is still pending the records interface;
 this change does not replace that selection with a new identity.
+
+### Public exports for run consumers
+
+Run consumers import `CAPTURED_GROUND`, `declarationGroundsRefusal`, `ContributionAppendPlan`, `compareText`, `ACTION`,
+`COMPONENTS`, `SCHEMAS`, `MAX_ONLY_VALUES`, `parseViewId` and `splitRevision` through `knowledge/api.ts`. These exports
+expose the existing declarations, append plan type, ordering, record metadata and view parsing implementations without aliases
+or behavior changes. Their definitions remain owned by knowledge; consumers do not import the internal files.
