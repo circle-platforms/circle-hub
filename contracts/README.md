@@ -692,3 +692,12 @@ B02/C04/D05/R02/V03 `changes51` state the change.
 The approved team identity contracts export `TeamId` and `TeamAssignmentSubject` through `contracts/api.ts`.
 Their generated schemas are `team-id@1` and `team-assignment-subject@1`; team IDs match
 `^tm_[0-7][0-9a-hjkmnp-tv-z]{25}$`. Resource use assignments use generated `resource_assign`.
+
+The approved cipher-identity completion adds mandatory sealed_sha256 to SecretUse and exposes
+SecretCipherIdentity (name, version, sealed_sha256) for vault material and cache-key consumers.
+It identifies authenticated ciphertext bytes, not a digest of the value; it never becomes rec: or
+src:. Metadata schemas and ordinary variable uses stay unchanged. No sequence/UUID field is added.
+Missing cipher identity is refused rather than using a name/version fallback. The records owner
+supplies the same authenticated row identity in material; cache/stop callers consume the whole tuple.
+Model wording remains untouched pending separate Boss review; runtime cache behavior is tested by
+its owners, while contracts tests cover required identity and unchanged metadata/ordinary bytes.
