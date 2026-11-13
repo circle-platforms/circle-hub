@@ -10,7 +10,7 @@ import { MemberEnvironments } from './member-environments.ts';
 import { definition } from './testing/definition.ts';
 import { grantLeases } from '../runs/engine/start.ts';
 import type { EngineContext } from '../runs/engine/deps.ts';
-import type { LoadedWorkflow } from '../runs/api.ts';
+import type { LoadedWorkflow } from '../ports.ts';
 import { Refusal } from '../runs/engine/errors.ts';
 
 async function world(t: import('node:test').TestContext, leaseNow?: () => Date) {
