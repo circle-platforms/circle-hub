@@ -1,6 +1,8 @@
-import { readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { DeploymentDefinition, type DeploymentDefinition as Definition } from '../../contracts/src/deployment.ts';
+import { readFile, mkdir, open, lstat, realpath, unlink, link } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { dirname, join, resolve, relative } from 'node:path';
+import { DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt, type DeploymentDefinition as Definition } from '../../contracts/src/deployment.ts';
 import { PackManifest } from '../../contracts/src/pack.ts';
 import { ResourceRecord } from '../../contracts/src/resources.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
@@ -284,4 +286,144 @@ export async function exportCommand(session: Session, args: readonly string[]): 
   const definition = await exportDeployment(session);
   session.ctx.io.stdout(jsonSafe(JSON.stringify(definition, null, 2)));
   return 0;
+}
+
+/** Required records-owned current-schema capability; no fallback to public export or an older reader. */
+export interface ProtectedConfigurationDomain<State> {
+  /** Verifies the exact current schema before reading configuration, including auth hashes and complete pack object bytes. */
+  capture(): Promise<State>;
+  /** Validates current format, object integrity and configuration closure without applying or logging it. */
+  validate(input: unknown): State | Promise<State>;
+  /** Verifies the target schema and restores original identities and configuration through the controlled records API. */
+  restore(snapshot: State): Promise<void>;
+}
+
+type ProtectedRoot = { dataDir: string };
+const PRIVATE_CONFIG_DIRECTORY = 'private-config-snapshots';
+
+function protectedProblem(message: string): CliError {
+  return new CliError(message, '保留配置未完成；不要继续清除数据。库结构不兼容时选择归档并初始化，或用部署定义文件恢复；已开始重置时由 reset 恢复校验过的备份');
+}
+
+async function privateConfigurationDirectory(config: ProtectedRoot, create: boolean): Promise<string> {
+  const root = resolve(config.dataDir), rootInfo = await lstat(root);
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw protectedProblem('数据目录不是普通目录，不能读写受保护配置');
+  const directory = join(root, PRIVATE_CONFIG_DIRECTORY);
+  if (create) await mkdir(directory, { mode: 0o700 }).catch(error => { if (error?.code !== 'EEXIST') throw error; });
+  const info = await lstat(directory);
+  if (!info.isDirectory() || info.isSymbolicLink() || (info.mode & 0o777) !== 0o700 || info.uid !== process.getuid?.())
+    throw protectedProblem('受保护配置目录的类型、属主或权限不正确');
+  if (await realpath(directory) !== join(await realpath(root), PRIVATE_CONFIG_DIRECTORY))
+    throw protectedProblem('受保护配置目录不在当前数据目录内');
+  return directory;
+}
+
+async function readProtectedConfiguration(config: ProtectedRoot, input: unknown): Promise<{ payload: unknown }> {
+  const receipt = ProtectedConfigurationReceipt.safeParse(input);
+  if (!receipt.success) throw protectedProblem('受保护配置文件凭据不合格式');
+  const directory = await privateConfigurationDirectory(config, false);
+  const path = join(resolve(config.dataDir), receipt.data.file);
+  if (dirname(path) !== directory || relative(directory, path).includes('/')) throw protectedProblem('受保护配置文件不在指定目录内');
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o777) !== 0o600 || info.size !== receipt.data.bytes)
+      throw protectedProblem('受保护配置文件的类型、属主、权限或长度不正确');
+    const bytes = await handle.readFile();
+    if (sha256Hex(bytes) !== receipt.data.sha256) throw protectedProblem('受保护配置文件摘要不正确');
+    const parsed = ProtectedConfigurationEnvelope.safeParse(parseStrictJson(bytes.toString('utf8')));
+    if (!parsed.success) throw protectedProblem('受保护配置文件格式不兼容');
+    if (sha256Hex(canonicalBytes(parsed.data.payload)) !== parsed.data.payloadSha256) throw protectedProblem('受保护配置内容摘要不正确');
+    await privateConfigurationDirectory(config, false);
+    return { payload: parsed.data.payload };
+  } finally { await handle.close(); }
+}
+
+/** Captures a protected current-schema configuration file before reset's destructive stage. Never prints payload or hashes. */
+export async function exportProtectedConfiguration<State>(config: ProtectedRoot, domain: ProtectedConfigurationDomain<State>, target?: string): Promise<ProtectedConfigurationReceipt> {
+  let payload: State;
+  try { payload = await domain.validate(await domain.capture()); }
+  catch { throw protectedProblem('当前数据库结构不兼容或配置原件不完整，不能导出保留配置'); }
+  let bytes: Uint8Array;
+  try { bytes = canonicalBytes(ProtectedConfigurationEnvelope.parse({ schema: 'protected-deployment@1', createdAt: new Date().toISOString(), payloadSha256: sha256Hex(canonicalBytes(payload)), payload })); }
+  catch { throw protectedProblem('受保护配置不能完整序列化，不能继续重置'); }
+  let path: string | undefined, temporary: string | undefined;
+  let published = false;
+  try {
+    const directory = await privateConfigurationDirectory(config, true);
+    const name = target === undefined ? `${randomUUID()}.json` : privateConfigurationName(config, target);
+    path = join(directory, name);
+    temporary = join(directory, `.pending-${randomUUID()}`);
+    const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try { await handle.chmod(0o600); await handle.writeFile(bytes); await handle.sync(); }
+    finally { await handle.close(); }
+    await link(temporary, path);
+    published = true;
+    await unlink(temporary);
+    temporary = undefined;
+    const parent = await open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    try { await parent.sync(); } finally { await parent.close(); }
+    const receipt = { file: `${PRIVATE_CONFIG_DIRECTORY}/${name}`, sha256: sha256Hex(bytes), bytes: bytes.byteLength };
+    const verified = await readProtectedConfiguration(config, receipt);
+    await domain.validate(verified.payload);
+    return receipt;
+  } catch {
+    if (temporary !== undefined) await unlink(temporary).catch(() => {});
+    if (published && path !== undefined) await unlink(path).catch(() => {});
+    throw protectedProblem('受保护配置写入或回读校验失败，不能继续重置');
+  }
+}
+
+/** Restores only a verified private snapshot. Reset owns quiescence, authorization and rollback on any failure. */
+export async function applyProtectedConfiguration<State>(config: ProtectedRoot, receipt: ProtectedConfigurationReceipt, domain: ProtectedConfigurationDomain<State>): Promise<void> {
+  let snapshot: State;
+  try { snapshot = await domain.validate((await readProtectedConfiguration(config, receipt)).payload); }
+  catch { throw protectedProblem('受保护配置文件校验失败，未调用配置恢复'); }
+  try { await domain.restore(snapshot); }
+  catch { throw protectedProblem('当前结构下的保留配置恢复失败，需要 reset 恢复备份'); }
+}
+
+
+function privateConfigurationName(config: ProtectedRoot, path: string): string {
+  const file = relative(resolve(config.dataDir), resolve(path));
+  const parsed = ProtectedConfigurationReceipt.safeParse({ file, sha256: '0'.repeat(64), bytes: 1 });
+  if (!parsed.success) throw protectedProblem('受保护配置路径不在指定私有目录内');
+  return file.slice(PRIVATE_CONFIG_DIRECTORY.length + 1);
+}
+
+export interface ResetConfigurationPorts {
+  exportConfiguration(path: string): Promise<void>;
+  restoreConfiguration(path: string): Promise<void>;
+  applyDefinition(path: string): Promise<void>;
+}
+export interface ResetConfigurationOptions<State> extends ProtectedRoot {
+  domain: ProtectedConfigurationDomain<State>;
+  /** Existing public apply orchestration, bound to the new database and closed before resolving; reject on differences. */
+  applyDefinition(path: string): Promise<void>;
+}
+
+/** Composition entry for server/api: platform receives callbacks, and imports no server implementation. */
+export function createResetConfigurationPorts<State>(options: ResetConfigurationOptions<State>): ResetConfigurationPorts {
+  return {
+    exportConfiguration: async path => { await exportProtectedConfiguration(options, options.domain, path); },
+    restoreConfiguration: async path => {
+      let receipt: ProtectedConfigurationReceipt;
+      try {
+        const name = privateConfigurationName(options, path);
+        const directory = await privateConfigurationDirectory(options, false);
+        const handle = await open(join(directory, name), constants.O_RDONLY | constants.O_NOFOLLOW);
+        try {
+          const info = await handle.stat();
+          if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o777) !== 0o600 || info.uid !== process.getuid?.()) throw new Error();
+          const bytes = await handle.readFile();
+          receipt = { file: `${PRIVATE_CONFIG_DIRECTORY}/${name}`, sha256: sha256Hex(bytes), bytes: bytes.byteLength };
+        } finally { await handle.close(); }
+      } catch { throw protectedProblem('受保护配置文件不可用，未调用配置恢复'); }
+      await applyProtectedConfiguration(options, receipt, options.domain);
+    },
+    applyDefinition: async path => {
+      try { await options.applyDefinition(path); }
+      catch { throw protectedProblem('部署定义恢复未完成，需要 reset 恢复备份'); }
+    },
+  };
 }

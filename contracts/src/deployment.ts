@@ -51,3 +51,17 @@ export const DeploymentDefinition = z.strictObject({
   }
 });
 export type DeploymentDefinition = z.infer<typeof DeploymentDefinition>;
+
+/** Private maintenance envelope. Its payload is validated by the records owner, never by the public deployment parser. */
+export const ProtectedConfigurationEnvelope = z.strictObject({
+  schema: z.literal('protected-deployment@1'),
+  createdAt: z.iso.datetime(),
+  payloadSha256: z.string().regex(/^[0-9a-f]{64}$/),
+  payload: z.unknown().refine(value => value !== undefined, 'protected configuration payload is required'),
+});
+export const ProtectedConfigurationReceipt = z.strictObject({
+  file: z.string().regex(/^private-config-snapshots\/[0-9a-f-]{36}\.json$/),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export type ProtectedConfigurationReceipt = z.infer<typeof ProtectedConfigurationReceipt>;

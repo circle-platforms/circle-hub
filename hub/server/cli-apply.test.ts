@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, stat, chmod, symlink, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { applyCommand, applyDeployment, deploymentOrder, differentFields, exactMatch, exportCommand, exportDeployment, parseDeployment } from './cli-apply.ts';
+import { randomUUID } from 'node:crypto';
+import { exportProtectedConfiguration, applyProtectedConfiguration, createResetConfigurationPorts, type ProtectedConfigurationDomain, applyCommand, applyDeployment, deploymentOrder, differentFields, exactMatch, exportCommand, exportDeployment, parseDeployment } from './cli-apply.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { ExecutorRegistry } from '../dispatch/api.ts';
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
@@ -246,4 +247,92 @@ test('export preserves an older installed skill and reapply does not install an 
   assert.equal(exported.packs.find(pack => pack.ref === 'skill-other@1.0.0')?.install, false);
   await applyDeployment(f.session, exported);
   assert.deepEqual(f.calls, []);
+});
+
+function protectedFixture() {
+  const state = { schema: 'synthetic-current-config@1', schemaFingerprint: 'a'.repeat(64),
+    users: [{ id: uid, password_hash: 'synthetic-scrypt-hash', disabled: true }],
+    tokens: [{ id: 'tok_00000000000000000000000001', user_id: uid, sha256: 'b'.repeat(64), revoked_at: null }],
+    oauth_clients: [{ id: 'cli_00000000000000000000000001', redirect_uris: ['http://127.0.0.1/callback'] }],
+    ordinary: [{ name: 'DEMO_ROOT', value: 'synthetic-root' }],
+  };
+  const calls: string[] = [];
+  let restored: typeof state | undefined;
+  const domain: ProtectedConfigurationDomain<typeof state> = {
+    capture: async () => { calls.push('capture'); return structuredClone(state); },
+    validate: input => { calls.push('validate'); const value = input as typeof state; if (value.schema !== state.schema || value.schemaFingerprint !== state.schemaFingerprint) throw new Error('synthetic incompatible'); return value; },
+    restore: async input => { calls.push('restore'); restored = structuredClone(input); },
+  };
+  return { state, calls, domain, restored: () => restored };
+}
+
+test('protected snapshot writes private files and restores original IDs and authentication hashes without public export', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-private-config-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = protectedFixture(), config = { dataDir: root };
+  const receipt = await exportProtectedConfiguration(config, f.domain);
+  assert.equal((await stat(join(root, receipt.file))).mode & 0o777, 0o600);
+  assert.equal((await stat(join(root, 'private-config-snapshots'))).mode & 0o777, 0o700);
+  assert.deepEqual(Object.keys(receipt).sort(), ['bytes', 'file', 'sha256']);
+  await applyProtectedConfiguration(config, receipt, f.domain);
+  assert.deepEqual(f.restored(), f.state);
+  assert.equal(f.restored()!.users[0].id, uid);
+  assert.equal(f.restored()!.tokens[0].sha256, 'b'.repeat(64));
+  const publicState = parseDeployment({ schema: 'deployment@1', accounts: [{ id: uid, name: '合成管理员', role: 'admin' }] });
+  assert.equal(JSON.stringify(publicState).includes('password_hash'), false);
+  assert.equal(JSON.stringify(publicState).includes('sha256'), false);
+  assert.deepEqual((await readdir(join(root, 'private-config-snapshots'))), [receipt.file.split('/')[1]]);
+});
+
+test('protected export refuses incompatible current schema before making a snapshot and never exposes raw failures', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-incompatible-config-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = protectedFixture();
+  f.domain.capture = async () => { throw new Error('raw-password-or-token-must-not-appear'); };
+  await assert.rejects(exportProtectedConfiguration({ dataDir: root }, f.domain), error => {
+    assert.ok(error instanceof Error); assert.match(error.message, /不能导出/); assert.equal(error.message.includes('raw-password'), false); assert.equal('cause' in error, false); return true;
+  });
+  assert.deepEqual(await readdir(root), []);
+  assert.equal(f.calls.includes('restore'), false);
+});
+
+test('protected restore rejects altered bytes, loose permissions, and symlinks before calling records', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-config-integrity-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = protectedFixture(), config = { dataDir: root };
+  const receipt = await exportProtectedConfiguration(config, f.domain), path = join(root, receipt.file);
+  await chmod(path, 0o644);
+  await assert.rejects(applyProtectedConfiguration(config, receipt, f.domain));
+  await chmod(path, 0o600);
+  const original = await readFile(path);
+  await writeFile(path, Buffer.concat([original, Buffer.from(' ')]));
+  await assert.rejects(applyProtectedConfiguration(config, receipt, f.domain));
+  await rm(path); await symlink(join(root, 'absent.json'), path);
+  await assert.rejects(applyProtectedConfiguration(config, receipt, f.domain));
+  assert.equal(f.calls.includes('restore'), false);
+});
+
+test('reset bound callbacks persist and automatically restore a private snapshot and delegate the existing definition apply', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-reset-ports-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = protectedFixture(), definitions: string[] = [];
+  const options = { dataDir: root, domain: f.domain, applyDefinition: async (path: string) => { definitions.push(path); } };
+  const ports = createResetConfigurationPorts(options), path = join(root, 'private-config-snapshots', `${randomUUID()}.json`);
+  await ports.exportConfiguration(path);
+  const reopened = createResetConfigurationPorts(options);
+  await reopened.restoreConfiguration(path);
+  assert.deepEqual(f.restored(), f.state);
+  await reopened.applyDefinition('synthetic-definition.json');
+  assert.deepEqual(definitions, ['synthetic-definition.json']);
+  const before = await readFile(path);
+  await assert.rejects(ports.exportConfiguration(path));
+  assert.deepEqual(await readFile(path), before);
+  await assert.rejects(ports.exportConfiguration(join(root, '..', `${randomUUID()}.json`)));
+});
+
+test('reset restore verifies persisted payload checksum even without an in-memory receipt', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-config-checksum-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const f = protectedFixture(), path = join(root, 'private-config-snapshots', `${randomUUID()}.json`);
+  const ports = createResetConfigurationPorts({ dataDir: root, domain: f.domain, applyDefinition: async () => {} });
+  await ports.exportConfiguration(path);
+  const envelope = JSON.parse(await readFile(path, 'utf8')); envelope.payload.users[0].disabled = false;
+  await writeFile(path, JSON.stringify(envelope));
+  await assert.rejects(ports.restoreConfiguration(path));
+  assert.equal(f.calls.includes('restore'), false);
 });
