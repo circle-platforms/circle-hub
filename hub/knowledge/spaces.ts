@@ -197,7 +197,7 @@ export class KnowledgeSpaces {
   async #registerProducts(products:SpaceVersionBody['products'],tx:Transaction):Promise<SpaceVersion>{
     const previous=await this.current('team',tx);
     if(previous&&canonicalize(products)===canonicalize(previous.body.products))return previous;
-    return this.#save('team',previous,previous?.body.entries??[],previous?.body.directories.filter(p=>!withinSpacePath(p,PRODUCTS_PATH))??['/'],null,previous?'登记当前产品目录':'建立公共空间',0,tx,previous?.body.sources??[],products,false,true);
+    return this.#save('team',previous,previous?.body.entries??[],previous?.body.directories.filter(p=>!withinSpacePath(p,PRODUCTS_PATH))??['/'],null,previous?'登记当前产品目录':`建立${labelOf('knowledge_space_kind','team')}`,0,tx,previous?.body.sources??[],products,false,true);
   }
   async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local?null:(await this.ensure(by)).root }; }
   async capacity(space: string, tx?: Transaction): Promise<number> {
@@ -390,7 +390,7 @@ export class KnowledgeSpaces {
     if (space !== by.id && (space !== 'team' || !isAdmin(by)))
       fail('SOURCE_UNAVAILABLE');
     if (space === 'team' && !input.grounds.length)
-      fail('SPACE_ENTRY_INVALID', '团队知识导入须有可核验的依据');
+      fail('SPACE_ENTRY_INVALID', `${labelOf('knowledge_space_kind','team')}导入须有可核验的依据`);
     if (space === 'team' && withinSpacePath(input.path, PRODUCTS_PATH))
       fail('SPACE_ENTRY_INVALID', '产品目录由产品知识来源维护');
     const content = { kind: input.kind, statement: normaliseStatement(input.statement), data: input.data, applicability: input.applicability };
@@ -407,11 +407,11 @@ export class KnowledgeSpaces {
       if (space === 'team') {
         const ref = parseReference(ground.reference);
         if (ref.scheme !== 'src')
-          fail('SPACE_ENTRY_INVALID', '团队导入须引用业务系统的团队读取原文');
+          fail('SPACE_ENTRY_INVALID', `${labelOf('knowledge_space_kind','team')}导入须引用业务系统的团队读取原文`);
         const artifact = await this.#ctx.records.artifacts.readable(by, ref.sha256);
         const declared=artifact?await this.#attributionForCapture(by,artifact):null;
         if (!artifact || !(('read' in artifact.body.origin&&artifact.body.visibility.admins)||await this.#ctx.records.artifacts.mayDeclareUpload(by,artifact.digest)||declared?.team))
-          fail('SPACE_ENTRY_INVALID', '团队导入须引用团队读取原文，或管理员本人声明的普通上传；个人空间原文须先共享或授权');
+          fail('SPACE_ENTRY_INVALID', `${labelOf('knowledge_space_kind','team')}导入须引用团队读取原文，或管理员本人声明的普通上传；个人空间原文须先共享或授权`);
         teamSources.push({ sha256: ref.sha256, artifact: artifact.digest, size: artifact.body.size,...(declared?.team?{attribution:declared.record}:{}) });
       }
       const result = await resolveReference(ground.reference, { reader: { user: by.id, role: by.role },teamParsersOnly:space==='team', parsers: this.#ctx.parsers, trees: this.treeReader(), sources: { read: hash => this.source(by, hash) } });
@@ -518,7 +518,7 @@ export class KnowledgeSpaces {
         fail('SOURCE_UNAVAILABLE');
       if(space==='team'&&!isAdmin(by)){const body=await this.#entry(row,tx);if(!body?.shared_from||body.by!==by.id)fail('SOURCE_UNAVAILABLE');}
       row.status = 'withdrawn';
-      await this.#save(space, previous, rows, previous.body.directories, by, space === 'team' ? '撤回团队条目' : '撤回个人条目', 0, tx);
+      await this.#save(space, previous, rows, previous.body.directories, by, space === 'team' ? `撤回${labelOf('knowledge_space_kind','team')}条目` : '撤回个人条目', 0, tx);
     }));
   }
   async #entry(row: Pick<SpaceRow,'entry'|'record'>, tx?: Transaction): Promise<SpaceEntryBody | null> {
@@ -797,7 +797,7 @@ export class KnowledgeSpaces {
           }
           grounds.push({...ground,reference});
         }
-        if(withinSpacePath(teamPath,PRODUCTS_PATH))fail('SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录');
+        if(withinSpacePath(teamPath,PRODUCTS_PATH))fail('SHARE_GROUND_UNREADABLE',`产品目录由产品知识来源维护；请选择${labelOf('knowledge_space_kind','team')}的普通目录`);
         if(new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[])).size>100)fail('SPACE_ENTRY_INVALID');
         checks[phase++].state='pass';
         // Follow only the submitter's personal revision chain; another submitter's team content is never replaced.
@@ -863,7 +863,7 @@ export class KnowledgeSpaces {
       };
       const {sources,grounds,replacement,error}=await this.#inspectSharing(by,input,view,personal,previous,teamPath,tx);
       if(error){if(error instanceof KnowledgeError&&error.code&&(error.code.startsWith('SHARE_')||error.code==='GROUNDS_WITHDRAWN'||error.code==='SPACE_CONTENT_UNINSPECTABLE'||error.code==='TEAM_PARSER_REQUIRED'))return receipt('rejected',error.code,error.message,null);throw error;}
-      if(withinSpacePath(teamPath,PRODUCTS_PATH))return receipt('rejected','SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录',null);
+      if(withinSpacePath(teamPath,PRODUCTS_PATH))return receipt('rejected','SHARE_GROUND_UNREADABLE',`产品目录由产品知识来源维护；请选择${labelOf('knowledge_space_kind','team')}的普通目录`,null);
       const {client:_personalClient,...shared}=view.body;const body=SpaceEntryBody.parse({...shared,space:'team',grounds,by:by.id,at,session,replaces:replacement?.entry??null,shared_from:source,...(client?{client}:{}),...([...sources.values()].some(source=>source.attribution)?{source_attributions:[...new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[]))]}:{})});
       const plannedRows=previous.body.entries.map(row=>row.record===replacement?.record&&active(row)?{...row,status:KnowledgeEntryStatusSchema.enum.superseded}:row),facts=await this.capacityFacts('team',tx);
       const planned=this.#draft('team',previous,[...plannedRows,{path:teamPath,entry:input.entry,record:'0'.repeat(64),status:'verified'}],previous.body.directories,by,'提交共享',safeBytes(BigInt(chargedBytes(body))+[...sources.values()].reduce((sum,source)=>sum+BigInt(source.size),0n)),[...previous.body.sources,...[...sources.values()].map(()=>'0'.repeat(64))],undefined,facts.knowledge);
@@ -944,7 +944,7 @@ export class KnowledgeSpaces {
           }
           grounds.push({reference,quotation:ground.quotation});
         }
-        if(withinSpacePath(teamPath,PRODUCTS_PATH))fail('SHARE_GROUND_UNREADABLE','产品目录由产品知识来源维护；请选择普通团队目录');
+        if(withinSpacePath(teamPath,PRODUCTS_PATH))fail('SHARE_GROUND_UNREADABLE',`产品目录由产品知识来源维护；请选择${labelOf('knowledge_space_kind','team')}的普通目录`);
         if(new Set([...sources.values()].flatMap(source=>source.attribution?[source.attribution]:[])).size>100)fail('SPACE_ENTRY_INVALID');
         // Only this account's earlier single-item share of the same item is replaced; another submitter's entry never is.
         for(const record of await this.#ctx.records.store.findMany({kind:'knowledge_share',key:SINGLE_SHARE_ITEM_KEY,values:[by.id+'/'+input.item_id]},tx)){
