@@ -645,4 +645,10 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
   const exported = await child(['export']); assert.equal(exported.code, 0);
   const actual = parseDeployment(JSON.parse(exported.stdout));
   assert.deepEqual({ ...actual, accounts: actual.accounts.map(({ id: _id, ...account }) => account) }, parseDeployment(definition));
+  const { fileOperatorTokens, deploymentKeyService } = await import('./assemble/operator-token.ts');
+  const token = await fileOperatorTokens(layout.root, await deploymentKeyService(env)).read();
+  assert.ok(token);
+  const output = oldSetup.stdout + oldSetup.stderr + freshSetup.stdout + freshSetup.stderr + applied.stdout + applied.stderr + exported.stdout + exported.stderr;
+  assert.equal(output.includes(password), false);
+  assert.equal(output.includes(token), false);
 });
