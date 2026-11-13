@@ -18,8 +18,8 @@ async function fixture(t: TestContext) {
   const owner = await kit.principals.createUser(admin, 'synthetic-owner');
   const other = await kit.principals.createUser(admin, 'synthetic-other');
   // Only the records port is used by source(); no product, external reader or production pipeline is involved.
-  const context = { records: kit } as KnowledgeContext;
-  const spaces = new KnowledgeSpaces(context, { read: async () => null, readEntry: async () => null });
+  const context: Pick<KnowledgeContext, 'records'> = { records: kit };
+  const spaces = new KnowledgeSpaces(context as KnowledgeContext, { read: async () => null, readEntry: async () => null });
   const capture = (by: Principal, session: string, bytes = Buffer.from('合成同字节来源，权限由每份捕获独立决定。'), readTier: NonNullable<IngestInput['readTier']> = 'model_readable', shareable = false) =>
     kit.artifacts.ingest({
       bytes, mediaType: 'text/plain', name: 'synthetic-source.txt', origin: { upload: { session } },

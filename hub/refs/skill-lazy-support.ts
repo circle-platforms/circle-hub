@@ -140,7 +140,7 @@ export async function sampleLocate(document: ParsedDocument, eager: { locate(sel
   const chosen = [...new Set([...pick(selectors, 50, 0x5eed), ...ranges])];
   assert.equal(typeof document.prefetch, 'function');
   await document.prefetch!(chosen);
-  for (const selector of chosen) await sameFragment(document.locate(selector), eager.locate(selector), selector);
+  for (const selector of chosen) await sameFragment(document.locate(selector), await eager.locate(selector), selector);
 }
 
 export async function locateAll(document: ParsedDocument, attempts: FunctionAttempt[]) {
@@ -172,12 +172,12 @@ async function locateWorkbookSample(document: ParsedDocument, eager: Eager, atte
     const batch = chosen.slice(at, at + batchSize), start = attempts.length;
     await document.prefetch!(batch);
     assert.equal(attempts.slice(start).filter(attempt => attempt.attempt === 1).length, 1, 'one sandbox invocation per prefetch batch');
-    for (const selector of batch) await sameFragment(document.locate(selector), eager.locate(selector), selector);
+    for (const selector of batch) await sameFragment(document.locate(selector), await eager.locate(selector), selector);
   }
   assert.equal(attempts.slice(before).filter(attempt => attempt.attempt === 1).length, 3, '96 sampled selectors use three batches');
   const loaded = attempts.length;
   await document.prefetch!(chosen);
-  for (const selector of chosen) await sameFragment(document.locate(selector), eager.locate(selector), selector);
+  for (const selector of chosen) await sameFragment(document.locate(selector), await eager.locate(selector), selector);
   assert.equal(attempts.length, loaded, 'repeated prefetch and locate use cached fragments');
 }
 
