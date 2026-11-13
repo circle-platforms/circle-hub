@@ -17,6 +17,7 @@ import { createApp } from './app.ts';
 import type { CommandBridge, CommandInput } from './command-bridge.ts';
 import { manifestDigest } from '../runs/api.ts';
 import { ACTIONS } from './console/manage.ts';
+import './console/team-actions.ts';
 import { NEUTRAL } from './console/context.ts';
 import { withoutNonces } from './console/testing-security.ts';
 import { issueSetupCode } from './setup-code.ts';
@@ -235,6 +236,7 @@ test('the first administrator is created with the setup code; the token shown on
 
 test('the four operation pages carry the management forms of the console, and every management page answers', async () => {
   // Proposal decision 6 (2026-10-31): the console runs four operations; every other one is a command for the Circle.
+  // K3 removed the /console/admin/* page entries; POST /console/admin/do/<action> remains.
   const forms = { member: 'member-add', system: 'system-add', pack: 'pack-stage', knowledge: 'knowledge-sync' } as const;
   for (const [operation, action] of Object.entries(forms)) {
     const page = await send('GET', `/console/operations/${operation}`, { cookie: `circle_hub_session=${session}` });
@@ -242,14 +244,10 @@ test('the four operation pages carry the management forms of the console, and ev
     assert.match(page.body, new RegExp(`action="/console/admin/do/${action}"`), operation);
     csrf = csrfOf(page.body);
   }
-  const admin = await send('GET', '/console/admin', { cookie: `circle_hub_session=${session}` });
-  assert.equal(admin.status, 200);
-  assert.doesNotMatch(admin.body, /action="\/console\/admin\/do\/(?:user-disable|token-revoke|token-issue)"/, 'no form for an operation the Circle runs');
-  for (const path of ['packs', 'resources', 'secrets', 'knowledge']) {
-    const page = await send('GET', `/console/admin/${path}`, { cookie: `circle_hub_session=${session}` });
-    assert.equal(page.status, 200, path);
+  for (const path of ['', 'packs', 'resources', 'secrets', 'knowledge']) {
+    const page = await send('GET', `/console/admin${path === '' ? '' : `/${path}`}`, { cookie: `circle_hub_session=${session}` });
+    assert.equal(page.status, 404, path === '' ? 'admin' : path);
   }
-  assert.match((await send('GET', '/console/admin/secrets', { cookie: `circle_hub_session=${session}` })).body, /DEMO 第 1 版/);
 });
 
 test('actions become exact argv as the signed-in administrator; flag values cannot become flags', async () => {
@@ -468,7 +466,9 @@ test('a stage expires after 30 minutes: its 发布 step reads like an unknown st
 });
 
 test('every action is declared with a page to return to', () => {
-  for (const [name, action] of Object.entries(ACTIONS)) assert.ok(action.title && /^\/console\/(?:admin|operations|team)(?:\/|$)/.test(action.back), name);
+  for (const [name, action] of Object.entries(ACTIONS)) {
+    assert.ok(action.title && /^\/console\/(?:admin|operations|teams?|connections)(?:\/|$)/.test(action.back), name);
+  }
 });
 
 test('closing the app removes every staged directory', async () => {

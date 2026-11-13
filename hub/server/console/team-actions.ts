@@ -1,6 +1,6 @@
-// Team management ACTIONS for the command bridge (interfaces §2). Registered into manage.ACTIONS by the api agent.
+// Team management ACTIONS for the command bridge (interfaces §2). Shapes stay here; manage.registerActions installs them.
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { FormError, word, type Action, type Form } from './manage.ts';
+import { FormError, registerActions, word, type Action, type Form } from './manage.ts';
 
 /** Result-page back link and nav highlight for team ACTIONS (interfaces §5.2). */
 export const TEAMS = '/console/teams';
@@ -95,3 +95,5 @@ export const TEAM_ACTIONS: Readonly<Record<string, Action>> = {
     }),
   },
 };
+
+registerActions(TEAM_ACTIONS);

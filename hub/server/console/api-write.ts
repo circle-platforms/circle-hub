@@ -19,6 +19,8 @@ import type { PackStaging } from './staging.ts';
 import { runForgetTrial, runTrial, trialJson } from './trial.ts';
 import type { CommandDialog } from './ui.ts';
 import { neutral, type ApiResult } from './api.ts';
+// Side effect: team ACTIONS register into manage.ACTIONS (shapes in team-actions.ts).
+import './team-actions.ts';
 
 export interface WriteOptions {
   bridge: CommandBridge | undefined;
