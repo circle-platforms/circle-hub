@@ -18,9 +18,9 @@ test('budgets, durations, percentages, addresses and dependency versions are not
  const text=['timeoutMs: 10_000','inputBytes: 10_000_000','elapsed 10.0 ms','completion 10.0%','"typescript": "5.10.0"','address 192.0.2.1','line: "10.6.1"','version line 10.50','package version 1.10.0'].join('\n');
  assert.deepEqual(rules.versionLineProblems('hub/sample.ts',text),[]);
 });
-test('only frozen archives, lock files and exact pinned vendor bytes can be excluded',()=>{
+test('only lock files and exact pinned vendor bytes can be excluded',()=>{
  const text='版本线 '+sample(4);
- for(const path of ['foundation/a.txt','references/a.txt','package-lock.json','docs/Gemfile.lock','pnpm-lock.yaml'])assert.deepEqual(rules.versionLineProblems(path,text),[]);
+ for(const path of ['package-lock.json','docs/Gemfile.lock','pnpm-lock.yaml'])assert.deepEqual(rules.versionLineProblems(path,text),[]);
  assert.equal(rules.versionLineProblems('packs/product/other/vendor/core.mjs',text).length,1);
  const file='packs/product/famx/functions/adoc/vendor/core.mjs';const source=readFileSync(file,'utf8');const digest=createHash('sha256').update(source).digest('hex');
  assert.deepEqual(rules.versionLineProblems(file,source,digest),[]);

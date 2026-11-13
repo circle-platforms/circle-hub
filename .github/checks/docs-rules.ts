@@ -201,10 +201,6 @@ const VENDORED_SYNTHETIC_PATHS: Readonly<Record<string, { sha256: string; paths:
   },
 };
 
-function archived(file: string): boolean {
-  return file.startsWith('foundation/') || file.startsWith('references/');
-}
-
 /** Only normalized network hosts qualify; malformed and machine-local URLs remain checked. */
 function networkPathURL(token:string):boolean {
   try{
@@ -219,7 +215,6 @@ function networkPathURL(token:string):boolean {
 
 /** Machine paths anywhere in tracked text, with explicit file-scoped synthetic fixtures. */
 export function localPathProblems(file: string, text: string, byteDigest?: string): string[] {
-  if (archived(file)) return [];
   const pinned = VENDORED_SYNTHETIC_PATHS[file];
   const upstreamPaths = pinned && byteDigest === pinned.sha256 && createHash('sha256').update(text).digest('hex') === pinned.sha256 ? pinned.paths : [];
   const problems: string[] = [];
@@ -242,7 +237,6 @@ const BUILD_NAME = new RegExp('(?:Rel' + '|Beta)_[A-Za-z][A-Za-z0-9_-]*_10_[0-5]
 
 /** Build names from protected version lines belong in deployment data, not repository content. */
 export function buildNameProblems(file: string, text: string): string[] {
-  if (archived(file)) return [];
   const problems: string[] = [];
   text.split('\n').forEach((line, index) => {
     for (const m of line.matchAll(BUILD_NAME)) problems.push(`${file}:${index + 1}: protected build name ${JSON.stringify(m[0])}`);
@@ -273,7 +267,7 @@ const lockFile=(file:string):boolean=>/(?:^|\/)(?:package-lock\.json|npm-shrinkw
 
 /** Release-line syntax in a release context, never an arbitrary dotted number; diagnostics disclose locations only. */
 export function versionLineProblems(file:string,text:string,byteDigest?:string):string[]{
-  if(archived(file)||lockFile(file))return [];
+  if(lockFile(file))return [];
   const pinned=VENDORED_SYNTHETIC_PATHS[file];
   if(pinned&&byteDigest===pinned.sha256&&createHash('sha256').update(text).digest('hex')===pinned.sha256)return [];
   return text.split('\n').flatMap((line,index)=>RELEASE_CONTEXT.test(line)||RELEASE_BUILD.test(line)?[`${file}:${index+1}: protected release line`]:[]);

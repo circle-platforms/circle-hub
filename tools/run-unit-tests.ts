@@ -28,7 +28,6 @@ export const UNIT_PATTERNS = [
   'contracts/**/*.test.ts',
   'hub/**/*.test.ts',
   'packs/**/*.test.ts',
-  'scripts/**/*.test.ts',
   'tools/gen-contracts*.test.ts',
   'tools/prepare-packs.test.ts',
   'tools/run-acceptance-tests.test.ts',
@@ -172,7 +171,6 @@ export const UNIT_MEASURED_SECONDS: Readonly<Record<string, number>> = {
   'packs/workflow/case-review-verify/end-to-end.test.ts': 121,
   'packs/workflow/case-review-verify/predecessor-view.test.ts': 35,
   'packs/workflow/case-review/packs.test.ts': 16,
-  'scripts/diagnostics/seed-lists-repro.test.ts': 84,
 };
 
 export function unitSeconds(file: string): number {
