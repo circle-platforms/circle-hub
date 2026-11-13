@@ -6,8 +6,8 @@ import {xmlParser as xmlImplementation} from '../../packs/skill/xml-format/funct
 import {QUOTATION_UNITS as XML_PACKAGE_UNITS} from '../../packs/skill/xml-format/functions/format.ts';
 import {htmlParser as htmlImplementation} from '../../packs/skill/html-format/functions/html.ts';
 import {QUOTATION_UNITS as HTML_PACKAGE_UNITS} from '../../packs/skill/html-format/functions/format.ts';
-import {createParserRegistry,ParseError,ParseLimitError,ParseEncodingError,ParseSyntaxError,ParseForbiddenError,QUOTATION_UNITS,type Parser,type ParsedDocument,type QuotationSource,type ParseLimits} from '../refs/parser.ts';
-import {defaultParsers} from '../refs/parsers/index.ts';
+import {createParserRegistry,ParseError,ParseLimitError,ParseEncodingError,ParseSyntaxError,ParseForbiddenError,QUOTATION_UNITS,type Parser,type ParsedDocument,type QuotationSource,type ParseLimits} from '../refs/api.ts';
+import {defaultParsers} from '../refs/api.ts';
 import type {KityMinderModel} from '../../packs/skill/mindmap-format/functions/kityminder.ts';
 import type {XlsxModel} from '../../packs/skill/workbook-format/functions/xlsx.ts';
 import type {XmlModel, XmlElement} from '../../packs/skill/xml-format/functions/xml.ts';
