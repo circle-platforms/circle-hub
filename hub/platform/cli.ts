@@ -606,6 +606,11 @@ const COMMANDS = [
   { name: 'rehearse', summary: '演练备份、销毁和恢复', handler: rehearseCommand },
   { name: 'status', summary: '汇总运行状态', handler: status },
   { name: 'tls', summary: '管理内置 HTTPS 证书', handler: tls },
+  { name: 'upgrade', summary: '自动升级上个发行的数据，失败恢复原库和服务', handler: async (args: readonly string[], context: PlatformContext, io: PlatformIo) => {
+    noArguments(args);
+    const { upgradeCommand } = await import('./upgrade/cli.ts');
+    return upgradeCommand(context, io);
+  } },
 ].map((command): PlatformCommandDefinition => ({ ...command, bridge: false, step: `run-${command.name}` }));
 
 export type PlatformCommandMetadata = Omit<PlatformCommandDefinition, 'handler'>;

@@ -1,4 +1,5 @@
 import { quoteIdentifier, type SqlSession } from '../sql.ts';
+import { expandSpaceObjectGraph } from './object-graph.ts';
 import { canonicalOldBody, selectState, type OldRecord, type Selection, type UpgradeIssue } from './state.ts';
 
 // Exhaustive predecessor table inventory; every table is accounted for before a row is copied.
@@ -12,10 +13,10 @@ export const COPIED_TABLES = [
 ] as const;
 export const FILTERED_TABLES = [
   'records', 'record_index', 'record_keys', 'personal_record_bindings', 'personal_objects', 'personal_payloads',
-  'pointers', 'leases', 'object_holds', 'held_objects', 'held_object_targets', 'original_targets',
+  'pointers', 'leases', 'object_holds', 'held_objects', 'held_object_targets', 'original_targets', 'run_originals', 'run_original_purges',
 ] as const;
 export const ARCHIVED_TABLES = [
-  'call_logs', 'call_notes', 'call_reasons', 'run_originals', 'run_original_purges', 'run_pack_records',
+  'call_logs', 'call_notes', 'call_reasons', 'run_pack_records',
   'run_upload_declarations', 'trace_spans', 'resource_samples', 'process_events',
   'personal_legacy_candidates', 'personal_legacy_ready', 'personal_legacy_retire', 'personal_legacy_retired',
   'personal_sync_sessions', 'personal_sync_session_objects', 'personal_sync_aborts',
@@ -44,7 +45,7 @@ export async function predecessorTables(source: SqlSession): Promise<string[]> {
   return tables;
 }
 
-export async function readState(source: SqlSession): Promise<TransferPlan> {
+export async function readState(source: SqlSession, readObject: (hash: string) => Promise<Uint8Array | null>): Promise<TransferPlan> {
   const tables = await predecessorTables(source);
   const records: OldRecord[] = [];
   const issues: UpgradeIssue[] = [];
@@ -68,7 +69,13 @@ export async function readState(source: SqlSession): Promise<TransferPlan> {
   const aliasRows = await source.query("SELECT value,digest FROM record_index WHERE key=ANY($1::text[]) ORDER BY record_seq", [['knowledge.node','knowledge.entry','knowledge.root']]);
   const aliases = new Map<string, string[]>();
   for (const row of aliasRows) { const list = aliases.get(String(row.value)) ?? []; list.push(String(row.digest)); aliases.set(String(row.value), list); }
-  let selection = selectState(records, objects, aliases);
+  const cleared = await source.query(`SELECT b.record FROM personal_record_bindings b JOIN personal_purges p ON (p.owner,p.epoch)=(b.owner,b.epoch)
+    WHERE NOT EXISTS(SELECT 1 FROM run_originals h WHERE h.artifact=b.record) AND NOT EXISTS(SELECT 1 FROM run_pack_records k WHERE k.record=b.record)`);
+  const purged = new Set(cleared.map(row => String(row.record)));
+  const sourceIndex = await source.query("SELECT value,digest FROM record_index WHERE key='artifact.sha256' ORDER BY record_seq");
+  const sourceAliases = new Map<string, string[]>();
+  for (const row of sourceIndex) if (!purged.has(String(row.digest))) { const values = sourceAliases.get(String(row.value)) ?? []; values.push(String(row.digest)); sourceAliases.set(String(row.value), values); }
+  let selection = selectState(records, objects, aliases, purged, sourceAliases);
   const attempted = new Set<string>();
   while (selection.unhydrated.size) {
     const needed = [...selection.unhydrated].filter(hash => !attempted.has(hash));
@@ -80,10 +87,11 @@ export async function readState(source: SqlSession): Promise<TransferPlan> {
       try { record.body = canonicalOldBody(String(row.body)); }
       catch { issues.push({ table: 'records', row: records.indexOf(record) + 1, reason: '引用的原件或动作不能按旧规范读取' }); }
     }
-    selection = selectState(records, objects, aliases);
+    selection = selectState(records, objects, aliases, purged, sourceAliases);
   }
   for (const hash of selection.unhydrated) issues.push({ table: 'records', row: records.findIndex(record => record.digest === hash) + 1, reason: '状态引用的原件或动作正文缺失' });
   issues.push(...selection.issues);
+  issues.push(...await expandSpaceObjectGraph(records, selection.selected, selection.objects, readObject));
   const counts: TableCount[] = [];
   for (const table of tables) {
     const [row] = await source.query(`SELECT count(*)::text AS n FROM ${quoteIdentifier(table)}`);
@@ -96,8 +104,8 @@ export async function readState(source: SqlSession): Promise<TransferPlan> {
 function predicate(table: string): string {
   if (table === 'records' || table === 'record_index' || table === 'record_keys') return 'digest=ANY($1::text[])';
   if (table === 'personal_record_bindings' || table === 'object_holds') return 'record=ANY($1::text[])';
-  if (table === 'original_targets') return 'artifact=ANY($1::text[])';
-  if (table === 'held_object_targets' || table === 'held_objects') return 'sha256=ANY($2::text[])';
+  if (['original_targets', 'run_originals', 'run_original_purges'].includes(table)) return 'artifact=ANY($1::text[]) AND held_by=ANY($1::text[])';
+  if (table === 'held_object_targets' || table === 'held_objects') return 'sha256=ANY($2::text[]) AND held_by=ANY($1::text[])';
   if (table === 'pointers') return 'true';
   if (table === 'leases') return 'true';
   if (table === 'personal_objects' || table === 'personal_payloads') return 'sha256=ANY($2::text[])';
@@ -144,8 +152,9 @@ export async function transferState(source: SqlSession, destination: SqlSession,
       if (fromColumns.length !== toColumns.length || fromColumns.some((col, i) => col !== toColumns[i])) throw new StateTransferFailure([{ table, row: 0, reason: '保留表的列形状不同，未声明转换' }]);
       const names = toColumns.map(quoteIdentifier).join(',');
       const where = predicate(table);
-      const params = where.includes('$2') ? [objectIds] : where.includes('$1') ? [selected] : [];
-      const selectionWhere = where.replaceAll('$2', '$1');
+      const both = where.includes('$1') && where.includes('$2');
+      const params = both ? [selected, objectIds] : where.includes('$2') ? [objectIds] : where.includes('$1') ? [selected] : [];
+      const selectionWhere = both ? where : where.replaceAll('$2', '$1');
       // The cursor bounds memory and keeps values out of SQL text and diagnostic output.
       const selectedColumns = toColumns.map(column => `${quoteIdentifier(column)}::text AS ${quoteIdentifier(column)}`).join(',');
       const fingerprint = (alias: string) => `encode(sha256(convert_to(ROW(${alias}.*)::text,'UTF8')),'hex')`;

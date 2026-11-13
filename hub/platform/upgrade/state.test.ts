@@ -66,3 +66,11 @@ test('the complete old-release fixture has a closed state graph without retainin
     assert.equal(selected.selected.has(digest), true, 'a fixture state record was omitted');
   }
 });
+
+test('purged personal capsules are archived by exact purge facts rather than reported as damaged active content', () => {
+  const purged = { ...row('memory_version', 'memory-version@1', {}), body: undefined };
+  const selected = selectState([purged], new Set(), new Map(), new Set([purged.digest]));
+  assert.deepEqual(selected.issues, []);
+  assert.equal(selected.selected.size, 0);
+  assert.match(selected.decisions[0]!.reason, /清除事实/);
+});

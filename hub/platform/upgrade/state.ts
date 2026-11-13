@@ -54,6 +54,8 @@ const STATE_SCHEMAS: Readonly<Record<string, readonly string[]>> = {
 const ARCHIVE_SCHEMAS: Readonly<Record<string, readonly string[]>> = {
   run: ['run@1'], submission: ['submission@1', 'submission-received@1'],
   validation_result: ['validation@1'], request: ['request@1'], call_log: ['call_log@1'],
+  action: ['memory-refusal@1', 'memory-unchanged@1'],
+  claim: ['feeding-offset@1'],
   effect: ['effect@1'], result_summary: ['result-summary@1'], token_issuance: ['token-issuance@1'],
 };
 
@@ -64,13 +66,13 @@ export function fields(value: unknown): Record<string, unknown> {
 
 /** Each path is a typed dependency field, not a search over authored text. '*' means one declared array/map level. */
 const DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
-  'authorization@1': ['supersedes', 'bound'],
+  'authorization@1': ['supersedes', 'object'],
   'pack_version@1': ['manifest/files/*/sha256'],
   'tree_node@1': ['children/*/digest', 'entries/*'],
   'knowledge-entry@1': [],
-  'tree_root@1': ['root', 'sources/*/artifact', 'sources/*/sha256', 'composition/*/entry', 'unplaced/*/entry', 'parts/composition/*/record', 'parts/unplaced/*/record', 'parts/sources/*/record', 'inherited_builds/*/record', 'variables/*/decision'],
-  'tree_root-rows@1': ['rows/*/entry', 'rows/*/sources/*/artifact', 'rows/*/sources/*/sha256'],
-  'tree_root-unplaced@1': ['rows/*/entry'],
+  'tree_root@1': ['root', 'sources/*/artifact', 'sources/*/sha256', 'producer/digest', 'composition/*/entry', 'composition/*/fragments/*', 'composition/*/applicability_sources/*/fragment', 'composition/*/placement/judgments/*', 'unplaced/*/entry', 'unplaced/*/fragments/*', 'unplaced/*/judgments/*', 'parts/composition/*/record', 'parts/unplaced/*/record', 'parts/sources/*/record', 'known_builds/*/record', 'variables/*/decision'],
+  'tree_root-rows@1': ['rows/*/entry', 'rows/*/fragments/*', 'rows/*/applicability_sources/*/fragment', 'rows/*/placement/judgments/*'],
+  'tree_root-unplaced@1': ['rows/*/entry', 'rows/*/fragments/*', 'rows/*/judgments/*'],
   'tree_root-sources@1': ['rows/*/artifact', 'rows/*/sha256'],
   'root_pointer@1': ['expected', 'root', 'composition', 'move', 'cause'],
   'knowledge-space-version@1': ['parent', 'tree', 'sources/*', 'products/*/root', 'entries/*/record'],
@@ -88,12 +90,12 @@ const DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
   'memory-grant@1': [],
   'memory-share@1': ['document', 'version', 'team_document', 'team_version', 'replaces'],
   'member-deletion@1': ['purge_manifest'],
-  'claim@1': ['grounds/*', 'validity/bound/*', 'resolutions/*/references/*'],
-  'knowledge-build@1': ['plan'],
-  'knowledge-calibration@1': [],
-  'knowledge-observation@1': [],
-  'knowledge-contribution@1': [],
-  'seedling@1': [],
+  'claim@1': ['grounds/*', 'validity/bound/*', 'resolutions/*/references/*', 'statement/data/feeding/root', 'statement/data/feeding/source/artifact'],
+  'knowledge-build@1': ['pack/digest', 'plan'],
+  'knowledge-calibration@1': ['root'],
+  'knowledge-observation@1': ['echo'],
+  'knowledge-contribution@1': ['root', 'source/reference', 'source/records/*', 'source/sources/*', 'relation/other/reference', 'relation/other/records/*', 'relation/other/sources/*', 'feeding_record', 'applicability_claim/admission/composition', 'applicability_claim/admission/declarations/*'],
+  'seedling@1': ['root', 'composition', 'origin/*/sha256', 'parent'],
   'source_artifact@1': ['origin/read/action', 'origin/generated/inputs/*', 'origin/generated/read_back', 'sha256'],
   'action@1': ['inputs/*', 'detail/previous_action', 'detail/expected', 'detail/next'],
 };
@@ -114,7 +116,7 @@ function targetOf(value: unknown): string | null {
 }
 
 
-export function selectState(records: readonly OldRecord[], objects: ReadonlySet<string>, aliases: ReadonlyMap<string, readonly string[]> = new Map()): Selection {
+export function selectState(records: readonly OldRecord[], objects: ReadonlySet<string>, aliases: ReadonlyMap<string, readonly string[]> = new Map(), purged: ReadonlySet<string> = new Set(), sourceAliases: ReadonlyMap<string, readonly string[]> = new Map()): Selection {
   const objectClosure = new Set<string>();
   const selected = new Set<string>(), issues: UpgradeIssue[] = [], secretDecisions: OldRecord[] = [];
   const byDigest = new Map(records.map(row => [row.digest, row]));
@@ -122,6 +124,7 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
   const permitted = new Set<string>();
   const fail = (row: OldRecord, reason: string) => issues.push({ table: 'records', row: positions.get(row.digest)!, reason });
   for (const row of records) {
+    if (purged.has(row.digest)) continue;
     if (STATE_SCHEMAS[row.kind]?.includes(row.schema)) {
       try {
         const body = fields(row.body);
@@ -147,7 +150,7 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
       } catch { fail(row, '状态记录的模式或完整性不符，不能转入'); }
     } else if (row.kind === 'source_artifact' && row.schema === 'source_artifact@1' || row.kind === 'action' && row.schema === 'action@1') {
       permitted.add(row.digest);
-    } else if (!(row.kind === 'claim' && row.schema === 'feeding-offset@1') && !ARCHIVE_SCHEMAS[row.kind]?.includes(row.schema)) {
+    } else if (!ARCHIVE_SCHEMAS[row.kind]?.includes(row.schema)) {
       fail(row, '没有声明这个种类和模式的迁移规则，不能判作历史丢弃');
     }
   }
@@ -156,11 +159,18 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
   const add = (hash: string, from: OldRecord) => {
     const direct = byDigest.has(hash) ? [hash] : aliases.get(hash);
     if (direct) for (const digest of direct) {
-      if (!permitted.has(digest)) { fail(from, '状态引用了仅归档的运行历史，引用闭包不完整'); continue; }
+      if (!permitted.has(digest)) { fail(from, '状态引用了仅归档或已清除的记录，引用闭包不完整'); continue; }
       if (!selected.has(digest)) { selected.add(digest); queue.push(digest); }
     }
     else if (objects.has(hash)) objectClosure.add(hash);
     else fail(from, '状态引用的记录或对象缺失，不能转入');
+  };
+  const addSource = (hash: string, from: OldRecord) => {
+    const captures = sourceAliases.get(hash) ?? records.filter(row => row.kind === 'source_artifact' && row.body !== undefined && fields(row.body).sha256 === hash && !purged.has(row.digest)).map(row => row.digest);
+    if (!captures.length) { fail(from, '原件引用缺少可用的来源记录，不能只复制字节登记'); return; }
+    captures.forEach(digest => add(digest, from));
+    if (!objects.has(hash)) fail(from, '原件字节登记缺失');
+    else objectClosure.add(hash);
   };
   for (let at = 0; at < queue.length; at++) {
     const row = byDigest.get(queue[at]!)!;
@@ -172,17 +182,26 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
       if (!isActionKind(body.action) || !isActionResult(body.result) || !Array.isArray(body.inputs) || body.inputs.some(value => typeof value !== 'string')) { fail(row, '引用的状态动作不合正式动作模式'); continue; }
     }
     if (recordDigest(row) !== row.digest) { fail(row, '引用记录的完整性不符'); continue; }
-    for (const path of DEPENDENCIES[row.schema] ?? []) {
+    const paths = [...(DEPENDENCIES[row.schema] ?? [])];
+    if (row.schema === 'authorization@1') {
+      const body = fields(row.body);
+      // scan:<SHA> binds a computed scanDigest, not an object; publication/configuration bindings otherwise name objects.
+      if ((body.permission === 'publish' || body.permission === 'resource_config') && !(typeof body.object === 'string' && /^scan:[0-9a-f]{64}$/.test(body.object))) paths.push('bound');
+    }
+    for (const path of paths) {
       for (const value of valuesAt(row.body, path.split('/'))) {
         const target = targetOf(value);
-        if (target !== null) add(target, row);
+        if (target !== null) {
+          if (typeof value === 'string' && value.startsWith('src:') || row.schema === 'knowledge-observation@1' && path === 'echo' || row.schema === 'seedling@1' && path === 'origin/*/sha256') addSource(target, row);
+          else add(target, row);
+        }
         if (typeof value === 'string' && Ground.safeParse(value).success && value.startsWith('tree:') && value.includes('@')) add(value.slice(value.lastIndexOf('@') + 1), row);
       }
     }
   }
   const archived = new Map<string, number>();
   for (const row of records) if (!selected.has(row.digest)) archived.set(row.kind, (archived.get(row.kind) ?? 0) + 1);
-  return { selected, unhydrated, archived, issues, secretDecisions, objects: objectClosure, decisions: records.map((row, index) => ({ row: index + 1, disposition: selected.has(row.digest) ? 'migrated' : 'archived', reason: selected.has(row.digest) ? '保留状态及其明确引用闭包' : secretDecisions.includes(row) ? '旧密钥登记转为独立非值元数据，原决定保留归档' : '不属于保留状态，原件在旧数据库归档中保留' })) };
+  return { selected, unhydrated, archived, issues, secretDecisions, objects: objectClosure, decisions: records.map((row, index) => ({ row: index + 1, disposition: selected.has(row.digest) ? 'migrated' : 'archived', reason: selected.has(row.digest) ? '保留状态及其明确引用闭包' : purged.has(row.digest) ? '个人内容已按原清除事实不可读，仅归档不可变封套' : secretDecisions.includes(row) ? '旧密钥登记转为独立非值元数据，原决定保留归档' : '不属于保留状态，原件在旧数据库归档中保留' })) };
 }
 
 export function canonicalOldBody(text: string): unknown {
