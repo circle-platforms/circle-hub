@@ -55,7 +55,7 @@ export class RequestPermissions {
     if (production !== null && !PackId.safeParse(production).success) return false;
     const valid = (row: AuthorizationRecord | null) => this.enabled(row) && (production === null || row!.body.bound === digestOf({pack:production,accepted_producer:'fact'}));
     const direct = this.latest('share',this.user.id,object);
-    if (valid(direct) && (direct!.body.share_audience === undefined || direct!.body.share_audience === 'user')) return true;
+    if (valid(direct) && direct!.body.share_audience === 'user') return true;
     for (const row of this.#grants.values()) {
       const body = row.body;
       if (body.permission !== 'share' || body.object !== object || body.share_audience !== 'pack_users' || !body.subject.startsWith('pack_users:') || !valid(row)) continue;

@@ -379,8 +379,7 @@ export class RecordAuthorizations implements Authorizations {
       const previous = await this.#latest(permission, subject, object, tx);
       const decidedAt = this.#now().toISOString();
       const body: AuthorizationBody = {
-        ...(permission === SHARE ? { share_audience: input.shareAudience ?? 'user' } : {}),
-        permission,
+        ...(permission === SHARE ? { permission, share_audience: input.shareAudience ?? 'user' } : {permission}),
         subject,
         object,
         revoked,
@@ -492,7 +491,7 @@ export async function sharedWith(store: RecordStore, user: string, object: strin
       const target = object.slice('production:'.length);
       if (!PackId.safeParse(target).success || body.bound !== productionShareBinding(target)) continue;
     }
-    if ((body.share_audience === undefined || body.share_audience === 'user') && body.subject === user) return true;
+    if (body.share_audience === 'user' && body.subject === user) return true;
     if (body.share_audience === 'pack_users' && body.subject.startsWith('pack_users:')) {
       const pack = body.subject.slice('pack_users:'.length);
       if (!PackId.safeParse(pack).success || expectedPack !== undefined && pack !== expectedPack) continue;

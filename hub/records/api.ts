@@ -683,10 +683,7 @@ export async function checkVaultKey(vault: Pick<Vault, 'get'>): Promise<void> {
 export type PackShareAudience = { kind: Extract<ShareAudience, 'pack_users'>; pack: string };
 export type ShareAudienceInput = string[] | PackShareAudience;
 
-export interface AuthorizationBody {
-  /** Absent on legacy user shares; pack audience subjects are pack_users:<pack>. */
-  share_audience?: ShareAudience;
-  permission: PermissionKind;
+interface AuthorizationFields {
   /** Usually a user id; WHOLE_HUB for a resource configuration. */
   subject: string;
   /** Pack id, `pack@version`, resource id, shared object key, or WHOLE_HUB. */
@@ -703,6 +700,10 @@ export interface AuthorizationBody {
   supersedes: string | null;
 }
 
+export type AuthorizationBody = AuthorizationFields & (
+  | { permission: Extract<PermissionKind,'share'>; share_audience: ShareAudience }
+  | { permission: Exclude<PermissionKind,'share'>; share_audience?: never }
+);
 export type AuthorizationRecord = StoredRecord<AuthorizationBody>;
 
 export interface AuthorizationInput {
