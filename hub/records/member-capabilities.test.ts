@@ -18,9 +18,11 @@ test('member capabilities union assignments without leaking installed or other-t
   await records.authorizations.assignResource(admin, 'assigned-resource', one.id);
   const seen: string[] = [];
   const sources: MemberCapabilitySources = {
+    canUsePack: async (by, pack) => pack === 'generic-skill' || await records.authorizations.canUse(by.id, pack),
     packs: async by => { seen.push(by.id); return [
       { id: 'assigned-workflow', version: '1.0.0', title: '可用工作流', kind: 'workflow' },
       { id: 'assigned-skill', version: '1.0.0', title: '可用技能', kind: 'skill' },
+      { id: 'generic-skill', version: '1.0.0', title: '全局通用技能', kind: 'skill' },
       { id: 'hidden-skill', version: '1.0.0', title: '其他团队秘密技能', kind: 'skill' },
     ]; },
     connections: async by => { seen.push(by.id); return [
@@ -33,7 +35,7 @@ test('member capabilities union assignments without leaking installed or other-t
   const view = await memberCapabilities(records, sources, admin, alice.id);
   assert.deepEqual(view.teams, ['乙组', '甲组'].sort());
   assert.deepEqual(view.workflows.map(item => item.ref), ['assigned-workflow@1.0.0']);
-  assert.deepEqual(view.skills.map(item => item.ref), ['assigned-skill@1.0.0']);
+  assert.deepEqual(view.skills.map(item => item.ref), ['assigned-skill@1.0.0', 'generic-skill@1.0.0']);
   assert.equal(view.connections.length, 1);
   assert.deepEqual(view.environments, []);
   assert.ok(seen.every(id => id === alice.id), 'administrator preview queries candidates as the target');
@@ -43,7 +45,7 @@ test('member capabilities union assignments without leaking installed or other-t
   await records.authorizations.unassignResource(admin, 'assigned-resource', one.id);
   await records.teams.remove(admin, two.id, alice.id);
   const revoked = await memberCapabilities(records, sources, alice);
-  assert.deepEqual(revoked.skills, []);
+  assert.deepEqual(revoked.skills.map(item => item.ref), ['generic-skill@1.0.0']);
   assert.deepEqual(revoked.connections, []);
   await records.principals.setDisabled(admin, alice.id, true);
   const disabled = await memberCapabilities(records, sources, admin, alice.id);

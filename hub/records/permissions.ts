@@ -32,6 +32,8 @@ export interface MemberCapabilities {
   denials: Array<{ reason: string; nextAction: string }>;
 }
 export interface MemberCapabilitySources {
+  /** The existing pack permission boundary, including globally installed generic skills. */
+  canUsePack(by: Principal, pack: string): Promise<boolean>;
   packs(by: Principal): Promise<readonly { id: string; version: string; title: string; kind: import('../../contracts/generated/vocabulary.ts').PackKind; space?: string }[]>;
   connections(by: Principal): Promise<readonly { id: string; name: string; systemPack: string; environment: string; enabled: boolean }[]>;
   personalPackUse(by: Principal, owner: string, pack: string): Promise<boolean>;
@@ -65,7 +67,7 @@ export async function memberCapabilities(
     const personal = pack.space !== undefined && pack.space !== 'team';
     const allowed = personal
       ? await sources.personalPackUse(target, pack.space!, pack.id)
-      : await records.authorizations.canUse(target.id, pack.id);
+      : await sources.canUsePack(target, pack.id);
     if (!allowed) continue;
     const item: MemberPackCapability = { name: pack.title, ref: `${pack.id}@${pack.version}` };
     if (personal) {
