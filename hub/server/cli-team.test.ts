@@ -18,7 +18,7 @@ function fixture(admin: boolean) {
   const teams: Teams = {
     list: async () => [{ ...team, member_count: 1, pack_count: 0, resource_count: 0, changed_at: team.created_at }], get: async () => team, memberships: async () => [team], membershipsMany: async () => new Map([[member.id, [team]]]),
     members: async () => { restrictedReads++; return []; }, assignments: async () => { restrictedReads++; return { packs: [], resources: [] }; },
-    create: async () => { writes.push('create'); return team; }, delete: async () => { writes.push('delete'); return team; },
+    create: async () => { writes.push('create'); return team; }, delete: async () => { writes.push('delete'); return { ...team, deleted_at: '2035-01-02T00:00:00.000Z', revoked_packs: 2, revoked_resources: 3 }; },
     add: async () => { writes.push('add'); return { team: id, user: member, added_at: member.created_at, added_by: by.id }; },
     remove: async () => { writes.push('remove'); return true; },
   };
@@ -42,6 +42,8 @@ test('administrator team operations delegate to the records team service', async
   const f = fixture(true);
   for (const args of [['create', team.name], ['add', id, member.name], ['remove', id, member.id], ['delete', id]]) assert.equal(await teamCommand(f.session, args), 0);
   assert.deepEqual(f.writes, ['create', 'add', 'remove', 'delete']);
+  assert.equal(f.out.at(-1), `已删除团队 ${team.name}（${team.id}）；撤回工作流分配 2 条、资源分配 3 条`);
+  assert.equal(f.restrictedReads(), 0);
 });
 
 test('assignment commands accept equals flags and reject conflicting personal, team and all targets before authentication', async () => {

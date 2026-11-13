@@ -48,7 +48,7 @@ export async function teamCommand(session: TeamCommandSession, args: readonly st
       const { positionals } = parse(rest, {}, 1), id = teamId(positionals[0]);
       const by = await session.admin(), records = await session.records();
       const team = await decided(() => records.teams.delete(by, id));
-      session.out(`已删除团队 ${team.name}（${team.id}）`);
+      session.out(`已删除团队 ${team.name}（${team.id}）；撤回工作流分配 ${team.revoked_packs} 条、资源分配 ${team.revoked_resources} 条`);
       return 0;
     },
     add: async () => membership(true),
