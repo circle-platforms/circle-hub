@@ -215,10 +215,3 @@ export type { ResetConfigurationOptions, ResetConfigurationPorts, ProtectedConfi
 export async function createResetConfigurationPorts<State>(options: import('./cli-apply.ts').ResetConfigurationOptions<State>): Promise<import('./cli-apply.ts').ResetConfigurationPorts> {
   return (await import('./cli-apply.ts')).createResetConfigurationPorts(options);
 }
-
-export type { ResetConfigurationOptions, ResetConfigurationPorts, ProtectedConfigurationDomain } from './cli-apply.ts';
-
-/** Lazily binds the protected configuration operations used by reset. */
-export async function createResetConfigurationPorts<State>(options: import('./cli-apply.ts').ResetConfigurationOptions<State>): Promise<import('./cli-apply.ts').ResetConfigurationPorts> {
-  return (await import('./cli-apply.ts')).createResetConfigurationPorts(options);
-}
