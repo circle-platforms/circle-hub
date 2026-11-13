@@ -52,7 +52,7 @@ export class PgTeams implements Teams {
     do {
       const key = query.subject !== undefined ? 'authz.subject' : 'authz.object';
       const value = 'assign|' + (query.subject ?? query.object);
-      const page: Page<AuthorizationRecord['body']> = await this.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key, value, limit: 500, cursor }, tx);
+      const page: Page<AuthorizationRecord> = await this.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key, value, limit: 500, cursor }, tx);
       for (const row of page.items) latest.set(row.body.subject + '\0' + row.body.object, row);
       cursor = page.next;
     } while (cursor !== null);
@@ -169,7 +169,7 @@ export class PgTeams implements Teams {
       const related=new Map<string,AuthorizationRecord>();
       for(const key of ['authz.object-any','authz.subject-any']){
         let cursor:string|null=null;
-        do{const page: Page<AuthorizationRecord['body']>=await this.store.find<AuthorizationRecord['body']>({kind:'authorization',key,value:id,limit:500,cursor},tx);
+        do{const page: Page<AuthorizationRecord>=await this.store.find<AuthorizationRecord['body']>({kind:'authorization',key,value:id,limit:500,cursor},tx);
           for(const row of page.items)related.set(row.body.permission+'\0'+row.body.subject+'\0'+row.body.object,row);cursor=page.next;
         }while(cursor!==null);
       }
