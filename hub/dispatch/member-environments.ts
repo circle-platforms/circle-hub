@@ -8,8 +8,21 @@ export type EnvironmentPermission = (actor: Principal, executor: string, tx?: Tr
 export interface MemberEnvironment {
   name: string;
   enabled: boolean;
+  assigned: boolean;
+  can_use: boolean;
   occupancy: Array<{ name: string; since: string; until: string | null; mine: boolean }> | null;
   missing: string[];
+}
+
+export interface UnattributedHolding {
+  booking_run: string;
+  since: string;
+  until: string | null;
+  target: null;
+  assigned: false;
+  can_use: false;
+  assignment_reason: string;
+  target_missing: string;
 }
 
 export class MemberEnvironments {
@@ -65,7 +78,7 @@ export class MemberEnvironments {
       if (!await this.permission(actor, id)) continue;
       const entry = await this.registry.readSource(id);
       if (!entry) continue;
-      const row: MemberEnvironment = { name: entry.source.target, enabled: entry.source.enabled, occupancy: null, missing: [] };
+      const row: MemberEnvironment = { name: entry.source.target, enabled: entry.source.enabled, assigned: true, can_use: entry.source.enabled, occupancy: null, missing: [] };
       try {
         const keys = new Set(entry.source.resources);
         const entries = (await this.leases.view('', true)).entries.filter(lease => keys.has(lease.key));
@@ -89,4 +102,36 @@ export class MemberEnvironments {
     }
     return out;
   }
+
+  /** A lease key is not an executor binding; never infer a target for an unassigned booking. */
+  async unattributedHoldings(actor: Principal): Promise<UnattributedHolding[] | null> {
+    try {
+      if (!this.records.artifacts.capturePermissionSnapshot) return null;
+      const viewer = (await this.records.artifacts.capturePermissionSnapshot(actor)).user;
+      if (!viewer || viewer.disabled || viewer.deleted_at) return [];
+      const held = (await this.leases.view('', true)).entries.filter(lease => lease.user === viewer.id);
+      if (!held.length) return [];
+      const assignedKeys = new Set<string>();
+      for (const id of await this.ids()) {
+        if (!await this.permission(actor, id)) continue;
+        const entry = await this.registry.readSource(id);
+        if (!entry) return null;
+        for (const key of entry.source.resources) assignedKeys.add(key);
+      }
+      const holdings = new Map<string, UnattributedHolding>();
+      for (const lease of held) {
+        if (assignedKeys.has(lease.key)) continue;
+        holdings.set([lease.run, lease.since, lease.until].join('\0'), {
+          booking_run: lease.run, since: lease.since, until: lease.until,
+          target: null, assigned: false, can_use: false,
+          assignment_reason: '当前没有分配，不能续期或开始新的上机验证；预订仍由你持有',
+          target_missing: '预订没有可核验的执行器绑定，目标归属未知',
+        });
+      }
+      return [...holdings.values()];
+    } catch {
+      return null;
+    }
+  }
+
 }
