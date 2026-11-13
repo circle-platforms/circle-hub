@@ -46,6 +46,8 @@ async function membershipsForUsers(ctx: PageContext, teams: Teams | undefined, u
 }
 
 async function packSourcesFor(ctx: PageContext, userId: string): Promise<PackSource[] | null> {
+  // packSources is administrator-only (authorizations.ts); members fall back to direct assignments.
+  if (!ctx.admin) return null;
   const auth = ctx.deps.records.authorizations;
   return auth.packSources ? auth.packSources(ctx.principal, userId) : null;
 }

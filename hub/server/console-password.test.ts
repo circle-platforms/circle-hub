@@ -34,7 +34,7 @@ test('initial passwords cannot bypass the first change through pages, APIs, mana
   const session=cookie(signed,'circle_hub_session');
   const elsewhere=cookie(await login({username:user.name,password:initial}),'circle_hub_session');assert.ok(elsewhere && elsewhere!==session);
   assert.equal((await send('/console/overview','GET',undefined,session)).status,303);
-  assert.equal((await send('/console/api/status','GET',undefined,session)).status,403);
+  assert.equal((await send('/console/api/stream','GET',undefined,session)).status,403);
   assert.equal((await send('/console/admin/do/member-add','POST',{name:'禁止创建'},session)).status,303);
   const form=await send('/console/password','GET',undefined,session);assert.equal(form.status,200);
   assert.ok(!form.body.includes(initial));assert.match(form.body,/首次登录必须修改密码/);
@@ -123,7 +123,7 @@ test('an administrator who must change the password signs in with it and can nei
   const admin=await server.records.principals.createUser(server.admin.principal,'合成初始管理员','admin',{password:initial,mustChange:true});
   const signed=await login({username:admin.name,password:initial});assert.match(String(signed.headers.location),/^\/console\/password/);
   const session=cookie(signed,'circle_hub_session');
-  assert.equal((await send('/console/api/me','GET',undefined,session)).status,403);
+  assert.equal((await send('/console/api/stream','GET',undefined,session)).status,403);
   const form=await send('/console/password','GET',undefined,session);
   assert.equal((await send('/console/admin/do/password-reset','POST',{csrf:csrf(form.body),user:server.admin.user.id},session)).status,303);
 });

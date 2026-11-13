@@ -1,4 +1,4 @@
-// Call-log query shared by the records page and /console/api/records (K4).
+// Call-log query for the records page (K4; U5 retired the JSON twin).
 import type { CallLogLine, Page } from '../../records/api.ts';
 import type { PageContext } from './context.ts';
 import { USER_ID, isoOrUndefined, param } from './params.ts';

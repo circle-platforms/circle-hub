@@ -1,4 +1,4 @@
-// Shared URL / form query helpers for pages and /console/api (K4): one parse, one shape.
+// Shared URL / form query helpers for console pages (K4).
 import type { PageContext } from './context.ts';
 
 export const DAY_MS = 86_400_000;

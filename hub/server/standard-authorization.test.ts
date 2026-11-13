@@ -585,8 +585,10 @@ describe('one-time login links', () => {
       body: form({ ...testConsoleCredentials(user.token), csrf: csrfOf(page.body), next: '/console/runs?result=passed' }),
     });
     assert.equal(signedIn.headers.location, '/console/runs?result=passed');
-    const me = JSON.parse((await send('/console/api/me', { headers: { cookie: `circle_hub_session=${valueOf(cookieOf(signedIn, 'circle_hub_session'))}` } })).body);
-    assert.equal(me.id, user.user.id);
+    const session = `circle_hub_session=${valueOf(cookieOf(signedIn, 'circle_hub_session'))}`;
+    const overview = await send('/console/overview', { headers: { cookie: session } });
+    assert.equal(overview.status, 200);
+    assert.match(overview.body, new RegExp(user.user.name));
 
     // A link whose token was revoked meanwhile, and a code never issued, read like a spent link.
     const pending = new URL(JSON.parse((await ask(user.token)).body).url).pathname;

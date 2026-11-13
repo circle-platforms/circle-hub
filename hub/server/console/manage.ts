@@ -41,7 +41,7 @@ export interface Built {
 
 export type BuiltStepRun = { argv: readonly string[]; run: CommandRun };
 
-/** Shared command loop for HTML actions and /console/api writes (K4): stop at the first non-zero exit. */
+/** Shared command loop for HTML actions (K4; U5 retired JSON writes): stop at the first non-zero exit. */
 export async function runBuiltSteps(
   bridge: CommandBridge,
   built: readonly Built[],

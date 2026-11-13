@@ -132,22 +132,29 @@ describe('runtime environments', () => {
   });
 
   test('the interface gives the derived state beside the facts; members get the neutral answer', async () => {
-    const body = JSON.parse((await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } })).body);
-    assert.equal(body.wired, true);
-    assert.deepEqual(body.environments.map((e: { status: string }) => e.status), ['available', 'in_use', 'frozen', 'frozen', 'deactivated', 'unknown', 'unknown']);
-    assert.deepEqual(body.environments.map((e: { status: EnvironmentState; status_label: string }) => e.status_label === uiLabelOf('environment_state', e.status)), Array(7).fill(true), 'each status comes with its interface term');
-    const unknown = body.environments.find((e: { id: string }) => e.id === id(6));
-    assert.equal(unknown.state, null, 'not read');
-    assert.deepEqual(unknown.status_detail, ['占用与冻结状态暂不可读']);
-    assert.equal(body.environments[0].state.reported_version, 'gateway 2.4.1');
-    assert.deepEqual(body.environments[0].calls_24h, { ...calls, results_label: { completed: '完成', error: '报错', unknown: '未知' } });
-    assert.equal(body.environments[5].calls_24h, null, 'missing statistics stay unknown');
-    assert.deepEqual(body.environments[2].state.known, { occupancy: true, latest: false, version: false });
-    assert.deepEqual(body.environments[3].status_detail, [`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`]);
-    assert.deepEqual(body.environments[6].status_detail, ['占用该运行环境的作业暂不可读']);
-    const refused = await send('/console/api/environments', { headers: { cookie: await signIn((await member()).token) } });
-    assert.equal(refused.status, 404);
-    assert.equal(JSON.parse(refused.body).code, 'SOURCE_UNAVAILABLE');
+    // U5: /console/api/environments retired — the connections page carries the same facts; retired path is unavailable.
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    for (const [target, label] of [
+      ['合成运行环境甲', uiLabelOf('environment_state', 'available' as EnvironmentState)],
+      ['合成运行环境乙', uiLabelOf('environment_state', 'in_use' as EnvironmentState)],
+      ['合成运行环境丙', uiLabelOf('environment_state', 'frozen' as EnvironmentState)],
+      ['合成运行环境丁', uiLabelOf('environment_state', 'frozen' as EnvironmentState)],
+      ['合成运行环境戊', uiLabelOf('environment_state', 'deactivated' as EnvironmentState)],
+      ['合成运行环境己', uiLabelOf('environment_state', 'unknown' as EnvironmentState)],
+      ['合成运行环境庚', uiLabelOf('environment_state', 'unknown' as EnvironmentState)],
+    ] as const) assert.match(rowOf(page, target), new RegExp(label));
+    assert.match(rowOf(page, '合成运行环境甲'), /gateway 2\.4\.1/);
+    assert.match(rowOf(page, '合成运行环境甲'), /3 次.+中位 120 毫秒/);
+    assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
+    assert.match(rowOf(page, '合成运行环境丁'), new RegExp(`作业 ${job(4).slice(0, 12)} 结束后运行环境未恢复（synthetic-bed），等待管理员确认中`));
+    assert.match(rowOf(page, '合成运行环境庚'), /占用该运行环境的作业暂不可读/);
+    const memberPage = await send('/console/connections?tab=environments', { headers: { cookie: await signIn((await member()).token) } });
+    assert.equal(memberPage.status, 200);
+    assert.doesNotMatch(memberPage.body, /合成运行环境甲|gateway 2\.4\.1/);
+    assert.match(memberPage.body, /业务系统和运行环境的配置仅管理员可见|运行环境仅管理员可见/);
+    const retired = await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } });
+    assert.equal(retired.status, 404);
+    assert.equal(JSON.parse(retired.body).code, 'SOURCE_UNAVAILABLE');
   });
 
   test('a task names the environment of its dispatch step and the state it is in', async () => {

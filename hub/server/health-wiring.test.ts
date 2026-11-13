@@ -168,8 +168,8 @@ test('a console event stream is a stream, not a request in flight, and a page\'s
   beginRequest(log, incoming('GET'), '/console/api/stream')();
   assert.equal(begun.length, 0);
   assert.equal(ended(), 0);
-  beginRequest(log, incoming('GET'), '/console/api/runs')();
-  assert.equal(begun[0]?.name, 'GET /console/api/runs');
+  beginRequest(log, incoming('GET'), '/console/runs')();
+  assert.equal(begun[0]?.name, 'GET /console/runs');
 });
 
 test('the name and origin of every kind of target', () => {

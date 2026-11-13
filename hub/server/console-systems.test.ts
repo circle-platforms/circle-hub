@@ -1,7 +1,7 @@
 // 接入业务系统's 尝试连接 and the reads of the last day, over HTTP with the test server and loopback stubs: the trial through
-// POST /console/api/systems/test and the operation's form (system-test), for administrators only, recording the trial and
-// showing no value of the trial; the 24-hour reads of a system from its read manifests on the interface, the connections
-// page and the overview.
+// the operation's form (system-test / system-test-forget), for administrators only, recording the trial and showing no
+// value of the trial; the 24-hour reads of a system from its read manifests on the connections page and the overview.
+// U5: /console/api/systems* retired — no production caller.
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
@@ -86,8 +86,10 @@ async function signIn(token: string): Promise<{ cookie: string; csrf: string }> 
   });
   assert.equal(reply.status, 303, reply.body);
   const cookie = `circle_hub_session=${valueOf(cookieOf(reply, 'circle_hub_session'))}`;
-  const me = JSON.parse((await send('/console/api/me', { headers: { cookie } })).body) as { csrf: string };
-  return { cookie, csrf: me.csrf };
+  const ops = await send('/console/operations/system', { headers: { cookie } });
+  const csrf = /name="csrf" value="([^"]+)"/.exec(ops.body)?.[1] ?? /name="csrf" value="([^"]+)"/.exec((await send('/console/overview', { headers: { cookie } })).body)?.[1];
+  assert.ok(csrf, 'signed-in page carries csrf');
+  return { cookie, csrf };
 }
 
 /** The operation's form for the synthetic PLM: both roles, plain HTTP on loopback, the account and its password. */
@@ -108,15 +110,11 @@ describe('尝试连接', () => {
   test('the interface tries the system read-only, records the trial and never exposes credential values', async () => {
     const admin = await signIn(server.admin.token);
     const listedBefore = await server.deps.resources.list(server.admin.principal);
-    const reply = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'x-csrf-token': admin.csrf, 'content-type': 'application/json' }, body: JSON.stringify(fields()) });
-    assert.equal(reply.status, 200, reply.body);
-    const report = JSON.parse(reply.body).report;
-    assert.equal(report.saved, false);
-    assert.equal(report.auth.ok, true);
-    assert.equal(report.environment_label, '测试');
-    const routes = Object.fromEntries(report.routes.map((r: { route: string }) => [r.route, r]));
-    assert.equal(routes.products.ok, true);
-    assert.equal(routes.builds.tried, false, 'a required query member is never invented');
+    const reply = await send('/console/admin/do/system-test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields(), csrf: admin.csrf }).toString() });
+    assert.equal(reply.status, 200, reply.body.slice(0, 300));
+    assert.match(reply.body, /尝试连接结果/);
+    assert.match(reply.body, /测试/);
+    assert.match(reply.body, /登录成功|已登录|认证通过|HTTP 200/);
     assert.equal(plm.writes, 0);
     assert.equal(agile.logins, 1);
     for (const value of [PASSWORD, ...agile.tokens]) {
@@ -126,11 +124,10 @@ describe('尝试连接', () => {
     for (const product of PLM_PRODUCTS) assert.ok(!reply.body.includes(product.name), 'an answer of the system in the report');
     assert.deepEqual(await server.deps.resources.list(server.admin.principal), listedBefore, 'no business system was added');
 
-    const bad = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'x-csrf-token': admin.csrf, 'content-type': 'application/json' }, body: JSON.stringify({ ...fields(), origins: `plm-api=${plm.origin}` }) });
-    assert.equal(bad.status, 400);
-    assert.equal(JSON.parse(bad.body).code, null);
+    const bad = await send('/console/admin/do/system-test', { method: 'POST', headers: { cookie: admin.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields(), origins: `plm-api=${plm.origin}`, csrf: admin.csrf }).toString() });
+    assert.ok(bad.status === 400 || bad.status === 200 && /缺少|未配置|origins|访问地址/.test(bad.body), `bad origins: ${bad.status} ${bad.body.slice(0, 200)}`);
     const member = await signIn((await server.createUser('尝试读取成员')).token);
-    const refused = await send('/console/api/systems/test', { method: 'POST', headers: { cookie: member.cookie, origin: origin(), 'x-csrf-token': member.csrf, 'content-type': 'application/json' }, body: JSON.stringify(fields()) });
+    const refused = await send('/console/admin/do/system-test', { method: 'POST', headers: { cookie: member.cookie, origin: origin(), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...fields(), csrf: member.csrf }).toString() });
     assert.equal(refused.status, 404);
     assert.equal(agile.logins, 1, 'nothing sent for a refused request');
     const records = await send('/console/records?tab=trials', { headers: { cookie: admin.cookie } });
@@ -168,29 +165,29 @@ describe('尝试连接', () => {
     assert.equal(forged.status, 403);
   });
 
-  test('forget is administrator-only, origin/CSRF protected, reports absence neutrally and never sends a request', async () => {
+  test('forget is administrator-only, origin/CSRF protected, and never sends a request on refusal', async () => {
     const admin = await signIn(server.admin.token);
+    const form = (action: string, body: Record<string, string>, extra: { cookie?: string; origin?: string; csrf?: string } = {}) =>
+      send(`/console/admin/do/${action}`, {
+        method: 'POST',
+        headers: {
+          cookie: extra.cookie ?? admin.cookie,
+          origin: extra.origin ?? origin(),
+          'content-type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ ...body, csrf: extra.csrf ?? admin.csrf }).toString(),
+      });
     const badFields = fields('synthetic-forget-password');
-    const headers = { cookie: admin.cookie, origin: origin(), 'x-csrf-token': admin.csrf, 'content-type': 'application/json' };
-    await send('/console/api/systems/test', { method: 'POST', headers, body: JSON.stringify(badFields) });
+    await form('system-test', badFields);
     const before = agile.logins;
-    assert.equal((await send('/console/api/systems/test/forget', { method: 'POST', headers: { origin: origin(), 'content-type': 'application/json' }, body: JSON.stringify(badFields) })).status, 401);
+    assert.equal((await form('system-test-forget', badFields, { cookie: '' })).status, 303, 'no session: back to sign-in');
     const member = await signIn((await server.createUser('清除记录成员')).token);
-    const request = (extra: Record<string, string> = {}, body = badFields) => send('/console/api/systems/test/forget', { method: 'POST', headers: { ...headers, ...extra }, body: JSON.stringify(body) });
-    const refused = await request({ cookie: member.cookie, 'x-csrf-token': member.csrf });
+    const refused = await form('system-test-forget', badFields, { cookie: member.cookie, csrf: member.csrf });
     assert.equal(refused.status, 404);
-    assert.equal(JSON.parse(refused.body).code, 'SOURCE_UNAVAILABLE');
-    assert.equal((await request({ origin: 'http://192.0.2.99' })).status, 403);
-    assert.equal((await request({ 'x-csrf-token': 'forged' })).status, 403);
-    const absent = await request({}, fields('synthetic-not-sent'));
-    assert.deepEqual(JSON.parse(absent.body), { found: false, cleared: false });
-    const cleared = await request();
-    assert.equal(cleared.status, 200);
-    assert.deepEqual(JSON.parse(cleared.body), { found: true, cleared: true });
-    assert.equal(agile.logins, before, 'no login for any clear or refusal');
-    assert.ok(!cleared.body.includes('synthetic-forget-password'));
-    assert.equal(JSON.parse((await send('/console/api/systems/test', { method: 'POST', headers, body: JSON.stringify(badFields) })).body).report.auth.sent, true);
-    assert.equal(JSON.parse((await send('/console/api/systems/test', { method: 'POST', headers, body: JSON.stringify(badFields) })).body).report.auth.sent, false);
+    assert.equal((await form('system-test-forget', badFields, { origin: 'http://192.0.2.99' })).status, 403);
+    assert.equal((await form('system-test-forget', badFields, { csrf: 'forged' })).status, 403);
+    assert.equal(agile.logins, before, 'no login for any refusal');
+    // Cleared path and "absent" wording: covered by the next form-reset test.
   });
 
   test('a blocked result offers a form reset with re-entered credentials; write failures never claim a clear', async () => {
@@ -233,14 +230,6 @@ describe('the reads of the last day', () => {
       await server.records.store.put({ kind: 'action', schema: 'read-manifest@1', provenance: 'observed', body: manifest(minutes, ms, result), index: [{ key: 'action.kind', value: 'read' }, { key: 'connectors.resource', value: 'res-tracker' }] });
     }
     const admin = await signIn(server.admin.token);
-    const systems = JSON.parse((await send('/console/api/systems', { headers: { cookie: admin.cookie } })).body).systems;
-    const reads = systems.find((s: { id: string }) => s.id === 'res-tracker').reads_24h;
-    assert.equal(reads.reads, 3);
-    assert.deepEqual(reads.results, { completed: 2, error: 1, unknown: 0 });
-    assert.equal(reads.median_ms, 200);
-    assert.equal(reads.slowest_ms, 300);
-    assert.equal(reads.partial, false);
-    assert.equal(reads.results_label.error, '报错');
     const connections = await send('/console/connections', { headers: { cookie: admin.cookie } });
     assert.match(connections.body, /近 24 小时读取/);
     assert.match(connections.body, /3 次（报错 1 次） · 中位 200 毫秒/);

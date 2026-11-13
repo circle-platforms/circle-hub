@@ -26,7 +26,7 @@ export const startOfDay = (time: number): number => {
   return d.getTime();
 };
 
-/** Shared load for the overview page and /console/api/overview (K4). */
+/** Load for the overview page (K4; U5 retired the JSON twin). */
 export interface OverviewWindow {
   days: number;
   now: number;
