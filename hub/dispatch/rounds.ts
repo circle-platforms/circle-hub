@@ -1,6 +1,6 @@
 // Pure round planning for one dispatch command. The service writes the records; this file does not.
 import type { Aggregation } from '../../contracts/generated/vocabulary.ts';
-import { withinCountBudget, type RepetitionPolicy } from '../runs/engine/repetition.ts';
+import type { DispatchRunRulesPort, RepetitionPolicy } from '../ports.ts';
 
 export interface RoundPolicy extends RepetitionPolicy {
   fresh_context: boolean;
@@ -44,8 +44,8 @@ export function bytesKey(sha: string, round: number, attempt: number, multi: boo
   return multi ? `dispatch.bytes:${sha}:${lineage}:${round}:${attempt}` : `dispatch.bytes:${sha}:${lineage}:${attempt}`;
 }
 
-export function roundAllowed(round: number, policy: RoundPolicy): boolean {
-  return withinCountBudget(round, policy, policy.limit);
+export function roundAllowed(round: number, policy: RoundPolicy, rules: Pick<DispatchRunRulesPort, 'withinCountBudget'>): boolean {
+  return rules.withinCountBudget(round, policy, policy.limit);
 }
 
 /** A pass meets a support expectation; a fail meets only a refute expectation that names its code. */
