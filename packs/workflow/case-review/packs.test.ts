@@ -6,11 +6,11 @@ import ts from 'typescript';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { packVocabularyFiles } from '../../../tools/gen-contracts.ts';
-import { AXES } from '../../../contracts/generated/vocabulary.ts';
+import { AXES, PackKindSchema } from '../../../contracts/generated/vocabulary.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { StartRunInput } from '../../../contracts/src/tools.ts';
 import { readPackDirectory, refusalsOf, runPublishCheck, validatePack } from '../../../hub/runs/api.ts';
@@ -18,19 +18,6 @@ import { osIsolationAvailable } from '../../../hub/rules/api.ts';
 import { PACK_DIRECTORIES, manifestProblems, readManifest, stagePack } from './packaging.ts';
 import { listSamples, sampleText, samples as draftSamples } from './testing/samples.ts';
 import { samples as verifySamples } from '../case-review-verify/testing/samples.ts';
-
-const KINDS: Record<string, string> = {
-  'case-review': 'workflow',
-  'case-review-verify': 'workflow',
-  'case-review-report': 'workflow',
-  famx: 'product',
-  'lumen-api': 'product',
-  'agile-platform': 'system',
-  plm: 'system',
-  'build-site': 'system',
-  'manual-store': 'system',
-  openkm: 'system',
-};
 
 let temp: string;
 before(async () => {
@@ -41,12 +28,17 @@ after(async () => {
 });
 
 describe('every pack of this package', () => {
-  for (const [id, kind] of Object.entries(KINDS)) {
+  const packsRoot = fileURLToPath(new URL('../../', import.meta.url));
+  for (const [id, directory] of Object.entries(PACK_DIRECTORIES)) {
     it(`${id}: pack.json is current, the pack validates and its publish check passes`, async () => {
-      assert.deepEqual(await manifestProblems(PACK_DIRECTORIES[id]), [], `run node packs/workflow/case-review/packaging.ts sign ${id}`);
-      const manifest = await readManifest(PACK_DIRECTORIES[id]);
+      const layout = relative(packsRoot, directory).split(sep);
+      assert.equal(layout.length, 2, 'registered packs use the packs/<kind>/<id> layout');
+      assert.equal(layout[1], id, 'the directory and registered identity agree');
+      const kind = PackKindSchema.parse(layout[0]);
+      assert.deepEqual(await manifestProblems(directory), [], `run node packs/workflow/case-review/packaging.ts sign ${id}`);
+      const manifest = await readManifest(directory);
       assert.deepEqual([manifest.id, manifest.kind], [id, kind]);
-      const staged = await stagePack(PACK_DIRECTORIES[id], join(temp, id));
+      const staged = await stagePack(directory, join(temp, id));
       const read = await readPackDirectory(staged);
       assert.ok(read.ok, JSON.stringify(!read.ok ? read.problems : []).slice(0, 2000));
       const validated = await validatePack(read.pack);
