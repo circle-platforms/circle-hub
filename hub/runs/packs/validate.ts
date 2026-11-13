@@ -4,7 +4,7 @@
 import { packSchema } from '../engine/slots.ts';
 import type { z } from 'zod';
 import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
-import { ERROR_HANDLING, isCheckTier, labelOf, TARGET, VERDICT, type CheckTier, type PackKind } from '../../../contracts/generated/vocabulary.ts';
+import { ERROR_HANDLING, labelOf, TARGET, VERDICT, type CheckTier, type PackKind } from '../../../contracts/generated/vocabulary.ts';
 import {
   ChecksFile,
   KnowledgeFile,
@@ -12,7 +12,7 @@ import {
   MAX_CHECK_READ_BYTES,
   PackSample,
   REQUIRED_FILES,
-  PublishableRequirementsFile,
+  RequirementsFile,
   SlotsFile,
   SkillDeclaration,
   WorkflowFile,
@@ -125,15 +125,9 @@ export function isKnownCode(code: string, packId: string): boolean {
   return code.startsWith(`${packId}.`) && PACK_CODE_TAIL.test(code.slice(packId.length + 1));
 }
 
-/** The tier a check's outcomes get, as runCheck decides it: the declaration's, else the table's, else by the basis. */
-export function effectiveTier(check: CheckEntry, table: unknown): CheckTier {
-  if (check.tier !== undefined) return check.tier;
-  if (check.interpreter !== undefined) {
-    const declared = isRecord(table) ? table.tier : undefined;
-    if (isCheckTier(declared)) return declared;
-    return isRecord(table) && hasText(table.basis) ? 'blocking' : 'advisory';
-  }
-  return hasText(check.basis) ? 'blocking' : 'advisory';
+/** The explicit tier declared by the check. */
+export function effectiveTier(check: CheckEntry, _table: unknown): CheckTier {
+  return check.tier;
 }
 
 /** A blocking check names its contract clause (C05 R[1]): its own basis, or for an interpreter the table's. */
@@ -248,7 +242,7 @@ function judgmentRequirement(r: { accepted_producer: string }): boolean {
 async function validateWorkflow(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<{ declarations: WorkflowDeclarations; samples: LoadedSample[] } | null> {
   const { manifest } = directory;
   const workflow = c.parse('workflow.shape', 'workflow.json', WorkflowFile, 'workflow@1');
-  const requirements = c.parse('requirements.shape', 'requirements.json', PublishableRequirementsFile, 'requirements@1');
+  const requirements = c.parse('requirements.shape', 'requirements.json', RequirementsFile, 'requirements@1');
   const checks = c.parse('checks.shape', 'checks.json', ChecksFile, 'checks@1');
   const slots = c.parse('slots.shape', 'slots.schema.json', SlotsFile, 'slots@1');
   const knowledgePresent = c.files.has(KNOWLEDGE);

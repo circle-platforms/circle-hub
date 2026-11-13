@@ -1,3 +1,4 @@
+import { PACK_KIND_REGISTRY } from '../../../contracts/src/pack.ts';
 import {scopedRecordStore,memoReadPort,memoReadValue} from '../../records/api.ts';
 import {defaultParsers} from '../../refs/api.ts';
 import { PersonalPacks } from './personal.ts';
@@ -165,12 +166,6 @@ export interface PackRegistry {
 }
 
 const PRODUCTS_LOCK = '#products';
-const DECLARATION_FILES: Readonly<Record<PackKind, readonly string[]>> = {
-  workflow: ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'knowledge.json', 'SKILL.md'],
-  product: ['product.json'],
-  system: ['system.json'],
-  skill: ['skill.json', 'SKILL.md', 'workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'knowledge.json', 'ledger.json'],
-};
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
   '.json': 'application/json',
   '.md': 'text/markdown',
@@ -713,7 +708,7 @@ class Registry implements PackRegistry {
     if (record === null) return null;
     const files = new Map<string, Uint8Array>();
     for (const entry of record.body.manifest.files) {
-      if (!DECLARATION_FILES[record.body.kind].includes(entry.path)) continue;
+      if (!(PACK_KIND_REGISTRY[record.body.kind].declarationFiles as readonly string[]).includes(entry.path)) continue;
       const bytes = await this.#records.objects.get(entry.sha256);
       if (bytes === null) throw new IntegrityError(`包文件 ${entry.path} 的原件缺失；请从备份恢复`, { detail: { digest, path: entry.path } });
       files.set(entry.path, bytes);
