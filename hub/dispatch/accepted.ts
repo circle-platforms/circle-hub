@@ -90,7 +90,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行开始上机验证；${PROGRESS}，结束后同样的答复带结果引用`) }]); }
   const settled = attempt.settled;
   if (!settled) return answer([{ text: `Hub 正在做上机验证前核对；${PROGRESS}` }]);
-  if (attempt.uncertain) { const next=administrative?`circle-hub run show ${run} --json`:'不要重新发送或另开运行；联系管理员只读核对原作业';return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:next}],next_action:next,text:clip(`上机验证状态尚未确认；不要重新发送或另开运行；下一步：${next}`)}]); }
+  if (attempt.uncertain || settled.outcome==='unknown') { const next=administrative?`circle-hub run show ${run} --json`:'不要重新发送或另开运行；联系管理员只读核对原作业';return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:next}],next_action:next,text:clip(`上机验证状态尚未确认；不要重新发送或另开运行；下一步：${next}`)}]); }
   // A settled attempt is answered once; a repeat after that tries again, as before (a cause the runner fixes, as a booking).
   open.delete(run);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering
@@ -103,8 +103,8 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     return answer([{ job: status.job, ...diagnostics, text: clip(`上机验证核对尚未完成；${diagnostics.next_action}`) }]);
   }
   const missing = !administrative && settled.checks ? releaseMissingFacts(settled.checks) : [];
-  const facts = missing.length ? missing : [{fact:administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
-  return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', missing_facts:facts,next_action:facts.map(fact=>fact.next_action).join('；'),text:clip('上机验证没有发出：'+facts.map(fact=>fact.fact).join('；')) }]);
+  const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对分配及权限检查接线':administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
+  return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:facts.map(fact=>fact.next_action).join('；'),text:clip('上机验证没有发出：'+facts.map(fact=>fact.fact).join('；')) }]);
 }
 
 /** The run's jobs that have not ended, with their notes, or null: submit_result keeps a different submission from them. */

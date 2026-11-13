@@ -53,11 +53,12 @@ export interface DispatchOptions {
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
+  environmentAccess?: { canUse(actor: Principal, executor: string): Promise<boolean> };
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
 }
-export interface JobStatus { member_missing_facts?:Array<{fact:string;next_action:string}>;/** The source holding what the target returned, word for word: see deviceReturn. */device_return?:string;/** The request id of the submit intent (issue 142): what the Hub asks the target about when no answer came. */request_id?:string;/** The stage at which the target refused, as the target names it, when the refusal is certified. */rejection_stage?:string;/** Ended before the submit was called: nothing was sent, and the cause may pass. */not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
+export interface JobStatus { error_code?:ActionBody['error_code']; member_missing_facts?:Array<{fact:string;next_action:string}>;/** The source holding what the target returned, word for word: see deviceReturn. */device_return?:string;/** The request id of the submit intent (issue 142): what the Hub asks the target about when no answer came. */request_id?:string;/** The stage at which the target refused, as the target names it, when the refusal is certified. */rejection_stage?:string;/** Ended before the submit was called: nothing was sent, and the cause may pass. */not_sent?:boolean;report_pending?:boolean;qualifier_marks?:QualifierMark[]; admin_release?:ReleaseCheck[];admin_release_missing?:boolean; unprobed_devices?:Array<{index:number;type:string|null}>; unjudged?:Array<{step:string;seat?:string;check?:string;pointer?:string}>; failed_checks?:Array<{step:string;seat?:string;check?:string;missing_fact:string;next_action:string}>; failed_conditions?:Array<{pointer:string;operator:string}>; requests?:Array<{id:string;question_sha256:string|null;deadline:string|null}>; marks?:EffectMark[];disposition?:Disposition;decided_by?:string;decided_at?:string; rounds?: Array<{ round: number; terminal: DynamicTerminal; reason?: Reason }>; reason?: string; job: string; phase: string; outcome: EffectOutcome; frozen: boolean; result?: string; events: number; next_action?: string; missing_fact?: string; }
 /** One piece of what the target returned for a row; text is null when the credential scan holds it back. */
 interface ReturnedPiece {name:string;text:string|null;}
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
@@ -178,7 +179,7 @@ export class DispatchService {
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
     const rounds=roundRecords(events).filter(e=>typeof e.body.detail.terminal==='string').map(e=>({round:Number(e.body.detail.round),terminal:e.body.detail.terminal as DynamicTerminal,...(typeof e.body.detail.reason==='string'?{reason:e.body.detail.reason as Reason}:{})})).sort((a,b)=>a.round-b.round);
     const deviceReturn=projectedResult(events)?.body.detail.device_return;
-    return { job,...(memberFacts.length?{member_missing_facts:memberFacts}:{}),...(typeof deviceReturn==='string'?{device_return:deviceReturn}:{}),...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}),...(typeof intent?.body.detail.request_id==='string'?{request_id:intent.body.detail.request_id}:{}),...(rejectionStage!==undefined?{rejection_stage:rejectionStage}:{}),...(end?.body.detail.phase==='complete'&&end.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?{not_sent:true}:{}), phase: String(events.at(-1)!.body.detail.phase),
+    return { job,...(end?.body.error_code?{error_code:end.body.error_code}:{}),...(memberFacts.length?{member_missing_facts:memberFacts}:{}),...(typeof deviceReturn==='string'?{device_return:deviceReturn}:{}),...(pendingReport?{report_pending:true}:{}),...(modelPremises?.length?{qualifier_marks:['conditional_on_judgment' as const]}:{}),...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),...(rounds.length?{rounds}:{}),...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(failedChecks.length?{failed_checks:failedChecks}:{}),...(unjudged.length?{unjudged}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),requests:openRequests(events).map(e=>({id:e.digest,question_sha256:typeof e.body.detail.question_sha256==='string'?e.body.detail.question_sha256:null,deadline:typeof e.body.detail.deadline==='string'?e.body.detail.deadline:null})),marks,...(isDisposition(choice)?{disposition:choice}:{}),...(typeof decision?.body.detail.decided_by==='string'?{decided_by:decision.body.detail.decided_by}:{}),...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}), ...(typeof end?.body.detail.public_reason === 'string' ? {reason:end.body.detail.public_reason} : {}),...(typeof intent?.body.detail.request_id==='string'?{request_id:intent.body.detail.request_id}:{}),...(rejectionStage!==undefined?{rejection_stage:rejectionStage}:{}),...(end?.body.detail.phase==='complete'&&end.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?{not_sent:true}:{}), phase: String(events.at(-1)!.body.detail.phase),
       outcome: riskDisposed ? 'unknown' : end?.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false ? 'not_dispatched' : end && retrySafeOutcome(end.body.detail.outcome) ? end.body.detail.outcome as EffectOutcome : unknown || missingReceipt || (intent && !receipt) ? 'unknown' : end?.body.detail.outcome === 'not_dispatched' ? 'not_dispatched' : end ? 'effective' : intent ? 'issued' : 'not_dispatched',
       frozen: unknown || missingReceipt, ...(typeof result?.body.detail.reference === 'string' ? { result: result.body.detail.reference } : {}), events: events.length, ...(gap||missingFact ? { missing_fact:[missingFact,gap?.missing_fact].filter(Boolean).join('；') } : {}),
       ...(gap?{next_action:String(gap.next_action)}:pendingReport&&!unknown&&!missingReceipt?{next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:`circle-hub job resume ${job}；只读补报告，不重交`}:riskDisposed ? {next_action:'处置已完成，原效果保留未知；后续作业须重新核验与授权，不得将原请求当作未执行重交'} : unknown || missingReceipt ? { next_action: typeof uncertainty?.body.detail.next_action==='string'?uncertainty.body.detail.next_action:`circle-hub job resume ${job}；只读原请求，不重交` } : typeof end?.body.detail.next_action === 'string' ? { next_action: end.body.detail.next_action } : !isDone(events) ? { next_action: `circle-hub job resume ${job}` } : {}) };
@@ -411,7 +412,7 @@ export class DispatchService {
    * The Hub's own dispatch of an accepted run for its runner (decision 105). Refusal wording (C14) lists only conditions
    * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
    */
-  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; checks?: ReleaseCheck[] }> {
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
@@ -421,9 +422,13 @@ export class DispatchService {
     const pack = detail.run.pack.split('@')[0];
     const candidates = (await this.registry.list(admin)).filter((e) => e.definition.enabled && e.definition.proof.package === pack);
     const released: typeof candidates = [];
+    let permittedCandidates=0,environmentFailure:BoundaryFailure|undefined;
     let refusalChecks: ReleaseCheck[] | undefined;
     let refusalExecutor: string | undefined;
     for (const candidate of candidates) {
+      const useFailure=await this.environmentUseFailure(detail.run.runner,candidate.id);
+      if(useFailure){environmentFailure??=useFailure;continue;}
+      permittedCandidates++;
       try {
         const explanation = await this.explainRelease(admin, run, candidate.id);
         if (explanation.satisfied) { released.push(candidate); continue; }
@@ -440,6 +445,7 @@ export class DispatchService {
     }
     if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，请管理员指定执行器后再上机验证` }; }
     if (!released.length) {
+      if(candidates.length&&permittedCandidates===0&&environmentFailure)return {started:false,error_code:environmentFailure.code,reason:environmentFailure.message};
       if (!candidates.length) return { started: false, reason: '没有为该任务包登记的启用执行器，上机验证没有发出；等管理员登记执行器' };
       const runner = await this.options.records.principals.get(detail.run.runner);
       return {
@@ -460,10 +466,10 @@ export class DispatchService {
       return { started: true, executor: chosen.id, status };
     } catch (error) {
       log('error', `${chosen.id}: ${described(error)}`);
-      return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
+      return { started: false, executor: chosen.id, ...(!(error instanceof TargetOccupiedError)&&!(error instanceof AlreadyDispatchedError)?{outcome:'unknown' as const}:{}), reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
           ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后重新开始上机验证` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
-          : '上机验证前核对出错，没有发出；请管理员查看调用日志后处理，再原样重交' };
+          : '本次派发状态尚未确认；请管理员只读核对作业记录，不要重新发送' };
     }
   }
 
@@ -493,6 +499,8 @@ export class DispatchService {
       if (!end || isFrozen(priorEvents) || !(retrySafeOutcome(end.body.detail.outcome) || end.body.detail.outcome==='not_dispatched' && end.body.detail.submit_invoked===false) || pinned.input?.run !== input.run || digestOfValue(operationDefinition(await this.pinned(pinned))) !== digestOfValue(operationDefinition(d)) || !same({...pinned.input,result:null},{...input,result:null})) throw new AlreadyDispatchedError(priorJob, !!end && !isFrozen(priorEvents), `这份字节已有派发意图；作业摘要 ${priorJob}；只能查询或对账，不能重交`);
     }
     const attempt = attempts.length + 1;
+    const useFailure=await this.environmentUseFailure(input.user,executor);
+    if(useFailure)return this.boundaryRefused(by,{...provisional,input},useFailure);
     const source = await this.options.records.artifacts.source({ id: input.user, name: '', role: 'user' }, input.sha256, { consumer: 'function' });
     let initial:HolderSnapshot[];try{initial=await this.holders(input.ancestors,input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);}catch(error){const missing=error instanceof LeaseCoverageError?error.missing:[];return this.boundaryRefused(by,{...provisional,input},deny(5,'LEASE_UNAVAILABLE',missing.length?`缺少覆盖派发窗口的同血缘资源租约：${missing.join('、')}；执行器的目标是这些键所在的整个自动化测试环境，在本运行的预订谱系里取得全部键后重开计划与核验`:'缺少覆盖派发窗口的同血缘资源租约；请取得租约并重证基线'));}
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
@@ -584,6 +592,7 @@ export class DispatchService {
           const row=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|var:${use.name}`,kind:'authorization',newestFirst:true,limit:1},tx);
           if(row.items[0]?.body.revoked||row.items[0]?.digest!==use.decision)throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
         }
+        const useFailure=await this.environmentUseFailure(input.user,executor);if(useFailure)throw new EffectBoundaryError(useFailure);
         await gate.reserveBudget(boundary.row,tx);
         const permitted = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}`, tx);
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
@@ -661,6 +670,15 @@ export class DispatchService {
       return await this.status(by, binding.job);
     } finally { await stop(); await unlockObservation?.(); }
   }
+  /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
+  private async environmentUseFailure(userId:string,executor:string):Promise<BoundaryFailure|null> {
+    if(!this.options.environmentAccess)return deny(1,'SOURCE_NOT_PERMITTED','环境使用权限检查未装配，不能派发；请管理员恢复检查接线');
+    try {
+      const actor=await this.options.records.principals.get(userId);
+      if(!actor||actor.disabled||!await this.options.environmentAccess.canUse(actor,executor))return deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
+      return null;
+    } catch { return deny(1,'SOURCE_UNAVAILABLE','本次环境使用权限尚未核对，不能派发；请管理员恢复权限读取后再核验'); }
+  }
   private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure):Promise<JobStatus>{
     let adminReleaseSha:string|undefined,adminReleaseMissing=false;
     if(failure.admin_checks?.length){
@@ -677,7 +695,7 @@ export class DispatchService {
     if(!(await this.journal.events(binding.job)).length)await this.journal.append(binding,'reservation','dispatch','completed',{binding,read_only:true});
     // The event records submit_invoked false, so a refusal without a conclusion may say that nothing went out (decision 116).
     const said=refusalText(failure,false);
-    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,next_action:failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
+    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,...(failure.code==='SOURCE_NOT_PERMITTED'?{member_missing_facts:[{fact:failure.message,next_action:'联系管理员核对本测试环境的分配及权限检查接线，再重新核验'}]}:{}),next_action:failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
     return this.status(by,binding.job);
   }
 
@@ -1592,6 +1610,7 @@ export class DispatchService {
         await this.options.records.variables.lockNames((binding.variables ?? []).map(use => use.name), tx);
         const config = await this.options.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|executor.${binding.executor}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
         if (config.items[0]?.body.revoked || config.items[0]?.body.bound !== registered.digest) throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验', '用当前配置重新核验后再派发；没有提交');
+        const useFailure=await this.environmentUseFailure(input.user,binding.executor);if(useFailure)throw new EffectBoundaryError(useFailure);
         await gate.reserveBudget(boundary.row, tx);
         const permitted = await this.journal.append(binding, 'gate', 'validate', 'completed', { allow_submit: true }, [], `dispatch.gate:${binding.job}:${round}`, tx);
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
