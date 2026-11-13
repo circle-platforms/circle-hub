@@ -40,6 +40,18 @@ test('pack install and executor assign build argv from the command registry', ()
   );
 });
 
+test('executor-assign accepts several executors in one form for the same subject', () => {
+  const built = ACTIONS['executor-assign'].build(formOf({
+    executors: 'exe_synthetic_a\nexe_synthetic_b',
+    team: 'tm_0123456789abcdefghjkmnpqrs',
+  }));
+  assert.ok(Array.isArray(built));
+  assert.deepEqual(built, [
+    { argv: ['executor', 'assign', 'exe_synthetic_a', '--team=tm_0123456789abcdefghjkmnpqrs'] },
+    { argv: ['executor', 'assign', 'exe_synthetic_b', '--team=tm_0123456789abcdefghjkmnpqrs'] },
+  ]);
+});
+
 test('member invite and team batch assign forms post to admin actions', () => {
   const invite = String(registeredActionForm('user-invite', 'csrf', '签发', { values: { user: 'usr_synthetic' } }));
   assert.match(invite, /action="\/console\/admin\/do\/user-invite"/);

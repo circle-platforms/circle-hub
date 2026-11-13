@@ -185,7 +185,24 @@ export const ACTIONS: Record<string, Action> = {
   'executor-disable': { title: '停用执行器', back: RESOURCES, build: (form) => fromRegistration('executor-disable', form) },
   'executor-add': { title: '登记测试环境执行器', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-add', form) },
   'executor-update': { title: '更新测试环境执行器', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-update', form) },
-  'executor-assign': { title: '分配测试环境', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-assign', form) },
+  'executor-assign': {
+    title: '分配测试环境',
+    back: `${RESOURCES}?tab=environments`,
+    active: 'connections',
+    // Boss 03:45 #3: one POST may assign several executors under the same target (executors= newline list, or single executor=).
+    build: (form) => {
+      const listed = form.get('executors').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const single = form.get('executor').trim();
+      const ids = listed.length > 0 ? listed : single === '' ? [] : [single];
+      if (ids.length === 0) throw new FormError('请选择测试环境执行器');
+      const team = form.get('team').trim();
+      const user = form.get('user').trim();
+      if ((team === '') === (user === '')) throw new FormError('请选择团队或账户之一');
+      return ids.map((executor) => fromRegistration('executor-assign', {
+        get: (name) => name === 'executor' ? executor : name === 'team' ? team : name === 'user' ? user : form.get(name),
+      }));
+    },
+  },
   'executor-unassign': { title: '撤回测试环境分配', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-unassign', form) },
   'doc-put': { title: '登记环境清单文档', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('doc-put', form) },
   'lease-register': { title: '登记租约前缀归属', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('lease-register', form) },
