@@ -112,7 +112,7 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
   {
     id: 'teams-permissions',
     title: '团队和权限',
-    rationale: '覆盖团队成员记录、包与资源授权边界、OAuth/RFC8628 标准授权、请求级权限快照、读范围、控制台团队管理与配额/授权视图、无包访问隔离与成员删退隔离。',
+    rationale: '覆盖团队成员记录、包与资源授权边界、OAuth/RFC8628 标准授权、请求级权限快照、读范围、控制台团队管理与配额/授权视图、知识空间访问权限与成员永久删除隔离。',
     commands: [],
     unitFiles: [
       'hub/records/teams.test.ts',
@@ -133,7 +133,8 @@ export const QUICK_CATEGORIES: readonly QuickCategory[] = [
       'hub/connectors/resource-access.test.ts',
     ],
     acceptanceFiles: [
-      'tests/acceptance/06-user-without-pack.test.ts',
+      'tests/acceptance/46-knowledge-spaces.test.ts',
+      'tests/acceptance/54-member-deletion.test.ts',
     ],
   },
   {
