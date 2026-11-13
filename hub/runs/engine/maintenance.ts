@@ -151,10 +151,6 @@ async function expireRun(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promi
   const now=ctx.now();
   const account=await ctx.deps.records.principals?.get(runner);
   if(!account||account.disabled||!canSeeRun(account,run))return; // recoverRun has already issued the named administrator request.
-  if(!run.submission_due){
-    await putRequest(ctx,{run:run.run,answer_action:'rerun',kind:'disposition',audience:runner,due:new Date(now.getTime()+86400000).toISOString(),source:stored.digest,code:'not_covered',missing:'旧运行没有记录提交期限',next_action:'用 start_run 以本运行为 predecessor 开带 submission_due 的新修订，或由运行者明确放弃'});
-    return;
-  }
   if(Date.parse(run.submission_due)>now.getTime())return;
   const input={run:run.run,run_record:stored.digest,submission_due:run.submission_due,observed_at:now.toISOString()};
   const evidence=await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:['rec:'+stored.digest],startedAt:now.toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{input,deadline_checked:true,accepted_submission_absent:true}});

@@ -571,7 +571,6 @@ async function validate(base: Basis, submission: EffectiveSubmission, before: Pr
     return capability!==undefined&&tokens?.[1]==='items'&&tokens[3]==='slots'&&tokens[4]===capability.slot?{...error,requirement:capability.requirement}:error;
   });
   const structure = attribute([...slotProblems(workflow, run.items, submission), ...runtimeCheckProblems(workflow,run.items,submission)]);
-  if(submission.criterion_changes?.length&&!run.submission_due)structure.push(protocolError('SUBMISSION_SCHEMA_VIOLATION','历史运行缺少提交期限，不能建立判据复核请求',{path:'/criterion_changes',fix:'以本运行为 predecessor 开新修订，取得明确提交期限后重交声明'}));
   const exactAttempts: Array<Record<string, unknown>> = [];
   const scope = await buildScope(ctx, run, workflow, user, 'function', exactAttempts);
   const resolver = createResolver(ctx, scope, 'function', exactAttempts);
