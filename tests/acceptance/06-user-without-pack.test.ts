@@ -69,7 +69,7 @@ describe('scenario 6: user without pack', () => {
     assert.equal(unassignedCall.admin_note, `管理员理由 ${unassignedCall.admin_reasons?.length} 条；详见管理员调用日志详情`);
 
     // 4. Console log check
-    const callsPage = await consoleClient.get('/console/admin/calls');
+    const callsPage = await consoleClient.get('/console/records');
     assert.equal(callsPage.status, 200);
     assert.ok(callsPage.body.includes('SOURCE_NOT_PERMITTED') || callsPage.body.includes(outsider.user.id));
   });
