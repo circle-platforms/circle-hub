@@ -41,6 +41,9 @@ export const knowledgeDownloadPath = (): string => '/console/knowledge/download'
 export const connectionsPath = (): string => '/console/connections';
 export const recordsPath = (): string => '/console/records';
 export const teamPath = (memberId?: string): string => (memberId === undefined ? '/console/team' : `/console/team/${enc(memberId)}`);
+/** Collaborative teams (K6); distinct from /console/team member pages so tm_ ids never collide with user ids. */
+export const teamsPath = (): string => '/console/teams';
+export const teamDetailPath = (teamId: string): string => `/console/teams/${enc(teamId)}`;
 export const settingsPath = (): string => '/console/settings';
 export const healthPath = (): string => '/console/health';
 
