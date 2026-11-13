@@ -33,7 +33,7 @@ test('copied legacy v1 ciphertext and authenticated metadata execute under a new
     assert.ok(fresh.endpoint.calls.every(call => call.headers.authorization === 'Bearer ' + value));
     const events = await fresh.service.journal.events(state.job);
     const used = events.find(event => event.body.detail.phase === 'credential_used');
-    assert.deepEqual(used?.body.detail.variables, [{ kind: 'secret', at: fresh.executor.id + '#/credential', name, version: 1 }]);
+    assert.deepEqual(used?.body.detail.variables, [{ kind: 'secret', at: fresh.executor.id + '#/credential', name, version: 1, sealed_sha256: createHash('sha256').update(original).digest('hex') }]);
     assert.deepEqual(used?.body.inputs, []);
     assert.equal(await fresh.kit.authorizations.resourceConfig('secret:' + name), null);
     assert.equal((await fresh.kit.vault.secretMetadata(name))?.set_by, source.admin.id);
