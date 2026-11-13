@@ -91,17 +91,28 @@ test('a finished permission scope cannot lend a shared source to detached work a
 for (const readScope of [false, true]) {
   const scope = readScope ? 'a read scope and request permissions' : 'request permissions without a read scope';
 
-  test(`an explicit account disable retires readable source bytes inside ${scope}`, async t => {
+  test(readScope ? `an explicit account disable retires readable source bytes inside ${scope}`
+    : 'account disable reloads under frozen permission-only identity until the request ends', async t => {
     const w = await fixture(t);
+    const calls = readScope ? undefined : countSources(t, w);
     const read = () => w.spaces.source(w.owner, w.artifact.body.sha256, undefined, 'model', w.artifact.digest);
     const request = () => withRequestPermissions(w.kit.artifacts, w.owner, async () => {
       assert.ok((await read())?.bytes, 'establish a successful source proof before the destructive write');
       const disabled = await w.kit.principals.setDisabled(w.admin, w.owner.id, true);
       assert.equal(disabled.disabled, true, 'the explicit write completed in this same async context');
-      assert.equal(await read(), null, 'a disabled subject must not regain cached bytes before this request ends');
+      if (readScope) assert.equal(await read(), null, 'a disabled subject must not regain cached bytes before this request ends');
+      else {
+        assert.ok((await read())?.bytes, 'permission-only requests retain their start-of-request identity');
+        assert.equal(calls!.length, 2, 'the destructive write clears source values, not the frozen permission snapshot');
+      }
     });
     if (readScope) await withReadScope(request);
-    else await request();
+    else {
+      await request();
+      await withRequestPermissions(w.kit.artifacts, w.owner, async () => {
+        assert.equal(await read(), null, 'the next request must observe the disabled account');
+      });
+    }
   });
 
   test(`an explicit personal purge retires readable source bytes inside ${scope}`, async t => {
