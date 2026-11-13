@@ -9,7 +9,11 @@ import { ProductId } from '../../../contracts/src/product.ts';
 import { ReferenceUri } from '../../../contracts/src/reference.ts';
 import type { ResetProblem, ResetScope } from './types.ts';
 
-export interface CurrentReference { kind: 'record' | 'object'; digest: string; field: string }
+export interface CurrentReference {
+  kind: 'record' | 'object'; digest: string; field: string;
+  /** Content/pack identities require a verified alias; they are never treated as records.digest directly. */
+  recordAlias?: boolean;
+}
 export interface CurrentRecord {
   digest: string;
   kind: string;
@@ -31,6 +35,8 @@ export interface SelectionOptions {
   objectReferences?: ReadonlyMap<string, readonly CurrentReference[]>;
   /** Verified source_artifact holders, including held_by ownership resolved from SQL foreign keys. */
   sourceScopes?: ReadonlyMap<string, readonly ResetScope[]>;
+  /** Verified object bytes that the host explicitly keeps regardless of the selected record scopes. */
+  retainedObjects?: ReadonlySet<string>;
 }
 export interface RecordSelection { retained: string[]; cleared: string[]; blocked: ResetProblem[] }
 type Body = Record<string, unknown>;
@@ -120,6 +126,7 @@ function classifyClaim(record: CurrentRecord, body: Body): ResetScope | null {
   const feeding = object(object(object(body.statement)?.data)?.feeding);
   const schema = feeding?.schema;
   if (typeof schema !== 'string') return null;
+  if (schema === 'feeding-offset@1' || schema === 'feeding-quote@1' || schema === 'knowledge-structure@1') return null;
   const shape = Object.hasOwn(FEEDING_SCHEMAS, schema) ? FEEDING_SCHEMAS[schema as keyof typeof FEEDING_SCHEMAS] : undefined;
   if (!shape?.safeParse(feeding).success) return null;
   return schema === 'usage@1' ? 'history' : 'knowledge';
@@ -170,14 +177,14 @@ const CLASSIFIERS = {
   root_pointer: fixed('knowledge', 'root_pointer@1'),
   knowledge_space_version: fixed('knowledge', 'knowledge-space-version@1'),
   knowledge_space_entry: fixed('knowledge', 'knowledge-space-entry@1'),
-  knowledge_space_grant: fixed('knowledge', 'knowledge-space-grant@1'),
+  knowledge_space_grant: fixed('config', 'knowledge-space-grant@1'),
   knowledge_space_source: fixed('knowledge', 'knowledge-space-source@1'),
-  knowledge_space_quota: fixed('knowledge', 'knowledge-space-quota@1'),
+  knowledge_space_quota: fixed('config', 'knowledge-space-quota@1'),
   knowledge_share: fixed('knowledge', 'knowledge-share@1'),
   personal_pack_version: fixed('packs', 'personal-pack-version@1'), personal_pack_grant: fixed('packs', 'personal-pack-grant@1'),
   personal_pack_retirement: fixed('packs', 'personal-pack-retirement@1'), personal_pack_transfer: fixed('packs', 'personal-pack-transfer@1'),
   memory_document: fixed('knowledge', 'memory-document@1'), memory_version: fixed('knowledge', 'memory-version@1'),
-  memory_grant: fixed('knowledge', 'memory-grant@1'), memory_share: fixed('knowledge', 'memory-share@1'),
+  memory_grant: fixed('config', 'memory-grant@1'), memory_share: fixed('knowledge', 'memory-share@1'),
   knowledge_source_attribution: fixed('knowledge', 'knowledge-source-attribution@1'),
   knowledge_team_source_attribution: fixed('knowledge', 'knowledge-team-source-attribution@1'),
   member_deletion: fixed('config', 'member-deletion@1'), token_issuance: fixed('config', 'token-issuance@1'),
@@ -199,22 +206,45 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
   const body = object(record.body);
   if (!body) return [];
   const out: CurrentReference[] = [...record.references ?? []];
-  const add = (kind: CurrentReference['kind'], value: unknown, field: string): void => {
-    if (sha256(value)) out.push({ kind, digest: value, field });
+  const add = (kind: CurrentReference['kind'], value: unknown, field: string, recordAlias = false): void => {
+    if (sha256(value)) out.push({ kind, digest: value, field, ...(kind === 'record' ? { recordAlias } : {}) });
   };
   const ref = (value: unknown, field: string): void => {
     if (typeof value !== 'string' || !ReferenceUri.safeParse(value).success) return;
     const colon = value.indexOf(':'), scheme = value.slice(0, colon);
     const identity = value.slice(colon + 1).split(/[\/#]/, 1)[0];
-    if (scheme === 'rec' || scheme === 'tree') add('record', identity, field);
+    if (scheme === 'rec') add('record', identity, field);
+    if (scheme === 'tree' && sha256(identity)) out.push({ kind: 'record', digest: identity, field });
     if (scheme === 'src') add('object', identity, field);
     if (scheme === 'tree') add('record', value.slice(value.lastIndexOf('@') + 1), field);
   };
   const rows = (value: unknown): Body[] => Array.isArray(value) ? value.flatMap(row => object(row) ? [object(row)!] : []) : [];
+  const grounds = (value: unknown, field: string): void => rows(value).forEach((ground, n) => ref(ground.reference, field + '/' + n + '/reference'));
+  const variables = (value: unknown, field: string): void => rows(value).forEach((variable, n) => add('record', variable.decision, field + '/' + n + '/decision'));
+  const composition = (value: unknown, field: string): void => rows(value).forEach((row, n) => {
+    add('record', row.entry, field + '/' + n + '/entry', true);
+    strings(row.fragments).forEach((fragment, index) => ref(fragment, field + '/' + n + '/fragments/' + index));
+  });
+  const rootSources = (value: unknown, field: string): void => rows(value).forEach((source, n) => {
+    add('record', source.artifact, field + '/' + n + '/artifact'); add('object', source.sha256, field + '/' + n + '/sha256');
+  });
+  const claim = (value: unknown, field: string): void => {
+    const entry = object(value);
+    strings(entry?.grounds).forEach((value, n) => ref(value, field + '/grounds/' + n));
+    strings(object(entry?.validity)?.premises).forEach((value, n) => ref(value, field + '/validity/premises/' + n));
+  };
+  const locks = (value: unknown, field: string): void => {
+    const frozen = object(value);
+    add('record', frozen?.root, field + '/root', true); add('record', frozen?.unversioned_root, field + '/unversioned_root', true);
+    add('record', frozen?.pack_digest, field + '/pack_digest', true);
+    add('record', object(frozen?.feeding_offset)?.root, field + '/feeding_offset/root', true);
+    rows(frozen?.skills).forEach((skill, n) => add('record', skill.digest, field + '/skills/' + n + '/digest', true));
+  };
   switch (record.kind) {
     case 'authorization':
       if (body.permission === 'publish' || body.permission === 'resource_config' || body.permission === 'assign') add('object', body.bound, '/bound');
-      add('record', body.supersedes, '/supersedes'); break;
+      add('record', body.supersedes, '/supersedes');
+      if (body.permission === 'share') ref(body.object, '/object'); break;
     case 'source_artifact': {
       add('object', body.sha256, '/sha256');
       const origin = object(body.origin), read = object(origin?.read), generated = object(origin?.generated);
@@ -229,36 +259,69 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
       if (record.kind === 'personal_pack_version') Object.entries(object(body.files) ?? {}).forEach(([key, digest]) => add('record', digest, '/files/' + key));
       break;
     }
-    case 'validation_result': add('record', body.submission, '/submission'); ref(body.system_input, '/system_input'); break;
-    case 'result_summary': add('record', body.result, '/result'); if (body.system_input === false) add('record', body.submission, '/submission'); break;
+    case 'personal_pack_retirement': add('object', body.digest, '/digest'); break;
+    case 'personal_pack_transfer': add('object', body.digest, '/digest'); add('record', body.source, '/source'); add('record', body.target, '/target'); break;
+    case 'validation_result':
+      if (body.system_input === undefined) add('record', body.submission, '/submission');
+      ref(body.system_input, '/system_input'); locks(body.locks, '/locks');
+      rows(body.cross_item).forEach((value, n) => claim(value, '/cross_item/' + n));
+      rows(object(body.contributions)?.stored).forEach((stored, n) => add('record', stored.record, '/contributions/stored/' + n + '/record')); break;
+    case 'result_summary':
+      add('record', body.result, '/result'); if (body.system_input === false) add('record', body.submission, '/submission');
+      strings(body.grounds).forEach((value, n) => ref(value, '/grounds/' + n)); break;
     case 'request': add('record', body.source, '/source'); add('record', body.job, '/job'); strings(body.sources).forEach((value, n) => ref(value, '/sources/' + n)); break;
     case 'run':
       rows(body.sources).forEach((source, n) => { add('record', source.artifact, '/sources/' + n + '/artifact'); add('record', source.meta_artifact, '/sources/' + n + '/meta_artifact'); ref(source.reference, '/sources/' + n + '/reference'); });
       add('object', body.executors, '/executors'); add('object', body.policy, '/policy');
       add('object', body.pack_digest, '/pack_digest'); add('object', body.product_pack_digest, '/product_pack_digest');
+      add('record', body.pack_digest, '/pack_digest', true); add('record', body.product_pack_digest, '/product_pack_digest', true);
       rows(body.skills).forEach((skill, n) => add('object', skill.digest, '/skills/' + n + '/digest'));
-      add('record', body.root, '/root'); add('record', body.unversioned_root, '/unversioned_root');
+      rows(body.skills).forEach((skill, n) => add('record', skill.digest, '/skills/' + n + '/digest', true));
+      add('record', body.root, '/root', true); add('record', body.unversioned_root, '/unversioned_root', true);
+      add('record', object(body.feeding_offset)?.root, '/feeding_offset/root', true);
+      strings(body.feeding_objects).forEach((digest, n) => add('record', digest, '/feeding_objects/' + n, true));
       for (const [key, digest] of Object.entries(object(body.knowledge_spaces) ?? {})) if (key !== 'owner') add('record', digest, '/knowledge_spaces/' + key);
+      rows(body.target_basis).forEach((value, n) => claim(value, '/target_basis/' + n));
+      rows(body.device_observations).forEach((value, n) => claim(value, '/device_observations/' + n));
       break;
     case 'knowledge_space_version':
       add('record', body.parent, '/parent'); add('object', body.tree, '/tree');
-      rows(body.entries).forEach((entry, n) => add('record', entry.record, '/entries/' + n + '/record'));
+      rows(body.entries).forEach((entry, n) => { add('record', entry.record, '/entries/' + n + '/record'); add('record', entry.entry, '/entries/' + n + '/entry', true); });
       strings(body.sources).forEach((digest, n) => add('record', digest, '/sources/' + n));
-      rows(body.products).forEach((product, n) => add('record', product.root, '/products/' + n + '/root')); break;
+      rows(body.products).forEach((product, n) => add('record', product.root, '/products/' + n + '/root', true)); break;
+    case 'knowledge_space_entry':
+      grounds(body.grounds, '/grounds'); add('record', body.replaces, '/replaces', true);
+      add('record', object(body.shared_from)?.root, '/shared_from/root'); add('record', object(body.shared_from)?.entry, '/shared_from/entry', true);
+      strings(body.source_attributions).forEach((digest, n) => add('record', digest, '/source_attributions/' + n)); break;
     case 'knowledge_space_source': add('record', body.artifact, '/artifact'); add('record', body.attribution, '/attribution'); add('object', body.sha256, '/sha256'); break;
     case 'knowledge_source_attribution': add('record', body.source, '/source'); add('record', body.artifact, '/artifact'); add('object', body.sha256, '/sha256'); break;
     case 'knowledge_team_source_attribution':
       add('record', body.team_source, '/team_source'); add('record', body.declaration, '/declaration'); add('record', body.artifact, '/artifact'); add('object', body.sha256, '/sha256'); break;
     case 'memory_version': add('record', body.document, '/document'); add('record', body.parent, '/parent'); add('record', body.content_version, '/content_version'); break;
+    case 'memory_share':
+      for (const field of ['document', 'version', 'team_document', 'team_version', 'replaces']) add('record', body[field], '/' + field);
+      break;
+    case 'knowledge_share':
+      add('record', object(body.source)?.root, '/source/root'); add('record', object(body.source)?.entry, '/source/entry', true);
+      add('record', body.team_root, '/team_root'); ref(body.reference, '/reference');
+      strings(object(body.single_item)?.sources).forEach((digest, n) => add('record', digest, '/single_item/sources/' + n)); break;
     case 'tree_node':
-      if (record.schema === 'tree_node@1') { rows(body.children).forEach((child, n) => add('record', child.digest, '/children/' + n + '/digest')); strings(body.entries).forEach((digest, n) => add('record', digest, '/entries/' + n)); } break;
+      if (record.schema === 'tree_node@1') { rows(body.children).forEach((child, n) => add('record', child.digest, '/children/' + n + '/digest', true)); strings(body.entries).forEach((digest, n) => add('record', digest, '/entries/' + n, true)); } break;
     case 'tree_root':
-      if (record.schema === 'tree_root@1') { add('record', body.root, '/root'); const parts = object(body.parts); for (const [key, list] of Object.entries(parts ?? {})) rows(list).forEach((part, n) => add('record', part.record, '/parts/' + key + '/' + n + '/record')); }
-      rows(body.sources).forEach((source, n) => { add('record', source.artifact, '/sources/' + n + '/artifact'); add('object', source.sha256, '/sources/' + n + '/sha256'); }); break;
-    case 'root_pointer': add('record', body.move, '/move'); add('record', body.composition, '/composition'); add('record', body.root, '/root'); break;
+      if (record.schema === 'tree_root@1') {
+        add('record', body.root, '/root', true); add('record', object(body.producer)?.digest, '/producer/digest', true); variables(body.variables, '/variables');
+        const parts = object(body.parts); for (const [key, list] of Object.entries(parts ?? {})) rows(list).forEach((part, n) => add('record', part.record, '/parts/' + key + '/' + n + '/record'));
+        rows(body.known_builds).forEach((build, n) => { if (build.record !== '0'.repeat(64)) add('record', build.record, '/known_builds/' + n + '/record'); });
+        composition(body.composition, '/composition'); composition(body.unplaced, '/unplaced'); rootSources(body.sources, '/sources');
+      } else if (record.schema === 'tree_root-sources@1') rootSources(body.rows, '/rows');
+      else composition(body.rows, '/rows');
+      break;
+    case 'root_pointer':
+      add('record', body.move, '/move'); add('record', body.composition, '/composition'); add('record', body.root, '/root', true);
+      add('record', body.expected, '/expected', true); ref(body.cause, '/cause'); break;
     case 'action':
       strings(body.inputs).forEach((value, n) => {
-        if (sha256(value)) { const kind = moveTargetKind(body); if (kind) add(kind, value, '/inputs/' + n); }
+        if (sha256(value)) { const kind = moveTargetKind(body); if (kind) add(kind, value, '/inputs/' + n, kind === 'record'); }
         else ref(value, '/inputs/' + n);
       });
       if (record.schema === 'mcp-client-declaration@1') add('record', body.call, '/call');
@@ -266,16 +329,66 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
         rows(body.artifacts).forEach((artifact, n) => add('record', artifact.record, '/artifacts/' + n + '/record'));
         rows(body.requests).forEach((request, n) => add('record', request.artifact, '/requests/' + n + '/artifact'));
         rows(body.reads).forEach((read, n) => add('record', read.manifest, '/reads/' + n + '/manifest'));
+        variables(body.variables, '/variables'); add('record', object(body.system_pack)?.digest, '/system_pack/digest', true);
       }
       if (record.schema === 'action@1') {
         const detail = object(body.detail); add('record', detail?.previous_action, '/detail/previous_action');
         const target = moveTargetKind(body);
-        if (target) { add(target, detail?.expected, '/detail/expected'); add(target, detail?.next, '/detail/next'); }
+        if (target) { add(target, detail?.expected, '/detail/expected', target === 'record'); add(target, detail?.next, '/detail/next', target === 'record'); }
         if (body.component === 'server.docs@1' && body.action === 'read') add('object', detail?.sha256, '/detail/sha256');
+        if (typeof body.component === 'string' && Object.hasOwn(ACTION_COMPONENTS, body.component) && ACTION_COMPONENTS[body.component] === 'knowledge') {
+          add('record', detail?.root, '/detail/root', true); add('record', detail?.composition, '/detail/composition');
+          add('record', detail?.artifact, '/detail/artifact'); add('object', object(detail?.output)?.sha256, '/detail/output/sha256');
+          if (body.component === 'hub.feeding@2' || body.component === 'knowledge.sync@1') add('object', detail?.sha256, '/detail/sha256');
+          rows(detail?.lists).forEach((list, n) => add('object', list.externals, '/detail/lists/' + n + '/externals'));
+        }
       }
       break;
-    case 'claim': strings(body.grounds).forEach((value, n) => ref(value, '/grounds/' + n)); break;
+    case 'claim': {
+      claim(body, '');
+      if (record.schema === 'seedling@1') {
+        add('record', body.root, '/root', true); add('record', body.composition, '/composition'); add('record', body.parent, '/parent');
+        rows(body.origin).forEach((source, n) => add('object', source.sha256, '/origin/' + n + '/sha256'));
+      } else if (record.schema === 'feeding-offset@1') add('record', body.root, '/root', true);
+      else if (record.schema === 'claim@1') {
+        const feeding = object(object(object(body.statement)?.data)?.feeding), source = object(feeding?.source);
+        add('record', source?.artifact, '/statement/data/feeding/source/artifact'); add('object', source?.bytes, '/statement/data/feeding/source/bytes');
+        add('record', feeding?.root, '/statement/data/feeding/root', true);
+        add('record', feeding?.object, '/statement/data/feeding/object', true);
+        strings(feeding?.entries).forEach((digest, n) => add('record', digest, '/statement/data/feeding/entries/' + n));
+      } else if (record.schema === 'knowledge-contribution@1') {
+        add('record', body.root, '/root', true); add('record', body.feeding_record, '/feeding_record');
+        for (const [path, source] of [['/source', object(body.source)], ['/relation/other', object(object(body.relation)?.other)]] as const) {
+          strings(source?.records).forEach((digest, n) => add('record', digest, path + '/records/' + n));
+          strings(source?.sources).forEach((digest, n) => add('object', digest, path + '/sources/' + n));
+          ref(source?.reference, path + '/reference');
+        }
+      }
+      break;
+    }
   }
+  return out;
+}
+
+function recordTarget(reference: CurrentReference, options: SelectionOptions): string | undefined {
+  if (reference.recordAlias === true) return options.recordAliases?.get(reference.digest);
+  if (reference.recordAlias === false) return reference.digest;
+  return options.recordAliases?.get(reference.digest) ?? reference.digest;
+}
+
+function untypedDigestFields(record: CurrentRecord): { digest: string; field: string }[] {
+  const body = object(record.body), out: { digest: string; field: string }[] = [];
+  const add = (value: unknown, field: string): void => { if (sha256(value)) out.push({ digest: value, field }); };
+  const bound = (value: unknown, field: string): void => {
+    strings(object(object(value)?.validity)?.bound).forEach((digest, n) => add(digest, field + '/validity/bound/' + n));
+  };
+  if (!body) return out;
+  if (record.kind === 'action' && !moveTargetKind(body)) strings(body.inputs).forEach((value, n) => add(value, '/inputs/' + n));
+  if (record.kind === 'claim') bound(body, '');
+  if (record.kind === 'result_summary') strings(body.bound).forEach((value, n) => add(value, '/bound/' + n));
+  if (record.kind === 'run') for (const field of ['target_basis', 'device_observations', 'device_help'])
+    if (Array.isArray(body[field])) body[field].forEach((value, n) => bound(value, '/' + field + '/' + n));
+  if (record.kind === 'validation_result' && Array.isArray(body.cross_item)) body.cross_item.forEach((value, n) => bound(value, '/cross_item/' + n));
   return out;
 }
 
@@ -296,7 +409,7 @@ export function resolveCurrentRecordScopes(records: readonly CurrentRecord[], op
   const sources = new Map<string, string[]>();
   for (const record of records) {
     const targets = currentRecordReferences(record).filter(reference => reference.kind === 'record').map(reference =>
-      options.recordAliases?.get(reference.digest) ?? reference.digest).filter(digest => {
+      recordTarget(reference, options)).filter((digest): digest is string => digest !== undefined).filter(digest => {
       const target = byDigest.get(digest), body = target && object(target.body);
       return target?.kind === 'source_artifact' && target.available !== false && body !== null && body !== undefined && artifactBody(target, body);
     });
@@ -328,18 +441,23 @@ export function selectCurrentRecords(records: readonly CurrentRecord[], scopes: 
     if (!scope) return;
     const visitedObjects = new Set<string>();
     const pending = currentRecordReferences(record);
-    const body = object(record.body);
-    if (record.kind === 'action' && body && !moveTargetKind(body)) strings(body.inputs).forEach((value, n) => {
-      if (sha256(value) && !record.references?.some(reference => reference.field === '/inputs/' + n && reference.digest === value)) blocked.push({
-        scope, table: 'records', row: index + 1, name: record.digest, reason: `正式输入 /inputs/${n} 的裸摘要目标类型尚未核对`,
+    for (const field of untypedDigestFields(record)) {
+      if (record.references?.some(reference => reference.field === field.field && reference.digest === field.digest)) continue;
+      const recordKnown = owners.has(field.digest) || options.recordAliases?.has(field.digest);
+      const objectKnown = options.retainedObjects?.has(field.digest) || options.objectScopes?.has(field.digest);
+      if (recordKnown && !objectKnown) pending.push({ kind: 'record', digest: field.digest, field: field.field });
+      else if (objectKnown && !recordKnown) pending.push({ kind: 'object', digest: field.digest, field: field.field });
+      else blocked.push({ scope, table: 'records', row: index + 1, name: record.digest,
+        reason: `正式输入 ${field.field} 的裸摘要目标类型尚未核对`,
         nextAction: '按当前 writer 声明记录、树内容别名或对象引用后重试；不把裸摘要默认当记录' });
-    });
+    }
     for (let at = 0; at < pending.length; at++) {
       const reference = pending[at]!;
-      const target = options.recordAliases?.get(reference.digest) ?? reference.digest;
-      const targetScopes = reference.kind === 'record' ? owners.get(target) : options.objectScopes?.get(reference.digest);
-      if (!targetScopes?.length || targetScopes.every(targetScope => scopes.has(targetScope))) blocked.push({ scope, table: 'records',
-        row: index + 1, name: record.digest, reason: !targetScopes?.length ? `正式引用 ${reference.field} 缺少已核对的目标范围` : `保留记录的正式引用 ${reference.field} 指向所清范围`,
+      const target = recordTarget(reference, options);
+      const targetScopes = reference.kind === 'record' ? (target === undefined ? undefined : owners.get(target)) : options.objectScopes?.get(reference.digest);
+      const objectKept = reference.kind === 'object' && options.retainedObjects?.has(reference.digest);
+      if (!objectKept && (!targetScopes?.length || targetScopes.every(targetScope => scopes.has(targetScope)))) blocked.push({ scope, table: 'records',
+        row: index + 1, name: record.digest, reason: !targetScopes?.length ? `正式引用 ${reference.field} 缺少已核对的目标范围或别名` : `保留记录的正式引用 ${reference.field} 指向所清范围`,
         nextAction: '补齐引用目标的范围或显式调整所选范围；程序不会扩大清除范围' });
       else if (reference.kind === 'object' && !visitedObjects.has(reference.digest)) {
         visitedObjects.add(reference.digest);
