@@ -5,7 +5,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { AUDIENCE_SCOPE, labelOf, uiLabelOf } from '../generated/vocabulary.ts';
+import { AUDIENCE_SCOPE, PermissionKindSchema, labelOf, uiLabelOf } from '../generated/vocabulary.ts';
+
+import { TeamId, TeamAssignmentSubject } from './common.ts';
 
 const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url), 'utf8')) as {
   elements: Array<{ id: string; fields: string[]; rules: string[]; changes42?: string[] }>;
@@ -46,4 +48,21 @@ test('every element that model 42 changed names the owner decision it follows', 
   const changed = model.elements.filter((e) => e.changes42 !== undefined);
   assert.deepEqual(changed.map((e) => e.id).sort(), ['B01', 'B02', 'B03', 'B04', 'C01', 'C02', 'C04', 'D05', 'D06', 'K01', 'K02', 'R01', 'R02', 'T01', 'T02', 'V03', 'W09']);
   for (const e of changed) for (const note of e.changes42!) assert.match(note, /（来源：决定 15[01]，所有者 2026-11-06）$/, e.id);
+});
+
+
+test('the approved team identity and resource assignment use shared contracts', () => {
+  const id = 'tm_0' + 'a'.repeat(25);
+  assert.equal(TeamId.parse(id), id);
+  assert.ok(TeamId.safeParse('tm_7' + 'z'.repeat(25)).success);
+  for (const invalid of ['tm_8' + 'a'.repeat(25), 'tm_0' + 'A'.repeat(25), 'tm_0' + 'i'.repeat(25), 'tm_' + 'a'.repeat(25)]) {
+    assert.equal(TeamId.safeParse(invalid).success, false, invalid);
+  }
+  assert.equal(TeamAssignmentSubject.parse('*'), '*');
+  assert.equal(TeamAssignmentSubject.parse(id), id);
+  assert.equal(TeamAssignmentSubject.safeParse('usr_0' + 'a'.repeat(25)).success, false);
+  assert.equal(PermissionKindSchema.parse('resource_assign'), 'resource_assign');
+  assert.equal(labelOf('permission_kind', 'resource_assign'), '业务系统资源分配');
+  const rule = element('B04').rules.at(-1)!;
+  for (const text of ['authorization@1','subject=*','object=TeamId','subject=UserId','resource_assign','同一事务','可从记录重建']) assert.ok(rule.includes(text), text);
 });
