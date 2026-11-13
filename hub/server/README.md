@@ -1362,3 +1362,31 @@ reported as zero usage. Errors from a present capacity service still propagate r
 
 控制台的“通用技能”是独立入口（`/console/skills`），工作流页只列工作流。技能页写它提供的模块、解析器和用到它的工作流；工作流详情的“组成”列内嵌的模块（发布时核对过）、声明的连接、知识和命名文档。技能的安装和卸载是对应 `pack install`、`pack uninstall` 的命令对话框。命名文档列在“连接”页，只给管理员看，写入仍用 `circle-hub doc put`。界面不用“插件”一词。
 
+
+## Server implementation boundaries (2026-11-13)
+
+The command definitions are in `command-registry.ts`: names, help, handlers, bridge eligibility and telemetry step names.
+Platform metadata comes from the platform API. `cli.ts` derives built-in dispatch and help; `cli-admin.ts` wraps the
+registered administrative handlers in one invocation session; `command-bridge.ts` derives its allow-list. User and token
+subcommands use handler tables. `cli-session.ts` owns invocation identity and cleanup, `cli-arguments.ts` owns argument
+parsing and package error translation, and the pack, resource and knowledge handlers have their own modules. Existing
+exports of the administrative facade remain available. CLI help was compared byte for byte with the preceding version.
+
+Generic record reads delegate to `records/api.ts`'s `mayReadRecord`. The server supplies run headers, contribution reads,
+request/result checks and submission receipts through callbacks; it does not maintain another visibility policy table.
+The assembly supplies knowledge's run and pack read ports and dispatch's run-rule port from `runs/api.ts`.
+
+Cancellation currently applies to `list_task_packs` and `resolve_reference` at safe read boundaries. Each call combines
+SDK cancellation, socket disconnection and an authenticated cross-POST cancellation controller. The active-call key binds
+the current account, credential identity, MCP session, client session and request ID; an ambiguous duplicate live ID does
+not select a call. A disconnected read still completes its call-log append. A provider that has not accepted an abort signal
+may finish its current read before the next boundary observes cancellation. This does not prove remote stopping.
+`get_nodes` can write source observations, and its unsafe cancellation and all business-writing tool cancellation remain
+outside today's implementation under the approved scope. These paths continue their existing processing.
+
+Server output validation uses the output shapes in the tool registry. Additional output fields survive both structured
+content and the model reference block, including nested objects; known fields remain validated. Tool inputs remain strict.
+No reader-facing wording was changed by the renderer registration or current validation-shape substitution.
+
+Validation receipts and outstanding PostgreSQL/type-check checks are tracked in the external server handoff; synthetic
+HTTP tests do not establish production or business-system behavior.
