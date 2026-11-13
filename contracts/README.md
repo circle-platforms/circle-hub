@@ -759,3 +759,12 @@ must match the metadata name; a current non-revoked version requires this cipher
 Historical or revoked entries may have null ciphertext identity after deletion. Unknown setter/time
 stay null. Sidecar authentication, selection and same-byte decryption belong to the vault reader;
 this contract does not authorize an export script or infer current versions from file timestamps.
+
+The final producer format is SecretMetadataFile (secret-metadata-file@1): one authenticated payload
+{name, versions: SecretSidecar[]} per name under vault/metadata/secret.<lower-name>.sealed. Every
+version names that same secret; actual value versions strictly increase, missing historical numbers
+remain missing, sealed entries are unique, and exactly the last entry is current. Revocation keeps
+the value version and original setter/time; its actor/time belong only to the audit. Value files
+remain opaque secret.<lower-name>.<24hex>.sealed files. The product reads only this metadata format,
+with no alternate legacy-metadata fallback. Cross-version constraints are enforced by the Zod
+SecretMetadataFile parser; generated JSON Schema describes the structural part.

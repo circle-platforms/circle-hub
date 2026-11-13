@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { VariableName, VariableValue, VariableRecord, SecretRecord, SecretSidecar, VariableUse, SecretUse, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
+import { VariableName, VariableValue, VariableRecord, SecretRecord, SecretSidecar, SecretMetadataFile, VariableUse, SecretUse, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
 test('names are exact and reserved prefixes refuse without echo or rewriting', () => {
     assert.equal(VariableName.parse('A'.repeat(64)).length, 64);
     for (const name of ['A'.repeat(65), 'demo', '1DEMO', 'CIRCLE_HUB_X', 'CIRCLE_SERVER_X']) {
@@ -106,4 +106,17 @@ test('secret sidecars bind exact sealed names and current ciphertext without inv
     assert.ok(SecretSidecar.safeParse({...sidecar,metadata:{...metadata,revoked:true},sealed_sha256:null}).success);
     for (const sealed_entry of ['secret.other_key.'+'a'.repeat(24),'secret.demo_key.'+'a'.repeat(23),'secret.demo_key.'+'A'.repeat(24),'../secret.demo_key.'+'a'.repeat(24)]) assert.equal(SecretSidecar.safeParse({...sidecar,sealed_entry}).success,false,sealed_entry);
     for (const extra of [{value:'SyntheticPassword42'},{value_sha256:'c'.repeat(64)}]) assert.equal(SecretSidecar.safeParse({...sidecar,...extra}).success,false);
+});
+
+
+test('one metadata file keeps exact value-version order and a single explicit current version', () => {
+    const row = (version: number, suffix: string, current: boolean) => ({metadata:{schema:'secret@1',name:'DEMO_KEY',entry:'secret.demo_key',digest_rule:'plain',length:20,version,set_by:null,set_at:null,revoked:false},sealed_entry:'secret.demo_key.'+suffix.repeat(24),sealed_sha256:'c'.repeat(64),current});
+    const first = row(2,'a',false), last = row(7,'b',true);
+    const file = {name:'DEMO_KEY',versions:[first,last]};
+    assert.deepEqual(SecretMetadataFile.parse(file),file,'historical version gaps are not filled');
+    for (const versions of [[],[first],[last,{...first,current:true}],[{...first,current:true},last],[last,first],[first,{...last,metadata:{...last.metadata,version:2}}],[first,{...last,sealed_entry:first.sealed_entry}]]) assert.equal(SecretMetadataFile.safeParse({...file,versions}).success,false);
+    const other = {...last,metadata:{...last.metadata,name:'OTHER_KEY',entry:'secret.other_key'},sealed_entry:'secret.other_key.'+'b'.repeat(24)};
+    assert.equal(SecretMetadataFile.safeParse({...file,versions:[first,other]}).success,false);
+    const revoked = {...last,metadata:{...last.metadata,revoked:true},sealed_sha256:null};
+    assert.deepEqual(SecretMetadataFile.parse({...file,versions:[{...first,sealed_sha256:null},revoked]}),{...file,versions:[{...first,sealed_sha256:null},revoked]},'revocation keeps the value version and unknown setter metadata');
 });
