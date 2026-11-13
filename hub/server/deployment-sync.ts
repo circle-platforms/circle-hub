@@ -3,9 +3,10 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { DeploymentSyncIntent, DEPLOYMENT_SYNC_INTENT_SCHEMA, type DeploymentSyncTarget } from '../../contracts/src/deployment.ts';
 import { UserId } from '../../contracts/src/common.ts';
 import type { HubConfig } from '../config/index.ts';
-import { Database, createPool, openRecords, isAdmin, sha256Hex, parseStrictJson, type RecordsKit } from '../records/api.ts';
+import { Database, createPool, openRecords, isAdmin, sha256Hex, canonicalBytes, parseStrictJson, type RecordsKit } from '../records/api.ts';
 import { type SyncReport } from '../knowledge/api.ts';
 import { CODE_ROOT, createContext, identityOf, settingsOf, serviceEnvironment, toolEnvironment, renderPlist, withLock, writeFileAtomic, hubKeyProvider, platformLockPath } from '../platform/api.ts';
 import { assembleHub } from './assemble/hub.ts';
@@ -13,11 +14,9 @@ import type { Session } from './cli-session.ts';
 import { loadServerConfig } from './main.ts';
 import { CliError } from './errors.ts';
 
-export interface DeploymentSyncTarget { product: string; line: string | null }
-interface DeploymentSyncIntentValue { schema: 'deployment-sync-intent@1'; targets: DeploymentSyncTarget[] }
-async function parseIntent(input: unknown): Promise<DeploymentSyncIntentValue> {
-  return (await import('../../contracts/src/deployment.ts')).DeploymentSyncIntent.parse(input);
-}
+export type { DeploymentSyncTarget } from '../../contracts/src/deployment.ts';
+type DeploymentSyncIntentValue = ReturnType<typeof DeploymentSyncIntent.parse>;
+const parseIntent = (input: unknown): DeploymentSyncIntentValue => DeploymentSyncIntent.parse(input);
 export interface DeploymentSyncTask extends DeploymentSyncTarget { id: string; progressCommand: string }
 export interface DeploymentSyncStatus extends DeploymentSyncTarget {
   id: string; running: boolean; completed: boolean; probing: boolean; synchronized: boolean; current: boolean;
@@ -62,7 +61,7 @@ async function requestOf(config: HubConfig, id: string): Promise<Request> {
   const value = object(await readPrivate(paths(config, id).request));
   if (value.id !== id || typeof value.submittedAt !== 'number' || !Number.isSafeInteger(value.submittedAt) || value.submittedAt < 0 || typeof value.databaseOid !== 'string' || !/^[1-9][0-9]*$/.test(value.databaseOid)) throw problem();
   const actor = UserId.parse(value.actor);
-  const [target] = (await parseIntent({ schema: 'deployment-sync-intent@1', targets: [{ product: value.product, line: value.line }] })).targets;
+  const [target] = (await parseIntent({ schema: DEPLOYMENT_SYNC_INTENT_SCHEMA, targets: [{ product: value.product, line: value.line }] })).targets;
   if (!target) throw problem();
   return { id, actor, databaseOid: value.databaseOid, submittedAt: value.submittedAt, ...target };
 }
@@ -138,14 +137,21 @@ async function launch(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Pr
 /** Returns only after durable requests and supervisor launches. Never probes or synchronizes in the submitting process. */
 export async function queueDeploymentSync(session: Session, input: readonly DeploymentSyncTarget[]): Promise<{ tasks: DeploymentSyncTask[]; current: DeploymentSyncTarget[] }> {
   const actor = await session.admin(), config = session.config();
-  const targets = (await parseIntent({ schema: 'deployment-sync-intent@1', targets: input })).targets;
-  const intent = await readIntent(await session.records());
-  if (targets.some(target => !intent?.targets.some(declared => declared.product === target.product && declared.line === target.line)))
-    throw new CliError('同步目标尚未列入当前已授权部署声明，未提交任务');
+  const targets = (await parseIntent({ schema: DEPLOYMENT_SYNC_INTENT_SCHEMA, targets: input })).targets;
   const root = await directory(config);
   return withLock(join(root, 'queue.lock'), async () => {
     if (await resetting(config)) throw new CliError('初始化进行中，未提交后台同步任务');
     const oid = await databaseOid(config), tasks: DeploymentSyncTask[] = [];
+    const records = await session.records();
+    const bytes = canonicalBytes(parseIntent({schema:DEPLOYMENT_SYNC_INTENT_SCHEMA,targets}));
+    const bound = sha256Hex(bytes);
+    await records.store.withTransaction(async tx => {
+      await records.store.lock('deployment-sync-intent',tx);
+      const previous = await records.authorizations.resourceConfig(intentKey);
+      if (previous?.body.bound === bound) return;
+      await records.objects.put(bytes,'application/json',tx);
+      await records.authorizations.configureResource(actor,intentKey,bound,null,tx);
+    });
     const unique = new Map(targets.map(target => [JSON.stringify([target.product,target.line]), target]));
     for (const target of unique.values()) {
       let id: string | undefined;
@@ -162,7 +168,7 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
         const status: DeploymentSyncStatus = { id, ...target, running: false, completed: false, probing: false, synchronized: false, current: false };
         await save(config,status);
         try { await launch(config,id,session.ctx.io.env); }
-        catch { await save(config,{...status,completed:true,error:{reason:'独立同步进程未能启动',nextAction:'修复用户服务管理器后重新提交'}}); throw problem(); }
+        catch { await save(config,{...status,completed:true,error:{reason:'独立同步进程未能启动',nextAction:'修复用户服务管理器后重新提交'}}); throw new CliError('后台知识同步任务未能启动：' + id, 'circle-hub knowledge sync-status ' + id); }
       }
       tasks.push({ id, ...target, progressCommand: 'circle-hub knowledge sync-status ' + id });
     }
