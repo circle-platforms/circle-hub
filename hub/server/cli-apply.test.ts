@@ -354,15 +354,16 @@ test('[PG] real product variables, named document bytes and booking registration
   const product = productPack();
   const productFile = product.files['product.json'] as Record<string, unknown>;
   productFile.variables = Array.from({ length: 17 }, (_, index) => ({ name: `DEMO_ROOT_${index}`, description: '合成产品变量', schema: { type: 'string' }, default: `default-${index}` }));
+  (productFile.sync as Record<string, unknown>).options = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`root${index}`, '${var:DEMO_ROOT_' + index + '}']));
   const productDirectory = await writePack(join(kit.dataDir, 'product-source'), product);
   const productOutcome = await registry.publish(by, productDirectory.dir);
-  assert.equal(productOutcome.ok, true);
+  assert.equal(productOutcome.ok, true, productOutcome.ok ? undefined : JSON.stringify(productOutcome));
   const workflow = docsPack();
   const workflowFile = workflow.files['workflow.json'] as Record<string, unknown>;
   workflowFile.leases = { prefix: 'synthetic-environments/' }; workflowFile.context = ['leases'];
   const workflowDirectory = await writePack(join(kit.dataDir, 'workflow-source'), workflow);
   const workflowOutcome = await registry.publish(by, workflowDirectory.dir);
-  assert.equal(workflowOutcome.ok, true);
+  assert.equal(workflowOutcome.ok, true, workflowOutcome.ok ? undefined : JSON.stringify(workflowOutcome));
   const workflows = createWorkflowStore(registry), docs = createDocs({ records: kit, workflows });
   const leases = new LeaseService(database, { records: kit.store });
   const output: string[] = [];
@@ -394,4 +395,18 @@ test('[PG] real product variables, named document bytes and booking registration
   const failedDocument = { ...documents[0], bytesBase64: Buffer.from('synthetic-changed').toString('base64') };
   await assert.rejects(applyDeployment(session, { schema: 'deployment@1', documents: [failedDocument] }), /字节、长度或摘要/);
   assert.equal((await docs.show(documents[0].name))?.sha256, documents[0].sha256);
+});
+
+test('document base64 accepts the 2 MiB boundary and rejects malformed or noncanonical input before writing', () => {
+  const bytes = Buffer.alloc(2 * 1024 * 1024, 0x78);
+  const document = { name: 'synthetic-boundary', size: bytes.byteLength, sha256: sha256Hex(bytes), bytesBase64: bytes.toString('base64'), mediaType: 'application/octet-stream', fileName: 'synthetic.bin' };
+  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@1', documents: [document] }));
+  const small = Buffer.from('f');
+  const valid = { ...document, size: small.length, sha256: sha256Hex(small), bytesBase64: 'Zg==' };
+  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@1', documents: [valid] }));
+  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...document, size: 0, sha256: sha256Hex(Buffer.alloc(0)), bytesBase64: '' }] }));
+  for (const bytesBase64 of ['Zg=', 'Zg==\n', 'Zg$=', 'Zh==']) {
+    assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...valid, bytesBase64 }] }));
+  }
+  assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...document, size: bytes.byteLength + 1 }] }));
 });
