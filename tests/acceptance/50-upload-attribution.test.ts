@@ -21,7 +21,7 @@ test('only uploader confirmation signs a source and existing MCP sharing records
   const original=await hub.records.store.get(file.digest),saved=await spaces.write(user.principal,{kind:'observation',statement:'合成带来源条目',grounds:[{reference:'src:'+file.body.sha256,quotation:'保留两份'}]});
   const input={root:saved.root,path:'/',entry:saved.entry};assert.equal((await client.call('upload_file',{share_entry:input})).out.share?.code,'SHARE_UPLOAD_UNSIGNED');
   const url='/console/knowledge/source?'+new URLSearchParams({sha256:file.body.sha256,artifact:file.digest});
-  const page=await web.get(url+'#attribute-source');assert.equal(page.status,200);assert.match(page.body,/确认为团队来源…/);assert.match(page.body,/团队已经取得的副本不会因收回文件夹分享而收回/);assert.ok(page.body.includes(raw));assert.deepEqual(wordingProblems(page.body),[]);
+  const page=await web.get(url+'#attribute-source');assert.equal(page.status,200);assert.match(page.body,/确认为团队来源…/);assert.match(page.body,/公共空间已经取得的副本不会因收回文件夹分享而收回/);assert.ok(page.body.includes(raw));assert.deepEqual(wordingProblems(page.body),[]);
   assert.equal((await hub.records.store.list({kind:'knowledge_source_attribution'})).items.length,0,'opening the confirmation is read-only');
   const action='/console/knowledge/do/attribute-source',fields={source:source.digest,artifact:file.digest,csrf:csrf(page.body)};
   assert.equal((await web.post(action,{...fields,csrf:'wrong'})).status,403);
