@@ -34,4 +34,4 @@ When adopting a module, check the dependencies actually used, and ship the corre
 
 No license field or `LICENSE` file is present in the npm metadata, lockfile entry or installed files of `buffers@0.1.1`, which is an active transitive dependency of the root package (`exceljs@4.4.0` -> `unzipper@0.10.14` -> `binary@0.3.0` -> `buffers@0.1.1`), rather than being limited to the removed reference packages. Obtain a license basis or replace or remove that dependency path before distributing an artifact that bundles `exceljs@4.4.0`.
 
-This page is not a file-by-file notice list of every dependency. The first software release needs a composition and notice list generated from the actual artifact. The sources, the scope that was checked and the remaining release requirements are in the [open-source readiness record](docs/open-source-readiness.md).
+This page is not a file-by-file notice list of every dependency. The first software release needs a composition and notice list generated from the actual artifact.
