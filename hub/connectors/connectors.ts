@@ -290,6 +290,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     const out: { runtime: ResourceRuntime; read: ReadDeclaration }[] = [];
     for (const state of await registry.states()) {
       if (!state.enabled) continue;
+      if (context && !await records.authorizations.canUseResource(context.principal.id, state.resource.id)) continue;
       let loaded;
       try {
         loaded = await loadBound(state);
@@ -339,6 +340,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         if (type === null) return false;
         registry.invalidate();
         for(const state of await registry.states()) if(state.enabled) {
+          if(context && !await records.authorizations.canUseResource(context.principal.id, state.resource.id))continue;
           try {if((await loadBound(state)).profile.reads.some(r=>r.external===type))return true;}
           catch(error){
             const failed=asConnectorError(error,'PACK_UNAVAILABLE');
@@ -479,6 +481,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         registry.invalidate();
         const state = await registry.get(resource);
         if (state === null || !state.enabled) return { ok: false, external, code: 'RESOURCE_UNAVAILABLE', reason: `资源 ${redactor.text(String(resource))} 不存在或已停用`, manifest: null };
+        if (!await records.authorizations.canUseResource(context.principal.id, resource)) return { ok: false, external, code: 'ACCESS_DENIED', reason: '没有读取该资源的权限', manifest: null };
         const loaded = await loadBound(state);
         const read = loaded.profile.reads.find((r) => r.name === readName);
         if (read === undefined) return { ok: false, external, code: 'READ_UNDECLARED', reason: `系统包没有读取 ${redactor.text(String(readName))}`, manifest: null };
