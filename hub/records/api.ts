@@ -1,4 +1,4 @@
-export { PgTeams, type Team, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
+export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
 export { isAdmin, canSeeRun } from './permissions.ts';
 export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
 export { openRecords, migrateRecords } from './index.ts';
@@ -730,6 +730,8 @@ export interface Authorizations {
   isActive(permission: PermissionKind, subject: string, object: string): Promise<boolean>;
   history(query: { permission?: PermissionKind; subject?: string; object?: string } & PageQuery): Promise<Page<AuthorizationRecord>>;
 
+  teamsOf(by: Principal, kind: 'pack' | 'resource', object: string): Promise<{teams:import('./teams.ts').Team[];all:boolean}>;
+  packSources(by: Principal, userId: string): Promise<Array<{pack:string;via:'user'|{team:string}}>>;
   assignTeam(by: Principal, teamId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
   unassignTeam(by: Principal, teamId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   assignResource(by: Principal, resourceId: string, subject: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;

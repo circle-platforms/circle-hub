@@ -38,6 +38,13 @@ export class RequestPermissions {
     const subjects = new Set([this.user.id,...this.teams()]);
     return [...new Set([...this.#grants.values()].filter(row => row.body.permission === 'assign' && subjects.has(row.body.subject) && PackId.safeParse(row.body.object).success && this.enabled(row)).map(row => row.body.object))].sort();
   }
+  packSources(): Array<{pack:string;via:'user'|{team:string}}> {
+    if(!this.user||this.user.disabled||this.user.deleted_at)return [];
+    const teams=new Set(this.teams());
+    return [...this.#grants.values()].filter(row=>row.body.permission==='assign'&&PackId.safeParse(row.body.object).success&&this.enabled(row)&&(row.body.subject===this.user!.id||teams.has(row.body.subject)))
+      .map(row=>({pack:row.body.object,via:row.body.subject===this.user!.id?'user' as const:{team:row.body.subject}}))
+      .sort((a,b)=>a.pack.localeCompare(b.pack)||JSON.stringify(a.via).localeCompare(JSON.stringify(b.via)));
+  }
   canUseResource(resource: string): boolean {
     if (!this.user || this.user.disabled || this.user.deleted_at) return false;
     return [this.user.id,...this.teams(),'*'].some(subject => subject !== this.user!.id && this.enabled(this.latest('resource_assign',subject,resource)));

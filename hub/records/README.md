@@ -1297,12 +1297,12 @@ The two existing `runOfRecord` argument shapes are supported. Wrapped submission
 `PgTeams(db,store,objects,principals,authorizations,now)` implements the approved `RecordsKit.teams` interface.
 `assign/*/TeamId` registers a team and binds canonical `{id,name}` bytes retained by ObjectStore. Members are the
 latest active `assign/UserId/TeamId` decisions; `teams` and `team_members` only project that history. Deleting a team
-revokes its registration and removes projected membership; reusing its name creates a different ID. A revoked ID cannot
+appends a revocation for every active member, pack and resource assignment, then revokes registration and removes projected membership; reusing its name creates a different ID. A revoked ID cannot
 be registered again. Team writes lock user rows in ID order before the team and authorization locks.
 
 Pack assignment accepts direct users and teams through separate wrappers. Resource assignment uses `resource_assign`
 and accepts only a team or all enabled accounts. `canUseResource(userId,resourceId)` checks the current enabled account;
-active administrators retain the model's default resource read permission. A single SQL permission snapshot collects the
+administrator status alone does not grant business reads; administrators still manage unassigned resources. A single SQL permission snapshot collects the
 current account, direct decisions, team registrations, membership decisions, team grants and pack audiences. The same
 snapshot drives `canUse`, `packs`, resource grants and pack-user sharing. Batch pack/user queries use that implementation.
 Frozen runs, remote work and stored results are not cancelled or rewritten by team withdrawal.

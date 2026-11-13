@@ -49,6 +49,16 @@ test('multiple teams union with direct assignments in snapshots, batches and pac
   await w.kit.authorizations.assignTeam(w.admin,two.id,'shared-workflow');
   await w.kit.authorizations.assign(w.admin,w.alice.id,'direct-workflow');
   assert.deepEqual(await w.kit.authorizations.packsFor(w.alice.id),['direct-workflow','shared-workflow']);
+  assert.deepEqual((await w.teams.membershipsMany(w.admin,[w.alice.id,w.bob.id])).get(w.alice.id)?.map(team=>team.id).sort(),[one.id,two.id].sort());
+  assert.deepEqual((await w.teams.membershipsMany(w.admin,[w.alice.id,w.bob.id])).get(w.bob.id),[]);
+  const listed=await w.teams.list(w.admin);assert.equal(listed.find(team=>team.id===one.id)?.member_count,1);assert.equal(listed.find(team=>team.id===one.id)?.pack_count,1);
+  assert.deepEqual((await w.kit.authorizations.teamsOf(w.admin,'pack','shared-workflow')).teams.map(team=>team.id).sort(),[one.id,two.id].sort());
+  const sources=await w.kit.authorizations.packSources(w.admin,w.alice.id);
+  assert.deepEqual(sources.filter(source=>source.pack==='direct-workflow').map(source=>source.via),['user']);
+  assert.deepEqual(sources.filter(source=>source.pack==='shared-workflow').map(source=>typeof source.via==='string'?source.via:source.via.team).sort(),[one.id,two.id].sort());
+  await assert.rejects(w.kit.authorizations.teamsOf(w.alice,'pack','shared-workflow'),AccessError);
+  await assert.rejects(w.kit.authorizations.packSources(w.alice,w.alice.id),AccessError);
+
   assert.deepEqual((await w.kit.authorizations.packsForMany!([w.alice.id,w.bob.id])).get(w.alice.id),['direct-workflow','shared-workflow']);
   assert.deepEqual((await w.kit.authorizations.usersOfMany!(['shared-workflow'])).get('shared-workflow'),[w.alice.id]);
   await w.kit.authorizations.share(w.admin,'synthetic-shared-run',{kind:'pack_users',pack:'shared-workflow'});

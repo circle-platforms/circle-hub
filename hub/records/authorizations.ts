@@ -1,3 +1,4 @@
+import { readTeamDefinitions } from './team-definitions.ts';
 import { isAdmin } from './permissions.ts';
 import {scopedRecordStore} from './read-scope.ts';
 import {mayUsePersonalPack} from './personal-packs.ts';
@@ -17,6 +18,7 @@ import type {
   AuthorizationBody,
   AuthorizationInput,
   AuthorizationRecord,
+  ObjectStore,
   Authorizations,
   IndexEntry,
   Page,
@@ -86,11 +88,13 @@ export class RecordAuthorizations implements Authorizations {
   readonly #rawStore: RecordStore;
   get #store():RecordStore{return scopedRecordStore(this.#rawStore);}
   readonly #now: () => Date;
+  readonly #objects: ObjectStore;
 
-  constructor(db: Database, store: RecordStore, now: () => Date) {
+  constructor(db: Database, store: RecordStore, now: () => Date, objects: ObjectStore) {
     this.#db = db;
     this.#rawStore = store;
     this.#now = now;
+    this.#objects = objects;
   }
 
   async grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord> {
@@ -251,6 +255,20 @@ export class RecordAuthorizations implements Authorizations {
   }
   async unassignResource(by: Principal, resource: string, subject: string, reason?:string|null): Promise<AuthorizationRecord> {
     return this.revoke(by,{permission:'resource_assign',subject:TeamAssignmentSubject.parse(subject),object:term(resource,'resource'),note:reason});
+  }
+
+  async teamsOf(by: Principal, kind: 'pack' | 'resource', object: string): Promise<{teams:import('./teams.ts').Team[];all:boolean}> {
+    const actor=await this.#decider(by);if(!isAdmin(actor))throw new AccessError('只有管理员可以查看团队分配');
+    const permission:PermissionKind=kind==='pack'?ASSIGN:'resource_assign';
+    const latest=new Map<string,AuthorizationRecord>();let cursor:string|null=null;
+    do{const page:Page<AuthorizationRecord>=await this.#store.find<AuthorizationBody>({kind:'authorization',key:'authz.object',value:permission+'|'+term(object,'object'),limit:500,cursor});for(const row of page.items)latest.set(row.body.subject,row);cursor=page.next;}while(cursor!==null);
+    const active=new Set([...latest.values()].filter(row=>this.#active(row)).map(row=>row.body.subject));
+    return {teams:(await readTeamDefinitions(this.#store,this.#objects,this.#now)).filter(team=>active.has(team.id)),all:kind==='resource'&&active.has('*')};
+  }
+  async packSources(by: Principal, userId: string): Promise<Array<{pack:string;via:'user'|{team:string}}>> {
+    const actor=await this.#decider(by);if(!isAdmin(actor))throw new AccessError('只有管理员可以查看分配来源');
+    if(!UserId.safeParse(userId).success)return [];
+    return (await captureRequestPermissions(this.#db,{id:userId,name:userId,role:'user'},this.#now())).packSources();
   }
 
   async canPublish(user: string): Promise<boolean> {

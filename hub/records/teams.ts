@@ -1,32 +1,32 @@
+import { verifiedRecord } from './store.ts';
 // Team tables are projections; verified authorization decisions and their bound definition bytes are authoritative.
-import { z } from 'zod';
 import { TeamId, UserId, PackId } from '../../contracts/api.ts';
 import type { Authorizations, AuthorizationRecord, ObjectStore, Principal, Principals, RecordStore, Transaction, User } from './api.ts';
 import { canonicalBytes } from './canonical.ts';
 import { iso, type Database, type Row } from './db.ts';
-import { sha256Hex } from './digest.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 import { newId } from './ids.ts';
 import { isAdmin } from './permissions.ts';
-import { parseStrictJson } from './strict-json.ts';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 
-export interface Team { id: string; name: string; created_at: string; created_by: string; deleted_at: string | null }
+export type { Team } from './team-definitions.ts';
+import { readTeamDefinitions, type Team } from './team-definitions.ts';
+export interface TeamRow extends Team { member_count:number; pack_count:number; resource_count:number; changed_at:string }
 export interface TeamMember { team: string; user: User; added_at: string; added_by: string }
 export interface TeamAssignments { packs: AuthorizationRecord[]; resources: AuthorizationRecord[] }
 export interface Teams {
-  list(by: Principal): Promise<Team[]>;
+  list(by: Principal): Promise<TeamRow[]>;
   get(by: Principal, id: string): Promise<Team | null>;
   members(by: Principal, id: string): Promise<TeamMember[]>;
   assignments(by: Principal, id: string): Promise<TeamAssignments>;
   memberships(by: Principal, userId?: string): Promise<Team[]>;
+  membershipsMany(by: Principal, userIds: readonly string[]): Promise<Map<string,Team[]>>;
   create(by: Principal, name: string): Promise<Team>;
   delete(by: Principal, id: string): Promise<Team>;
   add(by: Principal, id: string, userId: string): Promise<TeamMember>;
   remove(by: Principal, id: string, userId: string): Promise<boolean>;
 }
 const NAME = /^[^\s\p{Cc}](?:[^\p{Cc}]{0,98}[^\s\p{Cc}])?$/u;
-const TeamDefinition=z.strictObject({id:TeamId,name:z.string().regex(NAME)});
 
 function account(row: Row): User {
   if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里');
@@ -61,19 +61,7 @@ export class PgTeams implements Teams {
   #active(row: AuthorizationRecord): boolean {
     return !row.body.revoked && (row.body.expires_at === null || Date.parse(row.body.expires_at) > this.now().getTime());
   }
-  async #all(tx?: Transaction): Promise<Team[]> {
-    const teams: Team[] = [];
-    for (const decision of await this.#decisions({ subject: '*' }, tx)) {
-      if (!TeamId.safeParse(decision.body.object).success || !this.#active(decision)) continue;
-      const bound = decision.body.bound;
-      const bytes = bound === null ? null : await this.objects.get(bound, tx);
-      if (bytes === null || sha256Hex(bytes) !== bound) throw new IntegrityError('团队定义原件缺失或摘要不符');
-      const checked=TeamDefinition.safeParse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
-      if (!checked.success || checked.data.id !== decision.body.object) throw new IntegrityError('团队定义与登记不一致');
-      teams.push({ id: decision.body.object, name: checked.data.name, created_at: decision.body.decided_at, created_by: decision.body.decided_by, deleted_at: null });
-    }
-    return teams.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
-  }
+  #all(tx?: Transaction): Promise<Team[]> { return readTeamDefinitions(this.store,this.objects,this.now,tx); }
   async #reader(by: Principal, adminOnly = false): Promise<User> {
     const user = await this.principals.get(by.id);
     if (!user || user.disabled || user.deleted_at || adminOnly && !isAdmin(user)) throw new AccessError('对象不存在或无权读取');
@@ -83,9 +71,23 @@ export class PgTeams implements Teams {
     const memberships = new Set((await this.#decisions({ subject: user }, tx)).filter(row => this.#active(row) && TeamId.safeParse(row.body.object).success).map(row => row.body.object));
     return (await this.#all(tx)).filter(team => memberships.has(team.id));
   }
-  async list(by: Principal): Promise<Team[]> {
+  async list(by: Principal): Promise<TeamRow[]> {
     const user = await this.#reader(by);
-    return isAdmin(user) ? this.#all() : this.#memberships(user.id);
+    const teams=isAdmin(user)?await this.#all():await this.#memberships(user.id);
+    if(!teams.length)return [];
+    const ids=teams.map(team=>team.id);
+    const rows=(await this.db.query(`SELECT DISTINCT ON ((r.body::jsonb)->>'permission',(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object') r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+      FROM record_index i JOIN records r ON r.digest=i.digest WHERE r.kind='authorization' AND i.key IN ('authz.object-any','authz.subject-any') AND i.value=ANY($1::text[])
+      ORDER BY (r.body::jsonb)->>'permission',(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object',r.seq DESC`,[ids])).rows.map(row=>verifiedRecord<AuthorizationRecord['body']>(row));
+    const members=[...new Set(rows.filter(row=>row.body.permission==='assign'&&ids.includes(row.body.object)&&UserId.safeParse(row.body.subject).success&&this.#active(row)).map(row=>row.body.subject))];
+    const enabled=new Set((await this.principals.some(members)).filter(user=>!user.disabled&&!user.deleted_at).map(user=>user.id));
+    return teams.map(team=>{
+      const related=rows.filter(row=>row.body.subject===team.id||row.body.object===team.id),active=related.filter(row=>this.#active(row));
+      return {...team,member_count:active.filter(row=>row.body.permission==='assign'&&row.body.object===team.id&&enabled.has(row.body.subject)).length,
+        pack_count:active.filter(row=>row.body.permission==='assign'&&row.body.subject===team.id&&PackId.safeParse(row.body.object).success).length,
+        resource_count:active.filter(row=>row.body.permission==='resource_assign'&&row.body.subject===team.id).length,
+        changed_at:related.reduce((at,row)=>row.body.decided_at>at?row.body.decided_at:at,team.created_at)};
+    });
   }
   async get(by: Principal, id: string): Promise<Team | null> {
     if (!TeamId.safeParse(id).success) return null;
@@ -96,6 +98,18 @@ export class PgTeams implements Teams {
     if (userId !== actor.id && !isAdmin(actor)) throw new AccessError('只有管理员可以查看别人的团队');
     const target = await this.principals.get(userId);
     return !target || target.disabled || target.deleted_at ? [] : this.#memberships(userId);
+  }
+  async membershipsMany(by: Principal, userIds: readonly string[]): Promise<Map<string,Team[]>> {
+    const actor=await this.#reader(by),ids=[...new Set(userIds)];
+    if(!isAdmin(actor)&&ids.some(id=>id!==actor.id))throw new AccessError('只有管理员可以查看别人的团队');
+    const out=new Map(ids.map(id=>[id,[] as Team[]]));if(!ids.length)return out;
+    const accounts=await this.principals.some(ids),enabled=new Set(accounts.filter(user=>!user.disabled&&!user.deleted_at).map(user=>user.id));
+    const teams=new Map((await this.#all()).map(team=>[team.id,team]));
+    const rows=(await this.db.query(`SELECT DISTINCT ON ((r.body::jsonb)->>'subject',(r.body::jsonb)->>'object') r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
+      FROM record_index i JOIN records r ON r.digest=i.digest WHERE i.key='authz.subject' AND i.value=ANY($1::text[]) AND r.kind='authorization'
+      ORDER BY (r.body::jsonb)->>'subject',(r.body::jsonb)->>'object',r.seq DESC`,[ids.map(id=>'assign|'+id)])).rows;
+    for(const row of rows){const decision=verifiedRecord<AuthorizationRecord['body']>(row),team=teams.get(decision.body.object);if(team&&enabled.has(decision.body.subject)&&this.#active(decision))out.get(decision.body.subject)!.push(team);}
+    for(const values of out.values())values.sort((a,b)=>a.id.localeCompare(b.id));return out;
   }
   async members(by: Principal, id: string): Promise<TeamMember[]> {
     await this.#reader(by, true);
