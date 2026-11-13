@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { randomBytes, createHash } from 'node:crypto';
 import { FileVault, FileKeyProvider } from './vault.ts';
 import { VaultReadinessError } from './errors.ts';
+import type { VaultArchiveEntry } from './api.ts';
 import { RecordVariables, type VariablePorts } from './variables.ts';
 import { newId } from './ids.ts';
 
@@ -37,7 +38,7 @@ test('same-name set archives all unverified ciphertext without inventing its old
     assert.equal(result.archive?.at, f.at);
     assert.equal(result.archive?.entries.length, 2);
     for (const original of [first, second]) {
-        const archived = result.archive!.entries.find(entry => entry.entry === original.entry + '.sealed')!;
+        const archived: VaultArchiveEntry = result.archive!.entries.find(entry => entry.entry === original.entry + '.sealed')!;
         assert.ok(archived);
         assert.equal(archived.sealed_sha256, createHash('sha256').update(original.bytes).digest('hex'));
         assert.ok((await readFile(join(f.root, 'vault', archived.archived_entry))).equals(original.bytes));
@@ -132,4 +133,43 @@ test('retry after a published value and unfinished receipt does not archive that
     assert.equal(receipt.completed, false);
     assert.ok((await readFile(join(f.root, 'vault', receipt.entries[0].archived_entry))).equals(original.bytes));
     assert.ok(!JSON.stringify({ receipt, retry }).includes(value));
+});
+
+test('a metadata write that publishes then throws removes its new index and restores all original active ciphertext', async t => {
+    const f = await fixture(t), original = await f.original('MY_KEY'), value = secret();
+    const put = FileVault.prototype.put;
+    let wrote = false;
+    FileVault.prototype.put = async function (entry, bytes) {
+        await put.call(this, entry, bytes);
+        if (this.directory === join(f.root, 'vault', 'metadata')) {
+            wrote = (await readFile(join(this.directory, entry + '.sealed'))).length > 0;
+            throw new Error('synthetic failure after metadata publication');
+        }
+    };
+    try {
+        await assert.rejects(f.vault.putSecret({ name: 'MY_KEY', value, digest_rule: 'plain', set_by: f.by, set_at: f.at }), /已恢复同名原active文件/);
+    } finally { FileVault.prototype.put = put; }
+    assert.ok(wrote);
+    assert.ok((await readFile(join(f.root, 'vault', original.entry + '.sealed'))).equals(original.bytes));
+    assert.equal(await new FileVault(join(f.root, 'vault', 'metadata'), f.provider).has('secret.my_key'), false);
+    await assert.rejects(f.vault.readSecret('MY_KEY'), error => error instanceof VaultReadinessError && error.issues.some(issue => issue.missing.includes('metadata')));
+});
+
+test('a late metadata publication failure restores the exact untrusted metadata identity when it was archived', async t => {
+    const f = await fixture(t), original = await f.original('MY_KEY');
+    const metadata = new FileVault(join(f.root, 'vault', 'metadata'), f.provider);
+    await metadata.put('secret.my_key', '{"incomplete":true}');
+    const path = join(f.root, 'vault', 'metadata', 'secret.my_key.sealed');
+    const oldMetadata = await readFile(path);
+    const put = FileVault.prototype.put; let wrote = false;
+    FileVault.prototype.put = async function (entry, bytes) {
+        await put.call(this, entry, bytes);
+        if (this.directory === metadata.directory) { wrote = true; throw new Error('synthetic fsync failure after publication'); }
+    };
+    try {
+        await assert.rejects(f.vault.putSecret({ name: 'MY_KEY', value: secret(), digest_rule: 'plain', set_by: f.by, set_at: f.at }), /已恢复同名原active文件/);
+    } finally { FileVault.prototype.put = put; }
+    assert.ok(wrote);
+    assert.ok((await readFile(path)).equals(oldMetadata));
+    assert.ok((await readFile(join(f.root, 'vault', original.entry + '.sealed'))).equals(original.bytes));
 });

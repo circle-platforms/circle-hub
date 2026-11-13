@@ -105,15 +105,22 @@ test('variable snapshots keep prior decisions after later settings and do not re
     assert.deepEqual((await kit.variables.resolveVariables({ field: '${var:DEMO_FIELD}' }, 'res_synthetic')).value, { field: 'after' });
 });
 
-test('old unbound random versions are not collected or selected using filesystem times', async t => {
+test('explicit reset archives all old unverified random files without choosing by filesystem times', async t => {
     const { kit, admin } = await setup(t);
     const stale = 'secret.demo_key.' + 'f'.repeat(24), young = 'secret.demo_key.' + 'e'.repeat(24);
     await kit.vault.put(stale, key()); await kit.vault.put(young, key());
+    const original = new Map(await Promise.all([stale, young].map(async entry => [entry, await readFile(join(kit.dataDir, 'vault', entry + '.sealed'))] as const)));
     const old = new Date(Date.now() - 7200000);
     await utimes(join(kit.dataDir, 'vault', stale + '.sealed'), old, old);
-    await assert.rejects(kit.variables.setSecrets(admin, [{ name: 'DEMO_KEY', value: key() }], '合成旧文件'), /元数据/);
-    assert.equal(await kit.vault.has(stale), true);
-    assert.equal(await kit.vault.has(young), true);
+    const [reset] = await kit.variables.setSecrets(admin, [{ name: 'DEMO_KEY', value: key() }], '合成旧文件归档后重新设置');
+    assert.equal(reset.version, 1);
+    assert.equal(reset.archive?.previous_version, null);
+    assert.equal(reset.archive?.entries.length, 2);
+    for (const entry of [stale, young]) {
+        const archived: import('./api.ts').VaultArchiveEntry = reset.archive!.entries.find(item => item.entry === entry + '.sealed')!;
+        assert.ok((await readFile(join(kit.dataDir, 'vault', archived.archived_entry))).equals(original.get(entry)!));
+        assert.equal(await kit.vault.has(entry), false);
+    }
 });
 test('an audit transaction rollback does not pretend to roll back already updated independent vault material', async t => {
     const { kit, admin } = await setup(t);
