@@ -726,5 +726,642 @@
     "what": "unlisted",
     "reason": "Temporary Batch-2 keep: pending owner decision on unlanded proposal",
     "removeWhen": "Owner decision"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/contributions.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy_value on line(s) 22); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/knowledge.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 293,306); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/pack.ts",
+    "what": "symbol:PublishableRequirementsFile",
+    "reason": "Legacy/compatibility path (PublishableRequirementsFile on line(s) 274); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/pack.ts",
+    "what": "word:historical",
+    "reason": "Old pack predecessor and product_pack_digest schema descriptions retaining historical context tolerance; clean in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/pack.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 506); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/resources.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 674); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/run.ts",
+    "what": "symbol:NewRunRecord",
+    "reason": "Legacy/compatibility path (NewRunRecord on line(s) 282); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/run.ts",
+    "what": "symbol:PersistedLeaseContextRow",
+    "reason": "Legacy/compatibility path (PersistedLeaseContextRow on line(s) 211,256); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/run.ts",
+    "what": "symbol:PersistedRequirementSummary",
+    "reason": "Legacy/compatibility path (PersistedRequirementSummary on line(s) 217,227); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/run.ts",
+    "what": "word:historical",
+    "reason": "Old run, lease snapshot, and ruling schema tolerances for historical shapes; clean in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/run.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 42,120,263); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/submission.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (Legacy, legacy on line(s) 84,85); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/tools.ts",
+    "what": "word:historical",
+    "reason": "Append-only domain qualifier on withdrawn_grounds: outside the immutable historical result",
+    "removeWhen": "never"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/validation.ts",
+    "what": "symbol:readStoredValidationResult",
+    "reason": "Legacy/compatibility path (readStoredValidationResult on line(s) 313); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/validation.ts",
+    "what": "symbol:storedItemNotices",
+    "reason": "Legacy/compatibility path (storedItemNotices on line(s) 302,315); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/validation.ts",
+    "what": "symbol:StoredLayerResult",
+    "reason": "Legacy/compatibility path (StoredLayerResult on line(s) 287,291); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/validation.ts",
+    "what": "symbol:StoredPartitionItem",
+    "reason": "Legacy/compatibility path (StoredPartitionItem on line(s) 293,299,302); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/validation.ts",
+    "what": "symbol:StoredValidationResult",
+    "reason": "Legacy/compatibility path (StoredValidationResult on line(s) 300,314); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/validation.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 238); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/variables.ts",
+    "what": "prefix:CIRCLE_SERVER_",
+    "reason": "Legacy/compatibility path (CIRCLE_SERVER_ on line(s) 8); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "contracts/src/views.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 224,225); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/guard.ts",
+    "what": "symbol:assertNoRetiredEnvironment",
+    "reason": "Legacy/compatibility path (assertNoRetiredEnvironment on line(s) 2,4); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/index.ts",
+    "what": "symbol:assertNoRetiredEnvironment",
+    "reason": "Legacy/compatibility path (assertNoRetiredEnvironment on line(s) 4,9,117); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/index.ts",
+    "what": "symbol:isRetiredName",
+    "reason": "Legacy/compatibility path (isRetiredName on line(s) 7); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/index.ts",
+    "what": "symbol:RETIRED_NAMES",
+    "reason": "Legacy/compatibility path (RETIRED_NAMES on line(s) 7); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/index.ts",
+    "what": "symbol:RETIRED_PREFIX",
+    "reason": "Legacy/compatibility path (RETIRED_PREFIX on line(s) 7); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/index.ts",
+    "what": "symbol:retiredEnvironmentKeys",
+    "reason": "Legacy/compatibility path (retiredEnvironmentKeys on line(s) 9); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/index.ts",
+    "what": "symbol:RetiredName",
+    "reason": "Legacy/compatibility path (RetiredName on line(s) 8); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/names.ts",
+    "what": "prefix:CIRCLE_SERVER_",
+    "reason": "Legacy/compatibility path (CIRCLE_SERVER_ on line(s) 9); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/names.ts",
+    "what": "symbol:isRetiredName",
+    "reason": "Legacy/compatibility path (isRetiredName on line(s) 55); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/names.ts",
+    "what": "symbol:RETIRED_NAMES",
+    "reason": "Legacy/compatibility path (RETIRED_NAMES on line(s) 16,53,56); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/names.ts",
+    "what": "symbol:RETIRED_PREFIX",
+    "reason": "Legacy/compatibility path (RETIRED_PREFIX on line(s) 9); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/names.ts",
+    "what": "symbol:RetiredName",
+    "reason": "Legacy/compatibility path (RetiredName on line(s) 53,55); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/retired.ts",
+    "what": "symbol:assertNoRetiredEnvironment",
+    "reason": "Legacy/compatibility path (assertNoRetiredEnvironment on line(s) 22); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/retired.ts",
+    "what": "symbol:isRetiredName",
+    "reason": "Legacy/compatibility path (isRetiredName on line(s) 5,18,36); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/retired.ts",
+    "what": "symbol:RETIRED_NAMES",
+    "reason": "Legacy/compatibility path (RETIRED_NAMES on line(s) 5,36); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/retired.ts",
+    "what": "symbol:RETIRED_PREFIX",
+    "reason": "Legacy/compatibility path (RETIRED_PREFIX on line(s) 5,18,26,30,34); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/config/retired.ts",
+    "what": "symbol:retiredEnvironmentKeys",
+    "reason": "Legacy/compatibility path (retiredEnvironmentKeys on line(s) 16,23); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/knowledge/applicability-fields.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy_value on line(s) 11,40); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/knowledge/contributions.ts",
+    "what": "word:historical",
+    "reason": "Append-only domain constant HISTORICAL_CAPTURE_TIME disclosing undeclared captured_at_declared on historical feeding records",
+    "removeWhen": "never"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/knowledge/personal-sync/service.ts",
+    "what": "word:historical",
+    "reason": "Append-only history export flag historical for reconstructing personal-sync parent lineage",
+    "removeWhen": "never"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/knowledge/service.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 318,319,320,321); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/knowledge/spaces.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (#legacy, #legacyNodes, #legacyIndex, #legacyPaths on line(s) 96,98,99,101,105,108,748,762,820,956,1032,1120,1165,1250,1251,1252,1284,1563,1568,1578,1587); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/api.ts",
+    "what": "symbol:RETIRED_VARIABLES",
+    "reason": "Legacy/compatibility path (RETIRED_VARIABLES on line(s) 8); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/api.ts",
+    "what": "symbol:retiredEnvironmentKeys",
+    "reason": "Legacy/compatibility path (retiredEnvironmentKeys on line(s) 9); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/environment.ts",
+    "what": "prefix:CIRCLE_SERVER_",
+    "reason": "Legacy/compatibility path (CIRCLE_SERVER_ on line(s) 63); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/environment.ts",
+    "what": "symbol:RETIRED_PREFIX",
+    "reason": "Legacy/compatibility path (RETIRED_PREFIX on line(s) 63,78,85,86,88,90); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/environment.ts",
+    "what": "symbol:RETIRED_VARIABLES",
+    "reason": "Legacy/compatibility path (RETIRED_VARIABLES on line(s) 71,78,87,89); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/environment.ts",
+    "what": "symbol:retiredEnvironmentKeys",
+    "reason": "Legacy/compatibility path (retiredEnvironmentKeys on line(s) 76,83); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/platform/process.ts",
+    "what": "prefix:CIRCLE_SERVER_",
+    "reason": "Legacy/compatibility path (CIRCLE_SERVER_ on line(s) 108); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/records/store.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 269,282,298,299,301); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/api.ts",
+    "what": "symbol:bindLegacyParser",
+    "reason": "Legacy/compatibility path (bindLegacyParser on line(s) 79); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/api.ts",
+    "what": "symbol:bindLegacySkills",
+    "reason": "Legacy/compatibility path (bindLegacySkills on line(s) 79); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/parser.ts",
+    "what": "symbol:bindingDisclosure",
+    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 97); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/parser.ts",
+    "what": "symbol:bindingRecord",
+    "reason": "Legacy/compatibility path (bindingRecord on line(s) 95); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/parser.ts",
+    "what": "symbol:bindingRecords",
+    "reason": "Legacy/compatibility path (bindingRecords on line(s) 96); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/resolve.ts",
+    "what": "literal:bind-legacy",
+    "reason": "Legacy/compatibility path (bind-legacy on line(s) 398); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/resolve.ts",
+    "what": "symbol:bindingDisclosure",
+    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 410); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/resolve.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (LEGACY_DOCUMENT_OVERHEAD, legacyDocumentBytes on line(s) 178,182,183,224); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "literal:bind-legacy",
+    "reason": "Legacy/compatibility path (bind-legacy on line(s) 17,250,297,329,331); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "symbol:bindingDisclosure",
+    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 296,329); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "symbol:bindingRecord",
+    "reason": "Legacy/compatibility path (bindingRecord on line(s) 328); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "symbol:bindingRecords",
+    "reason": "Legacy/compatibility path (bindingRecords on line(s) 296,328); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "symbol:bindLegacyParser",
+    "reason": "Legacy/compatibility path (bindLegacyParser on line(s) 375); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "symbol:bindLegacySkills",
+    "reason": "Legacy/compatibility path (bindLegacySkills on line(s) 338); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/skills.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (LegacySkillBinding, legacy on line(s) 20,295,383,384,392); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/refs/text-decoding.ts",
+    "what": "word:legacy",
+    "reason": "Encoding/charset domain helper legacyCharset and legacySingleBytes handling CJK/UTF-16 text decoding (not compatibility fallback)",
+    "removeWhen": "never"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/api.ts",
+    "what": "symbol:backfillCitations",
+    "reason": "Legacy/compatibility path (backfillCitations on line(s) 79); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/evaluate.ts",
+    "what": "symbol:bindingDisclosure",
+    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 1213); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/evaluate.ts",
+    "what": "symbol:bindingRecord",
+    "reason": "Legacy/compatibility path (bindingRecord on line(s) 316); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/evaluate.ts",
+    "what": "symbol:bindingRecords",
+    "reason": "Legacy/compatibility path (bindingRecords on line(s) 316); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/exact.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacySources on line(s) 345,347); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/grounds.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy on line(s) 70,126); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/maintenance-requests.ts",
+    "what": "symbol:restoreLegacyRequests",
+    "reason": "Legacy/compatibility path (restoreLegacyRequests on line(s) 10); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/maintenance.ts",
+    "what": "symbol:legacyResultRequests",
+    "reason": "Legacy/compatibility path (legacyResultRequests on line(s) 84,351); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/maintenance.ts",
+    "what": "symbol:restoreLegacyRequests",
+    "reason": "Legacy/compatibility path (restoreLegacyRequests on line(s) 21,354); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/maintenance.ts",
+    "what": "word:historical",
+    "reason": "Append-only submitted-record inspection check historicalSession verifying recorded session provenance",
+    "removeWhen": "never"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/management.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy_unwritten_fields on line(s) 75); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/preview.ts",
+    "what": "literal:bind-legacy",
+    "reason": "Legacy/compatibility path (bind-legacy on line(s) 58); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/result-summary.ts",
+    "what": "symbol:summarizeStoredResults",
+    "reason": "Legacy/compatibility path (summarizeStoredResults on line(s) 98); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/service.ts",
+    "what": "symbol:backfillCitations",
+    "reason": "Legacy/compatibility path (backfillCitations on line(s) 23,108); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/service.ts",
+    "what": "symbol:summarizeStoredResults",
+    "reason": "Legacy/compatibility path (summarizeStoredResults on line(s) 24,115); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/start.ts",
+    "what": "symbol:PublishableRequirementsFile",
+    "reason": "Legacy/compatibility path (PublishableRequirementsFile on line(s) 11,497); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/engine/store.ts",
+    "what": "symbol:backfillCitations",
+    "reason": "Legacy/compatibility path (backfillCitations on line(s) 109); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/runs/packs/validate.ts",
+    "what": "symbol:PublishableRequirementsFile",
+    "reason": "Legacy/compatibility path (PublishableRequirementsFile on line(s) 15,251); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/server/cli-resource.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (missingLegacy on line(s) 216,218); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/server/cli.ts",
+    "what": "symbol:assertNoRetiredEnvironment",
+    "reason": "Legacy/compatibility path (assertNoRetiredEnvironment on line(s) 18,718); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/server/console/runs-pages.ts",
+    "what": "word:legacy",
+    "reason": "Legacy/compatibility path (legacy_unwritten_fields on line(s) 334); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/server/main.ts",
+    "what": "symbol:assertNoRetiredEnvironment",
+    "reason": "Legacy/compatibility path (assertNoRetiredEnvironment on line(s) 10,65); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/server/text.ts",
+    "what": "symbol:StoredPartitionItem",
+    "reason": "Legacy/compatibility path (StoredPartitionItem on line(s) 14,543); remove in C3",
+    "removeWhen": "C3"
+  },
+  {
+    "check": "no-compat-paths",
+    "path": "hub/server/text.ts",
+    "what": "symbol:StoredValidationResult",
+    "reason": "Legacy/compatibility path (StoredValidationResult on line(s) 14,541); remove in C3",
+    "removeWhen": "C3"
   }
 ]
