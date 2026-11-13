@@ -373,7 +373,8 @@ test('[PG] real product variables, named document bytes and booking registration
   const leases = new LeaseService(database, { records: kit.store });
   const output: string[] = [];
   const hub = { records: kit, registry, workflows, docs, resources: { list: async () => [] } };
-  const session = { ctx: { io: { cwd: kit.dataDir, stdout: (line: string) => output.push(line) } }, options: {},
+  const session = { ctx: { io: { cwd: kit.dataDir, env: {}, stdout: (line: string) => output.push(line) } }, options: {},
+    config: () => ({ ...kit.config, database: kit.database, host: '127.0.0.1', port: 0 }),
     admin: async () => by, viewer: async () => by, records: async () => kit, hub: async () => hub, leases: async () => leases,
     user: async (name: string) => { const found = name === by.id ? await kit.principals.get(name) : await kit.principals.findByName(name); if (!found) throw new Error('synthetic account missing'); return found; },
     out: (line: string) => output.push(terminalSafe(line)), err: (line: string) => output.push(terminalSafe(line)),
@@ -400,6 +401,13 @@ test('[PG] real product variables, named document bytes and booking registration
   const failedDocument = { ...documents[0], bytesBase64: Buffer.from('synthetic-changed').toString('base64') };
   await assert.rejects(applyDeployment(session, { schema: 'deployment@1', documents: [failedDocument] }), /字节、长度或摘要/);
   assert.equal((await docs.show(documents[0].name))?.sha256, documents[0].sha256);
+  assert.equal((await applyDeployment(session, { schema: 'deployment@1', knowledgeSync: [] })).created, 1);
+  const emptyIntent = await kit.authorizations.resourceConfig('deployment-sync');
+  assert.ok(emptyIntent?.body.bound);
+  assert.deepEqual((await exportDeployment(session)).knowledgeSync, []);
+  assert.equal((await applyDeployment(session, { schema: 'deployment@1', knowledgeSync: [] })).created, 0);
+  assert.equal((await kit.authorizations.resourceConfig('deployment-sync'))?.digest, emptyIntent!.digest);
+
 });
 
 test('document base64 accepts the 2 MiB boundary and rejects malformed or noncanonical input before writing', () => {
@@ -414,4 +422,234 @@ test('document base64 accepts the 2 MiB boundary and rejects malformed or noncan
     assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...valid, bytesBase64 }] }));
   }
   assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...document, size: bytes.byteLength + 1 }] }));
+});
+
+test('sync targets distinguish omitted and explicit empty intents and retain exact product and line spellings', async () => {
+  const { DeploymentSyncIntent } = await import('../../contracts/src/deployment.ts');
+  assert.equal(parseDeployment({ schema: 'deployment@1' }).knowledgeSync, undefined);
+  assert.deepEqual(parseDeployment({ schema: 'deployment@1', knowledgeSync: [] }).knowledgeSync, []);
+  const targets = [{ product: 'synthetic-product', line: 'Version-A' }, { product: 'synthetic-product', line: 'version-a' }, { product: 'synthetic-product', line: '版本-甲' }, { product: 'synthetic-product', line: null }];
+  assert.deepEqual(parseDeployment({ schema: 'deployment@1', knowledgeSync: targets }).knowledgeSync, targets);
+  assert.deepEqual(DeploymentSyncIntent.parse({ schema: 'deployment-sync-intent@1', targets }).targets, targets);
+  for (const invalid of [
+    [{ product: 'synthetic-product' }],
+    [{ product: 'synthetic-product', line: '' }],
+    [{ product: 'synthetic-product', line: 'same' }, { product: 'synthetic-product', line: 'same' }],
+    [{ product: 'Synthetic-Product', line: 'one' }],
+  ]) assert.throws(() => parseDeployment({ schema: 'deployment@1', knowledgeSync: invalid }));
+});
+
+test('fresh database definition apply rejects before mutations when no administrator session exists', async t => {
+  const f = fake(t);
+  const { Session: ActualSession } = await import('./cli-session.ts');
+  const { memoryOperatorTokens } = await import('./assemble/operator-token.ts');
+  const records = await f.session.records();
+  const actual = new ActualSession({
+    ...f.session.ctx,
+    io: { ...f.session.ctx.io, env: {}, stderr: () => {} },
+    records: async () => records,
+    config: () => ({ dataDir: join(tmpdir(), 'circle-hub-synthetic-config') }),
+  } as unknown as import('./api.ts').CliContext, { tokens: () => memoryOperatorTokens(null) });
+  await assert.rejects(applyDeployment(actual, { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }] }), /管理员令牌/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('[PG] a fresh database requires standard init-admin before definition apply and never auto-creates an administrator', { timeout: 120000 }, async t => {
+  const { openTestRecords } = await import('../testing/records.ts');
+  const { Session: ActualSession } = await import('./cli-session.ts');
+  const { initAdminCommand } = await import('./cli-admin.ts');
+  const { memoryOperatorTokens } = await import('./assemble/operator-token.ts');
+  const { removeTree } = await import('./assemble/files.ts');
+  const kit = await openTestRecords();
+  const config: import('../config/index.ts').HubConfig = { ...kit.config, database: kit.database, host: '127.0.0.1', port: 0 };
+  const output: string[] = [];
+  const tokens = memoryOperatorTokens(null, '合成首次设置令牌库');
+  const password = 'Synthetic-initial-password-58!';
+  const context: import('./api.ts').CliContext = {
+    io: { env: {}, cwd: kit.dataDir, stdout: line => output.push(line), stderr: line => output.push(line) },
+    config: () => config, records: async () => kit,
+    deps: async () => { throw new Error('synthetic context does not expose unrelated deps'); },
+    actingAdmin: async () => { throw new Error('first setup must not infer an administrator'); },
+  };
+  const session = new ActualSession(context, { tokens: () => tokens, readSecret: async () => password, assembly: { requireOsIsolation: false } });
+  t.after(async () => {
+    try { await session.close(); await removeTree(join(kit.dataDir, 'packs')); }
+    finally { await kit.close(); }
+  });
+  const definition = { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }] };
+  await assert.rejects(applyDeployment(session, definition), /管理员令牌/);
+  assert.equal((await kit.principals.list()).length, 0);
+  tokens.value = 'synthetic-old-operator-token';
+  assert.equal((await kit.principals.list()).length, 0);
+  assert.equal(await initAdminCommand(session, ['合成初始管理员', '--password-stdin']), 0);
+  assert.notEqual(tokens.value, 'synthetic-old-operator-token');
+  assert.ok(tokens.value);
+  const applied = await applyDeployment(session, definition);
+  assert.equal(applied.created, 1);
+  assert.deepEqual(applied.differences, []);
+  assert.equal((await kit.principals.list()).length, 2);
+  assert.equal(output.join('\n').includes(password), false);
+  assert.equal(output.join('\n').includes(tokens.value!), false);
+});
+
+test('[PG] actual CLI children perform fresh init-admin stdin then apply and export without another identity step', { timeout: 180000 }, async t => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const { open } = await import('node:fs/promises');
+  const { startPostgres } = await import('../testing/postgres.ts');
+  const { openTestRecords } = await import('../testing/records.ts');
+  const { fileOperatorTokens } = await import('./assemble/operator-token.ts');
+  const { DEFAULT_KEY_SERVICE } = await import('../platform/api.ts');
+  const { removeTree } = await import('./assemble/files.ts');
+  const postgres = await startPostgres({ socket: true, passwordless: true, private: true });
+  let kit: Awaited<ReturnType<typeof openTestRecords>> | undefined;
+  t.after(async () => {
+    try {
+      if (kit) {
+        try { await removeTree(join(kit.dataDir, 'packs')); }
+        finally { await kit.close(); }
+      }
+    } finally { await postgres.stop(); }
+  });
+  kit = await openTestRecords({ postgres, initKey: false });
+  assert.equal((await kit.principals.list()).length, 0);
+  const home = join(kit.dataDir, 'synthetic-home'); await mkdir(home, { mode: 0o700 });
+  const env: NodeJS.ProcessEnv = {
+    HOME: home, PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', NODE_NO_WARNINGS: '1',
+    CIRCLE_HUB_DATA_DIR: kit.dataDir, CIRCLE_HUB_LOG_DIR: kit.config.logDir, CIRCLE_HUB_PORT: '0',
+    CIRCLE_HUB_DATABASE_SOCKET_DIR: kit.database.host, CIRCLE_HUB_DATABASE_PORT: String(kit.database.port),
+    CIRCLE_HUB_DATABASE_NAME: kit.database.database, CIRCLE_HUB_DATABASE_USER: kit.database.user,
+  };
+  const documentBytes = Buffer.from('{"topology":"synthetic-fresh"}\r\n');
+  const definition = {
+    schema: 'deployment@1',
+    accounts: [{ name: '合成脚本管理员', role: 'admin' }, { name: '合成脚本成员', role: 'user' }],
+    teams: [{ name: '合成脚本团队', members: ['合成脚本成员'] }],
+    variables: [{ schema: 'variable@1', name: 'SYNTHETIC_SCRIPT_COUNT', value: 17 }],
+    documents: [{ name: 'synthetic-script-topology', sha256: sha256Hex(documentBytes), size: documentBytes.length, bytesBase64: documentBytes.toString('base64'), mediaType: 'application/json', fileName: 'synthetic-topology.json' }],
+    knowledgeSync: [],
+  };
+  const definitionFile = join(kit.dataDir, 'synthetic-definition.json');
+  await writeFile(definitionFile, JSON.stringify(definition), { mode: 0o600, flag: 'wx' });
+  const password = 'Synthetic-script-initial-password-93!';
+  const passwordFile = join(kit.dataDir, 'synthetic-initial-password.input');
+  await writeFile(passwordFile, password + '\n', { mode: 0o600, flag: 'wx' });
+  assert.equal((await stat(passwordFile)).mode & 0o777, 0o600);
+  const entry = fileURLToPath(new URL('../../bin/circle-hub', import.meta.url));
+  const child = async (args: string[], inputFd?: number): Promise<{ code: number; stdout: string; stderr: string }> => {
+    return new Promise((resolve, reject) => {
+      const processChild = spawn(process.execPath, [entry, ...args], { cwd: home, env, stdio: [inputFd ?? 'ignore', 'pipe', 'pipe'], signal: t.signal });
+      let stdout = '', stderr = '';
+      processChild.stdout?.on('data', chunk => { stdout += String(chunk); });
+      processChild.stderr?.on('data', chunk => { stderr += String(chunk); });
+      processChild.once('error', () => reject(new Error('Synthetic CLI child could not start')));
+      processChild.once('close', code => resolve({ code: code ?? -1, stdout, stderr }));
+    });
+  };
+  const input = await open(passwordFile, 'r');
+  let initialized: Awaited<ReturnType<typeof child>>;
+  try { initialized = await child(['init-admin', '合成脚本管理员', '--password-stdin'], input.fd); }
+  finally { await input.close(); }
+  assert.equal(initialized.code, 0, 'Fresh init-admin child failed; diagnostics must not print stdin material');
+  const applied = await child(['apply', definitionFile]);
+  assert.equal(applied.code, 0, 'Definition apply child failed after standard first setup');
+  const exported = await child(['export']);
+  assert.equal(exported.code, 0, 'Definition export child failed');
+  const actual = parseDeployment(JSON.parse(exported.stdout));
+  const names = new Map(actual.accounts.map(account => [account.id, account.name]));
+  const normalized = {
+    ...actual,
+    accounts: actual.accounts.map(({ id: _id, ...account }) => account).sort((a, b) => a.name.localeCompare(b.name)),
+    teams: actual.teams.map(({ id: _id, ...team }) => ({ ...team, members: team.members.map(id => names.get(id) ?? id).sort() })).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+  const expected = parseDeployment(definition);
+  expected.accounts.sort((a, b) => a.name.localeCompare(b.name));
+  assert.deepEqual(normalized, expected);
+  const administrator = await kit.principals.findByName('合成脚本管理员');
+  assert.ok(administrator);
+  assert.ok(await kit.principals.verifyPassword(administrator.name, password));
+  const storedToken = await fileOperatorTokens(kit.dataDir, DEFAULT_KEY_SERVICE).read();
+  assert.ok(storedToken);
+  const output = initialized.stdout + initialized.stderr + applied.stdout + applied.stderr + exported.stdout + exported.stderr;
+  assert.equal(output.includes(password), false);
+  assert.equal(output.includes(storedToken), false);
+  assert.doesNotMatch(initialized.stdout, /初始密码（仅显示一次/);
+});
+
+test('[PG] same-root all reset preserves old operator bytes and the standard CLI first setup remains usable', { timeout: 180000 }, async t => {
+  const { spawn } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const { open } = await import('node:fs/promises');
+  const { migrateRecords } = await import('../records/api.ts');
+  const { createContext, postgresFor, layoutAt, ensureLayout, newSettingsFile, writeSettingsFile, ensureDatabaseRunning, withSession } = await import('../platform/api.ts');
+  const { recordingRunner, exit, freePort, socketPort, libpqAvailable } = await import('../platform/test-support.ts');
+  const { resetData } = await import('./reset/host.ts');
+  const { protectedFiles } = await import('./reset/protected-files.ts');
+  const { removeTree } = await import('./assemble/files.ts');
+  const libpq = await libpqAvailable(); assert.ok(libpq, 'Real reset regression needs the existing PostgreSQL 18 backup tools');
+  const parent = await mkdtemp(join(tmpdir(), 'chu1-reset-')), layout = layoutAt(join(parent, 'data'));
+  await ensureLayout(layout);
+  const port = await freePort(), databasePort = socketPort();
+  await writeSettingsFile(layout, newSettingsFile({ environment: 'test', port, database: { port: databasePort } }));
+  const runner = recordingRunner(call => /(?:launchctl|systemctl)$/.test(call.command) ? exit(113, 'synthetic service not loaded') : undefined).runner;
+  const context = createContext({ CIRCLE_HUB_DATA_DIR: layout.root }, { platform: 'darwin', home: parent, launchAgentsDir: join(parent, 'agents'), layout, runner, libpqBin: libpq });
+  const postgres = postgresFor(context);
+  t.after(async () => { try { await postgres.stop(); } finally { await removeTree(parent); } });
+  await postgres.initialise(); await ensureDatabaseRunning(postgres, { create: true });
+  const database = { host: postgres.target.socketDir, port: databasePort, user: postgres.target.user, database: postgres.target.database };
+  await migrateRecords({ database }, { runtimeRole: postgres.application.user });
+  const env: NodeJS.ProcessEnv = {
+    HOME: parent, PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', NODE_NO_WARNINGS: '1',
+    CIRCLE_HUB_DATA_DIR: layout.root, CIRCLE_HUB_LOG_DIR: layout.logs, CIRCLE_HUB_PORT: String(port),
+    CIRCLE_HUB_DATABASE_SOCKET_DIR: database.host, CIRCLE_HUB_DATABASE_PORT: String(database.port),
+    CIRCLE_HUB_DATABASE_NAME: database.database, CIRCLE_HUB_DATABASE_USER: postgres.application.user,
+  };
+  const password = 'Synthetic-same-root-password-82!';
+  const passwordFile = join(parent, 'synthetic-first-setup.input');
+  await writeFile(passwordFile, password + '\n', { mode: 0o600, flag: 'wx' });
+  const entry = fileURLToPath(new URL('../../bin/circle-hub', import.meta.url));
+  const child = async (args: string[], stdin = false): Promise<{ code: number; stdout: string; stderr: string }> => {
+    const input = stdin ? await open(passwordFile, 'r') : null;
+    try {
+      return await new Promise((resolve, reject) => {
+        const subprocess = spawn(process.execPath, [entry, ...args], { cwd: parent, env, stdio: [input?.fd ?? 'ignore', 'pipe', 'pipe'], signal: t.signal });
+        let stdout = '', stderr = '';
+        subprocess.stdout?.on('data', chunk => { stdout += String(chunk); });
+        subprocess.stderr?.on('data', chunk => { stderr += String(chunk); });
+        subprocess.once('error', () => reject(new Error('Synthetic same-root CLI child could not start')));
+        subprocess.once('close', code => resolve({ code: code ?? -1, stdout, stderr }));
+      });
+    } finally { await input?.close(); }
+  };
+  const oldSetup = await child(['init-admin', '合成原管理员', '--password-stdin'], true);
+  const setupDiagnostic = oldSetup.stderr.replaceAll(password, '[omitted]').replace(/[A-Za-z0-9_-]{43}/g, '[omitted-token]');
+  assert.equal(oldSetup.code, 0, 'Original current-schema setup failed: ' + setupDiagnostic);
+  assert.equal(oldSetup.stdout.includes(password), false);
+  const originals = await protectedFiles(layout);
+  assert.ok(originals.some(file => file.area === 'keys'));
+  const report = await resetData(context, { scopes: 'all', keepConfig: false });
+  assert.ok(report.archive); assert.ok(report.backup);
+  assert.deepEqual(await protectedFiles(layout), originals);
+  const [empty] = await withSession(postgres.connector, postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM users'));
+  assert.equal(empty!.n, 0);
+  const freshSetup = await child(['init-admin', '合成新管理员', '--password-stdin'], true);
+  assert.equal(freshSetup.stdout.includes(password) || freshSetup.stderr.includes(password), false);
+  if (freshSetup.code !== 0) assert.match(freshSetup.stderr, /已经有操作令牌/);
+  assert.equal(freshSetup.code, 0, 'Known first-setup blocker: reset preserved the stale operator token; no remove or other identity step was inserted');
+  const afterSetup = await protectedFiles(layout);
+  assert.deepEqual(afterSetup.map(file => [file.area, file.path]), originals.map(file => [file.area, file.path]));
+  assert.deepEqual(afterSetup.filter(file => file.area === 'vault'), originals.filter(file => file.area === 'vault'));
+  assert.ok(originals.some(before => before.area === 'keys' && afterSetup.some(after => after.area === before.area && after.path === before.path && after.sha256 !== before.sha256)));
+  const definition = { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }], knowledgeSync: [] };
+  const file = join(parent, 'synthetic-after-reset-definition.json'); await writeFile(file, JSON.stringify(definition), { mode: 0o600, flag: 'wx' });
+  const applied = await child(['apply', file]); assert.equal(applied.code, 0, 'Same-root apply failed after standard first setup');
+  const exported = await child(['export']); assert.equal(exported.code, 0);
+  const actual = parseDeployment(JSON.parse(exported.stdout));
+  assert.deepEqual({ ...actual, accounts: actual.accounts.map(({ id: _id, ...account }) => account) }, parseDeployment(definition));
+  const { fileOperatorTokens, deploymentKeyService } = await import('./assemble/operator-token.ts');
+  const token = await fileOperatorTokens(layout.root, await deploymentKeyService(env)).read();
+  assert.ok(token);
+  const output = oldSetup.stdout + oldSetup.stderr + freshSetup.stdout + freshSetup.stderr + applied.stdout + applied.stderr + exported.stdout + exported.stderr;
+  assert.equal(output.includes(password), false);
+  assert.equal(output.includes(token), false);
 });

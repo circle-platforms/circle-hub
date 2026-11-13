@@ -171,24 +171,28 @@ export async function exportDeployment(session: Session): Promise<Definition> {
     documents.push({ name: document.name, sha256: document.sha256, size: document.size, bytesBase64: Buffer.from(bytes).toString('base64'), mediaType: source.body.media_type, fileName: source.body.name ?? `${document.name}.bin` });
   }
   const leaseRegistrations = await (await session.leases()).registrations('');
+  const { readDeploymentSyncIntent } = await import('./deployment-sync.ts');
+  const syncIntent = await readDeploymentSyncIntent(session);
   return parseDeployment({ schema: 'deployment@1',
     accounts: users.map(({ id, name, role, disabled }) => ({ id, name, role, disabled })),
     teams: await Promise.all(teams.map(async team => ({ id: team.id, name: team.name, members: (await records.teams.members(by, team.id)).map(member => member.user.id) }))),
     packs: packDefinitions,
     resources, executors: (await new ExecutorRegistry(records).sources(by)).map(entry => entry.source),
     workflowAssignments, resourceAssignments, knowledgeSources: packs.filter(pack => pack.kind === 'product' && pack.active).map(pack => pack.id),
-    variables, documents, leaseRegistrations, missingConfiguration: ['知识同步产品线配置意图未知：当前版本没有持久读写配置的领域 API，不能从同步历史或知识根推断'],
+    variables, documents, leaseRegistrations, ...(syncIntent === null ? {} : { knowledgeSync: syncIntent.targets }),
+    missingConfiguration: syncIntent === null ? ['尚未通过部署定义声明知识同步目标；请在 knowledgeSync 列出产品和版本线，明确无目标则填写 []'] : [],
   });
 }
 
-export interface DeploymentReport { created: number; skipped: number; missingConfiguration: string[]; differences: Array<{ section: string; index: number; fields: string[] }>; }
+export interface DeploymentSyncTask { id: string; product: string; line: string | null; progressCommand: string }
+export interface DeploymentReport { created: number; skipped: number; missingConfiguration: string[]; syncTasks: DeploymentSyncTask[]; syncCurrent: Array<{product:string;line:string|null}>; differences: Array<{ section: string; index: number; fields: string[] }>; }
 
 export async function applyDeployment(session: Session, input: unknown, base = session.ctx.io.cwd): Promise<DeploymentReport> {
   const definition = parseDeployment(input);
   const by = await session.admin(), records = await session.records(), hub = await session.hub(false, true);
   const packs = await loadPacks(session, definition, base);
   const current = await exportDeployment(session);
-  const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration };
+  const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration, syncTasks: [], syncCurrent: [] };
   try {
     const compare = (section: string, index: number, before: unknown, after: unknown): boolean => {
       const fields = differentFields(before, after);
@@ -315,6 +319,18 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       if (await hub.registry.isActive(pack)) report.skipped++;
       else { await hub.registry.activate(by, pack); report.created++; }
     }
+    if (definition.knowledgeSync !== undefined && report.differences.length === 0) {
+      for (const target of definition.knowledgeSync) {
+        const product = await hub.packs.productById(target.product);
+        if (!product || product.product.id !== target.product || !await hub.registry.isActive(product.id))
+          throw new CliError('知识同步目标不是精确ID对应的已启用产品；请发布并启用该产品知识来源后重试');
+      }
+      const { queueDeploymentSync } = await import('./deployment-sync.ts');
+      const dispatched = await queueDeploymentSync(session, definition.knowledgeSync);
+      report.syncTasks = dispatched.tasks;
+      report.syncCurrent = dispatched.current;
+      if (differentFields(current.knowledgeSync, definition.knowledgeSync).length) report.created++; else report.skipped++;
+    }
     return report;
   } catch (error) {
     session.out(`部署未完成；本次已配置 ${report.created} 项，相同跳过 ${report.skipped} 项；先前已生效的操作未撤回`);
@@ -331,6 +347,8 @@ export async function applyCommand(session: Session, args: readonly string[]): P
   catch { throw new UsageError('部署定义不是可读取的严格 JSON 文件'); }
   const report = await applyDeployment(session, input, dirname(file));
   for (const difference of report.differences) session.out(`${difference.section}[${difference.index}] 与现状不同：${difference.fields.join('、')}；未覆盖`);
+  for (const task of report.syncTasks) session.out('知识同步后台任务 ' + task.id + '；产品 ' + task.product + '；版本线 ' + (task.line ?? '使用产品声明的默认选择') + '；查询进度：' + task.progressCommand);
+  for (const target of report.syncCurrent) session.out('知识同步已核对到最新：' + target.product + '；版本线 ' + (target.line ?? '使用产品声明的默认选择'));
   for (const missing of report.missingConfiguration) session.out(`缺少配置：${missing}`);
   session.out(`已配置 ${report.created} 项；相同跳过 ${report.skipped} 项；差异 ${report.differences.length} 项`);
   return report.differences.length || report.missingConfiguration.length ? 1 : 0;

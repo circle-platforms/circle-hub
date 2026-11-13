@@ -2637,6 +2637,36 @@
         "pattern": "^[a-z][a-z0-9-]{1,40}$"
       }
     },
+    "knowledgeSync": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,40}$"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "version line the pack assigns to the build, for example 10.7.6"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "product",
+          "line"
+        ],
+        "additionalProperties": false
+      }
+    },
     "variables": {
       "default": [],
       "type": "array",
