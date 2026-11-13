@@ -28,6 +28,8 @@ export interface ServerDeps {
   /** Administrator-only startup observations, not proof of current resource readiness. */
   startupSecretIssues?(): readonly VaultReadinessIssue[];
   config: HubConfig;
+  /** Releases assembly-owned resources only; the caller still owns the supplied records. */
+  close?(): Promise<void>;
   /** Named documents, for the administrators' console; `circle-hub doc` writes them. */
   documents?: { list(): Promise<Array<{ name: string; sha256: string; size: number }>> };
   records: RecordsKit;
