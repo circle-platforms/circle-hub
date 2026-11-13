@@ -152,9 +152,10 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
 
   let resetHandler: Promise<ReturnType<typeof createRebuildHandler>> | undefined;
   const handleReset = async (request: IncomingMessage, response: ServerResponse, url: URL) => {
-    if (!options.reset) return sendText(response, 503, '重建执行端口未装配，请使用本机受控命令');
+    const reset = options.reset;
+    if (!reset) return sendText(response, 503, '重建执行端口未装配，请使用本机受控命令');
     resetHandler ??= (async () => createRebuildHandler({
-      dataDir: deps.config.dataDir, rebuildNeeded: null, bridge: await options.reset.bridge(), render: options.reset.render,
+      dataDir: deps.config.dataDir, rebuildNeeded: null, bridge: await reset.bridge(), render: reset.render,
       originAllowed: request => originAllowed(request, origins), log, now: clock,
       authenticateAdmin: async request => {
         const secure = secureRequest(request);
