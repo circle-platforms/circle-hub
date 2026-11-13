@@ -31,7 +31,8 @@ function startupSpies(kit: TestRecordsKit) {
     throw new Error('startup must not execute reset bridge operations');
   };
   const bridge: RebuildResetBridge = {
-    validate: forbidden, inspect: forbidden, preview: forbidden,
+    validate: () => { bridgeCalls++; throw new Error('startup must not validate reset requests'); },
+    inspect: forbidden, preview: forbidden,
     launch: forbidden, acknowledge: forbidden, status: forbidden,
   };
   const options: Pick<ServeOptions, 'keyProvider' | 'assembly' | 'rebuild'> = {
