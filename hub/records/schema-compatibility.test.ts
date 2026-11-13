@@ -22,5 +22,4 @@ test('an unavailable observation is unknown, never confirmed incompatible or eli
   assert.notEqual(unknown.status,'incompatible');assert.equal(String(unknown.status),'unavailable');assert.equal(unknown.compatible,null);assert.equal(unknown.applied,null);
   assert.equal(compareRecordMigrations(null).status,'incompatible');
   assert.equal(compareRecordMigrations(currentRecordMigrations()).status,'compatible');
-  assert.equal(unknown.status==='incompatible',false);
 });
