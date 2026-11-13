@@ -9,11 +9,11 @@ import { RunRecord } from '../../../contracts/src/run.ts';
 import { Submission } from '../../../contracts/src/submission.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RequestRecord } from '../../../contracts/src/request.ts';
-import { SpaceTreeNode, SpaceVersionBody } from '../../../contracts/src/spaces.ts';
+import { SpaceSourceBody, SpaceTreeNode, SpaceVersionBody } from '../../../contracts/src/spaces.ts';
 import { canonicalize, digestOf, recordDigest, sha256Hex } from '../../records/api.ts';
 import type { CallLogEntry } from '../../records/api.ts';
 import { OLD33_MIGRATIONS, old33Checksum } from './testing/old33.ts';
-import { buildOld33Fixture, writeOld33Objects } from './testing/fixtures.ts';
+import { buildOld33Fixture, buildOld33PurgeScenario, writeOld33Objects } from './testing/fixtures.ts';
 
 test('old33 SQL retains all 33 previous-release migration identities and checksums', () => {
   assert.equal(OLD33_MIGRATIONS.length, 33);
@@ -78,6 +78,24 @@ test('synthetic retained state has intact logical record, object and content-add
       assert.equal(objects.has(fixture.handles.product.root), false, 'a mounted product root is a tree-node record, not a space object');
     }
   }
+  const purge = buildOld33PurgeScenario(fixture);
+  const retainedSource = SpaceSourceBody.parse(purge.publicSource.body);
+  const retainedVersion = SpaceVersionBody.parse(purge.publicVersion.body);
+  assert.equal(purge.publicSource.digest, recordDigest(purge.publicSource));
+  assert.equal(purge.publicVersion.digest, recordDigest(purge.publicVersion));
+  assert.equal(retainedSource.space, 'team');
+  assert.equal(retainedSource.artifact, purge.original.record);
+  assert.equal(purge.original.heldBy, purge.publicSource.digest);
+  assert.equal(objects.get(purge.original.sha256)!.scope!.owner, fixture.member);
+  assert.ok(retainedVersion.sources.includes(purge.publicSource.digest));
+  assert.deepEqual(retainedVersion.products, fixture.handles.spaces.find(space => space.space === 'team')!.products);
+  assert.equal(purge.purgedRecordDigests.length, 6);
+  assert.ok(purge.purgedRecordDigests.includes(purge.original.record));
+  assert.equal(purge.purgedWithoutRetainedCopy.length, 5);
+  assert.ok(purge.purgedWithoutRetainedCopy.includes(purge.ordinaryPurgedCapsule));
+  assert.equal(records.get(purge.ordinaryPurgedCapsule)!.kind, 'memory_version');
+  assert.equal(purge.purgedWithoutRetainedCopy.includes(purge.original.record), false);
+  assert.equal(fixture.records.length, 43, 'planning a purge does not alter the baseline fixture');
 });
 
 test('previous-release authentication hashes, secret versions, reservations and archived classes are distinct', () => {

@@ -68,6 +68,17 @@ export interface Old33Fixture {
   };
 }
 
+export interface Old33PurgeScenario {
+  owner: string;
+  epoch: string;
+  publicSource: FixtureRecord<ReturnType<typeof SpaceSourceBody.parse>>;
+  publicVersion: FixtureRecord<SpaceVersionBody>;
+  original: { record: string; sha256: string; size: number; heldBy: string };
+  ordinaryPurgedCapsule: string;
+  purgedRecordDigests: string[];
+  purgedWithoutRetainedCopy: string[];
+}
+
 /** Builds data without opening files, a database, a network connection or a vault. */
 export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixture {
   const admin = id('usr', 1), member = id('usr', 2), disabled = id('usr', 3);
@@ -346,6 +357,60 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
       variable: { name: variableName, object: variableObject.sha256, decision: variableDecision.digest }, secrets,
       product: { id: product, root, composition: composition.digest, pointer, source: source.digest }, spaces,
       reservation: { key, lease, run } } };
+}
+
+/** Plans an old-writer public association followed by an actual old-schema personal purge. */
+export function buildOld33PurgeScenario(fixture: Old33Fixture): Old33PurgeScenario {
+  const personal = fixture.handles.spaces.find(space => space.space === fixture.member)!;
+  const shared = fixture.handles.spaces.find(space => space.space === 'team')!;
+  const association = fixture.records.find(record => record.digest === personal.source)!.body as ReturnType<typeof SpaceSourceBody.parse>;
+  const original = fixture.records.find(record => record.digest === association.artifact)!;
+  const scope = original.scope!;
+  const previous = fixture.records.find(record => record.digest === shared.version)!.body as SpaceVersionBody;
+  const append = <B>(kind: RecordEnvelope['kind'], schema: string, body: B, index: IndexEntry[], n: number): FixtureRecord<B> => {
+    const envelope = { kind, schema, provenance: 'declared' as const, created_at: fixture.at, body };
+    return { id: id('rcd', fixture.records.length + n), ...envelope, digest: recordDigest(envelope), index };
+  };
+  const sourceBody = SpaceSourceBody.parse({ space: 'team', path: '/', sha256: association.sha256,
+    artifact: original.digest, size: association.size, by: fixture.member, at: fixture.at });
+  const publicSource = append('knowledge_space_source', 'knowledge-space-source@1', sourceBody,
+    [{ key: 'knowledge.space.source', value: 'team' }, { key: 'knowledge.space.source_hash', value: association.sha256 }], 1);
+  const versionBody = SpaceVersionBody.parse({ ...previous, parent: shared.version, sources: [...previous.sources, publicSource.digest],
+    by: fixture.member, at: fixture.at, reason: '合成公共原件独立留存', used_bytes: previous.used_bytes + association.size });
+  const baseBytes = versionBody.used_bytes;
+  for (let n = 0; n < 8; n++) {
+    const next = baseBytes + Buffer.byteLength(canonicalize(versionBody));
+    if (versionBody.used_bytes === next) break;
+    versionBody.used_bytes = next;
+  }
+  const publicVersion = append('knowledge_space_version', 'knowledge-space-version@1', versionBody,
+    [{ key: 'knowledge.space.version', value: 'team' }], 2);
+  const purgedRecordDigests = fixture.records.filter(record => record.scope?.owner === scope.owner &&
+    record.scope.epoch === scope.epoch).map(record => record.digest);
+  return { owner: scope.owner, epoch: scope.epoch, publicSource, publicVersion,
+    original: { record: original.digest, sha256: association.sha256, size: association.size, heldBy: publicSource.digest },
+    ordinaryPurgedCapsule: personal.memoryVersion, purgedRecordDigests,
+    purgedWithoutRetainedCopy: purgedRecordDigests.filter(digest => digest !== original.digest) };
+}
+
+/** Call only after seedOld33Fixture commits; old triggers retain the public original before the purge clears payloads. */
+export async function appendOld33PurgeScenario(session: Pick<SqlSession, 'query'>, scenario: Old33PurgeScenario): Promise<void> {
+  await session.query('BEGIN');
+  try {
+    for (const record of [scenario.publicSource, scenario.publicVersion]) {
+      const body = canonicalize(record.body);
+      const result = await session.query(`INSERT INTO records(id,digest,kind,schema,provenance,created_at,body,size)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING seq`,
+      [record.id, record.digest, record.kind, record.schema, record.provenance, record.created_at, body, Buffer.byteLength(body)]);
+      for (const entry of record.index) await session.query('INSERT INTO record_index(key,value,digest,record_seq) VALUES($1,$2,$3,$4)',
+        [entry.key, entry.value, record.digest, result[0]!.seq]);
+    }
+    await session.query('SELECT public.hub_purge_personal($1,$2)', [scenario.owner, scenario.epoch]);
+    await session.query('COMMIT');
+  } catch (error) {
+    await session.query('ROLLBACK');
+    throw error;
+  }
 }
 
 function executorSource(executorId: string): unknown {
