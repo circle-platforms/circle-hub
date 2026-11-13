@@ -5,7 +5,6 @@
 <p align="center">
   <a href="https://circle-platforms.github.io/circle-hub/">文档</a> ·
   <a href="docs/design/generic-model.md">模型</a> ·
-  <a href="docs/hub-r4-brief.md">里程碑</a> ·
   <a href="CHANGELOG.md">更新日志</a> ·
   <a href="README.md">English</a>
 </p>
@@ -40,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/circle-platforms/circle-hub/main/in
 
 ## 状态
 
-第一个里程碑已建成并部署；0.3.0 是重建后 Hub 的第一个发行，带 macOS 和 Linux 的一键安装包（[CHANGELOG](CHANGELOG.md)、[当前状态](docs/hub-status-2026-11.md)）。通用模型、由它生成的合约、[架构简报](docs/hub-r4-architecture.md)、`hub/` 下的各个包（服务器、网页控制台、知识树、只读连接器、派发），任务包，以及单机持久部署都已就位；哪些部分已经落地、复核过，还有什么未完，见 [docs/hub-r4-progress.md](docs/hub-r4-progress.md)。此前的任务与审批服务器（截至 0.2.0）已退役，它的简报和交接文档作为[历史记录](docs/README.md#历史记录)保留。
+第一个里程碑已建成并部署；0.3.0 是重建后 Hub 的第一个发行，带 macOS 和 Linux 的一键安装包（[CHANGELOG](CHANGELOG.md)）。通用模型、由它生成的合约、[架构简报](docs/hub-r4-architecture.md)、`hub/` 下的各个包（服务器、网页控制台、知识树、只读连接器、派发），任务包，以及单机持久部署都已就位；哪些部分已经落地、复核过，还有什么未完，见 [docs/hub-r4-progress.md](docs/hub-r4-progress.md)。此前的任务与审批服务器（截至 0.2.0）已退役，它的简报和交接文档保存在 Git 历史中。
 
 ## 运行检查
 
@@ -60,7 +59,7 @@ node --test ".github/checks/*.test.ts"   # 文档检查
 
 ## 文档
 
-- [第一个里程碑简报](docs/hub-r4-brief.md) · [架构](docs/hub-r4-architecture.md) · [进度与决定](docs/hub-r4-progress.md)
+- [架构](docs/hub-r4-architecture.md) · [进度与决定](docs/hub-r4-progress.md)
 - [通用模型](docs/design/generic-model.md) · [五要素检查单](docs/design/object-standard.md) · [设计索引](docs/design/README.md)
 - [兼容矩阵](docs/compatibility.md)：circle、circle-hub、circle-packs 三个仓库彼此的要求。
 

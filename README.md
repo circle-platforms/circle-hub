@@ -5,7 +5,6 @@
 <p align="center">
   <a href="https://circle-platforms.github.io/circle-hub/">Docs</a> ·
   <a href="docs/design/en/generic-model.md">Model</a> ·
-  <a href="docs/hub-r4-brief.md">Milestone</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="README.zh-CN.md">中文</a>
 </p>
@@ -40,7 +39,7 @@ For other computers on the internal network, add this machine's address: `… | 
 
 ## Status
 
-Milestone 1 is built and deployed, and 0.3.0 is the first release of the redesigned Hub, with one-click install bundles for macOS and Linux ([CHANGELOG](CHANGELOG.md), [current status](docs/hub-status-2026-11.md)). The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, web console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its briefs and handoffs are kept as [historical records](docs/README.md#历史记录).
+Milestone 1 is built and deployed, and 0.3.0 is the first release of the redesigned Hub, with one-click install bundles for macOS and Linux ([CHANGELOG](CHANGELOG.md)). The model, the contracts generated from it, the [architecture brief](docs/hub-r4-architecture.md), the packages under `hub/` (server, web console, knowledge tree, read-only connectors, dispatch), the packs and a persistent single-machine deployment are in place; [docs/hub-r4-progress.md](docs/hub-r4-progress.md) says which parts have landed and been reviewed, and what is still open. The task-and-approval server that came before (up to 0.2.0) is retired, and its historical records live in Git history.
 
 ## Run the checks
 
@@ -60,7 +59,7 @@ node --test ".github/checks/*.test.ts"   # docs checks
 
 ## Documentation
 
-- [Milestone 1 brief](docs/hub-r4-brief.md) · [architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
+- [Architecture](docs/hub-r4-architecture.md) · [progress and decisions](docs/hub-r4-progress.md)
 - [Generic model](docs/design/en/generic-model.md) · [the five-element checklist](docs/design/en/object-standard.md) · [design index](docs/design/en/README.md) (Chinese originals in [docs/design](docs/design/README.md))
 - [Compatibility matrix](docs/compatibility.en.md): what circle, circle-hub and circle-packs expect of each other.
 

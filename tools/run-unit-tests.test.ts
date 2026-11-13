@@ -10,7 +10,6 @@ const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 
 // Tracked test files that no runner picks up on purpose, each with the reason. Everything else must be run.
 const NOT_RUN:Array<[pattern:string,reason:string]>=[
- ['docs/hub-r4-research/adoc-sandbox/prototype.test.ts','research prototype: needs an explicit public-registry download first (docs/hub-r4-research/adoc-sandbox.md)'],
  ['scripts/real/**/*.test.ts','real-system, gold and conversion scripts: outside the default Hub unit suite (run directly with node --test when needed)'],
 ];
 
