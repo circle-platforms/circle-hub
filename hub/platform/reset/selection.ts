@@ -5,6 +5,7 @@ import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { FEEDING_SCHEMAS } from '../../../contracts/src/feeding.ts';
 import { IsoTime, UserId, Versioned } from '../../../contracts/src/common.ts';
 import { PackManifest } from '../../../contracts/src/pack.ts';
+import { ResourceRecord } from '../../../contracts/src/resources.ts';
 import { ProductId } from '../../../contracts/src/product.ts';
 import { ReferenceUri } from '../../../contracts/src/reference.ts';
 import type { ResetProblem, ResetScope } from './types.ts';
@@ -199,6 +200,13 @@ export function classifyCurrentRecord(record: CurrentRecord, options: SelectionO
   if (shape && !shape.safeParse(body).success) return null;
   return record.kind === 'source_artifact' ? classifyArtifact(record, body, artifactScopes(record, body, options)) :
     CLASSIFIERS[record.kind as RecordKind](record, body);
+}
+
+/** A configured system pack is a registry record dependency, even when its manifest bytes are retained. */
+export function resourceDefinitionReferences(value: unknown): CurrentReference[] | null {
+  const resource = ResourceRecord.safeParse(value);
+  return resource.success ? [{ kind: 'record', digest: resource.data.system_pack_digest,
+    field: '/system_pack_digest', recordAlias: true }] : null;
 }
 
 /** Formal SHA fields only. RunId, user ids, text and arbitrary JSON are not traversed for hashes. */
