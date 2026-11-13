@@ -31,7 +31,7 @@ import type { SubmitResultOutput } from '../../../contracts/src/tools.ts';
 import { PROTOCOL_CODES } from '../../../contracts/generated/protocol.ts';
 import { PARTITION, type Acceptance } from '../../../contracts/generated/vocabulary.ts';
 import { partitionCountsOf, type Partitions, type ValidationResult } from '../../../contracts/src/validation.ts';
-import { CanonicalizationError, LimitError, recordExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
+import { CanonicalizationError, LimitError, isAdmin, recordExistence, sha256Hex, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { CallContext, LoadedWorkflow, Untraced } from '../../ports.ts';
 import { parseReference, recReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -348,7 +348,9 @@ async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAn
     return notes.length ? { ...answer, dispatch: notes } : answer;
   } catch (error) {
     ctx.log({ traceId, run: run.run, what: 'hub dispatch', detail: describe(error) });
-    return { ...answer, dispatch: [{ outcome: 'unknown', missing_facts: [{fact:'本次调用未能取得可核对的作业状态',next_action:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对'}], next_action:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对', text: '上机验证状态尚未确认：本次未取得可核对的作业状态；不要重新发送或另开运行重发，请稍后原样重交原提交只读记录，或联系管理员核对' }] };
+    const current=await ctx.deps.records.principals.get(user.id).catch(()=>null);
+    const next=current&&!current.disabled&&isAdmin(current)?`circle-hub run show ${run.run} --json`:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对';
+    return { ...answer, dispatch: [{ outcome: 'unknown', missing_facts: [{fact:'本次调用未能取得可核对的作业状态',next_action:next}], next_action:next, text:'上机验证状态尚未确认：本次未取得可核对的作业状态；不要重新发送或另开运行重发；下一步：'+next }] };
   }
 }
 
