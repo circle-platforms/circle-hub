@@ -24,7 +24,7 @@ const TEAM_A: ConsoleTeamRow = {
   changed_at: '2026-11-13T03:00:00.000Z',
 };
 const TEAM_B: ConsoleTeamRow = {
-  id: 'tm_01bryyz0123456789abcdefghjm',
+  id: 'tm_01bryyz0123456789abcdefghm',
   name: '合成乙组',
   created_at: '2026-11-13T01:00:00.000Z',
   created_by: ADMIN.id,

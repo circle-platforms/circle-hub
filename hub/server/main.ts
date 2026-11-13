@@ -2,6 +2,7 @@ import { createRebuildApp } from './rebuild-app.ts';
 import { createPlatformRebuildBridge } from './rebuild-platform.ts';
 import { rebuildRequiredState } from './rebuild-state.ts';
 import type { RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts';
+import { renderRebuildPage } from './console/reset.ts';
 import { diagnoseRecordsSchema } from '../records/api.ts';
 // `circle-hub serve`: configuration from CIRCLE_HUB_* only (a retired CIRCLE_SERVER_* name refuses to start, and so does an
 // operator token in the environment: a server needs no admin token), the platform's cluster started when the database is the
@@ -175,7 +176,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
       try {
         const bridge = options.rebuild?.bridge ?? await createPlatformRebuildBridge(config, io.env);
         maintenanceApp = await createRebuildApp(config, {
-          dataDir: config.dataDir, rebuildNeeded: needed, bridge, render: options.rebuild?.render,
+          dataDir: config.dataDir, rebuildNeeded: needed, bridge, render: options.rebuild?.render ?? renderRebuildPage,
           now: options.now, log: line => io.stderr(terminalSafe(line)), tls: options.appOptions?.tls,
         });
         const info = await maintenanceApp.listen();
