@@ -7,8 +7,8 @@ export type { ResetScope, ResetDataScope } from '../../../contracts/api.ts';
 export const ResetRequest = z.strictObject({
   scopes: ResetScopesSchema,
   keepConfig: z.boolean().default(false),
-  definitionFile: z.string().regex(/^src:[0-9a-f]{64}$/, '定义文件必须是已授权上传对象的src引用').optional(),
-}).refine(request => !(request.keepConfig && request.definitionFile), '保留现有配置与定义文件恢复只能选择一种');
+  definitionFile: z.string().refine(value => !value.includes('\0') && (/^src:[0-9a-f]{64}$/.test(value) || process.getBuiltinModule('path').isAbsolute(value)), '定义文件必须是src引用或绝对本机路径').optional(),
+});
 export type ResetRequest = z.infer<typeof ResetRequest>;
 export interface ResetProblem { scope?: ResetDataScope; table?: string; row?: number; name?: string; reason: string; nextAction: string; }
 export interface ResetInspection { available: boolean; compatible: boolean; needsRebuild: boolean; diagnostics: readonly ResetProblem[]; canKeepConfig: boolean; choices: readonly { scopes: readonly ResetDataScope[] | 'all'; keepConfig: boolean; definitionAllowed: boolean }[]; }

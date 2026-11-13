@@ -71,6 +71,16 @@ export async function runContributionEntries(runs: Pick<RunsService, 'getRun'>, 
 
 export async function knowledgeCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
+  if (sub === 'sync-worker') {
+    const { positionals } = parse(rest, {}, 1);
+    return (await import('./deployment-sync.ts')).runDeploymentSyncWorker(session.config(), positionals[0], session.ctx.io.env);
+  }
+  if (sub === 'sync-status') {
+    const { positionals } = parse(rest, {}, 1);
+    const status = await (await import('./deployment-sync.ts')).deploymentSyncStatus(session, positionals[0]);
+    session.out(JSON.stringify(status));
+    return status.error ? 1 : 0;
+  }
   if (sub === 'view') {
     const { values, positionals } = parse(rest, { out: { type: 'string' }, only: { type: 'string' }, as: { type: 'string' } }, 1);
     if (!values.out) throw new UsageError('knowledge view 要用 --out 指定新文件');
