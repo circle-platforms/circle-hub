@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // Named documents published by administrators (C4, docs/hub-r4-device-pack.md section 4). `circle-hub doc put` stores
 // the file through the source-artifact pipeline (the credential scan as usual: a hit is held back until an admin
 // accepts it) and moves a named pointer (hub/records/pointers.ts compare-and-set, `doc:<name>`) to its digest; a
@@ -121,7 +122,7 @@ export function createDocs(deps: DocsDeps): Docs {
   const now = deps.now ?? (() => new Date());
 
   async function put(admin: Principal, name: string, bytes: Uint8Array, options: { fileName?: string; mediaType?: string } = {}): Promise<DocPutResult> {
-    if (admin.role !== 'admin') throw new DocsError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
+    if (!isAdmin(admin)) throw new DocsError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
     if (!DOC_NAME.test(name)) throw new DocsError(`命名文档的名字要写成小写字母开头的字母、数字或连字符，1 到 64 个字符：${name.slice(0, 80)}`);
     if (!(bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (bytes.byteLength > MAX_DOC_BYTES) throw new DocsError(`文件有 ${bytes.byteLength} 字节，超过命名文档的上限 ${MAX_DOC_BYTES} 字节（2 MiB），没有保存`);
@@ -187,7 +188,7 @@ export function createDocs(deps: DocsDeps): Docs {
     const lost = (message: string): ExternalRead => ({ ok: false, id: bare, reason: message, inputError: { code: 'SOURCE_INTEGRITY_UNPROVEN', message, fix: '请管理员从备份恢复这份命名文档后重读' } });
     const pointer = await records.pointers.get(docPointerName(parsed.name));
     if (pointer === null) return absent(`Hub 里没有命名文档 ${parsed.name}`);
-    if (principal.role !== 'admin') {
+    if (!isAdmin(principal)) {
       // Through a run only: the run must exist and be this user's, and its pack must declare the doc input type.
       // A run that is not stored yet is being started: bindInputs has already checked the assignment and the slot.
       if (context.run === undefined || context.run === null || !RunId.safeParse(context.run).success) return forbidden('命名文档只经运行读取');

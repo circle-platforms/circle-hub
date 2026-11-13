@@ -5,7 +5,6 @@
 // reaches `secret set` through the command's readSecret option, never through argv or the environment. Each invocation
 // opens and closes its own records, like a CLI process. Platform commands (backup, restore, deploy, …) stop the server
 // and are refused here: they stay on the command line.
-import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import type { AssemblyModule, CliCommand } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
 
@@ -27,25 +26,8 @@ export interface CommandBridge {
   run(argv: readonly string[], input: CommandInput): Promise<CommandRun>;
 }
 
-/** The `circle-hub` commands the console may run, with what each manages there (the CLI's command names). */
-interface BridgedCommandDescriptions {
-  readonly user: string;
-  readonly token: string;
-  readonly pack: string;
-  readonly resource: string;
-  readonly secret: string;
-  readonly knowledge: string;
-}
-const BRIDGED_COMMAND_DESCRIPTIONS: BridgedCommandDescriptions = {
-  user: '用户',
-  token: '令牌',
-  pack: uiLabelOf('pack_kind', 'workflow'),
-  resource: '资源',
-  secret: '密钥',
-  knowledge: '知识同步',
-};
-/** Every other first word is refused before anything is loaded. */
-export const BRIDGED_COMMANDS: ReadonlySet<string> = new Set(Object.keys(BRIDGED_COMMAND_DESCRIPTIONS));
+export { BRIDGED_COMMANDS } from './command-registry.ts';
+import { BRIDGED_COMMANDS } from './command-registry.ts';
 
 type CliMain = (argv: readonly string[], overrides: Record<string, unknown>) => Promise<number>;
 

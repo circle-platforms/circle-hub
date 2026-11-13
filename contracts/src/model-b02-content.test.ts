@@ -30,10 +30,10 @@ test('model 47: the masking dictionary replaces what its rules match in a busine
  assert.ok(b02.fields[6].startsWith('遮盖：只在业务系统的应答被遮盖字典替换过时有'));
  assert.ok(b02.rules[4].includes('遮盖字典见 R[11]')&&!b02.rules[4].includes('尚未实施'));
  assert.equal(b02.changes47.length,1);
- // The dictionary is put in force by a resource configuration: no new permission kind, record kind or protocol code.
+ // The dictionary is put in force by resource_config; resource_assign is the later team allocation decision.
  assert.ok(rule.includes('由一条资源配置决定生效'));
  const kinds=model.vocabulary.find((axis:{axis:string})=>axis.axis==='permission_kind').values.map((value:{code:string})=>value.code);
- assert.deepEqual(kinds,['publish','assign','publish_right','resource_config','share']);
+ assert.deepEqual(kinds,['publish','assign','publish_right','resource_config','share','resource_assign']);
 });
 
 test('model 51: the review, acceptance and withdrawal of credential findings are gone; old holds stay, old acceptances stand, a re-read is the way out (decision 161)',()=>{

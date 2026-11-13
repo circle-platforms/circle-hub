@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 // Named deployment versions use existing resource-configuration decisions and the vault, never a new table.
 import { randomBytes, createHash } from 'node:crypto';
 import { OrdinaryVariableName, VariableName, VariableRecord, SecretRecord, VariableValue, validateSecret, referencesIn, resolve as resolveValue, type SecretConsumer, type VariableUse } from '../../contracts/src/variables.ts';
@@ -80,7 +81,7 @@ export class RecordVariables {
     readonly #now: () => Date;
     readonly #prepared = new WeakSet<object>();
     constructor(ports: VariablePorts) { this.#p = ports; this.#now = ports.now ?? (() => new Date()); }
-    async assertAdmin(by: Principal) { const actual = await this.#p.principals.get(by.id); if (!actual || actual.disabled || actual.role !== 'admin')
+    async assertAdmin(by: Principal) { const actual = await this.#p.principals.get(by.id); if (!actual || actual.disabled || !isAdmin(actual))
         throw new AccessError('只有管理员可以设置或查看变量与密钥'); }
     #name(name: unknown, kind: VariableKind): string { const parsed = (kind === 'var' ? OrdinaryVariableName : VariableName).safeParse(name); if (!parsed.success)
         throw new VariableError(parsed.error.issues[0]?.message ?? '名字不合规则；请核对参数'); return parsed.data; }

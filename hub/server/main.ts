@@ -43,7 +43,8 @@ export interface ServeOptions {
 /** The longest one statement of the 运行状况 page may run; its part of the page then says 未知. */
 const OBSERVATION_STATEMENT_MS = 5000;
 
-export const SERVE_USAGE = 'serve [--migrate-only] [--migrate]   启动 Hub（默认只监听本机；配置了内置 HTTPS 时另开 HTTPS）；--migrate-only 以拥有表的角色应用迁移后退出；--migrate 用连接角色先迁移（单角色的开发环境）';
+import { SERVE_USAGE } from './cli-command-usage.ts';
+export { SERVE_USAGE } from './cli-command-usage.ts';
 
 /** CIRCLE_HUB_* names hub/config does not know but this program accepts: the platform's own (its commands read them). */
 export const ACCEPTED_PLATFORM_VARIABLES: readonly string[] = PLATFORM_ONLY_VARIABLES;

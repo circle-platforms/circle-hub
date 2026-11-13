@@ -47,7 +47,7 @@ export const AXES = {
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', ui: '请求类型', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
   request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }, { code: 'superseded', label: '已作废' }] },
-  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
+  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }, { code: 'resource_assign', label: '业务系统资源分配' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '常见误区' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干', ui: '大类' }, { code: 'branch', label: '枝', ui: '分类' }, { code: 'leaf', label: '叶', ui: '条目' }] },
@@ -95,9 +95,9 @@ export const AXES = {
   composition_basis: { label: '组成依据', ui: '组成来源', owner: 'K01', values: [{ code: 'release_record', label: '发布记录' }, { code: 'device_echo', label: '设备回显' }, { code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
   binding_status: { label: '版本绑定状态', owner: 'K03', values: [{ code: 'bound', label: '已绑定' }, { code: 'undeclared', label: '未声明' }, { code: 'conflict', label: '冲突' }] },
   binding_basis: { label: '版本绑定依据', ui: '版本绑定来源', owner: 'K03', values: [{ code: 'source_structure', label: '来源结构' }, { code: 'declared', label: '声明' }] },
-  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }] },
+  knowledge_space_kind: { label: '知识空间', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '公共空间' }] },
   knowledge_entry_status: { label: '条目状态', owner: 'K02', values: [{ code: 'verified', label: '已核验', ui: '已验证' }, { code: 'unverified', label: '未核验', ui: '待验证' }, { code: 'withdrawn', label: '已撤回' }, { code: 'superseded', label: '被取代' }] },
-  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '团队' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
+  knowledge_search_scope: { label: '搜索范围', owner: 'K01', values: [{ code: 'personal', label: '个人', ui: '我的' }, { code: 'team', label: '公共空间' }, { code: 'shared', label: '共享给我的', ui: '与我共享' }, { code: 'all', label: '全部' }] },
   knowledge_grantee: { label: '授权对象', ui: '分享对象', owner: 'R01', values: [{ code: 'member', label: '指定成员' }, { code: 'administrators', label: '全体管理员' }] },
   knowledge_grant_action: { label: '授权操作', ui: '分享操作', owner: 'R01', values: [{ code: 'grant', label: '授权', ui: '已分享' }, { code: 'revoke', label: '收回授权', ui: '已收回分享' }] },
   knowledge_share_status: { label: '提交共享状态', ui: '分享到团队状态', owner: 'K02', values: [{ code: 'merged', label: '已合并' }, { code: 'rejected', label: '已拒收' }] },
@@ -563,10 +563,10 @@ export function isRequestStatus(value: unknown): value is RequestStatus {
 }
 
 /** 许可种类 (B04) */
-export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share'] as const;
+export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share', 'resource_assign'] as const;
 export type PermissionKind = (typeof PERMISSION_KIND)[number];
-export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '工作流分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
-export const PERMISSION_KIND_UI = { 'publish': '发布记录', 'assign': '使用范围', 'publish_right': '维护人', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
+export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '工作流分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享', 'resource_assign': '业务系统资源分配' } as const satisfies { readonly [K in PermissionKind]: string };
+export const PERMISSION_KIND_UI = { 'publish': '发布记录', 'assign': '使用范围', 'publish_right': '维护人', 'resource_config': '资源配置', 'share': '分享', 'resource_assign': '业务系统资源分配' } as const satisfies { readonly [K in PermissionKind]: string };
 export const PermissionKindSchema = z.enum(PERMISSION_KIND);
 export function isPermissionKind(value: unknown): value is PermissionKind {
   return (PERMISSION_KIND as readonly unknown[]).includes(value);
@@ -1045,8 +1045,8 @@ export function isBindingBasis(value: unknown): value is BindingBasis {
 /** 知识空间 (K01) */
 export const KNOWLEDGE_SPACE_KIND = ['personal', 'team'] as const;
 export type KnowledgeSpaceKind = (typeof KNOWLEDGE_SPACE_KIND)[number];
-export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
-export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '团队' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_LABEL = { 'personal': '个人', 'team': '公共空间' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
+export const KNOWLEDGE_SPACE_KIND_UI = { 'personal': '我的', 'team': '公共空间' } as const satisfies { readonly [K in KnowledgeSpaceKind]: string };
 export const KnowledgeSpaceKindSchema = z.enum(KNOWLEDGE_SPACE_KIND);
 export function isKnowledgeSpaceKind(value: unknown): value is KnowledgeSpaceKind {
   return (KNOWLEDGE_SPACE_KIND as readonly unknown[]).includes(value);
@@ -1065,8 +1065,8 @@ export function isKnowledgeEntryStatus(value: unknown): value is KnowledgeEntryS
 /** 搜索范围 (K01) */
 export const KNOWLEDGE_SEARCH_SCOPE = ['personal', 'team', 'shared', 'all'] as const;
 export type KnowledgeSearchScope = (typeof KNOWLEDGE_SEARCH_SCOPE)[number];
-export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '团队', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
-export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '团队', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_LABEL = { 'personal': '个人', 'team': '公共空间', 'shared': '共享给我的', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
+export const KNOWLEDGE_SEARCH_SCOPE_UI = { 'personal': '我的', 'team': '公共空间', 'shared': '与我共享', 'all': '全部' } as const satisfies { readonly [K in KnowledgeSearchScope]: string };
 export const KnowledgeSearchScopeSchema = z.enum(KNOWLEDGE_SEARCH_SCOPE);
 export function isKnowledgeSearchScope(value: unknown): value is KnowledgeSearchScope {
   return (KNOWLEDGE_SEARCH_SCOPE as readonly unknown[]).includes(value);

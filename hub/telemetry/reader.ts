@@ -4,7 +4,7 @@
 // member reading a shared id sees their own rows of it and no others.
 import { TRACE_ORIGIN, type Environment, type StepLevel, type StepType, type TraceOrigin } from '../../contracts/generated/vocabulary.ts';
 import type { Principal } from '../records/api.ts';
-import { iso, normalizeTime, pageLimit, type Database, type Row } from '../records/db.ts';
+import { iso, normalizeTime, pageLimit, type Database, type Row } from '../records/api.ts';
 import { BACKGROUND_STEPS, type BackgroundStep, type UsageName } from './names.ts';
 import type { Usage } from './usage.ts';
 

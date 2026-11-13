@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createSlotPool } from '../rules/sandbox/slots.ts';
+import { tracing as telemetryTracing } from './usage.ts';
 import { stagingSlots } from '../records/staging-slots.ts';
 import {
   MAX_TRACE_STEPS,
@@ -21,7 +22,7 @@ import {
   updateTrace,
   withoutTrace,
   type SpanRow,
-} from './usage.ts';
+} from '../records/api.ts';
 
 let uninstall = (): void => {};
 afterEach(() => uninstall());
@@ -41,6 +42,7 @@ const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 test('outside a trace every call only does what it was given', async () => {
   assert.equal(tracing(), false);
+  assert.equal(telemetryTracing, tracing);
   assert.equal(currentTrace(), null);
   addUsage('db.rows', 5);
   recordQuery('SELECT 1', [{ a: 'x' }], 1, 0);

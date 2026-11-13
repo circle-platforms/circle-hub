@@ -16,7 +16,7 @@ import * as variableSchemas from './variables.ts';
 import * as tokenSchemas from './tokens.ts';
 import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
-import { SchemaId } from './common.ts';
+import { SchemaId, TeamId, TeamAssignmentSubject } from './common.ts';
 import { RecordEnvelope } from './records.ts';
 import { RunRecord, RunSummary, PackSummary } from './run.ts';
 import { ReceivedSubmission, Submission } from './submission.ts';
@@ -55,6 +55,8 @@ function registry(parts: Record<string, Record<string, z.ZodType>>): Record<stri
 
 export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
+    'team-id@1': TeamId,
+    'team-assignment-subject@1': TeamAssignmentSubject,
     'contribution-input@1':ContributionInput,
     'claim@1': Claim,
     'record@1': RecordEnvelope,

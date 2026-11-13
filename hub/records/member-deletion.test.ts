@@ -1,6 +1,8 @@
 // Synthetic permanent deletion exercises the real PostgreSQL boundary, not only UI visibility.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
 import {randomUUID,randomBytes} from 'node:crypto';
 import {openTestRecords} from '../testing/records.ts';
 import {Database,createPool} from './db.ts';
@@ -33,17 +35,18 @@ test('the last active administrator and a stale pre-check cannot begin deletion'
  await assert.rejects(w.deletions.preview(w.member,w.admin.id));
  await w.kit.principals.setDisabled(w.admin,w.member.id,true);const {intent}=await prepare(w);await w.deletions.finish(w.admin,w.member.id,intent.operation_id);assert.ok((await w.kit.principals.get(w.member.id))?.deleted_at);
 });
-test('failed retirement leaves a sealed account and recoverable digest-only intent without a false completion',async t=>{
+test('failed cache cleanup leaves a sealed account and recoverable digest-only intent without a false completion',async t=>{
  const w=await world(t);await w.kit.store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:w.member.id,markdown:'synthetic-resume-private'}});
- const {intent}=await prepare(w),failing=new PgMemberDeletions(w.db,w.kit.store,w.kit.personalPayloads!,async()=>{throw new Error('synthetic durable retirement failure');},()=>new Date());
- await assert.rejects(failing.finish(w.admin,w.member.id,intent.operation_id),(e:any)=>e.message.includes('存储清理未完成')&&e.cause?.message==='synthetic durable retirement failure');assert.ok((await w.kit.principals.get(w.member.id))?.deleted_at);assert.equal((await w.kit.store.list({kind:'member_deletion'})).items.length,0);assert.ok((await w.db.query('SELECT 1 FROM personal_payloads WHERE owner=$1',[w.member.id])).rowCount);
+ const {intent}=await prepare(w),failing=new PgMemberDeletions(w.db,w.kit.store,w.kit.personalPayloads!,()=>new Date());
+ const blocked=join(w.kit.dataDir,'synthetic-cache-file');await writeFile(blocked,'synthetic');failing.registerCacheRoot(blocked);
+ await assert.rejects(failing.finish(w.admin,w.member.id,intent.operation_id),(e:any)=>e.message.includes('存储清理未完成')&&e.cause?.code==='ENOTDIR');assert.ok((await w.kit.principals.get(w.member.id))?.deleted_at);assert.equal((await w.kit.store.list({kind:'member_deletion'})).items.length,0);assert.ok((await w.db.query('SELECT 1 FROM personal_payloads WHERE owner=$1',[w.member.id])).rowCount);
  await w.deletions.finish(w.admin,w.member.id,intent.operation_id);assert.equal((await w.db.query('SELECT count(*)::int n FROM personal_payloads WHERE owner=$1',[w.member.id])).rows[0].n,0);
 });
-test('a runtime role gets no tombstone or payload mutation grants and cannot reopen the conversion window',async t=>{
+test('a runtime role gets no tombstone or payload mutation grants and cannot rewrite immutable records',async t=>{
  const w=await world(t),role='synthetic_delete_'+randomBytes(4).toString('hex'),password=randomBytes(20).toString('hex');await w.db.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}'`);await w.db.query('REVOKE TEMPORARY ON DATABASE "'+w.kit.database.database+'" FROM PUBLIC');await grantRuntime(w.db,role);
  const rt=new Database(createPool({...w.kit.database,user:role,password}));t.after(()=>rt.end());
  await assert.rejects(rt.query('UPDATE users SET deleted_at=now() WHERE id=$1',[w.member.id]),(e:any)=>e.code==='42501');await assert.rejects(rt.query('DELETE FROM personal_payloads'),(e:any)=>e.code==='42501');
- await rt.query("SELECT set_config('circle_hub.member_layout_conversion','19',false)");assert.equal((await rt.query('SELECT hub_member_layout_conversion() AS yes')).rows[0].yes,false);
+ assert.equal((await w.db.query("SELECT to_regprocedure('hub_member_layout_conversion()') AS conversion")).rows[0].conversion,null);
  const victim=await w.kit.store.put({kind:'claim',schema:'synthetic@1',provenance:'declared',body:{text:'synthetic-reviewed-history'}});await w.db.query(`GRANT UPDATE(body) ON records TO ${role}`);
  await assert.rejects(rt.query("UPDATE records SET body='{}' WHERE digest=$1",[victim.digest]),(e:any)=>e.code==='HU001');await grantRuntime(w.db,role);
  const {intent}=await prepare(w);await assert.rejects(rt.query('UPDATE users SET disabled=false WHERE id=$1',[w.member.id]),(e:any)=>e.code==='HU001');await w.deletions.finish(w.admin,w.member.id,intent.operation_id);

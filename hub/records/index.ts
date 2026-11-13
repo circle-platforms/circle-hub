@@ -8,6 +8,7 @@ import { isAbsolute, join } from 'node:path';
 import type { OpenRecordsOptions, RecordsConfig, RecordsKit } from './api.ts';
 import { RecordArtifacts } from './artifacts.ts';
 import { RecordAuthorizations } from './authorizations.ts';
+import { PgTeams } from './teams.ts';
 import { PgCallLog, argumentDigest, newSpanId } from './calllog.ts';
 import { Database, createPool } from './db.ts';
 import { MIGRATIONS, RUNTIME_GRANTS, grantRuntime, migrate, verifyMigrations } from './migrations.ts';
@@ -60,18 +61,18 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   }
   const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
   const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now,personalPayloads:store.personalPayloads });
-  try{await objects.materializePersonalObjects();}
-  catch(error){await db.end().catch(()=>{});throw error;}
   store.personalPayloads.beforePurge=(owner,by,tx)=>preserveTeamAttributions(store,objects,owner,by,tx,now);
-  const authorizations = new RecordAuthorizations(db, store, now);
+  const authorizations = new RecordAuthorizations(db, store, now, objects);
   const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
   const principals = new PgPrincipals(db, now, store);
+  const teams = new PgTeams(db, store, objects, principals, authorizations, now);
   const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
-  const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,()=>objects.materializePersonalObjects(),now);
+  const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,now);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs'),{shared:true});
   let closed: Promise<void> | undefined;
   return {
+    teams,
     memberDeletions,
     personalSync:new PgPersonalSync(db,store,store.personalPayloads,config.limits,now),
     personalPayloads:store.personalPayloads,

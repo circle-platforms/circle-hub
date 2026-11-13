@@ -9,7 +9,7 @@ import { isId, newId } from '../records/ids.ts';
 import { createRecordStore, type RecordStore, type ActionBody, type Page, type StoredRecord, type Transaction } from '../records/api.ts';
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
-import type { Database, PgTransaction } from '../records/db.ts';
+import type { Database, PgTransaction } from '../records/api.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
 import { LeaseRegistrationDetail, LeaseDetail } from '../../contracts/src/records.ts';
 

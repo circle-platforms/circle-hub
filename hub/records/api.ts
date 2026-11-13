@@ -1,3 +1,10 @@
+export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
+export { isAdmin, canSeeRun } from './permissions.ts';
+export { RECORD_ACCESS, runOfRecord, mayReadRecord, type RecordVisibilityPorts } from './record-visibility.ts';
+export { openRecords, migrateRecords } from './index.ts';
+export { SLOW_QUERY_MS, MAX_TRACE_STEPS, MAX_STATUS_LENGTH, installTraceSink, traceSinkInstalled, tracing, currentTrace, addUsage, startTrace, background, step, addEvent, updateTrace, setTraceStatus, withoutTrace, recordQuery, recordSourceRead, type Usage, type SpanRow, type TraceSink, type TraceOptions, type TraceFields } from './trace-usage.ts';
+export { BACKGROUND_STEPS, TIMED_BACKGROUND_STEPS, STEP_NAMES, USAGE_NAMES, ACCOUNTED_USAGE, isUsageName, mcpStep, consoleStep, syncStep, commandStep, type BackgroundStep, type StepName, type UsageName } from './trace-names.ts';
+export { createPool, Database, iso, normalizeTime, pageLimit, type Row, type PgTransaction } from './db.ts';
 export {historyUsage,chargedBytes,safeBytes,forgetCapacityCharges,type CapacityHistory,type CapacityUsage} from './personal-capacity.ts';
 export {INITIAL_PERSONAL_EPOCH,disclosedExistence,personalOwnerOf,recordExistence} from './personal-payloads.ts';
 import type {PgPersonalSync} from './personal-sync.ts';
@@ -716,13 +723,20 @@ export interface Authorizations {
    * publication is the owner or an admin. Every other permission is decided by an admin.
    */
   grant(by: Principal, input: AuthorizationInput, tx?: Transaction): Promise<AuthorizationRecord>;
-  revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>): Promise<AuthorizationRecord>;
+  revoke(by: Principal, input: Omit<AuthorizationInput, 'bound' | 'expiresAt'>, tx?: Transaction): Promise<AuthorizationRecord>;
   /** Latest record for the triple, revoked or not. */
   latest(permission: PermissionKind, subject: string, object: string): Promise<AuthorizationRecord | null>;
   /** True when the latest record is a grant that has not expired. */
   isActive(permission: PermissionKind, subject: string, object: string): Promise<boolean>;
   history(query: { permission?: PermissionKind; subject?: string; object?: string } & PageQuery): Promise<Page<AuthorizationRecord>>;
 
+  teamsOf(by: Principal, kind: 'pack' | 'resource', object: string): Promise<{teams:import('./teams.ts').Team[];all:boolean}>;
+  packSources(by: Principal, userId: string): Promise<Array<{pack:string;via:'user'|{team:string}}>>;
+  assignTeam(by: Principal, teamId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignTeam(by: Principal, teamId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
+  assignResource(by: Principal, resourceId: string, subject: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
+  unassignResource(by: Principal, resourceId: string, subject: string, note?: string | null): Promise<AuthorizationRecord>;
+  canUseResource(userId: string, resourceId: string): Promise<boolean>;
   assign(by: Principal, userId: string, packId: string, options?: { expiresAt?: string | null; note?: string | null }): Promise<AuthorizationRecord>;
   unassign(by: Principal, userId: string, packId: string, note?: string | null): Promise<AuthorizationRecord>;
   grantPublishRight(by: Principal, userId: string, note?: string | null): Promise<AuthorizationRecord>;
@@ -944,6 +958,7 @@ export interface RecordsKit {
   /** The masking dictionary (B02 R[11]); absent on a fake that reads no business system. */
   masking?: import('./masking.ts').MaskingRules;
   principals: Principals;
+  teams: import('./teams.ts').Teams;
   authorizations: Authorizations;
   pointers: Pointers;
   callLog: CallLog;

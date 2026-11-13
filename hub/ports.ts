@@ -298,6 +298,8 @@ export interface PackListing {
   samples: Record<string, number>;
   /** User ids the pack is assigned to; filled for admins only. */
   assigned_to?: string[];
+  /** Team assignments, disclosed only to administrators. */
+  assigned_teams?: string[];
   /** Skill modules the pack carries, checked against the published skill at publication (T01 R[6]). */
   embeds?: import('../contracts/src/pack.ts').EmbeddedModule[];
   /** Installed skills a run locks for their parsers. */
@@ -312,6 +314,8 @@ export interface PackCatalogPort {
 }
 
 export interface ResourceListing {
+  /** Effective audience sources, disclosed only to administrators. */
+  assigned?: { teams: string[]; all: boolean };
   /** A broken bound profile, admins only; absence is never silently treated as disabled. */
   binding_error?:{code:string;message:string;fix:string};
   id: string;
