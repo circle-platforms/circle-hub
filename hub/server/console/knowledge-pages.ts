@@ -24,6 +24,7 @@ import {
   operationsPackPath,
 } from './routes.ts';
 import { SHA256, param } from './params.ts';
+import { timestamp } from './knowledge-display.ts';
 
 export interface ProductLine {
   id: string;
@@ -106,12 +107,17 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
         entry.total,
         entry.released,
         entry.produced,
+        // N7: each version line shows its current root and produced_at.
         current === null ? '尚未产出' : html`${link(knowledgeTreePath(), current.build.name, { root: current.root, path: '/' })}`,
+        current === null ? '—' : html`${link(knowledgeRootPath(), technicalCode(current.root.slice(0, 12)), { root: current.root })}`,
+        current === null ? '—' : timestamp(current.produced_at),
       ]);
     }
     const unversioned = await ctx.deps.knowledge.unversionedRoot?.(line.id) ?? null;
     rows.push(['不分版本', '不适用', '构建未声明', '不适用', unversioned === null ? '尚未产出' : `1（来源 ${unversioned.source_count} 个）`,
-      unversioned === null ? '尚未产出' : link(knowledgeRootPath(), '查看知识版本', {root:unversioned.root})]);
+      unversioned === null ? '尚未产出' : link(knowledgeRootPath(), '查看知识版本', {root:unversioned.root}),
+      unversioned === null ? '—' : technicalCode(unversioned.root.slice(0, 12)),
+      unversioned === null ? '—' : timestamp(unversioned.produced_at)]);
     const versions = builds.filter(build => build.root !== null).map(build => ({root: build.root!, label: `${build.line} / ${build.name}`}));
     if (unversioned !== null) versions.push({root: unversioned.root, label: '不分版本'});
     const options = versions;
@@ -124,7 +130,7 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     blocks.push(
       knowledgePanel(
         { title: line.title, meta: html`名称：${line.names.length > 0 ? line.names.join('、') : '未声明'}`, hint: '当前版本为该版本线最新产出的知识；内容变化后内容哈希随之改变。' },
-        html`${table(['产品版本', '名称族', '构建', '已发布', '已产出版本', '当前知识版本'], rows, '还没有构建')}<div class="ch-actions">${link(knowledgeProductPath(), '全部构建', { id: line.id })}</div>${diff}`,
+        html`${table(['产品版本', '名称族', '构建', '已发布', '已产出版本', '当前知识版本', '根', '产出时间'], rows, '还没有构建')}<div class="ch-actions">${link(knowledgeProductPath(), '全部构建', { id: line.id })}</div>${diff}`,
       ),
     );
   }
