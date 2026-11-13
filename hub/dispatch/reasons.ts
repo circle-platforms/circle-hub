@@ -5,6 +5,7 @@ import type { RunJob } from './read-runs.ts';
 export interface DispatchMissingFact { fact: string; next_action: string }
 export interface DispatchDiagnostics {
   outcome: JobStatus['outcome'];
+  error_code?: JobStatus['error_code'];
   frozen: boolean;
   not_sent?: boolean;
   report_pending?: boolean;
@@ -65,5 +66,5 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     for (const check of status.failed_checks ?? []) missing_facts.push({ fact: check.check === 'version' ? '设备报告的版本尚未与本次核验要求匹配' : check.check === 'interfaces' ? '设备接口集合尚未与本次绑定清单匹配' : '本次环境核对仍有未满足的条件', next_action: next });
     if (!missing_facts.length && (status.missing_fact || status.reason || status.failed_conditions?.length)) missing_facts.push({ fact: uncertain ? '原作业是否执行或执行到哪一步尚未确认' : status.report_pending ? '原作业的完整报告尚未取得' : status.outcome === 'not_dispatched' ? '本次上机前条件尚未满足' : '本次结果仍有缺失事实，尚不能据此确认逐条结论', next_action: next });
   }
-  return { outcome: status.outcome, frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: missing_facts.slice(0, 16), next_action: next };
+  return { outcome: status.outcome, ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: missing_facts.slice(0, 16), next_action: next };
 }

@@ -31,3 +31,5 @@ export {
 } from './bed-state.ts';
 
 export { holdsPhysicalTarget } from './journal.ts';
+
+export { MemberEnvironments, type MemberEnvironment, type EnvironmentPermission } from './member-environments.ts';

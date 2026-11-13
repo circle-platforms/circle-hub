@@ -341,3 +341,39 @@ test('unreadable certification evidence remains no_verdict and gives members its
   await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
   assert.equal(c.calls.filter(call=>call==='send_blob').length,1,'missing evidence never causes another submission');
 });
+
+test('the responsibility administrator cannot lend environment use to an unassigned runner',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(c.calls.length,0,'authorization fails before a gateway session is opened');
+  assert.equal(c.calls.includes('send_blob'),false);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
+  assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
+});
+
+test('revoking environment use during precheck is rechecked before the dispatch intent',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  const canUse=c.environmentAccess.canUse.bind(c.environmentAccess);let checks=0;
+  c.environmentAccess.canUse=async(actor,executor)=>{
+    checks++;
+    if(checks===2)await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+    return canUse(actor,executor);
+  };
+  const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.ok(checks>=2);assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(c.calls.includes('send_blob'),false);
+  assert.ok(!(await c.service.journal.events(denied.job)).some(event=>event.body.detail.phase==='intent'),'no intent authorizes the revoked environment use');
+});
+
+test('an unexpected dispatch exception caught by the scheduler is not evidence of nonexecution',async t=>{
+  const c=await setup();t.after(()=>c.close());let invoked=0;
+  c.service.dispatch=async()=>{invoked++;c.calls.push('send_blob');throw new Error('private after-send failure');};
+  for(let index=0;index<2;index++){
+    const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+    assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.equal(note.frozen,undefined);
+    assert.match(note.next_action!,/不要重新发送/);assert.doesNotMatch(JSON.stringify(note),/private after-send|circle-hub/);
+  }
+  assert.equal(invoked,1,'a scheduler catch cannot authorize a blind retry');
+});
