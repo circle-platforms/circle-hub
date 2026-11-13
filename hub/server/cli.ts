@@ -47,7 +47,7 @@ export interface CliOptions extends Omit<ServeOptions, 'io'> {
 /** Commands the assembly module registers; while the module in use does not, they print a clear message. */
 const RESERVED_COMMAND_DESCRIPTIONS = RESERVED_DESCRIPTIONS;
 export const RESERVED_COMMANDS: readonly string[] = Object.keys(RESERVED_COMMAND_DESCRIPTIONS);
-const BUILT_IN = new Set(['help', ...BUILTIN_COMMANDS.map(command => command.name)]);
+const BUILT_IN = new Set(BUILTIN_COMMANDS.map(command => command.name));
 const COMMAND_NAME = /^[a-z][a-z0-9-]{1,30}$/;
 
 const registry = new Map<string, CliCommand>();

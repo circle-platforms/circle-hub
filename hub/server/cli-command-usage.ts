@@ -11,11 +11,4 @@ export const INIT_ADMIN_USAGE = `init-admin [<用户名>] [--password-stdin]   �
 export const OPERATOR_TOKEN_USAGE =
   'operator-token set   从标准输入读一个启用中的管理员的令牌，存进私有密钥文件（账户 operator-token）；令牌文件丢失时用，已有的不覆盖 | reissue [--as <管理员>]   手里没有管理员令牌时：给一位启用中的管理员签发新令牌，直接存进私有密钥文件，不显示；已有的不覆盖 | remove --confirm-only-operator-token   仅删除本地操作令牌文件，不改主密钥、不撤销数据库令牌';
 
-// ---------------------------------------------------------------- pack
-
-// ---------------------------------------------------------------- resource
-
-// ---------------------------------------------------------------- secret
-
-
 export const SERVE_USAGE = 'serve [--migrate-only] [--migrate]   启动 Hub（默认只监听本机；配置了内置 HTTPS 时另开 HTTPS）；--migrate-only 以拥有表的角色应用迁移后退出；--migrate 用连接角色先迁移（单角色的开发环境）';

@@ -19,7 +19,8 @@ import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
 type BuiltinHandler = (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>;
 type AdminHandler = (session: Session, args: readonly string[]) => Promise<number>;
 interface CommandMetadata { name: string; summary: string; bridge: boolean; step: `run-${string}`; reserved?: string }
-const builtins: { name: string; help: string[]; handler: BuiltinHandler; bridge: boolean }[] = [
+const builtins: { name: string; summary?: string; help: string[]; handler: BuiltinHandler; bridge: boolean }[] = [
+  { name: 'help', summary: '显示命令用法', help: [], handler: (_args, _ctx, options) => import('./cli.ts').then(module => module.main(['help'], options)), bridge: false },
   { name: 'serve', help: [`  ${SERVE_USAGE}`], handler: (args, _ctx, options) => import('./main.ts').then(module => module.serve(args, options)), bridge: false },
   { name: 'user', help: [`  user create <名字> [--role ${PERMISSION_ROLE.join('|')}]   建用户；还没有管理员时先用 --role admin 建第一位管理员（省略名字时为 ${DEFAULT_ADMIN_NAME}），并只显示一次它的令牌`, '  user list [--json]                           列出用户（JSON 不含密码摘要或令牌）', '  user disable|enable <用户>                    停用或恢复一个账号（停用立即生效）', '  user rename <用户> <新名字>                    给账号改名；记录按成员编号引用账号，改名后登录和 --as 用新名字', '  user delete <成员编号> [--dry-run] [--json]    先检查清除范围；按显示的确认命令永久删除，失败后重试同一操作', '  user password-reset <用户>                   重置初始密码，只显示一次；首次登录须修改，控制台会话立即失效', '  user invite <用户>                            签发邀请码（24 小时内有效，仅可使用一次，只显示这一次）：成员的 Circle 经标准授权连接时，在授权页输入它'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.userCommand(args, ctx, options)), bridge: true },
   { name: 'token', help: ['  token issue <用户> [--label <标签>] [--raw]    签发令牌，令牌只显示这一次；--raw 时标准输出上只有令牌和换行，确认写到标准错误', '  token revoke <令牌编号>                        撤销令牌（立即生效）', '  token list [<用户>]                           列出令牌（不显示令牌值）'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.tokenCommand(args, ctx, options)), bridge: true },
@@ -30,7 +31,7 @@ const builtins: { name: string; help: string[]; handler: BuiltinHandler; bridge:
   { name: 'health', help: ['  health [--since <时长或时间>] [--json] [--as <管理员>]   资源的当前值和窗口内的最小、最大值（仅管理员；--since 写 30m、6h、7d 或 ISO 时间，默认 1 小时）'], handler: (args, ctx, options) => import('./cli.ts').then(module => module.healthCommand(args, ctx, options)), bridge: false },
   { name: 'crashes', help: [`  crashes [--limit <N>] [--json] [--as <管理员>]   进程的启动、停止和异常退出，异常退出带当时在处理的请求和崩溃报告摘要（仅管理员；默认 ${DEFAULT_EVENT_LIMIT} 条，新到旧）`], handler: (args, ctx, options) => import('./cli.ts').then(module => module.crashesCommand(args, ctx, options)), bridge: false },
  ];
-export const BUILTIN_COMMANDS = builtins.map(command => ({ ...command, summary: command.help[0].trim(), step: `run-${command.name}` as const }));
+export const BUILTIN_COMMANDS = builtins.map(command => ({ ...command, summary: command.summary ?? command.help[0].trim(), step: `run-${command.name}` as const }));
 const administrative: { name: string; summary: string; handler: AdminHandler; bridge?: boolean; reserved?: string }[] = [
 {name:'share',summary:SHARE_USAGE.slice('share '.length),handler: (session,args) => import('./cli-admin.ts').then(module => module.sharingCommand(session,args))},
   {name:'unshare',summary:UNSHARE_USAGE.slice('unshare '.length),handler:(session,args)=>import('./cli-admin.ts').then(module=>module.sharingCommand(session,args,true))},
