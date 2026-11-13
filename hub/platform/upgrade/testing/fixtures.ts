@@ -62,7 +62,8 @@ export interface Old33Fixture {
     variable: { name: string; object: string; decision: string };
     secrets: { name: string; version: number; entry: string; object: string; decision: string; digestRule: string }[];
     product: { id: string; root: string; composition: string; pointer: string; source: string };
-    spaces: { space: string; entry: string; version: string; source: string; memory: string; memoryVersion: string }[];
+    spaces: { space: string; entry: string; version: string; source: string; memory: string; memoryVersion: string;
+      tree: string; directories: string[]; products: SpaceVersionBody['products'] }[];
     reservation: { key: string; lease: string; run: string };
   };
 }
@@ -246,6 +247,7 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
   for (const space of ['team', member]) {
     const scope = space === 'team' ? undefined : { owner: member, epoch: EPOCH };
     const personalFields = scope ? { personal_epoch: EPOCH } : {};
+    const path = scope ? '/notes' : '/';
     const original = space === 'team' ? source : capture(object('合成个人知识原件\n', 'text/plain', scope), scope);
     const content = { kind: 'observation', statement: space === 'team' ? '合成公共知识' : '合成个人知识', data: {}, applicability: null };
     const entryDigest = digestOf(content);
@@ -254,12 +256,16 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
       status: 'unverified', by: scope?.owner ?? admin, at: AT, session: null, replaces: null }),
     [{ key: 'knowledge.space.entry', value: entryDigest }, { key: 'knowledge.space.entry_owner', value: space }], scope);
     const association = record('knowledge_space_source', 'knowledge-space-source@1', SpaceSourceBody.parse({ ...personalFields,
-      space, path: '/', sha256: original.body.sha256, artifact: original.digest, size: original.body.size, by: scope?.owner ?? admin, at: AT }),
+      space, path, sha256: original.body.sha256, artifact: original.digest, size: original.body.size, by: scope?.owner ?? admin, at: AT }),
     [{ key: 'knowledge.space.source', value: space }, { key: 'knowledge.space.source_hash', value: original.body.sha256 }], scope);
-    const tree = object({ name: '', children: [], entries: [entryDigest] }, 'application/json', scope);
+    const child = scope ? object({ name: 'notes', children: [], entries: [entryDigest] }, 'application/json', scope) : undefined;
+    const products = scope ? [] : [{ product, line: '1.0', path: '/' + product, root }];
+    const directories = scope ? ['/', '/notes'] : ['/', '/' + product];
+    const tree = object({ name: '', children: child ? [{ name: 'notes', digest: child.sha256 }] : [{ name: product, digest: root }],
+      entries: scope ? [] : [entryDigest] }, 'application/json', scope);
     const version = record('knowledge_space_version', 'knowledge-space-version@1', SpaceVersionBody.parse({ ...personalFields,
-      space, parent: null, tree: tree.sha256, directories: ['/'], entries: [{ path: '/', entry: entryDigest,
-        record: spaceEntry.digest, status: 'unverified' }], sources: [association.digest], products: [],
+      space, parent: null, tree: tree.sha256, directories, entries: [{ path, entry: entryDigest,
+        record: spaceEntry.digest, status: 'unverified' }], sources: [association.digest], products,
       by: scope?.owner ?? admin, at: AT, reason: '合成升级知识', used_bytes: 1024 }),
     [{ key: 'knowledge.space.version', value: space }], scope);
     const intent = digestOf(['synthetic-memory', space]);
@@ -275,7 +281,7 @@ export function buildOld33Fixture(options: Old33FixtureOptions = {}): Old33Fixtu
       bytes: Buffer.byteLength(markdown), context_bytes: Buffer.byteLength(markdown) });
     row('memory_space_usage', { space, active_bytes: Buffer.byteLength(markdown), history_bytes: Buffer.byteLength(markdown), active_documents: 1 });
     spaces.push({ space, entry: spaceEntry.digest, version: version.digest, source: association.digest,
-      memory: memory.digest, memoryVersion: memoryVersion.digest });
+      memory: memory.digest, memoryVersion: memoryVersion.digest, tree: tree.sha256, directories, products });
   }
   const run = id('run', 1), lease = id('lse', 1), key = 'synthetic/device/reserved';
   row('lease_registrations', { prefix: 'synthetic/device/', owner: 'synthetic-upgrade', registered_at: AT });
