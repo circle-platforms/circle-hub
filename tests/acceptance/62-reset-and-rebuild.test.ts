@@ -108,54 +108,56 @@ async function seedUnreferencedPacksHub(): Promise<{
   docName: string;
   docSha256: string;
 }> {
-  const { root, dataDir } = await createShortTempRoot('ch-r-packs-');
+  const { root, dataDir, scratchHome } = await createShortTempRoot('ch-r-packs-');
   const port = await allocateLoopbackPort();
   const product = await twoNameProduct();
   const secondProduct = await oneNameProduct();
+  try {
+    await runCli(dataDir, ['init', '--environment', 'test', '--port', String(port)], { scratchHome, expectOk: true });
+    await runCli(dataDir, ['key', 'init'], { expectOk: true });
+    await runCli(dataDir, ['serve', '--migrate-only'], { expectOk: true });
+    await runCli(dataDir, ['init-admin', 'admin', '--password-stdin'], {
+      stdin: `${SYNTHETIC_ADMIN_PASS}\n`,
+      expectOk: true,
+    });
+    await runCli(dataDir, ['user', 'create', 'alice'], { expectOk: true });
+    const teamCreateRes = await runCli(dataDir, ['team', 'create', '研发测试组'], { expectOk: true });
+    const teamId = /tm_[0-7][0-9a-hjkmnp-tv-z]{25}/.exec(teamCreateRes.combined)?.[0] ?? '';
+    assert.ok(teamId.length > 0, `expected TeamId from team create:\n${teamCreateRes.combined}`);
+    await runCli(dataDir, ['team', 'add', teamId, 'alice'], { expectOk: true });
 
-  await runCli(dataDir, ['init', '--environment', 'test', '--port', String(port)], { expectOk: true });
-  await runCli(dataDir, ['key', 'init'], { expectOk: true });
-  await runCli(dataDir, ['serve', '--migrate-only'], { expectOk: true });
-  await runCli(dataDir, ['init-admin', 'admin', '--password-stdin'], {
-    stdin: `${SYNTHETIC_ADMIN_PASS}\n`,
-    expectOk: true,
-  });
-  await runCli(dataDir, ['user', 'create', 'alice', '--role', 'reviewer'], { expectOk: true });
-  await runCli(dataDir, ['team', 'create', '研发测试组'], { expectOk: true });
-  const teamListOut = (await runCli(dataDir, ['team', 'list'], { expectOk: true })).stdout;
-  const teamLine = teamListOut.split(/\r?\n/).find((line) => line.includes('研发测试组'));
-  assert.ok(teamLine, `expected team in team list output:\n${teamListOut}`);
-  const teamId = teamLine.split('\t')[0].trim();
-  await runCli(dataDir, ['team', 'add', teamId, 'alice'], { expectOk: true });
+    const plainVarName = 'SYNTH_PLAIN_VAR';
+    const plainVarValue = 'plain-var-unreferenced';
+    await runCli(dataDir, ['var', 'set', plainVarName, '--not-secret', '--text', '--reason', 'seed'], {
+      stdin: plainVarValue,
+      expectOk: true,
+    });
 
-  const plainVarName = 'synth_plain_var';
-  const plainVarValue = 'plain-var-unreferenced';
-  await runCli(dataDir, ['var', 'set', plainVarName, '--text', '--not-secret', '--reason', 'seed'], {
-    stdin: `${plainVarValue}\n`,
-    expectOk: true,
-  });
+    const docPath = join(product.dir, 'pack.json');
+    const docSha256 = createHash('sha256').update(await readFile(docPath)).digest('hex');
+    const docName = 'synth-run-note';
+    await runCli(dataDir, ['doc', 'put', docName, docPath], { expectOk: true });
 
-  const docPath = join(product.dir, 'pack.json');
-  const docSha256 = createHash('sha256').update(await readFile(docPath)).digest('hex');
-  const docName = 'synth-run-note';
-  await runCli(dataDir, ['doc', 'put', docName, docPath], { expectOk: true });
+    await runCli(dataDir, ['pack', 'grant-publish', 'admin'], { expectOk: true });
+    await runCli(dataDir, ['pack', 'publish', product.dir, '--stage'], { expectOk: true });
+    await runCli(dataDir, ['pack', 'activate', product.id], { expectOk: true });
+    await runCli(dataDir, ['pack', 'publish', secondProduct.dir, '--stage'], { expectOk: true });
 
-  await runCli(dataDir, ['pack', 'grant-publish', 'admin'], { expectOk: true });
-  await runCli(dataDir, ['pack', 'publish', product.dir, '--stage'], { expectOk: true });
-  await runCli(dataDir, ['pack', 'activate', product.id], { expectOk: true });
-  await runCli(dataDir, ['pack', 'publish', secondProduct.dir, '--stage'], { expectOk: true });
-
-  return {
-    root,
-    dataDir,
-    productId: product.id,
-    secondProductId: secondProduct.id,
-    teamId,
-    plainVarName,
-    plainVarValue,
-    docName,
-    docSha256,
-  };
+    return {
+      root,
+      dataDir,
+      productId: product.id,
+      secondProductId: secondProduct.id,
+      teamId,
+      plainVarName,
+      plainVarValue,
+      docName,
+      docSha256,
+    };
+  } catch (err) {
+    await teardownRoot(root, dataDir).catch(() => undefined);
+    throw err;
+  }
 }
 
 const hasLibpq = await libpqAvailable();
