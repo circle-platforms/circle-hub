@@ -442,9 +442,9 @@ function extensibleOutput(schema: z.ZodType): z.ZodType {
   return visit(schema) as z.ZodType;
 }
 
-export const TOOLS: readonly (ToolDefinition & { name: ToolName })[] = TOOL_DEFINITIONS.map(
+export const TOOLS: readonly ToolDefinition[] = TOOL_DEFINITIONS.map(
   tool => ({ ...tool, output: extensibleOutput(tool.output) }),
 );
-export const TOOL_NAMES: readonly ToolName[] = TOOLS.map(tool => tool.name);
+export const TOOL_NAMES: readonly ToolName[] = TOOL_DEFINITIONS.map(tool => tool.name);
 
 export { Coverage, ItemId, PackId, ExternalObjectId, Fields };
