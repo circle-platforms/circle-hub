@@ -139,6 +139,8 @@ export interface PackRegistry {
   publications(packId?: string): Promise<PackVersionInfo[]>;
   /** Admins see every assignment, a user only their own. */
   assignments(by: Principal): Promise<AssignmentInfo[]>;
+  assignedTeams(by: Principal, packId: string): Promise<string[]>;
+  packSources(by: Principal, userId: string): Promise<Array<{pack:string;via:'user'|{team:string}}>>;
   usersOf(packId: string): Promise<string[]>;
   usersOfMany?(packIds:readonly string[]):Promise<Map<string,string[]>>;
   packsFor(userId: string): Promise<string[]>;
@@ -653,11 +655,20 @@ class Registry implements PackRegistry {
       for (const user of users) {
         if (user === WHOLE_HUB) continue;
         const record = await authorizations.latest('assign', user, pack);
-        if (record === null) continue;
+        if (record === null || !await authorizations.isActive('assign',user,pack)) continue;
         out.push({ user, pack, decided_by: record.body.decided_by, decided_at: record.body.decided_at, expires_at: record.body.expires_at, record: record.digest });
       }
     }
     return out;
+  }
+
+  async assignedTeams(by:Principal,packId:string):Promise<string[]>{
+    await this.#admin(by,'只有管理员可以查看团队分配');
+    return (await this.#records.authorizations.teamsOf(by,'pack',packId)).teams.map(team=>team.id);
+  }
+
+  packSources(by:Principal,userId:string):Promise<Array<{pack:string;via:'user'|{team:string}}>>{
+    return this.#records.authorizations.packSources(by,userId);
   }
 
   async usersOf(packId: string): Promise<string[]> {

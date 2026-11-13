@@ -232,7 +232,7 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
 
 function skillSummary(info:PackVersionInfo):PackSummary{return {...(info.space?{space:info.space}:{}),pack:info.id+'@'+info.version,id:info.id,version:info.version,kind:info.kind,title:info.title,description:info.description,digest:info.digest,products:[],inputs:[],parameters:[],requirements:[]};}
 
-function listing(info: PackVersionInfo, active: boolean, assigned?: string[]): PackListing {
+function listing(info: PackVersionInfo, active: boolean, assigned?: string[], teams?:string[]): PackListing {
   const out: PackListing = {
     ...(info.space?{space:info.space}:{}),
     id: info.id,
@@ -247,6 +247,7 @@ function listing(info: PackVersionInfo, active: boolean, assigned?: string[]): P
     samples: { ...info.samples },
   };
   if (assigned !== undefined) out.assigned_to = assigned;
+  if (teams !== undefined) out.assigned_teams = teams;
   if (info.manifest.embeds?.length) out.embeds = info.manifest.embeds;
   if (info.manifest.dependencies?.length) out.dependencies = info.manifest.dependencies;
   return out;
@@ -266,11 +267,12 @@ export function createPackCatalog(registry: PackRegistry): PackCatalogPort {
         const out: PackListing[] = [];
         const packs=await registry.listPacks(),ids=packs.filter(pack=>pack.kind==='workflow').map(pack=>pack.id);
         const assignments=registry.usersOfMany?await registry.usersOfMany(ids):new Map(await Promise.all(ids.map(async id=>[id,await registry.usersOf(id)] as const)));
+        const teams=new Map(await Promise.all(ids.map(async id=>[id,await registry.assignedTeams(account,id)] as const)));
         const installed=packs.some(pack=>pack.kind==='skill')?await registry.installedSkills():[];
         for (const pack of packs) {
           const assigned = pack.kind === 'workflow' ? assignments.get(pack.id)??[] : [];
           // A product pack is active in the version it is used in: the latest that is not withdrawn.
-          for (const version of pack.versions) out.push(listing(version, pack.kind==='skill'?installed.some(p=>p.info.digest===version.digest):pack.active && version.version === pack.latest, assigned));
+          for (const version of pack.versions) out.push(listing(version, pack.kind==='skill'?installed.some(p=>p.info.digest===version.digest):pack.active && version.version === pack.latest, assigned,pack.kind==='workflow'?teams.get(pack.id)??[]:[]));
         }
         for(const info of await registry.personal?.list(account)??[])out.push(listing(info,!info.withdrawn));
         return out;
