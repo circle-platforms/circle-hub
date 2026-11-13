@@ -81,7 +81,10 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
  const sourceHas=(sha:unknown,slot?:string)=>typeof sha==='string'&&!!detail?.run.sources.some(source=>{try{const ref=parseReference(source.reference);return ref.scheme==='src'&&ref.sha256===sha&&(slot===undefined||source.slot===slot&&source.role==='artifact_under_verification');}catch{return false;}});
  add('proof.artifact_slot','核验字节绑定在声明的待核验产物槽',hasData?sourceHas(sha256,d.proof.slot):null,[f('proof.slot',d.proof.slot,detail?.run.sources.filter(source=>source.slot===d.proof.slot).map(source=>({slot:source.slot,role:source.role,reference:source.reference})),hasData?sourceHas(sha256,d.proof.slot):null)]);
  add('proof.bound_sources','核验字节与清单都已绑定本运行',hasData?sourceHas(sha256)&&sourceHas(manifest):null,[f('run.sources.sha256',sha256,sourceHas(sha256)?sha256:undefined,hasData?sourceHas(sha256):null),f('run.sources.manifest_sha256',manifest,sourceHas(manifest)?manifest:undefined,hasData?sourceHas(manifest):null)]);
- add('proof.executor_identity','核验目标与清单等于执行器声明',hasData?target===d.target&&manifest===d.manifest_sha256:null,[f('target',d.target,target,hasData?target===d.target:null),f('manifest_sha256',d.manifest_sha256,manifest,hasData?manifest===d.manifest_sha256:null)]);
+  add('proof.executor_identity','核验目标与清单等于执行器声明',hasData?target===d.target&&manifest===d.manifest_sha256:null,[
+    f('target',d.target,target,hasData?target===d.target:null,typeof d.target==='string'&&typeof target==='string'?{expected:d.target,actual:target}:undefined),
+    f('manifest_sha256',d.manifest_sha256,manifest,hasData?manifest===d.manifest_sha256:null,typeof d.manifest_sha256==='string'&&typeof manifest==='string'?{expected:d.manifest_sha256.slice(0,12),actual:manifest.slice(0,12)}:undefined),
+  ]);
  add('proof.build','核验构建等于运行锁定构建',hasData?detail?.run.build===undefined||detail.run.build===build:null,[f('build',detail?.run.build,build,hasData?detail?.run.build===undefined||detail.run.build===build:null)]);
  const owner=detail?.run.runner?await trace.read('runner.read','发起用户读取完成',()=>records.principals.get(detail.run.runner!)):null;
  add('runner.enabled','运行发起用户存在且启用',detail?!!owner&&!owner.disabled:null,[f('run.runner.enabled',true,owner?!owner.disabled:undefined,detail?!!owner&&!owner.disabled:null)]);

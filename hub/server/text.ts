@@ -589,7 +589,11 @@ function dispatchNoteLine(note: { text: string; result?: string }): string {
     /目标在“.+”阶段拒绝/.test(message) ||
     message.includes('已证明目标没有执行')
   ) {
-    return `${message}；状态已确认；判断错误；原因还没查清；决定者程序`;
+    // C14: when release refusal already names the错误 and next step, do not append「原因还没查清」.
+    const diagnosed = message.includes('放行条件里有 ') || message.includes('还没有核对');
+    return diagnosed
+      ? `${message}；状态已确认；判断错误；决定者程序`
+      : `${message}；状态已确认；判断错误；原因还没查清；决定者程序`;
   }
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }
