@@ -90,7 +90,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行开始上机验证；${PROGRESS}，结束后同样的答复带结果引用`) }]); }
   const settled = attempt.settled;
   if (!settled) return answer([{ text: `Hub 正在做上机验证前核对；${PROGRESS}` }]);
-  if (attempt.uncertain) return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:'不要重新发送或另开运行；联系管理员只读核对原作业'}],next_action:'不要重新发送或另开运行；联系管理员只读核对原作业',text:'上机验证状态尚未确认；不要重新发送或另开运行，请联系管理员只读核对原作业'}]);
+  if (attempt.uncertain) { const next=administrative?`circle-hub run show ${run} --json`:'不要重新发送或另开运行；联系管理员只读核对原作业';return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:next}],next_action:next,text:clip(`上机验证状态尚未确认；不要重新发送或另开运行；下一步：${next}`)}]); }
   // A settled attempt is answered once; a repeat after that tries again, as before (a cause the runner fixes, as a booking).
   open.delete(run);
   // A dispatch that ended before any reservation was refused at the effect boundary (for example without a lease covering

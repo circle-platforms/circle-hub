@@ -293,6 +293,8 @@ test('an exception after starting dispatch reports unknown and never starts a se
     assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.equal(note.frozen,undefined,'no journal observation proves a durable freeze');assert.match(note.next_action!,/不要重新发送/);
     assert.doesNotMatch(JSON.stringify(note),/private-host|usr_private|circle-hub/);
   }
+  const [administrator]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.admin);
+  assert.equal(administrator.outcome,'unknown');assert.equal(administrator.not_sent,undefined);assert.equal(administrator.next_action,`circle-hub run show ${c.run} --json`);
   assert.equal(attempts,1,'an unobserved failure never authorizes a second dispatch');
 });
 
