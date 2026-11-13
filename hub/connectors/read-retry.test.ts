@@ -12,6 +12,7 @@ async function world(t:{after:(fn:()=>Promise<void>)=>void},reply:(n:number)=>Re
   const kit=await openConnectorKit(postgres,{fetch:async()=>reply(++calls),now:()=>new Date(now),readRetrySleep:async(ms:number)=>{sleeps.push(ms);now+=ms;}});t.after(()=>kit.close());
   const handle=await writePack(kit.packRoot,{id:'synthetic-retry',system:{schema:'system@1',title:'合成读取',roles:[{name:'source'}],auth:{kind:'none'},routes:[{id:'one',role:'source',method,path:'/one',response:'json',max_bytes:1024,read:true}],reads:[{name:'one',external:'fixture:item',request:{route:'one'},...(maxBytes===undefined?{}:{max_bytes:maxBytes})}]}});kit.packs.set(handle);
   const resource=await kit.connectors.admin.addResource(kit.admin,{system_pack:handle.id,name:'合成来源',environment:'test',origins:{source:'http://192.0.2.1'}});
+  await kit.records.authorizations.grant(kit.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
   return {external:()=>kit.connectors.reader.read('fixture:item:sample',{principal:kit.user,purpose:'synthetic retry'}),kit,sleeps,now:()=>now,calls:()=>calls,read:()=>kit.connectors.executeRead(resource.id,'one',{id:'sample'},{principal:kit.user,purpose:'synthetic retry'})};
 }
 for(const status of [429,503])test(`a read retries HTTP ${status}, honors Retry-After and journals every attempt`,async t=>{

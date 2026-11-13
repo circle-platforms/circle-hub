@@ -13,7 +13,9 @@ export async function addSyntheticResource(records: RecordsKit, packs: PacksPort
     const profile = await readProfile(handle);
     const names = profile.auth.kind === 'none' ? [] : profile.auth.kind === 'static_header' ? [profile.auth.credential] : profile.auth.credentials.map(c => c.name);
     const credentials = Object.fromEntries(names.map(name => [name, 'DEMO_' + randomBytes(10).toString('hex').toUpperCase()]));
-    return connectors.admin.addResource(by, { ...input, credentials: { ...credentials, ...input.credentials } });
+    const resource = await connectors.admin.addResource(by, { ...input, credentials: { ...credentials, ...input.credentials } });
+    await records.authorizations.grant(by, { permission: 'resource_assign', subject: '*', object: resource.id });
+    return resource;
 }
 export async function setSyntheticCredentials(records: RecordsKit, connectors: Connectors, by: Principal, id: string, values: Record<string, string>) {
     const actual = await records.principals.get(by.id);
