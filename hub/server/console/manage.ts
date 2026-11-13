@@ -232,7 +232,7 @@ export const ACTIONS: Record<string, Action> = {
     title: '接入业务系统',
     back: `${OPERATIONS}/system`,
     build: (form) => {
-      // The resource first: `secret set` names the definitions that reference a credential, so they must exist.
+      // Resource first so the new system exists before its credentials are set (C12: secret set no longer needs a prior definition reference).
       const add = ACTIONS['resource-add'].build(form) as Built;
       const secrets = credentialValues(form);
       const names = Object.keys(secrets);

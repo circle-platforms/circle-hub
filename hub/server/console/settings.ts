@@ -132,27 +132,86 @@ function lastUse(tokens: readonly TokenInfo[]): string | null {
   return times.at(-1) ?? null;
 }
 
+/** One credential row for the settings page (C12: vault metadata; no consumers registration). */
+export interface SecretRow {
+  name: string;
+  by: string;
+  at: string;
+  withdrawn: boolean;
+  version: number | null;
+  digestRule: string | null;
+  length: number | null;
+  entry: string | null;
+}
+
 export interface Secrets {
-  rows: { name: string; consumers: string[]; uses: { definition: string; item: string }[]; by: string; at: string; withdrawn: boolean }[] | null;
+  rows: SecretRow[] | null;
   /** The text of `secret list` when the records have no variables port (or it failed). */
   text: CommandRun | null;
 }
 
+/** Vault-side secret metadata (C12); set_by / set_at may be null and must stay「未知」. */
+type VaultSecretMeta = {
+  name: string;
+  entry: string;
+  version: number;
+  digest_rule: string;
+  length: number;
+  set_by: string | null;
+  set_at: string | null;
+  revoked: boolean;
+};
+
+const UNKNOWN = '未知';
+
+async function whoSet(ctx: PageContext, id: string | null | undefined): Promise<string> {
+  if (id === null || id === undefined || id === '') return UNKNOWN;
+  return ctx.userName(id);
+}
+
+function whenOrUnknown(at: string | null | undefined): string {
+  return at === null || at === undefined || at === '' ? UNKNOWN : at;
+}
+
 export async function secretsOf(ctx: PageContext, run: ((argv: string[]) => Promise<CommandRun>) | null): Promise<Secrets> {
-  const variables = ctx.deps.records.variables as { list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]> } | undefined;
-  if (variables?.list !== undefined) {
+  // Prefer vault listSecrets (C12). Fall back to the older records list without reading consumers.
+  const variables = ctx.deps.records.variables as {
+    listSecrets?: (by: typeof ctx.principal) => Promise<VaultSecretMeta[]>;
+    list?: (by: typeof ctx.principal) => Promise<import('../../records/api.ts').NamedVersion[]>;
+  } | undefined;
+  if (variables?.listSecrets !== undefined) {
     try {
-      const rows = [];
+      const rows: SecretRow[] = [];
+      for (const meta of await variables.listSecrets(ctx.principal)) {
+        rows.push({
+          name: meta.name,
+          by: await whoSet(ctx, meta.set_by),
+          at: whenOrUnknown(meta.set_at),
+          withdrawn: meta.revoked,
+          version: meta.version,
+          digestRule: meta.digest_rule,
+          length: meta.length,
+          entry: meta.entry,
+        });
+      }
+      return { rows, text: null };
+    } catch {
+      // Fall back to the command's own listing below.
+    }
+  } else if (variables?.list !== undefined) {
+    try {
+      const rows: SecretRow[] = [];
       for (const named of await variables.list(ctx.principal)) {
         if (named.kind !== 'secret') continue;
-        const definition = named.definition as { consumers?: { definition: string; item: string }[] } | null;
         rows.push({
           name: named.name,
-          consumers: (definition?.consumers ?? []).map((consumer) => `${consumer.definition} · ${consumer.item}`),
-          uses: definition?.consumers ?? [],
-          by: await ctx.userName(named.decision.body.decided_by),
-          at: named.decision.body.decided_at,
+          by: await whoSet(ctx, named.decision.body.decided_by),
+          at: whenOrUnknown(named.decision.body.decided_at),
           withdrawn: named.decision.body.revoked,
+          version: named.version,
+          digestRule: null,
+          length: null,
+          entry: null,
         });
       }
       return { rows, text: null };
@@ -200,10 +259,6 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   const secretName=ctx.url.searchParams.get('secret'),selectedSecret=secrets.rows?.find(secret=>secret.name===secretName);
   if(secretName&&!selectedSecret)return neutralPage(ctx);
   const hub = !selectedSecret && ctx.url.searchParams.get('tab') === 'hub';
-  // A credential says which system uses it by the system's name; the system's identifier stays in the pane's technical details.
-  const systems = new Map<string, string>();
-  if (!hub && secrets.rows?.some((secret) => secret.uses.length > 0)) try { for (const resource of await ctx.deps.resources.list(ctx.principal)) systems.set(resource.id, resource.name); } catch { /* The identifiers are shown instead. */ }
-  const use = (consumer: { definition: string; item: string }) => `${systems.get(consumer.definition) ?? consumer.definition} · ${consumer.item}`;
   let secretBody: Html;
   if (secrets.rows !== null) {
     const rows = secrets.rows.map((secret) => {
@@ -212,13 +267,13 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
       if (!secret.withdrawn&&secret.name===secretName) dialogs.push(set, unset);
       return [
         link('/console/settings',secret.name,{secret:secret.name}),
-        secret.uses.length === 0 ? '未被使用' : html`${secret.uses.map((consumer) => html`<div>${use(consumer)}</div>`)}`,
-        secret.by, when(secret.at),
+        secret.by,
+        secret.at === UNKNOWN ? UNKNOWN : when(secret.at),
         secret.withdrawn ? chip('已吊销', 'unchecked') : html`<span class="ch-meta">•••••••• 已加密</span>`,
-
       ];
     });
-    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '用于', '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
+    // C12: no「使用者」column — consumers registration is gone; use is only from live resource/executor definitions.
+    secretBody = table([tooltip('名称', '业务系统与运行环境的凭据加密保存；页面、记录与模型只可见名称。更新与吊销在运行 Hub 的服务器上执行'), '设置人', '更新时间', '内容'], rows, { title: '尚无凭据', text: '接入业务系统时设置。' },undefined,{selected:secrets.rows.findIndex(secret=>secret.name===secretName),hrefs:secrets.rows.map(secret=>'/console/settings?'+new URLSearchParams({secret:secret.name}))});
   } else if (secrets.text === null) {
     secretBody = html`<p class="error">凭据列表暂不可用</p>`;
   } else if (secrets.text.code === 0) {
@@ -237,13 +292,21 @@ ${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在�
     : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${masking ?? ''}`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
+  const inspectorFacts: Array<readonly [string, string | Html]> = selectedSecret ? [
+    ['内容', selectedSecret.withdrawn ? '已吊销' : '已加密'],
+    ['设置人', selectedSecret.by],
+    ['更新时间', selectedSecret.at === UNKNOWN ? UNKNOWN : when(selectedSecret.at)],
+    ...(selectedSecret.version === null ? [] : [['版本', String(selectedSecret.version)] as const]),
+    ...(selectedSecret.digestRule === null ? [] : [['摘要规则', selectedSecret.digestRule] as const]),
+    ...(selectedSecret.length === null ? [] : [['长度', String(selectedSecret.length)] as const]),
+  ] : [];
   return {
     status: 200,
     body: page(ctx.chrome('设置', {
       active: 'settings',
       hint: '凭据与 Hub 状态；需人工处理的事项在运行 Hub 的服务器上完成',
 
-    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts([['内容',selectedSecret.withdrawn?'已吊销':'已加密'],['用于',selectedSecret.uses.map(use).join('、')||'未被使用'],['设置人',selectedSecret.by],['更新时间',when(selectedSecret.at)]])}${selectedSecret.uses.length?technical(html`${selectedSecret.uses.map(consumer=>html`<div>${code(consumer.definition)}</div>`)}`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
+    }),pageLayout(body,{detail:!!selectedSecret,back:link('/console/settings','返回设置'),inspector:selectedSecret?html`<div data-inspector-content><span class="ch-tag">凭据</span><h2 class="ch-panel-title">${selectedSecret.name}</h2>${facts(inspectorFacts)}${selectedSecret.entry?technical(html`<div>${code(selectedSecret.entry)}</div>`):''}<footer class="ch-inspector-actions">${selectedSecret.withdrawn?'':html`${commandLink(commands.secretUnset(selectedSecret.name),'吊销…','ch-btn ch-btn--danger')}${commandLink(commands.secretSet(selectedSecret.name),'更新…','ch-btn ch-btn--primary')}`}</footer>${dialogs.filter(dialog=>dialog.id.startsWith('cmd-secret')).map(commandModal)}</div>`:null})),
   };
 }
 

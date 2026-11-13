@@ -61,11 +61,12 @@ export const commands = {
   }),
   secretSet: (name: string): CommandDialog => ({
     id: dialogId('secret-set', name), title: `更新凭据 ${name}`,
-    text: '新内容从标准输入读取，不出现在命令、记录和页面中；引用该凭据的业务系统与运行环境下次使用新版本。', command: command('secret', 'set', `--name=${name}`, REASON),
+    // C12: no prior definition reference required; value never appears in argv, records or the page.
+    text: '新内容从标准输入读取，不出现在命令、记录和页面中；不必先有资源或执行器引用这个名字。引用它的业务系统与运行环境下次使用新版本。', command: command('secret', 'set', `--name=${name}`, REASON),
   }),
   secretUnset: (name: string): CommandDialog => ({
     id: dialogId('secret-unset', name), title: `吊销凭据 ${name}`,
-    text: '吊销后引用该凭据的读取与派发不再可用；版本记录保留。', command: command('secret', 'unset', `--name=${name}`, REASON),
+    text: '吊销后引用该凭据的读取与派发不再可用；密钥库保留版本元数据。', command: command('secret', 'unset', `--name=${name}`, REASON),
   }),
   resourceToggle: (resource: { id: string; name: string; enabled: boolean }): CommandDialog => ({
     id: dialogId(resource.enabled ? 'resource-disable' : 'resource-enable', resource.id), title: `${resource.enabled ? '停用' : '启用'}业务系统 ${resource.name}`,
