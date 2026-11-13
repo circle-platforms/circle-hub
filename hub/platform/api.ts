@@ -86,3 +86,5 @@ export async function resetData(...args: Parameters<typeof import('./reset/host.
 export async function launchReset(...args: Parameters<typeof import('./reset/worker.ts').launchReset>) { return (await import('./reset/worker.ts')).launchReset(...args); }
 export async function acknowledgeReset(...args: Parameters<typeof import('./reset/worker.ts').acknowledgeReset>) { return (await import('./reset/worker.ts')).acknowledgeReset(...args); }
 export async function readResetStatus(...args: Parameters<typeof import('./reset/worker.ts').readResetStatus>) { return (await import('./reset/worker.ts')).readResetStatus(...args); }
+
+export { parseResetRequest } from './reset/types.ts';
