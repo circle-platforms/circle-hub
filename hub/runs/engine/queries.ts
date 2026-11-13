@@ -11,7 +11,6 @@ import { CORE_VIOLATION_CODES, PROTOCOL_CODES } from '../../../contracts/generat
 import { Submission } from '../../../contracts/src/submission.ts';
 import {RunId,IsoTime} from '../../../contracts/src/common.ts';
 import type { RunRecord, RunRecordView } from '../../../contracts/src/run.ts';
-import {hasRulingSummary,summaryOf} from './start.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
 import { RecordsError, type RecordStore, type Page, type Principal, type StoredRecord } from '../../records/api.ts';
 import type { RunDetail, RunSummary, RunSubmissionView, RunListing, LoadedWorkflow, RunHistoryOptions, RunStatistics } from '../../ports.ts';
@@ -39,15 +38,6 @@ export async function resultState(ctx:EngineContext,user:Principal,result:Valida
   const stored=await visibleRun(ctx,user,result.run);
   const readable=stored!==null&&await resultReadableBy(ctx,stored.body,result,user);
   return {readable,...(readable?await withdrawalState(ctx,result,user,true):{grounds_withdrawn:[],grounds_withdrawn_hidden_count:0})};
-}
-
-async function withRulingSummary(ctx:EngineContext,record:RunRecord,packages=new Map<string,Promise<LoadedWorkflow|null>>()):Promise<RunRecordView>{
-  if(hasRulingSummary(record))return record;
-  const key=(record.pack_space??'team')+'/'+record.pack_digest;
-  let loading=packages.get(key);
-  if(!loading){loading=ctx.deps.workflows.byDigest(record.pack_digest,record.pack_space);packages.set(key,loading);}
-  const workflow=await loading;
-  return {...record,requirements:summaryOf(record,workflow??undefined).requirements};
 }
 
 /** Read the exact frozen version through the existing metadata port, after run visibility has been checked. */
@@ -86,7 +76,7 @@ export async function getRunSummary(ctx:EngineContext,user:Principal,run:string)
     }
     cursor=page.next;
   }while(cursor!==null);
-  return {run:await withRulingSummary(ctx,stored.body),latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
+  return {run:stored.body,latest:head.latest?{record:head.latest.digest,result:head.latest.body}:null,production,...(head.management?{management:head.management}:{})};
 }
 
 /**
@@ -123,7 +113,7 @@ export async function getRunStatistics(ctx:EngineContext,user:Principal,run:stri
     cursor=page.next;
   }while(cursor!==null);
   // primaryRunResult, by summary: the requirements are the run's as the summary read gives them.
-  const requirements=(await withRulingSummary(ctx,stored.body)).requirements;
+  const requirements=(stored.body).requirements;
   const primary=latest?.system_input?latest:requirements.length>0&&requirements.every(row=>row.accepted_producer==='fact')?production:latest;
   return statisticsFor(management!==null,primary?.statistics??null);
 }
@@ -198,7 +188,7 @@ export async function getRun(ctx: EngineContext, user: Principal, run: string, o
   // The reader may already read this run; the purge facts name only its own sources, never another account's content.
   const purged=await ctx.deps.records.personalPayloads?.purgedRunOriginals(stored.digest)??[];
   const grounds_purged=purged.length?stored.body.sources.flatMap(source=>{const hit=purged.find(row=>row.artifact===source.artifact);return hit?[{reference:source.reference,at:hit.at}]:[];}):[];
-  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...await withRulingSummary(ctx,stored.body),...(notices.length?{criterion_changes:notices}:{})},submissions,...(page===null?{}:{history:{limit:page.limit,next:page.next,...(page.pinned===undefined?{}:{pinned:page.pinned})}}),...(management?{management}:{}), requests: await requestsOf(ctx,user,run,{waiting:options.requests==='waiting'}), latest: latest === null ? null : { record: latest.digest, result: latest.body },
+  return { ...(withdrawn.grounds_withdrawn.length||withdrawn.grounds_withdrawn_hidden_count?withdrawn:{}),...(grounds_purged.length?{grounds_purged}:{}),...await ruleWithdrawal(ctx,user,stored.body),run: {...stored.body,...(notices.length?{criterion_changes:notices}:{})},submissions,...(page===null?{}:{history:{limit:page.limit,next:page.next,...(page.pinned===undefined?{}:{pinned:page.pinned})}}),...(management?{management}:{}), requests: await requestsOf(ctx,user,run,{waiting:options.requests==='waiting'}), latest: latest === null ? null : { record: latest.digest, result: latest.body },
     production: production === undefined ? null : {record:production.digest,result:production.body} };
 }
 
@@ -253,8 +243,7 @@ export async function listRuns(ctx: EngineContext, user: Principal, query: { pac
   const order = (a: RunRecord,b: RunRecord): number => compare(b.started_at,a.started_at) || compare(b.run,a.run);
   rows.sort(order);
   const following = after === null ? rows : rows.filter(row => row.started_at < after!.at || row.started_at === after!.at && row.run < after!.id);
-  const packages=new Map<string,Promise<LoadedWorkflow|null>>();
-  const items = await Promise.all(following.slice(0,limit).map(record=>withRulingSummary(ctx,record,packages)));
+  const items = following.slice(0,limit);
   const last = items.at(-1);
   const next = following.length > limit && last ? Buffer.from(JSON.stringify({reader:user.id,pack,at:last.started_at,id:last.run})).toString('base64url') : null;
   // These fields read every request the reader may see, whichever page is listed; a caller that shows none of them opts out.
