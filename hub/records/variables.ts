@@ -7,7 +7,7 @@ import type { Principal, Principals, RecordStore, ObjectStore, Vault, Authorizat
 import { canonicalBytes, canonicalize } from './canonical.ts';
 import { parseStrictJson } from './strict-json.ts';
 import { scanForCredentials } from './scan.ts';
-import { AccessError, IntegrityError, VaultError, VaultReadinessError } from './errors.ts';
+import { AccessError, IntegrityError, VaultError, VaultReadinessError, isVaultReadBoundaryError, unexpectedVaultReadError } from './errors.ts';
 import { WHOLE_HUB } from './constants.ts';
 import type { Database } from './db.ts';
 import { verifiedRecord } from './store.ts';
@@ -259,7 +259,7 @@ export class RecordVariables {
             const name = this.#name(request.name, 'secret');
             let material: SecretMaterial | null;
             try { material = await this.#p.vault.readSecret(name); }
-            catch (error) { if (error instanceof VaultReadinessError) throw error; throw new VariableError('密钥 ' + name + '：' + (error instanceof VaultError ? error.message : '主密钥、封存或认证元数据不可核对；没有取值'), name); }
+            catch (error) { if (error instanceof VaultReadinessError) throw error; if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw new VariableError('密钥 ' + name + '：' + (error instanceof VaultError ? error.message : '主密钥、封存或认证元数据不可核对；没有取值'), name); }
             if (!material) throw new VariableError('密钥 ' + name + ' 名字不存在或已撤回；请 circle-hub secret set --name ' + name, name);
             out.push(material);
         }
@@ -269,6 +269,7 @@ export class RecordVariables {
         try { return await this.#p.vault.recentSecrets(); }
         catch (error) {
             if (error instanceof VaultReadinessError) throw error;
+            if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError();
             throw new VaultReadinessError([{ name: null, entry: 'vault/', missing: ['inventory'], reason: '密钥库脱敏材料读取失败；未返回部分材料', next_action: '请管理员查看运行状况中的密钥库条目诊断，核对主密钥、目录权限和认证元数据后重试；不会跳过脱敏' }]);
         }
     }
