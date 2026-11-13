@@ -1,6 +1,7 @@
 {
   "published": [
     "docs/404.md",
+    "docs/admin-guide.md",
     "docs/compatibility.en.md",
     "docs/compatibility.md",
     "docs/design/README.md",
@@ -36,6 +37,7 @@
     "docs/hub-r4-guide.md",
     "docs/hub-r4-progress.md",
     "docs/index.md",
+    "docs/member-guide.md",
     "docs/protocols/knowledge-sync-v1.md",
     "docs/protocols/knowledge-sync-v1.zh-CN.md",
     "docs/quickstart.md",
