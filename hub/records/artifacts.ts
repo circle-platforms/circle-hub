@@ -229,7 +229,7 @@ export class RecordArtifacts implements Artifacts {
     this.#options = options;
   }
 
-  capturePermissionSnapshot(principal: Principal) { return captureRequestPermissions(this.#db,principal,this.#options.now()); }
+  capturePermissionSnapshot(principal: Principal, tx?: Transaction) { return captureRequestPermissions(this.#db,principal,this.#options.now(),tx); }
 
   ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact> {
     return this.#owned(input,false,tx).then(snapshot=>snapshot.personalOwner?this.#personalIngest(snapshot,true,tx):this.#ingest(snapshot,true,tx));
