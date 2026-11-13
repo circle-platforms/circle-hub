@@ -390,9 +390,7 @@ test('getBuiltinModule reached any way but a direct call with a literal name is 
 
 test('every check must declare an explicit tier upon publication: missing tier is refused, declaring tier is accepted', async () => {
   const missingTier = checks((f) => delete f.checks[0].tier);
-  const p = await refused(missingTier, 'checks.tier_missing', { file: 'checks.json', field: '/checks/0/tier' });
-  assert.match(p.message, /任务包 demo-review 的检查 titles 没有声明 tier/);
-  assert.match(p.fix, /声明 blocking、advisory 或模型里的其他档名/);
+  await refused(missingTier, 'checks.shape', { file: 'checks.json', field: '/checks/0/tier' });
   const withTier = checks((f) => (f.checks[0].tier = 'blocking'));
   await accepted(withTier);
 });

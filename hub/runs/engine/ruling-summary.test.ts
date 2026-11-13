@@ -5,7 +5,7 @@ import {RequirementSummary} from '../../../contracts/src/run.ts';
 import type {RequirementTemplate, LedgerFile, CheckEntry} from '../../../contracts/src/pack.ts';
 const requirement:RequirementTemplate={key:'r',name:'合成要求',description:'合成',target:'item',required:true,done_rule:'bookkeeping',layers:['static'],accepted_producer:'fact',checks:['c'],error_handling:[],run_table:true};
 const ledger:LedgerFile={schema:'ledger@1',shapes:[{requirement:'r',interpreter:'range@1',ruled_in:'10.6.0'}]};
-const checks:CheckEntry[]=[{id:'c',interpreter:'structure@1',applies:'item',judges:'subject'}];
+const checks:CheckEntry[]=[{id:'c',interpreter:'structure@1',applies:'item',judges:'subject',tier:'advisory'}];
 test('requirement summaries expose the locked rules and permitted runtime interpreters as required arrays',()=>{
  const summary=requirementSummary(requirement,ledger,checks,'synthetic@10.6.0');
  assert.deepEqual(summary.rules,['structure@1']);
