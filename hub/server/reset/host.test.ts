@@ -1,7 +1,7 @@
 // Actual current-schema PostgreSQL and opaque file invariants; no previous-release reader or conversion fixture.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, stat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PackManifest } from '../../../contracts/src/pack.ts';
@@ -200,5 +200,20 @@ test('native reset backup restores with the public backup reader into another em
   for (const file of manifest.files.filter(file => file.path.startsWith('vault/') || file.path.startsWith('objects/'))) {
     assert.deepEqual(await readFile(join(layout.root, file.path)), await readFile(join(f.layout.root, file.path)));
   }
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
+
+
+test('native reset refuses a role-owned table before accepting a standard backup or changing the source', { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  await withSession(f.postgres.connector, f.postgres.target.database, async session => {
+    await session.query('CREATE TABLE synthetic_reset_owned (id integer)');
+    await session.query('INSERT INTO synthetic_reset_owned VALUES (1)');
+    await session.query('ALTER TABLE synthetic_reset_owned OWNER TO "' + f.postgres.application.user.replaceAll('"', '""') + '"');
+  });
+  await assert.rejects(nativeResetBackup(f.context, f.postgres), /应用角色.*应当只能连接并按授权读写/);
+  assert.deepEqual(await readdir(f.layout.backups), []);
+  const [row] = await withSession(f.postgres.connector, f.postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM synthetic_reset_owned'));
+  assert.equal(row!.n, 1);
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
 });
