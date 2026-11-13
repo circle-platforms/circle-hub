@@ -729,9 +729,9 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
 
   const diagnosed = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '上机验证没有发出：放行未通过：「核验目标与清单等于执行器声明」判定为错误。测试环境实际为 bed-a；与执行器声明的不一样。另有 2 条因为上面的错误还没有核对。现在可以做：原样重交前请管理员核对' }],
+    dispatch: [{ text: '上机验证没有发出：放行条件里有 1 条错误。「核验目标与清单等于执行器声明」判定为错误。这次脚本合并核对的是：测试环境 bed-a，清单 eeeeeeeeeeee，和执行器声明的不一样。另有 2 条因为上面的错误还没有核对。现在可以做：先确认预订的是哪个测试环境' }],
   }), { items: items(1) });
-  assert.match(diagnosed, /放行未通过/);
+  assert.match(diagnosed, /放行条件里有 1 条错误/);
   assert.match(diagnosed, /状态已确认；判断错误；决定者程序/);
   assert.doesNotMatch(diagnosed, /原因还没查清/);
 

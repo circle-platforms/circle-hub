@@ -590,7 +590,7 @@ function dispatchNoteLine(note: { text: string; result?: string }): string {
     message.includes('已证明目标没有执行')
   ) {
     // C14: when release refusal already names the错误 and next step, do not append「原因还没查清」.
-    const diagnosed = message.includes('放行未通过：') || message.includes('还没有核对');
+    const diagnosed = message.includes('放行条件里有 ') || message.includes('还没有核对');
     return diagnosed
       ? `${message}；状态已确认；判断错误；决定者程序`
       : `${message}；状态已确认；判断错误；原因还没查清；决定者程序`;
