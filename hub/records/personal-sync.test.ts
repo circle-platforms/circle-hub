@@ -191,17 +191,17 @@ test('the runtime role uses transport and owner-defined collection without UPDAT
  await api.abort(w.owner,opened.session_id,{epoch:state.epoch,operation_id:randomUUID()});assert.equal(await api.object(w.owner,state.epoch,object.id),null);
 });
 
-test('migration 15 preserves an already applied personal layout and the exact prior migration journal',async t=>{
- const {migrate,MIGRATIONS}=await import('./migrations.ts'),{PgRecordStore}=await import('./store.ts'),{PgPrincipals}=await import('./principals.ts');
+test('reopening the current baseline preserves personal payloads and the applied journal',async t=>{
+ const {migrate}=await import('./migrations.ts'),{PgRecordStore}=await import('./store.ts'),{PgPrincipals}=await import('./principals.ts');
  const database=await postgres.createDatabase(undefined,{empty:true});t.after(()=>postgres.dropDatabase(database.database));
- const db=new Database(createPool(database));t.after(()=>db.end());await migrate(db,MIGRATIONS.slice(0,14));
+ const db=new Database(createPool(database));t.after(()=>db.end());await migrate(db);
  const clock=()=>new Date('2026-11-03T00:00:00.000Z'),{user}=await new PgPrincipals(db,clock).bootstrapAdmin('synthetic-upgrade');
  const store=new PgRecordStore(db,{maxRecordBytes:16*1024*1024,now:clock});
  const record=await store.put({kind:'memory_version',schema:'memory-version@1',provenance:'declared',body:{space:user.id,markdown:'synthetic pre-transport personal body'}});
  const baseline=await store.get(record.digest);
  const journal=(await db.query('SELECT version,name,sha256 FROM schema_migrations ORDER BY version')).rows;
- assert.deepEqual(await migrate(db),MIGRATIONS.slice(14).map(m=>m.version));
- assert.deepEqual((await db.query('SELECT version,name,sha256 FROM schema_migrations WHERE version<=14 ORDER BY version')).rows,journal);
+ assert.deepEqual(await migrate(db),[]);
+ assert.deepEqual((await db.query('SELECT version,name,sha256 FROM schema_migrations ORDER BY version')).rows,journal);
  assert.deepEqual(await store.get(record.digest),baseline);
  assert.equal((await store.get<{markdown:string}>(record.digest))?.body.markdown,'synthetic pre-transport personal body');
  assert.equal((await store.personalPayloads.inspect(record.digest))?.cleared,false);

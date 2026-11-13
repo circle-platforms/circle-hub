@@ -5,7 +5,7 @@ import { startPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { AccessError } from './api.ts';
 import { Database, createPool } from './db.ts';
-import { MIGRATIONS, migrate } from './migrations.ts';
+import { migrate } from './migrations.ts';
 import { PgPrincipals } from './principals.ts';
 import { newId } from './ids.ts';
 import { sha256Hex } from './digest.ts';
@@ -56,16 +56,15 @@ test('passwords stay salted and private, reset revokes browser sessions, and cha
   assert.equal(await kit.principals.verifyPassword(user.name,'synthetic-new-password'),null);
 });
 
-test('the password migration preserves version-7 accounts and Circle credentials until an explicit reset',async t=>{
+test('accounts without passwords retain existing credentials until an explicit reset',async t=>{
   const postgres=await startPostgres();
   const config=await postgres.createDatabase(undefined,{empty:true});
   const db=new Database(createPool(config,2));
   t.after(async()=>{await db.end();await postgres.dropDatabase(config.database);await postgres.stop();});
-  await migrate(db,MIGRATIONS.slice(0,7));
+  await migrate(db);
   const id=newId('usr'),tokenId=newId('tok'),token='s'.repeat(43),at='2026-11-02T00:00:00.000Z';
-  await db.query('INSERT INTO users (id,name,role,disabled,created_at,updated_at) VALUES ($1,$2,$3,false,$4,$4)',[id,'合成旧管理员','admin',at]);
-  await db.query('INSERT INTO tokens (id,user_id,sha256,label,created_at) VALUES ($1,$2,$3,$4,$5)',[tokenId,id,sha256Hex(token),'合成旧 Circle',at]);
-  assert.deepEqual(await migrate(db),MIGRATIONS.slice(7).map(migration=>migration.version),'the password migration and every later one apply on top of version 7');
+  await db.query('INSERT INTO users (id,name,role,disabled,created_at,updated_at) VALUES ($1,$2,$3,false,$4,$4)',[id,'合成管理员','admin',at]);
+  await db.query('INSERT INTO tokens (id,user_id,sha256,label,created_at) VALUES ($1,$2,$3,$4,$5)',[tokenId,id,sha256Hex(token),'合成 Circle',at]);
   assert.deepEqual(await migrate(db),[]);
   const principals=new PgPrincipals(db,()=>new Date(at));
   const user=await principals.authenticate('Bearer '+token);assert.ok(user);assert.equal(user.id,id);

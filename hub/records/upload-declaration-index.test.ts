@@ -1,12 +1,11 @@
-// Run admission and the same migration backfill must decode only indexed, hash-matching source registrations.
+// Run admission decodes only indexed, hash-matching source registrations.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {openTestRecords} from '../testing/records.ts';
 import {Database,createPool} from './db.ts';
-import {MIGRATIONS} from './migrations.ts';
 import {newId} from './ids.ts';
 
-test('twenty declarations use indexed candidates among 100000 sources in both the trigger and backfill',async t=>{
+test('twenty declarations use indexed candidates among 100000 sources and retain their frozen boundary',async t=>{
  const kit=await openTestRecords();t.after(()=>kit.close());const db=new Database(createPool(kit.database));t.after(()=>db.end());
  const {user:owner}=await kit.principals.bootstrapAdmin('synthetic-declaration-index');
  // Metadata-only synthetic unrelated sources: no original, payload or business text is copied into the fixture.
@@ -22,18 +21,13 @@ test('twenty declarations use indexed candidates among 100000 sources in both th
  await associate(captures[1],owner.id);await associate(captures[2],'team');
  const equal=await upload('synthetic declaration 3','synthetic-separate-equal-byte-capture');assert.notEqual(equal.digest,captures[3].digest);await associate(equal,owner.id);
  const run=()=>kit.store.put({kind:'run',schema:'run@1',provenance:'declared',body:{run:newId('run'),runner:owner.id,sources:captures.map((capture,n)=>({reference:'src:'+capture.body.sha256,artifact:capture.digest,slot:'synthetic-'+n,upload_declaration:{by:owner.id}}))}});
- await db.query('ALTER TABLE records DISABLE TRIGGER records_frozen_uploads');
- let earlier:Awaited<ReturnType<typeof run>>;try{earlier=await run();}finally{await db.query('ALTER TABLE records ENABLE TRIGGER records_frozen_uploads');}
+ const earlier=await run();
  await associate(captures[4],owner.id);await db.query('ANALYZE records');await db.query('ANALYZE record_index');
  const began=performance.now(),current=await run();
  const declarations=async(record:string)=>(await db.query<{artifact:string}>('SELECT artifact FROM run_upload_declarations WHERE run_record=$1 ORDER BY artifact',[record])).rows.map(row=>row.artifact);
  assert.deepEqual(await declarations(current.digest),captures.filter((_,n)=>n!==1&&n!==4).map(c=>c.digest).sort());
- assert.deepEqual(await declarations(earlier!.digest),[]);
- const migration=MIGRATIONS.find(m=>m.version===21)!;
- const backfill=migration.sql.match(/DO \$backfill\$[\s\S]+?END \$backfill\$;/);assert.ok(backfill);await db.query(backfill[0]);
- assert.deepEqual(await declarations(earlier!.digest),captures.filter((_,n)=>n!==1).map(c=>c.digest).sort(),'later registration must not rewrite the frozen declaration boundary');
- await db.query(backfill[0]);assert.equal((await declarations(earlier!.digest)).length,19,'backfill remains idempotent');
- t.diagnostic('20-upload run plus two backfills among 100000 unrelated sources: '+Math.round(performance.now()-began)+' ms');
+ assert.deepEqual(await declarations(earlier.digest),captures.filter((_,n)=>n!==1).map(c=>c.digest).sort(),'later registrations must not rewrite the frozen declaration boundary');
+ t.diagnostic('20-upload run among 100000 unrelated sources: '+Math.round(performance.now()-began)+' ms');
 
  // Explain the installed function's actual candidate query; do not maintain a separate optimized query in the test.
  const definition=(await db.query<{definition:string}>("SELECT pg_get_functiondef('public.hub_freeze_upload_declarations(text)'::regprocedure) AS definition")).rows[0].definition;
