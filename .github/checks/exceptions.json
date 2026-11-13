@@ -106,37 +106,9 @@
   },
   {
     "check": "package-boundaries",
-    "path": "hub/leases/service.ts",
-    "what": "entrypoint-bypass: hub/records/db.ts",
-    "reason": "leases bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
     "path": "hub/ports.ts",
     "what": "entrypoint-bypass: hub/knowledge/feeding.ts",
     "reason": "shared interface hub/ports.ts bypasses hub/knowledge/api.ts by importing hub/knowledge/feeding.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/records/db.ts",
-    "what": "disallowed-dependency: hub/telemetry/usage.ts",
-    "reason": "records imports telemetry/usage.ts until low-level usage context moves out of telemetry (package-edges.md:149)",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/records/objects.ts",
-    "what": "disallowed-dependency: hub/telemetry/usage.ts",
-    "reason": "records imports telemetry/usage.ts until low-level usage context moves out of telemetry (package-edges.md:149)",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/records/request-permissions.ts",
-    "what": "disallowed-dependency: hub/telemetry/usage.ts",
-    "reason": "records imports telemetry/usage.ts until low-level usage context moves out of telemetry (package-edges.md:149)",
     "removeWhen": "C4"
   },
   {
@@ -239,20 +211,6 @@
   },
   {
     "check": "package-boundaries",
-    "path": "hub/server/cli-admin.ts",
-    "what": "entrypoint-bypass: hub/leases/service.ts",
-    "reason": "server bypasses hub/leases/api.ts by importing hub/leases/service.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/server/cli-admin.ts",
-    "what": "entrypoint-bypass: hub/records/db.ts",
-    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
     "path": "hub/server/cli-local-tools.ts",
     "what": "entrypoint-bypass: hub/platform/layout.ts",
     "reason": "server bypasses hub/platform/api.ts by importing hub/platform/layout.ts; route through package entrypoint in C4",
@@ -284,27 +242,6 @@
     "path": "hub/server/cli-local-tools.ts",
     "what": "entrypoint-bypass: hub/runs/packs/versions.ts",
     "reason": "server bypasses hub/runs/api.ts by importing hub/runs/packs/versions.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/server/cli.ts",
-    "what": "entrypoint-bypass: hub/records/db.ts",
-    "reason": "server bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/server/cli.ts",
-    "what": "entrypoint-bypass: hub/records/index.ts",
-    "reason": "server bypasses hub/records/api.ts by importing hub/records/index.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/server/console/pages.ts",
-    "what": "entrypoint-bypass: hub/runs/engine/api.ts",
-    "reason": "server bypasses hub/runs/api.ts by importing hub/runs/engine/api.ts; route through package entrypoint in C4",
     "removeWhen": "C4"
   },
   {
@@ -354,41 +291,6 @@
     "path": "hub/server/tools.ts",
     "what": "entrypoint-bypass: hub/knowledge/feeding.ts",
     "reason": "server bypasses hub/knowledge/api.ts by importing hub/knowledge/feeding.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/telemetry/api.ts",
-    "what": "entrypoint-bypass: hub/records/db.ts",
-    "reason": "telemetry bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/telemetry/reader.ts",
-    "what": "entrypoint-bypass: hub/records/db.ts",
-    "reason": "telemetry bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-boundaries",
-    "path": "hub/telemetry/retention.ts",
-    "what": "entrypoint-bypass: hub/records/db.ts",
-    "reason": "telemetry bypasses hub/records/api.ts by importing hub/records/db.ts; route through package entrypoint in C4",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-cycles",
-    "path": "hub/records",
-    "what": "records -> telemetry",
-    "reason": "records instruments db/objects/request-permissions via hub/telemetry/usage.ts while telemetry imports records (SCC: records, telemetry)",
-    "removeWhen": "C4"
-  },
-  {
-    "check": "package-cycles",
-    "path": "hub/telemetry",
-    "what": "telemetry -> records",
-    "reason": "telemetry api/reader/retention import records while records still imports telemetry/usage.ts (SCC: records, telemetry)",
     "removeWhen": "C4"
   },
   {
