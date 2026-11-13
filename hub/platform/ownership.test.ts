@@ -22,68 +22,36 @@ import { libpqAvailable, LIBPQ_MISSING, removeDir, socketPort, sqlState, tempDir
 
 const libpq = await libpqAvailable();
 
-/** A column per table that a statement may name; for users, tokens and pointers one the runtime role may not update. */
-const COLUMN: Record<string, string> = {
-  schema_migrations: 'sha256',
-  teams: 'id',
-  team_members: 'team_id',
-  member_deletion_intents:'member',
-  personal_cache_installs:'owner',run_upload_declarations:'run_record',run_pack_records:'record',held_objects:'sha256',held_object_targets:'sha256',original_targets:'artifact',
-  records: 'body',
-  object_holds:'record',
-  run_originals:'artifact',
-  personal_sync_mode_operations:'owner',
-  personal_sync_heads:'owner',
-  personal_sync_bindings:'owner',personal_sync_notes:'owner',personal_sync_native_credits:'owner',personal_sync_exports:'owner',personal_sync_memory_reservations:'owner',
-  personal_sync_identities:'identity',
-  personal_sync_clients:'name_payload',
-  personal_sync_sessions:'snapshot',
-  personal_sync_objects:'bytes',
-  personal_sync_edges:'child',
-  personal_sync_session_objects:'object_id',
-  personal_sync_retained:'object_id',
-  personal_sync_operations:'receipt',
-  personal_sync_aborts:'at',
-  personal_spaces:'owner',
-  personal_payloads:'owner',
-  personal_record_bindings:'owner',
-  personal_objects:'owner',
-  personal_purges:'owner',
-  record_index: 'value',
-  record_keys: 'key',
-  objects: 'media_type',
-  user_history: 'name',
-  call_logs: 'tool',
-  call_notes: 'note',
-  call_reasons: 'note',
-  users: 'created_at', // Only the approved account columns are updatable.
-  tokens: 'label',
-  oauth_clients: 'name',
-  invitations: 'user_id',
-  pointers: 'name',
-  leases: 'key',
-  lease_registrations: 'owner',
-  memory_heads:'space',
-  memory_space_usage:'space',
-  knowledge_space_search: 'space',
-  knowledge_space_search_documents: 'token_bytes',
-  knowledge_space_search_ready: 'row_count',
-  knowledge_space_search_totals:'quota_space',
-  run_original_purges:'at',
-  trace_spans:'name',
-  resource_samples:'boot',
-  process_events:'kind',
-};
-
 /** Everything the application role must never do, each to be refused with 42501 (insufficient_privilege). */
-function tamperingStatements(): string[] {
+async function tamperingStatements(session: SqlSession): Promise<string[]> {
+  const columns = await session.query(`SELECT c.relname AS table_name, a.attname AS column_name
+    FROM pg_catalog.pg_attribute a
+    JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+      AND a.attnum > 0 AND NOT a.attisdropped AND a.attidentity = '' AND a.attgenerated = ''
+    ORDER BY c.relname, a.attnum`);
   const out: string[] = [];
-  for (const table of Object.keys(RUNTIME_GRANTS)) {
-    const column = COLUMN[table];
-    assert.ok(column, `a column for ${table}`);
+  for (const [table, grants] of Object.entries(RUNTIME_GRANTS)) {
+    const mutable = table === 'teams' || table === 'lease_registrations';
+    let updateProbe: string[] = [];
+    if (!mutable) {
+      const writable = new Set<string>();
+      for (const part of grants.split(/,\s*(?![^(]*\))/)) {
+        const match = /^UPDATE(?:\s*\(([^)]*)\))?$/.exec(part.trim());
+        if (!match) continue;
+        assert.ok(match[1], `${table}: whole-table UPDATE needs an explicitly approved mutable exception`);
+        for (const column of match[1].split(',')) writable.add(column.trim());
+      }
+      const column = columns.find(row => row.table_name === table && !writable.has(String(row.column_name)))?.column_name;
+      assert.equal(typeof column, 'string', `${table}: a real column without registered UPDATE permission is required`);
+      const quoted = '"' + String(column).replaceAll('"', '""') + '"';
+      updateProbe = [`UPDATE ${table} SET ${quoted} = ${quoted}`];
+    }
     out.push(
       // Team and lease tables are mutable projections, not the append-only authorization history.
-      ...(table === 'lease_registrations' ? [] : table === 'teams' ? [`DELETE FROM ${table}`] : ['oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members'].includes(table) ? [`UPDATE ${table} SET ${column} = ${column}`] : [`DELETE FROM ${table}`, `UPDATE ${table} SET ${column} = ${column}`]),
+      ...(['lease_registrations', 'oauth_clients', 'trace_spans', 'resource_samples', 'process_events', 'team_members'].includes(table) ? [] : [`DELETE FROM ${table}`]),
+      ...updateProbe,
       `TRUNCATE ${table}`,
       `TRUNCATE ${table} CASCADE`,
       `DROP TABLE ${table}`,
@@ -150,7 +118,7 @@ describe('the real records schema in a platform cluster', { skip: libpq ? false 
       await session.query("DELETE FROM lease_registrations WHERE prefix = 'test/ownership/'");
       assert.deepEqual(await session.query("SELECT owner FROM lease_registrations WHERE prefix = 'test/ownership/'"), []);
       const out: string[] = [];
-      for (const statement of tamperingStatements()) {
+      for (const statement of await tamperingStatements(session)) {
         const code = await sqlState(session, statement);
         if (code !== '42501') out.push(`${statement} -> ${code ?? 'ran'}`);
       }
