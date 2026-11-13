@@ -15,6 +15,7 @@ import type { PageContext, PageResult } from './context.ts';
 import { readableLines } from './pages.ts';
 import { RUN_ID, USER_ID } from './params.ts';
 import { TOOL_LABELS, packTitles, taskTitle } from './tasks.ts';
+import { filterForm } from './components.ts';
 import { card, sectionHead, when } from './ui.ts';
 
 export const SEARCH_MAX_QUERY = 100;
@@ -159,7 +160,7 @@ export async function searchPage(ctx: PageContext): Promise<PageResult> {
   const spaceKnowledge=await spaceSearch(ctx);
   const results = await searchHub(ctx, raw);
   const chrome = ctx.chrome('搜索', results.q === '' ? { hint: '在任务、工作流、知识库与记录中查找' } : { sub: `“${results.q}”的查找结果` });
-  const form = html`<form class="ch-actions" data-filters method="get" action="/console/search"><label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label><button class="ch-btn ch-btn--secondary" type="submit">搜索</button></form>`;
+  const form = filterForm('/console/search', html`<label>关键词 <input name="q" value="${results.q}" maxlength="${SEARCH_MAX_QUERY}" required></label>`, '搜索');
   if (results.q === '') return { status: 200, body: page(chrome, html`${spaceKnowledge}${card(null, html`${form}`)}`) };
   const partial = (yes: boolean, what: string) => (yes ? html`<p class="ch-meta">${what}</p>` : '');
   const knowledgeRow = (hit: KnowledgeHit) => {
