@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import type { EntryKind, PackKind, RequestKind, ExitAction } from '../contracts/generated/vocabulary.ts';
 import type { PathChange } from '../contracts/src/views.ts';
 import type { Coverage } from '../contracts/src/common.ts';
-import type { ChecksFile, LedgerFile, KnowledgeFile, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
+import type { ChecksFile, LedgerFile, KnowledgeFile, SkillDeclaration, PackManifest, RequirementsFile, SlotsFile, WorkflowFile } from '../contracts/src/pack.ts';
 import type { PackSummary } from '../contracts/src/run.ts';
 import type { ProductDeclaration, KnownBuild } from '../contracts/src/product.ts';
 import type { ProtocolError } from '../contracts/src/common.ts';
@@ -15,11 +15,54 @@ import type { RunRecord, RunRecordView } from '../contracts/src/run.ts';
 import type { PackContextView, ResolveReferenceInput, ResolveReferenceOutput, StartRunInput, StartRunOutput, SubmitResultOutput, GetNodesOutput } from '../contracts/src/tools.ts';
 import type { ValidationResult } from '../contracts/src/validation.ts';
 import type { Acceptance } from '../contracts/generated/vocabulary.ts';
-import type { Page, Principal, SourceArtifact } from './records/api.ts';
+import type { Page, Principal, SourceArtifact, RecordStore, StoredRecord } from './records/api.ts';
 import type { TreeReader } from './refs/api.ts';
 import type { CatalogView } from './rules/api.ts';
 
 // ---------------------------------------------------------------- packs (provided by runs)
+
+/** Run facts consumed by knowledge without importing the run engine. */
+export interface KnowledgeRunReadPort {
+  runById(store: RecordStore, id: string): Promise<StoredRecord<RunRecord> | null>;
+  canViewRun(user: Principal, run: RunRecord, store: RecordStore): Promise<boolean>;
+}
+
+/** Pack bytes and the existing schema compiler consumed by knowledge. */
+export interface KnowledgePackReadPort {
+  readPackDirectory(directory: string): Promise<
+    | { ok: true; pack: { digest: string; manifest: Pick<PackManifest, 'id' | 'version' | 'kind'>; files: Array<{ path: string; bytes: Uint8Array }> } }
+    | { ok: false }
+  >;
+  packSchema(json: Record<string, unknown>): { ok: true; schema: z.ZodType } | { ok: false; problem: string };
+}
+
+/** The published identity and dependencies needed by generic skill parsers. */
+export interface SkillPackInfo {
+  id: string;
+  version: string;
+  digest: string;
+  space?: string;
+  kind: PackKind;
+  manifest: Pick<PackManifest, 'dependencies'>;
+}
+
+export interface OpenedSkillPack {
+  info: SkillPackInfo;
+  handle: { directory: string };
+  declarations: { kind: 'skill'; skill: SkillDeclaration } | { kind: Exclude<PackKind, 'skill'> };
+}
+
+/** Read-only parser access; publishing and authorization remain with the provider. */
+export interface SkillParserRegistryPort {
+  installedSkills(): Promise<OpenedSkillPack[]>;
+  open(digest: string): Promise<OpenedSkillPack | null>;
+  personal?: {
+    open(space: string, digest: string): Promise<OpenedSkillPack | null>;
+    resolve(principal: Principal, space: string, ref: string): Promise<SkillPackInfo | null>;
+    skills(principal: Principal): Promise<OpenedSkillPack[]>;
+    mayUse(principal: Principal, space: string, pack: string): Promise<boolean>;
+  };
+}
 
 /** A published pack version, extracted into a read-only directory that pack functions run in. */
 export interface PackHandle {

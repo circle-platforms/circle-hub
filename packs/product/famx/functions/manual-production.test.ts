@@ -1,3 +1,4 @@
+import { runById, canViewRun, readPackDirectory, packSchema } from '../../../../hub/runs/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // The famx manual producer through the real knowledge production (K01): the same sources produce the same root twice;
 // a tree change in a command the manual never names leaves the manual subtree byte-identical (the node digest of
@@ -102,7 +103,7 @@ before(async () => {
   external.set('manual:cli:10.6.1', { bytes: MANUAL, mediaType: 'text/markdown' });
   external.set('site:tree:a', { bytes: TREE_A, mediaType: 'application/xml' });
   external.set('site:tree:b', { bytes: TREE_B, mediaType: 'application/xml' });
-  knowledge = createKnowledge({
+  knowledge = createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },
     records: kit,
     parsers: createDefaultRegistry(),
     packs,

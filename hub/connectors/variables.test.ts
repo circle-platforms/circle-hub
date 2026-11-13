@@ -40,6 +40,7 @@ test('two resources share credential versions: rotation refreshes sessions and o
     const common = { ...input, origins: { 'agile-api': stub.origin, 'agile-oauth': stub.origin }, allow_plaintext: [stub.origin], credentials: { username: 'DEMO_USER', password: 'DEMO_PASSWORD' }, settings: { 'root#': '${var:DEMO_ROOT}' } };
     await k.records.variables.setVariable(k.admin, 'DEMO_ROOT', 'demo-root', 'DEMO_REASON');
     const first = await k.connectors.admin.addResource(k.admin, common), second = await k.connectors.admin.addResource(k.admin, { ...common, name: 'DEMO_SECOND',environment:'production' });
+    for (const resource of [first, second]) await k.records.authorizations.grant(k.admin, { permission: 'resource_assign', subject: '*', object: resource.id });
     const set = async (password: string) => k.records.variables.setSecrets(k.admin, [{ name: 'DEMO_USER', value: 'reader', short: true, consumers: [first, second].map(r => resourceConsumer(r, 'username')) }, { name: 'DEMO_PASSWORD', value: password, consumers: [first, second].map(r => resourceConsumer(r, 'password')) }], 'DEMO_ROTATION');
     await set('DEMO!Password42');
     const other = k.make();

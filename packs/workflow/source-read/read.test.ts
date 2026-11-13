@@ -11,10 +11,16 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { createKnowledge } from '../../../hub/knowledge/api.ts';
+import { createTestParserRegistry } from '../../../hub/testing/parsers.ts';
 import type { PermissionRole } from '../../../contracts/generated/vocabulary.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort } from '../../../hub/ports.ts';
 import type { Artifacts, Principal } from '../../../hub/records/api.ts';
 import {
+  runById,
+  canViewRun,
+  readPackDirectory,
+  packSchema,
   createPackRegistry,
   createPacksPort,
   createRunsService,
@@ -146,11 +152,22 @@ async function openWorld(postgres: TemporaryPostgres): Promise<TestWorld> {
 
     const external = new FakeExternal(kit.artifacts);
     const logs: AdminLogEntry[] = [];
+    const spaces = createKnowledge({
+      records: kit,
+      parsers: createTestParserRegistry(),
+      packs: createPacksPort(registry),
+      runReads: { runById, canViewRun },
+      packReads: { readPackDirectory, packSchema },
+      external,
+      clock: now,
+      admin,
+      sandbox: { requireOsIsolation: false },
+    }).spaces;
     const service = createRunsService({
       records: kit,
       workflows: createWorkflowStore(registry),
       packs: createPacksPort(registry),
-      knowledge: new FakeKnowledge(),
+      knowledge: new FakeKnowledge(spaces),
       external,
       now,
       adminLog: (entry) => logs.push(entry),

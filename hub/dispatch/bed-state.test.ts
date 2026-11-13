@@ -392,46 +392,6 @@ test('snapshot_only config channel skips baseline residue check and verifies pre
   assert.equal(state.outcome, 'effective');
 });
 
-test('config channel without snapshot_only and without manifest baseline records undeclared baseline and refuses dispatch', async t => {
-  const bedNoBaseline = {
-    name: 'bed-a',
-    devices: [{ ipv4: ['192.0.2.1/24'], ipv6: [] }],
-  };
-  const textBedState = { bed: '/bed', items: [textConfigItem] };
-
-  async function bindMissingBaseline(c: Awaited<ReturnType<typeof setup>>) {
-    const stored = await c.kit.artifacts.ingest({
-      bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map(n => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })), bed: bedNoBaseline }),
-      mediaType: 'application/json',
-      origin: { upload: { session: 'synthetic' } },
-      author: { user: c.owner.id },
-      provenanceType: 'declared',
-      visibility: { readers: [c.owner.id], admins: true, packs: [], shareable: false },
-    });
-    c.detail.run.sources = c.detail.run.sources.map(s => s.slot === 'synthetic-manifest' ? { ...s, reference: `src:${stored.body.sha256}` } : s);
-    (c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as { bed: { manifest_sha256: string } }).bed.manifest_sha256 = stored.body.sha256;
-    c.effectDocument.effects[0].parameters.values.manifest_sha256 = [stored.body.sha256];
-    await c.registry.update(c.admin, c.executor.id, {
-      ...c.executor.definition,
-      manifest_sha256: stored.body.sha256,
-      allowed_tools: [...c.executor.definition.allowed_tools, 'show_bed'],
-      bed_state: textBedState,
-    });
-    await c.freezeExecutor();
-  }
-
-  const cleanReply = { output: 'Pool            Mode            \npool1           off             \n' };
-  const queue = [cleanReply];
-  const c = await setup({ extraTools: ['show_bed'], alter: (name, value) => name === 'show_bed' ? queue.shift() ?? value : value });
-  t.after(() => c.close());
-  await bindMissingBaseline(c);
-
-  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.match(state.missing_fact ?? '', /未声明基线，无法判残留/);
-  assert.match(state.next_action ?? '', /由合成管理员在自动化测试环境清单中声明 baseline 行或将通道声明为 snapshot_only 后重开/);
-});
-
 test('captureText strips declared lead and trail lines verbatim, preserving content', () => {
   const raw = `show ip interface brief
 

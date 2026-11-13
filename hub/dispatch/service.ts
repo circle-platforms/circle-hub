@@ -1,69 +1,43 @@
-import {reportOutcome} from './report-outcome.ts';
-import {REPORT_READ_ATTEMPTS,REPORT_READ_WINDOW_MS,reportPending,reportReadDelay,trustedStatus} from './report-read.ts';
-import {releaseDigest,releaseField,releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
-import type {AdminLogEntry} from '../runs/api.ts';
-import {RETRY_RULES} from './retry-policy.ts';
-import {prepareEffectGate,EffectBoundaryError} from './effect-gate.ts';
-import {checkEffectBoundary,incompleteEffectBoundary,deny,refusalText,type BoundaryFailure} from './boundary.ts';
-import {verifiedContent} from './content.ts';
+import { isAdmin } from '../records/api.ts';
+import type { Heartbeat, LeaseClock, RemoteLease } from './session-types.ts';
+import * as bedOperations from './bed-lifecycle.ts';
+import * as deviceOperations from './devices.ts';
+import * as baselineOperations from './baselines.ts';
+import { environmentOf, runBound } from './precheck-context.ts';
+import { reportOutcome } from './report-outcome.ts';
+import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
+import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
+import type { AdminLogEntry } from '../runs/api.ts';
+import { RETRY_RULES } from './retry-policy.ts';
+import { prepareEffectGate, EffectBoundaryError } from './effect-gate.ts';
+import { checkEffectBoundary, incompleteEffectBoundary, deny, refusalText, type BoundaryFailure } from './boundary.ts';
+import { verifiedContent } from './content.ts';
 import { WHOLE_HUB, canonicalBytes, canonicalize, sha256Hex, type AuthorizationRecord, type ActionBody, type ArtifactSource, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService, HolderSnapshot } from '../leases/api.ts';
 import type { WorkflowStore } from '../ports.ts';
 import { labelOf, type EffectOutcome, type Disposition, type EffectMark, type QualifierMark, type RequestKind, type ActionKind, type ActionResult, type LeaseOp, type EffectClass, type RetrySafety, type Signing, type DynamicTerminal, type Reason, isDisposition, isEffectOutcome, isDynamicTerminal } from '../../contracts/generated/vocabulary.ts';
 import { at, bind, mapped, registrationMissing, type CallRole, type ExecutorDefinition } from './definition.ts';
-import {Redactor} from '../connectors/api.ts';
-import {background} from '../telemetry/api.ts';
-import {resolveExecutor} from './source.ts';
-import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
+import { Redactor } from '../connectors/api.ts';
+import { background } from '../telemetry/api.ts';
+import { resolveExecutor } from './source.ts';
+import { ExecutorRegistry, ExecutorAccessError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, HttpReplyError, IncompleteReplyError, InvocationDefinitionError, ResponseStorageError, RpcReplyError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
-import { probeValues, type BuildKnowledge, type SeatEcho } from './probes.ts';
-import { DeviceObservation, type DeviceHelpPosition, type DeviceHelpResult, type DeviceHelpTarget } from '../../contracts/src/pack.ts';
-import { capText, checkLine, readAnswer, type AskedLine } from './help.ts';
-import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
-import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
+import { type BuildKnowledge, type SeatEcho } from './probes.ts';
+import { DeviceObservation, type DeviceHelpResult, type DeviceHelpTarget } from '../../contracts/src/pack.ts';
+import { type AskedLine } from './help.ts';
+import { requestIdentity, sameRequestIdentity } from './request-identity.ts';
+import { PrecheckFactError, precheckFailure } from './precheck-failure.ts';
 import { canRetryRead } from './read-policy.ts';
 import { bindingRun, NEWEST_PAGE_SIZE, reportedVersion, scanNewest, type EnvironmentJob, type EnvironmentFacts } from './environment.ts';
 import { dynamicDisposition, DISPATCH_QUALIFICATIONS, missingOwnershipCertification, ownershipUnmet, unmetPremises } from './dynamic.ts';
-import { judgeBedSurface } from '../../packs/workflow/test-bed/api.ts';
-import {
-  againstBaseline,
-  againstStored,
-  bedLimits,
-  bedName,
-  cleanupSteps,
-  missingProbeFact,
-  parseReply,
-  residueFact,
-  undeclaredBaselineFact,
-  undeclaredBaselineNext,
-  unknownSteps,
-  unrestoredFact,
-  captureText,
-  lineDiff,
-  unregisteredBaselineFact,
-  unregisteredBaselineNext,
-  residueCaptureFact,
-  residueCaptureNext,
-  compareHeldProbes,
-  disjointHoldFact,
-  holdClearNext,
-  unrestoredHoldNext,
-  holdMissingBaselineFact,
-  ignoredHoldProbes,
-  type BedBaselineRecord,
-  type BedRead,
-  type BedReport,
-  type Canonical,
-  type Difference,
-} from './bed-state.ts';
+
+import { type BedBaselineRecord, type BedRead, type BedReport, type Canonical } from './bed-state.ts';
 import { bytesKey, earlyStopSentence, repeats, roundAllowed, roundMeets, roundOf, roundPolicy, type RoundPolicy } from './rounds.ts';
 import { expectationFor } from '../runs/engine/terminals.ts';
-import {RunId,Sha256} from '../../contracts/src/common.ts';
-import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort,type VerifiedInput } from './proof.ts';
+import { RunId, Sha256 } from '../../contracts/src/common.ts';
+import { verifyInput, inspectInput, lockedBuildBase, InputVerificationError, type VerificationPort, type VerifiedInput } from './proof.ts';
 
-/** Index of device observations: the inventory digest and the device's JSON Pointer in it, newest first (decision 112). */
-const OBSERVATION_KEY = 'dispatch.device_observation';
 /** Only validated generated outcomes can prove a submission retry is safe. */
 function retrySafeOutcome(value:unknown):boolean {
   if(!isEffectOutcome(value))return false;
@@ -86,9 +60,6 @@ export interface JobStatus {/** The source holding what the target returned, wor
 /** One piece of what the target returned for a row; text is null when the credential scan holds it back. */
 interface ReturnedPiece {name:string;text:string|null;}
 interface ExecutionReadback {continuity:boolean;drift?:boolean;lease_interrupted?:boolean;intent:string}
-interface Heartbeat {stop:()=>Promise<void>;held:()=>boolean;lastConfirmedAt:()=>number|null;}
-interface LeaseClock {at:number;mono:number;ttl:number;}
-interface RemoteLease { id: unknown; token: unknown; ttl: number; }
 const operationDefinition = (d:ExecutorDefinition) => ({target:d.target,endpoint:d.endpoint,ca:d.ca,resources:[...d.resources].sort(),manifest_sha256:d.manifest_sha256,actor_header:d.actor?.header.toLowerCase() ?? null,slot:d.proof.slot,payload_argument:d.payload_argument,submit:{tool:d.calls.submit.tool,arguments:d.calls.submit.arguments}});
 // Every future field stays fixed unless explicitly admitted as a read-only repair here.
 const fixedForReading = (d:ExecutorDefinition) => {
@@ -102,17 +73,6 @@ function precheckIssues(events:readonly Event[]):NonNullable<JobStatus['failed_c
     const d=e.body.detail;if(typeof d.missing_fact!=='string')return [];
     return [{step:typeof d.step==='string'?d.step:String(d.phase),...(typeof d.seat==='string'?{seat:d.seat}:{}),...(typeof d.check==='string'?{check:d.check}:{}),missing_fact:d.missing_fact,next_action:typeof d.next_action==='string'?d.next_action:'管理员核对附加只读来源及期望条件声明，补齐来源与期望事实后再采证'}];
   });
-}
-/** Values only a run supplies (decision 120): the executor describes how to reach the bed, not which build it should run, so
- * a definition's precheck context never stands in for them (one registered before the rule keeps parsing; its build is not read). */
-const RUN_LOCKED = new Set(['build', 'build_base']);
-function environmentOf(context: Readonly<Record<string, unknown>>): Record<string, unknown> { return Object.fromEntries(Object.entries(context).filter(([key]) => !RUN_LOCKED.has(key))); }
-/** The values only a run supplies that a declared value is bound to. */
-function runBound(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(runBound);
-  if (value === null || typeof value !== 'object') return [];
-  const o = value as Record<string, unknown>;
-  return Object.keys(o).length === 1 && typeof o.$value === 'string' ? (RUN_LOCKED.has(o.$value) ? [o.$value] : []) : Object.values(o).flatMap(runBound);
 }
 /** What a precheck without a run's locked build only recorded: each seat's version report and the conditions bound to the build. */
 function precheckUnjudged(events:readonly Event[]):NonNullable<JobStatus['unjudged']> {
@@ -444,7 +404,7 @@ export class DispatchService {
    * log, errors included, and the answer says the administrator has it.
    */
   async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
-    const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
+    const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
     if (!detail?.run.runner) return { started: false, reason: '运行不可读或没有发起用户' };
@@ -1148,127 +1108,46 @@ export class DispatchService {
     return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed);
   }
 
-  /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
-  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> {
-    const now = this.now().toISOString();
-    const build = input.values.length === 1 ? input.values[0]! : null;
-    // The echoed name is resolved to its knowledge-base build (aliases followed), so a reader compares builds, not spellings.
-    const known = build !== null && typeof input.product === 'string' && this.options.knowledge ? await this.options.knowledge.resolveBuild(input.product, build).catch(() => null) : null;
-    const observation = DeviceObservation.parse({
-      inventory: input.inventory, device: input.device, label: input.label, build, base: known?.base ?? null, values: input.values.slice(0, 20), observed_at: now, run: input.run, job: input.job, reference: input.reference,
-      ...(build === null ? { note: input.values.length > 1 ? `版本探针抽到 ${input.values.length} 个值，不是唯一的一个` : '版本探针的回显里没有抽到构建' } : {}),
-    });
-    await this.options.records.store.put<ActionBody>({
-      kind: 'action', schema: 'action@1', provenance: 'observed', created_at: now,
-      body: { action: 'validate', run: input.run, item: null, inputs: [input.reference], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, observation } },
-      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' }],
-    });
-    return observation;
+  private deviceContext() { return {
+      now: this.now,
+      options: this.options,
+      registry: this.registry,
+      observeSeats: this.observeSeats.bind(this),
+      assertNoSecrets: this.assertNoSecrets.bind(this),
+      secret: this.secret.bind(this),
+      session: this.session.bind(this),
+      acquire: this.acquire.bind(this),
+      context: this.context.bind(this),
+      heartbeat: this.heartbeat.bind(this),
+      recordObservation: this.recordObservation.bind(this),
+      release: this.release.bind(this),
+      askDevice: this.askDevice.bind(this),
+      activeLeaseJobs: this.activeLeaseJobs.bind(this),
+      queued: this.queued.bind(this),
+      askSeat: this.askSeat.bind(this),
+      certified: this.certified.bind(this),
+      journal: this.journal,
+      sleep: this.sleep,
+      saveText: this.saveText.bind(this),
+    };
   }
+  /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
+  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> { return deviceOperations.recordObservation.call(this.deviceContext(), input); }
 
   /** The newest observation of every version-probe seat of every enabled executor (decision 112); a seat never looked at is absent. */
-  async latestDeviceObservations(): Promise<DeviceObservation[]> {
-    const out: DeviceObservation[] = [];
-    for (const registered of await this.registry.probed()) {
-      const d = registered.definition;
-      for (const seat of d.probes!.seats) {
-        const found = (await this.options.records.store.find<ActionBody>({ kind: 'action', key: OBSERVATION_KEY, value: `${d.manifest_sha256}#${seat.manifest.device}`, limit: 1, newestFirst: true })).items[0];
-        const parsed = DeviceObservation.safeParse((found?.body.detail as { observation?: unknown } | undefined)?.observation);
-        if (parsed.success) out.push(parsed.data);
-      }
-    }
-    return out;
-  }
+  async latestDeviceObservations(): Promise<DeviceObservation[]> { return deviceOperations.latestDeviceObservations.call(this.deviceContext()); }
 
   /**
    * Looks at the installed build of devices a booking was just granted (decision 112): for each enabled executor bound to the
    * same inventory, the version-probe seats that point at a requested device are probed read-only inside one short gateway
    * lease; nothing is dispatched. Each observation is recorded and returned; what could not be looked at is said in `missing`.
    */
-  async observeDevices(by: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }> {
-    const pending = new Map(targets.map((t) => [`${t.inventory}#${t.device}`, t]));
-    const observed: DeviceObservation[] = [];
-    const problems: string[] = [];
-    for (const registered of await this.registry.probed()) {
-      const d = registered.definition;
-      const seats = d.probes!.seats.filter((seat) => pending.has(`${d.manifest_sha256}#${seat.manifest.device}`));
-      if (!seats.length) continue;
-      try {
-        for (const o of await this.observeSeats(by, run, registered, seats, pending)) observed.push(o);
-      } catch (error) {
-        this.options.adminLog?.({ traceId: null, run, what: 'device_observation', detail: `executor ${registered.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
-        problems.push(`执行器 ${registered.id} 这次没能连上设备（原因在管理员记录里）`);
-      }
-      for (const seat of seats) pending.delete(`${d.manifest_sha256}#${seat.manifest.device}`);
-    }
-    for (const t of pending.values()) problems.push(`${t.label}：没有绑定同一份清单、指向这台设备的执行器版本探针`);
-    return { observed, missing: problems.length ? problems.join('；') : null };
-  }
+  async observeDevices(by: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }> { return deviceOperations.observeDevices.call(this.deviceContext(), by, run, targets); }
 
-  private async observeSeats(by: Principal, run: string, registered: RegisteredExecutor, seats: NonNullable<ExecutorDefinition['probes']>['seats'], targets: ReadonlyMap<string, { label: string }>): Promise<DeviceObservation[]> {
-    const d = registered.definition;
-    const binding: JobBinding = {
-      job: newJob(), initiated_by: by.id, executor: registered.id, executor_digest: registered.resolved_digest, executor_source_digest: registered.digest, variables: registered.variables,
-      scope: { target: d.target, origin: new URL(d.endpoint).origin }, target_key: digestOfValue([...d.resources].sort()), input: null, user: by.id, resources: [],
-      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), manifest_sha256: d.manifest_sha256 },
-    };
-    await this.assertNoSecrets(binding);
-    const material = await this.secret(binding, d);
-    if (material === null) throw new Error('执行器凭据不可用');
-    const client = this.session(binding, d, material);
-    let lease: RemoteLease | undefined;
-    let stop = async () => {};
-    try {
-      await client.connect();
-      lease = await this.acquire(binding, d, client, this.context(binding));
-      stop = this.heartbeat(binding, d, client, lease).stop;
-      const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
-      const out: DeviceObservation[] = [];
-      for (const seat of seats) {
-        const response = await client.declaredRead(d.probes!.call, { ...context, command: seat.version.command, seat_index: seat.index }, `observe.${seat.index}.version`);
-        const label = targets.get(`${d.manifest_sha256}#${seat.manifest.device}`)?.label ?? seat.seat;
-        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product }));
-      }
-      return out;
-    } finally {
-      await stop();
-      if (lease) await this.release(binding, client, lease);
-    }
-  }
-  async askDevices(by: Principal, run: string, targets: ReadonlyArray<DeviceHelpTarget>): Promise<DeviceHelpResult[]> {
-    const out: DeviceHelpResult[] = [];
-    for (const target of targets) out.push(await this.askDevice(by, run, target));
-    return out;
-  }
+  private async observeSeats(by: Principal, run: string, registered: RegisteredExecutor, seats: NonNullable<ExecutorDefinition['probes']>['seats'], targets: ReadonlyMap<string, { label: string }>): Promise<DeviceObservation[]> { return deviceOperations.observeSeats.call(this.deviceContext(), by, run, registered, seats, targets); }
+  async askDevices(by: Principal, run: string, targets: ReadonlyArray<DeviceHelpTarget>): Promise<DeviceHelpResult[]> { return deviceOperations.askDevices.call(this.deviceContext(), by, run, targets); }
 
-  private async askDevice(by: Principal, run: string, target: DeviceHelpTarget): Promise<DeviceHelpResult> {
-    const nothing = (fact: string, next_action: string): DeviceHelpResult => ({ inventory: target.inventory, device: target.device, label: target.label, line: target.line, mode: target.mode ?? null, words: 0, positions: [], missing: { fact: `${target.label}：${fact}`, next_action } });
-    let covered = '没有绑定同一份清单、指向这台设备的执行器版本探针';
-    let found: { registered: RegisteredExecutor; seat: NonNullable<ExecutorDefinition['probes']>['seats'][number] } | undefined;
-    for (const registered of await this.registry.probed()) {
-      const d = registered.definition;
-      const seat = d.manifest_sha256 === target.inventory ? d.probes!.seats.find((s) => s.manifest.device === target.device) : undefined;
-      if (seat === undefined) continue;
-      if (d.probes!.help === undefined) { covered = `执行器 ${registered.id} 管着这台设备，但没有声明问位置的调用`; continue; }
-      found = { registered, seat };
-      break;
-    }
-    if (found === undefined) return nothing(covered, '管理员要给绑定这份清单的执行器登记问位置的调用（probes.help），并认证它只读（premises.read_only）；做完以前这台设备问不了');
-    const d = found.registered.definition;
-    const checked = checkLine(target.line, target.mode, d.probes!.help!);
-    if (!checked.ok) return nothing(checked.fact, checked.next_action);
-    const outside = target.keys.filter((key) => !d.resources.includes(key));
-    if (outside.length) return nothing(`任务包给的租约键 ${outside.join('、')} 不在执行器 ${found.registered.id} 管的资源里`, '管理员核对任务包的租约键和执行器的资源键是不是同一批；做完以前这台设备问不了');
-    let busy: Array<{ key: string; job: string }>;
-    try { busy = await this.activeLeaseJobs(target.keys); }
-    catch { return nothing('读不到这台设备上作业的状态，所以不往它的终端里打字', '管理员核对作业登记后再问'); }
-    if (busy.length) return nothing(`设备上还有作业没有结束（${[...new Set(busy.map((b) => b.job))].join('、')}），现在不往它的终端里打字`, '等这些作业结束，或让管理员用 job status 核对、用 job dispose 处置后再问');
-    try { return await this.queued(found.registered.id, () => this.askSeat(by, run, found.registered, found.seat, target, checked.asked)); }
-    catch (error) {
-      this.options.adminLog?.({ traceId: null, run, what: 'device_help', detail: `executor ${found.registered.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
-      return nothing('这次没能连上设备（原因在管理员记录里）', '稍后再问一次；连续出现时请管理员检查执行器的连接、凭据和租约');
-    }
-  }
+  private async askDevice(by: Principal, run: string, target: DeviceHelpTarget): Promise<DeviceHelpResult> { return deviceOperations.askDevice.call(this.deviceContext(), by, run, target); }
 
   // The executor has one gateway lease, so concurrent writers must wait their turn.
   private async queued<T>(executor: string, work: () => Promise<T>): Promise<T> {
@@ -1281,639 +1160,52 @@ export class DispatchService {
     finally { done(); if (this.#asking.get(executor) === tail) this.#asking.delete(executor); }
   }
 
-  private async askSeat(by: Principal, run: string, registered: RegisteredExecutor, seat: NonNullable<ExecutorDefinition['probes']>['seats'][number], target: DeviceHelpTarget, asked: AskedLine): Promise<DeviceHelpResult> {
-    const d = registered.definition; const spec = d.probes!.help!;
-    const binding: JobBinding = {
-      job: newJob(), initiated_by: by.id, executor: registered.id, executor_digest: registered.resolved_digest, executor_source_digest: registered.digest, variables: registered.variables,
-      scope: { target: d.target, origin: new URL(d.endpoint).origin }, target_key: digestOfValue([...d.resources].sort()), input: null, user: by.id, resources: [],
-      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), manifest_sha256: d.manifest_sha256 },
+  private async askSeat(by: Principal, run: string, registered: RegisteredExecutor, seat: NonNullable<ExecutorDefinition['probes']>['seats'][number], target: DeviceHelpTarget, asked: AskedLine): Promise<DeviceHelpResult> { return deviceOperations.askSeat.call(this.deviceContext(), by, run, registered, seat, target, asked); }
+
+  private bedContext() { return {
+      options: this.options,
+      journal: this.journal,
+      registry: this.registry,
+      latestExecutorHold: this.latestExecutorHold.bind(this),
+      frozenValue: this.frozenValue.bind(this),
+      readBed: this.readBed.bind(this),
+      noteBed: this.noteBed.bind(this),
+      openBedHold: this.openBedHold.bind(this),
+      getBaseline: this.getBaseline.bind(this),
+      effectivelyComplete: this.effectivelyComplete.bind(this),
+      restoredReport: this.restoredReport.bind(this),
     };
-    const result = (positions: DeviceHelpPosition[], missing: DeviceHelpResult['missing']): DeviceHelpResult => ({ inventory: target.inventory, device: target.device, label: target.label, line: asked.line, mode: target.mode ?? null, words: asked.words, positions, missing });
-    await this.assertNoSecrets(binding);
-    const material = await this.secret(binding, d);
-    if (material === null) throw new Error('执行器凭据不可用');
-    const client = this.session(binding, d, material);
-    let lease: RemoteLease | undefined;
-    let stop = async () => {};
-    try {
-      await client.connect();
-      // Certification is version-bound and precedes any gateway lease or typed text.
-      const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
-      if (admin === undefined || !(await this.certified({ ...binding, acting_by: admin.id }, d, client, 'read_only'))) {
-        return result([], { fact: `执行器 ${registered.id} 的目标这个版本（${client.serverVersion ?? '没有报版本'}）没有认证“问位置不按回车、输入行总是清掉”（premises.read_only），所以没有往设备发任何字`, next_action: '管理员核对目标这一版的问位置工具，把版本和证据登记到执行器的 premises.read_only 后再问' });
-      }
-      lease = await this.acquire(binding, d, client, this.context(binding));
-      stop = this.heartbeat(binding, d, client, lease).stop;
-      const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
-      const positions: DeviceHelpPosition[] = [];
-      let missing: DeviceHelpResult['missing'] = null;
-      for (const prefix of asked.prefixes) {
-        let response: Exchange | undefined; let failure: 'refused' | 'unusable' | undefined; let failedSource: string | undefined;
-        for (let attempt = 1; attempt <= 3 && response === undefined && failure === undefined; attempt++) {
-          try { response = await client.declaredRead(spec.call, { ...context, line: prefix.text, seat_index: seat.index, ...(target.mode === undefined ? {} : { mode: target.mode }) }, `help.${seat.index}.${prefix.words}`); }
-          catch (error) {
-            const retry = canRetryRead(error, d, context);
-            if (error instanceof ToolReplyError) failedSource = error.source;
-            await this.journal.append(binding, 'help.retry', 'read', 'error', { seat: seat.seat, words: prefix.words, attempt, next_action: retry && attempt < 3 ? '自动重读这个位置，不按回车' : '目标明确拒绝，或原件无法保存、调用声明不合目标公开的参数；不再往下问' }, failedSource ? [failedSource] : []);
-            if (!retry) {
-              failure = error instanceof ToolReplyError ? 'refused' : 'unusable';
-              this.options.adminLog?.({ traceId: null, run, what: 'device_help', detail: `executor ${registered.id} seat ${seat.seat}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
-            } else if (attempt < 3) await this.sleep(d.poll_ms);
-          }
-        }
-        if (response === undefined) {
-          missing = failure === 'refused'
-            ? { fact: `目标拒绝了对“${prefix.text}”的这一问（原件已保存，管理员能读），不再往下问`, next_action: '管理员读受限原件，核对问位置的声明和目标的权限；写手可以改写这一行再问' }
-            : failure === 'unusable'
-              ? { fact: `对“${prefix.text}”的这一问没有完成（应答不完整、不能保存，或调用声明不合目标公开的参数；原因在管理员记录里），不再往下问`, next_action: '管理员核对受限原件、问位置的调用声明和本地存储后再问' }
-              : { fact: `对“${prefix.text}”的这一问连续三次没有取得完整应答，不再往下问`, next_action: '稍后再问一次；连续出现时请管理员检查执行器的连接' };
-          break;
-        }
-        const reading = readAnswer(spec, response.value);
-        const observed_at = response.received_at;
-        if (!reading.ok) {
-          await this.journal.append(binding, 'device_help', 'read', 'error', { seat: seat.seat, words: prefix.words, asked: prefix.text, anomaly: reading.why }, [response.source]);
-          this.options.adminLog?.({ traceId: null, run, what: 'device_help', detail: `executor ${registered.id} seat ${seat.seat}: ${reading.why}` } as AdminLogEntry);
-          positions.push({ prefix: prefix.text, words: prefix.words, next_word: prefix.next_word, described: false, caret_only: null, text: null, truncated: false, withheld: false, anomaly: reading.why, observed_at, reference: response.source, text_reference: null });
-          missing = { fact: `对“${prefix.text}”的应答没有确认“没有按回车、输入行已清掉”，所以不呈现它的内容，也不再往下问`, next_action: '管理员核对这个座位终端上的输入行和网关记录，确认干净、并核对目标这一版的认证后再问' };
-          break;
-        }
-        let text: string | null = null; let truncated = false; let withheld = false; let textReference: string | null = null; let unstored: string | null = null;
-        if (reading.text !== null) {
-          try {
-            const { body } = await this.saveText(binding, response.source, reading.text, 'device-help.txt');
-            textReference = `src:${body.sha256}`;
-            if (body.read_tier === 'retain_only') withheld = true;
-            else ({ text, truncated } = capText(reading.text));
-          } catch (error) {
-            unstored = '设备说明的文本原件没有存下来';
-            this.options.adminLog?.({ traceId: null, run, what: 'device_help', detail: `help text could not be stored: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
-          }
-        }
-        positions.push({ prefix: prefix.text, words: prefix.words, next_word: prefix.next_word, described: reading.text !== null, caret_only: reading.caret_only, text, truncated, withheld, anomaly: unstored, observed_at, reference: response.source, text_reference: textReference });
-        await this.journal.append(binding, 'device_help', 'read', unstored === null ? 'completed' : 'error', { seat: seat.seat, words: prefix.words, asked: prefix.text, described: reading.text !== null, caret_only: reading.caret_only, withheld, truncated, ...(unstored === null ? {} : { anomaly: unstored }) }, [response.source, ...(textReference === null ? [] : [textReference])]);
-        if (unstored !== null) {
-          missing = { fact: `对“${prefix.text}”的说明没能存成原件，所以不呈现，也不再往下问`, next_action: '管理员检查本地存储后再问' };
-          break;
-        }
-        if (reading.text !== null) break;
-      }
-      if (missing === null && positions.length > 0 && !positions.some((p) => p.described) && positions.length < asked.words) {
-        missing = { fact: `只问了最长的 ${positions.length} 个前缀（执行器声明的上限），都没有得到说明；更短的前缀没有问，不能说设备什么都不接受`, next_action: '把这一行截短后再问' };
-      }
-      return result(positions, missing);
-    } finally {
-      await stop();
-      if (lease) await this.release(binding, client, lease);
-    }
   }
+  private async frozenValue(binding: JobBinding, d: ExecutorDefinition, pointer: string): Promise<unknown> { return bedOperations.frozenValue.call(this.bedContext(), binding, d, pointer); }
+  async recordBaseline(by: Principal, executor: string, probeId: string, reason?: string | null): Promise<BedBaselineRecord> { return baselineOperations.recordBaseline.call({ registry: this.registry, options: this.options, now: this.now, getBaseline: this.getBaseline.bind(this), assertNoSecrets: this.assertNoSecrets.bind(this), secret: this.secret.bind(this), session: this.session.bind(this), acquire: this.acquire.bind(this), context: this.context.bind(this), heartbeat: this.heartbeat.bind(this), release: this.release.bind(this) }, by, executor, probeId, reason); }
 
-  private async frozenValue(binding: JobBinding, d: ExecutorDefinition, pointer: string): Promise<unknown> {
-    if (!d.manifest_sha256) return undefined;
-    const owner = await this.options.records.principals.get(binding.user);
-    if (!owner || owner.disabled) return undefined;
-    let source;
-    try { source = await this.options.records.artifacts.source(owner, d.manifest_sha256, { consumer: 'function' }); } catch { return undefined; }
-    if (!source?.bytes || sha256Hex(source.bytes) !== d.manifest_sha256) return undefined;
-    try { return at(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(source.bytes)), pointer); } catch { return undefined; }
-  }
-  async recordBaseline(by: Principal, executor: string, probeId: string, reason?: string | null): Promise<BedBaselineRecord> {
-    await this.registry.admin(by);
-    const registered = await this.registry.get(executor);
-    if (!registered?.definition.enabled) throw new Error('执行器不可用或已禁用');
-    const d = registered.definition;
-    const spec = d.bed_state;
-    if (!spec) throw new Error('执行器未声明 bed_state');
-    const item = spec.items.find(i => i.id === probeId);
-    if (!item) throw new Error(`执行器未声明探针 ${probeId}`);
+  async setBaseline(by: Principal, executor: string, probeId: string, text: string, reason?: string | null): Promise<BedBaselineRecord> { return baselineOperations.setBaseline.call(this, by, executor, probeId, text, reason); }
 
-    const binding: JobBinding = {
-      job: newJob(),
-      initiated_by: by.id,
-      executor,
-      executor_digest: registered.resolved_digest,
-      executor_source_digest: registered.digest,
-      variables: registered.variables,
-      scope: { target: d.target, origin: new URL(d.endpoint).origin },
-      target_key: digestOfValue([...d.resources].sort()),
-      input: null,
-      user: by.id,
-      resources: [],
-      context: { ...environmentOf(d.precheck_context), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) },
-    };
-    await this.assertNoSecrets(binding);
-    const material = await this.secret(binding, d);
-    if (material === null) throw new Error('执行器凭据不可用');
-    const client = this.session(binding, d, material);
-    let lease: RemoteLease | undefined;
-    let stop = async () => {};
-    try {
-      await client.connect();
-      lease = await this.acquire(binding, d, client, this.context(binding));
-      stop = this.heartbeat(binding, d, client, lease).stop;
-      const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
-      const response = await client.declaredRead(item.call, context, `bed.baseline.${item.id}`);
-      const raw = at(response.value, item.output ?? '/output');
-      if (typeof raw !== 'string') throw new Error(`探针 ${probeId} 未返回文本内容（指针 ${item.output ?? '/output'}）`);
-      const text = captureText(raw, item.lead, item.trail);
-      const sha256 = sha256Hex(new TextEncoder().encode(text));
-      const artifact = await this.options.records.artifacts.ingest({
-        bytes: new TextEncoder().encode(text),
-        mediaType: 'text/plain',
-        origin: { upload: { session: 'bed-baseline' } },
-        author: { user: by.id },
-        provenanceType: 'observed',
-        visibility: { readers: [by.id], admins: true, packs: [], shareable: false },
-      });
-      const reference = `art:${artifact.body.sha256}`;
-      const now = this.now().toISOString();
-      const recordBody: BedBaselineRecord = {
-        executor,
-        probe: probeId,
-        sha256,
-        reference,
-        text,
-        recorded_by: by.id,
-        created_at: now,
-        reason: reason ?? null,
-      };
-      await this.options.records.store.put<ActionBody>({
-        kind: 'action',
-        schema: 'action@1',
-        provenance: 'observed',
-        created_at: now,
-        body: {
-          action: 'validate',
-          run: null,
-          item: null,
-          inputs: [reference, response.source],
-          component: 'dispatch@1',
-          lease: null,
-          started_at: now,
-          ended_at: now,
-          result: 'completed',
-          error_code: null,
-          acceptance: null,
-          codes: [],
-          detail: {
-            phase: 'bed_baseline',
-            ...recordBody,
-          },
-        },
-        index: [
-          { key: 'bed.baseline', value: `${executor}:${probeId}` },
-          { key: 'bed.baseline.executor', value: executor },
-          { key: 'dispatch.phase', value: 'bed_baseline' },
-        ],
-      });
-      return recordBody;
-    } finally {
-      await stop();
-      if (lease) await this.release(binding, client, lease);
-    }
-  }
+  async getBaseline(executor: string, probeId: string): Promise<BedBaselineRecord | null> { return baselineOperations.getBaseline.call(this, executor, probeId); }
 
-  async setBaseline(by: Principal, executor: string, probeId: string, text: string, reason?: string | null): Promise<BedBaselineRecord> {
-    await this.registry.admin(by);
-    const artifact = await this.options.records.artifacts.ingest({
-      bytes: new TextEncoder().encode(text),
-      mediaType: 'text/plain',
-      origin: { upload: { session: 'bed-baseline' } },
-      author: { user: by.id },
-      provenanceType: 'observed',
-      visibility: { readers: [by.id], admins: true, packs: [], shareable: false },
-    });
-    const sha256 = sha256Hex(new TextEncoder().encode(text));
-    const reference = `art:${artifact.body.sha256}`;
-    const now = this.now().toISOString();
-    const recordBody: BedBaselineRecord = {
-      executor,
-      probe: probeId,
-      sha256,
-      reference,
-      text,
-      recorded_by: by.id,
-      created_at: now,
-      reason: reason ?? null,
-    };
-    await this.options.records.store.put<ActionBody>({
-      kind: 'action',
-      schema: 'action@1',
-      provenance: 'observed',
-      created_at: now,
-      body: {
-        action: 'validate',
-        run: null,
-        item: null,
-        inputs: [reference],
-        component: 'dispatch@1',
-        lease: null,
-        started_at: now,
-        ended_at: now,
-        result: 'completed',
-        error_code: null,
-        acceptance: null,
-        codes: [],
-        detail: {
-          phase: 'bed_baseline',
-          ...recordBody,
-        },
-      },
-      index: [
-        { key: 'bed.baseline', value: `${executor}:${probeId}` },
-        { key: 'bed.baseline.executor', value: executor },
-        { key: 'dispatch.phase', value: 'bed_baseline' },
-      ],
-    });
-    return recordBody;
-  }
+  async listBaselines(by: Principal, executor?: string): Promise<BedBaselineRecord[]> { return baselineOperations.listBaselines.call(this, by, executor); }
 
-  async getBaseline(executor: string, probeId: string): Promise<BedBaselineRecord | null> {
-    const rows = await this.options.records.store.findMany<ActionBody>({
-      kind: 'action',
-      key: 'bed.baseline',
-      values: [`${executor}:${probeId}`],
-    });
-    const last = rows.at(-1);
-    if (!last || last.body.detail.phase !== 'bed_baseline') return null;
-    return last.body.detail as unknown as BedBaselineRecord;
-  }
+  async showBaseline(by: Principal, executor: string, probeId: string): Promise<BedBaselineRecord> { return baselineOperations.showBaseline.call(this, by, executor, probeId); }
 
-  async listBaselines(by: Principal, executor?: string): Promise<BedBaselineRecord[]> {
-    await this.registry.admin(by);
-    let rows: Array<{ body: ActionBody; created_at?: string }>;
-    if (executor) {
-      rows = await this.options.records.store.findMany<ActionBody>({
-        kind: 'action',
-        key: 'bed.baseline.executor',
-        values: [executor],
-      });
-    } else {
-      rows = await this.options.records.store.findMany<ActionBody>({
-        kind: 'action',
-        key: 'dispatch.phase',
-        values: ['bed_baseline'],
-      });
-    }
-    const map = new Map<string, BedBaselineRecord>();
-    for (const row of rows) {
-      if (row.body.detail.phase === 'bed_baseline') {
-        const record = row.body.detail as unknown as BedBaselineRecord;
-        map.set(`${record.executor}:${record.probe}`, record);
-      }
-    }
-    return [...map.values()].sort((a, b) => (a.executor === b.executor ? a.probe.localeCompare(b.probe) : a.executor.localeCompare(b.executor)));
-  }
-
-  async showBaseline(by: Principal, executor: string, probeId: string): Promise<BedBaselineRecord> {
-    await this.registry.admin(by);
-    const baseline = await this.getBaseline(executor, probeId);
-    if (!baseline) throw new Error(`未找到执行器 ${executor} 探针 ${probeId} 的登记基线`);
-    return baseline;
-  }
-
-  private async readBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, when: 'pre' | 'post'): Promise<BedRead[]> {
-    const spec = d.bed_state;
-    if (!spec) return [];
-    const reads: BedRead[] = [];
-    for (const item of spec.items) {
-      try {
-        const response = await client.declaredRead(item.call, context, `bed.${when}.${item.id}`);
-        const raw = at(response.value, item.output ?? '/output') ?? at(response.value, '/output');
-        const text = typeof raw === 'string' ? captureText(raw, item.lead, item.trail) : undefined;
-        let sha256: string | undefined;
-        let reference: string | undefined;
-        if (text !== undefined) {
-          const textBytes = new TextEncoder().encode(text);
-          sha256 = sha256Hex(textBytes);
-          const artifact = await this.options.records.artifacts.ingest({
-            bytes: textBytes,
-            mediaType: 'text/plain',
-            origin: { upload: { session: `bed-${when}` } },
-            author: { user: binding.user },
-            provenanceType: 'observed',
-            visibility: { readers: [binding.user], admins: true, packs: [], shareable: false },
-          });
-          reference = `art:${artifact.body.sha256}`;
-        }
-        const canonical = item.parser ? parseReply(item, response.value) : undefined;
-        if (text !== undefined) {
-          reads.push({
-            id: item.id,
-            ok: true,
-            text,
-            sha256,
-            reference,
-            canonical: canonical ?? { kind: 'address_table', addresses: [] },
-            value: response.value,
-            source: response.source,
-          });
-        } else if (canonical !== null && canonical !== undefined) {
-          reads.push({
-            id: item.id,
-            ok: true,
-            canonical,
-            value: response.value,
-            source: response.source,
-          });
-        } else {
-          reads.push({ id: item.id, ok: false, value: response.value, source: response.source });
-        }
-      } catch (error) {
-        reads.push({ id: item.id, ok: false, source: error instanceof ToolReplyError ? error.source : null });
-      }
-    }
-    return reads;
-  }
-  private async noteBed(binding: JobBinding, when: 'pre' | 'post', bed: string, reads: readonly BedRead[], differences: BedReport['differences']): Promise<Record<string, Canonical>> {
-    const canonical = Object.fromEntries(reads.flatMap(read => read.ok ? [[read.id, read.canonical] as const] : []));
-    const sources = reads.flatMap(read => read.source ? [read.source] : []);
-    await this.journal.append(binding, 'bed_snapshot', 'read', 'completed', { when, bed, canonical, differences, sources, reads }, sources);
-    return canonical;
-  }
-  private async openBedHold(bed: string): Promise<{ job: string; pre: Record<string, Canonical>; pre_reads?: BedRead[] } | null> {
-    const rows = await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.phase', values: ['bed_hold'] });
-    const mine = rows.filter(row => row.body.detail.bed === bed).sort((left, right) => left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1 : 0);
-    const last = mine.at(-1);
-    const pre = last?.body.detail.pre;
-    if (!last || last.body.detail.state !== 'open' || !pre || typeof pre !== 'object' || Array.isArray(pre) || typeof last.body.detail.job !== 'string') return null;
-    return { job: last.body.detail.job, pre: pre as Record<string, Canonical>, pre_reads: last.body.detail.pre_reads as BedRead[] | undefined };
-  }
+  private async readBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, when: 'pre' | 'post'): Promise<BedRead[]> { return bedOperations.readBed.call(this.bedContext(), binding, d, client, context, when); }
+  private async noteBed(binding: JobBinding, when: 'pre' | 'post', bed: string, reads: readonly BedRead[], differences: BedReport['differences']): Promise<Record<string, Canonical>> { return bedOperations.noteBed.call(this.bedContext(), binding, when, bed, reads, differences); }
+  private async openBedHold(bed: string): Promise<{ job: string; pre: Record<string, Canonical>; pre_reads?: BedRead[] } | null> { return bedOperations.openBedHold.call(this.bedContext(), bed); }
 
   /** Latest bed_hold for this executor. An open row is the hold an administrator can clear; a later clear hides it. */
-  private async latestExecutorHold(executor: string): Promise<{ job: string; bed: string; state: string } | null> {
-    const rows = await this.options.records.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.executor', values: [executor] });
-    const holds = rows.filter(row => row.body.detail.phase === 'bed_hold' && typeof row.body.detail.bed === 'string' && typeof row.body.detail.job === 'string' && typeof row.body.detail.state === 'string');
-    holds.sort((left, right) => left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1 : 0);
-    const last = holds.at(-1);
-    if (!last) return null;
-    return { job: String(last.body.detail.job), bed: String(last.body.detail.bed), state: String(last.body.detail.state) };
-  }
+  private async latestExecutorHold(executor: string): Promise<{ job: string; bed: string; state: string } | null> { return bedOperations.latestExecutorHold.call(this.bedContext(), executor); }
 
   /** Append a clear for the executor's open bed hold. Does not rewrite the open record. */
-  async clearBedHold(by: Principal, executor: string, reason: string): Promise<{ cleared: false } | { cleared: true; job: string; bed: string }> {
-    await this.registry.admin(by);
-    if (!reason.trim() || reason.includes('\n') || reason.includes('\r')) throw new Error('结清理由必须是一行非空说明');
-    const text = reason.trim();
-    const open = await this.latestExecutorHold(executor);
-    if (!open || open.state !== 'open') return { cleared: false };
-    const binding = await this.journal.binding(open.job);
-    await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: open.bed, state: 'clear', method: 'admin', reason: text, cleared_by: by.id, held_job: open.job });
-    return { cleared: true, job: open.job, bed: open.bed };
-  }
+  async clearBedHold(by: Principal, executor: string, reason: string): Promise<{ cleared: false } | { cleared: true; job: string; bed: string }> { return bedOperations.clearBedHold.call(this.bedContext(), by, executor, reason); }
   /** Pre-dispatch bed gate. A residue, an open recovery diff, or a missing probe refuses before any intent. */
-  private async gateBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> {
-    const spec = d.bed_state;
-    if (!spec) return;
-    const bed = spec.bed ? await this.frozenValue(binding, d, spec.bed) : undefined;
-    const name = spec.bed ? bedName(bed) : binding.executor;
-    if (spec.bed && !name) throw new PrecheckFactError('冻结清单里没有声明的自动化测试环境对象或自动化测试环境名', '管理员核对床面指针和已发布的自动化测试环境清单，补齐自动化测试环境名后再派发；尚未提交');
-    const bedNameOrExecutor = name ?? binding.executor;
-    const reads = await this.readBed(binding, d, client, context, 'pre');
-
-    const declaration = await this.frozenValue(binding, d, '/surface');
-
-    // Missing probe check (when not using surface judgment)
-    if (declaration === undefined) {
-      const missing = reads.filter(read => !read.ok).map(read => read.id);
-      if (missing.length) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-        throw new PrecheckFactError(missingProbeFact(missing), unknownSteps(spec.items, missing));
-      }
-    }
-
-    // Open bed hold check. Overlapping probes compare held text; probes added since the hold compare a registered baseline.
-    const hold = await this.openBedHold(bedNameOrExecutor);
-    if (hold) {
-      const heldReads = hold.pre_reads?.filter(read => read.ok && 'text' in read && typeof read.text === 'string') ?? [];
-      const ignoredNote = (ids: readonly string[]) => ids.length ? ignoredHoldProbes(ids) : '';
-      const withNote = (fact: string, ignored: readonly string[]) => [fact, ignoredNote(ignored)].filter(Boolean).join('；');
-      if (heldReads.length > 0) {
-        const baselines = new Map<string, { text: string; sha256: string }>();
-        for (const item of spec.items) {
-          if (heldReads.some(read => read.id === item.id)) continue;
-          const baseline = await this.getBaseline(binding.executor, item.id);
-          if (baseline) baselines.set(item.id, { text: baseline.text, sha256: baseline.sha256 });
-        }
-        const compared = compareHeldProbes(
-          heldReads.flatMap(read => read.ok && 'text' in read && typeof read.text === 'string' ? [{ id: read.id, text: read.text, sha256: 'sha256' in read ? read.sha256 : undefined }] : []),
-          spec.items.map(item => {
-            const read = reads.find(entry => entry.id === item.id);
-            const text = read?.ok && 'text' in read && typeof read.text === 'string' ? read.text : undefined;
-            return { id: item.id, text, sha256: read?.ok && 'sha256' in read ? read.sha256 : undefined };
-          }),
-          baselines,
-        );
-        if (compared.outcome === 'disjoint') {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-          throw new PrecheckFactError(withNote(disjointHoldFact(hold.job, compared.heldIds, compared.currentIds), compared.ignored), holdClearNext(binding.executor));
-        }
-        if (compared.outcome === 'unread') {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-          throw new PrecheckFactError(missingProbeFact(compared.unread), unknownSteps(spec.items, compared.unread));
-        }
-        if (compared.outcome === 'no_baseline') {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
-          throw new PrecheckFactError(withNote(holdMissingBaselineFact(compared.missingBaseline), compared.ignored), unregisteredBaselineNext(binding.executor, compared.missingBaseline));
-        }
-        if (compared.outcome === 'unrestored') {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, compared.differences);
-          const lines = compared.differences.flatMap(diff => diff.diff_lines ?? []).slice(0, 5).join('；');
-          throw new PrecheckFactError(withNote([unrestoredFact(compared.differences), lines].filter(Boolean).join('；'), compared.ignored), unrestoredHoldNext(spec.items, compared.differences.map(diff => diff.item), binding.executor));
-        }
-        await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(compared.ignored.length ? { ignored_probes: compared.ignored, note: ignoredHoldProbes(compared.ignored) } : {}) });
-      } else {
-        const heldIds = Object.keys(hold.pre);
-        const currentIds = spec.items.map(item => item.id);
-        const currentSet = new Set(currentIds);
-        const ignored = heldIds.filter(id => !currentSet.has(id));
-        const overlap = spec.items.filter(item => Object.hasOwn(hold.pre, item.id));
-        if (overlap.length === 0) {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-          throw new PrecheckFactError(withNote(disjointHoldFact(hold.job, heldIds, currentIds), ignored), holdClearNext(binding.executor));
-        }
-        const outstanding = againstStored(overlap, hold.pre, reads);
-        if (outstanding === null) {
-          const unread = overlap.filter(item => !reads.find(read => read.id === item.id)?.ok).map(item => item.id);
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-          throw new PrecheckFactError(missingProbeFact(unread.length ? unread : overlap.map(item => item.id)), unknownSteps(spec.items, unread.length ? unread : overlap.map(item => item.id)));
-        }
-        const added = spec.items.filter(item => !Object.hasOwn(hold.pre, item.id));
-        const missingBaseline: string[] = [];
-        for (const item of added) {
-          const read = reads.find(entry => entry.id === item.id);
-          const text = read?.ok && 'text' in read && typeof read.text === 'string' ? read.text : undefined;
-          const baseline = await this.getBaseline(binding.executor, item.id);
-          if (!baseline || text === undefined) { missingBaseline.push(item.id); continue; }
-          if (text !== baseline.text) outstanding.push({ item: item.id, kind: 'changed', identity: item.id, diff_lines: lineDiff(baseline.text, text), pre_sha256: baseline.sha256, post_sha256: read?.ok && 'sha256' in read ? read.sha256 : undefined });
-        }
-        if (missingBaseline.length) {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
-          throw new PrecheckFactError(withNote(holdMissingBaselineFact(missingBaseline), ignored), unregisteredBaselineNext(binding.executor, missingBaseline));
-        }
-        if (outstanding.length) {
-          await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, outstanding);
-          throw new PrecheckFactError(withNote(unrestoredFact(outstanding), ignored), unrestoredHoldNext(spec.items, outstanding.map(diff => diff.item), binding.executor));
-        }
-        await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: bedNameOrExecutor, state: 'clear', pre: hold.pre, ...(ignored.length ? { ignored_probes: ignored, note: ignoredHoldProbes(ignored) } : {}) });
-      }
-    }
-
-    // Baseline residue check
-    const itemBaselines = await Promise.all(spec.items.map(async item => ({
-      item,
-      baseline: await this.getBaseline(binding.executor, item.id),
-      read: reads.find(r => r.id === item.id),
-    })));
-
-    const anyRegistered = itemBaselines.some(ib => ib.baseline !== null);
-    const anyWithoutParser = spec.items.some(item => !item.parser);
-
-    if (anyRegistered || anyWithoutParser) {
-      const unregistered = itemBaselines.filter(ib => !ib.baseline).map(ib => ib.item.id);
-      if (unregistered.length) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-        throw new PrecheckFactError(
-          unregisteredBaselineFact(unregistered),
-          unregisteredBaselineNext(binding.executor, unregistered)
-        );
-      }
-
-      const captureDiffs: Difference[] = [];
-      for (const ib of itemBaselines) {
-        const text = ib.read?.ok && 'text' in ib.read && typeof ib.read.text === 'string' ? ib.read.text : undefined;
-        if (text === undefined || text !== ib.baseline!.text) {
-          const diffLines = text !== undefined ? lineDiff(ib.baseline!.text, text) : ['无法读取当前回显原文'];
-          captureDiffs.push({
-            item: ib.item.id,
-            kind: 'changed',
-            identity: ib.item.id,
-            diff_lines: diffLines,
-            pre_sha256: ib.baseline!.sha256,
-            post_sha256: ib.read?.ok && 'sha256' in ib.read ? (ib.read.sha256 as string) : undefined,
-          });
-        }
-      }
-
-      await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, captureDiffs);
-      if (captureDiffs.length) {
-        throw new PrecheckFactError(
-          residueCaptureFact(captureDiffs),
-          residueCaptureNext(spec.items, captureDiffs, binding.executor)
-        );
-      }
-      return;
-    }
-
-    // Fallback: legacy parser check for tests declaring parser and no registered baseline
-    if (declaration === undefined) {
-      const undeclared = spec.items.filter(item => {
-        if (!item.parser) return true;
-        if (item.parser.kind === 'address_table') return false;
-        if (item.parser.kind === 'text_table' && (item.parser.address || item.parser.manifest_lists || item.parser.manifest_device || item.parser.manifest_devices || item.parser.columns.some(c => c.cidr))) return false;
-        const snapshotOnly = 'snapshot_only' in item.parser && item.parser.snapshot_only;
-        if (snapshotOnly) return false;
-        const manifestRows = 'manifest_rows' in item.parser && item.parser.manifest_rows ? at(bed, item.parser.manifest_rows) : undefined;
-        return !Array.isArray(manifestRows);
-      });
-      if (undeclared.length) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-        throw new PrecheckFactError(undeclaredBaselineFact(undeclared.map(item => item.id)), undeclaredBaselineNext(spec.items, undeclared.map(item => item.id)));
-      }
-    }
-    if (declaration !== undefined) {
-      const unread = reads.filter(read => read.value === undefined).map(read => read.id);
-      if (unread.length) {
-        await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-        throw new PrecheckFactError(missingProbeFact(unread), unknownSteps(spec.items, unread));
-      }
-      const judged = judgeBedSurface(declaration, bed, reads);
-      const residueDiffs = judged.ok ? judged.residues.map(residue => ({ item: residue.probe, kind: 'extra' as const, identity: residue.identity })) : [];
-      await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, residueDiffs);
-      if (!judged.ok) throw new PrecheckFactError(judged.missing, judged.next);
-      if (!judged.residues.length) return;
-      const probes = [...new Set(judged.residues.map(residue => residue.probe))].join('、');
-      if (judged.automatic && judged.cleanup) {
-        await this.journal.append(binding, 'bed_cleanup', 'dispatch', 'completed', { executed: false, authorization: 'required', actions: judged.cleanup });
-        const steps = judged.cleanup.map(action => `座位 ${action.seat} 的 ${action.command}（粒度 ${action.granularity}）`).join('、');
-        throw new PrecheckFactError(`床面残留可自动清理。来源探针 ${probes}`, `下一步经派发和授权执行清理：${steps}。Hub 不执行这些命令`);
-      }
-      const exit = judged.exits.map(item => `由${item.owner}对${item.object}${item.action}，期限 ${item.deadline}`).join('；');
-      throw new PrecheckFactError(`床面残留不可自动清理。来源探针 ${probes}`, exit || '下一步：为该残留类补上出口后再派发');
-    }
-    const diffs = againstBaseline(spec.items, bed, reads);
-    if (diffs === null) {
-      await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, []);
-      throw new PrecheckFactError(missingProbeFact(spec.items.map(item => item.id)), unknownSteps(spec.items, spec.items.map(item => item.id)));
-    }
-    await this.noteBed(binding, 'pre', bedNameOrExecutor, reads, diffs);
-    if (diffs.length) throw new PrecheckFactError(residueFact(diffs), cleanupSteps(spec.items, diffs.map(diff => diff.item)));
-  }
+  private async gateBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<void> { return bedOperations.gateBed.call(this.bedContext(), binding, d, client, context); }
   /** An effective complete already sealed this job. A later finish must not release the lease or append another conclusion. */
-  private async effectivelyComplete(job: string): Promise<boolean> {
-    const end = eventOf(await this.journal.events(job), 'complete');
-    return end?.body.detail.done === true && end.body.detail.outcome === 'effective';
-  }
+  private async effectivelyComplete(job: string): Promise<boolean> { return bedOperations.effectivelyComplete.call(this.bedContext(), job); }
 
   /** The post snapshot that already recorded a restored bed, if this job is sealed. */
-  private async restoredReport(job: string): Promise<BedReport | null> {
-    if (!await this.effectivelyComplete(job)) return null;
-    const snap = [...await this.journal.events(job)].reverse().find(event => event.body.detail.phase === 'bed_snapshot' && event.body.detail.when === 'post' && Array.isArray(event.body.detail.differences) && event.body.detail.differences.length === 0 && Array.isArray(event.body.detail.reads) && event.body.detail.reads.length > 0 && event.body.detail.reads.every(read => object(read) && read.ok === true));
-    if (!snap) return null;
-    return { bed: typeof snap.body.detail.bed === 'string' ? snap.body.detail.bed : '', pre: 'passed', recovery: 'restored', differences: [], originals: { pre: [], post: [] }, limits: [], next_action: null };
-  }
+  private async restoredReport(job: string): Promise<BedReport | null> { return bedOperations.restoredReport.call(this.bedContext(), job); }
 
   /** Post-terminal snapshot. Pass/fail stays as reported; only the shared-bed limit moves. */
-  private async finishBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<BedReport | null> {
-    if (await this.effectivelyComplete(binding.job)) return this.restoredReport(binding.job);
-    const spec = d.bed_state;
-    if (!spec) return null;
-    const events = await this.journal.events(binding.job);
-    const pre = [...events].reverse().find(event => event.body.detail.phase === 'bed_snapshot' && event.body.detail.when === 'pre' && event.body.detail.differences instanceof Array && (event.body.detail.differences as unknown[]).length === 0);
-    const stored = pre?.body.detail.canonical;
-    const name = typeof pre?.body.detail.bed === 'string' ? pre.body.detail.bed : null;
-    const prior = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored as Record<string, Canonical> : null;
-    const preReads = pre?.body.detail.reads as BedRead[] | undefined;
-    const reads = await this.readBed(binding, d, client, context, 'post');
-    const sources = { pre: pre?.body.inputs ?? [], post: reads.flatMap(read => read.source ? [read.source] : []) };
-    const missing = !name || reads.some(read => !read.ok);
-    let diffs: Difference[] | null = null;
-    if (!missing && name) {
-      const hasTextCaptures = reads.some(r => r.ok && 'text' in r && typeof r.text === 'string');
-      if (hasTextCaptures && preReads) {
-        diffs = [];
-        for (const item of spec.items) {
-          const preRead = preReads.find(r => r.id === item.id);
-          const postRead = reads.find(r => r.id === item.id);
-          if (!preRead || !preRead.ok || !postRead || !postRead.ok || !('text' in preRead) || !('text' in postRead) || preRead.text === undefined || postRead.text === undefined) {
-            diffs = null;
-            break;
-          }
-          if (preRead.text !== postRead.text) {
-            const diffLines = lineDiff(preRead.text, postRead.text);
-            diffs.push({
-              item: item.id,
-              kind: 'changed',
-              identity: item.id,
-              diff_lines: diffLines,
-              pre_sha256: preRead.sha256,
-              post_sha256: postRead.sha256,
-            });
-          }
-        }
-      } else if (prior) {
-        diffs = againstStored(spec.items, prior, reads);
-      }
-    }
-    const recovery: BedReport['recovery'] = missing || diffs === null ? 'unknown' : diffs.length ? 'unrestored' : 'restored';
-    const differences = diffs ?? [];
-    const late = await this.restoredReport(binding.job);
-    if (await this.effectivelyComplete(binding.job)) return late;
-    if (name) await this.noteBed(binding, 'post', name, reads, differences);
-    if (name && recovery !== 'restored') await this.journal.append(binding, 'bed_hold', 'validate', 'completed', { bed: name, state: 'open', reason: recovery, pre: prior, differences, pre_reads: preReads });
-    const ids = recovery === 'unknown' ? spec.items.map(item => item.id) : differences.map(diff => diff.item);
-    return { bed: name ?? '', pre: 'passed', recovery, differences, originals: sources, limits: bedLimits(recovery), next_action: recovery === 'restored' ? null : recovery === 'unknown' ? unknownSteps(spec.items, ids) : cleanupSteps(spec.items, ids) };
-  }
+  private async finishBed(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>): Promise<BedReport | null> { return bedOperations.finishBed.call(this.bedContext(), binding, d, client, context); }
   private async extraPrechecks(binding: JobBinding, d: ExecutorDefinition, client: RpcClient, context: Record<string, unknown>, collectAll: boolean): Promise<boolean> {
     let verified = true;
     for (const [index, check] of d.precheck_reads.entries()) {

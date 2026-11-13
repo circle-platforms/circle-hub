@@ -1,5 +1,5 @@
 import { productVariableProblems, variableUsesOfRoot } from '../knowledge/api.ts';
-import type { PackRegistry } from '../runs/api.ts';
+import { readPackDirectory, packSchema, type PackRegistry } from '../runs/api.ts';
 // Administrator-only named deployment commands. Arguments never carry values and diagnostics never quote them.
 import { readFile } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
@@ -365,7 +365,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
             for(const user of productUsers){
               // Other unset declarations use their synthetic defaults only for this size check, never for a real sync.
               const candidate=new Map((user.product.variables??[]).map(v=>[v.name,values.has(v.name)?values.get(v.name):v.default]));
-              const problems=productVariableProblems(user.product,candidate,undefined,name!);
+              const problems=productVariableProblems({ readPackDirectory, packSchema },user.product,candidate,undefined,name!);
               if(problems.length)throw new CliError(`包 ${user.pack}@${user.version}：${problems.join('；')}`);
             }
             for (const definition of affected) {
@@ -462,7 +462,7 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
               const current=byName.get(v.name);
               return [v.name,current?.definition?.schema==='variable@1'&&!current.decision.body.revoked?current.definition.value:v.default];
             }));
-            const problems=productVariableProblems(owner.product,candidate,undefined,name);
+            const problems=productVariableProblems({ readPackDirectory, packSchema },owner.product,candidate,undefined,name);
             if(problems.length)notes.push(...problems.map(p=>`值不合包 ${owner.pack}：${p}；真实同步会拒绝`));
           }
           s.out(versionsLine(item)+'；'+(used.length||owners.length?'使用者 '+[...used,...notes].join('、'):'设置了，没有使用者'));

@@ -11,7 +11,7 @@ export { createPackRegistry, PACK_VERSION_SCHEMA, productNameKey } from './packs
 export type { ActiveProduct, OpenedPack, PackRegistry, PackRegistryOptions, RegistryRecords } from './packs/registry.ts';
 export { PersonalPacks } from './packs/personal.ts';
 
-export { createPackCatalog, createPacksPort, createWorkflowStore, boundProducts, packSummary } from './packs/ports.ts';
+export { createPackCatalog, createPacksPort, createWorkflowStore, boundProducts, packSummary, localToolsOf } from './packs/ports.ts';
 /** T02 R[1] for a run: check id -> marks (author_samples_only) of a LoadedWorkflow, as its stored publish report has them. */
 export { publishCheckMarks } from './packs/marks.ts';
 
@@ -75,6 +75,6 @@ export type { FileContent, PackDescription, WrittenManifest, WrittenPack } from 
 export {recheckEffectChecks} from './engine/recheck-effect.ts';
 export { packSchema } from './engine/slots.ts';
 
-export {runById} from './engine/store.ts';
+export {runById, listRunRecords, resultsOf} from './engine/store.ts';
 export { backfillCitations, citedNodeKey, personalCitedEntryKey, citationIndex, citationsComplete, countCitations, citationsIndexedSince, type CitationCount } from './engine/store.ts';
 export {canViewRun} from './engine/readers.ts';

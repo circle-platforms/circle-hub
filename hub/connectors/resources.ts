@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // Resource administration (D01 R[6], D07 resources, B04 resource configuration). A resource is a deployment instance of a
 // system pack: its definition (resource@1) is stored as content-addressed canonical JSON in the object store and put in
 // force by a resource_config authorization bound to that digest; every change is a new definition and a new decision, and a
@@ -363,12 +364,16 @@ export class ResourceRegistry {
     return { ...listing(state, true), credentials };
   }
 
-  /** Admins: every resource with addresses; any other valid account: the same rows without addresses. */
+  /** Admins manage every resource; other valid accounts see assigned resources without addresses. */
   async list(by: Principal): Promise<ResourceListing[]> {
     const viewer = await this.#viewer(by);
     if (viewer === null) return [];
-    const admin = viewer.role === 'admin';
-    return (await this.states()).map((state) => listing(state, admin));
+    const admin = isAdmin(viewer);
+    const rows: ResourceListing[] = [];
+    for (const state of await this.states()) {
+      if (admin || await this.#o.authorizations.canUseResource(viewer.id, state.resource.id)) rows.push(listing(state, admin));
+    }
+    return rows;
   }
 
   /** Every resource, enabled or not, by name (no access check: for the connectors themselves). */
@@ -531,7 +536,7 @@ export class ResourceRegistry {
 
   async #admin(by: Principal): Promise<User> {
     const user = await this.#viewer(by);
-    if (user === null || user.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能配置资源和凭据');
+    if (user === null || !isAdmin(user)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能配置资源和凭据');
     return user;
   }
 
