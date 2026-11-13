@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
-import type { LoadedWorkflow } from '../api.ts';
+import type { LoadedWorkflow } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal } from './errors.ts';
 import { grantLeases, type LeaseRequest } from './start.ts';
