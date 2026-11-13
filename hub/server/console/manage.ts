@@ -148,6 +148,14 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
       const origins = pairs(form, 'origins', '地址');
       if (origins.length === 0) throw new FormError('至少写一行 角色=地址');
       const plaintext = form.get('plaintext').split(/[,，\s]+/).filter(Boolean);
+      // system-add audience (decision 1500 / interfaces §4.6): none omits flags; all → --all; team → --team=.
+      // Values are inlined so manage does not import team-actions (team-actions imports manage).
+      const audience = form.get('audience') || 'none';
+      const audienceFlags =
+        audience === 'none' ? [] :
+        audience === 'all' ? ['--all'] :
+        audience === 'team' ? [flag('team', word(form, 'team', '团队'))] :
+        (() => { throw new FormError('请选择使用对象'); })();
       return {
         argv: [
           'resource', 'add', word(form, 'system_pack', uiLabelOf('pack_kind', 'system')),
@@ -157,6 +165,7 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
           ...plaintext.map((role) => flag('allow-plaintext', role)),
           ...pairs(form, 'settings', '设置').map((line) => flag('setting', line)),
           ...pairs(form, 'credentials', '凭据').map((line) => flag('credential', line)),
+          ...audienceFlags,
         ],
       };
     },
@@ -323,11 +332,16 @@ export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | 
     : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
   const trust = ctx.secure ? '把颁发机构证书加入 trust_cert_files。' : '';
   const connected = html`<p>${link('/console/team','查看团队')}</p>`;
-  const after = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
+  const afterMember = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
     ? ''
     : form.get('connect') === 'token'
       ? card({ title: '写入成员的客户端',hint:'把令牌保存为成员客户端的密钥 CIRCLE_HUB_TOKEN，再按下面 mcp_servers 格式的条目填写 MCP 地址。'+trust+'完成连接后可在团队页查看最近使用时间。', meta: '访问令牌' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx))}</code></pre>${connected}`)
       : card({ title: '成员的客户端如何连接',hint:'按下面 mcp_servers 格式的条目在成员的客户端中填写 MCP 地址。'+trust+'首次连接时在浏览器连接确认页输入邀请码并确认身份，完成后可在团队页查看。', meta: 'MCP 标准连接确认' }, html`<pre class="ch-quote"><code>${circleEntry(originOf(ctx), false)}</code></pre>${connected}`);
+  // interfaces §4.6: 先不分配 result says nobody can use it yet.
+  const afterSystem = last.code === 0 && action === ACTIONS['system-add'] && form !== undefined && (form.get('audience') === 'none' || form.get('audience') === '')
+    ? card({ title: '使用对象' }, html`<p>还没有分配，暂时谁都不能使用。可在连接页或团队页再分配。</p>`)
+    : '';
+  const after = html`${afterMember}${afterSystem}`;
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
     body: page({...actionChrome(ctx, action),...(last.code===0?{notice:doneNotice(action.title)}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),

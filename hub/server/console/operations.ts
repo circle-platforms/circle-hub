@@ -16,6 +16,8 @@ import { forgetTrialMessage, trialCard, type ForgetOutcome, type TrialOutcome } 
 import { card, chip, stepper as steps, when } from './ui.ts';
 import { segments } from './components.ts';
 import { adminDoPath, knowledgeSpacePath, operationsPackPath, operationsPath } from './routes.ts';
+import { RESOURCE_AUDIENCE, RESOURCE_AUDIENCE_OPTIONS, SYSTEM_ADD_AUDIENCE_HINT } from './team-actions.ts';
+import type { ConsoleTeamRow, ConsoleTeams } from './team.ts';
 
 const OPERATIONS = ['member', 'system', 'pack', 'knowledge'] as const;
 type Operation = (typeof OPERATIONS)[number];
@@ -41,14 +43,30 @@ ${card({ title: '成员如何连接', meta: 'MCP 标准连接确认', hint:'把�
 /** A field's value as the form last had it (the trial brings the form back); credential contents never come back. */
 const prefilled = (prefill: Form | undefined, name: string): string => prefill?.get(name) ?? '';
 
+/** Teams for the system-add audience step; absent until Codex exports records.teams (interfaces §5.6). */
+async function listedTeams(ctx: PageContext): Promise<ConsoleTeamRow[]> {
+  const teams = (ctx.deps.records as { teams?: ConsoleTeams }).teams;
+  if (!teams) return [];
+  return (await teams.list(ctx.principal)).filter((row) => row.id !== 'team' && row.deleted_at === null);
+}
+
 async function systemPage(ctx: PageContext, prefill?: Form, aside?: Html, canForget = false): Promise<Html> {
   const systems = [...new Set((await ctx.deps.packs.list(ctx.principal)).filter((pack) => pack.kind === 'system' && !pack.withdrawn).map((pack) => pack.id))];
   const chosen = prefilled(prefill, 'system_pack');
+  const audience = prefilled(prefill, 'audience') || RESOURCE_AUDIENCE.none;
+  const teamId = prefilled(prefill, 'team');
+  const teams = await listedTeams(ctx);
   const secretRows = [1, 2, 3].map((slot) => html`${field(`凭据名称 ${slot}`, html`<input name="secret_name_${slot}" autocomplete="off" placeholder="DEMO_TOKEN" pattern="[A-Z][A-Z0-9_]{0,63}" value="${prefilled(prefill, `secret_name_${slot}`)}">`)}${field(`凭据内容 ${slot}`, html`<input type="password" name="value_${slot}" autocomplete="off">`)}`);
+  const audienceSelect = html`<select name="audience" required>${RESOURCE_AUDIENCE_OPTIONS.map((row) => html`<option value="${row.value}"${row.value === audience ? html` selected` : ''}>${row.label}</option>`)}</select>`;
+  const teamSelect = teams.length === 0
+    ? html`<select name="team" disabled><option value="">尚无团队</option></select>`
+    : html`<select name="team">${html`<option value="">选择团队</option>`}${teams.map((row) => html`<option value="${row.id}"${row.id === teamId ? html` selected` : ''}>${row.name}</option>`)}</select>`;
   const form = actionForm('system-add', ctx.csrf ?? '', html`<div data-fields>
 ${field(uiLabelOf('pack_kind', 'system'), systems.length === 0 ? html`<select name="system_pack" required disabled><option>尚无业务系统接入</option></select>` : html`<select name="system_pack" required>${systems.map((id) => html`<option value="${id}"${id === chosen ? html` selected` : ''}>${id}</option>`)}</select>`, { hint: '业务系统接入声明访问方式与只读接口' })}
 ${field('名称', html`<input name="name" required maxlength="200" value="${prefilled(prefill, 'name')}">`)}
 ${field('环境', html`<select name="environment" required>${environmentOptions(prefilled(prefill, 'environment'))}</select>`)}
+${field('使用对象', audienceSelect, { hint: SYSTEM_ADD_AUDIENCE_HINT })}
+${field('团队', teamSelect, { hint: '选「某团队」时填写；全体或先不分配可留空' })}
 ${field('允许明文 http 的角色', html`<input name="plaintext" placeholder="逗号分隔，可留空" value="${prefilled(prefill, 'plaintext')}">`)}
 ${field('访问地址', html`<textarea name="origins" rows="3" required placeholder="api=https://192.0.2.20">${prefilled(prefill, 'origins')}</textarea>`, { hint: '每行 角色=地址；业务系统接入声明的每个角色一行', full: true })}
 ${field('设置', html`<textarea name="settings" rows="2" placeholder="tenant=demo">${prefilled(prefill, 'settings')}</textarea>`, { hint: '每行 键=值，可留空', full: true })}
@@ -60,7 +78,7 @@ ${canForget ? html`<div data-wide-field><button type="submit" class="ch-btn ch-b
   const trialStep = aside === undefined ? 1 : 2;
   return html`${steps(['选择业务系统接入', '访问地址与凭据', '尝试连接', '完成'], trialStep)}
 <section class="ch-section" data-columns="2">
-${card({ title: '业务系统', hint: '只读访问，不修改业务数据；凭据内容仅写入密钥库，之后不再显示，尝试连接后需重新填写。' }, html`${form}`)}
+${card({ title: '业务系统', hint: '只读访问，不修改业务数据；凭据内容仅写入密钥库，之后不再显示，尝试连接后需重新填写。没有分配时对谁都不开放。' }, html`${form}`)}
 ${aside ?? card({ title: '尝试连接', meta: '可选', hint: '接入前以只读方式尝试读取业务系统接入声明的接口：登录（若业务系统接入声明）至多一次，只尝试读取不需要参数的接口，显示认证结果、各接口结果与响应时间。每次尝试连接记一条尝试读取记录，不保存配置、凭据内容或来源原文；登录失败时加密保存防止重复登录的摘要。' }, html``)}
 </section>`;
 }
