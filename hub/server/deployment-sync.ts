@@ -8,7 +8,7 @@ import { UserId } from '../../contracts/src/common.ts';
 import type { HubConfig } from '../config/index.ts';
 import { Database, createPool, openRecords, isAdmin, sha256Hex, canonicalBytes, parseStrictJson, type RecordsKit } from '../records/api.ts';
 import { type SyncReport } from '../knowledge/api.ts';
-import { CODE_ROOT, createContext, identityOf, settingsOf, serviceEnvironment, toolEnvironment, renderPlist, withLock, writeFileAtomic, hubKeyProvider, platformLockPath } from '../platform/api.ts';
+import { CODE_ROOT, createContext, identityOf, settingsOf, serviceEnvironment, toolEnvironment, renderPlist, withLock, writeFileAtomic, hubKeyProvider, platformLockPath, type PlatformContext } from '../platform/api.ts';
 import { assembleHub } from './assemble/hub.ts';
 import type { Session } from './cli-session.ts';
 import { loadServerConfig } from './main.ts';
@@ -121,8 +121,10 @@ async function readIntent(records: RecordsKit): Promise<DeploymentSyncIntentValu
   return parseIntent(parseStrictJson(Buffer.from(bytes).toString('utf8')));
 }
 
-async function launch(config: HubConfig, id: string, env: NodeJS.ProcessEnv): Promise<void> {
-  const context = createContext(env), settings = await settingsOf(context);
+export async function launchDeploymentSyncSupervisor(config: HubConfig, id: string, context: PlatformContext): Promise<void> {
+  paths(config,id);
+  await directory(config);
+  const settings = await settingsOf(context);
   const environment = serviceEnvironment(context.layout, settings, identityOf(context));
   const child = loadServerConfig(environment);
   if (child.dataDir !== config.dataDir || child.database.host !== config.database.host || child.database.port !== config.database.port || child.database.database !== config.database.database || child.database.user !== config.database.user) throw new CliError('后台同步目标与当前服务数据库不一致，未启动任务');
@@ -176,7 +178,7 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
         await writeFile(paths(config,id).request, JSON.stringify(request), { flag: 'wx', mode: 0o600, flush:true });
         const status: DeploymentSyncStatus = { id, ...target, running: false, completed: false, probing: false, synchronized: false, current: false };
         await save(config,status);
-        try { await launch(config,id,session.ctx.io.env); }
+        try { await launchDeploymentSyncSupervisor(config,id,createContext(session.ctx.io.env)); }
         catch { await save(config,{...status,completed:true,error:{reason:'独立同步进程未能启动',nextAction:'修复用户服务管理器后重新提交'}}); throw new CliError('后台知识同步任务未能启动：' + id, 'circle-hub knowledge sync-status ' + id); }
       }
       tasks.push({ id, ...target, progressCommand: 'circle-hub knowledge sync-status ' + id });
