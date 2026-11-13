@@ -1,0 +1,119 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { test, type TestContext } from 'node:test';
+import { CODE_ROOT, createContext } from '../context.ts';
+import { ensureLayout, layoutAt } from '../layout.ts';
+import { newSettingsFile, writeSettingsFile } from '../settings.ts';
+import type { CommandOptions } from '../process.ts';
+import { launchReset, acknowledgeReset, readResetStatus, runResetWorker } from './worker.ts';
+import type { ResetReport } from './types.ts';
+
+const AUTH = 'admin:synthetic-user:action-one';
+const request = { scopes: 'all', keepConfig: false } as const;
+const report: ResetReport = { archive: 'synthetic_archive', backup: 'synthetic_backup', counts: [], notices: [] };
+async function fixture(t: TestContext, platform: NodeJS.Platform = 'linux') {
+  const root = await mkdtemp(join(tmpdir(), 'circle-hub-reset-worker-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const layout = layoutAt(root);
+  await ensureLayout(layout);
+  await writeSettingsFile(layout, newSettingsFile({ environment: 'test' }));
+  let clock = Date.parse('2026-11-13T00:00:00.000Z');
+  const calls: Array<{ command: string; args: readonly string[]; options?: CommandOptions }> = [];
+  const context = createContext({}, { layout, platform, home: root, user: 'synthetic', uid: 501,
+    now: () => new Date(clock), runner: async (command, args, options) => {
+      calls.push({ command, args, options });
+      return { code: 0, stdout: '', stderr: '' };
+    } });
+  return { root, context, calls, advance: () => { clock += 60_000; } };
+}
+
+test('Linux launch is a fixed independent unit with private files, authenticated status and idempotent POST/ACK', async t => {
+  const f = await fixture(t);
+  const { operationId: id } = await launchReset(f.context, request, AUTH);
+  assert.deepEqual(await launchReset(f.context, request, AUTH), { operationId: id });
+  assert.equal(f.calls.length, 1);
+  const call = f.calls[0]!;
+  assert.equal(call.command, '/usr/bin/systemd-run');
+  assert.ok(call.args.includes('--user'));
+  assert.ok(call.args.includes('--collect'));
+  assert.ok(call.args.includes('--property=StandardOutput=null'));
+  assert.deepEqual(call.args.slice(-5), [process.execPath, join(CODE_ROOT, 'bin', 'circle-hub'), 'reset', '--worker', id]);
+  assert.ok(call.args.includes(`--setenv=CIRCLE_HUB_DATA_DIR=${f.root}`));
+  assert.equal(call.options?.env?.CIRCLE_HUB_DATA_DIR, undefined);
+  assert.equal(call.options?.env?.XDG_RUNTIME_DIR, '/run/user/501');
+  assert.equal((await stat(join(f.context.layout.run, 'reset'))).mode & 0o777, 0o700);
+  for (const suffix of ['request.json', 'status.json']) assert.equal((await stat(join(f.context.layout.run, 'reset', `${id}.${suffix}`))).mode & 0o777, 0o600);
+  await assert.rejects(readResetStatus(f.context, id, 'setup:other'), /无权/);
+  await assert.rejects(acknowledgeReset(f.context, id, 'setup:other'), /无权/);
+  await assert.rejects(launchReset(f.context, { scopes: ['history'], keepConfig: false }, AUTH), /已有初始化/);
+  await acknowledgeReset(f.context, id, AUTH);
+  await acknowledgeReset(f.context, id, AUTH);
+  assert.equal(f.calls.length, 1);
+  let runs = 0;
+  assert.equal(await runResetWorker(f.context, id, async value => { runs++; assert.deepEqual(value, request); return report; }), 0);
+  assert.equal(await runResetWorker(f.context, id, async () => { runs++; return report; }), 1);
+  assert.equal(runs, 1);
+  assert.deepEqual(await readResetStatus(f.context, id, AUTH), { operationId: id, acknowledged: true, running: false, completed: true, report });
+  assert.deepEqual(await launchReset(f.context, request, AUTH), { operationId: id });
+  const next = await launchReset(f.context, request, 'admin:synthetic-user:action-two');
+  assert.notEqual(next.operationId, id);
+  assert.equal(f.calls.length, 2);
+});
+
+test('macOS launches a separate one-shot launchd job and discards child output', async t => {
+  const f = await fixture(t, 'darwin');
+  const { operationId: id } = await launchReset(f.context, request, AUTH);
+  assert.equal(f.calls[0]!.command, '/bin/launchctl');
+  assert.deepEqual(f.calls[0]!.args.slice(0, 2), ['bootstrap', 'gui/501']);
+  const plist = await readFile(join(f.context.layout.run, 'reset', `${id}.plist`), 'utf8');
+  assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
+  assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/);
+  assert.ok(plist.includes(join(CODE_ROOT, 'bin', 'circle-hub')));
+  assert.ok(plist.includes('/dev/null'));
+  assert.ok(!plist.includes('<string>serve</string>'));
+});
+
+test('no ACK expires without invoking reset, and malformed requests never launch', async t => {
+  const f = await fixture(t);
+  await assert.rejects(launchReset(f.context, { ...request, scopes: ['all', 'history'] } as never, AUTH));
+  assert.equal(f.calls.length, 0);
+  const { operationId: id } = await launchReset(f.context, request, AUTH);
+  f.advance();
+  let runs = 0;
+  assert.equal(await runResetWorker(f.context, id, async () => { runs++; return report; }), 1);
+  assert.equal(runs, 0);
+  const state = await readResetStatus(f.context, id, AUTH);
+  assert.equal(state.completed, true);
+  assert.equal(state.acknowledged, false);
+  assert.match(state.error!.reason, /未执行/);
+  await assert.rejects(readResetStatus(f.context, '../outside', AUTH), /编号/);
+});
+
+test('worker waits for ACK and keeps running while the reset callback is rolling back', { timeout: 10_000 }, async t => {
+  const f = await fixture(t);
+  const { operationId: id } = await launchReset(f.context, request, AUTH);
+  let started!: () => void;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  let rollbackDone!: () => void;
+  const rollback = new Promise<void>(resolve => { rollbackDone = resolve; });
+  let runs = 0;
+  const worker = runResetWorker(f.context, id, async () => { runs++; started(); await rollback; throw new Error('synthetic secret must not escape'); });
+  const claim = join(f.context.layout.run, 'reset', `${id}.claim`);
+  while (!(await stat(claim).catch(() => null))) await delay(5);
+  assert.equal(runs, 0);
+  assert.equal((await readResetStatus(f.context, id, AUTH)).running, false);
+  await acknowledgeReset(f.context, id, AUTH);
+  await entered;
+  assert.equal((await readResetStatus(f.context, id, AUTH)).running, true);
+  assert.equal(await runResetWorker(f.context, id, async () => report), 1);
+  rollbackDone();
+  assert.equal(await worker, 1);
+  const state = await readResetStatus(f.context, id, AUTH);
+  assert.equal(state.running, false);
+  assert.equal(state.completed, true);
+  assert.equal(state.report, undefined);
+  assert.ok(!JSON.stringify(state).includes('synthetic secret'));
+});
