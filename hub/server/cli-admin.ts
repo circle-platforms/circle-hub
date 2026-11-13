@@ -13,7 +13,7 @@ import { ADMIN_COMMANDS } from './command-registry.ts';
 import { RECORD_KINDS, type RecordKind } from '../../contracts/generated/protocol.ts';
 import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { maskCommand, MASK_USAGE } from './cli-mask.ts';
-import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
+import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE, readUploadedCommandBytes } from './cli-job.ts';
 import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
@@ -316,17 +316,20 @@ export async function leaseCommand(session: Session, args: readonly string[]): P
 export async function docCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   if (sub === 'put') {
-    const { positionals } = parse(rest, {}, 2);
+    const { positionals, values } = parse(rest, { reference: { type: 'string' } }, 1, 2);
     const [name, file] = positionals;
+    if (Number(file !== undefined) + Number(values.reference !== undefined) !== 1) throw new UsageError('定义文件和 --reference 必须且只能提供一种');
     // The neutral rule: a non-admin is told what they would hear for a doc that does not exist.
     const viewer = await session.viewer(undefined);
     if (!isAdmin(viewer)) throw new CliError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
     const admin = await session.admin();
-    const source = isAbsolute(file) ? file : resolve(session.ctx.io.cwd, file);
-    const bytes = await readFile(source).catch(() => null);
+    const source = file === undefined ? undefined : isAbsolute(file) ? file : resolve(session.ctx.io.cwd, file);
+    const bytes = values.reference !== undefined
+      ? await readUploadedCommandBytes(await session.records(), admin, values.reference)
+      : await readFile(source!).catch(() => null);
     if (bytes === null) throw new CliError(`读不出文件 ${file.slice(0, 120)}`, '给一个有读取权限的现有文件');
     const hub = await session.hub();
-    const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), { fileName: basename(source) }));
+    const put = await decided(() => hub.docs.put(admin, name, new Uint8Array(bytes), source === undefined ? {} : { fileName: basename(source) }));
     session.out(put.created ? `已发布命名文档 ${put.name}（摘要 ${put.sha256}，${put.size} 字节）` : `命名文档 ${put.name} 已经是这份（摘要 ${put.sha256}，${put.size} 字节）`);
     return 0;
   }

@@ -7,6 +7,7 @@
 // and are refused here: they stay on the command line.
 import type { AssemblyModule, CliCommand } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
+import { parseCommandParameters } from './command-parameters.ts';
 
 export interface CommandRun {
   /** The command's exit code: 0 ok, 1 refused or failed, 2 usage. */
@@ -51,6 +52,14 @@ export function createCommandBridge(options: BridgeOptions): CommandBridge {
       // Reset is handled by the authenticated HTTP launch/finish/ACK path, never by synchronous CLI dispatch.
       if (argv[0] === 'reset') return { code: 2, stdout, stderr: ['请使用控制台重建预览和确认入口；不能在服务进程同步执行 reset'] };
       if (argv.length === 0 || !BRIDGED_COMMANDS.has(argv[0])) return { code: 2, stdout, stderr: ['控制台不执行这个命令'] };
+      const uploadCommand = argv[0] === 'executor' && (argv[1] === 'add' || argv[1] === 'update') ? `executor.${argv[1]}` as const : argv[0] === 'doc' && argv[1] === 'put' ? 'doc.put' : null;
+      if (uploadCommand !== null) {
+        try {
+          const parsed = parseCommandParameters(uploadCommand, argv.slice(2));
+          const requiredPositionals = uploadCommand === 'executor.add' ? 0 : 1;
+          if (parsed.values.reference === undefined || parsed.positionals.length !== requiredPositionals) throw new Error();
+        } catch { return { code: 2, stdout, stderr: ['控制台登记只接受上传原件的 --reference 引用，不接受服务器文件路径'] }; }
+      }
       // Imported here, not at the top: the CLI imports serve, and serve builds the app that holds this bridge.
       const main = options.main ?? ((await import('./cli.ts')).main as unknown as CliMain);
       const loadAssembly = options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>);
