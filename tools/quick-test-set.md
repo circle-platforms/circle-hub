@@ -99,14 +99,14 @@
 
 ---
 
-## 实测耗时与结果（macOS，基线 `cbb19119a1` + 整合提交）
+## 实测耗时与结果（macOS，基线 `d403572de1` + 整合提交 `c3d460bef5`）
 
-以下数据来自本工作树在整合 `cbb19119a1` 后执行 `npm run test:quick` 的真实全流程墙钟测量：
+以下数据来自本工作树在变基到 `d403572de1` 并更新兼容性文档与变更日志（`c3d460bef5`）后执行 `npm run test:quick` 的真实全流程墙钟测量：
 
-- **总计墙钟耗时：`106.27s`**（约 1 分 46 秒，远低于 300s / 5 分钟上限；共 3 项校验命令 + 69 个单测文件 `662` 项测试 + 9 个验收文件 `20` 项测试，全部 `0` 失败、`0` 跳过）
+- **总计墙钟耗时：`121.24s`**（约 2 分 1 秒，远低于 300s / 5 分钟上限；共 3 项校验命令 + 69 个单测文件 `676` 项测试 + 10 个验收文件 `21` 项测试，全部 `0` 失败、`0` 跳过）
 - **各阶段实测分项**：
-  - `[1/4] 合约生成物一致性校验`：`0.25s`（`exit=0`，`contracts/generated matches the model (210 files)`）
-  - `[2/4] TypeScript 类型检查（主仓库 + .github/checks）`：`13.76s`（`exit=0`）
-  - `共享 PostgreSQL 模板准备`：`0.57s`
-  - `[3/4] 快速单元测试（69 文件，concurrency=6）`：`63.70s`（`exit=0`，`662 passed / 0 failed / 0 skipped / 22 suites`）
-  - `[4/4] 快速验收测试（9 文件，concurrency=1）`：`27.99s`（`exit=0`，`20 passed / 0 failed / 0 skipped / 1 suite`）
+  - `[1/4] 合约生成物一致性校验`：`0.23s`（`exit=0`，`contracts/generated matches the model (211 files)`）
+  - `[2/4] TypeScript 类型检查（主仓库 + .github/checks）`：`13.48s`（`exit=0`）
+  - `共享 PostgreSQL 模板准备`：`0.81s`
+  - `[3/4] 快速单元测试（69 文件，concurrency=6）`：`60.87s`（`exit=0`，`676 passed / 0 failed / 0 skipped / 22 suites`）
+  - `[4/4] 快速验收测试（10 文件，concurrency=1）`：`45.85s`（`exit=0`，`21 passed / 0 failed / 0 skipped / 2 suites`）
