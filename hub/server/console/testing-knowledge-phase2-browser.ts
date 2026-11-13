@@ -78,7 +78,7 @@ try {
   await capture('entry-versions', member.sessionCookie!, entry(second.entry), /更新了内容和来源/);
   await capture('entry-superseded', member.sessionCookie!, entry(first.entry), /查看取代它的条目/);
   await capture('team-empty', member.sessionCookie!, hub.url + '/console/knowledge?scope=team', /公共空间还没有知识/);
-  await capture('shares-empty', member.sessionCookie!, hub.url + '/console/knowledge/submissions', /还没有分享到团队的内容/);
+  await capture('shares-empty', member.sessionCookie!, hub.url + '/console/knowledge/submissions', /还没有分享到公共空间的内容/);
   let folder = 0;
   const csrf = async () => /name="csrf" value="([^"]+)"/.exec((await member.get('/console/knowledge?scope=personal')).body)![1];
   await capture('success-message', member.sessionCookie!, hub.url + '/console/knowledge?scope=personal', /已新建文件夹 · 合成文件夹/, async () => {

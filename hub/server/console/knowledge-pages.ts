@@ -7,6 +7,7 @@ import { coverageText } from '../claims.ts';
 import { html, link, liveModule, page, pageLayout, pre, table, type Html } from './html.ts';
 import { button, sectionHead } from './ui.ts';
 import { citationsLine, countText, nodeCitations } from './citations.ts';
+import { loadKnowledgeNodes } from './knowledge-reads.ts';
 import { packSources } from './pack-sources.ts';
 import {knowledgeHome} from './knowledge-home.ts';
 import {sourceArchivePage} from './source-archive.ts';
@@ -208,7 +209,7 @@ export async function treePage(ctx: PageContext): Promise<PageResult> {
   const path = param(ctx, 'path') ?? '/';
   const cursor = param(ctx, 'cursor');
   if (!SHA256.test(root)) return neutralPage(ctx);
-  const nodes = await ctx.deps.knowledge.getNodes({ root, paths: [path], depth: 1, cursor: cursor ?? null }, ctx.principal);
+  const nodes = await loadKnowledgeNodes(ctx, root, path, cursor ?? null);
   if (nodes === null) return neutralPage(ctx);
   // The node asked for gets its citations and its entries' provenance; the nodes below it are listed as before.
   const main = nodes.nodes.find((node) => node.path === path);

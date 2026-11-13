@@ -220,9 +220,9 @@ describe('operations and commands', () => {
   test('product and system integrations appear in their own places and details retain catalog permissions', async () => {
     const admin=await signIn(server.admin.token);
     const knowledge=await get('/console/knowledge',admin), connections=await get('/console/connections?tab=packs',admin);
-    assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/packs\/line-a"/);
+    assert.match(knowledge.body,/id="product-sources"/);assert.match(knowledge.body,/href="\/console\/workflows\/line-a"/);
     assert.ok(knowledge.body.includes(uiLabelOf('pack_kind','product')));assert.match(knowledge.body,/合成产品线/);
-    assert.match(connections.body,/id="live-system-sources"/);assert.match(connections.body,/href="\/console\/packs\/tracker-system"/);
+    assert.match(connections.body,/id="live-system-sources"/);assert.match(connections.body,/href="\/console\/workflows\/tracker-system"/);
     assert.ok(connections.body.includes(uiLabelOf('pack_kind','system')));assert.match(connections.body,/合成跟踪系统/);
     for(const [id,place,kind] of [['line-a','知识库','product'],['tracker-system','连接','system']] as const){
       const detail=await get('/console/workflows/'+id,admin);
@@ -231,7 +231,7 @@ describe('operations and commands', () => {
       assert.equal((await get('/console/workflows/'+id,session)).status,404);
     }
     const user=await member(), session=await signIn(user.token), mine=await get('/console/knowledge',session);
-    assert.doesNotMatch(mine.body,/href="\/console\/packs\/line-a"/,'moving source configuration does not grant new catalog access');
+    assert.doesNotMatch(mine.body,/href="\/console\/(?:packs|workflows)\/line-a"/,'moving source configuration does not grant new catalog access');
     assert.ok(mine.body.includes('合成产品线'),'existing product-line knowledge remains readable');
   });
 
@@ -251,7 +251,7 @@ describe('operations and commands', () => {
     const admin = await signIn(server.admin.token);
     for (const [path, source, state] of [['/console/knowledge', sources[0], 'inactive'], ['/console/connections?tab=packs', sources[1], 'retired']] as const) {
       const body = (await get(path, admin)).body;
-      const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/packs/' + source.id))?.[0];
+      const row = [...body.matchAll(/<tr[\s\S]*?<\/tr>/g)].find(match => match[0].includes('/console/workflows/' + source.id) || match[0].includes('/console/packs/' + source.id))?.[0];
       assert.ok(row);
       assert.ok(row.includes(uiLabelOf('pack_status', state)));
       assert.match(row, /<td>(未声明|尚未接入)<\/td>/, 'no product line or business system is invented, and the cell says why it is empty');
@@ -335,18 +335,20 @@ describe('operations and commands', () => {
   test('team owns members and permissions, settings retains system settings and members cannot browse another account', async () => {
     const user=await member(), other=await member();
     const admin=await signIn(server.admin.token), session=await signIn(user.token);
-    const team=await get('/console/team',admin);
+    // interfaces §5.2: default tab is 团队; members list is ?tab=members.
+    const teamHome=await get('/console/team',admin);
+    assert.match(teamHome.body,/尚无团队|新建团队/);
+    const team=await get('/console/team?tab=members',admin);
     assert.ok(team.body.includes(`/console/team/${user.user.id}`));
     assert.ok(team.body.indexOf('href="/console/team"')<team.body.indexOf('href="/console/settings"'));
     assert.match(team.body,/第一个账户是管理员/);
     assert.match(team.body,/添加成员/);
-    // Decision 151, step 7: the team page is two tabs, the members and the clients they connected, one list each.
-    const teamTabs=(body:string)=>[...(/<nav class="ch-seg" aria-label="团队内容" data-team-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]);
-    assert.deepEqual(teamTabs(team.body),[['/console/team',true,'成员'],['/console/team?tab=clients',false,'已连接的客户端']]);
+    const teamTabs=(body:string)=>[...(/<nav class="ch-seg" aria-label="成员与团队" data-team-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]);
+    assert.deepEqual(teamTabs(team.body),[['/console/team?tab=members',true,'成员'],['/console/team',false,'团队'],['/console/team?tab=clients',false,'已连接的客户端']]);
     assert.match(team.body,/ id="live-members"/);assert.doesNotMatch(team.body,/ id="live-member-circles"/);
     assert.match(team.body,/<th scope="col">可用的工作流<\/th><th scope="col">客户端<\/th>/,'a row counts the member\'s workflows and clients');
     const teamClients=await get('/console/team?tab=clients',admin);
-    assert.deepEqual(teamTabs(teamClients.body).map(row=>row[1]),[false,true]);
+    assert.deepEqual(teamTabs(teamClients.body).map(row=>[row[0],row[1]]),[['/console/team?tab=members',false],['/console/team',false],['/console/team?tab=clients',true]]);
     assert.match(teamClients.body,/ id="live-member-circles"/);assert.doesNotMatch(teamClients.body,/ id="live-members"/);
     const settings=await get('/console/settings',admin);
     assert.doesNotMatch(settings.body,/添加成员|circle-hub user disable|id="people"/);

@@ -11,7 +11,7 @@
 // command bridge. An error is {code, message, fix}; none of these situations has a registered code, so code is null.
 import type { CommandBridge } from '../command-bridge.ts';
 import { commands } from './commands.ts';
-import { ACTIONS, FormError, discardStage, publishStage, stagePack, type Built, type Form, type JobStore, type StepRefusal } from './manage.ts';
+import { ACTIONS, FormError, discardStage, publishStage, runBuiltSteps, stagePack, type Built, type Form, type JobStore, type StepRefusal } from './manage.ts';
 import { PACK_ID, byId } from './packs.ts';
 import type { PageContext } from './context.ts';
 import { circleEntry, originOf } from './context.ts';
@@ -66,25 +66,19 @@ async function execute(ctx: PageContext, options: WriteOptions, name: string, fi
     throw error;
   }
   const bridge = options.bridge;
-  const run = (step: Built) => bridge.run(step.argv, { token: options.token, ...(step.secrets ? { secrets: step.secrets } : {}) });
   if (action.background) {
     const [step] = built;
     const what = step.argv.slice(0, 2).join(' ');
     const job = options.jobs.start(action.title, step.argv, ctx.principal, async () => {
-      const result = await run(step);
-      options.log(`控制台后台任务 ${what}（${ctx.principal.name}）结束：退出码 ${result.code}`);
-      return result;
+      const [done] = await runBuiltSteps(bridge, [step], options.token, options.log, ctx.principal.name, true);
+      options.log(`控制台后台任务 ${what}（${ctx.principal.name}）结束：退出码 ${done.run.code}`);
+      return done.run;
     });
     options.log(`控制台后台任务 ${what} 由 ${ctx.principal.name} 经接口发起`);
     return { status: 202, body: { job: job.id, command: ['circle-hub', ...step.argv].join(' '), status_url: `/console/api/knowledge/imports/${job.id}` } };
   }
-  const steps: { command: string; code: number; stdout: string[]; stderr: string[] }[] = [];
-  for (const step of built) {
-    const result = await run(step);
-    options.log(`控制台管理操作 ${step.argv.slice(0, 2).join(' ')}（${ctx.principal.name}，经接口）：退出码 ${result.code}`);
-    steps.push({ command: ['circle-hub', ...step.argv].join(' '), code: result.code, stdout: result.stdout, stderr: result.stderr });
-    if (result.code !== 0) break;
-  }
+  const runs = await runBuiltSteps(bridge, built, options.token, options.log, ctx.principal.name, true);
+  const steps = runs.map((row) => ({ command: ['circle-hub', ...row.argv].join(' '), code: row.run.code, stdout: row.run.stdout, stderr: row.run.stderr }));
   const last = steps[steps.length - 1];
   if (last.code !== 0) {
     return { status: last.code === 2 ? 400 : 409, body: { code: null, message: last.code === 2 ? '参数不正确，未执行' : '操作未完成', fix: last.stderr[last.stderr.length - 1] ?? '按命令的输出处理后重试', steps } };
