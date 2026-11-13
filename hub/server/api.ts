@@ -212,6 +212,8 @@ export interface AssemblyModule {
 export type { RebuildNeeded } from './rebuild-state.ts';
 export type { RebuildConsoleContext, RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts';
 export type { ResetConfigurationOptions, ResetConfigurationPorts, ProtectedConfigurationDomain } from './cli-apply.ts';
+/** Pure rebuild HTML for the incompatible-store listener; also the default `ServeOptions.rebuild.render`. */
+export { renderRebuildPage } from './console/reset.ts';
 export async function createResetConfigurationPorts<State>(options: import('./cli-apply.ts').ResetConfigurationOptions<State>): Promise<import('./cli-apply.ts').ResetConfigurationPorts> {
   return (await import('./cli-apply.ts')).createResetConfigurationPorts(options);
 }
