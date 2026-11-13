@@ -1,3 +1,4 @@
+import { runById, canViewRun, readPackDirectory, packSchema } from '../../../../hub/runs/api.ts';
 import { installMindmapFixture, installWorkbookFixture, installXmlFixture, installHtmlFixture } from '../../../../hub/testing/skills.ts';
 import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials } from '../../../../hub/connectors/testing/credentials.ts';
 // The end-to-end bed of this package (tests only, not part of a pack): the real Hub packages wired as the server wires them,
@@ -120,7 +121,7 @@ export async function openReviewBed(postgres: TemporaryPostgres): Promise<Review
     await add({ system_pack: 'build-site', name: '合成构建站', environment: 'test', origins: { 'build-site': `${site.origin}${SITE_BASE}` }, settings: { index_page: 'index.html' } });
     await add({ system_pack: 'manual-store', name: '合成文档库', environment: 'test', origins: { 'manual-store': store.origin } });
 
-    const knowledge = createKnowledge({ records: kit, parsers, packs, external: connectors.reader, jev: null, sandbox: { requireOsIsolation: isolation }, clock: now, admin });
+    const knowledge = createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema }, records: kit, parsers, packs, external: connectors.reader, jev: null, sandbox: { requireOsIsolation: isolation }, clock: now, admin });
     const syncs: Record<string, SyncReport> = {};
     for (const id of PRODUCT_PACKS) {
       const product = await packs.productById(id);

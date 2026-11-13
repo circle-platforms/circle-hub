@@ -1,7 +1,6 @@
 import {admitApplicability} from './applicability-claims.ts';
 // K03: deterministic admission beside the tree. The caller supplies the run boundary's scoped resolver;
 // it never supplies an evidence grade, provenance or an applicability declaration.
-import {readPackDirectory} from '../runs/api.ts';
 import {ProductDeclaration} from '../../contracts/src/product.ts';
 import { ContributionInput, ContributionSource, KnowledgeContributionBody, WithheldContributionBody, MAX_NODE_CONTRIBUTIONS, type KnowledgeContributionPageView, type KnowledgeContributionView } from '../../contracts/src/contributions.ts';
 import type { RootSource } from '../../contracts/src/knowledge.ts';
@@ -291,7 +290,7 @@ export class ContributionLayer {
         const current=await this.#context.packs.productById(producer.pack);
         if(current?.id===pack.id&&current.version===pack.version&&current.digest===producer.digest)raw=current.product;
         else {
-          const loaded=await readPackDirectory(pack.directory);
+          const loaded=await this.#context.packReads.readPackDirectory(pack.directory);
           if(!loaded.ok||loaded.pack.digest!==producer.digest||loaded.pack.manifest.kind!=='product'||loaded.pack.manifest.id!==pack.id||loaded.pack.manifest.version!==pack.version)throw new Error('unverified product declaration');
           const file=loaded.pack.files.find(file=>file.path==='product.json');
           if(!file)throw new Error('missing product declaration');
@@ -342,7 +341,7 @@ export class ContributionLayer {
     const user = await this.#context.records.principals.get(prepared.submitted_by);
     const submitter: Principal | null = user === null ? null : { id: user.id, name: user.name, role: user.role };
     const feeding = submitter === null || this.#context.feeding === undefined ? null : await this.#context.feeding.planAppend(submitter, prepared.feeding as Record<string, unknown>, { product: prepared.product, root: prepared.root, run: origin.run });
-    return { submitter, feeding, lease: operationRecord(prepared.feeding.schema) ? await reproductionLease(this.#context.records.store, origin.run) : null };
+    return { submitter, feeding, lease: operationRecord(prepared.feeding.schema) ? await reproductionLease(this.#context.runReads, this.#context.records.store, origin.run) : null };
   }
 
   /**

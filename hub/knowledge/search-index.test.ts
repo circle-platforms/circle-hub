@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 // The knowledge search index is built by background rounds and only read by searches. Real PostgreSQL and a real product
 // composition, synthetic entries; the scheduling cases run on a fake source and a mocked clock.
 import assert from 'node:assert/strict';
@@ -28,7 +29,7 @@ async function productWorld(t: { after(fn: () => unknown): void }, entries: numb
 
 /** The same records in a new process, or with other limits. */
 const knowledgeOn = (w: World, records: World['kit'] | (World['kit'] & { spaceIndex: SpaceSearchIndex }) = w.kit) =>
-  createKnowledge({ records, parsers: createTestParserRegistry(), packs: w.packs, external: w.external, jev: null, sandbox: { requireOsIsolation: false }, admin: w.admin });
+  createKnowledge({...TEST_KNOWLEDGE_READ_PORTS, records, parsers: createTestParserRegistry(), packs: w.packs, external: w.external, jev: null, sandbox: { requireOsIsolation: false }, admin: w.admin });
 
 const counts = async (db: Database): Promise<number[]> => {
   const out: number[] = [];

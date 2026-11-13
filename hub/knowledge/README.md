@@ -11,7 +11,7 @@ Requests opened before stay in the records as they are.
 verify each exact quotation, recursively check source eligibility, compare only team content, then scan content and
 complete original bytes for credentials. Personal-credential reads and unsigned uploads are refused. Personal-entry
 dependencies must already have a team counterpart, so a merge never leaves a team entry dependent on private read rights.
-Deduplication includes team history and the caller-readable legacy product mounts; inaccessible product mounts and other
+Deduplication includes team history and the caller-readable product mounts; inaccessible product mounts and other
 people's personal spaces are not an existence oracle. Original capture authority and phase-2 read-tier rules stay intact.
 
 Success appends a team entry, source aliases, a new immutable version and a `knowledge_share` receipt in one transaction;
@@ -37,7 +37,7 @@ content, metadata and grantable originals; personal-credential sources cannot be
 
 Reads recheck the enabled account and current path grants, including old versions and search pages. Administrators have
 no default access to personal content. Grant path comparison is segment-based, and raw space records cannot bypass it.
-`getNodes` and the tree reader understand both space and legacy roots. Runs lock team and initiator roots; both the actual
+`getNodes` and the tree reader understand both space and product roots. Runs lock team and initiator roots; both the actual
 reader and initiator must remain authorized, and a later owner/team version is outside that run. Citation counts for
 personal entries are owner-only and use a separate owner-scoped index rather than the team content count.
 
@@ -1802,3 +1802,11 @@ the last page decides. A pack that opts in must say the unknown entries as unkno
 the view's notes name, and must not count them as zero or fail on them. In a facet view `total` counts only the entries in the
 lists, so `total + unknown_entries` is the population of the root for the query. Impact and links views do not carry the fields
 and keep the refusal.
+
+### Run and pack read dependencies
+
+`createKnowledge` requires `runReads: KnowledgeRunReadPort` and `packReads: KnowledgePackReadPort`, both declared in
+`hub/ports.ts`. The server supplies the existing run lookup, visibility check, verified pack directory reader and schema
+compiler; knowledge has no default implementation and no production import from runs. Tests inject the same implementations
+explicitly through `testing/read-ports.ts`. The two workflow test-bed imports remain pending a declared pack capability;
+moving those imports into assembly alone would not remove that dependency.

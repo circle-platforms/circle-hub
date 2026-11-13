@@ -313,7 +313,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
   const itemIds = new Set(items.map((it) => it.id));
   const criterionBound=(run.accepted_criteria??[]).flatMap(change=>[rootDigest(change.declaration),rootDigest(change.review)]).filter((digest):digest is string=>digest!==null);
   const skills=ctx.parsers.skills??run.skills;
-  const baseBound = [run.pack_digest,...(ctx.parsers.bindingRecords??(ctx.parsers.bindingRecord?[ctx.parsers.bindingRecord]:[])), ...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
+  const baseBound = [run.pack_digest,...(skills??[]).map(skill=>skill.digest),...(run.root !== undefined ? [run.root] : []),...criterionBound];
   const itemDigests = items.map((it) => it.digest).filter((d): d is string => d !== undefined);
   const entries = new Map<string, { index: number; entry: Submission['items'][number] }>();
   submission?.items.forEach((entry, index) => entries.set(entry.item, { index, entry }));
@@ -1210,7 +1210,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       complete: examined === items.length,
       examined,
       total: items.length,
-      ...((submission !== null && hasItemJudgments)||ctx.parsers.bindingDisclosure ? {note:[...(submission!==null&&hasItemJudgments?[`提交处理了 ${handled} 个条目，共 ${items.length} 个`]:[]),...(ctx.parsers.bindingDisclosure?[ctx.parsers.bindingDisclosure]:[])].join('；')} : {}),
+      ...(submission !== null && hasItemJudgments ? {note:`提交处理了 ${handled} 个条目，共 ${items.length} 个`} : {}),
     },
     locks: { ...(skills?{skills:[...skills]}:{}),...(run.feeding_offset?{feeding_offset:run.feeding_offset}:{}),...(run.unversioned_root ? { unversioned_root: run.unversioned_root } : {}), pack: run.pack, pack_digest: run.pack_digest, ...(run.root !== undefined ? { root: run.root } : {}) },
     trace: input.traceId,

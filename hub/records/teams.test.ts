@@ -112,3 +112,18 @@ test('membership started behind deactivation cannot commit from a stale enabled 
   assert.equal(await w.kit.authorizations.latest('assign',w.alice.id,team.id),null);
   assert.equal((await w.db.query('SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2',[team.id,w.alice.id])).rowCount,0);
 });
+
+test('whole-Hub pack activation and skill installation remain valid assignment decisions', async t => {
+  const w = await world(t);
+  const grant = await w.kit.authorizations.grant(w.admin, {
+    permission: 'assign', subject: '*', object: 'synthetic-installed-skill', bound: 'a'.repeat(64),
+  });
+  assert.equal(grant.body.subject, '*');
+  assert.equal(grant.body.bound, 'a'.repeat(64));
+  assert.equal(await w.kit.authorizations.canUse(w.alice.id, 'synthetic-installed-skill'), false);
+  const revoked = await w.kit.authorizations.revoke(w.admin, {
+    permission: 'assign', subject: '*', object: 'synthetic-installed-skill',
+  });
+  assert.equal(revoked.body.revoked, true);
+  assert.equal(revoked.body.supersedes, grant.digest);
+});

@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { IndexView, ScopedDocument } from '../../contracts/src/views.ts';
@@ -11,7 +12,7 @@ test('a scanner upgrade changes composition provenance and cursors without chang
   t.after(() => postgres.stop());
   const w = await makeUnversionedWorld(postgres, true, { entries: 5, statementBytes: 1600 });
   t.after(() => w.close());
-  const knowledge = createKnowledge({
+  const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,
     records: w.kit, parsers: createTestParserRegistry(), packs: w.packs,
     external: w.external, admin: w.admin, limits: { maxViewBytes: 65536 + 2600 },
   });

@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
 // Issue 142 (decision 155): what went wrong comes back in the answer of the call that triggered the dispatch, in three
@@ -25,7 +26,7 @@ function capped(notes: DispatchNote[]): DispatchNote[] {
 const PROGRESS = '稍后逐字原样重交上机验证时的那次提交读进展';
 
 async function activeAdmin(records: Pick<RecordsKit, 'principals'>) {
-  return (await records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
+  return (await records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
 }
 
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;

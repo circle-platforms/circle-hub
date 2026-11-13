@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // Wiring of the connectors: the resource registry, one runtime per enabled resource (HttpSource, and the LoginManager or
 // StaticCredential of the resource), the read engine, and the two ports of hub/ports.ts this package provides:
 // ExternalReaderPort (accepts, read) and ResourceCatalogPort. A resource uses the system pack version and digest its
@@ -74,7 +75,7 @@ export interface ConnectorsOptions {
 export interface ResourceAdmin {
   addResource(by: Principal, input: AddResourceInput): Promise<ResourceRecord>;
   updateResource(by: Principal, id: string, changes: UpdateResourceInput): Promise<ResourceRecord>;
-  /** Admins get addresses and plaintext declarations; any other valid account the rows without them. */
+  /** Admins see every configured resource; other valid accounts see assigned resources without addresses. */
   listResources(by: Principal): Promise<ResourceListing[]>;
   /**
    * Admins only: one resource, enabled or not, with each named reference, wire rule and current storage metadata
@@ -289,6 +290,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     const out: { runtime: ResourceRuntime; read: ReadDeclaration }[] = [];
     for (const state of await registry.states()) {
       if (!state.enabled) continue;
+      if (context && !await records.authorizations.canUseResource(context.principal.id, state.resource.id)) continue;
       let loaded;
       try {
         loaded = await loadBound(state);
@@ -338,6 +340,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         if (type === null) return false;
         registry.invalidate();
         for(const state of await registry.states()) if(state.enabled) {
+          if(context && !await records.authorizations.canUseResource(context.principal.id, state.resource.id))continue;
           try {if((await loadBound(state)).profile.reads.some(r=>r.external===type))return true;}
           catch(error){
             const failed=asConnectorError(error,'PACK_UNAVAILABLE');
@@ -391,7 +394,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   async function resourceList(by:Principal):Promise<ResourceListing[]> {
     const rows=await registry.list(by);
     const user=await records.principals.get(by.id);
-    if(user?.role!=='admin' || user.disabled)return rows;
+    if(!user||!isAdmin(user) || user.disabled)return rows;
     for(const row of rows) {
       const state=await registry.get(row.id);
       if(!state)continue;
@@ -408,7 +411,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     async list(user: Principal): Promise<ResourceListing[]> {
       try {
         const viewer = typeof user?.id === 'string' ? await records.principals.get(user.id) : null;
-        if (viewer === null || viewer.disabled || viewer.role !== 'admin') return [];
+        if (viewer === null || viewer.disabled || !isAdmin(viewer)) return [];
         return await resourceList(viewer);
       } catch {
         return [];
@@ -421,12 +424,12 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
   const admin: ResourceAdmin = {
     async trial(by, input) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
-      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能尝试连接业务系统');
+      if (viewer === null || viewer.disabled || !isAdmin(viewer)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能尝试连接业务系统');
       return trialSystem({ store: records.store, load: (ref) => profiles.load(ref), redactor, now, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.log ? { log: options.log } : {}), failedLogins: failedTrialLogins }, input, viewer.id);
     },
     async forgetTrialLogin(by, input) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
-      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能清除登录失败记录');
+      if (viewer === null || viewer.disabled || !isAdmin(viewer)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能清除登录失败记录');
       return forgetTrialLogin({ load: (ref) => profiles.load(ref), redactor, now, failedLogins: failedTrialLogins }, input, viewer.id);
     },
     addResource: (by, input) => registry.add(by, input),
@@ -448,7 +451,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     },
     async loginStatus(by, id) {
       const viewer = typeof by?.id === 'string' ? await records.principals.get(by.id) : null;
-      if (viewer === null || viewer.disabled || viewer.role !== 'admin') throw new ConnectorError('ACCESS_DENIED', '只有管理员能看登录状态');
+      if (viewer === null || viewer.disabled || !isAdmin(viewer)) throw new ConnectorError('ACCESS_DENIED', '只有管理员能看登录状态');
       const state = await registry.get(id);
       if (state === null) return null;
       const runtime = await runtimeOf(state, await loadBound(state));
@@ -457,7 +460,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       return status&&shared?.stopped?{...status,stopped:true,cooldownUntil:null,failure:status.failure??shared.code??'LOGIN_FAILED'}:status;
     },
     resetLogin: async (by,id,note)=>{
-      const actual=await records.principals.get(by.id);if(!actual||actual.disabled||actual.role!=='admin')throw new ConnectorError('ACCESS_DENIED');
+      const actual=await records.principals.get(by.id);if(!actual||actual.disabled||!isAdmin(actual))throw new ConnectorError('ACCESS_DENIED');
       registry.invalidate();const state=await registry.get(id);
       if(state) { const defs=await records.variables.list(by);const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);const decisions=names.map(name=>defs.find(d=>d.kind==='secret'&&d.name===name&&d.definition)?.decision.digest).filter((v):v is string=>!!v);
       if(decisions.length)await new CredentialStop(records.store,records.vault,decisions,names,id).reset(); }
@@ -478,6 +481,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         registry.invalidate();
         const state = await registry.get(resource);
         if (state === null || !state.enabled) return { ok: false, external, code: 'RESOURCE_UNAVAILABLE', reason: `资源 ${redactor.text(String(resource))} 不存在或已停用`, manifest: null };
+        if (!await records.authorizations.canUseResource(context.principal.id, resource)) return { ok: false, external, code: 'ACCESS_DENIED', reason: '没有读取该资源的权限', manifest: null };
         const loaded = await loadBound(state);
         const read = loaded.profile.reads.find((r) => r.name === readName);
         if (read === undefined) return { ok: false, external, code: 'READ_UNDECLARED', reason: `系统包没有读取 ${redactor.text(String(readName))}`, manifest: null };

@@ -1,3 +1,4 @@
+import {runById,canViewRun,readPackDirectory,packSchema} from '../api.ts';
 import {osIsolationAvailable} from '../../rules/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../testing/parsers.ts';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ import {runContextOf} from './evaluate.ts';
 import {RunRecord} from '../../../contracts/src/run.ts';
 test('start freezes feeding before bound and expected source reads; checks and result locks retain the same horizon',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await openHarness(pg);t.after(()=>h.close());const dir=await mkdtemp(join(tmpdir(),'hub-feeding-engine-'));t.after(()=>rm(dir,{recursive:true,force:true}));
- const knowledge=createKnowledge({sandbox:{requireOsIsolation:await osIsolationAvailable()},records:h.kit,packs:h.packs,external:h.external,parsers:createDefaultRegistry(),admin:h.admin});Object.assign(h.knowledge,{feeding:knowledge.feeding});
+ const knowledge=createKnowledge({runReads:{runById,canViewRun},packReads:{readPackDirectory,packSchema},sandbox:{requireOsIsolation:await osIsolationAvailable()},records:h.kit,packs:h.packs,external:h.external,parsers:createDefaultRegistry(),admin:h.admin});Object.assign(h.knowledge,{feeding:knowledge.feeding});
  const spec:PackSpec={id:'synthetic-feeding',version:'1.0.0',kind:'workflow',title:'Synthetic feeding probe',description:'Synthetic source reads at 192.0.2.8',files:{
   'workflow.json':{json:{schema:'workflow@1',inputs:[{slot:'subject',role:'subject',description:'synthetic JSON',accepts:['application/json'],required:true,many:false}],parameters:[],product:{catalogs:[]},subject:'subject',projection:{module:'functions/project.ts'},expected_sources:{module:'functions/expected.ts'}}},
   'requirements.json':{json:{schema:'requirements@1',requirements:[{key:'probe',name:'Synthetic probe',description:'Echo horizon',target:'run',required:true,done_rule:'bookkeeping',layers:['static'],accepted_producer:'fact',checks:['probe'],error_handling:[]}]}},

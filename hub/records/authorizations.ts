@@ -359,7 +359,7 @@ export class RecordAuthorizations implements Authorizations {
       if(permission===ASSIGN){
         const registration=subject==='*'&&TeamId.safeParse(object).success;
         const membership=UserId.safeParse(subject).success&&TeamId.safeParse(object).success;
-        const assignment=(UserId.safeParse(subject).success||TeamId.safeParse(subject).success)&&PackId.safeParse(object).success;
+        const assignment=(subject===WHOLE_HUB||UserId.safeParse(subject).success||TeamId.safeParse(subject).success)&&PackId.safeParse(object).success;
         if(!registration&&!membership&&!assignment)throw new TypeError('invalid assignment tuple');
       }
       if(permission==='resource_assign')TeamAssignmentSubject.parse(subject);

@@ -4,7 +4,6 @@ import {ProductDeclaration,Applicability} from '../../contracts/src/product.ts';
 import type {ContributionInput,KnowledgeContributionBody} from '../../contracts/src/contributions.ts';
 import type {RootSource} from '../../contracts/src/knowledge.ts';
 import {parseReference} from '../refs/api.ts';
-import {readPackDirectory} from '../runs/api.ts';
 import {callPackFunction} from '../rules/api.ts';
 import {canonicalize,type Principal} from '../records/api.ts';
 import type {KnowledgeContext} from './context.ts';
@@ -29,7 +28,7 @@ export async function admitApplicability(context:KnowledgeContext,reading:TreeRe
  const marker=object(data?.applicability_state)?data.applicability_state:null;
  if(!content||!data)return missing('目标条目的原始内容');
  const producer=composition.body.producer,pack=await context.packs.pack(`${producer.pack}@${producer.version}`);if(!pack||pack.digest!==producer.digest)return missing('原生产器包版本及其完整性');
- const loaded=await readPackDirectory(pack.directory);if(!loaded.ok||loaded.pack.digest!==producer.digest)return missing('与原组成一致的已核验产品包');
+ const loaded=await context.packReads.readPackDirectory(pack.directory);if(!loaded.ok||loaded.pack.digest!==producer.digest)return missing('与原组成一致的已核验产品包');
  const file=loaded.pack.files.find(file=>file.path==='product.json');if(!file)return missing('原产品声明');
  const product=ProductDeclaration.safeParse(JSON.parse(Buffer.from(file.bytes).toString('utf8')));if(!product.success||!product.data.applicability)return missing('原包没有声明条件语法和闭集来源');
  const policy=product.data.applicability,snapshot=composition.body.applicability_context,inventory=composition.body.known_builds;

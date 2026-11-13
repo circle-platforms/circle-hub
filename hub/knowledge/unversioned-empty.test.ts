@@ -1,3 +1,4 @@
+import {TEST_KNOWLEDGE_READ_PORTS} from './testing/read-ports.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
 import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
@@ -23,7 +24,7 @@ async function world(t:any,versioned=false){
  const product=ProductDeclaration.parse({schema:'product@1',id:'synthetic',title:'Synthetic',names:['Synthetic'],catalogs:[],sync:{start:['site:tree:inventory'],plan:{module:'functions/plan.ts'}},producers:[{id:'documents',title:'Synthetic docs',unversioned:!versioned,function:{module:'functions/produce.ts'},inputs:{inventory:{source:'inventory',optional:true},items:{source:'docs',many:true,optional:true}}}]});
  const handle:ProductHandle={id:'synthetic',kind:'product',version:'1.0.0',digest:'a'.repeat(64),directory,product};const packs=new FakePacks();packs.add(handle);const external=new FakeExternal(kit);
  const set=(items:unknown[],extra={})=>external.set('site:tree:inventory',{bytes:JSON.stringify({complete:true,items,...extra}),mediaType:'application/json'});set([]);
- const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,admin,jev:null,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+ const knowledge=createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,records:kit,parsers:createDefaultRegistry(),packs,external,admin,jev:null,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
  return {kit,admin,handle,external,knowledge,set,packs};
 }
 test('complete zero selections create a distinguishable empty scope and replace a populated pointer',async t=>{

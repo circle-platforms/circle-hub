@@ -9,8 +9,8 @@ test('engine contribution gates fail closed for current and unsupported schema r
   const w=await makeWorld(postgres);t.after(()=>w.close());
   for(const schema of [SCHEMAS.contribution,SCHEMAS.contribution.replace(/@\d+$/,'@99')]){
     const stored=await w.kit.store.put({kind:'claim',schema,provenance:'declared',body:{synthetic:'protected'}});
-    const read=recordReader(w.kit.store,{read:async()=>null});
+    const read=recordReader(w.kit,{read:async()=>null});
     assert.equal(await read.read(stored.digest,{user:w.admin.id,role:w.admin.role}),null);
-    assert.equal(await recordReader(w.kit.store).read(stored.digest,{user:w.admin.id,role:w.admin.role}),null);
+    assert.equal(await recordReader(w.kit).read(stored.digest,{user:w.admin.id,role:w.admin.role}),null);
   }
 });
