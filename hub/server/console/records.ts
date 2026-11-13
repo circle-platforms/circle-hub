@@ -1,5 +1,5 @@
 import {chart,comparisons,parts} from './charts.ts';
-import {technicalCode,stat,facts} from './presentation.ts';
+import {technicalCode,facts} from './presentation.ts';
 // 记录 (the design canvas's Audit board): the append-only call log with its filters, the calls per day and tool, per member
 // and per result over the last 14 days, and the lines themselves. Administrators see every call with the admin notes; a
 // member sees their own calls only (the call log answers so itself). /console/admin/calls is the administrators' path of

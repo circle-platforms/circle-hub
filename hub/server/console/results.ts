@@ -1,5 +1,5 @@
 import {time} from './format.ts';
-import {technicalCode,stat} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 import {packTitles,taskTitle} from './tasks.ts';
 // Read-only production results computed at start_run, separate from later model commentary; every value under its
 // interface term (display rule 20).
@@ -12,11 +12,11 @@ import { errorLine, filterForm, selectControl } from './components.ts';
 import { code, definitions, html, link, page, section, table } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { ruleWithdrawalNotice, claimBlockAtRead, sharedRunNotice, missingProductionResult } from './pages.ts';
+import { RUN_ID, param } from './params.ts';
 /** What 生产结果 is: a product of the workflow, not a result from the production environment (issue 230). */
 const PRODUCTION_RESULT_HINT = '开始任务时由规则直接算出的结果，是工作流的产物，与生产环境无关';
 
 const production = (run: RunRecord): boolean => run.requirements.length > 0 && run.requirements.every((r) => r.accepted_producer === 'fact');
-const param = (ctx: PageContext, key: string): string | undefined => ctx.url.searchParams.get(key) || undefined;
 
 export async function resultsPage(ctx: PageContext): Promise<PageResult> {
   const pack = param(ctx, 'pack');
@@ -36,7 +36,7 @@ export async function resultsPage(ctx: PageContext): Promise<PageResult> {
 }
 
 export async function resultPage(ctx: PageContext, runId: string): Promise<PageResult> {
-  if (!/^run_[0-9a-z]{26}$/.test(runId)) return neutralPage(ctx);
+  if (!RUN_ID.test(runId)) return neutralPage(ctx);
   const detail = await ctx.deps.runs.getRun(ctx.principal, runId);
   if (detail === null || !production(detail.run)) return neutralPage(ctx);
   const renderClaim=claimBlockAtRead(detail.rule_withdrawn===true);

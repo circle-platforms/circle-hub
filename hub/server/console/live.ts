@@ -25,6 +25,7 @@ import { describeError } from '../notes.ts';
 import { background } from '../../telemetry/api.ts';
 import type { PageContext } from './context.ts';
 import { readableLines } from './pages.ts';
+import { RUN_ID, SHA256, USER_ID } from './params.ts';
 import type { ConsoleSession, SessionStore } from './session.ts';
 
 export const LIVE_EVENTS = ['task.updated', 'request.updated', 'environment.status', 'system.status', 'import.progress', 'member.connected', 'system.added', 'pack.published', 'knowledge.published'] as const;
@@ -77,12 +78,9 @@ const QUEUED = 1_000;
 /** Held back this long: the resource catalog of this process keeps its list up to 5 s (connectors cacheMs). */
 const HOLD_MS: Readonly<Partial<Record<LiveEventName, number>>> = { 'system.added': 6_000, 'system.status': 6_000, 'environment.status': 6_000 };
 const LOG_EVERY_MS = 60_000;
-const RUN_ID = /^run_[0-9a-z]{26}$/;
-const USER_ID = /^usr_[0-9a-z]{26}$/;
 const RESOURCE_ID = /^res_[0-9a-z]{26}$/;
 /** A runtime environment's configuration object: `executor.<id>` (hub/dispatch). */
 const EXECUTOR_OBJECT = /^executor\.([A-Za-z0-9._-]{1,128})$/;
-const SHA256 = /^[0-9a-f]{64}$/;
 const EXECUTOR_ID = /^exe_[0-9a-hjkmnp-tv-z]{26}$/;
 /** The effect outcome of a result nobody could confirm: a job in that state keeps its environment frozen. */
 const UNKNOWN_OUTCOME: EffectOutcome = 'unknown';

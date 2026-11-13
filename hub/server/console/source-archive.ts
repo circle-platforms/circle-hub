@@ -2,7 +2,7 @@
 import {Sha256} from '../../../contracts/src/common.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
 import {html,link,code,table,page,pageLayout,type Html} from './html.ts';
-import {actionLink,badge,dialog,evidence,facts,panel,technical,tooltip,stat,field} from './presentation.ts';
+import {actionLink,badge,dialog,evidence,facts,panel,technical,tooltip,field} from './presentation.ts';
 import { count, csrfField, postForm, selectControl, submitButton } from './components.ts';import {attributionBadge,knowledgeSearchScopeLabel,sourceTypeLabel} from './knowledge-display.ts';
 import {selectedScope,spaceLayout,knowledgeContext,knowledgeTabs} from './space-layout.ts';
 import {size as bytes,time} from './format.ts';

@@ -20,6 +20,7 @@ import type { PageContext, PageResult } from './context.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
 import type { HubFacts } from './settings.ts';
 import { segments } from './components.ts';
+import { DAY_MS } from './params.ts';
 import { card, chip, clock, count, dot, duration, kpi, when } from './ui.ts';
 
 /** What the page reads; `serve` gives one. A Hub without it says 未知 everywhere, not 0. */
@@ -29,8 +30,6 @@ export interface HealthPageSources {
   /** The trace writer's numbers of this process; null before it started. */
   writer(): WriterStats | null;
 }
-
-const DAY_MS = 86_400_000;
 const GB = 1024 ** 3;
 /** The curves of the last 24 hours: 288 points of 5 minutes, whatever the table holds. */
 const CURVE_POINTS = 288;

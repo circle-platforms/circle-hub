@@ -1,4 +1,4 @@
-import {evidence,technicalCode,stat,facts} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 import {personalOriginCleared,clearedPersonalFolder,singleItemOrigin} from './personal-origin.ts';
 // Decision 135 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
 import { SpaceGrantBody } from '../../../contracts/src/spaces.ts';

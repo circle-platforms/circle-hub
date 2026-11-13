@@ -1,5 +1,5 @@
 import {tooltip} from './presentation.ts';
-import {stat,facts,technicalCode,technical} from './presentation.ts';
+import {facts,technicalCode,technical} from './presentation.ts';
 // 设置 (the design canvas's Admin board): members and the Circles connected with their tokens, credentials and the Hub's
 // state for administrators; a member sees their own Circles and the Hub's state. The console runs only adding a member
 // (proposal decision 6 of 2026-10-31); disabling, disconnecting, issuing a spare login token and changing a credential are

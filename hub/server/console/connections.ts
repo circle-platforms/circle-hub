@@ -1,5 +1,5 @@
 import {dot} from './ui.ts';
-import {technical,technicalCode,stat,facts,actionLink,evidence,tooltip} from './presentation.ts';
+import {technical,technicalCode,facts,actionLink,evidence,tooltip} from './presentation.ts';
 // 连接 (the design canvas's Connections board): the Circles connected with a token, the business systems the Hub reads
 // (resources, administrators only: the catalog gives others none) and the runtime environments dispatch jobs go to (the
 // registered executors, administrators only). The Hub only reads business systems; a write route is never opened here.
