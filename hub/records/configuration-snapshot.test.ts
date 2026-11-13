@@ -1,3 +1,4 @@
+import {createPackRegistry,productPack,writePack,temporaryDirectory} from '../runs/api.ts';
 // Synthetic current-schema reset replay. Protected states are never printed by these tests.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -66,4 +67,36 @@ test('nonempty targets and incompatible receipts fail before committing protecte
   assert.deepEqual((await w.targetDb.query('SELECT id FROM users')).rows,before);
   const altered=structuredClone(snapshot);altered.migrations[0].sha256='f'.repeat(64);
   assert.throws(()=>validateConfigurationSnapshot(altered),RecordsError);
+});
+
+
+test('published package manifests and files replay with activation, installation and team resource grants',{timeout:120000},async t=>{
+  const w=await world(t),temp=await temporaryDirectory('synthetic-config-pack-');t.after(()=>temp.remove());
+  const {user:admin}=await w.source.principals.bootstrapAdmin('synthetic-pack-owner');
+  const user=await w.source.principals.createUser(admin,'synthetic-pack-member');
+  const team=await w.source.teams.create(admin,'合成包分配组');await w.source.teams.add(admin,team.id,user.id);
+  await w.source.authorizations.grantPublishRight(admin,admin.id);
+  const registry=createPackRegistry({records:w.source,extractDir:join(temp.path,'source-extracted'),sandbox:{requireOsIsolation:false}});
+  const product=await writePack(join(temp.path,'product'),productPack());
+  const published=await registry.publish(admin,product.dir);assert.ok(published.ok,published.ok?'':published.problems.map(problem=>problem.rule).join(','));
+  await registry.activate(admin,published.version.id);
+  const skill=await writePack(join(temp.path,'skill'),{id:'synthetic-snapshot-skill',version:'1.0.0',kind:'skill',title:'合成保留技能',description:'仅合成配置恢复',files:{'SKILL.md':'# Synthetic snapshot skill\n','skill.json':{schema:'skill@1',parsers:[]}}});
+  const skillPublished=await registry.publish(admin,skill.dir);assert.ok(skillPublished.ok,skillPublished.ok?'':skillPublished.problems.map(problem=>problem.rule).join(','));
+  await registry.install(admin,skillPublished.version.id+'@'+skillPublished.version.version);
+  await w.source.authorizations.assignTeam(admin,team.id,'synthetic-future-workflow');
+  await w.source.authorizations.assignResource(admin,'synthetic-resource',team.id);
+  const snapshot=await exportConfigurationSnapshot(w.sourceConfig);assert.equal(snapshot.packages.length,2);
+  await restoreConfigurationSnapshot(w.targetConfig,snapshot);
+  const restored=createPackRegistry({records:w.target,extractDir:join(temp.path,'target-extracted'),sandbox:{requireOsIsolation:false}});
+  assert.deepEqual((await restored.activeProducts()).map(item=>item.info.digest),[published.version.digest]);
+  assert.deepEqual((await restored.installedSkills()).map(item=>item.info.digest),[skillPublished.version.digest]);
+  assert.equal(await w.target.authorizations.canUse(user.id,'synthetic-future-workflow'),true);
+  assert.equal(await w.target.authorizations.canUseResource(user.id,'synthetic-resource'),true);
+  for(const pack of snapshot.packages){
+    const root=await restored.extractPack(pack.digest);
+    assert.deepEqual(Buffer.from((await w.target.objects.get(pack.digest))!),Buffer.from((await w.source.objects.get(pack.digest))!));
+    for(const file of pack.manifest.files)assert.equal(sha256Hex(await readFile(join(root,file.path))),file.sha256);
+  }
+  const corrupted=structuredClone(snapshot);corrupted.objects[0].bytes_base64=Buffer.from('synthetic wrong bytes').toString('base64');
+  assert.throws(()=>validateConfigurationSnapshot(corrupted),RecordsError);
 });
