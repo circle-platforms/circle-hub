@@ -31,7 +31,8 @@ export type { RebuildConsoleContext };
 /** What the administrator types to confirm a destructive reset. */
 export const RESET_CONFIRM_WORD = '重建';
 
-export type ResetChoice = ResetScope | 'all';
+/** Selector values are the generated reset_scope axis (including all); do not append a handwritten literal. */
+export type ResetChoice = ResetScope;
 
 export const RESET_SCOPES: readonly { value: ResetChoice; label: string; clears: string; keeps: string }[] = [
   {
@@ -67,7 +68,7 @@ export const RESET_SCOPES: readonly { value: ResetChoice; label: string; clears:
 ];
 
 export function isResetScope(value: string): value is ResetChoice {
-  return value === 'all' || (RESET_SCOPE as readonly string[]).includes(value);
+  return (RESET_SCOPE as readonly string[]).includes(value);
 }
 
 const ARCHIVE_NOTE =

@@ -268,8 +268,8 @@ describe('pages', () => {
     assert.ok(list.body.includes(run));
     const page = await everyTaskTab(`/console/runs/${run}`, (path) => get(path, session));
     assert.equal(page.status, 200);
-    // Issue 239: a run recorded without a submission deadline says what the reader can do, in plain words.
-    assert.ok(page.body.includes('这次任务未记录提交期限。请从此任务创建新的修订后继续。'));
+    // New runs always record submission_due (start/fakes). Historical missing-due copy is not tested (RULES §6 / regression rule 0).
+    assert.match(page.body, /提交期限/);
     assert.ok(!page.body.includes('旧运行没有记录期限'));
     const [stat, dyn] = [uiLabelOf('layer', 'static'), uiLabelOf('layer', 'dynamic')];
     for (const text of ['已交付', '未完成', `${dyn}：本层不适用`, `？ ${stat}：未检查`, `✓ ${stat}：通过`, '回执：已受理；结果分类：已交付 2', '期望结果缺失', '调用日志', 'submit_result', '执行过程', '技术信息', DONE_RULE_NOTE, ACCEPTED_PRODUCER_NOTE]) {
@@ -379,7 +379,8 @@ describe('pages', () => {
       assert.ok(page.body.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
       assert.ok(page.body.includes('&quot;&gt;&lt;img src=x onerror=alert(2)&gt;'));
       const admin = await signIn(server.admin.token);
-      const adminPage = await get('/console/team', admin);
+      // Default /console/team is collaborative teams; member names live on ?tab=members.
+      const adminPage = await get('/console/team?tab=members', admin);
       assert.ok(!adminPage.body.includes('<b>名字</b>') && adminPage.body.includes('&lt;b&gt;名字&lt;/b&gt;'));
     } finally {
       server.fakes.runs.items = null;
@@ -430,7 +431,7 @@ describe('pages', () => {
 
     const stranger = await person([]);
     const strangerSession = await signIn(stranger.token);
-    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的团队知识/);
+    assert.match((await get('/console/knowledge', strangerSession)).body, /没有可读的公共知识/);
     const hidden = await get(`/console/knowledge/tree?root=${ROOT_1}&path=%2F`, strangerSession);
     const missing = await get(`/console/knowledge/tree?root=${'e'.repeat(64)}&path=%2F`, strangerSession);
     assert.equal(hidden.status, 404);
@@ -443,11 +444,12 @@ describe('pages', () => {
     const bare = await createTestServer({ postgres, withoutProducts: true });
     try {
       const admin = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(bare.admin.token, bare.port) } });
-      assert.ok(admin.body.includes('/console/packs/line-a'), 'the product pack id of the catalog');
+      // Product packs use packPath → /console/workflows/<id> (/console/packs paths retired).
+      assert.ok(admin.body.includes('/console/workflows/line-a'), 'the product pack id of the catalog');
       const user = await bare.createUser('无产品端口');
       await bare.assign(user.principal, 'review');
       const page = await send('/console/knowledge', { port: bare.port, headers: { cookie: await signIn(user.token, bare.port) } });
-      assert.match(page.body, /没有可读的团队知识/);
+      assert.match(page.body, /没有可读的公共知识/);
     } finally {
       await bare.close();
     }
@@ -486,7 +488,7 @@ describe('pages', () => {
 
     const session = await signIn(server.admin.token);
     assert.equal((await get('/console/admin', session)).status, 404);
-    const admin = await get('/console/team', session);
+    const admin = await get('/console/team?tab=members', session);
     assert.equal(admin.status, 200);
     assert.ok(admin.body.includes(user.user.name));
     assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
