@@ -38,7 +38,7 @@ test('an explicit rec reference to archived history fails closed instead of movi
   assert.equal(selected.selected.has(run.digest), false);
 });
 test('a root move keeps an opaque producing RunId without treating it as a missing rec reference', () => {
-  const body = { action: 'move_root', run: 'run_' + '1'.repeat(26), inputs: [], detail: { next: null, previous_action: null, expected: null } };
+  const body = { action: 'move_root', result: 'completed', run: 'run_' + '1'.repeat(26), inputs: [], detail: { next: null, previous_action: null, expected: null } };
   const action = row('action', 'action@1', body);
   const grant = row('authorization', 'authorization@1', { permission: 'resource_config', subject: '*', object: 'synthetic', revoked: false, bound: action.digest, supersedes: null });
   const selected = selectState([grant, action], new Set());
@@ -48,4 +48,21 @@ test('a root move keeps an opaque producing RunId without treating it as a missi
 test('noncanonical old bodies are rejected rather than a runtime fallback being introduced', () => {
   assert.deepEqual(canonicalOldBody(canonicalize({ b: 2, a: 1 })), { a: 1, b: 2 });
   assert.throws(() => canonicalOldBody('{"b":2,"a":1}'));
+});
+
+test('the complete old-release fixture has a closed state graph without retaining task history', async () => {
+  const { buildOld33Fixture } = await import('./testing/fixtures.ts');
+  const fixture = buildOld33Fixture();
+  const records = fixture.records.map((record, index) => ({ ...record, seq: String(index + 1) }));
+  const aliases = new Map<string, string[]>();
+  for (const record of records) for (const entry of record.index) if (['knowledge.node', 'knowledge.entry', 'knowledge.root'].includes(entry.key)) {
+    const values = aliases.get(entry.value) ?? []; values.push(record.digest); aliases.set(entry.value, values);
+  }
+  const selected = selectState(records, new Set(fixture.objects.map(object => object.sha256)), aliases);
+  assert.deepEqual(selected.issues, []);
+  for (const digest of fixture.archived) assert.equal(selected.selected.has(digest), false);
+  for (const digest of fixture.retained) {
+    if (fixture.handles.secrets.some(secret => secret.decision === digest)) continue;
+    assert.equal(selected.selected.has(digest), true, 'a fixture state record was omitted');
+  }
 });

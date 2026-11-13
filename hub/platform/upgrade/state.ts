@@ -3,7 +3,7 @@ import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { PackManifest } from '../../../contracts/src/pack.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
 import { RunId, Sha256 } from '../../../contracts/src/common.ts';
-import { isPermissionKind } from '../../../contracts/generated/vocabulary.ts';
+import { isPermissionKind, isActionKind, isActionResult } from '../../../contracts/generated/vocabulary.ts';
 import { canonicalize, recordDigest, digestOf } from '../../records/api.ts';
 
 export interface OldRecord {
@@ -19,6 +19,7 @@ export interface OldRecord {
 export interface UpgradeIssue { table: string; row: number; reason: string; }
 export interface Selection {
   selected: Set<string>;
+  unhydrated: Set<string>;
   archived: Map<string, number>;
   issues: UpgradeIssue[];
   secretDecisions: OldRecord[];
@@ -150,7 +151,7 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
       fail(row, '没有声明这个种类和模式的迁移规则，不能判作历史丢弃');
     }
   }
-  const visited = new Set<string>();
+  const visited = new Set<string>(), unhydrated = new Set<string>();
   const queue = [...selected];
   const add = (hash: string, from: OldRecord) => {
     const direct = byDigest.has(hash) ? [hash] : aliases.get(hash);
@@ -165,9 +166,10 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
     const row = byDigest.get(queue[at]!)!;
     if (visited.has(row.digest)) continue;
     visited.add(row.digest);
+    if (row.body === undefined) { unhydrated.add(row.digest); continue; }
     if (row.schema === 'action@1') {
       const body = fields(row.body);
-      if (body.action !== 'move_root') { fail(row, '引用的动作没有已声明的状态迁移规则'); continue; }
+      if (!isActionKind(body.action) || !isActionResult(body.result) || !Array.isArray(body.inputs) || body.inputs.some(value => typeof value !== 'string')) { fail(row, '引用的状态动作不合正式动作模式'); continue; }
     }
     if (recordDigest(row) !== row.digest) { fail(row, '引用记录的完整性不符'); continue; }
     for (const path of DEPENDENCIES[row.schema] ?? []) {
@@ -180,7 +182,7 @@ export function selectState(records: readonly OldRecord[], objects: ReadonlySet<
   }
   const archived = new Map<string, number>();
   for (const row of records) if (!selected.has(row.digest)) archived.set(row.kind, (archived.get(row.kind) ?? 0) + 1);
-  return { selected, archived, issues, secretDecisions, objects: objectClosure, decisions: records.map((row, index) => ({ row: index + 1, disposition: selected.has(row.digest) ? 'migrated' : 'archived', reason: selected.has(row.digest) ? '保留状态及其明确引用闭包' : secretDecisions.includes(row) ? '旧密钥登记转为独立非值元数据，原决定保留归档' : '不属于保留状态，原件在旧数据库归档中保留' })) };
+  return { selected, unhydrated, archived, issues, secretDecisions, objects: objectClosure, decisions: records.map((row, index) => ({ row: index + 1, disposition: selected.has(row.digest) ? 'migrated' : 'archived', reason: selected.has(row.digest) ? '保留状态及其明确引用闭包' : secretDecisions.includes(row) ? '旧密钥登记转为独立非值元数据，原决定保留归档' : '不属于保留状态，原件在旧数据库归档中保留' })) };
 }
 
 export function canonicalOldBody(text: string): unknown {
