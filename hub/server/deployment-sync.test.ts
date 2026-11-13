@@ -114,3 +114,11 @@ test('supervisor refuses an arbitrary id or a different database before any OS c
   await assert.rejects(launchDeploymentSyncSupervisor({...f.config,database:{...f.config.database,database:'another'}},f.id,f.context),/不一致/);
   assert.equal(f.calls.length,0);
 });
+
+test('offline owner submission may launch the same database runtime worker without widening its DSN',async t=>{
+  const f=await supervisorFixture(t,'linux');
+  await launchDeploymentSyncSupervisor({...f.config,database:{...f.config.database,user:f.context.user}},f.id,f.context);
+  assert.equal(f.calls.length,1);
+  assert.ok(f.calls[0].args.includes('--setenv=CIRCLE_HUB_DATABASE_USER='+f.context.database.role));
+  assert.ok(!f.calls[0].args.includes('--setenv=CIRCLE_HUB_DATABASE_USER='+f.context.user));
+});
