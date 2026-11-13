@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openConnectorKit } from '../connectors/testing/kit.ts';
 import { writePack } from '../connectors/testing/packs.ts';
-import { FileVault } from '../records/vault.ts';
+import { FileVault } from '../records/api.ts';
 import { canonicalBytes } from '../records/api.ts';
 
 let pg: TemporaryPostgres;
