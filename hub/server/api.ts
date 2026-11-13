@@ -56,6 +56,15 @@ export interface ServerDeps {
   dispatch?: DispatchView;
   /** The read-only trial of a business system before it is connected (connectors' admin.trial); absent where not wired. */
   systems?: SystemsView;
+  /**
+   * Read-only lease view for the console (N7 alerts: held with no until). Absent when leases are not wired.
+   * Prefix '' lists every held key; withHolder adds the occupying account id.
+   */
+  leases?: {
+    view(prefix: string, withHolder?: true): Promise<{
+      entries: Array<{ key: string; since: string; until: string | null; run: string; user?: string }>;
+    }>;
+  };
 }
 
 /** Business systems as the console's administrators try them; the connectors recheck the administrator themselves. */

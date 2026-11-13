@@ -181,9 +181,9 @@ function section(markup: string, title: string): string {
   return found;
 }
 
-/** The tabs of the page (decision 151): each is an address of its own and reads only what it shows. */
-const TABS = ['resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
-const tabPath = (tab: typeof TABS[number]): string => (tab === 'resources' ? '/console/health' : `/console/health?tab=${tab}`);
+/** The tabs of the page (decision 151): each is an address of its own and reads only what it shows. N7 adds 告警 first. */
+const TABS = ['alerts', 'resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
+const tabPath = (tab: typeof TABS[number]): string => (tab === 'alerts' ? '/console/health' : `/console/health?tab=${tab}`);
 
 async function one(client: ConsoleClient, path: string): Promise<string> {
   const reply = await client.get(path);
@@ -201,12 +201,13 @@ async function shown(client: ConsoleClient, path?: string): Promise<string> {
 
 // ---------------------------------------------------------------- who may open it
 
-test('six tabs, each an address of its own, and a tab reads only what it shows', async (t) => {
+test('seven tabs, each an address of its own, and a tab reads only what it shows', async (t) => {
   const reads: string[] = [];
   const counted = <T extends object>(name: string, target: T): T => new Proxy(target, { get: (object, key, receiver) => { const value = Reflect.get(object, key, receiver); return typeof value !== 'function' ? value : (...args: unknown[]) => { reads.push(`${name}.${String(key)}`); return (value as (...a: unknown[]) => unknown).apply(object, args); }; } });
   const w = await world(t, (page) => ({ health: counted('health', healthReader(page)), traces: counted('traces', new TraceReader(page)) }));
   const tabsOf = (body: string) => [...(/<nav class="ch-seg" aria-label="运行状况内容" data-health-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1] ?? '').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map((match) => [match[1], !!match[2], match[3]]);
   const expected: Record<typeof TABS[number], { label: string; reads: string[] }> = {
+    alerts: { label: '告警', reads: ['health.summary', 'traces.background'] },
     resources: { label: '资源', reads: ['health.summary', 'health.curve', 'health.events'] },
     tasks: { label: '后台任务', reads: ['health.summary', 'traces.background'] },
     events: { label: '崩溃和重启', reads: ['health.summary', 'health.events', 'health.eventCount'] },
@@ -222,7 +223,7 @@ test('six tabs, each an address of its own, and a tab reads only what it shows',
     assert.deepEqual(reads, expected[tab].reads, `the reads of ${tab}`);
   }
   reads.length = 0;
-  assert.match(await shown(w.admin, '/console/health?tab=absent'), /data-health-tab="resources"/, 'an unknown tab is the first');
+  assert.match(await shown(w.admin, '/console/health?tab=absent'), /data-health-tab="alerts"/, 'an unknown tab is the first');
 });
 
 test('运行状况 is an administrator\'s page: listed for them, and a member gets what any other administrators\' page gives', async (t) => {
@@ -482,12 +483,14 @@ test('observation itself: the writer of this process and the samples of the day'
   assert.match(observed, /已写入 21,364 行 每批写入耗时 22 毫秒 最近一批 没有写入的样本 0 个 近 24 小时 读取失败的样本 0 个 近 24 小时/);
 });
 
-test('the slowest queries are a note for now, and alerts are not on the page', async (t) => {
+test('the slowest queries are a note for now, and the alerts tab lists judged conditions', async (t) => {
   const w = await world(t);
   await everything(w);
   const page = await shown(w.admin);
   assert.match(section(page, '最慢的查询'), /circle-hub db top/);
-  assert.doesNotMatch(visible(page), /告警/);
+  const alerts = await shown(w.admin, '/console/health');
+  assert.match(alerts, /data-health-tab="alerts"/);
+  assert.match(alerts, /告警/);
 });
 
 // ---------------------------------------------------------------- what it does not know

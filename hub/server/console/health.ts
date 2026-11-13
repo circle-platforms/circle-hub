@@ -18,7 +18,7 @@ import { hoverTime, size } from './format.ts';
 import { code, emptyBlock, href, html, page, table, type Html } from './html.ts';
 import type { PageContext, PageResult } from './context.ts';
 import { evidence, facts, technical, technicalCode } from './presentation.ts';
-import type { HubFacts } from './settings.ts';
+import { storageFacts, type HubFacts } from './settings.ts';
 import { segments } from './components.ts';
 import { DAY_MS } from './params.ts';
 import { card, chip, clock, count, dot, duration, kpi, when } from './ui.ts';
@@ -31,6 +31,10 @@ export interface HealthPageSources {
   writer(): WriterStats | null;
 }
 const GB = 1024 ** 3;
+/** Alert-rules.md thresholds Hub can judge today (N7). */
+const LEASE_HOLD_MS = 24 * 60 * 60 * 1000;
+const BACKUP_STALE_MS = 7 * DAY_MS;
+const DISK_LOW_BYTES = 5 * GB;
 /** The curves of the last 24 hours: 288 points of 5 minutes, whatever the table holds. */
 const CURVE_POINTS = 288;
 const POINT_MS = DAY_MS / CURVE_POINTS;
@@ -454,9 +458,78 @@ const NO_SAMPLES = emptyBlock({ title: '近 24 小时没有资源样本', text: 
 const HINT = '主线程、内存、沙箱、连接池、数据库、磁盘和请求的当前值和曲线，后台任务，崩溃和重启。只有管理员可见。诊断数据保留 14 天，不作根据。';
 
 /** The tabs of the page, in the order shown. A crash asked for by `event` opens the tab that lists it. */
-const HEALTH_TABS = ['resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
+const HEALTH_TABS = ['alerts', 'resources', 'tasks', 'events', 'clients', 'releases', 'self'] as const;
 type HealthTab = typeof HEALTH_TABS[number];
-const HEALTH_TAB_LABEL: Record<HealthTab, string> = { resources: '资源', tasks: '后台任务', events: '崩溃和重启', clients: '按客户端', releases: '按发布', self: '观测自身' };
+const HEALTH_TAB_LABEL: Record<HealthTab, string> = { alerts: '告警', resources: '资源', tasks: '后台任务', events: '崩溃和重启', clients: '按客户端', releases: '按发布', self: '观测自身' };
+
+interface AlertHit {
+  id: string;
+  text: string;
+  next: string;
+}
+
+/** Alerts Hub can already judge (alert-rules A1/A8/A9/A10); missing data stays off the list, not green. */
+async function collectAlerts(ctx: PageContext, sources: HealthPageSources | undefined, summary: HealthSummary | null, background: BackgroundTotal[] | null, now: Date): Promise<AlertHit[]> {
+  const hits: AlertHit[] = [];
+  if (ctx.rebuildNeeded) {
+    hits.push({ id: 'A10', text: `库结构不兼容，需要重建：${ctx.rebuildNeeded.reason}`, next: '打开 /console/rebuild，按维护流程重建。' });
+  }
+  try {
+    const storage = await storageFacts(ctx);
+    if (storage.backups === null) {
+      /* unreadable stays unknown — no alert row */
+    } else if (storage.backups.count === 0) {
+      hits.push({ id: 'A9', text: '尚无备份', next: '在设置页用备份命令做一份校验过的备份。' });
+    } else if (storage.backups.latest_at !== null) {
+      const age = now.getTime() - Date.parse(storage.backups.latest_at);
+      if (Number.isFinite(age) && age > BACKUP_STALE_MS) {
+        hits.push({ id: 'A9', text: `最近备份已超过 7 天（${when(storage.backups.latest_at)}）`, next: '在设置页再做备份。' });
+      }
+    }
+  } catch { /* storage unread → no backup alert */ }
+  const disk = summary?.fields.data_free_bytes.current ?? null;
+  if (disk !== null && disk < DISK_LOW_BYTES) {
+    hits.push({ id: 'A9', text: `数据目录可用空间不足 ${size(DISK_LOW_BYTES)}（现 ${size(disk)}）`, next: '清理磁盘或扩大数据卷后再备份/重置。' });
+  }
+  if (background !== null) {
+    const sync = background.find((row) => row.name === 'sync-knowledge');
+    if (sync !== undefined) {
+      const age = now.getTime() - Date.parse(sync.last_at);
+      if (Number.isFinite(age) && age > BACKUP_STALE_MS) {
+        hits.push({ id: 'A8', text: `知识同步上次运行已超过 7 天（${when(sync.last_at)}）`, next: '到「后台任务」页核对 sync-knowledge；成员也可在知识库看同步条。' });
+      }
+    }
+  }
+  const leases = ctx.deps.leases;
+  if (leases !== undefined) {
+    try {
+      const { entries } = await leases.view('', true);
+      for (const entry of entries) {
+        if (entry.until !== null) continue;
+        const held = now.getTime() - Date.parse(entry.since);
+        if (!Number.isFinite(held) || held < LEASE_HOLD_MS) continue;
+        const who = entry.user === undefined ? '未知账户' : await ctx.userName(entry.user);
+        hits.push({
+          id: 'A1',
+          text: `租约 ${entry.key} 自 ${when(entry.since)} 被持有且没有到期时间（持有人 ${who}）`,
+          next: '核对占用运行是否仍需要；结束后释放租约。本地释放不能代替远端停作业。',
+        });
+      }
+    } catch { /* lease unread → no A1 row */ }
+  }
+  return hits;
+}
+
+function alertsPanel(hits: AlertHit[]): Html {
+  if (hits.length === 0) {
+    return card({ title: '告警' }, html`<p class="ch-meta">当前没有已判定的告警（租约无到期、备份过期、磁盘不足、知识同步失败、需要重建）。读不到的数据不会标成正常。</p>`);
+  }
+  return card({ title: `告警 · ${count(hits.length)}` }, table(
+    ['编号', '条件', '下一步'],
+    hits.map((hit) => [hit.id, hit.text, hit.next]),
+    '没有告警',
+  ));
+}
 
 export async function healthPage(ctx: PageContext, sources: HealthPageSources | undefined, log: (line: string) => void): Promise<PageResult> {
   const now = ctx.deps.now?.() ?? new Date();
@@ -477,7 +550,7 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
   // Decision 151, step 8: one part a tab, and a tab reads only what it shows. The page used to make nine reads, one after the
   // other, for six blocks down one page. The latest sample is read on every tab: it is the line under the title.
   const asked = ctx.url.searchParams.get('tab');
-  const tab: HealthTab = ctx.url.searchParams.has('event') ? 'events' : HEALTH_TABS.find((key) => key === asked) ?? 'resources';
+  const tab: HealthTab = ctx.url.searchParams.has('event') ? 'events' : HEALTH_TABS.find((key) => key === asked) ?? 'alerts';
   // One after the other: the reads share one connection, and a page that reports on load keeps to one at a time.
   const summary = await read('样本', (s) => s.health.summary(by, { since: from }));
   const uptime = ctx.hub === undefined ? '' : ` · 本次启动已运行 ${duration(now.getTime() - ctx.hub.startedAt.getTime())}`;
@@ -485,7 +558,10 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
   const curveOf = () => read('曲线', (s) => s.health.curve(by, { from, to, points: CURVE_POINTS }));
   const eventsOf = () => read('进程事件', (s) => s.health.events(by, { limit: EVENTS_SHOWN }));
   let content: Html;
-  if (tab === 'resources') {
+  if (tab === 'alerts') {
+    const background = await read('后台任务', (s) => s.traces.background(by, { since: from.toISOString(), retained }));
+    content = alertsPanel(await collectAlerts(ctx, sources, summary, background, now));
+  } else if (tab === 'resources') {
     const curvePoints = await curveOf();
     const crashes = (await eventsOf())?.filter((event) => event.kind === 'abnormal_exit') ?? [];
     const points = curvePoints ?? Array.from({ length: CURVE_POINTS }, (_, index): CurvePoint => ({ at: new Date(from.getTime() + index * POINT_MS).toISOString(), last_at: null, samples: 0, failed: 0, dropped: 0, event_loop_delay_max_ms: null, heap_used_bytes: null, gc_pause_ms: null, sandbox_running: null, sandbox_waiting: null, pool_in_use: null, pool_waiting: null, pg_active_connections: null, pg_waiting_locks: null, data_free_bytes: null, requests_in_flight: null }));
@@ -522,7 +598,7 @@ export async function healthPage(ctx: PageContext, sources: HealthPageSources | 
 ${SLOW_QUERIES}`;
   }
   const tabs = segments('运行状况内容', HEALTH_TABS.map((key) => ({
-    href: href('/console/health', key === 'resources' ? {} : { tab: key }),
+    href: href('/console/health', key === 'alerts' ? {} : { tab: key }),
     label: HEALTH_TAB_LABEL[key],
     current: key === tab,
   })), 'data-health-tabs');
