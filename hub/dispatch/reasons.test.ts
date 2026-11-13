@@ -59,3 +59,11 @@ test('another job or corrupted projected bytes cannot supply a verdict', async (
     assert.equal(result.no_verdict, undefined); assert.deepEqual(result.missing_facts, []);
   }
 });
+
+test('unknown send evidence takes precedence over an older booking diagnosis',()=>{
+  const source=job({outcome:'unknown',frozen:true,booking:{target:'synthetic-bed',coverage_complete:false,required_resources:2,missing_resources:2,declared_device_count:2}});
+  source.ended='unknown';
+  const note=statusDiagnostics(source,false);
+  assert.match(note.next_action,/不要重交/);
+  assert.doesNotMatch(note.next_action,/先预订|开始新的运行/);
+});

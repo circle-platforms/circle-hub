@@ -406,3 +406,37 @@ test('an unreadable environment permission port is unavailable, not a negative p
   assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
   assert.doesNotMatch(JSON.stringify(note),/private connection|没有.*分配|usr_|exe_|circle-hub/);
 });
+
+
+test('a verified submission without booking reports authorized environment facts without raw lease keys',async t=>{
+  const c=await setup({mode:'lineage'});t.after(()=>c.close());
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.equal(note.submission_verified,true);
+  assert.equal(note.error_code,'LEASE_UNAVAILABLE');assert.equal(note.booking?.coverage_complete,false);
+  assert.equal(note.booking?.target,c.executor.definition.target);
+  assert.equal(note.booking?.required_resources,c.executor.definition.resources.length);
+  assert.equal(note.booking?.missing_resources,c.executor.definition.resources.length);
+  assert.equal(note.booking?.declared_device_count,c.executor.definition.probes!.seats.length);
+  assert.match(note.next_action!,/先预订整个.*脚本编写/);
+  for(const key of c.executor.definition.resources)assert.ok(!JSON.stringify(note).includes(key));
+  assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|原因.*未查清/);
+  assert.equal(c.calls.length,0);
+});
+
+test('an unassigned actor gets no environment name or booking diagnosis',async t=>{
+  const c=await setup({mode:'lineage'});t.after(()=>c.close());
+  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.equal(note.booking,undefined);
+  assert.ok(!JSON.stringify(note).includes(c.executor.definition.target));assert.equal(c.calls.length,0);
+});
+
+test('unreadable lease coverage stays unknown instead of asserting no booking',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  c.leases.holderSnapshot=async()=>{throw new Error('private lease read failure');};
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.equal(note.submission_verified,true);assert.equal(note.error_code,'SOURCE_UNAVAILABLE');
+  assert.equal(note.booking?.coverage_complete,null);assert.equal(note.booking?.missing_resources,null);
+  assert.doesNotMatch(JSON.stringify(note),/private lease|没有.*预订|没有.*分配|usr_|exe_/);
+  assert.equal(c.calls.length,0);
+});

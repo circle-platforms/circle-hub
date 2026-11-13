@@ -5,6 +5,8 @@ import type { RunJob } from './read-runs.ts';
 export interface DispatchMissingFact { fact: string; next_action: string }
 export interface DispatchDiagnostics {
   outcome: JobStatus['outcome'];
+  submission_verified?:boolean;
+  booking?:JobStatus['booking'];
   error_code?: JobStatus['error_code'];
   frozen: boolean;
   not_sent?: boolean;
@@ -53,6 +55,8 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
   const { status } = job;
   const uncertain = status.frozen || job.ended === 'unknown' || status.outcome === 'unknown';
   const next = uncertain ? admin ? `circle-hub job resume ${job.job}；只读核对原作业，不重新发送` : '目标可能已经执行；不要重交或另开运行重发，联系管理员核对；之后原样重交原提交只读进展'
+    : status.booking?.coverage_complete===false?'先预订整个测试环境，再从脚本编写开始新的运行，并重新核验脚本合并'
+    : status.booking?.coverage_complete===null?(admin?'恢复预订记录读取后重新核对覆盖范围；当前不能派发':'联系管理员恢复预订记录读取后重新核对覆盖范围；当前不能派发')
     : status.report_pending ? admin ? `circle-hub job resume ${job.job}；只读补取原报告，不重新发送` : '原样重交原提交读取报告进展；不要重新发送作业'
     : status.outcome === 'not_dispatched' ? admin ? `circle-hub job status ${job.job}` : job.boundary_refused || status.not_sent ? '按缺失条件核对预订或联系管理员处理，再原样重交原提交' : '联系管理员核对本次未派发原因；不要绕过当前运行的派发保护'
     : admin ? `circle-hub job status ${job.job}` : '读取本次结果引用查看逐条结论；没有结论时不要当作通过';
@@ -66,5 +70,5 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     for (const check of status.failed_checks ?? []) missing_facts.push({ fact: check.check === 'version' ? '设备报告的版本尚未与本次核验要求匹配' : check.check === 'interfaces' ? '设备接口集合尚未与本次绑定清单匹配' : '本次环境核对仍有未满足的条件', next_action: next });
     if (!missing_facts.length && (status.missing_fact || status.reason || status.failed_conditions?.length)) missing_facts.push({ fact: uncertain ? '原作业是否执行或执行到哪一步尚未确认' : status.report_pending ? '原作业的完整报告尚未取得' : status.outcome === 'not_dispatched' ? '本次上机前条件尚未满足' : '本次结果仍有缺失事实，尚不能据此确认逐条结论', next_action: next });
   }
-  return { outcome: status.outcome, ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: missing_facts.slice(0, 16), next_action: next };
+  return { outcome: status.outcome, ...(status.submission_verified!==undefined?{submission_verified:status.submission_verified}:{}),...(status.booking?{booking:status.booking}:{}), ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: missing_facts.slice(0, 16), next_action: next };
 }
