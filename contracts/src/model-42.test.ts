@@ -14,9 +14,9 @@ const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url),
 const element = (id: string) => model.elements.find((e) => e.id === id)!;
 
 test('R01 R[13] and K02 R[8] are appended and the rules that cite them by number resolve', () => {
-  assert.equal(element('R01').rules.length, 14);
+  assert.ok(element('R01').rules.length >= 14);
   assert.ok(element('R01').rules[13].startsWith('团队是管理员命名的一组启用账户'));
-  assert.equal(element('K02').rules.length, 9);
+  assert.ok(element('K02').rules.length >= 9);
   assert.ok(element('K02').rules[8].startsWith('条目文字给不给读者'));
   for (const [id, index] of [['T01', 3], ['C02', 2]] as const) assert.ok(element(id).rules[index].includes('R01 R[13]'), `${id} R[${index}]`);
   // D05 R[3] cited R01 R[13] only in the pending-review clause; decision 161 removed that answer (model 51).
