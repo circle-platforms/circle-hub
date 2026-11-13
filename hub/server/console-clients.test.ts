@@ -88,7 +88,7 @@ test('empty lists say what appears there with one action, and knowledge actions 
  const hub=await createTestHub(options);t.after(()=>hub.close());
  const owner=await hub.createUser('合成空状态成员'),browser=await openConsole(hub,owner.token);
  const team=await browser.get('/console/knowledge?scope=team');assert.equal(team.status,200);
- assert.match(team.body,/<div class="ch-empty"><p class="ch-empty-title">团队还没有知识<\/p><p class="ch-empty-text">[^<]+<\/p><div class="ch-actions"><a class="ch-btn ch-btn--primary" href="\/console\/knowledge\?scope=personal">打开我的知识<\/a><\/div><\/div>/);
+ assert.match(team.body,/<div class="ch-empty"><p class="ch-empty-title">公共空间还没有知识<\/p><p class="ch-empty-text">[^<]+<\/p><div class="ch-actions"><a class="ch-btn ch-btn--primary" href="\/console\/knowledge\?scope=personal">打开我的知识<\/a><\/div><\/div>/);
  const submissions=await browser.get('/console/knowledge/submissions');assert.equal(submissions.status,200);
  assert.match(submissions.body,/<p class="ch-empty-title">还没有分享到团队的内容<\/p><p class="ch-empty-text">[^<]+<\/p><div class="ch-actions"><a class="ch-btn ch-btn--primary" href="\/console\/knowledge\?scope=personal">打开我的知识<\/a>/);
  for(const body of [team.body,submissions.body])assert.deepEqual(wordingProblems(body),[]);
