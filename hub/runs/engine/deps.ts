@@ -10,13 +10,8 @@ import type { SandboxLimits, SandboxOptions } from '../../rules/api.ts';
 import { createKeyedLock, wellFormed } from './util.ts';
 
 /** One line for the admin log: the real reason behind a neutral answer, or a pack function failure. Never shown to callers. */
-export interface AdminLogEntry {
-  traceId: string | null;
-  run: string | null;
-  /** What the engine was doing, for example start_run, submit_result, check consistency. */
-  what: string;
-  detail: string;
-}
+export type {AdminLogEntry} from '../../ports.ts';
+import type {AdminLogEntry} from '../../ports.ts';
 
 export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
