@@ -333,13 +333,15 @@ const BUILDS: KnownBuild[] = [
 ];
 
 export class FakeKnowledge implements KnowledgePort {
+  readonly spaces: KnowledgePort['spaces'];
   readonly #products: FakeProducts;
   readonly #trees = new Map<string, FakeNode[]>([
     [ROOT_1, TREE_1],
     [ROOT_2, TREE_2],
   ]);
   readonly script = new Script();
-  constructor(products: FakeProducts) {
+  constructor(products: FakeProducts, spaces: KnowledgePort['spaces']) {
+    this.spaces = spaces;
     this.#products = products;
   }
 
