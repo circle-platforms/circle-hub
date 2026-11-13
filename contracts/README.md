@@ -717,7 +717,10 @@ Current runs always write skill locks (possibly empty) and a submission deadline
 Conditional metadata stays optional: publication namespace, configured knowledge-space locks,
 configured feeding horizon and selected product digest. Their absence is not filled with a guessed
 value. Runs/server owners must adopt the removed symbols and update their synthetic fixtures.
-The resource-assignment permission and team registration tuples remain a proposal pending Boss approval.
+The Boss approved the resource-assignment permission and team registration tuples in `answers-codex.md`.
+`TeamId` and `TeamAssignmentSubject` are exported from the public contracts API and generated as
+`team-id@1` and `team-assignment-subject@1`; the exact team ID pattern is
+`^tm_[0-7][0-9a-hjkmnp-tv-z]{25}$`. `resource_assign` comes from the generated permission vocabulary.
 
 The authorized typecheck returned exit 2 with one contracts clone-definition diagnostic and downstream
 tier/console diagnostics. The local definition has been corrected and output tests rerun; a new
