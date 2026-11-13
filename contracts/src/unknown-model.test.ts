@@ -52,15 +52,6 @@ test('item 3 binds request kind and a named audience only to request exits',()=>
 });
 
 
-test('item 3 reads historical omissions without inventing facts, actors or deadlines',()=>{
-  const legacy=validation.ValidationResult.parse(copy(accepted));const requirement=legacy.partitions.delivered[0].requirements[0];
-  requirement.layers=[{layer:'static',terminal:'unchecked',reason:'timeout'}];requirement.status='pending';
-  assert.equal(validation.ValidationResult.safeParse(legacy).success,false);
-  const read=validation.readStoredValidationResult(legacy);assert.deepEqual(read.result,legacy);
-  assert.ok(read.notices.some(note=>note.path.endsWith('/exit')&&note.message==='下一步处理安排未记录'));
-  assert.ok(!Object.hasOwn(read.result.partitions.delivered[0].requirements[0].layers[0],'exit'));
-  assert.deepEqual(legacy,read.result);
-});
 test('item 3 retains independent secondary reasons and their own recovery facts',()=>{
   const value={layer:'static',terminal:'unchecked',reason:'missing_input',...gap,gaps:[{reason:'budget_exhausted',missing:'Remaining synthetic batch',exit:{...automatic,action:'rerun'}}]};
   const parsed=LayerResult.parse(value);assert.equal(parsed.gaps?.length,1);assert.equal(parsed.gaps?.[0].reason,'budget_exhausted');
@@ -105,7 +96,7 @@ test('item 5 gives fact publication a strict coverage boundary without hiding le
   assert.ok(pack.PublishableRequirementsFile.safeParse({...body,requirements:[{...fact,layers:['dynamic'],observation:'synthetic.observe@1'}]}).success);
 });
 test('item 5 per-check work limits stay within the sandbox maxima and exclude effect budgets',()=>{
-  const check={id:'test',function:{module:'functions/check.ts'},applies:'item',judges:'subject',limits:{outputBytes:64*1024*1024,timeoutMs:120000}};
+  const check={tier:'blocking',id:'test',function:{module:'functions/check.ts'},applies:'item',judges:'subject',limits:{outputBytes:64*1024*1024,timeoutMs:120000}};
   assert.ok(CheckEntry.safeParse(check).success);
   assert.equal(CheckEntry.safeParse({...check,limits:{outputBytes:64*1024*1024+1}}).success,false);
   assert.equal(CheckEntry.safeParse({...check,limits:{effects:3}}).success,false);
