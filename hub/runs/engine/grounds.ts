@@ -110,7 +110,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     let parser=ctx.parsers;
 
     const attempts:Array<Record<string,unknown>>=[];
-    const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge?.treeReader(),records:recordReader(ctx.deps.records.store,ctx.deps.knowledge?.layers?.contributions),sources:{read:async(hash,reader)=>{
+    const read=()=>resolveReference(reference,{reader:identity,parsers:parser,documents,trees:ctx.deps.knowledge?.treeReader(),records:recordReader(ctx.deps.records,ctx.deps.knowledge?.layers?.contributions),sources:{read:async(hash,reader)=>{
       const pins=[...new Set(atRun.sources.filter(binding=>{const ref=parseReference(binding.reference);return ref.scheme==='src'&&ref.sha256===hash&&binding.artifact;}).map(binding=>binding.artifact!))];
       if(pins.length){
         let selected:Awaited<ReturnType<typeof ctx.deps.records.artifacts.source>>=null;
@@ -128,7 +128,7 @@ export async function groundsReadableBy(ctx:EngineContext,run:RunRecord,value:un
     }},consumer:'function'});
     if(ref.scheme==='rec'){
       // A missing JSON pointer is an exact-validator diagnostic, not a different permission to its parent record.
-      if(!await recordReader(ctx.deps.records.store,ctx.deps.knowledge?.layers?.contributions).read(ref.record,identity)){
+      if(!await recordReader(ctx.deps.records,ctx.deps.knowledge?.layers?.contributions).read(ref.record,identity)){
         const record=await ctx.deps.records.store.get<any>(ref.record);
         const currentSamples=record?.kind==='submission'&&record.digest===options.provisionalSubmission&&/^\/checks\/[0-9]+\/samples$/.test(ref.pointer??'');
         const candidateAction=pending&&record?.kind==='action'&&record.body.run===atRun.run;
@@ -231,7 +231,7 @@ async function issuedReadable(ctx:EngineContext,by:Principal,request:{run:string
 /** Every record-to-input and exact-value path uses the same current views as direct record reads. */
 export function guardedRecords(ctx:EngineContext):RecordReader{
   const {store,artifacts}=ctx.deps.records;
-  const base=recordReader(store,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody),(by,run,digest)=>groundsReadableBy(ctx,run,'rec:'+digest,by));
+  const base=recordReader(ctx.deps.records,ctx.deps.knowledge?.layers?.contributions,(by,run)=>runReadableBy(ctx,by,run),(by,run,value)=>resultReadableBy(ctx,run,value as ValidationResult,by),(by,value)=>requestReadable(ctx,by,value as RequestBody),(by,run,digest)=>groundsReadableBy(ctx,run,'rec:'+digest,by));
   return {read:async(digest,reader)=>{
     const record=await store.get(digest);
     if(record?.kind==='source_artifact'&&!await artifacts.canRead(principalOf(reader),record as import('../../records/api.ts').SourceArtifact))return null;
