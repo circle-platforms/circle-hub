@@ -18,7 +18,7 @@ import { api } from './console-api-http.ts';
 import { type ConsoleOptions, ENDED_COOKIE, SECURE_ENDED_COOKIE, HOME, sendHtml, redirect, anonymous, pageContext } from './console-http.ts';
 import { handleAuthenticatedConsole } from './console-posts.ts';
 import { FAVICON_SVG, html, page } from './html.ts';
-import { login, loginLink, loginLinks, loginPage, logout, passwordPage, setup, setupPage } from './login-pages.ts';
+import { login, loginPage, logout, passwordPage, setup, setupPage } from './login-pages.ts';
 import { SESSION_COOKIE, SECURE_SESSION_COOKIE, cookie, safeNext } from './session.ts';
 
 export type { ConsoleOptions } from './console-http.ts';
@@ -48,7 +48,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     return;
   }
   if (segments[0] === 'login') {
-    if (segments.length === 2) return loginLink(request, response, options, secure, segments[1]);
+    // U5 follow-up: /console/login/<code> and POST /console/api/login-links retired — no production caller.
     if (segments.length !== 1) return sendHtml(response, 404, page(anonymous('没有这个页面'), html`<p>没有这个页面</p>`));
     if (request.method === 'GET') return loginPage(options, response, 200, null, secure, cookiesOf(request).get(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE) === '1', url.searchParams.get('next'));
     if (request.method === 'POST') return login(request, response, options);
@@ -81,7 +81,6 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
   }
   if (segments[0] === 'authorize') return authorizePage(request, response, options, session, secure, segments.slice(1));
   if (segments[0] === 'device' && segments.length === 1) return devicePage(request, response, url, options, secure);
-  if (segments[0] === 'api' && segments.length === 2 && segments[1] === 'login-links') return loginLinks(request, response, options, secure);
   if (segments[0] === 'api') return api(request, response, url, options, session, secure, segments.slice(1));
   const isAction = segments.length === 3 && segments[0] === 'admin' && segments[1] === 'do';
   const isKnowledgeAction = segments.length === 3 && (segments[0] === 'knowledge' || segments[0] === 'workflows' || segments[0] === 'skills') && segments[1] === 'do';

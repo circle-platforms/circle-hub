@@ -15,6 +15,7 @@ import type { PackStaging } from './staging.ts';
 import { forgetTrialMessage, trialCard, type ForgetOutcome, type TrialOutcome } from './trial.ts';
 import { card, chip, stepper as steps, when } from './ui.ts';
 import { segments } from './components.ts';
+import { commandFields } from './command-form.ts';
 import { adminDoPath, knowledgeSpacePath, operationsPackPath, operationsPath } from './routes.ts';
 import { RESOURCE_AUDIENCE, RESOURCE_AUDIENCE_OPTIONS, SYSTEM_ADD_AUDIENCE_HINT } from './team-actions.ts';
 import type { ConsoleTeamRow, ConsoleTeams } from './team.ts';
@@ -117,12 +118,10 @@ ${card({ title: '在运行 Hub 的服务器上发布',hint:'维护人在运行 H
 
 async function knowledgePage(ctx: PageContext, jobs: JobStore): Promise<Html> {
   const products = [...new Set((await ctx.deps.packs.list(ctx.principal)).filter((pack) => isPackKind(pack.kind) && pack.kind === 'product' && pack.active && !pack.withdrawn).map((pack) => pack.id))];
-  const form = actionForm('knowledge-sync', ctx.csrf ?? '', html`<div data-fields>
-${field('产品', html`<input name="product" list="products" required>`, { hint: '已启用的产品知识来源；每个产品导入哪些内容由它的产品包声明，列在下面' })}
-${field('版本线', html`<input name="line" placeholder="可留空">`, { hint: '留空时导入全部版本线' })}
-<label class="check" data-wide-field><input type="checkbox" name="dry_run" value="1"> 试运行：只读取并预览新增、修改、删除的条目，不写入</label>
-<datalist id="products">${products.map((id) => html`<option value="${id}">`)}</datalist>
-</div>`, '开始导入', { primary: true });
+  // U2: fields from command registration (knowledge.sync); product choices supplied as data.
+  const form = actionForm('knowledge-sync', ctx.csrf ?? '', html`${commandFields('knowledge.sync', {
+    product: products.map((id) => ({ value: id, label: id })),
+  })}`, '开始导入', { primary: true });
   // What each enabled product's source imports, by the titles its own producers declare (issue 238): the page says it per
   // product, beside the choice, instead of assuming builds, manuals or command trees of every import.
   const declared = (await ctx.deps.products?.products?.() ?? []).filter((handle) => products.includes(handle.product.id));
