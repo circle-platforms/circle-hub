@@ -11,7 +11,7 @@ import { CredentialStop } from './credential-stop.ts';
 import { callPackFunction, osIsolationAvailable, type SandboxLimits } from '../rules/api.ts';
 import { createDefaultRegistry, type ParserRegistry } from '../refs/api.ts';
 import { type ExternalRead, type ExternalReadContext, type ExternalReaderPort, type PacksPort, type ResourceCatalogPort, type ResourceListing } from '../ports.ts';
-import { canonicalBytes, sha256Hex, type Principal, type RecordsKit } from '../records/api.ts';
+import { canonicalBytes, sha256Hex, VaultReadinessError, type Principal, type RecordsKit } from '../records/api.ts';
 import { step } from '../telemetry/api.ts';
 import type { ReadDeclaration } from '../../contracts/src/resources.ts';
 import { ConnectorError, asConnectorError } from './errors.ts';
@@ -171,7 +171,13 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     });
 
   async function runtimeOf(state: ResourceState, loaded: Awaited<ReturnType<ProfileCache['load']>>, context?: ExternalReadContext): Promise<ResourceRuntime> {
-    for (const material of await records.variables.recentSecrets()) redactor.add(material.value);
+    let recent;
+    try { recent = await records.variables.recentSecrets(); }
+    catch (error) {
+      if (error instanceof VaultReadinessError) context?.adminNote?.(error.adminMessage);
+      throw error;
+    }
+    for (const material of recent) redactor.add(material.value);
     const resolved = await records.variables.resolveVariables(state.resource.settings,state.resource.id,context?.variables);
     resolved.uses=resolved.uses.map(u=>({...u,at:u.at.replace('#/','#/settings/')}));
     const original = state.resource;
