@@ -80,6 +80,7 @@ export async function initAdminCommand(session: Session, args: readonly string[]
   const { positionals, values } = parse(args, { 'password-stdin': { type: 'boolean' } }, 0, 1);
   const name = positionals[0] ?? DEFAULT_ADMIN_NAME;
   const supplied = values['password-stdin'] === true ? await (session.options.readSecret ?? readSecretFromStdin)('管理员密码') : '';
+  if (values['password-stdin'] === true && supplied === '') throw new UsageError('未收到管理员密码；未创建账号或操作令牌');
   if (supplied !== '' && !validPassword(supplied)) throw new UsageError('密码须为 12 至 256 个字符，不含控制字符');
   const password = supplied || initialPassword();
   const kit = await session.records();
