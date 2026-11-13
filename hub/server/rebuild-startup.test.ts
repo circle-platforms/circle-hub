@@ -35,7 +35,7 @@ function startupSpies(kit: TestRecordsKit) {
     launch: forbidden, acknowledge: forbidden, status: forbidden,
   };
   const options: Pick<ServeOptions, 'keyProvider' | 'assembly' | 'rebuild'> = {
-    keyProvider: () => { keys++; return kit.keyProvider; },
+    keyProvider: () => ({ getKey: async () => { keys++; return kit.keyProvider.getKey(); } }),
     assembly: async () => { assemblies++; throw new Error('normal assembly must not load'); },
     rebuild: { bridge, render: context => {
       assert.equal(context.authorized, false);
@@ -80,7 +80,7 @@ test('incompatible PG migration fingerprint starts only the restricted real HTTP
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), { needsRebuild: true });
     const page = await fetch(`${info.url}/console/rebuild`);
-    assert.equal(page.status, 200);
+    assert.equal(page.status, 401);
     assert.equal(await page.text(), '维护授权');
     for (const [path, method] of [
       ['/mcp', 'POST'], ['/oauth/authorize', 'GET'], ['/oauth/token', 'POST'],
