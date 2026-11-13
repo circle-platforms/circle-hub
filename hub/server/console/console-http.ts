@@ -11,6 +11,7 @@ import type { HealthPageSources } from './health.ts';
 import type { LiveEvents } from './live.ts';
 import type { Form, JobStore } from './manage.ts';
 import type { PageContext } from './context.ts';
+import type { RebuildNeeded } from './reset.ts';
 import type { HubFacts } from './settings.ts';
 import type { ConsoleSession, SessionStore } from './session.ts';
 import type { PackStaging } from './staging.ts';
@@ -33,6 +34,11 @@ export interface ConsoleOptions {
   live?: LiveEvents;
   /** The process serving the console, for the Hub's state on the settings and overview pages. */
   hub?: HubFacts;
+  /**
+   * Incompatibility judgment from the platform (K11). When set, overview banners and `/console/rebuild`
+   * explain the next step; other route gating lands with Codex's interfaces-reset.
+   */
+  rebuildNeeded?: RebuildNeeded | null;
   /** What the 运行状况 page reads; without it every reading on that page is unknown. */
   observation?: HealthPageSources;
   /** Open requests of the MCP standard authorization (hub/server/oauth.ts); without it /console/authorize is absent. */
@@ -127,6 +133,7 @@ export function pageContext(options: ConsoleOptions, request: IncomingMessage, u
     secure,
     origin: mcpOrigin(request, secure),
     ...(options.hub === undefined ? {} : { hub: options.hub }),
+    ...(options.rebuildNeeded === undefined ? {} : { rebuildNeeded: options.rebuildNeeded }),
     chrome: (title, extra = {}) => ({ title, notice, user: { name: principal.name, role: uiLabelOf('permission_role', principal.role), admin: principal.role === 'admin' }, csrf: session.csrf, ...extra }),
     userName: (userId) => {
       if (userId === null || userId === undefined) return Promise.resolve('未记录');

@@ -14,8 +14,9 @@ import { taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
-import { box, count, kpi, tile, when } from './ui.ts';
-import { segments } from './components.ts';
+import { box, kpi, tile, when } from './ui.ts';
+import { count, segments } from './components.ts';
+import { rebuildNeededBanner } from './reset.ts';
 
 export const PERIODS = [7, 14, 30] as const;
 export const RECENT_LIMIT = 120;
@@ -181,7 +182,8 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
   const taskList=html`<section class="ch-section" data-overview-tasks>${box({title:'需要处理',meta:scope,hint:'优先列出有等待回应中的请求、未决项或尚未完成的任务，最多 8 个'},recent.length?html`<div class="ch-list">${rows}</div>`:html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-text">在客户端中运行工作流后，这里显示任务。</p>${link('/console/workflows','查看工作流')}</section>`,{flush:recent.length>0,...(recent.length?{foot:link('/console/runs','查看全部任务')}:{})})}</section>`;
   // One question per page (decision 151): what needs attention. The figures first, the tasks beside their statistics; no
   // folded sections and nothing that is only planned.
-  const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
+  const rebuild = ctx.rebuildNeeded ? rebuildNeededBanner(ctx.rebuildNeeded) : '';
+  const body = html`${rebuild}${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
 <div class="ch-board">${liveModule('overview-priority', ['task.updated','request.updated'],taskList)}
 <div class="ch-stack" data-overview-side>${liveModule('overview-results', ['task.updated'], html`<div class="ch-stack">${checkCard}${box({title:'每日任务',meta:scope},html`${daily}${resultsTable}`)}${stuckCard}</div>`)}
 ${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<div class="ch-stack">${systems}${state}</div>`)}</div></div>`;

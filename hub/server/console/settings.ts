@@ -18,6 +18,7 @@ import { code, href, html, link, liveModule, page, pageLayout, pre, table, type 
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
 import { registeredActionForm } from './command-form.ts';
 import { count, errorLine, segments } from './components.ts';
+import { resetRebuildSection } from './reset.ts';
 import { box, button, card, chip, commandLink, commandModal, duration, kv, sectionHead, when, type CommandDialog } from './ui.ts';
 
 export type { HubFacts } from './context.ts';
@@ -297,7 +298,8 @@ async function adminSettings(ctx: PageContext, run: ((argv: string[]) => Promise
   );
   const content = hub
     ? html`${await hubState(ctx)}
-${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}`
+${box({title:'服务器上的操作',hint:'控制台不执行这些操作；在运行 Hub 的服务器上执行。部署与回滚在运行 Hub 的服务器上通过 circle-hub deploy 和 circle-hub rollback 执行。'}, html`<div class="ch-actions">${stopping.map((dialog) => commandLink(dialog, dialog.title))}</div>`)}
+${resetRebuildSection(ctx)}`
     : html`<section id="secrets">${box(null, secretBody, { flush: secrets.rows !== null })}</section>${setSecret}${masking ?? ''}`;
   const body = html`<div class="ch-stack" data-settings>${settingsTabs('凭据', hub, secrets.rows?.length)}<div class="ch-stack" data-settings-tab="${hub ? 'hub' : 'secrets'}">${content}</div>
 ${liveModule('dialogs', ['member.connected'], dialogs.filter(dialog=>!selectedSecret||!dialog.id.startsWith('cmd-secret')).map(commandModal))}</div>`;
