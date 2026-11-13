@@ -10,7 +10,7 @@ import {mayUsePersonalPack} from './personal-packs.ts';
 import { TeamId, TeamAssignmentSubject } from '../../contracts/api.ts';
 import { PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
-import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
+import { isPermissionKind, isShareAudience, isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionKind, PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type {
   ShareAudienceInput,
@@ -435,9 +435,10 @@ export class RecordAuthorizations implements Authorizations {
   /** The decider as stored now: an enabled account (its current role decides, not the one in the token's Principal). */
   async #decider(by: Principal, tx?: Transaction): Promise<{ id: string; role: PermissionRole }> {
     const id = typeof by?.id === 'string' && UserId.safeParse(by.id).success ? by.id : null;
-    const row = id === null ? undefined : (await this.#db.query<{id: string; role: PermissionRole; disabled: boolean}>('SELECT id, role, disabled FROM users WHERE id = $1', [id], tx)).rows[0];
+    const row = id === null ? undefined : (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id], tx)).rows[0];
     if (row === undefined || row.disabled === true) throw new AccessError('操作人不是有效的 Hub 账号');
-    return { id: String(row.id), role: isAdmin(row) ? 'admin' : 'user' };
+    if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里');
+    return { id: String(row.id), role: row.role };
   }
 }
 

@@ -1,6 +1,7 @@
 // What administrators read: the resource samples of a window and the process events. `circle-hub health`, `circle-hub crashes`
 // and the console's 运行状况 page (decision 146, step 3) use this reader. Every read is bounded by a time window or a row limit
 // and aggregates in SQL: what comes back does not grow with the age of the deployment.
+import { isAdmin } from '../records/api.ts';
 import type { Principal } from '../records/api.ts';
 import { NUMERIC_FIELDS, type HealthDatabase, type NumericField, type ProcessEventKind, type ReportSummary, type RequestEntry, type StoredProcessEvent } from './store.ts';
 
@@ -104,7 +105,7 @@ const number = (value: unknown): number | null => (value === null || value === u
 const time = (value: unknown): string | null => (value === null || value === undefined ? null : new Date(value as string | Date).toISOString());
 
 function requireAdmin(by: Principal): void {
-  if (by.role !== 'admin') throw new HealthAccessError();
+  if (!isAdmin(by)) throw new HealthAccessError();
 }
 
 const RANGE = NUMERIC_FIELDS.map((field) => `min(${field}) AS min_${field},max(${field}) AS max_${field}`).join(',');

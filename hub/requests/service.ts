@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import {RequestRecord as Request} from '../../contracts/src/request.ts';
 import { Sha256 } from '../../contracts/src/common.ts';
-import { digestOf, ConflictError, type Principal, type StoredRecord, type Page, type RecordsKit,type Transaction } from '../records/api.ts';
+import { isAdmin, digestOf, ConflictError, type Principal, type StoredRecord, type Page, type RecordsKit,type Transaction } from '../records/api.ts';
 interface RequestContext {deps:{records:Pick<RecordsKit,'store'>};now:()=>Date;transaction?:Transaction;canReadRun?:(by:Principal,run:string)=>Promise<boolean>}
 export type RequestBody=z.infer<typeof Request>;
 export const RequestBodySchema=Request;
@@ -196,7 +196,7 @@ async function newestAnswers(ctx:RequestContext,requests:readonly string[]):Prom
 }
 export async function requestsOf(ctx:RequestContext,user:Principal,run?:string,options:{waiting?:boolean}={}):Promise<RequestView[]>{
   const records=options.waiting?await waitingRequestRecords(ctx,run):await requestRecords(ctx,run);
-  const allowed=await Promise.all(records.map(request=>user.role==='admin'?true:request.run?ctx.canReadRun?.(user,request.run):request.audience===user.id));
+  const allowed=await Promise.all(records.map(request=>isAdmin(user)?true:request.run?ctx.canReadRun?.(user,request.run):request.audience===user.id));
   return records.filter((_,i)=>allowed[i]);
 }
 

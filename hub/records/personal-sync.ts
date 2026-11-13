@@ -1,10 +1,11 @@
+import {isAdmin} from './permissions.ts';
 import {retireReadScope} from './read-scope.ts';
 import {historyUsage} from './personal-capacity.ts';
 // Scoped transport storage only: uploaded objects never become knowledge, memory or executable packs here.
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {PROTOCOL_CODES,type ProtocolCode} from '../../contracts/generated/protocol.ts';
-import {PermissionRoleSchema,KnowledgeGrantActionSchema,KnowledgeShareStatusSchema,ActionKindSchema,SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
+import {isPermissionRole,KnowledgeGrantActionSchema,KnowledgeShareStatusSchema,ActionKindSchema,SyncModeSchema,SyncStatusSchema,SyncObjectKindSchema,type SyncObjectKind} from '../../contracts/generated/vocabulary.ts';
 import {PERSONAL_SYNC_LIMITS,PERSONAL_SYNC_HTTP_ROUTES,PersonalSyncModeCheck,PersonalSyncModeChange,PersonalSyncModeImpact,PersonalSyncModeResult,PersonalSyncCommit,PersonalSyncResult,PersonalSyncClient,PersonalSyncSession,PersonalSyncUpload,PersonalSyncMissing,PersonalSyncAbort,PersonalSyncReceipt,PersonalSyncState,PersonalSyncDescriptor,PersonalSyncItem,type PersonalSyncObject} from '../../contracts/src/sync.ts';
 import {decodePersonalSyncObject,encodePersonalSyncObject,normalizePersonalSyncText} from '../../contracts/src/sync-canonical.ts';
 import {MemoryGrantBody,MemoryShareBody} from '../../contracts/src/memory.ts';
@@ -123,7 +124,7 @@ export class PgPersonalSync {
  /** Only bounded synchronization metadata is exposed on a member detail page. */
  async memberMetadata(by:Principal,owner:string){
   const actor=(await this.#db.query('SELECT role,disabled FROM users WHERE id=$1',[by.id])).rows[0];
-  if(!actor||actor.disabled||(owner!==by.id&&actor.role!==PermissionRoleSchema.enum.admin))return null;
+  if(!actor||actor.disabled||!isPermissionRole(actor.role)||(owner!==by.id&&!isAdmin({role:actor.role})))return null;
   const row=(await this.#db.query('SELECT p.mode,h.last_synced_at FROM users u LEFT JOIN personal_spaces p ON p.owner=u.id LEFT JOIN personal_sync_heads h ON h.owner=p.owner AND h.epoch=p.epoch WHERE u.id=$1',[owner])).rows[0];
   return row?{mode:row.mode?SyncModeSchema.parse(row.mode):SyncModeSchema.enum.hub,last_synced_at:row.mode!==SyncModeSchema.enum.local&&row.last_synced_at?iso(row.last_synced_at):null}:null;
  }

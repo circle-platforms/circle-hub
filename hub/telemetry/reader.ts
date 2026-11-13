@@ -2,7 +2,8 @@
 // their own calls, steps and usage included. The stored account decides, not the Principal a session kept; a trace a reader
 // may not see and a trace that does not exist look the same. A client may reuse a trace id, so the rule holds per row: a
 // member reading a shared id sees their own rows of it and no others.
-import { TRACE_ORIGIN, type Environment, type StepLevel, type StepType, type TraceOrigin } from '../../contracts/generated/vocabulary.ts';
+import { isPermissionRole, TRACE_ORIGIN, type Environment, type StepLevel, type StepType, type TraceOrigin } from '../../contracts/generated/vocabulary.ts';
+import { isAdmin, IntegrityError } from '../records/api.ts';
 import type { Principal } from '../records/api.ts';
 import { iso, normalizeTime, pageLimit, type Database, type Row } from '../records/api.ts';
 import { BACKGROUND_STEPS, type BackgroundStep, type UsageName } from './names.ts';
@@ -220,7 +221,9 @@ export class TraceReader {
     const id = typeof principal?.id === 'string' && USER_ID.test(principal.id) ? principal.id : null;
     if (id === null) return null;
     const row = (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
-    return row === undefined || row.disabled === true ? null : { id: String(row.id), admin: row.role === 'admin' };
+    if (row === undefined || row.disabled === true) return null;
+    if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里');
+    return { id: String(row.id), admin: isAdmin({role:row.role}) };
   }
 
   /** Traces, newest first: their root steps, whose usage is the whole trace's. */

@@ -15,7 +15,7 @@ import { captureRequestPermissions, requestPermissions } from './request-permiss
 import { PackId, RunId, UserId, Versioned } from '../../contracts/src/common.ts';
 import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { PROTOCOL_CODES, type ProtocolCode } from '../../contracts/generated/protocol.ts';
-import { isProducerKind, isProvenanceType, isReadTier, labelOf } from '../../contracts/generated/vocabulary.ts';
+import { isPermissionRole, isProducerKind, isProvenanceType, isReadTier, labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionKind, PermissionRole, ProducerKind, ReadTier } from '../../contracts/generated/vocabulary.ts';
 import type {
   ActionBody,
@@ -532,9 +532,10 @@ export class RecordArtifacts implements Artifacts {
     if (id === null) return null;
     const snapshot = requestPermissions(id);
     if (snapshot) return snapshot.user === null || snapshot.user.disabled ? null : {id,role:snapshot.user.role};
-    const row = (await this.#db.query<{id: string; role: PermissionRole; disabled: boolean}>('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
+    const row = (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
     if (row === undefined || row.disabled === true) return null;
-    return { id: String(row.id), role: isAdmin(row) ? 'admin' : 'user' };
+    if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里');
+    return { id: String(row.id), role: row.role };
   }
 
   /** B02 R[3] for one record; a share names this record, not the bytes, so other uploads of the same bytes stay private. */

@@ -1,9 +1,10 @@
+import {isAdmin} from './permissions.ts';
 import {retireReadScope} from './read-scope.ts';
 import {retirePersonalCaches} from './personal-caches.ts';
 import {isAbsolute} from 'node:path';
 // Administrator coordination shares the native payload purger; progress contains digests and counts only.
 import {MemberDeletionBody,MemberDeletionCounts,type MemberDeletionBody as Receipt} from '../../contracts/src/spaces.ts';
-import {PermissionRoleSchema,TokenActionSchema,type MemberHandoverStatus} from '../../contracts/generated/vocabulary.ts';
+import {PermissionRoleSchema,isPermissionRole,TokenActionSchema,type MemberHandoverStatus} from '../../contracts/generated/vocabulary.ts';
 import type {PersonalPackVersionBody} from '../../contracts/src/sharing.ts';
 import {canonicalize} from './canonical.ts';
 import {parseStrictJson} from './strict-json.ts';
@@ -39,10 +40,11 @@ export class PgMemberDeletions {
  }
  readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly now:()=>Date;
  constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.now=now;}
- async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||user.role!==PermissionRoleSchema.enum.admin)throw new AccessError('对象不存在或无权读取');}
+ async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||!isPermissionRole(user.role)||!isAdmin({role:user.role}))throw new AccessError('对象不存在或无权读取');}
  async #preview(member:string,tx?:Transaction):Promise<MemberDeletionPreview>{
   const user=(await this.db.query('SELECT * FROM users WHERE id=$1',[member],tx)).rows[0];if(!user||user.deleted_at)throw new AccessError('对象不存在或无权读取');
-  if(user.role===PermissionRoleSchema.enum.admin&&!user.disabled&&!(await this.db.query('SELECT 1 FROM users WHERE role=$1 AND NOT disabled AND id<>$2',[PermissionRoleSchema.enum.admin,member],tx)).rowCount)throw new ConflictError('至少须保留一名启用的管理员');
+  if(!isPermissionRole(user.role))throw new IntegrityError('用户角色不在词表里');
+  if(isAdmin({role:user.role})&&!user.disabled&&!(await this.db.query('SELECT 1 FROM users WHERE role=$1 AND NOT disabled AND id<>$2',[PermissionRoleSchema.enum.admin,member],tx)).rowCount)throw new ConflictError('至少须保留一名启用的管理员');
   if((await this.db.query("SELECT 1 FROM records r JOIN record_index i ON i.digest=r.digest AND i.key='personal.pack.owner' WHERE r.kind='personal_pack_version' AND i.value=$1 AND NOT EXISTS(SELECT 1 FROM personal_record_bindings b WHERE b.record=r.digest) LIMIT 1",[member],tx)).rowCount)throw new ConflictError('私人包清除准备尚未完成，不能删除成员');
   const unscoped=await this.db.query(`SELECT 1 FROM records r JOIN record_index i ON i.digest=r.digest AND i.key IN ('artifact.author','artifact.reader') AND i.value=$1
    CROSS JOIN LATERAL (SELECT pg_catalog.replace(r.body,pg_catalog.chr(92)||'u0000',pg_catalog.chr(92)||'u0001')::pg_catalog.jsonb AS b) x
