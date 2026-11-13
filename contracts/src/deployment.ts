@@ -5,7 +5,18 @@ import { PackId, UserId, TeamId, IsoTime, Sha256 } from './common.ts';
 import { ExecutorSource, ResourceId, ResourceRecord, ExactPackRef } from './resources.ts';
 import { SecretReference, VariableName, VariableRecord } from './variables.ts';
 
+import { ProductId, BuildInfo } from './product.ts';
 import { LeaseRegistrationDetail } from './records.ts';
+
+export const DeploymentSyncTarget = z.strictObject({
+  product: ProductId,
+  line: BuildInfo.shape.line.nullable(),
+});
+export type DeploymentSyncTarget = z.infer<typeof DeploymentSyncTarget>;
+export const DeploymentSyncTargets = z.array(DeploymentSyncTarget).max(100).refine(targets => new Set(targets.map(target => JSON.stringify([target.product, target.line]))).size === targets.length, 'product and version line pairs are unique');
+export const DEPLOYMENT_SYNC_INTENT_SCHEMA = 'deployment-sync-intent@1';
+export const DeploymentSyncIntent = z.strictObject({ schema: z.literal(DEPLOYMENT_SYNC_INTENT_SCHEMA), targets: DeploymentSyncTargets });
+export type DeploymentSyncIntent = z.infer<typeof DeploymentSyncIntent>;
 
 export const DeploymentVariable = VariableRecord;
 export const DeploymentDocument = z.strictObject({
@@ -49,6 +60,7 @@ export const DeploymentDefinition = z.strictObject({
     z.strictObject({ resource: name, all: z.literal(true) }),
   ])).default([]),
   knowledgeSources: z.array(PackId).default([]),
+  knowledgeSync: DeploymentSyncTargets.optional(),
   variables: z.array(DeploymentVariable).default([]),
   documents: z.array(DeploymentDocument).default([]),
   leaseRegistrations: z.array(DeploymentLeaseRegistration).default([]),
@@ -88,5 +100,6 @@ export type ProtectedConfigurationReceipt = z.infer<typeof ProtectedConfiguratio
 
 export const schemas: Record<string, z.ZodType> = {
   'deployment@1': DeploymentDefinition,
+  [DEPLOYMENT_SYNC_INTENT_SCHEMA]: DeploymentSyncIntent,
   'protected-deployment@1': ProtectedConfigurationEnvelope,
 };
