@@ -227,6 +227,12 @@ export async function grantLeases(
     ]);
   }
   const prefix = declared.prefix; const cap = declared.max_ttl_seconds;
+  const environmentKeys = [...new Set(requests.filter(request => request.op === undefined || request.op === 'acquire' || request.op === 'extend').flatMap(requestKeys))];
+  if (environmentKeys.length) {
+    if (!ctx.deps.environmentAccess) throw new Refusal([protocolError('SOURCE_NOT_PERMITTED', '运行环境权限核对端口未配置，不能预订或续期', { fix: '请管理员配置运行环境权限核对后重试' })]);
+    const denied = await ctx.deps.environmentAccess.authorizeKeys(user, environmentKeys);
+    if (denied) throw new Refusal([denied]);
+  }
   const now = ctx.now(); const service=ctx.deps.leases;
   const lineage=await lineageOf(ctx,runId,predecessor);
   const rows=await service.holders([...new Set(requests.flatMap(requestKeys))]);
