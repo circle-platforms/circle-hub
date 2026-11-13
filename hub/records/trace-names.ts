@@ -4,8 +4,10 @@
 // and the commands those of the CLI (a test keeps both complete); a name a client or a URL sent never becomes a step name
 // by itself: the functions below map what arrives to an entry of this list.
 
+import { TOOL_NAMES } from '../../contracts/src/tools.ts';
+
 /** The root step of an MCP request: the tool called, or what else the request asked for. */
-const MCP_STEPS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result', 'initialize', 'list-tools', 'handle-mcp'] as const;
+const MCP_STEPS = [...TOOL_NAMES, 'initialize', 'list-tools', 'handle-mcp'] as const;
 
 /**
  * The root step of a console request, by its first path segment; `serve-console` for anything else under /console and

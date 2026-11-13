@@ -6,7 +6,7 @@ import { PERSONAL_SYNC_CAPABILITY_ROUTES, PERSONAL_SYNC_HTTP_ROUTES } from '../.
 import { TOOLS } from '../../contracts/src/tools.ts';
 import { PLATFORM_COMMANDS } from '../platform/api.ts';
 import { adminCommands } from '../server/cli-admin.ts';
-import { ACCOUNTED_USAGE, STEP_NAMES, USAGE_NAMES, commandStep, consoleStep, isUsageName, mcpStep, syncStep } from './names.ts';
+import { ACCOUNTED_USAGE, STEP_NAMES, USAGE_NAMES, commandStep, consoleStep, isUsageName, mcpStep, syncStep } from '../records/api.ts';
 
 test('step names are unique lowercase words with no room for a dynamic value', () => {
   assert.equal(new Set(STEP_NAMES).size, STEP_NAMES.length);
