@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import { open, lstat, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createKnowledgeReader, formatKnowledgeRetract, formatReprojectReport, formatSeedReport, formatSyncReport, knowledgeReproject, knowledgeRetract, knowledgeSeed, knowledgeSync, parseKnowledgeReprojectArgs, parseKnowledgeSeedArgs, parseKnowledgeSyncArgs, type KnowledgeReprojectArgs, type KnowledgeSeedArgs, type KnowledgeSyncArgs } from '../knowledge/api.ts';
@@ -77,7 +78,7 @@ export async function knowledgeCommand(session: Session, args: readonly string[]
       if (error instanceof CliError || error instanceof UsageError) throw error;
       throw new CliError('无法核对知识视图读取账号', '检查管理员身份及记录库连接后重试；原始异常不输出到终端');
     });
-    if (viewer.role !== 'admin') throw new CliError('只有管理员能导出知识视图');
+    if (!isAdmin(viewer)) throw new CliError('只有管理员能导出知识视图');
     const target = resolve(values.out);
     if (await lstat(target).then(() => true, () => false)) throw new CliError('输出文件已存在', '换一个新文件');
     let external = positionals[0];
@@ -216,7 +217,7 @@ export async function knowledgeCommand(session: Session, args: readonly string[]
     const viewer = await session.viewer(values.as);
     const hub = await session.hub();
     const neutral = new CliError('没有这两个知识根，或者你不能读它们');
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       const readable = await hub.packs.readableProducts(viewer);
       for (const root of [from, to]) {
         const infos = await hub.knowledge.rootInfo(root);

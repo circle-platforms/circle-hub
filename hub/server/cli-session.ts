@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { updateTrace } from '../telemetry/api.ts';
 import { LeaseService } from '../leases/service.ts';
@@ -165,7 +166,7 @@ export class Session {
       );
     }
     const principal = await kit.principals.authenticate(`Bearer ${token}`);
-    if (principal === null || requireAdmin&&principal.role !== 'admin') {
+    if (principal === null || requireAdmin&&!isAdmin(principal)) {
       if(!requireAdmin)throw new CliError('操作令牌无效或账号已停用','用运行者本人或管理员的有效令牌重试');
       const hint =
         this.envToken === null
@@ -190,7 +191,7 @@ export class Session {
       admin,
       noticeIfLost: async () => {
         const still = await (await this.records()).principals.authenticate(`Bearer ${token}`);
-        return still !== null && still.role === 'admin' ? null : lost;
+        return still !== null && isAdmin(still) ? null : lost;
       },
     };
   }

@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import { BUILTIN_COMMANDS, RESERVED_DESCRIPTIONS } from './command-registry.ts';
 import {deletionCheck,deleteMember,DELETION_EFFECT,handoverLines} from './member-deletion.ts';
 // `circle-hub <command>`: the server's commands. main(argv) returns the exit code and never runs on import (bin/circle-hub
@@ -160,10 +161,10 @@ function contextFor(options: CliOptions, assembly: () => Promise<AssemblyModule>
       const kit = await ctx.records();
       if (as !== undefined) {
         const user = await findUser(kit, as);
-        if (user === null || user.role !== 'admin' || user.disabled) throw new CliError(`${as} 不是启用中的管理员`);
+        if (user === null || !isAdmin(user) || user.disabled) throw new CliError(`${as} 不是启用中的管理员`);
         return { id: user.id, name: user.name, role: user.role };
       }
-      const admins = (await kit.principals.list()).filter((user) => user.role === 'admin' && !user.disabled);
+      const admins = (await kit.principals.list()).filter((user) => isAdmin(user) && !user.disabled);
       if (admins.length === 0) throw new CliError('还没有管理员', `先建第一位管理员：circle-hub init-admin [<名字>] 或 circle-hub user create [<名字>] --role admin；省略名字时为 ${DEFAULT_ADMIN_NAME}`);
       if (admins.length > 1) throw new CliError('有多位管理员，要用 --as <名字> 指明以谁的身份操作');
       return { id: admins[0].id, name: admins[0].name, role: admins[0].role };
@@ -196,9 +197,9 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     const role = values.role ?? 'user';
     if (!isPermissionRole(role)) throw new UsageError(`角色只能是 ${PERMISSION_ROLE.map((code) => `${code}（${roleText(code)}）`).join('、')}`);
     const kit = await ctx.records();
-    const admins = (await kit.principals.list()).filter((user) => user.role === 'admin');
+    const admins = (await kit.principals.list()).filter((user) => isAdmin(user));
     if (admins.length === 0) {
-      if (role !== 'admin') throw new CliError('还没有管理员', `先建第一位管理员：circle-hub init-admin [<名字>]（令牌存进私有密钥文件），或 circle-hub user create [<名字>] --role admin（令牌显示一次）；省略名字时为 ${DEFAULT_ADMIN_NAME}`);
+      if (!isAdmin({ role })) throw new CliError('还没有管理员', `先建第一位管理员：circle-hub init-admin [<名字>]（令牌存进私有密钥文件），或 circle-hub user create [<名字>] --role admin（令牌显示一次）；省略名字时为 ${DEFAULT_ADMIN_NAME}`);
       const password = initialPassword();
       const { user, token } = await kit.principals.bootstrapAdmin(positionals[0] ?? DEFAULT_ADMIN_NAME, {password,mustChange:true});
       io.stdout('初始密码（仅显示一次，首次登录必须修改）：');
@@ -430,7 +431,7 @@ async function runListCommand(args: readonly string[], ctx: CliContext, options:
     as: { type: 'string' },
   }, 0);
   const by = await (await tokenRules(options)).viewer(ctx, values.as);
-  if (by.role !== 'admin') throw new CliError('只有管理员可以列出运行', '用管理员的操作令牌执行这一条命令');
+  if (!isAdmin(by)) throw new CliError('只有管理员可以列出运行', '用管理员的操作令牌执行这一条命令');
   const kit = await ctx.records();
   const named = values.user;
   const user = named === undefined ? null : USER_ID.test(named) ? await kit.principals.get(named) : await kit.principals.findByName(named);
@@ -467,7 +468,7 @@ async function runBatchCommand(args: readonly string[], ctx: CliContext, options
   const intervalMs = boundedOption('--interval-ms', values['interval-ms'], 0, 0, BATCH_MAX_INTERVAL_MS, usage);
   const perRun = boundedOption('--per-run', values['per-run'], 1, 1, BATCH_MAX_PER_RUN, usage);
   const by = await (await tokenRules(options)).member(ctx);
-  if (by.role !== 'admin') throw new CliError('只有管理员可以批量开始运行', '用管理员的操作令牌执行这一条命令');
+  if (!isAdmin(by)) throw new CliError('只有管理员可以批量开始运行', '用管理员的操作令牌执行这一条命令');
   const path = (name: string) => isAbsolute(name) ? name : resolve(ctx.io.cwd, name);
   let text: string;
   try { text = await readFile(path(values.from), 'utf8'); }
@@ -560,7 +561,7 @@ export async function runCommand(args: readonly string[], ctx: CliContext, optio
 /** Who a health command reads as; administrators only, as `run list`. */
 async function healthViewer(ctx: CliContext, options: CliOptions, as: string | undefined): Promise<Principal> {
   const by = await (await tokenRules(options)).viewer(ctx, as);
-  if (by.role !== 'admin') throw new CliError('只有管理员可以读运行状况', '用管理员的操作令牌执行这一条命令');
+  if (!isAdmin(by)) throw new CliError('只有管理员可以读运行状况', '用管理员的操作令牌执行这一条命令');
   return by;
 }
 
@@ -607,7 +608,7 @@ export async function crashesCommand(args: readonly string[], ctx: CliContext, o
 export async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promise<number> {
   parse(args, {}, 0);
   const kit = await ctx.records();
-  if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
+  if ((await kit.principals.list()).some((user) => isAdmin(user))) {
     throw new CliError('已经有管理员，不再发设置码', '管理员登录控制台后在“管理”里添加用户、签发令牌；管理员令牌丢了用 circle-hub operator-token reissue');
   }
   const code = await issueSetupCode(ctx.config().dataDir);

@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
 import { join } from 'node:path';
 import { ENVIRONMENT, isEnvironment, labelOf, type Environment } from '../../contracts/generated/vocabulary.ts';
@@ -242,7 +243,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
     case 'list': {
       const { values } = parse(rest, { as: { type: 'string' } }, 0);
       const viewer = await session.viewer(values.as);
-      if (viewer.role !== 'admin') throw new CliError('只有管理员能列出资源');
+      if (!isAdmin(viewer)) throw new CliError('只有管理员能列出资源');
       const hub = await session.hub();
       // The console's listing (ResourceCatalogPort): admins only, with addresses and plaintext declarations.
       const listings = await hub.resources.list(viewer);

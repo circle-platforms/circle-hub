@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import { ADMIN_COMMANDS } from './command-registry.ts';
 // The administrator commands the assembly registers with the server CLI: pack, resource, secret, knowledge, init-admin and
 // operator-token. Every command that changes state acts as the admin of the operator token: CIRCLE_HUB_TOKEN, or when it is
@@ -82,7 +83,7 @@ export async function initAdminCommand(session: Session, args: readonly string[]
   if (supplied !== '' && !validPassword(supplied)) throw new UsageError('密码须为 12 至 256 个字符，不含控制字符');
   const password = supplied || initialPassword();
   const kit = await session.records();
-  if ((await kit.principals.list()).some((user) => user.role === 'admin')) {
+  if ((await kit.principals.list()).some((user) => isAdmin(user))) {
     throw new CliError(
       '已经有管理员；init-admin 只建第一位管理员',
       `给用户签发令牌用 circle-hub token issue <用户>（以私有密钥文件里的操作令牌执行）；操作令牌丢了（令牌文件丢失，或它的令牌已撤销）就用 ${REISSUE}`,
@@ -134,7 +135,7 @@ export async function operatorTokenCommand(session: Session, args: readonly stri
   // A Hub token has no white space; a pasted line may.
   const token = (await decided(() => read('管理员令牌'))).trim();
   const principal = tokenBytes(token) === null ? null : await kit.principals.authenticate(`Bearer ${token}`);
-  if (principal === null || principal.role !== 'admin') {
+  if (principal === null || !isAdmin(principal)) {
     throw new CliError(
       '这个令牌无效，或者不属于启用中的管理员，没有存进操作令牌文件',
       `给一个启用中的管理员的有效令牌；手里没有的话，用 ${REISSUE} 给一位启用中的管理员签发新令牌，直接存进操作令牌文件（不显示）`,
@@ -173,7 +174,7 @@ export async function originalCommand(session: Session, args: readonly string[])
   if (sub === 'list') {
     const { values } = parse(rest, { external: { type: 'string' }, suffix: { type: 'string' }, limit: { type: 'string' }, as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') throw new CliError('只有管理员能列出原件');
+    if (!isAdmin(viewer)) throw new CliError('只有管理员能列出原件');
     const limit = values.limit === undefined ? 100 : Number(values.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new UsageError('--limit 是 1 到 500 的整数');
     const kit = await session.records();
@@ -206,7 +207,7 @@ export async function originalCommand(session: Session, args: readonly string[])
     const sha = positionals[0];
     if (!isSha256(sha)) throw new UsageError('sha256 要写成 64 位小写十六进制');
     const viewer = await session.viewer(undefined);
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       // A non-admin gets the same answer as for a nonexistent original: no existence signal.
       throw new CliError('Hub 没有保存这份原件');
     }
@@ -240,7 +241,7 @@ export async function leaseCommand(session: Session, args: readonly string[]): P
   if (sub === 'list') {
     const { values } = parse(rest, { prefix: { type: 'string' }, as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') throw new CliError('只有管理员能列出租约');
+    if (!isAdmin(viewer)) throw new CliError('只有管理员能列出租约');
     const leases = await session.leases();
     const view = await leases.view(values.prefix ?? '', true);
     const registrations=await leases.registrations(values.prefix??'');
@@ -259,7 +260,7 @@ export async function leaseCommand(session: Session, args: readonly string[]): P
     if(!values.reason?.trim())throw new UsageError('登记或注销须写 --reason <理由>');
     if(sub==='register'&&!values.owner)throw new UsageError('登记须写 --owner <用户>');
     const viewer=await session.viewer(values.as);
-    if(viewer.role!=='admin')throw new CliError('只有管理员能管理登记');
+    if(!isAdmin(viewer))throw new CliError('只有管理员能管理登记');
     const leases=await session.leases();
     if(sub==='unregister'){
       const outcome=await leases.unregister({prefix,by:viewer.id,admin:true,reason:values.reason});
@@ -285,7 +286,7 @@ export async function leaseCommand(session: Session, args: readonly string[]): P
     if (key === '' || !/^[a-z0-9][a-z0-9:._/-]{0,199}$/.test(key)) throw new UsageError('键的写法不对（小写字母、数字和 :._/-，最长 200）');
     if (values.reason === undefined || values.reason.trim() === '') throw new UsageError('强制释放要写 --reason <理由>（写进动作记录）');
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       // The same answer as for a row that does not exist: no existence signal for a non-administrator.
       throw new CliError('没有租约行');
     }
@@ -319,7 +320,7 @@ export async function docCommand(session: Session, args: readonly string[]): Pro
     const [name, file] = positionals;
     // The neutral rule: a non-admin is told what they would hear for a doc that does not exist.
     const viewer = await session.viewer(undefined);
-    if (viewer.role !== 'admin') throw new CliError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
+    if (!isAdmin(viewer)) throw new CliError(`没有叫 ${name.slice(0, 80)} 的命名文档`);
     const admin = await session.admin();
     const source = isAbsolute(file) ? file : resolve(session.ctx.io.cwd, file);
     const bytes = await readFile(source).catch(() => null);
@@ -332,7 +333,7 @@ export async function docCommand(session: Session, args: readonly string[]): Pro
   if (sub === 'list') {
     const { values } = parse(rest, { as: { type: 'string' } }, 0);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') {
+    if (!isAdmin(viewer)) {
       session.out('还没有命名文档');
       return 0;
     }
@@ -348,7 +349,7 @@ export async function docCommand(session: Session, args: readonly string[]): Pro
   if (sub === 'show') {
     const { values, positionals } = parse(rest, { as: { type: 'string' } }, 1);
     const viewer = await session.viewer(values.as);
-    if (viewer.role !== 'admin') throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
+    if (!isAdmin(viewer)) throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
     const hub = await session.hub();
     const info = await hub.docs.show(positionals[0]);
     if (info === null) throw new CliError(`没有叫 ${positionals[0].slice(0, 80)} 的命名文档`);
@@ -361,7 +362,7 @@ export async function docCommand(session: Session, args: readonly string[]): Pro
 export async function recordsCommand(session:Session,args:readonly string[]):Promise<number> {
   const [sub,...rest]=args;if(sub!=='verify')throw new UsageError('records verify [--kind <记录类型>] [--vault]');
   const {values}=parse(rest,{kind:{type:'string'},as:{type:'string'},vault:{type:'boolean'}},0);
-  const viewer=await session.viewer(values.as);if(viewer.role!=='admin')throw new CliError('只有管理员能核对记录完整性');
+  const viewer=await session.viewer(values.as);if(!isAdmin(viewer))throw new CliError('只有管理员能核对记录完整性');
   const kind=values.kind ?? 'action';if(!(RECORD_KINDS as readonly string[]).includes(kind))throw new UsageError('记录类型不在生成的协议词表里');
   const records=await session.records();let cursor:string|null=null,total=0,notes=0;
   do {

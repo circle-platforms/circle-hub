@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import { uiLabelOf } from '../../contracts/generated/vocabulary.ts';
 import { copyFile, lstat, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -203,14 +204,14 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
       const hub = await session.hub();
       const listings = await hub.catalog.list(viewer);
       if (listings.length === 0) {
-        session.out(viewer.role === 'admin' ? '还没有发布任何内容' : '当前账户没有可用的工作流');
+        session.out(isAdmin(viewer) ? '还没有发布任何内容' : '当前账户没有可用的工作流');
         return 0;
       }
       const names = await session.names();
       for (const pack of listings) {
         const state = uiLabelOf('pack_status', pack.withdrawn ? 'retired' : pack.kind === 'product' ? (pack.active ? 'enabled' : 'inactive') : 'published');
         const fields = [`${pack.id}@${pack.version}`, uiLabelOf('pack_kind', pack.kind), pack.title, state];
-        if (viewer.role === 'admin') {
+        if (isAdmin(viewer)) {
           fields.push(`所有者 ${names.get(pack.owner) ?? pack.owner}`, pack.published_at);
           if (pack.kind === 'workflow') fields.push(`分配给 ${(pack.assigned_to ?? []).map((id) => names.get(id) ?? id).join('、') || '无'}`);
         }
