@@ -1,3 +1,5 @@
+import { createKnowledge } from '../knowledge/api.ts';
+import { runById, canViewRun, readPackDirectory, packSchema } from '../runs/api.ts';
 // createTestServer(): the server assembled in-process on a temporary PostgreSQL (hub/testing) with the fakes of hub/server/fakes.ts,
 // listening on a loopback port; helpers create users, tokens and assignments; client() wraps the official SDK client over
 // streamable HTTP with the Bearer token and the Circle-Session-Id header. Nothing here touches the real runs, knowledge or
@@ -112,11 +114,22 @@ export function fakeDeps(
   const now = options.now ?? (() => new Date());
   const workflows = new FakeWorkflows(records, options.packs ?? defaultPacks());
   const products = new FakeProducts(records, workflows);
+  const parsers = createDefaultRegistry();
+  const spaces = createKnowledge({
+    records,
+    parsers,
+    packs: { pack: async () => null, productByName: async () => null, productById: async () => null, products: async () => [], readableProducts: async () => new Set() },
+    runReads: { runById, canViewRun },
+    packReads: { readPackDirectory, packSchema },
+    external: { accepts: async () => false, read: async () => { throw new Error('Synthetic spaces have no external reader'); } },
+    clock: now,
+    sandbox: { requireOsIsolation: false },
+  }).spaces;
   const fakes: TestFakes = {
     workflows,
     products,
     runs: new FakeRuns(records, workflows, now),
-    knowledge: new FakeKnowledge(products),
+    knowledge: new FakeKnowledge(products, spaces),
     packs: new FakePackCatalog(records, workflows),
     resources: new FakeResources(records),
   };
@@ -128,7 +141,7 @@ export function fakeDeps(
     workflows,
     packs: fakes.packs,
     resources: fakes.resources,
-    parsers: createDefaultRegistry(),
+    parsers,
     now,
     ...(options.withoutProducts ? {} : { products }),
     ...(options.withoutRunsDetail ? {} : { runsDetail: fakes.runs }),

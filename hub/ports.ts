@@ -481,7 +481,7 @@ export interface ReadRoot {
 export interface KnowledgePort {
   personalSync?:import('./knowledge/api.ts').PersonalKnowledgeSync;
   memory?:import('./knowledge/api.ts').MemoryDocuments;
-  spaces?: import('./knowledge/api.ts').KnowledgeSpaces;
+  spaces: import('./knowledge/api.ts').KnowledgeSpaces;
   feeding?:import('./knowledge/feeding.ts').FeedingLayer;
   seedlingRoot?(product:string,line:string):Promise<RootInfo|null>;
   /** Seedling pointer of the line, otherwise the sync root. Absent on older ports; runs then keep the seedling-then-sync fallback. */
