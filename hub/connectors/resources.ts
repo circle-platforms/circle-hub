@@ -364,12 +364,16 @@ export class ResourceRegistry {
     return { ...listing(state, true), credentials };
   }
 
-  /** Admins: every resource with addresses; any other valid account: the same rows without addresses. */
+  /** Admins manage every resource; other valid accounts see assigned resources without addresses. */
   async list(by: Principal): Promise<ResourceListing[]> {
     const viewer = await this.#viewer(by);
     if (viewer === null) return [];
     const admin = isAdmin(viewer);
-    return (await this.states()).map((state) => listing(state, admin));
+    const rows: ResourceListing[] = [];
+    for (const state of await this.states()) {
+      if (admin || await this.#o.authorizations.canUseResource(viewer.id, state.resource.id)) rows.push(listing(state, admin));
+    }
+    return rows;
   }
 
   /** Every resource, enabled or not, by name (no access check: for the connectors themselves). */
