@@ -8,7 +8,7 @@ import { UserId } from '../../contracts/src/common.ts';
 import type { HubConfig } from '../config/index.ts';
 import { Database, createPool, openRecords, isAdmin, sha256Hex, canonicalBytes, parseStrictJson, type RecordsKit } from '../records/api.ts';
 import { type SyncReport } from '../knowledge/api.ts';
-import { CODE_ROOT, createContext, identityOf, settingsOf, serviceEnvironment, toolEnvironment, renderPlist, withLock, writeFileAtomic, hubKeyProvider, platformLockPath, type PlatformContext } from '../platform/api.ts';
+import { CODE_ROOT, createContext, identityOf, settingsOf, serviceEnvironment, toolEnvironment, renderPlist, withLock, writeFileAtomic, hubKeyProvider, platformLockPath, postgresFor, type PlatformContext } from '../platform/api.ts';
 import { assembleHub } from './assemble/hub.ts';
 import type { Session } from './cli-session.ts';
 import { loadServerConfig } from './main.ts';
@@ -127,7 +127,7 @@ export async function launchDeploymentSyncSupervisor(config: HubConfig, id: stri
   const settings = await settingsOf(context);
   const environment = serviceEnvironment(context.layout, settings, identityOf(context));
   const child = loadServerConfig(environment);
-  if (child.dataDir !== config.dataDir || child.database.host !== config.database.host || child.database.port !== config.database.port || child.database.database !== config.database.database || child.database.user !== config.database.user) throw new CliError('后台同步目标与当前服务数据库不一致，未启动任务');
+  if (child.dataDir !== config.dataDir || child.database.host !== config.database.host || child.database.port !== config.database.port || child.database.database !== config.database.database || (config.database.user !== child.database.user && config.database.user !== postgresFor(context).target.user)) throw new CliError('后台同步目标与当前服务数据库不一致，未启动任务');
   const args = [process.execPath, join(CODE_ROOT, 'bin', 'circle-hub'), 'knowledge', 'sync-worker', id];
   const label = 'io.github.circle-platforms.circle-hub.deployment-sync.' + id;
   if (context.platform === 'linux') {
@@ -151,7 +151,6 @@ export async function queueDeploymentSync(session: Session, input: readonly Depl
   const targets = (await parseIntent({ schema: DEPLOYMENT_SYNC_INTENT_SCHEMA, targets: input })).targets;
   const root = await directory(config);
   return withLock(join(root, 'queue.lock'), async () => {
-    if (await resetting(config)) throw new CliError('初始化进行中，未提交后台同步任务');
     const oid = await databaseOid(config), tasks: DeploymentSyncTask[] = [];
     const records = await session.records();
     const bytes = canonicalBytes(parseIntent({schema:DEPLOYMENT_SYNC_INTENT_SCHEMA,targets}));
