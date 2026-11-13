@@ -76,7 +76,7 @@ test('two resources share credential versions: rotation refreshes sessions and o
     await read(second, other);
     assert.equal(stub.logins, before + 2);
 });
-test('legacy migration commits both decisions, rejects a destination change, and removes the old entry last', async (t) => {
+test('explicit material migration follows the current resource destination and removes the old entry last', async (t) => {
     const { canonicalBytes } = await import('../records/api.ts');
     const k = await openConnectorKit(pg);
     t.after(() => k.close());
@@ -85,8 +85,8 @@ test('legacy migration commits both decisions, rejects a destination change, and
     const object = await k.records.objects.put(canonicalBytes(old), 'application/json');
     await k.records.authorizations.configureResource(k.admin, r.id, object.sha256, 'DEMO_LEGACY');
     await k.records.vault.put(old.credentials.username, 'demo-reader');
-    await assert.rejects(k.connectors.admin.updateResource(k.admin, r.id, { credentials: { username: 'DEMO_USER' }, allow_plaintext: ['http://192.0.2.11'], origins: { 'agile-api': 'http://192.0.2.11', 'agile-oauth': 'http://192.0.2.11' } }), /分开做/);
-    const changed = await k.connectors.admin.updateResource(k.admin, r.id, { credentials: { username: 'DEMO_USER' } });
+    const changed = await k.connectors.admin.updateResource(k.admin, r.id, { credentials: { username: 'DEMO_USER' }, allow_plaintext: ['http://192.0.2.11'], origins: { 'agile-api': 'http://192.0.2.11', 'agile-oauth': 'http://192.0.2.11' } });
+    assert.equal(changed.origins['agile-api'], 'http://192.0.2.11');
     assert.equal(changed.credentials.username, '${secret:DEMO_USER}');
     assert.equal(await k.records.vault.has(old.credentials.username), false);
     assert.equal((await k.records.variables.listSecrets(k.admin)).find(v => v.name === 'DEMO_USER')?.version, 1);

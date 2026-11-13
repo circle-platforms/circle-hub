@@ -258,8 +258,6 @@ export class ResourceRegistry {
       bound.profile,
     );
     const migrating = Object.keys(record.credentials).filter(name => current.credentials[name] === credentialEntry(id,name) && secretNameOf(record.credentials[name]));
-    if (migrating.length && (canonicalBytes(current.origins).toString() !== canonicalBytes(record.origins).toString() || canonicalBytes(current.allow_plaintext).toString() !== canonicalBytes(record.allow_plaintext).toString()))
-      throw new ConnectorError('RESOURCE_INVALID','迁移凭据和改地址须分开做：先迁移，再改地址并重新输入密钥');
     const writes: SecretWrite[] = [];
     for (const item of migrating) {
       const value = await this.#o.vault.getText(current.credentials[item]);
