@@ -361,6 +361,7 @@ async function answer(
   response.once('close', onClose);
   if (response.destroyed) onClose();
   server.setNotificationHandler(CancelledNotificationSchema, notification => {
+    if (notification.params.requestId === undefined) return;
     const calls = pending!.get(cancellationKey(notification.params.requestId));
     // Duplicate live request IDs cannot identify which call the client intends to cancel.
     if (calls?.size === 1) calls.values().next().value!.abort();
