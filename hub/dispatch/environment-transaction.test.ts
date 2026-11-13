@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { test } from 'node:test';
-import { Database, openRecords, type Transaction } from '../records/api.ts';
+import type { QueryResult } from 'pg';
+import { Database, openRecords, type Transaction, type Row } from '../records/api.ts';
 import { canUseEnvironment } from '../records/environment-permissions.ts';
 import { requestPermissions, withRequestPermissions } from '../records/request-permissions.ts';
 import { DispatchService } from './service.ts';
@@ -14,6 +15,7 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
   const c = await setup(); t.after(() => c.close());
   const records = await openRecords({ ...c.kit.config, database: c.kit.database }, { migrate: false, maxConnections: 1, keyProvider: c.kit.keyProvider, now: c.now });
   t.after(() => records.close());
+  assert.ok(records.poolStats, 'the real fixture exposes pool statistics');
   assert.equal(records.poolStats().limit, 1, 'the permission and intent kit really has one connection');
   // Keep the real observation advisory lock on a separate session: it lives for the whole job, not just its intent TX.
   records.store.tryHold=c.kit.store.tryHold.bind(c.kit.store);
@@ -22,14 +24,15 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
   records.store.withTransaction = (run, outer) => originalTransaction(tx => scope.run(tx, () => run(tx)), outer);
   let reborrows = 0, transactionChecks = 0, revoked = false;
   const originalQuery = Database.prototype.query;
-  Database.prototype.query = function (this: Database, text, values, tx) {
+  Database.prototype.query = function<R extends Row = Row>(this: Database, text: string, values: readonly unknown[] = [], tx?: Transaction): Promise<QueryResult<R>> {
     const held = scope.getStore();
     if (held && this.pool.options.max === 1 && this.pool.options.database === c.kit.database.database && tx !== held) {
       reborrows++;
       // Refuse the second lease deterministically instead of waiting for a pool timeout to imply a deadlock.
       throw new Error('a held transaction attempted another client lease');
     }
-    return Reflect.apply(originalQuery, this, [text, values, tx]);
+    const execute = originalQuery<R>;
+    return execute.call(this, text, values, tx);
   };
   t.after(() => { Database.prototype.query = originalQuery; });
   const permission = async (actor: Parameters<typeof canUseEnvironment>[1], executor: string, tx?: Transaction) => {
