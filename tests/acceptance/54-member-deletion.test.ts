@@ -28,6 +28,7 @@ test('permanent deletion removes private knowledge, archive, memory and sync dat
  assert.equal(check.status,200,check.body);assert.match(check.body,/预览永久删除的影响/);assert.match(check.body,/--expected-state=/);assert.match(check.body,/--epoch=/);
  assert.doesNotMatch(check.body,/合成私人路径|合成成员私人名称|synthetic private memory|合成待清除同步设备/);
  const ownPreview=await web.get(previewPath);assert.equal(ownPreview.status,200,ownPreview.body);assert.doesNotMatch(ownPreview.body,/预览永久删除的影响|--expected-state=|--operation-id=/);
+ assert.equal((await reader.get(previewPath)).status,404);
  await assert.rejects(deletionCheck(hub.records,owner.principal,owner.user.id),AccessError);
  const preview=await deletionCheck(hub.records,hub.admin.principal,owner.user.id);
  assert.ok(check.body.includes('--expected-state='+preview.preview.state));assert.ok(check.body.includes('--epoch='+preview.preview.epoch));
