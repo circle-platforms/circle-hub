@@ -12,8 +12,8 @@ import { osIsolationAvailable, type SandboxLimits, type SandboxOptions } from '.
 import type { TemporaryPostgres } from '../../../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../testing/records.ts';
 import { createRunsService, type AdminLogEntry, type RunsEngine } from '../api.ts';
-import { LeaseService } from '../../../leases/service.ts';
-import { createPool, Database } from '../../../records/db.ts';
+import { LeaseService } from '../../../leases/api.ts';
+import { createPool, Database } from '../../../records/api.ts';
 import { FakeExternal } from './external.ts';
 import { FakeKnowledge, FakePacks } from './knowledge.ts';
 import { locatePack, reviewPack, verifyPack, writePack, type ReviewOptions } from './packs.ts';
