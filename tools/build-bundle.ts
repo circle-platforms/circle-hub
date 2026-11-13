@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { BUNDLE_FILE, BUNDLE_PLATFORMS, BUNDLE_SCHEMA, RELEASE_EXCLUDES, bundleTreeDigest, type BundlePlatform } from '../hub/platform/release.ts';
+import { BUNDLE_FILE, BUNDLE_PLATFORMS, BUNDLE_SCHEMA, bundleTreeDigest, type BundlePlatform } from '../hub/platform/release.ts';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 /** The Node.js the bundles carry: 24.20 or later is needed for process.permission.drop (the Linux pack sandbox). */
@@ -84,8 +84,7 @@ export async function buildBundle(options: { platform: BundlePlatform; out: stri
     const app = join(dir, 'app');
     await mkdir(app, { recursive: true });
     const archive = join(staging, 'source.tar');
-    const pathspec = ['.', ...RELEASE_EXCLUDES.map((entry) => `:(exclude)${entry}`)];
-    run('git', ['-C', ROOT, 'archive', '--format=tar', `--output=${archive}`, options.commit, '--', ...pathspec], ROOT);
+    run('git', ['-C', ROOT, 'archive', '--format=tar', `--output=${archive}`, options.commit, '--', '.'], ROOT);
     run('tar', ['-x', '-f', archive, '-C', app], ROOT);
     await rm(archive);
     const { os, cpu } = npmTarget(options.platform);
