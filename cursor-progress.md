@@ -10,6 +10,10 @@
 
 ## 交付（2026-11-14）
 
+### 提交
+- `7099fa3021477572b46dcddbf15aae856b8a2b24`
+- 定向无 PG：38 pass / 0 skip；`npx tsc --noEmit` 通过
+
 ### 拣入
 - Codex `1ec24795d7`（上传 `--reference=src:…` + bridge + pack.install/uninstall + doc.put）
 - Codex `0f47e07870`（executor.assign/unassign）
