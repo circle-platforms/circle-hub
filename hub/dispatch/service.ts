@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 import type { Heartbeat, LeaseClock, RemoteLease } from './session-types.ts';
 import * as bedOperations from './bed-lifecycle.ts';
 import * as deviceOperations from './devices.ts';
@@ -403,7 +404,7 @@ export class DispatchService {
    * log, errors included, and the answer says the administrator has it.
    */
   async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
-    const admin = (await this.options.records.principals.list()).find((p) => p.role === 'admin' && !p.disabled);
+    const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
     if (!detail?.run.runner) return { started: false, reason: '运行不可读或没有发起用户' };
