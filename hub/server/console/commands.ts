@@ -100,6 +100,12 @@ export const commands = {
     id: dialogId('bed-hold-clear', executor.id), title: `确认运行环境 ${executor.target} 已恢复`,
     text: '核实运行环境已恢复原状（例如设备已重启、作业留下的配置已清除）后再执行；执行后该运行环境恢复接受派发，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
   }),
+  /** Boss 04:30 — force-release a booking that remains after assignment revoke; same dialog pattern as bedHoldClear. */
+  leaseRelease: (executor: { id: string; target: string }, detail: string): CommandDialog => ({
+    id: dialogId('lease-release', executor.id), title: `强制释放预订：${executor.target}`,
+    text: `${detail}收回分配后预订仍留在原持有者名下；本地释放不证明远端已停。请把「租约键」换成该预订的实际键后再执行。`,
+    command: command('lease', 'release', '租约键', REASON),
+  }),
   jobDispose: (job: string): CommandDialog => ({
     id: dialogId('job-dispose', job), title: `处置作业 ${job.slice(0, 12)} 的派发结果`,
     text: '先查看作业状态与处置请求，再按核对结论执行 circle-hub job dispose（核对、保持未知、标记失败三选一）；处置前该运行环境不接受新的派发。', command: command('job', 'status', job),
