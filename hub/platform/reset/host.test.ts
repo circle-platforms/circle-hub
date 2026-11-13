@@ -20,7 +20,7 @@ import type { ResetScope } from './types.ts';
 
 const libpq = await libpqAvailable();
 async function fixture(incompatible = false) {
-  const parent = await mkdtemp(join(tmpdir(), 'circle-hub-reset-current-')), layout = layoutAt(join(parent, 'data'));
+  const parent = await mkdtemp(join(tmpdir(), 'chr-')), layout = layoutAt(join(parent, 'data'));
   await ensureLayout(layout);
   const port = await freePort(), dbPort = socketPort();
   await writeSettingsFile(layout, newSettingsFile({ environment: 'test', port, database: { port: dbPort } }));
