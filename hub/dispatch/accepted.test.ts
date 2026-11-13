@@ -1,3 +1,4 @@
+import { isAdmin } from '../records/api.ts';
 // Decision 105 (W03, D06): the Hub dispatches an accepted run whose release holds, as the runner's run with a named
 // administrator responsible for unknown outcomes, at most once; the runner reads the jobs' progress. Synthetic executor only.
 import assert from 'node:assert/strict';
@@ -36,7 +37,7 @@ test('the Hub dispatches an accepted run whose release holds, as the runner with
 test('without an enabled administrator, or when the release does not hold, the Hub dispatches nothing and says why', async (t) => {
   const c = await setup(); t.after(() => c.close());
   const list = c.kit.principals.list.bind(c.kit.principals);
-  c.kit.principals.list = async (...args: Parameters<typeof list>) => (await list(...args)).filter((p) => p.role !== 'admin');
+  c.kit.principals.list = async (...args: Parameters<typeof list>) => (await list(...args)).filter((p) => !isAdmin(p));
   const lonely = await c.service.dispatchAccepted(c.run);
   assert.equal(lonely.started, false); assert.match(lonely.reason ?? '', /没有在职管理员/);
   c.kit.principals.list = list;
