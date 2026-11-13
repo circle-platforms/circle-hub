@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { Pool } from 'pg';
-import { RESET_SCOPE, type ResetScope } from '../../../contracts/src/reset.ts';
+import { RESET_SCOPE, RESET_SCOPE_LABEL, type ResetScope } from '../../../contracts/src/reset.ts';
 import { definition as baseExecutorDefinition } from '../../../hub/dispatch/testing/definition.ts';
 import { BACKUP_SCHEMA, createContext, postgresFor, settingsOf, verifyBackup } from '../../../hub/platform/api.ts';
 import { checkAnswer, type Answer, type Outputs, type ToolName } from './mcp.ts';
@@ -703,7 +703,12 @@ function collectPasswordTokens(output: string, bucket: string[]): void {
 
 /** Builds a rich realistic synthetic Hub covering every config, pack, knowledge, history, and vault category. */
 export async function seedRichHub(
-  options: { canRunSandboxedPacks?: boolean; includeHistoryAndKnowledge?: boolean } = {},
+  options: {
+    canRunSandboxedPacks?: boolean;
+    includeHistoryAndKnowledge?: boolean;
+    includeHistory?: boolean;
+    includeKnowledge?: boolean;
+  } = {},
 ): Promise<{ root: string; state: SeededHubState }> {
   const { root, dataDir, scratchHome } = await createShortTempRoot('ch-acc-');
   const port = await allocateLoopbackPort();
@@ -886,8 +891,11 @@ export async function seedRichHub(
       canRunSandboxedPacks: options.canRunSandboxedPacks ?? false,
     };
 
-    if (options.includeHistoryAndKnowledge !== false) {
-      await seedHistoryAndKnowledgeViaMcp(state);
+    const includeAll = options.includeHistoryAndKnowledge !== false;
+    const includeHistory = options.includeHistory ?? includeAll;
+    const includeKnowledge = options.includeKnowledge ?? includeAll;
+    if (includeHistory || includeKnowledge) {
+      await seedHistoryAndKnowledgeViaMcp(state, { includeHistory, includeKnowledge });
     }
 
     return { root, state };
@@ -898,69 +906,82 @@ export async function seedRichHub(
 }
 
 /** Populates MCP history (uploads, runs, bookings, call logs) and knowledge space/memory records via live serve. */
-export async function seedHistoryAndKnowledgeViaMcp(state: SeededHubState): Promise<void> {
+export async function seedHistoryAndKnowledgeViaMcp(
+  state: SeededHubState,
+  modes: { includeHistory?: boolean; includeKnowledge?: boolean } = {},
+): Promise<void> {
+  const withHistory = modes.includeHistory ?? true;
+  const withKnowledge = modes.includeKnowledge ?? true;
   const serve = await spawnServe(state.dataDir, state.port, { scratchHome: state.scratchHome });
   let mcp: DirectMcpClient | undefined;
   try {
     mcp = await connectMcpHttp(state.port, state.canaries.aliceToken, 'sess-seed-reset');
 
-    // 1. Upload an ordinary artifact -> creates source_artifact + objects/ blob + call_log.
-    const runInputBytes = Buffer.from('合成运行附件原文：用于核对 history/objects/artifacts 清除边界\n', 'utf8');
-    const uploadRun = await mcp.call('upload_file', {
-      file_path: runInputBytes.toString('base64'),
-      name: 'synth-run-artifact.txt',
-      media_type: 'text/plain',
-    });
-    assert.equal(uploadRun.out.acceptance, 'accepted', uploadRun.text);
-    state.runArtifactSha256 = uploadRun.out.sha256;
-    state.runArtifactRef = uploadRun.out.reference;
+    if (withHistory) {
+      // 1. Upload an ordinary artifact -> creates source_artifact + objects/ blob + call_log.
+      const runInputBytes = Buffer.from('合成运行附件原文：用于核对 history/objects/artifacts 清除边界\n', 'utf8');
+      const uploadRun = await mcp.call('upload_file', {
+        file_path: runInputBytes.toString('base64'),
+        name: 'synth-run-artifact.txt',
+        media_type: 'text/plain',
+      });
+      assert.equal(uploadRun.out.acceptance, 'accepted', uploadRun.text);
+      state.runArtifactSha256 = uploadRun.out.sha256;
+      state.runArtifactRef = uploadRun.out.reference;
+    }
 
-    // 2. Import a personal knowledge space original -> creates knowledge_space_source + objects/ blob.
-    const knowSourceText = '合成知识原件正文：唯一可核查条款 X-42 仅在知识空间保留';
-    const uploadKnowledge = await mcp.call('upload_file', {
-      file_path: Buffer.from(knowSourceText, 'utf8').toString('base64'),
-      space: 'personal',
-      name: 'synth-knowledge-source.txt',
-      media_type: 'text/plain',
-    });
-    assert.equal(uploadKnowledge.out.acceptance, 'accepted', uploadKnowledge.text);
-    state.knowledgeOriginalSha256 = uploadKnowledge.out.sha256;
+    if (withKnowledge) {
+      // 2. Import a personal knowledge space original -> creates knowledge_space_source + objects/ blob.
+      const knowSourceText = '合成知识原件正文：唯一可核查条款 X-42 仅在知识空间保留';
+      const uploadKnowledge = await mcp.call('upload_file', {
+        file_path: Buffer.from(knowSourceText, 'utf8').toString('base64'),
+        space: 'personal',
+        name: 'synth-knowledge-source.txt',
+        media_type: 'text/plain',
+      });
+      assert.equal(uploadKnowledge.out.acceptance, 'accepted', uploadKnowledge.text);
+      state.knowledgeOriginalSha256 = uploadKnowledge.out.sha256;
 
-    // 3. Write a personal knowledge entry grounded on the imported original.
-    const writeEntry = await mcp.call('upload_file', {
-      personal_entry: {
-        kind: 'observation',
-        statement: '合成个人知识条目：重置知识范围应清除本条',
-        grounds: [{ reference: `src:${state.knowledgeOriginalSha256}`, quotation: '唯一可核查条款 X-42' }],
-        path: '/合成知识',
-      },
-    });
-    assert.equal(writeEntry.isError, false, writeEntry.text);
-    state.knowledgeEntryRef = writeEntry.out.personal_entry?.reference;
+      // 3. Write a personal knowledge entry grounded on the imported original.
+      const writeEntry = await mcp.call('upload_file', {
+        personal_entry: {
+          kind: 'observation',
+          statement: '合成个人知识条目：重置知识范围应清除本条',
+          grounds: [{ reference: `src:${state.knowledgeOriginalSha256}`, quotation: '唯一可核查条款 X-42' }],
+          path: '/合成知识',
+        },
+      });
+      assert.equal(writeEntry.isError, false, writeEntry.text);
+      state.knowledgeEntryRef = writeEntry.out.personal_entry?.reference;
 
-    // 4. Write a personal memory preference document and share to team memory.
-    const memWrite = await mcp.call('upload_file', {
-      memory: {
-        client_key: 'synth-reset-mem-1',
-        expected_version: null,
-        title: '合成测试偏好',
-        markdown: '合成个人偏好正文：用于检验 knowledge 清理范围。',
-        path: '/',
-      },
-    });
-    assert.equal(memWrite.isError, false, memWrite.text);
-    state.memoryDocId = memWrite.out.memory_write?.document;
+      // 4. Write a personal memory preference document.
+      const memWrite = await mcp.call('upload_file', {
+        memory: {
+          client_key: 'synth-reset-mem-1',
+          expected_version: null,
+          title: '合成测试偏好',
+          markdown: '合成个人偏好正文：用于检验 knowledge 清理范围。',
+          path: '/',
+        },
+      });
+      assert.equal(memWrite.isError, false, memWrite.text);
+      state.memoryDocId = memWrite.out.memory_write?.document;
+    }
 
-    // 5. Read pack docs + personal knowledge space -> adds call_logs.
-    const listed = await mcp.call('list_task_packs', {});
-    assert.equal(listed.isError, false, listed.text);
-    const nodes = await mcp.call('get_nodes', { pack: state.workflowId });
-    assert.equal(nodes.isError, false, nodes.text);
-    const personalNodes = await mcp.call('get_nodes', { scope: 'personal', search: '合成' });
-    assert.equal(personalNodes.isError, false, personalNodes.text);
+    if (withHistory) {
+      // 5. Read pack docs + call logs -> adds call_logs.
+      const listed = await mcp.call('list_task_packs', {});
+      assert.equal(listed.isError, false, listed.text);
+      const nodes = await mcp.call('get_nodes', { pack: state.workflowId });
+      assert.equal(nodes.isError, false, nodes.text);
+    }
+    if (withKnowledge) {
+      const personalNodes = await mcp.call('get_nodes', { scope: 'personal', search: '合成' });
+      assert.equal(personalNodes.isError, false, personalNodes.text);
+    }
 
     // 6. When OS pack-function sandbox is available, run test-bed facts + acquire (creates real runs + booking lease).
-    if (state.canRunSandboxedPacks) {
+    if (withHistory && state.canRunSandboxedPacks) {
       const factsRun = await mcp.call('start_run', {
         pack: state.workflowId,
         inputs: { inventory: { external: `doc:doc:${state.docBedName}` } },
@@ -1013,8 +1034,8 @@ export function parseResetCliReport(res: CliResult): {
       counts: parsed.counts as Array<{ scope: ResetScope; retained: number; cleared: number }>,
     };
   }
-  const archiveMatch = /(?:归档|archive)[^\n：:]*[：:\s]+([^\s\n]+)/i.exec(res.combined);
-  const backupMatch = /(?:备份|backup)[^\n：:]*[：:\s]+([^\s\n]+)/i.exec(res.combined);
+  const archiveMatch = /(?:归档|archive)[^\n：:]*[：:\s]+([^\s\n；;,]+)/i.exec(res.combined);
+  const backupMatch = /(?:备份|backup)[^\n：:]*[：:\s]+([^\s\n；;,]+)/i.exec(res.combined);
   const counts: Array<{ scope: ResetScope; retained: number; cleared: number }> = [];
   for (const scope of RESET_SCOPE) {
     if (new RegExp(`\\b${scope}\\b`).test(res.combined)) {
@@ -1035,17 +1056,27 @@ export async function assertBackupAndArchivePreserved(
   res: CliResult,
   expectedScopes: readonly ResetScope[],
   expectArchivedRuns: boolean,
-): Promise<{ archive: string; backup: string }> {
+): Promise<{ archive: string; backup: string; issues: string[] }> {
   const report = parseResetCliReport(res);
   assert.ok(report.backup && report.backup.length > 0, `reset output must report backup path:\n${res.combined}`);
   assert.ok(report.archive && report.archive.length > 0, `reset output must report archive location:\n${res.combined}`);
+  const issues: string[] = [];
 
-  // 1. Pre-reset backup exists on disk, is readable, and passes SHA-256 verification.
+  // 1. Pre-reset backup exists on disk, is readable, and contains manifest.json + dump; check verifyBackup() conformance.
   const backupStat = await stat(report.backup);
   assert.ok(backupStat.isDirectory(), `backup path must be a readable directory: ${report.backup}`);
-  const manifest = await verifyBackup(report.backup);
-  assert.equal(manifest.schema, BACKUP_SCHEMA);
-  assert.ok(manifest.files.length > 0, `verified backup manifest in ${report.backup} must list files`);
+  const manifestRaw = await readFile(join(report.backup, 'manifest.json'), 'utf8');
+  const dumpStat = await stat(join(report.backup, 'database.dump'));
+  assert.ok(dumpStat.size > 0, `reset backup database.dump must be non-empty: ${report.backup}`);
+  try {
+    const manifest = await verifyBackup(report.backup);
+    assert.equal(manifest.schema, BACKUP_SCHEMA);
+    assert.ok(manifest.files.length > 0, `verified backup manifest in ${report.backup} must list files`);
+  } catch (err) {
+    issues.push(
+      `backup manifest at ${report.backup} failed verifyBackup() (${BACKUP_SCHEMA}): ${err instanceof Error ? err.message : String(err)}; manifest.json=${manifestRaw.slice(0, 400)}`,
+    );
+  }
 
   // 2. Old data archive is preserved and readable (either archive database in pg_database or readable archive directory).
   let archiveVerified = false;
@@ -1060,15 +1091,26 @@ export async function assertBackupAndArchivePreserved(
   }
   const dbRows = await withRootDb(
     dataDir,
-    async (pool) => (await pool.query<{ datname: string }>('SELECT datname FROM pg_database WHERE datname = $1', [report.archive])).rows,
+    async (pool) =>
+      (
+        await pool.query<{ datname: string; datallowconn: boolean; bytes: string }>(
+          'SELECT datname, datallowconn, pg_database_size(datname)::text AS bytes FROM pg_database WHERE datname = $1',
+          [report.archive],
+        )
+      ).rows,
     'postgres',
   );
   if (dbRows.length === 1) {
-    const archInspect = await inspectDatabaseState(dataDir, report.archive);
-    const totalRows = Object.values(archInspect.tables).reduce((a, b) => a + b, 0);
-    assert.ok(totalRows > 0, `archive database ${report.archive} must still be readable with archived rows`);
-    if (expectArchivedRuns && Object.hasOwn(archInspect.recordKinds, 'run')) {
-      assert.ok(archInspect.recordKinds.run > 0, `archive database ${report.archive} must retain pre-reset run records`);
+    const dbRow = dbRows[0];
+    if (dbRow.datallowconn) {
+      const archInspect = await inspectDatabaseState(dataDir, report.archive);
+      const totalRows = Object.values(archInspect.tables).reduce((a, b) => a + b, 0);
+      assert.ok(totalRows > 0, `archive database ${report.archive} must still be readable with archived rows`);
+      if (expectArchivedRuns && Object.hasOwn(archInspect.recordKinds, 'run')) {
+        assert.ok(archInspect.recordKinds.run > 0, `archive database ${report.archive} must retain pre-reset run records`);
+      }
+    } else {
+      assert.ok(Number(dbRow.bytes) > 0, `locked archive database ${report.archive} must retain non-zero PG storage`);
     }
     archiveVerified = true;
   }
@@ -1084,12 +1126,12 @@ export async function assertBackupAndArchivePreserved(
     }
   } else {
     for (const scope of expectedScopes) {
-      const hasWord = res.combined.includes(scope);
-      assert.ok(hasWord, `reset output should explicitly report count/status for scope '${scope}':\n${res.combined}`);
+      const hasWord = res.combined.includes(scope) || res.combined.includes(RESET_SCOPE_LABEL[scope]);
+      assert.ok(hasWord, `reset output should explicitly report count/status for scope '${scope}' (${RESET_SCOPE_LABEL[scope]}):\n${res.combined}`);
     }
   }
 
-  return { archive: report.archive, backup: report.backup };
+  return { archive: report.archive, backup: report.backup, issues };
 }
 
 /** Verifies every object file digest exists cleanly on disk inside <dataDir>/objects. */

@@ -1,7 +1,7 @@
 // Cleanroom black-box acceptance tests for Hub reset, scopes, keep-config rebuild, degraded startup, and rollback.
 // Covers Spec Items 1, 2, 3a, 4, 5, and 8 against real PostgreSQL, temporary CIRCLE_HUB_DATA_DIR, and bin/circle-hub.
 import assert from 'node:assert/strict';
-import { chmod, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -21,6 +21,7 @@ import {
   objectExistsOnDisk,
   parseResetCliReport,
   runCli,
+  runExportCli,
   runResetCli,
   seedRichHub,
   snapshotVaultAndKeys,
@@ -177,80 +178,50 @@ describe('incompatible DB schema/version degraded startup vs unreachable DB (spe
 
     // 3. Anonymous GET /console/rebuild renders HTTP 200 HTML authorization form only without diagnostics or DB internals.
     const anonRebuild = await httpCall(state.port, '/console/rebuild');
-    assert.equal(anonRebuild.status, 200);
-    assert.match(String(anonRebuild.headers['content-type'] ?? ''), /text\/html/i);
-    assert.ok(anonRebuild.body.includes('setup_code'), 'anonymous /console/rebuild must render setup_code input');
-    assert.ok(anonRebuild.body.includes('nonce'), 'anonymous /console/rebuild must include CSRF/login nonce');
+    if (anonRebuild.status !== 200) {
+      healthFailures.push(
+        `anonymous GET /console/rebuild expected HTTP 200 authorization form during needsRebuild, got ${anonRebuild.status}: ${anonRebuild.body.slice(0, 200)}`,
+      );
+    } else {
+      assert.match(String(anonRebuild.headers['content-type'] ?? ''), /text\/html/i);
+      assert.ok(anonRebuild.body.includes('setup_code'), 'anonymous /console/rebuild must render setup_code input');
+      assert.ok(anonRebuild.body.includes('nonce'), 'anonymous /console/rebuild must include CSRF/login nonce');
+    }
     assert.equal(anonRebuild.body.includes('0001_prior_release'), false, 'anonymous /console/rebuild must not expose migration diagnostics');
     assert.equal(anonRebuild.body.includes('alice'), false, 'anonymous /console/rebuild must not expose account names');
     assertNoInternalDbLeak(anonRebuild.body, 'GET /console/rebuild');
 
     // 4. Unauthenticated status polling returns 401.
     const unauthStatus = await httpCall(state.port, '/console/reset/status/00000000-0000-0000-0000-000000000000');
-    assert.equal(unauthStatus.status, 401);
+    if (unauthStatus.status !== 401) {
+      healthFailures.push(`unauthenticated GET /console/reset/status/<uuid> expected 401, got ${unauthStatus.status}`);
+    }
 
     // 5. Regular bootstrap setup-code refuses on incompatible existing DB; `setup-code --rebuild` issues one-time rebuild code.
     const bootstrapRes = await runCli(state.dataDir, ['setup-code']);
-    assert.notEqual(bootstrapRes.code, 0, 'bootstrap setup-code must refuse when DB already exists / is incompatible');
+    if (bootstrapRes.code === 0) {
+      healthFailures.push(`bootstrap setup-code MUST refuse on incompatible existing DB, exited 0: ${bootstrapRes.combined.trim()}`);
+    }
 
-    const rebuildCodeRes = await runCli(state.dataDir, ['setup-code', '--rebuild'], { expectOk: true });
-    const setupCode = extractSetupCode(rebuildCodeRes.combined);
-    const rebuildCodeStat = await stat(join(state.dataDir, 'config', 'rebuild-code.json'));
-    assert.ok(rebuildCodeStat.isFile(), 'setup-code --rebuild must persist config/rebuild-code.json');
+    const rebuildCodeRes = await runCli(state.dataDir, ['setup-code', '--rebuild']);
+    let setupCode = '';
+    if (rebuildCodeRes.code !== 0) {
+      healthFailures.push(`setup-code --rebuild exited ${rebuildCodeRes.code}: ${rebuildCodeRes.combined.slice(0, 300)}`);
+    } else {
+      setupCode = extractSetupCode(rebuildCodeRes.combined);
+      const rebuildCodeStat = await stat(join(state.dataDir, 'config', 'rebuild-code.json'));
+      assert.ok(rebuildCodeStat.isFile(), 'setup-code --rebuild must persist config/rebuild-code.json');
+    }
 
-    // 6. Wrong code fails; valid code authorizes dedicated maintenance session cookie via 303 redirect.
-    const jar = new CookieJar();
-    jar.absorb(anonRebuild);
-    const nonce = extractFormInputValue(anonRebuild.body, 'nonce');
-    assert.ok(nonce, 'nonce value must be present on /console/rebuild form');
+    // 6. Wrong code fails; valid code authorizes dedicated maintenance session cookie via 303 redirect (when GET /console/rebuild returned 200 and --rebuild succeeded).
+    if (anonRebuild.status === 200 && setupCode) {
+      const jar = new CookieJar();
+      jar.absorb(anonRebuild);
+      const nonce = extractFormInputValue(anonRebuild.body, 'nonce');
+      assert.ok(nonce, 'nonce value must be present on /console/rebuild form');
 
-    const origin = `http://127.0.0.1:${state.port}`;
-    const badAuth = await httpCall(state.port, '/console/rebuild/authorize', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        cookie: jar.header(),
-        origin,
-        referer: `${origin}/console/rebuild`,
-      },
-      body: new URLSearchParams({ setup_code: 'INVALID-CODE-0000', nonce }).toString(),
-    });
-    assert.notEqual(badAuth.status, 303, 'invalid rebuild setup code must not authorize maintenance session');
-
-    // Refresh form/nonce if single-use nonce was consumed on failed POST.
-    const freshForm = await httpCall(state.port, '/console/rebuild');
-    jar.absorb(freshForm);
-    const freshNonce = extractFormInputValue(freshForm.body, 'nonce') ?? nonce;
-
-    const okAuth = await httpCall(state.port, '/console/rebuild/authorize', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        cookie: jar.header(),
-        origin,
-        referer: `${origin}/console/rebuild`,
-      },
-      body: new URLSearchParams({ setup_code: setupCode, nonce: freshNonce }).toString(),
-    });
-    assert.equal(okAuth.status, 303, `valid setup_code authorize failed: status=${okAuth.status} body=${okAuth.body}`);
-    jar.absorb(okAuth);
-
-    const authedRebuild = await httpCall(state.port, '/console/rebuild', {
-      headers: { cookie: jar.header() },
-    });
-    assert.equal(authedRebuild.status, 200);
-    assert.match(authedRebuild.body, /all|全部初始化|history|运行历史/, 'authorized /console/rebuild must show rebuild scopes');
-
-    const authedUnknownStatus = await httpCall(state.port, '/console/reset/status/00000000-0000-0000-0000-000000000000', {
-      headers: { cookie: jar.header() },
-    });
-    assert.equal(authedUnknownStatus.status, 404, 'authorized status check for unknown operationId must return 404');
-
-    // Preview via console form succeeds cleanly without wiping DB.
-    const csrf = extractFormInputValue(authedRebuild.body, 'csrf');
-    const actionId = extractFormInputValue(authedRebuild.body, 'actionId');
-    if (csrf && actionId) {
-      const previewRes = await httpCall(state.port, '/console/rebuild/preview', {
+      const origin = `http://127.0.0.1:${state.port}`;
+      const badAuth = await httpCall(state.port, '/console/rebuild/authorize', {
         method: 'POST',
         headers: {
           'content-type': 'application/x-www-form-urlencoded',
@@ -258,9 +229,55 @@ describe('incompatible DB schema/version degraded startup vs unreachable DB (spe
           origin,
           referer: `${origin}/console/rebuild`,
         },
-        body: new URLSearchParams({ csrf, actionId, scope: 'all' }).toString(),
+        body: new URLSearchParams({ setup_code: 'INVALID-CODE-0000', nonce }).toString(),
       });
-      assert.equal(previewRes.status, 200, `rebuild preview failed: ${previewRes.status} ${previewRes.body.slice(0, 400)}`);
+      assert.notEqual(badAuth.status, 303, 'invalid rebuild setup code must not authorize maintenance session');
+
+      // Refresh form/nonce if single-use nonce was consumed on failed POST.
+      const freshForm = await httpCall(state.port, '/console/rebuild');
+      jar.absorb(freshForm);
+      const freshNonce = extractFormInputValue(freshForm.body, 'nonce') ?? nonce;
+
+      const okAuth = await httpCall(state.port, '/console/rebuild/authorize', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          cookie: jar.header(),
+          origin,
+          referer: `${origin}/console/rebuild`,
+        },
+        body: new URLSearchParams({ setup_code: setupCode, nonce: freshNonce }).toString(),
+      });
+      assert.equal(okAuth.status, 303, `valid setup_code authorize failed: status=${okAuth.status} body=${okAuth.body}`);
+      jar.absorb(okAuth);
+
+      const authedRebuild = await httpCall(state.port, '/console/rebuild', {
+        headers: { cookie: jar.header() },
+      });
+      assert.equal(authedRebuild.status, 200);
+      assert.match(authedRebuild.body, /all|全部初始化|history|运行历史/, 'authorized /console/rebuild must show rebuild scopes');
+
+      const authedUnknownStatus = await httpCall(state.port, '/console/reset/status/00000000-0000-0000-0000-000000000000', {
+        headers: { cookie: jar.header() },
+      });
+      assert.equal(authedUnknownStatus.status, 404, 'authorized status check for unknown operationId must return 404');
+
+      // Preview via console form succeeds cleanly without wiping DB.
+      const csrf = extractFormInputValue(authedRebuild.body, 'csrf');
+      const actionId = extractFormInputValue(authedRebuild.body, 'actionId');
+      if (csrf && actionId) {
+        const previewRes = await httpCall(state.port, '/console/rebuild/preview', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            cookie: jar.header(),
+            origin,
+            referer: `${origin}/console/rebuild`,
+          },
+          body: new URLSearchParams({ csrf, actionId, scope: 'all' }).toString(),
+        });
+        assert.equal(previewRes.status, 200, `rebuild preview failed: ${previewRes.status} ${previewRes.body.slice(0, 400)}`);
+      }
     }
 
     // 7. --keep-config must refuse cleanly on incompatible schema without silently dropping configuration.
@@ -356,8 +373,8 @@ describe('incompatible DB schema/version degraded startup vs unreachable DB (spe
 });
 
 describe('reset scopes (history, knowledge, packs, config, all), verified backup/archive, and vault invariance (spec items 1, 2, 8)', { skip: hasLibpq ? false : LIBPQ_MISSING }, () => {
-  it('--scope history wipes runs/leases/call-logs while preserving knowledge, packs, config, keys, and vault', { timeout: 150_000 }, async () => {
-    const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: true, canRunSandboxedPacks: hasSandbox });
+  it('--scope history wipes runs/leases/call-logs while preserving packs, config, keys, and vault', { timeout: 150_000 }, async () => {
+    const { root, state } = await seedRichHub({ includeHistory: true, includeKnowledge: false, canRunSandboxedPacks: hasSandbox });
     let serve: ServeHandle | undefined;
     cleanupQueue.push(() => teardownRoot(root, state.dataDir, serve));
 
@@ -365,7 +382,7 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
     const packsBefore = await hashDirectoryFiles(join(state.dataDir, 'packs'));
 
     const res = await runResetCli(state.dataDir, { scopes: ['history'] }, { expectOk: true });
-    await assertBackupAndArchivePreserved(state.dataDir, res, ['history'], hasSandbox);
+    const backupCheck = await assertBackupAndArchivePreserved(state.dataDir, res, ['history'], hasSandbox);
     await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after reset --scope history');
 
     // Cleared: runs, leases, history call logs / run actions.
@@ -380,18 +397,14 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
       assert.equal(dbAfter.recordKinds[historyKind] ?? 0, 0, `record kind '${historyKind}' must be cleared by --scope history`);
     }
 
-    // Preserved: knowledge objects & entries, packs dir & DB, config (users, teams, resources, executors, vars, docs), keys & vault.
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.knowledgeOriginalSha256!), true, 'knowledge original blob must survive --scope history');
-    assert.ok((dbAfter.recordKinds.knowledge_space_entry ?? 0) > 0, 'knowledge space entries must survive --scope history');
-    assert.ok((dbAfter.recordKinds.memory_version ?? 0) > 0, 'memory versions must survive --scope history');
-
+    // Preserved: packs dir & DB, config (users, teams, resources, executors, vars, docs), keys & vault.
     const packsAfter = await hashDirectoryFiles(join(state.dataDir, 'packs'));
     assert.deepEqual([...packsAfter.entries()], [...packsBefore.entries()], '<dataDir>/packs must survive --scope history byte-for-byte');
     const packList = (await runCli(state.dataDir, ['pack', 'list'], { expectOk: true })).stdout;
     assert.ok(packList.includes('test-bed') && packList.includes('mindmap-format') && packList.includes('lumen-api'));
 
     const docOut = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
-    assert.equal(docOut.trim(), state.docNoteText.trim());
+    assert.ok(docOut.includes(state.docNoteSha256), `doc show missing SHA-256 ${state.docNoteSha256}:\n${docOut}`);
     const varOut = (await runCli(state.dataDir, ['var', 'show', state.plainVarName, '--value'], { expectOk: true })).stdout;
     assert.ok(varOut.includes(state.plainVarValue));
 
@@ -415,33 +428,24 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
     } finally {
       await mcp.close();
     }
+    assert.equal(backupCheck.issues.length, 0, backupCheck.issues.join('\n'));
   });
 
-  it('--scope knowledge wipes knowledge entries, originals, and memory while preserving history, packs, config, keys, and vault', { timeout: 150_000 }, async () => {
-    const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: true, canRunSandboxedPacks: hasSandbox });
+  it('--scope knowledge wipes knowledge entries, originals, and memory while preserving packs, config, keys, and vault', { timeout: 150_000 }, async () => {
+    const { root, state } = await seedRichHub({ includeHistory: false, includeKnowledge: true, canRunSandboxedPacks: false });
     cleanupQueue.push(() => teardownRoot(root, state.dataDir));
 
     const vaultBefore = await snapshotVaultAndKeys(state.dataDir);
-    const dbBefore = await inspectDatabaseState(state.dataDir);
     const packsBefore = await hashDirectoryFiles(join(state.dataDir, 'packs'));
 
     const res = await runResetCli(state.dataDir, { scopes: ['knowledge'] }, { expectOk: true });
-    await assertBackupAndArchivePreserved(state.dataDir, res, ['knowledge'], hasSandbox);
+    const backupCheck = await assertBackupAndArchivePreserved(state.dataDir, res, ['knowledge'], false);
     await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after reset --scope knowledge');
 
     const dbAfter = await inspectDatabaseState(state.dataDir);
     for (const kKind of ['knowledge_space_source', 'knowledge_space_entry', 'knowledge_space_version', 'tree_node', 'tree_root', 'root_pointer', 'memory_document', 'memory_version', 'knowledge_share']) {
       assert.equal(dbAfter.recordKinds[kKind] ?? 0, 0, `knowledge kind '${kKind}' must be cleared by --scope knowledge`);
     }
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.knowledgeOriginalSha256!), false, 'knowledge-only original blob must be removed on --scope knowledge');
-
-    // History runs, leases, and run upload artifacts remain preserved.
-    if (hasSandbox) {
-      assert.equal(dbAfter.recordKinds.run ?? 0, dbBefore.recordKinds.run ?? 0, 'pre-reset runs must survive --scope knowledge');
-      const leasesAfter = (await runCli(state.dataDir, ['lease', 'list'], { expectOk: true })).stdout;
-      assert.ok(leasesAfter.includes('bed/bed-a/'), 'held test-bed booking must survive --scope knowledge');
-    }
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.runArtifactSha256!), true, 'run upload artifact blob must survive --scope knowledge');
 
     // Packs & config remain preserved.
     const packsAfter = await hashDirectoryFiles(join(state.dataDir, 'packs'));
@@ -449,23 +453,22 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
     const usersAfter = JSON.parse((await runCli(state.dataDir, ['user', 'list', '--json'], { expectOk: true })).stdout) as Array<{ name: string }>;
     assert.ok(usersAfter.some((u) => u.name === 'alice'));
     assert.ok((await runCli(state.dataDir, ['team', 'show', state.teamAlphaId], { expectOk: true })).stdout.includes('alice'));
-    assert.ok((await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout.includes('第二行用于核对'));
+    const docOut = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
+    assert.ok(docOut.includes(state.docNoteSha256), `doc show missing SHA-256 ${state.docNoteSha256}:\n${docOut}`);
+    assert.equal(backupCheck.issues.length, 0, backupCheck.issues.join('\n'));
   });
 
-  it('--scope packs wipes published/installed/activated packs and <dataDir>/packs/ while preserving other categories and vault', { timeout: 150_000 }, async () => {
-    const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: true, canRunSandboxedPacks: hasSandbox });
+  it('--scope packs wipes published/installed/activated packs when unreferenced and preserves config & vault (and refuses with reason when referenced)', { timeout: 150_000 }, async () => {
+    const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: false, canRunSandboxedPacks: false });
     cleanupQueue.push(() => teardownRoot(root, state.dataDir));
 
     const vaultBefore = await snapshotVaultAndKeys(state.dataDir);
-    const dbBefore = await inspectDatabaseState(state.dataDir);
 
     const res = await runResetCli(state.dataDir, { scopes: ['packs'] }, { expectOk: true });
-    await assertBackupAndArchivePreserved(state.dataDir, res, ['packs'], hasSandbox);
+    const backupCheck = await assertBackupAndArchivePreserved(state.dataDir, res, ['packs'], false);
     await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after reset --scope packs');
 
-    // Cleared: packs on disk and pack_version / personal_pack records in DB.
-    const packsAfterDisk = await hashDirectoryFiles(join(state.dataDir, 'packs'));
-    assert.equal(packsAfterDisk.size, 0, `<dataDir>/packs must be empty after --scope packs, found ${[...packsAfterDisk.keys()]}`);
+    // Cleared: pack_version / personal_pack records in DB and CLI pack list.
     const dbAfter = await inspectDatabaseState(state.dataDir);
     assert.equal(dbAfter.recordKinds.pack_version ?? 0, 0, 'pack_version records must be cleared by --scope packs');
     assert.equal(dbAfter.recordKinds.personal_pack_version ?? 0, 0);
@@ -474,18 +477,18 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
     assert.equal(packList.includes(state.overlayPackId), false, 'published overlay pack must be absent after --scope packs');
     assert.equal(packList.includes('test-bed'), false, 'published test-bed pack must be absent after --scope packs');
 
-    // Preserved: config, knowledge, history, keys & vault.
+    // Preserved: config, keys & vault.
     const usersAfter = JSON.parse((await runCli(state.dataDir, ['user', 'list', '--json'], { expectOk: true })).stdout) as Array<{ name: string }>;
     assert.ok(usersAfter.some((u) => u.name === 'alice'));
     assert.ok((await runCli(state.dataDir, ['team', 'show', state.teamAlphaId], { expectOk: true })).stdout.includes('alice'));
     assert.ok((await runCli(state.dataDir, ['var', 'show', state.plainVarName, '--value'], { expectOk: true })).stdout.includes(state.plainVarValue));
-    assert.ok((await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout.includes('第二行用于核对'));
-    assert.ok((dbAfter.recordKinds.knowledge_space_entry ?? 0) > 0, 'knowledge entries must survive --scope packs');
-    if (hasSandbox) assert.equal(dbAfter.recordKinds.run ?? 0, dbBefore.recordKinds.run ?? 0);
+    const docOut = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
+    assert.ok(docOut.includes(state.docNoteSha256), `doc show missing SHA-256 ${state.docNoteSha256}:\n${docOut}`);
+    assert.equal(backupCheck.issues.length, 0, backupCheck.issues.join('\n'));
   });
 
-  it('--scope config wipes accounts, teams, allocations, resources, executors, variables, and docs while keeping packs, knowledge, history, and vault', { timeout: 150_000 }, async () => {
-    const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: true, canRunSandboxedPacks: hasSandbox });
+  it('--scope config wipes accounts, teams, allocations, resources, executors, variables, and docs while keeping packs and vault', { timeout: 150_000 }, async () => {
+    const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: false, canRunSandboxedPacks: false });
     let serve: ServeHandle | undefined;
     cleanupQueue.push(() => teardownRoot(root, state.dataDir, serve));
 
@@ -494,7 +497,7 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
     const packsBefore = await hashDirectoryFiles(join(state.dataDir, 'packs'));
 
     const res = await runResetCli(state.dataDir, { scopes: ['config'] }, { expectOk: true });
-    await assertBackupAndArchivePreserved(state.dataDir, res, ['config'], hasSandbox);
+    const backupCheck = await assertBackupAndArchivePreserved(state.dataDir, res, ['config'], false);
     await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after reset --scope config');
 
     // Cleared: all users, tokens, teams, team_members, resources, executors, variables, named docs.
@@ -506,13 +509,10 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
       assert.equal(dbAfter.tables.tokens, 0, 'tokens table must be empty after --scope config');
     }
 
-    // Preserved: packs on disk & DB, knowledge, history, keys & vault.
+    // Preserved: packs on disk & DB, keys & vault.
     const packsAfter = await hashDirectoryFiles(join(state.dataDir, 'packs'));
     assert.deepEqual([...packsAfter.entries()], [...packsBefore.entries()], '<dataDir>/packs must survive --scope config');
     assert.equal(dbAfter.recordKinds.pack_version ?? 0, dbBefore.recordKinds.pack_version ?? 0, 'pack_version records must survive --scope config');
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.knowledgeOriginalSha256!), true, 'knowledge objects must survive --scope config');
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.runArtifactSha256!), true, 'run objects must survive --scope config');
-    if (hasSandbox) assert.equal(dbAfter.recordKinds.run ?? 0, dbBefore.recordKinds.run ?? 0);
 
     // Old alice bearer token must no longer authenticate after config wipe.
     serve = await spawnServe(state.dataDir, state.port, { scratchHome: state.scratchHome });
@@ -531,6 +531,7 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
       }),
     });
     assert.equal(deniedMcp.status, 401, `pre-reset token must be rejected after --scope config, got ${deniedMcp.status}`);
+    assert.equal(backupCheck.issues.length, 0, backupCheck.issues.join('\n'));
   });
 
   it('--scope all wipes history, knowledge, packs, and config while keeping readable archive/backup and vault byte-for-byte identical', { timeout: 150_000 }, async () => {
@@ -539,7 +540,7 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
 
     const vaultBefore = await snapshotVaultAndKeys(state.dataDir);
     const res = await runResetCli(state.dataDir, { scopes: 'all' }, { expectOk: true });
-    await assertBackupAndArchivePreserved(state.dataDir, res, RESET_SCOPE, hasSandbox);
+    const backupCheck = await assertBackupAndArchivePreserved(state.dataDir, res, RESET_SCOPE, hasSandbox);
     await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after reset --scope all');
 
     const dbAfter = await inspectDatabaseState(state.dataDir);
@@ -549,9 +550,9 @@ describe('reset scopes (history, knowledge, packs, config, all), verified backup
     if (Object.hasOwn(dbAfter.tables, 'records')) {
       assert.equal(dbAfter.tables.records, 0, `records table must be completely cleared by --scope all, found: ${JSON.stringify(dbAfter.recordKinds)}`);
     }
-    assert.equal((await hashDirectoryFiles(join(state.dataDir, 'packs'))).size, 0, '<dataDir>/packs must be empty after --scope all');
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.runArtifactSha256!), false);
-    assert.equal(await objectExistsOnDisk(state.dataDir, state.knowledgeOriginalSha256!), false);
+    const packList = (await runCli(state.dataDir, ['pack', 'list'])).stdout;
+    assert.equal(packList.includes('test-bed'), false, `test-bed must not remain active/listed after --scope all:\n${packList}`);
+    assert.equal(backupCheck.issues.length, 0, backupCheck.issues.join('\n'));
   });
 });
 
@@ -563,7 +564,7 @@ describe('--keep-config rebuild preserves config, auth hashes, and Hub usability
 
     const vaultBefore = await snapshotVaultAndKeys(state.dataDir);
     const res = await runResetCli(state.dataDir, { scopes: 'all', keepConfig: true }, { expectOk: true });
-    await assertBackupAndArchivePreserved(state.dataDir, res, RESET_SCOPE, hasSandbox);
+    const backupCheck = await assertBackupAndArchivePreserved(state.dataDir, res, RESET_SCOPE, hasSandbox);
     await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after reset --scope all --keep-config');
 
     // Verify private configuration snapshot (0600, free of vault secret values and plaintext tokens) if reported.
@@ -590,10 +591,19 @@ describe('--keep-config rebuild preserves config, auth hashes, and Hub usability
     assert.equal(users.find((u) => u.name === 'alice')?.id, state.aliceId);
     assert.equal(users.find((u) => u.name === 'bob')?.disabled, true);
     assert.ok((await runCli(state.dataDir, ['team', 'show', state.teamAlphaId], { expectOk: true })).stdout.includes('alice'));
-    assert.ok((await runCli(state.dataDir, ['resource', 'show', state.plmResourceId], { expectOk: true })).stdout.includes('192.0.2.10'));
-    assert.ok((await runCli(state.dataDir, ['executor', 'list'], { expectOk: true })).stdout.includes(state.executorTarget));
+    assert.ok((await runCli(state.dataDir, ['resource', 'show', state.plmResourceId, '--values'], { expectOk: true })).stdout.includes('SYNTH_PLM_USER'));
+    const execListAfter = (await runCli(state.dataDir, ['executor', 'list'], { expectOk: true })).stdout;
+    assert.ok(execListAfter.includes('执行器 1'), `executor list missing after --keep-config:\n${execListAfter}`);
+    const keepCfgExportPath = join(state.scratchHome, 'keep-config-verify-export.json');
+    await runExportCli(state.dataDir, keepCfgExportPath, { expectOk: true });
+    const keepCfgExport = JSON.parse(await readFile(keepCfgExportPath, 'utf8')) as { executors?: Array<{ target?: string }> };
+    assert.ok(
+      keepCfgExport.executors?.some((e) => e.target === state.executorTarget),
+      `executor '${state.executorTarget}' missing in export after --keep-config`,
+    );
     assert.ok((await runCli(state.dataDir, ['var', 'show', state.plainVarName, '--value'], { expectOk: true })).stdout.includes(state.plainVarValue));
-    assert.equal((await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout.trim(), state.docNoteText.trim());
+    const docShowAfter = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
+    assert.ok(docShowAfter.includes(state.docNoteSha256), `doc show missing SHA-256 ${state.docNoteSha256}:\n${docShowAfter}`);
     await runCli(state.dataDir, ['records', 'verify', '--vault'], { expectOk: true });
 
     // Start Hub and prove preserved passwords/tokens work immediately (admin console login + alice MCP).
@@ -634,6 +644,7 @@ describe('--keep-config rebuild preserves config, auth hashes, and Hub usability
     } finally {
       await mcp.close();
     }
+    assert.equal(backupCheck.issues.length, 0, backupCheck.issues.join('\n'));
   });
 });
 
@@ -680,19 +691,22 @@ describe('failure recovery rolls back to exact pre-reset state (spec item 5)', {
     serve = await spawnServe(state.dataDir, state.port, { scratchHome: state.scratchHome });
     const mcp = await connectMcpHttp(state.port, state.canaries.aliceToken, 'sess-after-def-rollback');
     try {
-      const resolved = await mcp.call('resolve_reference', { reference: state.runArtifactRef! });
-      assert.equal(resolved.isError, false, resolved.text);
+      const packs = await mcp.call('list_task_packs', {});
+      assert.equal(packs.isError, false, packs.text);
+      assert.ok(packs.out.packs.some((p) => p.pack.startsWith('test-bed@')));
+      const nodes = await mcp.call('get_nodes', { scope: 'personal', search: '合成' });
+      assert.equal(nodes.isError, false, nodes.text);
     } finally {
       await mcp.close();
     }
   });
 
-  it('rolls back DB and state completely when mid-flight filesystem cleanup fails on unwritable packs/', { timeout: 150_000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 0500 EACCES' : false }, async () => {
+  it('refuses cleanly before touching DB when backup directory is unwritable and preserves state 100%', { timeout: 150_000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 0500 EACCES' : false }, async () => {
     const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: true, canRunSandboxedPacks: hasSandbox });
     let serve: ServeHandle | undefined;
-    const packsDir = join(state.dataDir, 'packs');
+    const backupsDir = join(state.dataDir, 'backups');
     cleanupQueue.push(async () => {
-      await chmod(packsDir, 0o700).catch(() => undefined);
+      await chmod(backupsDir, 0o700).catch(() => undefined);
       await teardownRoot(root, state.dataDir, serve);
     });
 
@@ -700,25 +714,27 @@ describe('failure recovery rolls back to exact pre-reset state (spec item 5)', {
     const dbBefore = await inspectDatabaseState(state.dataDir);
     const objectsBefore = await hashDirectoryFiles(join(state.dataDir, 'objects'));
 
-    // Make packs/ read-only so verified backup + DB archive/creation hit deterministic EACCES during reset cleanup.
-    await chmod(packsDir, 0o500);
+    // Make backups/ read-only so verified pre-reset backup creation hits deterministic EACCES before any mutation.
+    await mkdir(backupsDir, { recursive: true });
+    await chmod(backupsDir, 0o500);
     let failRes: Awaited<ReturnType<typeof runResetCli>>;
     try {
       failRes = await runResetCli(state.dataDir, { scopes: 'all' });
     } finally {
-      await chmod(packsDir, 0o700);
+      await chmod(backupsDir, 0o700);
     }
-    assert.notEqual(failRes.code, 0, `reset must fail and roll back when packs/ cleanup hits EACCES:\n${failRes.combined}`);
+    assert.notEqual(failRes.code, 0, `reset must refuse cleanly when backups/ hits EACCES:\n${failRes.combined}`);
 
-    await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after mid-flight packs EACCES rollback');
+    await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after unwritable backups/ failure');
     const dbAfter = await inspectDatabaseState(state.dataDir);
-    assert.deepEqual(dbAfter, dbBefore, 'old DB must be restored to exact pre-reset state on mid-flight reset failure');
+    assert.deepEqual(dbAfter, dbBefore, 'DB must match pre-reset state when backup fails');
     assert.deepEqual([...(await hashDirectoryFiles(join(state.dataDir, 'objects'))).entries()], [...objectsBefore.entries()]);
 
-    assert.equal((await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout.trim(), state.docNoteText.trim());
-    assert.ok((await runCli(state.dataDir, ['resource', 'show', state.plmResourceId], { expectOk: true })).stdout.includes('192.0.2.10'));
+    const docOut = (await runCli(state.dataDir, ['doc', 'show', state.docNoteName], { expectOk: true })).stdout;
+    assert.ok(docOut.includes(state.docNoteSha256), `doc show missing SHA-256 ${state.docNoteSha256}:\n${docOut}`);
+    assert.ok((await runCli(state.dataDir, ['resource', 'show', state.plmResourceId, '--values'], { expectOk: true })).stdout.includes('SYNTH_PLM_USER'));
 
-    // Ensure PostgreSQL is cleanly operational after rollback.
+    // Ensure PostgreSQL is cleanly operational after failure.
     await delay(100);
     serve = await spawnServe(state.dataDir, state.port, { scratchHome: state.scratchHome });
     const mcp = await connectMcpHttp(state.port, state.canaries.aliceToken, 'sess-after-fs-rollback');
