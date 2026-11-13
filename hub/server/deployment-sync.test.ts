@@ -28,3 +28,48 @@ test('unknown, partial, failed, or non-probe results never claim current', () =>
   report=probe();report.builds[0].composition=null;reports.push(report);
   for (const result of reports) assert.equal(unchangedDeploymentProbe(result),false);
 });
+
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DEFAULT_LIMITS, type HubConfig } from '../config/index.ts';
+import { deploymentSyncStatus } from './deployment-sync.ts';
+
+async function statusFixture(t: { after(fn: () => Promise<void>): void }) {
+  const root=await mkdtemp(join(tmpdir(),'circle-hub-sync-status-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const directory=join(root,'run','deployment-sync');await mkdir(directory,{recursive:true,mode:0o700});
+  const id='550e8400-e29b-41d4-a716-446655440000';
+  const config:HubConfig={dataDir:root,logDir:join(root,'logs'),host:'127.0.0.1',port:0,database:{host:'127.0.0.1',port:1,database:'unused',user:'unused'},limits:DEFAULT_LIMITS};
+  const session={config:()=>config,admin:async()=>({id:'usr_'+ '0'.repeat(26),name:'synthetic',role:'admin' as const})};
+  const request={id,actor:'usr_'+ '0'.repeat(26),product:'synthetic',line:null,databaseOid:'123',submittedAt:Date.now()};
+  await writeFile(join(directory,id+'.request.json'),JSON.stringify(request),{mode:0o600});
+  const status={id,product:'synthetic',line:null,running:false,completed:false,probing:false,synchronized:false,current:false};
+  const statusPath=join(directory,id+'.status.json');
+  await writeFile(statusPath,JSON.stringify(status),{mode:0o600});
+  return {root,directory,id,config,session,request,status,statusPath};
+}
+test('status reads survive a new caller without a parent Session or business database',async t=>{
+  const f=await statusFixture(t);
+  assert.deepEqual(await deploymentSyncStatus(f.session,f.id),f.status);
+  const denied={...f.session,admin:async()=>{throw new Error('synthetic denied');}};
+  await assert.rejects(deploymentSyncStatus(denied,f.id),/synthetic denied/);
+  await assert.rejects(deploymentSyncStatus(f.session,'../escape'));
+});
+test('status rejects nonprivate files and symlinks',async t=>{
+  const f=await statusFixture(t);
+  await chmod(f.statusPath,0o644);await assert.rejects(deploymentSyncStatus(f.session,f.id));
+  await rm(f.statusPath);
+  const outside=join(f.root,'outside.json');await writeFile(outside,JSON.stringify(f.status),{mode:0o600});
+  await symlink(outside,f.statusPath);await assert.rejects(deploymentSyncStatus(f.session,f.id));
+});
+test('an incomplete submission or unconfirmed supervisor is terminal unknown rather than current',async t=>{
+  const f=await statusFixture(t);
+  await rm(f.statusPath);
+  let status=await deploymentSyncStatus(f.session,f.id);
+  assert.equal(status.completed,true);assert.equal(status.current,false);assert.ok(status.error);
+  await writeFile(f.statusPath,JSON.stringify(f.status),{mode:0o600});
+  await writeFile(join(f.directory,f.id+'.request.json'),JSON.stringify({...f.request,submittedAt:0}),{mode:0o600});
+  status=await deploymentSyncStatus(f.session,f.id);
+  assert.equal(status.completed,true);assert.equal(status.current,false);assert.ok(status.error);
+});
