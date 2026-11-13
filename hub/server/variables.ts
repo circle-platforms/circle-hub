@@ -509,6 +509,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             s.out('下一步：在签发方吊销或换掉旧值；Hub 删掉条目只是自己不再用它，备份里还有');
             return 0;
         }
+        if (!v['dry-run']) await requireVaultKey(kit, { command: true });
         const registry=(await s.hub(false)).registry;
         const checkProductNames=async(tx?:Transaction)=>{
           const declarations=await registry.variableDeclarations(tx);
@@ -528,8 +529,6 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 throw new UsageError('第 ' + (index + 1) + ' 个 --short 没有对应名字或重复');
             short.add(name);
         }
-        if (!v['dry-run'])
-            await requireVaultKey(kit, { command: true });
         let values: string[];
         let sourceSecrets: string[] = [];
         const basicPasswords: string[] = [];
