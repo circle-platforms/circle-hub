@@ -1836,3 +1836,7 @@ or behavior changes. Their definitions remain owned by knowledge; consumers do n
 
 The shared knowledge space is displayed as 公共空间. Its internal space identifier remains `team`; named teams do not
 create knowledge spaces or memory stores in this milestone. This label change does not change access rules or stored identifiers.
+
+Shared-space labels in capacity refusals, import/refusal messages, withdrawal and creation action labels use
+`labelOf('knowledge_space_kind', 'team')`. Credential audience wording and package/model declarations are unchanged.
+The generated label update belongs to contracts and must be integrated with these consumers.
