@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { VariableName, VariableValue, VariableRecord, SecretRecord, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
+import { VariableName, VariableValue, VariableRecord, SecretRecord, VariableUse, SecretUse, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
 test('names are exact and reserved prefixes refuse without echo or rewriting', () => {
     assert.equal(VariableName.parse('A'.repeat(64)).length, 64);
     for (const name of ['A'.repeat(65), 'demo', '1DEMO', 'CIRCLE_HUB_X', 'CIRCLE_SERVER_X']) {
@@ -50,10 +50,36 @@ test('secret text has explicit short admission and never echoes a rejected value
         assert.throws(() => validateSecret(value), e => e instanceof Error && !e.message.includes(value));
 });
 test('secret metadata cannot carry secret material or a digest of its value', () => {
-    const record = { schema: 'secret@1', name: 'DEMO_KEY', entry: 'secret.demo_key.' + 'a'.repeat(24), digest_rule: 'plain', length: 20, consumers: [{ definition: 'res_' + '0'.repeat(26), item: 'password', sends_to: 'a'.repeat(64) }] };
+    const record = { schema: 'secret@1', name: 'DEMO_KEY', entry: 'secret.demo_key', digest_rule: 'plain', length: 20, version: 1, set_by: 'usr_' + '0'.repeat(26), set_at: '2026-11-13T07:00:00Z', revoked: false };
     assert.ok(SecretRecord.safeParse(record).success);
-    for (const extra of [{ value: 'SyntheticPassword42' }, { sha256: 'b'.repeat(64) }])
+    for (const extra of [{ value: 'SyntheticPassword42' }, { sha256: 'b'.repeat(64) }, { consumers: [] }])
         assert.ok(!SecretRecord.safeParse({ ...record, ...extra }).success);
     assert.ok(VariableDeclaration.safeParse({ name: 'DEMO_COMPONENTS', description: 'Synthetic declaration', schema: { type: 'array' }, default: [] }).success);
     assert.ok(!VariableDeclaration.safeParse({ name: 'DEMO_COMPONENTS', description: 'Synthetic declaration', schema: { type: 'array' } }).success);
+});
+
+
+test('vault metadata represents unknown setters without inventing identity or time', () => {
+    const metadata = {schema:'secret@1',name:'DEMO_KEY',entry:'secret.demo_key',digest_rule:'plain',length:20,version:2,set_by:null,set_at:null,revoked:false};
+    assert.deepEqual(SecretRecord.parse(metadata), metadata);
+    assert.equal(SecretRecord.safeParse({...metadata,entry:'secret.other_key'}).success,false);
+    assert.equal(SecretRecord.safeParse({...metadata,entry:'secret.demo_key.'+'a'.repeat(24)}).success,false);
+    for (const version of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1]) assert.equal(SecretRecord.safeParse({...metadata,version}).success,false);
+    const {set_by,set_at,...missing} = metadata;
+    assert.equal(SecretRecord.safeParse(missing).success,false);
+});
+
+test('ordinary variable decisions and secret vault versions have distinct evidence identities', () => {
+    const ordinary = {kind:'var',at:'res_synthetic#/settings/path',name:'DEMO_PATH',decision:'a'.repeat(64)};
+    const secret = {kind:'secret',at:'res_synthetic#/credentials/password',name:'DEMO_KEY',version:2};
+    assert.deepEqual(VariableUse.parse(ordinary),ordinary);
+    assert.deepEqual(VariableUse.parse(secret),secret);
+    assert.deepEqual(OrdinaryVariableUse.parse(ordinary),ordinary);
+    assert.deepEqual(SecretUse.parse(secret),secret);
+    const {decision,...missingDecision} = ordinary;
+    assert.equal(VariableUse.safeParse(missingDecision).success,false);
+    for (const extra of [{decision:'a'.repeat(64)},{reference:'rec:'+'a'.repeat(64)},{reference:'src:'+'a'.repeat(64)},{value:'SyntheticPassword42'}]) assert.equal(VariableUse.safeParse({...secret,...extra}).success,false);
+    const {version,...missingVersion} = secret;
+    assert.equal(VariableUse.safeParse(missingVersion).success,false);
+    assert.equal(VariableUse.safeParse({...ordinary,version:2}).success,false);
 });
