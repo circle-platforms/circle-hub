@@ -1,3 +1,4 @@
+import { teamCommand, TEAM_USAGE } from './cli-team.ts';
 import type { CliContext } from './api.ts';
 import type { CliOptions } from './cli.ts';
 import type { Session } from './cli-session.ts';
@@ -45,6 +46,7 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.originalCommand(session,args)) },
   { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.leaseCommand(session,args)) },
   { name: 'knowledge', reserved: '读取和管理知识树', bridge: true, summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },
+  { name: 'team', reserved: '管理团队', bridge: true, summary: TEAM_USAGE.slice('team '.length), handler: teamCommand },
   { name: 'trace', summary: TRACE_USAGE.slice('trace '.length), handler: traceCommand },
   { name: 'doc', summary: DOC_USAGE.slice('doc '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.docCommand(session,args)) },
   { name: 'init-admin', reserved: '初始化管理员', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.initAdminCommand(session,args)) },

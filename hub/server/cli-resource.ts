@@ -1,3 +1,4 @@
+import { teamId } from './cli-team.ts';
 import { isAdmin } from '../records/api.ts';
 import {referencesIn} from '../../contracts/src/variables.ts';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import { CliError, UsageError } from './errors.ts';
 import { parse, decided } from './cli-arguments.ts';
 import type { Session } from './cli-session.ts';
 import { RUNNING_HUB_LOGIN } from './cli-session.ts';
-export const RESOURCE_USAGE = 'resource add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
+export const RESOURCE_USAGE = 'resource assign|unassign <资源ID> (--team=<团队ID> | --all) | add <业务系统接入> --name <名字> --environment <环境> --origin <角色>=<地址> [--allow-plaintext <角色>] [--credential <凭据项>=<密钥名>…（包声明项必填）] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] | update <资源> [--system-pack <业务系统接入>] [--name <名字>] [--environment <环境>] [--origin <角色>=<地址>…] [--allow-plaintext <角色>… | --clear-plaintext] [--credential <凭据项>=<密钥名>] [--setting <键>=<文字> | --setting-json <键>=<JSON> | --setting-var <键>=<变量名>] [--unset-setting <键>]（地址整项替换，设置逐键修改） | show <资源> [--values] | read <资源> <读取名> <键> [--events] | list | disable <资源> | enable <资源> | reset-login <资源>';
 function pairs(values: readonly string[] | undefined, flag: string): [string, string][] {
   return (values ?? []).map((value) => {
     const at = value.indexOf('=');
@@ -58,6 +59,19 @@ function loginText(status: LoginStatus | null): string {
 export async function resourceCommand(session: Session, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   switch (sub) {
+    case 'assign':
+    case 'unassign': {
+      const { positionals, values } = parse(rest, { team: { type: 'string' }, all: { type: 'boolean' }, note: { type: 'string' } }, 1);
+      if ((values.team !== undefined) === (values.all === true)) throw new UsageError('资源分配须且只能指定 --team=<团队ID> 或 --all');
+      const subject = values.team !== undefined ? teamId(values.team) : WHOLE_HUB;
+      const by = await session.admin(), hub = await session.hub();
+      const resource = (await hub.resources.list(by)).find(row => row.id === positionals[0]);
+      if (!resource) throw new CliError('资源不可用');
+      if (sub === 'assign') await decided(() => hub.records.authorizations.assignResource(by, resource.id, subject, { note: values.note }));
+      else await decided(() => hub.records.authorizations.unassignResource(by, resource.id, subject, values.note));
+      session.out(sub === 'assign' ? `资源 ${resource.name} 已分配给${values.all ? '全体成员' : '团队 ' + subject}` : `已撤回资源 ${resource.name} 给${values.all ? '全体成员' : '团队 ' + subject}的分配`);
+      return 0;
+    }
     case 'add': {
       const { values, positionals } = parse(
         rest,
