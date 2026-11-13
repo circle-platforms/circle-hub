@@ -37,8 +37,8 @@ export class PgMemberDeletions {
   const to=by.id===preview.member?null:by.id,items=to?await this.#handover.plan(to,preview.member,tx):[];
   return {...preview,handover:{to,items},state:sha256Hex(canonicalize({state:preview.state,handover:{to,items}}))};
  }
- readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly retire:()=>Promise<void>;readonly now:()=>Date;
- constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,retire:()=>Promise<void>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.retire=retire;this.now=now;}
+ readonly db:Database;readonly store:RecordStore;readonly payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>;readonly now:()=>Date;
+ constructor(db:Database,store:RecordStore,payloads:Pick<PgPersonalPayloads,'purge'|'scope'|'inspect'|'beforePurge'>,now:()=>Date){this.db=db;this.store=store;this.payloads=payloads;this.now=now;}
  async #admin(by:Principal,tx?:Transaction){const user=(await this.db.query('SELECT * FROM users WHERE id=$1'+(tx?' FOR SHARE':''),[by.id],tx)).rows[0];if(!user||user.disabled||user.role!==PermissionRoleSchema.enum.admin)throw new AccessError('对象不存在或无权读取');}
  async #preview(member:string,tx?:Transaction):Promise<MemberDeletionPreview>{
   const user=(await this.db.query('SELECT * FROM users WHERE id=$1',[member],tx)).rows[0];if(!user||user.deleted_at)throw new AccessError('对象不存在或无权读取');
@@ -112,7 +112,7 @@ export class PgMemberDeletions {
   const intent=await this.intent(member);if(!intent||intent.operation_id!==operation_id)throw new ConflictError('没有对应的删除操作');
   // Self-deletion may finish only its already authorized operation; no new operation is admitted by a tombstone.
   if(by.id!==member||intent.by!==by.id)await this.#admin(by);
-  try{await this.retire();await retirePersonalCaches(this.db,member,this.cacheRoots,this.sharedCacheRoots);}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
+  try{await retirePersonalCaches(this.db,member,this.cacheRoots,this.sharedCacheRoots);}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
   return this.store.withTransaction(async tx=>{
    await this.store.lock('knowledge-space:'+member,tx);
    if(by.id!==member||intent.by!==by.id)await this.#admin(by,tx);

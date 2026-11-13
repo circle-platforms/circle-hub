@@ -32,7 +32,6 @@ import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 import { requestPermissions } from './request-permissions.ts';
 
-const ADMIN: PermissionRole = 'admin';
 const PUBLISH: PermissionKind = 'publish';
 const ASSIGN: PermissionKind = 'assign';
 const PUBLISH_RIGHT: PermissionKind = 'publish_right';
@@ -397,9 +396,9 @@ export class RecordAuthorizations implements Authorizations {
   /** The decider as stored now: an enabled account (its current role decides, not the one in the token's Principal). */
   async #decider(by: Principal, tx?: Transaction): Promise<{ id: string; role: PermissionRole }> {
     const id = typeof by?.id === 'string' && UserId.safeParse(by.id).success ? by.id : null;
-    const row = id === null ? undefined : (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id], tx)).rows[0];
+    const row = id === null ? undefined : (await this.#db.query<{id: string; role: PermissionRole; disabled: boolean}>('SELECT id, role, disabled FROM users WHERE id = $1', [id], tx)).rows[0];
     if (row === undefined || row.disabled === true) throw new AccessError('操作人不是有效的 Hub 账号');
-    return { id: String(row.id), role: row.role === ADMIN ? ADMIN : 'user' };
+    return { id: String(row.id), role: isAdmin(row) ? 'admin' : 'user' };
   }
 }
 
