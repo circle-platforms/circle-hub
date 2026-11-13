@@ -31,7 +31,8 @@ import { assertApplicationRoleName, type PlatformSettings } from './settings.ts'
  * as this operating-system account with the service environment, so CIRCLE_HUB_DATABASE_USER names the application role.
  * `serve --migrate-only` connects as the account's own role, the cluster's superuser that owns the Hub database (hub/server
  * takes it from the operating-system account), applies the migrations as that owner and grants the application role
- * through migrateRecords(..., { runtimeRole }). The service later runs `serve` without --migrate: it connects as the
+ * through migrateRecords(..., { runtimeRole }): one baseline on an empty database, then only appended migrations.
+ * The service later runs `serve` without --migrate: it connects as the
  * application role and only verifies the migrations. After the child the deploy checks that the application role still
  * owns nothing.
  */

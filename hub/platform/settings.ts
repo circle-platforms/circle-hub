@@ -23,7 +23,8 @@ export const DEFAULT_BACKUPS_KEEP = 14;
 export const DATABASE_NAME = 'circle_hub';
 /**
  * Role the Hub server connects as: not a superuser and owns nothing; it connects and holds the grants the migrations
- * give it. The Hub database and every object in it belong to the cluster's superuser role (roles.ts).
+ * give it, starting with the single baseline migration. The Hub database and every object in it belong to the cluster's
+ * superuser role (roles.ts).
  */
 export const APPLICATION_ROLE = 'circle_hub';
 /** Names the socket file only: the cluster has no TCP listener. */

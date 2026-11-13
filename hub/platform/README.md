@@ -317,7 +317,9 @@ without `main`, or a `main` that returns no integer, ends with exit 1 and a mess
    fixed: the child runs as this operating-system account; hub/server connects as that account's role, the superuser
    that owns the Hub database (hub/config has no variable for it), applies the migrations as that owner and grants
    `CIRCLE_HUB_DATABASE_USER`, the application role, through `migrateRecords(..., { runtimeRole })`; `logs/deploy.log`
-   names both roles, and afterwards the deploy checks that the application role still owns nothing (a migration that
+   names both roles. An empty database starts from one baseline migration; later schema changes append migrations.
+   Existing migration names and hashes must match the release; restore keeps the backup’s schema and grants rather
+   than applying the restoring release’s baseline. Afterwards the deploy checks that the application role still owns nothing (a migration that
    hands it an object is undone like a failed one) → install and start the service (`serve` as the application role,
    without migrating) → `GET /healthz` on loopback until 200 (a body naming another `release` does not count) → record in
    `releases/deployments.jsonl`. Deploying the release that is already current is refused before anything stops. On

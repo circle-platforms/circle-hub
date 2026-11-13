@@ -5,8 +5,8 @@
 // application role first), with --no-owner, so every restored object belongs to that role whoever owned it where the dump
 // was taken. The GRANTs in the dump are kept: they are exactly what the migration of the release that wrote the data gave
 // the application role. Re-granting instead would need the records package's table list (RUNTIME_GRANTS), which the
-// platform may not import, and the restoring code's list could name tables the restored schema does not have yet. The
-// restore then proves that the application role holds exactly the privileges the manifest recorded and owns nothing.
+// platform may not import. A backup carries the baseline and any appended migrations of its release; restore does not
+// apply the restoring release's schema or grants. The restore then proves that the application role holds exactly the privileges the manifest recorded and owns nothing.
 import { chmod, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DUMP_FILE, libpqToolsForMajor, permissions, verifyBackup } from './backup.ts';

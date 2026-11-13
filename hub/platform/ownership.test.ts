@@ -58,7 +58,7 @@ const COLUMN: Record<string, string> = {
   call_logs: 'tool',
   call_notes: 'note',
   call_reasons: 'note',
-  users: 'created_at', // name is updatable since migration 25 (rename)
+  users: 'created_at', // The runtime role may rename users but may not change creation times.
   tokens: 'label',
   oauth_clients: 'name',
   invitations: 'user_id',
