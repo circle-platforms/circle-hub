@@ -67,7 +67,6 @@ const INGEST_LOCK_SPACE = 730_157;
 const MODEL_READABLE: ReadTier = 'model_readable';
 const FUNCTION_BYTES_ONLY: ReadTier = 'function_bytes_only';
 const RETAIN_ONLY: ReadTier = 'retain_only';
-const ADMIN: PermissionRole = 'admin';
 const MODEL: ProducerKind = 'model';
 const FUNCTION: ProducerKind = 'function';
 const RESOURCE_CONFIG: PermissionKind = 'resource_config';
@@ -533,9 +532,9 @@ export class RecordArtifacts implements Artifacts {
     if (id === null) return null;
     const snapshot = requestPermissions(id);
     if (snapshot) return snapshot.user === null || snapshot.user.disabled ? null : {id,role:snapshot.user.role};
-    const row = (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
+    const row = (await this.#db.query<{id: string; role: PermissionRole; disabled: boolean}>('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
     if (row === undefined || row.disabled === true) return null;
-    return { id: String(row.id), role: row.role === ADMIN ? ADMIN : 'user' };
+    return { id: String(row.id), role: isAdmin(row) ? 'admin' : 'user' };
   }
 
   /** B02 R[3] for one record; a share names this record, not the bytes, so other uploads of the same bytes stay private. */
