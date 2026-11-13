@@ -197,7 +197,7 @@ export class KnowledgeSpaces {
   async #registerProducts(products:SpaceVersionBody['products'],tx:Transaction):Promise<SpaceVersion>{
     const previous=await this.current('team',tx);
     if(previous&&canonicalize(products)===canonicalize(previous.body.products))return previous;
-    return this.#save('team',previous,previous?.body.entries??[],previous?.body.directories.filter(p=>!withinSpacePath(p,PRODUCTS_PATH))??['/'],null,previous?'登记当前产品目录':'建立团队知识空间',0,tx,previous?.body.sources??[],products,false,true);
+    return this.#save('team',previous,previous?.body.entries??[],previous?.body.directories.filter(p=>!withinSpacePath(p,PRODUCTS_PATH))??['/'],null,previous?'登记当前产品目录':'建立公共空间',0,tx,previous?.body.sources??[],products,false,true);
   }
   async locks(by: Principal) { return { owner: by.id, team: (await this.ensure(by, 'team')).root, personal: await this.#ctx.records.personalPayloads?.mode(by.id)===SyncModeSchema.enum.local?null:(await this.ensure(by)).root }; }
   async capacity(space: string, tx?: Transaction): Promise<number> {

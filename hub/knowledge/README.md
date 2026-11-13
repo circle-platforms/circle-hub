@@ -1823,3 +1823,8 @@ Run consumers import `CAPTURED_GROUND`, `declarationGroundsRefusal`, `Contributi
 `COMPONENTS`, `SCHEMAS`, `MAX_ONLY_VALUES`, `parseViewId` and `splitRevision` through `knowledge/api.ts`. These exports
 expose the existing declarations, append plan type, ordering, record metadata and view parsing implementations without aliases
 or behavior changes. Their definitions remain owned by knowledge; consumers do not import the internal files.
+
+### Shared space label
+
+The shared knowledge space is displayed as 公共空间. Its internal space identifier remains `team`; named teams do not
+create knowledge spaces or memory stores in this milestone. This label change does not change access rules or stored identifiers.
