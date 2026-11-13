@@ -1,21 +1,18 @@
-// Owner-approved reset categories (2026-11-13 17:15); all is a selector, never a category.
+// Concrete reset categories and the all selector derive from the approved generated vocabulary.
 import { z } from 'zod';
+import { RESET_SCOPE, ResetScopeSchema, labelOf } from '../generated/vocabulary.ts';
 
-// One runtime declaration supplies both codes and owner-authored labels; the model axis awaits Boss approval.
-export const RESET_SCOPE_LABEL = {
-  history: '运行历史',
-  knowledge: '知识',
-  packs: '包',
-  config: '配置',
-} as const;
-export const RESET_ALL_LABEL = '全部初始化';
-export const ResetScopeSchema = z.enum(Object.keys(RESET_SCOPE_LABEL) as Array<keyof typeof RESET_SCOPE_LABEL>);
-export type ResetScope = z.infer<typeof ResetScopeSchema>;
-export const RESET_SCOPE: readonly ResetScope[] = ResetScopeSchema.options;
+export { RESET_SCOPE, RESET_SCOPE_LABEL, ResetScopeSchema } from '../generated/vocabulary.ts';
+export type { ResetScope } from '../generated/vocabulary.ts';
+
+export const ResetDataScopeSchema = ResetScopeSchema.exclude(['all']);
+export type ResetDataScope = z.infer<typeof ResetDataScopeSchema>;
+export const RESET_DATA_SCOPE: readonly ResetDataScope[] = RESET_SCOPE.filter((scope): scope is ResetDataScope => scope !== 'all');
+export const RESET_ALL_LABEL = labelOf('reset_scope', 'all');
 
 export const ResetScopesSchema = z.union([
-  z.array(ResetScopeSchema).min(1).refine(scopes => new Set(scopes).size === scopes.length, 'each reset scope is selected once'),
-  z.literal('all'),
+  z.array(ResetDataScopeSchema).min(1).refine(scopes => new Set(scopes).size === scopes.length, 'each reset scope is selected once'),
+  ResetScopeSchema.extract(['all']),
 ]);
 export type ResetScopes = z.infer<typeof ResetScopesSchema>;
 
