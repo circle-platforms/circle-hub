@@ -3,7 +3,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { Database, createPool } from '../records/db.ts';
-import { MIGRATIONS } from '../records/migrations.ts';
 import { newId } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
@@ -74,7 +73,7 @@ test('the waiting requests are the unanswered ones of the full listing, and only
   assert.deepEqual(seen.closingsAsked, [[made[2], made[4], made[5], made[6], made[7]]], 'the answered and the voided requests are not asked about');
 });
 
-test('closing records stored before the settled entry answer the same, and migration 33 spares their reads', async (t) => {
+test('closing records without settled entries remain readable while current closings spare settled reads', async (t) => {
   const { kit, source, body, legacyClosing, service } = await bed(t);
   const run = newId('run');
   const made = [];
@@ -94,17 +93,20 @@ test('closing records stored before the settled entry answer the same, and migra
   assert.deepEqual(await createRequestService({ store: before.store }, () => NOW).waiting(run), full.filter((request) => request.answered_by === null));
   assert.deepEqual(new Set(before.closingsAsked.flat()), new Set(made), 'without the entry every request is a candidate, read as before');
 
+  const indexedRun = newId('run'), indexed: string[] = [];
+  for (let i = 0; i < 6; i++) indexed.push((await service.write(body(indexedRun))).digest);
+  await service.answer(indexed[0], later);
+  await service.supersede([indexed[1], indexed[2]], later);
+  await service.reinstate([indexed[2]], later);
+  await service.answer(indexed[3], later);
   const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
-  const migration = MIGRATIONS.find((m) => m.version === 33)!;
-  await owner.query(migration.sql);
-  await owner.query(migration.sql);
   const settled = await owner.query<{ value: string }>(`SELECT value FROM record_index WHERE key='runs.request.settled' ORDER BY value`);
-  assert.deepEqual(settled.rows.map((row) => row.value), [made[0], made[1], made[2], made[3]].sort(), 'one entry for each closing record that carries a source, added once');
+  assert.deepEqual(settled.rows.map(row => row.value), [indexed[0], indexed[1], indexed[2], indexed[3]].sort(), 'only source-bearing closing records carry settled entries');
+  const indexedFull = await service.all(indexedRun), after = watched(kit);
+  assert.deepEqual(await createRequestService({ store: after.store }, () => NOW).waiting(indexedRun), indexedFull.filter((request) => request.answered_by === null));
+  assert.deepEqual(after.closingsAsked, [[indexed[2], indexed[4], indexed[5]]], 'current closing entries spare settled requests; reinstated requests are read');
+  assert.deepEqual(await service.all(run), full, 'current writes do not change the unindexed listing');
 
-  const after = watched(kit);
-  assert.deepEqual(await createRequestService({ store: after.store }, () => NOW).waiting(run), full.filter((request) => request.answered_by === null));
-  assert.deepEqual(after.closingsAsked, [expected], 'the settled ones are no longer read; the one that waits again still is');
-  assert.deepEqual(await service.all(run), full, 'the full listing is untouched');
 });
 
 test('what the index says is never the answer: a closing record decides, and a store without the index reads them all', async (t) => {
@@ -125,7 +127,7 @@ test('what the index says is never the answer: a closing record decides, and a s
   assert.deepEqual(await createRequestService({ store: plain }, () => NOW).waiting(run), await service.waiting(run));
 });
 
-test('the declarations of a run are read without its other requests, whenever they were stored', async (t) => {
+test('current plain requests are skipped while declarations and requests without plain entries remain readable', async (t) => {
   const { kit, body, service } = await bed(t);
   const run = newId('run'), other = newId('run');
   const declared = (pointer: number, of = run): RequestBody => ({ ...body(of), kind: 'judgment', declaration: `/criterion_changes/${pointer}` });
@@ -157,12 +159,9 @@ test('the declarations of a run are read without its other requests, whenever th
   assert.deepEqual(await read(), [first, ...oldPlain, oldDeclared, second], 'a request stored without the entry is read and looked at');
 
   const owner = new Database(createPool(kit.database, 1)); t.after(() => owner.end());
-  const migration = MIGRATIONS.find((m) => m.version === 33)!;
-  await owner.query(migration.sql);
-  await owner.query(migration.sql);
   const plain = await owner.query<{ digest: string }>(`SELECT digest FROM record_index WHERE key='runs.request.plain' AND value=$1 ORDER BY record_seq`, [run]);
-  assert.deepEqual(plain.rows.map((row) => row.digest), [...made, ...oldPlain], 'the requests with no declaration, each once');
-  assert.deepEqual(await read(), [first, oldDeclared, second], 'after the migration the declarations alone are read');
+  assert.deepEqual(plain.rows.map((row) => row.digest), made, 'current writes index plain requests, not declarations or manually unindexed requests');
+  assert.deepEqual(await read(), [first, ...oldPlain, oldDeclared, second], 'only requests lacking the current plain entry require a body read');
   assert.deepEqual(await service.declared(newId('run')), []);
 
   const without = new Proxy(kit.store, { get(target, property) { if (property === 'findLacking') return undefined; const value = Reflect.get(target, property, target); return typeof value === 'function' ? value.bind(target) : value; } });
