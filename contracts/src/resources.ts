@@ -1129,8 +1129,8 @@ const definition=base.superRefine((d, ctx) => {
   } else if(d.retry_safety!=='unsafe' && d.retry_safety!=='dedup_window')ctx.addIssue({code:'custom',path:['retry_safety'],message:'其他重试类须提供完整写声明'});
   const u = new URL(d.endpoint); const host = u.hostname.replace(/^\[|\]$/g, '');
   const loopback = host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
-  if (u.username || u.password || u.search || u.hash || (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback))) ctx.addIssue({ code: 'custom', message: '端点必须固定为 HTTPS，明文只允许回环，地址不带凭据、查询或片段' });
-  if (u.protocol === 'https:') try { new X509Certificate(d.ca); } catch { ctx.addIssue({ code: 'custom', message: 'HTTPS 需要固定 CA 证书' }); }
+  if (u.username || u.password || u.search || u.hash || (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback))) ctx.addIssue({ code: 'custom', path: ['endpoint'], message: '端点必须固定为 HTTPS，明文只允许回环，地址不带凭据、查询或片段' });
+  if (u.protocol === 'https:') try { new X509Certificate(d.ca); } catch { ctx.addIssue({ code: 'custom', path: ['ca'], message: 'HTTPS 需要固定 CA 证书' }); }
   if (new Set(d.resources).size !== d.resources.length || new Set(d.allowed_tools).size !== d.allowed_tools.length) ctx.addIssue({ code: 'custom', message: '资源键和允许工具不得重复' });
   const bedCalls = d.bed_state?.items.map(item => item.call) ?? [];
   const helpCalls = d.probes?.help ? [d.probes.help.call] : [];

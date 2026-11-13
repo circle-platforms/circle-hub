@@ -5,8 +5,8 @@
 // on (127.0.0.1:<port>, localhost:<port> and the declared names, against DNS rebinding) and the Origin check (absent, or
 // one of this server's own origins); then the route decides. The request target is parsed once and never throws:
 // a target that is neither a path nor an absolute http URL of this server is a 400. close() stops accepting, lets requests in
-// flight end (bounded), closes every connection, then waits (bounded again) for the handlers it cut off, so their call-log
-// lines are written before the caller closes the records; it never stops the database.
+// flight end across both bounded drain periods before closing every connection. A handler still running at that boundary
+// has an unknown outcome; the caller must reconcile it rather than blindly resend. It never stops the database.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
 import type { TLSSocket } from 'node:tls';
@@ -190,6 +190,13 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       request.resume();
       return sendText(response, 400, BAD_TARGET, { connection: 'close' });
     }
+    if (stopping) {
+      request.resume();
+      const headers = { connection: 'close', 'retry-after': '5' };
+      const message = 'Hub 正在重启，这次调用没有执行，稍后原样重试';
+      if (isMcp) return sendRpcError(response, 503, -32000, message, headers);
+      return sendText(response, 503, message, headers);
+    }
     const url = target.url;
     if (localToolsTarget(request.url)) return handleLocalTools(request, response, deps, log);
     if (runExportTarget(request.url)) return handleRunExport(request, response, deps, log);
@@ -231,8 +238,13 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     // `task` never rejects: fail() catches everything, so no request can leave a rejection nobody handles. Its trace ends
     // with it, the last-resort 500 included.
     const remote = traceContextFrom(request.headers.traceparent);
+    const answered = new Promise<void>(resolve => {
+      const done = () => { response.off('finish', done); response.off('close', done); resolve(); };
+      response.once('finish', done); response.once('close', done);
+      if (response.writableFinished || response.destroyed) done();
+    });
     const task: Promise<void> = startTrace({ ...requestEntry(target?.url.pathname), traceId: remote?.traceId, parentSpanId: remote?.parentSpanId }, () =>
-      route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response)));
+      route(request, response, target).catch((error: unknown) => fail(request, response, label, error)).finally(() => noteAnswer(response))).then(() => answered);
     inflight.add(task);
     void task.finally(() => { finished(); inflight.delete(task); }).catch(() => {});
   };
@@ -311,12 +323,12 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       if (current !== null) {
         const closed = Promise.all(listeners.map((s) => new Promise<void>((resolve) => s.close(() => resolve()))));
         for (const s of listeners) s.closeIdleConnections();
-        await drained(closeTimeoutMs);
-        for (const s of listeners) s.closeAllConnections();
-        // Cutting a connection does not stop its handler: wait for those too (bounded), so a call that is still running
-        // writes its call-log line before the caller stops the sandbox and closes the records.
-        if (!(await drained(closeGraceMs))) {
-          log(`停止时还有 ${inflight.size} 个请求没有结束（连接已断开，又等了 ${closeGraceMs} 毫秒）；它们的调用日志可能写不进去`);
+        const completed = await drained(closeTimeoutMs) || await drained(closeGraceMs);
+        if (completed) {
+          for (const s of listeners) s.closeIdleConnections();
+        } else {
+          for (const s of listeners) s.closeAllConnections();
+          log(`停止预算已用完，还有 ${inflight.size} 个请求没有结束；连接已断开，结果未知，调用日志可能写不进去；不要盲目重发，请按运行号、提交摘要或作业号核对`);
         }
         await closed;
       } else {
