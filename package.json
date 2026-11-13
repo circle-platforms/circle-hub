@@ -18,6 +18,7 @@
     "verify:contracts": "node tools/gen-contracts.ts --check",
     "gen:sync-errors": "node tools/gen-sync-error-table.ts",
     "test:unit": "node tools/run-unit-tests.ts",
+    "test:quick": "node tools/run-quick-tests.ts",
     "test:acceptance": "node tools/run-acceptance-tests.ts",
     "test:docs": "node --test \".github/checks/*.test.ts\"",
     "test": "npm run verify:contracts && npm run test:unit && npm run test:docs && npm run test:acceptance",

@@ -32,6 +32,7 @@ export const UNIT_PATTERNS = [
   'tools/prepare-packs.test.ts',
   'tools/run-acceptance-tests.test.ts',
   'tools/run-guarded-tests.test.ts',
+  'tools/run-quick-tests.test.ts',
   'tools/run-unit-tests.test.ts',
   'tools/slot-schema.test.ts',
   'tests/fixtures/**/*.test.ts',
