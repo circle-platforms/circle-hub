@@ -158,11 +158,11 @@ export const InputDefault = z.strictObject({
 export type InputDefault = z.infer<typeof InputDefault>;
 
 export const RunSummary = z.strictObject({
-  pack_space:SpaceId.optional().describe("Personal workflow owner or team; absent on historical runs"),
+  pack_space:SpaceId.optional().describe("Publication namespace when the workflow names one"),
   team_shared:z.literal(true).optional().describe("Team publication from a personal workflow shares new results with its assigned readers"),
-  knowledge_spaces: SpaceLocks.optional().describe('Team and initiator personal knowledge versions frozen at start; absent on historical runs'),
+  knowledge_spaces: SpaceLocks.optional().describe('Team and initiator personal knowledge versions frozen when space storage is configured'),
   skills: SkillLocks.describe('Skill package digests frozen at start; empty when no skills are used'),
-  feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root; missing on a historical run remains unknown'),
+  feeding_offset:FeedingOffsetSchema.optional().describe('Append-only feeding horizon frozen with the root when feeding storage is configured; omission provides no horizon'),
   feeding_objects:z.array(Sha256).optional().describe('Objects actually consumed by this run'),
   criterion_changes:z.array(CriterionNotice).optional(),
   run: RunId,
@@ -192,7 +192,7 @@ export const RunSummary = z.strictObject({
   instructions: z.string().describe('the pack procedure, plain text'),
   instructions_digest: Sha256,
   predecessor: RunId.optional(),
-  input_defaults: z.array(InputDefault).min(1).refine(rows=>new Set(rows.map(row=>`${row.slot}\0${row.reference}`)).size===rows.length,'defaulted bindings are unique').optional().describe('Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings'),
+  input_defaults: z.array(InputDefault).min(1).refine(rows=>new Set(rows.map(row=>`${row.slot}\0${row.reference}`)).size===rows.length,'defaulted bindings are unique').optional().describe('Hub-selected input defaults frozen at start_run; absent when no predecessor binding is selected'),
   session: z.string().optional().describe('client session id observed from the request header'),
   model_identity: ModelIdentitySchema.optional().describe('Explicit client declaration at start; a submission from the same observed session can reuse it'),
   started_at: IsoTime,
@@ -208,7 +208,7 @@ const CONFIGURED = TriggerSchema.extract(['event_or_schedule', 'standing_obligat
  * Phase is derived from records, never stored. A Hub-side run (a standing obligation the Hub executes) has no runner.
  */
 export const RunRecord = RunSummary.omit({criterion_changes:true}).extend({
-  product_pack_digest:Sha256.optional().describe('Product package digest frozen at admission; absent on historical records'),
+  product_pack_digest:Sha256.optional().describe('Product package digest frozen at admission when a product is selected'),
   command_policy:CommandPolicy.optional(),
   accepted_criteria:z.array(AcceptedCriterionRef).optional(),
   criterion_requests:z.array(Sha256).optional(),
