@@ -94,6 +94,8 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
     const read = await readBody(request, 16 * 1024);
     if (!read.ok) return sendText(response, read.reason === 'too_large' ? 413 : 400, '表单未完整接收');
     const form = new URLSearchParams(read.bytes.toString('utf8'));
+    const allowedFields = new Set(url.pathname === ROOT + '/authorize' ? ['setup_code', 'nonce'] : url.pathname === ROOT + '/preview' ? ['csrf', 'actionId', 'scope', 'keep-config', 'definition'] : ['csrf', 'actionId']);
+    if ([...form.keys()].some(name => !allowedFields.has(name))) return sendText(response, 400, '表单字段不符合重建动作；请重新打开控制台');
     if (url.pathname === ROOT + '/authorize') {
       const nonce = form.get('nonce');
       if (!sessions.takeLoginAttempt(request.socket.remoteAddress ?? 'unknown')) return sendText(response, 429, '尝试过多，请稍后重试');
@@ -109,6 +111,7 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
     if (form.get('csrf') !== session.csrf || form.get('actionId') !== action.id) return sendText(response, 403, '动作或 CSRF 验证失败');
     const context = authContext(session, action);
     if (url.pathname === ROOT + '/new-action') {
+      if (action.launching && !action.operationId) return sendText(response, 409, '当前动作正在接受中');
       if (action.operationId && !(await options.bridge.status(action.operationId, context)).completed) return sendText(response, 409, '当前重建尚未结束');
       actions.set(session, { id: randomUUID() }); response.writeHead(303, { location: ROOT }); response.end(); return;
     }
@@ -118,7 +121,9 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
       const canonical = await options.bridge.validate({ scopes: scopes.length === 1 && scopes[0] === 'all' ? 'all' : scopes,
         keepConfig: form.has('keep-config'), ...(definitionFile ? { definitionFile } : {}) });
       if (!canonical || canonical.scopes !== 'all' || canonical.keepConfig) return sendText(response, 400, '不兼容记录库只允许明确选择 all 归档初始化，不可保留无法核对的配置');
-      action.plan = await options.bridge.preview(canonical);
+      const plan = await options.bridge.preview(canonical);
+      if (action.operationId || action.launching) return sendText(response, 409, '当前动作已启动，请查询其状态');
+      action.plan = plan;
       return page(response, { authorized: true, rebuildNeeded: options.rebuildNeeded, csrf: session.csrf, actionId: action.id, plan: action.plan });
     }
     if (!action.plan || action.plan.blocked.length) return sendText(response, 409, '需要先查看并确认可执行的重建预览');
