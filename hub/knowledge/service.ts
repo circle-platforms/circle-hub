@@ -315,10 +315,10 @@ export function createKnowledge(options: KnowledgeOptions): Knowledge {
     }),
     catalog: (root, catalogId, selection): Promise<CatalogView | null> => withReadCache(()=>reading.catalog(root, catalogId, selection)),
     treeReader: (lock?: TreeLock | null): TreeReader => {
-      const legacy=reading.treeReader(lock??null), scoped=spaces.treeReader();
-      const reader:TreeReader={...legacy,
-        read:async(root,path,entry,who)=>await spaces.version(root)?scoped.read(root,path,entry,who):legacy.read(root,path,entry,who),
-        hasRoot:async(root,who)=>await spaces.version(root)?scoped.hasRoot!(root,who):legacy.hasRoot!(root,who),
+      const productTree=reading.treeReader(lock??null), scoped=spaces.treeReader();
+      const reader:TreeReader={...productTree,
+        read:async(root,path,entry,who)=>await spaces.version(root)?scoped.read(root,path,entry,who):productTree.read(root,path,entry,who),
+        hasRoot:async(root,who)=>await spaces.version(root)?scoped.hasRoot!(root,who):productTree.hasRoot!(root,who),
       };
       return {...reader,read:(...args)=>withReadCache(()=>reader.read(...args)),readEntry:(...args)=>withReadCache(()=>reader.readEntry(...args)),...(reader.hasRoot?{hasRoot:(...args:Parameters<NonNullable<TreeReader['hasRoot']>>)=>withReadCache(()=>reader.hasRoot!(...args))}:{})};
     },
