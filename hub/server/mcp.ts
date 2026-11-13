@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, CancelledNotificationSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, CancelledNotificationSchema, JSONRPCMessageSchema, isInitializeRequest, SUPPORTED_PROTOCOL_VERSIONS, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { SERVER_INSTRUCTIONS } from '../../contracts/src/tools.ts';
 import type { SessionTracker } from '../health/api.ts';
@@ -419,7 +419,20 @@ async function answer(
     const host = typeof request.headers.host === 'string' ? request.headers.host : '127.0.0.1';
     const webRequest = new Request(`http://${host}/mcp`, { method: 'POST', headers: headersOf(request) });
     const reply = await transport.handleRequest(webRequest, { parsedBody: parsed });
-    const text = await reply.text();
+    let text = await reply.text();
+    const protocol = webRequest.headers.get('mcp-protocol-version');
+    // In stateless mode a parsed non-initialize request has no session-validation refusal before this SDK gate.
+    if (!early && reply.status === 400 && protocol !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(protocol)
+      && JSONRPCMessageSchema.safeParse(parsed).success && !isInitializeRequest(parsed)) {
+      try {
+        const refused: unknown = JSON.parse(text);
+        if (isPlainObject(refused) && refused.jsonrpc === '2.0' && isPlainObject(refused.error) && refused.error.code === -32000) {
+          const received = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(protocol) ? protocol : '无法识别的版本值';
+          refused.error.message = `MCP 协议版本不匹配：收到 ${received}，支持 ${SUPPORTED_PROTOCOL_VERSIONS.join('、')}；这次调用没有执行；下一步重新初始化连接并按协商返回的协议版本调用，不支持该版本的客户端请更新后重连`;
+          text = JSON.stringify(refused);
+        }
+      } catch { /* Preserve any SDK answer that is not the expected JSON refusal. */ }
+    }
     if (reply.status >= 400) {
       // The transport refused the message before any handler ran (a missing Accept, a malformed message, a protocol version).
       const reason = `the transport answered HTTP ${reply.status}${transportDetail(text)}`;
@@ -463,6 +476,7 @@ async function answer(
       reply.headers.forEach((value, name) => {
         headers[name] = value;
       });
+      if (own?.state.method === 'tools/list') headers['cache-control'] = 'private, no-store';
       if (issued !== null) headers['mcp-session-id'] = issued;
       headers['content-length'] = String(Buffer.byteLength(text));
       response.writeHead(reply.status, headers);
