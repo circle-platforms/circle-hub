@@ -1,3 +1,4 @@
+import { diagnoseRecordsSchema } from '../records/api.ts';
 import { isAdmin } from '../records/api.ts';
 import { BUILTIN_COMMANDS, RESERVED_DESCRIPTIONS } from './command-registry.ts';
 import {deletionCheck,deleteMember,DELETION_EFFECT,handoverLines} from './member-deletion.ts';
@@ -32,7 +33,7 @@ import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { listRunInventory, RUN_LIST_DEFAULT_LIMIT, RUN_LIST_MAX_LIMIT, RUN_LIST_STATES, runListLines, type RunListState } from './run-list.ts';
 import { countsLine } from './text.ts';
 import { DEFAULT_ADMIN_NAME, initialPassword } from '../records/api.ts';
-import { issueSetupCode } from './setup-code.ts';
+import { issueSetupCode, issueRebuildCode } from './setup-code.ts';
 import { BATCH_DEFAULT_CONCURRENCY, BATCH_MAX_CONCURRENCY, BATCH_MAX_INTERVAL_MS, BATCH_MAX_OBJECTS, BATCH_MAX_PER_RUN, RUN_BATCH_USAGE, batchLines, boundedOption, labelOfRow, objectsOf, startBatch } from './cli-run-batch.ts';
 
 export interface CliOptions extends Omit<ServeOptions, 'io'> {
@@ -618,6 +619,15 @@ export async function crashesCommand(args: readonly string[], ctx: CliContext, o
 /** A one-time code for /console/setup; refused once an administrator exists (they add users in the console). */
 export async function setupCodeCommand(args: readonly string[], ctx: CliContext): Promise<number> {
   parse(args, {}, 0);
+  const diagnosis = await diagnoseRecordsSchema(ctx.config());
+  if (diagnosis.status === 'unavailable') throw new CliError(diagnosis.problems.join('；'));
+  if (diagnosis.status === 'incompatible') {
+    const code = await issueRebuildCode(ctx.config().dataDir);
+    ctx.io.stdout('本机重建维护码（仅显示一次，不是管理员令牌）：');
+    ctx.io.stdout(code);
+    ctx.io.stdout('在 /console/rebuild 输入；预览并显式确认后才会归档和初始化，不读取不兼容库的账户');
+    return 0;
+  }
   const kit = await ctx.records();
   if ((await kit.principals.list()).some((user) => isAdmin(user))) {
     throw new CliError('已经有管理员，不再发设置码', '管理员登录控制台后在“管理”里添加用户、签发令牌；管理员令牌丢了用 circle-hub operator-token reissue');
@@ -669,6 +679,7 @@ function report(io: CliIo, error: unknown, commands: readonly CliCommand[]): num
 async function commandTelemetry(options: CliOptions): Promise<Telemetry | null> {
   try {
     const config = loadServerConfig(options.io.env, { command: true });
+    if ((await diagnoseRecordsSchema(config)).status !== 'compatible') return null;
     return startTelemetry({ database: config.database, release: readReleaseId(options.appOptions?.codeRoot), environment: await deploymentEnvironment(config.dataDir) });
   } catch {
     return null;

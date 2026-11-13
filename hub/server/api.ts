@@ -1,3 +1,4 @@
+import type { RebuildNeeded } from './rebuild-state.ts';
 import type { VaultReadinessIssue } from '../records/api.ts';
 // Public surface of the server package (D05 D06 B08 R01 R02): the MCP server, the console, the HTTP surface and the CLI.
 // The assembly step (next phase) imports only this file: it builds ServerDeps from the real packages and registers the
@@ -22,6 +23,7 @@ export type { TextContext } from './text.ts';
 
 /** Everything the server needs; the assembly builds it from the real packages, tests from fakes (hub/server/testing.ts). */
 export interface ServerDeps {
+  rebuildNeeded?: RebuildNeeded | null;
   /** Administrator-only startup observations, not proof of current resource readiness. */
   startupSecretIssues?(): readonly VaultReadinessIssue[];
   config: HubConfig;
@@ -207,3 +209,9 @@ export interface AssemblyModule {
   registerCommands?: (register: RegisterCommand) => void;
 }
 
+export type { RebuildNeeded } from './rebuild-state.ts';
+export type { RebuildConsoleContext, RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts';
+export type { ResetConfigurationOptions, ResetConfigurationPorts, ProtectedConfigurationDomain } from './cli-apply.ts';
+export async function createResetConfigurationPorts<State>(options: import('./cli-apply.ts').ResetConfigurationOptions<State>): Promise<import('./cli-apply.ts').ResetConfigurationPorts> {
+  return (await import('./cli-apply.ts')).createResetConfigurationPorts(options);
+}
