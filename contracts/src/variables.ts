@@ -137,7 +137,7 @@ export const SecretMetadataFile = z.strictObject({
     let current = 0;
     value.versions.forEach((row, index) => {
         if (row.metadata.name !== value.name) ctx.addIssue({code:'custom',path:['versions',index,'metadata','name'],message:'every version belongs to this exact file name'});
-        if (index > 0 && row.metadata.version <= value.versions[index - 1].metadata.version) ctx.addIssue({code:'custom',path:['versions',index,'metadata','version'],message:'value versions are strictly increasing; historical gaps remain gaps'});
+        if (index > 0 && row.metadata.version <= value.versions[index - 1].metadata.version) ctx.addIssue({code:'custom',path:['versions',index,'metadata','version'],message:'value versions are strictly increasing; gaps remain gaps'});
         if (entries.has(row.sealed_entry)) ctx.addIssue({code:'custom',path:['versions',index,'sealed_entry'],message:'a sealed entry identifies only one value version'});
         entries.add(row.sealed_entry);
         if (row.current) current++;
