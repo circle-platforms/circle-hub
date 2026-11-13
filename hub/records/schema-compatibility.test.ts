@@ -19,7 +19,7 @@ test('compatibility is derived from the current migration receipts without hardc
 
 test('an unavailable observation is unknown, never confirmed incompatible or eligible for rebuilding',()=>{
   const unknown=unavailableRecordsSchema();
-  assert.equal(unknown.status,'unavailable');assert.equal(unknown.compatible,null);assert.equal(unknown.applied,null);
+  assert.notEqual(unknown.status,'incompatible');assert.equal(String(unknown.status),'unavailable');assert.equal(unknown.compatible,null);assert.equal(unknown.applied,null);
   assert.equal(compareRecordMigrations(null).status,'incompatible');
   assert.equal(compareRecordMigrations(currentRecordMigrations()).status,'compatible');
   assert.equal(unknown.status==='incompatible',false);
