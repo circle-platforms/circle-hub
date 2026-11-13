@@ -297,10 +297,11 @@ test('a readable copy of equal bytes never grants a frozen capture label and an 
   await spaces.grant(other.principal,{path:'/capture-copy',audience:'member',member:owner.user.id});
   await spaces.grant(other.principal,{path:'/capture-copy',audience:'administrators'});
   const detail=await hub.hub.runs.getRun(owner.principal,run.run);assert.ok(detail);
-  const {feeding_offset:_offset,...snapshot}=detail.run,legacyId=newId('run');
-  const legacy=RunRecord.parse({...snapshot,run:legacyId,sources:[{...snapshot.sources[0],artifact:copy.digest,label:'synthetic-authorized-copy.json',slot:'same-byte-copy'},...snapshot.sources]});
-  await hub.records.store.put({kind:'run',schema:'run@1',provenance:'observed',body:legacy,index:[{key:'runs.id',value:legacyId}]});
-  for(const by of [other.principal,hub.admin.principal])for(const id of [run.run,legacyId])assert.equal(await hub.hub.runs.getRun(by,id),null,'every frozen capture is checked, even when a readable equal-byte capture is first');
+  const snapshot={...detail.run,run:newId('run')};
+  if(snapshot.feeding_offset)snapshot.feeding_offset={...snapshot.feeding_offset,run:snapshot.run};
+  const counterexample=RunRecord.parse({...snapshot,sources:[{...snapshot.sources[0],artifact:copy.digest,label:'synthetic-authorized-copy.json',slot:'same-byte-copy'},...snapshot.sources]});
+  await hub.records.store.put({kind:'run',schema:'run@1',provenance:'observed',body:counterexample,index:[{key:'runs.id',value:counterexample.run}]});
+  for(const by of [other.principal,hub.admin.principal])for(const id of [run.run,counterexample.run])assert.equal(await hub.hub.runs.getRun(by,id),null,'every frozen capture is checked, even when a readable equal-byte capture is first');
 
   await spaces.grant(owner.principal,{path:'/capture-original',audience:'member',member:other.user.id});
   await hub.hub.registry.personal!.grant(owner.principal,packId,{audience:'member',member:other.user.id});
