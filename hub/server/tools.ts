@@ -25,7 +25,7 @@ import {
   type ToolName,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
-import { localToolsOf } from '../runs/packs/ports.ts';
+import { localToolsOf } from '../runs/api.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
 import { SandboxError } from '../rules/api.ts';
