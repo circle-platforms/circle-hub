@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 import {scopedRecordStore} from './read-scope.ts';
 import {mayUsePersonalPack} from './personal-packs.ts';
 // Authorization records (B04): publish-right grants, pack assignment and removal, resource configuration, sharing, and the
@@ -191,7 +192,7 @@ export class RecordAuthorizations implements Authorizations {
     if (members.length === 0 || members.length > 500) throw new TypeError('the audience is 1 to 500 users or one pack');
     return this.#store.withTransaction(async tx => {
       const actor = await this.#decider(by, tx);
-      if (actor.role !== ADMIN) throw new AccessError('只有管理员可以分享');
+      if (!isAdmin(actor)) throw new AccessError('只有管理员可以分享');
       if (Array.isArray(audience)) for (const member of members) await this.#existingUser(member);
       const out: AuthorizationRecord[] = [];
       for (const member of members) out.push(await this.#decide(by, {
@@ -211,7 +212,7 @@ export class RecordAuthorizations implements Authorizations {
   async shares(by: Principal, object?: string): Promise<AuthorizationRecord[]> {
     return this.#store.withTransaction(async tx => {
       const actor = await this.#decider(by, tx);
-      if (actor.role !== ADMIN) throw new AccessError('只有管理员可以列出分享');
+      if (!isAdmin(actor)) throw new AccessError('只有管理员可以列出分享');
       if (object !== undefined) term(object, 'shared object');
       return activeShares(this.#store, object, this.#now());
     });
@@ -328,11 +329,11 @@ export class RecordAuthorizations implements Authorizations {
       if (published !== null) {
         if (revoked) {
           // The owner withdraws a version, or an admin does (R01 R[1]).
-          if (decider.id !== subject && decider.role !== ADMIN) throw new AccessError('只有包的所有者或管理员可以退役');
+          if (decider.id !== subject && !isAdmin(decider)) throw new AccessError('只有包的所有者或管理员可以退役');
         } else {
           await this.#checkPublication(decider.id, subject, published.pack, object, bound as string, tx);
         }
-      } else if (decider.role !== ADMIN) {
+      } else if (!isAdmin(decider)) {
         throw new AccessError('只有管理员可以分配包、授予发布权、配置资源和分享');
       }
       const key = `${permission}|${subject}|${object}`;
@@ -456,7 +457,7 @@ export async function runIsSharedWith(store: RecordStore, user: string, run: Pic
   if(run.pack_space&&run.pack_space!=='team')return mayUsePersonalPack(store,{id:user,name:user,role},run.pack_space,pack);
   // Within one request the permissions captured at its start decide (decision 82); personal packs keep their own check.
   const snapshot = requestPermissions(user);
-  if(run.team_shared){if(role==='admin')return true;if(snapshot)return snapshot.canUse(pack);const assignment=(await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];return !!assignment&&activeAt(assignment,now);}
+  if(run.team_shared){if(isAdmin({role}))return true;if(snapshot)return snapshot.canUse(pack);const assignment=(await store.find<AuthorizationBody>({kind:'authorization',key:'authz.key',value:`assign|${user}|${pack}`,newestFirst:true,limit:1})).items[0];return !!assignment&&activeAt(assignment,now);}
   if (snapshot) return snapshot.runShared(run);
   if (await sharedWith(store, user, run.run, now, pack)) return true;
   if (!PackId.safeParse(pack).success || !run.requirements.length || !run.requirements.every(r => r.accepted_producer === 'fact')) return false;

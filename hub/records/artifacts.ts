@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 import {PgPersonalPayloads,type PersonalScope} from './personal-payloads.ts';
 import {scopedRecordStore,memoReadPort} from './read-scope.ts';
 import {SpaceSourceBody} from '../../contracts/src/spaces.ts';
@@ -419,7 +420,7 @@ export class RecordArtifacts implements Artifacts {
       const owner=(await this.#db.query('SELECT deleted_at FROM users WHERE id=$1',[snapshot.pack_space])).rows[0];
       if(!owner?.deleted_at||!record||!(await this.#db.query('SELECT 1 FROM run_pack_records WHERE owner=$1 AND digest=$2',[snapshot.pack_space,snapshot.pack_digest])).rowCount)return null;
     }
-    const visible = (!snapshot.pack_space||snapshot.pack_space==='team')&&viewer.role === ADMIN || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now(),viewer.role);
+    const visible = (!snapshot.pack_space||snapshot.pack_space==='team')&&isAdmin(viewer) || snapshot.host !== 'hub' && snapshot.runner === viewer.id || await runIsSharedWith(this.#store,viewer.id,snapshot,this.#options.now(),viewer.role);
     if (!visible || ![...snapshot.sources.map(binding=>binding.reference),...snapshot.items.map(item=>item.location)].some(reference => /^src:([0-9a-f]{64})(?:\/|$)/.exec(reference)?.[1] === sha256)) return null;
     const captures=[...new Set(snapshot.sources.filter(binding=>binding.artifact!==undefined&&/^src:([0-9a-f]{64})(?:\/|$)/.exec(binding.reference)?.[1]===sha256).map(binding=>binding.artifact!))];
     const requested=pinned(options.record);if(requested&&!captures.includes(requested))return null;
@@ -519,7 +520,7 @@ export class RecordArtifacts implements Artifacts {
 
   async #requireAdmin(by: Principal, message: string): Promise<void> {
     const viewer = await this.#viewer(by);
-    if (viewer === null || viewer.role !== ADMIN) throw new AccessError(message);
+    if (viewer === null || !isAdmin(viewer)) throw new AccessError(message);
   }
 
   #note(choice: Choice): string {
@@ -541,7 +542,7 @@ export class RecordArtifacts implements Artifacts {
   async #mayRead(viewer: Viewer, artifact: SourceArtifact): Promise<boolean> {
     const visibility = artifact.body.visibility;
     if (visibility.readers.includes(viewer.id)) return true;
-    if (visibility.admins && viewer.role === ADMIN) return true;
+    if (visibility.admins && isAdmin(viewer)) return true;
     for (const pack of visibility.packs) if (await this.#authorizations.canUse(viewer.id, pack)) return true;
     return visibility.shareable && (await this.#authorizations.isSharedWith(viewer.id, artifactShareKey(artifact)));
   }
