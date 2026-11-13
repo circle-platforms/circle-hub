@@ -14,62 +14,39 @@ import {emptyBlock} from './components.ts';
 import {box,button,card,chip,commandLink,commandModal,when,type CommandDialog} from './ui.ts';
 import {actionForm} from './manage.ts';
 import {RESOURCE_AUDIENCE} from './team-actions.ts';
-import type {Principal,User} from '../../records/api.ts';
+import type {Principal,Team,TeamAssignments,TeamMember,TeamRow,Teams,User} from '../../records/api.ts';
 
 /** The two tabs of the members page (decision 151, step 7): the members, and the clients they connected. One list each. */
 const TEAM_TABS=['members','teams','clients'] as const;
 type TeamTab=typeof TEAM_TABS[number];
 const TEAM_TAB_LABEL:Record<TeamTab,string>={members:'成员',teams:'团队',clients:'已连接的客户端'};
 
-/** Console shape of RecordsKit.teams (interfaces §1); absent until Codex exports it. */
-export interface ConsoleTeam {
-  id: string;
-  name: string;
-  created_at: string;
-  created_by: string;
-  deleted_at: string | null;
-}
-export interface ConsoleTeamRow extends ConsoleTeam {
-  member_count?: number;
-  pack_count?: number;
-  resource_count?: number;
-  changed_at?: string;
-}
-export interface ConsoleTeamMember { team: string; user: User; added_at: string; added_by: string }
-export interface ConsoleTeamAssignments {
-  packs: readonly { body: { object: string; subject: string; revoked: boolean; decided_at: string; decided_by: string; note: string | null } }[];
-  resources: readonly { body: { object: string; subject: string; revoked: boolean; decided_at: string; decided_by: string; note: string | null } }[];
-}
-export interface ConsoleTeams {
-  list(by: Principal): Promise<ConsoleTeam[]>;
-  /** Admin list with counts (interfaces §1); fall back to list when absent. */
-  overview?(by: Principal): Promise<ConsoleTeamRow[]>;
-  get(by: Principal, id: string): Promise<ConsoleTeam | null>;
-  members(by: Principal, id: string): Promise<ConsoleTeamMember[]>;
-  assignments(by: Principal, id: string): Promise<ConsoleTeamAssignments>;
-  memberships(by: Principal, userId?: string): Promise<ConsoleTeam[]>;
-  membershipsMany?(by: Principal, userIds: readonly string[]): Promise<Map<string, ConsoleTeam[]>>;
-}
+/** Re-export records shapes for console-teams tests (synthetic PageContext). */
+export type ConsoleTeam = Team;
+export type ConsoleTeamRow = TeamRow;
+export type ConsoleTeamMember = TeamMember;
+export type ConsoleTeamAssignments = TeamAssignments;
+export type ConsoleTeams = Teams;
 
 type PackSource = { pack: string; via: 'user' | { team: string } };
 
-function teamsApi(ctx: PageContext): ConsoleTeams | undefined {
-  return (ctx.deps.records as { teams?: ConsoleTeams }).teams;
+/** Real kit always has teams (hub/records/index.ts); optional only for incomplete synthetic deps in unit tests. */
+function teamsApi(ctx: PageContext): Teams | undefined {
+  return (ctx.deps.records as { teams?: Teams }).teams;
 }
 
 /** list must not treat the built-in knowledge space id `team` as a team row (decision 3). */
-function listedTeams(rows: readonly ConsoleTeam[]): ConsoleTeamRow[] {
-  return rows.filter((row) => row.id !== 'team' && row.deleted_at === null);
+function listedTeams(rows: readonly Team[]): TeamRow[] {
+  return rows.filter((row) => row.id !== 'team' && row.deleted_at === null) as TeamRow[];
 }
 
-async function membershipsForUsers(ctx: PageContext, teams: ConsoleTeams | undefined, userIds: readonly string[]): Promise<Map<string, ConsoleTeam[]>> {
+async function membershipsForUsers(ctx: PageContext, teams: Teams | undefined, userIds: readonly string[]): Promise<Map<string, Team[]>> {
   if (!teams) return new Map(userIds.map((id) => [id, []] as const));
-  if (teams.membershipsMany) return teams.membershipsMany(ctx.principal, userIds);
-  return new Map(await Promise.all(userIds.map(async (id) => [id, listedTeams(await teams.memberships(ctx.principal, id))] as const)));
+  return teams.membershipsMany(ctx.principal, userIds);
 }
 
 async function packSourcesFor(ctx: PageContext, userId: string): Promise<PackSource[] | null> {
-  const auth = ctx.deps.records.authorizations as { packSources?(by: Principal, id: string): Promise<PackSource[]> };
+  const auth = ctx.deps.records.authorizations;
   return auth.packSources ? auth.packSources(ctx.principal, userId) : null;
 }
 
@@ -191,9 +168,8 @@ function countCell(value: number | undefined): string {
 export async function teamsPage(ctx: PageContext): Promise<PageResult> {
   const teams = teamsApi(ctx);
   const spaces = ctx.deps.knowledge?.spaces;
-  const rows = teams
-    ? listedTeams(ctx.admin && teams.overview ? await teams.overview(ctx.principal) : await teams.list(ctx.principal))
-    : [];
+  // Teams.list already returns TeamRow with counts (interfaces §1 overview shape).
+  const rows = teams ? listedTeams(await teams.list(ctx.principal)) : [];
   const detailPath = (id: string) => `/console/team/${id}`;
   const tableRows = rows.map((row) => {
     const name = link(detailPath(row.id), row.name);

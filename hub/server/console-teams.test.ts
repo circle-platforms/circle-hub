@@ -21,6 +21,7 @@ const TEAM_A: ConsoleTeamRow = {
   member_count: 2,
   pack_count: 1,
   resource_count: 3,
+  changed_at: '2026-11-13T03:00:00.000Z',
 };
 const TEAM_B: ConsoleTeamRow = {
   id: 'tm_01syntheticteamb00000000000',
@@ -31,6 +32,7 @@ const TEAM_B: ConsoleTeamRow = {
   member_count: 1,
   pack_count: 0,
   resource_count: 0,
+  changed_at: '2026-11-13T01:00:00.000Z',
 };
 const BUILTIN: ConsoleTeamRow = {
   id: 'team',
@@ -41,6 +43,7 @@ const BUILTIN: ConsoleTeamRow = {
   member_count: 0,
   pack_count: 0,
   resource_count: 0,
+  changed_at: '2026-11-13T00:00:00.000Z',
 };
 
 function fakeTeams(options: {
@@ -51,6 +54,11 @@ function fakeTeams(options: {
   memberships?: ConsoleTeams['memberships'];
 } = {}): ConsoleTeams {
   const all = options.list ?? [TEAM_A, TEAM_B, BUILTIN];
+  const memberships: ConsoleTeams['memberships'] = options.memberships ?? (async (by, userId) => {
+    const id = userId ?? by.id;
+    if (id === MEMBER.id || id === ADMIN.id) return [TEAM_A];
+    return [];
+  });
   return {
     list: async (by) => (by.role === 'admin' ? all : all.filter((row) => row.id === TEAM_A.id)),
     get: async (by, id) => {
@@ -69,14 +77,20 @@ function fakeTeams(options: {
       },
     ]),
     assignments: options.assignments ?? (async () => ({
-      packs: [{ body: { object: 'wf.synthetic', subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T03:00:00.000Z', decided_by: ADMIN.id, note: null } }],
-      resources: [{ body: { object: 'res_synthetic', subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T03:30:00.000Z', decided_by: ADMIN.id, note: null } }],
+      packs: [{ body: { object: 'wf.synthetic', subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T03:00:00.000Z', decided_by: ADMIN.id, note: null } }] as never,
+      resources: [{ body: { object: 'res_synthetic', subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T03:30:00.000Z', decided_by: ADMIN.id, note: null } }] as never,
     })),
-    memberships: options.memberships ?? (async (by, userId) => {
-      const id = userId ?? by.id;
-      if (id === MEMBER.id || id === ADMIN.id) return [TEAM_A];
-      return [];
+    memberships,
+    membershipsMany: async (by, userIds) => new Map(await Promise.all(userIds.map(async (id) => [id, await memberships(by, id)] as const))),
+    create: async () => TEAM_A,
+    delete: async (_by, id) => all.find((row) => row.id === id) ?? TEAM_A,
+    add: async () => ({
+      team: TEAM_A.id,
+      user: { id: MEMBER.id, name: MEMBER.name, role: 'user', disabled: false, deleted_at: null, created_at: '2026-11-01T00:00:00.000Z', updated_at: '2026-11-01T00:00:00.000Z' },
+      added_at: '2026-11-13T02:00:00.000Z',
+      added_by: ADMIN.id,
     }),
+    remove: async () => true,
   };
 }
 
