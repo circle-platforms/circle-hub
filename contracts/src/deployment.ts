@@ -59,6 +59,7 @@ export const ProtectedConfigurationEnvelope = z.strictObject({
   payloadSha256: Sha256,
   payload: z.unknown().refine(value => value !== undefined, 'protected configuration payload is required'),
 });
+export type ProtectedConfigurationEnvelope = z.infer<typeof ProtectedConfigurationEnvelope>;
 export const ProtectedConfigurationReceipt = z.strictObject({
   file: z.string().regex(/^private-config-snapshots\/[0-9a-f-]{36}\.json$/),
   sha256: Sha256,
