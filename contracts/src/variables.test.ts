@@ -83,3 +83,15 @@ test('ordinary variable decisions and secret vault versions have distinct eviden
     assert.equal(VariableUse.safeParse(missingVersion).success,false);
     assert.equal(VariableUse.safeParse({...ordinary,version:2}).success,false);
 });
+
+
+test('C12 keeps secret reads independent while retaining ordinary variable decisions', () => {
+    const model = JSON.parse(readFileSync(new URL('../model.json',import.meta.url),'utf8'));
+    const element = (id: string) => model.elements.find((entry: {id:string}) => entry.id === id);
+    const rule = element('B04').rules[10] as string;
+    for (const text of ['不查 secret 授权记录','不按文件修改时间猜测','普通变量记录真实 decision','不把密钥库摘要冒充 rec: 或 src:']) assert.ok(rule.includes(text), text);
+    assert.ok(!element('B04').fields[1].includes('登记的使用者'));
+    assert.ok(!element('D01').rules[6].includes('每一版密钥只发往设置它时登记'));
+    assert.ok(!element('D07').rules[2].includes('照登记的使用者和地址核对'));
+    assert.ok(element('R02').rules[4].includes('未知的设置人或时间照实披露未知'));
+});

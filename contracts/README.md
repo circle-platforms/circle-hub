@@ -733,3 +733,22 @@ the six team rules, including direct user grants, membership unions, member-only
 no resource access for any unassigned account. The existing shared knowledge-space kind and search
 scope display 公共空间; their internal code remains team. Other terminology and pack skill text
 are outside this change. No independent team spaces or new schemas are introduced here.
+
+
+## C12 vault ownership (2026-11-13)
+
+The owner's 15:58 C12 decision supersedes secret adopt. SecretRecord is authenticated vault
+metadata, despite the retained export name and secret@1 schema ID; it is not a records-database
+lookup contract. The vault owns name, deterministic entry, version, digest_rule, length, set_by,
+set_at and revoked alongside the sealed value. Unknown setter/time are explicit null; an old
+format without a trustworthy version/current selection is not assigned facts from file times.
+SecretConsumer and the consumers field are removed. Records only audit settings/changes.
+
+VariableUse is discriminated by the existing variable_kind: ordinary uses have kind=var, at, name
+and the actual decision digest; secret uses have kind=secret, at, name and authenticated vault
+version. OrdinaryVariableUse, SecretUse and SecretVersion are public exports. A secret vault
+identity never becomes a rec: or src: reference. Consumers must only construct record references
+for ordinary variable decisions. No URI scheme, protocol code or database migration is added.
+The read manifest and knowledge-root schemas carry the same union. Runtime migration, secret
+read behavior and encrypted metadata authenticity are validated by the vault/consumer owners;
+contracts tests establish shapes and model consistency only.
