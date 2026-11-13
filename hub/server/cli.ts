@@ -1,5 +1,5 @@
 import { isAdmin } from '../records/api.ts';
-import { BUILTIN_COMMANDS, RESERVED_DESCRIPTIONS } from './command-registry.ts';
+import { BUILTIN_COMMANDS, RESERVED_DESCRIPTIONS, COMMAND_METADATA } from './command-registry.ts';
 import {deletionCheck,deleteMember,DELETION_EFFECT,handoverLines} from './member-deletion.ts';
 // `circle-hub <command>`: the server's commands. main(argv) returns the exit code and never runs on import (bin/circle-hub
 // calls it). Platform commands go to hub/platform's runPlatformCommand; serve is main.ts; user, token, logs and run need only
@@ -18,7 +18,7 @@ import { PARTITION, PERMISSION_ROLE, isPermissionRole, labelOf, uiLabelOf, type 
 import { HubConfigError, HubEnvironmentError, assertNoRetiredEnvironment, type HubConfig } from '../config/index.ts';
 import { DEFAULT_EVENT_LIMIT, DEFAULT_SINCE_MS, MAX_EVENT_LIMIT, eventLines, healthLines, healthReader, parseSince, type HealthReader } from '../health/api.ts';
 import { PLATFORM_COMMANDS, hubKeyProvider, isPlatformCommand, liveKeyPipe, platformCommands } from '../platform/api.ts';
-import { Database, createPool } from '../records/api.ts';
+import { Database, createPool, installCommandSteps } from '../records/api.ts';
 import { RecordsError, openRecords, type CallLogLine, type Principal, type RecordsKit, type User } from '../records/api.ts';
 import type { AssemblyModule, CliCommand, CliContext, CliIo, RegisterCommand, ServerDeps } from './api.ts';
 import { OPERATOR_TOKEN_VARIABLE, takeEnvironmentToken, type OperatorTokenStore } from './assemble/operator-token.ts';
@@ -712,6 +712,7 @@ const processIo = (): CliIo => ({
 
 /** Runs one command and resolves with its exit code: 0 ok, 1 failure, 2 usage (platform status commands may give 3). */
 export async function main(argv: readonly string[] = process.argv.slice(2), overrides: Partial<CliOptions> = {}): Promise<number> {
+  installCommandSteps(COMMAND_METADATA);
   const options: CliOptions = { ...overrides, io: overrides.io ?? processIo() };
   const io = options.io;
   const [command, ...rest] = argv;
