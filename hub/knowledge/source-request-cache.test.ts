@@ -159,6 +159,26 @@ test('equal bytes in private captures do not share a proof across captures or ac
   assert.ok(calls.some(([by, , options]) => by.id === w.other.id && options?.record === w.artifact.digest));
 });
 
+test('mutating a pending source principal cannot authorize another private capture or poison the caller cache', async t => {
+  const w = await fixture(t);
+  const privateOther = await w.capture(w.other, 'synthetic-call-time-principal');
+  assert.equal(privateOther.body.sha256, w.artifact.body.sha256);
+  assert.notEqual(privateOther.digest, w.artifact.digest);
+  assert.equal(await w.kit.artifacts.source(w.owner, privateOther.body.sha256, { record: privateOther.digest }), null);
+  assert.ok((await w.kit.artifacts.source(w.other, privateOther.body.sha256, { record: privateOther.digest }))?.bytes);
+  await withRequestPermissions(w.kit.artifacts, w.owner, async () => {
+    const by: Principal = { id: w.owner.id, name: w.owner.name, role: w.owner.role };
+    const pending = w.spaces.source(by, privateOther.body.sha256, undefined, 'model', privateOther.digest);
+    by.id = w.other.id;
+    by.name = w.other.name;
+    by.role = w.other.role;
+    const first = await pending;
+    const repeated = await w.spaces.source(w.owner, privateOther.body.sha256, undefined, 'model', privateOther.digest);
+    assert.deepEqual({ first, repeated }, { first: null, repeated: null },
+      'authorization uses the invocation principal and the owner cache cannot retain another actor\'s private capture');
+  });
+});
+
 test('a role change cannot reuse the previous role proof even for the same account and capture', async t => {
   const w = await fixture(t);
   const privateOther = await w.capture(w.other, 'synthetic-role-boundary');
