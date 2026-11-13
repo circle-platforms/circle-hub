@@ -7,7 +7,7 @@ import { isAdmin } from './permissions.ts';
 import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ActionKindSchema, isAcceptance, isCallResult } from '../../contracts/generated/vocabulary.ts';
+import { ActionKindSchema, isAcceptance, isCallResult, isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import type { CallLog, CallLogEntry, CallLogInput, CallLogLine, CallLogQuery, Page, Principal, RecordStore } from './api.ts';
 import { canonicalize } from './canonical.ts';
 import { RECORD_SCHEMAS } from './constants.ts';
@@ -357,11 +357,13 @@ export class PgCallLog implements CallLog {
     }
   }
 
-  async #viewer(principal: Principal): Promise<{ id: string; role: string } | null> {
+  async #viewer(principal: Principal): Promise<Pick<Principal, 'id' | 'role'> | null> {
     const id = typeof principal?.id === 'string' && USER_ID.test(principal.id) ? principal.id : null;
     if (id === null) return null;
     const row = (await this.#db.query('SELECT id, role, disabled FROM users WHERE id = $1', [id])).rows[0];
-    return row === undefined || row.disabled === true ? null : { id: String(row.id), role: String(row.role) };
+    if (row === undefined || row.disabled === true) return null;
+    if (!isPermissionRole(row.role)) throw new IntegrityError('用户角色不在词表里');
+    return { id: String(row.id), role: row.role };
   }
 }
 
