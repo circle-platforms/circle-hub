@@ -143,6 +143,8 @@ export const notAccepted = {
 };
 
 export const summary = {
+  skills: [],
+  submission_due: '2026-10-22T08:00:00Z',
   run: RUN,
   pack: 'review@1.0.0',
   pack_digest: H,
