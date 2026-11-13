@@ -38,7 +38,6 @@ async function resourceWarnings(session:Session, record:import('../../contracts/
   for(const item of described?.credentials??[]) {
     const match=/^\$\{secret:([^}]+)\}$/.exec(item.entry);if(!match)continue;
     if(!item.set)session.out(`密钥 ${match[1]} 还没有设置：用 circle-hub secret set --name ${match[1]} 设置`);
-    else if(!item.registered)session.out(`密钥 ${match[1]} 的这一版未登记此使用者和地址：要重新输入一次值才会发往这里`);
   }
 }
 
@@ -237,7 +236,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
         const names=refs.map(ref=>{const version=versions.find(v=>v.kind==='var'&&v.name===ref.name);return '${var:'+ref.name+'} '+(!version?'还没有设置':version.decision.body.revoked?`已撤回（最后第 ${version.version} 版）`:`第 ${version.version} 版`);});
         session.out(`设置 ${key}：${names.length?names.join('；'):values.values?JSON.stringify(value):'长度 '+Buffer.byteLength(JSON.stringify(value))}`);
       }
-      for(const c of d.credentials){const version=c.revoked?`已撤回（最后第 ${c.version} 版）`:c.version?`第 ${c.version} 版`:'尚未登记命名版本';const stored=c.stored_digest?labelOf('digest_rule',c.stored_digest):'无当前登记';session.out(`凭据项 ${c.name} ${c.entry} ${version} 长度 ${c.length??'不适用'} 发送规则 ${labelOf('digest_rule',c.digest)} 存储规则 ${stored} ${c.set?'有条目':'无条目'} ${c.registered?'已登记使用者':'无当前使用者登记'}`);}
+      for(const c of d.credentials){const version=c.revoked?`已撤回（最后第 ${c.version} 版）`:c.version?`第 ${c.version} 版`:'尚未登记命名版本';const stored=c.stored_digest?labelOf('digest_rule',c.stored_digest):'无当前登记';session.out(`凭据项 ${c.name} ${c.entry} ${version} 长度 ${c.length??'不适用'} 发送规则 ${labelOf('digest_rule',c.digest)} 存储规则 ${stored} ${c.set?'有条目':'无条目'}`);}
       return 0;
     }
     case 'read': {
