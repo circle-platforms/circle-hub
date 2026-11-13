@@ -778,13 +778,6 @@
   },
   {
     "check": "no-compat-paths",
-    "path": "contracts/src/variables.ts",
-    "what": "word:historical",
-    "reason": "Append-only secret version monotonicity check preserving deleted historical version gaps without renumbering",
-    "removeWhen": "never"
-  },
-  {
-    "check": "no-compat-paths",
     "path": "contracts/src/validation.ts",
     "what": "symbol:readStoredValidationResult",
     "reason": "Legacy/compatibility path (readStoredValidationResult on line(s) 313); remove in C3",

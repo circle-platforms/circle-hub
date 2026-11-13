@@ -14,7 +14,7 @@
 
 1. **前置零开销门禁（约 17–20 秒）**：先跑 `tools/gen-contracts.ts --check` 与两次 `tsc --noEmit`（主仓库 + `.github/checks`），任一失败直接退出，不启动 PostgreSQL。
 2. **单次共享 PostgreSQL 模板复用**：借鉴 `tools/run-unit-tests.ts` 的 `prepareTemplate` + `sharedEnv` 方案，整个 `test:quick` 只启动 **1 个**共享 PostgreSQL 集群并预迁移 `hub_migrated` 模板库，随后单元测试泳道与验收测试泳道共同复用。
-3. **长文件优先 + 受限并发**：单元测试泳道共 66 个文件，全部属于纯共享泳道（不含 `ISOLATED_MARK` 独占库和耗时毫秒敏感 sentinel），将耗时约 55 秒的 `hub/server/mcp.test.ts` 排在首位，其余 65 个快文件在并发槽位（`min(6, availableParallelism() - 1)`）上重叠消化；验收泳道 7 个文件以并发 1 顺序执行，避免争抢数据库与连接资源。
+3. **长文件优先 + 受限并发**：单元测试泳道共 69 个文件，全部属于纯共享泳道（不含 `ISOLATED_MARK` 独占库和耗时毫秒敏感 sentinel），将耗时约 55 秒的 `hub/server/mcp.test.ts` 排在首位，其余 68 个快文件在并发槽位（`min(6, availableParallelism() - 1)`）上重叠消化；验收泳道 9 个文件以并发 1 顺序执行，避免争抢数据库与连接资源。
 4. **Node 编译缓存**：临时设置 `NODE_COMPILE_CACHE`，结束或中断时自动清理。
 
 ---
@@ -36,11 +36,12 @@
   - `node node_modules/typescript/bin/tsc --noEmit -p .github/checks`（仓库检查脚本）
 - **选择理由**：全量静态类型检查与 `erasableSyntaxOnly` / `.ts` 导入规范门禁，耗时约 17 秒即可覆盖整个代码库，不可删减。
 
-### 3. 六个工具（11 个测试文件）
+### 3. 六个工具（12 个测试文件）
 
 - **选入项**：
   - `hub/server/mcp.test.ts`（HTTP MCP SDK 全量端到端契约：6 个工具、`tools/list`、`isError` 矩阵、trace/session、调用日志与令牌校验）
   - `hub/server/list-tools.test.ts`（精确 6 个工具列表与调用者包可见性）
+  - `hub/runs/packs/ports.test.ts`（`WorkflowStore`、`PacksPort`、`PackCatalogPort`、`WHOLE_HUB` 产品绑定、`local_tools` 与 `list_task_packs` trace 记录）
   - `hub/server/declared-clients.test.ts`（MCP 客户端兼容性）
   - `hub/server/model-declaration-mcp.test.ts`（模型声明与读边界）
   - `hub/server/read-recovery-mcp.test.ts`（`resolve_reference` / 读取中断恢复）
@@ -48,17 +49,15 @@
   - `hub/server/call-status.test.ts` 与 `hub/server/long-call-status.test.ts`（调用状态与长任务进度）
   - `hub/server/command-parameters.test.ts` 与 `hub/server/console/command-form.test.ts`（U2 命令参数结构与控制台渲染边界）
   - `hub/records/calllog.test.ts`（底层追加式调用记录与幂等基础）
-- **选择理由**：直接守护 MCP 协议边界、六个工具的请求/响应格式与注解、状态机和调用日志，且除了 `mcp.test.ts`（约 55 秒）其余均在 0.1–3 秒内完成。
+- **选择理由**：直接守护 MCP 协议边界、六个工具的请求/响应格式与注解、任务包端口可见性、状态机和调用日志，且除了 `mcp.test.ts`（约 55 秒）其余均在 0.1–3 秒内完成。
 - **留给全量的耗时/独立兄弟**：`hub/server/submit-load.test.ts`（压测 sentinel，逾百秒）、`hub/server/assemble/testing-real.test.ts`（约 58 秒）等留给全量单测。
 
-### 4. 团队和权限（15 个测试文件）
+### 4. 团队和权限（16 个单测 + 2 个验收）
 
 - **选入项**：
-  - `hub/records/teams.test.ts`、`hub/records/authorizations.test.ts`、`hub/records/standard-authorization.test.ts`、`hub/records/request-permissions.test.ts`、`hub/records/read-scope.test.ts`
-  - `hub/server/cli-team.test.ts`、`hub/server/standard-authorization.test.ts`、`hub/server/request-permissions.test.ts`、`hub/server/console-clients.test.ts`、`hub/server/console-team-capacity.test.ts`
-  - `hub/server/console/audience.test.ts`、`hub/server/console/grant-dialog.test.ts`、`hub/server/console/member-reads.test.ts`、`hub/server/member-deletion-effect.test.ts`
-  - `hub/connectors/resource-access.test.ts`
-- **选择理由**：完整覆盖团队记录摘要绑定与级联失效、OAuth / RFC 8628 设备授权流程、单次请求权限快照隔离、团队与全体可见范围、CLI 团队分配、业务系统资源授权以及成员删退与并发授权安全；平均每个文件仅 0.2–4 秒。
+  - 单测：`hub/records/teams.test.ts`、`hub/records/authorizations.test.ts`、`hub/records/standard-authorization.test.ts`、`hub/records/request-permissions.test.ts`、`hub/records/read-scope.test.ts`、`hub/server/cli-team.test.ts`、`hub/server/standard-authorization.test.ts`、`hub/server/request-permissions.test.ts`、`hub/server/console-clients.test.ts`、`hub/server/console-teams.test.ts`、`hub/server/console-team-capacity.test.ts`、`hub/server/console/audience.test.ts`、`hub/server/console/grant-dialog.test.ts`、`hub/server/console/member-reads.test.ts`、`hub/server/member-deletion-effect.test.ts`、`hub/connectors/resource-access.test.ts`
+  - 验收：`tests/acceptance/46-knowledge-spaces.test.ts`（知识空间权限、公共空间页面标签、`/console/knowledge/space` 详情与引用计数展示，以及 `mayReadRecord` 下的源记录阅读边界）、`tests/acceptance/54-member-deletion.test.ts`（成员永久删除 `/console/team/<id>?deletion=preview` 页面、`deletionCheck` 与 `/console/workflows` 移交页面）
+- **选择理由**：完整覆盖团队记录摘要绑定与级联失效、OAuth / RFC 8628 设备授权流程、单次请求权限快照隔离、团队与全体可见范围、CLI/控制台团队管理与配额视图、业务系统资源授权、知识空间与共享隔离以及成员永久删除与并发授权安全。
 
 ### 5. 密钥按名字取值（18 个测试文件）
 
@@ -68,13 +67,13 @@
   - Connectors / Dispatch / Knowledge 层：`hub/connectors/vault-rebind.test.ts`、`hub/connectors/variables.test.ts`、`hub/dispatch/vault-rebind.test.ts`、`hub/dispatch/variables.test.ts`、`hub/knowledge/ordinary-variable-use.test.ts`、`hub/knowledge/variables.test.ts`、`hub/knowledge/unversioned-variables.test.ts`
 - **选择理由**：完整覆盖 C12「按名字引用密钥」落库、sidecar 元数据、脱敏用途标签、短口令拒绝不回显、连接器与调度层的引用重绑定、旧读写路径拒绝，以及普通变量的引用解析、单次替换与知识库无版本变量行为。18 个文件总工作线程时间也仅约 25 秒。
 
-### 6. 脑图编译路径上的验收（13 个包内编译单测 + 7 个验收测试）
+### 6. 脑图编译路径上的验收（14 个包内编译单测 + 7 个验收测试）
 
-- **包内编译路径单测（13 个）**：
-  - `packs/workflow/case-compile/pack.test.ts`、`packs/workflow/case-compile/publish.test.ts`
+- **包内编译路径单测（14 个）**：
+  - `packs/workflow/case-compile/pack.test.ts`、`packs/workflow/case-compile/publish.test.ts`、`packs/workflow/case-compile/review/end-to-end.test.ts`
   - `packs/workflow/case-compile/functions/whole-mindmap.test.ts`、`generate.test.ts`、`cases.test.ts`、`runtime-contract.test.ts`、`fidelity.test.ts`、`recomposition.test.ts`、`recompose-check.test.ts`、`block-workbook.test.ts`、`binding.test.ts`
   - `packs/workflow/case-compile/recompose/tools/submit-records.test.ts`、`packs/workflow/case-compile/tools/seal-recompose.test.ts`
-- **快速验收路径（7 个）**：
+- **快速验收路径（7 个；另有 `tests/acceptance/46-knowledge-spaces.test.ts` 与 `54-member-deletion.test.ts` 归于「团队和权限」验收）**：
   - `tests/acceptance/38-r5-t4-1-block-cases.test.ts`（块用例生成与校验）
   - `tests/acceptance/56-fed-case-reprojection.test.ts`（投喂用例重投影不变性）
   - `tests/acceptance/39-r5-t9-2-skill-packs.test.ts`（技能包发布、格式与调用前就绪性）
@@ -82,31 +81,35 @@
   - `tests/acceptance/40-r5-t9-3-process-restart.test.ts`（进程重启与持久状态恢复）
   - `tests/acceptance/53-capacity.test.ts`（容量上限与拒绝边界）
   - `tests/acceptance/coverage-paths.test.ts`（验收覆盖路径完整性检查）
-- **选择理由**：既验证 `case-compile` 从全脑图、块工作簿、绑定/生成/保真检查、重组封板到 `publish` 沙箱加载的编译核心路径，又在 `tests/acceptance/` 中以约 13 秒跑完块用例、重投影、技能包、调度规则、重启恢复、容量和覆盖路径验收。
+- **选择理由**：既验证 `case-compile` 从全脑图、块工作簿、绑定/生成/保真检查、重组封板、评审端到端到 `publish` 沙箱加载的编译核心路径，又在 `tests/acceptance/` 中以约 13 秒跑完块用例、重投影、技能包、调度规则、重启恢复、容量和覆盖路径验收。
 - **留给全量的长耗时/条件测试**：`packs/workflow/case-compile/production.test.ts`（约 94 秒）、`packs/workflow/case-review-verify/end-to-end.test.ts`（逾 120–200 秒）、`tests/acceptance/26-review-report.test.ts` / `28-device-run.test.ts` / `41-r5-t1t3-acceptance.test.ts` 等均保留在完整回归中。
 
 ---
 
-## 基于基线 `6667281163` 的上游阻断说明（不修改他包代码）
+## 在基线 `cbb19119a1` 上的恢复与保留排除说明
 
-在基线提交 `6667281163` 上实测发现两处非本任务职责范围的现有回归，为保证 `test:quick` 在当前基线上严格零失败且不修改任何他包源码或测试文件，相关用例暂未列入默认必过集：
+上游在 `6de55e070e`（修复 `authorizations.ts` 的 `packsFor('*')`）与 `770e07ccbf`（修复 `console-teams.test.ts` 中的非 ULID 团队编号 `TEAM_A.id`）合入 `hub-final cbb19119a1` 后，并随 agy 完成 `46` / `54` 验收迁移，已恢复以下 5 项测试进 `test:quick`：
 
-1. **`hub/records/authorizations.ts:226` `packsFor('*')` 返回空**：
-   - `f4cbb84b0ba` 引入 `!UserId.safeParse(user).success` 早返回空数组，导致 `authorizations.packsFor(WHOLE_HUB)`（`'*'`）始终返回 `[]`，进而使全站启用的产品包/技能包无法被 `activeProducts()` / `installedSkills()` 发现。
-   - **受阻塞测试**（修复 `packsFor('*')` 后可在耗时预算内择优增补或复核）：`packs/workflow/case-compile/review/end-to-end.test.ts`、`packs/workflow/case-compile/recompose/end-to-end.test.ts`，以及依赖 `openBed()` 启动默认产品包的 `tests/acceptance/07-call-log.test.ts`、`13-idempotence.test.ts`、`29-variables.test.ts`、`35-r5-t1t3-build-diff.test.ts` 等。
-2. **`hub/server/console-teams.test.ts:128` U2 命令登记校验失败**：
-   - 失败表现：`TEAM_ACTIONS build the argv shapes from interfaces §2` 抛出 `FormError: 参数不符合命令登记；请核对必填项、范围和互斥选项`。待 U2/`console-teams` 同步修正后即可并回「团队和权限」列表。
+1. `hub/server/console-teams.test.ts`（已恢复至「团队和权限」单测；7 pass / 0 fail）
+2. `hub/runs/packs/ports.test.ts`（已恢复至「六个工具」单测）
+3. `packs/workflow/case-compile/review/end-to-end.test.ts`（已恢复至「脑图编译路径上的验收」包内单测）
+4. `tests/acceptance/46-knowledge-spaces.test.ts`（已迁移至 `/console/knowledge/space` 页面与「公共空间」文案并适配 `mayReadRecord`，已恢复至「团队和权限」验收；8 pass / 0 fail）
+5. `tests/acceptance/54-member-deletion.test.ts`（已迁移至 `/console/team/<id>?deletion=preview`、`deletionCheck` 与 `/console/workflows`，已恢复至「团队和权限」验收；2 pass / 0 fail）
+
+以下 1 项测试暂留在**待解禁列表**（不阻断 `test:quick` 全绿）：
+
+- `tests/acceptance/06-user-without-pack.test.ts`：`WHOLE_HUB` 缺陷虽已解禁，但实测在 `cbb19119a1` 上失败（`AssertionError: 404 !== 200`，第 72–73 行仍请求 K3 已下线的 `GET /console/admin/calls`）；待 Codex 将第 72 行迁至 `/console/records` 后即放回 `test:quick`。
 
 ---
 
-## 实测耗时与结果（macOS，基线 `6667281163`）
+## 实测耗时与结果（macOS，基线 `cbb19119a1` + 整合提交）
 
-以下数据来自本工作树在 `6667281163` 上执行 `npm run test:quick` 的真实全流程墙钟测量：
+以下数据来自本工作树在整合 `cbb19119a1` 后执行 `npm run test:quick` 的真实全流程墙钟测量：
 
-- **总计墙钟耗时：`89.98s`**（约 1.5 分钟，远低于 300s / 5 分钟上限；共 3 项校验命令 + 66 个单测文件 `643` 项测试 + 7 个验收文件 `10` 项测试，全部 `0` 失败、`0` 跳过）
+- **总计墙钟耗时：`106.27s`**（约 1 分 46 秒，远低于 300s / 5 分钟上限；共 3 项校验命令 + 69 个单测文件 `662` 项测试 + 9 个验收文件 `20` 项测试，全部 `0` 失败、`0` 跳过）
 - **各阶段实测分项**：
-  - `[1/4] 合约生成物一致性校验`：`0.21s`（`exit=0`，`contracts/generated matches the model (206 files)`）
-  - `[2/4] TypeScript 类型检查（主仓库 + .github/checks）`：`14.38s`（`exit=0`）
-  - `共享 PostgreSQL 模板准备`：`0.66s`
-  - `[3/4] 快速单元测试（66 文件，concurrency=6）`：`62.39s`（`exit=0`，`643 passed / 0 failed / 0 skipped / 22 suites`）
-  - `[4/4] 快速验收测试（7 文件，concurrency=1）`：`12.34s`（`exit=0`，`10 passed / 0 failed / 0 skipped / 1 suite`）
+  - `[1/4] 合约生成物一致性校验`：`0.25s`（`exit=0`，`contracts/generated matches the model (210 files)`）
+  - `[2/4] TypeScript 类型检查（主仓库 + .github/checks）`：`13.76s`（`exit=0`）
+  - `共享 PostgreSQL 模板准备`：`0.57s`
+  - `[3/4] 快速单元测试（69 文件，concurrency=6）`：`63.70s`（`exit=0`，`662 passed / 0 failed / 0 skipped / 22 suites`）
+  - `[4/4] 快速验收测试（9 文件，concurrency=1）`：`27.99s`（`exit=0`，`20 passed / 0 failed / 0 skipped / 1 suite`）

@@ -97,8 +97,8 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
 | 产品知识来源（`product`） | `./bin/circle-hub pack publish packs/product/famx --stage` | 全 Hub 启用：`./bin/circle-hub pack activate famx`（如需构建知识树另见 `knowledge sync --product famx`） |
 | 业务系统接入（`system`） | `./bin/circle-hub pack publish packs/system/plm --stage` | 实例化资源、写入密钥并开放给团队或全体成员（见下文） |
 
-以 `plm` 系统包为例，配置合成测试资源与命名密钥时必须遵守两条约束：
-1. **先建资源再写密钥**（密钥写入会核对已登记的使用者），且必须给全系统包 `system.json` 声明的所有角色与凭据项（`plm` 声明了 `plm-oauth` 与 `plm-api` 两个角色，且 `password` 要求存储摘要规则 `sha512_base64`）。
+以 `plm` 系统包为例，配置合成测试资源与命名密钥时必须遵守三条约束：
+1. **命名密钥独立存放在 `vault/`，且必须给全凭据与角色**：`secret set` 与 `resource add` 没有先后顺序要求（密钥库不再核对已登记的使用者；先建资源时若密钥尚未写入，命令只会提示用 `secret set` 补齐），按密钥名称绑定即可；同时必须给全系统包 `system.json` 声明的所有角色与凭据项（`plm` 声明了 `plm-oauth` 与 `plm-api` 两个角色，且 `password` 要求摘要规则 `sha512_base64`，写入 `SYNTH_PLM_PASS` 时需显式传入 `--digest SYNTH_PLM_PASS=sha512_base64`，未传 `--digest` 时默认规则为 `plain`）。
 2. **密钥名必须以大写字母开头**，只含大写字母、数字和下划线（`^[A-Z][A-Z0-9_]{0,63}$`）。
 3. **新建业务系统默认不向成员开放**，必须显式分配 `--team=<团队ID>` 或 `--all`。
 
@@ -111,7 +111,7 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
   --credential username=SYNTH_PLM_USER \
   --credential password=SYNTH_PLM_PASS
 
-# 从标准输入喂入密钥值（记下上一步输出的 res_… 编号）
+# 记下上一步输出的 res_… 编号供下方 assign/show 使用，再从标准输入喂入密钥值（也可先写密钥再建资源）
 printf '%s\n' '<合成账号>' | ./bin/circle-hub secret set --name SYNTH_PLM_USER --reason "quickstart synthetic verification"
 printf '%s\n' '<合成口令>' | ./bin/circle-hub secret set --name SYNTH_PLM_PASS --digest SYNTH_PLM_PASS=sha512_base64 --reason "quickstart synthetic verification"
 
@@ -204,8 +204,77 @@ chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
 
 ---
 
+## 用部署定义文件一次配好
+
+如果你不想逐条执行建账号、建团队、发布包、登记资源与做分配的命令，可以用一份声明式的部署定义文件（`schema: "deployment@1"`，定义在 `contracts/src/deployment.ts`）统一描述整套部署结构。
+
+### 定义文件包含哪些顶层字段
+
+除了必填的 `"schema": "deployment@1"`，其余八个顶层数组字段均可选（默认视为空数组 `[]`）：
+
+- `accounts`：账号列表（`{ name, role: "admin" | "user", disabled?: false }`，新建条目省略 `id`；若指定 `id` 则必须与已有记录精确匹配）。
+- `teams`：团队列表（`{ name, members?: [...] }`，`members` 可填账号名或账号 `id`）。
+- `packs`：包列表（`{ ref: "<id>@<x.y.z>", directory?: "<包目录>", install?: false, dependsOn?: [...] }`；按依赖顺序写入，首次发布可提供 `directory`，复用已发布包时可省略 `directory`，此时要求该版本已存在，且若清单或文件摘要不一致会拒绝覆盖）。
+- `resources`：业务系统资源列表（`{ definition: { system_pack: "<id>@<x.y.z>", name, environment, origins, allow_plaintext?, credentials?, settings?, limits? }, enabled?: true }`；注意在 `deployment@1` 中，`credentials` 直接写大写密钥名如 `"SYNTH_PLM_USER"`，不带 `${secret:...}` 外壳）。
+- `executors`：执行器列表（按 `target` 唯一标识，凭据字段使用 `${secret:<NAME>}` 引用格式）。
+- `workflowAssignments`：工作流分配（`{ pack: "<包ID>", team: "<团队名>" }` 或 `{ pack: "<包ID>", user: "<用户名>" }`；`pack` 写包 ID，不带 `@版本号`）。
+- `resourceAssignments`：资源分配（`{ resource: "<资源名>", team: "<团队名>" }` 或 `{ resource: "<资源名>", all: true }`）。
+- `knowledgeSources`：启用为知识源的包 ID 列表（`PackId[]`）。
+
+### 最小合成示例（`deployment@1`）
+
+```json
+{
+  "schema": "deployment@1",
+  "accounts": [
+    { "name": "synth-member", "role": "user" }
+  ],
+  "teams": [
+    { "name": "synth-team", "members": ["synth-member"] }
+  ],
+  "packs": [
+    { "ref": "plm@1.3.11", "directory": "./packs/system/plm" },
+    { "ref": "test-bed@1.3.2", "directory": "./packs/workflow/test-bed", "install": true }
+  ],
+  "resources": [
+    {
+      "definition": {
+        "system_pack": "plm@1.3.11",
+        "name": "synth-plm",
+        "environment": "test",
+        "origins": {
+          "plm-oauth": "http://192.0.2.10:8080",
+          "plm-api": "http://192.0.2.11:8080"
+        },
+        "allow_plaintext": ["plm-oauth", "plm-api"],
+        "credentials": {
+          "username": "SYNTH_PLM_USER",
+          "password": "SYNTH_PLM_PASS"
+        }
+      },
+      "enabled": true
+    }
+  ],
+  "workflowAssignments": [
+    { "pack": "test-bed", "team": "synth-team" }
+  ],
+  "resourceAssignments": [
+    { "resource": "synth-plm", "team": "synth-team" }
+  ]
+}
+```
+
+### `apply` 与 `export` 的行为差异
+
+- **应用（`apply`）不盲目覆盖差异**：匹配到同 `id` 或同名的已有条目且内容完全一致时，直接计为「相同跳过」；若存在不同，只会逐条输出存在差异的字段路径（例如 `<section>[<index>] 与现状不同：<fields>；未覆盖`）并返回非零退出码，**不会自动覆盖**现有配置（同时汇总输出 `已配置 X 项；相同跳过 Y 项；差异 Z 项`）。如果应用过程在中途失败，前面已生效的创建操作不会自动回滚。
+- **导出（`export`）不含任何真实密钥**：`export` 只导出结构定义、分配关系与引用到的密钥名（资源凭据只含大写密钥名，执行器只含 `${secret:<NAME>}`），从不读取 `vault/` 密文、密码散列或明文令牌。因此在跨环境重装并 `apply` 后，仍需按密钥名补写（或沿用原有保留下来的）`vault/` 密钥值。
+- **CLI 接线现状提示**：当前 `hub/server/cli-apply.ts` 中的 `apply` / `export` 核心逻辑已经实现并通过单元测试，但 `hub/server/command-registry.ts` 尚未把这两个子命令正式挂入 `circle-hub` 主命令分发表。待接入合并到 `hub-final` 后，本节将补充并实测完整的命令行调用写法。
+
+---
+
 ## 下一步阅读
 
+- 需要重置数据、保留配置重建或处理版本更新后的「需要重建」状态：[重置和重建](reset.md)
 - 需要修改工作流文案、规则或通用技能并重新上线：[改一个工作流或技能怎么做](edit-pack.md)
 - 了解 7 项用例工作流的详细参数与报告规范：[Hub r4 使用指南：七项用例能力](hub-r4-guide.md)
 - 跨机部署到 Linux 系统级服务：[Linux 单机迁移与运行](hub-linux-deploy.md)
