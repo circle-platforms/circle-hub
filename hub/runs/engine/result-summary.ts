@@ -3,10 +3,10 @@
 // whole result for them cost a megabyte or more a row. The summary is those facts, projected from the result where the
 // result is stored, as a record of its own: verified like any record when it is read, and never the authority over the
 // result. A result without a summary is read whole and gives the same facts, so nothing depends on the summaries being
-// complete; a background pass writes the ones missing for the results stored before.
+// complete.
 import { ResultSummaryBody } from '../../../contracts/src/result-summary.ts';
 import type { ValidationResult } from '../../../contracts/src/validation.ts';
-import { verifiedBodyDigest, type Page, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
+import { verifiedBodyDigest, type RecordStore, type StoredRecord, type Transaction } from '../../records/api.ts';
 import { step } from '../../telemetry/api.ts';
 import { resultStatistics } from '../statistics.ts';
 import { boundOf, groundsOf } from './ground-extraction.ts';
@@ -83,46 +83,4 @@ export async function summarizeStored(store: RecordStore, run: string, digest: s
  */
 export async function resultSummaryOf(store: RecordStore, run: string, digest: string, whole: (run: string, digest: string) => Promise<ResultSummary | null> = (id, result) => summarizeStored(store, id, result)): Promise<ResultSummary | null> {
   return await storedSummaryOf(store, run, digest) ?? whole(run, digest);
-}
-
-/** Every result has its summary: a pass over the older ones reached its end (summarizeStoredResults). */
-export async function summariesComplete(store: Pick<RecordStore, 'find'>): Promise<boolean> {
-  return (await store.find<unknown>({ key: INDEX.resultSummariesComplete, value: STORED, kind: 'validation_result', limit: 1 })).items.length > 0;
-}
-
-/**
- * Writes the summary of every result stored before results were stored with one: oldest first, a few at a time since each
- * is read whole, up to the first result that was stored with its summary. A pass that is interrupted starts again; writing
- * a summary that exists changes nothing. Marks the end so that later starts do not walk again.
- */
-export async function summarizeStoredResults(
-  store: Pick<RecordStore, 'list' | 'find' | 'put' | 'addIndex' | 'findFirstMany'>,
-  options: { batch?: number; signal?: AbortSignal } = {},
-): Promise<{ examined: number; written: number; complete: boolean }> {
-  if (store.addIndex === undefined) return { examined: 0, written: 0, complete: false };
-  if (await summariesComplete(store)) return { examined: 0, written: 0, complete: true };
-  const boundary = (await store.find<unknown>({ key: INDEX.resultSummarized, value: STORED, kind: 'validation_result', limit: 1 })).items[0];
-  let examined = 0, written = 0, last: StoredRecord<ValidationResult> | undefined, cursor: string | null = null;
-  walk: do {
-    options.signal?.throwIfAborted();
-    const page: Page<StoredRecord<ValidationResult>> = await store.list<ValidationResult>({ kind: 'validation_result', limit: options.batch ?? 4, cursor });
-    const have = await store.findFirstMany<unknown>({ key: INDEX.summaryResult, values: page.items.map((record) => record.digest), kind: 'result_summary' });
-    for (const record of page.items) {
-      if (record.digest === boundary?.digest) break walk;
-      last = record;
-      examined += 1;
-      // A result that does not have the stored shape is left to the reads that already cope with it.
-      if (record.schema !== SCHEMAS.result || have.has(record.digest)) continue;
-      const body = ResultSummaryBody.safeParse(summarize(record.body, record.digest));
-      if (!body.success) continue;
-      const put = await store.put<ResultSummary>({ kind: 'result_summary', schema: SCHEMAS.summary, provenance: 'projected', body: body.data, created_at: record.created_at, index: [{ key: INDEX.summaryResult, value: record.digest }] });
-      if (put.created) written += 1;
-    }
-    cursor = page.next;
-  } while (cursor !== null);
-  options.signal?.throwIfAborted();
-  const end = boundary ?? last;
-  if (end === undefined) return { examined, written, complete: false };
-  await store.addIndex(end.digest, [{ key: INDEX.resultSummariesComplete, value: STORED }]);
-  return { examined, written, complete: true };
 }

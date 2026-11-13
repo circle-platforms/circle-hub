@@ -18,7 +18,6 @@ import type { EngineContext } from './deps.ts';
 import {latestAccepted,listRunRecords,putAction,runById,submissionsOf,submissionByDigest,actionOfSubmission,actionsOf,isVerbatimObject} from './store.ts';
 import {saveResult} from './result-summary.ts';
 import { putRequest, recordResultRequests, requestRecords, requestRecordsIn, answerRequest, answerSuccessorRequests, requestKey, requestKeyOf, RequestBodySchema, type RequestBody, type RequestScope, type RequestView } from './requests.ts';
-import { restoreLegacyRequests,restoreRecordedRequests } from './maintenance-requests.ts';
 import { canFollow, clearRequestWork, noteChanges, noteDeadlines, noteRequests, noteVisit, requestsAwaitWork, type MaintenanceMemory } from './maintenance-memory.ts';
 
 /**
@@ -81,7 +80,6 @@ async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>,reservatio
   if(run.body.predecessor){const before=await runById(ctx.deps.records.store,run.body.predecessor);if(before)await answerSuccessorRequests(ctx,before.body,run);}
   await reconcileDispatch(ctx,run,reservations);
   await rootUpdateRequest(ctx,run);
-  await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));
   await recoverRun(ctx,run);
   await recoverParent(ctx,run);
   await ctx.lock(`submit:${run.body.run}`,()=>expireRun(ctx,run));
@@ -347,14 +345,6 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:[`rec:${latest.digest}`],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{dispatch_snapshot:signature,result:saved.digest}});
   });
 }
-
-async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRecord>):Promise<void>{
-  const latest=await latestAccepted(ctx.deps.records.store,stored.body.run);
-  if(!latest)return;
-  await restoreLegacyRequests(ctx,stored,latest);
-  await restoreRecordedRequests(ctx,stored,latest);
-}
-
 
 /** Cache identity contains only the safe status fields used by the projection, never remote error text or lease material. */
 function dispatchSnapshot(jobs:import('../../dispatch/api.ts').RunJob[]):string{
