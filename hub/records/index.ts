@@ -62,7 +62,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
   const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now,personalPayloads:store.personalPayloads });
   store.personalPayloads.beforePurge=(owner,by,tx)=>preserveTeamAttributions(store,objects,owner,by,tx,now);
-  const authorizations = new RecordAuthorizations(db, store, now);
+  const authorizations = new RecordAuthorizations(db, store, now, objects);
   const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
   const principals = new PgPrincipals(db, now, store);
   const teams = new PgTeams(db, store, objects, principals, authorizations, now);
