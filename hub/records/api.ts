@@ -658,6 +658,23 @@ export interface VaultSecretMaterial extends SecretCipherIdentity {
   metadata: VaultSecretMetadata;
   value: string;
 }
+export interface VaultArchiveEntry {
+  readonly entry: string;
+  readonly archived_entry: string;
+  readonly sealed_sha256: string;
+}
+export interface VaultArchiveReceipt {
+  readonly name: string;
+  readonly by: string;
+  readonly at: string;
+  readonly directory: string;
+  readonly previous_version: number | null;
+  readonly new_version: number;
+  readonly entries: readonly VaultArchiveEntry[];
+}
+export interface VaultSecretWriteResult extends VaultSecretMetadata {
+  readonly archive?: VaultArchiveReceipt;
+}
 export interface VaultSecretWrite {
   name: string;
   value: string;
@@ -670,7 +687,7 @@ export interface VaultSecretWrite {
 export interface Vault {
   /** Explicit key creation through the key provider. The vault never creates a key on its own. */
   initKey(): Promise<void>;
-  putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata>;
+  putSecret(input: VaultSecretWrite): Promise<VaultSecretWriteResult>;
   secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
   /** Authenticated identity only; does not open value ciphertext. Null when absent or revoked. */
   secretIdentity(name: string): Promise<SecretCipherIdentity | null>;

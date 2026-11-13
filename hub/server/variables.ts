@@ -579,6 +579,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
         const result = await kit.variables.setSecrets(by, inputs, reason, async tx => {await checkProductNames(tx);});
         for (const row of result) {
             s.out(secretVersionLine(row));
+            if (row.archive) s.out(`归档后重新设置：原条目 ${row.archive.entries.length} 个已保留于 ${row.archive.directory}；旧版本${row.archive.previous_version === null ? '无法核对，新序数从1开始' : '已核对'}，本次以新cipher身份记录`);
             if (short.has(row.name))
                 s.out(`${row.name} 使用短值；这样的值脱敏器遮不住、也找不出回显`);
         }
