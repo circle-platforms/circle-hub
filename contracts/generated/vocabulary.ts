@@ -47,7 +47,7 @@ export const AXES = {
   disposition: { label: '处置', owner: 'B07', values: [{ code: 'reconcile', label: '核对' }, { code: 'keep_unknown', label: '带期限的暂缓' }, { code: 'abandon', label: '放弃' }, { code: 'mark_failed', label: '标记失败' }, { code: 'compensate', label: '补偿' }, { code: 'complete', label: '补齐' }] },
   request_kind: { label: '请求种类', ui: '请求类型', owner: 'B07', values: [{ code: 'clarification', label: '澄清' }, { code: 'repair', label: '修复' }, { code: 'disposition', label: '处置', ui: '处置决策' }, { code: 'judgment', label: '判断', ui: '独立判定' }] },
   request_status: { label: '请求状态', owner: 'B07', values: [{ code: 'waiting', label: '等待回应中' }, { code: 'overdue', label: '已逾期' }, { code: 'answered', label: '已回答' }, { code: 'superseded', label: '已作废' }] },
-  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }] },
+  permission_kind: { label: '许可种类', ui: '许可类型', owner: 'B04', values: [{ code: 'publish', label: '发布记录' }, { code: 'assign', label: '工作流分配', ui: '使用范围' }, { code: 'publish_right', label: '发布权授予', ui: '维护人' }, { code: 'resource_config', label: '资源配置' }, { code: 'share', label: '分享' }, { code: 'resource_assign', label: '业务系统资源分配' }] },
   knowledge_layer: { label: '知识层', owner: 'K03', values: [{ code: 'tree', label: '树本身' }, { code: 'observation', label: '观察层' }, { code: 'contribution', label: '回注层' }] },
   entry_kind: { label: '知识条目种类', ui: '知识条目类型', owner: 'K02', values: [{ code: 'definition', label: '定义' }, { code: 'behaviour', label: '行为' }, { code: 'case', label: '用例' }, { code: 'defect', label: '缺陷' }, { code: 'observation', label: '观察' }, { code: 'procedure', label: '步骤' }, { code: 'pitfall', label: '常见误区' }] },
   node_level: { label: '节点位置', owner: 'K01', values: [{ code: 'trunk', label: '干', ui: '大类' }, { code: 'branch', label: '枝', ui: '分类' }, { code: 'leaf', label: '叶', ui: '条目' }] },
@@ -563,10 +563,10 @@ export function isRequestStatus(value: unknown): value is RequestStatus {
 }
 
 /** 许可种类 (B04) */
-export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share'] as const;
+export const PERMISSION_KIND = ['publish', 'assign', 'publish_right', 'resource_config', 'share', 'resource_assign'] as const;
 export type PermissionKind = (typeof PERMISSION_KIND)[number];
-export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '工作流分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
-export const PERMISSION_KIND_UI = { 'publish': '发布记录', 'assign': '使用范围', 'publish_right': '维护人', 'resource_config': '资源配置', 'share': '分享' } as const satisfies { readonly [K in PermissionKind]: string };
+export const PERMISSION_KIND_LABEL = { 'publish': '发布记录', 'assign': '工作流分配', 'publish_right': '发布权授予', 'resource_config': '资源配置', 'share': '分享', 'resource_assign': '业务系统资源分配' } as const satisfies { readonly [K in PermissionKind]: string };
+export const PERMISSION_KIND_UI = { 'publish': '发布记录', 'assign': '使用范围', 'publish_right': '维护人', 'resource_config': '资源配置', 'share': '分享', 'resource_assign': '业务系统资源分配' } as const satisfies { readonly [K in PermissionKind]: string };
 export const PermissionKindSchema = z.enum(PERMISSION_KIND);
 export function isPermissionKind(value: unknown): value is PermissionKind {
   return (PERMISSION_KIND as readonly unknown[]).includes(value);
