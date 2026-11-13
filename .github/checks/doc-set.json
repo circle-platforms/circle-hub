@@ -38,7 +38,8 @@
     "docs/index.md",
     "docs/protocols/knowledge-sync-v1.md",
     "docs/protocols/knowledge-sync-v1.zh-CN.md",
-    "docs/quickstart.md"
+    "docs/quickstart.md",
+    "docs/reset.md"
   ],
   "kept_internal": [
     "docs/Gemfile",
