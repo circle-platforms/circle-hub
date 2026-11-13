@@ -26,6 +26,37 @@ export const startOfDay = (time: number): number => {
   return d.getTime();
 };
 
+/** Shared load for the overview page and /console/api/overview (K4). */
+export interface OverviewWindow {
+  days: number;
+  now: number;
+  since: number;
+  runs: RunRecordView[];
+  more: boolean;
+  tasks: TaskRow[];
+}
+
+export async function loadOverviewWindow(ctx: PageContext, days: number): Promise<OverviewWindow> {
+  const now = (ctx.deps.now?.() ?? new Date()).getTime();
+  const since = startOfDay(now - (days - 1) * DAY);
+  const { runs, more } = await runsSince(ctx, since, RECENT_LIMIT);
+  const tasks = await loadTasks(ctx, runs);
+  return { days, now, since, runs, more, tasks };
+}
+
+/** One bucket per day in the window, oldest first. */
+export function overviewDayBuckets(tasks: readonly TaskRow[], days: number, now: number): { start: number; end: number; inDay: TaskRow[] }[] {
+  return Array.from({ length: days }, (_, i) => {
+    const start = startOfDay(now - (days - 1 - i) * DAY);
+    const end = i + 1 < days ? startOfDay(now - (days - 2 - i) * DAY) : Infinity;
+    const inDay = tasks.filter((task) => {
+      const t = Date.parse(task.run.started_at);
+      return t >= start && t < end;
+    });
+    return { start, end, inDay };
+  });
+}
+
 /** The runs that started since `since`, newest first, at most `limit`; `more` when the window holds others. */
 export async function runsSince(ctx: PageContext, since: number, limit: number): Promise<{ runs: RunRecordView[]; more: boolean }> {
   const runs: RunRecordView[] = [];
@@ -76,13 +107,12 @@ export function blockers(tasks: readonly TaskRow[]): { label: string; value: num
 }
 
 export async function overviewPage(ctx: PageContext): Promise<PageResult> {
-  const now = (ctx.deps.now?.() ?? new Date()).getTime();
   const raw = Number(ctx.url.searchParams.get('days') ?? '7');
   const days = (PERIODS as readonly number[]).includes(raw) ? raw : 7;
-  const since = startOfDay(now - (days - 1) * DAY);
-  const [{ runs, more }, titles] = await Promise.all([step('list-runs', () => runsSince(ctx, since, RECENT_LIMIT)), packTitles(ctx)]);
-  const tasks = await step('load-tasks', () => loadTasks(ctx, runs));
-  const today=tasks;
+  const [{ more, tasks, now, since }, titles] = await Promise.all([
+    step('list-runs', () => loadOverviewWindow(ctx, days)),
+    packTitles(ctx),
+  ]);
   const settled = tasks.filter((task) => task.result !== null && task.result !== 'awaiting');
   const passed = settled.filter((task) => task.result === 'passed').length;
   const pending = tasks.reduce((n, task) => n + task.pending, 0);
@@ -94,17 +124,14 @@ export async function overviewPage(ctx: PageContext): Promise<PageResult> {
   for (const request of requests) if (request.run) perRun.set(request.run, (perRun.get(request.run) ?? 0) + 1);
   // The four figures of the page; each says what it counts, and the first leads to the list it counts.
   const kpis = html`<section class="ch-tiles" data-overview-kpis>
-${tile(kpi('任务', count(today.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs', '查看任务列表')}
+${tile(kpi('任务', count(tasks.length), { unit: '个', note: `${scope}共 ${count(tasks.length)} 个${awaiting > 0 ? ` · ${uiLabelOf('task_result', 'awaiting')} ${count(awaiting)}` : ''}`, state: 'info' }), '/console/runs', '查看任务列表')}
 ${tile(kpi(uiLabelOf('task_result', 'passed'), settled.length === 0 ? '暂无数据' : count(passed), { unit: settled.length === 0 ? '' : `/ ${count(settled.length)}`, note: `已有结果的 ${count(settled.length)} 个任务中 ${count(passed)} 个`, state: settled.length===0?'idle':'ok' }))}
 ${tile(kpi('未决项', count(pending), { unit: '项', hint: '已交付结果中尚无结论的要求项', state: pending > 0 ? 'unknown' : 'idle', ...(pending > 0 ? { tone: 'unk' as const } : {}) }))}
 ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.length), { unit: '条', hint: '在接收人的客户端中处理', ...(kinds > 0 ? { note: `内容相同的归并后 ${count(kinds)} 类` } : {}), state: requests.length > 0 ? 'warn' : 'idle' }))}
 </section>`;
   // Each day's results: a column per day stacked by task result, the held result only while one exists.
-  const dayStarts = Array.from({ length: days }, (_, i) => startOfDay(now - (days - 1 - i) * DAY));
   const shown = TASK_RESULT.filter((result) => result !== 'held' || tasks.some((task) => task.result === 'held'));
-  const columns = dayStarts.map((start, i) => {
-    const end = i + 1 < dayStarts.length ? dayStarts[i + 1] : Infinity;
-    const inDay = tasks.filter((task) => { const t = Date.parse(task.run.started_at); return t >= start && t < end; });
+  const columns = overviewDayBuckets(tasks, days, now).map(({ start, inDay }) => {
     const d = new Date(start);
     return { label: `${d.getMonth() + 1}/${d.getDate()}`, parts: shown.map((result) => inDay.filter((task) => task.result === result).length), all: inDay.length, unread: inDay.filter((task) => task.result === null).length };
   });
