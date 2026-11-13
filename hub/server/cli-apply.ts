@@ -7,7 +7,7 @@ import { DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigur
 import { PackManifest } from '../../contracts/src/pack.ts';
 import { ResourceRecord } from '../../contracts/src/resources.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
-import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB } from '../records/api.ts';
+import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB, type RecordsConfig, type ConfigurationSnapshot } from '../records/api.ts';
 import { ExecutorRegistry } from '../dispatch/api.ts';
 import { jsonSafe } from './assemble/terminal.ts';
 import { variableCommand } from './variables.ts';
@@ -451,14 +451,32 @@ export interface ResetConfigurationPorts {
   restoreConfiguration(path: string): Promise<void>;
   applyDefinition(path: string): Promise<void>;
 }
-export interface ResetConfigurationOptions<State> extends ProtectedRoot {
+export interface DomainResetConfigurationOptions<State> extends ProtectedRoot {
   domain: ProtectedConfigurationDomain<State>;
   /** Existing public apply orchestration, bound to the new database and closed before resolving; reject on differences. */
   applyDefinition(path: string): Promise<void>;
 }
 
+/** Owner DSN for the same database name before and after reset; records opens and closes each operation's pool. */
+export interface CurrentResetConfigurationOptions {
+  config: RecordsConfig;
+  applyDefinition(path: string): Promise<void>;
+}
+export type ResetConfigurationOptions<State = ConfigurationSnapshot> = DomainResetConfigurationOptions<State> | CurrentResetConfigurationOptions;
+
 /** Composition entry for server/api: platform receives callbacks, and imports no server implementation. */
-export function createResetConfigurationPorts<State>(options: ResetConfigurationOptions<State>): ResetConfigurationPorts {
+export function createResetConfigurationPorts<State = ConfigurationSnapshot>(options: ResetConfigurationOptions<State>): ResetConfigurationPorts {
+  if ('config' in options) {
+    return createResetConfigurationPorts<ConfigurationSnapshot>({
+      dataDir: options.config.dataDir,
+      domain: {
+        capture: async () => (await import('../records/api.ts')).exportConfigurationSnapshot(options.config),
+        validate: async input => (await import('../records/api.ts')).validateConfigurationSnapshot(input),
+        restore: async snapshot => (await import('../records/api.ts')).restoreConfigurationSnapshot(options.config, snapshot),
+      },
+      applyDefinition: path => options.applyDefinition(path),
+    });
+  }
   return {
     exportConfiguration: async path => { await exportProtectedConfiguration(options, options.domain, path); },
     restoreConfiguration: async path => {
