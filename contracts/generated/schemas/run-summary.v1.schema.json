@@ -3,7 +3,7 @@
   "type": "object",
   "properties": {
     "pack_space": {
-      "description": "Personal workflow owner or team; absent on historical runs",
+      "description": "Publication namespace when the workflow names one",
       "anyOf": [
         {
           "type": "string",
@@ -21,7 +21,7 @@
       "const": true
     },
     "knowledge_spaces": {
-      "description": "Team and initiator personal knowledge versions frozen at start; absent on historical runs",
+      "description": "Team and initiator personal knowledge versions frozen when space storage is configured",
       "type": "object",
       "properties": {
         "team": {
@@ -85,7 +85,7 @@
       "description": "Skill package digests frozen at start; empty when no skills are used"
     },
     "feeding_offset": {
-      "description": "Append-only feeding horizon frozen with the root; missing on a historical run remains unknown",
+      "description": "Append-only feeding horizon frozen with the root when feeding storage is configured; omission provides no horizon",
       "type": "object",
       "properties": {
         "schema": {
@@ -1704,7 +1704,7 @@
       "pattern": "^run_[0-7][0-9a-hjkmnp-tv-z]{25}$"
     },
     "input_defaults": {
-      "description": "Hub-selected input defaults frozen at start_run; absent on explicit or historical bindings",
+      "description": "Hub-selected input defaults frozen at start_run; absent when no predecessor binding is selected",
       "minItems": 1,
       "type": "array",
       "items": {
