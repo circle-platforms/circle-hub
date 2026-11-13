@@ -67,6 +67,16 @@ test('real assembly shares assigned environment access with member projection an
   await hub.records.authorizations.unassignResource(admin, assigned.id, team.id);
   assert.equal(await environments.canUse(alice.principal, assigned.id), false);
   assert.deepEqual((await hub.deps.memberCapabilities(alice.principal)).environments, []);
+  const revoked = await hub.deps.memberCapabilities(admin, alice.principal.id);
+  assert.deepEqual(revoked.environments, []);
+  assert.equal(revoked.unattributed_holdings?.length, 1, 'revoked own booking survives independently from named environments');
+  assert.equal(revoked.unattributed_holdings?.[0].booking_run, run);
+  assert.equal(revoked.unattributed_holdings?.[0].target, null);
+  assert.equal(revoked.unattributed_holdings?.[0].assigned, false);
+  assert.equal(revoked.unattributed_holdings?.[0].can_use, false);
+  const after = await client.call('list_task_packs', {});
+  assert.deepEqual(after.structuredContent.member_capabilities, revoked, 'MCP preserves the same independent own-booking facts');
+  assert.equal(JSON.stringify(revoked).includes('已分配合成环境'), false, 'revocation cannot reveal a target via matching resource keys');
 });
 
 test('unassigned workflow count uses distinct current public publications and target permissions through revocation and retirement', { timeout: 60000 }, async t => {

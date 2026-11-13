@@ -35,6 +35,12 @@ export interface MemberCapabilities {
   skills: MemberPackCapability[];
   connections: MemberConnectionCapability[];
   environments: MemberEnvironmentCapability[];
+  /** Own bookings without a verified executor binding; null means the holding read is unknown. */
+  unattributed_holdings: Array<{
+    booking_run: string; since: string; until: string | null;
+    target: null; assigned: false; can_use: false;
+    assignment_reason: string; target_missing: string;
+  }> | null;
   environmentAccess: { ready: boolean; missing: string | null; nextAction: string | null };
   denials: Array<{ reason: string; nextAction: string }>;
 }
@@ -48,6 +54,7 @@ export interface MemberCapabilitySources {
   personalPackUse(by: Principal, owner: string, pack: string): Promise<boolean>;
   /** Only already-authorized environments and already-redacted holder names may cross this port. */
   environments(by: Principal): Promise<{ ready: boolean; items: readonly MemberEnvironmentCapability[]; missing: string | null; nextAction: string | null }>;
+  unattributedHoldings(by: Principal): Promise<MemberCapabilities['unattributed_holdings']>;
 }
 
 /** One read-only permission projection; caller and target are reloaded, and hidden candidates never become denials. */
@@ -64,7 +71,7 @@ export async function memberCapabilities(
   return withRequestPermissions(records.artifacts, target, async () => {
     const result: MemberCapabilities = {
       member: { name: target.name, enabled: !target.disabled && !target.deleted_at },
-      teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [], environments: [],
+      teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [], environments: [], unattributed_holdings: null,
       environmentAccess: { ready: false, missing: '尚未核对测试环境使用权限', nextAction: '请管理员核对测试环境使用权限接线' },
       denials: [],
     };
@@ -110,6 +117,12 @@ export async function memberCapabilities(
         name: holder.name, since: holder.since, until: holder.until, mine: holder.mine,
       })),
       missing: [...item.missing],
+    }));
+    const holdings = await sources.unattributedHoldings(target);
+    result.unattributed_holdings = holdings === null ? null : holdings.map(item => ({
+      booking_run: item.booking_run, since: item.since, until: item.until,
+      target: item.target, assigned: item.assigned, can_use: item.can_use,
+      assignment_reason: item.assignment_reason, target_missing: item.target_missing,
     }));
     result.workflows.sort((a, b) => a.ref.localeCompare(b.ref));
     result.skills.sort((a, b) => a.ref.localeCompare(b.ref));
