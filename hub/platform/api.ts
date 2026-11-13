@@ -56,7 +56,7 @@ export {
 export { checkHealth, HEALTH_PATH, waitForHealth, type HealthResult } from './health.ts';
 export { rehearse, type RehearsalReport } from './rehearse.ts';
 export { verifyPostgres, type VerifyResult } from './verify.ts';
-export { isPlatformCommand, main, PLATFORM_COMMANDS, runPlatformCommand, type PlatformIo } from './cli.ts';
+export { isPlatformCommand, main, platformCommands, PLATFORM_COMMAND_METADATA, PLATFORM_COMMANDS, runPlatformCommand, type PlatformCommand, type PlatformCommandMetadata, type PlatformIo } from './cli.ts';
 export { fdIsKeyPipe, liveKeyPipe, readKeyStdin, type KeyPipe } from './key-transfer.ts';
 export { deploymentKeyNames, ensureHubDatabase, hubKeyProvider } from './service.ts';
 export {
