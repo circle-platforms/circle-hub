@@ -1,3 +1,4 @@
+import { runById, canViewRun, readPackDirectory, packSchema } from '../../../../hub/runs/api.ts';
 import {createTestParserRegistry as createDefaultRegistry} from '../../../../hub/testing/parsers.ts';
 // The actual product producer and the generic reader use one frozen declaration, including literals beyond the former cap.
 import assert from 'node:assert/strict';
@@ -27,7 +28,7 @@ test('production and paged reading agree on all 150 drift literals, while ordina
   const literals=Array.from({length:150},(_,i)=>`demo missing${i}`);
   const manual=['# 合成章节','', '正文提及 `demo pool add` 与 `demo pool add HostName`。', '', '```', 'demo pool add HostName', ...literals, '```'].join('\n');
   external.set('site:tree:links',{bytes:tree,mediaType:'application/xml'});external.set('manual:cli:10.8.1',{bytes:manual,mediaType:'text/markdown'});
-  const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const knowledge=createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
   const build:KnownBuild={name:'Rel_FAMX_10_8_1_99',family:'FAMX',line:'10.8.1',base:'Rel_FAMX_10_8_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
   const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
   const warning=produced.warnings.find(text=>text.startsWith('链接声明 manual-literals'));
@@ -63,7 +64,7 @@ test('the fixed manual fixture has identical declared production drift and paged
   for(const variable of product.variables??[])await kit.variables.setVariable(admin,variable.name,variable.default,'合成关系测试显式部署设置');
   const handle:ProductHandle={id:'famx',version:JSON.parse(readFileSync(new URL('../pack.json',import.meta.url),'utf8')).version,digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   external.set('site:tree:links',{bytes:fixtureBytes('command-tree.xml'),mediaType:'application/xml'});external.set('manual:cli:10.8.1',{bytes:fixtureBytes('manual.md'),mediaType:'text/markdown'});
-  const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const knowledge=createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
   const build:KnownBuild={name:'Rel_FAMX_10_8_1_99',family:'FAMX',line:'10.8.1',base:'Rel_FAMX_10_8_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
   const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
   assert.deepEqual(produced.warnings.filter(warning=>warning.startsWith('链接声明 ')),[
@@ -89,7 +90,7 @@ test('an HTML tree source leaves manual literals unchecked in both production an
   const handle:ProductHandle={id:'famx',version:JSON.parse(readFileSync(new URL('../pack.json',import.meta.url),'utf8')).version,digest:createHash('sha256').update(readFileSync(new URL('../pack.json',import.meta.url))).digest('hex'),kind:'product',directory,product};packs.add(handle);
   external.set('site:tree:links',{bytes:'<html><body>synthetic unavailable tree</body></html>',mediaType:'text/html'});
   external.set('manual:cli:10.8.1',{bytes:'**demo pool add** *<name>*\n\n参考 `demo pool create` 和 `demo probe`。\n',mediaType:'text/markdown'});
-  const knowledge=createKnowledge({records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
+  const knowledge=createKnowledge({ runReads: { runById, canViewRun }, packReads: { readPackDirectory, packSchema },records:kit,parsers:createDefaultRegistry(),packs,external,jev:null,admin,sandbox:{requireOsIsolation:await osIsolationAvailable()}});
   const build:KnownBuild={name:'Rel_FAMX_10_8_1_99',family:'FAMX',line:'10.8.1',base:'Rel_FAMX_10_8_1_99',platform:null,built_at:null,released_at:null,sources:{tree:'site:tree:links'},root:null};
   const produced=await knowledge.produceTree({product:handle,build,by:admin});assert.ok(produced.ok,produced.reason??'');
   assert.ok(!produced.warnings.some(warning=>warning.includes('漂移事实')),produced.warnings.join('\n'));
