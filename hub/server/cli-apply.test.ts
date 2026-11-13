@@ -622,7 +622,8 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
     } finally { await input?.close(); }
   };
   const oldSetup = await child(['init-admin', '合成原管理员', '--password-stdin'], true);
-  assert.equal(oldSetup.code, 0, 'Original current-schema setup failed');
+  const setupDiagnostic = oldSetup.stderr.replaceAll(password, '[omitted]').replace(/[A-Za-z0-9_-]{43}/g, '[omitted-token]');
+  assert.equal(oldSetup.code, 0, 'Original current-schema setup failed: ' + setupDiagnostic);
   assert.equal(oldSetup.stdout.includes(password), false);
   const originals = await protectedFiles(layout);
   assert.ok(originals.some(file => file.area === 'keys'));
