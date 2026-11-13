@@ -223,5 +223,5 @@ PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。�
 
 ## Task page history window (B1, #200)
 
-The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (50) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
+The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (10) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
 
