@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { PackManifest } from '../../../contracts/src/pack.ts';
 import { DEFAULT_LIMITS } from '../../config/index.ts';
 import { migrateRecords, openRecords, canonicalBytes, digestOf } from '../../records/api.ts';
-import { createContext, postgresFor } from '../../platform/api.ts';
+import { createContext, postgresFor, nativeResetBackup, verifyBackup, restoreBackup } from '../../platform/api.ts';
 import { layoutAt, ensureLayout } from '../../platform/api.ts';
 import { newSettingsFile, writeSettingsFile } from '../../platform/api.ts';
 import { ensureDatabaseRunning } from '../../platform/api.ts';
@@ -83,6 +83,7 @@ for (const scope of ['history','knowledge','packs','config'] as const satisfies 
   assert.deepEqual(preview.blocked, []);
   const report = await resetData(f.context, request);
   assert.ok(report.archive); assert.ok(report.backup);
+  assert.equal((await verifyBackup(report.backup)).schema, 'circle-hub-backup@3');
   assert.deepEqual(await protectedFiles(f.layout), f.originals);
   await withSession(f.postgres.connector, f.postgres.target.database, async session => {
     for (const [kind, digest] of Object.entries(f.records)) {
@@ -173,4 +174,31 @@ test('reset counts distinguish logical records from table rows and expose unclas
   assert.deepEqual(result.counts.find(count => count.scope === 'config'), { scope: 'config', retained: 1, cleared: 0 });
   assert.deepEqual(result.counts.find(count => count.scope === 'knowledge'), { scope: 'knowledge', retained: 0, cleared: 1 });
   assert.equal(result.unclassifiedRetainedRecords, 1);
+});
+
+
+test('native reset backup restores with the public backup reader into another empty cluster', { timeout: 180_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const opaque = Buffer.from('synthetic immutable configuration');
+  await writeFile(join(f.layout.config, 'synthetic-reset.json'), opaque, { mode: 0o600 });
+  const backup = await nativeResetBackup(f.context, f.postgres);
+  const manifest = await verifyBackup(backup.directory);
+  assert.equal(manifest.schema, 'circle-hub-backup@3');
+  for (const area of ['objects', 'vault', 'config']) assert.ok(manifest.files.some(file => file.path.startsWith(area + '/')), area);
+  assert.ok(!manifest.files.some(file => file.path.startsWith('keys/')));
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
+  const parent = await mkdtemp(join(tmpdir(), 'chr-restore-')), layout = layoutAt(join(parent, 'data'));
+  await ensureLayout(layout);
+  const databasePort = socketPort();
+  const context = createContext({ CIRCLE_HUB_DATA_DIR: layout.root }, { home: parent, layout, libpqBin: libpq, database: { ...f.context.database, port: databasePort } });
+  const postgres = postgresFor(context);
+  t.after(async () => { await postgres.stop(); await rm(parent, { recursive: true, force: true }); });
+  const report = await restoreBackup({ layout, backupDir: backup.directory, postgres, libpqBin: libpq });
+  assert.equal(report.tables, manifest.database.tables.length);
+  assert.equal(report.privileges, manifest.database.application_role.privileges.length);
+  assert.deepEqual(await readFile(join(layout.config, 'synthetic-reset.json')), opaque);
+  for (const file of manifest.files.filter(file => file.path.startsWith('vault/') || file.path.startsWith('objects/'))) {
+    assert.deepEqual(await readFile(join(layout.root, file.path)), await readFile(join(f.layout.root, file.path)));
+  }
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
 });

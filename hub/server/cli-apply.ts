@@ -7,7 +7,7 @@ import { DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigur
 import { PackManifest } from '../../contracts/src/pack.ts';
 import { ResourceRecord } from '../../contracts/src/resources.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
-import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB, type RecordsConfig, type ConfigurationSnapshot } from '../records/api.ts';
+import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB, isAdmin, type RecordsConfig, type ConfigurationSnapshot } from '../records/api.ts';
 import { ExecutorRegistry } from '../dispatch/api.ts';
 import { jsonSafe } from './assemble/terminal.ts';
 import { variableCommand } from './variables.ts';
@@ -189,7 +189,12 @@ export interface DeploymentReport { created: number; skipped: number; missingCon
 
 export async function applyDeployment(session: Session, input: unknown, base = session.ctx.io.cwd): Promise<DeploymentReport> {
   const definition = parseDeployment(input);
-  const by = await session.admin(), records = await session.records(), hub = await session.hub(false, true);
+  const records = await session.records();
+  if (!(await records.principals.list()).some(isAdmin)) throw new CliError(
+    '数据库里还没有管理员，不能应用部署定义；本次没有改动配置',
+    '先运行 circle-hub init-admin [<名字>] --password-stdin（从标准输入读取非空密码），再运行 circle-hub apply <部署定义.json>；init-admin 会替换上一个库留下的操作令牌，无需删除令牌文件',
+  );
+  const by = await session.admin(), hub = await session.hub(false, true);
   const packs = await loadPacks(session, definition, base);
   const current = await exportDeployment(session);
   const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration, syncTasks: [], syncCurrent: [] };
