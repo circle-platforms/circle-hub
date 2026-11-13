@@ -4,19 +4,13 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { DigestRuleSchema } from '../../../contracts/generated/vocabulary.ts';
 import { UserId, IsoTime, Sha256 } from '../../../contracts/src/common.ts';
-import { VariableName } from '../../../contracts/src/variables.ts';
+import { VariableName, SecretMetadataFile, type SecretRecord } from '../../../contracts/src/variables.ts';
 import { recordDigest } from '../../records/api.ts';
 import { sha256File } from '../files.ts';
 import { fields, type OldRecord, type UpgradeIssue } from './state.ts';
 
-export interface UpgradeSecretMetadata {
-  schema: 'secret@1'; name: string; entry: string; digest_rule: string; length: number;
-  version: number; set_by: string | null; set_at: string | null; revoked: boolean;
-}
-export interface UpgradeSecretFile {
-  name: string;
-  versions: Array<{ metadata: UpgradeSecretMetadata; sealed_entry: string; sealed_sha256: string | null; current: boolean }>;
-}
+export type UpgradeSecretMetadata = SecretRecord;
+export type UpgradeSecretFile = SecretMetadataFile;
 export interface MetadataResult { files: UpgradeSecretFile[]; issues: UpgradeIssue[]; }
 export interface MetadataSource {
   definition(hash: string): Promise<Uint8Array>;
@@ -63,7 +57,7 @@ export async function exportSecretMetadata(decisions: readonly OldRecord[], sour
         previous = row.digest;
         if (decision.revoked) {
           if (!versions.length) throw new Error();
-          revoked = true; continue;
+          revoked = true; versions.at(-1)!.metadata.revoked = true; continue;
         }
         if (typeof decision.bound !== 'string') throw new Error();
         const bytes = await source.definition(decision.bound);
@@ -72,15 +66,17 @@ export async function exportSecretMetadata(decisions: readonly OldRecord[], sour
         if (old.schema !== 'secret@1' || old.name !== name || typeof old.entry !== 'string' || !new RegExp('^secret\\.' + name.toLowerCase() + '\\.[a-f0-9]{24}$').test(old.entry) || !DigestRuleSchema.safeParse(old.digest_rule).success || !Number.isInteger(old.length) || Number(old.length) < 1 || Number(old.length) > 4096) throw new Error();
         if (!UserId.safeParse(decision.decided_by).success || !IsoTime.safeParse(decision.decided_at).success) throw new Error();
         const fingerprint = await source.sealedFingerprint(old.entry);
-        versions.push({ metadata: { schema: 'secret@1', name, entry: 'secret.' + name.toLowerCase(), digest_rule: String(old.digest_rule), length: Number(old.length), version: versions.length + 1, set_by: String(decision.decided_by), set_at: String(decision.decided_at), revoked: false }, sealed_entry: old.entry, sealed_sha256: fingerprint, current: false });
+        versions.push({ metadata: { schema: 'secret@1', name, entry: 'secret.' + name.toLowerCase(), digest_rule: DigestRuleSchema.parse(old.digest_rule), length: Number(old.length), version: versions.length + 1, set_by: String(decision.decided_by), set_at: String(decision.decided_at), revoked: false }, sealed_entry: old.entry, sealed_sha256: fingerprint, current: false });
         revoked = false;
       } catch { issue(row, '旧密钥的版本、摘要规则、设置事实或原件身份不完整'); }
     }
     if (!versions.length) continue;
     const last = versions.at(-1)!;
     last.current = true; last.metadata.revoked = revoked;
-    if (!revoked && last.sealed_sha256 === null) issue(rows.at(-1)!, '现行密钥原密文文件缺失');
-    files.push({ name, versions });
+    if (!revoked && last.sealed_sha256 === null) { issue(rows.at(-1)!, '现行密钥原密文文件缺失'); continue; }
+    const file = SecretMetadataFile.safeParse({ name, versions });
+    if (file.success) files.push(file.data);
+    else issue(rows.at(-1)!, '派生元数据不合C12唯一格式');
   }
   return { files, issues };
 }
