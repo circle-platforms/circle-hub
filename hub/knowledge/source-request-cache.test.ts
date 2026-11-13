@@ -91,17 +91,28 @@ test('a finished permission scope cannot lend a shared source to detached work a
 for (const readScope of [false, true]) {
   const scope = readScope ? 'a read scope and request permissions' : 'request permissions without a read scope';
 
-  test(`an explicit account disable retires readable source bytes inside ${scope}`, async t => {
+  test(readScope ? `an explicit account disable retires readable source bytes inside ${scope}`
+    : 'account disable reloads under frozen permission-only identity until the request ends', async t => {
     const w = await fixture(t);
+    const calls = readScope ? undefined : countSources(t, w);
     const read = () => w.spaces.source(w.owner, w.artifact.body.sha256, undefined, 'model', w.artifact.digest);
     const request = () => withRequestPermissions(w.kit.artifacts, w.owner, async () => {
       assert.ok((await read())?.bytes, 'establish a successful source proof before the destructive write');
       const disabled = await w.kit.principals.setDisabled(w.admin, w.owner.id, true);
       assert.equal(disabled.disabled, true, 'the explicit write completed in this same async context');
-      assert.equal(await read(), null, 'a disabled subject must not regain cached bytes before this request ends');
+      if (readScope) assert.equal(await read(), null, 'a disabled subject must not regain cached bytes before this request ends');
+      else {
+        assert.ok((await read())?.bytes, 'permission-only requests retain their start-of-request identity');
+        assert.equal(calls!.length, 2, 'the destructive write clears source values, not the frozen permission snapshot');
+      }
     });
     if (readScope) await withReadScope(request);
-    else await request();
+    else {
+      await request();
+      await withRequestPermissions(w.kit.artifacts, w.owner, async () => {
+        assert.equal(await read(), null, 'the next request must observe the disabled account');
+      });
+    }
   });
 
   test(`an explicit personal purge retires readable source bytes inside ${scope}`, async t => {
@@ -157,6 +168,26 @@ test('equal bytes in private captures do not share a proof across captures or ac
   assert.equal(calls.filter(([by, , options]) => by.id === w.owner.id && options?.record === w.artifact.digest).length, 1);
   assert.ok(calls.some(([by, , options]) => by.id === w.owner.id && options?.record === privateOther.digest));
   assert.ok(calls.some(([by, , options]) => by.id === w.other.id && options?.record === w.artifact.digest));
+});
+
+test('mutating a pending source principal cannot authorize another private capture or poison the caller cache', async t => {
+  const w = await fixture(t);
+  const privateOther = await w.capture(w.other, 'synthetic-call-time-principal');
+  assert.equal(privateOther.body.sha256, w.artifact.body.sha256);
+  assert.notEqual(privateOther.digest, w.artifact.digest);
+  assert.equal(await w.kit.artifacts.source(w.owner, privateOther.body.sha256, { record: privateOther.digest }), null);
+  assert.ok((await w.kit.artifacts.source(w.other, privateOther.body.sha256, { record: privateOther.digest }))?.bytes);
+  await withRequestPermissions(w.kit.artifacts, w.owner, async () => {
+    const by: Principal = { id: w.owner.id, name: w.owner.name, role: w.owner.role };
+    const pending = w.spaces.source(by, privateOther.body.sha256, undefined, 'model', privateOther.digest);
+    by.id = w.other.id;
+    by.name = w.other.name;
+    by.role = w.other.role;
+    const first = await pending;
+    const repeated = await w.spaces.source(w.owner, privateOther.body.sha256, undefined, 'model', privateOther.digest);
+    assert.deepEqual({ first, repeated }, { first: null, repeated: null },
+      'authorization uses the invocation principal and the owner cache cannot retain another actor\'s private capture');
+  });
 });
 
 test('a role change cannot reuse the previous role proof even for the same account and capture', async t => {
