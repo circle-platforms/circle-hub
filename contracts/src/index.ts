@@ -37,7 +37,7 @@ export * from './contributions.ts';
 export * from './feeding.ts';
 export * from './records.ts';
 export * from './variables.ts';
-export { RESET_SCOPE, ResetScopeSchema, ResetScopesSchema } from './reset.ts';
+export { RESET_SCOPE, RESET_SCOPE_LABEL, RESET_ALL_LABEL, ResetScopeSchema, ResetScopesSchema } from './reset.ts';
 export type { ResetScope, ResetScopes } from './reset.ts';
 export { DeploymentResource, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt } from './deployment.ts';
 export * from './annotations.ts';
