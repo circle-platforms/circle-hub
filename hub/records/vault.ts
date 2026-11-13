@@ -3,9 +3,9 @@
 // is never created implicitly. A key-check file tells a wrong key apart from an altered entry.
 import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { KeyProvider, Vault, VaultVerification, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWrite } from './api.ts';
+import type { KeyProvider, Vault, VaultVerification, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWrite, VaultSecretWriteResult, VaultArchiveReceipt } from './api.ts';
 import { VariableName, SecretRecord, SecretSidecar, SecretMetadataFile } from '../../contracts/src/variables.ts';
 import { isDigestRule } from '../../contracts/generated/vocabulary.ts';
 import { VaultError, VaultReadinessError, type VaultReadinessIssue, isVaultReadBoundaryError, unexpectedVaultReadError } from './errors.ts';
@@ -81,10 +81,14 @@ const SECRET_QUEUES = new Map<string, Promise<unknown>>();
 export class FileVault implements Vault {
   readonly directory: string;
   readonly #provider: KeyProvider | undefined;
+  readonly #move: typeof rename;
+  readonly #writeReceipt: typeof writeFile;
 
-  constructor(directory: string, provider?: KeyProvider) {
+  constructor(directory: string, provider?: KeyProvider, move: typeof rename = rename, writeReceipt: typeof writeFile = writeFile) {
     this.directory = directory;
     this.#provider = provider;
+    this.#move = move;
+    this.#writeReceipt = writeReceipt;
   }
 
   #secretEntry(name: string): string {
@@ -94,7 +98,7 @@ export class FileVault implements Vault {
   #metadataVault(): FileVault { return new FileVault(join(this.directory, 'metadata'), this.#provider); }
 
   #metadataFailure(name: string, entry: string, missing: readonly string[], reason: string): VaultReadinessError {
-    return new VaultReadinessError([{ name, entry, missing, reason, next_action: `缺少可信元数据会阻断完整脱敏；请联系数据所有者或从旧备份恢复原设置事实，恢复 vault/metadata/${this.#secretEntry(name)}.sealed 后重试；完全无依据时不要猜版本、重设同名或新建主密钥` }]);
+    return new VaultReadinessError([{ name, entry, missing, reason, next_action: `管理员持有值时可执行 circle-hub secret set --name ${name} --reason <理由>（值从标准输入）；未认证旧条目会归档保留并记录“归档后重新设置”，无可信旧版本时新序数从1开始、以新cipher身份区分。若有可信原事实，也可先恢复 vault/metadata/${this.#secretEntry(name)}.sealed；不猜版本，不运行 key init` }]);
   }
 
   async #metadataFile(name: string): Promise<SecretMetadataFile | null> {
@@ -106,7 +110,7 @@ export class FileVault implements Vault {
       let values: string[];
       try { values = (await this.list()).filter(candidate => candidate.startsWith(entry + '.') && /^[a-f0-9]{24}$/.test(candidate.slice(entry.length + 1))); }
       catch (error) { if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError(); throw this.#metadataFailure(name, entry, ['inventory'], '无法列出该名字的封存条目'); }
-      if (values.length) throw new VaultReadinessError(values.map(value => ({ name, entry: value + '.sealed', missing: ['metadata', 'version', 'current', 'digest_rule', 'set_by', 'set_at'], reason: '封存缺少认证元数据；不能从文件时间推断版本或原设置事实', next_action: `请联系数据所有者或从旧备份恢复可信原设置事实，再恢复 vault/metadata/${entry}.sealed（version/current/digest_rule，原人/时刻确实未知才null）；完全无依据时仍阻断完整脱敏，不猜版本、不用新名set冒充已恢复、不新建主密钥` })));
+      if (values.length) throw new VaultReadinessError(values.map(value => ({ name, entry: value + '.sealed', missing: ['metadata', 'version', 'current', 'digest_rule', 'set_by', 'set_at'], reason: '封存缺少认证元数据；不能从文件时间推断版本或原设置事实', next_action: `管理员持有值时可执行 circle-hub secret set --name ${name} --reason <理由>（标准输入提供值）；程序归档保留原条目并审计“归档后重新设置”，不伪造旧版本。若有可信原设置事实，可恢复 vault/metadata/${entry}.sealed 后重试；不要猜版本或新建主密钥` })));
       return null;
     }
     let text: string | null;
@@ -277,11 +281,71 @@ export class FileVault implements Vault {
     return out;
   }
 
-  async putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata> {
+  async #archiveAndSet(input: VaultSecretWrite, previous: SecretMetadataFile | null): Promise<VaultSecretWriteResult> {
+    const logical = this.#secretEntry(input.name);
+    const next = (previous?.versions.at(-1)?.metadata.version ?? 0) + 1;
+    const metadata: VaultSecretMetadata = { schema: 'secret@1', name: input.name, entry: logical, version: next, digest_rule: input.digest_rule, length: [...input.value].length, set_by: input.set_by, set_at: input.set_at, revoked: false };
+    if (!SecretRecord.safeParse(metadata).success || !metadata.set_by || !metadata.set_at) throw new VaultError('设置人的身份或时间不合认证元数据规则；没有归档');
+    await this.#key();
+    const originals = (await this.list()).filter(entry => entry.startsWith(logical + '.') && /^[a-f0-9]{24}$/.test(entry.slice(logical.length + 1))).map(entry => ({ source: this.#path(entry), entry: entry + '.sealed', folder: 'values' }));
+    if (await this.#metadataVault().has(logical)) originals.push({ source: join(this.directory, 'metadata', logical + '.sealed'), entry: 'metadata/' + logical + '.sealed', folder: 'metadata' });
+    if (!originals.length) throw new VaultError('没有可归档的原条目；未重新设置');
+    const directory = 'archive/' + randomBytes(16).toString('hex');
+    const target = join(this.directory, directory);
+    await mkdir(join(this.directory, 'archive'), { recursive: true, mode: 0o700 });
+    await mkdir(target, { mode: 0o700 });
+    await mkdir(join(target, 'values'), { mode: 0o700 });
+    await mkdir(join(target, 'metadata'), { mode: 0o700 });
+    const planned = [];
+    for (const original of originals) {
+      const bytes = await readVerifiedFile(original.source, MAX_SEALED_BYTES);
+      const basename = original.entry.slice(original.entry.lastIndexOf('/') + 1);
+      planned.push({ ...original, destination: join(target, original.folder, basename), archived_entry: directory + '/' + original.folder + '/' + basename, sealed_sha256: createHash('sha256').update(bytes.bytes).digest('hex') });
+    }
+    const receipt: VaultArchiveReceipt = { name: input.name, by: input.set_by, at: input.set_at, directory, previous_version: previous?.versions.at(-1)?.metadata.version ?? null, new_version: next, entries: planned.map(({ entry, archived_entry, sealed_sha256 }) => ({ entry, archived_entry, sealed_sha256 })) };
+    const receiptPath = join(target, 'receipt.json');
+    await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, ...receipt }), { mode: 0o600 });
+    const moved: typeof planned = [];
+    const entry = logical + '.' + randomBytes(12).toString('hex');
+    let published = false;
+    try {
+      for (const file of planned) {
+        await this.#move(file.source, file.destination);
+        moved.push(file);
+        const archived = await readVerifiedFile(file.destination, MAX_SEALED_BYTES);
+        if (createHash('sha256').update(archived.bytes).digest('hex') !== file.sealed_sha256) throw new VaultError('归档文件与原密文身份不符');
+      }
+      await this.put(entry, input.value);
+      const cipher = await readVerifiedFile(this.#path(entry), MAX_SEALED_BYTES);
+      const rows: SecretMetadataFile['versions'] = (previous?.versions ?? []).map(row => ({ ...row, current: false, sealed_sha256: null }));
+      rows.push({ metadata, sealed_entry: entry, sealed_sha256: createHash('sha256').update(cipher.bytes).digest('hex'), current: true });
+      await this.#writeMetadata({ name: input.name, versions: rows });
+      published = true;
+      await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: true, ...receipt }), { mode: 0o600 });
+      return { ...metadata, archive: receipt };
+    } catch {
+      if (published) throw new VaultError(`新值与认证元数据已发布，但归档收据完成标记未写成；原件保留于 ${directory}，本次未完成审计，不得视为成功`);
+      let restored = true;
+      try { await this.remove(entry); } catch { restored = false; }
+      for (const file of [...moved].reverse()) {
+        try { await this.#move(file.destination, file.source); } catch { restored = false; }
+      }
+      try { await this.#writeReceipt(receiptPath, JSON.stringify({ operation: '归档后重新设置', completed: false, restored, ...receipt }), { mode: 0o600 }); } catch { restored = false; }
+      if (!restored) throw new VaultError(`归档后重新设置未完成，原active条目未全部恢复；请管理员依据 ${directory}/receipt.json 恢复，原件未删除，不得视为成功`);
+      throw new VaultError('归档后重新设置未完成；已恢复同名原active文件，未发布新元数据，请修复故障后重试');
+    }
+  }
+
+  async putSecret(input: VaultSecretWrite): Promise<VaultSecretWriteResult> {
     const logical = this.#secretEntry(input.name);
     if (!isDigestRule(input.digest_rule) || typeof input.value !== 'string' || !input.value.isWellFormed() || /[\x00-\x1f\x7f-\x9f]/.test(input.value) || [...input.value].length < 1 || [...input.value].length > 4096) throw new VaultError('密钥值或摘要规则不合规则');
     return this.#changeSecret(input.name, async () => {
-      const previous = await this.#metadataFile(input.name);
+      let previous: SecretMetadataFile | null = null;
+      try { previous = await this.#metadataFile(input.name); if (previous) await this.recentSecrets([input.name]); }
+      catch (error) {
+        if (!(error instanceof VaultReadinessError)) throw error;
+        return this.#archiveAndSet(input, previous);
+      }
       const metadata: VaultSecretMetadata = { schema: 'secret@1', name: input.name, entry: logical, version: (previous?.versions.at(-1)?.metadata.version ?? 0) + 1, digest_rule: input.digest_rule, length: [...input.value].length, set_by: input.set_by, set_at: input.set_at, revoked: false };
       if (!SecretRecord.safeParse(metadata).success || !metadata.set_by || !metadata.set_at) throw new VaultError('设置人的身份或时间不合认证元数据规则');
       const entry = logical + '.' + randomBytes(12).toString('hex');
@@ -399,7 +463,7 @@ export class FileVault implements Vault {
   }
 
   /**
-   * Authenticate every entry without writing key-check or revealing names or values. Writers must be stopped while this
+   * Authenticate every active entry without writing key-check or revealing names or values. Writers must be stopped while this
    * runs: metadata checks detect changes during the scan, but cannot freeze an unrelated process after the last check.
    */
   async verify(): Promise<VaultVerification> {
@@ -415,7 +479,7 @@ export class FileVault implements Vault {
       if (!before.isDirectory() || before.isSymbolicLink()) throw new Error('invalid directory');
       const files = (await readdir(this.directory)).sort();
       const names = files.filter(file => file.endsWith(SUFFIX) && NAME.test(file.slice(0, -SUFFIX.length)));
-      result.failed += files.length - names.length - (files.includes(KEY_CHECK) ? 1 : 0) - (files.includes('metadata') ? 1 : 0);
+      result.failed += files.length - names.length - (files.includes(KEY_CHECK) ? 1 : 0) - (files.includes('metadata') ? 1 : 0) - (files.includes('archive') ? 1 : 0);
       if (files.includes('metadata')) {
         const nested = await this.#metadataVault().verify();
         result.checked += nested.checked;

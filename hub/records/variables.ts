@@ -3,7 +3,7 @@ import { isAdmin } from './permissions.ts';
 import { createHash } from 'node:crypto';
 import { OrdinaryVariableName, VariableName, VariableRecord, VariableValue, validateSecret, referencesIn, resolve as resolveValue, type OrdinaryVariableUse } from '../../contracts/src/variables.ts';
 import { isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
-import type { Principal, Principals, RecordStore, ObjectStore, Vault, Authorizations, AuthorizationRecord, Transaction, Page, VaultSecretMetadata, VaultSecretMaterial } from './api.ts';
+import type { Principal, Principals, RecordStore, ObjectStore, Vault, Authorizations, AuthorizationRecord, Transaction, Page, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWriteResult } from './api.ts';
 import { canonicalBytes, canonicalize } from './canonical.ts';
 import { parseStrictJson } from './strict-json.ts';
 import { scanForCredentials } from './scan.ts';
@@ -147,11 +147,11 @@ export class RecordVariables {
         this.#prepared.set(prepared, writes);
         return prepared;
     }
-    async #auditSecret(by: Principal, metadata: VaultSecretMetadata, reason: string, tx: Transaction): Promise<void> {
-        const audit = await this.#p.objects.put(canonicalBytes({ name: metadata.name, by: by.id, at: this.#now().toISOString() }), 'application/json');
+    async #auditSecret(by: Principal, metadata: VaultSecretWriteResult, reason: string, tx: Transaction): Promise<void> {
+        const audit = await this.#p.objects.put(canonicalBytes({ name: metadata.name, by: by.id, at: this.#now().toISOString(), ...(metadata.archive ? { operation: '归档后重新设置', archive: metadata.archive } : {}) }), 'application/json');
         await this.#p.authorizations.configureResourceInTransaction(by, 'secret:' + metadata.name, audit.sha256, reason, tx, metadata.revoked);
     }
-    async commitSecrets(by: Principal, prepared: PreparedSecrets, tx: Transaction, validate?: (tx: Transaction) => Promise<void>): Promise<VaultSecretMetadata[]> {
+    async commitSecrets(by: Principal, prepared: PreparedSecrets, tx: Transaction, validate?: (tx: Transaction) => Promise<void>): Promise<VaultSecretWriteResult[]> {
         await this.assertAdmin(by);
         const writes = this.#prepared.get(prepared);
         if (!writes) throw new VariableError('密钥准备结果不是本次可信输入；请重新设置');
@@ -159,9 +159,9 @@ export class RecordVariables {
         await this.lockNames(writes.map(v => v.name), tx);
         for (const write of writes) await this.#kindFree(write.name, 'secret', tx);
         await validate?.(tx);
-        const out: VaultSecretMetadata[] = [];
+        const out: VaultSecretWriteResult[] = [];
         for (const write of writes) {
-            let metadata: VaultSecretMetadata;
+            let metadata: VaultSecretWriteResult;
             try { metadata = await this.#p.vault.putSecret({ name: write.name, value: write.value, digest_rule: write.digest_rule!, set_by: by.id, set_at: this.#now().toISOString() }); }
             catch (error) { throw new VariableError((out.length ? '部分密钥库已更新；' : '') + (error instanceof VaultError ? error.message : '密钥库写入未完成；请核对主密钥、封存文件及缺失元数据')); }
             try { await this.#auditSecret(by, metadata, prepared.reason, tx); }
@@ -170,7 +170,7 @@ export class RecordVariables {
         }
         return out;
     }
-    async setSecrets(by: Principal, input: readonly SecretWrite[], reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<VaultSecretMetadata[]> {
+    async setSecrets(by: Principal, input: readonly SecretWrite[], reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<VaultSecretWriteResult[]> {
         const prepared = await this.prepareSecrets(by, input, reason);
         let vaultUpdated = false;
         try { return await this.#p.store.withTransaction(async tx => { const result = await this.commitSecrets(by, prepared, tx, validate); vaultUpdated = true; return result; }); }
@@ -180,7 +180,7 @@ export class RecordVariables {
         await this.assertAdmin(by);
         name = this.#name(name, 'secret');
         const note = validateChangeReason(reason, (await this.#p.vault.recentSecrets()).map(v => v.value));
-        let metadata: VaultSecretMetadata;
+        let metadata: VaultSecretWriteResult;
         try { metadata = await this.#p.vault.unsetSecret(name, by.id, this.#now().toISOString()); }
         catch { throw new VariableError('密钥名字不存在、主密钥无法解开或封存元数据缺失；撤回未完成'); }
         try { await this.#p.store.withTransaction(tx => this.#auditSecret(by, metadata, note, tx)); }
