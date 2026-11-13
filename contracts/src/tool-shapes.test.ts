@@ -38,11 +38,12 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
       invalid: [{ why: 'kind outside the vocabulary', value: { kind: 'plugin' } }, { why: 'misspelled key', value: { knd: 'workflow' } }],
     },
     output: {
-      valid: [{ why: 'packs', value: { ...ok, packs: [packSummary] } }, { why: 'error with the empty list', value: { ...failed(), packs: [] } }],
+      valid: [
+        { why: 'extra key', value: { ...ok, packs: [], total: 1 } },
+{ why: 'packs', value: { ...ok, packs: [packSummary] } }, { why: 'error with the empty list', value: { ...failed(), packs: [] } }],
       invalid: [
         { why: 'an error answer that lists packs', value: { ...failed(), packs: [packSummary] }, refinement: true },
         { why: 'an error without a code', value: { ...ok, call_result: 'error', packs: [] }, refinement: true },
-        { why: 'extra key', value: { ...ok, packs: [], total: 1 } },
       ],
     },
   },
@@ -92,6 +93,8 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
     },
     output: {
       valid: [
+        { why: 'run with an unknown key', value: { ...ok, run: { ...summary, phase: 'running' } } },
+
         { why: 'the run', value: { ...ok, run: summary } },
         { why: 'the run with the result the Hub computed', value: { ...ok, run: summary, result: { reference: `rec:${H}`, counts: { delivered: 3, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 } } } },
         { why: 'neutral answer', value: failed() },
@@ -101,7 +104,6 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
         { why: 'a result without a run', value: { ...failed(), result: { reference: `rec:${H}`, counts: { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } }, refinement: true },
         { why: 'a result that points at a source', value: { ...ok, run: summary, result: { reference: `src:${H}`, counts: { delivered: 0, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 } } } },
         { why: 'an error with a run', value: { ...failed(), run: summary }, refinement: true },
-        { why: 'run with an unknown key', value: { ...ok, run: { ...summary, phase: 'running' } } },
       ],
     },
   },
@@ -176,6 +178,8 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
     },
     output: {
       valid: [
+        { why: 'result with an unknown key', value: { ...ok, acceptance: 'accepted', result: { ...accepted, items: [] }, counts: acceptedCounts() } },
+
         { why: 'accepted', value: { ...ok, trace: TRACE2, acceptance: 'accepted', result: accepted, counts: acceptedCounts() } },
         { why: 'not accepted, validated against the run', value: { ...failed(notAccepted.errors[0]), acceptance: 'not_accepted', result: notAccepted } },
         { why: 'neutral answer for an absent or unavailable run (D05 R[3])', value: { ...failed(), acceptance: 'not_accepted' } },
@@ -192,7 +196,6 @@ const CASES: Record<string, { input: Sides; output: Sides }> = {
           value: { ...ok, acceptance: 'accepted', result: { ...accepted, partitions: { ...accepted.partitions, rejected: [{ ...(accepted.partitions.delivered[0] as object), code: 'x' }] } }, counts: acceptedCounts() },
           refinement: true,
         },
-        { why: 'result with an unknown key', value: { ...ok, acceptance: 'accepted', result: { ...accepted, items: [] }, counts: acceptedCounts() } },
         { why: 'result bound to a malformed run id', value: { ...failed(malformedRun), acceptance: 'not_accepted', result: { ...notAccepted, run: 'run_123' } } },
         { why: 'receipt missing', value: failed() },
       ],
@@ -230,6 +233,22 @@ describe('tool shapes: zod and the published schema agree', () => {
       });
     }
   }
+  test('every output preserves root and nested error extensions while inputs stay strict', () => {
+    for (const tool of TOOLS) {
+      const value = { ...failed({ ...unavailable, future_detail: { nested: ['synthetic'] } }), future_result: { extra: true },
+        ...(tool.name === 'list_task_packs' ? { packs: [] } : {}),
+        ...(tool.name === 'resolve_reference' ? { references: [], diagnostics: [] } : {}),
+        ...(tool.name === 'upload_file' || tool.name === 'submit_result' ? { acceptance: 'not_accepted' } : {}),
+      };
+      assert.deepEqual(tool.output.parse(value), value, tool.name);
+      assert.equal(validators.get(tool.name)!.output(value).valid, true, tool.name);
+      const input = CASES[tool.name].input.valid[0].value as object;
+      assert.equal(tool.input.safeParse({ ...input, future_argument: true }).success, false, tool.name);
+    }
+    const value = { ...ok, run: { ...summary, requirements: summary.requirements.map(row => ({ ...row, future_rule: { retained: true } })) } };
+    assert.deepEqual(TOOLS.find(tool => tool.name === 'start_run')!.output.parse(value), value);
+    assert.equal(validators.get('start_run')!.output(value).valid, true);
+  });
   test('a protocol error never needs invented run, lock or digest values (D05 R[3], T03 R[3])', () => {
     const submit = TOOLS.find((t) => t.name === 'submit_result');
     const neutral = { ...failed(), acceptance: 'not_accepted' };
