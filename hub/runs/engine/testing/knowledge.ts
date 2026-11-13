@@ -1,3 +1,4 @@
+import {isAdmin} from '../../../records/api.ts';
 // Fakes of the product registry (PacksPort) and the knowledge base (KnowledgePort) for the engine's tests: two toy product
 // lines, one known by two names whose second family's builds are aliases of the first's, builds with and without roots, and
 // a closed command catalog per root.
@@ -120,7 +121,7 @@ export class FakePacks implements PacksPort {
     return [...this.handles];
   }
   async readableProducts(user: Principal): Promise<ReadonlySet<string>> {
-    if (user.role === 'admin' || this.readable === null) return new Set(this.handles.map((h) => h.product.id));
+    if (isAdmin(user) || this.readable === null) return new Set(this.handles.map((h) => h.product.id));
     return this.readable;
   }
 }

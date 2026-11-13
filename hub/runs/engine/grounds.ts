@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 // Current audience and withdrawal checks are views; historical submissions and validation records are never rewritten.
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { ValidationResult } from '../../../contracts/src/validation.ts';
@@ -207,7 +208,7 @@ export async function summaryReadableBy(ctx:EngineContext,run:RunRecord,summary:
 
 /** Request instances retain run-owner/administrator scope and never lend a private submission's diagnostics. */
 export async function requestReadable(ctx:EngineContext,by:Principal,request:RequestBody):Promise<boolean>{
-  if(!request.run)return by.role==='admin'||request.audience===by.id;
+  if(!request.run)return isAdmin(by)||request.audience===by.id;
   // The answer rests on the run and on what issued the request, and a result issues its requests by the dozen: it is
   // worked out once for the pair within a read, not once a request.
   return queryRead(ctx,['request-readable',by,request.run,request.source] as const,()=>issuedReadable(ctx,by,{run:request.run!,source:request.source}));

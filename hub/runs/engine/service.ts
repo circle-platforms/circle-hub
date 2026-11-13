@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import { createDocumentCache } from '../../refs/api.ts';
 import { background } from '../../telemetry/api.ts';
 import {withQueryReads} from './query-scope.ts';
@@ -118,7 +119,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       return withDocuments(ctx,context,current=>startRun(current,user,input,context,{host:'local_circle'}),user);
     },
     async startHubRun(configurer, input, context) {
-      if (configurer.role !== 'admin') return refused([unavailableError('/pack')]);
+      if (!isAdmin(configurer)) return refused([unavailableError('/pack')]);
       return withDocuments(ctx,context,current=>startRun(current,configurer,input,context,{host:'hub'}),configurer);
     },
     submitResult(user, args, context) {
@@ -133,7 +134,7 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     exportRun(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
         const detail = await getRun(current, user, run);
-        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        if (!detail || (!isAdmin(user) && detail.run.runner !== user.id)) return null;
         const result = detail.latest?.result.acceptance === 'accepted' ? detail.latest.result : null;
         const submission = result ? (await submissionByDigest(current.deps.records.store, run, result.submission))?.body ?? null : null;
         return { run: detail.run, result, submission };
@@ -142,15 +143,15 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
     exportJobs(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
         const detail = await getRun(current, user, run);
-        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        if (!detail || (!isAdmin(user) && detail.run.runner !== user.id)) return null;
         return { run, jobs: await exportedJobs(current, run) };
       }));
     },
     exportSuccessors(user, run) {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
         const detail = await getRun(current, user, run);
-        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
-        const visible = (await successorsOf(current.deps.records.store, run)).map((stored) => stored.body).filter((r) => user.role === 'admin' || r.runner === user.id);
+        if (!detail || (!isAdmin(user) && detail.run.runner !== user.id)) return null;
+        const visible = (await successorsOf(current.deps.records.store, run)).map((stored) => stored.body).filter((r) => isAdmin(user) || r.runner === user.id);
         return { run, successors: visible.map((r) => ({ run: r.run, pack: r.pack, started_at: r.started_at, predecessor: r.predecessor ?? null, parameters: r.parameters, sources: (r.sources ?? []).map((source) => ({ slot: source.slot ?? null, reference: source.reference })) })) };
       }));
     },

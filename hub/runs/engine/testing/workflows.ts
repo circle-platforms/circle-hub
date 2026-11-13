@@ -1,3 +1,4 @@
+import {isAdmin} from '../../../records/api.ts';
 // A fake WorkflowStore for the engine's tests: packs loaded from directories written by packs.ts and validated against the
 // pack file formats, assignments by user, the exact version by digest. The real registry is hub/runs/packs.
 import { createHash } from 'node:crypto';
@@ -68,7 +69,7 @@ export class FakeWorkflowStore implements WorkflowStore {
     const id = at < 0 ? ref : ref.slice(0, at);
     const version = at < 0 ? null : ref.slice(at + 1);
     if (this.#withdrawn.has(id)) return null;
-    if (user.role !== 'admin' && !this.#assigned.get(user.id)?.has(id)) return null;
+    if (!isAdmin(user) && !this.#assigned.get(user.id)?.has(id)) return null;
     const versions = this.#versions.get(id) ?? [];
     const selected=(version === null ? versions[versions.length - 1] : versions.find((v) => v.pack.version === version)) ?? null;
     if(selected?.pack.space&&selected.pack.space!=='team')await this.freezePersonal?.(selected);
@@ -83,7 +84,7 @@ export class FakeWorkflowStore implements WorkflowStore {
     const versions = this.#versions.get(id) ?? [];
     if (versions.length === 0 || version !== null && !versions.some((v) => v.pack.version === version)) return 'unknown';
     if (this.#withdrawn.has(id)) return 'withdrawn';
-    if (user.role !== 'admin' && !this.#assigned.get(user.id)?.has(id)) return 'unassigned';
+    if (!isAdmin(user) && !this.#assigned.get(user.id)?.has(id)) return 'unassigned';
     return null;
   }
 

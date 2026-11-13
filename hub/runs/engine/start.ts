@@ -1,3 +1,4 @@
+import {isAdmin} from '../../records/api.ts';
 import {groundsAudience,guardedRecords} from './grounds.ts';
 import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
@@ -133,8 +134,8 @@ export async function contextLeases(ctx: EngineContext, workflow: LoadedWorkflow
   };
   return {now:ctx.now().toISOString(),entries:await Promise.all(rows.map(async row=>({key:row.key,since:row.since,until:row.until,run:row.run,mine:false,
     jobs:jobs.filter(job=>job.key===row.key).map(job=>job.job),
-    ...(user.role==='admin'||registered.some(r=>r.owner===user.id&&row.key.startsWith(r.prefix))?{holder:await identity(row.user)}:{})}))),
-    registrations:await Promise.all(registered.map(async row=>({prefix:row.prefix,mine:row.owner===user.id,...(user.role==='admin'?{owner:await identity(row.owner)}:{})})))};
+    ...(isAdmin(user)||registered.some(r=>r.owner===user.id&&row.key.startsWith(r.prefix))?{holder:await identity(row.user)}:{})}))),
+    registrations:await Promise.all(registered.map(async row=>({prefix:row.prefix,mine:row.owner===user.id,...(isAdmin(user)?{owner:await identity(row.owner)}:{})})))};
 }
 
 /**
@@ -228,14 +229,14 @@ export async function grantLeases(
     }
     if(request.op==='unregister'){
       const owner=registered.find(row=>row.prefix===request.prefix);
-      if(!owner || user.role!=='admin'&&owner.owner!==user.id)refuse('LEASE_UNAVAILABLE','这个前缀不能由你注销','由主人或管理员带理由注销');
+      if(!owner || !isAdmin(user)&&owner.owner!==user.id)refuse('LEASE_UNAVAILABLE','这个前缀不能由你注销','由主人或管理员带理由注销');
       if((await service.view(request.prefix)).entries.length)refuse('LEASE_UNAVAILABLE','这个前缀还有未释放的租约','先强制释放，或等它释放');
       continue;
     }
     if(request.op==='force_release'){
       if(!request.reason.trim())refuse('LEASE_UNAVAILABLE','强制释放须写理由','reason 写用户原话');
       for(const key of keys){
-        if(user.role!=='admin'&&!registered.some(row=>row.owner===user.id&&key.startsWith(row.prefix)))refuse('LEASE_UNAVAILABLE','这些键不在你登记的前缀下','由主人或管理员带理由强制释放');
+        if(!isAdmin(user)&&!registered.some(row=>row.owner===user.id&&key.startsWith(row.prefix)))refuse('LEASE_UNAVAILABLE','这些键不在你登记的前缀下','由主人或管理员带理由强制释放');
         const row=rows.find(r=>r.key===key);
         if(!row||row.released||(row.expires_at!==null&&Date.parse(row.expires_at)<=now.getTime()))refuse('LEASE_UNAVAILABLE','要强制释放的键没有未释放的租约','重新读取当前占用再决定是否释放');
       }
@@ -259,7 +260,7 @@ export async function grantLeases(
   try{
     for(const request of requests){
       if(request.op==='register'||request.op==='unregister'){
-        const outcome=request.op==='register'?await service.register({prefix:request.prefix,declaredPrefix:prefix,owner:user.id,by:user.id,reason:'用户登记'}):await service.unregister({prefix:request.prefix,by:user.id,admin:user.role==='admin',reason:request.reason});
+        const outcome=request.op==='register'?await service.register({prefix:request.prefix,declaredPrefix:prefix,owner:user.id,by:user.id,reason:'用户登记'}):await service.unregister({prefix:request.prefix,by:user.id,admin:isAdmin(user),reason:request.reason});
         if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取登记状态，注销前先强制释放，或等它释放');
         done.push({op:request.op,prefix:request.prefix,owner:outcome.owner});
       }
@@ -267,7 +268,7 @@ export async function grantLeases(
         const outcome=await service.forceRelease({keys:request.keys,by:user.id,reason:request.reason,guard:async()=>{
           const jobs=await ctx.deps.leaseJobs!(request.keys);
           if(jobs.length)refuse('LEASE_UNAVAILABLE','作业 '+jobs.map(job=>job.job).join('、')+' 还没有终态，本地释放停不了网关上的作业','等它结束，或者请管理员用 circle-hub job status 看、用 job dispose 处置');
-        },...(user.role==='admin'?{}:{owner:user.id})});
+        },...(isAdmin(user)?{}:{owner:user.id})});
         if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取占用和登记后再决定是否释放');
         done.push({op:'force_release',keys:request.keys,reason:request.reason,until:outcome.until,previous_holders:rows.filter(r=>request.keys.includes(r.key)).map(r=>({key:r.key,run:r.run}))});
       }
