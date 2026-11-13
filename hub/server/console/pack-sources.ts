@@ -7,6 +7,7 @@ import type { PageContext } from './context.ts';
 import { byId, shownVersion, stateOf } from './packs.ts';
 import {box,sectionHead} from './ui.ts';
 import {panel as card,badge as chip,technical,tooltip} from './presentation.ts';
+import { count } from './components.ts';
 
 /**
  * The catalog remains the permission boundary; declarations and connections only enrich already-visible rows.
@@ -27,7 +28,7 @@ export async function packSources(ctx: PageContext, kind: Extract<PackKind, 'pro
   const id = kind === 'product' ? 'product-sources' : 'system-sources';
   const empty = `当前账户没有可见的${uiLabelOf('pack_kind', kind)}`, last = kind === 'product' ? '产品线' : '对应的业务系统';
   if (options.bare) return liveModule(id, ['pack.published'], box(null, table([tooltip('名称', packPurpose(kind)), '状态', last], rows, empty), { flush: true }));
-  return liveModule(id, ['pack.published'], html`${sectionHead(uiLabelOf('pack_kind', kind), `${packs.length} 个`, undefined, id,
+  return liveModule(id, ['pack.published'], html`${sectionHead(uiLabelOf('pack_kind', kind), `${count(packs.length)} 个`, undefined, id,
     kind === 'product' ? '当前账户可见的产品知识来源；产品线取当前启用版本的声明，暂不可读时显示破折号' : '当前账户可见的业务系统接入；对应系统取已有连接，不发出业务系统请求')}
 <p class="ch-meta">${packPurpose(kind)}</p>${card(null, table(['名称', '版本', '状态', last], rows, empty))}`);
 }

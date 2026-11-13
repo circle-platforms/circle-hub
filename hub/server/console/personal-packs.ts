@@ -46,7 +46,7 @@ async function personalPackReturn(ctx:PageContext,packId:string,kindHint?:PackKi
   const found=listings.find(row=>row.id===packId&&row.space===ctx.principal.id)??listings.find(row=>row.id===packId);
   const kind=found?.kind??kindHint;
   const place=kind==='skill'?PACK_PLACES.skill:PACK_PLACES.workflow;
-  const detail=found?packPath(found):place.path+'/'+encodeURIComponent(packId);
+  const detail=found?packPath(found):(kind==='skill'?skillPath(packId):workflowPath(packId));
   return {list:place.path,detail};
 }
 export async function performPersonalPackAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined},staging:PackStaging,upload?:{bytes:Buffer}):Promise<string>{
