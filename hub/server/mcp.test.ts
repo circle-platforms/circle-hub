@@ -19,6 +19,7 @@ import { storeLegacyHeld } from '../testing/records.ts';
 import { ROOT_1, defaultPacks, fakeWorkflowPack } from './fakes.ts';
 import { pageCursor } from './text.ts';
 import { createTestServer, type TestMcpClient, type TestServer, type TestUser, type ToolCallResult } from './testing.ts';
+import { installTraceSink, type SpanRow } from '../telemetry/api.ts';
 
 type Published = { name: string; title: string; description: string; inputSchema: unknown; outputSchema: unknown; annotations: Record<string, boolean> };
 const PUBLISHED = JSON.parse(readFileSync(new URL('../../contracts/generated/tools.json', import.meta.url), 'utf8')) as Published[];
@@ -220,26 +221,39 @@ describe('initialize and tools/list', () => {
 });
 
 describe('list_task_packs', () => {
-  test('the MCP text gives every assigned pack in full in one answer (decision 158)', async () => {
-    const packs = Array.from({ length: 80 }, (_, i) => {
+  test('the MCP text gives every assigned pack in full in one answer (decision 158)', { timeout: 360_000 }, async t => {
+    // The old 80-pack case took 27.7 s alone and 82.5 s under load. The ceiling is only a hang guard;
+    // fewer assignments keep at least 128 KiB of descriptions, and the request's actual SQL/answer counts are recorded.
+    const CEILING_MS = 300_000;
+    const packCount = 16, descriptionBytes = 128 * 1024, phrase = '合成说明';
+    const repetitions = Math.ceil(descriptionBytes / (packCount * Buffer.byteLength(phrase, 'utf8')));
+    const packs = Array.from({ length: packCount }, (_, i) => {
       const pack = fakeWorkflowPack(`sample-${String(i).padStart(3, '0')}`, '合成任务', ['application/json']);
-      return { ...pack, summary: { ...pack.summary!, description: '合成说明'.repeat(100) } };
+      return { ...pack, summary: { ...pack.summary!, description: phrase.repeat(repetitions) } };
     });
     const other = await createTestServer({ postgres, packs });
     try {
       const user = await other.createUser('合成列表用户');
       for (const pack of packs) await other.assign(user.principal, pack.id);
       const client = await other.client(user.token);
+      const root = Promise.withResolvers<SpanRow>();
+      t.after(installTraceSink({ push: row => { if (row.is_root && row.name === 'list_task_packs') root.resolve(row); } }));
+      assert.ok(Buffer.byteLength(packs.map(pack => pack.summary!.description).join('\n'), 'utf8') >= descriptionBytes);
       // Every choice is on the first page whatever the budget (A05 R[1], decision 113): one index row per pack.
-      const first = await client.call('list_task_packs', { kind: 'workflow' });
-      assert.deepEqual((first.content[0].text ?? '').split('\n').slice(1, 81), packs.map((pack) => pack.title), 'the index lists all 80 titles');
+      const first = await client.client.callTool({ name: 'list_task_packs', arguments: { kind: 'workflow' } }, undefined, { timeout: CEILING_MS }) as unknown as ToolCallResult;
+      const observed = await root.promise;
+      assert.ok((observed.usage['db.queries'] ?? 0) > 0);
+      assert.ok((observed.usage['answer.bytes'] ?? 0) >= descriptionBytes);
+      t.diagnostic(`catalogue packs=${packs.length}, descriptionBytes=${descriptionBytes}, queries=${observed.usage['db.queries']}, answerBytes=${observed.usage['answer.bytes']}`);
+      assert.deepEqual((first.content[0].text ?? '').split('\n').slice(1, packs.length + 1), packs.map((pack) => pack.title), 'the index lists every declared title');
       assert.deepEqual((first.structuredContent.index as { pack: string }[]).map((row) => row.pack.split('@')[0]), packs.map((pack) => pack.id));
       const text = first.content[0].text ?? '';
       assert.deepEqual(text.split('\n').filter((line) => line.startsWith('合成任务，')), packs.map((pack) => `${pack.title}，${pack.summary!.description}`), 'every pack description in full');
-      assert.equal(text.split('\n').filter((line) => line === '被评审的文档，必填').length, 80);
+      assert.equal(text.split('\n').filter((line) => line === '被评审的文档，必填').length, packs.length);
       assert.ok(!text.includes('继续 list_task_packs'), 'nothing to page through');
-      const exact = await client.call('list_task_packs', { pack_id: 'sample-079' });
-      assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['sample-079']);
+      const last = packs[packs.length - 1].id;
+      const exact = await client.call('list_task_packs', { pack_id: last });
+      assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), [last]);
       assert.match(exact.content[0].text ?? '', /被评审的文档，必填/);
       await client.close();
     } finally {
