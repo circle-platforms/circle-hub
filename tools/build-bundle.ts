@@ -1,7 +1,7 @@
 // Builds the release bundle of one platform (owner decision 123): `node tools/build-bundle.ts --platform <platform>
 // --out <dir> [--version <x.y.z>] [--node <vX.Y.Z>] [--commit <rev>]`. The bundle is a tar.gz holding one directory
 // `circle-hub-<version>-<platform>/` with
-//   app/         git archive of the commit (without foundation/ and references/) and `npm ci --include=dev` for the
+//   app/         git archive of the commit and `npm ci --include=dev` for the
 //                target platform (`--os` and `--cpu`: the PostgreSQL binaries are a dev dependency per platform);
 //   node/        bin/node and LICENSE of the official Node.js build, checked against the release's SHASUMS256.txt;
 //   bundle.json  version, commit, platform, Node version and the tree digest of app/ (hub/platform bundleTreeDigest).

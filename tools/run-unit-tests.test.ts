@@ -10,7 +10,6 @@ const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 
 // Tracked test files that no runner picks up on purpose, each with the reason. Everything else must be run.
 const NOT_RUN:Array<[pattern:string,reason:string]>=[
- ['foundation/**/*.test.ts','frozen Circle baseline: its own test setup, never changed or run here (AGENTS.md)'],
  ['docs/hub-r4-research/adoc-sandbox/prototype.test.ts','research prototype: needs an explicit public-registry download first (docs/hub-r4-research/adoc-sandbox.md)'],
 ];
 
@@ -18,7 +17,7 @@ const NOT_RUN:Array<[pattern:string,reason:string]>=[
 function scriptFiles():string[]{
  const scripts=(JSON.parse(readFileSync(resolve(ROOT,'package.json'),'utf8')) as {scripts:Record<string,string>}).scripts;
  const files:string[]=[...acceptanceFiles()];
- for(const name of ['test:docs','test:references']){
+ for(const name of ['test:docs']){
   const patterns=[...scripts[name].matchAll(/"([^"]+\.test\.ts)"|(\S+\.test\.ts)/g)].map(match=>match[1]??match[2]);
   assert.ok(patterns.length>0,`${name} names no test files`);
   for(const pattern of patterns)files.push(...globSync(pattern,{cwd:ROOT}));
@@ -125,5 +124,5 @@ test('every tracked test file is run by a runner or listed as not run, with its 
  const orphans=tracked.filter(file=>!run.has(file)&&!excluded.has(file));
  assert.deepEqual(orphans,[],'add these to a runner (tools/run-unit-tests.ts UNIT_PATTERNS, tools/run-acceptance-tests.ts ACCEPTANCE_PATTERNS or a package.json test script) or to NOT_RUN with a reason');
  for(const file of excluded)assert.equal(run.has(file),false,`${file} is both run and listed as not run`);
- for(const file of ['tests/acceptance/oracle/oracle.test.ts','tests/acceptance/oracle/differential.test.ts','tools/slot-schema.test.ts','tests/fixtures/recompose/checks.test.ts','.github/checks/workflow.test.ts','tools/verify-reference-archive.test.ts'])assert.ok(run.has(file),file);
+ for(const file of ['tests/acceptance/oracle/oracle.test.ts','tests/acceptance/oracle/differential.test.ts','tools/slot-schema.test.ts','tests/fixtures/recompose/checks.test.ts','.github/checks/workflow.test.ts'])assert.ok(run.has(file),file);
 });

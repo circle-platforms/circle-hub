@@ -4,9 +4,9 @@ The project's own code, documentation, synthetic samples and interface assets ar
 
 ## The shared Circle baseline
 
-`foundation/circle` comes from the public Circle commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100`. Its bytes, its [MIT license](foundation/circle/LICENSE) and its [third-party notices](foundation/circle/THIRD_PARTY_NOTICES.md) are kept as they were.
+Code adapted from the Circle baseline derives from the public [Circle repository](https://github.com/qingshanfeihu/circle) at commit `9d23c09a0f8de2f71920b32b23db9af6c9a41100` (previously mirrored locally under `foundation/circle`, removed from the working tree on 2026-11-13). Its [MIT license](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/LICENSE) and [third-party notices](https://github.com/qingshanfeihu/circle/blob/9d23c09a0f8de2f71920b32b23db9af6c9a41100/THIRD_PARTY_NOTICES.md) remain in effect for adapted and historical content.
 
-The compressed model catalogs in its `src/data/` contain metadata derived from models.dev; the original MIT notice and copyright are in the third-party notices named above. Keep that notice when adopting or distributing this content.
+The compressed model catalogs in `src/data/` of that upstream baseline (and earlier Git history) contain metadata derived from models.dev; the original MIT notice and copyright are in the third-party notices linked above. Keep that notice when adopting or distributing that content.
 
 Circle's earlier Git history is kept as well. The licenses and notices of each historical version belong to their source; the current root files do not replace them.
 
@@ -28,7 +28,7 @@ The root package's current direct dependencies are `@modelcontextprotocol/sdk@1.
 
 Exact versions, download integrity and transitive dependencies are in the root `package-lock.json`. ExcelJS's uuid dependency is pinned by an override to `11.1.1`, which supports the same CommonJS v4 API and fixes the out-of-bounds advisory that npm audit reported; the lockfile currently has no reported vulnerability. A composition check describes the dependencies of this moment and promises nothing about future advisories. No `node_modules` and no server artifact is included.
 
-The historical lockfiles of the shared baseline and of the reference packages still record their original dependencies; they are not used by the Hub's entry points.
+The historical lockfiles of the shared baseline and of the reference packages in earlier Git history recorded their original dependencies; they were removed from the working tree and are not used by the Hub's entry points.
 
 When adopting a module, check the dependencies actually used, and ship the corresponding licenses and notices with the artifact. Special cases in the current lockfiles are jszip's license choice, pako's MIT/Zlib, lightningcss's MPL-2.0 and caniuse-lite's CC-BY-4.0. None of them can be turned into the project's license.
 

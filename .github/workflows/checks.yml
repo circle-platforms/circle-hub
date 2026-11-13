@@ -8,7 +8,7 @@ name: Hub checks
 # runner writes (JUNIT_REPORT), to compare with the measured durations that balance the shards, and keep that report for 14
 # days. The macOS paths (sandbox-exec, plutil, launchd) run in macos.yml on every push to main, nightly and on
 # demand, and in the local macOS run of each phase (AGENTS.md).
-# A pull request runs the fast jobs only: Types, Generated contracts match the model, Docs and CI checks, Reference archive.
+# A pull request runs the fast jobs only: Types, Generated contracts match the model, Docs and CI checks.
 # The heavy jobs (the unit, acceptance and Linux isolation shards) run in the merge queue, on the commit that becomes main,
 # and on every push to main. On a pull request their aggregates (Unit tests, Acceptance on a temporary PostgreSQL, Linux
 # isolation) are skipped, which a required check counts as passed; in the merge queue and on main each requires every shard.
@@ -283,15 +283,3 @@ jobs:
       - name: Count what ran and what was skipped
         if: ${{ !cancelled() }}
         run: node .github/checks/test-summary.ts "$RUNNER_TEMP/docs.log" 'Docs and CI checks'
-
-  references:
-    name: Reference archive
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: '24'
-      - run: npm run verify:references
-      - run: npm run test:references
