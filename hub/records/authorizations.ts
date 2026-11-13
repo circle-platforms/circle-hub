@@ -7,8 +7,8 @@ import {mayUsePersonalPack} from './personal-packs.ts';
 // (permission, subject, object) wins. Every decision names the record it follows (`supersedes`), so it is a distinct record
 // even when it repeats an earlier one in the same millisecond. A permission is not evidence, and a passed check is not a
 // permission (B04 R[0]).
-import { TeamId, TeamAssignmentSubject } from '../../contracts/api.ts';
-import { PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
+import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from '../../contracts/api.ts';
+import { idOf, PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
 import type { PermissionKind, PermissionRole } from '../../contracts/generated/vocabulary.ts';
@@ -34,6 +34,11 @@ import { digestOf, isSha256 } from './digest.ts';
 import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 import { captureRequestPermissions, capturePermissionSnapshots, requestPermissions } from './request-permissions.ts';
+
+const EnvironmentId = idOf('exe');
+function resourceSubject(subject: string, resource: string): string {
+  return EnvironmentId.safeParse(resource).success ? ResourceAssignmentSubject.parse(subject) : TeamAssignmentSubject.parse(subject);
+}
 
 const PUBLISH: PermissionKind = 'publish';
 const ASSIGN: PermissionKind = 'assign';
@@ -263,10 +268,10 @@ export class RecordAuthorizations implements Authorizations {
     return this.revoke(by,{permission:ASSIGN,subject:TeamId.parse(team),object:packId(pack),note:reason});
   }
   async assignResource(by: Principal, resource: string, subject: string, options: {expiresAt?:string|null;note?:string|null} = {}): Promise<AuthorizationRecord> {
-    return this.grant(by,{permission:'resource_assign',subject:TeamAssignmentSubject.parse(subject),object:term(resource,'resource'),...options});
+    return this.grant(by,{permission:'resource_assign',subject:resourceSubject(subject,resource),object:term(resource,'resource'),...options});
   }
   async unassignResource(by: Principal, resource: string, subject: string, reason?:string|null): Promise<AuthorizationRecord> {
-    return this.revoke(by,{permission:'resource_assign',subject:TeamAssignmentSubject.parse(subject),object:term(resource,'resource'),note:reason});
+    return this.revoke(by,{permission:'resource_assign',subject:resourceSubject(subject,resource),object:term(resource,'resource'),note:reason});
   }
 
   async teamsOf(by: Principal, kind: 'pack' | 'resource', object: string): Promise<{teams:import('./teams.ts').Team[];all:boolean}> {
@@ -374,7 +379,7 @@ export class RecordAuthorizations implements Authorizations {
         const assignment=(subject===WHOLE_HUB||UserId.safeParse(subject).success||TeamId.safeParse(subject).success)&&PackId.safeParse(object).success;
         if(!registration&&!membership&&!assignment)throw new TypeError('invalid assignment tuple');
       }
-      if(permission==='resource_assign')TeamAssignmentSubject.parse(subject);
+      if(permission==='resource_assign')resourceSubject(subject,object);
       const decider = await this.#decider(by, tx);
       if (published !== null) {
         if (revoked) {
