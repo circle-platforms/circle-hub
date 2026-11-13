@@ -31,12 +31,14 @@
     "docs/design/en/object-standard.md",
     "docs/design/generic-model.md",
     "docs/design/object-standard.md",
+    "docs/edit-pack.md",
     "docs/hub-linux-deploy.md",
     "docs/hub-r4-guide.md",
     "docs/hub-r4-progress.md",
     "docs/index.md",
     "docs/protocols/knowledge-sync-v1.md",
-    "docs/protocols/knowledge-sync-v1.zh-CN.md"
+    "docs/protocols/knowledge-sync-v1.zh-CN.md",
+    "docs/quickstart.md"
   ],
   "kept_internal": [
     "docs/Gemfile",

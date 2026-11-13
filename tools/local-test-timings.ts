@@ -30,7 +30,6 @@ export const LOCAL_ACCEPTANCE_SECONDS: Readonly<Record<string, number>> = {
   'tests/acceptance/44-r5-t5-1-webui.test.ts': 81.640780,
   'tests/acceptance/41-r5-t1t3-acceptance.test.ts': 78.736173,
   'tests/acceptance/21-model-violations.test.ts': 76.756881,
-  'tests/acceptance/59-held-source-observation.test.ts': 69.795456,
   'tests/acceptance/42-r5-t4-2-operations.test.ts': 68.317338,
   'tests/acceptance/58-bed-install.test.ts': 61.922968,
   'tests/acceptance/60-device-help.test.ts': 52.965453,
