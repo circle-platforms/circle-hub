@@ -1,7 +1,3 @@
-import { createRebuildHandler } from './rebuild-http.ts';
-import { isAdmin } from '../records/api.ts';
-import { cookiesOf } from './http.ts';
-import { SESSION_COOKIE, SECURE_SESSION_COOKIE } from './console/session.ts';
 // The HTTP surface of the Hub: POST /mcp, the console under /console, the MCP standard authorization (the metadata under
 // /.well-known and the endpoints under /oauth, hub/server/oauth.ts) and GET /healthz, on a loopback address unless the
 // configuration declares the allowed hosts; the same routes also over the built-in HTTPS when it is configured (a second
