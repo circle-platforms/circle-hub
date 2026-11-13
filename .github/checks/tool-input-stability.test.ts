@@ -101,6 +101,35 @@ describe('compareInputSchemas', () => {
 });
 
 describe('buildBaseline', () => {
+  it('recurses into anyOf and oneOf branches', () => {
+    const built = buildBaseline([
+      {
+        name: 'demo',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            choice: { anyOf: [{ type: 'object', properties: { a: { type: 'string' } } }, { type: 'object', properties: { b: { type: 'integer' } } }] },
+            free: { type: 'object', additionalProperties: { anyOf: [{ type: 'object', properties: { deep: { type: 'string' } } }] } },
+            either: { oneOf: [{ type: 'object', properties: { c: { type: 'boolean' } } }] },
+          },
+        },
+      },
+    ]);
+    assert.deepEqual(built.demo.fields, {
+      choice: 'any',
+      'choice.anyOf[0]': 'object',
+      'choice.anyOf[0].a': 'string',
+      'choice.anyOf[1]': 'object',
+      'choice.anyOf[1].b': 'integer',
+      either: 'any',
+      'either.oneOf[0]': 'object',
+      'either.oneOf[0].c': 'boolean',
+      free: 'object',
+      'free.*.anyOf[0]': 'object',
+      'free.*.anyOf[0].deep': 'string',
+    });
+  });
+
   it('flattens nested objects, arrays, and the required list', () => {
     const built = buildBaseline([
       {

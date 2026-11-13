@@ -48,6 +48,19 @@ function collectFields(schema: unknown, prefix: string, out: Record<string, stri
     }
   }
   if (node.items !== undefined) collectFields(node.items, `${prefix}[]`, out);
+  if (node.additionalProperties !== null && typeof node.additionalProperties === 'object') {
+    collectFields(node.additionalProperties, `${prefix}.*`, out);
+  }
+  for (const key of ['anyOf', 'oneOf'] as const) {
+    const branches = node[key];
+    if (Array.isArray(branches)) {
+      branches.forEach((branch, index) => {
+        const path = prefix === '' ? `${key}[${index}]` : `${prefix}.${key}[${index}]`;
+        out[path] = schemaTypeName(branch);
+        collectFields(branch, path, out);
+      });
+    }
+  }
 }
 
 function requiredSet(schema: unknown): Set<string> {
@@ -126,7 +139,7 @@ export function violationLines(violations: readonly InputViolation[]): string[] 
 }
 
 const UPDATE_HINT =
-  '六个工具的输入格式是不变契约；确经批准的变更用 node .github/checks/tool-input-stability.ts --update-baseline 重录基线，并让合约所有者评审生成的差异。';
+  '六个工具的输入格式是不变契约；更新基线等于宣布一次不兼容的改动，要所有者的决定。确经批准的变更用 node .github/checks/tool-input-stability.ts --update-baseline 重录基线，并让合约所有者评审生成的差异。';
 
 export function toolInputStabilityProblems(root: string): string[] {
   const toolsFile = join(root, TOOLS_PATH);
