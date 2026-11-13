@@ -34,6 +34,7 @@ test('team definitions have retained digest-bound bytes and projections never be
   await w.kit.authorizations.assignTeam(w.admin,team.id,'synthetic-workflow');
   await w.kit.authorizations.assignResource(w.admin,'synthetic-resource',team.id);
   const deleted=await w.teams.delete(w.admin,team.id);
+  assert.equal(deleted.revoked_packs,1); assert.equal(deleted.revoked_resources,1);
   for(const [permission,subject,object]of [['assign',w.alice.id,team.id],['assign',team.id,'synthetic-workflow'],['resource_assign',team.id,'synthetic-resource']] as const)assert.equal((await w.kit.authorizations.latest(permission,subject,object))?.body.revoked,true);assert.ok(deleted.deleted_at);
   assert.equal(await w.teams.get(w.admin,team.id),null);
   const recreated=await w.teams.create(w.admin,'合成团队');assert.notEqual(recreated.id,team.id);
@@ -126,4 +127,16 @@ test('whole-Hub pack activation and skill installation remain valid assignment d
   });
   assert.equal(revoked.body.revoked, true);
   assert.equal(revoked.body.supersedes, grant.digest);
+});
+
+test('team deletion counts exclude assignments already revoked before the transaction', async t => {
+  const w = await world(t), team = await w.teams.create(w.admin, '合成撤回计数');
+  await w.kit.authorizations.assignTeam(w.admin, team.id, 'synthetic-workflow');
+  await w.kit.authorizations.assignResource(w.admin, 'synthetic-resource', team.id);
+  await w.kit.authorizations.unassignTeam(w.admin, team.id, 'synthetic-workflow');
+  await w.kit.authorizations.unassignResource(w.admin, 'synthetic-resource', team.id);
+  const deleted = await w.teams.delete(w.admin, team.id);
+  assert.equal(deleted.revoked_packs, 0);
+  assert.equal(deleted.revoked_resources, 0);
+  assert.ok(deleted.deleted_at);
 });
