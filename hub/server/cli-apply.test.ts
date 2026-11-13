@@ -635,6 +635,10 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
   assert.equal(freshSetup.stdout.includes(password) || freshSetup.stderr.includes(password), false);
   if (freshSetup.code !== 0) assert.match(freshSetup.stderr, /已经有操作令牌/);
   assert.equal(freshSetup.code, 0, 'Known first-setup blocker: reset preserved the stale operator token; no remove or other identity step was inserted');
+  const afterSetup = await protectedFiles(layout);
+  assert.deepEqual(afterSetup.map(file => [file.area, file.path]), originals.map(file => [file.area, file.path]));
+  assert.deepEqual(afterSetup.filter(file => file.area === 'vault'), originals.filter(file => file.area === 'vault'));
+  assert.ok(originals.some(before => before.area === 'keys' && afterSetup.some(after => after.area === before.area && after.path === before.path && after.sha256 !== before.sha256)));
   const definition = { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }], knowledgeSync: [] };
   const file = join(parent, 'synthetic-after-reset-definition.json'); await writeFile(file, JSON.stringify(definition), { mode: 0o600, flag: 'wx' });
   const applied = await child(['apply', file]); assert.equal(applied.code, 0, 'Same-root apply failed after standard first setup');
