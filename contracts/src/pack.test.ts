@@ -100,8 +100,8 @@ test('checks: a check names an interpreter with a table, or a function, never bo
     schema: 'checks@1',
     checks: [
       { id: 'structure', interpreter: 'structure@1', table: 'tables/structure.json', applies: 'run', judges: 'subject', tier: 'blocking', basis: 'clause 3' },
-      { id: 'catalog', interpreter: 'catalog@1', table: 'tables/catalog.json', applies: 'item', catalog: 'commands@1', subject: { module: 'functions/subject.ts', export: 'catalogSubject' }, judges: 'subject' },
-      { id: 'consistent', function: { module: 'functions/consistent.ts' }, applies: 'item', judges: 'artifact_under_verification' },
+      { id: 'catalog', interpreter: 'catalog@1', table: 'tables/catalog.json', applies: 'item', catalog: 'commands@1', subject: { module: 'functions/subject.ts', export: 'catalogSubject' }, judges: 'subject', tier: 'blocking' },
+      { id: 'consistent', function: { module: 'functions/consistent.ts' }, applies: 'item', judges: 'artifact_under_verification', tier: 'blocking' },
     ],
   };
   assert.ok(ChecksFile.safeParse(checks).success);
