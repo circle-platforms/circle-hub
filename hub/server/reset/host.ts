@@ -1,3 +1,4 @@
+import { archiveResetDatabase, createResetDatabase } from '../../platform/api.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -160,14 +161,12 @@ export async function resetData(context: PlatformContext, input: ResetRequest, p
       async exportConfiguration() { checkpoint(); if (snapshot) { await ports.exportConfiguration!(snapshot); await assertProtectedFiles(context.layout, originals); } },
       async archive() {
         checkpoint();
-        await maintenance(async session => { await disconnect(session, database); await session.query(`ALTER DATABASE ${quoteIdentifier(database)} RENAME TO ${quoteIdentifier(archive)}`); archived = true; await save(); });
+        await archiveResetDatabase(postgres, database, archive); archived = true; await save();
       },
       async create() {
         checkpoint();
-        if (request.scopes === 'all') {
-          await postgres.ensureDatabase();
-          await migrateRecords({ database: { host: postgres.target.socketDir, port: postgres.target.port, user: postgres.target.user, database } }, { runtimeRole: postgres.application.user });
-        } else await maintenance(session => session.query(`CREATE DATABASE ${quoteIdentifier(database)} OWNER ${quoteIdentifier(postgres.target.user)} TEMPLATE ${quoteIdentifier(archive)}`).then(() => {}));
+        await createResetDatabase(postgres, database, request.scopes === 'all' ? {} : { template: archive });
+        if (request.scopes === 'all') await migrateRecords({ database: { host: postgres.target.socketDir, port: postgres.target.port, user: postgres.target.user, database } }, { runtimeRole: postgres.application.user });
         created = true; await save();
         await maintenance(session => session.query(`REVOKE CONNECT ON DATABASE ${quoteIdentifier(database)} FROM ${quoteIdentifier(postgres.application.user)}`).then(() => {}));
       },

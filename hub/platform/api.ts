@@ -85,3 +85,5 @@ export { portOccupied } from './health.ts';
 export { quoteIdentifier, withSession, type SqlSession } from './sql.ts';
 export { toolEnvironment, type CommandOptions } from './process.ts';
 export { newSettingsFile, writeSettingsFile } from './settings.ts';
+
+export { archiveResetDatabase, createResetDatabase, type ResetDatabaseControl, type CreateResetDatabaseOptions } from './reset/database.ts';
