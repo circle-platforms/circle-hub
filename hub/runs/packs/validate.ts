@@ -598,6 +598,38 @@ async function validateSystem(c: Collector, policy: ImportPolicy): Promise<PackD
   return { kind: 'system', system };
 }
 
+type DeclarationValidation = {declarations: PackDeclarations | null; samples: LoadedSample[]};
+const DECLARATION_VALIDATORS = {
+  async workflow(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<DeclarationValidation> {
+    const result=await validateWorkflow(c,directory,policy);
+    return {declarations:result?.declarations??null,samples:result?.samples??[]};
+  },
+  async skill(c: Collector, directory: PackDirectory, policy: ImportPolicy): Promise<DeclarationValidation> {
+    let samples: LoadedSample[]=[];
+    const instructions=c.files.get('SKILL.md');
+    if(instructions!==undefined&&(utf8(instructions)===null||utf8(instructions)!.trim()===''))c.add(problem('skill.empty','SKILL.md','技能包规程必须是非空 UTF-8 文本','写明能力与边界'));
+    const skill = c.parse('skill.shape', 'skill.json', SkillDeclaration, 'skill@1', 'contracts/src/pack.ts');
+    let method: WorkflowDeclarations | null = null;
+    if (c.files.has('workflow.json')) {
+      const result = await validateWorkflow(c, directory, policy);
+      method = result?.declarations ?? null;
+      samples = result?.samples ?? [];
+    }
+    if (skill) {
+      const functions=skill.parsers.flatMap((row,i)=>[functionEntry(row.function,'skill.json',`/parsers/${i}/function`),...(row.locate?[functionEntry(row.locate,'skill.json',`/parsers/${i}/locate`)]:[] )]);
+      for (const p of await scanFunctions(c.files, functions, policy)) c.add(p);
+      return {declarations: { kind: 'skill', skill, method }, samples};
+    }
+    return {declarations:null,samples};
+  },
+  async product(c: Collector, _directory: PackDirectory, policy: ImportPolicy): Promise<DeclarationValidation> {
+    return {declarations:await validateProduct(c,policy),samples:[]};
+  },
+  async system(c: Collector, _directory: PackDirectory, policy: ImportPolicy): Promise<DeclarationValidation> {
+    return {declarations:await validateSystem(c,policy),samples:[]};
+  },
+} satisfies Record<PackKind,(c:Collector,directory:PackDirectory,policy:ImportPolicy)=>Promise<DeclarationValidation>>;
+
 /**
  * Validates a pack read by readPackDirectory: the declaration files of its kind with their contract shapes, then the rules
  * across files. The pack is publishable only when `ok`; warnings never stop it.
@@ -629,29 +661,7 @@ export async function validatePack(directory: PackDirectory, options: ValidateOp
       if (file.path.startsWith('samples/')) c.add(problem('samples.unknown_check', file.path, `${file.path} 是样例，但只有${labelOf('pack_kind', 'workflow')}有检查和样例`, '删掉这个样例'));
     }
   }
-  let declarations: PackDeclarations | null;
-  let samples: LoadedSample[] = [];
-  if (manifest.kind === 'workflow') {
-    const workflow = await validateWorkflow(c, directory, policy);
-    declarations = workflow?.declarations ?? null;
-    samples = workflow?.samples ?? [];
-  } else if (manifest.kind === 'skill') {
-    const instructions=c.files.get('SKILL.md');
-    if(instructions!==undefined&&(utf8(instructions)===null||utf8(instructions)!.trim()===''))c.add(problem('skill.empty','SKILL.md','技能包规程必须是非空 UTF-8 文本','写明能力与边界'));
-    const skill = c.parse('skill.shape', 'skill.json', SkillDeclaration, 'skill@1', 'contracts/src/pack.ts');
-    let method: WorkflowDeclarations | null = null;
-    if (c.files.has('workflow.json')) {
-      const result = await validateWorkflow(c, directory, policy);
-      method = result?.declarations ?? null;
-      samples = result?.samples ?? [];
-    }
-    if (skill) {
-      const functions=skill.parsers.flatMap((row,i)=>[functionEntry(row.function,'skill.json',`/parsers/${i}/function`),...(row.locate?[functionEntry(row.locate,'skill.json',`/parsers/${i}/locate`)]:[] )]);
-      for (const p of await scanFunctions(c.files, functions, policy)) c.add(p);
-      declarations = { kind: 'skill', skill, method };
-    } else declarations = null;
-  } else if (manifest.kind === 'product') declarations = await validateProduct(c, policy);
-  else declarations = await validateSystem(c, policy);
+  const {declarations,samples}=await DECLARATION_VALIDATORS[manifest.kind](c,directory,policy);
   if (c.problems.length > 0 || declarations === null) {
     if (c.problems.length === 0) c.add(problem('manifest.kind', 'pack.json', `种类 ${manifest.kind} 的声明文件读不出来`, '补全这个种类要求的文件'));
     return { ok: false, problems: c.problems, warnings: c.warnings };

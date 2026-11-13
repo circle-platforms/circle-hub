@@ -35,28 +35,34 @@ function shaped<T>(schema: { safeParse(value: unknown): { success: boolean; data
   return parsed.data as T;
 }
 
-export function parseDeclarations(kind: PackKind, files: ReadonlyMap<string, Uint8Array>): PackDeclarations {
-  if (kind === 'skill') {
+const DECLARATION_READERS = {
+  skill(files: ReadonlyMap<string, Uint8Array>): PackDeclarations {
     const method = files.has('workflow.json') ? parseDeclarations('workflow', files) : null;
     if (method !== null && method.kind !== 'workflow') throw new IntegrityError('技能包方法声明不是工作流');
-    return { kind, skill: shaped(SkillDeclaration, files, 'skill.json'), method };
-  }
-  if (kind === 'product') return { kind, product: shaped(ProductDeclaration, files, 'product.json') };
-  if (kind === 'system') return { kind, system: shaped(SystemProfile, files, 'system.json') };
-  const skill = files.get('SKILL.md');
-  const instructions = skill === undefined ? null : utf8(skill);
-  if (skill === undefined || instructions === null) throw new IntegrityError('已发布的包里 SKILL.md 缺失或不是 UTF-8');
-  return {
-    kind,
-    workflow: shaped(WorkflowFile, files, 'workflow.json'),
-    requirements: shaped(RequirementsFile, files, 'requirements.json'),
-    checks: shaped(ChecksFile, files, 'checks.json'),
-    slots: shaped(SlotsFile, files, 'slots.schema.json'),
-    ledger: files.has('ledger.json') ? shaped(LedgerFile, files, 'ledger.json') : null,
-    knowledge: files.has('knowledge.json') ? shaped(KnowledgeFile, files, 'knowledge.json') : null,
-    instructions,
-    instructionsDigest: sha256Hex(skill),
-  };
+    return { kind: 'skill', skill: shaped(SkillDeclaration, files, 'skill.json'), method };
+  },
+  product: (files: ReadonlyMap<string, Uint8Array>): PackDeclarations => ({ kind: 'product', product: shaped(ProductDeclaration, files, 'product.json') }),
+  system: (files: ReadonlyMap<string, Uint8Array>): PackDeclarations => ({ kind: 'system', system: shaped(SystemProfile, files, 'system.json') }),
+  workflow(files: ReadonlyMap<string, Uint8Array>): PackDeclarations {
+    const skill = files.get('SKILL.md');
+    const instructions = skill === undefined ? null : utf8(skill);
+    if (skill === undefined || instructions === null) throw new IntegrityError('已发布的包里 SKILL.md 缺失或不是 UTF-8');
+    return {
+      kind: 'workflow',
+      workflow: shaped(WorkflowFile, files, 'workflow.json'),
+      requirements: shaped(RequirementsFile, files, 'requirements.json'),
+      checks: shaped(ChecksFile, files, 'checks.json'),
+      slots: shaped(SlotsFile, files, 'slots.schema.json'),
+      ledger: files.has('ledger.json') ? shaped(LedgerFile, files, 'ledger.json') : null,
+      knowledge: files.has('knowledge.json') ? shaped(KnowledgeFile, files, 'knowledge.json') : null,
+      instructions,
+      instructionsDigest: sha256Hex(skill),
+    };
+  },
+} satisfies Record<PackKind, (files: ReadonlyMap<string, Uint8Array>) => PackDeclarations>;
+
+export function parseDeclarations(kind: PackKind, files: ReadonlyMap<string, Uint8Array>): PackDeclarations {
+  return DECLARATION_READERS[kind](files);
 }
 
 /**
