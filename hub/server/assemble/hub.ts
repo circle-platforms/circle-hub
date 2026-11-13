@@ -10,7 +10,7 @@ import { productVariableNameAvailable } from '../variables.ts';
 // left in the vault is never read.
 // Nothing here reads the environment, a file outside the data directory, or a credential value.
 import { join } from 'node:path';
-import { DispatchService, ExecutorRegistry, MemberEnvironments, freezeEffectRegistry } from '../../dispatch/api.ts';
+import { DispatchService, ExecutorRegistry, MemberEnvironments, freezeEffectRegistry, createEnvironmentReadiness } from '../../dispatch/api.ts';
 import type { HubConfig } from '../../config/index.ts';
 import {
   createConnectors,
@@ -289,6 +289,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
+      ...(dispatch && leases ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, (actor, id) => canUseEnvironment(records, actor, id), now) } : {}),
       executors: async (by) => {
         const views: ExecutorView[] = [];
         for (const entry of await new ExecutorRegistry(records).sources(by)) {
