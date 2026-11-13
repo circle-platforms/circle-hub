@@ -20,8 +20,7 @@ import { getResult, getRun, getRunStatistics, getRunSummary, listRuns, runHeader
 import { submissionByDigest, successorsOf } from './store.ts';
 import { exportedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
-import { backfillCitations } from './store.ts';
-import { summarizeStored, summarizeStoredResults } from './result-summary.ts';
+import { summarizeStored } from './result-summary.ts';
 import { submitResult, type SubmitAnswer } from './submit.ts';
 import { packContext } from './pack-context.ts';
 import { wellFormed } from './util.ts';
@@ -100,36 +99,17 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
   let aborted=false;
   const memory=newMaintenanceMemory();
   const maintain=(options:{incremental?:boolean}={}):Promise<void>=>ongoing??=(background('maintain-runs',()=>withDocuments(ctx,undefined,current=>maintainRuns(current,()=>aborted,options.incremental===true?memory:undefined))).finally(()=>{ongoing=null;}));
-  // Submissions stored before citations were indexed get their index in the background: a pass at the start and at every
-  // tick until one reaches its end (backfillCitations). Stopping aborts the pass under way; the next one resumes it.
-  let indexing:Promise<void>|null=null;
-  let indexed=false;
-  let stopIndexing=new AbortController();
-  const indexCitations=():Promise<void>=>indexing??=(background('index-citations',()=>backfillCitations(ctx.deps.records.store,{signal:stopIndexing.signal}))
-    .then(outcome=>{indexed=outcome.complete;if(outcome.indexed>0)ctx.log({traceId:null,run:null,what:'citation index',detail:`indexed the citations of ${outcome.indexed} submissions stored before citations were indexed (${outcome.examined} examined)`});})
-    .catch((error:unknown)=>{if(!stopIndexing.signal.aborted)ctx.log({traceId:null,run:null,what:'citation index',detail:String(error)});})
-    .finally(()=>{indexing=null;}));
-  // W08 R[6]: the results stored before results were stored with a summary get theirs in the background.
-  let summarizing:Promise<void>|null=null;
-  let summarized=false;
-  const summarizeResults=():Promise<void>=>summarizing??=(background('summarize-results',()=>summarizeStoredResults(ctx.deps.records.store,{signal:stopIndexing.signal}))
-    .then(outcome=>{summarized=outcome.complete;if(outcome.written>0)ctx.log({traceId:null,run:null,what:'result summaries',detail:`wrote the summaries of ${outcome.written} results stored before results were stored with one (${outcome.examined} examined)`});})
-    .catch((error:unknown)=>{if(!stopIndexing.signal.aborted)ctx.log({traceId:null,run:null,what:'result summaries',detail:String(error)});})
-    .finally(()=>{summarizing=null;}));
   return {
     abandonRun(user,run,request,reason){return abandonRun(ctx,user,run,request,reason);},
     maintain,
     async startMaintenance(){
       aborted=false;
-      if(stopIndexing.signal.aborted)stopIndexing=new AbortController();
-      void indexCitations();
-      void summarizeResults();
       // Scheduled first, so a failed first pass is retried like any other.
-      timer??=setInterval(()=>{void maintain({incremental:true}).catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));if(!indexed)void indexCitations();if(!summarized)void summarizeResults();},60000);
+      timer??=setInterval(()=>{void maintain({incremental:true}).catch(error=>ctx.log({traceId:null,run:null,what:'run maintenance',detail:String(error)}));},60000);
       timer.unref();
       await maintain({incremental:true});
     },
-    async stopMaintenance(options={}){if(timer){clearInterval(timer);timer=null;}if(options.abort===true)aborted=true;stopIndexing.abort();try{await indexing;await summarizing;await ongoing;}finally{aborted=false;}},
+    async stopMaintenance(options={}){if(timer){clearInterval(timer);timer=null;}if(options.abort===true)aborted=true;try{await ongoing;}finally{aborted=false;}},
     listRequests(user,run,options) { return withRequestPermissions(ctx.deps.records.artifacts,user,()=>withQueryReads(ctx,current=>requestsOf(current,user,run,options))); },
     async startRun(user, input, context) {
       return withDocuments(ctx,context,async current=>(await startRun(current,user,input,context,{host:'local_circle'})).answer,user);

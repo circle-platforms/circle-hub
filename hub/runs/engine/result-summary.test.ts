@@ -13,7 +13,7 @@ import {startPostgres} from '../../testing/postgres.ts';
 import {openHarness} from './testing/harness.ts';
 import {resultGrounds} from './ground-extraction.ts';
 import {groundsWithSources} from './ground-extraction.ts';
-import {resultSummaryOf,saveResult,summarize,summariesComplete,summarizeStoredResults} from './result-summary.ts';
+import {resultSummaryOf,saveResult,summarize} from './result-summary.ts';
 import {INDEX,putResult,putRun} from './store.ts';
 import {createRequestService} from '../../requests/api.ts';
 let pg:Awaited<ReturnType<typeof startPostgres>>;
@@ -136,41 +136,6 @@ test('a summary is verified when it is read, cannot be replaced by a later one, 
  // The summary altered: the statistics refuse it, as they refuse an altered result that has no summary.
  await corrupt("UPDATE records SET body=replace(body,'\"passed\"','\"rejected\"') WHERE digest=$1",summary.digest);
  await assert.rejects(h.service.getRunStatistics!(h.alice,run.run),IntegrityError);
-});
-
-test('results stored before summaries get theirs in one background pass, which then does not run again',async t=>{
- const h=await openHarness(pg);t.after(h.close);
- const run=RunRecord.parse({...runRecord,run:newId('run'),runner:h.alice.id,pack:`${h.review.pack.id}@${h.review.pack.version}`,pack_digest:h.review.pack.digest,requirements:[],sources:[],items:[],target_basis:[],client_key:'synthetic-summary-backfill'});
- const record=await putRun(h.kit.store,run,at(run));
- const old:StoredRecord<ValidationResult>[]=[];
- for(let n=0;n<5;n++)old.push(await putResult(h.kit.store,ValidationResult.parse({...(n%2?notAccepted:accepted),run:run.run,submission:n===0?record.digest:sha('synthetic old '+n)}),at(run)));
- const before=await h.service.getRunStatistics!(h.alice,run.run);
- assert.equal(await summariesComplete(h.kit.store),false);
- const have=async()=>(await h.kit.store.findMany({kind:'result_summary',key:INDEX.summaryResult,values:old.map(r=>r.digest)})).length;
- assert.equal(await have(),0);
-
- // Interrupted before it starts: nothing is marked.
- const stopped=new AbortController();stopped.abort();
- await assert.rejects(summarizeStoredResults(h.kit.store,{signal:stopped.signal}));
- assert.equal(await summariesComplete(h.kit.store),false);
-
- // From here on results are stored with their summary: the pass stops at the first of them.
- const fresh=await saveResult(h.kit.store,ValidationResult.parse({...accepted,run:run.run,submission:sha('synthetic fresh')}),at(run));
- assert.deepEqual(await summarizeStoredResults(h.kit.store,{batch:2}),{examined:5,written:5,complete:true});
- assert.equal(await have(),5);
- assert.equal(await summariesComplete(h.kit.store),true);
- assert.deepEqual(await summarizeStoredResults(h.kit.store),{examined:0,written:0,complete:true});
- for(const result of old){
-  const summary=(await h.kit.store.find<ResultSummaryBody>({kind:'result_summary',key:INDEX.summaryResult,value:result.digest,limit:1})).items[0];
-  assert.deepEqual(summary.body,ResultSummaryBody.parse(summarize(result.body,result.digest)),'what storing it with a summary would have written');
-  assert.equal(summary.created_at,result.created_at);
- }
- // The statistics read summaries now, and say for the older results what they said from the results.
- const read=await resultsRead(h,()=>h.service.getRunStatistics!(h.alice,run.run));
- assert.equal(read.results,0);
- assert.deepEqual(read.value,runStatistics((await h.service.getRunSummary!(h.alice,run.run))!));
- assert.equal((await resultSummaryOf(h.kit.store,run.run,fresh.digest))!.result,fresh.digest);
- assert.ok(before);
 });
 
 test('a request is shown to a reader by the summary of the result that issued it, as by the result',async t=>{
