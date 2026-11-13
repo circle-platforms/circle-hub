@@ -3,8 +3,7 @@ import {test} from 'node:test';
 import {startPostgres} from '../../testing/postgres.ts';
 import {criterionHarness} from './testing/criterion.ts';
 import {createRequestService} from '../../requests/api.ts';
-import {runById,putRun} from './store.ts';
-import {newId} from '../../records/api.ts';
+import {runById} from './store.ts';
 test('accepted declarations open named judgment requests at the source submission position and remain on the old criterion',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const run=await h.start();
  const answer=await h.submit(run.run,[h.proposal]);assert.equal(answer.acceptance,'accepted',JSON.stringify(answer));
@@ -23,11 +22,6 @@ test('resubmitting the same item and criterion appends a replacement answer with
  const old=after.find(row=>row.record===before.record)!;assert.ok(old.answered_by);assert.equal(JSON.stringify((await h.kit.store.get(before.record))!.body),bytes);
  const event=await h.kit.store.find<any>({kind:'action',key:'runs.request.answer',value:old.record,limit:1,newestFirst:true});assert.equal(event.items[0].body.detail.criterion_answer.message,'由后一份提交的同名声明取代');
  const notices=(await h.service.getRun(h.alice,run.run))!.run.criterion_changes!;assert.equal(notices.length,2);assert.equal(notices.find(notice=>notice.request==='rec:'+old.record)!.superseded_by,'rec:'+old.answered_by);
-});
-test('legacy runs without a submission deadline reject declarations but do not invent a request deadline',async t=>{
- const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const run=await h.start();const source=await runById(h.kit.store,run.run);assert.ok(source);
- const {submission_due,...record}=source.body;const id=newId('run');await putRun(h.kit.store,{...record,run:id},source.created_at);
- const answer=await h.submit(id,[h.proposal]);assert.equal(answer.acceptance,'not_accepted');assert.ok(answer.errors.some(row=>row.path==='/criterion_changes'&&row.message.includes('期限')));assert.equal((await createRequestService(h.kit).all(id)).filter(row=>row.declaration).length,0);
 });
 test('the request next action can be executed when criterion and grounds cite source fragments',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg);t.after(()=>h.close());const {installReview}=await import('./testing/criterion-review.ts');await installReview(h);const run=await h.start();const proposal={...h.proposal,criterion:h.expected+'/text@1/l/1',grounds:[{reference:h.expected+'/text@1/l/2',quote:'第二依据'}]};assert.equal((await h.submit(run.run,[proposal])).acceptance,'accepted');

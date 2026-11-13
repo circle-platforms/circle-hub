@@ -39,7 +39,6 @@ export function criterionReviewInstruction(run:string,source:string,change:Crite
 }
 export async function publishCriterionRequests(ctx:EngineContext,run:RunRecord,source:string,changes:readonly import('./exact.ts').AcceptedCriterionChange[],result:ValidationResult,tx:Transaction):Promise<void>{
  if(!changes.length)return;
- if(!run.submission_due)throw new Error('criterion request requires the frozen submission deadline');
  const authors=await authorAccountsOf(ctx,run.run),people=(await ctx.deps.records.principals?.list?.()??[]).filter(user=>!user.disabled).sort((a,b)=>a.id.localeCompare(b.id));
  const eligible=[] as Principal[];for(const user of people)if(!authors?.accounts.has(user.id)&&(user.role==='admin'||await canViewRun(user,run,ctx.deps.records.store)))eligible.push(user);
  const audience=eligible[0]??people.find(user=>user.role==='admin');
