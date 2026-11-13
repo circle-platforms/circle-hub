@@ -17,9 +17,9 @@ import {RESOURCE_AUDIENCE,TEAMS} from './team-actions.ts';
 import type {Principal,User} from '../../records/api.ts';
 
 /** The two tabs of the members page (decision 151, step 7): the members, and the clients they connected. One list each. */
-const TEAM_TABS=['members','clients'] as const;
+const TEAM_TABS=['members','teams','clients'] as const;
 type TeamTab=typeof TEAM_TABS[number];
-const TEAM_TAB_LABEL:Record<TeamTab,string>={members:'成员',clients:'已连接的客户端'};
+const TEAM_TAB_LABEL:Record<TeamTab,string>={members:'成员',teams:'团队',clients:'已连接的客户端'};
 
 /** Console shape of RecordsKit.teams (interfaces §1); absent until Codex exports it. */
 export interface ConsoleTeam {
@@ -162,14 +162,20 @@ export async function teamPage(ctx:PageContext,member?:string):Promise<PageResul
  }
  const selected=!!selectedUser||!!selectedDevice;
  const asked=ctx.url.searchParams.get('tab');
- const tab:TeamTab=selectedDevice?'clients':selectedUser?'members':TEAM_TABS.find(key=>key===asked)??'members';
- const counts:Record<TeamTab,number>={members:users.length,clients:devices.length};
- const tabs=liveModule('team-tabs',['member.connected'],html`<nav class="ch-seg" aria-label="成员与客户端" data-team-tabs>${TEAM_TABS.map(key=>html`<a href="${href('/console/team',key==='members'?{}:{tab:key})}"${key===tab?html` aria-current="page"`:''}>${TEAM_TAB_LABEL[key]} <span class="ch-count">${counts[key].toLocaleString('en-US')}</span></a>`)}</nav>`);
+ // The 团队 tab is /console/teams; this page only hosts 成员 and 已连接的客户端.
+ const tab:TeamTab=selectedDevice?'clients':selectedUser?'members':asked==='clients'?'clients':'members';
+ const counts:Record<TeamTab,number|undefined>={members:users.length,teams:undefined,clients:devices.length};
+ const tabs=liveModule('team-tabs',['member.connected'],html`<nav class="ch-seg" aria-label="成员与团队" data-team-tabs>${TEAM_TABS.map(key=>{
+  const path=key==='teams'?TEAMS:href('/console/team',key==='members'?{}:{tab:key});
+  const current=key==='teams'?false:key===tab;
+  const count=counts[key];
+  return html`<a href="${path}"${current?html` aria-current="page"`:''}>${TEAM_TAB_LABEL[key]}${count===undefined?'':html` <span class="ch-count">${count.toLocaleString('en-US')}</span>`}</a>`;
+ })}</nav>`);
  const content=tab==='members'
   ?html`${capacityLine}${liveModule('members',['member.connected'],box(null,table(['名字','角色','状态','所属团队','可用的工作流','客户端'],members,'没有可读的成员',undefined,{selected:users.findIndex(user=>user.id===member),hrefs:users.map(user=>'/console/team/'+user.id)}),{flush:true}))}`
   :liveModule('member-circles',['member.connected'],box(null,table(CLIENT_COLUMNS,circles,noClients(ctx.admin),undefined,{selected:devices.findIndex(device=>device.id===circleId),hrefs:devices.map(device=>href('/console/team',{circle:device.id}))}),{flush:devices.length>0}));
  const teamListLink=ctx.admin||teams?button(TEAMS,'团队列表'):html``;
- return {status:200,body:page(ctx.chrome('成员',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${teamListLink}${button('/console/password','修改密码')}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`<div class="ch-stack" data-team>${tabs}<div class="ch-stack" data-team-tab="${tab}">${content}</div>${selected||tab!=='members'?'':confirmations}</div>`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回成员',tab==='members'?{}:{tab})}))};
+ return {status:200,body:page(ctx.chrome('团队',{active:'team',hint:'第一个账户是管理员；账户仅由管理员添加，成员权限和工作流分配在此管理。',actions:html`${teamListLink}${button('/console/password','修改密码')}${ctx.admin?button('/console/operations/member','添加成员',{primary:true,icon:'plus'}):''}`}),pageLayout(html`<div class="ch-stack" data-team>${tabs}<div class="ch-stack" data-team-tab="${tab}">${content}</div>${selected||tab!=='members'?'':confirmations}</div>`,{inspector:selected?liveModule('team-inspector',['member.connected'],html`${inspector}${confirmations}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/team','返回成员',tab==='members'?{}:{tab})}))};
 }
 
 function countCell(value: number | undefined): string {

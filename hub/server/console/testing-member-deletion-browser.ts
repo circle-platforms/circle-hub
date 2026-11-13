@@ -118,7 +118,7 @@ try {
     const text=Buffer.from('合成团队保留原文，精确署名。'),file=await spaces.importFile(user.principal,text,'text/plain','合成私人原件.txt'),source=(await hub.records.store.findMany<any>({kind:'knowledge_space_source',key:'knowledge.space.source_hash',values:[file.body.sha256]})).find(row=>row.body.artifact===file.digest)!;
     await spaces.attributeSource(user.principal,source.digest,file.digest);const entry=await spaces.write(user.principal,{kind:'observation',statement:'合成团队独立保留条目',grounds:[{reference:'src:'+file.body.sha256,quotation:'精确署名'}]}),shared=await spaces.share(user.principal,{root:entry.root,path:'/',entry:entry.entry});assert.ok(shared.team_root);
     if(process.argv.includes('--team-capacity-only')){
-      await capture('team-capacity',hub.url+'/console/team?capacity=team',/团队空间容量/);
+      await capture('team-capacity',hub.url+'/console/team?capacity=team',/公共空间容量/);
       await capture('team-capacity-dialog',hub.url+'/console/team?capacity=team#adjust-team-capacity',/调整公共空间容量/);
     }else{
     const privatePack=await writePack(join(dir,'private-workflow'),workflowPack({id:'synthetic-deletion-transfer',title:'合成转移工作流'}));

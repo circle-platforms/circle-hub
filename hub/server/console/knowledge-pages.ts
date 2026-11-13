@@ -134,11 +134,11 @@ export async function knowledgePage(ctx: PageContext): Promise<PageResult> {
     );
   }
   const flow = html``;
-  const actions = ctx.admin ? html`${button(operationsPackPath(),`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button(operationsKnowledgePath(), '导入团队知识', { primary: true, icon: 'upload', hint: '从所选产品已配置的知识来源导入到团队知识库；产品文件夹沿用产品线的读取权限，仅管理员可用' })}` : undefined;
+  const actions = ctx.admin ? html`${button(operationsPackPath(),`发布${uiLabelOf('pack_kind','product')}`,{params:{kind:'product'},icon:'upload'})}${button(operationsKnowledgePath(), '导入公共知识', { primary: true, icon: 'upload', hint: '从所选产品已配置的知识来源导入到公共知识库；产品文件夹沿用产品线的读取权限，仅管理员可用' })}` : undefined;
   return {
     status: 200,
     body: knowledgeShell(ctx.chrome('知识库', { active: 'knowledge', hint: ctx.deps.knowledge.spaces?'我的、团队与与本账户共享的知识；已验证与待验证内容分别标示':'统一的知识库：每条知识均附来源，按产品线与版本组织', ...(actions === undefined ? {} : { actions }) }), html`${ctx.deps.knowledge.spaces?spaces:flow}${sources}${pending}
-${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品文件夹':'团队知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品文件夹':ctx.admin ? '还没有团队知识；团队知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的团队知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">团队知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link(knowledgeProductPath(),line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
+${liveModule('lines', ['knowledge.published'], lines.length === 0 ? knowledgePanel({ title: ctx.deps.knowledge.spaces?'产品文件夹':'公共知识' }, html`<p class="empty">${ctx.deps.knowledge.spaces?'没有可读的产品文件夹':ctx.admin ? '还没有公共知识；公共知识按产品线组织，发布产品知识来源后可在此浏览和导入' : '没有可读的公共知识；成员可读分配给自己的工作流所绑定的产品线'}</p>`) : html`${sectionHead('按产品线浏览', undefined, undefined, undefined, '可读的产品线及其版本')}<div class="ch-section">${blocks}</div>`)}`,html`<section class="ch-section"><h2 class="ch-panel-title">公共知识</h2></section>${stat('可读产品线',lines.length)}${lines.length?knowledgePanel({title:'产品线'},html`<ul class="ch-feed">${lines.map(line=>html`<li>${link(knowledgeProductPath(),line.title,{id:line.id})}</li>`)}</ul>`):''}`),  };
 }
 
 function pagedArray<T>(ctx:PageContext,values:readonly T[],size:number,key:string,scope:string):{items:readonly T[];next:string|null;start:number}|null {
