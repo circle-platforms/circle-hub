@@ -39,6 +39,27 @@ export interface Built {
   secrets?: Record<string, string>;
 }
 
+export type BuiltStepRun = { argv: readonly string[]; run: CommandRun };
+
+/** Shared command loop for HTML actions and /console/api writes (K4): stop at the first non-zero exit. */
+export async function runBuiltSteps(
+  bridge: CommandBridge,
+  built: readonly Built[],
+  token: string,
+  log: (line: string) => void,
+  who: string,
+  viaApi = false,
+): Promise<BuiltStepRun[]> {
+  const runs: BuiltStepRun[] = [];
+  for (const step of built) {
+    const result = await bridge.run(step.argv, { token, ...(step.secrets ? { secrets: step.secrets } : {}) });
+    log(`控制台管理操作 ${step.argv.slice(0, 2).join(' ')}（${who}${viaApi ? '，经接口' : ''}）：退出码 ${result.code}`);
+    runs.push({ argv: step.argv, run: result });
+    if (result.code !== 0) break;
+  }
+  return runs;
+}
+
 export class FormError extends Error {
   constructor(message: string) {
     super(message);
@@ -578,25 +599,18 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
     throw error;
   }
   const bridge = deps.bridge;
-  const run = (step: Built) => bridge.run(step.argv, { token, ...(step.secrets ? { secrets: step.secrets } : {}) });
   if (action.background) {
     const [step] = built;
     const what = step.argv.slice(0, 2).join(' ');
     const job = deps.jobs.start(action.title, step.argv, ctx.principal, async () => {
-      const result = await run(step);
-      deps.log(`控制台后台任务 ${what}（${ctx.principal.name}）结束：退出码 ${result.code}`);
-      return result;
+      const [done] = await runBuiltSteps(bridge, [step], token, deps.log, ctx.principal.name);
+      deps.log(`控制台后台任务 ${what}（${ctx.principal.name}）结束：退出码 ${done.run.code}`);
+      return done.run;
     });
     deps.log(`控制台后台任务 ${what} 由 ${ctx.principal.name} 发起`);
     return { status: 202, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已在后台开始，${link(`/console/admin/jobs/${job.id}`, '查看进展')}。Hub 重启时，进行中的任务需重新发起，已写入的内容不受影响。</p>`)}<p>${link(action.back, '返回')}</p>`) };
   }
-  const runs: { argv: readonly string[]; run: CommandRun }[] = [];
-  for (const step of built) {
-    const result = await run(step);
-    deps.log(`控制台管理操作 ${step.argv.slice(0, 2).join(' ')}（${ctx.principal.name}）：退出码 ${result.code}`);
-    runs.push({ argv: step.argv, run: result });
-    if (result.code !== 0) break;
-  }
+  const runs = await runBuiltSteps(bridge, built, token, deps.log, ctx.principal.name);
   return resultPage(ctx, action, built.length === 1 ? runs[0].run : runs, form);
 }
 
