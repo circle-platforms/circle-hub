@@ -1,7 +1,7 @@
 // Actual current-schema PostgreSQL and opaque file invariants; no previous-release reader or conversion fixture.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PackManifest } from '../../../contracts/src/pack.ts';
@@ -13,6 +13,7 @@ import { newSettingsFile, writeSettingsFile } from '../settings.ts';
 import { ensureDatabaseRunning } from '../postgres.ts';
 import { withSession } from '../sql.ts';
 import { exit, recordingRunner, freePort, socketPort, libpqAvailable, LIBPQ_MISSING } from '../test-support.ts';
+import { createResetConfigurationPorts } from '../../server/api.ts';
 import { resetData, previewReset } from './host.ts';
 import { protectedFiles } from './protected-files.ts';
 import { ResetFailure, type ResetStage } from './operation.ts';
@@ -69,6 +70,7 @@ async function fixture(incompatible = false) {
     ] as const) await writeFile(path, content, { mode: 0o600 });
     const originals = await protectedFiles(layout);
     return { parent, layout, context, postgres, records, originals,
+      ownerConfig: { dataDir: layout.root, logDir: layout.logs, database, limits: { ...DEFAULT_LIMITS } },
       async close() { await postgres.stop(); await rm(parent, { recursive: true, force: true }); } };
   } catch (error) { await postgres.stop().catch(() => {}); await rm(parent, { recursive: true, force: true }); throw error; }
 }
@@ -119,4 +121,40 @@ for (const stage of ['stop','exportConfiguration','archive','create','prepare','
   });
   const [row] = await withSession(f.postgres.connector, f.postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM users'));
   assert.equal(row!.n, 1); assert.deepEqual(await protectedFiles(f.layout), f.originals);
+});
+
+
+test('all keep-config uses the actual U1 factory and current records restore once into a fresh baseline', { timeout: 120_000, skip: libpq ? false : LIBPQ_MISSING }, async t => {
+  const f = await fixture(); t.after(() => f.close());
+  const application = { ...f.ownerConfig, database: { ...f.ownerConfig.database, user: f.postgres.application.user } };
+  const source = await openRecords(application, { migrate: false });
+  let token: string, userId: string, tokenId: string;
+  try {
+    const admin = await source.principals.findByName('合成重建管理员'); assert.ok(admin);
+    await source.principals.resetPassword(admin, admin.id); // The returned synthetic password is deliberately not retained or printed.
+    const issued = await source.principals.issueToken(admin, admin.id, '合成重建保留验证');
+    token = issued.token; tokenId = issued.id; userId = admin.id;
+    const pack = await source.store.get<Record<string, unknown>>(f.records.packs!); assert.ok(pack);
+    await source.authorizations.grantPublishRight(admin, admin.id, '合成发布授权');
+    await source.authorizations.grant(admin, { permission: 'publish', subject: admin.id, object: 'synthetic-reset-skill@1.0.0', bound: String(pack.body.digest), note: '合成发布' });
+    await source.authorizations.grant(admin, { permission: 'assign', subject: '*', object: 'synthetic-reset-skill', note: '合成整库启用' });
+  } finally { await source.close(); }
+  const before = await withSession(f.postgres.connector, f.postgres.target.database, session => session.query('SELECT u.id,u.password_hash,t.sha256 FROM users u JOIN tokens t ON t.user_id=u.id WHERE t.id=$1', [tokenId!]));
+  let definitionCalled = false;
+  const actualPorts = await createResetConfigurationPorts({ config: f.ownerConfig, applyDefinition: async () => { definitionCalled = true; throw new Error('定义文件未在此请求中选择'); } });
+  const report = await resetData(f.context, { scopes: 'all', keepConfig: true }, actualPorts);
+  assert.ok(report.configurationSnapshot); assert.equal(definitionCalled, false);
+  assert.equal((await stat(report.configurationSnapshot)).mode & 0o777, 0o600);
+  assert.equal((await readFile(report.configurationSnapshot, 'utf8')).includes(token!), false, 'the protected snapshot must contain a hash, never the raw client token');
+  const after = await withSession(f.postgres.connector, f.postgres.target.database, session => session.query('SELECT u.id,u.password_hash,t.sha256 FROM users u JOIN tokens t ON t.user_id=u.id WHERE t.id=$1', [tokenId!]));
+  assert.ok(JSON.stringify(before) === JSON.stringify(after), 'original identities and authentication hashes must be unchanged');
+  const restored = await openRecords(application, { migrate: false });
+  try {
+    const principal = await restored.principals.authenticate('Bearer ' + token!); assert.ok(principal?.id === userId!);
+    assert.equal((await restored.store.list({ kind: 'call_log', limit: 10 })).items.length, 0);
+    assert.equal((await restored.store.list({ kind: 'tree_node', limit: 10 })).items.length, 0);
+    assert.ok(await restored.store.get(f.records.packs!));
+    assert.deepEqual(await restored.authorizations.packsFor('*'), ['synthetic-reset-skill']);
+  } finally { await restored.close(); }
+  assert.deepEqual(await protectedFiles(f.layout), f.originals);
 });
