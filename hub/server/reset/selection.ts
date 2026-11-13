@@ -156,9 +156,9 @@ function classifyAction(record: CurrentRecord, body: Body): ResetDataScope | nul
     !ActionResultSchema.safeParse(body.result).success || !nullableText(body.error_code) || !textArray(body.codes) ||
     !(body.acceptance === null || AcceptanceSchema.safeParse(body.acceptance).success)) return null;
   if (body.component === 'leases@1') {
-    const op = object(body.detail)?.op;
-    if (!LeaseOpSchema.safeParse(op).success) return null;
-    return op === 'register' || op === 'unregister' ? 'config' : 'history';
+    const op = LeaseOpSchema.safeParse(object(body.detail)?.op);
+    if (!op.success) return null;
+    return op.data === LeaseOpSchema.enum.register || op.data === LeaseOpSchema.enum.unregister ? 'config' : 'history';
   }
   if (body.action === 'move_root') { const target = moveTargetKind(body); return target === 'object' ? 'config' : target === 'record' ? 'knowledge' : null; }
   if (body.component === 'server.docs@1') return body.action === 'read' && /^doc:doc:[a-z][a-z0-9-]{0,63}$/.test(String(object(body.detail)?.external)) ? 'history' : null;
@@ -251,7 +251,7 @@ export function currentRecordReferences(record: CurrentRecord): CurrentReference
   };
   switch (record.kind) {
     case 'authorization':
-      if (body.permission === 'publish' || body.permission === 'resource_config' || body.permission === 'assign') add('object', body.bound, '/bound');
+      if (body.permission === PermissionKindSchema.enum.publish || body.permission === PermissionKindSchema.enum.resource_config || body.permission === PermissionKindSchema.enum.assign) add('object', body.bound, '/bound');
       add('record', body.supersedes, '/supersedes');
       if (body.permission === 'share') ref(body.object, '/object'); break;
     case 'source_artifact': {

@@ -100,6 +100,26 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
     }
     return ts.isParenthesizedTypeNode(node) && derives(node.type, type) || ts.isUnionTypeNode(node) && node.types.some(t => derives(t, type));
   };
+  // A generic key argument is structural only when its declared keyof constraint and every actual key agree.
+  const checkedKeyArgument = (node: ts.TypeReferenceNode, index: number): boolean => {
+    if (!semantic || !node.typeArguments) return false;
+    let symbol = semantic.checker.getSymbolAtLocation(node.typeName);
+    if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = semantic.checker.getAliasedSymbol(symbol);
+    return symbol?.declarations?.some(declaration => {
+      if (!ts.isTypeAliasDeclaration(declaration) && !ts.isInterfaceDeclaration(declaration)) return false;
+      const parameters = declaration.typeParameters;
+      const constraint = parameters?.[index]?.constraint;
+      if (!constraint || !ts.isTypeOperatorNode(constraint) || constraint.operator !== ts.SyntaxKind.KeyOfKeyword || !ts.isTypeReferenceNode(constraint.type) || !ts.isIdentifier(constraint.type.typeName)) return false;
+      const targetName = constraint.type.typeName.text;
+      const targetIndex = parameters!.findIndex(parameter => parameter.name.text === targetName);
+      const targetNode = node.typeArguments![targetIndex];
+      if (!targetNode) return false;
+      const target = semantic.checker.getTypeFromTypeNode(targetNode);
+      const keys = semantic.checker.getTypeFromTypeNode(node.typeArguments![index]);
+      const members = keys.isUnion() ? keys.types : [keys];
+      return members.length > 0 && members.every(member => member.isStringLiteral() && semantic.checker.getPropertyOfType(target, member.value) !== undefined);
+    }) ?? false;
+  };
   const visit = (node: ts.Node): void => {
     // Compiler-checked subsets are allowed; their argument literals do not declare a new enumeration.
     if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && ['Extract', 'Exclude'].includes(node.typeName.text)
@@ -175,6 +195,10 @@ function handWrittenAxes(text: string, semantic?: { source: ts.SourceFile; check
         const matching = [...values].filter(v => axis.values.has(v));
         if (matching.length >= 2) out.push({ line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1, axis: axis.name, values: matching });
       }
+    }
+    if (ts.isTypeReferenceNode(node) && node.typeArguments?.some((_, index) => checkedKeyArgument(node, index))) {
+      node.typeArguments.forEach((argument, index) => { if (!checkedKeyArgument(node, index)) visit(argument); });
+      return;
     }
     const parts = ts.isUnionTypeNode(node) ? [...node.types] : ts.isArrayLiteralExpression(node) ? [...node.elements] : null;
     if (parts !== null) {
@@ -273,6 +297,26 @@ describe('the vocabulary', () => {
     const hits=handWrittenAxes(text,{source:program.getSourceFile(file)!,checker:program.getTypeChecker()});
     const badLines=text.split('\n').flatMap((line,i)=>line.includes('bad')?[i+1]:[]);
     assert.deepEqual([...new Set(hits.map(h=>h.line))].sort((a,b)=>a-b),badLines);
+  });
+
+  it('checks generic keyof arguments as structural keys without exempting unchecked axis unions', () => {
+    const file = join(root, 'scan-property-keys-self-test.ts');
+    const text = [
+      'interface Fields { admin: string; user: string; knowledge: string; packs: string }',
+      "type Picked = Pick<Fields, 'knowledge' | 'packs'>;",
+      "type Omitted = Omit<Fields, 'admin' | 'user'>;",
+      'type Checked<T, K extends keyof T> = { [P in K]: T[P] };',
+      "type Selected = Checked<Fields, 'knowledge' | 'packs'>;",
+      'type Unchecked<T, K> = { keys: K };',
+      "type Invalid = Unchecked<Fields, 'knowledge' | 'packs'>;",
+      "type Missing = Pick<Fields, 'admin' | 'user' | 'other'>;",
+      "type Raw = 'admin' | 'user';",
+    ].join('\n');
+    const host = ts.createCompilerHost({}), original = host.getSourceFile;
+    host.getSourceFile = (path, language, onError, create) => path === file ? ts.createSourceFile(path, text, language, true) : original(path, language, onError, create);
+    const program = ts.createProgram([file], { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext }, host);
+    const hits = handWrittenAxes(text, { source: program.getSourceFile(file)!, checker: program.getTypeChecker() });
+    assert.deepEqual([...new Set(hits.map(hit => hit.line))].sort((a, b) => a - b), [7, 8, 9]);
   });
 
   it('c3 detects negated membership and loose equality without field name exemptions',()=>{
