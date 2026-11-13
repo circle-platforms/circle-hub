@@ -27,6 +27,10 @@ import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.t
 import { isolationFailureText, osIsolationAvailable, osIsolationFailure, type SandboxOptions } from '../../rules/api.ts';
 import { AssemblyError } from './errors.ts';
 import {
+  runById,
+  canViewRun,
+  readPackDirectory,
+  packSchema,
   createPackCatalog,
   createPackRegistry,
   sweepPackStages,
@@ -181,6 +185,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // 5. Knowledge: it reads its sources through the connectors alone. No placer: the Hub calls no model, so spans the
   // code cannot place stay unplaced at the root (a producer may declare them for the bot's placement proposals).
   const knowledge = createKnowledge({
+    runReads: { runById, canViewRun },
+    packReads: { readPackDirectory, packSchema },
     records,
     parsers,
     packs,
