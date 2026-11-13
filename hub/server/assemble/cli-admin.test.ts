@@ -2096,7 +2096,7 @@ test('team CLI preserves direct grants, unions team grants and explicitly assign
   await expectOk(admin, ['pack', 'unassign', state.member.name, REVIEW_PACK]);
   await expectOk(admin, ['team', 'add', state.second.id, state.member.name]);
 
-  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成团队资源', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, ...syntheticCredentialArgs('username','password')]);
+  const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成团队资源', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
   const resource = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
   assert.ok(resource, added.text);
   const mayRead = (user: string) => withKit(admin, kit => kit.authorizations.canUseResource(user, resource));
