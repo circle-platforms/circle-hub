@@ -829,14 +829,14 @@ export async function seedRichHub(
 
     const plainVarName = 'SYNTH_PLAIN_VAR';
     const plainVarValue = 'synthetic-var-value-v1';
-    const secretVarName = 'SYNTH_BUILD_KEY_LABEL';
-    const keyLabelValue = 'ordinary-key-label-v1';
+    const secretVarName = 'SYNTH_BUILD_LABEL';
+    const buildLabelValue = 'ordinary-build-label-v1';
     await runCli(dataDir, ['var', 'set', plainVarName, '--not-secret', '--text', '--reason', 'synthetic plain variable'], {
       stdin: plainVarValue,
       expectOk: true,
     });
-    await runCli(dataDir, ['var', 'set', secretVarName, '--not-secret', '--text', '--reason', 'synthetic key-named ordinary variable'], {
-      stdin: keyLabelValue,
+    await runCli(dataDir, ['var', 'set', secretVarName, '--not-secret', '--text', '--reason', 'synthetic build label ordinary variable'], {
+      stdin: buildLabelValue,
       expectOk: true,
     });
 
