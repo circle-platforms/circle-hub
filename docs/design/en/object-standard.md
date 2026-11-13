@@ -1,6 +1,6 @@
 # Object standard: the five-element checklist
 
-> **Rewritten 2026-10-21**: the previous version treated the five elements (records, assets, approval policy, evidence, extension points) as storage partitions of each of the four objects. That is superseded. By the decision on the generic model's pending item 3, the five elements are a design checklist and a record-page layout, not storage partitions. The previous partition table, data flow and adaptation sheet are in [this page at ca66002](https://github.com/circle-platforms/circle-hub/blob/ca66002fb6bfc3220547d0fdd895bfae83345943/docs/design/en/object-standard.md). This page translates the [Chinese original](../object-standard.md); where they differ, the Chinese text is authoritative.
+> **Rewritten 2026-10-21**: the previous version treated the five elements (records, assets, approval policy, evidence, extension points) as storage partitions of each of the four objects. That is superseded. By the decision on the generic model's pending item 3, the five elements are a design checklist and a record-page layout, not storage partitions. The previous partition table, data flow and adaptation sheet are preserved in Git history at commit `ca66002fb6bfc3220547d0fdd895bfae83345943` of this page. This page translates the [Chinese original](../object-standard.md); where they differ, the Chinese text is authoritative.
 
 ## 1. The four objects are the four homes
 

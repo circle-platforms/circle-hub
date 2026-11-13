@@ -474,5 +474,243 @@
     "what": "knowledge-contribution",
     "reason": "Run submission branches on packIdOf(run.pack) !== 'knowledge-contribution' (line 240; tracked in C6)",
     "removeWhen": "C6"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/design/knowledge-workflows.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/design/personal-team-knowledge.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-architecture.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-coverage.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-device-pack.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-kb-direction.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-research/adoc-sandbox.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/adoc-declared-text.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/console-readability.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/console-visual.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/defect-to-case.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/device-core.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/device-help-read.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/famx-red-b.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/famx-trunk-red.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/fix-catalog-constraints.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/hub-view-perf.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/kb-candidates.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/kb-feeding.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/kb-seedling.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/knowledge-ui-phase2.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/kw-console.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/nested-read-tiers.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/no-judgment-in-hub.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/observability.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/quality-board.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/rulings-141.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/traceability-closed.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/traceability.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/union-case-rule.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/value-domain-claims.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: referenced by hub/, packs/, contracts/, or tests/ (see G2 docs-kept inventory)",
+    "removeWhen": "G2 batch 2"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/skill-hooks-proposal.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: pending owner decision on unlanded proposal",
+    "removeWhen": "Owner decision"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/skill-hooks-proposal.patch",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: pending owner decision on unlanded proposal",
+    "removeWhen": "Owner decision"
+  },
+  {
+    "check": "doc-set",
+    "path": "docs/hub-r4-tasks/wecom-bot-owner-decisions.md",
+    "what": "unlisted",
+    "reason": "Temporary Batch-2 keep: pending owner decision on unlanded proposal",
+    "removeWhen": "Owner decision"
   }
 ]
