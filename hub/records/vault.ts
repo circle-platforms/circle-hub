@@ -6,6 +6,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { KeyProvider, Vault, VaultVerification } from './api.ts';
+import { isDigestRule, type DigestRule } from '../../contracts/generated/vocabulary.ts';
 import { VaultError } from './errors.ts';
 
 const NAME = /^[a-z0-9][a-z0-9._-]{0,99}$/;
@@ -72,6 +73,7 @@ interface Sealed {
   iv: string;
   tag: string;
   data: string;
+  digest_rule?: DigestRule;
 }
 
 export class FileVault implements Vault {
@@ -88,15 +90,16 @@ export class FileVault implements Vault {
     await this.#provider.initKey();
   }
 
-  async put(name: string, value: string | Uint8Array): Promise<void> {
+  async put(name: string, value: string | Uint8Array, digest_rule?: DigestRule): Promise<void> {
+    if (digest_rule !== undefined && !isDigestRule(digest_rule)) throw new VaultError('封存摘要规则无效');
     const target = this.#path(name);
     const plain = toBytes(value);
     const key = await this.#key();
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
-    cipher.setAAD(associatedData(name));
+    cipher.setAAD(associatedData(name, digest_rule));
     const data = Buffer.concat([cipher.update(plain), cipher.final()]);
-    const sealed: Sealed = { v: FORMAT, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') };
+    const sealed: Sealed = { ...(digest_rule === undefined ? {} : { digest_rule }), v: FORMAT, iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), data: data.toString('base64') };
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const temporary = `${target}.${randomBytes(8).toString('hex')}.tmp`;
     try {
@@ -115,16 +118,27 @@ export class FileVault implements Vault {
   }
 
   async get(name: string): Promise<Uint8Array | null> {
+    return (await this.getWithMetadata(name))?.value ?? null;
+  }
+
+  /** Reads the value and its authenticated rule from the same sealed bytes. */
+  async getWithMetadata(name: string): Promise<{ value: Uint8Array; digest_rule?: DigestRule } | null> {
     const target = this.#path(name);
     const key = await this.#key();
     let text: string;
-    try {
-      text = await readFile(target, 'utf8');
-    } catch (error) {
-      if (errno(error) === 'ENOENT') return null;
-      throw error;
-    }
-    return openSealed(name, text, key);
+    try { text = await readFile(target, 'utf8'); }
+    catch (error) { if (errno(error) === 'ENOENT') return null; throw new VaultError('封存文件不可读'); }
+    const value = openSealed(name, text, key);
+    const sealed = JSON.parse(text) as Sealed;
+    return { value, ...(sealed.digest_rule === undefined ? {} : { digest_rule: sealed.digest_rule }) };
+  }
+
+  /** Returns only authenticated sealing metadata, never the sealed value. */
+  async metadata(name: string): Promise<{ digest_rule?: DigestRule } | null> {
+    const opened = await this.getWithMetadata(name);
+    if (opened === null) return null;
+    opened.value.fill(0);
+    return opened.digest_rule === undefined ? {} : { digest_rule: opened.digest_rule };
   }
 
   async getText(name: string): Promise<string | null> {
@@ -331,12 +345,13 @@ function openSealed(name: string, text: string, key: Buffer): Uint8Array {
   if (sealed?.v !== FORMAT || typeof sealed.iv !== 'string' || typeof sealed.tag !== 'string' || typeof sealed.data !== 'string') {
     throw new VaultError(`密钥库条目 ${name} 的格式不对`);
   }
+  if (sealed.digest_rule !== undefined && !isDigestRule(sealed.digest_rule)) throw new VaultError('封存摘要规则无效');
   const iv = Buffer.from(sealed.iv, 'base64');
   const tag = Buffer.from(sealed.tag, 'base64');
   if (iv.byteLength !== IV_BYTES || tag.byteLength !== TAG_BYTES) throw new VaultError(`密钥库条目 ${name} 的格式不对：初始向量或认证标签长度不对`);
   try {
     const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
-    decipher.setAAD(associatedData(name));
+    decipher.setAAD(associatedData(name, sealed.digest_rule));
     decipher.setAuthTag(tag);
     return new Uint8Array(Buffer.concat([decipher.update(Buffer.from(sealed.data, 'base64')), decipher.final()]));
   } catch {
@@ -344,8 +359,8 @@ function openSealed(name: string, text: string, key: Buffer): Uint8Array {
   }
 }
 
-function associatedData(name: string): Buffer {
-  return Buffer.from(`circle-hub vault v1\0${name}`, 'utf8');
+function associatedData(name: string, rule?: DigestRule): Buffer {
+  return Buffer.from(`circle-hub vault v1\0${name}${rule === undefined ? '' : '\0digest_rule=' + rule}`, 'utf8');
 }
 
 function toBytes(value: string | Uint8Array): Buffer {

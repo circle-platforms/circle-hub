@@ -36,7 +36,7 @@ export interface VariableCommandSession {
     err(line: string): void;
 }
 export const VAR_USAGE = 'var set <名字> [--file <文件>] [--text] [--not-secret] --reason <理由> | unset <名字> --reason <理由> | list [--run <运行> | --root <根摘要>] | show <名字> [--history] [--value]';
-export const NAMED_SECRET_USAGE = 'secret set --name <名字>… [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> | unset --name <名字> --reason <理由> | list | show --name <名字> [--history] | import --env-file <文件> --key <键>=<名字>… [--basic <用户键>:<密码键>=<名字>] [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> [--dry-run]';
+export const NAMED_SECRET_USAGE = 'secret set --name <名字>… [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> | adopt (--name <名字> | --all) --reason <理由> | unset --name <名字> --reason <理由> | list | show --name <名字> [--history] | import --env-file <文件> --key <键>=<名字>… [--basic <用户键>:<密码键>=<名字>] [--digest <名字>=sha512_base64] [--short <名字>] --reason <理由> [--dry-run]';
 const CONFIG = 'resource_config' satisfies PermissionKind;
 export interface DeploymentDefinition {
     key: string;
@@ -477,14 +477,14 @@ export async function variableCommand(s: VariableCommandSession, args: readonly 
 }
 export async function namedSecretCommand(s: VariableCommandSession, args: readonly string[]): Promise<number> {
     const [sub, ...rest] = args;
-    const parsed = parse(rest, { name: { type: 'string', multiple: true }, digest: { type: 'string', multiple: true }, short: { type: 'string', multiple: true }, reason: { type: 'string' }, history: { type: 'boolean' }, 'env-file': { type: 'string' }, key: { type: 'string', multiple: true }, basic: { type: 'string', multiple: true }, 'dry-run': { type: 'boolean' } });
+    const parsed = parse(rest, { name: { type: 'string', multiple: true }, digest: { type: 'string', multiple: true }, short: { type: 'string', multiple: true }, reason: { type: 'string' }, all: { type: 'boolean' }, history: { type: 'boolean' }, 'env-file': { type: 'string' }, key: { type: 'string', multiple: true }, basic: { type: 'string', multiple: true }, 'dry-run': { type: 'boolean' } });
     const v = parsed.values;
-    const allowed: Record<string, readonly string[]> = { set: ['name', 'digest', 'short', 'reason'], unset: ['name', 'reason'], show: ['name', 'history'], list: [], import: ['env-file', 'key', 'basic', 'digest', 'short', 'reason', 'dry-run'] };
+    const allowed: Record<string, readonly string[]> = { adopt: ['name', 'all', 'reason'], set: ['name', 'digest', 'short', 'reason'], unset: ['name', 'reason'], show: ['name', 'history'], list: [], import: ['env-file', 'key', 'basic', 'digest', 'short', 'reason', 'dry-run'] };
     if (allowed[sub ?? ''] && Object.keys(v).some(key => !allowed[sub!].includes(key)))
         throw new UsageError('旗标不能用于这个密钥子命令；请核对用法');
     if (parsed.positionals.length)
         throw new UsageError('密钥只从标准输入读；旧写法先 resource update <资源> --credential <凭据项>=<密钥名> 迁移，再用 secret set --name <名字>');
-    if (!['set', 'unset', 'list', 'show', 'import'].includes(sub ?? ''))
+    if (!['set', 'adopt', 'unset', 'list', 'show', 'import'].includes(sub ?? ''))
         throw new UsageError(NAMED_SECRET_USAGE);
     const by = await s.admin(), kit = await s.records();
     await kit.variables.assertAdmin(by);
@@ -532,6 +532,34 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                     s.out('没有决定指向的条目 ' + entry);
             }
             return 0;
+        }
+        if (sub === 'adopt') {
+            if (v.all ? (v.name ?? []).length !== 0 : (v.name ?? []).length !== 1)
+                throw new UsageError('secret adopt 须恰好指定一个 --name 或 --all');
+            const reason = reasonInput(v.reason);
+            let definitions: DeploymentDefinition[], entries: string[];
+            try { definitions = await deploymentDefinitions(kit); entries = await kit.vault.list(); }
+            catch { throw new CliError('当前部署定义或密钥库目录不可核对；没有认领'); }
+            const names = v.all ? [...new Set([
+                ...definitions.flatMap(d => d.references.filter(r => r.kind === 'secret').map(r => r.name)),
+                ...entries.flatMap(entry => { const match = /^secret\.([a-z][a-z0-9_]{0,63})\.[a-f0-9]{24}$/.exec(entry); return match ? [match[1].toUpperCase()] : []; }),
+            ])].sort() : [nameInput(v.name[0], 0, 'secret')];
+            try { await kit.variables.validateAdoptionReason(by, names, reason); }
+            catch { throw new CliError('认领理由不可核对或含封存值；没有认领，请重写理由'); }
+            let failed = false;
+            for (const name of names) {
+                try {
+                    const used = consumersOf(definitions, name);
+                    const row = await kit.variables.adoptSecret(by, name, used.map(publicConsumer), used.map(c => c.required), reason,
+                        tx => unchangedDefinitions(kit, definitions, tx));
+                    s.out(versionsLine(row) + '；沿用密钥库里已封存的值；认领管理员 ' + by.id);
+                } catch (error) {
+                    failed = true;
+                    s.err(name + '：认领失败；' + (error instanceof VariableError ? error.message : '封存值或当前定义不可核对；没有完成认领'));
+                }
+            }
+            if (!names.length) s.out('没有可认领的名字');
+            return failed ? 1 : 0;
         }
         const mappings: Array<{
             name: string;

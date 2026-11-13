@@ -6,13 +6,13 @@ import { PLATFORM_COMMAND_METADATA } from '../platform/api.ts';
 import { PERMISSION_ROLE } from '../../contracts/generated/vocabulary.ts';
 import { DEFAULT_ADMIN_NAME } from '../records/api.ts';
 import { DEFAULT_EVENT_LIMIT } from '../health/api.ts';
-import { SERVE_USAGE, SECRET_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
+import { SERVE_USAGE, ORIGINAL_USAGE, LEASE_USAGE, SHARE_USAGE, UNSHARE_USAGE, DOC_USAGE, INIT_ADMIN_USAGE, OPERATOR_TOKEN_USAGE } from './cli-command-usage.ts';
 import { packCommand, PACK_USAGE } from './cli-pack.ts';
 import { resourceCommand, RESOURCE_USAGE } from './cli-resource.ts';
 import { knowledgeCommand, KNOWLEDGE_USAGE } from './cli-knowledge.ts';
 import { localToolsCommand, LOCAL_TOOLS_USAGE } from './cli-local-tools.ts';
 import { RUN_BATCH_USAGE } from './cli-run-batch.ts';
-import { variableCommand, namedSecretCommand, VAR_USAGE } from './variables.ts';
+import { variableCommand, namedSecretCommand, VAR_USAGE, NAMED_SECRET_USAGE } from './variables.ts';
 import { maskCommand, MASK_USAGE } from './cli-mask.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
@@ -42,7 +42,7 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'resource', reserved: '管理资源声明', bridge: true, summary: RESOURCE_USAGE.slice('resource '.length), handler: resourceCommand },
   { name: 'var', summary: VAR_USAGE.slice('var '.length), handler: variableCommand },
   { name: 'mask', summary: MASK_USAGE.slice('mask '.length), handler: maskCommand },
-  { name: 'secret', reserved: '管理密钥库条目', bridge: true, summary: SECRET_USAGE.slice('secret '.length), handler: namedSecretCommand },
+  { name: 'secret', reserved: '管理密钥库条目', bridge: true, summary: NAMED_SECRET_USAGE.slice('secret '.length), handler: namedSecretCommand },
   { name: 'original', summary: ORIGINAL_USAGE.slice('original '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.originalCommand(session,args)) },
   { name: 'lease', summary: LEASE_USAGE.slice('lease '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.leaseCommand(session,args)) },
   { name: 'knowledge', reserved: '读取和管理知识树', bridge: true, summary: KNOWLEDGE_USAGE.slice('knowledge '.length), handler: knowledgeCommand },

@@ -1,3 +1,4 @@
+import { FileVault } from './vault.ts';
 import { isAdmin } from './permissions.ts';
 // Named deployment versions use existing resource-configuration decisions and the vault, never a new table.
 import { randomBytes, createHash } from 'node:crypto';
@@ -158,7 +159,8 @@ export class RecordVariables {
         const note = validateChangeReason(reason, [...input.map(v => v.value), ...validated.map(v => v.stored)]);
         const items = [];
         for (const v of validated) {
-            await this.#p.vault.put(v.metadata.entry, v.stored);
+            if (this.#p.vault instanceof FileVault) await this.#p.vault.put(v.metadata.entry, v.stored, v.metadata.digest_rule);
+            else await this.#p.vault.put(v.metadata.entry, v.stored);
             const object = await this.#p.objects.put(canonicalBytes(v.metadata), 'application/json');
             items.push({ name: v.name, metadata: v.metadata, bound: object.sha256 });
         }
@@ -184,6 +186,61 @@ export class RecordVariables {
     }
     async setSecrets(by: Principal, input: readonly SecretWrite[], reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<NamedVersion[]> { const prepared = await this.prepareSecrets(by, input, reason); const out = await this.#p.store.withTransaction(tx => this.commitSecrets(by, prepared, tx, validate)); for (const item of input)
         await this.cleanupSecret(item.name); return out; }
+    async validateAdoptionReason(by: Principal, names: readonly string[], reason: string): Promise<void> {
+        await this.assertAdmin(by);
+        validateChangeReason(reason);
+        const prefixes = new Set(names.map(name => 'secret.' + this.#name(name, 'secret').toLowerCase()));
+        for (const entry of await this.#p.vault.list()) {
+            if (!/^secret\.[a-z][a-z0-9_]{0,63}\.[a-f0-9]{24}$/.test(entry) || !prefixes.has(entry.slice(0, entry.lastIndexOf('.')))) continue;
+            let value: string | null;
+            try { value = await this.#p.vault.getText(entry); }
+            catch { continue; } // An unreadable entry is reported by its own adoption, never treated as adopted.
+            if (value !== null) validateChangeReason(reason, [value]);
+        }
+    }
+    async adoptSecret(by: Principal, name: string, consumers: SecretConsumer[], declared: DigestRule[], reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<NamedVersion> {
+        await this.assertAdmin(by);
+        name = this.#name(name, 'secret');
+        if (!consumers.length) throw new VariableError('没有当前资源或执行器定义引用这个名字');
+        const entries = (await this.#p.vault.list()).filter(entry => new RegExp('^secret\\.' + name.toLowerCase() + '\\.[a-f0-9]{24}$').test(entry));
+        if (!entries.length) throw new VariableError('密钥库没有这个名字的封存值');
+        const history = await this.#history('secret', name);
+        const current = history[0] && !history[0].body.revoked ? await this.#definition(history[0], 'secret', name) : null;
+        const bound = current?.schema === 'secret@1' ? current.entry : undefined;
+        if (bound && !entries.includes(bound)) throw new VariableError('当前绑定的封存值不存在；没有认领');
+        const candidates = bound ? [bound] : entries;
+        let value: string | undefined;
+        let rule: DigestRule | undefined;
+        for (const entry of candidates) {
+            let stored: string | null;
+            let sealedRule: DigestRule | undefined;
+            try {
+                if (this.#p.vault instanceof FileVault) {
+                    const opened = await this.#p.vault.getWithMetadata(entry);
+                    try { stored = opened === null ? null : new TextDecoder('utf-8', { fatal: true }).decode(opened.value); sealedRule = opened?.digest_rule; }
+                    finally { opened?.value.fill(0); }
+                } else stored = await this.#p.vault.getText(entry);
+            } catch { throw new VariableError(candidates.length > 1 ? '多个封存版本无法确认；没有认领' : '当前主密钥无法解开封存值，或封存文件不可核对'); }
+            if (stored === null) throw new VariableError('密钥库没有这个名字的封存值');
+            if (sealedRule === undefined) {
+                const rules = [...new Set(declared)];
+                if (rules.length !== 1) throw new VariableError('封存未记摘要规则，当前定义的声明不一致；没有认领');
+                sealedRule = rules[0];
+            }
+            if (value !== undefined && (value !== stored || rule !== sealedRule)) throw new VariableError('多个封存版本无法确认；没有认领');
+            value = stored;
+            rule = sealedRule;
+        }
+        if (value === undefined || rule === undefined) throw new VariableError('密钥库没有这个名字的封存值');
+        if (rule === 'sha512_base64' && declared.includes('plain')) throw new VariableError('封存值仅为摘要，当前定义需要原值；没有认领');
+        const note = validateChangeReason(reason, [value]) + '；沿用密钥库里已封存的值；认领管理员 ' + by.id;
+        const rows = await this.setSecrets(by, [{ name, value, digest_rule: rule, alreadyStored: true, short: true, consumers }], note, async tx => {
+            const latest = await this.#history('secret', name, tx);
+            if (latest[0]?.digest !== history[0]?.digest) throw new VariableError('当前密钥登记在核对期间改变；没有认领，请重跑');
+            await validate?.(tx);
+        });
+        return rows[0];
+    }
     async unset(by: Principal, kind: VariableKind, name: string, reason: string, validate?: (tx: Transaction) => Promise<void>): Promise<NamedVersion> {
         await this.assertAdmin(by);
         name = this.#name(name, kind);
