@@ -29,3 +29,5 @@ export {
   residueCaptureFact,
   residueCaptureNext,
 } from './bed-state.ts';
+
+export { holdsPhysicalTarget } from './journal.ts';
