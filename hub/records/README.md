@@ -1279,3 +1279,16 @@ A source artifact whose bytes were replaced carries `masking` (`dictionary`, the
 `rules`, each rule that matched with its count; never what was matched). The store accepts it only on a read of a
 business system and only with at least one rule; it takes part in the dedupe key only when present, so every other
 ingest keeps the key and the record it always had. A copy of such an artifact into an archive keeps the mark.
+
+## Shared permission and record-read implementation
+
+`permissions.ts` owns `isAdmin` and run ownership visibility (`canSeeRun`). Role checks use the current account loaded
+by the calling boundary; the helper does not authenticate an account or grant a system actor identity.
+`record-visibility.ts` declares one exhaustive `RECORD_ACCESS` entry per generated record kind and the generic record-read
+policy. Its ports require a current account, authorized run headers, source and contribution permissions, and the existing
+request, result and submission checks. Dedicated space, memory and personal-pack records remain behind their own readers.
+
+The two existing `runOfRecord` argument shapes are supported. Wrapped submission arguments must carry
+`submission-received@1`; a canonical top-level run takes precedence. These modules are prepared internally; public exports
+and the server/runs adapter changes still require interface coordination. Until those callers adopt `mayReadRecord`, their
+existing implementations have not been replaced. No system account or environment variable is introduced.

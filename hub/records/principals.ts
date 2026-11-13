@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 import {retireReadScope} from './read-scope.ts';
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
 // once; only its SHA-256 is stored. Every change to a user is recorded as an append-only snapshot in user_history.
@@ -212,7 +213,7 @@ export class PgPrincipals implements Principals {
       await this.#decider(tx, by, true);
       const current = await this.#locked(tx, userId);
       if (current.role === wanted) return current;
-      if (current.role === ADMIN && !current.disabled) await this.#keepAnAdmin(tx, current.id);
+      if (isAdmin(current) && !current.disabled) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: wanted, disabled: current.disabled }, by.id);
     }).finally(retireReadScope);
   }
@@ -224,7 +225,7 @@ export class PgPrincipals implements Principals {
       await this.#decider(tx, by, true);
       const current = await this.#locked(tx, userId);
       if (current.disabled === disabled) return current;
-      if (disabled && current.role === ADMIN) await this.#keepAnAdmin(tx, current.id);
+      if (disabled && isAdmin(current)) await this.#keepAnAdmin(tx, current.id);
       return this.#update(tx, current, { role: current.role, disabled }, by.id);
     }).finally(retireReadScope);
   }
@@ -307,7 +308,7 @@ export class PgPrincipals implements Principals {
     if (client !== undefined && (typeof client !== 'string' || !CLIENT_ID.test(client))) throw new TypeError('client ids are cli_<ULID>');
     return this.#db.transaction(async (tx) => {
       const decider = await this.#decider(tx, by, false);
-      if (decider.role !== ADMIN && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
+      if (!isAdmin(decider) && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
       if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能签发令牌`);
       if (client !== undefined && (await this.#db.query('SELECT 1 FROM oauth_clients WHERE id = $1', [client], tx)).rowCount === 0) throw new ConflictError('没有这个客户端');
@@ -321,7 +322,7 @@ export class PgPrincipals implements Principals {
       const decider = await this.#decider(tx, by, false);
       const row = (await this.#db.query('SELECT user_id FROM tokens WHERE id = $1 FOR UPDATE', [tokenId], tx)).rows[0];
       // Someone else's token looks exactly like an absent one.
-      if (row === undefined || (decider.role !== ADMIN && row.user_id !== decider.id)) return false;
+      if (row === undefined || (!isAdmin(decider) && row.user_id !== decider.id)) return false;
       const at = this.#now().toISOString();
       const result = await this.#db.query(
         'UPDATE tokens SET revoked_at = $2, revoked_by = $3 WHERE id = $1 AND revoked_at IS NULL',
@@ -486,7 +487,7 @@ export class PgPrincipals implements Principals {
     const row = id === null ? undefined : (await this.#db.query('SELECT * FROM users WHERE id = $1', [id], tx)).rows[0];
     const user = row === undefined ? null : userOf(row);
     if (user === null || user.disabled) throw new AccessError('操作人不是有效的 Hub 账号');
-    if (adminOnly && user.role !== ADMIN) throw new AccessError('只有管理员可以管理用户和角色');
+    if (adminOnly && !isAdmin(user)) throw new AccessError('只有管理员可以管理用户和角色');
     return user;
   }
 

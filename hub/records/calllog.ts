@@ -1,3 +1,4 @@
+import { isAdmin } from './permissions.ts';
 // Call log (B08): one line per MCP call, as a `call_log@1` record, a typed row for queries and a line in
 // <log dir>/calls-YYYY-MM-DD.jsonl (UTC date). Arguments are reduced to the digest and size of their canonical JSON before
 // anything is written, plus a preview only when the server gives one it redacted by the tool schema (B08 F[7]). Every call
@@ -242,7 +243,7 @@ export class PgCallLog implements CallLog {
     // The stored account decides, not the Principal a session kept: a demoted admin sees only their own calls.
     const viewer = await this.#viewer(principal);
     if (viewer === null) return { items: [], next: null };
-    const admin = viewer.role === 'admin';
+    const admin = isAdmin(viewer);
     const limit = pageLimit(query.limit);
     const after = decodeCursor(query.cursor);
     const descending = query.newestFirst ?? true;
