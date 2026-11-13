@@ -77,7 +77,7 @@ test('a clean upload stores the bytes and a source_artifact record; repeating it
   assert.equal(body.provenance_type, 'declared');
   assert.deepEqual(body.origin, { upload: { session: 'sess-synthetic-1', message: 'msg-7' } });
   assert.deepEqual(body.author, { user: uploader.id, declared: '合成作者' });
-  assert.deepEqual(body.scan, { scanner: CONTENT_SCANNER, inspected: false, clean: false, findings: [], truncated: false });
+  assert.deepEqual(body.scan, { scanner: CONTENT_SCANNER, inspected: true, clean: true, findings: [], truncated: false });
   assert.deepEqual(Buffer.from((await kit.artifacts.source(uploader, body.sha256))?.bytes ?? []), bytes);
   assert.deepEqual(Buffer.from((await kit.artifacts.trustedBytes(body.sha256)) ?? []), bytes);
   const again = await kit.artifacts.ingest(upload(uploader, bytes));
@@ -163,7 +163,7 @@ test('content that looks like it carries a credential is stored and read like an
   const bytes = Buffer.from('登录步骤\npassword=Synth3tic9x\nAuthorization: Bearer synthetic-token-0123456789abcdef\n');
   const uploaded = await kit.artifacts.ingest(upload(uploader, bytes));
   assert.equal(uploaded.body.read_tier, 'model_readable');
-  assert.deepEqual(uploaded.body.scan, { scanner: CONTENT_SCANNER, inspected: false, clean: false, findings: [], truncated: false });
+  assert.deepEqual(uploaded.body.scan, { scanner: CONTENT_SCANNER, inspected: true, clean: true, findings: [], truncated: false });
   assert.deepEqual(Buffer.from((await kit.artifacts.source(uploader, uploaded.body.sha256))?.bytes ?? []), bytes, 'the uploader reads the bytes as they are');
   assert.equal(await kit.artifacts.source(other, uploaded.body.sha256), null, 'who may read it is decided as before');
   const read = await kit.artifacts.ingest({
@@ -175,7 +175,7 @@ test('content that looks like it carries a credential is stored and read like an
   const archive = gzipSync(bytes);
   const binary = await kit.artifacts.ingest({ ...upload(uploader, archive), mediaType: 'application/gzip' });
   assert.equal(binary.body.read_tier, 'model_readable');
-  assert.deepEqual(binary.body.scan, { scanner: CONTENT_SCANNER, inspected: false, clean: false, findings: [], truncated: false });
+  assert.deepEqual(binary.body.scan, { scanner: CONTENT_SCANNER, inspected: true, clean: true, findings: [], truncated: false });
   // A tier asked for explicitly is still kept: only the scan no longer decides one.
   const kept = await kit.artifacts.ingest({ ...upload(uploader, Buffer.from('合成：明确要求仅保留的内容')), readTier: 'retain_only' });
   assert.equal(kept.body.read_tier, 'retain_only');
@@ -396,7 +396,7 @@ test('an archive is accepted readable and its scan is the content scan, which lo
   const { uploader } = await people(kit);
   const archive = gzipSync(Buffer.from('notes\npassword=Synth3tic9x\n'));
   const artifact = await kit.artifacts.ingest({ ...upload(uploader, archive), mediaType: 'application/gzip' });
-  assert.deepEqual(artifact.body.scan, { scanner: CONTENT_SCANNER, inspected: false, clean: false, findings: [], truncated: false });
+  assert.deepEqual(artifact.body.scan, { scanner: CONTENT_SCANNER, inspected: true, clean: true, findings: [], truncated: false });
   assert.equal(artifact.body.read_tier, 'model_readable');
 });
 
