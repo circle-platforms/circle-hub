@@ -1,7 +1,7 @@
 import { verifiedRecord } from './store.ts';
 // Team tables are projections; verified authorization decisions and their bound definition bytes are authoritative.
 import { TeamId, UserId, PackId } from '../../contracts/api.ts';
-import type { Authorizations, AuthorizationRecord, ObjectStore, Principal, Principals, RecordStore, Transaction, User } from './api.ts';
+import type { Authorizations, AuthorizationRecord, ObjectStore, Page, Principal, Principals, RecordStore, Transaction, User } from './api.ts';
 import { canonicalBytes } from './canonical.ts';
 import { iso, type Database, type Row } from './db.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
@@ -52,7 +52,7 @@ export class PgTeams implements Teams {
     do {
       const key = query.subject !== undefined ? 'authz.subject' : 'authz.object';
       const value = 'assign|' + (query.subject ?? query.object);
-      const page = await this.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key, value, limit: 500, cursor }, tx);
+      const page: Page<AuthorizationRecord['body']> = await this.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key, value, limit: 500, cursor }, tx);
       for (const row of page.items) latest.set(row.body.subject + '\0' + row.body.object, row);
       cursor = page.next;
     } while (cursor !== null);
@@ -169,7 +169,7 @@ export class PgTeams implements Teams {
       const related=new Map<string,AuthorizationRecord>();
       for(const key of ['authz.object-any','authz.subject-any']){
         let cursor:string|null=null;
-        do{const page=await this.store.find<AuthorizationRecord['body']>({kind:'authorization',key,value:id,limit:500,cursor},tx);
+        do{const page: Page<AuthorizationRecord['body']>=await this.store.find<AuthorizationRecord['body']>({kind:'authorization',key,value:id,limit:500,cursor},tx);
           for(const row of page.items)related.set(row.body.permission+'\0'+row.body.subject+'\0'+row.body.object,row);cursor=page.next;
         }while(cursor!==null);
       }
