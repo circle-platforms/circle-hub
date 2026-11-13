@@ -12,6 +12,7 @@ const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const NOT_RUN:Array<[pattern:string,reason:string]>=[
  ['foundation/**/*.test.ts','frozen Circle baseline: its own test setup, never changed or run here (AGENTS.md)'],
  ['docs/hub-r4-research/adoc-sandbox/prototype.test.ts','research prototype: needs an explicit public-registry download first (docs/hub-r4-research/adoc-sandbox.md)'],
+ ['scripts/real/**/*.test.ts','real-system, gold and conversion scripts: outside the default Hub unit suite (run directly with node --test when needed)'],
 ];
 
 /** The acceptance runner's files and the test files of the npm scripts that run node --test directly, read from package.json so they stay in step. */
