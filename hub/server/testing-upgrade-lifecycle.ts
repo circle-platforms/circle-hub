@@ -21,10 +21,11 @@ const end = Database.prototype.end;
 Database.prototype.end = async function () { ended.set(this.pool, (ended.get(this.pool) ?? 0) + 1); await end.call(this); };
 const timeout = globalThis.setTimeout, clear = globalThis.clearTimeout;
 globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
-  if (args[1] !== 30_000 || !new Error().stack?.includes('/pg-pool/')) return timeout(...args);
+  const [callback, delay, ...callbackArgs] = args;
+  if (delay !== 30_000 || !new Error().stack?.includes('/pg-pool/')) return timeout(...args);
   // A leaked idle timer must remain observable without waiting 30 seconds or asserting an elapsed ceiling.
   let timer: ReturnType<typeof setTimeout>;
-  timer = timeout(() => { idleTimers.delete(timer); idleFired++; args[0](...args.slice(2)); }, 2 ** 31 - 1);
+  timer = timeout(() => { idleTimers.delete(timer); idleFired++; callback(...callbackArgs); }, 2 ** 31 - 1);
   idleTimers.add(timer);
   return timer;
 }) as typeof setTimeout;
