@@ -13,7 +13,6 @@ export const LOCAL_UNIT_SECONDS: Readonly<Record<string, number>> = {
   'hub/dispatch/probes.test.ts': 95.434116,
   'hub/dispatch/review-first.test.ts': 95.231357,
   'packs/workflow/case-compile/production.test.ts': 93.777885,
-  'scripts/diagnostics/seed-lists-repro.test.ts': 88.777971,
   'hub/dispatch/results.test.ts': 87.619787,
   'packs/workflow/case-review-verify/predecessor-view.test.ts': 87.083142,
   'hub/server/console-health.test.ts': 86.029187,
