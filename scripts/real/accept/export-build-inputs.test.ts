@@ -168,8 +168,8 @@ test('pages the index by its own continuation until the last page and cross-chec
 
 test('finishes from the facets view when the Hub refuses a continuation page and says so', async t=>{
   const f=fixture(t);
-  // The Hub refuses an `after` read of a page whose entries have unaccepted credential hits: the key list then comes from
-  // the facets view, and the stopped page is reported instead of being guessed away.
+  // When the Hub refuses an `after` continuation read (e.g., a permission, cursor or snapshot refusal), the key list then
+  // comes from the facets view, and the stopped page is reported instead of being guessed away.
   const shards={ 'synthetic-doc':[id], 'synthetic-other':['c'.repeat(64)], 'synthetic-unplaced':['d'.repeat(64)] };
   const p=paged(f,shards,{keys:3,entries:3},['synthetic-doc']);
   let indexReads=0;
@@ -215,7 +215,7 @@ test('refuses an empty answer that is not declared complete and empty', async t=
   const cut=fixture(t);
   cut.deps.index=async()=>({view:{...cut.view(),...emptyIndex()},root});
   cut.deps.facets=async()=>({view:{...cut.facet([],0),truncated:true,notes:['取值组合有 3 种，只列出按取值排序的前 0 种']},root});
-  await assert.rejects(exportBuild(cut.options,cut.deps),e=>e instanceof ExportError&&e.missing==='确认完整且为空的文档键'&&/空答复不等于空根/.test(e.action)&&/受理凭据命中|修复来源/.test(e.action));
+  await assert.rejects(exportBuild(cut.options,cut.deps),e=>e instanceof ExportError&&e.missing==='确认完整且为空的文档键'&&/空答复不等于空根/.test(e.action)&&/核对视图截断、读取权限与来源/.test(e.action));
 
   // A continuation the Hub refused: the index may hold keys the export never saw.
   const stopped=fixture(t);

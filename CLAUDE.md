@@ -20,8 +20,7 @@ npm run gen:contracts             # regenerate contracts/generated (never hand-e
 npm run test:unit                 # runs tools/run-unit-tests.ts (contracts, hub, packs, scripts)
 npm run test:acceptance           # tests/acceptance, temporary loopback PostgreSQL, concurrency 1
 npm run test:docs                 # .github/checks/*.test.ts
-npm run verify:references && npm run test:references   # after touching provenance tooling
-npm test                          # contracts check + unit + docs + acceptance + references
+npm test                          # contracts check + unit + docs + acceptance
 
 node --test hub/runs/some.test.ts           # single test file
 node --test --test-name-pattern="x" file.ts # single test by name
@@ -50,7 +49,7 @@ Packages under `hub/` with a strict dependency direction (cross-package calls go
 - `knowledge`: tree, roots, producers, placement. `connectors`: read-only access to business systems (GET / allow-listed read routes only).
 - `server`: MCP endpoint, console, `circle-hub` CLI (`bin/circle-hub`). `platform`: key files (the vault master key and the operator token under `<data root>/keys`, on every platform; no macOS keychain), launchd/systemd, PG lifecycle, backup/restore.
 - `packs/` holds product / workflow / system packs; **core code must not name any product, command or customer** — product content lives in packs. `tests/fixtures` and `scripts/real/` (owner-run, read-only against real systems) are the only places real-system structure appears.
-- `foundation/circle` (public source baseline) is frozen: do not edit, run or import it. `references/` now holds only its SHA manifest (`npm run verify:references` checks the 287 files); the archive of the preceding platform was removed from this public repository on 2026-10-30 and must not be added back. The earlier implementation is readable via `git show ca66002:<path>`; copy and adapt, never import.
+- Circle Hub has no `foundation/` or `references/` directory (removed during repository cleanup; third-party attribution lives in `THIRD_PARTY_NOTICES.md`). The earlier implementation is readable via `git show ca66002:<path>`; copy and adapt, never import.
 
 ## Conventions that bite
 

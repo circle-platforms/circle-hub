@@ -21,6 +21,6 @@ export function urlPathnameUses(file: string, source: string): string[] {
 export function urlPathnameProblems(root: string): string[] {
   const files = execFileSync('git', ['ls-files', '-z', '--', '*.ts', '*.mjs', '*.js'], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
     .split('\0')
-    .filter((file) => file !== '' && !file.startsWith('foundation/') && !file.startsWith('references/'));
+    .filter((file) => file !== '');
   return files.flatMap((file) => urlPathnameUses(file, readFileSync(join(root, file), 'utf8')));
 }

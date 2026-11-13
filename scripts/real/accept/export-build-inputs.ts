@@ -152,7 +152,7 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   const keys = new Set<string>(Object.keys(initial.keys));
   const pagedListed = new Set<string>(Object.keys(initial.entries));
   const followed = new Set<string>();
-  /** Continuation reads the Hub refused: a page whose entries have unaccepted credential hits is not served by `after`. */
+  /** Continuation reads the Hub refused while paging the index. */
   let refused = 0;
   let next = nextOf(initial);
   while (next !== null) {
@@ -224,7 +224,7 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   const carriers = facetTotal - facetEmpty;
   if (documents.length !== initial.total_keys)
     fail(`与索引 total_keys 一致的完整文档键（索引 ${initial.total_keys} 个，分页列出 ${keys.size} 个，分面非空取值 ${facetRows} 行，合计 ${documents.length} 个，读不出的续页 ${refused + facetRefused} 次）`,
-      '按两个视图自己的说明补齐：分面行被行数或字节预算截断、取值文字有凭据扫描命中、续页读不出都会少列；处理后重新导出。未归位条目和产品级根的条目两个视图照常计入，重新生产不会补上这个差');
+      '按两个视图自己的说明补齐：分面行被行数或字节预算截断、续页读不出或缺少读取权限都会少列；核对视图截断、权限与来源后重新导出。未归位条目和产品级根的条目两个视图照常计入，重新生产不会补上这个差');
   if (carriers !== initial.total_entries)
     fail(`两个视图一致的用例条目总数（索引 total_entries ${initial.total_entries}，分面 total ${facetTotal} 减无文档键 ${facetEmpty} 为 ${carriers}）`,
       '核对两个视图读的是不是同一快照，以及来源里有没有 document 是混着空的列表的条目（索引按元素计键，分面把该条目同时计入空组）；改正来源后重新生产并导出');
@@ -232,7 +232,7 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
     // A locked product-wide root may legitimately be empty, but only an answer that declares itself complete and empty
     // proves it: a refused continuation, a second page, a truncated view or a note is never that declaration.
     fail('确认完整且为空的文档键',
-      `索引读了 ${pages.length} 页、分面读了 ${facetPages} 页，读不出的续页 ${refused + facetRefused} 次，截断 ${initial.truncated || facetTruncated ? '是' : '否'}；空答复不等于空根。下一步：管理员受理这些页上的凭据命中或修复来源后重新导出，不能把读不全当作没有条目`);
+      `索引读了 ${pages.length} 页、分面读了 ${facetPages} 页，读不出的续页 ${refused + facetRefused} 次，截断 ${initial.truncated || facetTruncated ? '是' : '否'}；空答复不等于空根。下一步：核对视图截断、读取权限与来源后重新导出，不能把读不全当作没有条目`);
 
   // ---- the saved views: the one complete page when the first already is one, else one only= shard per document
   const shards: any[] = [];
@@ -241,20 +241,20 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
     const page = locked(await deps.index(`${base}&only=${encodeURIComponent(document)}`));
     const listed = Object.keys(page.entries).length;
     if (!Object.hasOwn(page.keys, document) || Object.keys(page.keys).length !== 1)
-      fail('该文档键下列出的条目', '这个文档的条目一条也没有列出（多半是它们的文字有凭据扫描命中而被排除）；请管理员受理这些命中或修复来源文字，重新生产后导出');
-    // A single listed key can only be truncated by entries the scan withheld: they stay in the totals and leave every
-    // listing, so the shard's own totals name exactly how many are missing.
+      fail('该文档键下列出的条目', '这个文档的条目一条也没有列出；核对视图截断、读取权限与来源，修复并必要时重新生产后导出');
+    // A single listed key should not claim truncation when every entry is listed; any shortfall below total_entries
+    // remains visible in the shard totals (for example, legacy/compatibility exclusions).
     if (page.truncated && page.total_entries === listed)
       fail('可解释的分片截断', '这个单文档分片标了截断，却没有条目差额可以解释；核对 Hub 与脚本版本后重新导出');
     shards.push(page);
   }
   const entries = new Set(shards.flatMap(page => Object.keys(page.entries)));
-  /** Entries the Hub counted and withheld from every listing (their own text has credential scan hits). */
+  /** Entries counted in shard totals but omitted from listings (legacy/compatibility accounting). */
   const withheld = shards.reduce((sum, page) => sum + Math.max(0, page.total_entries - Object.keys(page.entries).length), 0);
   const lost = [...pagedListed].filter(digest => !entries.has(digest)).length;
   if (documents.length !== initial.total_keys || entries.size + withheld !== initial.total_entries || lost > 0)
     fail(`与总数一致的全部索引条目（文档 ${documents.length}/${initial.total_keys}，条目 ${entries.size}${withheld === 0 ? '' : ` 加扫描排除 ${withheld}`}/${initial.total_entries}，分页列出而分片没给的 ${lost} 条）`,
-      '核对文档字段和索引完整性；差额若来自凭据扫描排除，请管理员受理这些命中或修复来源文字，重新生产后导出');
+      '核对文档字段、视图截断、读取权限、来源与索引完整性；修复并必要时重新生产后导出');
   shards.forEach((page, i) => save(`index-${i + 1}.json`, Buffer.from(JSON.stringify(page, null, 2) + '\n')));
   let missing = 0;
   const maps: string[] = [];
@@ -294,7 +294,7 @@ export async function exportBuild(options: Options, deps: Deps): Promise<string[
   else await obtain(matches[0], 'command-tree.xml');
   if (missing) fail(`原件缺失或不唯一 ${missing} 份`, '管理员按构建列出的文档清单补读原件，核对命令树路径及原件列表上限；换空目录重新导出');
   const lines = [`索引 ${shards.length} 份；文档 ${documents.length} 份${documents.length === 0 && facetEmpty > 0 ? `（有 ${facetEmpty} 条用例没有文档键）` : ''}；用例 ${entries.size} 条${withheld === 0 ? '' : `（另有 ${withheld} 条被凭据扫描排除，没有进输入）`}；命令树 1 份`];
-  if (refused + facetRefused > 0) lines.push(`读不出的续页 ${refused + facetRefused} 次，文档键由分面视图补齐；下一页读不出通常是该页条目有未受理的凭据命中，管理员受理后可整页续读`);
+  if (refused + facetRefused > 0) lines.push(`读不出的续页 ${refused + facetRefused} 次，文档键由分面视图补齐；下一步：核对视图截断、读取权限或快照与来源状态后重新导出`);
   return [...lines, ...summaries];
 }
 
