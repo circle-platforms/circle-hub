@@ -15,6 +15,7 @@ import {
   RFC5737_PLM_ALT,
   RFC5737_PLM_API,
   RFC5737_PLM_OAUTH,
+  SYNTHETIC_ADMIN_PASS,
   assertBackupAndArchivePreserved,
   assertVaultAndKeysUnchanged,
   connectMcpHttp,
@@ -131,6 +132,8 @@ describe('deployment definition export excludes all secret values (spec item 7)'
     if (!parsed.accounts.some((a) => a.name === 'bob' && a.disabled === true)) {
       exportFailures.push(`exported accounts missing disabled 'bob': ${JSON.stringify(parsed.accounts)}`);
     }
+    // [产品缺陷 · 明天修 (verdict 63①)]: export 当前向 teams[].members 写入内部 UserId 而非账户名 'alice'，
+    // 且导出含其他实体内部编号；保留名字断言不放宽。
     if (!parsed.teams.some((t) => t.name === '研发测试组' && t.members.includes('alice'))) {
       exportFailures.push(
         `exported teams must retain '研发测试组' with member account name 'alice' (not UserId); got teams=${JSON.stringify(parsed.teams)}`,
@@ -198,6 +201,7 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     const diffFailures: string[] = [];
 
     // 1. Account role change (alice: user -> admin).
+    // [产品缺陷 · 明天修 (verdict 63②)]: DeploymentReport 当前只输出 section[index]，缺少实体对象名字（账户/资源/执行器/变量/文档），保留对象名断言不放宽。
     const diffAccount = structuredClone(baseParsed);
     const aliceEntry = diffAccount.accounts.find((a) => a.name === 'alice');
     assert.ok(aliceEntry);
@@ -207,22 +211,19 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     if (!accountRes.combined.includes('alice')) diffFailures.push(`account diff missing 'alice':\n${accountRes.combined}`);
     if (!/role|角色/i.test(accountRes.combined)) diffFailures.push(`account diff missing role field:\n${accountRes.combined}`);
 
-    // 2. Team membership change (remove alice from 研发测试组).
+    // 2. Team membership omission (`members: []`) obeys target-completion ("目标补齐、省略不删除"):
+    // omitting existing member alice must succeed without error and preserve alice in 研发测试组.
     const diffTeam = structuredClone(baseParsed);
     const teamEntry = diffTeam.teams.find((t) => t.name === '研发测试组');
     assert.ok(teamEntry);
     teamEntry.members = [];
     const teamRes = await runApplyCli(state.dataDir, await writeMutated('diff-team.json', diffTeam));
-    if (teamRes.code === 0) {
-      diffFailures.push(`mutated team members was NOT rejected (exit 0):\n${teamRes.combined}`);
-    } else {
-      if (!teamRes.combined.includes('研发测试组') && !teamRes.combined.includes(state.teamAlphaId)) {
-        diffFailures.push(`team diff missing '研发测试组' / '${state.teamAlphaId}':\n${teamRes.combined}`);
-      }
-      if (!/member|成员/i.test(teamRes.combined)) diffFailures.push(`team diff missing members field:\n${teamRes.combined}`);
+    if (teamRes.code !== 0) {
+      diffFailures.push(`omitted team members must not fail under target-completion apply (exit ${teamRes.code}):\n${teamRes.combined}`);
     }
 
     // 3. Resource origin change (synth-plm plm-api -> RFC 5737 alternate).
+    // [产品缺陷 · 明天修 (verdict 63②)]: 保留实体名 synth-plm / plmResourceId 断言不放宽。
     const diffResource = structuredClone(baseParsed);
     const resEntry = diffResource.resources.find((r) => r.definition.name === 'synth-plm');
     assert.ok(resEntry);
@@ -240,6 +241,7 @@ describe('deployment definition apply idempotency and field-level diff refusal (
     }
 
     // 4. Executor endpoint change (synthetic-bed endpoint port 19201 -> 19299).
+    // [产品缺陷 · 明天修 (verdict 63②)]: 保留执行器名 executorTarget 断言不放宽。
     const diffExecutor = structuredClone(baseParsed);
     const execEntry = diffExecutor.executors.find((e) => e.target === state.executorTarget);
     assert.ok(execEntry);
@@ -254,19 +256,24 @@ describe('deployment definition apply idempotency and field-level diff refusal (
       if (!/endpoint|端点/i.test(execRes.combined)) diffFailures.push(`executor diff missing endpoint field:\n${execRes.combined}`);
     }
 
-    // 5. Workflow assignment diff (remove alice assignment).
+    // 5. Workflow assignment omission (actually drop alice whether exported by UserId or name):
+    // obeys target-completion ("目标补齐、省略不删除"), exiting 0 without revoking existing assignment.
     const diffAssign = structuredClone(baseParsed);
+    const beforeAssignCount = diffAssign.workflowAssignments.length;
     diffAssign.workflowAssignments = diffAssign.workflowAssignments.filter(
-      (a) => !('user' in a && a.user === 'alice' && a.pack === state.workflowId),
+      (a) => !('user' in a && (a.user === 'alice' || a.user === state.aliceId) && a.pack === state.workflowId),
+    );
+    assert.ok(
+      diffAssign.workflowAssignments.length < beforeAssignCount,
+      `fixture must drop alice workflowAssignment (${state.aliceId} / alice) before apply`,
     );
     const assignRes = await runApplyCli(state.dataDir, await writeMutated('diff-assign.json', diffAssign));
-    if (assignRes.code === 0) {
-      diffFailures.push(`mutated workflowAssignments was NOT rejected (exit 0):\n${assignRes.combined}`);
-    } else if (!/test-bed|alice|assignment|workflowAssignments|分配/i.test(assignRes.combined)) {
-      diffFailures.push(`workflowAssignments diff missing entity/field:\n${assignRes.combined}`);
+    if (assignRes.code !== 0) {
+      diffFailures.push(`omitted workflowAssignments must not fail under target-completion apply (exit ${assignRes.code}):\n${assignRes.combined}`);
     }
 
     // 6. Variable or named-document content diff if present in exported JSON.
+    // [产品缺陷 · 明天修 (verdict 63②)]: 保留变量名 / 文档名断言不放宽。
     const rawVarClone = JSON.parse(baseRaw) as Record<string, unknown>;
     if (mutateOptionalSectionField(rawVarClone, ['variables', 'vars'], state.plainVarName, (rec) => {
       if (typeof rec.value === 'string') {
@@ -304,16 +311,20 @@ describe('deployment definition apply idempotency and field-level diff refusal (
       else if (!docRes.combined.includes(state.docNoteName)) diffFailures.push(`document diff missing '${state.docNoteName}':\n${docRes.combined}`);
     }
 
-    // Confirm none of the refused applies mutated any existing live configuration.
+    // Confirm none of the refused or omitting applies mutated or removed existing live configuration.
     const usersAfter = JSON.parse((await runCli(state.dataDir, ['user', 'list', '--json'], { expectOk: true })).stdout) as Array<{ name: string; role: string }>;
     assert.equal(usersAfter.find((u) => u.name === 'alice')?.role, 'user', 'alice role must remain user after refused apply');
     const teamShow = (await runCli(state.dataDir, ['team', 'show', state.teamAlphaId], { expectOk: true })).stdout;
-    assert.ok(teamShow.includes('alice'), 'alice must remain in 研发测试组 after refused apply');
+    assert.ok(teamShow.includes('alice'), 'alice must remain in 研发测试组 after omitted-member apply');
     const resShow = (await runCli(state.dataDir, ['resource', 'show', state.plmResourceId, '--values'], { expectOk: true })).stdout;
     assert.ok(resShow.includes('synth-plm') && resShow.includes('SYNTH_PLM_USER'), `resource show missing synth-plm:\n${resShow}`);
     const afterDiffExportPath = join(state.scratchHome, 'after-diff-export.json');
     await runExportCli(state.dataDir, afterDiffExportPath, { expectOk: true });
     const afterDiffParsed = DeploymentDefinition.parse(JSON.parse(await readFile(afterDiffExportPath, 'utf8')));
+    assert.ok(
+      afterDiffParsed.workflowAssignments.some((a) => 'user' in a && (a.user === 'alice' || a.user === state.aliceId) && a.pack === state.workflowId),
+      `alice workflowAssignment must survive omitted-assignment apply: ${JSON.stringify(afterDiffParsed.workflowAssignments)}`,
+    );
     const plmAfterDiff = afterDiffParsed.resources.find((r) => r.definition.name === 'synth-plm');
     assert.ok(plmAfterDiff, 'synth-plm resource must still exist after refused diff applies');
     if (plmAfterDiff.definition.origins['plm-api'] !== RFC5737_PLM_API) {
@@ -340,8 +351,8 @@ describe('deployment definition apply idempotency and field-level diff refusal (
   });
 });
 
-describe('export -> reset --scope all -> apply round-trip rebuild & vault invariance (spec items 3b & 8)', { skip: hasLibpq ? false : LIBPQ_MISSING }, () => {
-  it('rebuilds full usable Hub configuration after wiping DB while keeping keys/ and vault/ byte-for-byte identical', { timeout: 180_000 }, async () => {
+describe('export -> reset --scope all -> init-admin -> apply round-trip rebuild & vault invariance (spec items 3b & 8)', { skip: hasLibpq ? false : LIBPQ_MISSING }, () => {
+  it('rebuilds full usable Hub configuration after wiping DB via init-admin + apply while keeping vault/ and master key byte-for-byte identical', { timeout: 180_000 }, async () => {
     const { root, state } = await seedRichHub({ includeHistoryAndKnowledge: true, canRunSandboxedPacks: hasSandbox });
     let serve: ServeHandle | undefined;
     cleanupQueue.push(() => teardownRoot(root, state.dataDir, serve));
@@ -362,17 +373,39 @@ describe('export -> reset --scope all -> apply round-trip rebuild & vault invari
     assert.equal(dbEmpty.tables.teams ?? 0, 0, 'all teams must be cleared by reset --scope all before apply');
     assert.equal(dbEmpty.tables.team_members ?? 0, 0, 'all team_members must be cleared by reset --scope all before apply');
 
-    await runApplyCli(state.dataDir, applyPath, { expectOk: true });
-    await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after apply');
-
-    // Refresh local operator-token only if pre-reset operator token is no longer bound after full apply (plan.md:40).
-    const probeUsers = await runCli(state.dataDir, ['user', 'list', '--json']);
-    if (probeUsers.code !== 0) {
-      await runCli(state.dataDir, ['operator-token', 'remove', '--confirm-only-operator-token'], { expectOk: true });
-      await runCli(state.dataDir, ['operator-token', 'reissue', '--as', 'admin'], { expectOk: true });
-    }
-
     const rebuildFailures: string[] = [...backupCheck.issues];
+
+    // [产品缺陷 · 已有修复待合 (verdict 63③)]: Codex 已在 5a090e2c0e + 4d80fc511f 修复无管理员空库执行 apply 的误导提示，
+    // 要求明确提示先运行 `circle-hub init-admin` 而非 operator-token remove/reissue；保留提示断言不放宽。
+    const preInitApplyRes = await runApplyCli(state.dataDir, applyPath);
+    assert.notEqual(preInitApplyRes.code, 0, 'apply on admin-empty post-reset DB before init-admin MUST refuse');
+    if (!/init-admin/i.test(preInitApplyRes.combined)) {
+      rebuildFailures.push(`apply on empty post-reset DB before init-admin must guide operator to init-admin; got:\n${preInitApplyRes.combined}`);
+    }
+    await assertVaultAndKeysUnchanged(state.dataDir, vaultBefore, 'after refused apply before init-admin');
+
+    // 19:30 / 19:36 正式恢复路径：reset --scope all 后先运行 init-admin 建立首位管理员并原子替换操作令牌文件。
+    await runCli(state.dataDir, ['init-admin', 'admin', '--password-stdin'], {
+      stdin: `${SYNTHETIC_ADMIN_PASS}\n`,
+      expectOk: true,
+    });
+    const operatorTokenKeyFile = `${createHash('sha256').update(JSON.stringify(['circle-hub', 'operator-token'])).digest('hex')}.key`;
+    const vaultAfterInit = await snapshotVaultAndKeys(state.dataDir);
+    assert.deepEqual([...vaultAfterInit.vault.entries()], [...vaultBefore.vault.entries()], 'init-admin must keep vault/ files byte-for-byte identical');
+    for (const [keyFile, digest] of vaultBefore.keys.entries()) {
+      if (keyFile === operatorTokenKeyFile) continue;
+      assert.equal(vaultAfterInit.keys.get(keyFile), digest, `init-admin must leave non-operator key file ${keyFile} byte-for-byte identical`);
+    }
+    assert.ok(vaultAfterInit.keys.has(operatorTokenKeyFile), 'init-admin must atomically write/replace operator-token key file');
+
+    // [产品缺陷 · 明天修 (verdict 63①/可移植导出)]: 当前 export 仍含实体内部 ID（accounts/teams/resources/executors），
+    // 在清空后的新库直接 apply 会因显式编号不存在被拒绝；待明天改为按名字导出后可通过，保留此 round-trip 断言不降级。
+    const applyRes = await runApplyCli(state.dataDir, applyPath);
+    if (applyRes.code !== 0) {
+      rebuildFailures.push(`apply after init-admin failed (exit ${applyRes.code}):\n${applyRes.combined}`);
+      assert.fail(rebuildFailures.join('\n---\n'));
+    }
+    await assertVaultAndKeysUnchanged(state.dataDir, vaultAfterInit, 'after apply');
 
     // Inspect accounts, teams, packs (including whole-Hub activation), assignments, resources, executors, variables, docs.
     const snap = await readConfigCliSnapshot(state.dataDir);
