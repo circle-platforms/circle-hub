@@ -727,6 +727,14 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
   assert.match(notSent, /什么都没有发到目标/);
   assert.match(notSent, /状态已确认；判断错误；原因还没查清/);
 
+  const diagnosed = toolText('submit_result', SubmitResultOutput.parse({
+    ...base,
+    dispatch: [{ text: '上机验证没有发出：放行未通过：「核验目标与清单等于执行器声明」判定为错误。测试环境实际为 bed-a；与执行器声明的不一样。另有 2 条因为上面的错误还没有核对。现在可以做：原样重交前请管理员核对' }],
+  }), { items: items(1) });
+  assert.match(diagnosed, /放行未通过/);
+  assert.match(diagnosed, /状态已确认；判断错误；决定者程序/);
+  assert.doesNotMatch(diagnosed, /原因还没查清/);
+
   const rejected = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
     dispatch: [{ text: '已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次' }],

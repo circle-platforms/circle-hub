@@ -7,6 +7,7 @@ import { environmentOf, runBound } from './precheck-context.ts';
 import { reportOutcome } from './report-outcome.ts';
 import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
 import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
+import { formatReleaseRefusal } from './refusal-text.ts';
 import type { AdminLogEntry } from '../runs/api.ts';
 import { RETRY_RULES } from './retry-policy.ts';
 import { prepareEffectGate, EffectBoundaryError } from './effect-gate.ts';
@@ -116,10 +117,13 @@ export class AlreadyDispatchedError extends Error {
   readonly ended: boolean;
   constructor(job: string, ended: boolean, message: string) { super(message); this.job = job; this.ended = ended; }
 }
-/** The fixed labels of the release checks that do not hold. Fields carry digests only, so the labels disclose no value. */
+/** All applicable release checks from one explanation (rows that apply plus top-level checks). */
+function releaseChecksOf(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): ReleaseCheck[] {
+  return [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
+}
+/** Labels for the operator log only (may include unchecked); reader wording uses formatReleaseRefusal. */
 function unmetReleaseLabels(explanation: { checks: ReleaseCheck[]; rows: Array<{ applicable: boolean; checks: ReleaseCheck[] }> }): string[] {
-  const checks = [...explanation.checks, ...explanation.rows.filter((row) => row.applicable).flatMap((row) => row.checks)];
-  return [...new Set(checks.filter((check) => check.satisfied !== true).map((check) => check.label))];
+  return [...new Set(releaseChecksOf(explanation).filter((check) => check.satisfied !== true).map((check) => check.label))];
 }
 export class DispatchService {
   readonly options: DispatchOptions;
@@ -399,9 +403,8 @@ export class DispatchService {
    * enabled executor of the run's pack must release; none or several start nothing and say why. The byte and budget guards of
    * dispatch refuse a repeat, so an accepted submission dispatches at most once. */
   /**
-   * The Hub's own dispatch of an accepted run for its runner (decision 105). The reasons are the runner's: release checks
-   * that do not hold are named by their fixed labels; what only an administrator can see or do goes to the administrator
-   * log, errors included, and the answer says the administrator has it.
+   * The Hub's own dispatch of an accepted run for its runner (decision 105). Refusal wording (C14) lists only conditions
+   * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
    */
   async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
@@ -412,17 +415,39 @@ export class DispatchService {
     const described = (error: unknown) => error instanceof Error ? error.message : String(error);
     const pack = detail.run.pack.split('@')[0];
     const candidates = (await this.registry.list(admin)).filter((e) => e.definition.enabled && e.definition.proof.package === pack);
-    const released: typeof candidates = [], unmet = new Set<string>();
+    const released: typeof candidates = [];
+    let refusalChecks: ReleaseCheck[] | undefined;
+    let refusalExecutor: string | undefined;
     for (const candidate of candidates) {
       try {
         const explanation = await this.explainRelease(admin, run, candidate.id);
         if (explanation.satisfied) { released.push(candidate); continue; }
-        const labels = unmetReleaseLabels(explanation); for (const label of labels) unmet.add(label);
-        log('release unmet', `${candidate.id}: ${labels.join('；')}`);
-      } catch (error) { unmet.add('放行核对出错'); log('release error', `${candidate.id}: ${described(error)}`); }
+        const checks = releaseChecksOf(explanation);
+        if (refusalChecks === undefined) { refusalChecks = checks; refusalExecutor = candidate.id; }
+        log('release unmet', `${candidate.id}: ${unmetReleaseLabels(explanation).join('；')}`);
+      } catch (error) {
+        if (refusalChecks === undefined) {
+          refusalChecks = releaseFailure(error);
+          refusalExecutor = candidate.id;
+        }
+        log('release error', `${candidate.id}: ${described(error)}`);
+      }
     }
-    if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，等管理员指定执行器（已记下）` }; }
-    if (!released.length) return { started: false, reason: candidates.length ? `放行条件尚未全部满足：${[...unmet].join('、')}；能在提交、自动化用例或预订上补齐的补齐后原样重交，其余等管理员处理（已记下）` : '没有为该任务包登记的启用执行器，上机验证没有发出；等管理员登记执行器' };
+    if (released.length > 1) { log('release ambiguous', released.map((e) => e.id).join('、')); return { started: false, reason: `有 ${released.length} 个执行器同时满足放行条件，请管理员指定执行器后再上机验证` }; }
+    if (!released.length) {
+      if (!candidates.length) return { started: false, reason: '没有为该任务包登记的启用执行器，上机验证没有发出；等管理员登记执行器' };
+      const runner = await this.options.records.principals.get(detail.run.runner);
+      return {
+        started: false,
+        ...(refusalExecutor ? { executor: refusalExecutor } : {}),
+        reason: formatReleaseRefusal({
+          checks: refusalChecks ?? [],
+          run,
+          executor: refusalExecutor ?? candidates[0].id,
+          callerIsAdmin: runner !== null && isAdmin(runner),
+        }),
+      };
+    }
     const chosen = released[0];
     try {
       const status = await this.dispatch(admin, run, chosen.id, (job) => onReserved?.(job, chosen.id), { initiatedBy: detail.run.runner });
@@ -432,7 +457,7 @@ export class DispatchService {
       return { started: false, executor: chosen.id, reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
           ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后重新开始上机验证` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
-          : '上机验证前核对出错，没有发出；等管理员处理（已记下）后原样重交' };
+          : '上机验证前核对出错，没有发出；请管理员查看调用日志后处理，再原样重交' };
     }
   }
 

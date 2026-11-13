@@ -63,8 +63,10 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
    const proof=await inspectInput(o.by,o.run,d,o.records,o.runs,o.workflows,o.now());
    const trace=new ReleaseTrace();trace.checks.push(...proof.checks);
    const derived=proof.input?effectParameters(proof.input):undefined;
-   trace.check('release.parameters.keys','派发参数字段集合与核验事实一致',derived?equal(Object.keys(parameters).sort(),Object.keys(derived).sort()):null,[releaseField('parameters.keys',derived?Object.keys(derived).sort():undefined,Object.keys(parameters).sort(),derived?equal(Object.keys(parameters).sort(),Object.keys(derived).sort()):null)]);
-   for(const name of ['target','manifest_sha256','build','sha256','items','generator'])trace.check('release.parameters.'+name,'派发参数与重新读取的核验事实一致',derived?equal(parameters[name],derived[name]):null,[releaseField('parameters.'+name,derived?.[name],parameters[name],derived?equal(parameters[name],derived[name]):null)]);
+   const blockedBy=derived?undefined:proof.checks.find(check=>check.satisfied!==true)?.condition;
+   const blocked=blockedBy?{blocked_by:blockedBy}:undefined;
+   trace.check('release.parameters.keys','派发参数字段集合与核验事实一致',derived?equal(Object.keys(parameters).sort(),Object.keys(derived).sort()):null,[releaseField('parameters.keys',derived?Object.keys(derived).sort():undefined,Object.keys(parameters).sort(),derived?equal(Object.keys(parameters).sort(),Object.keys(derived).sort()):null)],blocked);
+   for(const name of ['target','manifest_sha256','build','sha256','items','generator'])trace.check('release.parameters.'+name,'派发参数与重新读取的核验事实一致',derived?equal(parameters[name],derived[name]):null,[releaseField('parameters.'+name,derived?.[name],parameters[name],derived?equal(parameters[name],derived[name]):null)],blocked);
    trace.check('release.artifact','效果行产物要求项等于执行器指定要求项',row.release.artifact===d.proof.requirement,[releaseField('row.release.artifact',d.proof.requirement,row.release.artifact,row.release.artifact===d.proof.requirement)]);
    const latest=await trace.read('release.latest.read','当前受理结果读取完成',()=>o.runs.getRun(o.by,o.run));
    trace.check('release.latest.available','当前受理结果存在',!!latest?.latest,[releaseField('latest','present',!!latest?.latest,!!latest?.latest)]);

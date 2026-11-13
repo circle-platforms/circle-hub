@@ -43,9 +43,9 @@ test('without an enabled administrator, or when the release does not hold, the H
   c.kit.principals.list = list;
   c.detail.latest!.result.errors.push({ code: 'SOURCE_UNAVAILABLE', message: 'synthetic' });
   const held = await c.service.dispatchAccepted(c.run);
-  assert.equal(held.started, false); assert.match(held.reason ?? '', /放行条件尚未全部满足/);
-  // The release check that does not hold is named by its fixed label; no administrator command.
-  assert.match(held.reason ?? '', /核验结果没有未消除错误/); assert.doesNotMatch(held.reason ?? '', /circle-hub|job dispatch/);
+  assert.equal(held.started, false); assert.match(held.reason ?? '', /放行未通过/);
+  // The release check that does not hold is named by its fixed label; non-admin runner gets no CLI.
+  assert.match(held.reason ?? '', /核验结果没有未消除错误/); assert.doesNotMatch(held.reason ?? '', /circle-hub|job dispatch|已记下/);
   assert.equal(c.calls.includes('send_blob'), false);
 });
 
