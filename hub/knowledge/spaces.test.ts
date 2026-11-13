@@ -103,7 +103,7 @@ test('capacity and concurrency are serialized, while search pages bind identity,
   await assert.rejects(spaces.directory(w.user, '/notes/../private'));
   await assert.rejects(spaces.search(w.user, 'x'.repeat(201)));
 });
-test('team product mounts preserve legacy hashes and read permissions while sharing the full-text projection', async (t) => {
+test('team product mounts preserve product tree hashes and read permissions while sharing the full-text projection', async (t) => {
   const w = await makeWorld(postgres);
   t.after(w.close);
   w.external.set('site:tree:Rel_ACME_1_2_15', { bytes: catalogXml(BASE_CATALOG), mediaType: 'application/xml' });
