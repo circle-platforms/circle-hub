@@ -700,7 +700,7 @@ C5 exports `ToolName` and `TOOL_NAMES` from the existing `TOOLS` registration. C
 required publication files and readable declaration files per generated `PackKind`; `REQUIRED_FILES`
 is derived from it. Server and runs owners adopt these exports in their own packages.
 
-C7 changes only output schemas; inputs and model-facing response text retain their bytes. The
-generator owner must enable deep output extensions and the server owner must preserve them during
-validation. Generation also writes pack mirrors; this task restores those generated mirror changes
-and leaves synchronization to the integrator. PostgreSQL and typecheck require a scheduled slot.
+C7 changes only output schemas; inputs and model-facing response text retain their bytes. The `TOOLS` registration clones output schemas recursively, allowing and retaining extra object
+fields at every depth while preserving refinements and leaving shared input and record schemas strict.
+The existing generator and server validation consume these registered schemas without further changes.
+Generation can also write pack mirrors; any such changes remain outside this task and go to the integrator. PostgreSQL and typecheck require a scheduled slot.
