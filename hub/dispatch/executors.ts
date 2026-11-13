@@ -11,7 +11,7 @@ export type RegisteredExecutor = {
     source: ExecutorSource;
     definition: ExecutorDefinition;
     resolved_digest: string;
-    variables: import('../../contracts/src/variables.ts').VariableUse[];
+    variables: import('../../contracts/src/variables.ts').OrdinaryVariableUse[];
 };
 export class ExecutorAccessError extends Error {
     readonly next_action: string;
@@ -20,7 +20,6 @@ export class ExecutorAccessError extends Error {
 export class ExecutorCredentialError extends ExecutorAccessError {
     constructor(id: string, name?: string, fact?:string) { super(fact??(name ? `密钥 ${name} 没有可用的当前设置；未发请求` : `执行器 ${id} 还没有 credential 引用；未发请求`), name ? `circle-hub secret set --name ${name}，然后重做原操作` : `在定义里加 credential 引用后 circle-hub executor update ${id} <定义文件>；原来的钥匙会迁移过去`); }
 }
-export function executorConsumer(d: ExecutorDefinition | ExecutorSource) { return { definition: d.id!, item: 'credential', sends_to: sha256Hex(canonicalBytes({ endpoint: d.endpoint, ca: d.ca })) }; }
 /** An executor describes how to reach the bed, not which build it should run (decision 120): the build the devices run is what
  * they report, and only a run's locked build is compared against it. Refused when written; a definition registered before the
  * rule still reads, and the dispatcher never takes these values from it. */
@@ -92,23 +91,19 @@ export class ExecutorRegistry {
                 throw new Error('迁移密钥与修改 endpoint、ca 须分开做；改地址后要重新输入密钥');
             const value = await this.records.vault.getText(`executor.${id}.bearer`);
             if (value !== null) {
-                const previous = (await this.records.variables.list(by)).find(v => v.kind === 'secret' && v.name === name && v.definition);
-                let consumers = [executorConsumer(source)];
-                if (previous?.definition?.schema === 'secret@1') {
-                    const old = await this.records.vault.getText(previous.definition.entry);
-                    if (previous.definition.digest_rule !== 'plain' || old !== value)
+                const previous = await this.records.vault.readSecret(name);
+                if (previous) {
+                    const old = previous.value;
+                    if (previous.metadata.digest_rule !== 'plain' || old !== value)
                         throw new Error('旧执行器密钥与已有名字的值或规则不同：请换一个名字');
-                    consumers = [...previous.definition.consumers.filter(c => c.definition !== id || c.item !== 'credential'), executorConsumer(source)];
                 }
-                migration = { name, value, short: true, consumers };
+                migration = { name, value, short: true };
             }
         }
         const result = await this.configure(by, source, migration, { digest: current.digest, source: current.source, target: previousTarget, rebind });
         try {
             if (source.credential) {
                 await this.records.vault.remove(`executor.${id}.bearer`);
-                const name = secretNameOf(source.credential)!;
-                await this.records.variables.cleanupSecret(name);
             }
         }
         catch {
@@ -164,7 +159,7 @@ export class ExecutorRegistry {
     async material(id: string, definition: ExecutorDefinition) { const current = await this.readSource(id); if (!current?.source.enabled)
         throw new ExecutorAccessError('执行器已禁用或不可用；未发请求', '管理员核对源定义并用 executor update 启用后重做原操作'); const name = definition.credential ? secretNameOf(definition.credential) : null; if (!name)
         throw new ExecutorCredentialError(id); try {
-        const [m] = await this.records.variables.readSecrets([{ name, consumer: executorConsumer({ ...definition, id }) }]);
+        const [m] = await this.records.variables.readSecrets([{ name }]);
         if (m.metadata.digest_rule !== 'plain')
             throw new ExecutorCredentialError(id,name,`密钥 ${name} 当前登记只存摘要；执行器需要原值，未发请求`);
         return m;
@@ -199,7 +194,6 @@ export class ExecutorRegistry {
                 throw new Error('解析后的执行器定义不能包含任何当前或上一版密钥的原文');
         const stored = await this.records.objects.put(canonicalBytes(source), 'application/json');
         const pinned = await this.records.objects.put(canonicalBytes(resolved.definition), 'application/json');
-        const expected = migration ? (await this.records.authorizations.resourceConfig('secret:' + migration.name))?.digest ?? null : null;
         const prepared = migration ? await this.records.variables.prepareSecrets(by, [migration], `从执行器 ${source.id} 迁移来`) : undefined;
         await this.records.store.withTransaction(async (tx) => {
             await lockExecutorConfiguration(this.records.store, tx, source.id!, [...source.resources, ...(guard?.source.resources ?? [])], [resolved.definition.target, ...(guard ? [guard.target] : [])], [new URL(source.endpoint).origin, ...(guard ? [new URL(guard.source.endpoint).origin] : [])]);
@@ -211,16 +205,11 @@ export class ExecutorRegistry {
                     await assertUnused(this.records.store, tx, source.id!, guard);
             }
             const refs = referencesIn(source);
-            await this.records.variables.lockNames(refs.map(r => r.name), tx);
+            await this.records.variables.lockNames(refs.filter(r=>r.kind==='var').map(r => r.name), tx);
             for (const ref of refs.filter(r => r.kind === 'var')) {
                 const rows = await this.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|var:${ref.name}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
                 if (rows.items[0]?.body.revoked || rows.items[0]?.digest !== snapshot.get(ref.name))
                     throw new Error('引用的变量在配置时已变；请先 var set 后重做 executor update');
-            }
-            if (migration) {
-                const rows = await this.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|secret:${migration.name}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
-                if ((rows.items[0] && !rows.items[0].body.revoked ? rows.items[0].digest : null) !== expected)
-                    throw new Error('迁移期间密钥已变；核对后重新 update');
             }
             if (prepared)
                 await this.records.variables.commitSecrets(by, prepared, tx);
