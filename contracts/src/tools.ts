@@ -426,9 +426,12 @@ function extensibleOutput(schema: z.ZodType): z.ZodType {
     if (value instanceof z.ZodType) {
       const previous = copies.get(value);
       if (previous) return previous;
-      const definition = Object.fromEntries(Object.entries(value._zod.def).map(([key, child]) => [key, visit(child)]));
+      const definition: z.core.$ZodTypeDef & Record<string, unknown> = {
+        ...Object.fromEntries(Object.entries(value._zod.def).map(([key, child]) => [key, visit(child)])),
+        type: value._zod.def.type,
+      };
       if (definition.type === 'object') definition.catchall = z.unknown();
-      const copy = z.core.clone(value, definition as typeof value._zod.def, { parent: true });
+      const copy = z.core.clone(value, definition, { parent: true });
       copies.set(value, copy);
       return copy;
     }
