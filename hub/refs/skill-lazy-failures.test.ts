@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {createSkillParserRegistry} from './skills.ts';
 import {createDocumentCache} from './resolve.ts';
-import type {PackRegistry} from '../runs/api.ts';
+import type {SkillParserRegistryPort} from '../ports.ts';
 import type {RecordsKit} from '../records/api.ts';
 import type {FunctionAttempt} from '../rules/api.ts';
 
@@ -28,7 +28,7 @@ export function medium(input){const text='a'.repeat(10_000);return {fragments:in
 `);
   const row:any={parser:'demo@1',media_types:['text/plain'],limits:{maxBytes:1024,maxDepth:5,maxNodes:10},function:{module:'parser.ts',export:'parse'},locate:{module:'parser.ts',export:'fail'}};
   const opened:any={info:{id:'demo-format',version:'1.0.0',digest:'a'.repeat(64),manifest:{}},handle:{directory:dir},declarations:{kind:'skill',skill:{parsers:[row]}}};
-  const registry={installedSkills:async()=>[opened],open:async()=>opened} as unknown as PackRegistry;
+  const registry={installedSkills:async()=>[opened],open:async()=>opened} as unknown as SkillParserRegistryPort;
   const attempts:FunctionAttempt[]=[];
   const parsers=(await createSkillParserRegistry({registry,records:{} as RecordsKit,sandbox:{requireOsIsolation:false,onAttempt:a=>attempts.push(a)}}).freeze!([])).parsers;
   await run({parser:parsers.get('demo@1'),row,attempts});
@@ -91,7 +91,7 @@ test('overlapping HTML ranges split when their aggregate exceeds the sandbox lim
  const row={parser:'html@1',media_types:['text/html'],limits:{maxBytes:16*1024*1024,maxDepth:256,maxNodes:1_000_000,maxAttributes:512},function:{module:'functions/parse.ts',export:'default'},locate:{module:'functions/parse.ts',export:'locate'}};
  const opened:any={info:{id:'html-format',version:'1.0.0',digest:'a'.repeat(64),manifest:{}},handle:{directory},declarations:{kind:'skill',skill:{parsers:[row]}}};
  const attempts:FunctionAttempt[]=[];
- const registry={installedSkills:async()=>[opened],open:async()=>opened} as unknown as PackRegistry;
+ const registry={installedSkills:async()=>[opened],open:async()=>opened} as unknown as SkillParserRegistryPort;
  const parsers=(await createSkillParserRegistry({registry,records:{} as RecordsKit,sandbox:{requireOsIsolation:false,onAttempt:a=>attempts.push(a)}}).freeze!([])).parsers;
  const parser=parsers.get('html@1')!;
  const bytes=Buffer.from('<html><body>'+Array.from({length:1200},(_,i)=>`<p>${i} ${'x'.repeat(760)}</p>`).join('')+'</body></html>');

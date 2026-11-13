@@ -15,7 +15,7 @@ parser names require a frozen run. This cannot replace another reader's existing
 
 
 Model elements: **B03** (references), **T04** (resolution, the verbatim quote check), and the read tiers of **B02**.
-Other packages import only from `hub/refs/api.ts`. Core parsing depends on contracts; the skill adapter uses the records, runs and rules public APIs.
+Other packages import only from `hub/refs/api.ts`. Core parsing depends on contracts; the skill adapter uses the records and rules public APIs plus the server-owned read-only skill registry port.
 
 ## What is here
 
@@ -565,5 +565,5 @@ freezing and published digest retention tests remain. PostgreSQL tests and type 
 ## Package boundaries (C4)
 
 Parser usage tracing imports only telemetry/api.ts. QUOTATION_UNITS and quotation types are available through refs/api.ts
-for synthetic parser fixtures. The skill adapter still needs the server-owned registry port before its runs type import
-can be removed.
+for synthetic parser fixtures. The skill adapter consumes SkillParserRegistryPort and OpenedSkillPack from the server-owned ports.ts; the provider
+registry satisfies this read-only shape without a wrapper or changes to parser behavior.
