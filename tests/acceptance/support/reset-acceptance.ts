@@ -817,21 +817,26 @@ export async function seedRichHub(
       expectOk: true,
     });
 
-    // Standalone vault secret (verifies post-C12 secret vault entry independent of consumers).
+    // Standalone vault secrets (verifies post-C12 secret vault entry independent of consumers).
     await runCli(dataDir, ['secret', 'set', '--name', 'SYNTH_STANDALONE_SECRET', '--reason', 'synthetic standalone vault check'], {
       stdin: `${canaries.extraSecret}\n`,
+      expectOk: true,
+    });
+    await runCli(dataDir, ['secret', 'set', '--name', 'SYNTH_EXTRA_VAULT_SECRET', '--reason', 'synthetic second vault secret check'], {
+      stdin: `${canaries.varSecret}\n`,
       expectOk: true,
     });
 
     const plainVarName = 'SYNTH_PLAIN_VAR';
     const plainVarValue = 'synthetic-var-value-v1';
-    const secretVarName = 'SYNTH_SECRET_VAR';
+    const secretVarName = 'SYNTH_BUILD_KEY_LABEL';
+    const keyLabelValue = 'ordinary-key-label-v1';
     await runCli(dataDir, ['var', 'set', plainVarName, '--not-secret', '--text', '--reason', 'synthetic plain variable'], {
       stdin: plainVarValue,
       expectOk: true,
     });
-    await runCli(dataDir, ['var', 'set', secretVarName, '--text', '--reason', 'synthetic secret variable'], {
-      stdin: canaries.varSecret,
+    await runCli(dataDir, ['var', 'set', secretVarName, '--not-secret', '--text', '--reason', 'synthetic key-named ordinary variable'], {
+      stdin: keyLabelValue,
       expectOk: true,
     });
 
