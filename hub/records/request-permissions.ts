@@ -8,7 +8,7 @@ import type { AuthorizationBody, AuthorizationRecord, Principal, User } from './
 import { iso, type Database } from './db.ts';
 import { digestOf } from './digest.ts';
 import { verifiedRecord } from './store.ts';
-import { readScopeValue } from './read-scope.ts';
+import { readScopeValue, withReadRetirement } from './read-scope.ts';
 
 export class RequestPermissions {
   active = true;
@@ -141,10 +141,10 @@ export async function withRequestPermissions<T>(source: {capturePermissionSnapsh
   const shared = readScopeValue(source, principal.id, () => capture(principal), pending => { void pending.then(snapshot => { snapshot.active = false; snapshot.cache.clear(); }, () => {}); });
   if (shared) {
     const snapshot = await shared;
-    if (snapshot.active) return storage.run(snapshot, run);
+    if (snapshot.active) return withReadRetirement(() => { snapshot.cache.clear(); snapshot.cacheBytes = 0; }, () => storage.run(snapshot, run));
   }
   const snapshot = await capture(principal);
-  return storage.run(snapshot, async () => { try { return await run(); } finally { snapshot.active = false; snapshot.cache.clear(); } });
+  return withReadRetirement(() => { snapshot.cache.clear(); snapshot.cacheBytes = 0; }, () => storage.run(snapshot, async () => { try { return await run(); } finally { snapshot.active = false; snapshot.cache.clear(); } }));
 }
 
 /** Reuse successful source reads only inside the request, retaining at most 64 MiB of raw bytes. */
@@ -154,9 +154,11 @@ export async function requestRead<T>(user: string, key: string, load: () => Prom
   const found = snapshot.cache.get(key); if (found) return found as Promise<T>;
   const pending = load(); snapshot.cache.set(key,pending);
   try {
-    const value = await pending, bytes = size(value);
+    const value = await pending;
+    if (snapshot.cache.get(key) !== pending) return value;
+    const bytes = size(value);
     if (!snapshot.active || value === null || bytes < 0 || snapshot.cacheBytes + bytes > 64*1024*1024) snapshot.cache.delete(key);
     else snapshot.cacheBytes += bytes;
     return value;
-  } catch (error) { snapshot.cache.delete(key); throw error; }
+  } catch (error) { if (snapshot.cache.get(key) === pending) snapshot.cache.delete(key); throw error; }
 }

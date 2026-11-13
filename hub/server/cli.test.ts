@@ -122,13 +122,10 @@ describe('retired names and startup', () => {
     assert.match(result.text, /CIRCLE_HUB_TYPO 不是 Hub 的配置项/);
   });
 
-  test('serve as the runtime role before the migrations refuses to start; an unknown flag is a usage error', async () => {
-    const env = await environment();
-    const result = await run(['serve'], env);
-    assert.equal(result.code, 1);
-    assert.match(result.text, /还没有应用/);
-    assert.equal((await run(['serve', '--bogus'], env)).code, 2);
-    assert.equal((await run(['serve', '--migrate-only', '--migrate'], env)).code, 2);
+  test('serve invalid flags remain usage errors before initialization', async () => {
+    const env=await environment();
+    assert.equal((await run(['serve','--bogus'],env)).code,2);
+    assert.equal((await run(['serve','--migrate-only','--migrate'],env)).code,2);
   });
 });
 

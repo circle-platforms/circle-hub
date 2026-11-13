@@ -11,6 +11,7 @@ test('a large synthetic workbook stays inside the sandbox output budget and loca
   const book = await workbook();
   const bookEager = xlsxParser.parse(book);
   assert.ok(bookEager.summary().cells as number >= 20000);
+  assert.ok(bookEager.listSelectors('').length >= 20000);
   await measure('workbook-format', book);
   const parsers = lazy.parsers();
   await parsers.refresh!();

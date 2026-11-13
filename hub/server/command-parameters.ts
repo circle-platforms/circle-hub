@@ -74,6 +74,7 @@ const as = text('读取账户', '现有 --as 参数；写操作仍由原处理�
 const note = text('说明', '分配或撤回记录的说明');
 const reason = text('理由', '必填、至多 500 字符；原服务检查凭据内容，不在表单中替代扫描', { required: true, schema: { type: 'string', minLength: 1, maxLength: 500 } });
 const teamOption = text('团队', '与个人位置参数互斥的团队编号', { schema: teamSchema, dynamicChoices: true });
+const resourceAudienceOptions = { team: teamOption, all: flag('全体成员', '与 --team 互斥；接入后显式分配给全体启用账户') };
 const memberName = () => positional('name', '账户名', '由 records 校验：1–100 字符，无控制字符及首尾空白');
 const product = text('产品', '产品包声明的名称或产品号，由知识服务解析', { required: true, dynamicChoices: true });
 const line = text('版本线', '产品的版本线；存在性由知识服务检查', { dynamicChoices: true });
@@ -140,7 +141,7 @@ export const COMMAND_PARAMETERS = {
   'pack.assign': assign('assign'), 'pack.unassign': assign('unassign'),
   'pack.grant-publish': define(['pack', 'grant-publish'], '授予发布权', sources.pack, [user()], {}),
   'pack.revoke-publish': define(['pack', 'revoke-publish'], '撤回发布权', sources.pack, [user()], {}),
-  'resource.add': define(['resource', 'add'], '接入业务系统资源', sources.resource, [positional('system-pack', '业务系统接入包', '已发布的系统包号或号@版本', true, stringSchema, true)], { ...resourceOptions, team: teamOption, all: flag('全体成员', '与 --team 互斥；接入后显式分配给全体启用账户'), name: { ...resourceOptions.name, required: true }, environment: { ...resourceOptions.environment, required: true }, origin: { ...resourceOptions.origin, required: true } }, { rules: [{ not: { required: ['team', 'all'], properties: { all: { const: true } } } }], validationNotes: ['所需角色、凭据项和设置来自选定系统包；不预设产品字段', '未指定 --all 或 --team 时不分配；接入和分配分步执行，分配未确认时资源仍已添加'] }),
+  'resource.add': define(['resource', 'add'], '接入业务系统资源', sources.resource, [positional('system-pack', '业务系统接入包', '已发布的系统包号或号@版本', true, stringSchema, true)], { ...resourceOptions, ...resourceAudienceOptions, name: { ...resourceOptions.name, required: true }, environment: { ...resourceOptions.environment, required: true }, origin: { ...resourceOptions.origin, required: true } }, { rules: [{ not: { required: Object.keys(resourceAudienceOptions), properties: { all: { const: true } } } }], validationNotes: ['所需角色、凭据项和设置来自选定系统包；不预设产品字段', '未指定 --all 或 --team 时不分配；接入和分配分步执行，分配未确认时资源仍已添加'] }),
   'resource.update': define(['resource', 'update'], '更新资源接入配置', sources.resource, [resource()], { 'system-pack': text('业务系统接入包', '新的已发布系统包引用', { dynamicChoices: true }), ...resourceOptions, 'clear-plaintext': flag('清除明文许可', '不能与 --allow-plaintext 同时提供') }, { rules: [{ not: { required: ['clear-plaintext', 'allow-plaintext'], properties: { 'clear-plaintext': { const: true } } } }] }),
   'resource.assign': resourceAssign('assign'), 'resource.unassign': resourceAssign('unassign'),
   'secret.set': define(['secret', 'set'], '设置命名密钥', sources.secret, [], { name: { ...secretOptions.name, required: true }, digest: secretOptions.digest, short: secretOptions.short, reason }, { stdin: [{ keysFromOption: 'name', sensitive: true, description: '每个命名密钥对应一个 readSecret(name) 输入；绝不进入 argv 或公开形状' }] }),

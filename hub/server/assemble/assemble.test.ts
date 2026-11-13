@@ -119,19 +119,14 @@ describe('start-up order and failure modes', () => {
     assert.deepEqual(calls, ['start', 'stop abort=true'], 'the pass in progress is asked to stop at its next run');
   });
 
-  test('serve on a database the owner never migrated refuses before the assembly runs', async () => {
-    const deployment = await harness.deployment({ migrate: false });
-    const spy = spyAssembly();
-    let listening: ListenInfo | null = null;
-    const result = await deployment.run(['serve'], { assembly: spy.load, onListening: (info) => (listening = info) });
-    assert.equal(result.code, 1);
-    assert.match(result.text, /还没有应用/);
-    assert.equal(spy.assembled, 0, 'records come before the assembly');
-    assert.equal(listening, null);
-    for (const argv of [['pack', 'list'], ['init-admin', '甲']]) {
-      const command = await deployment.run(argv, { assembly: realAssembly });
-      assert.equal(command.code, 1, argv.join(' '));
-      assert.match(command.text, /还没有应用/, argv.join(' '));
+  test('ordinary administrator commands refuse an unmigrated database before business assembly', async () => {
+    const deployment=await harness.deployment({migrate:false});
+    const empty=await harness.postgres.createDatabase(undefined,{empty:true});
+    deployment.env.CIRCLE_HUB_DATABASE_NAME=empty.database;
+    for(const argv of [['pack','list'],['init-admin','甲']]){
+      const command=await deployment.run(argv,{assembly:realAssembly});
+      assert.equal(command.code,1,argv.join(' '));
+      assert.match(command.text,/还没有应用/,argv.join(' '));
     }
   });
 

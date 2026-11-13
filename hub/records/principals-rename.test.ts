@@ -1,15 +1,14 @@
 // Renaming an account (owner's requirement of 2026-11-04): an administrator renames any account but a deleted member,
-// through the runtime role's UPDATE (name) (RUNTIME_GRANTS, migration 25), with a user_history snapshot of the new name.
+// through the runtime role's UPDATE (name) (RUNTIME_GRANTS, consolidated baseline), with a user_history snapshot of the new name.
 // Records name accounts by id, so login and lookups follow the new name and nothing else changes. Synthetic names only.
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
-import { startPostgres } from '../testing/postgres.ts';
 import { openTestRecords } from '../testing/records.ts';
 import type { Principal } from './api.ts';
 import { Database, createPool } from './db.ts';
 import { AccessError, ConflictError } from './errors.ts';
-import { MIGRATIONS, grantRuntime, migrate } from './migrations.ts';
+import { grantRuntime } from './migrations.ts';
 import { PgPrincipals } from './principals.ts';
 
 const PASSWORD = 'synthetic-rename-password';
@@ -85,25 +84,4 @@ test('rename refuses an unchanged name, a live account\'s name, a deleted member
   assert.equal((await w.kit.principals.findByName('synthetic-deleted'))?.id, reused.id, 'lookups by name find the live account');
   // The tombstone trigger of migration 23 keeps a deleted member's name even against the runtime role's grant.
   await assert.rejects(w.rt.query('UPDATE users SET name=$2 WHERE id=$1', [gone.id, 'synthetic-forced']), (error: any) => error.code === 'HU001');
-});
-
-test('migration 25 gives UPDATE (name) to the roles that hold the earlier users column UPDATEs, and to nobody else', async (t) => {
-  const pg = await startPostgres();
-  t.after(() => pg.stop());
-  const db = new Database(createPool(await pg.createDatabase(undefined, { empty: true })));
-  t.after(() => db.end());
-  await migrate(db, MIGRATIONS.slice(0, 24));
-  const suffix = randomBytes(4).toString('hex'), runtime = `synthetic_before_${suffix}`, reader = `synthetic_reader_${suffix}`;
-  await db.query(`CREATE ROLE ${runtime} NOLOGIN`);
-  await db.query(`CREATE ROLE ${reader} NOLOGIN`);
-  // The users grant of RUNTIME_GRANTS before this migration.
-  await db.query(`GRANT SELECT, INSERT, UPDATE (role, disabled, updated_at, password_hash, password_must_change, password_revision) ON users TO ${runtime}`);
-  await db.query(`GRANT SELECT ON users TO ${reader}`);
-  const may = async (role: string) => (await db.query("SELECT has_column_privilege($1,'public.users','name','UPDATE') AS ok", [role])).rows[0].ok;
-  assert.equal(await may(runtime), false);
-  assert.deepEqual(await migrate(db), MIGRATIONS.slice(24).map((migration) => migration.version));
-  assert.equal(MIGRATIONS[24].version, 25);
-  assert.equal(await may(runtime), true);
-  assert.equal(await may(reader), false);
-  assert.equal((await db.query("SELECT has_column_privilege('public','public.users','name','UPDATE') AS ok")).rows[0].ok, false);
 });

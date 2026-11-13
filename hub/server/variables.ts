@@ -13,6 +13,7 @@ import type { PacksPort } from '../ports.ts';
 import { ExecutorDefinition, ExecutorSource } from '../dispatch/api.ts';
 import { canonicalize, validateChangeReason, secretForms, isSha256, parseStrictJson, scanForCredentials, VariableError, VaultError, VaultReadinessError, type VaultSecretMetadata, type RecordsKit, type Principal, type Transaction, type NamedVersion, type AuthorizationRecord, type SecretWrite, type VariableSnapshot, WHOLE_HUB } from '../records/api.ts';
 import { requireVaultKey } from './assemble/vault.ts';
+import { AssemblyError } from './assemble/errors.ts';
 import { readNamedEnvironment } from './assemble/env-file.ts';
 import { readSecret, readSecrets } from './assemble/secret-input.ts';
 import { CliError, UsageError } from './errors.ts';
@@ -509,6 +510,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
             s.out('下一步：在签发方吊销或换掉旧值；Hub 删掉条目只是自己不再用它，备份里还有');
             return 0;
         }
+        if (!v['dry-run']) await requireVaultKey(kit, { command: true });
         const registry=(await s.hub(false)).registry;
         const checkProductNames=async(tx?:Transaction)=>{
           const declarations=await registry.variableDeclarations(tx);
@@ -528,8 +530,6 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
                 throw new UsageError('第 ' + (index + 1) + ' 个 --short 没有对应名字或重复');
             short.add(name);
         }
-        if (!v['dry-run'])
-            await requireVaultKey(kit, { command: true });
         let values: string[];
         let sourceSecrets: string[] = [];
         const basicPasswords: string[] = [];
@@ -587,7 +587,7 @@ export async function namedSecretCommand(s: VariableCommandSession, args: readon
         return 0;
     }
     catch (error) {
-        if (error instanceof CliError || error instanceof UsageError) throw error;
+        if (error instanceof CliError || error instanceof UsageError || error instanceof AssemblyError) throw error;
         if (error instanceof VaultReadinessError) throw new CliError(error.adminMessage);
         if (error instanceof VariableError || error instanceof VaultError) throw new CliError(error.message);
         throw new CliError('密钥库操作未完成；主密钥、封存文件或完整元数据不可核对');

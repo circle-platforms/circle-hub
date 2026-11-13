@@ -39,3 +39,14 @@ test('subcommand tables reject unknown and inherited names without opening recor
     for (const name of ['unknown', 'constructor', 'toString', '__proto__']) await assert.rejects(command([name], context, options), UsageError);
   }
 });
+
+
+test('reset advertises no synchronous bridge capability and directs callers to the authenticated worker path', async () => {
+  const { COMMAND_METADATA } = await import('./command-registry.ts');
+  const { createCommandBridge } = await import('./command-bridge.ts');
+  assert.equal(COMMAND_METADATA.find(command => command.name === 'reset')?.bridge, false);
+  const bridge = createCommandBridge({ env: {}, cwd: tmpdir(), main: async () => { throw new Error('reset must not execute synchronously'); } });
+  const result = await bridge.run(['reset'], { token: 'synthetic' });
+  assert.equal(result.code, 2);
+  assert.deepEqual(result.stderr, ['请使用控制台重建预览和确认入口；不能在服务进程同步执行 reset']);
+});

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { test } from 'node:test';
-import { artifactShareKey, requestRead, withRequestPermissions } from './api.ts';
+import { artifactShareKey, requestRead, retireReadScope, withRequestPermissions } from './api.ts';
 import { openTestRecords } from '../testing/records.ts';
 import { sourceReader } from '../runs/engine/readers.ts';
 
@@ -96,6 +96,28 @@ test('a failed source read is not cached as absence', async () => {
       await assert.rejects(requestRead(admin.id,'synthetic',load,value=>value.bytes.length));
       assert.ok(await requestRead(admin.id,'synthetic',load,value=>value.bytes.length));
       assert.ok(await requestRead(admin.id,'synthetic',load,value=>value.bytes.length)); assert.equal(attempts,2);
+    });
+  } finally { await kit.close(); }
+});
+
+
+test('a retired pending read cannot evict the current request generation after it fails', async () => {
+  const kit = await openTestRecords();
+  try {
+    const admin = (await kit.principals.bootstrapAdmin('synthetic-pending-admin')).user;
+    await withRequestPermissions(kit.artifacts, admin, async () => {
+      const old = Promise.withResolvers<string>(), fresh = Promise.withResolvers<string>();
+      const failure = new Error('synthetic retired read failure');
+      const previous = requestRead(admin.id, 'synthetic-generation', () => old.promise, value => value.length);
+      const rejected = assert.rejects(previous, error => error === failure);
+      retireReadScope();
+      let loads = 0;
+      const current = requestRead(admin.id, 'synthetic-generation', () => { loads++; return fresh.promise; }, value => value.length);
+      old.reject(failure); await rejected;
+      fresh.resolve('synthetic-current');
+      assert.equal(await current, 'synthetic-current');
+      assert.equal(await requestRead(admin.id, 'synthetic-generation', async () => { loads++; return 'synthetic-current'; }, value => value.length), 'synthetic-current');
+      assert.equal(loads, 1, 'the obsolete failure must not remove the newer pending or successful proof');
     });
   } finally { await kit.close(); }
 });
