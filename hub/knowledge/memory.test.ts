@@ -23,8 +23,6 @@ test('memory and knowledge keep text that looks like a credential and clean Unic
  }
  const clean='合成　偏好\nＵＴＦ－８　原文\u200b。',saved=await memory.write(w.user,create(clean,'keep-bytes'));
  assert.equal((await memory.read(w.user,saved.document)).markdown,clean);
- const grantChecks=await memory.precheckGrant(w.user,'/preferences');assert.equal(grantChecks[0].state,'unchecked');assert.match(grantChecks[0].message,/未.*扫描/);
- const preview=await memory.share(w.user,{document:saved.document,version:saved.version,client_key:'unscanned-preview',check_only:true});assert.equal(preview.ok,true);assert.deepEqual(preview.checks.map(c=>c.state),['pass','pass','unchecked']);assert.match(preview.checks[2].message,/未.*扫描/);
  const note=await spaces.write(w.user,{kind:'observation',statement:clean});assert.equal((await spaces.entry(w.user,note.root,'/',note.entry))?.body.content.statement,clean);
 });
 test('disabled grantees can be revoked and disabled personal memories stay hidden from every recipient',async t=>{

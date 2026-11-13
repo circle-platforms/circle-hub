@@ -1804,13 +1804,6 @@ lists, so `total + unknown_entries` is the population of the root for the query.
 and keep the refusal.
 
 
-### Content scan status
-
-Business content is not scanned for credentials. An uninspected source is not refused solely for that status; it does not
-mean the content is clean. Credential sharing checks report `unchecked` with an explanation, while quotation, permission,
-structure, integrity, source eligibility and size checks still apply. Actual findings and truncated scan results retain their
-existing handling. Hub-generated diagnostic text continues to use the real credential scanner in `feeding-errors.ts`.
-
 ### Run and pack read dependencies
 
 `createKnowledge` requires `runReads: KnowledgeRunReadPort` and `packReads: KnowledgePackReadPort`, both declared in

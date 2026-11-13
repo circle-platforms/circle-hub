@@ -282,7 +282,7 @@ export class KnowledgeSpaces {
       const sources=(await this.sources(by)).filter(source=>withinSpacePath(source.path,path));
       const originals=await Promise.allSettled(sources.map(source=>this.source(by,source.sha256,undefined,'model',source.artifact)));
       for(const result of originals){if(result.status==='rejected')throw result.reason;const original=result.value;if(!original?.bytes)fail('SPACE_CONTENT_UNINSPECTABLE');this.#inspectSource(original.bytes);}
-      checks[phase++].message='未执行内容凭据扫描';
+      checks[phase++].state='pass';
       const grantable=await Promise.allSettled([...entries.flatMap(entry=>entry.grounds.map(ground=>this.#grantableGround(by,ground.reference))),...sources.map(source=>this.#grantableGround(by,'src:'+source.sha256,new Set(),source.artifact))]);
       for(const result of grantable)if(result.status==='rejected')throw result.reason;
       checks[phase++].state='pass';checks[phase].state='pass';
@@ -325,7 +325,7 @@ export class KnowledgeSpaces {
   #scan(value: unknown) {
     const inspect = (text: string) => {
       const scan = scanContent(Buffer.from(text));
-      if (scan.findings.length)
+      if (scan.findings.length || !scan.inspected)
         fail('SPACE_CREDENTIALS_DETECTED');
     };
     inspect(canonicalize(value));
@@ -343,7 +343,7 @@ export class KnowledgeSpaces {
     };
     visit(value);
   }
-  #inspectSource(bytes:Uint8Array){const scan=scanContent(bytes);if(scan.findings.length)fail('SPACE_CREDENTIALS_DETECTED');if(scan.truncated)fail('SPACE_CONTENT_UNINSPECTABLE');}
+  #inspectSource(bytes:Uint8Array){const scan=scanContent(bytes);if(scan.findings.length)fail('SPACE_CREDENTIALS_DETECTED');if(!scan.inspected||scan.truncated)fail('SPACE_CONTENT_UNINSPECTABLE');}
   async #grantableGround(by: Principal, reference: string, seen = new Set<string>(),capture?:string): Promise<void> {
     if (seen.has(reference))
       fail('SPACE_ENTRY_INVALID');
@@ -352,6 +352,7 @@ export class KnowledgeSpaces {
     if (ref.scheme === 'src') {
       const pinned=capture?await this.source(by,ref.sha256,undefined,'model',capture):null;
       const artifact = capture?pinned?.artifact:await this.#ctx.records.artifacts.readable(by, ref.sha256);
+      if(artifact&&!artifact.body.scan.inspected)fail('SPACE_CONTENT_UNINSPECTABLE');
       if (!artifact || artifact.body.read_tier !== 'model_readable' || ('read' in artifact.body.origin && !artifact.body.visibility.admins))
         fail('SPACE_ENTRY_INVALID', '个人凭据读取的来源不可授权');
       const source = capture?pinned:await this.#ctx.records.artifacts.source(by, ref.sha256);
@@ -820,7 +821,7 @@ export class KnowledgeSpaces {
         for(const mount of (previous?.body.products??[]).filter(mount=>readable.has(mount.product)))if((await this.#productPaths(mount.root)).some(row=>row.entry===input.entry))fail('SHARE_DUPLICATE');
         checks[phase++].state='pass';
         try{this.#scan(teamPath);this.#scan(view.body);for(const source of sources.values()){const bytes=await this.source(by,source.sha256,undefined,'model',source.artifact);if(!bytes?.bytes)fail('SHARE_GROUND_UNRESOLVED');this.#inspectSource(bytes.bytes);}}catch(error){if(error instanceof KnowledgeError&&error.code==='SPACE_CREDENTIALS_DETECTED')fail('SHARE_CREDENTIALS');throw error;}
-        checks[phase].message='未执行内容凭据扫描';
+        checks[phase].state='pass';
       }catch(error){
         const code=error instanceof KnowledgeError&&error.code?error.code:'SOURCE_UNAVAILABLE';
         checks[phase]={...checks[phase],state:error instanceof KnowledgeError&&code!=='SPACE_CONTENT_UNINSPECTABLE'&&code!=='SHARE_GROUND_UNRESOLVED'?'violation':'incomplete',code,message:error instanceof KnowledgeError?error.message:PROTOCOL_CODES.SOURCE_UNAVAILABLE.when,fix:PROTOCOL_CODES[code].fix};
@@ -921,7 +922,7 @@ export class KnowledgeSpaces {
         if(!input.grounds.length)fail('SHARE_UNVERIFIED');
         if(input.grounds.some(ground=>ground.entry))fail('SHARE_GROUND_UNRESOLVED','单条分享只上传这一条及其来源；依据另一条本机条目的，先分享那一条');
         if(await this.hasWithdrawnGrounds(existing))fail('GROUNDS_WITHDRAWN');
-        const read=async(hash:string)=>{const sent=input.sources.get(hash);if(!sent)return this.#sharingSource(by,hash,tx);const scan=scanContent(sent.bytes),readable=!scan.truncated&&!scan.findings.length;return {bytes:readable?sent.bytes:null,size:sent.bytes.length,mediaType:sent.mediaType,readTier:readable?'model_readable' as const:'retain_only' as const};};
+        const read=async(hash:string)=>{const sent=input.sources.get(hash);if(!sent)return this.#sharingSource(by,hash,tx);const scan=scanContent(sent.bytes),readable=scan.inspected&&!scan.truncated;return {bytes:readable?sent.bytes:null,size:sent.bytes.length,mediaType:sent.mediaType,readTier:readable?'model_readable' as const:'retain_only' as const};};
         const resolved=[];
         for(const ground of input.grounds){
           const result=await resolveReference(ground.reference!,{reader:{user:by.id,role:by.role},teamParsersOnly:true,parsers:this.#ctx.parsers,trees:this.treeReader(),sources:{read}});

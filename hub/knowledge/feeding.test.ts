@@ -51,7 +51,6 @@ test('an upload note records a capture time only when the client declared one (r
  const pg=await startPostgres();t.after(()=>pg.stop());const w=await setup(pg);t.after(()=>w.close());const layer=w.knowledge.feeding!;
  const upload=(text:string,capturedAt?:string)=>w.kit.artifacts.ingest({bytes:Buffer.from(text),mediaType:'text/plain',origin:{upload:{session:'synthetic',message:null}},author:{user:w.user.id},provenanceType:'declared',visibility:{readers:[w.user.id],admins:true,packs:[],shareable:true},readTier:'model_readable',...(capturedAt?{capturedAt}:{})});
  const undeclared=await upload('synthetic note without a capture time'),declared=await upload('synthetic note with a capture time','2026-10-27T08:00:00.000Z');
- assert.equal(undeclared.body.scan.inspected,false);assert.equal(undeclared.body.scan.clean,false);
  await layer.upload(w.user,undeclared);await layer.upload(w.user,declared);
  const notes=new Map((await layer.entries(w.user,w.user.id)).map(row=>[row.body.object,row.body as Record<string,unknown>]));
  const plain=notes.get(undeclared.body.sha256)!,timed=notes.get(declared.body.sha256)!;
