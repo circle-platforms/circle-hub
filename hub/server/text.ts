@@ -10,7 +10,7 @@ import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { ItemProjection, type PackSummary, type RequirementSummary, type RunSummary, type SlotSchema } from '../../contracts/src/run.ts';
 import { Submission } from '../../contracts/src/submission.ts';
-import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type ResolveReferenceOutput, type StartRunOutput, type SubmitResultOutput, type UploadFileOutput } from '../../contracts/src/tools.ts';
+import { StartRunInput, type ToolName, type GetNodesOutput, type ListTaskPacksOutput, type ResolveReferenceOutput, type StartRunOutput, type SubmitResultOutput, type UploadFileOutput } from '../../contracts/src/tools.ts';
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
@@ -627,7 +627,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
 
 // ---------------------------------------------------------------- entry point
 
-const RENDERERS: Record<string, (value: never, context: TextContext) => string> = {
+const RENDERERS: Record<ToolName, (value: never, context: TextContext) => string> = {
   list_task_packs: listText,
   upload_file: uploadText,
   start_run: startText,
@@ -646,7 +646,7 @@ export function modelReferencesText(value: Record<string, unknown>, context: Tex
 
 /** User-facing text; identifiers remain in structuredContent. */
 export function toolText(tool: string, value: unknown, context: TextContext = {}): string {
-  const render = RENDERERS[tool] as ((value: unknown, context: TextContext) => string) | undefined;
+  const render = RENDERERS[tool as ToolName] as ((value: unknown, context: TextContext) => string) | undefined;
   if (render === undefined) throw new Error(`no text renderer for ${tool}`);
   return render(value, context);
 }

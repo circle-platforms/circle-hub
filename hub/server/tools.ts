@@ -22,6 +22,7 @@ import {
   TOOLS,
   UploadFileInput,
   type ToolDefinition,
+  type ToolName,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
@@ -81,7 +82,6 @@ export interface PublishedTool {
   annotations: ToolAnnotations;
 }
 
-type ToolName = 'list_task_packs' | 'upload_file' | 'start_run' | 'get_nodes' | 'resolve_reference' | 'submit_result';
 type Answer = Record<string, unknown>;
 /** A handler's answer and what its text may use besides it; `paging` is set for every tool by callTool. */
 interface Reply {
