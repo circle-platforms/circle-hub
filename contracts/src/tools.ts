@@ -352,7 +352,7 @@ export const SubmitResultOutput = Envelope.safeExtend({
   if (Object.entries(derived).some(([key, value]) => counts[key] !== value)) issue(ctx, ['counts'], 'counts are derived from result.partitions (W08 R[0])');
 });
 
-export const TOOLS: ToolDefinition[] = [
+const TOOL_DEFINITIONS = [
   {
     name: 'list_task_packs',
     label: '查询工作流',
@@ -416,6 +416,10 @@ export const TOOLS: ToolDefinition[] = [
     writesHubRecords: true,
     idempotent: true,
   },
-];
+] as const satisfies readonly ToolDefinition[];
+
+export type ToolName = (typeof TOOL_DEFINITIONS)[number]['name'];
+export const TOOLS: readonly (ToolDefinition & { name: ToolName })[] = TOOL_DEFINITIONS;
+export const TOOL_NAMES: readonly ToolName[] = TOOLS.map(tool => tool.name);
 
 export { Coverage, ItemId, PackId, ExternalObjectId, Fields };
