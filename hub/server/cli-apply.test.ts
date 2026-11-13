@@ -457,7 +457,7 @@ test('fresh database definition apply rejects before mutations when no administr
 test('[PG] a fresh database requires standard init-admin before definition apply and never auto-creates an administrator', { timeout: 120000 }, async t => {
   const { openTestRecords } = await import('../testing/records.ts');
   const { Session: ActualSession } = await import('./cli-session.ts');
-  const { initAdminCommand, operatorTokenCommand } = await import('./cli-admin.ts');
+  const { initAdminCommand } = await import('./cli-admin.ts');
   const { memoryOperatorTokens } = await import('./assemble/operator-token.ts');
   const { removeTree } = await import('./assemble/files.ts');
   const kit = await openTestRecords();
@@ -480,10 +480,9 @@ test('[PG] a fresh database requires standard init-admin before definition apply
   await assert.rejects(applyDeployment(session, definition), /管理员令牌/);
   assert.equal((await kit.principals.list()).length, 0);
   tokens.value = 'synthetic-old-operator-token';
-  await assert.rejects(initAdminCommand(session, ['合成初始管理员', '--password-stdin']), /已经有操作令牌/);
   assert.equal((await kit.principals.list()).length, 0);
-  assert.equal(await operatorTokenCommand(session, ['remove', '--confirm-only-operator-token']), 0);
   assert.equal(await initAdminCommand(session, ['合成初始管理员', '--password-stdin']), 0);
+  assert.notEqual(tokens.value, 'synthetic-old-operator-token');
   assert.ok(tokens.value);
   const applied = await applyDeployment(session, definition);
   assert.equal(applied.created, 1);
