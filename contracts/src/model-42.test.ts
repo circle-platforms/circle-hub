@@ -63,6 +63,6 @@ test('the approved team identity and resource assignment use shared contracts', 
   assert.equal(TeamAssignmentSubject.safeParse('usr_0' + 'a'.repeat(25)).success, false);
   assert.equal(PermissionKindSchema.parse('resource_assign'), 'resource_assign');
   assert.equal(labelOf('permission_kind', 'resource_assign'), '业务系统资源分配');
-  const rule = element('B04').rules.at(-1)!;
+  const rule = element('B04').rules[9];
   for (const text of ['authorization@1','subject=*','object=TeamId','subject=UserId','resource_assign','同一事务','可从记录重建']) assert.ok(rule.includes(text), text);
 });
