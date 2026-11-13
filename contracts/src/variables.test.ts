@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { VariableName, VariableValue, VariableRecord, SecretRecord, VariableUse, SecretUse, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
+import { VariableName, VariableValue, VariableRecord, SecretRecord, SecretSidecar, VariableUse, SecretUse, OrdinaryVariableUse, VariableDeclaration, referencesIn, resolve, secretLikeName, validateSecret } from './variables.ts';
 test('names are exact and reserved prefixes refuse without echo or rewriting', () => {
     assert.equal(VariableName.parse('A'.repeat(64)).length, 64);
     for (const name of ['A'.repeat(65), 'demo', '1DEMO', 'CIRCLE_HUB_X', 'CIRCLE_SERVER_X']) {
@@ -94,4 +94,16 @@ test('C12 keeps secret reads independent while retaining ordinary variable decis
     assert.ok(!element('D01').rules[6].includes('每一版密钥只发往设置它时登记'));
     assert.ok(!element('D07').rules[2].includes('照登记的使用者和地址核对'));
     assert.ok(element('R02').rules[4].includes('未知的设置人或时间照实披露未知'));
+});
+
+
+test('secret sidecars bind exact sealed names and current ciphertext without inventing history', () => {
+    const metadata = {schema:'secret@1',name:'DEMO_KEY',entry:'secret.demo_key',digest_rule:'plain',length:20,version:2,set_by:null,set_at:null,revoked:false};
+    const sidecar = {metadata,sealed_entry:'secret.demo_key.'+'a'.repeat(24),sealed_sha256:'b'.repeat(64),current:true};
+    assert.deepEqual(SecretSidecar.parse(sidecar),sidecar);
+    assert.equal(SecretSidecar.safeParse({...sidecar,sealed_sha256:null}).success,false);
+    assert.deepEqual(SecretSidecar.parse({...sidecar,current:false,sealed_sha256:null}),{...sidecar,current:false,sealed_sha256:null});
+    assert.ok(SecretSidecar.safeParse({...sidecar,metadata:{...metadata,revoked:true},sealed_sha256:null}).success);
+    for (const sealed_entry of ['secret.other_key.'+'a'.repeat(24),'secret.demo_key.'+'a'.repeat(23),'secret.demo_key.'+'A'.repeat(24),'../secret.demo_key.'+'a'.repeat(24)]) assert.equal(SecretSidecar.safeParse({...sidecar,sealed_entry}).success,false,sealed_entry);
+    for (const extra of [{value:'SyntheticPassword42'},{value_sha256:'c'.repeat(64)}]) assert.equal(SecretSidecar.safeParse({...sidecar,...extra}).success,false);
 });

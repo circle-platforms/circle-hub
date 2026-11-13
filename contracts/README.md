@@ -752,3 +752,10 @@ for ordinary variable decisions. No URI scheme, protocol code or database migrat
 The read manifest and knowledge-root schemas carry the same union. Runtime migration, secret
 read behavior and encrypted metadata authenticity are validated by the vault/consumer owners;
 contracts tests establish shapes and model consistency only.
+
+SecretSidecar (secret-sidecar@1) authenticates metadata for an unchanged legacy sealed entry. Its
+sealed_sha256 identifies the ciphertext bytes, not a digest of the secret value. The sealed entry
+must match the metadata name; a current non-revoked version requires this ciphertext identity.
+Historical or revoked entries may have null ciphertext identity after deletion. Unknown setter/time
+stay null. Sidecar authentication, selection and same-byte decryption belong to the vault reader;
+this contract does not authorize an export script or infer current versions from file timestamps.
