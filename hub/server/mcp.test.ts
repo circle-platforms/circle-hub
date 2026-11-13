@@ -240,6 +240,7 @@ describe('list_task_packs', () => {
     assert.equal(reads, 1);
     const view = result.structuredContent.member_capabilities as import('../records/api.ts').MemberCapabilities;
     assert.deepEqual(view.teams, ['投影团队']);
+    assert.equal(view.unassigned_workflows_count, 0);
     assert.deepEqual(view.workflows.map(item => item.ref).sort(), ['local-review@1.0.0', 'review@1.0.0']);
     assert.deepEqual((result.structuredContent.packs as { id: string }[]).map(item => item.id).sort(), ['local-review', 'review']);
     assert.equal(JSON.stringify(result).includes('hidden-pack'), false);
@@ -344,6 +345,8 @@ describe('list_task_packs', () => {
     const result = await client.call('list_task_packs', {});
     assert.equal(result.isError, false);
     assert.deepEqual(result.structuredContent.packs, []);
+    assert.equal((result.structuredContent.member_capabilities as import('../records/api.ts').MemberCapabilities).unassigned_workflows_count,
+      server.fakes.workflows.packs.filter(pack => pack.kind === 'workflow' && pack.summary !== null).length);
     await client.close();
   });
 });

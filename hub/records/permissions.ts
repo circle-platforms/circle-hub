@@ -29,6 +29,7 @@ export interface MemberCapabilities {
   member: { name: string; enabled: boolean };
   teams: string[];
   workflows: MemberPackCapability[];
+  unassigned_workflows_count: number;
   skills: MemberPackCapability[];
   connections: MemberConnectionCapability[];
   environments: MemberEnvironmentCapability[];
@@ -38,6 +39,8 @@ export interface MemberCapabilities {
 export interface MemberCapabilitySources {
   /** The existing pack permission boundary, including globally installed generic skills. */
   canUsePack(by: Principal, pack: string): Promise<boolean>;
+  /** Public workflow IDs with a current non-withdrawn publication; never personal directories. */
+  publicWorkflowIds(): Promise<readonly string[]>;
   packs(by: Principal): Promise<readonly { id: string; version: string; title: string; kind: import('../../contracts/generated/vocabulary.ts').PackKind; space?: string }[]>;
   connections(by: Principal): Promise<readonly { id: string; name: string; systemPack: string; environment: string; enabled: boolean }[]>;
   personalPackUse(by: Principal, owner: string, pack: string): Promise<boolean>;
@@ -59,7 +62,7 @@ export async function memberCapabilities(
   return withRequestPermissions(records.artifacts, target, async () => {
     const result: MemberCapabilities = {
       member: { name: target.name, enabled: !target.disabled && !target.deleted_at },
-      teams: [], workflows: [], skills: [], connections: [], environments: [],
+      teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [], environments: [],
       environmentAccess: { ready: false, missing: '尚未核对测试环境使用权限', nextAction: '请管理员核对测试环境使用权限接线' },
       denials: [],
     };
@@ -68,6 +71,9 @@ export async function memberCapabilities(
       return result;
     }
     result.teams = (await records.teams.memberships(actor, target.id)).map(team => team.name).sort();
+    for (const id of new Set(await sources.publicWorkflowIds())) {
+      if (!await sources.canUsePack(target, id)) result.unassigned_workflows_count += 1;
+    }
     for (const pack of await sources.packs(target)) {
       const personal = pack.space !== undefined && pack.space !== 'team';
       const allowed = personal

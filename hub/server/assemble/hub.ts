@@ -258,6 +258,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     records,
     memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
       canUsePack: (target, pack) => registry.canUse(target.id, pack),
+      publicWorkflowIds: async () => (await registry.listPacks()).filter(pack => pack.kind === 'workflow' && pack.latest !== null).map(pack => pack.id),
       packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
       connections: async target => (await resources.list(target)).map(item => ({
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,

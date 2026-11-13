@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { join } from 'node:path';
 import { MemberEnvironments } from '../../dispatch/api.ts';
 import { definition } from '../../dispatch/testing/definition.ts';
+import { writePack } from '../../runs/api.ts';
 import { createTestHub } from '../testing-real.ts';
+import { locatePack } from './test-packs.ts';
 
 test('real assembly shares assigned environment access with member projection and preserves every occupied lease', { timeout: 60000 }, async t => {
   const hub = await createTestHub({ repositoryPacks: false, stubs: false, requireOsIsolation: false });
@@ -64,4 +67,31 @@ test('real assembly shares assigned environment access with member projection an
   await hub.records.authorizations.unassignResource(admin, assigned.id, team.id);
   assert.equal(await environments.canUse(alice.principal, assigned.id), false);
   assert.deepEqual((await hub.deps.memberCapabilities(alice.principal)).environments, []);
+});
+
+test('unassigned workflow count uses distinct current public publications and target permissions through revocation and retirement', { timeout: 60000 }, async t => {
+  const hub = await createTestHub({ repositoryPacks: false, stubs: false, requireOsIsolation: false });
+  t.after(() => hub.close());
+  const alice = await hub.createUser('合成计数成员');
+  const admin = hub.admin.principal;
+  const registry = hub.hub.registry;
+  const one = 'synthetic-count-one', two = 'synthetic-count-two';
+  for (const [id, version] of [[one, '1.0.0'], [one, '2.0.0'], [two, '1.0.0']] as const) {
+    const source = await writePack(join(hub.records.dataDir, 'count-fixtures', id, version), { ...locatePack(version), id, title: '合成计数工作流' });
+    await hub.publishPack(source.dir);
+  }
+  const count = async () => (await hub.deps.memberCapabilities(admin, alice.principal.id)).unassigned_workflows_count;
+  assert.equal(await count(), 2, 'versions count once and installed format skills are excluded');
+  await hub.records.authorizations.assign(admin, alice.principal.id, one);
+  assert.equal(await count(), 1, 'preview subtracts the target grant, not administrator access');
+  await registry.retire(admin, one, '2.0.0');
+  assert.equal(await count(), 1, 'retired newest version falls back to the still-published version');
+  await hub.records.authorizations.unassign(admin, alice.principal.id, one);
+  assert.equal(await count(), 2, 'revoked assignments become unassigned again');
+  await registry.retire(admin, two, '1.0.0');
+  assert.equal(await count(), 1, 'a fully retired workflow is no longer in the available public set');
+  await registry.retire(admin, one, '1.0.0');
+  assert.equal(await count(), 0);
+  await hub.records.principals.setDisabled(admin, alice.principal.id, true);
+  assert.equal(await count(), 0, 'disabled accounts receive no catalog projection');
 });
