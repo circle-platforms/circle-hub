@@ -66,3 +66,22 @@ test('the approved team identity and resource assignment use shared contracts', 
   const rule = element('B04').rules.at(-1)!;
   for (const text of ['authorization@1','subject=*','object=TeamId','subject=UserId','resource_assign','同一事务','可从记录重建']) assert.ok(rule.includes(text), text);
 });
+
+
+test('the owner decision revokes deleted team assignments and keeps the shared space public', () => {
+  const assignment = element('B04').rules.at(-1)!;
+  for (const text of ['每一条工作流分配和资源分配','revoked=true','同一事务','不能仅保留原分配']) assert.ok(assignment.includes(text), text);
+  const team = element('R01').rules[13];
+  for (const text of ['只有管理员','多个团队','直接分给本人','并集','逐条','revoked=true','自己所属团队的名字','没有独立知识空间','对任何账户都不开放','decisions-1500.md']) {
+    assert.ok(team.includes(text === '逐条' ? '每一条' : text), text);
+  }
+  assert.ok(!element('R01').rules[2].includes('管理员默认可读全部资源'));
+  for (const axis of ['knowledge_space_kind','knowledge_search_scope']) {
+    assert.equal(labelOf(axis, 'team'), '公共空间');
+    assert.equal(uiLabelOf(axis, 'team'), '公共空间');
+  }
+  const space = element('K01');
+  assert.ok(space.definition.includes('内部编号仍为 team'));
+  assert.ok(space.definition.includes('本轮新建团队不拥有独立知识空间'));
+  assert.equal(labelOf('audience_scope','team_members'), '该团队的成员');
+});
