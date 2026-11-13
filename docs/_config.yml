@@ -36,9 +36,6 @@ exclude:
   - .bundle
   # The GitHub index of this folder; the site starts at index.md instead.
   - README.md
-  # Licensing and review records. They stay in the repository, like CONTRIBUTING.md.
-  - open-source-readiness.md
-  - validation
 
 aux_links:
   GitHub:

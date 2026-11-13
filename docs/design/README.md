@@ -5,7 +5,7 @@ nav_order: 4
 
 # circle-hub 设计
 
-设计的权威是通用模型 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)，[通用模型](generic-model.md)是它的摘要；两者不一致时以模型为准。下面“现行”一表是摘要、检查单和研究提案；“已被取代”一表是旧服务器时期或后续决定已取代的设计篇，每篇开头注明被什么取代，只作记录保留。英文译文在 [en/](en/README.md)，两者有出入以中文为准。实现进度在 [Hub r4 进度](../hub-r4-progress.md)。
+设计的权威是通用模型 [contracts/model.json](https://github.com/circle-platforms/circle-hub/blob/main/contracts/model.json)，[通用模型](generic-model.md)是它的摘要；两者不一致时以模型为准。下面“现行”一表是摘要、检查单和交互规范；已被取代的旧设计篇保存在 Git 历史中。英文译文在 [en/](en/README.md)，两者有出入以中文为准。实现进度在 [Hub r4 进度](../hub-r4-progress.md)。
 
 ## 现行
 
@@ -16,24 +16,12 @@ nav_order: 4
 | [知识库与工作流：个人与团队](knowledge-workflows.md) | 决定 131 的完整方案：个人与团队空间、同步、授权、提交共享、索引与版本，工作流（原任务包）与通用技能，以及分阶段实施 |
 | **[通用模型](generic-model.md)** | **11 组 73 个元素、三条不变量、词表、七个内核名字，以及第一个里程碑用到哪些** |
 | [对象标准：五要素检查单](object-standard.md) | 四个对象就是四个家；五要素作设计检查单和记录页布局，不作存储分区 |
-| [置真对接架构：理论基础、条件命题与产品研究框架](truth-docked-architecture.md) | 研究提案与数学审计：理论基础、条件命题与反例、未证义务；不是实现说明 |
 
 ## 已被取代
 
 | 篇 | 原来回答什么 | 现在看哪里 |
 |---|---|---|
 | [个人与团队知识库整合调研](personal-team-knowledge.md) | 第一轮的需求与同类项目调研；个人只放 Circle 本地的旧建议已失效 | [知识库与工作流：个人与团队](knowledge-workflows.md)（决定 131） |
-| [审批与执行链](approvals-and-enforcement.md) | 变更集审批、执行链、错误码目录 | 许可 B04、发布校验 T02、边界校验 T03、两道强制边界 P11 |
-| [角色与范围](roles.md) | 管理员 / 成员 / 访客按范围授予、两人规则 | 权限角色 R01（用户、管理员）、可见性 R02 |
-| [术语与状态](vocabulary.md) | 旧术语表、状态枚举与颜色 | 模型的词表（生成在 `contracts/generated/vocabulary.ts`） |
-| [层级与元素](levels-and-elements.md) | Circle 里的五层界面 | Circle 里不出现 Hub 专用界面；网页控制台（运行记录、知识库、任务包、系统管理；管理员在系统管理页管理 Hub，决定 122） |
-| [与 Circle 的集成](circle-integration.md) | hub 扩展 Circle 的菜单 | Circle 作为普通 MCP 客户端连接（D06） |
-| [产品线包典范](product-line-pack.md) | `product-line/1` 产品线包 | 任务包 T01、发布记录与发布校验 T02 |
-| [执行流迁入产品线包](execution-flow-packs.md) | 执行流与 `module-execute` | 效果写入、租约与执行器（B06、D04，D03 的写声明，D07 的执行器部分）由 `hub/dispatch` 实现；D03 的读部分与 D07 的资源部分由 connectors 包实现，MCP 注解按 D03 推出 |
-| [harness 原语规范](harness-primitives.md) | `hub-*/1` 中立清单与适配器 | 六个 MCP 工具（D06）与任务包（T01） |
-| [权限策略导出](permission-export.md) | `hub-permission/1` | R01；工具类别按 MCP 注解（D03、D06） |
-| [harness 原语格式调查](harness-formats.md) | 五家 harness 的磁盘格式（2026-10-13 的调查） | 不再需要：Hub 不导入导出 harness 原语 |
-| [handoff 到设计文档的对照表](handoff-map.md) | 两份交接文档并入设计篇的对照 | 两份交接都已成为历史记录 |
 
 两条更早的原则仍然成立：确定内容交给脚本、其余交给模型判断并完整披露（ADR 0024）；本地取消、远端停止、任务交付分别记录（ADR 0025）。
 
