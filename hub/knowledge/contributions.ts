@@ -70,7 +70,7 @@ const refuse = (code: ContributionAdmissionCode, message: string, detail: Record
 function scanPublicText(texts: readonly string[]): void {
   for (const text of texts) {
     const scan = scanContent(new TextEncoder().encode(text));
-    if (scan.truncated || scan.findings.length > 0) refuse("CREDENTIAL_IN_UPLOAD", '回注文字、模型声明或会话标识未通过完整凭据扫描，缺少可安全公开的文本');
+    if (!scan.inspected || scan.truncated || scan.findings.length > 0) refuse("CREDENTIAL_IN_UPLOAD", '回注文字、模型声明或会话标识未通过完整凭据扫描，缺少可安全公开的文本');
   }
 }
 

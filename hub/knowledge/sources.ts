@@ -1,7 +1,7 @@
 // Reading and parsing the sources of a sync or a production: through the ExternalReaderPort in an admin context, then the
 // stored bytes through the tier-aware Artifacts.source (never trustedBytes), then the explicitly declared core parser (or media recognition when undeclared; the
 // Hub parses, not the pack). Only model-readable text read with a shared credential enters the tree: a credential hit
-// (retain_only), function-only bytes and personal-credential reads are refused with a
+// (retain_only), function-only bytes, bytes the scanner could not inspect and personal-credential reads are refused with a
 // Chinese reason naming the digest (B02 R[3], R[4]; records README, Needs).
 import {ReadManifest,SourceAbsent} from '../../contracts/src/resources.ts';
 import type {RecordStore} from '../records/api.ts';
@@ -179,6 +179,9 @@ export class SourceLoader {
     if (source.bytes === null || source.readTier !== MODEL_READABLE) {
       if (source.readTier === RETAIN_ONLY) return { ok: false, sha256, reason: credentialReason(sha256, id) };
       return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）的读取档位是“${labelOf('read_tier', source.readTier)}”；知识树的内容对模型可读，不能收这份文件` };
+    }
+    if (!source.artifact.body.scan.inspected) {
+      return { ok: false, sha256, reason: `源文件 ${sha256}（${id}）不是凭据扫描能检查的文本，不进知识树` };
     }
     return {
       ok: true,

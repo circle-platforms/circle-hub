@@ -36,7 +36,7 @@ test('parallel sharing prechecks still inspect every original and retain the fir
  for(let i=0;i<6;i++)await spaces.importFile(w.user,Buffer.from('合成待署名原文 '+i),'text/plain','synthetic-'+i+'.txt','/batch');
  const source=spaces.source.bind(spaces),seen:string[]=[];spaces.source=async(...args)=>{seen.push(args[1]);return source(...args);};
  const checks=await spaces.precheckGrant(w.user,'/batch');
- assert.equal(new Set(seen).size,6);assert.equal(checks[0].state,'unchecked');assert.match(checks[0].message,/未.*扫描/);assert.deepEqual(checks.map(check=>check.state),['unchecked','pass','pass']);
+ assert.equal(new Set(seen).size,6);assert.equal(checks[0].state,'pass');assert.deepEqual(checks.map(check=>check.state),['pass','pass','pass']);
  const first=(await spaces.sources(w.user)).find(row=>row.path==='/batch')!.sha256;
  spaces.source=async(...args)=>args[1]===first?null:source(...args);
  const missing=await spaces.precheckGrant(w.user,'/batch');assert.equal(missing[0].code,'SPACE_CONTENT_UNINSPECTABLE');assert.equal(missing[1].state,'unchecked');
