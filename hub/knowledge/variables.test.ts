@@ -37,7 +37,7 @@ test('one sync pins its variable decisions through reads, options, production an
  assert.ok(seen.every(s=>s===seen[0]&&s?.get('DEMO_SYNC_NOTE')===note.value.decision.digest));
  const produced=first.builds.find(b=>b.composition)!;
  const composition=await w.knowledge.store.composition(produced.composition!);
- assert.ok(composition?.variables?.some(v=>v.name==='DEMO_SYNC_NOTE'&&v.decision===note.value.decision.digest));
+ assert.ok(composition?.variables?.some(v=>v.kind==='var'&&v.name==='DEMO_SYNC_NOTE'&&v.decision===note.value.decision.digest));
  const second=await w.knowledge.syncProduct(w.product);assert.match(second.builds.find(b=>b.outcome==='produced')?.reason??'',/变量 DEMO_SYNC_NOTE 从第 1 版变为第 2 版/);
  assert.ok(second.builds.filter(b=>b.outcome==='produced').every(b=>b.calls?.made===0&&b.calls.reused>0));
  const third=await w.knowledge.syncProduct(w.product);assert.equal(third.counts.produced,0);

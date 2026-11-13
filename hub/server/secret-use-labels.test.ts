@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { secretUseLabels, type SecretUseLabelReaders } from './secret-use-labels.ts';
+
+const by = { id: 'usr_0123456789abcdefghjkmnpqrs', name: '合成管理员', role: 'admin' as const };
+
+test('secret use labels query only the exact vault name and version without reading containers or record decisions', async () => {
+  const queried: string[] = [];
+  const forbidden = () => { throw new Error('must not read values or record decisions'); };
+  const readers = {
+    variables: { history: async () => forbidden() },
+    vault: { secretHistory: async (name: string) => { queried.push(name); return [{ name, version: 3 }, { name, version: 4 }]; }, getText: forbidden, readSecret: forbidden },
+  };
+  const labels = await secretUseLabels(readers, by, [{ kind: 'secret', name: 'API_SECRET', version: 3, at: 'synthetic-executor#/credential' }]);
+  assert.deepEqual(queried, ['API_SECRET']);
+  assert.deepEqual(labels, ['API_SECRET 第 3 版']);
+  assert.ok(!labels.join('').includes('rec:'));
+});
+
+test('missing secret metadata preserves the recorded version and discloses unknown instead of substituting a current version', async () => {
+  const readers: SecretUseLabelReaders = { variables: { history: async () => [] }, vault: { secretHistory: async name => [{ name, version: 8 }] } };
+  assert.deepEqual(await secretUseLabels(readers, by, [{ kind: 'secret', name: 'API_SECRET', version: 3, at: 'synthetic-executor#/credential' }]), ['API_SECRET 第 3 版（密钥库元数据未知）']);
+});
+
+test('ordinary variable labels still resolve actual record decisions and never synthesize version zero', async () => {
+  const digest = 'a'.repeat(64), names: string[] = [];
+  const readers: SecretUseLabelReaders = { variables: { history: async (_by, _kind, name) => { names.push(name); return name === 'KNOWN_VALUE' ? [{ version: 2, decision: { digest } }] : []; } }, vault: { secretHistory: async () => { throw new Error('ordinary variables do not query the vault'); } } };
+  const labels = await secretUseLabels(readers, by, [{ kind: 'var', name: 'KNOWN_VALUE', decision: digest, at: 'synthetic-executor#/setting' }, { kind: 'var', name: 'MISSING_VALUE', decision: digest, at: 'synthetic-executor#/setting' }]);
+  assert.deepEqual(names, ['KNOWN_VALUE', 'MISSING_VALUE']);
+  assert.deepEqual(labels, ['KNOWN_VALUE 第 2 版', 'MISSING_VALUE 版本未知']);
+});

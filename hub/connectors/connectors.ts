@@ -1,3 +1,4 @@
+import { secretVersionKey } from './secret-version.ts';
 import { isAdmin } from '../records/api.ts';
 // Wiring of the connectors: the resource registry, one runtime per enabled resource (HttpSource, and the LoginManager or
 // StaticCredential of the resource), the read engine, and the two ports of hub/ports.ts this package provides:
@@ -21,7 +22,7 @@ import { ProfileCache, type LoadedProfile } from './profiles.ts';
 import { ReadEngine, externalRoutingType, externalSizeReason, parseExternal, type PackFunctionRunner, type ReadArgs, type ReadEngineOptions, type ReadOutcome, type ResourceRuntime } from './read.ts';
 import { TrialLoginStops, trialSystem, forgetTrialLogin, type SystemTrialInput, type SystemTrialReport, type SystemTrialForget } from './trial.ts';
 import { Redactor } from './redact.ts';
-import { ResourceRegistry, sessionEntry, resourceConsumer, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
+import { ResourceRegistry, sessionEntry, storedCredential, type AddResourceInput, type ResourceDescription, type ResourceState, type UpdateResourceInput } from './resources.ts';
 import { compileRoutes } from './routes.ts';
 import type { ResourceRecord } from '../../contracts/src/resources.ts';
 
@@ -177,7 +178,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     const requests = Object.entries(original.credentials).map(([item,entry])=>{
       const name=secretNameOf(entry);
       if(!name)throw new ConnectorError('CREDENTIAL_MISSING',`资源 ${original.id} 的凭据还是旧写法：用 circle-hub resource update ${original.id} --credential ${item}=<密钥名> 改成引用，原值会迁移过去`);
-      return {name,consumer:resourceConsumer(original,item)};
+      return {name};
     });
     let materials;
     try {materials=await records.variables.readSecrets(requests);}catch(error) {throw new ConnectorError('CREDENTIAL_MISSING',error instanceof Error ? error.message : '密钥未设置；请 secret set');}
@@ -188,13 +189,14 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
       const value=m.metadata.digest_rule===rule?m.value:storedCredential(m.value,rule);
       redactor.addSent(value);values.set(original.credentials[item]+'#'+item,value);
     }
-    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(m=>m.decision),materials.map(m=>m.name),original.id):null;
+    const gate=materials.length?new CredentialStop(records.store,records.vault,materials.map(secretVersionKey),materials.map(m=>m.name),original.id):null;
     const epoch=await gate?.epoch() ?? '';
-    const dependencies=[...resolved.uses.map(u=>u.decision),...materials.map(m=>m.decision)];
+    const dependencies=resolved.uses.map(u=>u.decision);
+    const secretVersions=materials.map(secretVersionKey);
     const vault=new Proxy(records.vault,{get(target,key){if(key==='getText')return async (entry:string)=>values.has(entry)?values.get(entry)!:target.getText(entry);const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
     const credentials=Object.fromEntries(Object.entries(original.credentials).map(([item,entry])=>[item,entry+'#'+item]));
     state={...state,resource:{...original,settings:resolved.value as Record<string,unknown>}};
-    const key = `${state.bound}|${state.decision}|${loaded.pack.digest}|${dependencies.join("|")}|${epoch}`;
+    const key = `${state.bound}|${state.decision}|${loaded.pack.digest}|${dependencies.join("|")}|${JSON.stringify(secretVersions)}|${epoch}`;
     const known = runtimes.get(state.resource.id);
     if (known !== undefined && known.key === key) return known.runtime;
     const { resource } = state;
@@ -222,7 +224,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
         system_pack_digest: resource.system_pack_digest,
         credentials: resource.credentials,
         credential_digests: resource.credential_digests,
-        dependencies, epoch,
+        dependencies, secretVersions, epoch,
       }),
     );
     let guard = guards.get(resource.id);
@@ -269,7 +271,7 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     }
     const runtime: ResourceRuntime = {
       resource,
-      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),name:m.name,decision:m.decision}))],
+      variables:[...resolved.uses,...materials.map((m,i)=>({at:resource.id+'#/credentials/'+Object.keys(original.credentials)[i].replaceAll('~','~0').replaceAll('/','~1'),kind:'secret' as const,name:m.name,version:m.version}))],
       dependencies,
       gate,
       decision: state.decision,
@@ -462,8 +464,12 @@ export function createConnectors(options: ConnectorsOptions): Connectors {
     resetLogin: async (by,id,note)=>{
       const actual=await records.principals.get(by.id);if(!actual||actual.disabled||!isAdmin(actual))throw new ConnectorError('ACCESS_DENIED');
       registry.invalidate();const state=await registry.get(id);
-      if(state) { const defs=await records.variables.list(by);const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);const decisions=names.map(name=>defs.find(d=>d.kind==='secret'&&d.name===name&&d.definition)?.decision.digest).filter((v):v is string=>!!v);
-      if(decisions.length)await new CredentialStop(records.store,records.vault,decisions,names,id).reset(); }
+      if(state) {
+        const names=Object.values(state.resource.credentials).map(secretNameOf).filter((name):name is string=>name!==null);
+        const metadata=await Promise.all(names.map(name=>records.vault.secretMetadata(name)));
+        const versions=metadata.filter(m=>m!==null).filter(m=>!m.revoked).map(secretVersionKey);
+        if(versions.length)await new CredentialStop(records.store,records.vault,versions,names,id).reset();
+      }
       await registry.resetLogin(by,id,note);
     },
   };

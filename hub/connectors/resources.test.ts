@@ -6,7 +6,7 @@ import { addSyntheticResource, setSyntheticCredential, setSyntheticCredentials, 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, test } from 'node:test';
-import { canonicalBytes, sha256Hex, type Vault } from '../records/api.ts';
+import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { ConnectorError } from './errors.ts';
 import { openConnectorKit, type ConnectorKit } from './testing/kit.ts';
@@ -144,7 +144,7 @@ test('credentials: admins only, declared names only, passwords kept as Base64(SH
   assert.equal(await syntheticStoredCredential(k.records,record,'username'), 'reader');
   assert.equal(await syntheticStoredCredential(k.records,record,'password'), createHash('sha512').update('Synthetic#Pass42').digest('base64'));
   const logged = JSON.stringify(k.log);
-  assert.ok((await k.records.variables.list(k.admin)).length===2);
+  assert.ok((await k.records.variables.listSecrets(k.admin)).length===2);
   assert.ok(!logged.includes('Synthetic#Pass42') && !logged.includes(createHash('sha512').update('Synthetic#Pass42').digest('base64')));
   assert.equal(await code(k.connectors.admin.loginStatus(k.user, record.id)), 'ACCESS_DENIED');
   assert.deepEqual(await k.connectors.admin.loginStatus(k.admin, record.id), { token: false, expiresAt: null, obtainedAt: null, cooldownUntil: null, failure: null, stopped: false });
@@ -155,16 +155,16 @@ test('several named credentials commit atomically and a failed validation leaves
   const set=(by:typeof k.admin,values:Record<string,string>)=>setSyntheticCredentials(k.records,k.connectors,by,record.id,values);
   assert.equal(await code(set(k.user,{username:'reader',password:'Synthetic#Pass42'})),'ACCESS_DENIED');
   for(const values of ([{},{username:'reader',token:'x1234567'},{username:'reader',password:'bad\nvalue'}] as Record<string,string>[]))assert.equal(await code(set(k.admin,values)),'RESOURCE_INVALID');
-  assert.deepEqual(await k.records.variables.list(k.admin),[]);
+  assert.deepEqual(await k.records.variables.listSecrets(k.admin),[]);
   await set(k.admin,{username:'reader',password:'Synthetic#Pass42'});
-  const previous=(await k.records.variables.list(k.admin)).map(v=>v.decision.digest);
+  const previous=(await k.records.variables.listSecrets(k.admin)).map(v=>[v.name,v.version,v.revoked]);
   assert.equal(await syntheticStoredCredential(k.records,record,'username'),'reader');
   assert.equal(await syntheticStoredCredential(k.records,record,'password'),createHash('sha512').update('Synthetic#Pass42').digest('base64'));
   await assert.rejects(set(k.admin,{username:'changed',password:'bad\nvalue'}));
-  assert.deepEqual((await k.records.variables.list(k.admin)).map(v=>v.decision.digest),previous);
+  assert.deepEqual((await k.records.variables.listSecrets(k.admin)).map(v=>[v.name,v.version,v.revoked]),previous);
 });
 
-test('an update that changes credential declarations preserves named material shared by other consumers', async (t) => {
+test('an update that changes credential declarations preserves named material shared by other definitions', async (t) => {
   const k = await kit(t);
   const record = await addSyntheticResource(k.records, k.packs, k.connectors, k.admin, agileInput());
   await setSyntheticCredential(k.records, k.connectors, k.admin, record.id, 'username', 'reader');
@@ -174,9 +174,9 @@ test('an update that changes credential declarations preserves named material sh
   k.packs.set(await writePack(k.packRoot, { id: 'agile-test', version: '1.1.0', system, functions: AGILE_FUNCTIONS }));
   const updated = await k.connectors.admin.updateResource(k.admin, record.id, { system_pack: 'agile-test@1.1.0' });
   assert.deepEqual(Object.keys(updated.credentials), ['password']);
-  assert.equal(await syntheticStoredCredential(k.records,record,'username'),'reader','removing a consumer does not delete named material');
+  assert.equal(await syntheticStoredCredential(k.records,record,'username'),'reader','removing a definition reference does not delete named material');
   assert.ok(await syntheticStoredCredential(k.records,record,'password'), 'an unchanged one stays');
-  assert.deepEqual((await k.connectors.admin.describe(k.admin,record.id))?.credentials.map(c=>[c.name,c.set,c.version,c.registered]),[['password',true,1,true]]);
+  assert.deepEqual((await k.connectors.admin.describe(k.admin,record.id))?.credentials.map(c=>[c.name,c.set,c.version]),[['password',true,1]]);
   assert.equal(await code(k.connectors.admin.resetLogin(k.user, record.id)), 'ACCESS_DENIED');
 });
 
@@ -216,9 +216,10 @@ test('describe: one resource for admins, enabled or not, with its credential nam
   assert.deepEqual((await k.connectors.admin.describe(k.admin, site.id))?.credentials, []);
   const vault = k.records.vault;
   const noKey = () => Promise.reject(new Error('密钥库主密钥不存在'));
-  const keyless: Vault = { initKey: noKey, put: noKey, get: noKey, getText: noKey, has: (name) => vault.has(name), stat: (n) => vault.stat(n), list: () => vault.list(), remove: (name) => vault.remove(name) };
+  const keyless = new Proxy(vault, { get(target,key) { if(key==='secretMetadata')return noKey;const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;} });
   const cli = k.make({ records: { ...k.records, vault: keyless } });
-  assert.equal((await cli.admin.describe(k.admin, record.id))?.credentials[0].set, true, 'presence only, without the key');
+  assert.deepEqual((await cli.admin.describe(k.admin, site.id))?.credentials, []);
+  await assert.rejects(cli.admin.describe(k.admin, record.id), /密钥库主密钥不存在/);
 });
 
 test('a reset whose session entry cannot be removed is an error for the admin, naming the system code and no path', async (t) => {
@@ -228,7 +229,7 @@ test('a reset whose session entry cannot be removed is an error for the admin, n
   await setSyntheticCredential(k.records,k.connectors,k.admin,record.id,'password','Synthetic#Pass42');
   const vault = k.records.vault;
   const refused = () => Promise.reject(Object.assign(new Error('EACCES: permission denied, unlink synthetic-vault/connector.x.session.sealed'), { code: 'EACCES' }));
-  const stuck: Vault = { initKey: () => vault.initKey(), put: (name, value) => vault.put(name, value), get: (name) => vault.get(name), getText: (name) => vault.getText(name), has: (name) => vault.has(name), stat: (n) => vault.stat(n), list: () => vault.list(), remove: refused };
+  const stuck = new Proxy(vault, { get(target,key) { if(key==='remove')return refused;const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;} });
   const failed = async (promise: Promise<unknown>): Promise<string> => {
     try {
       await promise;

@@ -3,14 +3,14 @@ import {IntegrityError,type RecordStore,type StoredRecord,type Page} from '../re
 import {INDEX} from './store.ts';
 // Resolve only declared whole-value references. Inputs, not function internals, determine dependency provenance.
 import type {ProductDeclaration} from '../../contracts/src/product.ts';
-import {referencesIn, resolve, type VariableUse} from '../../contracts/src/variables.ts';
+import {referencesIn, resolve, type VariableUse, type OrdinaryVariableUse} from '../../contracts/src/variables.ts';
 import type {ProductHandle,KnowledgePackReadPort} from '../ports.ts';
 import {canonicalize, type RecordVariables, type Principal, type VariableSnapshot} from '../records/api.ts';
 import {DEFAULT_SANDBOX} from './context.ts';
 
 export interface ProductVariables {
  product:ProductHandle;
- uses:VariableUse[];
+ uses:OrdinaryVariableUse[];
  versions:Array<{name:string;version:number|null;default:boolean}>;
  snapshot:VariableSnapshot;
 }
@@ -53,9 +53,9 @@ export async function resolveProductVariables(packReads:KnowledgePackReadPort, p
  }
  const problems=productVariableProblems(packReads,product.product,values,limits);
  if(problems.length)return {problems};
- const uses=referencesIn(product.product).flatMap(ref=>{
+ const uses=referencesIn(product.product).flatMap<OrdinaryVariableUse>(ref=>{
   const decision=snapshot.get(ref.name);
-  return decision?[{at:`${product.id}@${product.version}#${ref.at}`,name:ref.name,decision}]:[];
+  return decision?[{kind:'var',at:`${product.id}@${product.version}#${ref.at}`,name:ref.name,decision}]:[];
  });
  return {product:{...product,product:resolve(product.product,(_kind,name)=>values.get(name)) as ProductDeclaration},uses,versions,snapshot};
 }
@@ -83,7 +83,7 @@ export async function variableUsesOfRoot(store:RecordStore,root:string):Promise<
 }
 
 /** Keep original published positions while excluding parameters of producers outside this root's scope. */
-export function productionVariableUses(product:ProductHandle,unversioned:boolean,uses:readonly VariableUse[]):VariableUse[]{
+export function productionVariableUses(product:ProductHandle,unversioned:boolean,uses:readonly OrdinaryVariableUse[]):OrdinaryVariableUse[]{
  const prefix=`${product.id}@${product.version}#/producers/`;
  const active=product.product.producers.flatMap((producer,index)=>(producer.unversioned===true)===unversioned?[`${prefix}${index}/params/`]:[]);
  return uses.filter(use=>!use.at.startsWith(prefix)||active.some(path=>use.at.startsWith(path)));

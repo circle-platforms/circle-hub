@@ -929,7 +929,7 @@ export class DispatchService {
     try {
       const material=await this.registry.material(binding.executor,d);
       this.redactor.addSent('Bearer '+material.value);
-      await this.journal.append(binding,'credential_used','read','completed',{name:material.name,version:material.version,variables:[{at:binding.executor+'#/credential',name:material.name,decision:material.decision}]},['rec:'+material.decision]);
+      await this.journal.append(binding,'credential_used','read','completed',{name:material.name,version:material.version,variables:[{kind:'secret',at:binding.executor+'#/credential',name:material.name,version:material.version}]});
       return material.value;
     }catch(error){if(!(error instanceof ExecutorAccessError))throw error;
       const events=await this.journal.events(binding.job);

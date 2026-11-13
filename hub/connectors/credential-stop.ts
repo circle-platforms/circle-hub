@@ -16,7 +16,7 @@ export class CredentialStop {
     readonly #store: RecordStore;
     readonly #vault: Vault;
     readonly #repair:string;
-    constructor(store: RecordStore, vault: Vault, decisions: string[],names:readonly string[],resource:string) { this.#store = store; this.#vault = vault; this.#repair='circle-hub secret set '+[...new Set(names)].sort().map(name=>'--name '+name).join(' ')+' 或 circle-hub resource reset-login '+resource; this.entry = 'login-stop.' + sha256Hex(canonicalBytes([...new Set(decisions)].sort())); }
+    constructor(store: RecordStore, vault: Vault, versions: string[],names:readonly string[],resource:string) { this.#store = store; this.#vault = vault; this.#repair='circle-hub secret set '+[...new Set(names)].sort().map(name=>'--name '+name).join(' ')+' 或 circle-hub resource reset-login '+resource; this.entry = 'login-stop.' + sha256Hex(canonicalBytes([...new Set(versions)].sort())); }
     async #read(): Promise<State> { const text = await this.#vault.getText(this.entry); if (!text)
         return { epoch: randomUUID(), stopped: false, active: null }; try {
         const s = JSON.parse(text);

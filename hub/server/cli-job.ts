@@ -1,3 +1,4 @@
+import { secretUseLabels } from './secret-use-labels.ts';
 // Administrator CLI only. Remote content is retained as sources; terminal output carries no remote body or resource names.
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
@@ -44,8 +45,8 @@ async function readDefinition(s: JobCommandSession, file: string): Promise<unkno
   try { return JSON.parse(await readFile(resolve(s.ctx.io.cwd, file), 'utf8')); } catch { throw new UsageError('执行器定义不是可读取的 JSON 文件'); }
 }
 async function executorLine(s:JobCommandSession,registry:ExecutorRegistry,by:import('../records/api.ts').Principal,e:import('../dispatch/api.ts').RegisteredExecutor) {
- const uses=[];for(const use of e.variables) {const version=(await registry.records.variables.history(by,'var',use.name)).find(v=>v.decision.digest===use.decision);uses.push(use.name+' 第 '+(version?.version??0)+' 版');}
- s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length===0)}；解析后摘要 ${e.resolved_digest}；变量 ${uses.join('、')||'无'}`);
+ const uses = await secretUseLabels(registry.records, by, e.variables);
+ s.out(`执行器编号 ${e.id}；定义摘要 ${e.digest}；启用 ${Number(e.definition.enabled)}；具备派发登记 ${Number(registrationMissing(e.definition).length===0)}；解析后摘要 ${e.resolved_digest}；引用 ${uses.join('、')||'无'}`);
 }
 export async function executorCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
