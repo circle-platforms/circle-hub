@@ -49,10 +49,6 @@ const COLUMN: Record<string, string> = {
   personal_record_bindings:'owner',
   personal_objects:'owner',
   personal_purges:'owner',
-  personal_legacy_ready:'record',
-  personal_legacy_candidates:'record',
-  personal_legacy_retire:'sha256',
-  personal_legacy_retired:'sha256',
   record_index: 'value',
   record_keys: 'key',
   objects: 'media_type',
@@ -60,7 +56,7 @@ const COLUMN: Record<string, string> = {
   call_logs: 'tool',
   call_notes: 'note',
   call_reasons: 'note',
-  users: 'created_at', // name is updatable since migration 25 (rename)
+  users: 'created_at', // Only the approved account columns are updatable.
   tokens: 'label',
   oauth_clients: 'name',
   invitations: 'user_id',
