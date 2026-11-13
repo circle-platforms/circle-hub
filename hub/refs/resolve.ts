@@ -406,8 +406,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
   const diagnose = (message: string): void => ctx.onDiagnostic?.({ reference: canonical, scheme: ref.scheme, message });
   switch (ref.scheme) {
     case 'src': {
-      const result=await resolveSource(ref, canonical, ctx, consumer, diagnose);
-      return result.resolved&&ctx.parsers.bindingDisclosure?{...result,note:[result.note,ctx.parsers.bindingDisclosure].filter(Boolean).join('；')}:result;
+      return resolveSource(ref, canonical, ctx, consumer, diagnose);
     }
     case 'tree':
     case 'entry': {

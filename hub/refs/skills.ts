@@ -207,7 +207,7 @@ function hydrate(value:unknown,parser:string,fetchFragments?:(selectors:string[]
 
 function parserOf(opened:OpenedPack,row:SkillDeclaration['parsers'][number],options:SkillParserOptions):Parser{
   const split=row.parser.lastIndexOf('@'),id=row.parser.slice(0,split),version=Number(row.parser.slice(split+1));
-  return {id,version,mediaTypes:row.media_types,limits:row.limits,skill_digest:opened.info.digest,...(row.migration_test?{migration_test:row.migration_test}:{}),
+  return {id,version,mediaTypes:row.media_types,limits:row.limits,skill_digest:opened.info.digest,
     parse(){throw new ParseError(row.parser,'技能包解析必须经平台异步沙箱调用');},
     async parseAsync(bytes,parseOptions={}){
       const limits={...row.limits};

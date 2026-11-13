@@ -79,7 +79,6 @@ export interface ParsedDocument<M extends JsonValue = JsonValue> {
 
 export interface Parser<M extends JsonValue = JsonValue> {
   readonly skill_digest?: string;
-  readonly migration_test?:string;
   parseAsync?(bytes: Uint8Array, options?: ParseOptions): Promise<ParsedDocument<M>>;
   readonly id: string;
   readonly version: number;
