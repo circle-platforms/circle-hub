@@ -477,7 +477,13 @@ test('[PG] a fresh database requires standard init-admin before definition apply
     finally { await kit.close(); }
   });
   const definition = { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }] };
-  await assert.rejects(applyDeployment(session, definition), /管理员令牌/);
+  await assert.rejects(applyDeployment(session, definition), error => {
+    const failure = error as Error & { hint?: string };
+    assert.match(failure.message, /数据库里还没有管理员/);
+    assert.match(failure.hint!, /circle-hub init-admin/);
+    assert.doesNotMatch(failure.hint!, /operator-token remove|operator-token reissue/);
+    return true;
+  });
   assert.equal((await kit.principals.list()).length, 0);
   tokens.value = 'synthetic-old-operator-token';
   assert.equal((await kit.principals.list()).length, 0);
