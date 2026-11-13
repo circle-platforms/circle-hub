@@ -17,7 +17,7 @@ import { inspectCurrentState, clearOfflineSelection, assertCurrentForeignKeys, t
 import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, type CurrentRecord } from './selection.ts';
 import { inspectReset, resetRequestProblems } from './inspection.ts';
 import { runReset, ResetFailure, type ResetHost } from './operation.ts';
-import { parseResetRequest, RESET_SCOPE, type ResetInspection, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetScope } from './types.ts';
+import { parseResetRequest, RESET_DATA_SCOPE, type ResetInspection, type ResetPlan, type ResetPorts, type ResetProblem, type ResetRequest, type ResetReport, type ResetCount, type ResetDataScope } from './types.ts';
 
 export class ResetBlocked extends Error {
   readonly problems: readonly ResetProblem[];
@@ -35,7 +35,7 @@ export type CountedResetPlan = ResetPlan & { countsUnit: 'records'; unclassified
 export type CountedResetReport = ResetReport & ResetRecordTally;
 export function resetRecordTally(records: readonly CurrentRecord[], cleared: ReadonlySet<string> = new Set()): ResetRecordTally {
   const aliases = new Map<string, string>();
-  const objectScopes = new Map<string, ResetScope[]>();
+  const objectScopes = new Map<string, ResetDataScope[]>();
   for (const record of records) {
     for (const index of record.indices ?? []) if (['knowledge.node','knowledge.entry','knowledge.root','pack.digest'].includes(index.key)) aliases.set(index.value, record.digest);
     const scope = classifyCurrentRecord(record);
@@ -44,7 +44,7 @@ export function resetRecordTally(records: readonly CurrentRecord[], cleared: Rea
     }
   }
   const owners = resolveCurrentRecordScopes(records, { recordAliases: aliases, objectScopes });
-  const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
+  const counts = RESET_DATA_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
   let unclassifiedRetainedRecords = 0;
   for (const record of records) {
     const scopes = owners.get(record.digest);
@@ -83,7 +83,7 @@ async function currentState(context: PlatformContext, request: ResetRequest): Pr
 export async function previewReset(context: PlatformContext, input: ResetRequest, ports: ResetPorts = {}): Promise<CountedResetPlan> {
   const request = parseResetRequest(input), inspection = await inspectReset(context);
   const blocked = resetRequestProblems(inspection, request, ports);
-  const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: null as number | null }));
+  const counts = RESET_DATA_SCOPE.map(scope => ({ scope, retained: 0, cleared: null as number | null }));
   // All means no business record survives. Incompatible or unknown shapes must not require a business reader.
   if (request.scopes === 'all' || blocked.length) return { request, inspection, counts, blocked, countsUnit: 'records', unclassifiedRetainedRecords: null };
   const state = await currentState(context, request);

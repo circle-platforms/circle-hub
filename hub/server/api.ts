@@ -220,7 +220,7 @@ export async function createResetConfigurationPorts<State>(options: import('./cl
 }
 
 // Reset entry points are lazy: serving the Hub never imports destructive data operations.
-export type { ResetRequest, ResetScope, ResetInspection, ResetPlan, ResetProblem, ResetPorts, ResetReport } from './reset/types.ts';
+export type { ResetRequest, ResetScope, ResetDataScope, ResetInspection, ResetPlan, ResetProblem, ResetPorts, ResetReport } from './reset/types.ts';
 export type { ResetWorkerStatus } from './reset/worker.ts';
 export async function inspectReset(...args: Parameters<typeof import('./reset/inspection.ts').inspectReset>) { return (await import('./reset/inspection.ts')).inspectReset(...args); }
 export async function previewReset(...args: Parameters<typeof import('./reset/host.ts').previewReset>) { return (await import('./reset/host.ts')).previewReset(...args); }
