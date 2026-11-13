@@ -17,12 +17,16 @@ export function packHome(kind: PackKind): { active: NonNullable<PageChrome['acti
 
 /** The kinds that have a place of their own in the navigation (decision 151), each with its place. */
 export const PACK_PLACES = {
-  workflow: { active: 'packs', path: '/console/packs', title: uiLabelOf('pack_kind', 'workflow') },
+  workflow: { active: 'packs', path: '/console/workflows', title: uiLabelOf('pack_kind', 'workflow') },
   skill: { active: 'skills', path: '/console/skills', title: SKILLS_PLACE },
 } as const satisfies Partial<Record<PackKind, { active: NonNullable<PageChrome['active']>; path: string; title: string }>>;
 /** A kind with a place of its own: the keys of the table above, never a list of kinds written out again. */
 export type PlaceKind = keyof typeof PACK_PLACES;
-/** The page of one pack: a skill under the skills place, every other kind under the workflows path as before. */
+/** Personal zip staging and confirm (workflows and skills share one page under the workflows place). */
+export const PERSONAL_PUBLISH = '/console/workflows/-/publish';
+/** POST actions for the owner's personal pack forms. */
+export const personalPackDo = (action: string): string => `/console/workflows/do/${action}`;
+/** The page of one pack: a skill under the skills place, every other kind under the workflows place. */
 export const packPath = (pack: { id: string; kind: PackKind }): string => (pack.kind === 'skill' ? PACK_PLACES.skill.path : PACK_PLACES.workflow.path) + '/' + pack.id;
 
 export function packPurpose(kind:PackKind):string{
