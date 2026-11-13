@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { classifyCurrentRecord, currentRecordReferences, partitionRunOriginals, RECORD_HOLDER_COLUMNS, resolveCurrentRecordScopes, selectCurrentRecords, type CurrentRecord } from './selection.ts';
+import { classifyCurrentRecord, currentRecordReferences, partitionRunOriginals, RECORD_HOLDER_COLUMNS, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord } from './selection.ts';
 
 const hash = (n: number): string => n.toString(16).padStart(64, '0');
 const at = '2026-11-13T00:00:00.000Z';
@@ -227,4 +227,12 @@ test('content identities require an alias even if the same string is a current r
   config.references = [{ kind: 'record', digest: history.digest, field: '/declared-content', recordAlias: true }];
   assert.equal(selectCurrentRecords([config, history], new Set()).blocked.length, 1);
   assert.deepEqual(selectCurrentRecords([config, history], new Set(), { recordAliases: new Map([[history.digest, history.digest]]) }).blocked, []);
+});
+
+test('resource definitions yield a pack registry alias instead of only a manifest object edge', () => {
+  const resource = { schema: 'resource@1', id: 'res_' + '0'.repeat(26), system_pack: 'synthetic-system@1.0.0',
+    system_pack_digest: hash(20), name: '合成系统资源', environment: 'test', origins: { api: 'https://192.0.2.10' },
+    allow_plaintext: [], credentials: {}, credential_digests: {}, settings: {}, created_by: user, created_at: at };
+  assert.deepEqual(resourceDefinitionReferences(resource), [{ kind: 'record', digest: hash(20), field: '/system_pack_digest', recordAlias: true }]);
+  assert.equal(resourceDefinitionReferences({ ...resource, schema: 'resource@2' }), null);
 });
