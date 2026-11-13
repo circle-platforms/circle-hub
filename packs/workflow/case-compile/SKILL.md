@@ -92,7 +92,7 @@ case_index 仅在已有原始用例身份说明时使用
 
 ```text
 组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
-取一格: SELECT_CELL 的 from 指前序原输出保存名，table 写 format/separator/columns/header，column 是列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}
+取一格: 先查下载的 contract.json 中 runtime.block_model.cell_inputs 与 cell_methods（以及对应 object/method 的可用条目）；未声明就按缺资料处理并写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指前序原输出保存名，table 写 format/separator/columns/header，column 是列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}
 每条判断: output、原始用例 expectation 引用和 quote
 block_context.preconditions/causal_links/responders 写全；没有就写空表；主机观察写明谁应答
 obligations 覆盖全部原始期望: 实际判断 id，或 unmet+missing/next_action
@@ -102,7 +102,7 @@ criteria 由 review 阶段的非作者账号核对，使用真实 criteria_revie
 literal 仍选设备可观察文字；模型对含义的判断保持未确认
 RESTORE_FROM: 改动前取原文；末尾同设备逆序恢复；for 指配置块
 仅用已声明 guarded restore；root/target 由构建、产品规则和测试环境清单得出
-缺执行器恢复能力: 未知，找维护者补实现和发布说明；不用 {} 填普通设备命令
+缺执行器恢复能力: 未知，找维护者补实现和发布说明；不拿普通命令加 {} 冒充产品声明的恢复方法（上面允许的 input_register 回填除外）
 OBSERVE_DIST/MEMBER/EXIT 暂未提供，不自造正则或成功标记
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}
 receipt/case_id 取 fields.recomposition；每个期望对应 expects 的序号或 blocks 的判断 id
@@ -114,22 +114,29 @@ command_scope 与逐条 commands 同时存在时取交集，不能用身份说�
 
 ## 3. 脚本合并
 
-先照 tools/fidelity.md 由新会话逐条核对自动化用例是否改掉原始用例的场景，再把全部自动化用例一次交给 Hub。按说明改错并自动重交，最多重交 2 次；不要把 Hub 已接收内容当成全部正确。只有缺少自动化用例 Excel 时可以继续生成，其他检查都要正确。检查写成步骤符合执行器规则、期望能在原始用例里找到原句、命令在手册和命令树里、地址在测试环境里、没改掉原始用例的场景、自动化用例 Excel 和自动化用例一致、自动化用例本身写对了。
+先把全部自动化用例写好，再按下面顺序走完场景保真审计并一次交给 Hub（缺审计、摘要过期或格式不对时 `submit-plans.ts` 会直接在本地退出，不占用仅有的修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后从第 1 步重算核对资料并重新审计；不要把 Hub 已接收内容当成全部正确。只有缺少自动化用例 Excel 时可以继续生成，其他检查都要正确。检查写成步骤符合执行器规则、期望能在原始用例里找到原句、命令在手册和命令树里、地址在测试环境里、没改掉原始用例的场景、自动化用例 Excel 和自动化用例一致、自动化用例本身写对了。
 
 ```sh
+node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
+# 用新开的子代理逐份读取 to_audit 中的 .brief.json，严格只按文件内 rules 独立判断并将结果写到同目录同名的 .verdict.json
+node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
+# 确认输出 ready=true 后再提交
 node <技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <脚本编写编号> --model <模型> --plans <自动化用例目录>
 node <技能目录>/tools/fetch-run.ts --hub %HUB_URL% --run <脚本编写编号> --out <新目录>
 node <技能目录>/tools/generate-workbook.ts --run <新目录>/run.json --result <新目录>/result.json --submission <新目录>/submission.json --contract <新目录>/contract.json --profile <新目录>/profile.json --inventory <新目录>/inventory.json --out <新目录>/case.xlsx
 ```
 
-前两个工具从标准输入取令牌，生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。改了自动化用例就重新生成、上传并核对。
+submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。改了自动化用例就重新生成、上传并核对。
 
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项须 satisfied
-upload_file: case.xlsx 原文件；核对 SHA 与生成工具一致
-第二次 start_run: 同 subject/contract/inventory/profile/product/build/version 及 exclude
-inputs.workbook=<上传返回引用>；predecessor=parameters.plan_run=inputs.plan_result=<脚本编写编号>
-全部原始用例的自动化用例原样重交；多用例 plan_result 必填
+upload_file: 普通上传 case.xlsx 原文件（不标捕获原件）；核对 SHA 与生成工具一致
+第二次 start_run（同 subject/contract/inventory/profile/product/build/version 及 exclude）:
+  predecessor: "<脚本编写编号>"（脚本编写的运行编号）
+  parameters.plan_run: "<脚本编写编号>"（与 predecessor 同一脚本编写运行号，必填）
+  inputs.plan_result: {"run": "<脚本编写编号>"}（同一脚本编写运行号；多用例必填，单用例也可填）
+  inputs.workbook: {"reference": "src:<upload_file 返回的 sha256>"}
+用 tools/submit-plans.ts --hub %HUB_URL% --run <第二次 start_run 编号> --model <模型> --plans <自动化用例目录> 原样重交（不用 reuse 简写）
 Hub 上机前核对 Excel、构建、设备数、测试环境使用权及前后对应关系
 ```
 

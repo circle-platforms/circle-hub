@@ -1,4 +1,6 @@
-# case-compile 3.19.0
+# case-compile 3.19.1
+
+本地修正 3.19.1（2026-11-14）：（1）场景保真审计连跑防呆：`SKILL.md` 第 3 节合并命令块串联 `fidelity-brief` → 新子代理写 `.verdict.json` → `fidelity-apply` → `submit-plans`；`authoring-brief` 计划外壳末尾说明草稿交 Hub 前须走完保真核对；`submit-plans` 在发送前本地复用 `functions/fidelity.ts` 校验，缺少 `data.fidelity`、简报摘要过期或格式不对时直接本地退出并打印三步指令（不把必拒草稿发往 Hub 消耗修复次数，Hub 仍为准）。（2）通用取值文字补清：`SKILL.md` 点明先查 `contract.json` 中 `runtime.block_model.cell_inputs` 与 `cell_methods`（未声明按缺资料处理并写明执行器规则没有声明），并澄清 `RESTORE_FROM` 句不禁止按 `input_register` 使用 `{}`。（3）脚本合并防卡：`functions/text.ts` 与 `functions/project.ts` 补齐拒绝 `pointer`（缺 `plan_run` 指 `/parameters/plan_run`、缺 `plan_result` 指 `/inputs/plan_result`、工作簿原件错指 `/inputs/workbook` 等，不再回退到 `/inputs/subject`）并在 `fix` 与 `tables/codes.json` 写明三号字段；`SKILL.md` 第 3 节第二次 `start_run` 块分行写清 `predecessor`、`parameters.plan_run`、`inputs.plan_result`（均填脚本编写运行号）、普通上传 `inputs.workbook` 及通过 `tools/submit-plans.ts` 重交（不用 `reuse` 简写）。保持 `tables/runtime-profile-format.json` 不变以免影响 3.19.0 角色核对；更新生成器身份、四份工作簿合成样例及清单，未发布或部署。
 
 本地修正 3.19.0（2026-11-13）：顺序步骤的 expects 可写 op:"not_found"，生成并独立回读执行器已声明的不存在检查，可与同为顺序步骤的其它用例写进一份自动化用例 Excel。文字须来自本条原始期望，或本条配置后按产品有向逆操作撤销的完整名字；不另立判定标准、不发起复核。分块写法的既有行为保留。本次不发布或部署。
 
