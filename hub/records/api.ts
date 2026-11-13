@@ -1,3 +1,4 @@
+import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
 export { diagnoseRecordsSchema, currentRecordMigrations, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
 export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type Teams } from './teams.ts';
 export { isAdmin, canSeeRun } from './permissions.ts';
@@ -653,9 +654,7 @@ export interface VaultVerification {
 }
 
 export type VaultSecretMetadata = import('../../contracts/src/variables.ts').SecretRecord;
-export interface VaultSecretMaterial {
-  name: string;
-  version: number;
+export interface VaultSecretMaterial extends SecretCipherIdentity {
   metadata: VaultSecretMetadata;
   value: string;
 }
@@ -673,10 +672,12 @@ export interface Vault {
   initKey(): Promise<void>;
   putSecret(input: VaultSecretWrite): Promise<VaultSecretMetadata>;
   secretMetadata(name: string): Promise<VaultSecretMetadata | null>;
+  /** Authenticated identity only; does not open value ciphertext. Null when absent or revoked. */
+  secretIdentity(name: string): Promise<SecretCipherIdentity | null>;
   secretHistory(name: string): Promise<VaultSecretMetadata[]>;
   secretNames(): Promise<string[]>;
   readSecret(name: string): Promise<VaultSecretMaterial | null>;
-  recentSecrets(): Promise<VaultSecretMaterial[]>;
+  recentSecrets(names?: readonly string[]): Promise<VaultSecretMaterial[]>;
   unsetSecret(name: string, by: string, at: string): Promise<VaultSecretMetadata>;
   put(name: string, value: string | Uint8Array): Promise<void>;
   /** Null when there is no entry of that name. Throws VaultError when the key is wrong or the entry was altered or renamed. */

@@ -221,6 +221,12 @@ export class FileVault implements Vault {
     return (await this.#metadataFile(name))?.versions.at(-1)?.metadata ?? null;
   }
 
+  async secretIdentity(name: string): Promise<import('../../contracts/src/variables.ts').SecretCipherIdentity | null> {
+    const current = (await this.#metadataFile(name))?.versions.at(-1);
+    if (!current || current.metadata.revoked || current.sealed_sha256 === null) return null;
+    return { name, version: current.metadata.version, sealed_sha256: current.sealed_sha256 };
+  }
+
   async secretHistory(name: string): Promise<VaultSecretMetadata[]> {
     return (await this.#metadataFile(name))?.versions.map(row => row.metadata).reverse() ?? [];
   }
@@ -230,26 +236,27 @@ export class FileVault implements Vault {
     if (!current || current.metadata.revoked) return null;
     const value = await this.#sidecarValue(current);
     if (value === undefined) throw new VaultError('当前版本缺少封存值；没有取值');
-    return { name, version: current.metadata.version, metadata: current.metadata, value };
+    if (current.sealed_sha256 === null) throw new VaultError('当前版本缺少认证密文身份；没有取值');
+    return { name, version: current.metadata.version, sealed_sha256: current.sealed_sha256, metadata: current.metadata, value };
   }
 
-  async recentSecrets(): Promise<VaultSecretMaterial[]> {
+  async recentSecrets(names?: readonly string[]): Promise<VaultSecretMaterial[]> {
     const out: VaultSecretMaterial[] = [], issues: VaultReadinessIssue[] = [];
-    let names: string[];
-    try { names = await this.secretNames(); }
+    let selected: string[];
+    try { selected = names === undefined ? await this.secretNames() : [...new Set(names.map(name => { this.#secretEntry(name); return name; }))]; }
     catch (error) {
       if (error instanceof VaultReadinessError) throw error;
       if (!isVaultReadBoundaryError(error)) throw unexpectedVaultReadError();
       throw new VaultReadinessError([{ name: null, entry: 'vault/', missing: ['inventory'], reason: '无法列出密钥库的正式命名条目', next_action: '请管理员核对vault与metadata目录的属主和读取权限，再重试；不要改动或解释其他命名空间的opaque状态文件' }]);
     }
-    for (const name of names) {
+    for (const name of selected) {
       try {
         const state = await this.#metadataFile(name);
         if (state?.versions.at(-1)?.metadata.revoked) continue;
         for (const row of (state?.versions ?? []).filter(row => row.sealed_sha256 !== null).slice(-2)) {
           try {
             const value = await this.#sidecarValue(row);
-            if (value !== undefined) out.push({ name, version: row.metadata.version, metadata: row.metadata, value });
+            if (value !== undefined && row.sealed_sha256 !== null) out.push({ name, version: row.metadata.version, sealed_sha256: row.sealed_sha256, metadata: row.metadata, value });
           } catch (error) {
             if (error instanceof VaultReadinessError) issues.push(...error.issues);
             else throw error;
