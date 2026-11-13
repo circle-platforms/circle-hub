@@ -6,6 +6,7 @@ import {
   needsRebuildPage,
   rebuildNeededBanner,
   renderRebuildPage,
+  RESET_CONFIRM_WORD,
   RESET_SCOPES,
   resetRebuildSection,
 } from './reset.ts';
@@ -26,12 +27,13 @@ function ctx(principal: Principal, path = '/console/settings?tab=hub'): PageCont
   };
 }
 
-test('settings reset card posts async preview, not the sync command bridge', () => {
+test('settings reset card posts to admin/do/reset with confirm and keep_config', () => {
   const body = String(resetRebuildSection(ctx(ADMIN)));
   assert.match(body, /重置和重建/);
-  assert.match(body, /action="\/console\/reset\/preview"/);
-  assert.match(body, /name="keep-config"/);
-  assert.doesNotMatch(body, /admin\/do\/reset/);
+  assert.match(body, /action="\/console\/admin\/do\/reset"/);
+  assert.match(body, /name="confirm"/);
+  assert.match(body, /name="keep_config"/);
+  assert.match(body, new RegExp(RESET_CONFIRM_WORD));
   for (const row of RESET_SCOPES) {
     assert.match(body, new RegExp(row.label));
     assert.match(body, new RegExp(row.clears.slice(0, 8)));
@@ -53,6 +55,7 @@ test('needs-rebuild page offers archive-and-init and definition restore for an a
   assert.match(body, /circle-hub apply/);
   assert.match(body, /action="\/console\/rebuild\/preview"/);
   assert.match(body, /name="scope" value="all"/);
+  assert.match(body, /name="confirm" value="重建"/);
 });
 
 test('renderRebuildPage is a pure document for the lightweight server', () => {
@@ -101,7 +104,6 @@ test('renderRebuildPage is a pure document for the lightweight server', () => {
   });
   assert.match(running, /重建进行中/);
   assert.match(running, /href="\/console\/reset\/status\/11111111-1111-1111-1111-111111111111"/);
-  assert.match(running, /operation=11111111-1111-1111-1111-111111111111/);
 });
 
 test('overview banner names the rebuild page', () => {

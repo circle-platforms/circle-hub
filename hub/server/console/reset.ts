@@ -1,20 +1,20 @@
 /**
- * K11 console surfaces for「重置和重建」. Page copy and pure renderer live here; launch / ACK / status
- * stay on the server rebuild bridge (interfaces-reset.md). Status path is `/console/reset/status/<UUID>`.
- * Orchestration of backup/archive/empty-db sits in hub/server (answers-codex 18:40), not platform.
+ * K11 console surfaces for「重置和重建」and「需要重建」.
+ * Ordinary mode posts settings preview to `/console/admin/do/reset` (Codex createApp routes it to the
+ * rebuild handler with authenticateAdmin + ResetPorts). Incompatible mode uses `/console/rebuild/*`.
+ * Status path: `/console/reset/status/<UUID>`. Orchestration/apply/export live on the server bridge.
  */
 import { RESET_ALL_LABEL, RESET_SCOPE, RESET_SCOPE_LABEL, type ResetScope } from '../../../contracts/src/reset.ts';
 import type { RebuildConsoleContext } from '../rebuild-http.ts';
 import type { RebuildNeeded } from '../rebuild-state.ts';
 import {
+  adminDoPath,
   overviewPath,
   rebuildAuthorizePath,
   rebuildExecutePath,
   rebuildNewActionPath,
   rebuildPath,
   rebuildPreviewPath,
-  resetPreviewPath,
-  resetExecutePath,
   resetStatusPath,
   settingsPath,
   setupPath,
@@ -28,13 +28,11 @@ import type { PageContext, PageResult } from './context.ts';
 export type { RebuildNeeded };
 export type { RebuildConsoleContext };
 
-/** What the administrator types to confirm a destructive reset (plain language, not an internal code). */
+/** What the administrator types to confirm a destructive reset. */
 export const RESET_CONFIRM_WORD = '重建';
 
-/** Console choice: one owner scope or全部初始化 (`all` is a selector, never a category). */
 export type ResetChoice = ResetScope | 'all';
 
-/** Plain-language consequences for each choice. */
 export const RESET_SCOPES: readonly { value: ResetChoice; label: string; clears: string; keeps: string }[] = [
   {
     value: 'history',
@@ -79,22 +77,20 @@ const KEEP_CONFIG_NOTE =
   '勾选后，程序会在重置前导出当前配置（账户与令牌的散列、团队、分配、业务系统、执行器等，不含任何凭据明文），重置后再自动写回。库的结构已经和本版本对不上、导不出来时，只能选「归档并初始化」或带着定义文件恢复。';
 
 const PAGE_HINT = '数据与本版本不兼容时的重建入口；平常重置也在设置页。';
-const ASYNC_NOTE = '执行走独立的预检与后台重建，不会在网页请求里同步停服；进度在状态页查看。';
+const ASYNC_NOTE = '预检通过后会打开确认页；真正执行走后台重建，不会在网页请求里同步停服。';
 
 function scopeHelp(): Html {
   return html`<ul class="ch-meta">${RESET_SCOPES.map((row) => html`<li><b>${row.label}</b>：${row.clears}${row.keeps}</li>`)}</ul>`;
 }
 
 /**
- * Admin-only「重置和重建」card. Posts to async preview/execute (not the sync command bridge),
- * matching Server AppOptions.reset hooks (requests-to-cursor 17:58+). Preview then execute is the
- * confirmation; the form only submits fields the server accepts (csrf, actionId, scope, keep-config).
+ * Admin-only「重置和重建」card. Posts to `/console/admin/do/reset` (fields Codex rebuild-http accepts:
+ * csrf, confirm, scope, keep_config). Response is the preview page with execute controls.
  */
 export function resetRebuildSection(ctx: PageContext): Html {
   if (!ctx.admin) return html``;
   const selected = ctx.url.searchParams.get('reset_scope') ?? 'history';
   const keepOn = ctx.url.searchParams.get('keep_config') === '1' || ctx.url.searchParams.get('keep-config') === '1';
-  const actionId = ctx.url.searchParams.get('actionId') ?? undefined;
   const fields = html`${field(
     '范围',
     selectControl(
@@ -105,28 +101,15 @@ export function resetRebuildSection(ctx: PageContext): Html {
     ),
     '只清所选范围；全部初始化会回到空库。',
   )}
-<label class="check" data-wide-field><input type="checkbox" name="keep-config" value="1"${keepOn ? html` checked` : ''}> 保留配置重建</label>
+<label class="check" data-wide-field><input type="checkbox" name="keep_config" value="1"${keepOn ? html` checked` : ''}> 保留配置重建</label>
 <p class="ch-meta">${KEEP_CONFIG_NOTE}</p>
+${field(
+    '确认',
+    html`<input name="confirm" autocomplete="off" required maxlength="16" placeholder="${RESET_CONFIRM_WORD}">`,
+    `请输入「${RESET_CONFIRM_WORD}」再预检。`,
+  )}
 <p class="ch-meta">${ARCHIVE_NOTE}</p>
-<p class="ch-meta">${ASYNC_NOTE} 先预检，再点确认执行（相当于输入「${RESET_CONFIRM_WORD}」）。</p>
-${actionId === undefined ? '' : html`<input type="hidden" name="actionId" value="${actionId}">`}`;
-  const preview = postForm({
-    action: resetPreviewPath(),
-    csrf: ctx.csrf ?? '',
-    fields,
-    submit: '预检所选范围',
-    danger: true,
-  });
-  const execute =
-    actionId === undefined
-      ? html``
-      : postForm({
-          action: resetExecutePath(),
-          csrf: ctx.csrf ?? '',
-          fields: html`<input type="hidden" name="actionId" value="${actionId}">`,
-          submit: '确认执行重建',
-          danger: true,
-        });
+<p class="ch-meta">${ASYNC_NOTE}</p>`;
   return html`<section id="reset-rebuild">${card(
     {
       title: '重置和重建',
@@ -134,10 +117,15 @@ ${actionId === undefined ? '' : html`<input type="hidden" name="actionId" value=
     },
     html`${callout('warn', html`<span>只有管理员可以执行。执行前请确认没有其他人正在写入 Hub。</span>`)}
 ${scopeHelp()}
-${preview}${execute}`)}</section>`;
+${postForm({
+  action: adminDoPath('reset'),
+  csrf: ctx.csrf ?? '',
+  fields,
+  submit: '预检所选范围',
+  danger: true,
+})}`)}</section>`;
 }
 
-/** Banner on the overview when the process is in「需要重建」. */
 export function rebuildNeededBanner(needed: RebuildNeeded): Html {
   return callout(
     'warn',
@@ -194,6 +182,7 @@ function authorizedRebuildBody(context: RebuildConsoleContext): Html {
   const actionId = context.actionId;
   const previewFields = html`${actionId === undefined ? '' : html`<input type="hidden" name="actionId" value="${actionId}">`}
 <input type="hidden" name="scope" value="all">
+<input type="hidden" name="confirm" value="${RESET_CONFIRM_WORD}">
 <p class="ch-meta">${ARCHIVE_NOTE}</p>
 <p class="ch-meta">${ASYNC_NOTE}</p>`;
   const previewForm = postForm({
@@ -234,7 +223,6 @@ ${card({ title: '用定义文件恢复' }, restoreHint)}
 <p>${link(overviewPath(), '返回总览')} · ${link(settingsPath() + '?tab=hub#reset-rebuild', '打开设置里的重置和重建')} · ${link(setupPath(), '首次设置')}</p>`;
 }
 
-/** Main panel shared by the pure renderer and the ordinary console adapter. */
 export function rebuildPageBody(context: RebuildConsoleContext): Html {
   return box(
     { title: '需要重建', hint: '这个 Hub 的数据结构和当前程序版本不一致时，只开放本页和健康检查。' },
@@ -247,10 +235,7 @@ ${authorizeForm(context.csrf, context.loginNonce)}
   );
 }
 
-/**
- * Pure rebuild page for the lightweight incompatible-store server (interfaces-reset 17:38).
- * Default renderer for `createRebuildApp` / `ServeOptions.rebuild.render`.
- */
+/** Pure rebuild page for the lightweight incompatible-store server; default `ServeOptions.rebuild.render`. */
 export function renderRebuildPage(context: RebuildConsoleContext): string {
   return String(
     page(

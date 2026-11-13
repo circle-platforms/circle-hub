@@ -52,13 +52,7 @@ export const rebuildAuthorizePath = (): string => '/console/rebuild/authorize';
 export const rebuildPreviewPath = (): string => '/console/rebuild/preview';
 export const rebuildExecutePath = (): string => '/console/rebuild/execute';
 export const rebuildNewActionPath = (): string => '/console/rebuild/new-action';
-/**
- * Compatible-DB admin reset (async preview/execute; not the sync command bridge).
- * Server AppOptions.reset hooks own these routes.
- */
-export const resetPreviewPath = (): string => '/console/reset/preview';
-export const resetExecutePath = (): string => '/console/reset/execute';
-/** Unique status path (interfaces-reset 17:40): `/console/reset/status/<UUID>`. */
+/** Unique status path (interfaces-reset 17:40 / Codex createApp): `/console/reset/status/<UUID>`. */
 export const resetStatusPath = (operationId: string): string => `/console/reset/status/${enc(operationId)}`;
 export const healthPath = (): string => '/console/health';
 
