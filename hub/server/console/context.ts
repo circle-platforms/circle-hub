@@ -1,6 +1,7 @@
 import type { Principal } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import { html, link, page, type Html, type PageChrome } from './html.ts';
+import type { RebuildNeeded } from './reset.ts';
 import { overviewPath } from './routes.ts';
 
 /** What the console knows about the process serving it, for the Hub's state. */
@@ -31,6 +32,11 @@ export interface PageContext {
   origin?: string;
   /** The process serving the console, for the Hub's state. */
   hub?: HubFacts;
+  /**
+   * When set, the store shape does not match this binary (K11). Overview shows a banner; `/console/rebuild`
+   * is the dedicated page. Codex fills the judgment; absent means the Hub is operating normally.
+   */
+  rebuildNeeded?: RebuildNeeded | null;
   /** Display name of a user id, cached for the request. */
   userName: (userId: string | null | undefined) => Promise<string>;
 }

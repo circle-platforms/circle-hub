@@ -96,6 +96,11 @@ export function emptyAction(path: string, text: unknown, params: Record<string, 
   return html`<a class="ch-btn ch-btn--primary" href="${href(path, params)}">${text}</a>`;
 }
 
+/** The one CSRF hidden input; every console POST form uses this (or postForm from components). */
+export function csrfField(csrf: string): Html {
+  return html`<input type="hidden" name="csrf" value="${csrf}">`;
+}
+
 export function table(headers: readonly (string|Html)[], rows: readonly unknown[][], empty: string | EmptyState = '没有记录', cls?: string, selection?: {selected?:number;hrefs?:readonly string[]}): Html {
   if (rows.length === 0) return emptyBlock(empty);
   return html`<div class="ch-table-wrap" tabindex="0" role="region" aria-label="表格"><table class="ch-table"${cls === undefined ? '' : html` data-view="${cls}"`}><thead><tr>${headers.map((h,i) => html`<th scope="col"${rows.some(row=>typeof row[i]==='number')?html` class="num"`:''}>${h}</th>`)}</tr></thead><tbody>${rows.map(
@@ -310,7 +315,7 @@ export function page(chrome: PageChrome, body: unknown): Html {
 <div class="ch-brand">${logo()}<span>circle-hub</span><label class="ch-icon-btn" for="console-navigation-toggle" title="展开导航" aria-label="展开导航">${icon('menu')}</label></div>
 <form role="search" method="get" action="${searchPath()}"><label class="ch-input">${icon('search')}<input id="console-search" type="search" name="q" maxlength="100" placeholder="搜索" aria-label="搜索"><span class="ch-kbd" aria-hidden="true">⌘K</span></label></form>
 <div class="ch-nav-list" id="console-navigation-links">${nav}</div>
-<div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="${logoutPath()}"><input type="hidden" name="csrf" value="${chrome.csrf ?? ''}"><button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
+<div class="ch-nav-foot"><div class="ch-actions"><span class="ch-avatar" aria-hidden="true">${[...user.name][0] ?? ''}</span><div class="ch-section"><span data-evidence title="${user.name}">${user.name}</span><span class="ch-meta">${user.role}</span></div><form method="post" action="${logoutPath()}">${csrfField(chrome.csrf ?? '')}<button type="submit" class="ch-icon-btn" aria-label="退出登录" title="退出登录">${icon('logout')}</button></form></div>${themeSwitch()}</div>
 </nav>
 <main class="ch-pane" id="console-main" tabindex="-1">${top}<div class="ch-section" data-area-content>${content}</div></main>
 ${inspector ? html`<aside class="ch-inspector" aria-label="${layout.detail ? '详情' : '概况'}">${layout.detail ? html`<h1 class="ch-visually-hidden ch-detail-heading">${heading}</h1>` : ''}${layout.detail && layout.back ? html`<nav class="ch-crumbs" aria-label="返回列表">${layout.back}</nav>` : ''}${layout.detail ? html`${notice}${state}` : ''}${inspector}</aside>` : ''}

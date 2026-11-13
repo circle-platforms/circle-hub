@@ -9,6 +9,7 @@ import {newId,AccessError} from '../../records/api.ts';
 import {html,link,page,pageLayout,pre,table,emptyAction,type Html} from './html.ts';
 import {button} from './ui.ts';
 import {evidence,panel as card,field as inputField,actionLink,dialog} from './presentation.ts';
+import { postForm, selectControl } from './components.ts';
 import {exactSize,memoryState,number,timestamp,versionLabel} from './knowledge-display.ts';
 import { type PageContext, type PageResult, neutralPage } from './context.ts';
 import {currentAudience,inScope,knowledgeContext,knowledgeTabs,selectedScope,spaceLayout} from './space-layout.ts';
@@ -17,7 +18,29 @@ import {containsDirectory,directoryName} from './audience.ts';
 import {grantDialog,checkTable,grantPreviewLocation} from './grant-dialog.ts';
 
 const location=(parameters:Record<string,string|undefined>={})=>'/console/knowledge?'+new URLSearchParams({view:'memory',...Object.fromEntries(Object.entries(parameters).filter((pair):pair is [string,string]=>pair[1]!==undefined))});
-const form=(ctx:PageContext,action:string,fields:Html,label:string,disabled=false,danger=false,back?:string)=>html`<form method="post" action="/console/knowledge/do/memory-${action}"${back?html` data-memory-editor`:''}><input type="hidden" name="csrf" value="${ctx.csrf??''}">${ctx.personalEpoch?html`<input type="hidden" name="personal_epoch" value="${ctx.personalEpoch}">`:html``}${fields}<div class="${back?'ch-editor-actions ':''}ch-actions"><button class="ch-btn ${danger||action==='revoke'?'ch-btn--danger':'ch-btn--primary'}" type="submit"${disabled?html` disabled`:''}>${label}</button>${back?actionLink(back,'取消并返回'):''}</div></form>`;
+function form(ctx: PageContext, action: string, fields: Html, label: string, disabled = false, danger = false, back?: string): Html {
+  const isDanger = danger || action === 'revoke';
+  // Editor keeps cancel after submit; postForm always appends the button last.
+  if (back) {
+    return postForm({
+      action: `/console/knowledge/do/memory-${action}`,
+      csrf: ctx.csrf ?? '',
+      fields,
+      personalEpoch: ctx.personalEpoch,
+      extra: ' data-memory-editor',
+      actions: html`<div class="ch-editor-actions ch-actions"><button class="ch-btn ${isDanger ? 'ch-btn--danger' : 'ch-btn--primary'}" type="submit"${disabled ? html` disabled` : ''}>${label}</button>${actionLink(back, '取消并返回')}</div>`,
+    });
+  }
+  return postForm({
+    action: `/console/knowledge/do/memory-${action}`,
+    csrf: ctx.csrf ?? '',
+    fields,
+    submit: label,
+    disabled,
+    danger: isDanger,
+    personalEpoch: ctx.personalEpoch,
+  });
+}
 const field=inputField;
 const memoryLabel=()=>uiLabelOf('knowledge_view','memory');
 const actionLabel=(action:MemoryAction)=>uiLabelOf('memory_action',action);
@@ -81,7 +104,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
 
 function memoryEditor(ctx:PageContext,space:KnowledgeSpaceKind,doc?:{document:string;current_version:string;title:string;path:string;markdown:string;state:string}):Html{
  const back=location({scope:ctx.url.searchParams.get('scope')??(space==='team'?'team':'personal'),document:doc?.document,version:ctx.url.searchParams.get('version')??undefined,path:ctx.url.searchParams.get('path')??undefined});
- return html`<section data-editor-foreground>${card({title:actionLabel(doc?'edit':'create'),hint:'正文可使用 Markdown 标记，按原文保存，页面不渲染也不转换格式；保存时检查大小，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('文件夹',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',html`<select name="enabled"><option value="true">${uiLabelOf('memory_status','enabled')}</option><option value="false"${doc?.state==='disabled'?html` selected`:''}>${uiLabelOf('memory_status','disabled')}</option></select>`)}<div data-wide-field>${field(MARKDOWN_FIELD.label,html`<textarea name="markdown" rows="6" required>${doc?.markdown??''}</textarea>`,MARKDOWN_FIELD.hint)}</div></div>`,actionLabel('save'),false,false,back))}</section>`;
+ return html`<section data-editor-foreground>${card({title:actionLabel(doc?'edit':'create'),hint:'正文可使用 Markdown 标记，按原文保存，页面不渲染也不转换格式；保存时检查大小，版本变化时拒绝覆盖'},form(ctx,'write',html`<div data-fields><input type="hidden" name="space" value="${space}"><input type="hidden" name="document" value="${doc?.document??''}"><input type="hidden" name="expected_version" value="${doc?.current_version??''}"><input type="hidden" name="client_key" value="${newId('evt')}">${field('标题',html`<input name="title" value="${doc?.title??''}" required maxlength="300">`)}${field('文件夹',html`<input name="path" value="${doc?.path??ctx.url.searchParams.get('path')??'/'}" required maxlength="2000">`)}${field('状态',selectControl('enabled',[{value:'true',label:uiLabelOf('memory_status','enabled'),selected:doc?.state!=='disabled'},{value:'false',label:uiLabelOf('memory_status','disabled'),selected:doc?.state==='disabled'}]))}<div data-wide-field>${field(MARKDOWN_FIELD.label,html`<textarea name="markdown" rows="6" required>${doc?.markdown??''}</textarea>`,MARKDOWN_FIELD.hint)}</div></div>`,actionLabel('save'),false,false,back))}</section>`;
 }
 
 export async function performMemoryAction(ctx:PageContext,action:string,values:{get(key:string):string|null|undefined}):Promise<string>{

@@ -14,7 +14,9 @@ import { taskChip } from './status.ts';
 import { loadTasks, packTitles, taskTitle, waitingRequests, type TaskRow } from './tasks.ts';
 import { sizeText, storageFacts } from './settings.ts';
 import { readsText, systemReads } from './trial.ts';
-import { box, count, kpi, tile, when } from './ui.ts';
+import { box, kpi, tile, when } from './ui.ts';
+import { count, segments } from './components.ts';
+import { rebuildNeededBanner } from './reset.ts';
 
 export const PERIODS = [7, 14, 30] as const;
 export const RECENT_LIMIT = 120;
@@ -166,7 +168,7 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
     });
     state = box({ title: '知识库', meta: '当前快照', hint: '按产品线统计，成员可读分配给自己的工作流所绑定的产品线。', tail: link('/console/knowledge', '打开知识库') }, html`<div class="ch-stats">${kpi('产品线',lines.length)}${kpi('已有知识的产品线',current)}</div>`);
   }
-  const periods = html`<nav class="ch-seg" aria-label="时间范围">${PERIODS.map((n) => html`<a${n === days ? html` aria-current="page"` : ''} href="/console/overview?days=${n}">${n} 天</a>`)}</nav>`;
+  const periods = segments('时间范围', PERIODS.map((n) => ({ href: `/console/overview?days=${n}`, label: `${n} 天`, current: n === days })));
   const waiting=new Set(requests.map(request=>request.run));
   // First what waits for someone (a request or an undecided requirement), then what is not finished, then the rest; newest first within each.
   const attention=(task:TaskRow)=>waiting.has(task.run.run)||task.pending>0?0:task.result!=='passed'&&task.result!=='abandoned'?1:2;
@@ -180,7 +182,8 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
   const taskList=html`<section class="ch-section" data-overview-tasks>${box({title:'需要处理',meta:scope,hint:'优先列出有等待回应中的请求、未决项或尚未完成的任务，最多 8 个'},recent.length?html`<div class="ch-list">${rows}</div>`:html`<section class="ch-empty"><h3 class="ch-empty-title">所选时段没有任务</h3><p class="ch-empty-text">在客户端中运行工作流后，这里显示任务。</p>${link('/console/workflows','查看工作流')}</section>`,{flush:recent.length>0,...(recent.length?{foot:link('/console/runs','查看全部任务')}:{})})}</section>`;
   // One question per page (decision 151): what needs attention. The figures first, the tasks beside their statistics; no
   // folded sections and nothing that is only planned.
-  const body = html`${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
+  const rebuild = ctx.rebuildNeeded ? rebuildNeededBanner(ctx.rebuildNeeded) : '';
+  const body = html`${rebuild}${liveModule('overview-kpis', ['task.updated', 'request.updated'], kpis)}
 <div class="ch-board">${liveModule('overview-priority', ['task.updated','request.updated'],taskList)}
 <div class="ch-stack" data-overview-side>${liveModule('overview-results', ['task.updated'], html`<div class="ch-stack">${checkCard}${box({title:'每日任务',meta:scope},html`${daily}${resultsTable}`)}${stuckCard}</div>`)}
 ${liveModule('overview-state', ['task.updated', 'system.added', 'system.status', 'knowledge.published'], html`<div class="ch-stack">${systems}${state}</div>`)}</div></div>`;

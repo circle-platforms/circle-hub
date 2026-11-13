@@ -3,10 +3,10 @@
  * ch-seg tabs, empty states, buttons, error lines, selects, and figures. Pages compose these;
  * hand-written duplicates of their markup belong only here.
  */
-import { emptyBlock, html, href, link, Html, type EmptyState } from './html.ts';
+import { csrfField, emptyBlock, html, href, link, Html, type EmptyState } from './html.ts';
 import { count } from './numbers.ts';
 
-export { emptyBlock, type EmptyState };
+export { csrfField, emptyBlock, type EmptyState };
 export { count };
 
 /** A POST form that carries the session CSRF token (and the personal epoch when the page has one). */
@@ -14,7 +14,10 @@ export function postForm(input: {
   action: string;
   csrf: string;
   fields: unknown;
-  submit: string;
+  /** Single submit label; ignored when `actions` is set. */
+  submit?: string;
+  /** Custom submit controls (for example approve/deny). When set, replaces the default button. */
+  actions?: Html;
   primary?: boolean;
   danger?: boolean;
   disabled?: boolean;
@@ -22,10 +25,12 @@ export function postForm(input: {
   personalEpoch?: string;
   /** Raw attribute text after action (for example ` data-entry-editor`). */
   extra?: string;
+  /** Extra class on the form element (for example `ch-actions`). */
+  formClass?: string;
 }): Html {
   const kind = input.danger ? 'ch-btn--danger' : input.primary === false ? 'ch-btn--secondary' : 'ch-btn--primary';
-  const button = html`<button type="submit" class="ch-btn ${kind}"${input.disabled ? html` disabled` : ''}>${input.submit}</button>`;
-  return html`<form method="post" action="${input.action}"${input.multipart ? html` enctype="multipart/form-data"` : ''}${input.extra ? new Html(input.extra) : ''}><input type="hidden" name="csrf" value="${input.csrf}">${input.personalEpoch === undefined ? '' : html`<input type="hidden" name="personal_epoch" value="${input.personalEpoch}">`}${input.fields}${button}</form>`;
+  const button = input.actions ?? html`<button type="submit" class="ch-btn ${kind}"${input.disabled ? html` disabled` : ''}>${input.submit ?? '提交'}</button>`;
+  return html`<form method="post" action="${input.action}"${input.formClass ? html` class="${input.formClass}"` : ''}${input.multipart ? html` enctype="multipart/form-data"` : ''}${input.extra ? new Html(input.extra) : ''}>${csrfField(input.csrf)}${input.personalEpoch === undefined ? '' : html`<input type="hidden" name="personal_epoch" value="${input.personalEpoch}">`}${input.fields}${button}</form>`;
 }
 
 /** The「下一页」control for cursor-based lists. */
@@ -72,12 +77,19 @@ export interface SelectOption {
   value: string;
   label: unknown;
   selected?: boolean;
+  /** Marks the option as evidence text (data-evidence). */
+  evidence?: boolean;
 }
 
 /** A native select control with escaped options. */
-export function selectControl(name: string, options: readonly SelectOption[], blank?: SelectOption): Html {
+export function selectControl(
+  name: string,
+  options: readonly SelectOption[],
+  blank?: SelectOption,
+  attrs?: { required?: boolean; disabled?: boolean },
+): Html {
   const list = blank === undefined ? options : [blank, ...options];
-  return html`<select name="${name}">${list.map((option) => html`<option value="${option.value}"${option.selected ? html` selected` : ''}>${option.label}</option>`)}</select>`;
+  return html`<select name="${name}"${attrs?.required ? html` required` : ''}${attrs?.disabled ? html` disabled` : ''}>${list.map((option) => html`<option value="${option.value}"${option.selected ? html` selected` : ''}${option.evidence ? html` data-evidence` : ''}>${option.label}</option>`)}</select>`;
 }
 
 /**

@@ -1,4 +1,4 @@
-import {evidence,technicalCode,stat,facts} from './presentation.ts';
+import {technicalCode} from './presentation.ts';
 import {personalOriginCleared,clearedPersonalFolder,singleItemOrigin} from './personal-origin.ts';
 // Decision 135 audit summaries: query only participant/all-administrator indexes, never private content or raw receipts.
 import { SpaceGrantBody } from '../../../contracts/src/spaces.ts';
@@ -8,6 +8,7 @@ import { KnowledgeGranteeSchema, MemoryFieldSchema, uiLabelOf } from '../../../c
 import {PROTOCOL_CODES} from '../../../contracts/generated/protocol.ts';
 import { pathSegments } from '../../refs/api.ts';
 import { html, link, table, code, type Html } from './html.ts';
+import { count } from './components.ts';
 import { card, when } from './ui.ts';
 import type { PageContext } from './context.ts';
 
@@ -29,7 +30,7 @@ async function memoryRefusals(ctx:PageContext,path:string,user?:string,from?:str
    const upper=to?await store.countIndexed({kind:'action',index,since:new Date(Date.parse(to)+1).toISOString(),cap:100_000}):{count:0,capped:false};
    total+=Math.max(0,lower.count-upper.count);capped||=lower.capped||upper.capped;
   }
-  return card({title,hint:'按记录创建时间和成员筛选统计；只计数，不读取或显示拒收码、字段、行或正文'},capped?'统计超过上限':html`<p>${total.toLocaleString('en-US')} 次</p>`);
+  return card({title,hint:'按记录创建时间和成员筛选统计；只计数，不读取或显示拒收码、字段、行或正文'},capped?'统计超过上限':html`<p>${count(total)} 次</p>`);
  }
  const cursor='memory_refusals',page=await store.find({kind:'action',key:'memory.refusal.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get(cursor)}),rows=[];
  const fields={title:MemoryFieldSchema.enum.document_title,path:MemoryFieldSchema.enum.directory_path,markdown:MemoryFieldSchema.enum.markdown_text};
