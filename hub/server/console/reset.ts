@@ -1,19 +1,20 @@
 /**
- * K11 (decisions-1600 / answers-cursor 17:15): console surfaces for「重置和重建」.
- * Settings offers scoped reset (same command as `circle-hub reset`); a dedicated page covers the
- *「需要重建」state when the running Hub finds an incompatible store. RebuildNeeded and status path
- * shapes follow `interfaces-reset.md` (17:38–17:39). Server fills rebuildNeeded and wires authorize /
- * preview / execute / reset-status; this module only renders.
+ * K11 console surfaces for「重置和重建」. Page copy and pure renderer live here; launch / ACK / status
+ * stay on the server rebuild bridge (interfaces-reset.md). Status path is `/console/reset/status/<UUID>`.
+ * Orchestration of backup/archive/empty-db sits in hub/server (answers-codex 18:40), not platform.
  */
 import { RESET_ALL_LABEL, RESET_SCOPE, RESET_SCOPE_LABEL, type ResetScope } from '../../../contracts/src/reset.ts';
+import type { RebuildConsoleContext } from '../rebuild-http.ts';
+import type { RebuildNeeded } from '../rebuild-state.ts';
 import {
-  adminDoPath,
   overviewPath,
   rebuildAuthorizePath,
   rebuildExecutePath,
   rebuildNewActionPath,
   rebuildPath,
   rebuildPreviewPath,
+  resetPreviewPath,
+  resetExecutePath,
   resetStatusPath,
   settingsPath,
   setupPath,
@@ -24,13 +25,16 @@ import { code, html, link, page, type Html } from './html.ts';
 import { box, callout, card } from './ui.ts';
 import type { PageContext, PageResult } from './context.ts';
 
+export type { RebuildNeeded };
+export type { RebuildConsoleContext };
+
 /** What the administrator types to confirm a destructive reset (plain language, not an internal code). */
 export const RESET_CONFIRM_WORD = '重建';
 
-/** Console choice: one owner scope or全部初始化 (`all` is a selector, never a category — contracts/src/reset.ts). */
+/** Console choice: one owner scope or全部初始化 (`all` is a selector, never a category). */
 export type ResetChoice = ResetScope | 'all';
 
-/** Plain-language consequences for each choice (interfaces-reset.md / answers-codex 17:15). */
+/** Plain-language consequences for each choice. */
 export const RESET_SCOPES: readonly { value: ResetChoice; label: string; clears: string; keeps: string }[] = [
   {
     value: 'history',
@@ -68,41 +72,6 @@ export function isResetScope(value: string): value is ResetChoice {
   return value === 'all' || (RESET_SCOPE as readonly string[]).includes(value);
 }
 
-/** Why this Hub needs a rebuild; Codex fills this when the store shape does not match the binary. */
-export interface RebuildNeeded {
-  /** One short sentence for the administrator. */
-  reason: string;
-  /** Optional extra lines (which check failed); shown as plain text, never internal table names alone. */
-  detail?: string;
-}
-
-/** Minimal worker status the rebuild page can show (platform ResetWorkerStatus subset). */
-export interface RebuildOperationStatus {
-  operationId: string;
-  acknowledged: boolean;
-  running: boolean;
-  completed: boolean;
-  report?: {
-    archive?: string;
-    backup?: string;
-    notices?: readonly { reason: string; nextAction: string }[];
-  };
-  error?: { reason: string; nextAction: string };
-}
-
-/**
- * Input for the pure rebuild renderer (interfaces-reset.md 17:36–17:39). Lightweight server calls this
- * without inventing ConsoleOptions.deps / Principal; normal console adapts PageContext into it.
- */
-export interface RebuildConsoleContext {
-  authorized: boolean;
-  rebuildNeeded?: RebuildNeeded | null;
-  csrf: string;
-  loginNonce?: string;
-  actionId?: string;
-  operation?: RebuildOperationStatus;
-}
-
 const ARCHIVE_NOTE =
   '执行前会先做一份校验过的备份，并把当前库改名归档到数据目录里（不直接删除）。页面结果里会写归档位置。密钥库（凭据的加密内容）不动；重置后业务系统和执行器仍按名字接回凭据。';
 
@@ -110,20 +79,22 @@ const KEEP_CONFIG_NOTE =
   '勾选后，程序会在重置前导出当前配置（账户与令牌的散列、团队、分配、业务系统、执行器等，不含任何凭据明文），重置后再自动写回。库的结构已经和本版本对不上、导不出来时，只能选「归档并初始化」或带着定义文件恢复。';
 
 const PAGE_HINT = '数据与本版本不兼容时的重建入口；平常重置也在设置页。';
+const ASYNC_NOTE = '执行走独立的预检与后台重建，不会在网页请求里同步停服；进度在状态页查看。';
 
-/** Scope explanations as a short list for the settings card. */
 function scopeHelp(): Html {
   return html`<ul class="ch-meta">${RESET_SCOPES.map((row) => html`<li><b>${row.label}</b>：${row.clears}${row.keeps}</li>`)}</ul>`;
 }
 
 /**
- * Admin-only「重置和重建」card for the Hub tab of settings. Posts to the same bridge action as
- * `circle-hub reset` once Codex registers the command.
+ * Admin-only「重置和重建」card. Posts to async preview/execute (not the sync command bridge),
+ * matching Server AppOptions.reset hooks (requests-to-cursor 17:58+). Preview then execute is the
+ * confirmation; the form only submits fields the server accepts (csrf, actionId, scope, keep-config).
  */
 export function resetRebuildSection(ctx: PageContext): Html {
   if (!ctx.admin) return html``;
   const selected = ctx.url.searchParams.get('reset_scope') ?? 'history';
-  const keepOn = ctx.url.searchParams.get('keep_config') === '1';
+  const keepOn = ctx.url.searchParams.get('keep_config') === '1' || ctx.url.searchParams.get('keep-config') === '1';
+  const actionId = ctx.url.searchParams.get('actionId') ?? undefined;
   const fields = html`${field(
     '范围',
     selectControl(
@@ -134,14 +105,28 @@ export function resetRebuildSection(ctx: PageContext): Html {
     ),
     '只清所选范围；全部初始化会回到空库。',
   )}
-<label class="check" data-wide-field><input type="checkbox" name="keep_config" value="1"${keepOn ? html` checked` : ''}> 保留配置重建</label>
+<label class="check" data-wide-field><input type="checkbox" name="keep-config" value="1"${keepOn ? html` checked` : ''}> 保留配置重建</label>
 <p class="ch-meta">${KEEP_CONFIG_NOTE}</p>
-${field(
-    '确认',
-    html`<input name="confirm" autocomplete="off" required maxlength="16" placeholder="${RESET_CONFIRM_WORD}">`,
-    `请输入「${RESET_CONFIRM_WORD}」再执行；这会归档当前库并按所选范围清空。`,
-  )}
-<p class="ch-meta">${ARCHIVE_NOTE}</p>`;
+<p class="ch-meta">${ARCHIVE_NOTE}</p>
+<p class="ch-meta">${ASYNC_NOTE} 先预检，再点确认执行（相当于输入「${RESET_CONFIRM_WORD}」）。</p>
+${actionId === undefined ? '' : html`<input type="hidden" name="actionId" value="${actionId}">`}`;
+  const preview = postForm({
+    action: resetPreviewPath(),
+    csrf: ctx.csrf ?? '',
+    fields,
+    submit: '预检所选范围',
+    danger: true,
+  });
+  const execute =
+    actionId === undefined
+      ? html``
+      : postForm({
+          action: resetExecutePath(),
+          csrf: ctx.csrf ?? '',
+          fields: html`<input type="hidden" name="actionId" value="${actionId}">`,
+          submit: '确认执行重建',
+          danger: true,
+        });
   return html`<section id="reset-rebuild">${card(
     {
       title: '重置和重建',
@@ -149,13 +134,7 @@ ${field(
     },
     html`${callout('warn', html`<span>只有管理员可以执行。执行前请确认没有其他人正在写入 Hub。</span>`)}
 ${scopeHelp()}
-${postForm({
-  action: adminDoPath('reset'),
-  csrf: ctx.csrf ?? '',
-  fields,
-  submit: '归档并按所选范围重建',
-  danger: true,
-})}`)}</section>`;
+${preview}${execute}`)}</section>`;
 }
 
 /** Banner on the overview when the process is in「需要重建」. */
@@ -177,14 +156,11 @@ ${field('本机维护码', html`<input name="setup_code" autocomplete="off" requ
   });
 }
 
-function operationPanel(operation: RebuildOperationStatus): Html {
+function operationPanel(operation: NonNullable<RebuildConsoleContext['operation']>): Html {
   const statusHref = resetStatusPath(operation.operationId);
   if (operation.completed) {
     if (operation.error) {
-      return callout(
-        'warn',
-        html`<span>重建未完成：${operation.error.reason} ${operation.error.nextAction}</span>`,
-      );
+      return callout('warn', html`<span>重建未完成：${operation.error.reason} ${operation.error.nextAction}</span>`);
     }
     const archive = operation.report?.archive;
     const backup = operation.report?.backup;
@@ -197,6 +173,17 @@ ${notices.length === 0 ? '' : html`<ul class="ch-meta">${notices.map((row) => ht
 <p class="ch-meta">请每约 2 秒 ${link(rebuildPath() + '?operation=' + encodeURIComponent(operation.operationId), '刷新本页')}，或打开 ${link(statusHref, '状态')}（需同一已验证会话）。</p>`;
 }
 
+function planPanel(context: RebuildConsoleContext): Html {
+  const plan = context.plan;
+  if (!plan) return html``;
+  const blocked = plan.blocked;
+  const counts = plan.counts.map((row) => html`<li>${RESET_SCOPE_LABEL[row.scope]}：保留 ${row.retained}，清除 ${row.cleared === null ? '待定' : row.cleared}</li>`);
+  return html`<section class="ch-section"><h2 class="ch-section-label">预检结果</h2>
+${blocked.length ? callout('warn', html`<span>当前不能执行：${blocked.map((row) => row.reason).join('；')}</span>`) : callout('info', html`<span>预检通过，可以确认执行。</span>`)}
+<ul class="ch-meta">${counts}</ul>
+</section>`;
+}
+
 function authorizedRebuildBody(context: RebuildConsoleContext): Html {
   const reason = context.rebuildNeeded?.reason ?? '当前数据与本版本对不上，不能继续按平常方式使用。';
   const detail = context.rebuildNeeded?.detail;
@@ -204,15 +191,11 @@ function authorizedRebuildBody(context: RebuildConsoleContext): Html {
     return html`${callout('warn', html`<span>${reason}</span>`)}${detail ? html`<p class="ch-meta">${detail}</p>` : ''}${operationPanel(context.operation)}`;
   }
 
-  const confirmField = field(
-    '确认',
-    html`<input name="confirm" autocomplete="off" required maxlength="16" placeholder="${RESET_CONFIRM_WORD}">`,
-    `请输入「${RESET_CONFIRM_WORD}」以归档当前库并全部初始化。`,
-  );
   const actionId = context.actionId;
   const previewFields = html`${actionId === undefined ? '' : html`<input type="hidden" name="actionId" value="${actionId}">`}
-<input type="hidden" name="scope" value="all">${confirmField}
-<p class="ch-meta">${ARCHIVE_NOTE}</p>`;
+<input type="hidden" name="scope" value="all">
+<p class="ch-meta">${ARCHIVE_NOTE}</p>
+<p class="ch-meta">${ASYNC_NOTE}</p>`;
   const previewForm = postForm({
     action: rebuildPreviewPath(),
     csrf: context.csrf,
@@ -221,7 +204,7 @@ function authorizedRebuildBody(context: RebuildConsoleContext): Html {
     danger: true,
   });
   const executeForm =
-    actionId === undefined
+    actionId === undefined || !context.plan || context.plan.blocked.length
       ? html``
       : postForm({
           action: rebuildExecutePath(),
@@ -237,12 +220,13 @@ function authorizedRebuildBody(context: RebuildConsoleContext): Html {
           action: rebuildNewActionPath(),
           csrf: context.csrf,
           fields: html``,
-          actions: submitButton('重新选择范围', { secondary: true }),
+          actions: submitButton('重新选择', { secondary: true }),
         });
   const restoreHint = html`<p>若你已有一份部署定义文件（账户、团队、分配、业务系统、执行器和要发布的包），先完成「归档并初始化」，再到运行 Hub 的服务器上执行 ${code('circle-hub apply')}，把定义写回去；凭据仍按名字从密钥库接回。</p>
 <p class="ch-meta">定义文件的写法见部署说明；本页不上传文件，避免把明文凭据带进浏览器。</p>`;
   return html`${callout('warn', html`<span>${reason}</span>`)}
 ${detail ? html`<p class="ch-meta">${detail}</p>` : ''}
+${planPanel(context)}
 <section class="ch-section"><h2 class="ch-section-label">可选做法</h2>
 ${card({ title: '归档并初始化' }, html`<p>把当前库改名归档，再建一份空库。完成后按提示做首次设置。</p>${previewForm}${executeForm}${newAction}`)}
 ${card({ title: '用定义文件恢复' }, restoreHint)}
@@ -265,7 +249,7 @@ ${authorizeForm(context.csrf, context.loginNonce)}
 
 /**
  * Pure rebuild page for the lightweight incompatible-store server (interfaces-reset 17:38).
- * Returns a full HTML document string; does not touch records, principals, or ConsoleOptions.deps.
+ * Default renderer for `createRebuildApp` / `ServeOptions.rebuild.render`.
  */
 export function renderRebuildPage(context: RebuildConsoleContext): string {
   return String(
@@ -282,10 +266,7 @@ export function renderRebuildPage(context: RebuildConsoleContext): string {
   );
 }
 
-/**
- * Ordinary console adapter: signed-in chrome when the Hub is still fully assembled.
- * Incompatible-store entry should call `renderRebuildPage` directly instead.
- */
+/** Ordinary console adapter when the Hub is still fully assembled. */
 export function needsRebuildPage(ctx: PageContext, needed: RebuildNeeded | null): PageResult {
   const operationId = ctx.url.searchParams.get('operation') ?? undefined;
   const context: RebuildConsoleContext = {
