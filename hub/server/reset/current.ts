@@ -1,15 +1,15 @@
 // Current-schema, offline selection. No previous schema or business-data conversion is supported here.
-import { RESET_SCOPE } from '../../../contracts/api.ts';
+import { RESET_DATA_SCOPE } from '../../../contracts/api.ts';
 import { ResourceRecord, ResourceId, ExecutorSource } from '../../../contracts/src/resources.ts';
 import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { SpaceTreeNode } from '../../../contracts/src/spaces.ts';
 import { sha256Hex, canonicalize } from '../../records/api.ts';
 import { quoteIdentifier, type SqlSession } from '../../platform/api.ts';
 import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord, type CurrentReference, type RecordSelection } from './selection.ts';
-import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetScope } from './types.ts';
+import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetDataScope } from './types.ts';
 
 // Each whole-table choice comes from the current table's responsibility, never its spelling.
-const TABLE_SCOPES: Readonly<Record<string, ResetScope>> = {
+const TABLE_SCOPES: Readonly<Record<string, ResetDataScope>> = {
   users: 'config', tokens: 'config', oauth_clients: 'config', invitations: 'config', user_history: 'config',
   teams: 'config', team_members: 'config', leases: 'config', lease_registrations: 'config', member_deletion_intents: 'config',
   personal_spaces: 'config', personal_purges: 'config',
@@ -58,7 +58,7 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
     const record = byDigest.get(String(row.record)); if (!record) continue;
     record.references = [...record.references ?? [], { kind: row.artifact === true ? 'record' : 'object', digest: String(row.sha256), field: 'object_holds' }];
   }
-  const objectScopes = new Map<string, readonly ResetScope[]>(), objectReferences = new Map<string, readonly CurrentReference[]>();
+  const objectScopes = new Map<string, readonly ResetDataScope[]>(), objectReferences = new Map<string, readonly CurrentReference[]>();
   for (const row of await session.query('SELECT sha256 FROM objects')) {
     objectScopes.set(String(row.sha256), []);
     objectReferences.set(String(row.sha256), []); // Immutable object bytes are retained; typed containers below add their formal edges.
@@ -79,7 +79,7 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
     }
   }
   const retainedObjects = new Set(objectScopes.keys());
-  const addOwner = (hash: string, scope: ResetScope) => objectScopes.set(hash, [...new Set([...objectScopes.get(hash) ?? [], scope])]);
+  const addOwner = (hash: string, scope: ResetDataScope) => objectScopes.set(hash, [...new Set([...objectScopes.get(hash) ?? [], scope])]);
   for (const record of records) {
     const scope = classifyCurrentRecord(record);
     if (scope) for (const reference of currentRecordReferences(record)) if (reference.kind === 'object') addOwner(reference.digest, scope);
@@ -90,7 +90,7 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
   }
   const selection = selectCurrentRecords(records, selectedScopes, { recordAliases: aliases, objectScopes, objectReferences, retainedObjects });
   blocked.push(...selection.blocked);
-  const counts = RESET_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
+  const counts = RESET_DATA_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
   const clearedSet = new Set(selection.cleared);
   records.forEach(record => {
     for (const scope of recordOwners.get(record.digest) ?? []) {

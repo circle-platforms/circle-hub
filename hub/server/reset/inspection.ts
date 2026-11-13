@@ -1,6 +1,6 @@
 import { diagnoseRecordsSchema, type RecordsSchemaCompatibility } from '../../records/api.ts';
 import { settingsOf, postgresFor, type PlatformContext } from '../../platform/api.ts';
-import { RESET_SCOPE, parseResetRequest, type ResetInspection, type ResetPorts, type ResetProblem, type ResetRequest } from './types.ts';
+import { RESET_DATA_SCOPE, parseResetRequest, type ResetInspection, type ResetPorts, type ResetProblem, type ResetRequest } from './types.ts';
 
 export function resetInspection(diagnostic: RecordsSchemaCompatibility): ResetInspection {
   const available = diagnostic.status !== 'unavailable';
@@ -9,7 +9,7 @@ export function resetInspection(diagnostic: RecordsSchemaCompatibility): ResetIn
     available, compatible, needsRebuild: diagnostic.status === 'incompatible', canKeepConfig: compatible,
     diagnostics: diagnostic.problems.map(reason => ({ reason, nextAction: available ? '选择归档并初始化，或用受控定义文件恢复' : '先检查数据库进程、连接和读取权限后重试；当前不能重建' })),
     choices: !available ? [] : compatible ? [
-      ...RESET_SCOPE.map(scope => ({ scopes: [scope], keepConfig: false, definitionAllowed: scope === 'config' })),
+      ...RESET_DATA_SCOPE.map(scope => ({ scopes: [scope], keepConfig: false, definitionAllowed: scope === 'config' })),
       { scopes: 'all', keepConfig: false, definitionAllowed: true },
       { scopes: 'all', keepConfig: true, definitionAllowed: false },
     ] : [{ scopes: 'all', keepConfig: false, definitionAllowed: true }],
