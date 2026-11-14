@@ -14,7 +14,7 @@ import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type Reso
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
-import { callErrorFact, callErrorNext } from './call-error-category.ts';
+import { callErrorFact, callErrorNext, formatStructuredCallError } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
 import { ENVIRONMENT_ASSIGNMENT_PREVIEW, packListHead } from './pack-words.ts';
@@ -256,6 +256,12 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
     // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
     const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
     const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
+    const structured = formatStructuredCallError(
+      error,
+      role,
+      escalated && typeof fix === 'string' ? { nextOverride: fix } : {},
+    );
+    if (structured !== null) return structured;
     const presentation = errorPresentationOf(error.code);
     if (presentation.kind === 'unavailable') {
       return conclusionErrorLine(error, error.message, fix);
@@ -857,6 +863,16 @@ function submitText(v: SubmitOut, context: TextContext): string {
         ? error.fix
         : fixByRole(error.code, role, error.fix, account);
     const fact = original === undefined ? message : `${caseName(original, original.label)}，${message}`;
+    const structured = !missingRecord
+      ? formatStructuredCallError(error, role, {
+          factOverride: fact,
+          ...(escalated && typeof fix === 'string' ? { nextOverride: fix } : {}),
+        })
+      : null;
+    if (structured !== null) {
+      lines.push(structured);
+      continue;
+    }
     const category = callErrorCategoryOf(error.code);
     if (category !== null) {
       const next = escalated

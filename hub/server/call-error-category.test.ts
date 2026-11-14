@@ -8,6 +8,7 @@ import {
   callErrorCategory,
   callErrorFact,
   callErrorNext,
+  formatStructuredCallError,
   renderCallError,
 } from './call-error-category.ts';
 import { circleHubNamesIn, fixByRole } from './fix-by-role.ts';
@@ -340,4 +341,59 @@ test('Boss 14:32 admin next steps fill the caller account name; <理由> stays',
   );
   assert.match(lease, /--reason <理由>/);
   assert.doesNotMatch(lease, /<当前账户的名字>/);
+});
+
+test('call_error_reason uses generated category × role next; source message is the fact', () => {
+  const fact = '当前账户没有测试环境「合成环境」的使用分配，这次没有预订';
+  const member = formatStructuredCallError(
+    { code: 'SOURCE_NOT_PERMITTED', message: fact, call_error_reason: 'environment_unassigned' },
+    'user',
+  );
+  assert.equal(
+    member,
+    '无权限：当前账户没有测试环境「合成环境」的使用分配，这次没有预订。请联系管理员为该账户或所属团队分配该测试环境。',
+  );
+  const admin = renderCallError(
+    { code: 'SOURCE_NOT_PERMITTED', message: fact, call_error_reason: 'environment_unassigned' },
+    'admin',
+    '请联系管理员为该账户或所在团队分配此工作流',
+  );
+  assert.equal(
+    admin,
+    '无权限：当前账户没有测试环境「合成环境」的使用分配，这次没有预订。请为该账户或所属团队分配该测试环境后重试。',
+  );
+  assert.doesNotMatch(admin!, /分配此工作流/);
+});
+
+test('call_error_reason unknown classification keeps 状态未知; no five-category prefix', () => {
+  const fact = '这次运行的预订是否包含测试环境「合成环境」还没有核对：现在读不到预订记录，这次上机验证没有执行';
+  const text = formatStructuredCallError(
+    { code: 'SOURCE_UNAVAILABLE', message: fact, call_error_reason: 'lease_reader_unavailable' },
+    'user',
+  );
+  assert.equal(
+    text,
+    `${fact}；状态未知；原因缺资料；下一步请联系管理员恢复预订记录读取后重试；决定者程序`,
+  );
+  assert.doesNotMatch(text!, /^(无权限|参数无效|不存在|已被占用|暂时不可用)：/);
+});
+
+test('toolText prefers call_error_reason over local next-step tables', () => {
+  const fact = '测试环境「合成环境」的权限现在不能核对，这次没有执行';
+  const text = toolText(
+    'start_run',
+    StartRunOutput.parse({
+      call_result: 'error',
+      errors: [{
+        code: 'ENVIRONMENT_PERMISSION_UNAVAILABLE',
+        message: fact,
+        call_error_reason: 'environment_permission_unavailable',
+        fix: '请联系维护人员恢复测试环境权限核对',
+      }],
+      trace: TRACE,
+    }),
+    { caller: { role: 'admin' } },
+  );
+  assert.equal(text, `暂时不可用：${fact}。原因记在调用记录里，追踪号见本条。`);
+  assert.doesNotMatch(text, /维护人员|分配此工作流/);
 });

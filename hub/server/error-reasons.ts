@@ -109,11 +109,16 @@ export const SOURCE_UNKNOWN_CODES = {
 /** Look up presentation; pack-scoped codes default to 参数无效 (whole-call pack refusal). */
 export function errorPresentationOf(code: string): ErrorPresentation {
   if (Object.hasOwn(SOURCE_UNKNOWN_CODES, code)) return { kind: 'unavailable' };
+  // Prefer the generated map when it has a definite category (e.g. ENVIRONMENT_PERMISSION_UNAVAILABLE).
+  // Codes the generated map leaves null (LEASE_UNAVAILABLE, RUN_ABANDONED, …) keep the local row until
+  // throw sites always send call_error_reason (decision 45 / structured-render-interface-2116).
+  const registered = registeredCallErrorCategory(code);
+  if (registered !== null) {
+    return { kind: 'category', category: labelOf('call_error_category', registered) as CallErrorCategory };
+  }
   if (Object.hasOwn(CATEGORY_BY_CODE, code)) {
     return { kind: 'category', category: CATEGORY_BY_CODE[code as keyof typeof CATEGORY_BY_CODE] };
   }
-  const registered = registeredCallErrorCategory(code);
-  if (registered !== null) return { kind: 'category', category: labelOf('call_error_category', registered) as CallErrorCategory };
   // Pack function refused the whole call (no item accepted): 参数无效, never the conclusion string.
   if (isPackScopedCode(code)) return { kind: 'category', category: '参数无效' };
   return { kind: 'conclusion' };

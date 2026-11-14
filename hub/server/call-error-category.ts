@@ -1,10 +1,16 @@
 /**
- * D3 fact/next for call errors (Boss 13:05 / 14:12). Category words come from
- * error-reasons.callErrorCategoryOf. Next steps are table-driven by code × role × object kind.
- * Object words come from pack-words / source messages.
+ * D3 fact/next for call errors (Boss 13:05 / 14:12). When ProtocolError.call_error_reason
+ * is set, category and next come only from contracts/generated (reason × actual role);
+ * source.message is the fact and is not rewritten. Legacy code-only paths keep the tables
+ * below until throw sites fill reason / object_kind (structured-render-interface-2116).
  */
 import type { ProtocolError } from '../../contracts/src/common.ts';
-import { SYNC_MODE_UI, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import {
+  formatCallError,
+  formatCallErrorReason,
+  resolveCallErrorReason,
+} from '../../contracts/generated/protocol.ts';
+import { CallErrorReasonSchema, SYNC_MODE_UI, type CallErrorReason, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { callErrorCategoryOf, type CallErrorCategory } from './error-reasons.ts';
 import { circleHubFromMetadata, circleHubFromParameters, fillCallerAccountName } from './fix-by-role.ts';
 
@@ -15,6 +21,61 @@ import { unassignedPackNext } from './pack-words.ts';
 export { callErrorCategoryOf as callErrorCategory } from './error-reasons.ts';
 export type { CallErrorCategory };
 export { packObjectWord, unassignedPackFact, unassignedPackNext } from './pack-words.ts';
+
+/** Append 「还可以重交 N 次。」 onto a line that already ends with a sentence stop. */
+function withRoundsLeft(line: string, roundsLeft: number | undefined): string {
+  if (roundsLeft === undefined) return line;
+  const trimmed = line.replace(/[。．]\s*$/u, '').trim();
+  return `${trimmed}。还可以重交 ${roundsLeft} 次。`;
+}
+
+/**
+ * Prefer the generated reason × role table when the throw site set call_error_reason.
+ * Does not strip category prefixes, does not match prose, does not default object kind to pack.
+ * Returns null when reason is absent or the (code, reason, role) tuple is not registered.
+ */
+export function formatStructuredCallError(
+  error: ProtocolError,
+  role: PermissionRole,
+  options: { nextOverride?: string; factOverride?: string } = {},
+): string | null {
+  const parsed = CallErrorReasonSchema.safeParse(error.call_error_reason);
+  if (!parsed.success) return null;
+  const reason: CallErrorReason = parsed.data;
+  const fact = options.factOverride ?? error.message;
+  const resolved = resolveCallErrorReason(error.code, reason, role);
+  if (resolved === null) return null;
+
+  if ('category' in resolved.classification) {
+    const next = options.nextOverride ?? resolved.nextAction;
+    if (next === null || next === undefined) return null;
+    if (options.nextOverride !== undefined) {
+      return withRoundsLeft(formatCallError(resolved.classification.category, fact, next), error.rounds_left);
+    }
+    const formatted = formatCallErrorReason(error.code, reason, role, fact);
+    return formatted === null ? null : withRoundsLeft(formatted, error.rounds_left);
+  }
+
+  if ('unknown' in resolved.classification) {
+    const next = options.nextOverride ?? resolved.nextAction ?? '请联系管理员';
+    const lead = fact.trim().replace(/[。．；;]\s*$/u, '');
+    return withRoundsLeft(
+      `${lead}；状态未知；原因缺资料；下一步${next}；决定者程序`,
+      error.rounds_left,
+    );
+  }
+
+  if ('conclusion' in resolved.classification) {
+    const next = options.nextOverride ?? resolved.nextAction ?? '请联系管理员处理';
+    const lead = fact.trim().replace(/[。．；;]\s*$/u, '');
+    return withRoundsLeft(
+      `${lead}；状态已确认；判断错误；下一步${next}；决定者程序`,
+      error.rounds_left,
+    );
+  }
+
+  return null;
+}
 
 /** Closed five (hub-terms); mirrored here for tests that assert the set without importing D1 internals. */
 export const CALL_ERROR_CATEGORIES = ['参数无效', '无权限', '不存在', '已被占用', '暂时不可用'] as const satisfies readonly CallErrorCategory[];
@@ -355,6 +416,8 @@ export function renderCallError(
   fix: string | undefined,
   callerName?: string,
 ): string | null {
+  const structured = formatStructuredCallError(error, role);
+  if (structured !== null) return structured;
   const category = callErrorCategoryOf(error.code);
   if (category === null) return null;
   const fact = callErrorFact(error.code, error.message);
