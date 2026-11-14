@@ -52,10 +52,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 /** Restricted reset-only authorization. No database account, administrator token or ordinary console session is created. */
 export function createRebuildHandler(options: RebuildHttpOptions) {
   const sessions = new SessionStore(() => (options.now?.() ?? new Date()).getTime());
-  const actions = new WeakMap<ConsoleSession, Action>();
+  /** Keyed by session.id (cookie value): SessionStore returns a fresh view each get(). */
+  const actions = new Map<string, Action>();
   let redemption = Promise.resolve();
-  const identities = new WeakMap<ConsoleSession, string>();
-  const authContext = (session: ConsoleSession, action: Action) => options.authenticateAdmin ? `admin:${identities.get(session)}:${action.id}` : `setup:${hash(session.id)}:${action.id}`;
+  const identities = new Map<string, string>();
+  const authContext = (session: ConsoleSession, action: Action) => options.authenticateAdmin ? `admin:${identities.get(session.id)}:${action.id}` : `setup:${hash(session.id)}:${action.id}`;
   const page = async (response: ServerResponse, context: RebuildConsoleContext) => {
     const render = options.render ?? (await import('./console/reset.ts')).renderRebuildPage;
     const body = await render(context);
@@ -77,10 +78,10 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
     const verified = options.authenticateAdmin ? await options.authenticateAdmin(request) : null;
     const session = options.authenticateAdmin ? verified?.session ?? null : sessions.get(cookies.get(SESSION), secure);
     if (verified) {
-      identities.set(verified.session, verified.principalId);
-      if (!actions.has(verified.session)) actions.set(verified.session, { id: randomUUID() });
+      identities.set(verified.session.id, verified.principalId);
+      if (!actions.has(verified.session.id)) actions.set(verified.session.id, { id: randomUUID() });
     }
-    const action = session ? actions.get(session) : undefined;
+    const action = session ? actions.get(session.id) : undefined;
     if (options.authenticateAdmin && !verified) return sendText(response, 403, '需要当前有效且已完成密码设置的管理员会话');
     if (request.method === 'GET' && url.pathname === ROOT) {
       if (!session || !action) {
@@ -123,8 +124,8 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
       const code = form.get('setup_code');
       if (!code || !await redeem(code)) return sendText(response, 401, '维护授权无效或已过期，请由本机操作账户重新签发');
       const opened = sessions.open(hash(normalizeSetupCode(code)), secure);
-      actions.set(opened, { id: randomUUID() });
-      response.setHeader('set-cookie', [cookie(SESSION, opened.id, '/console', undefined, secure), cookie(NONCE, '', ROOT, 0, secure)]);
+      actions.set(opened.id, { id: randomUUID() });
+      response.setHeader('set-cookie', [cookie(SESSION, opened.token, '/console', undefined, secure), cookie(NONCE, '', ROOT, 0, secure)]);
       response.writeHead(303, { location: ROOT }); response.end(); return;
     }
     if (!session || !action) return sendText(response, 401, '需要当前有效的维护授权');
@@ -133,7 +134,7 @@ export function createRebuildHandler(options: RebuildHttpOptions) {
     if (url.pathname === ROOT + '/new-action') {
       if (action.launching && !action.operationId) return sendText(response, 409, '当前动作正在接受中');
       if (action.operationId && !(await options.bridge.status(action.operationId, context)).completed) return sendText(response, 409, '当前重建尚未结束');
-      actions.set(session, { id: randomUUID() }); response.writeHead(303, { location: ROOT }); response.end(); return;
+      actions.set(session.id, { id: randomUUID() }); response.writeHead(303, { location: ROOT }); response.end(); return;
     }
     if (url.pathname === ROOT + '/preview' || settingsPreview) {
       if (form.get('confirm') !== '重建') return sendText(response, 400, '请输入重建以确认归档操作');

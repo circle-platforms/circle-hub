@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
-import { memoReadPort, type Principal } from '../../records/api.ts';
+import { memoReadPort, type Principal, type Principals } from '../../records/api.ts';
 import type { ServerDeps } from '../api.ts';
 import type { CommandBridge } from '../command-bridge.ts';
 import { mediaTypeOf, readBody, setCommonHeaders } from '../http.ts';
@@ -120,10 +120,17 @@ export function mcpOrigin(request: IncomingMessage, secure: boolean): string {
 
 export const bridgeRun = (options: ConsoleOptions, session: ConsoleSession) => (options.bridge === undefined ? null : (argv: string[]) => options.bridge!.run(argv, { token: session.token }));
 
+/** Cookie credential: console_session only (an access token cannot enter the console as a cookie). */
+export async function principalOfConsoleSession(principals: Principals, token: string): Promise<Principal | null> {
+  return principals.authenticateConsoleSession
+    ? principals.authenticateConsoleSession(`Bearer ${token}`)
+    : principals.authenticate(`Bearer ${token}`);
+}
+
 /** What a page or an interface answer of one signed-in request knows; user names are cached for the request. */
 export function pageContext(options: ConsoleOptions, request: IncomingMessage, url: URL, principal: Principal, session: ConsoleSession, secure: boolean): PageContext {
   const notice = request.method === 'GET' && request.headers['circle-hub-refresh'] !== 'live' ? session.notice : undefined;
-  if (notice) delete session.notice;
+  if (notice) session.notice = undefined;
   return {
     deps: options.deps,
     principal,

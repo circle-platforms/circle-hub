@@ -162,7 +162,7 @@ describe('sign-in', () => {
     assert.equal(cookieValue(login), csrfOf(page.body));
   });
 
-  test('a password opens a session: HttpOnly, SameSite=Strict, Path=/console, and the token is not in the cookie', async () => {
+  test('a password opens a session: HttpOnly, SameSite=Strict, Path=/console, cookie value is the console-session token', async () => {
     const user = await person();
     const { nonce, cookie } = await loginForm();
     const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ ...testConsoleCredentials(user.token), csrf: nonce }) });
@@ -170,11 +170,13 @@ describe('sign-in', () => {
     assert.equal(reply.headers.location, '/console/me', 'a member signs in to 我能做的事');
     const session = cookieHeader(reply, 'circle_hub_session') ?? '';
     assert.match(session, /^circle_hub_session=[A-Za-z0-9_-]{43}; Path=\/console; HttpOnly; SameSite=Strict$/);
-    assert.ok(!session.includes(user.token), 'the session cookie is not the token');
+    assert.ok(!session.includes(user.token), 'the cookie is the console-session token, not the Circle access token');
     assert.match(cookieHeader(reply, 'circle_hub_login') ?? '', /Max-Age=0/);
     const page = await get('/console/runs', `circle_hub_session=${cookieValue(session)}`);
     assert.equal(page.status, 200);
     assert.ok(page.body.includes(user.user.name));
+    // An access token cannot enter the console as a cookie.
+    assert.equal((await get('/console/runs', `circle_hub_session=${user.token}`)).status, 303);
   });
 
   test('CSRF: a missing, mismatched, reused or foreign nonce is refused; so is a form from another origin or of another type', async () => {

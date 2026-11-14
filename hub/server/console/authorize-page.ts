@@ -33,7 +33,7 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
     return sendHtml(response, 410, expiredPage());
   }
   const principals = options.deps.records.principals;
-  const signedIn = session === null ? null : await principals.authenticate(`Bearer ${session.token}`);
+  const signedIn = session === null ? null : await (principals.authenticateConsoleSession?.(`Bearer ${session.token}`) ?? principals.authenticate(`Bearer ${session.token}`));
   // The account the page names: the invitation's, else the session's. The approval must name the same one.
   const named = open.invitation !== null ? { id: open.invitation.user, name: open.invitation.name, role: open.invitation.role, via: 'invitation' as const } : signedIn !== null ? { ...signedIn, via: 'session' as const } : null;
   const show = (status: number, error: string | null): void => {
