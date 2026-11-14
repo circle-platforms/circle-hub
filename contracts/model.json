@@ -3474,7 +3474,7 @@
         "R[3] 去掉“X 存在，内容待核看”的新回答和给具名管理员的请求；新的读取不再因疑似凭据扣留；此前存下的 SOURCE_PENDING_REVIEW 观察照原样读，下一步是按原对象重读；保留第 50 版团队空间分配与产品知识无有效接受时“没有权限阅读”（来源：决定 161；合并线 model 51）"
       ],
       "changes82": [
-        "登记五值调用错误类别轴、每个协议码显式类别或null及生成的唯一成句函数；不修改六工具输入，不替未知或核对结论猜类。来源：Boss 2026-11-14本机13:48，Cursor13:05及13:50表、主会话13:53裁定。"
+        "登记五值调用错误类别轴、每个协议码显式类别或null及生成的唯一成句函数；不修改六工具输入，不替未知或核对结论猜类。来源：Boss 2026-11-14本机13:48、Cursor13:05建议表及主会话13:53明确接口；未有直接Boss裁定的争议保留null，主审确认不采纳Cursor13:50二次表中的未授权改归。"
       ]
     },
     {
@@ -4857,7 +4857,7 @@
         "when": "此前存下的观察：业务系统里有这个对象，它的应答当时按凭据扫描扣留（D05 R[3]）；新的读取不再产生（决定 161）。附系统、对象和读取时刻，不给内容，也不说命中的是什么",
         "fix": "按原对象重新读取，得到可读的新记录；或到来源系统看原文",
         "source": "所有者 2026-11-05，决定 152",
-        "callErrorCategory": "temporarily_unavailable"
+        "callErrorCategory": "not_found"
       },
       {
         "code": "EFFECT_NOT_ALLOWED",
@@ -5002,7 +5002,7 @@
         "code": "SHARE_DUPLICATE",
         "when": "团队空间已包含相同内容",
         "fix": "使用已有团队条目，或修改陈述后重新核对依据",
-        "callErrorCategory": "occupied"
+        "callErrorCategory": null
       },
       {
         "code": "SHARE_CREDENTIALS",
@@ -5086,7 +5086,7 @@
         "code": "MEMORY_CURSOR_STALE",
         "when": "记忆集合或权限已变化",
         "fix": "从第一页重新读取",
-        "callErrorCategory": "invalid_parameters"
+        "callErrorCategory": "temporarily_unavailable"
       },
       {
         "code": "SYNC_VERSION_CONFLICT",
@@ -5146,7 +5146,7 @@
         "code": "SYNC_PURGE_CONFIRMATION_REQUIRED",
         "when": "清除 Hub 上的私人空间需要本人在控制台确认",
         "fix": "10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试",
-        "callErrorCategory": "invalid_parameters"
+        "callErrorCategory": "permission_denied"
       },
       {
         "code": "GROUNDS_PURGED",
