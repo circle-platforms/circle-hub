@@ -595,3 +595,54 @@ test('dispatch notes preserve the verification run when read through a plan and 
     assert.equal(visible.notes[0].text.includes(live.run),false);assert.equal(visible.notes[0].text.includes(live.executor.id),false);
   }finally{release();await running;}
 });
+
+test('scoped accepted notes preserve the first round after a zero-write second attempt and never restart the whole job', { timeout: 60000 }, async t => {
+  const http = await import('node:http');
+  const { syncBuiltinESMExports } = await import('node:module');
+  const c = await setup({ alter: (name, value) => name === 'read_blob'
+    ? { ...value, ownership: 'staging_directory', ownership_reason: null, rows: [{ id: 'synthetic-case', outcome: 'good', log: 'SYNTHETIC_END' }] }
+    : value });
+  t.after(() => c.close());
+  (c.effectDocument.effects[0] as { repetition?: number }).repetition = 2;
+  c.detail.run.requirements = [{
+    key: 'workbook_verified', name: '合成核验', description: '合成', layers: ['dynamic'], done_rule: 'gating', accepted_producer: 'fact',
+    repair_rounds: 0, rules: [], run_interpreters: [],
+    repetition: { count: 2, aggregation: 'all', basis: 'explicit', declared: { count: true, aggregation: true, k: false } },
+  }] as typeof c.detail.run.requirements;
+  const proof = await c.kit.artifacts.ingest({ bytes: new TextEncoder().encode('synthetic attribution certification'), mediaType: 'text/plain', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: { readers: [c.admin.id], admins: true, packs: [], shareable: false } });
+  await c.registry.update(c.admin, c.executor.id, {
+    ...c.executor.definition,
+    premises: { result_ownership: { version: '1', evidence: [`src:${proof.body.sha256}`] } },
+    result: { ...c.executor.definition.result, ownership: { pointer: '/ownership', value: 'staging_directory', reason: '/ownership_reason' }, request_id: '/request', log: '/log', closing_marker: 'SYNTHETIC_END' },
+  });
+  await c.freezeExecutor();
+  const native = http.default.request;
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  c.service.options.beforeRound = async round => {
+    assert.equal(round, 2); assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+    t.mock.method(http.default, 'request', (url: URL, options: import('node:http').RequestOptions, listener: (response: import('node:http').IncomingMessage) => void) => {
+      t.mock.restoreAll(); syncBuiltinESMExports();
+      return native(url, { ...options, signal: AbortSignal.abort() }, listener);
+    });
+    syncBuiltinESMExports();
+  };
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const events = await c.service.journal.events(state.job);
+  assert.equal(events.find(event => event.body.detail.phase === 'round' && event.body.detail.round === 1)?.body.detail.terminal, 'pass');
+  assert.equal(events.filter(event => event.body.detail.phase === 'receipt' && event.body.detail.acceptance === 'accepted').length, 1);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+  const [note] = await acceptedDispatch(c.kit, c.service, c.run, false, undefined, c.owner);
+  assert.ok(note);
+  assert.equal(Object.hasOwn(note, 'outcome'), false, 'a last-attempt effect is never a root job outcome');
+  assert.equal(Object.hasOwn(note, 'not_sent'), false, 'a second-round no-send fact is never a root job fact');
+  assert.ok(Reflect.get(note, 'job_facts'));
+  const attempt = Reflect.get(note, 'dispatch_attempt');
+  assert.deepEqual(attempt?.scope && { job: attempt.scope.job, round: attempt.scope.round }, { job: state.job, round: 2 });
+  assert.equal(attempt?.not_sent, true);
+  assert.match(note.text, /第 2 轮/);
+  assert.doesNotMatch(note.text, /什么都没有发到目标|整个作业没有执行/);
+  const reservations = events.filter(event => event.body.detail.phase === 'reservation').length;
+  await acceptedDispatch(c.kit, c.service, c.run, true, undefined, c.owner);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+  assert.equal((await c.service.journal.events(state.job)).filter(event => event.body.detail.phase === 'reservation').length, reservations);
+});
