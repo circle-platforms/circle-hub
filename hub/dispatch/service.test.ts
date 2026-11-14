@@ -35,7 +35,11 @@ test('preflight refuses unmet package requirements, incorrect manifest, wrong li
       assert.equal(refused.dispatch_attempt!.not_sent, true);
     } else {
       assert.equal(refused.dispatch_attempt, undefined);
-      assert.equal(refused.job_facts.admission_error?.code, 'EFFECT_RELEASE_UNMET');
+      const code = mode === 'manifest' ? 'EFFECT_PARAMETER_OUT_OF_RANGE' : 'EFFECT_RELEASE_UNMET';
+      assert.equal(refused.job_facts.admission_error?.code, code);
+      const refusal = (await c.service.journal.events(refused.job)).find(event => event.body.detail.phase === 'boundary_refused');
+      assert.equal(refusal?.body.error_code, code);
+      assert.equal(refusal?.body.detail.boundary_clause, mode === 'manifest' ? 2 : 3);
     }
     assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
   }
