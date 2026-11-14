@@ -315,7 +315,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     // A team pack that exists and is not assigned is answered as not permitted (D05 R[3], model 37).
     assert.equal((neutral.out as { errors?: Array<{ code: string }> }).errors?.[0]?.code, 'SOURCE_NOT_PERMITTED');
   });
-  test('A registers, B books, C sees no holder identity, and owner release fences the former lineage',async()=>{
+  test('Admin registers A as owner, B books, C sees no holder identity, and owner release fences the former lineage',async()=>{
     const {adminCommands}=await import('../../hub/server/cli-admin.ts');
     const {memoryOperatorTokens}=await import('../../hub/server/assemble/operator-token.ts');
     const {newId,sha256Hex}=await import('../../hub/records/api.ts');
@@ -332,7 +332,16 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const call=(client:McpClient,parameters:Record<string,unknown>)=>client.call('start_run',{pack:'test-bed',inputs,parameters});
     const stored=async(run:string)=>(await bed.hub.records.store.find({key:INDEX.runId,value:run,kind:'run',limit:1})).items[0]!;
     const runId=(answer:Awaited<ReturnType<McpClient['call']>>)=>{assert.equal(answer.isError,false,answer.text);return (answer.out as {run:{run:string}}).run.run;};
-    runId(await call(ca,{action:'register',bed:'owned'}));
+    // Responsibility is an administrator's explicit decision in the one environment catalog, not a projection lease action.
+    const catalog=bed.hub.records.testEnvironments;
+    const at=new Date().toISOString();
+    await catalog.register(admin.principal,{name:'owned',target:'owned',executors:ownedExecutors,prefixes:[{prefix:'bed/owned/',owner:admin.principal.id,registered_at:at}],resources:[{key:'bed/owned/client',owner:admin.principal.id,registered_at:at}],enabled:true,missing_facts:[]});
+    const environments=(await catalog.list(admin.principal)).filter(environment=>environment.target==='owned');
+    assert.equal(environments.length,1,'the declared ownership topology has one catalog environment');
+    const environment=environments[0]!;
+    await catalog.reassignOwner(admin.principal,environment.id,{prefix:'bed/owned/',owner:a.user.id});
+    await catalog.reassignOwner(admin.principal,environment.id,{key:'bed/owned/client',owner:a.user.id});
+    assert.equal((await call(ca,{action:'register',bed:'owned'})).isError,true,'members cannot recreate projection registration');
     const booking=runId(await call(cb,{action:'acquire',bed:'owned',need:{devices:[{type:'client',count:1}]}}));
     const booked=await stored(booking);const key='bed/owned/client';
     const before=(await bed.hub.leases.holderSnapshot([key]))[0]!;
@@ -370,7 +379,7 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const workflows={byDigest:async()=>({pack:{id:'synthetic-workflow',version:'1.0.0',digest},requirements:[{key:'workbook_verified',required:true,target:'item',accepted_producer:'fact'}],readJson:async()=>allowed}) as unknown as import('../../hub/ports.ts').LoadedWorkflow};
     const proof=await verifyInput(admin.principal,verification,d,bed.hub.records,runs,workflows,new Date());
     assert.ok(proof.ancestors.includes(booking));assert.equal(proof.user,b.user.id);
-    const dispatcher=new DispatchService({records:bed.hub.records,leases:bed.hub.leases,runs,workflows});
+    const dispatcher=new DispatchService({records:bed.hub.records,leases:bed.hub.leases,runs,workflows,environmentAccess:bed.hub.hub.dispatch!.options.environmentAccess});
     const executor=await addSyntheticExecutor(bed.hub.records,dispatcher.registry,admin.principal,d,'synthetic-ownership-key');
     const reason='  合成主人要求收回  ';
     runId(await call(ca,{action:'force_release',bed:'owned',reason}));
@@ -382,7 +391,8 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const dispatchEvents=await dispatcher.journal.events(refusedDispatch.job);const refusal=dispatchEvents.find(event=>event.body.detail.phase==='boundary_refused')!;
     assert.equal(refusal.body.detail.boundary_clause,5);assert.equal(refusal.body.error_code,'LEASE_UNAVAILABLE');assert.equal(dispatchEvents.some(event=>event.body.detail.phase==='intent'),false);
     assert.ok((await bed.hub.leases.actionLog('bed/owned/')).some(row=>row.op==='force_release'&&row.by===a.user.id&&row.reason===reason));
-    await invoke(['register','bed/owned/','--owner',c.user.id,'--reason','合成管理员更正']);
+    await catalog.reassignOwner(admin.principal,environment.id,{prefix:'bed/owned/',owner:c.user.id});
+    await catalog.reassignOwner(admin.principal,environment.id,{key,owner:c.user.id});
     const nextBooking=runId(await call(cb,{action:'acquire',bed:'owned',need:{devices:[{type:'client',count:1}]}}));
     const oldOwnerSearch=runId(await call(ca,{action:'search'}));const newOwnerSearch=runId(await call(cc,{action:'search'}));
     assert.ok(!JSON.stringify(await claimsOf(bed,oldOwnerSearch)).includes(b.user.name));
@@ -390,7 +400,8 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     const updated=await invoke(['list','--prefix','bed/owned/']);
     assert.ok(updated.includes(c.user.name)&&updated.includes(b.user.name)&&updated.includes(nextBooking));
     runId(await call(cc,{action:'force_release',bed:'owned',reason:'合成收尾'}));
-    runId(await call(cc,{action:'unregister',bed:'owned',reason:'合成注销'}));
+    assert.equal((await call(cc,{action:'unregister',bed:'owned',reason:'合成注销'})).isError,true,'members cannot recreate projection unregistration');
+    await catalog.remove(admin.principal,environment.id);
     assert.deepEqual(await bed.hub.leases.registrations('bed/owned/'),[]);
   });
 
