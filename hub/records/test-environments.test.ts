@@ -8,7 +8,8 @@ import { TestEnvironment, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT
 import { LeaseService } from '../leases/api.ts';
 import { definition } from '../dispatch/testing/definition.ts';
 import { newId } from './ids.ts';
-import { openRecords, withEnvironmentPermissionLock, type RecordsKit, type TestEnvironmentInheritanceSources, type TestEnvironmentInput } from './api.ts';
+import { openRecords, withEnvironmentPermissionLock, EnvironmentWriteError, type RecordsKit, type AuthorizationRecord, type TestEnvironmentInheritanceSources, type TestEnvironmentInput } from './api.ts';
+import { environmentProgramWrite } from './environment-program-write.ts';
 
 async function fixture(initKey = false) {
   const kit = await openTestRecords({ initKey });
@@ -31,7 +32,16 @@ async function fixture(initKey = false) {
     return { workflows: [{ id: 'synthetic-workflow', prefix: 'synthetic/', installedMethod: false, sourceRecords: [evidence.digest] }], executors, sourceRecords: references };
   } };
   const input = (name = '合成测试环境', target = 'synthetic-bed'): TestEnvironmentInput => ({ name, target, prefixes: [{ prefix: 'synthetic/device/', owner: member.id, registered_at: at }], resources: [], executors: [], enabled: true, missing_facts: [] });
-  return { kit, db, admin, member, other, at, executor, executors, sources, input, close: async () => { await db.end(); await kit.close(); } };
+  // Test-only historical state: canonical append, not an ordinary configuration API or a production exemption.
+  async function historicalConfiguration(object: string, value: unknown) {
+    await kit.store.withTransaction(tx => environmentProgramWrite(tx, async () => {
+      const previous = (await kit.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key: 'authz.key', value: `resource_config|*|${object}`, newestFirst: true, limit: 1 }, tx)).items[0];
+      const stored = await kit.objects.put(canonicalBytes(value), 'application/json', tx);
+      const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object, revoked: false, bound: stored.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting inconsistent state', supersedes: previous?.digest ?? null };
+      await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: `resource_config|*|${object}` }] }, tx);
+    }));
+  }
+  return { kit, db, admin, member, other, at, executor, executors, sources, input, historicalConfiguration, close: async () => { await db.end(); await kit.close(); } };
 }
 
 test('ordinary catalog enforces unique names and targets, preserves ownership and never reuses a deleted identity', { timeout: 120000 }, async () => {
@@ -62,11 +72,12 @@ test('catalog registration rejects foreign executor targets and current executor
   const f = await fixture();
   try {
     const executor = await f.executor();
-    await assert.rejects(f.kit.testEnvironments.register(f.admin, { ...f.input('错误目标', 'different-target'), executors: [executor.id!] }), /目标或资源/);
+    await assert.rejects(f.kit.testEnvironments.register(f.admin, { ...f.input('错误目标', 'different-target'), executors: [executor.id!] }), error => error instanceof EnvironmentWriteError && error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.detail.expected_target === 'different-target' && error.detail.proposed_target === 'synthetic-bed');
     const environment = await f.kit.testEnvironments.register(f.admin, { ...f.input(), executors: [executor.id!] });
     assert.equal((await f.kit.testEnvironments.resolve(['synthetic/device/a'])).environments[0].id, environment.id);
     const changed = await f.kit.objects.put(canonicalBytes({ ...executor, target: 'different-target' }), 'application/json');
-    await f.kit.authorizations.configureResource(f.admin, 'executor.' + executor.id, changed.sha256);
+    await assert.rejects(f.kit.authorizations.configureResource(f.admin, 'executor.' + executor.id, changed.sha256), EnvironmentWriteError);
+    await f.historicalConfiguration('executor.' + executor.id, { ...executor, target: 'different-target' });
     await assert.rejects(f.kit.testEnvironments.resolve(['synthetic/device/a']), /目标或资源/);
     assert.deepEqual(await f.kit.testEnvironments.resolve(['unrelated/key']), { environments: [], unregistered: [] });
   } finally { await f.close(); }
@@ -338,9 +349,11 @@ test('a configured ordinary target variable inherits and validates on a pool of 
     const originalExecutor = await kit.authorizations.latest('resource_config', '*', 'executor.' + executor.id);
     assert.ok(grant && originalEnvironment && originalExecutor?.body.bound);
     assert.equal(ExecutorSource.parse(JSON.parse(Buffer.from((await kit.objects.get(originalExecutor.body.bound))!).toString())).target, '${var:SYNTHETIC_TARGET}');
-    await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 'different-target', 'owner-approved target change', { notSecret: true });
+    await assert.rejects(f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 'different-target', 'owner-approved target change', { notSecret: true }), EnvironmentWriteError);
+    await f.historicalConfiguration('var:SYNTHETIC_TARGET', { schema: 'variable@1', name: 'SYNTHETIC_TARGET', value: 'different-target' });
     await assert.rejects(withEnvironmentPermissionLock(kit.store, tx => kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx)), /目标或资源声明不一致/);
-    await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 42, 'owner-approved invalid-value fixture', { notSecret: true });
+    await assert.rejects(f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 42, 'owner-approved invalid-value fixture', { notSecret: true }), EnvironmentWriteError);
+    await f.historicalConfiguration('var:SYNTHETIC_TARGET', { schema: 'variable@1', name: 'SYNTHETIC_TARGET', value: 42 });
     await assert.rejects(withEnvironmentPermissionLock(kit.store, tx => kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx)), /当前值不是字符串/);
     assert.equal((await kit.testEnvironments.inheritance()).completed, true);
     assert.equal((await kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_INHERITANCE_KEY))?.digest, marker.digest);
@@ -361,7 +374,10 @@ test('executor admission never resolves shared keys by choosing only the environ
     const firstExecutor = await f.executor('first-target');
     const secondExecutor = await f.executor('second-target');
     const first = await f.kit.testEnvironments.register(f.admin, { ...f.input('第一环境', 'first-target'), executors: [firstExecutor.id!] });
-    await f.kit.testEnvironments.register(f.admin, { ...f.input('第二环境', 'second-target'), executors: [secondExecutor.id!] });
+    const secondInput = { ...f.input('第二环境', 'second-target'), executors: [secondExecutor.id!] };
+    await assert.rejects(f.kit.testEnvironments.register(f.admin, secondInput), EnvironmentWriteError);
+    const historicalSecond = TestEnvironment.parse({ ...secondInput, schema: 'test-environment@1', id: newId('env') });
+    await f.historicalConfiguration(TEST_ENVIRONMENT_CONFIG_PREFIX + historicalSecond.id, historicalSecond);
     await f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: first.id });
     await f.kit.testEnvironments.inherit(f.admin, f.sources);
     await withEnvironmentPermissionLock(f.kit.store, async tx => {
