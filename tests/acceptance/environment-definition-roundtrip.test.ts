@@ -29,7 +29,7 @@ test('an unmodified deployment v3 export restores environment identities by name
     await source.records.testEnvironments.inherit(by,environmentPermissionSources());
     const executors=new ExecutorRegistry(source.records);
     const linked=[];
-    for(const [index,name] of ['合成执行器甲','合成执行器乙'].entries())linked.push(await executors.add(by,{...syntheticExecutor('http://192.0.2.'+(10+index)),target:'synthetic-target-a',resources:['synthetic/a/device']},name));
+    for(const name of ['合成执行器甲','合成执行器乙'])linked.push(await executors.add(by,{...syntheticExecutor('http://127.0.0.1:9'),target:'synthetic-target-a',resources:['synthetic/a/device']},name));
     const at=new Date().toISOString();
     const first=await source.records.testEnvironments.register(by,{name:'合成环境甲',target:'synthetic-target-a',prefixes:[{prefix:'synthetic/a/',owner:responsible.user.id,registered_at:at}],resources:[],executors:linked.map(executor=>executor.id),enabled:true,missing_facts:[]});
     const second=await source.records.testEnvironments.register(by,{name:'合成环境乙',target:'synthetic-target-b',prefixes:[],resources:[{key:'synthetic/b/device',owner:responsible.user.id,registered_at:at}],executors:[],enabled:true,missing_facts:[]});
