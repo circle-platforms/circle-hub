@@ -72,6 +72,27 @@ export function exactMatch<T extends { id: string }>(rows: readonly T[], value: 
   return matches[0];
 }
 
+
+/** Resolve all executor identities before any domain write; target names are not executor identities. */
+function executorMatches(desired: readonly Definition['executors'][number][], current: readonly Definition['executors'][number][]): Array<Definition['executors'][number] | undefined> {
+  const unqualified = new Set<string>();
+  const resolved = desired.map(executor => {
+    if (executor.id !== undefined) {
+      const matches = current.filter(row => row.id === executor.id);
+      if (matches.length !== 1) throw new CliError('执行器编号不存在或不唯一；请核对明确的执行器身份');
+      return matches[0];
+    }
+    if (unqualified.has(executor.target)) throw new CliError(`执行器目标 ${executor.target} 在本次定义里对应多个未声明身份的执行器；须逐个明确身份`);
+    unqualified.add(executor.target);
+    const matches = current.filter(row => row.target === executor.target);
+    if (matches.length > 1) throw new CliError(`执行器目标 ${executor.target} 对应多个现有执行器；须明确要配置的执行器身份`);
+    return matches[0];
+  });
+  const identities = resolved.flatMap(executor => executor?.id === undefined ? [] : [executor.id]);
+  if (new Set(identities).size !== identities.length) throw new CliError('多个执行器声明指向同一个现有执行器；须逐个明确且不得重复');
+  return resolved;
+}
+
 async function loadPacks(session: Session, definition: Definition, base: string): Promise<DeploymentPack[]> {
   const hub = await session.hub();
   const result: DeploymentPack[] = [];
@@ -197,6 +218,7 @@ export async function applyDeployment(session: Session, input: unknown, base = s
   const by = await session.admin(), hub = await session.hub(false, true);
   const packs = await loadPacks(session, definition, base);
   const current = await exportDeployment(session);
+  const selectedExecutors = executorMatches(definition.executors, current.executors);
   const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration, syncTasks: [], syncCurrent: [] };
   try {
     const compare = (section: string, index: number, before: unknown, after: unknown): boolean => {
@@ -292,7 +314,7 @@ export async function applyDeployment(session: Session, input: unknown, base = s
     }
     const executors = new ExecutorRegistry(records);
     for (const [index, executor] of definition.executors.entries()) {
-      const found = exactMatch(current.executors.map(row => ({ ...row, id: row.id! })), executor.id ?? executor.target, row => row.target);
+      const found = selectedExecutors[index];
       if (found) { const { id: _id, ...before } = found; const { id: _wanted, ...after } = executor; compare('executors', index, before, after); continue; }
       if (executor.id) throw new CliError('执行器编号不存在；新执行器应省略编号');
       const created = await executors.add(by, executor); current.executors.push(created.source); report.created++;
