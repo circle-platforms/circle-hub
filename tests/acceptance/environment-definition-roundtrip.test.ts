@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createTestHub, type TestHub } from '../../hub/server/testing-real.ts';
 import { startPostgres } from '../../hub/testing/postgres.ts';
 import { applyDeployment, exportDeployment } from '../../hub/server/cli-apply.ts';
+import { createEnvironmentManagementPorts } from '../../hub/server/test-environments-console.ts';
 import { environmentPermissionSources } from '../../hub/server/env-permission-sources.ts';
 import { openRecords } from '../../hub/records/api.ts';
 import { ExecutorNames, ExecutorRegistry } from '../../hub/dispatch/api.ts';
@@ -76,7 +77,17 @@ test('an unmodified deployment v3 export restores environment identities by name
       const teams=await single.teams.list(target!.admin.principal,tx);assert.equal(teams.length,1);
       assert.ok((await single.teams.members(target!.admin.principal,teams[0].id,tx)).some(member=>member.user.id===restoredMember.id));
       assert.equal((await new ExecutorNames(single).list(target!.admin.principal,tx)).length,2);
-    });}finally{await single.close();}
+    });
+      const management=createEnvironmentManagementPorts(single,target.leases);
+      const managed=await management.testEnvironments.list(target.admin.principal);
+      const managedFirst=managed.find(environment=>environment.name==='合成环境甲')!;
+      assert.equal(managedFirst.ownership[0].ownerName,'合成责任人');assert.equal(managedFirst.ownership[0].ownerDisabled,true);
+      assert.ok(managedFirst.assignments.some(assignment=>assignment.subject.kind==='account'&&assignment.subject.name==='合成停用受众'&&assignment.accountDisabled===true));
+      const ordinary=await management.bookingPrefixes.list(target.admin.principal);
+      assert.equal(ordinary[0].ownerName,'合成责任人');assert.equal(ordinary[0].ownerDisabled,true);assert.deepEqual(ordinary[0].holders,[]);
+      await assert.rejects(management.testEnvironments.list(restoredMember));
+      assert.ok(target.deps.testEnvironments,'normal assembly exposes the real management port');
+    }finally{await single.close();}
 
   } finally {
     try {await target?.close();} finally {try {await source?.close();} finally {await postgres.stop();}}
