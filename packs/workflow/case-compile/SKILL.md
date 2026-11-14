@@ -42,6 +42,7 @@ inputs: subject/contract/inventory/profile；后三项用发布的 doc:doc
 profile: device_count 只读预检及可选 fold_newlines
 整份原始用例: 不填 parameters.autoid；单条: 原样复制 autoid 字符串
 排除: parameters.exclude=[autoid,...]，脚本编写和脚本合并用同一列表
+按范围: parameters.scope={"words":"<范围原话>","cases":["<autoid>",...]}（不与 exclude/autoid 同用）；脚本编写、脚本合并与返工重开须传同一 scope；中途换范围必须重新 start_run
 跳过用例重组: parameters.pipeline=legacy
 沿用已核对正确的重组（同脑图同构建）:
   inputs.recomposition_run={"reference":"<run_reference>"}（取下载重组目录 references.json 或导出顶层 run_reference）
@@ -52,7 +53,7 @@ profile: device_count 只读预检及可选 fold_newlines
 本地读取: items/<序号>.json、sources.json、sources/<摘要>、knowledge/、briefs/<序号>.md
 ```
 
-确认各目标计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检正确（`ok: true`）后，再进入脚本合并。**返工与重开运行规则（必守）**：一旦需要修改或返工任何已交计划（尤其是已经开始脚本合并运行之后，或上机失败需重写时），禁止往已被核对锁定的旧脚本编写运行重交，也禁止直接往脚本合并运行提交改过的计划；必须先用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号，沿用 `recomposition_run`/`recomposition_result` 与 `exclude`，完成后再重新生成 Excel、上传并新开脚本合并运行）。可照抄单行 `start_run` 模板（不排除用例时删去 `parameters.exclude`）：
+确认各目标计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检正确（`ok: true`）后，再进入脚本合并。**返工与重开运行规则（必守）**：一旦需要修改或返工任何已交计划（尤其是已经开始脚本合并运行之后，或上机失败需重写时），禁止往已被核对锁定的旧脚本编写运行重交，也禁止直接往脚本合并运行提交改过的计划；必须先用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号，沿用 `recomposition_run`/`recomposition_result` 与 `exclude`/`scope`，完成后再重新生成 Excel、上传并新开脚本合并运行）。可照抄单行 `start_run` 模板（不排除用例时删去 `parameters.exclude`）：
 ```text
 start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
 ```
@@ -82,7 +83,7 @@ submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项的结论须为正确（`satisfied`）
 upload_file: 普通上传 case.xlsx 原文件（不标捕获原件）；核对 SHA 与生成工具一致
-第二次 start_run（同 subject/contract/inventory/profile/product/build/version 及 exclude）:
+第二次 start_run（同 subject/contract/inventory/profile/product/build/version 及 exclude/scope）:
   predecessor: "<脚本编写编号>"（脚本编写的运行编号）
   parameters.plan_run: "<脚本编写编号>"（与 predecessor 同一脚本编写运行号，必填）
   inputs.plan_result: {"run": "<脚本编写编号>"}（同一脚本编写运行号；多用例必填，单用例也可填）

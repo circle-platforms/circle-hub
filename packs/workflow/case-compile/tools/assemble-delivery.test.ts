@@ -77,7 +77,19 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   for (const run of runsInOrder) {
     const plan = planOfRun(run);
     if (!records[plan]) records[plan] = { ...plans[plan].record, started_at: at(k++), predecessor: chain && previous ? previous : BOOKING };
-    records[run] = { run, pack: 'case-compile@9.9.9', started_at: at(k++), predecessor: plan, parameters: { plan_run: plan }, sources: plans[plan].record.sources };
+    records[run] = {
+      run,
+      pack: 'case-compile@9.9.9',
+      started_at: at(k++),
+      predecessor: plan,
+      parameters: {
+        plan_run: plan,
+        ...(plans[plan]?.record?.parameters && (plans[plan].record.parameters as Record<string, unknown>).scope !== undefined
+          ? { scope: (plans[plan].record.parameters as Record<string, unknown>).scope }
+          : {}),
+      },
+      sources: plans[plan].record.sources,
+    };
     previous = run;
   }
   if (gap !== 'none') { const g = gapRun(gap === 'shadowed' ? 'recorded' : gap); records[GAP] = { ...g.plan.record, started_at: '2026-11-08T00:00:30.000Z', predecessor: BOOKING }; if (g.submitted) plans[GAP] = g.plan; }
@@ -571,4 +583,165 @@ test('--scope is refused because delivery scope cannot be narrowed from a local 
   assert.equal(refused.code, 1);
   assert.match(refused.stderr, /^参数无效：交付时不允许从本地 --scope 文件收窄范围/);
   await assert.rejects(readdir(out));
+});
+
+function withScope(p: ReturnType<typeof planRun>, scope: { words: string; cases: string[]; out_of_scope?: Array<{ autoid: string; title: string }> } | undefined) {
+  const copy = structuredClone(p);
+  const params: Record<string, unknown> = { ...(copy.record.parameters as Record<string, unknown>) };
+  delete params.exclude;
+  if (scope) {
+    params.scope = { words: scope.words, cases: scope.cases };
+    (copy.record as Record<string, unknown>).groups = [{ kind: 'case-compile', scope: { words: scope.words, cases: scope.cases, out_of_scope: scope.out_of_scope ?? [] } }];
+  }
+  (copy.record as { parameters: Record<string, unknown> }).parameters = params;
+  return copy;
+}
+
+test('assemble-delivery refuses when runs carry conflicting frozen parameters.scope', async (t) => {
+  const scopeA = { words: '本次先编 101 和 102', cases: [CASES[0], CASES[1]] };
+  const scopeB = { words: '中途改成只编 101', cases: [CASES[0]] };
+  const scopedPlan1 = withScope(planRun(PLAN1, [CASES[0], CASES[1]], []), scopeA);
+  const scopedPlan2 = withScope(planRun(PLAN2, [CASES[0]], []), scopeB);
+  const h = await hub(
+    ['pass'],
+    scopedPlan2.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], scopedPlan1.workbook, ['pass', 'fail'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0]], scopedPlan2.workbook, ['pass'])] },
+    { [PLAN1]: scopedPlan1, [PLAN2]: scopedPlan2 },
+    [WHOLE, FINAL],
+    false,
+    [],
+    'none',
+  );
+  t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-scope-conflict-')), 'out');
+  const refused = await run(h, await notes({ [CASES[1]]: NOTES[CASES[1]] }), out, `${WHOLE},${FINAL}`);
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /^参数无效：/);
+  assert.match(refused.stderr, /scope/);
+  assert.match(refused.stderr, new RegExp(`${PLAN1}|${WHOLE}`));
+  assert.match(refused.stderr, new RegExp(`${PLAN2}|${FINAL}`));
+  await assert.rejects(readdir(out));
+});
+
+test('assemble-delivery uses matching frozen Hub parameters.scope and discloses out-of-scope cases without failing closure', async (t) => {
+  const scope = { words: '只做 101 和 102 两条核心场景', cases: [CASES[0], CASES[1]] };
+  const scopedPlan1 = withScope(planRun(PLAN1, [CASES[0], CASES[1]], []), scope);
+  const scopedPlan2 = withScope(planRun(PLAN2, [CASES[0]], []), { words: '只做 101 和 102 两条核心场景', cases: [CASES[1], CASES[0]] });
+  const h = await hub(
+    ['pass'],
+    scopedPlan2.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], scopedPlan1.workbook, ['pass', 'fail'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0]], scopedPlan2.workbook, ['pass'])] },
+    { [PLAN1]: scopedPlan1, [PLAN2]: scopedPlan2 },
+    [WHOLE, FINAL],
+    false,
+    [],
+    'none',
+  );
+  t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-scoped-delivery-'));
+  const out = join(dir, 'out');
+  const done = await run(h, await notes({ [CASES[1]]: NOTES[CASES[1]] }), out, `${WHOLE},${FINAL}`);
+  assert.equal(done.code, 0, done.stderr);
+  const payload = JSON.parse(done.stdout);
+  assert.deepEqual(payload.totals, { cases: 2, delivered: 1, failed: 1, unsettled: 0, unrun: 0 });
+  assert.equal(payload.in_scope_total, 2);
+  assert.equal(payload.out_of_scope_total, 2);
+  assert.match(payload.reply, /范围：本次共 2 \/ 4 条原始用例，另有 2 条未纳入本次范围（详见交付报告）。/);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.scope.source, 'hub_run_parameters');
+  assert.equal(summary.scope.words, '只做 101 和 102 两条核心场景');
+  assert.equal(summary.in_scope_total, 2);
+  assert.equal(summary.out_of_scope_total, 2);
+  assert.deepEqual(summary.out_of_scope.map((c: { autoid: string }) => c.autoid), [CASES[2], CASES[3]]);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /本次范围：只做 101 和 102 两条核心场景/);
+  assert.match(report, /未纳入本次范围的原始用例（2 条/);
+  assert.match(report, new RegExp(`${CASES[2]} 合成意图 3`));
+  assert.match(report, new RegExp(`${CASES[3]} 合成意图 4`));
+});
+
+test('assemble-delivery refuses one scoped run paired with an unscoped run, and reads frozen out_of_scope when --recompose is omitted', async (t) => {
+  const scope = { words: '本次仅交付 101 与 102', cases: [CASES[0], CASES[1]], out_of_scope: [{ autoid: CASES[2], title: '合成标题 3' }, { autoid: CASES[3], title: '合成标题 4' }] };
+  const scopedPlan1 = withScope(planRun(PLAN1, [CASES[0], CASES[1]], []), scope);
+  const unscopedPlan2 = withScope(planRun(PLAN2, [CASES[0]], []), undefined);
+  const mismatch = await hub(
+    ['pass'],
+    unscopedPlan2.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], scopedPlan1.workbook, ['pass', 'fail'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0]], unscopedPlan2.workbook, ['pass'])] },
+    { [PLAN1]: scopedPlan1, [PLAN2]: unscopedPlan2 },
+    [WHOLE, FINAL],
+    false,
+    [],
+    'none',
+  );
+  t.after(mismatch.close);
+  const outConflict = join(await mkdtemp(join(tmpdir(), 'cc-scope-half-')), 'out');
+  const refused = await run(mismatch, await notes({ [CASES[1]]: NOTES[CASES[1]] }), outConflict, `${WHOLE},${FINAL}`);
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /^参数无效：所选运行的冻结 parameters\.scope 不一致/);
+  await assert.rejects(readdir(outConflict));
+
+  const scopedPlan2 = withScope(planRun(PLAN2, [CASES[0]], []), scope);
+  const noRecompose = await hub(
+    ['pass'],
+    scopedPlan2.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], scopedPlan1.workbook, ['pass', 'fail'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0]], scopedPlan2.workbook, ['pass'])] },
+    { [PLAN1]: scopedPlan1, [PLAN2]: scopedPlan2 },
+    [WHOLE, FINAL],
+    false,
+    [],
+    'none',
+  );
+  t.after(noRecompose.close);
+  const outNoRec = join(await mkdtemp(join(tmpdir(), 'cc-scope-norec-')), 'out');
+  const notesPath = await notes({ [CASES[1]]: NOTES[CASES[1]] });
+  const ok = await outputOf(() => main(['--hub', noRecompose.url, '--runs', `${WHOLE},${FINAL}`, '--notes', notesPath, '--out', outNoRec, '--name', '合成无重组批'], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z')));
+  assert.equal(ok.code, 0, ok.stderr);
+  const summary = JSON.parse(await readFile(join(outNoRec, 'delivery.json'), 'utf8'));
+  assert.equal(summary.in_scope_total, 2);
+  assert.equal(summary.out_of_scope_total, 2);
+  assert.deepEqual(summary.out_of_scope, scope.out_of_scope);
+  const report = await readFile(join(outNoRec, 'delivery_report.md'), 'utf8');
+  assert.match(report, /990000000000000103 合成标题 3/);
+  assert.match(report, /990000000000000104 合成标题 4/);
+
+  // In-scope unrun case without closure still blocks delivery even when parameters.scope is active.
+  const partialScope = { words: '本次仅交付 101 与 102', cases: [CASES[0], CASES[1]] };
+  const scopedSinglePlan = withScope(planRun(PLAN1, [CASES[0]], []), partialScope);
+  const unclosed = await hub(
+    ['pass'],
+    scopedSinglePlan.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0]], scopedSinglePlan.workbook, ['pass'])] },
+    { [PLAN1]: scopedSinglePlan },
+    [WHOLE],
+    false,
+    [],
+    'none',
+  );
+  t.after(unclosed.close);
+  const outUnclosed = join(await mkdtemp(join(tmpdir(), 'cc-scope-unclosed-')), 'out');
+  const blocked = await run(unclosed, await notes({ [CASES[1]]: NOTES[CASES[1]] }), outUnclosed, WHOLE);
+  assert.equal(blocked.code, 1);
+  assert.match(blocked.stderr, new RegExp(`^不存在：用例 ${CASES[1]}尚未上机验证`));
+  await assert.rejects(readdir(outUnclosed));
+
+  // Dispatch containing an item outside the anchored scope is also refused.
+  const narrowScope = { words: '只交付 101', cases: [CASES[0]] };
+  const narrowedPlan = withScope(planRun(PLAN1, [CASES[0]], []), narrowScope);
+  const strayDispatch = await hub(
+    ['pass'],
+    narrowedPlan.workbook,
+    { [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], narrowedPlan.workbook, ['pass', 'pass'])] },
+    { [PLAN1]: narrowedPlan },
+    [WHOLE],
+    false,
+    [],
+    'none',
+  );
+  t.after(strayDispatch.close);
+  const outStray = join(await mkdtemp(join(tmpdir(), 'cc-scope-stray-')), 'out');
+  const refusedStray = await run(strayDispatch, await notes({}), outStray, WHOLE);
+  assert.equal(refusedStray.code, 1);
+  assert.match(refusedStray.stderr, new RegExp(`^参数无效：上机验证 ${WHOLE} 包含未纳入本次 parameters\\.scope 的原始用例 ${CASES[1]}`));
+  await assert.rejects(readdir(outStray));
 });

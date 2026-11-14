@@ -267,3 +267,44 @@ test('parameters.exclude leaves cases out of a whole-document run, and only ther
   assert.equal(project(startInput(two, { exclude: [AUTOID, SECOND], pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found', 'nothing left to compile');
 });
 
+test('parameters.scope projects only in-scope cases, freezes out_of_scope metadata, and refuses exclude/autoid/shape conflicts', () => {
+  const THIRD = '990000000000000033';
+  const three = parsed([caseOne, { ...caseOne, id: 'case-b', autoid: SECOND }, { ...caseOne, id: 'case-c', autoid: THIRD }]);
+  const both = project(startInput(three, { scope: { words: '本次只编译前两条', cases: [AUTOID] }, exclude: [SECOND], pipeline: 'legacy' }));
+  assert.equal(both.error?.code, 'case-compile.invalid_parameter', 'scope and exclude must be mutually exclusive');
+  assert.match(both.error?.message ?? '', /scope.*exclude/);
+  const withAutoid = project(startInput(three, { scope: { words: '本次只编译一条', cases: [AUTOID] }, autoid: AUTOID, pipeline: 'legacy' }));
+  assert.equal(withAutoid.error?.code, 'case-compile.invalid_parameter', 'scope and autoid must be mutually exclusive');
+  for (const bad of [
+    '只做第一条',
+    { words: '   ', cases: [AUTOID] },
+    { words: '只做第一条', cases: [] },
+    { words: '只做第一条', cases: [AUTOID, AUTOID] },
+    { words: '只做第一条', cases: ['not-an-autoid'] },
+    { words: '只做第一条', cases: [AUTOID], extra: true },
+  ]) {
+    assert.equal(project(startInput(three, { scope: bad, pipeline: 'legacy' })).error?.code, 'case-compile.invalid_parameter', JSON.stringify(bad));
+  }
+  assert.equal(project(startInput(three, { scope: { words: '缺编号', cases: ['990000000000000099'] }, pipeline: 'legacy' })).error?.code, 'case-compile.autoid_not_found');
+  const picked = projectItems(startInput(three, { scope: { words: '本次只编第一、三条', cases: [THIRD, AUTOID] }, pipeline: 'legacy' })) as {
+    items: Array<{ fields: { autoid: string } }>;
+    groups: Array<{ scope?: { words: string; cases: string[]; out_of_scope: Array<{ autoid: string; title: string }> } }>;
+  };
+  assert.deepEqual(picked.items.map((item) => item.fields.autoid), [AUTOID, THIRD]);
+  assert.equal(picked.groups[0].scope?.words, '本次只编第一、三条');
+  assert.deepEqual(picked.groups[0].scope?.out_of_scope.map((entry) => entry.autoid), [SECOND]);
+
+  // Verification run narrowed to [AUTOID] against a plan_result of [AUTOID, THIRD] is refused.
+  const workbook = { slot: 'workbook', parser: 'xlsx@1', sha256: 'b'.repeat(64), model: coreModel(generateWorkbook(generationFixture())) };
+  const delivered = picked.items.map((item: any) => ({
+    item: item.id,
+    requirements: [
+      { requirement: 'plan', status: 'satisfied', claims: [{ item: item.id, requirement: 'plan', statement: { text: '合成计划', data: { plan: 1 } } }] },
+      { requirement: 'commands_known', status: 'satisfied', claims: [{ statement: { verdict: 'support', data: { command_catalog: { root: 'c'.repeat(64), entries: [] } } } }] },
+    ],
+  }));
+  const planResult = { slot: 'plan_result', external: null, meta: { kind: 'validation_result', record: 'd'.repeat(64) }, model: { kind: 'validation_result', body: { schema: 'validation@1', acceptance: 'accepted', run: 'run_plan', locks: { pack: FORMAT.generator }, partitions: { delivered } } } };
+  const narrowed = project(startInput(three, { plan_run: 'run_plan', scope: { words: '中途改成一条', cases: [AUTOID] }, pipeline: 'legacy' }, [workbook, planResult]));
+  assert.equal(narrowed.error?.code, 'case-compile.workbook_context');
+});
+

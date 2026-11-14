@@ -119,8 +119,41 @@ export function projectItems(input: unknown): unknown {
     const unknown=(excludeAsked as string[]).filter(value=>!numbered.has(value));
     if(unknown.length)return refusal('autoid_not_found',`exclude 里的 ${unknown.slice(0,5).join('、')} 在按规则取到的用例里找不到`,'核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/exclude');
   }
+  // A scoped run freezes {words, cases} onto the Hub run record at start_run so assemble-delivery verifies every run matches
+  // and discloses omitted cases cleanly instead of blocking closure (mutually exclusive with autoid and exclude).
+  const scopeAsked = parameters.scope;
+  let frozenScope: { words: string; cases: string[] } | null = null;
+  let scoped: Set<string> | null = null;
+  if (scopeAsked !== undefined) {
+    if (!whole) return refusal('invalid_parameter', 'parameters.scope 只用于整份文档按范围编译，不能与 parameters.autoid 同时使用', '按范围编译时不填 autoid；只编一条时不填 scope', [], '/parameters/scope');
+    if (excludeAsked !== undefined) return refusal('invalid_parameter', 'parameters.scope 与 parameters.exclude 不能同时使用', '只用 parameters.scope 列出纳入本次范围的 autoid，或改用 parameters.exclude，不要同时填写', [], '/parameters/scope');
+    if (!isRecord(scopeAsked) || Object.keys(scopeAsked).some((key) => key !== 'words' && key !== 'cases')) {
+      return refusal('invalid_parameter', 'parameters.scope 只允许 words 与 cases 两个字段', '写成 {"words":"<范围原话>","cases":["<autoid>",...]}', [], '/parameters/scope');
+    }
+    if (typeof scopeAsked.words !== 'string' || scopeAsked.words.trim().length === 0 || scopeAsked.words.length > 4000) {
+      return refusal('invalid_parameter', 'parameters.scope.words 不能为空且长度不超过 4000 字', '在 scope.words 填入本次范围说明原文', [], '/parameters/scope/words');
+    }
+    if (!Array.isArray(scopeAsked.cases) || scopeAsked.cases.length === 0 || scopeAsked.cases.length > DISPATCH.max_items || scopeAsked.cases.some((value) => typeof value !== 'string' || !autoidShape.test(value)) || new Set(scopeAsked.cases).size !== scopeAsked.cases.length) {
+      return refusal('invalid_parameter', `parameters.scope.cases 必须是不重复的 autoid 文字列表（1 至 ${DISPATCH.max_items} 条），每个符合配置形状`, '写成 ["<autoid>", ...]，从用例原文复制 autoid', [], '/parameters/scope/cases');
+    }
+    const numbered = new Set(ruled.map((c) => c.autoid).filter((value): value is string => value !== null && autoidShape.test(value)));
+    const unknown = (scopeAsked.cases as string[]).filter((value) => !numbered.has(value));
+    if (unknown.length) return refusal('autoid_not_found', `scope.cases 里的 ${unknown.slice(0, 5).join('、')} 在按规则取到的用例里找不到`, '核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/scope/cases');
+    frozenScope = { words: scopeAsked.words.trim(), cases: [...(scopeAsked.cases as string[])] };
+    scoped = new Set(frozenScope.cases);
+  }
   const excluded=new Set<string>(Array.isArray(excludeAsked)?excludeAsked as string[]:[]);
-  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid)&&!excluded.has(c.autoid):c.autoid===parameters.autoid).map(c=>{
+  const outOfScopeCases = scoped
+    ? ruled
+      .filter((c) => c.autoid !== null && autoidShape.test(c.autoid) && !scoped.has(c.autoid))
+      .map((c) => {
+        const raw = (subject.model as any).nodes[c.node];
+        const old = c.selector ? extraction.cases.find((v) => v.selector === c.selector) : extraction.cases.filter((v) => v.id === c.id).length === 1 ? extraction.cases.find((v) => v.id === c.id) : undefined;
+        const title = old?.title ?? (isRecord(raw) && typeof raw.text === 'string' ? raw.text : '');
+        return { autoid: c.autoid as string, title };
+      })
+    : [];
+  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid)&&!excluded.has(c.autoid)&&(!scoped||scoped.has(c.autoid)):c.autoid===parameters.autoid).map(c=>{
     // The earlier extraction of the same node, by selector: a pasted case keeps the node id of the case it was copied from,
     // the parser then addresses both by position, so only the selector names one node. A model without selectors falls
     // back to a node id that names exactly one case.
@@ -207,9 +240,13 @@ export function projectItems(input: unknown): unknown {
       const data = (catalogs[0] as any).statement.data;
       planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, path: item.fields.path, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
     }
+    if (frozenScope && (accepted.partitions.delivered as unknown[]).length !== items.length) {
+      return refusal('workbook_context', '本次脚本合并运行的 parameters.scope 与所核对脚本编写运行的范围不一致', '脚本合并运行与脚本编写运行必须传入相同的 parameters.scope；若需更换范围，请重新用 start_run 开启新的脚本编写运行', [], '/parameters/scope');
+    }
   }
   const skipped = whole && unnumbered.size > 0 ? `；另有 ${unnumbered.size} 个用例没有 autoid，不编译（要编译请作者补 autoid 后重新上传）` : '';
-  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）${skipped}。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
+  const scopeNote = frozenScope ? `（按开运行 scope 纳入 ${items.length} 条，另有 ${outOfScopeCases.length} 条未纳入本次范围）` : '';
+  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）${scopeNote}${skipped}。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
   return {
     items,
     groups: [
@@ -218,6 +255,7 @@ export function projectItems(input: unknown): unknown {
         projection_report:structure,
         recomposition_requested:recompositionRequested,
         criteria_review:{result:slotOf(inputs,'criteria_review')??null,run:slotOf(inputs,'criteria_review_run')??null},
+        ...(frozenScope ? { scope: { words: frozenScope.words, cases: frozenScope.cases, out_of_scope: outOfScopeCases } } : {}),
         contract: contractSlot.model,
         manifest: inventorySlot.model,
         profile: profileSlot.model,

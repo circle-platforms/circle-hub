@@ -457,6 +457,9 @@ export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   return outcome.history.map((h) => `第 ${h.ordinal} 次上机验证${h.audit ? `状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : `判断${terminalLabel(h.terminal)}`}`).join('；') + '。';
 }
 
+export interface OutOfScopeCase { autoid: string; title: string }
+export interface ScopeSummary { words: string; cases: string[]; outOfScope: OutOfScopeCase[]; totalCases: number }
+
 export interface ReportInput {
   name: string; generatedAt: string; build: string | null;
   assembly: Assembly; notes: Notes; originals: Record<string, Original>; excluded: string[];
@@ -466,6 +469,7 @@ export interface ReportInput {
   /** The pass review: how many markers the contracts declared (null: none declared), passes read, turned into no verdict, and passes with no device words saved. */
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
   placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
+  scope?: ScopeSummary;
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || '标题未知';
 export function closingCounts(cases: CaseOutcome[]): string {
@@ -485,6 +489,7 @@ export function caseConclusion(input: ReportInput, outcome: CaseOutcome): string
 function head(input: ReportInput): string[] {
   const { pass, unsuccessful } = input.assembly;
   const lines = [
+    ...(input.scope ? [`本次范围：${input.scope.words}（共 ${input.scope.totalCases} 条原始用例，纳入本次范围 ${input.assembly.totals.cases} 条，另有 ${input.scope.outOfScope.length} 条未纳入本次范围）。`] : []),
     pass && input.files.pass ? `自动化用例 Excel case.xlsx 中的 ${pass.items.length} 条原始用例已一起完成上机验证，判断正确。` : '尚无核对正确的自动化用例 Excel。',
     unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
   ];
@@ -516,6 +521,12 @@ const DELIVERABLES = '自动化用例 Excel：`case.xlsx`、`unsuccessful_cases.
 export function deliveryReport(input: ReportInput): string {
   const lines = [`# 交付报告 — ${input.name}`, `> 生成 ${input.generatedAt}`, '', ...head(input)];
   for (const outcome of input.assembly.cases) lines.push('', ...(outcome.status === 'delivered' ? [caseConclusion(input, outcome)] : section(input, outcome)));
+  if (input.scope && input.scope.outOfScope.length > 0) {
+    lines.push('', `## 未纳入本次范围的原始用例（${input.scope.outOfScope.length} 条）`, '', '以下原始用例在开运行时未纳入本次范围，本次未做脚本编写与上机验证。', '');
+    for (const omitted of input.scope.outOfScope) {
+      lines.push(`- 原始用例 ${omitted.autoid} ${omitted.title || '标题未知'}`);
+    }
+  }
   lines.push('', '---', DELIVERABLES);
   return lines.join('\n') + '\n';
 }
