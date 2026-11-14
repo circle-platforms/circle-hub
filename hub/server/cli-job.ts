@@ -1,4 +1,4 @@
-import { bootstrapCapturePresentation } from './env-bootstrap-capture.ts';
+import { bootstrapCapturePresentation, registrationIncompletePresentation } from './env-bootstrap-capture.ts';
 import { testEnvironmentCommand, TEST_ENVIRONMENT_USAGE } from './cli-test-environment.ts';
 import { ExecutorStableName } from '../../contracts/api.ts';
 import { secretUseLabels } from './secret-use-labels.ts';
@@ -6,10 +6,10 @@ import { secretUseLabels } from './secret-use-labels.ts';
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
-import { ExecutorNames, ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
+import { EnvironmentRegistrationIncompleteError, ExecutorNames, ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
 import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
-import { isSha256, sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
+import { isAdmin, isSha256, sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts';
 import { CliError, UsageError } from './errors.ts';
@@ -204,7 +204,7 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     const events = await dispatch.journal.events(state.job);
     const capture = bootstrapCapturePresentation(events.map(event => event.body.detail), values.executor, state.result);
     // Keep the actual failure diagnostics, but replace this mode's generic result/next labels.
-    output(s, capture ? { ...state, result: undefined, next_action: undefined } : state);
+    output(s, capture ? { ...state, result: undefined, next_action: capture.exitCode === 0 ? undefined : state.next_action } : state);
     if (capture) {
       for (const line of capture.lines) s.out(line);
       if (values.save) s.out(`已导出观察 ${await exportPrecheck(s, dispatch, state.job, values.save)} 份`);
@@ -237,6 +237,14 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     output(s, state); return state.frozen ? 1 : 0;
   }
   throw new UsageError(`job 的子命令：${JOB_USAGE}`);
+  } catch (error) {
+    if (error instanceof EnvironmentRegistrationIncompleteError) {
+      const current = await (await s.records()).principals.get(by.id);
+      const role = current && !current.disabled && isAdmin(current) ? 'admin' : 'user';
+      const presentation = registrationIncompletePresentation(error.protocol, role, role === 'admin' ? error.administratorExecutor : undefined);
+      if (presentation) throw new CliError(`${presentation.category}：${presentation.fact}`, presentation.next);
+    }
+    throw error;
   } finally { await dispatch.close(); }
 }
 

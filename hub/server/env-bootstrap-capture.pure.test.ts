@@ -98,3 +98,23 @@ test('partial observations and initial credential failure do not claim completed
   assert.match(partial.lines.join('\n'), /没有完整的只读采集观察/);
   assert.equal(bootstrapCapturePresentation([{ phase: 'complete', readonly_verified: true }], 'synthetic-executor'), null);
 });
+
+test('successful capture advances to checking resources and updating definitions instead of repeating the precheck', () => {
+  const result = bootstrapCapturePresentation([
+    { phase: 'result', bootstrap_capture: true, capture_completed: true, reference },
+    { phase: 'complete', bootstrap_capture: true, capture_completed: true, registration_ready: false },
+  ], 'synthetic-executor', reference)!;
+  const next = result.lines.find(line => line.startsWith('下一步：'))!;
+  assert.match(next, /核实.*资源清单.*executor update/);
+  assert.doesNotMatch(next, /先只读采集|precheck/);
+});
+
+test('incomplete capture adds no guessed recovery action that could cover the source-selected credential next step', () => {
+  const result = bootstrapCapturePresentation([
+    { phase: 'reservation', bootstrap_capture: true },
+    { phase: 'session_unavailable', next_action: 'synthetic source credential recovery' },
+  ], 'synthetic-executor')!;
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.lines.some(line => line.startsWith('下一步：')), false);
+  assert.doesNotMatch(result.lines.join('\n'), /请先只读采集|precheck|executor update/);
+});
