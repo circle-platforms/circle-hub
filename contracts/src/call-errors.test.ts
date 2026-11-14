@@ -21,10 +21,11 @@ test('model 82 registers exactly five D05 categories and every protocol row supp
 test('Boss prerequisite and lease corrections override earlier classifications without guessing ambiguous codes', () => {
   for (const code of ['EFFECT_CONTENT_UNVERIFIED', 'EFFECT_RELEASE_UNMET', 'LEASE_EXPIRED', 'FENCING_STALE', 'TEAM_PARSER_REQUIRED', 'SYNC_MODE_LOCAL']) assert.equal(callErrorCategory(code), 'not_found', code);
   assert.equal(callErrorCategory('IDEMPOTENCY_MISMATCH'), 'invalid_parameters');
-  assert.equal(callErrorCategory('SOURCE_PENDING_REVIEW'), 'not_found');
-  assert.equal(callErrorCategory('MEMORY_CURSOR_STALE'), 'temporarily_unavailable');
-  assert.equal(callErrorCategory('SYNC_PURGE_CONFIRMATION_REQUIRED'), 'permission_denied');
-  for (const code of ['SOURCE_UNAVAILABLE', 'RUN_SUPERSEDED', 'RUN_ABANDONED', 'LEASE_UNAVAILABLE', 'EFFECT_UNKNOWN_DISPOSED', 'SHARE_DUPLICATE']) {
+  assert.equal(callErrorCategory('SOURCE_PENDING_REVIEW'), 'temporarily_unavailable');
+  assert.equal(callErrorCategory('MEMORY_CURSOR_STALE'), 'invalid_parameters');
+  assert.equal(callErrorCategory('SYNC_PURGE_CONFIRMATION_REQUIRED'), 'invalid_parameters');
+  assert.equal(callErrorCategory('SHARE_DUPLICATE'), 'occupied');
+  for (const code of ['SOURCE_UNAVAILABLE', 'RUN_SUPERSEDED', 'RUN_ABANDONED', 'LEASE_UNAVAILABLE', 'EFFECT_UNKNOWN_DISPOSED']) {
     assert.equal(callErrorCategory(code), null);
     assert.equal(callErrorCategory(code, true), null, 'a known unclassified code cannot become a package refusal');
   }
