@@ -56,7 +56,10 @@ export function commandLink(dialog:CommandDialog,label:unknown='查看命令…'
   return html`<a class="${cls}" href="#${dialog.id}">${label}</a>`;
 }
 export function commandModal(dialog:CommandDialog):Html{
-  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${tooltip(dialog.title,'请在运行 Hub 的服务器上执行下面的命令。')}</h3></div><div class="ch-dialog-body"><p>${dialog.text}</p><pre class="ch-quote"><code>${dialog.command}</code></pre></div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
+  const body = dialog.choices !== undefined && dialog.choices.length > 0
+    ? html`<p>${dialog.text}</p><fieldset data-command-choices><legend>持有的键</legend>${dialog.choices.map((choice, index) => html`<label class="ch-field"><span class="ch-field-label"><input type="radio" name="${dialog.id}-key"${index === 0 ? html` checked` : ''}> ${choice.label}</span><pre class="ch-quote"><code>${choice.command}</code></pre></label>`)}</fieldset>`
+    : html`<p>${dialog.text}</p><pre class="ch-quote"><code>${dialog.command}</code></pre>`;
+  return html`<div class="ch-dialog" id="${dialog.id}" role="dialog" aria-modal="true" aria-label="${dialog.title}"><div class="ch-dialog-panel"><div class="ch-dialog-head"><h3 class="ch-dialog-title">${tooltip(dialog.title,'请在运行 Hub 的服务器上执行下面的命令。')}</h3></div><div class="ch-dialog-body">${body}</div><div class="ch-dialog-foot"><a class="ch-btn ch-btn--secondary" href="#_">关闭</a></div></div></div>`;
 }
 
 /** Resolve only through the existing read boundary; missing and forbidden names remain indistinguishable. */

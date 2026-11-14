@@ -51,6 +51,25 @@ test('administrator team operations delegate to the records team service', async
   assert.equal(f.restrictedReads(), 0);
 });
 
+test('administrator team show lists the team and members by name without internal ids', async () => {
+  const by: Principal = { ...member, role: 'admin' }, out: string[] = [];
+  const teams: Teams = {
+    list: async () => [], get: async () => team,
+    memberships: async () => [], membershipsMany: async () => new Map(),
+    members: async () => [{ team: id, user: member, added_at: member.created_at, added_by: by.id }],
+    assignments: async () => ({ packs: [], resources: [] }),
+    create: async () => team, delete: async () => deletion,
+    add: async () => ({ team: id, user: member, added_at: member.created_at, added_by: by.id }),
+    remove: async () => true,
+  };
+  const session: TeamCommandSession = {
+    member: async () => by, admin: async () => by, records: async () => ({ teams }), user: async () => member, out: line => out.push(line),
+  };
+  assert.equal(await teamCommand(session, ['show', id]), 0);
+  assert.deepEqual(out, [team.name, `成员\t${member.name}`]);
+  assert.doesNotMatch(out.join('\n'), /tm_|usr_/);
+});
+
 test('assignment commands accept equals flags and reject conflicting personal, team and all targets before authentication', async () => {
   const reached = new Error('valid argv reached authentication');
   const unused = () => { throw new Error('must not access storage'); };

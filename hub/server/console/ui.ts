@@ -94,6 +94,8 @@ export interface CommandDialog {
   title: string;
   text: unknown;
   command: string;
+  /** Optional single-choice command variants (e.g. held lease keys); each shows its ready-to-copy command. */
+  choices?: ReadonlyArray<{ label: string; command: string }>;
 }
 
 export const commandLink=sharedCommandLink;

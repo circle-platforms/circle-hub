@@ -84,6 +84,23 @@ export function environmentIsOccupied(view: ExecutorView): boolean {
   return view.state?.known.occupancy === true && Array.isArray(holding) && holding.length > 0;
 }
 
+/**
+ * Held lease keys that belong to this executor's declared resources (exact match via leases.view).
+ * null when the lease port is absent or the read fails — the dialog then keeps a manual placeholder.
+ */
+export async function heldLeaseKeysForEnvironment(ctx: PageContext, view: ExecutorView): Promise<string[] | null> {
+  const leases = ctx.deps.leases;
+  if (leases === undefined) return null;
+  const declared = new Set(view.resources);
+  if (declared.size === 0) return [];
+  try {
+    const { entries } = await leases.view('', true);
+    return [...new Set(entries.filter((entry) => declared.has(entry.key)).map((entry) => entry.key))].sort((a, b) => a.localeCompare(b));
+  } catch {
+    return null;
+  }
+}
+
 export function noAssignmentMark(flags: AssignmentFlags): Html {
   return environmentLacksAssignment(flags) ? chip(NO_ASSIGNMENT_LABEL, 'unchecked') : html``;
 }
@@ -381,7 +398,8 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
     const detail = holders.length > 0
       ? `当前占用：${holders.join('、')}。`
       : '当前仍有占用记录。';
-    const release = commands.leaseRelease(environment, detail);
+    const heldKeys = await heldLeaseKeysForEnvironment(ctx, environment);
+    const release = commands.leaseRelease(environment, detail, heldKeys ?? []);
     dialogs.push(release);
     actions.push(commandLink(release, '强制释放预订…', 'ch-btn ch-btn--danger'));
   }

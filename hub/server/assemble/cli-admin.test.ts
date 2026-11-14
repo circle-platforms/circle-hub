@@ -1129,8 +1129,9 @@ describe('resource and secret', () => {
       'agile-api',
       '--setting-json',
       'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
-    const id = /已添加资源 (res_[0-9a-z]{26})：合成敏捷平台（业务系统接入 demo-agile@1\.0\.0，环境 测试）/.exec(added.text)?.[1];
-    assert.ok(id, added.text);
+    assert.match(added.text, /已添加资源 合成敏捷平台（业务系统接入 demo-agile@1\.0\.0，环境 测试）/);
+    assert.doesNotMatch(added.text, /res_/);
+    const id = await resourceIdByName(admin, '合成敏捷平台');
     await expectOk(admin,['resource','assign',id,'--all']);
     assert.match(added.text,/密钥 DEMO_.*还没有设置/);assert.match(added.text,/secret set --name/);
     const listed = await expectOk(admin, ['resource', 'list']);
@@ -1181,8 +1182,8 @@ describe('resource and secret', () => {
     await expectOk(admin, ['pack', 'grant-publish', '根管理员']);
     await expectOk(admin, ['pack', 'publish', packs.agile]);
     const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '甲', '--environment', 'test', '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting-json', 'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
-    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
-    assert.ok(id, added.text);
+    assert.doesNotMatch(added.text, /res_/);
+    const id = await resourceIdByName(admin, '甲');
     const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '乙', '--environment', 'shared', '--setting-json', 'roots=["7714","7001"]']);
     assert.match(renamed.text, new RegExp(`已更新资源 ${id}：乙（业务系统接入 demo-agile@1\\.0\\.0，环境 共享）`));
     const listed = await expectOk(admin, ['resource', 'list']);
@@ -1214,8 +1215,8 @@ describe('resource and secret', () => {
       '--setting-json', 'roots=["7714"]',
       ...syntheticCredentialArgs('username', 'password'),
     ]);
-    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)?.[1];
-    assert.ok(id);
+    assert.doesNotMatch(added.text, /res_/);
+    const id = await resourceIdByName(admin, '明文测试资源');
 
     const renamed = await expectOk(admin, ['resource', 'update', id, '--name', '改名测试', '--setting-json', 'roots=["7714","7002"]']);
     assert.ok(!renamed.text.includes('已清掉角色'));
@@ -1297,7 +1298,8 @@ describe('resource and secret', () => {
         'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
         '--origin', `agile-oauth=${stub.origin}`, '--origin', `agile-api=${stub.origin}`,
         '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', '--setting-json', 'roots=["7714"]', ...syntheticCredentialArgs('username','password')]);
-      const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+      assert.doesNotMatch(added.text, /res_/);
+      const id = await resourceIdByName(admin, '合成敏捷平台');
       await expectOk(admin,['resource','assign',id,'--all']);
       admin.stdin.push('reader', WRONG_PASSWORD);
       await expectOk(admin, await setArgs(admin,id,'username'));
@@ -1358,7 +1360,8 @@ describe('resource and secret', () => {
     const added = await expectOk(admin, [
       'resource', 'add', AGILE_PACK, '--name', '合成敏捷平台', '--environment', 'test',
       '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
-    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+    assert.doesNotMatch(added.text, /res_/);
+    const id = await resourceIdByName(admin, '合成敏捷平台');
     assert.match((await expectOk(admin, ['pack', 'list'])).out[0], /^demo-agile@1\.0\.0\t业务系统接入/);
     assert.ok(!(await expectOk(admin,['secret','list'])).text.includes(PASSWORD));
     const listed = await expectOk(admin, ['resource', 'list']);
@@ -1387,7 +1390,8 @@ describe('knowledge', () => {
     await expectOk(admin, ['pack', 'publish', packs.product]);
     await expectOk(admin, ['pack', 'activate', PRODUCT_PACK]);
     const source=await expectOk(admin, ['resource', 'add', SITE_PACK, '--name', '合成构建站', '--environment', 'shared', '--origin', `build-site=${site.origin}`]);
-    await expectOk(admin,['resource','assign',/已添加资源 (res_[0-9a-z]{26})/.exec(source.text)![1],'--all']);
+    assert.doesNotMatch(source.text, /res_/);
+    await expectOk(admin,['resource','assign',await resourceIdByName(admin, '合成构建站'),'--all']);
 
     const first = await admin.run(['knowledge', 'sync', '--product', 'DEMO']);
     assert.equal(first.code, 1, first.text);
@@ -1560,9 +1564,19 @@ async function importResource(admin: Admin): Promise<string> {
   await expectOk(admin, ['pack', 'publish', packs.agile]);
   return addImportResource(admin);
 }
+/** After resource add (names only on stdout), resolve the internal id from resource list by display name. */
+async function resourceIdByName(admin: Admin, name: string): Promise<string> {
+  const listed = await expectOk(admin, ['resource', 'list']);
+  const line = listed.out.find((row) => row.split('\t')[1] === name);
+  assert.ok(line, `resource list has no row named ${name}: ${listed.text}`);
+  const id = line.split('\t')[0]!;
+  assert.match(id, /^res_[0-9a-z]{26}$/);
+  return id;
+}
 async function addImportResource(admin: Admin,environment:Environment='test'): Promise<string> {
   const added = await expectOk(admin, ['resource', 'add', AGILE_PACK, '--name', '合成导入', '--environment', environment, '--origin', `agile-oauth=${agile.origin}`, '--origin', `agile-api=${agile.origin}`, '--allow-plaintext', 'agile-oauth', '--allow-plaintext', 'agile-api', ...syntheticCredentialArgs('username','password')]);
-  const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+  assert.doesNotMatch(added.text, /res_/);
+  const id = await resourceIdByName(admin, '合成导入');
   await expectOk(admin,['resource','assign',id,'--all']);
   return id;
 }
@@ -1884,7 +1898,8 @@ test('Basic import validates encoding and sends the declared static Authorizatio
     await expectOk(admin, ['pack', 'publish', pack.dir]);
     const added = await expectOk(admin, ['resource', 'add', 'demo-basic', '--name', '合成认证', '--environment', 'test',
       '--origin', `repository=${stub.origin}`, '--allow-plaintext', 'repository', ...syntheticCredentialArgs('authorization')]);
-    const id = /已添加资源 (res_[0-9a-z]{26})/.exec(added.text)![1];
+    assert.doesNotMatch(added.text, /res_/);
+    const id = await resourceIdByName(admin, '合成认证');
     await expectOk(admin,['resource','assign',id,'--all']);
     const args = async (file: string) => ['secret', 'import', '--env-file', file, '--basic', `USER:PASS=${await nameOf(admin,id,'authorization')}`, '--reason', 'DEMO_IMPORT'];
     const colonFile = await importFile(admin, `USER=has:colon\nPASS=${password}`); secrets.add('has:colon');

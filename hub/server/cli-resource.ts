@@ -129,12 +129,12 @@ export async function resourceCommand(session: Session, args: readonly string[])
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
       };
       const record = await decided(() => hub.connectors.admin.addResource(admin, input));
-      session.out(`已添加资源 ${record.id}：${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      session.out(`已添加资源 ${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       if (subject !== undefined) {
         try {
           await decided(() => hub.records.authorizations.assignResource(admin, record.id, subject));
         } catch (error) {
-          throw new CliError(`资源 ${record.id} 已添加，但分配未确认；请先核对资源分配，再用 resource assign 分配，勿重复添加资源${error instanceof CliError ? '：' + error.message : ''}`, error instanceof CliError ? error.hint : null);
+          throw new CliError(`资源 ${record.name} 已添加，但分配未确认；请先核对资源分配，再用 resource assign 分配，勿重复添加资源${error instanceof CliError ? '：' + error.message : ''}`, error instanceof CliError ? error.hint : null);
         }
         const teamName = subject === WHOLE_HUB ? null : (await hub.records.teams.get(admin, subject))?.name ?? '团队';
         session.out(`资源 ${record.name} 已分配给${subject === WHOLE_HUB ? '全体成员' : '团队 ' + teamName}`);
