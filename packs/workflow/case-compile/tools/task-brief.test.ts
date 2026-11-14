@@ -57,8 +57,9 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       note: '先查前置配置',
     });
     assert.equal(writerByKey, writerBrief);
-    // Legacy alias `写计划` resolves cleanly while rendered task briefs use `脚本编写`.
-    assert.equal(resolveSubagentRole('写计划')?.stageLabel, '脚本编写');
+    // Legacy alias `写计划` is rejected; callers must use `脚本编写` (or `plan` / `compile-writer`).
+    assert.equal(resolveSubagentRole('写计划'), null);
+    assert.equal(resolveSubagentRole('脚本编写')?.stageLabel, '脚本编写');
     assert.ok(!writerBrief.includes('写计划'));
     assert.equal(renderAgentDefinition(writerRole).includes('<技能目录>'), true);
 

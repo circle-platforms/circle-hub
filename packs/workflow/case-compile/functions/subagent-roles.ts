@@ -178,7 +178,6 @@ const ROLE_ALIAS_MAP: ReadonlyMap<string, SubagentRoleSpec> = new Map(
     [spec.key, spec],
     [spec.stageLabel, spec],
     [spec.agentName, spec],
-    ...(spec.key === 'plan' ? ([['写计划', spec]] as const) : []),
   ]),
 );
 

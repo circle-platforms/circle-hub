@@ -383,8 +383,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "c3d329ba7915ded45a5bddb3d92755f4bd7a2d8a14b87436e8323b3220987f35",
-      "size": 26816
+      "sha256": "5e40bb714d3005330043ca83a9d5013a23e58056ce3cd714c560beaa3213d2ef",
+      "size": 26746
     },
     {
       "path": "functions/subject.ts",
