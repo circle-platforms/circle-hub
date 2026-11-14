@@ -52,6 +52,8 @@ Also retired and removed on 2026-11-13: `/console/packs` (including `/console/pa
 
 ## History
 
+- 2026-11-14: Deployment definition @1 permits multiple executors for one target and exports every executor. Explicit IDs match IDs only. Ambiguous unnamed targets or declarations resolving to the same executor are rejected before configuration writes. No format conversion or database migration is added.
+
 - 2026-11-14 second batch: Member/environment projections, management forms and structured diagnostics are wired. New environment-assignment enforcement is explicitly OFF; existing workflow permissions, leases, lineage and verification remain unchanged. No new database migration or preservation writer is included; executor assignments are previews, not new execution restrictions. Shutdown closes its assembly-owned lease pool and drains run-material responses within the existing budget; forced termination and transparent remote-job recovery are not claimed.
 - 2026-11-14 first batch: Shutdown waits within its existing budget for admitted handlers and their responses; calls refused before business receive 503 and Retry-After. Unsupported subsequent MCP protocol headers retain SDK error codes with actionable guidance. tools/list adds only private/no-store HTTP headers, without private metadata or client-cache guarantees. Authorized upload references support executor and named-document registration, and registered commands expose skill install/uninstall. Six tool inputs, database structure and existing permissions are unchanged; lingering shutdown timers and environment-permission migration are not claimed complete.
 
