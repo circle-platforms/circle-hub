@@ -328,11 +328,9 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         return views;
       },
       jobs: async (by, run) => (dispatch === null ? [] : (await readRunJobs(records, dispatch, by, run)).map((job) => ({
-        job: job.job, outcome: job.status.outcome, frozen: job.status.frozen, phase: job.status.phase,
+        job: job.job, job_facts: job.status.job_facts,
+        ...(job.status.dispatch_attempt === undefined ? {} : { dispatch_attempt: job.status.dispatch_attempt }),
         ...(job.executor === undefined ? {} : { executor: job.executor }),
-        ...(job.status.disposition === undefined ? {} : { disposition: job.status.disposition }),
-        ...(job.status.missing_fact === undefined ? {} : { missing_fact: job.status.missing_fact }),
-        ...(job.status.next_action === undefined ? {} : { next_action: job.status.next_action }),
       }))),
     },
     // N7: lease list for health alerts (held with no until). LeaseService rechecks keys; console shows names via userName.
