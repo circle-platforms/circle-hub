@@ -52,6 +52,8 @@ Also retired and removed on 2026-11-13: `/console/packs` (including `/console/pa
 
 ## History
 
+- 2026-11-14 second batch: Member/environment projections, management forms and structured diagnostics are wired. New environment-assignment enforcement is explicitly OFF; existing workflow permissions, leases, lineage and verification remain unchanged. No new database migration or preservation writer is included; executor assignments are previews, not new execution restrictions. Shutdown closes its assembly-owned lease pool and drains run-material responses within the existing budget; forced termination and transparent remote-job recovery are not claimed.
+
 - 2026-11-14: Model 80 adds `resource-assignment-subject@1` and explicit `resource_assign` grants to `exe_` environments for accounts, teams or all members. The team-only subject contract and existing business-system assignment boundary remain unchanged. The environment-use guard reads current accounts and grants; management privileges do not imply use permission.
 
 - 2026-11-14: `list_task_packs` adds the `member_capabilities` permission projection through the same reader as the console; `submit_result.dispatch` adds structured dispatch outcomes, missing facts and next actions, filtered for the actual caller. The six tool input schemas are unchanged. Added output fields do not prove client consumption, environment readiness, job execution or device success.
