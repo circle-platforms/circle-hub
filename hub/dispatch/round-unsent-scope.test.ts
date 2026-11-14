@@ -6,10 +6,11 @@ import { holdsPhysicalTarget } from './journal.ts';
 import { roundOf } from './rounds.ts';
 import { setup } from './testing/context.ts';
 
-async function repeatedFixture() {
-  const c = await setup({ alter: (name, value) => name === 'read_blob'
-    ? { ...value, ownership: 'staging_directory', ownership_reason: null, rows: [{ id: 'synthetic-case', outcome: 'good', log: 'SYNTHETIC_END' }] }
-    : value });
+async function repeatedFixture(alter?: (name:string,value:Record<string,unknown>)=>Record<string,unknown>) {
+  const c = await setup({ alter: (name, value) => {
+    const observed=name==='read_blob'?{...value,ownership:'staging_directory',ownership_reason:null,rows:[{id:'synthetic-case',outcome:'good',log:'SYNTHETIC_END'}]}:value;
+    return alter?alter(name,observed):observed;
+  } });
   // Use the same declared repeat policy and certified ownership as the normal multi-round fixture.
   (c.effectDocument.effects[0] as { repetition?: number }).repetition = 2;
   c.detail.run.requirements = [{
@@ -338,4 +339,55 @@ test('an explicit invalid historical round never borrows a frozen single-round d
   assert.equal(before,1);
   await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id),/轮次.*核对|轮次.*未知/);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,before);
+});
+
+
+test('a later real submission cannot adopt an earlier receipt and report for the same bytes', {timeout:60000},async t=>{
+  let sent=0,firstRequest:unknown;
+  const c=await repeatedFixture((name,value)=>{
+    if(name==='send_blob'){
+      sent++;
+      if(sent===1)firstRequest=value.request;
+      else return {...value,request:firstRequest};
+    }
+    if(name==='read_blob'&&sent>1)return {...value,request:firstRequest};
+    return value;
+  });t.after(()=>c.close());
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(c.calls.filter(name=>name==='send_blob').length,2);
+  const events=await c.service.journal.events(state.job);
+  const intents=events.filter(event=>event.body.detail.phase==='intent');
+  assert.deepEqual(intents.map(event=>event.body.detail.round),[1,2]);
+  assert.notEqual(intents[0].body.detail.request_id,intents[1].body.detail.request_id);
+  assert.equal(state.dispatch_attempt?.outcome,'unknown','a stale request identity is not a current-round effect');
+  assert.equal(state.dispatch_attempt?.not_sent,undefined,'the second request really was submitted');
+  assert.equal(state.job_facts.frozen,true);
+  assert.equal(holdsPhysicalTarget(events),true);
+  assert.equal(events.filter(event=>event.body.detail.phase==='receipt').length,1);
+  assert.ok(events.some(event=>event.body.detail.phase==='round'&&event.body.detail.round===1&&event.body.detail.terminal==='pass'));
+  assert.equal(events.some(event=>event.body.detail.phase==='round'&&event.body.detail.round===2&&event.body.detail.outcome==='effective'),false);
+  const effects=await c.kit.store.findMany<{request_id:string|null;outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});
+  assert.equal(effects.some(effect=>effect.body.request_id===intents[1].body.detail.request_id&&effect.body.outcome==='effective'),false);
+  await assert.rejects(c.service.dispatch(c.admin,c.run,c.executor.id));
+  assert.equal(c.calls.filter(name=>name==='send_blob').length,2,'unknown second-round delivery never resubmits either round');
+});
+
+test('a parsed scope conflicting with the actual round remains unknown for default and explicit reads', {timeout:60000},async t=>{
+  const c=await setup();t.after(()=>c.close());
+  const append=c.service.journal.append.bind(c.service.journal);
+  t.mock.method(c.service.journal,'append',(...args:Parameters<typeof append>)=>{
+    const [binding,phase,action,result,detail={},...rest]=args;
+    return phase==='intent'?append(binding,phase,action,result,{...detail,round:2,scope:{operation:'dispatch',job:binding.job,round:1}},...rest):append(...args);
+  });
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.dispatch_attempt,undefined,'shape parsing cannot override inconsistent source scope facts');
+  const events=await c.service.journal.events(state.job);
+  const intent=events.find(event=>event.body.detail.phase==='intent');assert.ok(intent);
+  for(const round of [1,2]){
+    const scoped=await c.service.scopedFacts(c.admin,state.job,round);
+    assert.equal(scoped.dispatch_attempt,undefined);
+    assert.ok(scoped.job_facts.missing_facts?.length);
+    assert.ok(scoped.job_facts.grounds?.includes(`rec:${intent.digest}`));
+  }
+  assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
 });
