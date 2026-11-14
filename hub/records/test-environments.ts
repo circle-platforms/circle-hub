@@ -207,8 +207,10 @@ export class RecordTestEnvironments implements TestEnvironments {
       for (const row of rows.values()) {
         if (row.body.permission !== 'resource_config' || row.body.subject !== '*' || !row.body.object.startsWith('executor.') || !enabledAt(row, at)) continue;
         if (!linked.has(row.body.object.slice('executor.'.length))) continue;
-        const source = ExecutorSource.parse(await this.content(row.body.bound, tx));
-        if (!referencesIn({ target: source.target }).some(ref => ref.kind === 'var' && ref.name === change.name)) continue;
+        const raw = await this.content(row.body.bound, tx);
+        const target = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>).target : undefined;
+        if (!referencesIn({ target }).some(ref => ref.kind === 'var' && ref.name === change.name)) continue;
+        const source = ExecutorSource.parse(raw);
         await this.assertExecutorWrite(by, row.body.object.slice('executor.'.length), source, tx, overrides);
       }
     }, outer);
