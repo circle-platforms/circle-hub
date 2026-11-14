@@ -1199,6 +1199,8 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
             input: definition.input,
             inputSchema: published.inputSchema,
             runId: call.state.runId,
+            // Prefer example JSON for the mode keys the caller used (upload_file file_path vs memory_share).
+            visibleValues: args && Object.keys(args).length > 0 ? new Map(Object.entries(args)) : undefined,
           }),
         };
       } catch (error) {

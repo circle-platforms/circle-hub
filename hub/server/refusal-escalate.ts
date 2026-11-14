@@ -175,7 +175,31 @@ export function checkedExampleFromInputSchema(
   visibleValues?: ReadonlyMap<string, unknown>,
 ): string | null {
   const base = candidateFromInputSchema(inputSchema, visibleValues);
-  const tried: unknown[] = [base, ...refineCandidates(inputSchema, base, visibleValues)];
+  const refined = refineCandidates(inputSchema, base, visibleValues);
+  // Prefer the mode the caller actually used (e.g. file_path on upload_file, not memory_share).
+  // Schema placeholders for those keys — do not paste refused bytes into「完整的正确写法」.
+  const hintKeys = visibleValues && visibleValues.size > 0 ? [...visibleValues.keys()] : [];
+  const preferredPlaceholders: unknown[] = [];
+  if (hintKeys.length > 0 && isRecord(inputSchema.properties)) {
+    const properties = inputSchema.properties;
+    for (const key of hintKeys) {
+      if (!Object.hasOwn(properties, key)) continue;
+      const value = candidateFromInputSchema(properties[key], visibleValues);
+      if (value === undefined) continue;
+      preferredPlaceholders.push({ ...(isRecord(base) ? base : {}), [key]: value });
+    }
+  }
+  const preferred: unknown[] = [];
+  const rest: unknown[] = [];
+  const hints = new Set(hintKeys);
+  for (const candidate of refined) {
+    if (hints.size > 0 && isRecord(candidate) && hintKeys.some((key) => Object.hasOwn(candidate, key))) {
+      preferred.push(candidate);
+    } else {
+      rest.push(candidate);
+    }
+  }
+  const tried: unknown[] = [...preferredPlaceholders, ...preferred, base, ...rest];
   for (const candidate of tried) {
     if (candidate === undefined) continue;
     if (examplePassesInput(candidate, input)) return JSON.stringify(candidate);

@@ -194,7 +194,12 @@ describe('createTestHub', () => {
     await client.close();
     assert.equal(started.isError, true);
     const errors = started.structuredContent.errors as { code: string; message: string }[];
-    assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', `任务包 ${REVIEW_PACK} 存在，没有分配给你`]]);
+    assert.deepEqual(errors.map((e) => [e.code, e.message]), [['SOURCE_NOT_PERMITTED', `当前账户未获授权使用工作流「${REVIEW_PACK}」`]]);
+    // content[0] is the reader sentence (total table); content[1] is「供模型引用」+ JSON.
+    assert.equal(
+      started.content[0]?.text,
+      `无权限：当前账户未获授权使用工作流「${REVIEW_PACK}」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。`,
+    );
     const asAdmin = (await hub.records.callLog.query(hub.admin.principal, { userId: bob.user.id, tool: 'start_run' })).items;
     assert.equal(asAdmin.length, 1);
     assert.match((asAdmin[0].admin_reasons ?? []).join('\n'), new RegExp(`start_run: pack ${REVIEW_PACK} is unassigned for ${bob.user.id}`));
