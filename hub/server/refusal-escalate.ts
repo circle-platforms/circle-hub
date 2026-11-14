@@ -17,13 +17,13 @@ export { isPackScopedCode } from './error-reasons.ts';
 export const ESCALATION_WINDOW_MS = 60 * 60 * 1000;
 
 /**
- * Codes that never escalate (Boss 12:45 / 17:58):
- * - SOURCE_UNAVAILABLE / SOURCE_RETRYABLE: read failed, no judgment — keep the original next-step string
+ * Codes that never escalate (Boss 12:45 / 18:09):
+ * - SOURCE_UNAVAILABLE: neutral unknown, not a five-category call error
  * - Hub-internal failures and cancellation
+ * SOURCE_RETRYABLE is 暂时不可用 (a category); it escalates only when identity facts exist (Boss 18:09).
  */
 const SKIP_CODES = new Set([
   'SOURCE_UNAVAILABLE',
-  'SOURCE_RETRYABLE',
   'INTERNAL_ERROR',
   'INTERNAL',
   'CANCELLED',
@@ -31,6 +31,34 @@ const SKIP_CODES = new Set([
   'REQUEST_CANCELLED',
   'REQUEST_CANCELED',
 ]);
+
+/** Facts that prove two refusals are the same call (Boss 18:09). */
+export type EscalationIdentity = {
+  path?: string;
+  objectKey?: string;
+  requestDigest?: string;
+};
+
+/**
+ * Identity required before any count: 参数无效 → field path; other categories → object or request digest.
+ * No coarse「这个工具第 N 次参数无效」.
+ */
+export function escalationIdentityOf(
+  errorCode: string,
+  parts: { path?: string | null; objectKey?: string | null; requestDigest?: string | null },
+): EscalationIdentity | null {
+  const category = callErrorCategoryOf(errorCode);
+  if (category === null) return null;
+  if (category === '参数无效') {
+    if (typeof parts.path === 'string' && parts.path.length > 0) return { path: parts.path };
+    return null;
+  }
+  if (typeof parts.objectKey === 'string' && parts.objectKey.length > 0) return { objectKey: parts.objectKey };
+  if (typeof parts.requestDigest === 'string' && parts.requestDigest.length > 0) {
+    return { requestDigest: parts.requestDigest };
+  }
+  return null;
+}
 
 /** Whole-tool submit_result examples are useless for nested field-path refusals (Boss 17:58 F3). */
 const USELESS_WHOLE_TOOL_EXAMPLE_PATH = /^\/items(\/|$)/;
@@ -77,17 +105,8 @@ export function escalationTier(occurrence: number): EscalationTier {
   return 3;
 }
 
-/**
- * Count sentence (Boss 14:12): 参数无效 without error_path → tool-level wording;
- * otherwise「第 N 次同样的错误」.
- */
-export function countLabelOf(
-  occurrence: number,
-  options: { category?: CallErrorCategory | null; hasPath?: boolean } = {},
-): string {
-  if (options.category === '参数无效' && options.hasPath !== true) {
-    return `这是一小时内这个工具第 ${occurrence} 次参数无效`;
-  }
+/** Count sentence once Hub proved the same call (Boss 18:09); no coarse tool-level wording. */
+export function countLabelOf(occurrence: number): string {
   return `这是一小时内第 ${occurrence} 次同样的错误`;
 }
 
@@ -262,12 +281,10 @@ export function buildEscalation(options: {
   exampleJson: string | null;
   category?: CallErrorCategory | null;
   retryAfterSeconds?: number;
-  /** When false/absent for 参数无效, use the tool-level count sentence (Boss 14:12). */
-  hasPath?: boolean;
 }): EscalationParts {
   const occurrence = Math.max(1, Math.floor(options.occurrence));
   const tier = escalationTier(occurrence);
-  const countLabel = countLabelOf(occurrence, { category: options.category, hasPath: options.hasPath });
+  const countLabel = countLabelOf(occurrence);
   const exampleJson = options.exampleJson;
   if (tier === 1) {
     return { occurrence, tier, countLabel, exampleJson: null, categoryClose: null, fixSuffix: null };
@@ -346,14 +363,22 @@ export async function occurrenceOf(options: {
   errorCode: string;
   /** When set, count only within this run (Boss afternoon). */
   runId?: string | null;
-  /** For 参数无效, also match this field path when the count port supports it. */
   path?: string | null;
+  objectKey?: string | null;
+  requestDigest?: string | null;
   now?: Date;
 }): Promise<number | null> {
   if (!countsTowardEscalation(options.errorCode)) return null;
   if (typeof options.userId !== 'string' || options.userId.length === 0) return null;
   const callLog = options.callLog;
   if (callLog?.countRecentErrors === undefined) return null;
+  const identity = escalationIdentityOf(options.errorCode, {
+    path: options.path,
+    objectKey: options.objectKey,
+    requestDigest: options.requestDigest,
+  });
+  // Boss 18:09: without a sameness fact, do not count and do not append.
+  if (identity === null) return null;
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - ESCALATION_WINDOW_MS).toISOString();
   const query: {
@@ -361,18 +386,16 @@ export async function occurrenceOf(options: {
     tool: string;
     errorCode: string;
     since: string;
-    runId?: string;
     path?: string;
+    objectKey?: string;
+    requestDigest?: string;
   } = {
     userId: options.userId,
     tool: options.tool,
     errorCode: options.errorCode,
     since,
+    ...identity,
   };
-  if (typeof options.runId === 'string' && options.runId.length > 0) query.runId = options.runId;
-  if (typeof options.path === 'string' && options.path.length > 0 && callErrorCategoryOf(options.errorCode) === '参数无效') {
-    query.path = options.path;
-  }
   // Call through the object so PgCallLog keeps its private #db (do not extract the method).
   const prior = await callLog.countRecentErrors(query);
   return prior + 1;
@@ -389,6 +412,9 @@ export async function escalateProtocolErrors(options: {
   /** Caller-visible values for object fields in the example JSON. */
   visibleValues?: ReadonlyMap<string, unknown>;
   runId?: string | null;
+  /** Optional object key / request digest when the caller already computed sameness facts. */
+  objectKey?: string | null;
+  requestDigest?: string | null;
   now?: Date;
   retryAfterSeconds?: number;
 }): Promise<ProtocolError[]> {
@@ -403,6 +429,8 @@ export async function escalateProtocolErrors(options: {
       errorCode: error.code,
       runId: options.runId,
       path: error.path,
+      objectKey: options.objectKey,
+      requestDigest: options.requestDigest,
       now: options.now,
     });
     if (occurrence === null) {
@@ -427,7 +455,6 @@ export async function escalateProtocolErrors(options: {
           exampleJson,
           category,
           retryAfterSeconds: options.retryAfterSeconds,
-          hasPath: typeof error.path === 'string' && error.path.length > 0,
         }),
       ),
     );

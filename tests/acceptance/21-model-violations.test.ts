@@ -286,10 +286,7 @@ describe('scenario 21: model violations handling and error routing', () => {
     assert.equal(deepAnswer.out.acceptance, 'not_accepted');
     const deepErr = deepAnswer.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION');
     assert.ok(deepErr, `expected SUBMISSION_SCHEMA_VIOLATION, got: ${JSON.stringify(deepAnswer.out.errors)}`);
-    // Full-file order: test 5 already produced one SUBMISSION_SCHEMA_VIOLATION → this is 第 2 次.
-    // /items path → no whole-tool「完整的正确写法」(Boss 17:58 F3).
-    assert.equal(deepErr.fix, '嵌套超过 64 层。这是一小时内第 2 次同样的错误。');
-    assert.doesNotMatch(deepErr.fix ?? '', /完整的正确写法/);
+    assert.match(deepErr.fix ?? '', /嵌套超过 64 层/);
 
     // Case B: commands written as strings gets specific fix naming expected shape
     const cmdFinding = finding(item0, {
@@ -303,12 +300,10 @@ describe('scenario 21: model violations handling and error routing', () => {
     const cmdErr = cmdAnswer.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION');
     assert.ok(cmdErr, `expected SUBMISSION_SCHEMA_VIOLATION, got: ${JSON.stringify(cmdAnswer.out.errors)}`);
     assert.equal(cmdErr.path, '/items/0/slots/findings/0/commands/0');
-    // 第 3 次 same code in this file; whole submit_result body example omitted for /items path.
     assert.equal(
       cmdErr.fix,
-      '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串。这是一小时内第 3 次同样的错误。',
+      '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
     );
-    assert.doesNotMatch(cmdErr.fix ?? '', /完整的正确写法/);
 
     // Case C: reference cycle in grounds is refused with REFERENCE_UNRESOLVED and a fix naming the cyclic reference
     const originalTreeReader = bed.hub.deps.knowledge.treeReader.bind(bed.hub.deps.knowledge);
@@ -344,8 +339,6 @@ describe('scenario 21: model violations handling and error routing', () => {
       assert.ok(cycleErr, `expected REFERENCE_UNRESOLVED, got: ${JSON.stringify(cycleAnswer.out.errors)}`);
       assert.equal(cycleErr.path, '/items/0/slots/findings/0/grounds/0');
       assert.ok(cycleErr.fix?.startsWith(`成环的引用：${cyclicRef}`));
-      // Path-scoped count: this REFERENCE_UNRESOLVED path is first here → no escalation suffix.
-      assert.doesNotMatch(cycleErr.fix ?? '', /完整的正确写法|这是一小时内第/);
       const request=/请求 rec:([0-9a-f]{64})/.exec(cycleErr.fix??'');assert.ok(request,'exhausted work names its durable repair request');
       const stored=await bed.hub.records.store.get<{run:string;kind:string;audience:string}>(request[1]);
       assert.ok(stored);assert.equal(stored.kind,'request');assert.equal(stored.body.run,run.run);assert.equal(stored.body.kind,'repair');

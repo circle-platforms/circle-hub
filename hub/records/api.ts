@@ -969,13 +969,22 @@ export interface CallLogQuery extends PageQuery {
   to?: string;
 }
 
-/** Read-only count of recent error lines for refusal escalation (D5): same account, tool and code since `since`. */
+/**
+ * Read-only count of recent error lines for refusal escalation (D5).
+ * Boss 18:09: sameness requires an identity fact (field path / object key / request digest), not only account+tool+code.
+ */
 export interface CallLogErrorCountQuery {
   userId: string;
   tool: string;
   errorCode: string;
   /** Inclusive lower bound on `at` (ISO-8601). */
   since: string;
+  /** 参数无效: same JSON-pointer field path (stored on the call log once Codex records it). */
+  path?: string;
+  /** Other call-error categories: same object id/name the refusal named. */
+  objectKey?: string;
+  /** Same request digest when path/object are absent but the body is comparable. */
+  requestDigest?: string;
 }
 
 export interface CallLog {
