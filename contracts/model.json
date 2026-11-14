@@ -1,5 +1,5 @@
 {
-  "version": 83,
+  "version": 84,
   "elements": [
     {
       "id": "B01",
@@ -3411,7 +3411,8 @@
         "错误原因、完成状态和片段绑定只读权威结构字段：错误码/severity、进程退出或资源观测、作业回执、显式 item/requirement/piece 引用；不以 stderr、日志、statement、reason、instructions 或终端画面的关键词/前缀推原因、对象或完成。结构证据不足只用已有 check_error/missing_input、unknown 与补证出口，不把 UI busy 消失当完成。",
         "错误与修正也是主张（B01）。错误写明它根据的引用、作出它的规则@版本（任务包的拒绝缺省写包@版本和函数）和限定：声明、观察还是投影，采集时刻，查过的范围与覆盖；候选清单写明共几个、列出几个、其余在哪里，截断不当全量（A05 R[1]）。修正是计划类主张：写明由谁、用哪项现有能力去做；没有谁能做的步骤不写，改写缺的事实（A06 F[0]）。原因没定时，错误列出已知的各个假设及与它们有关的观察，固定留“其他”，开放的假设不替读者区分（V08 R[2]）；只有版本化规则给出的预测被观察反驳，假设才记已排除（V08 R[0]）。选哪个原因、下一项观察做什么由读者判断，Hub 只核验。修正的执行者不是读者时（维护者、管理员、包作者），不写成读者要做或要选的事：写明交给了谁、读者在等哪个请求",
         "调用错误只用 call_error_category 的五个类别，按 protocolCodes 每码显式 callErrorCategory 登记，不从消息文字推断。未知、核对结论码及未定码保留 null，不强加调用错误前缀；包码只在调用方明确标明 packageCode=true 且整次调用被拒时归参数无效。事实与下一步由调用者按真实结构及角色提供，统一由生成的 formatCallError 成句。缺少前提或预订过期归不存在，真有其他持有者才按结构事实归已被占用；多义 LEASE_UNAVAILABLE 不定类，调用方明确事实后选类。IDEMPOTENCY_MISMATCH 表示同键内容不同，归参数无效，不能借它推同字节已发或占用。（来源：Boss 2026-11-14 本机13:48、主会话13:53明确接口，覆盖 Cursor13:05表）",
-        "新开始的测试环境使用在权限核对未接上或不可读取、且尚未执行时，报 ENVIRONMENT_PERMISSION_UNAVAILABLE，类别暂时不可用，事实为“测试环境的权限核对现在不能进行，这次没有执行”，缺省下一步“请联系管理员”；管理员下一步由调用者按角色给。预订与上机验证使用同一码同一事实。此码不得覆盖已发或可能已发的原轮执行未知，不改 SOURCE_UNAVAILABLE 原有读资料未知语义。来源：Boss 2026-11-14 16:30、主会话明确新增窄码授权。"
+        "新开始的测试环境使用在权限核对未接上或不可读取、且尚未执行时，报 ENVIRONMENT_PERMISSION_UNAVAILABLE，类别暂时不可用，事实为“测试环境的权限核对现在不能进行，这次没有执行”，缺省下一步“请联系管理员”；管理员下一步由调用者按角色给。预订与上机验证使用同一码同一事实。此码不得覆盖已发或可能已发的原轮执行未知，不改 SOURCE_UNAVAILABLE 原有读资料未知语义。来源：Boss 2026-11-14 16:30、主会话明确新增窄码授权。",
+        "ProtocolError可选公开call_error_reason取生成闭集；机器code及抛出处message保持，原因只由同一使用边界的结构事实选择，不从canUse=false推账户停用、环境停用或无分配。reason登记精确适用机器码、唯一五类或明确conclusion/unknown，以及实际角色的下一步；错误组合不信任，不硬归调用错误。渲染不解析成句、词头或关键词，只按reason和已核实实际角色查表，一处成句。首块为测试环境和预订，派发结局另列；部分已发或可能已发不能用未执行事实覆盖。来源：Boss2026-11-14 18:55批准R7；具体人用句子仍待逐句审，码表/句库拆分未批前禁止生成。"
       ],
       "tracedTo": [
         "E3-69",
@@ -3489,6 +3490,9 @@
       ],
       "changes83": [
         "新增 ENVIRONMENT_PERMISSION_UNAVAILABLE，仅用于尚未执行的新使用前权限核对不可进行；SOURCE_UNAVAILABLE仍不归五类，不改变既有读取语义。来源：Boss 2026-11-14 16:30允许新增专码、主会话本批精确定名。"
+      ],
+      "changes84": [
+        "R7第一块登记12个env/lease结构化原因及公开可选字段，新增call_error_reason轴；分类不添第六词，code/message不改。来源：Boss2026-11-14 18:55；成员/管理员下一步为待审提案，五行拆分提案待批后方可生成，不更新字节基线。"
       ]
     },
     {
@@ -9065,7 +9069,181 @@
         "Every object read in a run is mandatory usage; freeze append offset with root",
         "Retract by an administrator, never rewrite or delete historical bytes"
       ]
-    }
+    },
+    "callErrorReasons": [
+      {
+        "reason": "actor_disabled",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系其他启用的管理员核对并启用当前账户；启用后重新登录",
+          "admin": "请由其他启用的管理员核对并启用该账户；启用后重新登录"
+        },
+        "source_condition": "fresh账户明确disabled=true"
+      },
+      {
+        "reason": "actor_not_active",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系管理员核对当前账户的有效状态",
+          "admin": "请核对该账户是否仍有效，不要通过补分配代替账户核对"
+        },
+        "source_condition": "fresh读取明确账户不存在或已删除，不包括读取失败"
+      },
+      {
+        "reason": "environment_disabled",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请管理员核对并启用该测试环境；启用后重新核对当前账户的分配",
+          "admin": "请在测试环境登记中核对启用状态；启用后重新核对该账户的分配"
+        },
+        "source_condition": "登记唯一且明确enabled=false；不从canUse=false推断"
+      },
+      {
+        "reason": "environment_unassigned",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请管理员为当前账户、所属团队或全体账户分配对应测试环境；分配后重试",
+          "admin": "请在测试环境分配中配置该账户、所属团队或全体账户的使用分配；完成后重试"
+        },
+        "source_condition": "fresh有效账户+唯一启用环境+有效user/team/all授予集合确认为空"
+      },
+      {
+        "reason": "environment_not_registered",
+        "codes": [
+          "SOURCE_NOT_PERMITTED",
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请管理员登记对应测试环境；登记核对完成后重试",
+          "admin": "请核对本次资源的测试环境登记；补齐目标与前缀或资源键后重试"
+        },
+        "source_condition": "应属测试环境的新使用缺登记；正式非环境bookingPrefix不可走此拒绝"
+      },
+      {
+        "reason": "environment_registration_ambiguous",
+        "codes": [
+          "SOURCE_NOT_PERMITTED",
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "invalid_parameters"
+        },
+        "next_by_role": {
+          "user": "请管理员核对测试环境的前缀或资源键登记；归属明确后重试",
+          "admin": "请修正重叠的测试环境前缀或资源键登记；归属唯一后重试"
+        },
+        "source_condition": "同一资源匹配多个不同环境，先全候选再查权限，不按已分配者消歧"
+      },
+      {
+        "reason": "environment_permission_unavailable",
+        "codes": [
+          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "temporarily_unavailable"
+        },
+        "next_by_role": {
+          "user": "请联系管理员",
+          "admin": "请联系维护人员恢复测试环境权限核对"
+        },
+        "source_condition": "尚未执行的新使用前权限观察缺失/抛错/marker不可核对"
+      },
+      {
+        "reason": "lease_held_by_other_account",
+        "codes": [
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "occupied"
+        },
+        "next_by_role": {
+          "user": "请等待当前持有者释放或联系管理员处理占用，再重试",
+          "admin": "请核对持有者及正在进行的作业；需要时按强制释放确认流程处理后重试"
+        },
+        "source_condition": "lease明确未释放未过期且holder.user!=fresh actor.id"
+      },
+      {
+        "reason": "lease_already_held_by_current_account",
+        "codes": [
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "invalid_parameters"
+        },
+        "next_by_role": {
+          "user": "请沿用已有预订；跨运行使用时按前驱血缘关联，增加资源前按原规则释放后重新预订",
+          "admin": "请核对当前账户已有预订及运行血缘并沿用；增加资源前按原规则释放后重新预订"
+        },
+        "source_condition": "仅重复acquire被拒且有效lease属于当前账户；合法沿用/extend不得套用"
+      },
+      {
+        "reason": "lease_missing_for_lineage",
+        "codes": [
+          "LEASE_UNAVAILABLE",
+          "LEASE_NO_ROW"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请先取得所需预订，再开始新的使用",
+          "admin": "请先核对运行血缘并取得所需预订，再重试新的使用"
+        },
+        "source_condition": "已核对当前血缘没有所需有效预订；不覆盖真实他人有效占用"
+      },
+      {
+        "reason": "lease_expired",
+        "codes": [
+          "LEASE_EXPIRED"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请重新预订，取得有效预订后重试",
+          "admin": "请核对预订的到期事实并重新预订，再重试"
+        },
+        "source_condition": "已读到expires_at且实际过期，不凭字符串或holder存在判断"
+      },
+      {
+        "reason": "lease_released",
+        "codes": [
+          "LEASE_EXPIRED",
+          "LEASE_NO_ROW"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请重新预订，取得有效预订后重试",
+          "admin": "请核对释放记录并重新预订，再重试"
+        },
+        "source_condition": "已知released_at或正式释放事实；记录读取失败不能归此"
+      }
+    ]
   },
   "objectStandard": {
     "note": "四个对象就是 C01 的四个家（知识 B、政策 C、方法 E、资源 D）。五要素按已定的决定表第 11 行留作设计检查单和记录页布局，不作存储分区；下表是全模型按五格的对照。",
@@ -11944,6 +12122,61 @@
         {
           "code": "temporarily_unavailable",
           "label": "暂时不可用"
+        }
+      ]
+    },
+    {
+      "axis": "call_error_reason",
+      "label": "调用错误原因",
+      "owner": "D05",
+      "values": [
+        {
+          "code": "actor_disabled",
+          "label": "fresh账户明确disabled=true"
+        },
+        {
+          "code": "actor_not_active",
+          "label": "fresh读取明确账户不存在或已删除，不包括读取失败"
+        },
+        {
+          "code": "environment_disabled",
+          "label": "登记唯一且明确enabled=false；不从canUse=false推断"
+        },
+        {
+          "code": "environment_unassigned",
+          "label": "fresh有效账户+唯一启用环境+有效user/team/all授予集合确认为空"
+        },
+        {
+          "code": "environment_not_registered",
+          "label": "应属测试环境的新使用缺登记；正式非环境bookingPrefix不可走此拒绝"
+        },
+        {
+          "code": "environment_registration_ambiguous",
+          "label": "同一资源匹配多个不同环境，先全候选再查权限，不按已分配者消歧"
+        },
+        {
+          "code": "environment_permission_unavailable",
+          "label": "尚未执行的新使用前权限观察缺失/抛错/marker不可核对"
+        },
+        {
+          "code": "lease_held_by_other_account",
+          "label": "lease明确未释放未过期且holder.user!=fresh actor.id"
+        },
+        {
+          "code": "lease_already_held_by_current_account",
+          "label": "仅重复acquire被拒且有效lease属于当前账户；合法沿用/extend不得套用"
+        },
+        {
+          "code": "lease_missing_for_lineage",
+          "label": "已核对当前血缘没有所需有效预订；不覆盖真实他人有效占用"
+        },
+        {
+          "code": "lease_expired",
+          "label": "已读到expires_at且实际过期，不凭字符串或holder存在判断"
+        },
+        {
+          "code": "lease_released",
+          "label": "已知released_at或正式释放事实；记录读取失败不能归此"
         }
       ]
     }

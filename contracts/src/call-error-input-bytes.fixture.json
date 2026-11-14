@@ -1,0 +1,65 @@
+{
+  "base": "cb05a8c97c",
+  "tools": {
+    "list_task_packs": {
+      "inputSchema": {
+        "bytes": 772,
+        "sha256": "ef9cfe051842c52b6a7e5138066376def2dbdba0e4fce2ba19a2edd35e735b25"
+      },
+      "description": {
+        "bytes": 237,
+        "sha256": "1ec53c23dcb73ec1a8a4de329d2f2c0089269848f952df85b2e261b7558cb894"
+      }
+    },
+    "upload_file": {
+      "inputSchema": {
+        "bytes": 15351,
+        "sha256": "121d9224004603144ebfdb8ca49ec265b93f8629fdf266b776ba2993af55b488"
+      },
+      "description": {
+        "bytes": 774,
+        "sha256": "f75412caff0c99299d1ff4eaf1895c8adf8c029c04ac51e709869bd6e2124869"
+      }
+    },
+    "start_run": {
+      "inputSchema": {
+        "bytes": 13388,
+        "sha256": "42153bf2f23b1fa66c81276adde4a49e6e1e25b57e7800a81deafee401b76f6f"
+      },
+      "description": {
+        "bytes": 174,
+        "sha256": "26437745944787d6a391c820e07b93fa8303cd42b0e9b823b960ff3d556bae8d"
+      }
+    },
+    "get_nodes": {
+      "inputSchema": {
+        "bytes": 6981,
+        "sha256": "e31b78f0fae1ec177e082f8a14b0b9244d8d2984c00bf22a20fc20dbec42c5bf"
+      },
+      "description": {
+        "bytes": 458,
+        "sha256": "412e7c9e9b9939fe20f19b40d25ade9e0077c323aeb694a29754827098913066"
+      }
+    },
+    "resolve_reference": {
+      "inputSchema": {
+        "bytes": 898,
+        "sha256": "4a9bf2752f38cd82eb29739d0dd945b629a1614a8c7e8bc1f9edcbbc169fb014"
+      },
+      "description": {
+        "bytes": 420,
+        "sha256": "ed9420edbe3c9ccad5b6a267e52b6f714daf2ee99097454737b71572d127ffc0"
+      }
+    },
+    "submit_result": {
+      "inputSchema": {
+        "bytes": 26947,
+        "sha256": "072a9005fbd9ff8b13669acbdc5553f601126d5da3464c637b50adf75fe8ca56"
+      },
+      "description": {
+        "bytes": 190,
+        "sha256": "ebad980696e25f107c8082b5cbd8ce598da241c15fc33f48dba23e0c49e79e51"
+      }
+    }
+  }
+}
