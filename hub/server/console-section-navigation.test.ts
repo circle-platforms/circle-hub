@@ -28,7 +28,7 @@ test('the connections page is one list a tab, each tab an address of its own, an
  for(const path of ['/console/connections','/console/connections?tab=systems','/console/connections?tab=environments']){
   const mine=await member.get(path);assert.equal(mine.status,200,path);assert.deepEqual(tabsOf(mine.body),[],path);
   assert.match(mine.body,/ id="live-circles"/);assert.doesNotMatch(mine.body,/ id="live-(?:systems|environments|system-sources)"/);
-  assert.match(mine.body,/业务系统和运行环境的配置仅管理员可见/);assert.doesNotMatch(mine.body,/href="\/console\/operations\/system"/);
+  assert.match(mine.body,/业务系统的配置仅管理员可见。/);assert.ok(mine.body.includes('测试环境与占用见 <a href="/console/me">我能做的事</a>'),path+': the member is pointed to their own test environments');assert.doesNotMatch(mine.body,/href="\/console\/operations\/system"/);
  }
  assert.doesNotThrow(()=>new Function(INTERACTION_SCRIPT));
 });

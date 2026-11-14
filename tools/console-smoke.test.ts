@@ -388,6 +388,13 @@ test('runConsoleSmoke passes all unauthenticated, admin, member isolation, and l
   assert.equal(report.failed, 0);
   assert.equal(report.total, report.passed);
 
+  // The member home (/console/me) is probed once in each of the anonymous, administrator and member phases, and passes.
+  for (const phase of ['未登录', '管理员', '普通成员'] as const) {
+    const home = report.checks.filter((check) => check.phase === phase && check.path === '/console/me');
+    assert.equal(home.length, 1, `${phase}: /console/me is probed once`);
+    assert.equal(home[0].ok, true, `${phase}: ${home[0].detail}`);
+  }
+
   // Strict read-only enforcement: every POST must be /console/login or /console/logout.
   const nonGet = mock.requests.filter((r) => r.method !== 'GET');
   assert.deepEqual(

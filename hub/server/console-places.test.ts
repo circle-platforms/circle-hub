@@ -54,6 +54,9 @@ const valueOf = (header: string | undefined): string => (header ?? '').split(';'
 const csrfOf = (body: string): string => /name="csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
 const own = () => `http://127.0.0.1:${server.port}`;
 
+/** Where a fresh sign-in lands: administrators on the overview, members on 我能做的事 (member home, bf4637f31c). */
+const landingOf = (token: string): string => (token === server.admin.token ? '/console/overview' : '/console/me');
+
 async function signIn(token: string): Promise<string> {
   const page = await send('/console/login');
   const reply = await send('/console/login', {
@@ -62,7 +65,7 @@ async function signIn(token: string): Promise<string> {
     body: new URLSearchParams({ ...testConsoleCredentials(token), csrf: csrfOf(page.body) }).toString(),
   });
   assert.equal(reply.status, 303, reply.body);
-  assert.equal(reply.headers.location, '/console/overview');
+  assert.equal(reply.headers.location, landingOf(token));
   return `circle_hub_session=${valueOf(cookieOf(reply, 'circle_hub_session'))}`;
 }
 
@@ -129,6 +132,7 @@ describe('the eight places', () => {
     await runWithResult(user);
     const otherRun = await runWithResult(other);
     const session = await signIn(user.token);
+    assert.equal((await get('/console', session)).headers.location, '/console/me', 'a member entering the console lands on 我能做的事');
     for (const path of ['/console/overview', '/console/runs', '/console/knowledge', '/console/workflows', '/console/connections', '/console/records', '/console/team', '/console/settings']) assertPage(await get(path, session), path);
     for (const path of ['/console/operations', '/console/operations/member', '/console/admin', '/console/admin/calls', '/console/packs']) {
       const refused = await get(path, session);

@@ -268,7 +268,7 @@ describe('list_task_packs', () => {
     assert.equal(ids.length, 2);
     const exact = await client.call('list_task_packs', { pack_id: 'review' });
     assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['review']);
-    assert.match(exact.content[0].text ?? '', /^可用的工作流和技能共 1 个。\n合成评审\n合成评审，合成评审（合成）/);
+    assert.match(exact.content[0].text ?? '', /^你能用的工作流和技能共 1 个。\n合成评审\n合成评审，合成评审（合成）/);
     const prefix = await client.call('list_task_packs', { pack_id: 'revie' });
     assert.deepEqual(prefix.structuredContent.packs, []);
     const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
@@ -297,7 +297,7 @@ describe('list_task_packs', () => {
     const all = await client.call('list_task_packs', {});
     assert.equal(all.isError, false);
     assert.deepEqual((all.structuredContent.packs as { id: string }[]).map((p) => p.id).sort(), ['local-review', 'review']);
-    assert.match(all.content[0].text ?? '', /^可用的工作流和技能共 2 个。/);
+    assert.match(all.content[0].text ?? '', /^你能用的工作流和技能共 2 个。/);
     const products = await client.call('list_task_packs', { kind: 'product' });
     assert.deepEqual(products.structuredContent.packs, []);
     const bad = await client.call('list_task_packs', { kind: 'plugin' });

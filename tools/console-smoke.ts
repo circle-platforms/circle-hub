@@ -19,6 +19,7 @@ import {
   knowledgeSubmissionsPath,
   loginPath,
   logoutPath,
+  mePath,
   operationsKnowledgePath,
   operationsMemberPath,
   operationsPackPath,
@@ -52,6 +53,8 @@ const LOGIN_COOKIE_NAMES = ['__Secure-circle_hub_login', 'circle_hub_login'] as 
 const SESSION_COOKIE_NAMES = ['__Secure-circle_hub_session', 'circle_hub_session'] as const;
 const WORKFLOW_TITLE = uiLabelOf('pack_kind', 'workflow');
 const SKILLS_TITLE = '技能';
+/** The member home (/console/me) is titled 我能做的事 for the signed-in account, administrators included. */
+const ME_TITLE = '我能做的事';
 
 export type SmokePhase = '未登录' | '管理员' | '普通成员';
 
@@ -64,6 +67,7 @@ export interface RouteProbeSpec {
 /** Parameterless protected GET routes checked for anonymous 303 redirect and authenticated admin 200 rendering. */
 export const ADMIN_GET_ROUTES: readonly RouteProbeSpec[] = [
   { path: overviewPath(), expectedTitle: '总览' },
+  { path: mePath(), expectedTitle: ME_TITLE },
   { path: teamPath(), expectedTitle: '团队' },
   { path: `${teamPath()}?tab=members`, expectedTitle: '团队' },
   { path: `${teamPath()}?tab=clients`, expectedTitle: '团队' },
@@ -114,6 +118,7 @@ export const MEMBER_BLOCKED_ADMIN_PATHS: readonly string[] = [
 /** Common GET pages also checked under the optional ordinary member session (besides team isolation & settings/rebuild checks). */
 export const MEMBER_COMMON_GET_ROUTES: readonly RouteProbeSpec[] = [
   { path: overviewPath(), expectedTitle: '总览' },
+  { path: mePath(), expectedTitle: ME_TITLE },
   { path: workflowsPath(), expectedTitle: WORKFLOW_TITLE },
   { path: skillsPath(), expectedTitle: SKILLS_TITLE },
   { path: knowledgePath(), expectedTitle: '知识库' },

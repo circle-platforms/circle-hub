@@ -151,7 +151,8 @@ describe('runtime environments', () => {
     const memberPage = await send('/console/connections?tab=environments', { headers: { cookie: await signIn((await member()).token) } });
     assert.equal(memberPage.status, 200);
     assert.doesNotMatch(memberPage.body, /合成运行环境甲|gateway 2\.4\.1/);
-    assert.match(memberPage.body, /业务系统和运行环境的配置仅管理员可见|运行环境仅管理员可见/);
+    assert.match(memberPage.body, /业务系统的配置仅管理员可见。/);
+    assert.ok(memberPage.body.includes('测试环境与占用见 <a href="/console/me">我能做的事</a>'), 'the member is pointed to their own test environments');
     const retired = await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } });
     assert.equal(retired.status, 404);
     assert.equal(JSON.parse(retired.body).code, 'SOURCE_UNAVAILABLE');

@@ -167,7 +167,7 @@ describe('sign-in', () => {
     const { nonce, cookie } = await loginForm();
     const reply = await send('/console/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie, origin: own() }, body: form({ ...testConsoleCredentials(user.token), csrf: nonce }) });
     assert.equal(reply.status, 303);
-    assert.equal(reply.headers.location, '/console/overview');
+    assert.equal(reply.headers.location, '/console/me', 'a member signs in to 我能做的事');
     const session = cookieHeader(reply, 'circle_hub_session') ?? '';
     assert.match(session, /^circle_hub_session=[A-Za-z0-9_-]{43}; Path=\/console; HttpOnly; SameSite=Strict$/);
     assert.ok(!session.includes(user.token), 'the session cookie is not the token');
