@@ -1,7 +1,7 @@
 // Shared primitives of the Hub contracts. Enumerations never appear here: they come from the generated vocabulary.
 // Every object is strict: an unknown or misspelled key is an issue with a path, never silently dropped.
 import { z } from 'zod';
-import { AcceptanceSchema, CallResultSchema, HypothesisStatusSchema, ProvenanceTypeSchema } from '../generated/vocabulary.ts';
+import { AcceptanceSchema, CallResultSchema, CallErrorReasonSchema, HypothesisStatusSchema, ProvenanceTypeSchema } from '../generated/vocabulary.ts';
 
 export const Sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'lowercase hex SHA-256');
 export type Sha256 = z.infer<typeof Sha256>;
@@ -117,6 +117,7 @@ export const ErrorClaimFields = {
 export const ProtocolError = z.strictObject({
   code: z.string().min(1),
   message: z.string(),
+  call_error_reason: CallErrorReasonSchema.optional(),
   fix: z.string().optional(),
   path: JsonPointer.optional().describe('JSON Pointer into the call arguments; for submit_result, into the submission'),
   item: ItemId.optional(),

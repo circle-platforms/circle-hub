@@ -120,6 +120,7 @@ export const AXES = {
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
   reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
   call_error_category: { label: '调用错误类别', owner: 'D05', values: [{ code: 'invalid_parameters', label: '参数无效' }, { code: 'permission_denied', label: '无权限' }, { code: 'not_found', label: '不存在' }, { code: 'occupied', label: '已被占用' }, { code: 'temporarily_unavailable', label: '暂时不可用' }] },
+  call_error_reason: { label: '调用错误原因', owner: 'D05', values: [{ code: 'actor_disabled', label: '账户已停用' }, { code: 'actor_not_active', label: '账户无效' }, { code: 'environment_disabled', label: '测试环境已停用' }, { code: 'environment_unassigned', label: '缺少测试环境分配' }, { code: 'environment_not_registered', label: '缺少测试环境登记' }, { code: 'environment_registration_inconsistent', label: '测试环境登记不一致' }, { code: 'environment_permission_unavailable', label: '测试环境权限暂不可核对' }, { code: 'lease_held_by_other_account', label: '资源已有他人预订' }, { code: 'lease_already_held_by_current_account', label: '已有本人预订' }, { code: 'lease_missing_for_lineage', label: '缺少本运行预订' }, { code: 'lease_expired', label: '预订已到期' }, { code: 'lease_released', label: '预订已释放' }, { code: 'lease_reader_unavailable', label: '预订记录暂不可读取' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1294,6 +1295,16 @@ export function isCallErrorCategory(value: unknown): value is CallErrorCategory 
   return (CALL_ERROR_CATEGORY as readonly unknown[]).includes(value);
 }
 
+/** 调用错误原因 (D05) */
+export const CALL_ERROR_REASON = ['actor_disabled', 'actor_not_active', 'environment_disabled', 'environment_unassigned', 'environment_not_registered', 'environment_registration_inconsistent', 'environment_permission_unavailable', 'lease_held_by_other_account', 'lease_already_held_by_current_account', 'lease_missing_for_lineage', 'lease_expired', 'lease_released', 'lease_reader_unavailable'] as const;
+export type CallErrorReason = (typeof CALL_ERROR_REASON)[number];
+export const CALL_ERROR_REASON_LABEL = { 'actor_disabled': '账户已停用', 'actor_not_active': '账户无效', 'environment_disabled': '测试环境已停用', 'environment_unassigned': '缺少测试环境分配', 'environment_not_registered': '缺少测试环境登记', 'environment_registration_inconsistent': '测试环境登记不一致', 'environment_permission_unavailable': '测试环境权限暂不可核对', 'lease_held_by_other_account': '资源已有他人预订', 'lease_already_held_by_current_account': '已有本人预订', 'lease_missing_for_lineage': '缺少本运行预订', 'lease_expired': '预订已到期', 'lease_released': '预订已释放', 'lease_reader_unavailable': '预订记录暂不可读取' } as const satisfies { readonly [K in CallErrorReason]: string };
+export const CALL_ERROR_REASON_UI = { 'actor_disabled': '账户已停用', 'actor_not_active': '账户无效', 'environment_disabled': '测试环境已停用', 'environment_unassigned': '缺少测试环境分配', 'environment_not_registered': '缺少测试环境登记', 'environment_registration_inconsistent': '测试环境登记不一致', 'environment_permission_unavailable': '测试环境权限暂不可核对', 'lease_held_by_other_account': '资源已有他人预订', 'lease_already_held_by_current_account': '已有本人预订', 'lease_missing_for_lineage': '缺少本运行预订', 'lease_expired': '预订已到期', 'lease_released': '预订已释放', 'lease_reader_unavailable': '预订记录暂不可读取' } as const satisfies { readonly [K in CallErrorReason]: string };
+export const CallErrorReasonSchema = z.enum(CALL_ERROR_REASON);
+export function isCallErrorReason(value: unknown): value is CallErrorReason {
+  return (CALL_ERROR_REASON as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1412,6 +1423,7 @@ export interface AxisValues {
   capacity_unit: CapacityUnit;
   reset_scope: ResetScope;
   call_error_category: CallErrorCategory;
+  call_error_reason: CallErrorReason;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1532,6 +1544,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   capacity_unit: CAPACITY_UNIT_LABEL,
   reset_scope: RESET_SCOPE_LABEL,
   call_error_category: CALL_ERROR_CATEGORY_LABEL,
+  call_error_reason: CALL_ERROR_REASON_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1652,6 +1665,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   capacity_unit: CAPACITY_UNIT_UI,
   reset_scope: RESET_SCOPE_UI,
   call_error_category: CALL_ERROR_CATEGORY_UI,
+  call_error_reason: CALL_ERROR_REASON_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

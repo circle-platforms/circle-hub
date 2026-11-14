@@ -19,6 +19,7 @@ import * as tokenSchemas from './tokens.ts';
 import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
 import { SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
+import { CallErrorReasonSchema } from '../generated/vocabulary.ts';
 import { RecordEnvelope } from './records.ts';
 import { RunRecord, RunSummary, PackSummary } from './run.ts';
 import { ReceivedSubmission, Submission } from './submission.ts';
@@ -61,6 +62,7 @@ function registry(parts: Record<string, Record<string, z.ZodType>>): Record<stri
 
 export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
+    'call-error-reason@1': CallErrorReasonSchema,
     'team-id@1': TeamId,
     'team-assignment-subject@1': TeamAssignmentSubject,
     'resource-assignment-subject@1': ResourceAssignmentSubject,
