@@ -1,3 +1,4 @@
+import { assertEnvironmentProgramWrite } from './environment-program-write.ts';
 import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { readTeamDefinitions } from './team-definitions.ts';
 import { isAdmin } from './permissions.ts';
@@ -8,7 +9,7 @@ import {mayUsePersonalPack} from './personal-packs.ts';
 // (permission, subject, object) wins. Every decision names the record it follows (`supersedes`), so it is a distinct record
 // even when it repeats an earlier one in the same millisecond. A permission is not evidence, and a passed check is not a
 // permission (B04 R[0]).
-import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from '../../contracts/api.ts';
+import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject, TestEnvironmentId, TEST_ENVIRONMENT_CONFIG_PREFIX } from '../../contracts/api.ts';
 import { idOf, PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
@@ -38,7 +39,7 @@ import { captureRequestPermissions, capturePermissionSnapshots, requestPermissio
 
 const EnvironmentId = idOf('exe');
 function resourceSubject(subject: string, resource: string): string {
-  return EnvironmentId.safeParse(resource).success ? ResourceAssignmentSubject.parse(subject) : TeamAssignmentSubject.parse(subject);
+  return (EnvironmentId.safeParse(resource).success || TestEnvironmentId.safeParse(resource).success) ? ResourceAssignmentSubject.parse(subject) : TeamAssignmentSubject.parse(subject);
 }
 
 const PUBLISH: PermissionKind = 'publish';
@@ -360,6 +361,7 @@ export class RecordAuthorizations implements Authorizations {
     if (permission === PUBLISH && !revoked && bound === null) throw new TypeError('a publication binds the SHA-256 of the exact pack content (B04 R[1])');
     return this.#store.withTransaction(async (tx) => {
       await lockEnvironmentPermission(this.#store, tx);
+      assertEnvironmentProgramWrite(input, tx);
       const users=[...new Set([by.id,...(UserId.safeParse(subject).success?[subject]:[])])].sort();
       const accounts=(await this.#db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE',[users],tx)).rows;
       const target=accounts.find(row=>row.id===subject);
@@ -381,7 +383,13 @@ export class RecordAuthorizations implements Authorizations {
         const assignment=(subject===WHOLE_HUB||UserId.safeParse(subject).success||TeamId.safeParse(subject).success)&&PackId.safeParse(object).success;
         if(!registration&&!membership&&!assignment)throw new TypeError('invalid assignment tuple');
       }
-      if(permission==='resource_assign')resourceSubject(subject,object);
+      if(permission==='resource_assign') {
+        resourceSubject(subject,object);
+        if (!revoked && TestEnvironmentId.safeParse(object).success) {
+          const environment = await this.#latest(RESOURCE_CONFIG, WHOLE_HUB, TEST_ENVIRONMENT_CONFIG_PREFIX + object, tx);
+          if (!environment || !this.#active(environment)) throw new ConflictError('测试环境不存在或已删除');
+        }
+      }
       const decider = await this.#decider(by, tx);
       if (published !== null) {
         if (revoked) {
