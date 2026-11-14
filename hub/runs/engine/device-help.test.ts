@@ -1,3 +1,4 @@
+import {registerEnvironment} from '../../dispatch/testing/environments.ts';
 import { MemberEnvironments } from '../../dispatch/member-environments.ts';
 import { ExecutorRegistry } from '../../dispatch/executors.ts';
 import { definition as executorDefinition } from '../../dispatch/testing/definition.ts';
@@ -92,8 +93,9 @@ before(async () => {
     ...executorDefinition('http://127.0.0.1:1/mcp'), target: 'synthetic-device-help',
     resources: ['meadow/dev/1', 'meadow/dev/2', 'meadow/dev/3', 'meadow/dev/4', 'meadow/dev/5', 'meadow/dev/7'],
   });
-  for (const actor of [h.alice, h.bob]) await h.kit.authorizations.assignResource(h.admin, environment.id, actor.id);
-  environments = new MemberEnvironments(h.kit, registry, h.leases!, (actor, id) => canUseEnvironment(h.kit, actor, id));
+  const catalog=await registerEnvironment(h.kit,h.admin,{name:environment.source.target,target:environment.source.target,executors:[environment.id],resources:environment.source.resources,owner:h.admin.id});
+  for (const actor of [h.alice, h.bob]) await h.kit.authorizations.assignResource(h.admin, catalog.id, actor.id);
+  environments = new MemberEnvironments(h.kit, registry, h.leases!);
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-device-help-'));
 });

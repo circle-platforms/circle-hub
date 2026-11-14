@@ -122,7 +122,7 @@ export async function openHarness(postgres: TemporaryPostgres, options: HarnessO
     });
     external.put('toy:history:zone-list', { bytes: new TextEncoder().encode('历史用例：设置 1 区浇灌 10 分钟。\n'), mediaType: 'text/plain' });
     const logs: AdminLogEntry[] = [];
-    const leases = options.leases === true ? new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }) : null;
+    const leases = options.leases === true ? new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now(),catalog:kit.testEnvironments }) : null;
     const service = createRunsService({
       sandbox: options.sandbox ?? { requireOsIsolation: await osIsolationAvailable() },
       records: kit,

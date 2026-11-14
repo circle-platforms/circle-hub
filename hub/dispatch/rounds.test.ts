@@ -199,7 +199,7 @@ test('resume reconciles the started round and a new dispatch continues at the ne
 
 test('revoking before round two preserves the executed first round and refuses every later intent',async t=>{
   const c=await openCertified();t.after(()=>c.close());
-  c.service.options.beforeRound=async round=>{if(round===2)await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);};
+  c.service.options.beforeRound=async round=>{if(round===2)await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);};
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
   assert.equal(state.outcome,'effective','the completed first effect must not become globally not_dispatched');
@@ -225,7 +225,7 @@ test('revoking while round one is running neither releases its lease nor hides i
   const running=c.service.dispatch(c.admin,c.run,c.executor.id);
   t.after(async()=>{finish();await running.catch(()=>{});await c.close();});
   await reached;
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
   assert.equal(c.calls.filter(name=>name==='close_slot').length,0,'revocation must not release an active round lease');
   const blocked=await c.service.dispatch(c.admin,c.run,c.executor.id);
@@ -245,10 +245,11 @@ test('revocation in the second intent transaction keeps the first effect and its
   const c=await openCertified();t.after(()=>c.close());let checks=0;
   const permission=c.environmentAccess.permission;
   c.service.options.environmentAccess={
+    inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
       checks++;
-      if(checks===2)await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+      if(checks===2)await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
       return permission(actor,executor,tx);
     },
   };
@@ -270,6 +271,7 @@ test('a later admitted intent that expires before sending does not erase the ear
   const c=await openCertified({count:2});t.after(()=>c.close());let checks=0;
   const permission=c.environmentAccess.permission;
   c.service.options.environmentAccess={
+    inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
       if(++checks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;

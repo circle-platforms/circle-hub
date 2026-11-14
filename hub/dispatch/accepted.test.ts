@@ -344,7 +344,7 @@ test('unreadable certification evidence remains no_verdict and gives members its
 
 test('the responsibility administrator cannot lend environment use to an unassigned runner',async t=>{
   const c=await setup();t.after(()=>c.close());
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
   assert.equal(c.calls.length,0,'authorization fails before a gateway session is opened');
@@ -357,10 +357,11 @@ test('revoking environment use after precheck is rechecked in the intent transac
   const c=await setup();t.after(()=>c.close());
   const permission=c.environmentAccess.permission;let checks=0;
   c.service.options.environmentAccess={
+    inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
       checks++;
-      await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+      await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
       return permission(actor,executor,tx);
     },
   };
@@ -397,6 +398,7 @@ test('an unreadable environment permission port is unavailable, not a negative p
   const c=await setup();t.after(()=>c.close());
   assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true);
   c.service.options.environmentAccess={
+    inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:async()=>{throw new Error('private connection failure');},
     permission:c.environmentAccess.permission,
   };
@@ -425,7 +427,7 @@ test('a verified submission without booking reports authorized environment facts
 
 test('an unassigned actor gets no environment name or booking diagnosis',async t=>{
   const c=await setup({mode:'lineage'});t.after(()=>c.close());
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
   assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.equal(note.booking,undefined);
   assert.ok(!JSON.stringify(note).includes(c.executor.definition.target));assert.equal(c.calls.length,0);
