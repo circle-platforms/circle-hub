@@ -9196,7 +9196,7 @@
         {
           "name": "DispatchJobFacts",
           "id": "dispatch-job-facts@1",
-          "meaning": "Job-scoped metadata and result observations, never a round-level effect outcome or history-any invocation summary. scope contains only job. No outcome, not_sent, submit_invoked or anyInvoke here. Optional readonly_verified and admission_error describe actual admission/readonly observations, not a job effect outcome.",
+          "meaning": "Job-scoped metadata and result observations, never a round-level effect outcome or history-any invocation summary. scope contains only job. No outcome, not_sent, submit_invoked or anyInvoke here. Optional readonly_verified and admission_error describe actual admission/readonly observations, not a job effect outcome. frozen is the conservative no-resend control. awaiting_disposition is the observed outstanding effect disposition/unknown-request state, sourced from isFrozen(events). Both are independent job-scoped observations, not mirrors; neither establishes a physical effect. Optional device_return retains the job-historical raw device output independently of the current attempt, including a later not-sent attempt; result alone does not assert that the raw output is recoverable.",
           "schema": {
             "type": "object",
             "properties": {
@@ -9227,7 +9227,8 @@
                 "description": "Only an actually observed job worker state; never a physical effect or successful execution claim."
               },
               "frozen": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "Conservative no-resend control, including protective unknown or missing-receipt states; not a physical effect observation."
               },
               "result": {
                 "$ref": "contract:reference/ReferenceUri",
@@ -9272,6 +9273,14 @@
               "conformance_verified": {
                 "type": "boolean",
                 "description": "Whether conformance was explicitly verified by the source; absent when not recorded."
+              },
+              "awaiting_disposition": {
+                "type": "boolean",
+                "description": "Observed outstanding effect disposition or unknown request, sourced from isFrozen(events); independent of conservative frozen control and not a physical effect observation."
+              },
+              "device_return": {
+                "$ref": "contract:reference/ReferenceUri",
+                "description": "Authorized job-historical raw device-output reference, retained across attempts; not evidence that the current attempt executed."
               }
             },
             "required": [

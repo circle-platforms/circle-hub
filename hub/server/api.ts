@@ -4,8 +4,7 @@ import type { VaultReadinessIssue } from '../records/api.ts';
 // The assembly step (next phase) imports only this file: it builds ServerDeps from the real packages and registers the
 // CLI commands that need them.
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Disposition, EffectOutcome } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness } from '../dispatch/api.ts';
+import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness, JobStatus } from '../dispatch/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import type { SystemTrialInput, SystemTrialReport, SystemTrialForget } from '../connectors/api.ts';
 import type { PacksPort, KnowledgePort, PackCatalogPort, ResourceCatalogPort, RunsService, WorkflowStore } from '../ports.ts';
@@ -100,17 +99,12 @@ export interface ExecutorView {
   calls_24h?: EnvironmentCalls | null;
 }
 
-/** One dispatch job of a run: its outcome and whether its target is frozen until a disposition (V05 R[3] ①). */
+/** A job's control facts and a separately scoped dispatch observation. */
 export interface JobView {
   job: string;
-  /** The executor (runtime environment) the job was reserved on, when its reservation names one. */
   executor?: string;
-  outcome: EffectOutcome;
-  frozen: boolean;
-  phase: string;
-  disposition?: Disposition;
-  missing_fact?: string;
-  next_action?: string;
+  job_facts: JobStatus['job_facts'];
+  dispatch_attempt?: JobStatus['dispatch_attempt'];
 }
 
 /** Read-only dispatch facts. Readiness also permits an assigned member; other methods require an active administrator. */

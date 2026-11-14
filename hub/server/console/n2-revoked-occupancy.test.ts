@@ -38,7 +38,7 @@ test('occupied without assignment is marked 已无分配; assigned occupancy is 
     enabled: true,
     resources: [],
     state: state({
-      holding: [{ job: 'a'.repeat(64), run: null, frozen: false, outcome: 'issued', phase: 'intent' }],
+      holding: [{ job: 'a'.repeat(64), run: null, job_facts: { scope: { job: 'a'.repeat(64) }, frozen: false, awaiting_disposition: false, phase: 'intent' }, dispatch_attempt: { scope: { operation: 'dispatch', job: 'a'.repeat(64), round: 1 }, outcome: 'issued' } }],
     }),
   };
   assert.equal(environmentIsOccupied(occupied), true);

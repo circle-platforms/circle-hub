@@ -144,7 +144,9 @@ async function verify(p: Awaited<ReturnType<typeof plan>>, index = 0, changed = 
 // The job the Hub dispatched for an accepted verification run. It runs on after the answer, so it is read, as the runner's
 // repeated submission reads it, until the journal records its end (never inferred from the name of the last phase).
 async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutput> | null }): Promise<JobStatus> {
-  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch)); assert.match(note.text, /已按任务包的效果行开始上机验证/);
+  const note = v.result?.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(v.result?.dispatch));
+  assert.equal(note.job_facts?.scope.job, note.job);
+  assert.equal(note.job_facts?.reservation_recorded, true, 'the automatic job is reserved; reservation alone does not claim a physical effect');
   let read: unknown;
   for (let i = 0; i < 600; i++) {
     const job = (await readRunJobs(bed.hub.records, dispatch(), bed.hub.admin.principal, v.run)).find(row => row.job === note.job); read = job;
@@ -154,11 +156,43 @@ async function settled(v: { run: string; result: z.infer<typeof SubmitResultOutp
   throw new Error(`the dispatched job did not end: ${JSON.stringify(read)}`);
 }
 async function resultReport(state: JobStatus) {
-  assert.match(state.result!, /^src:[a-f0-9]{64}$/);
-  const source = await bed.hub.records.artifacts.source(bed.reviewer.principal, state.result!.slice(4));
+  const reference = state.job_facts.result;
+  assert.ok(reference);
+  assert.match(reference, /^src:[a-f0-9]{64}$/);
+  const source = await bed.hub.records.artifacts.source(bed.reviewer.principal, reference.slice(4));
   assert.ok(source?.bytes); const report = JSON.parse(Buffer.from(source.bytes).toString());
   assert.ok(reportLines(report).length > 0); assert.equal(batchQualifications([report]).length, 1);
   return report;
+}
+function dispatchAttemptOf(state: JobStatus) {
+  assert.equal(state.job_facts.scope.job, state.job);
+  const attempt = state.dispatch_attempt;
+  assert.ok(attempt, JSON.stringify(state));
+  const scope = attempt.scope;
+  assert.equal(scope.job, state.job);
+  assert.ok(scope.operation === 'dispatch');
+  assert.ok(Number.isInteger(scope.round) && scope.round > 0);
+  return { ...attempt, scope };
+}
+// A scoped refusal is not an aggregate job outcome. Each caller retains the independent remote-submit count assertion.
+function assertScopedRefusal(state: JobStatus) {
+  assert.equal(state.job_facts.scope.job, state.job);
+  if (state.dispatch_attempt) {
+    const attempt = dispatchAttemptOf(state);
+    assert.equal(attempt.outcome, 'not_dispatched');
+    assert.equal(attempt.not_sent, true);
+  } else {
+    assert.ok(state.job_facts.admission_error, JSON.stringify(state));
+  }
+}
+function publicAdmission(note: DispatchNote, run: string) {
+  if (note.job_facts) {
+    assert.equal(note.job_facts.scope.job, note.job);
+    return note.job_facts;
+  }
+  assert.ok(note.run_facts, JSON.stringify(note));
+  assert.equal(note.run_facts.scope.run, run);
+  return note.run_facts;
 }
 
 before(async () => {
@@ -228,7 +262,8 @@ beforeEach(async () => { aliasEcho = false; if (!skip && bed) { const keys = (aw
 
 describe('scenario 28: published documents to real Hub workbook dispatch and release', { skip }, () => {
   test('two authored cases use independent bookings, different S, terminal results and qualified reports', async () => {
-    const checked = await dispatch().precheck(bed.hub.admin.principal, executor); assert.equal(checked.frozen, false);
+    const checked = await dispatch().precheck(bed.hub.admin.principal, executor); assert.equal(checked.job_facts.frozen, false);
+    assert.equal(checked.job_facts.operation, 'precheck'); assert.equal(checked.job_facts.readonly_verified, true); assert.equal(checked.dispatch_attempt, undefined);
     const hashes: string[] = []; const bookings: string[] = [];
     for (let index = 0; index < 2; index++) {
       const booked = await booking(); bookings.push(booked);
@@ -236,14 +271,14 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       assert.ok(v.result!.result!.partitions.delivered[0].requirements.every(r => r.status === 'satisfied'));
       // Decision 105: the runner's own accepted verification run dispatches, with an administrator answerable for an unknown outcome.
       const state = await settled(v); const job = state.job;
-      assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+      assert.equal(dispatchAttemptOf(state).outcome, 'effective'); assert.equal(state.job_facts.frozen, false); assert.equal(state.job_facts.awaiting_disposition, false);
       const binding = await dispatch().journal.binding(job); assert.equal(binding.initiated_by, bed.reviewer.principal.id); assert.equal(binding.acting_by, bed.hub.admin.principal.id);
       assert.deepEqual(latest.payload, p.payload); hashes.push(latest.digest);
       const report = await resultReport(state); assert.equal(report.rows[0].reported_terminal, 'pass'); assert.equal(report.rows[0].dynamic_terminal, 'no_verdict'); assert.ok(report.rows[0].limits.includes('未排除本地操作'));
       // Like the task id the reference compile skill prints: repeating the same submission reads this job and its result, it never dispatches again.
       const count = submissions; const again = (await client.call('submit_result', v.sent!)).out;
-      assert.equal(again.dispatch?.length, 1); assert.match(again.dispatch![0].text, /设备返回 src:[a-f0-9]{64}/); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].result, state.result); assert.equal(submissions, count);
-      const read = await client.call('get_nodes', { reference: state.result }); assert.equal(read.isError, false);
+      assert.equal(again.dispatch?.length, 1); assert.match(again.dispatch![0].text, /设备返回 src:[a-f0-9]{64}/); assert.equal(again.dispatch![0].job, job); assert.equal(again.dispatch![0].job_facts?.result, state.job_facts.result); assert.equal(submissions, count);
+      const read = await client.call('get_nodes', { reference: state.job_facts.result }); assert.equal(read.isError, false);
       const stored = await bed.hub.hub.runs.getRun(bed.reviewer.principal, p.run); assert.equal(stored!.run.predecessor, booked); await release(booked);
     }
     assert.equal(new Set(hashes).size, 2); assert.equal(new Set(bookings).size, 2);
@@ -279,11 +314,11 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.equal(result.result!.partitions.delivered.length, ids.length);
     for (const row of result.result!.partitions.delivered) assert.ok(row.requirements.every(r => r.status === 'satisfied'), JSON.stringify(row.requirements));
     const state = await settled({ run: verification.run!.run, result });
-    assert.equal(state.outcome, 'effective'); assert.equal(submissions, before + 1, 'one dispatch carries the whole mindmap');
+    assert.equal(dispatchAttemptOf(state).outcome, 'effective'); assert.equal(submissions, before + 1, 'one dispatch carries the whole mindmap');
     assert.deepEqual(latest.ids, ids); assert.deepEqual(latest.payload, payload);
     const report = await resultReport(state);
     assert.deepEqual(report.rows.map((row: { item: string }) => row.item), ids, 'one verdict row per case of the workbook');
-    const returned = await client.call('get_nodes', { reference: state.device_return }); assert.equal(returned.isError, false, JSON.stringify(returned));
+    const returned = await client.call('get_nodes', { reference: dispatchAttemptOf(state).device_return }); assert.equal(returned.isError, false, JSON.stringify(returned));
     for (const id of ids) assert.ok(JSON.stringify(returned).includes(`${id}：`), 'the device return says each case, so an answer need not send the runner through the whole report');
     for (const row of report.rows) assert.equal(row.reported_terminal, 'pass');
     const again = (await client.call('submit_result', sent)).out; assert.equal(again.dispatch?.[0]?.job, state.job); assert.equal(submissions, before + 1);
@@ -298,13 +333,16 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const before = submissions; const v = await verify(await plan(partial));
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
     const note: DispatchNote | undefined = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
-    assert.match(note.text, /^不存在：.*预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    assert.match(note.text, /第 1 轮派发：未发出.*本运行没有覆盖测试环境 bed-a 的完整预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
     // Members get the authorized environment and missing count; administrators retain exact resource keys.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
     assert.ok(missing.length > 0);
-    assert.equal(note.booking?.missing_resources,missing.length);
-    assert.equal(note.booking?.target,'bed-a');
+    const admission = note.dispatch_attempt; assert.ok(admission);
+    assert.equal(admission.scope.operation, 'dispatch'); assert.equal(admission.scope.job, note.job);
+    assert.equal(admission.outcome, 'not_dispatched'); assert.equal(admission.not_sent, true);
+    assert.equal(admission.error_code, 'LEASE_UNAVAILABLE');
+    assert.ok(admission.missing_facts?.some(fact => fact.fact.includes('bed-a') && fact.fact.includes(`缺少 ${missing.length} 项`)), JSON.stringify(admission));
     assert.ok(note.text.includes('bed-a'),note.text);
     assert.match(note.text,new RegExp(`缺少 ${missing.length} 项`));
     for (const key of missing) assert.equal(note.text.includes(key),false,`member does not receive ${key}`);
@@ -314,8 +352,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
     // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
     const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
-    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /^不存在：.*未发出.*预订.*这次重交 Hub 已再试/);
-    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^不存在：.*预订/);
+    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /第 1 轮派发：未发出.*预订.*本次运行已重新申请上机验证作业/);
+    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /第 1 轮派发：未发出.*预订/);
     assert.equal(submissions, before);
     await release(partial);
   });
@@ -325,18 +363,18 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     // An older workflow port has no effects declaration; all source and result fixtures remain the real run's. It is in place
     // before the verification run is submitted, which is when the Hub would dispatch it (decision 105).
     const legacy=()=>{workflows.byDigest=async digest=>{const workflow=await read(digest);if(!workflow)return workflow;return {...workflow,readJson:async path=>{const value=await workflow.readJson(path);if(path!=='requirements.json')return value;const {effects,...legacy}=value as Record<string,unknown>;return legacy;}};};};
-    try{const v=await verify(p,0,false,legacy);assert.ok((v.result?.dispatch??[]).every(note=>/^上机验证没有发出/.test(note.text)),JSON.stringify(v.result?.dispatch));assert.equal(submissions,before,'the accepted submission dispatched nothing');
-      const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assert.equal(state.outcome,'not_dispatched');const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
+    try{const v=await verify(p,0,false,legacy);assert.equal(v.result?.dispatch,undefined,'without a hub_template effect declaration acceptance does not schedule a job');assert.equal(submissions,before,'the accepted submission dispatched nothing');
+      const state=await dispatch().dispatch(bed.hub.admin.principal,v.run,executor);assertScopedRefusal(state);const event=(await dispatch().journal.events(state.job)).find(e=>e.body.detail.phase==='boundary_refused')!;assert.equal(event.body.error_code,'EFFECT_NOT_ALLOWED');assert.equal(event.body.detail.boundary_clause,1);assert.equal(submissions,before);}
     finally{workflows.byDigest=read;await release(booked);}
   });
   test('a plan without a workbook cannot dispatch', async () => {
     const booked = await booking(); const p = await plan(booked); const before = submissions;
-    assert.equal((await dispatch().dispatch(bed.hub.admin.principal,p.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
+    assertScopedRefusal(await dispatch().dispatch(bed.hub.admin.principal,p.run,executor)); assert.equal(submissions, before); await release(booked);
   });
   test('one altered workbook byte gains no support and never dispatches', async () => {
     const booked = await booking(); const p = await plan(booked); const v = await verify(p, 0, true); const before = submissions;
     assert.equal(v.result, null, 'the changed ZIP was refused by the core parser before any workbook support could exist');
-    assert.equal((await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
+    assertScopedRefusal(await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)); assert.equal(submissions, before); await release(booked);
   });
   test('a parseable but altered workbook fails semantic verification and cannot dispatch', async () => {
     const booked = await booking(); const p = await plan(booked); const changed = structuredClone(p.recipe);
@@ -346,19 +384,19 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.ok(v.result?.result);
     const rows = Object.values(v.result.result.partitions).flat();
     assert.ok(rows.some(row => row.requirements.some(r => r.requirement === 'workbook_verified' && r.status !== 'satisfied')));
-    assert.equal((await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)).outcome,'not_dispatched'); assert.equal(submissions, before); await release(booked);
+    assertScopedRefusal(await dispatch().dispatch(bed.hub.admin.principal,v.run,executor)); assert.equal(submissions, before); await release(booked);
   });
   test('failed declared environment precheck submits nothing and releases its gateway lease', async () => {
     const booked = await booking(); const p = await plan(booked); const before = submissions; const closed = releases;
     try {
       const v = await verify(p, 0, false, () => { mismatch = true; }); const state = await settled(v);
-      assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false); assert.equal(submissions, before);
+      assertScopedRefusal(state); assert.equal(state.job_facts.frozen, false); assert.equal(submissions, before);
       // The target lease is released after the job's end record, so its release is awaited rather than raced.
       for (let i = 0; i < 200 && releases === closed; i++) await new Promise(resolve => setTimeout(resolve, 50));
       assert.equal(releases, closed + 1);
       // the reference compile skill reports a failed bed check to the user as it is and submits nothing past it: the runner's repeat reads which check
       // failed, and that the job has ended rather than that it still runs.
-      assert.deepEqual(state.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
+      assert.deepEqual(state.dispatch_attempt ? state.dispatch_attempt.failed_conditions : state.job_facts.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
       const text = (await client.call('submit_result', v.sent!)).out.dispatch?.[0]?.text ?? '';
       assert.match(text, /已结束/); assert.doesNotMatch(text, /还在进行/);
       assert.match(text, /核对项目 \/seats.*至少数量/);assert.match(text,/请管理员/);
@@ -371,24 +409,33 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const booked = await booking(); const p = await plan(booked); const before = submissions;
     const first = await verify(p, 0, false, () => { lose = true; });
     const frozen = await settled(first); lose = false;
-    assert.equal(frozen.outcome, 'unknown'); assert.equal(frozen.frozen, true); assert.match(frozen.next_action!, /管理员/);
+    const unresolvedAttempt = dispatchAttemptOf(frozen);
+    assert.equal(unresolvedAttempt.outcome, 'unknown'); assert.equal(frozen.job_facts.frozen, true); assert.equal(frozen.job_facts.awaiting_disposition, true); assert.match(unresolvedAttempt.next_action!, /管理员/);
     const budgetRefused=await dispatch().dispatch(bed.hub.admin.principal,first.run,executor);
-    assert.equal(budgetRefused.outcome,'not_dispatched');
+    assertScopedRefusal(budgetRefused);
     const refusal=(await dispatch().journal.events(budgetRefused.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
     assert.equal(refusal.body.error_code,'EFFECT_BUDGET_EXHAUSTED');assert.equal(refusal.body.detail.boundary_clause,4);assert.equal(refusal.body.detail.effect_row,'submit_verified_workbook');
-    assert.equal((await dispatch().status(bed.hub.admin.principal,frozen.job)).frozen,true,'a new budget refusal never unfreezes the original effect');
+    const protectedJob = await dispatch().status(bed.hub.admin.principal, frozen.job);
+    assert.equal(protectedJob.job_facts.frozen,true,'a new budget refusal never unfreezes the original effect');
+    assert.equal(protectedJob.job_facts.awaiting_disposition, true);
     const whileFrozen=await verify(await plan(booked,1),1);
     // While the first effect is unresolved the Hub dispatches nothing for the next case and says why in the runner's answer.
-    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));assert.match(String(whileFrozen.result?.dispatch?.[0]?.text),/上机验证没有发出|没有发出/);
+    assert.ok(!whileFrozen.result?.dispatch?.some(note=>note.job),JSON.stringify(whileFrozen.result?.dispatch));
+    const blocked = whileFrozen.result?.dispatch?.[0]; assert.ok(blocked);
+    const blockedAdmission = publicAdmission(blocked, whileFrozen.run);
+    assert.ok(blockedAdmission.missing_facts?.length, JSON.stringify(blockedAdmission));
     await assert.rejects(dispatch().dispatch(bed.hub.admin.principal,whileFrozen.run,executor),/冻结|占用/);
     assert.equal(submissions,before+1);
     assert.deepEqual(latest.ids, [ids[0]], 'the next authored case has not been dispatched');
     const recovered = await dispatch().dispose(bed.hub.admin.principal, frozen.job, { choice: 'reconcile', remote_id: latest.key });
-    assert.equal(recovered.frozen, false); assert.equal(recovered.outcome, 'effective'); assert.equal(submissions, before + 1); await resultReport(recovered);
+    assert.equal(recovered.job_facts.frozen, false); assert.equal(recovered.job_facts.awaiting_disposition, false);
+    const reconciled = await dispatch().scopedFacts(bed.hub.admin.principal, frozen.job, unresolvedAttempt.scope.round);
+    assert.deepEqual(reconciled.dispatch_attempt?.scope, unresolvedAttempt.scope);
+    assert.equal(reconciled.dispatch_attempt?.outcome, 'effective'); assert.equal(submissions, before + 1); await resultReport(recovered);
     await release(booked);
     const nextBooking = await booking(); assert.notEqual(nextBooking, booked);
     const second = await verify(await plan(nextBooking, 1), 1);
-    assert.equal((await settled(second)).outcome, 'effective');
+    assert.equal(dispatchAttemptOf(await settled(second)).outcome, 'effective');
     assert.equal(submissions, before + 2); await release(nextBooking);
   });
 });

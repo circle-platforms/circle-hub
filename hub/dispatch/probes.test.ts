@@ -35,7 +35,7 @@ test('per-seat version and complete address sets are checked in the dispatch lea
     }
     const good=mismatch==='none'||mismatch==='alias'||mismatch==='content-root-changed-alias'||mismatch==='historical-alias';
     const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-    assert.equal(result.outcome,good?'effective':'not_dispatched'); assert.equal(result.frozen,false);
+    assert.equal(result.dispatch_attempt!.outcome,good?'effective':'not_dispatched'); assert.equal(result.job_facts.frozen,false);
     assert.equal(c.calls.filter(n=>n==='send_blob').length,good?1:0);
     assert.ok(c.calls.includes('close_slot'));
     if(good)assert.ok(c.calls.lastIndexOf('inspect_seat')<c.calls.indexOf('send_blob'));
@@ -53,7 +53,7 @@ test('persistent probe refusals retry reads three times and never submit',async 
     await c.freezeExecutor();
   // A manifest with no addresses would not reach the transport; version probes still establish retry counts.
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'not_dispatched');assert.equal(state.frozen,false);
+  assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(state.job_facts.frozen,false);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   assert.equal(c.calls.filter(n=>n==='inspect_seat').length,12);
 });
@@ -63,7 +63,7 @@ test('an explicit probe refusal does not cause repeated device login attempts',a
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes});
     await c.freezeExecutor();
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='inspect_seat').length,1);
+  assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='inspect_seat').length,1);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
 });
 
@@ -100,10 +100,10 @@ test('only declared dispatch targets need a probe seat; the other manifest devic
   } }); t.after(() => c.close());
   await bindBed(c, typedManifest(BED), { ...probes, dispatch_targets: { type_field: '/type', types: ['load-balancer'] }, seats: seatsFor([0]) });
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.equal(state.dispatch_attempt!.outcome, 'effective', JSON.stringify(state));
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1, 'the payload goes to the one probed seat');
   assert.equal(c.calls.filter(n => n === 'inspect_seat').length, 2, 'only the dispatch target is probed (version and interfaces)');
-  assert.deepEqual(state.unprobed_devices, [{ index: 1, type: 'router' }, { index: 2, type: 'client' }]);
+  assert.deepEqual(state.dispatch_attempt!.unprobed_devices, [{ index: 1, type: 'router' }, { index: 2, type: 'client' }]);
 });
 
 test('a declared dispatch target without a probe seat still refuses the precheck', async t => {
@@ -119,10 +119,10 @@ test('a declared dispatch target without a probe seat still refuses the precheck
   ] as const) {
     await bindBed(c, typedManifest(BED), { ...probes, ...(types === undefined ? {} : { dispatch_targets: { type_field: '/type', types: [...types] } }), seats: seatsFor([...seats]) });
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(state.outcome, 'not_dispatched', name);
+    assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched', name);
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 0, name);
-    assert.match(state.missing_fact ?? '', /一一对应探测座位/, name);
-    assert.ok((state.missing_fact ?? '').includes(missing), `${name}: ${state.missing_fact}`);
+    assert.match(state.dispatch_attempt!.missing_fact ?? '', /一一对应探测座位/, name);
+    assert.ok((state.dispatch_attempt!.missing_fact ?? '').includes(missing), `${name}: ${state.dispatch_attempt!.missing_fact}`);
   }
 });
 
@@ -130,10 +130,10 @@ test('a manifest device without a declared type stops the precheck instead of be
   const c = await setup({ extraTools: ['inspect_seat'] }); t.after(() => c.close());
   await bindBed(c, typedManifest([{ name: 'dut0', type: 'load-balancer', address: '192.0.2.1/24' }, { name: 'unknown0', address: '192.0.2.4/24' }]), { ...probes, dispatch_targets: { type_field: '/type', types: ['load-balancer'] }, seats: seatsFor([0]) });
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
-  assert.match(state.missing_fact ?? '', /没有声明的类型字段/);
-  assert.match(state.next_action ?? '', /类型字段|派发座位/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /没有声明的类型字段/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /类型字段|派发座位/);
 });
 
 type Harness = Awaited<ReturnType<typeof setup>>;
@@ -165,7 +165,7 @@ const cli = (c: Harness, lines: string[]) => ({ out: (s: string) => lines.push(s
 test('a clean bed passes the residue probes: the headers never count and an empty answer is empty only with its closing line', async t => {
   const c = await setupResidue(t, () => undefined);
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(state.failed_checks, undefined, JSON.stringify(state));
+  assert.equal(state.job_facts.failed_checks, undefined, JSON.stringify(state));
   const events = await c.service.journal.events(state.job);
   assert.ok(events.some(e => e.body.detail.readonly_verified === true));
   assert.deepEqual((await probeEvents(c, state.job)).filter(e => String(e.body.detail.check).startsWith('residue-')).map(e => [e.body.detail.seat, e.body.detail.check, e.body.detail.state, e.body.detail.matched]), [
@@ -175,7 +175,7 @@ test('a clean bed passes the residue probes: the headers never count and an empt
   assert.ok(reads(c).every(a => a.ticket === 'synthetic-ticket'));
   // A dispatch reads them again, in its own lease, before anything is submitted.
   const dispatched = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(dispatched.outcome, 'effective', JSON.stringify(dispatched));
+  assert.equal(dispatched.dispatch_attempt!.outcome, 'effective', JSON.stringify(dispatched));
   assert.equal(reads(c).length, 16, 'the dispatch does not reuse the precheck');
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
   assert.ok(c.calls.lastIndexOf('inspect_bound_seat') < c.calls.indexOf('send_blob'));
@@ -185,14 +185,14 @@ test('residue on one seat stops the precheck and the dispatch with a statement t
   let dirty = true;
   const c = await setupResidue(t, (seat, command) => dirty && seat === 1 && command === 'inspect peers' ? `peers:\nname        address\n${LEAKED}\n${PROMPT}` : undefined);
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false);
-  assert.equal(state.failed_checks?.length, 1, JSON.stringify(state.failed_checks));
-  const [check] = state.failed_checks!;
+  assert.equal(state.dispatch_attempt, undefined);assert.equal(state.job_facts.operation, 'precheck'); assert.equal(state.job_facts.frozen, false);
+  assert.equal(state.job_facts.failed_checks?.length, 1, JSON.stringify(state.job_facts.failed_checks));
+  const [check] = state.job_facts.failed_checks!;
   assert.deepEqual([check.step, check.seat, check.check], ['device_probe', 'synthetic-1', 'residue-1']);
   assert.match(check.missing_fact, /^设备 synthetic-1 读取 inspect peers 后.*残留/);
   assert.match(check.next_action, /重新上机验证/);
   assert.match(check.next_action, /清掉残留/);
-  assert.match(state.missing_fact!, /设备 synthetic-1 读取 inspect peers/);
+  assert.match(state.job_facts.missing_fact!, /设备 synthetic-1 读取 inspect peers/);
   assert.equal(JSON.stringify(state).includes('DO_NOT_DISCLOSE_REMOTE_VALUE'), false, 'the answer to the user carries no device line');
   const events = await c.service.journal.events(state.job);
   assert.ok(events.some(e => e.body.detail.readonly_verified === false));
@@ -206,8 +206,8 @@ test('residue on one seat stops the precheck and the dispatch with a statement t
   assert.ok(new TextDecoder().decode((await c.kit.artifacts.source(c.admin, original.slice(4), { consumer: 'function' }))!.bytes!).includes('DO_NOT_DISCLOSE_REMOTE_VALUE'));
   // The dispatch stops at the same finding: nothing is submitted, the lease is given back, no intent is written.
   const dispatched = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(dispatched.outcome, 'not_dispatched'); assert.equal(dispatched.frozen, false);
-  assert.deepEqual(dispatched.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-1', 'residue-1']]);
+  assert.equal(dispatched.dispatch_attempt!.outcome, 'not_dispatched'); assert.equal(dispatched.job_facts.frozen, false);
+  assert.deepEqual(dispatched.dispatch_attempt!.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-1', 'residue-1']]);
   assert.equal(JSON.stringify(dispatched).includes('DO_NOT_DISCLOSE_REMOTE_VALUE'), false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
   assert.ok(c.calls.includes('close_slot'));
@@ -215,22 +215,22 @@ test('residue on one seat stops the precheck and the dispatch with a statement t
   // Nothing was submitted and no intent was written, so once the administrator has cleaned the device the same run dispatches.
   dirty = false;
   const again = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(again.outcome, 'effective', JSON.stringify(again));
+  assert.equal(again.dispatch_attempt!.outcome, 'effective', JSON.stringify(again));
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
 
 test('one precheck lists every seat and command with residue, and reads the next command after a finding', async t => {
   const c = await setupResidue(t, (seat, command) => command === 'inspect version' || command === 'inspect interfaces' ? undefined : seat === 0 && command === 'inspect units' ? `unit-a 192.0.2.5\n${PROMPT}` : seat === 1 ? `unit-b 192.0.2.6\n${PROMPT}` : undefined);
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.deepEqual(state.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-2'], ['synthetic-1', 'residue-1'], ['synthetic-1', 'residue-2']]);
+  assert.deepEqual(state.job_facts.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-2'], ['synthetic-1', 'residue-1'], ['synthetic-1', 'residue-2']]);
   assert.equal(reads(c).length, 8, 'a finding does not end the collection');
 });
 
 test('residue is judged beside the version and interfaces rules, which stay as they were', async t => {
   const c = await setupResidue(t, (seat, command) => seat === 1 && command === 'inspect version' ? 'version: other_10_6' : seat === 0 && command === 'inspect peers' ? `unit-b 192.0.2.6\n${PROMPT}` : undefined, { lockedBuild: 'synthetic-build' });
   const state = await c.service.precheck(c.admin, c.executor.id, c.run);
-  assert.deepEqual(state.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-1'], ['synthetic-1', 'version']]);
-  assert.match(state.failed_checks![1].missing_fact, /座位 synthetic-1 的 version：回显值与锁定构建或绑定清单不符/);
+  assert.deepEqual(state.job_facts.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-1'], ['synthetic-1', 'version']]);
+  assert.match(state.job_facts.failed_checks![1].missing_fact, /座位 synthetic-1 的 version：回显值与锁定构建或绑定清单不符/);
 });
 
 for (const [name, reply, fact] of [
@@ -242,11 +242,11 @@ for (const [name, reply, fact] of [
   test(`${name} is an unread bed, never a clean one and never a residue`, async t => {
     const c = await setupResidue(t, (seat, command) => seat === 0 && command === 'inspect peers' ? reply : undefined);
     const state = await c.service.precheck(c.admin, c.executor.id);
-    assert.equal(state.outcome, 'not_dispatched');
-    assert.deepEqual(state.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-1']]);
-    assert.match(state.failed_checks![0].missing_fact, fact);
-    assert.match(state.failed_checks![0].missing_fact, /不能判断设备上有没有残留/);
-    assert.doesNotMatch(state.failed_checks![0].missing_fact, /留有/);
+    assert.equal(state.dispatch_attempt, undefined);assert.equal(state.job_facts.operation, 'precheck');
+    assert.deepEqual(state.job_facts.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-1']]);
+    assert.match(state.job_facts.failed_checks![0].missing_fact, fact);
+    assert.match(state.job_facts.failed_checks![0].missing_fact, /不能判断设备上有没有残留/);
+    assert.doesNotMatch(state.job_facts.failed_checks![0].missing_fact, /留有/);
     assert.deepEqual((await probeEvents(c, state.job)).filter(e => e.body.detail.matched === false).map(e => e.body.detail.state), ['unread']);
     assert.equal(c.calls.includes('send_blob'), false);
   });
@@ -255,9 +255,9 @@ for (const [name, reply, fact] of [
 test('a refused residue read stops all further reading of the device and is not reported as residue', async t => {
   const c = await setupResidue(t, (seat, command) => seat === 0 && command === 'inspect peers' ? { ok: false, error: 'synthetic refusal', phase: 'denied', touched: false } : undefined);
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.deepEqual(state.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-1']]);
-  assert.match(state.failed_checks![0].missing_fact, /设备拒绝读取.*不能判断设备上有没有残留/);
+  assert.equal(state.dispatch_attempt, undefined);assert.equal(state.job_facts.operation, 'precheck');
+  assert.deepEqual(state.job_facts.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-1']]);
+  assert.match(state.job_facts.failed_checks![0].missing_fact, /设备拒绝读取.*不能判断设备上有没有残留/);
   assert.equal(reads(c).length, 3, 'version, interfaces and the refused command; no repeated login, no later seat');
   assert.ok(c.calls.includes('close_slot'));
 });
@@ -266,12 +266,12 @@ test('a residue read that fails the way the definition calls safe to repeat is r
   let busy = 1;
   const once = await setupResidue(t, (seat, command) => seat === 0 && command === 'inspect peers' && busy-- > 0 ? BUSY : undefined, { definition: { read_retry_when: READ_BUSY_RETRIED } });
   const state = await once.service.precheck(once.admin, once.executor.id);
-  assert.equal(state.failed_checks, undefined, JSON.stringify(state.failed_checks));
+  assert.equal(state.job_facts.failed_checks, undefined, JSON.stringify(state.job_facts.failed_checks));
   assert.equal(reads(once).length, 9, 'one extra read of the command that failed once');
   const always = await setupResidue(t, (seat, command) => seat === 0 && command === 'inspect units' ? BUSY : undefined, { definition: { read_retry_when: READ_BUSY_RETRIED } });
   const failed = await always.service.precheck(always.admin, always.executor.id);
-  assert.deepEqual(failed.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-2']]);
-  assert.match(failed.failed_checks![0].missing_fact, /连续三次不可用/);
+  assert.deepEqual(failed.job_facts.failed_checks?.map(x => [x.seat, x.check]), [['synthetic-0', 'residue-2']]);
+  assert.match(failed.job_facts.failed_checks![0].missing_fact, /连续三次不可用/);
   assert.equal(reads(always).length, 10, 'three reads of the failing command, then the other seat is read as usual');
 });
 
@@ -290,7 +290,7 @@ test('a seat that declares no residue probes is read exactly as before', async t
   const c = await setup(); t.after(() => c.close());
   assert.equal(Object.hasOwn(c.executor.definition.probes!.seats[0], 'residue'), false);
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(state.failed_checks, undefined);
+  assert.equal(state.job_facts.failed_checks, undefined);
   assert.equal(reads(c).length, 4, 'version and interfaces on two seats');
   assert.equal((await probeEvents(c, state.job)).some(e => String(e.body.detail.check).startsWith('residue')), false);
 });

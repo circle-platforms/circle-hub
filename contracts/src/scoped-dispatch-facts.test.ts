@@ -107,3 +107,42 @@ test('readonly and conformance verification are optional source observations, no
   assert.equal(DispatchJobFactsSchema.parse({scope:{job}}).conformance_verified,undefined);
   assert.equal(DispatchJobFactsSchema.safeParse({...value,admission_error:{code:'SOURCE_NOT_PERMITTED'}}).success,false);
 });
+
+
+test('conservative freeze and awaiting disposition remain independent job observations', () => {
+  for (const frozen of [false,true]) for (const awaiting_disposition of [false,true]) {
+    const value = {scope:{job},frozen,awaiting_disposition};
+    const parsed = DispatchJobFactsSchema.parse(value);
+    assert.equal('outcome' in parsed,false);
+    assert.deepEqual(parsed,value);
+  }
+  const absent = DispatchJobFactsSchema.parse({scope:{job}});
+  assert.equal(absent.frozen,undefined);
+  assert.equal(absent.awaiting_disposition,undefined);
+  assert.equal(DispatchJobFactsSchema.safeParse({scope:{job},awaiting_disposition:'true'}).success,false);
+  assert.equal(DispatchAttemptFactsSchema.safeParse({scope:{operation:'dispatch',job,round:1},awaiting_disposition:true}).success,false);
+  assert.equal(DispatchRunFactsSchema.safeParse({scope:{run:'run_0'+'a'.repeat(25)},awaiting_disposition:true}).success,false);
+  const json = JSON.parse(readFileSync(new URL('../generated/schemas/dispatch-job-facts.v1.schema.json',import.meta.url),'utf8'));
+  assert.equal(json.properties.awaiting_disposition.type,'boolean');
+  assert.equal(json.required.includes('awaiting_disposition'),false);
+});
+
+
+test('job historical raw output survives a later not-sent attempt without claiming that attempt executed', () => {
+  const device_return = `src:${'d'.repeat(64)}`;
+  const value = {
+    job_facts:{scope:{job},result,device_return},
+    dispatch_attempt:{scope:{operation:'dispatch',job,round:2},outcome:'not_dispatched',not_sent:true},
+  };
+  const parsed = ScopedDispatchFactsSchema.parse(value);
+  assert.equal(parsed.dispatch_attempt?.device_return,undefined);
+  assert.equal(parsed.dispatch_attempt?.result,undefined);
+  assert.equal(parsed.dispatch_attempt?.submit_invoked,undefined);
+  assert.equal('outcome' in parsed.job_facts,false);
+  assert.deepEqual(parsed,value);
+  assert.equal(DispatchJobFactsSchema.parse({scope:{job}}).device_return,undefined);
+  assert.equal(DispatchJobFactsSchema.safeParse({scope:{job},device_return:'d'.repeat(64)}).success,false);
+  const schema = JSON.parse(readFileSync(new URL('../generated/schemas/dispatch-job-facts.v1.schema.json',import.meta.url),'utf8'));
+  assert.equal(schema.properties.device_return.description,'Authorized job-historical raw device-output reference, retained across attempts; not evidence that the current attempt executed.');
+  assert.equal(schema.required.includes('device_return'),false);
+});

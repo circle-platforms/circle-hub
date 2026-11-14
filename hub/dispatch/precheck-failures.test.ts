@@ -33,8 +33,10 @@ test('a precheck without a run\'s locked build records each seat\'s version and 
   const other='version: DO_NOT_DISCLOSE_REMOTE_VALUE';
   const c=await setup({alter:(name,value)=>name==='inspect_slot'?{...value,build:'DO_NOT_DISCLOSE_REMOTE_VALUE'}:name==='inspect_bound_seat' && String(value.output).startsWith('version:')?{output:other}:value});t.after(()=>c.close());
   const state=await c.service.precheck(c.admin,c.executor.id);
-  assert.equal(state.failed_checks,undefined);
-  assert.deepEqual(state.unjudged,[{step:'precheck.evaluated',pointer:'/build'},{step:'device_probe',seat:'synthetic-0',check:'version'},{step:'device_probe',seat:'synthetic-1',check:'version'}]);
+  assert.equal(state.dispatch_attempt,undefined);
+  assert.equal(state.job_facts.readonly_verified,true);
+  assert.equal(state.job_facts.failed_checks,undefined);
+  assert.deepEqual(state.job_facts.unjudged,[{step:'precheck.evaluated',pointer:'/build'},{step:'device_probe',seat:'synthetic-0',check:'version'},{step:'device_probe',seat:'synthetic-1',check:'version'}]);
   const events=await c.service.journal.events(state.job);
   assert.ok(events.some(e=>e.body.detail.readonly_verified===true));
   assert.ok(events.some(e=>e.body.detail.phase==='device_probe' && e.body.detail.check==='version' && e.body.detail.judged===false && e.body.detail.matched===true));

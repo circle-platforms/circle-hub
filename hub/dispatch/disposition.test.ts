@@ -6,12 +6,12 @@ test('keep-unknown and unconfirmed mark-failed preserve the freeze; confirmed ri
   const c = await setup({ mode: 'reject' }); t.after(() => c.close());
   const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
   const original = (await c.service.journal.events(first.job)).find(e => e.body.detail.uncertain === true)!;
-  assert.equal((await c.service.dispose(c.admin, first.job, { choice: 'keep_unknown' })).frozen, true);
-  assert.equal((await c.service.dispose(c.admin, first.job, { choice: 'mark_failed', reason: '合成审计未找到记录' })).frozen, true);
+  assert.equal((await c.service.dispose(c.admin, first.job, { choice: 'keep_unknown' })).job_facts.frozen, true);
+  assert.equal((await c.service.dispose(c.admin, first.job, { choice: 'mark_failed', reason: '合成审计未找到记录' })).job_facts.frozen, true);
   await assert.rejects(c.service.dispose(c.owner, first.job, { choice: 'mark_failed', reason: '合成原因', acceptPossibleDuplicateEffects: true }));
   await assert.rejects(c.service.dispose(c.admin, first.job, { choice: 'mark_failed', acceptPossibleDuplicateEffects: true }));
   const released = await c.service.dispose(c.admin, first.job, { choice: 'mark_failed', reason: '合成原因', acceptPossibleDuplicateEffects: true });
-  assert.equal(released.frozen, false); assert.equal(released.outcome, 'unknown');
+  assert.equal(released.job_facts.frozen, false); assert.equal(released.dispatch_attempt!.outcome, 'unknown');
   assert.deepEqual((await c.kit.store.get(original.digest))!.body, original.body);
   const confirmed = (await c.service.journal.events(first.job)).find(e => e.body.detail.risk_confirmed === true)!;
   assert.equal(confirmed.body.detail.confirmed_by, c.admin.id); assert.equal(confirmed.body.detail.confirmed_at, c.now().toISOString());
@@ -23,7 +23,7 @@ test('reconciliation verifies remote identity and bytes without comparing foreig
   const c = await setup({ mode: 'reject' }); t.after(() => c.close());
   const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
   const reconciled = await c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 'synthetic-remote' });
-  assert.equal(reconciled.frozen, false); assert.equal(reconciled.outcome, 'effective');
+  assert.equal(reconciled.job_facts.frozen, false); assert.equal(reconciled.dispatch_attempt!.outcome, 'effective');
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
 
@@ -32,9 +32,9 @@ test('structural reconciliation faults remain frozen while foreign wall-clock sk
     const c = await setup({ mode: 'reject', alter: (name, value) => name !== 'read_blob' ? value : fault === 'absent' ? {} : fault === 'digest' ? { ...value, digest: 'f'.repeat(64) } : fault === 'identity' ? { ...value, key: 'another' } : { ...value, submitted: new Date(Date.parse(String(value.submitted))+(fault==='time-fast'?1:-1)*7*3600000).toISOString() } });
     t.after(() => c.close());
     const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    if(fault==='time-fast'||fault==='time-slow'){assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).frozen,false);}
+    if(fault==='time-fast'||fault==='time-slow'){assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).job_facts.frozen,false);}
     else {await assert.rejects(c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 'synthetic-remote' }));
-    assert.equal((await c.service.status(c.admin, first.job)).frozen, true);}
+    assert.equal((await c.service.status(c.admin, first.job)).job_facts.frozen, true);}
   }
 });
 
@@ -55,5 +55,5 @@ test('numeric remote ids remain typed and reconcile without guessing string equi
   const c = await setup({ mode: 'reject', alter: (name, value) => name === 'read_blob' || name === 'send_blob' ? { ...value, key: 17 } : value }); t.after(() => c.close());
   const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
   await assert.rejects(c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: '17' }));
-  assert.equal((await c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 17 })).frozen, false);
+  assert.equal((await c.service.dispose(c.admin, first.job, { choice: 'reconcile', remote_id: 17 })).job_facts.frozen, false);
 });

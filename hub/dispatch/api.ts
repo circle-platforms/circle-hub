@@ -11,6 +11,7 @@ export type { BuildKnowledge } from './probes.ts';
 
 export { dispatchedRuns, readRunJobs, runReservations, type RunJob, type RunReservations } from './read-runs.ts';
 export { acceptedDispatch, runInFlight, type DispatchNote, type DispatchDiagnostics, type DispatchMissingFact } from './accepted.ts';
+export { statusDiagnostics } from './reasons.ts';
 export type { EnvironmentJob, EnvironmentFacts } from './environment.ts';
 export { dispatchCallTiming, readEnvironmentCalls, ENVIRONMENT_SCAN_LIMIT, ENVIRONMENT_WINDOW_MS, type EnvironmentCalls } from './environment-statistics.ts';
 export {ExecutorSource,resolveExecutorValues} from './source.ts';

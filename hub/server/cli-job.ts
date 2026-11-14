@@ -14,6 +14,7 @@ import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts
 import { CliError, UsageError } from './errors.ts';
 import { decided } from './cli-arguments.ts';
 import type { DispatchView } from './api.ts';
+import { dispatchScopeLabel } from './dispatch-scope-label.ts';
 export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
@@ -29,22 +30,48 @@ async function service(s: JobCommandSession, requireKey = true): Promise<Dispatc
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
 }
 function output(s: JobCommandSession, state: JobStatus): void {
-  s.out(`阶段 ${state.phase}；码 ${state.outcome}（${labelOf('effect_outcome', state.outcome)}）；作业摘要 ${state.job}；冻结 ${Number(state.frozen)}；动作 ${state.events}`);
-  if(state.qualifier_marks?.length)s.out('判定限定：'+state.qualifier_marks.map(mark=>labelOf('qualifier_mark',mark)).join('、'));
-  for (const round of state.rounds ?? []) s.out(`第 ${round.round} 轮 ${labelOf('dynamic_terminal', round.terminal)}${round.reason ? `；${labelOf('reason', round.reason)}` : ''}`);
-  for(const request of state.requests ?? [])s.out(`待终结请求 ${request.id}；问题摘要 ${request.question_sha256 ?? '历史未记录'}；期限 ${request.deadline ?? '历史未记录'}`);
-  if(state.marks?.length)s.out(`效果标记：${state.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
-  if(state.disposition)s.out(`处置：${labelOf('disposition',state.disposition)}；决定人 ${state.decided_by ?? '未记录'}；时间 ${state.decided_at ?? '未记录'}`);
-  if(state.unprobed_devices?.length)s.out(`未探测（非派发目标）：${state.unprobed_devices.map(device=>`清单第 ${device.index + 1} 台（类型 ${device.type ?? '清单未声明'}）`).join('、')}；只按清单身份参与拓扑与地址绑定，不派发命令`);
-  if(state.unjudged?.length)s.out(`未对照：${state.unjudged.map(item=>item.pointer!==undefined?`条件 ${JSON.stringify(item.pointer)}`:`座位 ${JSON.stringify(item.seat ?? '')} 的 ${item.check ?? 'version'}`).join('、')}；没有运行锁定的构建，只把设备自述记为观察，不按任何版本判断；派发时按运行锁定的构建核对`);
-  for(const condition of state.failed_conditions ?? [])s.out(`未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
-  for(const check of state.failed_checks ?? [])s.out(`未满足核对：步骤 ${JSON.stringify(check.step)}${check.seat!==undefined?`；座位 ${JSON.stringify(check.seat)}`:''}${check.check!==undefined?`；检查 ${JSON.stringify(check.check)}`:''}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
-  if(state.admin_release)for(const check of state.admin_release.filter(check=>check.satisfied!==true))s.out('管理员放行说明：'+JSON.stringify(check));
-  if(state.admin_release_missing)s.out('管理员放行说明：诊断记录未能保存或读取，请查看管理员日志');
-  if (state.reason) s.out(`说明：${state.reason}`);
-  if (state.missing_fact) s.out(`缺事实：${state.missing_fact}`);
-  if (state.result) s.out(`结果引用 ${state.result}`);
-  if (state.next_action) s.out(`下一步：${state.next_action}`);
+  const facts = state.job_facts;
+  const attempt = state.dispatch_attempt;
+  s.out(`作业摘要 ${state.job}；作业阶段 ${facts.phase ?? '未记录'}；冻结 ${facts.frozen === undefined ? '未核对' : Number(facts.frozen)}；动作 ${state.events}`);
+  if (attempt) {
+    const scope = dispatchScopeLabel(attempt.scope);
+    s.out(`${scope}：${attempt.outcome === undefined ? '尚无可核对的结局' : labelOf('effect_outcome', attempt.outcome)}`);
+    if (attempt.phase) s.out(`${scope}阶段：${attempt.phase}`);
+    if (attempt.rejection_stage) s.out(`${scope}的目标拒绝阶段：${attempt.rejection_stage}`);
+    for (const missing of attempt.missing_facts ?? []) s.out(`${scope}缺事实：${missing.fact}；下一步：${missing.next_action}`);
+    if (attempt.result) s.out(`${scope}结果引用 ${attempt.result}`);
+    if (attempt.device_return) s.out(`${scope}设备输出引用 ${attempt.device_return}`);
+    if (attempt.next_action) s.out(`${scope}下一步：${attempt.next_action}`);
+    for (const condition of attempt.failed_conditions ?? []) s.out(`${scope}未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
+    for (const check of attempt.failed_checks ?? []) s.out(`${scope}未满足核对：步骤 ${JSON.stringify(check.step)}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
+    if (attempt.admin_release) for (const check of attempt.admin_release.filter(check => check.satisfied !== true)) s.out(`${scope}管理员放行说明：${JSON.stringify(check)}`);
+    if (attempt.admin_release_missing) s.out(`${scope}管理员放行说明：诊断记录未能保存或读取，请查看管理员日志`);
+    if (attempt.reason) s.out(`${scope}说明：${attempt.reason}`);
+    if (attempt.missing_fact) s.out(`${scope}缺事实：${attempt.missing_fact}`);
+  } else if (facts.operation === 'precheck') {
+    s.out(`${labelOf('dispatch_operation', 'precheck')}：${facts.readonly_verified === true ? '已取得全部条件通过的核对' : facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
+  } else if (facts.operation === 'conformance') {
+    s.out(`${labelOf('dispatch_operation', 'conformance')}：${facts.conformance_verified === true ? '已取得全部条件通过的核对' : facts.conformance_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
+  } else {
+    s.out('尚无可核对的按范围派发结局；不据此认定作业未执行。');
+  }
+  if (facts.admission_error) s.out(`作业准入说明：${facts.admission_error.message}${facts.admission_error.fix ? '；下一步：' + facts.admission_error.fix : ''}`);
+  if(facts.qualifier_marks?.length)s.out('判定限定：'+facts.qualifier_marks.map(mark=>labelOf('qualifier_mark',mark)).join('、'));
+  for (const round of facts.rounds ?? []) s.out(`第 ${round.round} 轮 ${labelOf('dynamic_terminal', round.terminal)}${round.reason ? `；${labelOf('reason', round.reason)}` : ''}`);
+  for(const request of facts.requests ?? [])s.out(`待终结请求 ${request.id}；问题摘要 ${request.question_sha256 ?? '历史未记录'}；期限 ${request.deadline ?? '历史未记录'}`);
+  if(facts.marks?.length)s.out(`效果标记：${facts.marks.map(mark=>labelOf('effect_mark',mark)).join('、')}`);
+  if(facts.disposition)s.out(`处置：${labelOf('disposition',facts.disposition)}；决定人 ${facts.decided_by ?? '未记录'}；时间 ${facts.decided_at ?? '未记录'}`);
+  if(facts.unprobed_devices?.length)s.out(`未探测（非派发目标）：${facts.unprobed_devices.map(device=>`清单第 ${device.index + 1} 台（类型 ${device.type ?? '清单未声明'}）`).join('、')}；只按清单身份参与拓扑与地址绑定，不派发命令`);
+  if(facts.unjudged?.length)s.out(`未对照：${facts.unjudged.map(item=>item.pointer!==undefined?`条件 ${JSON.stringify(item.pointer)}`:`座位 ${JSON.stringify(item.seat ?? '')} 的 ${item.check ?? 'version'}`).join('、')}；没有运行锁定的构建，只把设备自述记为观察，不按任何版本判断；派发时按运行锁定的构建核对`);
+  for(const condition of facts.failed_conditions ?? [])s.out(`未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
+  for(const check of facts.failed_checks ?? [])s.out(`未满足核对：步骤 ${JSON.stringify(check.step)}${check.seat!==undefined?`；座位 ${JSON.stringify(check.seat)}`:''}${check.check!==undefined?`；检查 ${JSON.stringify(check.check)}`:''}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
+  if(facts.admin_release)for(const check of facts.admin_release.filter(check=>check.satisfied!==true))s.out('管理员放行说明：'+JSON.stringify(check));
+  if(facts.admin_release_missing)s.out('管理员放行说明：诊断记录未能保存或读取，请查看管理员日志');
+  if (facts.reason) s.out(`作业说明：${facts.reason}`);
+  if (facts.missing_fact) s.out(`作业缺事实：${facts.missing_fact}`);
+  if (facts.result) s.out(`作业报告引用 ${facts.result}`);
+  if (facts.device_return) s.out(`作业设备输出引用 ${facts.device_return}（不替代本轮结局）`);
+  if (facts.next_action) s.out(`作业下一步：${facts.next_action}`);
 }
 export async function readUploadedCommandBytes(records: Pick<RecordsKit, 'artifacts'>, by: Principal, reference: string): Promise<Uint8Array> {
   if (!reference.startsWith('src:') || !isSha256(reference.slice(4))) throw new UsageError('上传引用须为 src:<完整摘要>，不接受片段或记录引用');
@@ -213,10 +240,17 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     const events = await dispatch.journal.events(state.job); return events.some(e => e.body.detail.readonly_verified === true) ? 0 : 1;
   }
   if (sub === 'dispatch' && values.run && values.executor && positionals.length === 0) {
-    const state = await dispatch.dispatch(by, values.run, values.executor, job => s.out(`阶段已预留；作业摘要 ${job}`)); output(s, state); return state.outcome === 'effective' && !state.frozen ? 0 : 1;
+    const state = await dispatch.dispatch(by, values.run, values.executor, job => s.out(`阶段已预留；作业摘要 ${job}`)); output(s, state); return state.dispatch_attempt?.outcome === 'effective' && state.job_facts.frozen !== true ? 0 : 1;
   }
   if ((sub === 'status' || sub === 'resume') && positionals.length === 1) {
-    const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state); return state.outcome === 'unknown' ? 1 : 0;
+    const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state);
+    const facts = state.job_facts, attempt = state.dispatch_attempt;
+    if (facts.frozen === true) return 1;
+    if (attempt) return attempt.outcome === undefined || attempt.outcome === 'unknown' ? 1 : 0;
+    if (facts.admission_error) return 0;
+    if (facts.operation === 'precheck') return facts.readonly_verified === true ? 0 : 1;
+    if (facts.operation === 'conformance') return facts.conformance_verified === true ? 0 : 1;
+    return 1;
   }
   if (sub === 'dispose' && positionals.length === 1) {
     if (Number(values.reconcile !== undefined) + Number(values['keep-unknown'] === true) + Number(values['mark-failed'] === true) !== 1) throw new UsageError('处置必须且只能选择一个选项');
@@ -224,7 +258,7 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     if (values['accept-possible-duplicate-effects'] && !values['mark-failed']) throw new UsageError('风险确认只用于标记失败');
     if (values['numeric-id'] && (values.reconcile === undefined || !/^-?(?:0|[1-9][0-9]*)$/.test(values.reconcile) || !Number.isSafeInteger(Number(values.reconcile)))) throw new UsageError('--numeric-id 要求可精确表示的十进制整数对账编号');
     const state = await dispatch.dispose(by, positionals[0], { choice: values.reconcile !== undefined ? 'reconcile' : values['keep-unknown'] ? 'keep_unknown' : 'mark_failed', remote_id: values['numeric-id'] ? Number(values.reconcile) : values.reconcile, reason: values.reason, acceptPossibleDuplicateEffects: values['accept-possible-duplicate-effects'] === true });
-    output(s, state); return state.frozen ? 1 : 0;
+    output(s, state); return state.job_facts.frozen === true ? 1 : 0;
   }
   throw new UsageError(`job 的子命令：${JOB_USAGE}`);
   } finally { await dispatch.close(); }
