@@ -74,7 +74,8 @@ test('M2 selective reset keeps migration evidence and rejects its real dependenc
     };
     const contents = async () => {
       const tables: Record<string, unknown> = {};
-      for (const table of foundations) tables[table] = (await db.query(`SELECT * FROM ${table} ORDER BY ${table === 'hub_migration_compatibility' ? 'migration_version' : 'singleton'}`)).rows;
+      // PostgreSQL supplies JSON timestamp values; raw pg Date instances are not canonical JSON.
+      for (const table of foundations) tables[table] = (await db.query(`SELECT to_jsonb(t) AS value FROM ${table} t ORDER BY ${table === 'hub_migration_compatibility' ? 'migration_version' : 'singleton'}`)).rows.map(row => row.value);
       return canonicalBytes(tables);
     };
     const records = async () => (await db.query('SELECT digest FROM records ORDER BY seq')).rows;
