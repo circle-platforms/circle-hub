@@ -6,7 +6,6 @@ import type { DispatchNote } from '../dispatch/api.ts';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
 import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, isKnowledgeEntryStatus, type KnowledgeEntryStatus, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
-import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { ItemProjection, type PackSummary, type RequirementSummary, type RunSummary, type SlotSchema } from '../../contracts/src/run.ts';
@@ -15,6 +14,7 @@ import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type Reso
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
+import { SOURCE_UNKNOWN_CODES, errorReasonOf } from './error-reasons.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -168,27 +168,25 @@ export function countsLine(acceptance: SubmitOut['acceptance'], partitions: Part
   return `${receipt}；${countsText(partitionCountsOf(partitions), partitions, labels)}`;
 }
 
-const SOURCE_READ_ERRORS = {
-  SOURCE_UNPARSEABLE: true, SOURCE_UNAVAILABLE: true, SOURCE_RETRYABLE: true,
-  SOURCE_INTEGRITY_UNPROVEN: true, SOURCE_READ_FAILED: true, SOURCE_READ_LIMIT: true,
-  SOURCE_REDIRECT_REFUSED: true, SOURCE_ABSENT: true, SOURCE_PENDING_REVIEW: true,
-} satisfies Partial<Record<ProtocolCode, true>>;
-
 function unknownError(error: ProtocolError): boolean {
-  return isReason(error.code) || Object.hasOwn(SOURCE_READ_ERRORS, error.code);
+  return isReason(error.code) || Object.hasOwn(SOURCE_UNKNOWN_CODES, error.code);
 }
 
-/** SOURCE_NOT_PERMITTED is a judged refusal (e.g. no pack assignment), not missing evidence — findings N1/N7. */
+/** D1: determined protocol errors take a registered reason or omit the reason segment; never fill with 「还没查清」. */
 function errorStatusParts(error: ProtocolError): string[] {
   if (unknownError(error)) return ['状态未知', '原因缺资料'];
-  if (error.code === 'SOURCE_NOT_PERMITTED') return ['状态已确认', '判断错误'];
-  return ['状态已确认', '判断错误', '原因还没查清'];
+  const reason = errorReasonOf(error.code);
+  if (reason === 'judgment_no_reason') return ['状态已确认', '判断错误'];
+  return ['状态已确认', '判断错误', `原因${reason}`];
 }
 
 function errorText(v: { errors: ProtocolError[]; trace: string }): string {
   const allUnknown = v.errors.every(unknownError);
-  const allDenied = v.errors.length > 0 && v.errors.every((error) => error.code === 'SOURCE_NOT_PERMITTED');
-  const lead = allDenied ? null : allUnknown ? '资料尚未取得。' : '这次核对有错误。';
+  // ABSENT / NOT_PERMITTED are refusals (no submission was checked): no lead line (Boss 12:10).
+  const allRefusal = v.errors.length > 0 && v.errors.every(
+    (error) => error.code === 'SOURCE_ABSENT' || error.code === 'SOURCE_NOT_PERMITTED',
+  );
+  const lead = allRefusal ? null : allUnknown ? '资料尚未取得。' : '这次核对有错误。';
   const lines = v.errors.map((error) => [
     error.message, ...errorStatusParts(error),
     error.fix ? `下一步${error.fix}` : '下一步由使用者核对输入资料',
@@ -643,7 +641,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
     const fix = missingRecord ? '由使用者请管理员核对保存的结果后重新读取' : error.fix;
-    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...(unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误', '原因还没查清'])];
+    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...errorStatusParts(error)];
     if (fix) parts.push(`下一步${fix}`);
     if (error.rounds_left !== undefined) parts.push(`最多重交 ${error.rounds_left} 次`);
     parts.push('决定者程序');

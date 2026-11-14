@@ -415,7 +415,13 @@ const steps=Array.from({length:2000},(_,i)=>'第 '+(i+1)+' 步：逐条核对用
 });
 
   test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
-const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);assert.equal(linesOf(text).filter(line=>line.includes('判断错误')).length,20);for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));assert.doesNotMatch(text,/SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20);const unknown=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_UNAVAILABLE',message:'资料尚未取得',fix:'使用者请管理员核对权限'}],trace:TRACE}));assert.match(unknown,/状态未知；原因缺资料/);assert.doesNotMatch(unknown,/判断错误/);
+const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);assert.equal(linesOf(text).filter(line=>line.includes('判断错误')).length,20);for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));assert.match(text,/^这次核对有错误。/);assert.doesNotMatch(text,/原因还没查清|原因缺资料|SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20);const unknown=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_UNAVAILABLE',message:'对你不可用',fix:'使用者请管理员核对权限'}],trace:TRACE}));assert.match(unknown,/^资料尚未取得。/);assert.match(unknown,/对你不可用；状态未知；原因缺资料/);assert.doesNotMatch(unknown,/判断错误|这次核对有错误/);
+});
+
+  test('D1: ABSENT and NOT_PERMITTED refusals omit the lead and the unknown-cause filler', () => {
+const absent=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_ABSENT',message:'Hub 里没有任务包 toy-missing',fix:'核对任务包名；用 list_task_packs 看你能用的任务包',path:'/pack'}],trace:TRACE}));assert.equal(absent.split('\n')[0],'Hub 里没有任务包 toy-missing；状态已确认；判断错误；下一步核对任务包名；用 list_task_packs 看你能用的任务包；决定者程序');assert.doesNotMatch(absent,/这次核对有错误|资料尚未取得|原因/);
+const denied=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_NOT_PERMITTED',message:'任务包 recompose 存在，没有分配给你',fix:'请管理员把它分配给你；用 list_task_packs 看你能用的任务包',path:'/pack'}],trace:TRACE}));assert.equal(denied.split('\n')[0],'任务包 recompose 存在，没有分配给你；状态已确认；判断错误；下一步请管理员把它分配给你；用 list_task_packs 看你能用的任务包；决定者程序');assert.doesNotMatch(denied,/这次核对有错误|资料尚未取得|原因/);
+const retryable=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_RETRYABLE',message:'来源暂时读不到',fix:'按给出的下次时刻重读'}],trace:TRACE}));assert.match(retryable,/^这次核对有错误。/);assert.match(retryable,/来源暂时读不到；状态已确认；判断错误；原因临时故障；下一步按给出的下次时刻重读；决定者程序/);
 });
 
   test('requirement facts say the accepted producer only: no producer kind the contracts do not give', () => {
@@ -478,7 +484,7 @@ const result=resultOf(items(400));const first=toolText('submit_result',submitAns
 });
 
   test('a submission that is not accepted: per-code counts first, every error with its rounds left, the stored result for the rest', () => {
-const errors:ProtocolError[]=Array.from({length:600},(_,i)=>({code:'QUOTE_MISMATCH',message:'原句 '+i+' 与资料对不上',fix:'使用者按原文逐字引用',path:'/items/'+i,rounds_left:1}));const result=ValidationResult.parse({...resultOf(items(1)),acceptance:'not_accepted',errors,partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[]},cross_item:[]});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD});assert.equal(linesOf(text).filter(line=>line.includes('最多重交 1 次')).length,600);assert.doesNotMatch(text,/QUOTE_MISMATCH|\/items\/|rec:/);assert.equal(answer.errors.length,600);
+const errors:ProtocolError[]=Array.from({length:600},(_,i)=>({code:'QUOTE_MISMATCH',message:'原句 '+i+' 与资料对不上',fix:'使用者按原文逐字引用',path:'/items/'+i,rounds_left:1}));const result=ValidationResult.parse({...resultOf(items(1)),acceptance:'not_accepted',errors,partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[]},cross_item:[]});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD});assert.equal(linesOf(text).filter(line=>line.includes('最多重交 1 次')).length,600);assert.match(text,/原句 0 与资料对不上；状态已确认；判断错误；下一步使用者按原文逐字引用；最多重交 1 次；决定者程序/);assert.doesNotMatch(text,/原因还没查清|QUOTE_MISMATCH|\/items\/|rec:/);assert.equal(answer.errors.length,600);
 });
 });
 
