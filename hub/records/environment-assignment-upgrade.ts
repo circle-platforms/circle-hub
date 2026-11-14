@@ -6,13 +6,14 @@ import { PermissionRoleSchema } from '../../contracts/generated/vocabulary.ts';
 import { canonicalBytes } from './canonical.ts';
 import { sha256Hex } from './digest.ts';
 import { Database, createPool, iso } from './db.ts';
+import { PgPrincipals } from './principals.ts';
 import { PgRecordStore } from './store.ts';
 import { FileObjectStore } from './objects.ts';
 import { RecordAuthorizations } from './authorizations.ts';
 import { isAdmin } from './permissions.ts';
 import { RequestPermissions } from './request-permissions.ts';
 import { AccessError, IntegrityError } from './errors.ts';
-import { MIGRATIONS, migrationChecksum, verifyMigrations, migrateEnvironmentAssignments, lockRecordMigrations } from './migrations.ts';
+import { MIGRATIONS, migrationChecksum, verifyMigrations, migrateEnvironmentAssignments, lockRecordMigrations, grantRuntime } from './migrations.ts';
 import { EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE } from './environment-upgrade-errors.ts';
 export { EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE } from './environment-upgrade-errors.ts';
 
@@ -131,6 +132,30 @@ async function capture(db: Database, config: Config, requested: Principal, sourc
   return { snapshot: found.snapshot, sourceRecords, plan, responsibleUser: principal.id };
 }
 
+/** Exact known-schema authentication without opening the normal records writer or touching vault files. */
+export async function authenticateEnvironmentUpgradeActor(config: Pick<RecordsConfig, 'database'>, authorization: string | null | undefined): Promise<Principal> {
+  const db = new Database(createPool(config.database, 1));
+  try { return await db.transaction(async tx => {
+    await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY', [], tx);
+    if (await schema(db, tx)) throw new AccessError('全新库没有可认证的升级管理员');
+    const principal = await new PgPrincipals(db, () => new Date()).authenticateReadOnly(authorization, tx);
+    if (!principal) throw new AccessError('升级需要有效的管理员 Bearer 身份');
+    return actor(await users(db, tx), principal);
+  }); } finally { await db.end(); }
+}
+
+/** Reads only verified activation evidence; absence is refusal, never an implicit activation. */
+export async function readEnvironmentAssignmentActivation(config: Config): Promise<EnvironmentUpgradeReceipt> {
+  const db = new Database(createPool(config.database, 1));
+  try { return await db.transaction(async tx => {
+    await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY', [], tx);
+    if (await schema(db, tx)) throw new EnvironmentUpgradeRequiredError();
+    const receipt = await completed(db, new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now: () => new Date() }), tx);
+    if (!receipt) throw new EnvironmentUpgradeRequiredError();
+    return receipt;
+  }); } finally { await db.end(); }
+}
+
 /** No DDL and no writable transaction: the previous baseline is read only after its exact receipt is verified. */
 export async function previewEnvironmentAssignmentUpgrade(config: Config, by: Principal, sources: EnvironmentUpgradeSources): Promise<EnvironmentUpgradePreview> {
   const db = new Database(createPool(config.database, 1));
@@ -150,7 +175,7 @@ export async function previewEnvironmentAssignmentUpgrade(config: Config, by: Pr
   }); } finally { await db.end(); }
 }
 
-export async function applyEnvironmentAssignmentUpgrade(config: Config, by: Principal, sources: EnvironmentUpgradeSources, expected: EnvironmentUpgradePreview): Promise<EnvironmentUpgradeReceipt> {
+export async function applyEnvironmentAssignmentUpgrade(config: Config, by: Principal, sources: EnvironmentUpgradeSources, expected: EnvironmentUpgradePreview, options: { runtimeRole?: string } = {}): Promise<EnvironmentUpgradeReceipt> {
   const db = new Database(createPool(config.database, 1));
   try { return await db.transaction(async tx => {
     // Conflicting legacy writers need not use serializable transactions; owner-held table locks freeze their writes too.
@@ -167,6 +192,7 @@ export async function applyEnvironmentAssignmentUpgrade(config: Config, by: Prin
     if (freshDatabase) {
       if (!expected.freshDatabase || expected.payload !== null) throw new IntegrityError('全新库与预检不一致');
       await migrateEnvironmentAssignments(db, tx);
+      if (options.runtimeRole !== undefined) await grantRuntime(db, options.runtimeRole, tx);
       return { freshDatabase: true, alreadyCompleted: false, grants: 0, authorizationRecords: [] };
     }
     if (!expected.payload || expected.freshDatabase || expected.sha256 !== sha256Hex(canonicalBytes(expected.payload))) throw new IntegrityError('缺少完整保权预检快照');
@@ -180,6 +206,7 @@ export async function applyEnvironmentAssignmentUpgrade(config: Config, by: Prin
     }
     // Only now can any M2 DDL happen. The outer transaction also contains every grant and the completion receipt.
     await migrateEnvironmentAssignments(db, tx);
+    if (options.runtimeRole !== undefined) await grantRuntime(db, options.runtimeRole, tx);
     const references: string[] = [];
     for (const grant of current.plan.grants) {
       const decision = await authorizations.grant(await actorCurrent(db, tx, by), { permission: 'resource_assign', subject: grant.user, object: grant.executor, note: grant.note }, tx);

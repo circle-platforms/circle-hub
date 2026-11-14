@@ -460,7 +460,9 @@ export class PgPrincipals implements Principals {
   async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}
   authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,true);}
   identify(authorization:string|null|undefined){return this.#authenticate(authorization,false);}
-  async #authenticate(authorization:string|null|undefined,accessOnly:boolean):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
+  /** Internal upgrade authentication: same token rules, same connection, no usage telemetry write. */
+  async authenticateReadOnly(authorization:string|null|undefined,tx:Transaction):Promise<Principal|null>{return (await this.#authenticate(authorization,false,tx,true))?.principal??null;}
+  async #authenticate(authorization:string|null|undefined,accessOnly:boolean,tx?:Transaction,readOnly=false):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);
     if (match === null) return null;
@@ -468,12 +470,12 @@ export class PgPrincipals implements Principals {
       await this.#db.query(
         `SELECT t.id AS token_id, t.client_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
           WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2) AND (NOT $3 OR NOT t.console_session)`,
-        [sha256Hex(match[1]),this.#now().toISOString(),accessOnly],
+        [sha256Hex(match[1]),this.#now().toISOString(),accessOnly], tx,
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;
     const now = this.#now();
-    await this.#db.query('UPDATE tokens SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $3)', [
+    if (!readOnly) await this.#db.query('UPDATE tokens SET last_used_at = $2 WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $3)', [
       row.token_id,
       now.toISOString(),
       new Date(now.getTime() - LAST_USED_STEP_MS).toISOString(),
