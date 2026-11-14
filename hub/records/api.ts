@@ -171,11 +171,11 @@ export interface Principals {
   rename(by: Principal, userId: string, name: string): Promise<User>;
   /** Recheck the actor and personal owners, holding shared user-row locks until this transaction ends. */
   lockActive(by: Principal, tx: Transaction, owners?: readonly string[]): Promise<Principal>;
-  get(userId: string): Promise<User | null>;
+  get(userId: string, tx?: Transaction): Promise<User | null>;
   findByName(name: string): Promise<User | null>;
-  list(): Promise<User[]>;
+  list(tx?: Transaction): Promise<User[]>;
   /** These accounts in one read, for a page that names a few of them; an id that is none is left out. */
-  some(ids: readonly string[]): Promise<User[]>;
+  some(ids: readonly string[], tx?: Transaction): Promise<User[]>;
   history(userId: string): Promise<UserChange[]>;
   /** Admins issue tokens for anyone; a user only for themselves. `client` is the registered client it goes to, if any. */
   issueToken(by: Principal, userId: string, label?: string, client?: string): Promise<IssuedToken>;
