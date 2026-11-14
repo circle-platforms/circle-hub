@@ -37,6 +37,9 @@ export type ExecutorNameBinding = z.infer<typeof ExecutorNameBinding>;
 
 const name = ExecutorStableName;
 export const DEPLOYMENT_SCHEMA = 'deployment@3';
+/** A confirmed owner-held booking namespace, not a test environment or an environment assignment. */
+export const BookingPrefix = z.strictObject({ prefix: TestEnvironmentPrefix.shape.prefix, owner: name });
+export type BookingPrefix = z.infer<typeof BookingPrefix>;
 /** Public exports require complete names and targets; unknown canonical registrations must be reported, never guessed or omitted. */
 export const DeploymentTestEnvironment = z.strictObject({
   name, target: z.string().min(1).max(200),
@@ -78,6 +81,7 @@ export const DeploymentDefinition = z.strictObject({
   executors: z.array(DeploymentExecutor).default([]),
   testEnvironments: z.array(DeploymentTestEnvironment).default([]),
   environmentAssignments: z.array(DeploymentEnvironmentAssignment).default([]),
+  bookingPrefixes: z.array(BookingPrefix).default([]),
   workflowAssignments: z.array(z.union([
     z.strictObject({ pack: PackId, user: name }),
     z.strictObject({ pack: PackId, team: name }),
@@ -97,6 +101,8 @@ export const DeploymentDefinition = z.strictObject({
     if (new Set(names).size !== names.length) ctx.addIssue({ code: 'custom', path: [key], message: '名字重复' });
   }
   const targets = value.testEnvironments.map(row => row.target);
+  const bookingPrefixes = value.bookingPrefixes.map(row => row.prefix);
+  if (new Set(bookingPrefixes).size !== bookingPrefixes.length) ctx.addIssue({ code: 'custom', path: ['bookingPrefixes'], message: '预订前缀重复' });
   if (new Set(targets).size !== targets.length) ctx.addIssue({ code: 'custom', path: ['testEnvironments'], message: '同一目标只能登记一个测试环境，多个执行器应关联到同一环境' });
   const recipients = value.environmentAssignments.map(row => JSON.stringify([row.environment, 'user' in row ? ['user', row.user] : 'team' in row ? ['team', row.team] : ['all']]));
   if (new Set(recipients).size !== recipients.length) ctx.addIssue({ code: 'custom', path: ['environmentAssignments'], message: '测试环境的受众分配重复' });
