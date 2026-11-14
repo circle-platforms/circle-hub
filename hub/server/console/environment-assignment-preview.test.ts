@@ -44,3 +44,10 @@ test('connections page labels the staged policy without querying grants to infer
   assert.equal(result.status, 200); assert.ok(result.body.text.includes(notice));
   assert.match(result.body.text, /只读报告未知/); assert.doesNotMatch(result.body.text, /已无分配/);
 });
+
+test('member capabilities card for assigned resources is 业务系统 not 连接', () => {
+  const body = renderMemberCapabilities(capabilities(false)).text;
+  assert.match(body, /ch-section-label">业务系统</);
+  assert.match(body, /尚无可用的已分配业务系统/);
+  assert.doesNotMatch(body, /尚无可用的已分配连接/);
+});

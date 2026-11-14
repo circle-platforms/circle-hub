@@ -99,19 +99,23 @@ export const TEAM_ACTIONS: Readonly<Record<string, Action>> = {
     }),
   },
   'resource-assign': {
-    title: '分配资源',
-    back: '/console/connections',
-    active: 'connections',
-    build: (form) => ({
-      argv: ['resource', 'assign', word(form, 'resource', '资源'), ...resourceTarget(form)],
-    }),
+    title: '分配业务系统',
+    back: TEAMS,
+    active: 'team',
+    // Boss 15:20 #4: one POST may assign several business systems (resources= newline/checkbox list, or single resource=).
+    build: (form) => {
+      const listed = form.get('resources').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const list = listed.length > 0 ? listed : [word(form, 'resource', '业务系统')];
+      const target = resourceTarget(form);
+      return list.map((resource) => ({ argv: ['resource', 'assign', resource, ...target] }));
+    },
   },
   'resource-unassign': {
-    title: '撤回资源分配',
-    back: '/console/connections',
-    active: 'connections',
+    title: '撤回业务系统分配',
+    back: TEAMS,
+    active: 'team',
     build: (form) => ({
-      argv: ['resource', 'unassign', word(form, 'resource', '资源'), ...resourceTarget(form)],
+      argv: ['resource', 'unassign', word(form, 'resource', '业务系统'), ...resourceTarget(form)],
     }),
   },
 };

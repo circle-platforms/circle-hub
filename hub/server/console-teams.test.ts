@@ -133,12 +133,20 @@ test('TEAM_ACTIONS build the argv shapes from interfaces §2', () => {
   assert.deepEqual(TEAM_ACTIONS['pack-assign-team'].build(form({ pack: 'wf.synthetic', team: TEAM_A.id })), [
     { argv: ['pack', 'assign', 'wf.synthetic', `--team=${TEAM_A.id}`] },
   ]);
-  assert.deepEqual(TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.all })), {
-    argv: ['resource', 'assign', 'res_synthetic', '--all'],
-  });
-  assert.deepEqual(TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.team, team: TEAM_A.id })), {
-    argv: ['resource', 'assign', 'res_synthetic', `--team=${TEAM_A.id}`],
-  });
+  assert.deepEqual(TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.all })), [
+    { argv: ['resource', 'assign', 'res_synthetic', '--all'] },
+  ]);
+  assert.deepEqual(TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.team, team: TEAM_A.id })), [
+    { argv: ['resource', 'assign', 'res_synthetic', `--team=${TEAM_A.id}`] },
+  ]);
+  assert.deepEqual(TEAM_ACTIONS['resource-assign'].build(form({
+    resources: 'res_a\nres_b',
+    audience: RESOURCE_AUDIENCE.team,
+    team: TEAM_A.id,
+  })), [
+    { argv: ['resource', 'assign', 'res_a', `--team=${TEAM_A.id}`] },
+    { argv: ['resource', 'assign', 'res_b', `--team=${TEAM_A.id}`] },
+  ]);
   assert.throws(() => TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.none })), /先不分配/);
   assert.equal(TEAMS, '/console/team');
   assert.deepEqual(RESOURCE_AUDIENCE_OPTIONS.map((row) => row.label), ['全体', '某团队', '先不分配']);
@@ -200,6 +208,48 @@ test('teamDetailPage for an admin shows members, assignments and delete counts',
   assert.match(body, /合成业务系统/);
   assert.match(body, /action="\/console\/admin\/do\/team-add"/);
   assert.match(body, /action="\/console\/admin\/do\/pack-assign-team"|action="\/console\/admin\/do\/pack-unassign-team"/);
+  assert.match(body, /批量分配业务系统/);
   assert.match(body, /工作流 1 条，业务系统 1 条/);
+  assert.match(body, /测试环境分配/);
   assert.deepEqual(wordingProblems(body), []);
+});
+
+test('teamDetailPage lists executor assignments under 测试环境 with target names', async () => {
+  const executor = 'exe_01aryz0123456789abcdefghjk';
+  const teams = fakeTeams({
+    assignments: async () => ({
+      packs: [{ body: { object: 'wf.synthetic', subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T03:00:00.000Z', decided_by: ADMIN.id, note: null } }] as never,
+      resources: [
+        { body: { object: 'res_synthetic', subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T03:30:00.000Z', decided_by: ADMIN.id, note: null } },
+        { body: { object: executor, subject: TEAM_A.id, revoked: false, decided_at: '2026-11-13T04:00:00.000Z', decided_by: ADMIN.id, note: null } },
+      ] as never,
+    }),
+  });
+  const ctx = context(ADMIN, teams, `${TEAMS}/${TEAM_A.id}`);
+  (ctx.deps as unknown as { dispatch: { executors: () => Promise<unknown[]> } }).dispatch = {
+    executors: async () => [{ id: executor, target: '合成实验室', endpoint: 'https://192.0.2.10', enabled: true, resources: [] }],
+  };
+  (ctx.deps as unknown as { memberCapabilities: () => Promise<unknown> }).memberCapabilities = async () => ({
+    environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null },
+  });
+  // A second business system remains unassigned so the bulk checkbox form is rendered.
+  const listed = await ctx.deps.resources.list(ADMIN);
+  ctx.deps.resources.list = async () => [
+    ...listed,
+    { id: 'res_unassigned', name: '未分配业务系统', system_pack: 'sys.synthetic@1.0.0', environment: 'lab', enabled: true },
+  ] as never;
+  const page = await teamDetailPage(ctx, TEAM_A.id);
+  assert.equal(page.status, 200);
+  const body = String(page.body);
+  assert.match(body, /合成实验室/);
+  assert.match(body, /测试环境分配/);
+  assert.match(body, /data-environment-assignment-preview/);
+  assert.match(body, /<dt>业务系统<\/dt><dd>1<\/dd>/);
+  assert.match(body, /<dt>测试环境<\/dt><dd>1<\/dd>/);
+  assert.match(body, /name="resources" value="res_unassigned"/);
+  const businessSection = body.slice(body.indexOf('业务系统分配'), body.indexOf('测试环境分配'));
+  assert.doesNotMatch(businessSection, /合成实验室|exe_/);
+  const environmentSection = body.slice(body.indexOf('测试环境分配'));
+  assert.match(environmentSection, /合成实验室/);
+  assert.doesNotMatch(environmentSection.replace(/value="exe_[^"]+"/g, 'value="hidden"'), /exe_/);
 });

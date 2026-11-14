@@ -7,7 +7,7 @@ import {commands} from './commands.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
 import {tokensForMembers,assignmentsForMembers} from './member-reads.ts';
 import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
-import {CLIENT_COLUMNS,clientRow,clientInspector,noClients} from './connections.ts';
+import {CLIENT_COLUMNS,clientRow,clientInspector,noClients,environmentAssignmentPreviewNotice} from './connections.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { count, emptyBlock, postForm, segments, selectControl } from './components.ts';
@@ -17,6 +17,10 @@ import {actionForm} from './manage.ts';
 import {RESOURCE_AUDIENCE} from './team-actions.ts';
 import {memberCapabilitiesHref} from './member-capabilities.ts';
 import type {Principal,Team,TeamAssignments,TeamMember,TeamRow,Teams,User} from '../../records/api.ts';
+
+/** resource_assign objects that are executors (Boss 15:20 #3); never shown as 业务系统. */
+const EXECUTOR_OBJECT = /^exe_[0-9a-hjkmnp-tv-z]{26}$/;
+const isExecutorObject = (id: string): boolean => EXECUTOR_OBJECT.test(id);
 
 /** The two tabs of the members page (decision 151, step 7): the members, and the clients they connected. One list each. */
 const TEAM_TABS=['members','teams','clients'] as const;
@@ -257,8 +261,18 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     ctx.deps.resources.list(ctx.principal),
     ctx.deps.records.principals.list(),
   ]);
+  let executors: Array<{ id: string; target: string }> = [];
+  if (ctx.deps.dispatch) {
+    try { executors = await ctx.deps.dispatch.executors(ctx.principal); } catch { executors = []; }
+  }
+  const executorTarget = new Map(executors.map((row) => [row.id, row.target]));
+  let environmentAssignmentsEnforced = false;
+  try {
+    environmentAssignmentsEnforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
+  } catch { /* staged notice stays when the capability port is unavailable */ }
   const workflows = packs.filter((pack) => pack.kind === 'workflow' && !pack.space && !pack.withdrawn);
-  const packName = (id: string) => workflows.find((pack) => pack.id === id)?.title ?? resources.find((row) => row.id === id)?.name ?? id;
+  const resourceName = (id: string) => resources.find((row) => row.id === id)?.name ?? '名称暂不可读';
+  const environmentName = (id: string) => executorTarget.get(id) ?? '名称暂不可读';
   const activeUsers = users.filter((user) => !user.disabled && !user.deleted_at);
   const memberIds = new Set(members.map((row) => row.user.id));
   const memberRows = members.map((row) => {
@@ -268,16 +282,24 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     return [link(`/console/team/${row.user.id}`, name), uiLabelOf('permission_role', row.user.role), status, when(row.added_at), remove];
   });
   const assignedPacks = new Set(assignments.packs.filter((row) => !row.body.revoked).map((row) => row.body.object));
-  const assignedResources = assignments.resources.filter((row) => !row.body.revoked);
+  const assignedObjects = assignments.resources.filter((row) => !row.body.revoked);
+  const assignedBusiness = assignedObjects.filter((row) => !isExecutorObject(row.body.object));
+  const assignedEnvironments = assignedObjects.filter((row) => isExecutorObject(row.body.object));
+  const assignedBusinessIds = new Set(assignedBusiness.map((row) => row.body.object));
   const packRows = workflows.map((pack) => {
     const has = assignedPacks.has(pack.id);
     const form = actionForm(has ? 'pack-unassign-team' : 'pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}"><input type="hidden" name="pack" value="${pack.id}">`, has ? '撤回' : '分配', { inline: true });
     return [pack.title, has ? '已分配' : '未分配', form];
   });
-  const resourceRows = assignedResources.map((row) => {
+  const resourceRows = assignedBusiness.map((row) => {
     const id = row.body.object;
     const form = actionForm('resource-unassign', ctx.csrf ?? '', html`<input type="hidden" name="resource" value="${id}"><input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, '撤回', { inline: true });
-    return [packName(id), when(row.body.decided_at), form];
+    return [resourceName(id), when(row.body.decided_at), form];
+  });
+  const environmentRows = assignedEnvironments.map((row) => {
+    const id = row.body.object;
+    const form = actionForm('executor-unassign', ctx.csrf ?? '', html`<input type="hidden" name="executor" value="${id}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, '撤回', { inline: true });
+    return [environmentName(id), when(row.body.decided_at), form];
   });
   const addCandidates = activeUsers.filter((user) => !memberIds.has(user.id));
   const addMember = card({ title: '加入成员' }, actionForm('team-add', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${field('成员', selectControl(
@@ -286,30 +308,29 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     addCandidates.length === 0 ? { value: '', label: '没有可加入的账户' } : undefined,
     { required: true, disabled: addCandidates.length === 0 },
   ))}`, '加入'));
-  const assignResource = card({ title: '分配业务系统' }, actionForm('resource-assign', ctx.csrf ?? '', html`<input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${field('业务系统', selectControl(
-    'resource',
-    resources.map((row) => ({ value: row.id, label: row.name })),
-    resources.length === 0 ? { value: '', label: '尚无业务系统' } : undefined,
-    { required: true, disabled: resources.length === 0 },
-  ))}`, '分配'));
+  const unassignedBusiness = resources.filter((row) => !assignedBusinessIds.has(row.id));
+  const assignResource = card({ title: '批量分配业务系统', hint: '可一次勾选多个业务系统分给本团队。' }, actionForm('resource-assign', ctx.csrf ?? '', html`<input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${unassignedBusiness.length === 0 ? html`<p class="ch-meta">没有未分配的业务系统。</p>` : html`<div data-fields>${unassignedBusiness.map((row) => html`<label class="check" data-wide-field><input type="checkbox" name="resources" value="${row.id}"> ${row.name}</label>`)}</div>`}`, '分配选中的业务系统', { primary: true }));
   const packCount = assignedPacks.size;
-  const resourceCount = assignedResources.length;
+  const resourceCount = assignedBusiness.length;
+  const environmentCount = assignedEnvironments.length;
   const deleteId = 'delete-team-detail';
-  const deleteDialog = dialog(deleteId, '删除团队', html`<p>删除「${team.name}」会一并撤回它名下的分配：工作流 ${count(packCount)} 条，业务系统 ${count(resourceCount)} 条。</p>`, postForm({ action: '/console/admin/do/team-delete', csrf: ctx.csrf ?? '', fields: html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, submit: '删除', danger: true }));
+  const deleteDialog = dialog(deleteId, '删除团队', html`<p>删除「${team.name}」会一并撤回它名下的分配：工作流 ${count(packCount)} 条，业务系统 ${count(resourceCount)} 条${environmentCount ? html`，测试环境 ${count(environmentCount)} 条` : ''}。</p>`, postForm({ action: '/console/admin/do/team-delete', csrf: ctx.csrf ?? '', fields: html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, submit: '删除', danger: true }));
   return {
     status: 200,
     body: page(ctx.chrome(team.name, {
       active: 'team',
-      hint: '成员继承所在团队的工作流分配；业务系统按团队或全体分配，没有分配不开放。',
+      hint: '成员继承所在团队的工作流分配；业务系统按团队或全体分配，没有分配不开放。测试环境分配在本页单独列出。',
       actions: html`${button('/console/team', '返回团队')}${actionLink(`#${deleteId}`, '删除团队…', 'danger')}`,
     }), pageLayout(html`<div class="ch-stack" data-team-detail>
-${card({ title: '概况' }, definitions([['名称', team.name], ['成员', count(members.length)], [uiLabelOf('pack_kind', 'workflow'), count(packCount)], ['业务系统', count(resourceCount)], ['创建时间', when(team.created_at)]]))}
+${card({ title: '概况' }, definitions([['名称', team.name], ['成员', count(members.length)], [uiLabelOf('pack_kind', 'workflow'), count(packCount)], ['业务系统', count(resourceCount)], ['测试环境', count(environmentCount)], ['创建时间', when(team.created_at)]]))}
 ${card({ title: '成员' }, table(['名字', '角色', '状态', '加入时间', ''], memberRows, '没有成员'))}
 ${addMember}
 ${card({ title: '工作流分配' }, table([uiLabelOf('pack_kind', 'workflow'), '状态', ''], packRows, '尚无工作流'))}
 ${card({ title: '批量分配工作流', hint: '可一次勾选多个工作流分给本团队。' }, actionForm('pack-assign-team', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${workflows.filter((pack) => !assignedPacks.has(pack.id)).length === 0 ? html`<p class="ch-meta">没有未分配的工作流。</p>` : html`<div data-fields>${workflows.filter((pack) => !assignedPacks.has(pack.id)).map((pack) => html`<label class="check" data-wide-field><input type="checkbox" name="packs" value="${pack.id}"> ${pack.title}</label>`)}</div>`}`, '分配选中的工作流', { primary: true }))}
 ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], resourceRows, '尚未分配业务系统'))}
 ${assignResource}
+${environmentAssignmentPreviewNotice(environmentAssignmentsEnforced)}
+${card({ title: '测试环境分配', hint: environmentAssignmentsEnforced ? undefined : '新测试环境分配尚未启用，当前仍按原工作流和预订规则' }, table(['目标', '分配时间', ''], environmentRows, '尚未分配测试环境'))}
 ${deleteDialog}
 </div>`, { back: link('/console/team', '返回团队') })),
   };
