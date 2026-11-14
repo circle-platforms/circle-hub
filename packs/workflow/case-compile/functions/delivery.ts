@@ -141,7 +141,7 @@ export const auditKey = (run: string, item: string): string => `${run}\u0000${it
 /** A command the device refused to parse, as one of its sessions shows it (see syntaxRejections). */
 export interface SyntaxRejection { command: string; token?: string; prompt?: string }
 const isCaretLine = (line: string): boolean => { const s = line.trim(); return s === '^' || (s.length <= 3 && s.includes('^')); };
-const LEADING_PROMPT = /^([A-Za-z][A-Za-z0-9_.-]{0,20}(?:\([A-Za-z0-9_\- ]+\))?[#>])/;
+export const LEADING_PROMPT = /^([A-Za-z][A-Za-z0-9_.-]{0,20}(?:\([A-Za-z0-9_\- ]+\))?[#>])/;
 const PROMPT_LOOKBACK = 8;
 /** The word of `line` the caret column points at, or the next word after it (the reference engine's locate_caret_token). */
 function wordAt(line: string, column: number): string | null {

@@ -72,6 +72,43 @@ export function resolveInsideCwd(
   };
 }
 
+function resolveExistingEntryInsideCwd(
+  cwd: ResolvedCwd,
+  entryArg: string,
+  label: string,
+  kind: 'file' | 'directory',
+  missingHint?: string,
+): ResolvedCwdPath {
+  const resolved = resolveInsideCwd(cwd, entryArg, label);
+  const kindLabel = kind === 'file' ? '文件' : '目录';
+  const expectedType = kind === 'file' ? '普通文件' : '普通目录';
+  let st: ReturnType<typeof lstatSync>;
+  try {
+    st = lstatSync(resolved.lexical);
+  } catch (error) {
+    if ((error as { code?: unknown })?.code === 'ENOENT') {
+      const next = missingHint ?? `请确认 ${entryArg} 已在当前工作目录存在后重试`;
+      throw new Error(`不存在：找不到 ${label} ${kindLabel} ${entryArg}。${next}`);
+    }
+    throw error;
+  }
+  if (st.isSymbolicLink()) {
+    throw new Error(`参数无效：${label} ${kindLabel} ${entryArg} 不能是符号链接。请改用工作目录内的真实${kindLabel}后重试`);
+  }
+  if (kind === 'file' ? !st.isFile() : !st.isDirectory()) {
+    throw new Error(`参数无效：${label} ${entryArg} 不是${expectedType}。请改用工作目录内的${expectedType}后重试`);
+  }
+  const canonical = realpathSync(resolved.lexical);
+  if (!isInsideRoot(canonical, cwd.canonical)) {
+    throw new Error(`参数无效：${label} 路径 ${entryArg} 解析后超出当前工作目录。请改用工作目录内的真实路径后重试`);
+  }
+  return {
+    lexical: resolved.lexical,
+    canonical,
+    relative: relative(cwd.canonical, canonical) || '.',
+  };
+}
+
 /**
  * Resolves an existing regular non-symlink file inside `cwd`.
  */
@@ -81,30 +118,17 @@ export function resolveExistingFileInsideCwd(
   label: string,
   missingHint?: string,
 ): ResolvedCwdPath {
-  const resolved = resolveInsideCwd(cwd, fileArg, label);
-  let st: ReturnType<typeof lstatSync>;
-  try {
-    st = lstatSync(resolved.lexical);
-  } catch (error) {
-    if ((error as { code?: unknown })?.code === 'ENOENT') {
-      const next = missingHint ?? `请确认 ${fileArg} 已在当前工作目录创建后重试`;
-      throw new Error(`不存在：找不到 ${label} 文件 ${fileArg}。${next}`);
-    }
-    throw error;
-  }
-  if (st.isSymbolicLink()) {
-    throw new Error(`参数无效：${label} 文件 ${fileArg} 不能是符号链接。请改用工作目录内的普通文件后重试`);
-  }
-  if (!st.isFile()) {
-    throw new Error(`参数无效：${label} ${fileArg} 不是普通文件。请改用工作目录内的普通文件后重试`);
-  }
-  const canonical = realpathSync(resolved.lexical);
-  if (!isInsideRoot(canonical, cwd.canonical)) {
-    throw new Error(`参数无效：${label} 路径 ${fileArg} 解析后超出当前工作目录。请改用工作目录内的真实路径后重试`);
-  }
-  return {
-    lexical: resolved.lexical,
-    canonical,
-    relative: relative(cwd.canonical, canonical) || '.',
-  };
+  return resolveExistingEntryInsideCwd(cwd, fileArg, label, 'file', missingHint);
+}
+
+/**
+ * Resolves an existing non-symlink directory inside `cwd`.
+ */
+export function resolveExistingDirInsideCwd(
+  cwd: ResolvedCwd,
+  dirArg: string,
+  label: string,
+  missingHint?: string,
+): ResolvedCwdPath {
+  return resolveExistingEntryInsideCwd(cwd, dirArg, label, 'directory', missingHint);
 }

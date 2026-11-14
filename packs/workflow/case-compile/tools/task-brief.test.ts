@@ -5,7 +5,11 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { renderAgentDefinition, SUBAGENT_ROLES } from '../functions/subagent-roles.ts';
+import {
+  CIRCLE_GENERAL_PURPOSE_NOTICE,
+  renderAgentDefinition,
+  SUBAGENT_ROLES,
+} from '../functions/subagent-roles.ts';
 import { stage } from '../pack-files.ts';
 import { buildTaskBrief, main } from './task-brief.ts';
 
@@ -28,6 +32,7 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       packRoot: packDir,
       note: '先查前置配置',
     });
+    assert.ok(writerBrief.startsWith(`${CIRCLE_GENERAL_PURPOSE_NOTICE}\n\n`));
     assert.ok(writerBrief.includes('subagent_type="general-purpose"'));
     assert.ok(writerBrief.includes('compile-writer'));
     assert.ok(writerBrief.includes(scopeVerbatim));
@@ -239,6 +244,193 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     } finally {
       process.stderr.write = stderrWrite;
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('task-brief round 2+ embeds single-case prior plan, device output or 12,000-char missing disclosure, attribution hypothesis, and streak diffs while isolating fidelity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-round2-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    const workDir = join(root, 'work');
+    await mkdir(workDir);
+    await writeFile(join(workDir, 'scope.md'), '只测试 301 这一条合成用例。', 'utf8');
+
+    const CASE = '990000000000000301';
+    const OTHER = '990000000000000302';
+    const planDoc = (cmd1: string, cmd2: string) => ({
+      item: `case-${CASE}`,
+      handling: 'handled',
+      slots: {
+        plan: [
+          {
+            text: '合成自动化用例',
+            quotes: [{ reference: `src:${'2'.repeat(64)}/kityminder@1/n/e1`, text: '期望命中' }],
+            data: {
+              bucket: 'bed-a',
+              blocks: [],
+              replacements: [],
+              steps: [
+                { object: 'dut0', method: 'exec', args: [cmd1], keywords: {}, description: '设置前置' },
+                { object: 'dut0', method: 'exec', args: [cmd2], keywords: {}, description: '执行查询' },
+              ],
+              expects: [{ text: '期望命中', quote: { reference: `src:${'2'.repeat(64)}/kityminder@1/n/e1`, text: '期望命中' }, after: 2 }],
+            },
+          },
+        ],
+      },
+    });
+
+    await mkdir(join(workDir, 'run', 'items'), { recursive: true });
+    await mkdir(join(workDir, 'run', 'briefs'), { recursive: true });
+    await writeFile(join(workDir, 'run', 'briefs', '00.md'), '# 编写简报 00\n', 'utf8');
+    await writeFile(
+      join(workDir, 'run', 'items', '00.json'),
+      JSON.stringify({ id: `case-${CASE}`, fields: { autoid: CASE, title: '合成 301' } }),
+    );
+
+    await mkdir(join(workDir, 'plans-r1'));
+    await mkdir(join(workDir, 'plans-r2'));
+    await writeFile(join(workDir, 'plans-r1', '00.json'), JSON.stringify(planDoc('widget init-alpha', 'show widget v1')));
+    await writeFile(join(workDir, 'plans-r2', '00.json'), JSON.stringify(planDoc('widget init-beta', 'show widget v1')));
+
+    // Round 1 returns: truncated session missing step 1 (`widget init-alpha`) while retaining step 2 refusal;
+    // Round 2 returns: same `show widget v1` execution refusal so consecutive streak = 2 on Round 3.
+    const makeReturns = async (dirName: string, runId: string, omitStep1: boolean) => {
+      const base = join(workDir, dirName);
+      const caseDir = join(base, 'd'.repeat(12), 'cases', CASE);
+      await mkdir(caseDir, { recursive: true });
+      const lines = [
+        ...(omitStep1 ? ['seat#noise filler\n'.repeat(100)] : ['seat#widget init-beta\nok\n']),
+        'seat#show widget v1\nError: object missing\nseat#\n',
+      ];
+      await writeFile(join(caseDir, 'dut0.txt'), lines.join(''), 'utf8');
+      await writeFile(join(caseDir, 'log.txt'), `dispatched show widget v1\nError: object missing\n`, 'utf8');
+      await writeFile(
+        join(base, 'index.json'),
+        JSON.stringify({
+          schema: 'device-returns@1',
+          run: runId,
+          jobs: [
+            {
+              job: 'd'.repeat(64),
+              verification_run: runId,
+              rows: [
+                {
+                  item: OTHER,
+                  verdict: 'fail',
+                  execution_refused: [{ session: 'dut0.txt', prompt: 'seat#', command: 'forbidden other cmd', reply: ['other err'] }],
+                },
+                {
+                  item: CASE,
+                  verdict: 'fail',
+                  log: join('d'.repeat(12), 'cases', CASE, 'log.txt'),
+                  sessions: { 'dut0.txt': join('d'.repeat(12), 'cases', CASE, 'dut0.txt') },
+                  execution_refused: [{ session: 'dut0.txt', prompt: 'seat#', command: 'show widget v1', reply: ['Error: object missing'] }],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    };
+
+    await makeReturns('ret-r1', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', true);
+    await makeReturns('ret-r2', 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', false);
+    await writeFile(join(workDir, 'ans-r1.txt'), `用例 ${OTHER} OTHER_CODE\n用例 ${CASE} SOME_GATE /slots/plan/0：门禁提示\n`, 'utf8');
+    await writeFile(
+      join(workDir, 'notes-r2.json'),
+      JSON.stringify({
+        cases: {
+          [OTHER]: { judged: '另一个用例的归因', remedy: '不要泄露' },
+          [CASE]: { judged: '疑似缺少前置创建对象', remedy: '先建对象再查询', evidence: 'Error: object missing' },
+        },
+      }),
+    );
+
+    // Round 2 checks missing truncated step disclosure
+    const r2Brief = await buildTaskBrief({
+      role: '写计划',
+      caseRef: CASE,
+      briefPath: 'run/briefs/00.md',
+      outPath: 'plans-r2/00.json',
+      round: 2,
+      priorPlans: 'plans-r1/00.json',
+      priorReturns: 'ret-r1',
+      priorAnswers: 'ans-r1.txt',
+      cwd: workDir,
+      packRoot: packDir,
+    });
+    assert.ok(r2Brief.includes('当前轮次：第 2 轮'));
+    assert.ok(r2Brief.includes('widget init-alpha'));
+    assert.ok(r2Brief.includes('这一步的设备输出不在保留的末尾 12,000 个字符内'));
+    assert.ok(r2Brief.includes('Error: object missing'));
+    assert.ok(r2Brief.includes('SOME_GATE'));
+    assert.ok(!r2Brief.includes('forbidden other cmd') && !r2Brief.includes('OTHER_CODE'));
+
+    // Round 3 staged CLI run checks consecutive same-error streak, R1->R2 diff, and hypothesis marker
+    const r3Cli = spawnSync(
+      process.execPath,
+      [
+        join(packDir, 'tools/task-brief.ts'),
+        '--role',
+        '写计划',
+        '--case',
+        CASE,
+        '--brief',
+        'run/briefs/00.md',
+        '--out',
+        'plans-r3/00.json',
+        '--round',
+        '3',
+        '--prior-plans',
+        'plans-r1/00.json,plans-r2/00.json',
+        '--prior-returns',
+        'ret-r1,ret-r2',
+        '--prior-answers',
+        'ans-r1.txt,-',
+        '--prior-notes',
+        '-,notes-r2.json',
+      ],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(r3Cli.status, 0, r3Cli.stderr);
+    assert.ok(r3Cli.stdout.includes('当前轮次：第 3 轮'));
+    assert.ok(r3Cli.stdout.includes('连续 2 轮命中同类错误'));
+    assert.ok(r3Cli.stdout.includes('widget init-alpha') && r3Cli.stdout.includes('widget init-beta'));
+    assert.ok(r3Cli.stdout.includes('confidence: "hypothesis"'));
+    assert.ok(r3Cli.stdout.includes('先建对象再查询'));
+    assert.ok(!r3Cli.stdout.includes('另一个用例的归因'));
+
+    // Round 2 without prior history fails closed
+    await assert.rejects(
+      buildTaskBrief({
+        role: '写计划',
+        caseRef: CASE,
+        briefPath: 'run/briefs/00.md',
+        outPath: 'plans-r2/00.json',
+        round: 2,
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /禁止无历史重派/,
+    );
+
+    // Blind fidelity role rejects history flags
+    await assert.rejects(
+      buildTaskBrief({
+        role: '保真核对',
+        caseRef: CASE,
+        briefPath: 'audit/00.brief.json',
+        outPath: 'audit/00.verdict.json',
+        round: 2,
+        priorReturns: 'ret-r1',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /严格盲审/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

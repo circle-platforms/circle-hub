@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "76d15bda14c1e558d18d460d321ae853350984d02a81f8e26f54d61db6f2c41f",
-      "size": 11271
+      "sha256": "39bb6a001b8d55d80a2b8d29deda118630d304e55d10a03677eef44b68997219",
+      "size": 13816
     },
     {
       "path": "agents/compile-attributor.md",
@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "6b03440f325c208d65208b38dead00df591d111ffa1a7f3849154dc148fdf113",
-      "size": 24082
+      "sha256": "3ff520e3ede2b6815953ead36660e3b6023125a81613c6139a959621b52df96f",
+      "size": 59040
     },
     {
       "path": "functions/bed.ts",
@@ -213,8 +213,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "140cd0d531eaee43c146c9ac310efc3fb10e604b5aac06e6ab25d7ca8f748391",
-      "size": 47228
+      "sha256": "89b0d5dacd42b0f7ff09490053814b1fe2a3124107a753b5d3262b3654af7d8e",
+      "size": 47235
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -362,6 +362,11 @@
       "size": 7236
     },
     {
+      "path": "functions/rework-history.ts",
+      "sha256": "155bc94deeaf0c0873bfb1eff0cd8592a9b3e80ae7fca86dbe34b4edc5280f84",
+      "size": 49973
+    },
+    {
       "path": "functions/runtime-contract.ts",
       "sha256": "bb5889943410ef1d28f47ea99db0f1f43db563ca275de080bb0b55a12b886a08",
       "size": 29884
@@ -378,8 +383,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "665a7d44859745173bb0eb027d92245f1b087c1398cc82a02c62b095bf1fe739",
-      "size": 21114
+      "sha256": "d85c621dbe1f2b6035a50caa6595d0c29000d7ae57e956b9de6cc804e2356cb6",
+      "size": 24056
     },
     {
       "path": "functions/subject.ts",
@@ -403,8 +408,8 @@
     },
     {
       "path": "functions/workbook.ts",
-      "sha256": "eab6b13f208d6e7d06e909220a7ce085e6cde5ca6f4ca41555ee0a17a04b940a",
-      "size": 25978
+      "sha256": "54798eed9a186c96d29f8344b54e6f0aa13533986467900efba1495bc01edc58",
+      "size": 26330
     },
     {
       "path": "policies/dispatch.json",
@@ -693,8 +698,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "c41a6adc4e3f1d5f1d0ea6607f6026a3f1516272650253d2cc72ae87206f916d",
-      "size": 13312
+      "sha256": "bbb781db4d4353d8a16609752a7bf2042ca4447d1b1a970a44a28087139c889f",
+      "size": 13583
     },
     {
       "path": "tables/command-identity.schema.json",
@@ -778,8 +783,8 @@
     },
     {
       "path": "tools/authoring-brief.ts",
-      "sha256": "2d632a9387114afcd027019e4e5779d79f4cc947bf2872f908c98998388389c5",
-      "size": 6740
+      "sha256": "f460e53bfa5850871df38377809ca275852d0a1c9f39f0a3015ea3abaf4ff39e",
+      "size": 16491
     },
     {
       "path": "tools/case-writers/extension.json",
@@ -792,14 +797,19 @@
       "size": 25103
     },
     {
+      "path": "tools/check-brief.ts",
+      "sha256": "b8ec6e1e5853a7fee2cdbc7042c3f9f72078f2e109b8b0bc1ca4e4f275b5fe0e",
+      "size": 4374
+    },
+    {
       "path": "tools/check-plan.ts",
       "sha256": "f51c362338c10b6c7e14a592b583a55e85126bb732599715b79593ef1a1f90a4",
       "size": 16908
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "65f499241c4748b62d09880efb67daed296148eff395521456f5dcbd7710eaef",
-      "size": 9275
+      "sha256": "920a8ee4d616b3eff07deef2698f28f24e115709d45eacbad3c905f88e5f976a",
+      "size": 9681
     },
     {
       "path": "tools/download-returns.ts",
@@ -847,6 +857,11 @@
       "size": 2917
     },
     {
+      "path": "tools/rework-inputs.ts",
+      "sha256": "a7bd730eeea8e7d3706aaf16afe8a5c8b3b497f4201b689e6afc765e47bd265c",
+      "size": 12740
+    },
+    {
       "path": "tools/seal-recompose.ts",
       "sha256": "849fdd9ce71a5277328dd9480365bc581d3d6c376d1c65095f424daad130a2cd",
       "size": 4146
@@ -858,13 +873,13 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "0d5ab1d8d0af723f7d9f8a324570592241fee2ff5c0f3bf4d1386aeed42720e2",
-      "size": 5404
+      "sha256": "671c03fbd44bc5ac2bbdc4d494d4117940847543f194d84bcf61073277c25af7",
+      "size": 13659
     },
     {
       "path": "tools/workspace-path.ts",
-      "sha256": "5347624fad2fd03262ceaaa74a54fcf78eb8dc4cc0dfbde9b68e2bea43e4edc7",
-      "size": 4040
+      "sha256": "44de7b37ae6eb4256bc5d68bcaf0c30e6b389468b3a603ffd91777291f25baef",
+      "size": 4800
     },
     {
       "path": "workflow.json",

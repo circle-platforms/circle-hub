@@ -1,5 +1,11 @@
 // Single-source declarations for case-compile subagent roles.
 // Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
+import type { CompileBriefV1 } from './authoring-brief.ts';
+import {
+  renderPriorRoundsMarkdown,
+  type PriorRoundRecord,
+  type StreakAnalysis,
+} from './rework-history.ts';
 
 export type SubagentRoleKey = 'recompose' | 'plan' | 'fidelity' | 'attribute';
 
@@ -21,6 +27,10 @@ export interface TaskBriefInput {
   skillDir: string;
   scopeText: string;
   note?: string;
+  round?: number;
+  compileBrief?: CompileBriefV1;
+  priorRounds?: readonly PriorRoundRecord[];
+  streak?: StreakAnalysis;
 }
 
 const SKILL_DIR_PLACEHOLDER = '<技能目录>';
@@ -177,23 +187,40 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
   ].join('\n');
 }
 
+export const CIRCLE_GENERAL_PURPOSE_NOTICE =
+  '说明：这个子代理的系统提示里有一段关于「生成代理配置、输出 JSON」的内容，是 Circle 1.17.0 的已知缺陷，与本任务无关。本任务只做下面写的事，输出只按本任务说明。';
+
 /**
  * Renders a self-contained `description` string for Circle's built-in `general-purpose`
  * subagent (`task` tool), substituting the installed `<技能目录>` path and embedding
  * the verbatim user scope recorded by the main session.
  */
 export function renderTaskBrief(input: TaskBriefInput): string {
-  const { role, caseRef, briefPath, outPath, skillDir, scopeText, note } = input;
+  const { role, caseRef, briefPath, outPath, skillDir, scopeText, note, compileBrief } = input;
+  const round = input.round ?? compileBrief?.identity.round ?? 1;
+  const priorRounds = input.priorRounds ?? compileBrief?.round_history.rounds ?? [];
+  const streak = input.streak ?? compileBrief?.round_history.streak;
+
+  if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak)) {
+    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出或归因历史');
+  }
+  if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0) {
+    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或门禁/归因历史，禁止无历史重派`);
+  }
+
   const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
 
-  return [
+  const sections: string[] = [
+    CIRCLE_GENERAL_PURPOSE_NOTICE,
+    '',
     `请以只读隔离的子代理身份执行本阶段单项任务，使用通用子代理（\`subagent_type="general-purpose"\`）承载角色 \`${role.agentName}\`（${role.stageLabel}）。`,
     '',
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
     `- 原始用例 / 对象：${caseRef}`,
+    `- 当前轮次：第 ${round} 轮${compileBrief ? `（模式 ${compileBrief.task.mode}；简报摘要 ${compileBrief.brief_sha256.slice(0, 12)}）` : ''}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
     `- 技能目录：${skillDir}`,
@@ -203,6 +230,41 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     `- 本轮允许工具：${role.tools.join(', ')}`,
     `- 本轮严禁工具与动作：${role.forbiddenTools.join('、')}`,
     '- 严禁执行任何父会话上下文中的跨阶段动作或修改唯一目标输出路径之外的文件。',
+  ];
+
+  if (compileBrief) {
+    sections.push(
+      '',
+      '## 本轮结构化简报摘要与前置披露（来自 compile-brief@1）',
+      `- 前置检查状态（${compileBrief.materials.prerequisites.status}）：${compileBrief.materials.prerequisites.scan_reason}`,
+      `- 同用例历史上机记录（${compileBrief.prior_device_history.status}）：${compileBrief.prior_device_history.unavailable_reason ?? compileBrief.prior_device_history.disclaimer}`,
+    );
+    if (compileBrief.task.user_rulings.length > 0) {
+      for (const ur of compileBrief.task.user_rulings) {
+        sections.push(`- 已生效使用者裁定 [${ur.target}]：${ur.ruling}`);
+      }
+    }
+    if (compileBrief.materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
+      const bf = compileBrief.materials.bed_facts;
+      sections.push(
+        `- 测试环境 ${bf.bed_name ?? ''}：监听候选=[${bf.listeners.map((l) => l.address).join(', ')}]，盲区禁用=[${bf.blind.map((b) => b.address).join(', ')}]，后端=[${bf.backends.map((b) => b.address).join(', ')}]`,
+      );
+    }
+  }
+
+  if (priorRounds.length > 0 && streak && role.key !== 'fidelity') {
+    sections.push(
+      '',
+      renderPriorRoundsMarkdown({
+        caseRef,
+        currentRound: round,
+        rounds: priorRounds,
+        streak,
+      }),
+    );
+  }
+
+  sections.push(
     '',
     '## 本轮测试范围（使用者原话，由主会话记录）',
     '（以下为主会话逐字抄录的使用者范围原文；执行中必须严格遵守，不得自行缩小、改写或删减原始期望；若原文与手册冲突或存在未决项，按角色规则写入目标字段或交主代理汇总，不得擅自决定或向使用者发问。）',
@@ -211,5 +273,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '## 角色固定规则（与包内 agents 声明同源）',
     resolvedBody,
     '',
-  ].join('\n');
+  );
+
+  return sections.join('\n');
 }

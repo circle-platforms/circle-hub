@@ -149,6 +149,11 @@ test('the client skill dispatches general-purpose subagents via task-brief and s
   assert.ok(skill.includes('scope.md'));
   assert.ok(skill.includes('task-brief.ts'));
   assert.ok(skill.includes('general-purpose'));
+  assert.ok(skill.includes('装进当前主目录的 `skills` 目录'));
+  assert.ok(skill.includes('前台方式并列多个 `task`'));
+  assert.ok(skill.includes('严禁用 `background`'));
+  assert.ok(skill.includes('每批最多 6 个'));
+  assert.ok(skill.includes('单独重派'));
   assert.ok(!skill.includes('install-agents.ts'));
   assert.ok(!skill.includes('.circle/agents'));
   for (const phrase of ['按测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '要查询的记录先在步骤前部创建', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要清理']) assert.ok(writer.includes(phrase), phrase);
@@ -233,4 +238,12 @@ test('repository manifest paths directly name ordinary files with their declared
     const bytes=readFileSync(path);assert.equal(bytes.byteLength,file.size,file.path);
     assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,file.path);
   }
+});
+test('SKILL.md and delivery.md require opening a new plan run via start_run before editing plans', () => {
+  const skill = read('SKILL.md');
+  const delivery = read('tools/delivery.md');
+  assert.ok(skill.includes('start_run {"pack":"case-compile"'));
+  assert.ok(skill.includes('禁止往已被核对锁定的旧脚本编写运行重交'));
+  assert.ok(skill.includes('禁止直接往脚本合并运行提交改过的计划'));
+  assert.ok(delivery.includes('start_run` 新开一次脚本编写运行'));
 });

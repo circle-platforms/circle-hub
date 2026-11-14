@@ -10,10 +10,10 @@ description: 把原始用例写成自动化用例，交给 Hub 核对，生成�
 接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减）；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，先执行只读命令生成完整任务说明，再把标准输出全文原样传给 `task`（`subagent_type="general-purpose"`）的 `description` 参数，不删改或手写简报：
 
 ```sh
-node "<技能目录>/tools/task-brief.ts" --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标路径> [--scope scope.md] [--note <补充>]
+node "<技能目录>/tools/task-brief.ts" --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标路径> [--scope scope.md] [--note <补充>] [--round <轮次> --prior-plans <路径...> --prior-returns <目录...> --prior-notes <路径...>|--brief-json <结构简报JSON>]
 ```
 
-本地工具在 `<技能目录>`（优先用安装工具，否则按 Hub 命令装）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。`execute` 只跑单行 `node "<技能目录>/tools/<脚本>.ts" --选项 值`（禁 `=`）或 `sleep`，禁 shell/`node -e`/管道重定向。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令末接三行标准输入 `<<'EOF'` / `%HUB_TOKEN%` / `EOF`，令牌不落盘。
+本地工具在 `<技能目录>`（优先用安装工具，否则按 Hub 命令**装进当前主目录的 `skills` 目录**；装在别处时验收主目录的守卫会拒绝执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。`execute` 只跑单行 `node "<技能目录>/tools/<脚本>.ts" --选项 值`（禁 `=`）或 `sleep`，禁 shell/`node -e`/管道重定向。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令末接三行标准输入 `<<'EOF'` / `%HUB_TOKEN%` / `EOF`，令牌不落盘。
 
 每条结论只写一句，带原始用例 ID 加标题、结论、状态和判断。状态只用未确认、已确认、未知；模型的判断是未确认。判断只用正确或错误，未知不替它写正确或错误。错误或未知才写原因和下一步。原因只用缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清。证据和决定者放最后；决定者只用程序、模型、使用者。内部引用和工具参数留在机器可读部分，不转述给使用者。
 
@@ -27,7 +27,7 @@ node "<技能目录>/tools/task-brief.ts" --role <用例重组|写计划|保真�
 
 先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的 `items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数约束、配置恢复方法、同级命令写法与待填自动化用例。
 
-一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role 写计划` 生成完整任务说明并原文传给 `task`（`subagent_type="general-purpose"`，不合并、不分批）。单条编写、环境改写、前置清理与字段语法守则均由 `task-brief.ts` 同源注入，且已声明自动化用例的受限结构在根目录 `<技能目录>/slots.schema.json`（不在 `tables/`）、完整例子在 `<技能目录>/examples/submit-result.json`、分块格式在 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
+一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role 写计划` 生成完整任务说明，**在同一条消息里以前台方式并列多个 `task` 调用（`subagent_type="general-purpose"`，严禁用 `background`；后台最多同时 4 个且第 5 个直接报错）**，不合并用例，**每批最多 6 个**，失败或超时的条目单独重派、不整批重来。单条编写、环境改写、前置清理与字段语法守则均由 `task-brief.ts` 同源注入，且已声明自动化用例的受限结构在根目录 `<技能目录>/slots.schema.json`（不在 `tables/`）、完整例子在 `<技能目录>/examples/submit-result.json`、分块格式在 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
 每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，缺资料的原始用例先排除、其余继续。只读自检单个计划或目录跑 `tools/check-plan.ts`。
 
@@ -52,7 +52,11 @@ profile: device_count 只读预检及可选 fold_newlines
 本地读取: items/<序号>.json、sources.json、sources/<摘要>、knowledge/、briefs/<序号>.md
 ```
 
-确认各目标计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 通过后，再进入脚本合并。
+确认各目标计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 通过后，再进入脚本合并。**返工与重开运行规则（必守）**：一旦需要修改或返工任何已交计划（尤其是已经开始脚本合并运行之后，或上机失败需重写时），禁止往已被核对锁定的旧脚本编写运行重交，也禁止直接往脚本合并运行提交改过的计划；必须先用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号，沿用 `recomposition_run`/`recomposition_result` 与 `exclude`，完成后再重新生成 Excel、上传并新开脚本合并运行）。可照抄单行 `start_run` 模板（不排除用例时删去 `parameters.exclude`）：
+```text
+start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
+```
+第 2 轮及以上返工派发 `写计划` 或 `失败分析` 前，必须经 `task-brief.ts --round <n>` 传入同案 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（或经 `authoring-brief.ts --round` 与 `check-brief.ts` 校验的 `.round-<n>.json`），由程序原样嵌入上一轮计划、报错步设备原文（不在截断末尾 12,000 字符内时程序会显式标明）、未确认归因（`confidence: "hypothesis"`）及历轮变更与连续同错提醒，禁止手写摘要或跨用例拼接；保真核对（`保真核对`）继续严格盲审，只传 `.brief.json`。
 
 ## 3. 脚本合并
 
@@ -61,7 +65,7 @@ profile: device_count 只读预检及可选 fold_newlines
 ```sh
 node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
 node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
-# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role 保真核对，将全文传给 task (subagent_type="general-purpose") 写同名 .verdict.json
+# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role 保真核对，将全文传给前台并行 task（subagent_type="general-purpose"，不用 background，每批最多 6 个，失败单独重派）写同名 .verdict.json
 node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
 # 确认输出 ready=true 后再提交
 node <技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <脚本编写编号> --model <模型> --plans <自动化用例目录>
@@ -69,7 +73,7 @@ node <技能目录>/tools/fetch-run.ts --hub %HUB_URL% --run <脚本编写编号
 node <技能目录>/tools/generate-workbook.ts --run <新目录>/run.json --result <新目录>/result.json --submission <新目录>/submission.json --contract <新目录>/contract.json --profile <新目录>/profile.json --inventory <新目录>/inventory.json --out <新目录>/case.xlsx
 ```
 
-submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。改了自动化用例就重新生成、上传并核对。
+submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。改了自动化用例就必须回到第 2 节用 `start_run` 新开一次脚本编写运行（`predecessor` 填 `test-bed` 预订号）提交并核对，再重新生成、上传并新开脚本合并运行，禁止直接往当前脚本合并运行或已锁定的旧脚本编写运行提交改动。
 
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项须 satisfied
@@ -95,6 +99,6 @@ tools/delivery.md 下载命令加等待参数后台启动，等通知，不 slee
 
 ## 5. 失败分析
 
-完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条设备会话文本与 `log.txt`（框架日志只记下发命令和超时，设备 CLI 报错同时记入会话文本与 `index.json`；必要时用 `tools/task-brief.ts --role 失败分析` 派发 `general-purpose` 子代理只读归因，不改计划），再给错误的原始用例写原因和下一步。先看设备构建与手册和命令树是不是同一版，再查配置是否真正生效、手册要求的前置是否都写了；多个原始用例同一症状时找共同前置，也解释为什么其他原始用例正确。
+完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条设备会话文本与 `log.txt`（框架日志只记下发命令和超时，设备 CLI 报错同时记入会话文本与 `index.json`；必要时用 `tools/task-brief.ts --role 失败分析` 派发 `general-purpose` 子代理只读归因，不改计划），再给错误的原始用例写原因和下一步。先看设备构建与手册和命令树是不是同一版，再查配置是否真正生效、手册要求的前置是否都写了；多个原始用例同一症状时找共同前置，也解释为什么其他原始用例正确。确认改动并开始返工时，先按第 2 节 `start_run` 模板新开一次脚本编写运行再走第 2～3 节全流程，禁止重交到上一轮旧运行。
 
 排除这些后才判断设备的问题。原始用例的期望已忠实实现、手册前置全有、观察方法和对象正确，才能提出设备的问题；说不清就写状态未知、原因还没查清，在被测命令前加只读观察，下一次上机验证区分。设备输出只帮你理解错误，不抄进期望；其中点名的命令或配置，先在相同构建的手册和命令树中读到再改。时序、等待的推测是未确认的模型判断，预测不符就换解释。
