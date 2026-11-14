@@ -638,7 +638,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     server.fakes.runs.script.answerNext('getResult',null);server.fakes.runs.script.answerNext('getResult',null);
     const exhausted=await client.call('submit_result',submission(3));assert.equal(exhausted.structuredContent.acceptance,'accepted');
     assert.equal(exhausted.structuredContent.record, undefined);
-    assert.match(exhausted.content[0].text ?? '', /原因缺资料；下一步/);
+    assert.match(exhausted.content[0].text ?? '', /暂时不可用：核对结果的读取资料尚未取回/);
     assert.doesNotMatch(exhausted.content[0].text ?? '', /rec:|run_|[0-9a-f]{64}|console\/runs\//);
     assert.ok((exhausted.structuredContent.errors as Array<{code:string}>).some(error=>error.code==='SOURCE_RETRYABLE'));
     const found = await client.call('submit_result', submission(3));
