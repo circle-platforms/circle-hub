@@ -1,8 +1,9 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { isAdmin } from './permissions.ts';
 // Ordinary variables use record decisions; secret versions live in the vault and records provide audit only.
 import { createHash } from 'node:crypto';
 import { OrdinaryVariableName, VariableName, VariableRecord, VariableValue, validateSecret, referencesIn, resolve as resolveValue, type OrdinaryVariableUse } from '../../contracts/src/variables.ts';
-import { isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
+import { PermissionRoleSchema, isDigestRule, type DigestRule, type VariableKind, type PermissionKind } from '../../contracts/generated/vocabulary.ts';
 import type { Principal, Principals, RecordStore, ObjectStore, Vault, Authorizations, AuthorizationRecord, Transaction, Page, VaultSecretMetadata, VaultSecretMaterial, VaultSecretWriteResult } from './api.ts';
 import { canonicalBytes, canonicalize } from './canonical.ts';
 import { parseStrictJson } from './strict-json.ts';
@@ -70,8 +71,11 @@ export class RecordVariables {
     readonly #now: () => Date;
     readonly #prepared = new WeakMap<object, SecretWrite[]>();
     constructor(ports: VariablePorts) { this.#p = ports; this.#now = ports.now ?? (() => new Date()); }
-    async assertAdmin(by: Principal) { const actual = await this.#p.principals.get(by.id); if (!actual || actual.disabled || !isAdmin(actual))
-        throw new AccessError('只有管理员可以设置或查看变量与密钥'); }
+    async assertAdmin(by: Principal, tx?: Transaction) {
+        const row = tx ? (await this.#p.database.query('SELECT id,role,disabled,deleted_at FROM users WHERE id=$1 FOR SHARE', [by.id], tx)).rows[0] : null;
+        const actual = tx ? row ? { role: PermissionRoleSchema.parse(row.role), disabled: row.disabled === true, deleted_at: row.deleted_at } : null : await this.#p.principals.get(by.id);
+        if (!actual || actual.disabled || actual.deleted_at || !isAdmin(actual)) throw new AccessError('只有管理员可以设置或查看变量与密钥');
+    }
     #name(name: unknown, kind: VariableKind): string { const parsed = (kind === 'var' ? OrdinaryVariableName : VariableName).safeParse(name); if (!parsed.success)
         throw new VariableError(parsed.error.issues[0]?.message ?? '名字不合规则；请核对参数'); return parsed.data; }
     async lockNames(names: readonly string[], tx: Transaction) { for (const name of [...new Set(names)].sort()) {
@@ -117,11 +121,13 @@ export class RecordVariables {
             throw new VariableError('值像是凭据：用 circle-hub secret set；确实不是时显式给 --not-secret');
         const note = validateChangeReason(reason + (options.notSecret ? '；已确认不是密钥（--not-secret）' : ''));
         const definition = VariableRecord.parse({ schema: 'variable@1', name, value });
-        const object = await this.#p.objects.put(canonicalBytes(definition), 'application/json');
         return this.#p.store.withTransaction(async (tx) => {
+            await lockEnvironmentPermission(this.#p.store, tx);
+            await this.assertAdmin(by, tx);
             await this.lockNames([name, ...(options.names ?? [])], tx);
             await this.#kindFree(name, 'var', tx);
             await options.validate?.(tx);
+            const object = await this.#p.objects.put(canonicalBytes(definition), 'application/json', tx);
             const history = await this.#history('var', name, tx), previous = history[0];
             if (previous && !previous.body.revoked && previous.body.bound === object.sha256)
                 return { value: await this.#version('var', name, previous, history, definition), created: false };
@@ -148,11 +154,14 @@ export class RecordVariables {
         return prepared;
     }
     async #auditSecret(by: Principal, metadata: VaultSecretWriteResult, reason: string, tx: Transaction): Promise<void> {
-        const audit = await this.#p.objects.put(canonicalBytes({ name: metadata.name, by: by.id, at: this.#now().toISOString(), ...(metadata.archive ? { operation: '归档后重新设置', archive: metadata.archive } : {}) }), 'application/json');
+        await lockEnvironmentPermission(this.#p.store, tx);
+        await this.assertAdmin(by, tx);
+        const audit = await this.#p.objects.put(canonicalBytes({ name: metadata.name, by: by.id, at: this.#now().toISOString(), ...(metadata.archive ? { operation: '归档后重新设置', archive: metadata.archive } : {}) }), 'application/json', tx);
         await this.#p.authorizations.configureResourceInTransaction(by, 'secret:' + metadata.name, audit.sha256, reason, tx, metadata.revoked);
     }
     async commitSecrets(by: Principal, prepared: PreparedSecrets, tx: Transaction, validate?: (tx: Transaction) => Promise<void>): Promise<VaultSecretWriteResult[]> {
-        await this.assertAdmin(by);
+        await lockEnvironmentPermission(this.#p.store, tx);
+        await this.assertAdmin(by, tx);
         const writes = this.#prepared.get(prepared);
         if (!writes) throw new VariableError('密钥准备结果不是本次可信输入；请重新设置');
         this.#prepared.delete(prepared);
@@ -179,13 +188,22 @@ export class RecordVariables {
     async unsetSecret(by: Principal, name: string, reason: string): Promise<VaultSecretMetadata> {
         await this.assertAdmin(by);
         name = this.#name(name, 'secret');
-        const note = validateChangeReason(reason, (await this.#p.vault.recentSecrets()).map(v => v.value));
-        let metadata: VaultSecretWriteResult;
-        try { metadata = await this.#p.vault.unsetSecret(name, by.id, this.#now().toISOString()); }
-        catch { throw new VariableError('密钥名字不存在、主密钥无法解开或封存元数据缺失；撤回未完成'); }
-        try { await this.#p.store.withTransaction(tx => this.#auditSecret(by, metadata, note, tx)); }
-        catch { throw new VariableError('密钥库已撤回，审计记录未完成；请管理员核对密钥库元数据'); }
-        return metadata;
+        let vaultUpdated = false;
+        try { return await this.#p.store.withTransaction(async tx => {
+            await lockEnvironmentPermission(this.#p.store, tx);
+            await this.assertAdmin(by, tx);
+            await this.lockNames([name], tx);
+            const note = validateChangeReason(reason, (await this.#p.vault.recentSecrets()).map(v => v.value));
+            let metadata: VaultSecretWriteResult;
+            try { metadata = await this.#p.vault.unsetSecret(name, by.id, this.#now().toISOString()); }
+            catch { throw new VariableError('密钥名字不存在、主密钥无法解开或封存元数据缺失；撤回未完成'); }
+            vaultUpdated = true;
+            await this.#auditSecret(by, metadata, note, tx);
+            return metadata;
+        }); } catch (error) {
+            if (vaultUpdated) throw new VariableError('密钥库已撤回，审计记录未完成；请管理员核对密钥库元数据');
+            throw error;
+        }
     }
     async listSecrets(by: Principal): Promise<VaultSecretMetadata[]> {
         await this.assertAdmin(by);
@@ -205,6 +223,8 @@ export class RecordVariables {
         name = this.#name(name, kind);
         const note = validateChangeReason(reason);
         return this.#p.store.withTransaction(async tx => {
+            await lockEnvironmentPermission(this.#p.store, tx);
+            await this.assertAdmin(by, tx);
             await this.lockNames([name], tx);
             await this.#kindFree(name, kind, tx);
             await validate?.(tx);
