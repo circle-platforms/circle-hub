@@ -79,3 +79,22 @@ test('unknown arguments do not echo token-like values or use read-only identity 
   for (const argv of [['preview', '--as=' + actor.id], ['apply', '--preview=preview.json'], ['preview', '--password=' + token]]) await assert.rejects(upgradeCommand(f.session, argv, f.ports), error => error instanceof Error && !error.message.includes(token));
   assert.equal(f.calls.length, 0);
 });
+
+test('upgrade is registered with existing command telemetry and never exposed through the web management bridge', async () => {
+  const { COMMAND_METADATA } = await import('./command-registry.ts');
+  const { commandStep } = await import('../telemetry/api.ts');
+  const { createCommandBridge } = await import('./command-bridge.ts');
+  const registered = COMMAND_METADATA.find(command => command.name === 'upgrade');
+  assert.ok(registered); assert.equal(registered.step, commandStep('upgrade')); assert.equal(registered.bridge, false);
+  let invoked = false;
+  const bridge = createCommandBridge({ env: {}, cwd: '/synthetic/upgrade', main: async () => { invoked = true; return 0; } });
+  assert.equal((await bridge.run(['upgrade', 'apply', '--preview=preview.json', '--expected-snapshot=' + 'a'.repeat(64)], { token: 'synthetic-token' })).code, 2);
+  assert.equal(invoked, false);
+});
+
+test('public CLI help lists the real upgrade command without opening records or selecting an administrator', async () => {
+  const { main } = await import('./cli.ts');
+  const output: string[] = [];
+  const code = await main(['help'], { io: { env: {}, cwd: '/synthetic/upgrade', stdout: line => output.push(line), stderr: line => output.push(line) } });
+  assert.equal(code, 0); assert.match(output.join('\n'), /upgrade.*preview/); assert.match(output.join('\n'), /--expected-snapshot/);
+});

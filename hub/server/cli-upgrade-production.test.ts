@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { startPostgres } from '../testing/postgres.ts';
 import { loadConfig } from '../config/index.ts';
@@ -129,4 +131,46 @@ test('readable floor two with no preservation completion refuses startup and giv
   assert.equal(code, 1); assert.equal(assembled, false);
   assert.match(errors.join('\n'), /upgrade preview/); assert.match(errors.join('\n'), /--expected-snapshot/);
   assert.doesNotMatch(errors.join('\n'), /记录库需要重建/);
+});
+
+test('a real actor or source change after preview rejects the old snapshot before any migration or assignment write', { timeout: 180000 }, async t => {
+  const f = await fixture(t);
+  const result = await f.cli(['preview', '--json', '--owner-role=' + f.database.user]);
+  assert.equal(result.code, 0, result.err.join('\n'));
+  const document = JSON.parse(result.out.join('\n'));
+  const file = join(f.root, 'stale-preview.json'); await writeFile(file, JSON.stringify(document), { mode: 0o600 });
+  await f.records.principals.setDisabled(f.actor, f.memberToken.user, true);
+  const before = await f.snapshot();
+  const applied = await f.cli(['apply', '--preview=' + file, '--expected-snapshot=' + document.sha256, '--owner-role=' + f.database.user]);
+  assert.equal(applied.code, 1); assert.match(applied.err.join('\n'), /切点来源或权限已改变/);
+  assert.deepEqual(await f.snapshot(), before, 'owner transaction rejects before M2, grants, completion or token telemetry writes');
+});
+
+test('repository CLI script carries the actual token to zero-write preview and exact owner apply in separate processes', { timeout: 180000 }, async t => {
+  const f = await fixture(t);
+  // Keep HOME, settings lookup, data root and every CIRCLE_HUB value inside this synthetic deployment.
+  const run = async (args: string[]) => {
+    const { token } = await f.records.principals.issueToken(f.actor, f.actor.id, '合成子进程操作令牌');
+    const child = spawn(process.execPath, [fileURLToPath(new URL('../../bin/circle-hub', import.meta.url)), 'upgrade', ...args], { cwd: f.root, env: { ...f.env, HOME: f.root, PATH: '/usr/bin:/bin', CIRCLE_HUB_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+    t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); });
+    let out = '', err = '';
+    child.stdout.on('data', chunk => { out += chunk; }); child.stderr.on('data', chunk => { err += chunk; });
+    const code = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });
+    assert.ok(!out.includes(token)); assert.ok(!err.includes(token));
+    return { code, out, err };
+  };
+  // Token issuance is an intentional setup write, before measuring the child preview.
+  const operator = await f.records.principals.issueToken(f.actor, f.actor.id, '合成子进程固定令牌');
+  const before = await f.snapshot();
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../../bin/circle-hub', import.meta.url)), 'upgrade', 'preview', '--json', '--owner-role=' + f.database.user], { cwd: f.root, env: { ...f.env, HOME: f.root, PATH: '/usr/bin:/bin', CIRCLE_HUB_TOKEN: operator.token }, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM'); });
+  let json = '', stderr = ''; child.stdout.on('data', chunk => { json += chunk; }); child.stderr.on('data', chunk => { stderr += chunk; });
+  const code = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });
+  assert.ok(!json.includes(operator.token)); assert.ok(!stderr.includes(operator.token));
+  assert.equal(code, 0, stderr); assert.deepEqual(await f.snapshot(), before);
+  const preview = JSON.parse(json);
+  const file = join(f.root, 'child-preview.json'); await writeFile(file, JSON.stringify(preview), { mode: 0o600 });
+  const applied = await run(['apply', '--preview=' + file, '--expected-snapshot=' + preview.sha256, '--owner-role=' + f.database.user]);
+  assert.equal(applied.code, 0, applied.err);
+  assert.equal(upgradeStartupDecision(await readProductionUpgradeStartup(f.config)).enforceEnvironmentAssignments, true);
 });
