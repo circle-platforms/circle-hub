@@ -197,6 +197,7 @@ export type Repetition = z.infer<typeof Repetition>;
 export const RequirementTemplate = z
   .strictObject({
     key: Key,
+    step: Key.optional().describe('Explicit reference to workflow.json steps[].id; cross-file resolution is checked when the workflow pack is validated'),
     name: z.string().min(1),
     description: z.string().min(1),
     target: TargetSchema.describe('item: judged for every item; run: one judgment over the whole target (a cross-item claim)'),
@@ -650,6 +651,7 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
+    steps: z.array(z.strictObject({id: Key, name: z.string().min(1)})).optional().describe('Author-declared business steps and their user-facing names; not tool calls, dispatch phases or an execution graph'),
     incremental_submissions:z.boolean().optional().describe('Opt-in: preserving all previous material while first filling empty slots does not charge unknown-only requirements as repairs; edits, removals and actual violations keep normal budgets'),
     predecessor_access:z.literal('view').optional().describe('Read-only predecessor visibility; never grants mutation or lineage lease rights'),
     criterion_review:z.boolean().optional().describe('W10 review protocol over an explicitly bound declaration submission'),
@@ -682,6 +684,9 @@ export const WorkflowFile = z
       .describe('the lease namespace this workflow may acquire under (the keys of its lease_requests start with the prefix)'),
   })
   .superRefine((w, ctx) => {
+    w.steps?.forEach((step, index) => {
+      if (w.steps!.findIndex(other => other.id === step.id) !== index) ctx.addIssue({code: 'custom', path: ['steps', index, 'id'], message: 'workflow step ids are unique'});
+    });
     if (w.leases !== undefined && !(w.context ?? []).includes('leases')) {
       ctx.addIssue({ code: 'custom', path: ['leases'], message: 'a workflow that declares leases asks for the leases context (context: ["leases"])' });
     }
