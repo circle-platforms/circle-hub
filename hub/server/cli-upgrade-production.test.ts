@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startPostgres } from '../testing/postgres.ts';
 import { loadConfig } from '../config/index.ts';
-import { Database, createPool, migrateRecords, openRecords, type Principal, type RecordsKit } from '../records/api.ts';
+import { Database, createPool, migrateRecords, openRecords, type Principal, type RecordsKit, sha256Hex } from '../records/api.ts';
 import { main } from './cli.ts';
 import { serve } from './main.ts';
 import { assembleHub } from './assemble/hub.ts';
+import { readProductionUpgradeStartup } from './upgrade-production.ts';
+import { upgradeStartupDecision } from './upgrade-startup.ts';
 
 async function fixture(t: TestContext) {
   const postgres = await startPostgres({ socket: true, passwordless: true });
@@ -87,4 +89,44 @@ test('production upgrade never chooses another administrator for a member, inval
   const before = await f.snapshot();
   assert.equal((await f.cli(['preview', '--json', '--owner-role=' + f.database.user])).code, 1);
   assert.deepEqual(await f.snapshot(), before);
+});
+
+async function applyCurrentPreview(f: Awaited<ReturnType<typeof fixture>>) {
+  const result = await f.cli(['preview', '--json', '--owner-role=' + f.database.user]);
+  assert.equal(result.code, 0, result.err.join('\n'));
+  const document = JSON.parse(result.out.join('\n'));
+  const file = join(f.root, 'preview.json'); await writeFile(file, JSON.stringify(document), { mode: 0o600 });
+  const applied = await f.cli(['apply', '--preview=' + file, '--expected-snapshot=' + document.sha256, '--owner-role=' + f.database.user]);
+  assert.equal(applied.code, 0, applied.err.join('\n'));
+}
+
+test('a compatible declared future migration does not invalidate the independently verified completed cutover', { timeout: 180000 }, async t => {
+  const f = await fixture(t); await applyCurrentPreview(f);
+  const sha = sha256Hex('synthetic future append-only fixture');
+  await f.owner.transaction(async tx => {
+    await f.owner.query('INSERT INTO public.schema_migrations(version,name,sha256) VALUES(3,$1,$2)', ['synthetic_future', sha], tx);
+    await f.owner.query('INSERT INTO public.hub_migration_compatibility(migration_version,format_version,migration_name,migration_sha256,minimum_reader_level) VALUES(3,1,$1,$2,2)', ['synthetic_future', sha], tx);
+  });
+  const observed = await readProductionUpgradeStartup(f.config);
+  assert.equal(observed.compatibility.compatible, true);
+  assert.equal(observed.environmentAssignmentCompleted, true, 'activation must verify N2 receipts without replacing C2 declaration admission with an exact migration-count check');
+  assert.equal(upgradeStartupDecision(observed).enforceEnvironmentAssignments, true);
+});
+
+test('readable floor two with no preservation completion refuses startup and gives upgrade instructions instead of reset', { timeout: 180000 }, async t => {
+  const f = await fixture(t); await applyCurrentPreview(f);
+  // Corrupt only this isolated fixture after a committed cutover; no production repair or migration rewrite is introduced.
+  await f.owner.transaction(async tx => {
+    await f.owner.query('ALTER TABLE public.environment_assignment_completion DISABLE TRIGGER USER', [], tx);
+    await f.owner.query('DELETE FROM public.environment_assignment_completion', [], tx);
+    await f.owner.query('ALTER TABLE public.environment_assignment_completion ENABLE TRIGGER USER', [], tx);
+  });
+  const observed = await readProductionUpgradeStartup(f.config);
+  assert.equal(observed.compatibility.compatible, true); assert.equal(observed.environmentAssignmentCompleted, false);
+  assert.equal(upgradeStartupDecision(observed).enforceEnvironmentAssignments, false);
+  const errors: string[] = []; let assembled = false;
+  const code = await serve([], { io: { env: { ...f.env }, cwd: f.root, stdout: () => {}, stderr: line => errors.push(line) }, ensureDatabase: async () => {}, stopSignal: () => Promise.resolve(), assembly: async () => ({ assemble: () => { assembled = true; throw new Error('must not start business'); } }) });
+  assert.equal(code, 1); assert.equal(assembled, false);
+  assert.match(errors.join('\n'), /upgrade preview/); assert.match(errors.join('\n'), /--expected-snapshot/);
+  assert.doesNotMatch(errors.join('\n'), /记录库需要重建/);
 });
