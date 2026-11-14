@@ -23,6 +23,7 @@ test('member diagnostics preserve three distinct producer-authored missing facts
   const facts = ['本次测试环境尚未登记基线', '认证所需的证据文件当前不可读取', '本次绑定清单的摘要与可取得原件不一致'];
   const answers = facts.map(fact => statusDiagnostics(job({ missing_fact: 'private administrator detail usr_synthetic', next_action: 'circle-hub executor update exe_synthetic', member_missing_facts: [{ fact, next_action: '联系管理员补齐该事实后重新核对本次环境' }] }), false));
   for (const [index, answer] of answers.entries()) {
+    assert.ok(answer.job_facts.missing_facts);
     assert.equal(answer.job_facts.missing_facts[0]?.fact, facts[index]);
     assert.doesNotMatch(JSON.stringify(answer), /usr_synthetic|exe_synthetic|circle-hub/);
   }
@@ -246,4 +247,56 @@ test('source note refuses mismatched job and attempt identities instead of joini
   source.status.job_facts.scope = { job: jobId };
   source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: 'd'.repeat(64), round: 1 };
   assert.throws(() => runnerNote(source, 'usr_private'), /范围/);
+});
+
+test('member source projection never copies raw job facts into facts or admission text when an attempt exists', () => {
+  const source = job({ outcome: 'not_dispatched', not_sent: true, result: `src:${'c'.repeat(64)}` });
+  const marker = 'PRIVATE_ADMIN_DIAGNOSTIC_SENTINEL';
+  source.status.job_facts.device_return = `src:${'e'.repeat(64)}`;
+  source.status.job_facts.missing_facts = [{ fact: marker + ' job fact', next_action: marker + ' job next' }];
+  source.status.job_facts.admission_error = { code: 'SOURCE_NOT_PERMITTED', message: marker + ' admission message', fix: marker + ' admission fix' };
+  source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: jobId, round: 2, request_id: marker + ' request' };
+  source.status.dispatch_attempt!.missing_facts = [{ fact: marker + ' attempt fact', next_action: marker + ' attempt next' }];
+  source.status.dispatch_attempt!.next_action = marker + ' attempt next';
+  const member = statusDiagnostics(source, false);
+  assert.doesNotMatch(JSON.stringify(member), new RegExp(marker));
+  assert.equal(member.job_facts.result, source.status.job_facts.result);
+  assert.equal(member.job_facts.device_return, source.status.job_facts.device_return);
+  assert.equal(member.dispatch_attempt?.scope.request_id, undefined);
+  assert.ok(member.job_facts.missing_facts?.length, 'withheld diagnostic details are not claimed to be no missing facts');
+  const administrator = statusDiagnostics(source, true);
+  assert.match(JSON.stringify(administrator), new RegExp(marker + ' job fact'));
+  assert.match(JSON.stringify(administrator), new RegExp(marker + ' attempt fact'));
+  assert.equal(administrator.job_facts.admission_error?.message, marker + ' admission message');
+  assert.equal(administrator.dispatch_attempt?.scope.request_id, marker + ' request');
+  assert.equal(administrator.job_facts.device_return, source.status.job_facts.device_return);
+});
+
+test('final boundary after a target response does not restart the whole job while complete busy or build failures can retry', async () => {
+  const { acceptedDispatch } = await import('./accepted.ts');
+  const run = 'run_00000000000000000000000001';
+  const admin = { id: 'usr_00000000000000000000000002', name: '合成管理员', role: 'admin' as const, disabled: false };
+  for (const phase of ['round_refused', 'complete'] as const) {
+    const history = phase === 'round_refused' ? [
+      { digest: 'c'.repeat(64), body: { detail: { phase: 'precheck.response' } } },
+      { digest: 'd'.repeat(64), body: { detail: { phase: 'boundary_refused', done: true } } },
+    ] : [
+      { digest: 'c'.repeat(64), body: { detail: { phase: 'acquire.response' } } },
+      { digest: 'd'.repeat(64), body: { detail: { phase: 'complete', done: true } } },
+    ];
+    const records = { store: {
+      find: async () => ({ items: [{ body: { detail: { binding: { job: jobId, run } } } }], next: null }),
+      findMany: async () => history,
+    }, principals: { list: async () => [admin] } } as unknown as Pick<import('../records/api.ts').RecordsKit, 'store' | 'principals'>;
+    const publicJob = DispatchJobFactsSchema.parse({ scope: { job: jobId }, frozen: false });
+    const attempt = DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job: jobId, round: 1 }, phase, outcome: 'not_dispatched', not_sent: true });
+    let started = 0;
+    const service = { options: { records }, status: async () => ({ job: jobId, events: 2, job_facts: publicJob, dispatch_attempt: attempt }), dispatchAccepted: async () => { started++; return { started: false, error_code: 'SOURCE_NOT_PERMITTED', member_missing_facts: [{ fact: '合成后续准入拒绝', next_action: '联系管理员' }] }; } } as unknown as import('./service.ts').DispatchService;
+    const notes = await acceptedDispatch(records, service, run, true, 0);
+    assert.equal(started, phase === 'round_refused' ? 0 : 1);
+    assert.equal(notes.length, phase === 'round_refused' ? 1 : 2);
+    assert.equal(notes[0].dispatch_attempt?.not_sent, true);
+    assert.equal(notes[0].dispatch_attempt?.outcome, 'not_dispatched');
+    if (phase === 'round_refused') assert.match(notes[0].job_facts?.next_action ?? '', /不会整份重试.*重新开始核验/);
+  }
 });

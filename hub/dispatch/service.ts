@@ -27,7 +27,7 @@ import { Redactor } from '../connectors/api.ts';
 import { background } from '../telemetry/api.ts';
 import { resolveExecutor } from './source.ts';
 import { ExecutorRegistry, ExecutorAccessError, lockExecutorConfiguration, containsSecret, type RegisteredExecutor } from './executors.ts';
-import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
+import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, isConservativelyFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, HttpReplyError, IncompleteReplyError, InvocationDefinitionError, ResponseStorageError, RpcReplyError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
 import { type BuildKnowledge, type SeatEcho } from './probes.ts';
 import { DeviceObservation, type DeviceHelpResult, type DeviceHelpTarget } from '../../contracts/src/pack.ts';
@@ -280,7 +280,12 @@ export class DispatchService {
     const attemptOperation = intent.body.detail.phase === 'probe_intent' ? 'conformance' : 'dispatch';
     const scope = DispatchAttemptScopeSchema.safeParse(Object.hasOwn(intent.body.detail,'scope') ? intent.body.detail.scope : intent.body.detail.phase==='reservation'&&object(intent.body.detail.binding)?intent.body.detail.binding.attempt_scope:{ operation: attemptOperation, job, ...(attemptOperation === 'dispatch' ? { round: await this.knownRound(by, intent) } : {}),
       ...(typeof intent.body.detail.request_id === 'string' ? { request_id: intent.body.detail.request_id } : {}) });
-    if (!scope.success || scope.data.job !== job) {
+    const verifiedRound=scope.success&&scope.data.operation==='dispatch'?await this.knownRound(by,intent):undefined;
+    const expectedOperation=intent.body.detail.phase==='probe_intent'?'conformance':intent.body.detail.phase==='intent'||intent.body.detail.phase==='round_context'||intent.body.detail.phase==='round_refused'?'dispatch':operation.success?operation.data:undefined;
+    const operationConflict=scope.success&&expectedOperation!==undefined&&scope.data.operation!==expectedOperation;
+    const requestConflict=scope.success&&scope.data.request_id!==undefined&&intent.body.detail.request_id!==undefined&&scope.data.request_id!==intent.body.detail.request_id;
+
+    if (!scope.success || scope.data.job !== job || operationConflict || requestConflict || scope.data.operation==='dispatch'&&(verifiedRound===undefined||verifiedRound!==scope.data.round||round!==undefined&&round!==scope.data.round)) {
       const next = '只读核对该原意图记录，保留范围未知；不要为了补齐轮次而重新派发';
       return ScopedDispatchFactsSchema.parse({ job_facts: {
         ...job_facts,
@@ -289,6 +294,7 @@ export class DispatchService {
         grounds: [...job_facts.grounds ?? [], `rec:${intent.digest}`],
       } });
     }
+    if(round!==undefined&&scope.data.operation!=='dispatch')return {job_facts};
     // Only records between this intent and the next intent can describe this attempt.
     const linkedIntent=intent.body.detail.phase==='round_refused'
       ? events.find(event=>event.body.detail.phase==='intent'&&intent.body.inputs.includes(`rec:${event.digest}`)) : intent;
@@ -309,7 +315,7 @@ export class DispatchService {
     ));
     const records = events.slice(start + 1, next < 0 ? undefined : next);
     const responses = records.filter(event => event.body.detail.phase === 'submit.response');
-    const receipt = records.findLast(event => event.body.detail.phase === 'receipt' && event.body.detail.acceptance === 'accepted');
+    const receipt = records.findLast(event => (event.body.detail.phase === 'receipt'||event.body.detail.phase==='reconciled') && event.body.detail.acceptance === 'accepted' && event.body.detail.remote_id!==undefined);
     const complete = linkedIntent ? records.findLast(event => event.body.detail.phase === 'complete' && event.body.inputs.includes(`rec:${linkedIntent.digest}`)) : undefined;
     // One recorded, incomplete zero-write response is direct local no-send evidence.
     // Do not apply it to retries, an earlier accepted submission, or another intent.
@@ -326,9 +332,10 @@ export class DispatchService {
     const refusal = intent.body.detail.phase==='round_refused'||intent.body.detail.phase==='boundary_refused' ? intent : records.findLast(event=>event.body.detail.phase==='round_refused'&&event.body.inputs.includes(`rec:${intent.digest}`));
     const end = complete ?? refusal ?? uncertain ?? observation;
     const provenLocal = complete?.body.detail.done === true && complete.body.detail.not_sent === true || refusal?.body.detail.not_sent===true;
-    const chosen = unresolvedUnknown ? 'unknown' : terminalNotSent || provenLocal ? 'not_dispatched'
+    const riskConsent=records.some(event=>event.body.detail.phase==='dispose'&&event.body.detail.disposition==='mark_failed'&&event.body.detail.risk_confirmed===true&&event.body.detail.unfreeze===true);
+    const chosen = unresolvedUnknown || riskConsent&&uncertain ? 'unknown' : terminalNotSent || provenLocal ? 'not_dispatched'
       : isEffectOutcome(end?.body.detail.outcome) && end.body.detail.outcome !== 'not_dispatched' ? end.body.detail.outcome
-      : uncertain ? 'unknown' : isEffectOutcome(rejection?.body.detail.outcome) ? rejection.body.detail.outcome : receipt ? 'issued' : responses.length || intent.body.detail.phase==='round_context'||intent.body.detail.phase==='reservation' ? undefined : 'unknown';
+      : isEffectOutcome(rejection?.body.detail.outcome) ? rejection.body.detail.outcome : receipt ? 'issued' : uncertain ? 'unknown' : responses.length || intent.body.detail.phase==='round_context'||intent.body.detail.phase==='reservation' ? undefined : 'unknown';
     const stage = rejection?.body.detail.stage;
     const pending = result?.body.detail.report_pending ?? observation?.body.detail.report_pending;
     const diagnostics=await this.readDiagnostics([intent,...records],refusal??end);
@@ -366,7 +373,7 @@ export class DispatchService {
     const riskDisposed=choice==='mark_failed'&&decision?.body.detail.risk_confirmed===true;
     const marks:EffectMark[]=decision?.body.detail.effect_mark==='disposed'&&(riskDisposed||choice==='reconcile'&&decision.body.detail.identity_matched===true)?['disposed']:[];
     const result=projectedResult(events);
-    const frozen=isFrozen(events)||base.dispatch_attempt?.outcome==='unknown'||events.some(event=>event.body.detail.phase==='intent')&&!base.dispatch_attempt;
+    const frozen=isConservativelyFrozen(events,base.dispatch_attempt?.outcome==='unknown'||events.some(event=>event.body.detail.phase==='intent')&&!base.dispatch_attempt);
     const hasAttempt=events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'||event.body.detail.phase==='round_refused'||event.body.detail.phase==='round_context'||event.body.detail.phase==='boundary_refused'&&Object.hasOwn(event.body.detail,'scope')||event.body.detail.phase==='reservation'&&object(event.body.detail.binding)&&Object.hasOwn(event.body.detail.binding,'attempt_scope'));
     const readonlyOrAdmission=!hasAttempt;
     const jobDiagnostics=readonlyOrAdmission?await this.readDiagnostics(events,eventOf(events,'complete')??eventOf(events,'boundary_refused')):{};
@@ -585,7 +592,7 @@ export class DispatchService {
     const init = eventOf(await this.journal.events(binding.job),'initialize.response');
     const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
     await this.journal.append(binding,'result','read_back','completed',{reference:`src:${artifact.body.sha256}`,observations:observations.length},observations.map(o=>o.source));
-    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',conformance_verified:false,readonly_observed:checks.length===1&&checks[0],...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
+    await this.journal.append(binding,'complete','read_back','completed',{done:!ambiguous,effect_accounted:!ambiguous,outcome:ambiguous?'unknown':'not_dispatched',...(!ambiguous?{not_sent:true,submit_invoked:false}:{}),conformance_verified:false,readonly_observed:checks.length===1&&checks[0],...(failure??{}),next_action:ambiguous?'探测效果未决；只读核对原请求后由管理员处置，不得重跑 conformance':failure?.next_action ?? (checks.length === 4 && checks.every(Boolean) ? '管理员复核这些源记录后，将目标版本和证据引用登记到执行器前提；不会自动认证' : '一致性探测未取得四项相符事实；管理员核对定义和原始回答后重跑 conformance')});
     return this.status(by,binding.job);
   }
 
@@ -619,7 +626,7 @@ export class DispatchService {
    * The Hub's own dispatch of an accepted run for its runner (decision 105). Refusal wording (C14) lists only conditions
    * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
    */
-  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; member_missing_facts?:Array<{fact:string;next_action:string}>; call_error_category?:CallErrorCategory|null; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; member_missing_facts?:Array<{fact:string;next_action:string}>; call_error_category?:CallErrorCategory|null; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; job_status_unavailable?:true }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
@@ -682,7 +689,7 @@ export class DispatchService {
             next_action:error.ended?'读取原作业的结果；要再做一次，按任务包规程做一份新的产物，上传后重新开始上机验证':'等原作业结束或管理员对账后读取结果，不要用同一份字节再开运行',
           }]}
           : {};
-      return { started: false, executor: chosen.id, ...memberFailure, ...(!(error instanceof TargetOccupiedError)&&!(error instanceof AlreadyDispatchedError)?{outcome:'unknown' as const}:{}), reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
+      return { started: false, executor: chosen.id, ...memberFailure, ...(!(error instanceof TargetOccupiedError)&&!(error instanceof AlreadyDispatchedError)?{job_status_unavailable:true as const}:{}), reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
           ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后重新开始上机验证` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
           : '本次派发状态尚未确认；请管理员只读核对作业记录，不要重新发送' };
@@ -782,20 +789,7 @@ export class DispatchService {
       const key = attempts.length ? String(attempts[0].body.detail.intent_key) : digestOfValue([input.lineage, input.item, d.proof.slot, multi ? round : sequence]);
       context.request_id = `${key}:${attempt}`; context.not_after = notAfter;
       context.sequence_scope = binding.executor; context.dispatch_sequence = await this.journal.nextDispatchSequence(binding);
-      let requestSnapshot:Record<string,unknown>={};let requestSources:string[]=[];
-      if(d.reconciliation) {
-        const r=d.reconciliation;
-        if(!r.identity || !d.receipt.identity)throw new PrecheckFactError('缺少查询或投递回答的日志身份字段声明','管理员核对目标协议，补齐查询与投递回答的身份、起点及主体字段声明后重新派发；尚未提交');
-        if(!session.serverVersion || !r.protocol_versions.includes(session.serverVersion))throw new PrecheckFactError('投递会话版本未登记请求协议支持','管理员核对发送会话版本及协议证据，登记该版本支持或更换受支持版本后重新派发；尚未提交');
-        const response=await this.retryRead(binding,session,'query',context,Infinity);
-        const identity=requestIdentity(response.value,r.identity,r.time_scale_ms);
-        if(at(response.value,r.found)!==false || !identity) {
-          throw new PrecheckFactError('投递前缺少本请求号的查空记录或可靠日志身份与主体','管理员核对日志身份及主体声明后重新派发；尚未提交，时间只作记录');
-        }
-        const initialization=eventOf(await this.journal.events(binding.job),'initialize.response');
-        requestSnapshot={request_identity:identity,request_protocol_version:session.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
-        await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
-      }
+      const {snapshot:requestSnapshot,sources:requestSources}=await this.captureRequestSnapshot(binding,d,session,context);
       let beforeState:{bound:boolean;sha256:string|null;reference:string|null}={bound:false,sha256:null,reference:null};
       const readBeforeState=async()=>{
         const declaration=d.calls.submit.write?.before_state;if(!declaration)return;
@@ -1629,6 +1623,12 @@ export class DispatchService {
     if (!same(at(response.value, d.result.id), remoteId) || at(response.value, d.result.sha256) !== input.sha256) {
       await this.unknown(binding, '结果身份或摘要不符，整份不采信；请管理员对账', [response.source], { observed_outcome: 'read_back_mismatch' }); return this.status(by, binding.job);
     }
+    if(d.result.request_id&&at(response.value,d.result.request_id)!==intent.body.detail.request_id) {
+      await this.unknown(binding,'本轮报告的请求身份与原意图不一致；只读核对本轮归属，不重交',[response.source]);return this.status(by,binding.job);
+    }
+    if(typeof intent.body.detail.round==='number'&&intent.body.detail.round>1&&!d.result.request_id) {
+      await this.unknown(binding,'缺少可核对的本轮报告请求身份；先前轮次记录保留，不重交',[response.source]);return this.status(by,binding.job);
+    }
     const rows = at(response.value, d.result.items); const complete = at(response.value, d.result.complete) === true;
     const finalHolders=!options?.execution&&!drift?await this.options.leases.holderSnapshot(binding.resources):[];
     if (!options?.execution&&!drift && !this.sameFences(fences, finalHolders)) {
@@ -1904,6 +1904,24 @@ export class DispatchService {
     return this.sealRounds(by, binding, d, session, remote, pulse.stop);
   }
 
+  /** Capture the declared request protocol facts before the intent transaction. */
+  private async captureRequestSnapshot(binding:JobBinding,d:ExecutorDefinition,session:RpcClient,context:Record<string,unknown>):Promise<{snapshot:Record<string,unknown>;sources:string[]}> {
+      let requestSnapshot:Record<string,unknown>={};let requestSources:string[]=[];
+      if(d.reconciliation) {
+        const r=d.reconciliation;
+        if(!r.identity || !d.receipt.identity)throw new PrecheckFactError('缺少查询或投递回答的日志身份字段声明','管理员核对目标协议，补齐查询与投递回答的身份、起点及主体字段声明后重新派发；尚未提交');
+        if(!session.serverVersion || !r.protocol_versions.includes(session.serverVersion))throw new PrecheckFactError('投递会话版本未登记请求协议支持','管理员核对发送会话版本及协议证据，登记该版本支持或更换受支持版本后重新派发；尚未提交');
+        const response=await this.retryRead(binding,session,'query',context,Infinity);
+        const identity=requestIdentity(response.value,r.identity,r.time_scale_ms);
+        if(at(response.value,r.found)!==false || !identity) {
+          throw new PrecheckFactError('投递前缺少本请求号的查空记录或可靠日志身份与主体','管理员核对日志身份及主体声明后重新派发；尚未提交，时间只作记录');
+        }
+        const initialization=eventOf(await this.journal.events(binding.job),'initialize.response');
+        requestSnapshot={request_identity:identity,request_protocol_version:session.serverVersion,request_protocol_verified:true};requestSources=[...new Set([response.source,...(initialization?.body.inputs??[])])];
+        await this.journal.append(binding,'request_identity','validate','completed',requestSnapshot,requestSources);
+      }
+    return {snapshot:requestSnapshot,sources:requestSources};
+  }
   /** One later round: a new pre-effect boundary, its own intent, then a read of that round. It does not close the job. */
   private async submitRound(args: {
     by: Principal; run: string; executor: string; binding: JobBinding; d: ExecutorDefinition;
@@ -1926,6 +1944,7 @@ export class DispatchService {
     const key = digestOfValue([input.lineage, input.item, d.proof.slot, round]);
     context.request_id = `${key}:${attempt}`; context.not_after = notAfter;
       context.sequence_scope = binding.executor; context.dispatch_sequence = await this.journal.nextDispatchSequence(binding);
+    const {snapshot:requestSnapshot,sources:requestSources}=await this.captureRequestSnapshot(binding,d,session,context);
     const finalBoundary = { ...gate.context,
       lease: async () => { if (!pulse.held()) return { ok: false as const, code: 'LEASE_EXPIRED', message: '目标租约心跳或确认时效中断；请恢复租约并重证基线' }; const current = await this.options.leases.holderSnapshot(d.resources); return this.sameFences(initial, current) ? { ok: true as const } : { ok: false as const, code: 'FENCING_STALE', message: 'Hub 围栏改变；请重证基线后开新修订' }; },
       content: async proof => !!source?.bytes && !!source.mediaType && proof.sha256 === input.sha256 && verifiedContent(source.bytes, input.sha256, source.mediaType),
@@ -1947,9 +1966,9 @@ export class DispatchService {
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx);
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
-        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row: boundary.row.id, effect_duration_ms: d.max_run_ms, intent_key: key, verification_result: currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id, context.lease_token]), attempt, round, not_after: notAfter, sequence, action_digest: actionDigest,
+        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row: boundary.row.id, effect_duration_ms: d.max_run_ms, intent_key: key, verification_result: currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope,...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id, context.lease_token]), attempt, round, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, ...intentSemantics, on_behalf_of: input.user,
-          before_state_bound: false, before_state: { bound: false, sha256: null, reference: null }, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`], bytesKey(input.sha256, round, attempt, true,input.lineage), tx);
+          before_state_bound: false, before_state: { bound: false, sha256: null, reference: null }, fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...requestSources], bytesKey(input.sha256, round, attempt, true,input.lineage), tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
       });
     } catch (error) {
@@ -1964,6 +1983,12 @@ export class DispatchService {
       flags.submitInvoked = true;
       answer = await session.call('submit', context, Math.max(1, Date.parse(notAfter) - this.now().getTime()));
     } finally { process.off('SIGINT', ignore); process.off('SIGTERM', ignore); process.off('SIGHUP', ignore); }
+    if(!d.receipt.request_id||at(answer.value,d.receipt.request_id)!==context.request_id) {
+      await this.unknown(binding,'本轮回执未证明属于原请求；保留先前轮次结果，只读核对本轮，不重交',[answer.source]);return this.status(by,binding.job);
+    }
+    if(requestSnapshot.request_identity&&!sameRequestIdentity(requestSnapshot.request_identity,requestIdentity(answer.value,d.receipt.identity,d.reconciliation?.time_scale_ms))) {
+      await this.unknown(binding,'本轮回执的日志身份或主体与投递前记录不一致；缺少本轮归属事实，不重交',[answer.source]);return this.status(by,binding.job);
+    }
     const accepted = !answer.tool_error && mapped(d.receipt.map, at(answer.value, d.receipt.acceptance)) === 'accepted';
     const remoteId = at(answer.value, d.receipt.id);
     if (!accepted || ((typeof remoteId !== 'string' && typeof remoteId !== 'number') || !String(remoteId)) || at(answer.value, d.receipt.sha256) !== input.sha256 || !same(at(answer.value, d.receipt.items), input.items)) {
