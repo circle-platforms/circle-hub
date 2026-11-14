@@ -66,7 +66,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
   },
   {
     key: 'plan',
-    stageLabel: '写计划',
+    stageLabel: '脚本编写',
     agentName: 'compile-writer',
     description:
       '读取一条原始用例的下载资料与编写简报，在工作目录写出唯一对应的自动化用例 JSON 并用 check-plan.ts 本地自检。在 case-compile 脚本编写或返工阶段由主代理或 case-writers 按条派发。',
@@ -146,7 +146,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
     stageLabel: '失败分析',
     agentName: 'compile-attributor',
     description:
-      '失败分析专用子代理。读取单条用例最后一次设备输出、执行拒绝信息与同构建手册，按固定排错层序给出带假设标记的归因与修复方向。',
+      '失败分析专用子代理。读取单条用例最后一次设备输出、执行拒绝信息与同构建手册，按固定排错层序给出标为未确认的失败分析结论与修复方向。',
     tools: ['read_file', 'write_file', 'ls', 'glob', 'grep'],
     forbiddenTools: ['execute', 'question', 'task', 'Hub MCP', 'test-bed'],
     body: `本子代理只承担上机失败原因定位与返工方向建议职责，不修改任何计划文件、不读取或写入令牌、不调 Hub、不预订或释放测试环境预订、不向使用者提问。
@@ -162,15 +162,23 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 4. 最后才考虑设备问题：仅当原始期望已忠实实现、前置全有、观察对象与方法正确且命令未被语法拒绝时，才可建议 \`defect_candidate\` 候选；拿不准就标为状态未知、原因“还没查清”，建议在被测命令前加只读观察。
 
 ## 强制输出约束
-每条归因结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、处置建议（不超过五类标准判断/六类标准原因口径）、修复方向与逐字设备证据摘录，交主代理或编写者独立复核；任何归因在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
+每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、处置建议（不超过五类标准判断/六类标准原因口径）、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
   },
 ];
+
+const BRIEF_MODE_LABELS: Readonly<Record<string, string>> = {
+  initial: '初始',
+  rework_gate: '机械规则返工',
+  rework_device: '上机返工',
+  fidelity_fix: '保真修正',
+};
 
 const ROLE_ALIAS_MAP: ReadonlyMap<string, SubagentRoleSpec> = new Map(
   SUBAGENT_ROLES.flatMap((spec) => [
     [spec.key, spec],
     [spec.stageLabel, spec],
     [spec.agentName, spec],
+    ...(spec.key === 'plan' ? ([['写计划', spec]] as const) : []),
   ]),
 );
 
@@ -224,16 +232,19 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const unrecordedAttribution = input.unrecordedAttribution ?? unrecordedFromBrief;
 
   if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak || unrecordedAttribution)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出或归因历史');
+    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史');
   }
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0 && !unrecordedAttribution) {
-    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或门禁/归因历史，禁止无历史重派`);
+    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派`);
   }
 
   const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
 
+  const modeSummary = compileBrief
+    ? `（模式：${BRIEF_MODE_LABELS[compileBrief.task.mode] ?? compileBrief.task.mode}（\`${compileBrief.task.mode}\`）；结构化简报已在内存中拼入）`
+    : '';
   const headSections: string[] = [
     CIRCLE_GENERAL_PURPOSE_NOTICE,
     '',
@@ -242,7 +253,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
     `- 原始用例 / 对象：${caseRef}`,
-    `- 当前轮次：第 ${round} 轮${compileBrief ? `（模式 ${compileBrief.task.mode}；简报摘要 ${compileBrief.brief_sha256.slice(0, 12)}）` : ''}`,
+    `- 当前轮次：第 ${round} 轮${modeSummary}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
     `- 技能目录：${skillDir}`,

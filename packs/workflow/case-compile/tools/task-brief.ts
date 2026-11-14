@@ -1,5 +1,5 @@
 // 只读生成可直接原文传给 Circle 内置 general-purpose 子代理（task 工具）的任务说明：
-//   node <技能目录>/tools/task-brief.ts --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
+//   node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -44,7 +44,7 @@ const OPTIONS: Record<string, boolean> = {
   'prior-notes': false,
 };
 const USAGE =
-  'node <技能目录>/tools/task-brief.ts --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
+  'node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
 const DEFAULT_PACK_ROOT = realpathSync(resolve(fileURLToPath(new URL('..', import.meta.url))));
@@ -364,7 +364,7 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
   const role = resolveSubagentRole(options.role);
   if (!role) {
     throw new Error(
-      `参数无效：未知子代理角色 ${options.role}。可用角色为 用例重组（recompose）、写计划（plan）、保真核对（fidelity）、失败分析（attribute）`,
+      `参数无效：未知子代理角色 ${options.role}。可用角色为 用例重组（recompose）、脚本编写（plan）、保真核对（fidelity）、失败分析（attribute）`,
     );
   }
   const caseRef = options.caseRef.trim();
@@ -463,7 +463,7 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
 
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && (!priorRounds || priorRounds.length === 0) && !unrecordedAttribution) {
     throw new Error(
-      `参数无效：第 ${round} 轮 ${role.stageLabel} 必须提供上一轮计划、设备返还或门禁/归因历史（--brief-json 或 --prior-plans/--prior-returns/--prior-answers/--prior-notes），禁止无历史重派`,
+      `参数无效：第 ${round} 轮 ${role.stageLabel} 必须提供上一轮计划、设备返还或机械规则/失败分析历史（--brief-json 或 --prior-plans/--prior-returns/--prior-answers/--prior-notes），禁止无历史重派`,
     );
   }
 

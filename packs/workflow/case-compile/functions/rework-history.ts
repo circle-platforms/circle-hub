@@ -31,7 +31,7 @@ export const AMBIGUOUS_STEP_MSG = '这一步的输出无法唯一定位';
 /** Mandatory disclosure whenever any step or session evidence could not be retrieved. */
 export const MISSING_EVIDENCE_CAVEAT = '取不到证据的步骤不要当作正确，也不要当作无关。';
 export const UNCONFIRMED_HYPOTHESIS_NOTE =
-  '以下归因结论均标记为未确认假设（confidence: "hypothesis"）；编写或复核前须对照上述原始设备输出独立核对后再采纳或推翻。';
+  '以下失败分析结论均标记为未确认假设（confidence: "hypothesis"）；编写或核对前须对照上述原始设备输出独立核对后再采纳或推翻。';
 
 export interface PlanStepSummary {
   index: number;
@@ -162,12 +162,21 @@ export interface DeviceReturnEvidence {
   errorSignatures: string[];
 }
 
+export type HubAnswerAcceptance = 'accepted' | 'not_accepted' | 'unknown';
+
+export interface HubAnswerNotices {
+  acceptance: HubAnswerAcceptance;
+  refusals: GateRefusalItem[];
+  acceptedNotices: GateRefusalItem[];
+}
+
 export interface PriorRoundRecord {
   round: number;
   planSource?: string;
   plan?: PriorPlanSnapshot | null;
   deviceEvidence?: DeviceReturnEvidence | null;
   gateRefusals: GateRefusalItem[];
+  acceptedNotices?: GateRefusalItem[];
   attribution?: PriorAttributionItem | null;
   errorSignatures: string[];
 }
@@ -188,10 +197,157 @@ const WAIT_ONLY_METHOD = /^(?:sleep|wait|pause|delay)$/i;
 const ANSI_ESCAPE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const CTRL_CHARS = /[\u0000-\u0008\u000b-\u001f\u007f]/g;
 
+/** Strips ANSI CSI sequences and resolves terminal `\r` overwrites to the last non-empty segment. */
+function collapseAnsiCrLine(rawLine: string): string {
+  const withoutAnsi = rawLine.replace(ANSI_ESCAPE, '');
+  const parts = withoutAnsi.split('\r');
+  const tail = parts[parts.length - 1] ?? '';
+  if (tail) return tail;
+  for (let idx = parts.length - 1; idx >= 0; idx--) {
+    if (parts[idx]) return parts[idx];
+  }
+  return '';
+}
+
+/**
+ * Decodes terminal horizontal-scroll redraw lines (`BS` x W + `$<vis><spaces>` + `BS` x pad + `<chunk>`),
+ * returning the reconstructed `prompt + fullCommand` line when scroll frames are present.
+ * Returns `null` when the line does not follow a valid scroll-redraw sequence so callers never guess.
+ */
+export function decodeHorizontalScrollRedraw(rawLine: string): string | null {
+  const lastCr = collapseAnsiCrLine(rawLine);
+  if (!lastCr.includes('\x08')) return null;
+
+  const prompted = LEADING_PROMPT.exec(lastCr);
+  const tsPrefixed = !prompted
+    ? /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+Z?)?\s+)/.exec(lastCr)
+    : null;
+  const prompt = prompted ? prompted[1] : tsPrefixed ? tsPrefixed[1] : '';
+  const rest = lastCr.slice(prompt.length);
+  const tokens: Array<{ bs: number } | { text: string }> = [];
+  let i = 0;
+  while (i < rest.length) {
+    if (rest[i] === '\x08') {
+      let j = i;
+      while (j < rest.length && rest[j] === '\x08') j++;
+      tokens.push({ bs: j - i });
+      i = j;
+    } else {
+      let j = i;
+      while (j < rest.length && rest[j] !== '\x08') j++;
+      tokens.push({ text: rest.slice(i, j) });
+      i = j;
+    }
+  }
+
+  if (tokens.length < 3 || !('text' in tokens[0]) || !('bs' in tokens[1])) return null;
+  const width = tokens[0].text.length;
+  if (width < 20) return null;
+
+  let out = tokens[0].text;
+  let scrolled = false;
+  let k = 1;
+
+  const isEnterResetFrame = (txt: string): boolean =>
+    txt.length >= Math.min(20, width - 2)
+    && txt.length <= width
+    && txt.endsWith('$')
+    && out.startsWith(txt.slice(0, -1));
+
+  while (k < tokens.length) {
+    const t = tokens[k];
+    if (!('bs' in t)) return null;
+    const nxt = tokens[k + 1];
+    if (!nxt) {
+      // Trailing BS at very end of line
+      k++;
+      break;
+    }
+    if (!('text' in nxt)) return null;
+
+    if (scrolled && isEnterResetFrame(nxt.text)) {
+      k += 2;
+      if (k === tokens.length - 1 && 'bs' in tokens[k]) k++;
+      break;
+    }
+
+    if (t.bs === width && nxt.text.startsWith('$') && nxt.text.length === width) {
+      scrolled = true;
+      const after = tokens[k + 2];
+      const nextChunk = tokens[k + 3];
+      if (
+        after
+        && 'bs' in after
+        && after.bs < width
+        && nextChunk
+        && 'text' in nextChunk
+        && !isEnterResetFrame(nextChunk.text)
+      ) {
+        const pad = after.bs;
+        const vis = nxt.text.slice(1, width - pad);
+        if (!vis) return null;
+        out += vis.slice(-1);
+        out += nextChunk.text;
+        k += 4;
+        continue;
+      }
+      const nextIsScrollFrame = Boolean(
+        after
+        && 'bs' in after
+        && after.bs === width
+        && nextChunk
+        && 'text' in nextChunk
+        && nextChunk.text.startsWith('$')
+        && !isEnterResetFrame(nextChunk.text),
+      );
+      const visTrimmed = nextIsScrollFrame ? nxt.text.slice(1) : nxt.text.slice(1).replace(/ +$/, '');
+      if (!visTrimmed) return null;
+      out += visTrimmed.slice(-1);
+      k += 2;
+      continue;
+    }
+
+    return null;
+  }
+
+  if (!scrolled || k !== tokens.length) return null;
+  return prompt + out;
+}
+
+/**
+ * Formats one terminal output line for rendered excerpts: decodes horizontal-scroll redraws first
+ * and resolves any remaining `\x08` sequences via cursor overwrite so raw control bytes never leak.
+ */
+function sanitizeTerminalExcerptLine(rawLine: string): string {
+  const decoded = decodeHorizontalScrollRedraw(rawLine);
+  if (decoded !== null) return decoded.replace(CTRL_CHARS, '');
+  const lastCr = collapseAnsiCrLine(rawLine);
+  if (!lastCr.includes('\x08')) return lastCr.replace(CTRL_CHARS, '');
+  const chars: string[] = [];
+  let col = 0;
+  for (const ch of lastCr) {
+    if (ch === '\x08') {
+      if (col > 0) col -= 1;
+    } else {
+      chars[col] = ch;
+      col += 1;
+    }
+  }
+  return chars.join('').replace(CTRL_CHARS, '').trimEnd();
+}
+
 function cleanLineForMatch(line: string): string {
   const withoutAnsi = line.replace(ANSI_ESCAPE, '');
   const parts = withoutAnsi.split('\r');
-  const collapsed = parts[parts.length - 1] ?? '';
+  let collapsed = parts[parts.length - 1] ?? '';
+  if (!collapsed) {
+    for (let idx = parts.length - 1; idx >= 0; idx--) {
+      if (parts[idx]) {
+        collapsed = parts[idx];
+        break;
+      }
+    }
+  }
   return collapsed.replace(CTRL_CHARS, '').trim();
 }
 
@@ -565,8 +721,33 @@ function inspectSessionLine(rawLine: string): {
   collapsedAll: string;
 } {
   const rawNoAnsi = rawLine.replace(ANSI_ESCAPE, '');
+  const decodedScroll = decodeHorizontalScrollRedraw(rawLine);
+  if (decodedScroll !== null) {
+    const cleaned = decodedScroll.replace(CTRL_CHARS, '').trim();
+    const prompted = LEADING_PROMPT.exec(cleaned);
+    const body = prompted ? cleaned.slice(prompted[1].length).trim() : cleaned;
+    return {
+      rawNoAnsi,
+      cleaned,
+      body,
+      promptMatched: prompted !== null,
+      isRedraw: true,
+      redrawHead: '',
+      redrawTail: '',
+      collapsedAll: normWs(cleaned),
+    };
+  }
+
   const crParts = rawNoAnsi.split('\r');
-  const lastCr = crParts[crParts.length - 1] ?? '';
+  let lastCr = crParts[crParts.length - 1] ?? '';
+  if (!lastCr) {
+    for (let idx = crParts.length - 1; idx >= 0; idx--) {
+      if (crParts[idx]) {
+        lastCr = crParts[idx];
+        break;
+      }
+    }
+  }
   const cleaned = lastCr.replace(CTRL_CHARS, '').trim();
   const prompted = LEADING_PROMPT.exec(cleaned);
   const body = prompted ? cleaned.slice(prompted[1].length).trim() : cleaned;
@@ -689,14 +870,19 @@ function extractExcerptAt(rawLines: readonly string[], matchIndex: number): stri
   let end = matchIndex + 1;
   while (end < rawLines.length && end < matchIndex + 18) {
     const cleaned = cleanLineForMatch(rawLines[end]);
-    if (LEADING_PROMPT.test(cleaned) && end > matchIndex) {
-      // Include one trailing prompt line so return-to-prompt is visible.
-      end++;
+    const prompted = LEADING_PROMPT.exec(cleaned);
+    if (prompted && end > matchIndex) {
+      // Include a trailing bare return-to-prompt line, but stop before a non-empty next command.
+      if (!cleaned.slice(prompted[1].length).trim()) end++;
       break;
     }
     end++;
   }
-  const sliceText = rawLines.slice(start, end).map((l) => l.replace(/\r/g, '')).join('\n').trimEnd();
+  const sliceText = rawLines
+    .slice(start, end)
+    .map(sanitizeTerminalExcerptLine)
+    .join('\n')
+    .trimEnd();
   return sliceText.length > 1600
     ? sliceText.slice(0, 1600) + '\n…（此步后续输出已按长度上限省略，完整原文见对应会话文件）'
     : sliceText;
@@ -763,9 +949,9 @@ function extractExecutedLogCommands(logText: string): string[] {
 
 function collectCandidateLogLines(logText: string): string[] {
   const lines = logText
-    .replace(/\r/g, '')
+    .replace(/\r\n/g, '\n')
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => sanitizeTerminalExcerptLine(line).trim())
     .filter(Boolean);
   if (lines.length <= 24) return lines;
   const hitIndices = new Set<number>();
@@ -1278,8 +1464,12 @@ export function extractCaseDeviceEvidence(params: {
             continue;
           }
           if (winCands.length === 0) {
-            // Only cite 12,000-char gateway head truncation when session length reached retention cap AND step precedes retained anchors.
-            const beforeRetained = isTruncatedLen && win.lowLine === -1;
+            // Only cite 12,000-char gateway head truncation when session reached retention cap,
+            // is strictly absent from all retained session lines, and no earlier step was retained (`lowLine === -1`).
+            const beforeRetained =
+              isTruncatedLen
+              && win.lowLine === -1
+              && allCands.length === 0;
             const notice = beforeRetained ? MISSING_STEP_TRUNCATION_MSG : MISSING_STEP_NOT_FOUND_MSG;
             for (const t of grp) {
               resolvedExcerpts[t.slotIdx] = {
@@ -1326,12 +1516,21 @@ export function extractCaseDeviceEvidence(params: {
   let inlineTail = '';
   if (sessionEntries.length > 0) {
     const [primaryName, primary] = sessionEntries[0];
-    const cleanText = primary.text.replace(/\r/g, '');
-    const slice = cleanText.length > INLINE_TAIL_CHARS ? cleanText.slice(-INLINE_TAIL_CHARS) : cleanText;
+    const cleanText = primary.text
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map(sanitizeTerminalExcerptLine)
+      .join('\n');
+    let slice = cleanText;
+    if (cleanText.length > INLINE_TAIL_CHARS) {
+      const rawSlice = cleanText.slice(-INLINE_TAIL_CHARS);
+      const nlIdx = rawSlice.indexOf('\n');
+      slice = nlIdx >= 0 && nlIdx < rawSlice.length - 1 ? rawSlice.slice(nlIdx + 1) : rawSlice;
+    }
     const prefixNote =
       cleanText.length > INLINE_TAIL_CHARS
-        ? `[${primaryName} 仅展示末尾 ${INLINE_TAIL_CHARS} / ${cleanText.length} 字符] `
-        : `[${primaryName} 共 ${cleanText.length} 字符] `;
+        ? `[${primaryName} 仅展示解码后末尾 ${slice.length} / ${cleanText.length} 字符] `
+        : `[${primaryName} 共 ${cleanText.length} 字符（原始 ${primary.text.length} 字符）] `;
     const candidateTail = `${prefixNote}\n${slice}`;
     inlineTail =
       candidateTail.length > INLINE_TAIL_CHARS
@@ -1443,12 +1642,107 @@ function truncateAnswerField(value: string, maxChars: number): string {
   return `${clean.slice(0, maxChars)}…（已截断 ${clean.length - maxChars} 字符）`;
 }
 
+function cleanPunctuationRuns(text: string): string {
+  let out = text.replace(/\r/g, '');
+  for (let i = 0; i < 3; i++) {
+    out = out
+      .replace(/[（(]\s*[，,；;：:、\s]*[）)]/g, '')
+      .replace(/([（(])\s*[；;，,、]+/g, '$1')
+      .replace(/[；;，,、]+\s*([）)])/g, '$1')
+      .replace(/([；;，,])(?:\s*[；;，,])+/g, '$1')
+      .replace(/\s+/g, ' ')
+      .replace(/^[；;，,、：\s]+|[；;，,、\s]+$/g, '')
+      .trim();
+  }
+  return out;
+}
+
+/**
+ * Strips internal Hub transport identifiers (`rec:<hex>`, `usr_<id>`, ms UTC timestamps)
+ * from `errors[].message` / `errors[].fix`, and drops duplicated `缺失事实：<message>` clauses inside `fix`.
+ */
+export function sanitizeHubAnswerField(raw: string, stripMissingFactText?: string): string {
+  if (!raw) return '';
+  let out = raw
+    .replace(/\r/g, '')
+    .replace(/(?:请求(?:摘要|记录|编号)?|审计(?:记录|摘要)?|凭据|trace)[：:\s]*rec:[0-9a-f]{16,64}(?:\/[^\s，。；,;）)]*)?/gi, '')
+    .replace(/(?:受众|用户|使用者|操作者|发起人)[：:\s]*\busr_[0-9a-z_-]+\b/gi, '')
+    .replace(/\brec:[0-9a-f]{16,64}(?:\/[^\s，。；,;）)]*)?/gi, '')
+    .replace(/\busr_[0-9a-z_-]+\b/gi, '')
+    .replace(/\b(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}\.\d{1,6}Z\b/g, '$1 $2 UTC');
+
+  if (stripMissingFactText) {
+    const cleanMsgExact = cleanPunctuationRuns(stripMissingFactText).replace(/[。；;，,]+$/, '').trim();
+    if (cleanMsgExact) {
+      const escapedMsg = cleanMsgExact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp(`(?:^|[；;\\n])\\s*缺失事实[：:]\\s*${escapedMsg}[。；;]?`, 'g'), '');
+    }
+  }
+
+  out = cleanPunctuationRuns(out);
+
+  if (stripMissingFactText) {
+    const cleanMsg = cleanPunctuationRuns(stripMissingFactText).replace(/[。；;，,]+$/, '').trim();
+    if (cleanMsg) {
+      const clauses = out
+        .split(/(?<=[；;。\n])|[；;\n]+/)
+        .map((c) => cleanPunctuationRuns(c))
+        .filter(Boolean);
+      const filtered: string[] = [];
+      for (const clause of clauses) {
+        const factM = /^缺失事实[：:]\s*(.+)$/.exec(clause);
+        if (factM) {
+          const factBody = cleanPunctuationRuns(factM[1]).replace(/[。；;，,]+$/, '').trim();
+          const overlapPrefixLen = Math.min(cleanMsg.length, factBody.length, 16);
+          if (
+            factBody === cleanMsg
+            || (overlapPrefixLen >= 8 && (cleanMsg.startsWith(factBody.slice(0, overlapPrefixLen)) || factBody.startsWith(cleanMsg.slice(0, overlapPrefixLen))))
+          ) {
+            continue;
+          }
+        }
+        const stripped = clause.replace(/[。；;，,]+$/, '').trim();
+        if (stripped === cleanMsg) continue;
+        filtered.push(clause);
+      }
+      out = cleanPunctuationRuns(filtered.join('；'));
+      const remainingNorm = out.replace(/[。；;，,]+$/, '').trim();
+      if (remainingNorm === cleanMsg) return '';
+    }
+  }
+
+  return out;
+}
+
+function resolveAnswerAcceptance(parsed: Record<string, unknown>): HubAnswerAcceptance {
+  const top = typeof parsed.acceptance === 'string' ? parsed.acceptance.trim().toLowerCase() : '';
+  const nested = isRecord(parsed.result) && typeof parsed.result.acceptance === 'string'
+    ? parsed.result.acceptance.trim().toLowerCase()
+    : '';
+  const callRes = typeof parsed.call_result === 'string' ? parsed.call_result.trim().toLowerCase() : '';
+  if (top === 'accepted' || nested === 'accepted') return 'accepted';
+  if (
+    top === 'not_accepted' || top === 'rejected'
+    || nested === 'not_accepted' || nested === 'rejected'
+    || callRes === 'error' || callRes === 'rejected'
+  ) {
+    return 'not_accepted';
+  }
+  return 'unknown';
+}
+
 function extractCompactGateErrorsFromObject(
   parsed: Record<string, unknown>,
   caseIds: ReadonlySet<string>,
   round: number,
   pushItem: (item: GateRefusalItem) => void,
+  allowRootFallback = false,
 ): void {
+  let emittedCount = 0;
+  const emit = (item: GateRefusalItem): void => {
+    emittedCount += 1;
+    pushItem(item);
+  };
   const originalCases = Array.isArray(parsed.original_cases)
     ? parsed.original_cases.filter((c): c is Record<string, unknown> => isRecord(c))
     : [];
@@ -1500,7 +1794,7 @@ function extractCompactGateErrorsFromObject(
       if (ptrMatch === false) return;
       if (ptrMatch === null && caseIds.size > 0) {
         const msgRaw = typeof err.message === 'string' ? err.message : '';
-        const mentionsOurs = [...caseIds].some((id) => msgRaw.includes(id));
+        const mentionsOurs = [...caseIds].some((id) => msgRaw.includes(id) || ptr.includes(id));
         if (!mentionsOurs) {
           if (otherCaseTokens.some((tok) => msgRaw.includes(tok))) return;
           if (/(?:item_|99\d{14,}|doc-\d+:c-\d+)/.test(msgRaw)) return;
@@ -1511,29 +1805,34 @@ function extractCompactGateErrorsFromObject(
     const code = typeof err.code === 'string' && err.code.trim()
       ? err.code.trim()
       : (inheritedCode ?? 'GATE_REFUSAL');
-    const msg = typeof err.message === 'string' && err.message.trim()
+    const rawMsg = typeof err.message === 'string' && err.message.trim()
       ? err.message.trim()
       : typeof err.reason === 'string' && err.reason.trim()
         ? err.reason.trim()
         : typeof err.detail === 'string' && err.detail.trim()
           ? err.detail.trim()
           : '';
-    const fix = typeof err.fix === 'string' ? err.fix : '';
-    if (!msg && !ptr && !fix && !err.code) return;
+    const rawFix = typeof err.fix === 'string' ? err.fix : '';
+    if (!rawMsg && !ptr && !rawFix && !err.code) return;
 
-    pushItem({
+    const cleanMsg = sanitizeHubAnswerField(rawMsg);
+    const cleanFix = sanitizeHubAnswerField(rawFix, cleanMsg || rawMsg);
+
+    emit({
       round,
       source: 'hub_gate',
       code,
       path: truncateAnswerField(ptr, 200),
-      message: truncateAnswerField(msg || code, 400),
-      fix: truncateAnswerField(fix, 300),
+      message: truncateAnswerField(cleanMsg || rawMsg || code, 400),
+      fix: truncateAnswerField(cleanFix, 300),
     });
   };
 
   const errorLists: unknown[][] = [];
   if (Array.isArray(parsed.errors)) errorLists.push(parsed.errors);
+  if (Array.isArray(parsed.missing_input)) errorLists.push(parsed.missing_input);
   if (isRecord(parsed.result) && Array.isArray(parsed.result.errors)) errorLists.push(parsed.result.errors);
+  if (isRecord(parsed.result) && Array.isArray(parsed.result.missing_input)) errorLists.push(parsed.result.missing_input);
   if (isRecord(parsed.acceptance) && Array.isArray(parsed.acceptance.errors)) errorLists.push(parsed.acceptance.errors);
   for (const list of errorLists) {
     for (const err of list) {
@@ -1574,7 +1873,7 @@ function extractCompactGateErrorsFromObject(
           acceptErrorRecord({
             item,
             code: code ?? 'GATE_REFUSAL',
-            message: typeof entry.message === 'string' ? entry.message : `${partitionKey ?? 'partition'} 拒绝`,
+            message: typeof entry.message === 'string' ? entry.message : `${partitionKey ?? 'partition'} 未受理`,
             fix: typeof entry.fix === 'string' ? entry.fix : '',
           });
         }
@@ -1602,24 +1901,49 @@ function extractCompactGateErrorsFromObject(
       }
     }
   }
+
+  if (
+    emittedCount === 0
+    && allowRootFallback
+    && (
+      typeof parsed.code === 'string'
+      || typeof parsed.message === 'string'
+      || typeof parsed.reason === 'string'
+      || typeof parsed.pointer === 'string'
+      || typeof parsed.path === 'string'
+    )
+  ) {
+    acceptErrorRecord(parsed);
+  }
 }
 
 /**
  * Parses an `answer-*.txt` file from `submit-plans.ts` or Hub `submit_result` output,
- * extracting compact `{code, path, message, fix}` entries strictly matching THIS case.
- * Multi-line answers ending with `供模型引用\n{...}` never fall back to dumping the JSON blob.
+ * separating unaccepted gate refusals (`acceptance !== 'accepted'`) from accepted missing-input
+ * notices (`acceptance === 'accepted'`, e.g. `missing_input`) while scrubbing internal Hub IDs and duplicates.
  */
-export function parseGateRefusalsFromAnswer(
+export function parseHubAnswerNotices(
   answerText: string,
   caseIds: ReadonlySet<string>,
   round: number,
-): GateRefusalItem[] {
+): HubAnswerNotices {
   const trimmed = answerText.trim();
-  if (!trimmed) return [];
-  const items: GateRefusalItem[] = [];
-  const pushItem = (item: GateRefusalItem): void => {
-    const dup = items.some((x) => x.code === item.code && x.path === item.path && x.message === item.message);
-    if (!dup) items.push(item);
+  if (!trimmed) return { acceptance: 'unknown', refusals: [], acceptedNotices: [] };
+
+  const refusals: GateRefusalItem[] = [];
+  const acceptedNotices: GateRefusalItem[] = [];
+  const pushDedup = (target: GateRefusalItem[]) => (item: GateRefusalItem): void => {
+    const dup = target.some((x) => x.code === item.code && x.path === item.path && x.message === item.message);
+    if (!dup) target.push(item);
+  };
+
+  let overallAcceptance: HubAnswerAcceptance = 'unknown';
+  const recordObject = (parsed: Record<string, unknown>): void => {
+    const acc = resolveAnswerAcceptance(parsed);
+    if (acc === 'not_accepted') overallAcceptance = 'not_accepted';
+    else if (acc === 'accepted' && overallAcceptance !== 'not_accepted') overallAcceptance = 'accepted';
+    const target = acc === 'accepted' ? acceptedNotices : refusals;
+    extractCompactGateErrorsFromObject(parsed, caseIds, round, pushDedup(target), acc !== 'accepted');
   };
 
   let parsedStructuredJson = false;
@@ -1627,8 +1951,8 @@ export function parseGateRefusalsFromAnswer(
     const parsed: unknown = JSON.parse(trimmed);
     if (isRecord(parsed)) {
       parsedStructuredJson = true;
-      extractCompactGateErrorsFromObject(parsed, caseIds, round, pushItem);
-      return items;
+      recordObject(parsed);
+      return { acceptance: overallAcceptance, refusals, acceptedNotices };
     }
   } catch {
     // Multi-line `submit_result` text: inspect embedded single-line JSON payloads (e.g. after `供模型引用`).
@@ -1647,19 +1971,20 @@ export function parseGateRefusalsFromAnswer(
       const parsed: unknown = JSON.parse(lineTrim);
       if (isRecord(parsed)) {
         parsedStructuredJson = true;
-        extractCompactGateErrorsFromObject(parsed, caseIds, round, pushItem);
+        recordObject(parsed);
       }
     } catch {
       // Not a standalone JSON object line.
     }
   }
   if (parsedStructuredJson) {
-    return items;
+    return { acceptance: overallAcceptance, refusals, acceptedNotices };
   }
 
   // Legacy plain-text Hub answer format (no structured JSON payload present): never emit raw JSON lines.
   const ids = [...caseIds];
   const scanLimit = markerLineIdx >= 0 ? markerLineIdx : lines.length;
+  const pushRefusal = pushDedup(refusals);
   for (let i = 0; i < scanLimit; i++) {
     const line = lines[i].trim();
     if (!line || line.startsWith('{') || line.startsWith('[')) continue;
@@ -1670,16 +1995,30 @@ export function parseGateRefusalsFromAnswer(
     const nextLine = i + 1 < scanLimit && /^(?:修复|建议|fix[:：])/i.test(lines[i + 1].trim())
       ? lines[i + 1].trim()
       : '';
-    pushItem({
+    const cleanMsg = sanitizeHubAnswerField(line);
+    const cleanFix = sanitizeHubAnswerField(nextLine, cleanMsg || line);
+    pushRefusal({
       round,
       source: 'hub_gate',
       code: codeMatch ? codeMatch[1] : 'GATE_REFUSAL',
       path: pointerMatch ? truncateAnswerField(pointerMatch[1], 200) : '',
-      message: truncateAnswerField(line, 400),
-      fix: truncateAnswerField(nextLine, 300),
+      message: truncateAnswerField(cleanMsg || line, 400),
+      fix: truncateAnswerField(cleanFix, 300),
     });
   }
-  return items;
+  return { acceptance: 'unknown', refusals, acceptedNotices };
+}
+
+/**
+ * Extracts only unaccepted Hub gate refusals (`acceptance !== 'accepted'`) for THIS case.
+ * Accepted responses containing `missing_input` return `[]` here; inspect `parseHubAnswerNotices` for accepted gaps.
+ */
+export function parseGateRefusalsFromAnswer(
+  answerText: string,
+  caseIds: ReadonlySet<string>,
+  round: number,
+): GateRefusalItem[] {
+  return parseHubAnswerNotices(answerText, caseIds, round).refusals;
 }
 
 function parsePositiveRoundValue(value: unknown): number | null {
@@ -1812,16 +2151,45 @@ function signaturesMatchAsSameError(prevSigs: readonly string[], currSigs: reado
 }
 
 /**
+ * Returns Hub refusal codes that appeared sequentially in at least two trailing prior rounds
+ * (only unaccepted responses in `gateRefusals`; never counts `acceptedNotices` or multiple errors in a single round).
+ */
+export function consecutiveRepeatedGateCodes(rounds: readonly PriorRoundRecord[]): string[] {
+  const ordered = [...rounds].sort((a, b) => a.round - b.round);
+  if (ordered.length < 2) return [];
+  const latest = ordered[ordered.length - 1];
+  const candidateCodes = [...new Set(latest.gateRefusals.map((g) => g.code).filter(Boolean))];
+  const repeated: string[] = [];
+  for (const code of candidateCodes) {
+    let streak = 1;
+    for (let i = ordered.length - 2; i >= 0; i--) {
+      if (ordered[i].gateRefusals.some((g) => g.code === code)) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    if (streak >= 2) repeated.push(code);
+  }
+  return repeated;
+}
+
+/**
  * Computes round-to-round plan diffs and detects trailing consecutive rounds hitting the same error class.
- * InfoTest provenance (`compile_engine/remedies.py:39-42`, `compile_engine/briefs.py:2681-2690,2792-2833,2982-2985`):
- * - `finalAttempt` marks the last retry budget slot before escalation (`attemptLimit`).
- * - `varyFormRequired` sets only when consecutive prior rounds hit matching error signatures or repeated device
- *   syntax/execution refusals, requiring command morphology/precondition change rather than minor wording tweaks.
+ * InfoTest provenance (`InfoTest_Engine/main/ist_core/compile_engine/`):
+ * - `finalAttempt`: marks the last retry budget slot (`briefs.py:2982-2985`, rendered in Chinese).
+ * - `varyFormRequired`: triggers ONLY when InfoTest itself requires changing approach:
+ *   1) two or more consecutive unaccepted Hub gate refusals share the same code
+ *      (`briefs.py:2681-2690`, `rejection_history.py:3-40`, `nodes.py:9532-9594`), OR
+ *   2) failure attribution carries `disposition === "frozen"` (`remedies.py:39-42`).
+ * - General device failures (`runner_fail:`, `exec_refused:`, `syntax:`) still report `consecutiveSameError`
+ *   as a factual observation without auto-forcing `varyFormRequired` (no matching InfoTest rule in `briefs.py:2792-2820`).
  */
 export function analyzeRoundHistory(params: {
   currentRound: number;
   attemptLimit?: number;
   rounds: readonly PriorRoundRecord[];
+  unrecordedAttribution?: PriorAttributionItem | null;
 }): StreakAnalysis {
   const attemptLimit = params.attemptLimit ?? MAX_ROUNDS;
   const remainingAttempts = Math.max(0, attemptLimit - params.currentRound);
@@ -1852,12 +2220,19 @@ export function analyzeRoundHistory(params: {
     }
   }
 
-  const latestSyntaxOrExec =
-    (ordered.at(-1)?.deviceEvidence?.syntaxRejected.length ?? 0) > 0
-    || (ordered.at(-1)?.deviceEvidence?.executionRefused.length ?? 0) > 0;
+  const repeatedGateCodes = consecutiveRepeatedGateCodes(ordered);
+  const latestAttr =
+    [...ordered].reverse().find((r) => r.attribution)?.attribution
+    ?? params.unrecordedAttribution
+    ?? null;
+  const hasFrozenDisposition =
+    typeof latestAttr?.disposition === 'string' && latestAttr.disposition.trim().toLowerCase() === 'frozen';
+  const hasConsecutiveGateSignature =
+    consecutiveSameError >= 2 && Boolean(repeatedSignature?.startsWith('gate:'));
   const varyFormRequired =
-    consecutiveSameError >= 2
-    || (ordered.length >= 2 && latestSyntaxOrExec && ordered.at(-2)?.errorSignatures.some((s) => s.startsWith('syntax:') || s.startsWith('exec_refused:')) === true);
+    repeatedGateCodes.length > 0
+    || hasConsecutiveGateSignature
+    || hasFrozenDisposition;
 
   return {
     currentRound: params.currentRound,
@@ -1946,7 +2321,7 @@ export function renderPriorRoundsMarkdown(params: {
       );
     }
     if (params.streak.varyFormRequired) {
-      headerLines.push('- vary_form_required = true：连续多轮命中同类问题或真机拒收，禁止只改小词重试同一写法，必须核查手册命令形态或前置条件后改换实现路径。');
+      headerLines.push('- 须改换实现路径：连续两轮触发同码机械规则未受理或失败分析标记为已冻结，本轮须核查手册命令形态或前置条件后改换做法，勿仅微调字词重试。');
     }
 
     const historyLines: string[] = [];
@@ -1974,13 +2349,34 @@ export function renderPriorRoundsMarkdown(params: {
             historyLines.push(`  · 计划摘要：handling=${r.plan.handling}，共 ${r.plan.isBlocks ? r.plan.blocks.length + ' 块' : r.plan.steps.length + ' 步'}，${r.plan.expects.length} 条期望`);
           }
         }
-        if (r.gateRefusals.length > 0) {
-          const limit = Math.min(state.gateLimit, r.gateRefusals.length);
-          for (const g of r.gateRefusals.slice(0, limit)) {
-            historyLines.push(`  · Hub 门禁拒绝 [${g.code}${g.path ? ` @ ${g.path}` : ''}]：${g.message}${g.fix ? `（修复：${g.fix}）` : ''}`);
+        const acceptedNotices = r.acceptedNotices ?? [];
+        if (r === latest) {
+          if (r.gateRefusals.length > 0) {
+            const codes = [...new Set(r.gateRefusals.map((g) => g.code))].join('、');
+            historyLines.push(`  · Hub 没有受理，原因（共 ${r.gateRefusals.length} 条：${codes}，详见下方）`);
           }
-          if (r.gateRefusals.length > limit) {
-            omissions.push(`第 ${r.round} 轮历轮摘要内门禁拒绝：保留前 ${limit} 条，省略 ${r.gateRefusals.length - limit} 条`);
+          if (acceptedNotices.length > 0) {
+            const codes = [...new Set(acceptedNotices.map((g) => g.code))].join('、');
+            historyLines.push(`  · Hub 已受理，还缺（共 ${acceptedNotices.length} 项：${codes}，详见下方）`);
+          }
+        } else {
+          if (r.gateRefusals.length > 0) {
+            const limit = Math.min(state.gateLimit, r.gateRefusals.length);
+            for (const g of r.gateRefusals.slice(0, limit)) {
+              historyLines.push(`  · Hub 没有受理，原因 [${g.code}${g.path ? ` @ ${g.path}` : ''}]：${g.message}${g.fix ? `（修复：${g.fix}）` : ''}`);
+            }
+            if (r.gateRefusals.length > limit) {
+              omissions.push(`第 ${r.round} 轮历轮摘要内未受理原因：保留前 ${limit} 条，省略 ${r.gateRefusals.length - limit} 条`);
+            }
+          }
+          if (acceptedNotices.length > 0) {
+            const limit = Math.min(state.gateLimit, acceptedNotices.length);
+            for (const g of acceptedNotices.slice(0, limit)) {
+              historyLines.push(`  · Hub 已受理，还缺 [${g.code}${g.path ? ` @ ${g.path}` : ''}]：${g.message}${g.fix ? `（待补：${g.fix}）` : ''}`);
+            }
+            if (acceptedNotices.length > limit) {
+              omissions.push(`第 ${r.round} 轮历轮摘要内已受理待补项：保留前 ${limit} 条，省略 ${acceptedNotices.length - limit} 条`);
+            }
           }
         }
       }
@@ -2127,13 +2523,24 @@ export function renderPriorRoundsMarkdown(params: {
 
     const gateLines: string[] = [];
     if (latest && latest.gateRefusals.length > 0) {
-      gateLines.push('', `### 上一轮（第 ${latest.round} 轮）Hub 门禁拒绝`);
+      gateLines.push('', `### 上一轮（第 ${latest.round} 轮）Hub 没有受理，原因`);
       const limit = Math.min(state.gateLimit, latest.gateRefusals.length);
       for (const g of latest.gateRefusals.slice(0, limit)) {
         gateLines.push(`- [${g.code}]${g.path ? ` 路径 ${g.path}` : ''}：${g.message}${g.fix ? `；修复要求：${g.fix}` : ''}`);
       }
       if (latest.gateRefusals.length > limit) {
-        omissions.push(`上一轮 Hub 门禁拒绝（保留前 ${limit} 条，省略 ${latest.gateRefusals.length - limit} 条）`);
+        omissions.push(`上一轮 Hub 没有受理原因（保留前 ${limit} 条，省略 ${latest.gateRefusals.length - limit} 条）`);
+      }
+    }
+    const latestAcceptedNotices = latest?.acceptedNotices ?? [];
+    if (latest && latestAcceptedNotices.length > 0) {
+      gateLines.push('', `### 上一轮（第 ${latest.round} 轮）Hub 已受理，还缺`);
+      const limit = Math.min(state.gateLimit, latestAcceptedNotices.length);
+      for (const g of latestAcceptedNotices.slice(0, limit)) {
+        gateLines.push(`- [${g.code}]${g.path ? ` 路径 ${g.path}` : ''}：${g.message}${g.fix ? `；待补说明：${g.fix}` : ''}`);
+      }
+      if (latestAcceptedNotices.length > limit) {
+        omissions.push(`上一轮 Hub 已受理待补项（保留前 ${limit} 条，省略 ${latestAcceptedNotices.length - limit} 条）`);
       }
     }
 
@@ -2172,7 +2579,7 @@ export function renderPriorRoundsMarkdown(params: {
       allLines.push(
         '',
         `### 历史上下文篇幅控制与省略披露（上限 ${budget} 字符）`,
-        '- 触发篇幅上限，已按固定顺序缩减以下低优先级原文（关键报错、门禁拒绝条文与待证归因已优先保留）：',
+        '- 触发篇幅上限，已按固定顺序缩减以下低优先级原文（关键报错、机械规则未受理条文与待证失败分析已优先保留）：',
         ...omissions.map((o) => `- 已省略/缩减：${o}`),
       );
     }

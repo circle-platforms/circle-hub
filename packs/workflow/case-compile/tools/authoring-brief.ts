@@ -1,12 +1,9 @@
-// The authoring briefs of a downloaded plan run (functions/authoring-brief.ts): one text file per case, `briefs/<index>.md`,
-// beside `items/` and `knowledge/`, plus optional structured per-round `briefs/<index>.round-<n>.json` and `.round-<n>.md`.
-// tools/download-run.ts writes them with the run; run alone, this tool writes them for a directory downloaded before.
-// It reads local files only, decides nothing and never overwrites an existing brief file.
-//   node <skill directory>/tools/authoring-brief.ts --run <downloaded run directory> [--round <n> --mode <mode> --prior-plans <...> --returns <...> --answers <...> --attributions <...> --brief-out <dir>]
+// Internal library helpers for building authoring briefs (`briefs/<index>.md`) and single-case structured `compile-brief@1` context:
+// `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
+// It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   authoringBrief,
   buildCompileBrief,
@@ -25,7 +22,7 @@ import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { isRecord } from '../functions/text.ts';
 import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { loadCasePriorRounds } from './rework-inputs.ts';
 import {
@@ -364,64 +361,3 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
 
   return report;
 }
-
-const CLI_OPTIONS: Record<string, boolean> = {
-  run: false,
-  dir: false,
-  round: false,
-  mode: false,
-  case: false,
-  'prior-plans': false,
-  returns: false,
-  answers: false,
-  attributions: false,
-  'brief-out': false,
-};
-const CLI_USAGE =
-  'node <技能目录>/tools/authoring-brief.ts --run <运行目录> [--round <n>] [--case <序号或autoid>] [--mode <initial|rework_gate|rework_device|fidelity_fix>] [--prior-plans <...>] [--returns <...>] [--answers <...>] [--attributions <...>] [--brief-out <输出目录>]';
-
-export async function main(argv: string[]): Promise<number> {
-  try {
-    const args = parseCliOptions(argv, CLI_OPTIONS, CLI_USAGE);
-    const targetDir = args.run ?? args.dir;
-    if (!targetDir || (args.run && args.dir)) {
-      throw new Error('参数无效：--run <运行目录> 必填且只能写一次（或改用别名 --dir）');
-    }
-
-    const isStructured =
-      args.round !== undefined
-      || args.mode !== undefined
-      || args.case !== undefined
-      || args['prior-plans'] !== undefined
-      || args.returns !== undefined
-      || args.answers !== undefined
-      || args.attributions !== undefined
-      || args['brief-out'] !== undefined;
-
-    if (!isStructured) {
-      const report = await writeBriefs(targetDir);
-      process.stdout.write(JSON.stringify({ directory: resolve(targetDir, 'briefs'), ...report }) + '\n');
-      return 0;
-    }
-
-    const round = args.round === undefined ? 1 : Number(args.round);
-    if (!Number.isInteger(round) || round < 1) {
-      throw new Error(`参数无效：--round 必须是正整数（收到 ${args.round}）`);
-    }
-    const mode = args.mode as CompileBriefMode | undefined;
-    const report = await writeStructuredBriefs({
-      runDir: targetDir,
-      round,
-      ...(mode ? { mode } : {}),
-      ...(args.case !== undefined ? { caseFilter: args.case } : {}),
-      ...(args['prior-plans'] !== undefined ? { priorPlans: args['prior-plans'] } : {}),
-      ...(args.returns !== undefined ? { returns: args.returns } : {}),
-      ...(args.answers !== undefined ? { answers: args.answers } : {}),
-      ...(args.attributions !== undefined ? { attributions: args.attributions } : {}),
-      ...(args['brief-out'] !== undefined ? { briefOut: args['brief-out'] } : {}),
-    });
-    process.stdout.write(JSON.stringify(report) + '\n');
-    return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
-}
-if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

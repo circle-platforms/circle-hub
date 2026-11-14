@@ -5,17 +5,22 @@ import {
   AMBIGUOUS_STEP_MSG,
   analyzeRoundHistory,
   buildCaseIdSet,
+  consecutiveRepeatedGateCodes,
+  decodeHorizontalScrollRedraw,
   diffPlanSnapshots,
   extractCaseDeviceEvidence,
   MISSING_EVIDENCE_CAVEAT,
   MISSING_STEP_NOT_FOUND_MSG,
   MISSING_STEP_TRUNCATION_MSG,
   parseGateRefusalsFromAnswer,
+  parseHubAnswerNotices,
   parsePriorAttribution,
   parsePriorPlanSnapshot,
   renderPriorRoundsMarkdown,
+  sanitizeHubAnswerField,
   SESSION_RETAINED_CHARS,
 } from './rework-history.ts';
+import { buildCompileBrief, renderCompileBriefMd, validateCompileBrief } from './authoring-brief.ts';
 
 const CASE_ID = '990000000000000301';
 const OTHER_CASE_ID = '990000000000000399';
@@ -241,7 +246,8 @@ test('consecutive same-error streak counts matching rounds, sets vary_form_requi
   const streak = analyzeRoundHistory({ currentRound: 3, rounds });
   assert.equal(streak.consecutiveSameError, 2);
   assert.equal(streak.finalAttempt, true);
-  assert.equal(streak.varyFormRequired, true);
+  // InfoTest provenance (`remedies.py:39-42`, `briefs.py:2792-2820`): non-frozen device errors report consecutive streak without auto-forcing vary_form.
+  assert.equal(streak.varyFormRequired, false);
   assert.equal(streak.roundChanges.length, 1);
 
   const md = renderPriorRoundsMarkdown({ caseRef: CASE_ID, currentRound: 3, rounds, streak });
@@ -253,6 +259,13 @@ test('consecutive same-error streak counts matching rounds, sets vary_form_requi
   assert.ok(md.includes('不替代编写模型/分析模型的独立判断'));
   assert.ok(md.includes('widget mode a-1') && md.includes('widget mode a_2'));
   assert.ok(md.includes('confidence: "hypothesis"'));
+
+  const frozenRounds = [
+    rounds[0],
+    { ...rounds[1], attribution: { ...rounds[1].attribution, disposition: 'frozen' } },
+  ];
+  const frozenStreak = analyzeRoundHistory({ currentRound: 3, rounds: frozenRounds });
+  assert.equal(frozenStreak.varyFormRequired, true);
 });
 
 test('D1: parseGateRefusalsFromAnswer parses multi-line submit_result JSON cleanly without dumping 500KB payload, and capper omits in fixed order', () => {
@@ -564,7 +577,33 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
     ],
   });
   assert.equal(streak.consecutiveSameError, 2);
-  assert.equal(streak.varyFormRequired, true);
+  // InfoTest `briefs.py:2792-2820` & `remedies.py:39-42`: plain device error streak reports consecutiveSameError without auto varyFormRequired.
+  assert.equal(streak.varyFormRequired, false);
+
+  const streakFrozen = analyzeRoundHistory({
+    currentRound: 3,
+    rounds: [
+      { round: 1, plan, deviceEvidence: evR1, gateRefusals: [], attribution: null, errorSignatures: evR1.errorSignatures },
+      {
+        round: 2,
+        plan,
+        deviceEvidence: evR2,
+        gateRefusals: [],
+        attribution: {
+          round: 2,
+          roundRecorded: true,
+          sourceFile: 'attr-r2.json',
+          disposition: 'frozen',
+          confidence: 'hypothesis',
+          judged: '归因已冻结，需更换做法',
+          remedy: '更换命令形态',
+          evidenceQuotes: [],
+        },
+        errorSignatures: evR2.errorSignatures,
+      },
+    ],
+  });
+  assert.equal(streakFrozen.varyFormRequired, true);
 
   // D6: Unrecorded attribution rendered alone never fabricates `第 1 轮`
   const mdUnrecorded = renderPriorRoundsMarkdown({
@@ -586,3 +625,347 @@ test('D5 & D6: NOERROR/free-text never triggers false streak, normalized framewo
   assert.ok(!mdUnrecorded.includes('第 1 轮失败分析'));
   assert.ok(!mdUnrecorded.includes('上一轮（第 1 轮）'));
 });
+
+function buildApvScrollLine(prompt: string, fullCmd: string, viewportCols = 60): string {
+  // Simulates real APV horizontal-scroll redraws (`BS*W + $<W-1 chars>` frames, ending on a `<vis><spaces> + BS*pad + tail` chunk).
+  const firstSlice = fullCmd.slice(0, viewportCols);
+  let out = `${prompt}${firstSlice}`;
+  let cursor = firstSlice.length;
+  // Scroll 1 char at a time for the middle window, then finish with a space-padded scroll frame + trailing chunk.
+  const tailChunkLen = Math.min(24, Math.max(0, fullCmd.length - viewportCols - 5));
+  const scrollUntil = fullCmd.length - tailChunkLen;
+  while (cursor < scrollUntil) {
+    const vis = fullCmd.slice(cursor - (viewportCols - 2), cursor + 1);
+    out += '\b'.repeat(viewportCols) + '$' + vis;
+    cursor += 1;
+  }
+  if (tailChunkLen > 0) {
+    const frameBody = fullCmd.slice(cursor - (viewportCols - 9), cursor + 1);
+    const pad = viewportCols - 1 - frameBody.length;
+    out += '\b'.repeat(viewportCols) + '$' + frameBody + ' '.repeat(pad) + '\b'.repeat(pad) + fullCmd.slice(cursor + 1);
+  }
+  return out;
+}
+
+test('N1: APV horizontal-scroll \\x08/$ redraws match >=220-char commands and keep readable error excerpts', () => {
+  const ids = buildCaseIdSet(CASE_ID);
+  const prefix = 'set synthetic param alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu ';
+  const cmdKsk = `${prefix}token-one token-two mode KSK tail-check`;
+  const cmdZsk = `${prefix}token-one token-two mode ZSK tail-check`;
+  assert.ok(cmdKsk.length > 220);
+
+  const rawLineKsk = buildApvScrollLine('Dut0(config)#', cmdKsk);
+  assert.ok(rawLineKsk.length > 1000, 'raw terminal redraw stream exceeds naive excerpt cap');
+  const decoded = decodeHorizontalScrollRedraw(rawLineKsk);
+  assert.equal(decoded, `Dut0(config)#${cmdKsk}`);
+  const tsLogLine = buildApvScrollLine('2026-11-14 09:52:52 ', cmdKsk, 75);
+  assert.equal(decodeHorizontalScrollRedraw(tsLogLine), `2026-11-14 09:52:52 ${cmdKsk}`);
+
+  const session = [
+    'Dut0(config)#echo start',
+    rawLineKsk,
+    '% Error: Unrecognized parameter near token tail-check',
+    buildApvScrollLine('Dut0(config)#', cmdZsk),
+    '% Info: Applied ZSK variant',
+  ].join('\n');
+
+  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, cmdKsk, cmdZsk, 'ZSK succeeded'), ids);
+  assert.ok(plan);
+
+  const returnsIndex = {
+    schema: 'device-returns@1',
+    run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
+    jobs: [
+      {
+        job: 'd'.repeat(64),
+        verification_run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
+        rows: [
+          {
+            item: CASE_ID,
+            verdict: 'fail',
+            runner_verdict: 'fail',
+            sessions: { 'dut0.log': 'd'.repeat(12) + `/cases/${CASE_ID}/dut0.log` },
+          },
+        ],
+      },
+    ],
+  };
+
+  const evidence = extractCaseDeviceEvidence({
+    round: 1,
+    returnsIndex,
+    caseIds: ids,
+    sessionTexts: new Map([['dut0.log', { path: 'dut0.log', text: session }]]),
+    priorPlan: plan,
+  })!;
+
+  assert.ok(evidence);
+  assert.equal(evidence.stepExcerpts.length, 2);
+  assert.equal(evidence.stepExcerpts[0].found, true);
+  assert.equal(evidence.stepExcerpts[1].found, true);
+  assert.ok(evidence.stepExcerpts[0].excerpt?.includes('mode KSK tail-check'));
+  assert.ok(evidence.stepExcerpts[0].excerpt?.includes('% Error: Unrecognized parameter'));
+  assert.ok(!evidence.stepExcerpts[0].excerpt?.includes('mode ZSK tail-check'));
+  assert.ok(!evidence.stepExcerpts[0].excerpt?.includes('\b'));
+  assert.ok(!evidence.inlineTail.includes('\b'), 'inlineTail must decode scroll redraws without raw BS bytes');
+  assert.ok(evidence.inlineTail.includes(cmdKsk), 'inlineTail preserves decoded long APV command');
+  assert.ok(evidence.stepExcerpts[1].excerpt?.includes('% Info: Applied ZSK variant'));
+});
+
+test('N2: MISSING_STEP_TRUNCATION_MSG only triggers before first retained anchor in >=11k session when cmd absent', () => {
+  const ids = buildCaseIdSet(CASE_ID);
+  const cmd1 = 'configure missing-pre-anchor step alpha';
+  const cmd2 = 'show retained-middle status';
+  const cmd3 = 'show missing-post-anchor status';
+  const plan = {
+    item: CASE_ID,
+    handling: 'handled',
+    slots: {
+      plan: [
+        {
+          text: 'N2 test',
+          quotes: [{ reference: 'src:' + '2'.repeat(64) + '/kityminder@1/n/e1', text: 'synth' }],
+          data: {
+            bucket: 'bed-a',
+            blocks: [],
+            replacements: [],
+            steps: [
+              { object: 'dut0', method: 'exec', args: [cmd1], keywords: {} },
+              { object: 'dut0', method: 'exec', args: [cmd2], keywords: {} },
+              { object: 'dut0', method: 'exec', args: [cmd3], keywords: {} },
+            ],
+            expects: [{ text: 'ok', after: 3 }],
+          },
+        },
+      ],
+    },
+  };
+  const snapshot = parsePriorPlanSnapshot(plan, ids);
+  assert.ok(snapshot);
+
+  const filler = 'R'.repeat(11_400);
+  const longSession = `${filler}\nDut0#${cmd2}\nok-middle\nDut0#`;
+  const returnsIndex = {
+    schema: 'device-returns@1',
+    run: 'run_01cccccccccccccccccccccccc',
+    jobs: [
+      {
+        job: 'e'.repeat(64),
+        verification_run: 'run_01cccccccccccccccccccccccc',
+        rows: [
+          {
+            item: CASE_ID,
+            verdict: 'fail',
+            runner_verdict: 'fail',
+            sessions: { 'dut0.log': 'e'.repeat(12) + `/cases/${CASE_ID}/dut0.log` },
+          },
+        ],
+      },
+    ],
+  };
+
+  const ev = extractCaseDeviceEvidence({
+    round: 1,
+    returnsIndex,
+    caseIds: ids,
+    sessionTexts: new Map([['dut0.log', { path: 'dut0.log', text: longSession }]]),
+    priorPlan: snapshot,
+  })!;
+
+  assert.ok(ev);
+  assert.ok((ev.sessionLengths['dut0.log'] ?? 0) >= 11_000);
+  assert.equal(ev.stepExcerpts[0].found, false);
+  assert.equal(ev.stepExcerpts[0].missingNotice, MISSING_STEP_TRUNCATION_MSG);
+  assert.equal(ev.stepExcerpts[1].found, true);
+  assert.equal(ev.stepExcerpts[2].found, false);
+  assert.equal(ev.stepExcerpts[2].missingNotice, MISSING_STEP_NOT_FOUND_MSG);
+});
+
+test('N3 & N4: accepted missing_input splits from gate refusals, strips internal IDs, and avoids duplication', () => {
+  const ids = buildCaseIdSet(CASE_ID);
+  const fullMissingMsg = '尚未取得本检查所需的事实：缺少自动化用例 Excel（含规则；细节）。';
+  const acceptedRaw = JSON.stringify({
+    acceptance: 'accepted',
+    errors: [
+      {
+        code: 'missing_input',
+        item: CASE_ID,
+        path: '/items/0',
+        message: fullMissingMsg,
+        fix:
+          `补齐点名的事实后重交；缺失事实：${fullMissingMsg}；请补充具体 Mbps 数值，请求 rec:`
+          + 'f'.repeat(64)
+          + '，受众 usr_worker01，期限 2026-11-14T07:12:34.567Z：运行者用 upload_file 补齐',
+        requirement: 'workbook_verified',
+      },
+    ],
+  });
+
+  const notAcceptedRaw = JSON.stringify({
+    acceptance: 'not_accepted',
+    gate: 'plan_schema',
+    code: 'missing_field',
+    pointer: `plans/${CASE_ID}.json#/slots/plan/0/steps/0`,
+    message: '缺少必需字段 ref usr_admin02 2026-11-14T08:00:00.123Z rec:' + 'a'.repeat(64),
+    fix: '补充真实引用节点路径',
+  });
+
+  const parsedAccepted = parseHubAnswerNotices(acceptedRaw, ids, 1);
+  assert.equal(parsedAccepted.acceptance, 'accepted');
+  assert.equal(parsedAccepted.refusals.length, 0);
+  assert.equal(parsedAccepted.acceptedNotices.length, 1);
+  assert.equal(parseGateRefusalsFromAnswer(acceptedRaw, ids, 1).length, 0);
+
+  const sanitizedFix = parsedAccepted.acceptedNotices[0].fix ?? '';
+  assert.ok(!/rec:[0-9a-f]{16,64}/i.test(sanitizedFix));
+  assert.ok(!/\busr_[A-Za-z0-9_-]+/.test(sanitizedFix));
+  assert.ok(!/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/.test(sanitizedFix));
+  assert.ok(sanitizedFix.includes('2026-11-14 07:12 UTC'), 'ms timestamp rounded to minute UTC');
+  assert.ok(!sanitizedFix.includes('缺失事实：'), 'duplicate middle 缺失事实：<message> stripped whole from fix');
+  assert.ok(!sanitizedFix.includes('（含规则；细节）'), 'multi-clause duplicate message stripped without leaving fragments');
+  assert.ok(sanitizedFix.includes('请补充具体 Mbps 数值'));
+
+  assert.equal(
+    sanitizeHubAnswerField('hello usr_abc rec:' + 'b'.repeat(64) + ' at 2026-11-14T07:00:00.000Z'),
+    'hello at 2026-11-14 07:00 UTC',
+  );
+
+  const plan = parsePriorPlanSnapshot(makePlan(CASE_ID, 'cmd1', 'cmd2', 'expect ok'), ids);
+  assert.ok(plan);
+
+  const r1AcceptedRaw = JSON.stringify({
+    acceptance: 'accepted',
+    errors: [
+      {
+        code: 'missing_input',
+        item: CASE_ID,
+        path: '/items/0',
+        message: '缺失第一轮前置材料。',
+        fix: '请补充第一轮旧缺失参数',
+      },
+    ],
+  });
+  const parsedR1Acc = parseHubAnswerNotices(r1AcceptedRaw, ids, 1);
+
+  const r1Accepted: PriorRoundRecordLike = {
+    round: 1,
+    plan,
+    gateRefusals: [],
+    acceptedNotices: parsedR1Acc.acceptedNotices,
+    errorSignatures: [],
+  };
+  const r2Accepted: PriorRoundRecordLike = {
+    round: 2,
+    plan,
+    gateRefusals: [],
+    acceptedNotices: parsedAccepted.acceptedNotices,
+    errorSignatures: [],
+  };
+
+  const streakAcc = analyzeRoundHistory({ currentRound: 3, rounds: [r1Accepted, r2Accepted] });
+  assert.equal(streakAcc.varyFormRequired, false);
+  assert.equal(consecutiveRepeatedGateCodes([r1Accepted, r2Accepted]).length, 0);
+
+  const mdAccepted = renderPriorRoundsMarkdown({
+    caseRef: CASE_ID,
+    currentRound: 3,
+    rounds: [r1Accepted, r2Accepted],
+    streak: streakAcc,
+  });
+  assert.ok(mdAccepted.includes('Hub 已受理，还缺'));
+  assert.ok(!mdAccepted.includes('Hub 门禁拒绝'));
+  assert.ok(!mdAccepted.includes('Hub 没有受理'));
+  assert.ok(!mdAccepted.includes('vary_form_required'));
+  assert.ok(!/rec:[0-9a-f]{16,64}/i.test(mdAccepted));
+  // Earlier round shows in 历轮摘要, while latest round's notice renders only in 上一轮 block (never repeated twice verbatim).
+  assert.ok(mdAccepted.includes('请补充第一轮旧缺失参数'));
+  const occurrences = mdAccepted.split('请补充具体 Mbps 数值').length - 1;
+  assert.equal(occurrences, 1, 'latest round Hub notice should not repeat verbatim in both summary and 上一轮 section');
+
+  const item = {
+    id: CASE_ID,
+    autoid: 'autoid-n3',
+    reference: 'src:' + '3'.repeat(64) + '/kityminder@1/n/case1',
+    fields: {
+      title: '合成 N3 案例',
+      recomposition: {
+        record: {
+          kept: [],
+          dropped: [],
+          moved: [],
+          added: [],
+          notes: '',
+        },
+      },
+    },
+    text: '合成 N3 案例',
+    handling: 'handled',
+    slots: { plan: [{ reference: 'src:' + '3'.repeat(64) + '/kityminder@1/n/e1', text: '合成规则', quotes: [] }] },
+  };
+  const emptyKnowledge = { root: 'root', nodes: new Map(), lines: new Map() };
+
+  const briefAccepted = buildCompileBrief({
+    item,
+    index: CASE_ID,
+    knowledge: emptyKnowledge,
+    policy: null,
+    round: 3,
+    priorRounds: [r1Accepted, r2Accepted],
+    createdAt: '2026-11-14T16:00:00Z',
+  });
+  assert.ok(briefAccepted);
+  assert.deepEqual(briefAccepted.round_history.repeated_gate_codes, []);
+  assert.equal(briefAccepted.task.vary_form_required, false);
+  assert.ok(!briefAccepted.task.directives.some((d) => d.includes('机械规则错码')));
+  assert.equal(validateCompileBrief(briefAccepted, item).ok, true);
+  const mdBriefAcc = renderCompileBriefMd(briefAccepted);
+  assert.ok(mdBriefAcc.includes('Hub 已受理，还缺'));
+  assert.ok(!mdBriefAcc.includes('vary_form_required'));
+
+  // Contrast: 2 consecutive unaccepted refusals (both flat wrapper and standard `errors: [...]` envelope)
+  const parsedNotAcc = parseHubAnswerNotices(notAcceptedRaw, ids, 1);
+  assert.equal(parsedNotAcc.acceptance, 'not_accepted');
+  assert.equal(parsedNotAcc.refusals.length, 1);
+  assert.equal(parsedNotAcc.acceptedNotices.length, 0);
+
+  const notAcceptedEnvelope = JSON.stringify({
+    call_result: 'error',
+    acceptance: 'not_accepted',
+    errors: [
+      {
+        code: 'RUN_SUPERSEDED',
+        path: '/run',
+        message: '运行已被新修订取代 usr_admin02 rec:' + 'c'.repeat(64),
+        fix: '对新运行提交',
+      },
+    ],
+  });
+  const parsedEnvelope = parseHubAnswerNotices(notAcceptedEnvelope, ids, 2);
+  assert.equal(parsedEnvelope.acceptance, 'not_accepted');
+  assert.equal(parsedEnvelope.refusals.length, 1);
+  assert.equal(parsedEnvelope.refusals[0].code, 'RUN_SUPERSEDED');
+  assert.ok(!/usr_|rec:/.test(parsedEnvelope.refusals[0].message));
+
+  const r1Ref: PriorRoundRecordLike = { round: 1, plan, gateRefusals: parsedNotAcc.refusals, errorSignatures: ['gate:missing_field'] };
+  const r2Ref: PriorRoundRecordLike = { round: 2, plan, gateRefusals: parsedNotAcc.refusals, errorSignatures: ['gate:missing_field'] };
+  const briefRefused = buildCompileBrief({
+    item,
+    index: CASE_ID,
+    knowledge: emptyKnowledge,
+    policy: null,
+    round: 3,
+    priorRounds: [r1Ref, r2Ref],
+    createdAt: '2026-11-14T16:00:00Z',
+  });
+  assert.ok(briefRefused);
+  assert.deepEqual(briefRefused.round_history.repeated_gate_codes, ['missing_field']);
+  assert.equal(briefRefused.task.vary_form_required, true);
+  const gateDirective = briefRefused.task.directives.find((d) => d.includes('机械规则错码 missing_field'));
+  assert.ok(gateDirective?.includes('路径与字段要求'));
+  assert.equal(validateCompileBrief(briefRefused, item).ok, true);
+  const mdRefused = renderCompileBriefMd(briefRefused);
+  assert.ok(mdRefused.includes('Hub 没有受理，原因'));
+  assert.ok(!mdRefused.includes('Hub 门禁拒绝'));
+});
+
+type PriorRoundRecordLike = Parameters<typeof analyzeRoundHistory>[0]['rounds'][number];

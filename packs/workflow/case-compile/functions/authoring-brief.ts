@@ -27,6 +27,7 @@ import type { BedFacts } from './bed.ts';
 import { canonicalJson } from './canonical-json.ts';
 import {
   analyzeRoundHistory,
+  consecutiveRepeatedGateCodes,
   INLINE_TAIL_CHARS,
   MAX_ANOMALY_LINES,
   MAX_ROUNDS,
@@ -299,7 +300,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const envelope = planEnvelope(item, bed);
   if (envelope) out.push('', '## 这条用例的计划文件外壳',
     '',
-    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由你写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。写完只是草稿，交 Hub 前由主会话走完保真核对（按 SKILL.md 第 3 节依次跑 fidelity-brief → 新开子代理核对 → fidelity-apply 写入 data.fidelity）。`,
+    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由编写模型填写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。写完只是草稿，交 Hub 前由主会话走完保真核对（按 SKILL.md 第 3 节依次跑 fidelity-brief → 新开子代理核对 → fidelity-apply 写入 data.fidelity）。`,
     '',
     '原始用例要求不存在、无残留或删除后查不到时，顺序步骤在对应查询的 expects 写 op:"not_found"，text 使用原始期望的具体原文，或本条配置后按已声明逆操作撤销的名字，after 指向对应查询；不写描述句，不另立判定标准或发起复核。分块写法的常量仍用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获，执行器须声明寄存器的字面否定方法，不抄旧设备输出。quote 保留原始期望。要求删除成功时，删除后再查询，指向这次查询的设备输出；这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run。',
     '',
@@ -441,6 +442,7 @@ export interface CompileBriefV1 {
   round_history: {
     status: 'first_round_no_history' | 'has_prior_rounds';
     gate_refusals: PriorRoundRecord['gateRefusals'];
+    accepted_notices?: PriorRoundRecord['acceptedNotices'];
     repeated_gate_codes: string[];
     device_evidence: {
       verification_run: string;
@@ -562,7 +564,13 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
   const attemptLimit = input.attemptLimit ?? MAX_ROUNDS;
   const mode: CompileBriefMode = input.mode ?? (round > 1 ? 'rework_device' : 'initial');
   const priorRounds = [...(input.priorRounds ?? [])].sort((a, b) => a.round - b.round);
-  const streak = analyzeRoundHistory({ currentRound: round, attemptLimit, rounds: priorRounds });
+  const unrecordedAttr: PriorAttributionItem | null = input.unrecordedAttribution ?? null;
+  const streak = analyzeRoundHistory({
+    currentRound: round,
+    attemptLimit,
+    rounds: priorRounds,
+    unrecordedAttribution: unrecordedAttr,
+  });
 
   const { commands, others, missing } = collectKnowledgeSets(recomposition!, record, input.knowledge);
   const policy = input.policy;
@@ -697,25 +705,26 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
   }
 
   const allGateRefusals = priorRounds.flatMap((r) => r.gateRefusals);
-  const gateCodeCounts = new Map<string, number>();
-  for (const g of allGateRefusals) gateCodeCounts.set(g.code, (gateCodeCounts.get(g.code) ?? 0) + 1);
-  const repeatedGateCodes = [...gateCodeCounts.entries()].filter(([, n]) => n >= 2).map(([code]) => code);
+  const allAcceptedNotices = priorRounds.flatMap((r) => r.acceptedNotices ?? []);
+  const repeatedGateCodes = consecutiveRepeatedGateCodes(priorRounds);
 
   const latestDevice = [...priorRounds].reverse().find((r) => r.deviceEvidence)?.deviceEvidence ?? null;
   const latestAttribution: PriorAttributionItem | null = [...priorRounds].reverse().find((r) => r.attribution)?.attribution ?? null;
-  const unrecordedAttr: PriorAttributionItem | null = input.unrecordedAttribution ?? null;
 
-  // InfoTest provenance (`compile_engine/briefs.py:2792-2833,2681-2690,2982-2985`, `compile_engine/remedies.py:39-42`):
-  // emit last-attempt warning in Chinese (no bare English "FINAL attempt") and require form change when streak/gate repeats.
+  // InfoTest provenance:
+  // - `compile_engine/briefs.py:2982-2985`: final-attempt warning rendered in Chinese (no bare English "FINAL attempt").
+  // - `compile_engine/remedies.py:39-42`: `vary_form` triggers only when `disposition === 'frozen'`.
+  // - `compile_engine/briefs.py:2681-2690` & `compile_engine/rejection_history.py:3-40`: `structural_rejection_disclosure` triggers only on two consecutive unaccepted gate refusals with the same code.
+  // - `compile_engine/briefs.py:2792-2820`: recompile device failures report diagnostics without auto-setting `vary_form_required`.
   const directives: string[] = [];
   if (streak.finalAttempt) {
     directives.push(`最后一次机会（第 ${round}/${attemptLimit} 轮）：已达本案重试上限，务必核对全部前置与期望实现。`);
   }
   if (streak.varyFormRequired || repeatedGateCodes.length > 0) {
-    directives.push('连续多轮命中同类问题或真机拒收，本轮须核查手册命令形态与前置条件，禁止仅微调字词重复同一失败命令。');
+    directives.push('失败分析已冻结或机械规则连续同码未受理，本轮须核查手册命令形态与前置条件，禁止仅微调字词重复同一失败写法。');
   }
   if (repeatedGateCodes.length > 0) {
-    directives.push(`门禁错码 ${repeatedGateCodes.join('、')} 连续多轮出现，须对照 pointer 与 contract/schema 逐项消除。`);
+    directives.push(`机械规则错码 ${repeatedGateCodes.join('、')} 连续多轮未受理，须对照路径与字段要求逐项消除。`);
   }
 
   const caseId = record && isRecord(record.case) && typeof record.case.id === 'string' ? record.case.id : '';
@@ -744,7 +753,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       target_plan_path: input.targetPlanPath ?? `plans/${input.index}.json`,
       plan_exists: input.planExists ?? priorRounds.some((r) => Boolean(r.plan)),
       final_attempt: streak.finalAttempt,
-      vary_form_required: streak.varyFormRequired || repeatedGateCodes.length > 0,
+      vary_form_required: streak.varyFormRequired,
       directives,
       user_rulings: userRulings,
       exclusions: [...(input.runMeta?.exclusions ?? [])],
@@ -806,6 +815,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
     round_history: {
       status: round <= 1 && priorRounds.length === 0 && !unrecordedAttr ? 'first_round_no_history' : 'has_prior_rounds',
       gate_refusals: allGateRefusals,
+      ...(allAcceptedNotices.length > 0 ? { accepted_notices: allAcceptedNotices } : {}),
       repeated_gate_codes: repeatedGateCodes,
       device_evidence: latestDevice
         ? {
@@ -837,7 +847,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
             round_recorded: latestAttribution.roundRecorded ?? latestAttribution.round !== null,
             source_file: latestAttribution.sourceFile,
             confidence: 'hypothesis',
-            note: '以下归因仅是失败分析子代理或交接记录提出的未确认假设；编写前须自行核对上述原始设备输出再采纳或推翻。',
+            note: '以下失败分析仅是失败分析子代理或交接记录提出的未确认假设；编写前须自行核对上述原始设备输出再采纳或推翻。',
             ...(latestAttribution.layer ? { layer: latestAttribution.layer } : {}),
             ...(latestAttribution.disposition ? { disposition: latestAttribution.disposition } : {}),
             judged: latestAttribution.judged,
@@ -852,7 +862,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
               round_recorded: false as const,
               source_file: unrecordedAttr.sourceFile,
               confidence: 'hypothesis' as const,
-              note: '该分析来自未记录轮次的交付备注/归因文件，归作未确认假设，不代表第 1 轮结论。',
+              note: '该分析来自未记录轮次的交付备注/失败分析文件，归作未确认假设，不代表第 1 轮结论。',
               ...(unrecordedAttr.layer ? { layer: unrecordedAttr.layer } : {}),
               ...(unrecordedAttr.disposition ? { disposition: unrecordedAttr.disposition } : {}),
               judged: unrecordedAttr.judged,
@@ -862,10 +872,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
           }
         : {}),
       rounds: priorRounds,
-      streak: {
-        ...streak,
-        varyFormRequired: streak.varyFormRequired || repeatedGateCodes.length > 0,
-      },
+      streak,
     },
   };
 
@@ -1009,13 +1016,16 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
     const roundsCount = Array.isArray(roundHistory.rounds) ? roundHistory.rounds.length : 0;
     const hasUnrecorded = isRecord(roundHistory.unrecorded_attribution);
     if (gateCount === 0 && roundHistory.device_evidence === null && roundsCount === 0 && !hasUnrecorded) {
-      problems.push('第 2 轮及以上返工简报至少应包含上一轮门禁拒绝、设备证据、历轮计划或未记录轮次归因之一');
+      problems.push('第 2 轮及以上返工简报至少应包含上一轮机械规则未受理、设备证据、历轮计划或未记录轮次失败分析之一');
     }
     const streak = isRecord(roundHistory.streak) ? roundHistory.streak : null;
-    const consecutive = streak && typeof streak.consecutiveSameError === 'number' ? streak.consecutiveSameError : 0;
     const repeatedCodes = Array.isArray(roundHistory.repeated_gate_codes) ? roundHistory.repeated_gate_codes.length : 0;
-    if ((consecutive >= 2 || repeatedCodes > 0) && task.vary_form_required !== true) {
-      problems.push('连续两轮同类错误或门禁同码拒绝时 task.vary_form_required 必须为 true');
+    const roundsList = Array.isArray(roundHistory.rounds) ? roundHistory.rounds : [];
+    const hasFrozen =
+      roundsList.some((r) => isRecord(r) && isRecord(r.attribution) && r.attribution.disposition === 'frozen') ||
+      (isRecord(roundHistory.unrecorded_attribution) && roundHistory.unrecorded_attribution.disposition === 'frozen');
+    if ((repeatedCodes > 0 || hasFrozen || streak?.varyFormRequired === true) && task.vary_form_required !== true) {
+      problems.push('机械规则连续同码未受理或失败分析已冻结时 task.vary_form_required 必须为 true');
     }
   }
 

@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import {
   CIRCLE_GENERAL_PURPOSE_NOTICE,
   renderAgentDefinition,
+  resolveSubagentRole,
   SUBAGENT_ROLES,
 } from '../functions/subagent-roles.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
@@ -26,7 +27,7 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
 
     const writerRole = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
     const writerBrief = await buildTaskBrief({
-      role: '写计划',
+      role: '脚本编写',
       caseRef: 'case-101',
       briefPath: 'briefs/01.md',
       outPath: 'plans/01.json',
@@ -56,6 +57,9 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       note: '先查前置配置',
     });
     assert.equal(writerByKey, writerBrief);
+    // Legacy alias `写计划` resolves cleanly while rendered task briefs use `脚本编写`.
+    assert.equal(resolveSubagentRole('写计划')?.stageLabel, '脚本编写');
+    assert.ok(!writerBrief.includes('写计划'));
     assert.equal(renderAgentDefinition(writerRole).includes('<技能目录>'), true);
 
     // Attributor brief points to index.json, session transcripts, and log.txt.
@@ -354,7 +358,7 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
 
     // Round 2 checks missing truncated step disclosure
     const r2Brief = await buildTaskBrief({
-      role: '写计划',
+      role: '脚本编写',
       caseRef: CASE,
       briefPath: 'run/briefs/00.md',
       outPath: 'plans-r2/00.json',
@@ -378,7 +382,7 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
       [
         join(packDir, 'tools/task-brief.ts'),
         '--role',
-        '写计划',
+        '脚本编写',
         '--case',
         CASE,
         '--brief',
@@ -413,7 +417,7 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
     // Round 2 without prior history fails closed
     await assert.rejects(
       buildTaskBrief({
-        role: '写计划',
+        role: '脚本编写',
         caseRef: CASE,
         briefPath: 'run/briefs/00.md',
         outPath: 'plans-r2/00.json',
@@ -562,7 +566,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
 
     await assert.rejects(
       buildTaskBrief({
-        role: '写计划',
+        role: '脚本编写',
         caseRef: CASE_A,
         briefPath: 'run/briefs/00.md',
         outPath: 'plans/00.json',
@@ -575,7 +579,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     );
     await assert.rejects(
       buildTaskBrief({
-        role: '写计划',
+        role: '脚本编写',
         caseRef: CASE_A,
         briefPath: 'run/briefs/00.md',
         outPath: 'plans/00.json',
@@ -589,7 +593,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
 
     // D6: --round 2 with ONLY unrecorded notes works without fabricating `第 1 轮`
     const r2OnlyNote = await buildTaskBrief({
-      role: '写计划',
+      role: '脚本编写',
       caseRef: CASE_A,
       briefPath: 'run/briefs/00.md',
       outPath: 'plans/00.json',
@@ -638,7 +642,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     await mkCustomMarkerRet('r2', 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', 'widget b');
 
     const r3Unified = await buildTaskBrief({
-      role: '写计划',
+      role: '脚本编写',
       caseRef: CASE_A,
       briefPath: 'run/briefs/00.md',
       outPath: 'plans-r3/00.json',
@@ -672,7 +676,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     await writeFile(join(workDir, 'scope-other-only.md'), `# 使用者原话\n\n## ${CASE_B}（仅B）\n只写B的内容\n`, 'utf8');
     await assert.rejects(
       buildTaskBrief({
-        role: '写计划',
+        role: '脚本编写',
         caseRef: CASE_A,
         briefPath: 'run/briefs/00.md',
         outPath: 'plans/00.json',

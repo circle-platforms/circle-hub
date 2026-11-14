@@ -5,10 +5,11 @@ import { join, relative } from 'node:path';
 import {
   analyzeRoundHistory,
   extractCaseDeviceEvidence,
-  parseGateRefusalsFromAnswer,
+  parseHubAnswerNotices,
   parsePriorAttribution,
   parsePriorPlanSnapshot,
   type GateRefusalItem,
+  type HubAnswerNotices,
   type PriorAttributionItem,
   type PriorPlanSnapshot,
   type PriorRoundRecord,
@@ -275,33 +276,44 @@ function assertAttributionPayloadShape(raw: unknown, label: string): void {
   }
 }
 
-async function loadGateRefusalsFromTarget(
+async function loadHubAnswerNoticesFromTarget(
   cwd: ResolvedCwd,
   answerArg: string,
   caseIds: ReadonlySet<string>,
   round: number,
-): Promise<GateRefusalItem[]> {
+): Promise<{ refusals: GateRefusalItem[]; acceptedNotices: GateRefusalItem[] }> {
   const checked = resolveInsideCwd(cwd, answerArg, '--prior-answers');
   const dirTry = await lstat(checked.lexical).catch(() => null);
   if (dirTry?.isSymbolicLink()) {
     throw new Error(`参数无效：--prior-answers 路径 ${answerArg} 不能是符号链接`);
   }
+  const pushUnique = (target: GateRefusalItem[], items: readonly GateRefusalItem[]) => {
+    for (const item of items) {
+      if (!target.some((x) => x.code === item.code && x.path === item.path && x.message === item.message)) {
+        target.push(item);
+      }
+    }
+  };
   if (dirTry?.isDirectory()) {
     const dir = resolveExistingDirInsideCwd(cwd, answerArg, '--prior-answers');
     const names = (await readdir(dir.canonical)).filter((n) => /^answer-.*\.(?:txt|json)$/.test(n)).sort();
-    const collected: GateRefusalItem[] = [];
+    const refusals: GateRefusalItem[] = [];
+    const acceptedNotices: GateRefusalItem[] = [];
     for (const name of names) {
       const resolved = resolveExistingFileInsideCwd(cwd, join(dir.relative, name), '--prior-answers');
       const txt = await readFile(resolved.canonical, 'utf8');
       assertAnswerPayloadShape(txt, resolved.relative);
-      collected.push(...parseGateRefusalsFromAnswer(txt, caseIds, round));
+      const parsed: HubAnswerNotices = parseHubAnswerNotices(txt, caseIds, round);
+      pushUnique(refusals, parsed.refusals);
+      pushUnique(acceptedNotices, parsed.acceptedNotices);
     }
-    return collected;
+    return { refusals, acceptedNotices };
   }
   const resolved = resolveExistingFileInsideCwd(cwd, answerArg, '--prior-answers');
   const txt = await readFile(resolved.canonical, 'utf8');
   assertAnswerPayloadShape(txt, resolved.relative);
-  return parseGateRefusalsFromAnswer(txt, caseIds, round);
+  const parsed: HubAnswerNotices = parseHubAnswerNotices(txt, caseIds, round);
+  return { refusals: parsed.refusals, acceptedNotices: parsed.acceptedNotices };
 }
 
 async function loadAttributionFromTarget(
@@ -381,6 +393,7 @@ export async function loadCasePriorRounds(params: {
         round: r,
         deviceEvidence: null,
         gateRefusals: [],
+        acceptedNotices: [],
         attribution: null,
         errorSignatures: [],
       };
@@ -405,9 +418,9 @@ export async function loadCasePriorRounds(params: {
     const deviceEvidence = returnsArg
       ? await loadDeviceEvidenceFromDir(cwd, returnsArg, r, caseIds, loadedPlan?.snapshot ?? null, markers)
       : null;
-    const gateRefusals = answerArg
-      ? await loadGateRefusalsFromTarget(cwd, answerArg, caseIds, r)
-      : [];
+    const hubNotices = answerArg
+      ? await loadHubAnswerNoticesFromTarget(cwd, answerArg, caseIds, r)
+      : { refusals: [], acceptedNotices: [] };
     const attribution = noteArg
       ? await loadAttributionFromTarget(cwd, noteArg, caseIds)
       : null;
@@ -419,8 +432,12 @@ export async function loadCasePriorRounds(params: {
         rec.plan = loadedPlan.snapshot;
       }
       if (deviceEvidence) rec.deviceEvidence = deviceEvidence;
-      if (gateRefusals.length > 0) rec.gateRefusals.push(...gateRefusals);
-      for (const g of gateRefusals) rec.errorSignatures.push(`gate:${g.code}`);
+      if (hubNotices.refusals.length > 0) rec.gateRefusals.push(...hubNotices.refusals);
+      if (hubNotices.acceptedNotices.length > 0) {
+        rec.acceptedNotices ??= [];
+        rec.acceptedNotices.push(...hubNotices.acceptedNotices);
+      }
+      for (const g of hubNotices.refusals) rec.errorSignatures.push(`gate:${g.code}`);
       if (deviceEvidence) rec.errorSignatures.push(...deviceEvidence.errorSignatures);
     }
 
@@ -441,6 +458,6 @@ export async function loadCasePriorRounds(params: {
   }
 
   const rounds = [...roundMap.values()].sort((a, b) => a.round - b.round);
-  const streak = analyzeRoundHistory({ currentRound: round, rounds });
+  const streak = analyzeRoundHistory({ currentRound: round, rounds, unrecordedAttribution });
   return { rounds, streak, unrecordedAttribution };
 }

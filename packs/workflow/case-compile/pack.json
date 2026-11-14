@@ -38,13 +38,13 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "4a034c4a1077ca49eff058782bd61d0f604eae4283036e1884ab5e30a5ca4268",
-      "size": 14659
+      "sha256": "54a96c56e6ea487a5f51e25c2987668b492bd4a620411f78829322969b599dd2",
+      "size": 14868
     },
     {
       "path": "agents/compile-attributor.md",
-      "sha256": "3f104ccc203d69f53459c39a5a42502ad8f5fdf9107882a606a5481a1d3906ce",
-      "size": 2934
+      "sha256": "de27ee37d9bd01b25b1d5a91a7f504ff62d5c63b3470511da466522fef7df575",
+      "size": 2964
     },
     {
       "path": "agents/compile-fidelity.md",
@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "924416bf46a9e74a46db1f5c03066241c144ccf5d9778848ee91e931e8928496",
-      "size": 61977
+      "sha256": "ed43d9b936df67e170ea00414d28d3203702298e6d7ce2ad8da5ea87ff93768e",
+      "size": 62620
     },
     {
       "path": "functions/bed.ts",
@@ -363,8 +363,8 @@
     },
     {
       "path": "functions/rework-history.ts",
-      "sha256": "62a47f7bc24532a47162b86fd088d5eb30788c316078559ee5ff57271a5c3050",
-      "size": 92248
+      "sha256": "bcfb6b3a2ae2fa62c636462822be73022c64e28115bc06acfe04dd664b902af2",
+      "size": 107695
     },
     {
       "path": "functions/runtime-contract.ts",
@@ -383,8 +383,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "cae99f2aa47bd8128296a7879f79532e4b6ecd725cbd421b2411c25bc2a86145",
-      "size": 26384
+      "sha256": "c3d329ba7915ded45a5bddb3d92755f4bd7a2d8a14b87436e8323b3220987f35",
+      "size": 26816
     },
     {
       "path": "functions/subject.ts",
@@ -698,8 +698,8 @@
     },
     {
       "path": "tables/codes.json",
-      "sha256": "bbb781db4d4353d8a16609752a7bf2042ca4447d1b1a970a44a28087139c889f",
-      "size": 13583
+      "sha256": "79d436126650e9dd0e7e548b90318070003cbd14e61a369858b787572871aa9b",
+      "size": 13655
     },
     {
       "path": "tables/command-identity.schema.json",
@@ -783,8 +783,8 @@
     },
     {
       "path": "tools/authoring-brief.ts",
-      "sha256": "c7eb68ae72368a5834149dea85616338cea4e1bf97c8143d9ecbf2a3670c6e24",
-      "size": 19054
+      "sha256": "432c524663dc71860f9e0d24b5b0f21495886ad2c7ec10defb9f1d9147a225c6",
+      "size": 16076
     },
     {
       "path": "tools/case-writers/extension.json",
@@ -808,8 +808,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "f4f6f7261a4a0aeaae868009452d7ac38abec330d329390f69e19053a2a55c4a",
-      "size": 9701
+      "sha256": "d32779db4f0bb1078b79ce07908166971e8936e52fcc15d8e33a8c12abba3c70",
+      "size": 9716
     },
     {
       "path": "tools/download-returns.ts",
@@ -858,8 +858,8 @@
     },
     {
       "path": "tools/rework-inputs.ts",
-      "sha256": "bc35e659e22cf0d45db14d5877c9dea2a9c68948ebd9e01508637d8f0ba1e3f8",
-      "size": 16952
+      "sha256": "cb042c21d6b326e6abb407fa9e5def06d78697bc5d29dc247fa78cb6f64bf7f4",
+      "size": 17854
     },
     {
       "path": "tools/seal-recompose.ts",
@@ -873,8 +873,8 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "1c3d5a198549d5226df26c4a34b5b1c3d15755e307cf6ea9714a5db62c7dcdae",
-      "size": 22708
+      "sha256": "31d673a86e42372127fc0ab64ec47806819dac7a588532b43c5284642949160d",
+      "size": 22729
     },
     {
       "path": "tools/workspace-path.ts",
