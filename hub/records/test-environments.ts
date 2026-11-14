@@ -1,3 +1,4 @@
+import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
 import { prepareTestEnvironmentRegistration } from './test-environment-registration.ts';
 import {
   TestEnvironment, TestEnvironmentInput, TestEnvironmentId, TestEnvironmentPrefix, TestEnvironmentInheritanceCompletion,
@@ -162,8 +163,8 @@ export class RecordTestEnvironments implements TestEnvironments {
   private async validateOwners(environment: TestEnvironment, tx: Transaction) {
     const owners = [...new Set([...environment.prefixes, ...environment.resources].flatMap(row => row.owner === null ? [] : [row.owner]))].sort();
     if (!owners.length) return;
-    const rows = (await this.db.query('SELECT id,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE', [owners], tx)).rows;
-    if (rows.length !== owners.length || rows.some(row => row.deleted_at)) throw new ConflictError('测试环境登记的责任账户不存在或已删除');
+    const rows = (await this.db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE', [owners], tx)).rows;
+    if (rows.length !== owners.length || rows.some(row => row.deleted_at || row.disabled)) throw new ConflictError('测试环境登记的责任账户不存在、已停用或已删除');
   }
   async ownership(outer?: Transaction): Promise<TestEnvironmentOwnership> {
     return this.store.withTransaction(async tx => {
@@ -235,7 +236,7 @@ export class RecordTestEnvironments implements TestEnvironments {
           const owners = legacy.filter(row => key.startsWith(row.prefix));
           return { key, owner: owners.length === 1 ? owners[0].owner : null, registered_at: owners.length === 1 ? owners[0].registered_at : null };
         });
-        added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: null, target, prefixes: [], resources, executors: target === null ? [] : group.map(value => value.id), enabled: group.some(value => value.enabled), missing_facts: ['原登记尚未提供测试环境名字', ...(target === null ? ['执行器目标包含未解析引用'] : []), ...(resources.some(row => row.owner === null) ? ['部分资源没有已核对的登记责任人'] : [])] }));
+        added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: target, target, prefixes: [], resources, executors: target === null ? [] : group.map(value => value.id), enabled: group.some(value => value.enabled), missing_facts: [...(target === null ? ['原登记尚未提供测试环境名字', '执行器目标包含未解析引用'] : []), ...(resources.some(row => row.owner === null) ? ['部分资源没有已核对的登记责任人'] : [])] }));
       }
       for (const registration of legacy) {
         const matches = [...environments, ...added].filter(value => value.target !== null && value.resources.some(row => row.key.startsWith(registration.prefix)));
@@ -243,11 +244,16 @@ export class RecordTestEnvironments implements TestEnvironments {
         else if (matches.length === 1 && matches[0].prefixes.some(row => row.prefix === registration.prefix && row.owner === registration.owner && row.registered_at === registration.registered_at)) continue;
         else added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: null, target: null, prefixes: [registration], resources: [], executors: [], enabled: true, missing_facts: ['原前缀登记没有唯一可核对的目标归属', '原登记尚未提供测试环境名字'] }));
       }
-      for (const environment of added) { const decision = await this.write(actor, environment, tx); references.add(decision.digest); environments.push(environment); }
+      for (const environment of added) {
+        this.unique(environment, environments);
+        const decision = await this.write(actor, environment, tx);
+        references.add(decision.digest); environments.push(environment);
+      }
       const accounts = (await this.db.query('SELECT id,disabled,deleted_at FROM users ORDER BY id FOR SHARE', [], tx)).rows;
       const validUser = (id: string) => accounts.some(row => row.id === id && !row.disabled && !row.deleted_at);
       const grants = new Map<string, { subject: string; environment: string; until: number }>();
       for (const workflow of source.workflows) {
+        if (!workflowBooksTestEnvironments(workflow.prefix, environments)) continue;
         const assignments = [...latest.values()].filter(row => row.body.permission === 'assign' && row.body.object === workflow.id && enabledAt(row, at));
         for (const assignment of assignments) {
           const subject = assignment.body.subject;
@@ -256,7 +262,6 @@ export class RecordTestEnvironments implements TestEnvironments {
           const deadlines = [assignment, ...workflow.sourceRecords.flatMap(digest => authorizations.filter(row => row.digest === digest))].map(row => row.body.expires_at === null ? Infinity : Date.parse(row.body.expires_at));
           const until = Math.min(...deadlines);
           for (const environment of environments) {
-            if (!environment.prefixes.some(row => row.prefix.startsWith(workflow.prefix)) && !environment.resources.some(row => row.key.startsWith(workflow.prefix))) continue;
             const key = subject + '|' + environment.id, previous = grants.get(key);
             if (!previous || until > previous.until) grants.set(key, { subject, environment: environment.id, until });
           }
