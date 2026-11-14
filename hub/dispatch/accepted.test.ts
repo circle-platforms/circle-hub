@@ -12,6 +12,17 @@ import { definition } from './testing/definition.ts';
 import { readRunJobs } from './read-runs.ts';
 import { newId, type ActionBody, type Principal } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
+import { DispatchAttemptFactsSchema, DispatchJobFactsSchema } from '../../contracts/api.ts';
+
+// These pure fixtures explicitly describe one synthetic dispatch intent; runtime never manufactures a round.
+function scopedStatus(job: string, extra: Record<string, unknown> = {}) {
+  const { outcome = 'unknown', not_sent, request_id, rejection_stage, device_return, result, frozen, phase, awaiting_disposition, ...diagnostics } = extra;
+  const publicJob = DispatchJobFactsSchema.parse({ scope: { job }, phase: extra.phase ?? 'synthetic', frozen: extra.frozen ?? false, ...(awaiting_disposition!==undefined?{awaiting_disposition}:{}),
+    ...(extra.result !== undefined ? { result: extra.result } : {}), ...(extra.next_action !== undefined ? { next_action: extra.next_action } : {}) });
+  return { job, events: 3, job_facts: publicJob,
+    dispatch_attempt: { ...diagnostics, ...DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job, round: 1, ...(request_id ? { request_id } : {}) },
+      outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}) }) } };
+}
 
 type C = Awaited<ReturnType<typeof setup>>;
 async function bindingOf(c: C, job: string): Promise<Record<string, unknown>> {
@@ -58,7 +69,7 @@ test('a refusal at the final boundary, after the target was reached, is read and
   const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.ok(first?.job, JSON.stringify(first));
   const [job] = await settled(c);
-  assert.equal(job.job, first.job); assert.equal(job.status.outcome, 'not_dispatched'); assert.equal(job.boundary_refused, false);
+  assert.equal(job.job, first.job); assert.equal(job.status.dispatch_attempt?.outcome, 'not_dispatched'); assert.equal(job.boundary_refused, false);
   assert.ok(c.calls.length > 0 && !c.calls.includes('send_blob'), JSON.stringify(c.calls));
   const reached = c.calls.length;
   const again = await acceptedDispatch(c.kit, c.service, c.run, true);
@@ -79,7 +90,7 @@ test('the notes of a run stay within the answer limits: the newest, after a line
 
 test('the runner note names no administrator command in any job state', () => {
   const job = 'a'.repeat(64);
-  const status = (extra: Record<string, unknown>) => ({ job, phase: 'synthetic', outcome: 'unknown', frozen: false, events: 3, next_action: `circle-hub job resume ${job}`, ...extra }) as unknown as JobStatus;
+  const status = (extra: Record<string, unknown>) => scopedStatus(job, { next_action: `circle-hub job resume ${job}`, ...extra });
   const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
     { ended: null, status: status({}), expect: /还在进行/ },
     { ended: 'unknown', status: status({ frozen: true, request_id: 'synthetic-intent:1' }), expect: /上机验证结果未知.*不要重交.*管理员处置/ },
@@ -100,7 +111,7 @@ test('the runner note names no administrator command in any job state', () => {
 
 test('before anything is sent the reference is called the pre-dispatch checks, never the results of the cases (decision 116)', () => {
   const job = 'a'.repeat(64);
-  const status = (extra: Record<string, unknown>) => ({ job, phase: 'device_probe', outcome: 'not_dispatched', frozen: false, events: 3, result: `src:${'c'.repeat(64)}`, ...extra }) as unknown as JobStatus;
+  const status = (extra: Record<string, unknown>) => scopedStatus(job, { phase: 'device_probe', outcome: 'not_dispatched', result: `src:${'c'.repeat(64)}`, ...extra });
   const early = runnerNote({ job, boundary_refused: false, ended: null, status: status({}) }, 'admin-1').text;
   assert.match(early, /上机验证前核对的结论 src:c{64}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）/);
   assert.doesNotMatch(early, /结果引用|逐条结论/);
@@ -112,8 +123,8 @@ test('a dispatch refused at the effect boundary before any reservation says that
   // The lease on the target belongs to another lineage, as when the run's own booking does not cover the executor's target.
   const c = await setup({ mode: 'lineage' }); t.after(() => c.close());
   const [note] = await acceptedDispatch(c.kit, c.service, c.run, true);
-  assert.ok(note?.job, JSON.stringify(note)); assert.equal(note.outcome, 'not_dispatched'); assert.match(note.text, /未发出/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
-  assert.ok(note.missing_facts?.length, 'the member receives a missing prerequisite without raw administrator resource diagnostics');
+  assert.ok(note?.job, JSON.stringify(note)); assert.equal(note.dispatch_attempt?.outcome, 'not_dispatched'); assert.match(note.text, /未发出/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+  assert.ok(note.job_facts?.missing_facts?.length, 'the member receives a missing prerequisite without raw administrator resource diagnostics');
   assert.doesNotMatch(JSON.stringify(note), /circle-hub|usr_|exe_/);
   assert.equal(c.calls.includes('send_blob'), false);
   const [again] = await acceptedDispatch(c.kit, c.service, c.run, false);
@@ -147,14 +158,14 @@ test('the accepted answer reports the reserved job, then a repeat reads its prog
 });
 
 const verdictJob = 'a'.repeat(64);
-const verdictStatus = (extra: Record<string, unknown>) => ({ job: verdictJob, phase: 'synthetic', outcome: 'unknown', frozen: false, events: 3, next_action: 'x', ...extra }) as unknown as JobStatus;
+const verdictStatus = (extra: Record<string, unknown>) => scopedStatus(verdictJob, { next_action: 'x', ...extra });
 
 test('a finished job points at the device return and judges nothing itself; the note fits the schema a connected client caches', () => {
   const returned = `src:${'c'.repeat(64)}`;
   const note = runnerNote({ job: verdictJob, boundary_refused: false, ended: 'done', status: verdictStatus({ outcome: 'effective', result: `src:${'b'.repeat(64)}`, device_return: returned }) }, 'admin-1');
   assert.ok(note.text.includes(`设备返回 ${returned}`)); assert.match(note.text, /读设备返回，读完再判断/);
   assert.ok(note.text.length <= MAX_NOTE_TEXT);
-  assert.deepEqual(SubmitResultOutput.shape.dispatch.safeParse([{job:note.job,result:note.result,text:note.text}]).error?.issues ?? [], []);
+  assert.deepEqual(SubmitResultOutput.shape.dispatch.safeParse([note]).error?.issues ?? [], []);
   const output=TOOLS.find(tool=>tool.name==='submit_result')!.output;
   assert.equal(output.safeParse({call_result:'error',acceptance:'not_accepted',errors:[{code:'SOURCE_UNAVAILABLE',message:'synthetic'}],trace:'a'.repeat(32),dispatch:[note]}).success,true,'published output preserves structured extensions');
 });
@@ -216,7 +227,7 @@ for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（�
     const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
     assert.ok(first?.job, JSON.stringify(first));
     const [job] = await ended(c, 1);
-    assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, not_sent: job.status.not_sent, refused: job.boundary_refused }, { ended: 'done', outcome: 'not_dispatched', not_sent: true, refused: false });
+    assert.deepEqual({ ended: job.ended, outcome: job.status.dispatch_attempt?.outcome, not_sent: job.status.dispatch_attempt?.not_sent, refused: job.boundary_refused }, { ended: 'done', outcome: 'not_dispatched', not_sent: true, refused: false });
     assert.equal(c.calls.includes('send_blob'), false, 'nothing was submitted');
     const reached = c.calls.length;
     const again = await acceptedDispatch(c.kit, c.service, c.run, true);
@@ -230,7 +241,7 @@ for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（�
     assert.equal(c.calls.includes('send_blob'), false);
     // A submission that is not ready only reads: it starts nothing.
     const read = await acceptedDispatch(c.kit, c.service, c.run, false);
-    assert.equal(read.length, 2); assert.equal(read[1].not_sent,true); assert.match(read[1].next_action!,/核对|恢复/); assert.doesNotMatch(read[1].next_action!,/circle-hub/);
+    assert.equal(read.length, 2); assert.equal(read[1].dispatch_attempt?.not_sent,true); assert.match(read[1].dispatch_attempt?.next_action!,/核对|恢复/); assert.doesNotMatch(read[1].dispatch_attempt?.next_action!,/circle-hub/);
   });
 }
 
@@ -239,7 +250,7 @@ test('not sent (the target cannot be reached): the reason names no address, and 
   await c.endpoint.close();
   const first = await acceptedDispatch(c.kit, c.service, c.run, true);
   const [job] = await ended(c, 1);
-  assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, not_sent: job.status.not_sent }, { ended: 'done', outcome: 'not_dispatched', not_sent: true }, JSON.stringify(job.status));
+  assert.deepEqual({ ended: job.ended, outcome: job.status.dispatch_attempt?.outcome, not_sent: job.status.dispatch_attempt?.not_sent }, { ended: 'done', outcome: 'not_dispatched', not_sent: true }, JSON.stringify(job.status));
   assert.equal(job.status.reason, '目标没有给出完整应答：连不上、超时或应答超限');
   const again = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(again.length, 2, JSON.stringify(again));
@@ -254,7 +265,7 @@ test('rejected by the target with a certified stage: the answer names the stage 
   const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.ok(first?.job, JSON.stringify(first));
   const [job] = await ended(c, 1);
-  assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, frozen: job.status.frozen, stage: job.status.rejection_stage }, { ended: 'done', outcome: 'target_rejected', frozen: false, stage: 'admission' });
+  assert.deepEqual({ ended: job.ended, outcome: job.status.dispatch_attempt?.outcome, frozen: job.status.job_facts.frozen, stage: job.status.dispatch_attempt?.rejection_stage }, { ended: 'done', outcome: 'target_rejected', frozen: false, stage: 'admission' });
   assert.equal(c.calls.filter((name) => name === 'send_blob').length, 1);
   const again = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(again.length, 2, JSON.stringify(again));
@@ -269,14 +280,14 @@ test('sent without an answer: the note gives the request id, forbids a resend an
   const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.ok(first?.job, JSON.stringify(first));
   const [job] = await ended(c, 1);
-  assert.deepEqual({ ended: job.ended, outcome: job.status.outcome, frozen: job.status.frozen }, { ended: 'unknown', outcome: 'unknown', frozen: true });
-  assert.ok(job.status.request_id, 'the request id of the submit intent');
+  assert.deepEqual({ ended: job.ended, outcome: job.status.dispatch_attempt?.outcome, frozen: job.status.job_facts.frozen }, { ended: 'unknown', outcome: 'unknown', frozen: true });
+  assert.ok(job.status.dispatch_attempt?.scope.request_id, 'the request id of the submit intent');
   assert.equal(job.status.requests?.length, 1, 'the unresolved outcome is a request to the administrator');
   const sent = c.calls.filter((name) => name === 'send_blob').length, reached = c.calls.length;
   for (const ready of [true, false]) {
     const again = await acceptedDispatch(c.kit, c.service, c.run, ready);
     assert.equal(again.length, 1, JSON.stringify(again)); assert.equal(again[0].job, first.job);
-    assert.match(again[0].text, /上机验证结果未知/); assert.equal(again[0].outcome,'unknown'); assert.equal(again[0].not_sent,undefined); assert.ok(!again[0].text.includes(job.status.request_id!));
+    assert.match(again[0].text, /上机验证结果未知/); assert.equal(again[0].dispatch_attempt?.outcome,'unknown'); assert.equal(again[0].dispatch_attempt?.not_sent,undefined); assert.ok(!again[0].text.includes(job.status.dispatch_attempt?.scope.request_id!));
     assert.match(again[0].text, /不要重交，也不要另开运行重发，目标可能已经执行过一次/);
     assert.match(again[0].text,/管理员处置/); assert.ok(!JSON.stringify(again[0]).includes(c.admin.id));
     assert.doesNotMatch(again[0].text, /circle-hub|job resume|job dispose/);
@@ -291,11 +302,11 @@ test('an exception after starting dispatch reports unknown and never starts a se
   c.service.dispatchAccepted=async()=>{attempts++;throw new Error('private-host usr_private');};
   for (let n=0;n<2;n++) {
     const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.owner);
-    assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.equal(note.frozen,undefined,'no journal observation proves a durable freeze');assert.match(note.next_action!,/不要重新发送/);
+    assert.equal(note.dispatch_attempt,undefined);assert.equal(note.job_facts,undefined);assert.equal(note.run_facts?.worker_settled,true);assert.equal(note.dispatch_attempt?.not_sent,undefined);assert.equal(note.job_facts?.frozen,undefined,'no journal observation proves a durable freeze');assert.match(note.run_facts?.next_action!,/不要重新发送/);
     assert.doesNotMatch(JSON.stringify(note),/private-host|usr_private|circle-hub/);
   }
   const [administrator]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.admin);
-  assert.equal(administrator.outcome,'unknown');assert.equal(administrator.not_sent,undefined);assert.equal(administrator.next_action,`circle-hub run show ${c.run} --json`);
+  assert.equal(administrator.dispatch_attempt,undefined);assert.equal(administrator.job_facts,undefined);assert.equal(administrator.run_facts?.worker_settled,true);assert.equal(administrator.dispatch_attempt?.not_sent,undefined);assert.equal(administrator.run_facts?.next_action,`circle-hub run show ${c.run} --json`);
   assert.equal(attempts,1,'an unobserved failure never authorizes a second dispatch');
 });
 
@@ -303,16 +314,16 @@ test('the actual caller role is reread and cannot borrow the responsibility admi
   const c=await setup({mode:'lost'});t.after(()=>c.close());
   await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);const [job]=await ended(c,1);
   const [member]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,{...c.owner,role:'admin'});
-  assert.equal(member.outcome,'unknown');assert.doesNotMatch(JSON.stringify(member),/circle-hub|usr_|exe_/);
+  assert.equal(member.dispatch_attempt?.outcome,'unknown');assert.doesNotMatch(JSON.stringify(member),/circle-hub|usr_|exe_/);
   const [administrator]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.admin);
-  assert.match(administrator.next_action!,/circle-hub job resume/);assert.ok(administrator.text.includes(job.status.request_id!));
+  assert.match(administrator.run_facts?.next_action!,/circle-hub job resume/);assert.ok(administrator.text.includes(job.status.dispatch_attempt?.scope.request_id!));
   assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
 });
 
 test('members see a stale manifest binding as a distinct release prerequisite with no administrator identifiers',async t=>{
   const c=await setup({mode:'manifest'});t.after(()=>c.close());
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
-  assert.equal(note.outcome,'not_dispatched');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('清单摘要')));
+  assert.equal(note.dispatch_attempt?.outcome,'not_dispatched');assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact.includes('清单摘要')));
   assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub|192\.0\.2\./);
   assert.equal(c.calls.includes('send_blob'),false);
 });
@@ -323,8 +334,8 @@ test('missing baseline facts reach members from the actual pre-dispatch producer
   await c.registry.update(c.admin,c.executor.id,definition);await c.freezeExecutor();
   await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);await ended(c,1);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.outcome,'not_dispatched');assert.equal(note.not_sent,true);
-  assert.ok(note.missing_facts?.some(fact=>fact.fact==='本次测试环境尚未登记所需基线'));
+  assert.equal(note.dispatch_attempt?.outcome,'not_dispatched');assert.equal(note.dispatch_attempt?.not_sent,true);
+  assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact==='本次测试环境尚未登记所需基线'));
   assert.doesNotMatch(JSON.stringify(note),/private-admin-cleanup|usr_|exe_|circle-hub/);
   assert.equal(c.calls.includes('send_blob'),false);
 });
@@ -336,7 +347,7 @@ test('unreadable certification evidence remains no_verdict and gives members its
   const source=c.kit.artifacts.source.bind(c.kit.artifacts);c.kit.artifacts.source=async(...args)=>args[1]===proof.body.sha256?null:source(...args);
   await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);await ended(c,1);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.no_verdict,true);assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('证据文件不可读取')));
+  assert.equal(Object.hasOwn(note,'no_verdict'),false);assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact.includes('证据文件不可读取')));
   assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub|synthetic-secret/);
   assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
   await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
@@ -347,11 +358,11 @@ test('the responsibility administrator cannot lend environment use to an unassig
   const c=await setup();t.after(()=>c.close());
   await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(denied.dispatch_attempt?.outcome,'not_dispatched');assert.equal(denied.job_facts.error_code,'SOURCE_NOT_PERMITTED');
   assert.equal(c.calls.length,0,'authorization fails before a gateway session is opened');
   assert.equal(c.calls.includes('send_blob'),false);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
+  assert.equal(note.job_facts?.admission_error?.code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
 });
 
 test('revoking environment use after precheck is rechecked in the intent transaction',async t=>{
@@ -370,7 +381,7 @@ test('revoking environment use after precheck is rechecked in the intent transac
     },
   };
   const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(checks,1);assert.equal(denied.outcome,'not_dispatched');assert.equal(denied.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(checks,1);assert.equal(denied.dispatch_attempt?.outcome,'not_dispatched');assert.equal(denied.job_facts.error_code,'SOURCE_NOT_PERMITTED');
   assert.equal(c.calls.includes('send_blob'),false);
   assert.ok(!(await c.service.journal.events(denied.job)).some(event=>event.body.detail.phase==='intent'),'no intent authorizes the revoked environment use');
 });
@@ -380,8 +391,8 @@ test('an unexpected dispatch exception caught by the scheduler is not evidence o
   c.service.dispatch=async()=>{invoked++;c.calls.push('send_blob');throw new Error('private after-send failure');};
   for(let index=0;index<2;index++){
     const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
-    assert.equal(note.outcome,'unknown');assert.equal(note.not_sent,undefined);assert.equal(note.frozen,undefined);
-    assert.match(note.next_action!,/不要重新发送/);assert.doesNotMatch(JSON.stringify(note),/private after-send|circle-hub/);
+    assert.equal(note.dispatch_attempt?.outcome,'unknown');assert.equal(note.dispatch_attempt?.not_sent,undefined);assert.equal(note.job_facts?.frozen,undefined);
+    assert.match(note.dispatch_attempt?.next_action!,/不要重新发送/);assert.doesNotMatch(JSON.stringify(note),/private after-send|circle-hub/);
   }
   assert.equal(invoked,1,'a scheduler catch cannot authorize a blind retry');
 });
@@ -391,10 +402,10 @@ test('a missing environment provider is unavailable evidence, never a claim of n
   assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true,'this actor really has an assignment');
   c.service.options.environmentAccess=undefined;
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(result.outcome,'not_dispatched');
+  assert.equal(result.job_facts.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(result.dispatch_attempt?.outcome,'not_dispatched');
   assert.equal(c.calls.length,0);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
+  assert.equal(note.job_facts?.admission_error?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
   assert.doesNotMatch(JSON.stringify(note),/没有.*分配|usr_|exe_|circle-hub/);
 });
 
@@ -407,25 +418,35 @@ test('an unreadable environment permission port is unavailable, not a negative p
     permission:c.environmentAccess.permission,
   };
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.length,0);
+  assert.equal(result.job_facts.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.length,0);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
+  assert.equal(note.job_facts?.admission_error?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
   assert.doesNotMatch(JSON.stringify(note),/private connection|没有.*分配|usr_|exe_|circle-hub/);
 });
 
 
 test('a verified submission without booking reports authorized environment facts without raw lease keys',async t=>{
   const c=await setup({mode:'lineage'});t.after(()=>c.close());
+  const readStatus=c.service.status.bind(c.service);
+  t.mock.method(c.service,'status',async (...args:Parameters<typeof readStatus>)=>{
+    const status=await readStatus(...args);
+    return {...status,job_facts:{...status.job_facts,reason:'diagnostic with private keys '+c.executor.definition.resources.join(' ')}};
+  });
+  let observed: Attempted | undefined;
+  const original=c.service.dispatchAccepted.bind(c.service);
+  t.mock.method(c.service,'dispatchAccepted',async (...args:Parameters<typeof original>)=>{observed=await original(...args);return observed;});
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
-  assert.equal(note.submission_verified,true);
-  assert.equal(note.error_code,'LEASE_UNAVAILABLE');assert.equal(note.booking?.coverage_complete,false);
-  assert.equal(note.booking?.target,c.executor.definition.target);
-  assert.equal(note.booking?.required_resources,c.executor.definition.resources.length);
-  assert.equal(note.booking?.missing_resources,c.executor.definition.resources.length);
-  assert.equal(note.booking?.declared_device_count,c.executor.definition.probes!.seats.length);
-  assert.match(note.next_action!,/先预订整个.*脚本编写/);
+  assert.equal(observed?.status?.job_facts.submission_verified,true);
+  assert.equal(note.job_facts?.admission_error?.code,'LEASE_UNAVAILABLE');assert.equal(observed?.status?.job_facts.booking?.coverage_complete,false);
+  assert.equal(observed?.status?.job_facts.booking?.target,c.executor.definition.target);
+  assert.equal(observed?.status?.job_facts.booking?.required_resources,c.executor.definition.resources.length);
+  assert.equal(observed?.status?.job_facts.booking?.missing_resources,c.executor.definition.resources.length);
+  assert.equal(observed?.status?.job_facts.booking?.declared_device_count,c.executor.definition.probes!.seats.length);
+  assert.match(note.job_facts?.next_action!,/先预订整个.*脚本编写/);
+  assert.ok(note.job_facts);assert.equal(note.dispatch_attempt,undefined);
+  assert.deepEqual(note.run_facts?.scope,{run:c.run});assert.equal(note.run_facts?.worker_settled,true);
   for(const key of c.executor.definition.resources)assert.ok(!JSON.stringify(note).includes(key));
-  assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|原因.*未查清/);
+  assert.doesNotMatch(JSON.stringify(note),/diagnostic with private keys|usr_|exe_|原因.*未查清/);
   assert.equal(c.calls.length,0);
 });
 
@@ -433,16 +454,19 @@ test('an unassigned actor gets no environment name or booking diagnosis',async t
   const c=await setup({mode:'lineage'});t.after(()=>c.close());
   await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_NOT_PERMITTED');assert.equal(note.booking,undefined);
+  assert.equal(note.run_facts?.admission_error?.code,'SOURCE_NOT_PERMITTED');assert.equal(Object.hasOwn(note,'booking'),false);
   assert.ok(!JSON.stringify(note).includes(c.executor.definition.target));assert.equal(c.calls.length,0);
 });
 
 test('unreadable lease coverage stays unknown instead of asserting no booking',async t=>{
   const c=await setup();t.after(()=>c.close());
   c.leases.holderSnapshot=async()=>{throw new Error('private lease read failure');};
+  let observed: Attempted | undefined;
+  const original=c.service.dispatchAccepted.bind(c.service);
+  t.mock.method(c.service,'dispatchAccepted',async (...args:Parameters<typeof original>)=>{observed=await original(...args);return observed;});
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
-  assert.equal(note.submission_verified,true);assert.equal(note.error_code,'SOURCE_UNAVAILABLE');
-  assert.equal(note.booking?.coverage_complete,null);assert.equal(note.booking?.missing_resources,null);
+  assert.equal(observed?.status?.job_facts.submission_verified,true);assert.equal(note.job_facts?.admission_error,undefined);assert.ok(note.job_facts?.missing_facts?.length);
+  assert.equal(observed?.status?.job_facts.booking?.coverage_complete,null);assert.equal(observed?.status?.job_facts.booking?.missing_resources,null);
   assert.doesNotMatch(JSON.stringify(note),/private lease|没有.*预订|没有.*分配|usr_|exe_/);
   assert.equal(c.calls.length,0);
 });
@@ -504,9 +528,9 @@ test('a second member hitting an occupied physical environment receives the actu
     const explanation = await c.service.explainRelease(c.admin,run,c.executor.id);
     assert.equal(explanation.satisfied,true,JSON.stringify(explanation));
     const [note] = await acceptedDispatch(c.kit,c.service,run,true,undefined,second);
-    if (note.job) { const diagnostic=await c.service.status(c.admin,note.job); assert.fail(JSON.stringify({reason:diagnostic.reason,code:diagnostic.error_code,missing:diagnostic.missing_fact})); }
+    if (note.job) { const diagnostic=await c.service.status(c.admin,note.job); assert.fail(JSON.stringify({reason:diagnostic.job_facts.reason,code:diagnostic.job_facts.error_code,missing:diagnostic.job_facts.missing_fact})); }
     assert.match(note.text,/^已被占用：.*环境.*占用/);
-    assert.match(note.next_action!,/等占用结束后原样重交/);
+    assert.match(note.dispatch_attempt?.next_action!,/等占用结束后原样重交/);
     assert.doesNotMatch(JSON.stringify(note),/条件尚未满足|circle-hub|[0-9a-f]{64}|usr_|exe_/);
     assert.equal(c.calls.filter(call=>call==='send_blob').length,1,'the second member never submits into the occupied target');
   } finally {release();await running;}
@@ -545,8 +569,8 @@ test('a genuinely absent or expired own booking is not_found and never invents a
     else await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'合成：当前没有有效预订'});
     const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
     assert.match(note.text,/^不存在：/);assert.doesNotMatch(note.text,/已被占用|由其他运行持有/);
-    assert.match(note.text,/缺少/);assert.equal(note.booking?.coverage_complete,false);
-    assert.equal(note.error_code,'LEASE_UNAVAILABLE');
+    assert.match(note.text,/缺少/);assert.ok(note.job_facts?.missing_facts?.some(fact=>/预订/.test(fact.fact)));
+    assert.equal(note.job_facts?.admission_error?.code,'LEASE_UNAVAILABLE');
     if(mode==='expired')assert.match(note.text,/过期/);
     assert.equal(c.calls.length,0,'missing prerequisites never reach the target');
   }
@@ -563,7 +587,7 @@ test('an actual policy replay with no conclusion remains unclassified and preser
   assert.doesNotMatch(note.text,/private-evidence-body|circle-hub|usr_private/);
   const [admin]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.admin);
   assert.match(admin.text,/private-evidence-body/);
-  assert.equal(note.error_code,'PACK_POLICY_DENIED');
+  assert.equal(note.job_facts?.admission_error?.code,'PACK_POLICY_DENIED');
   assert.equal(c.calls.includes('send_blob'),false);assert.equal(c.submitted.length,0);
 });
 
@@ -594,4 +618,55 @@ test('dispatch notes preserve the verification run when read through a plan and 
     assert.ok(visible);assert.equal(visible.notes[0].run,live.run);assert.equal(visible.notes[0].executor,undefined);
     assert.equal(visible.notes[0].text.includes(live.run),false);assert.equal(visible.notes[0].text.includes(live.executor.id),false);
   }finally{release();await running;}
+});
+
+test('scoped accepted notes preserve the first round after a zero-write second attempt and never restart the whole job', { timeout: 60000 }, async t => {
+  const http = await import('node:http');
+  const { syncBuiltinESMExports } = await import('node:module');
+  const c = await setup({ alter: (name, value) => name === 'read_blob'
+    ? { ...value, ownership: 'staging_directory', ownership_reason: null, rows: [{ id: 'synthetic-case', outcome: 'good', log: 'SYNTHETIC_END' }] }
+    : value });
+  t.after(() => c.close());
+  (c.effectDocument.effects[0] as { repetition?: number }).repetition = 2;
+  c.detail.run.requirements = [{
+    key: 'workbook_verified', name: '合成核验', description: '合成', layers: ['dynamic'], done_rule: 'gating', accepted_producer: 'fact',
+    repair_rounds: 0, rules: [], run_interpreters: [],
+    repetition: { count: 2, aggregation: 'all', basis: 'explicit', declared: { count: true, aggregation: true, k: false } },
+  }] as typeof c.detail.run.requirements;
+  const proof = await c.kit.artifacts.ingest({ bytes: new TextEncoder().encode('synthetic attribution certification'), mediaType: 'text/plain', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: { readers: [c.admin.id], admins: true, packs: [], shareable: false } });
+  await c.registry.update(c.admin, c.executor.id, {
+    ...c.executor.definition,
+    premises: { result_ownership: { version: '1', evidence: [`src:${proof.body.sha256}`] } },
+    result: { ...c.executor.definition.result, ownership: { pointer: '/ownership', value: 'staging_directory', reason: '/ownership_reason' }, request_id: '/request', log: '/log', closing_marker: 'SYNTHETIC_END' },
+  });
+  await c.freezeExecutor();
+  const native = http.default.request;
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  c.service.options.beforeRound = async round => {
+    assert.equal(round, 2); assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+    t.mock.method(http.default, 'request', (url: URL, options: import('node:http').RequestOptions, listener: (response: import('node:http').IncomingMessage) => void) => {
+      t.mock.restoreAll(); syncBuiltinESMExports();
+      return native(url, { ...options, signal: AbortSignal.abort() }, listener);
+    });
+    syncBuiltinESMExports();
+  };
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const events = await c.service.journal.events(state.job);
+  assert.equal(events.find(event => event.body.detail.phase === 'round' && event.body.detail.round === 1)?.body.detail.terminal, 'pass');
+  assert.equal(events.filter(event => event.body.detail.phase === 'receipt' && event.body.detail.acceptance === 'accepted').length, 1);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+  const [note] = await acceptedDispatch(c.kit, c.service, c.run, false, undefined, c.owner);
+  assert.ok(note);
+  assert.equal(Object.hasOwn(note, 'outcome'), false, 'a last-attempt effect is never a root job outcome');
+  assert.equal(Object.hasOwn(note, 'not_sent'), false, 'a second-round no-send fact is never a root job fact');
+  assert.ok(Reflect.get(note, 'job_facts'));
+  const attempt = Reflect.get(note, 'dispatch_attempt');
+  assert.deepEqual(attempt?.scope && { job: attempt.scope.job, round: attempt.scope.round }, { job: state.job, round: 2 });
+  assert.equal(attempt?.not_sent, true);
+  assert.match(note.text, /第 2 轮/);
+  assert.doesNotMatch(note.text, /什么都没有发到目标|整个作业没有执行/);
+  const reservations = events.filter(event => event.body.detail.phase === 'reservation').length;
+  await acceptedDispatch(c.kit, c.service, c.run, true, undefined, c.owner);
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+  assert.equal((await c.service.journal.events(state.job)).filter(event => event.body.detail.phase === 'reservation').length, reservations);
 });

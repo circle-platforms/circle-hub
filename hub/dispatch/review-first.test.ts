@@ -6,7 +6,7 @@ import { setup } from './testing/context.ts';
 test('R01 a failed lease heartbeat during prechecks prevents intent and submission',async t=>{
   const c=await setup({mode:'heartbeat-failure',ttl:60,delay:{inspect_slot:160}});t.after(()=>c.close());
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'not_dispatched');assert.equal(state.frozen,false);
+  assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(state.job_facts.frozen,false);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   const events=await c.service.journal.events(state.job);
   assert.ok(events.some(e=>e.body.detail.phase==='heartbeat' && e.body.detail.lease_interrupted));
@@ -17,7 +17,7 @@ test('R01 heartbeat failures after submission do not permanently stop renewal at
   let sent=false,pulses=0;
   const c=await setup({ttl:600,delay:{inspect_blob:500},onSubmit:async()=>{sent=true;},alter:(name,v)=>name==='touch_slot' && sent && ++pulses===1?{...v,ok:false}:v});t.after(()=>c.close());
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'effective');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  assert.equal(state.dispatch_attempt!.outcome,'effective');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
   assert.ok(pulses>=2);
   const beats=(await c.service.journal.events(state.job)).filter(e=>e.body.detail.phase==='heartbeat');
   const failed=beats.findIndex(e=>e.body.detail.lease_interrupted===true);
@@ -26,7 +26,7 @@ test('R01 heartbeat failures after submission do not permanently stop renewal at
 
 test('R02 rekeying an occupied executor cannot hide an unresolved effect',async t=>{
   const c=await setup({mode:'reject'});t.after(()=>c.close());
-  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.frozen,true);
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.job_facts.frozen,true);
   await assert.rejects(c.registry.update(c.admin,c.executor.id,{...c.executor.definition,resources:['synthetic/device/c']}),new RegExp(first.job));
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
@@ -51,9 +51,9 @@ test('R02 simultaneous reservations serialize shared targets and origins despite
 test('R03 accepted work awaiting a readable terminal cannot be disposed as if its effect were unknown',async t=>{
   for(const choice of ['mark_failed','keep_unknown','reconcile'] as const) {
     const c=await setup({alter:(name,v)=>name==='inspect_blob'?{ok:false,error:'synthetic unavailable'}:v});t.after(()=>c.close());
-    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'issued');assert.equal(state.frozen,false);
+    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.dispatch_attempt!.outcome,'issued');assert.equal(state.job_facts.frozen,false);
     await assert.rejects(c.service.dispose(c.admin,state.job,{choice,remote_id:'synthetic-remote',reason:'synthetic',acceptPossibleDuplicateEffects:true}),/resume/);
-    assert.equal((await c.service.status(c.admin,state.job)).frozen,false);await c.close();
+    assert.equal((await c.service.status(c.admin,state.job)).job_facts.frozen,false);await c.close();
   }
 });
 
@@ -61,7 +61,7 @@ test('R03 repeated unreadable accepted work escalates to a named disposition req
   const c=await setup({alter:(name,v)=>name==='inspect_blob'?{ok:false,error:'synthetic unavailable'}:v});t.after(()=>c.close());
   const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
   await c.service.resume(c.admin,first.job);const third=await c.service.resume(c.admin,first.job);
-  assert.equal(third.frozen,true);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  assert.equal(third.job_facts.frozen,true);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
   assert.ok((await c.service.journal.events(first.job)).some(e=>e.body.detail.request_kind==='disposition'));
 });
 
@@ -75,7 +75,7 @@ test('R04 a local post-intent fence refusal proves no submission rather than inv
     return values;
   };
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.outcome,'not_dispatched');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
+  assert.equal(result.dispatch_attempt!.outcome,'not_dispatched');assert.equal(result.job_facts.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   assert.ok((await c.service.journal.events(result.job)).some(e=>e.body.detail.submit_invoked===false && e.body.detail.done===true));
 });
 
@@ -91,7 +91,7 @@ test('R06 unresolved jobs are discoverable without remembering a lost terminal d
   const c=await setup({mode:'reject'});t.after(()=>c.close());
   const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
   const jobs=await c.service.list(c.admin,c.executor.id);
-  assert.ok(jobs.some(job=>job.job===first.job && job.frozen && job.next_action));
+  assert.ok(jobs.some(job=>job.job===first.job && job.job_facts.frozen && job.job_facts.next_action));
 });
 
 test('R07 an observation failure after a successful reconcile never falsifies the match',async t=>{
@@ -99,7 +99,7 @@ test('R07 an observation failure after a successful reconcile never falsifies th
   const c=await setup({mode:'reject',alter:(name,v)=>name==='inspect_blob' && ++statusReads>1?{ok:false,error:'synthetic read unavailable'}:v});t.after(()=>c.close());
   const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
   const state=await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'});
-  assert.equal(state.frozen,false);assert.equal(state.outcome,'issued');assert.match(state.next_action!,/resume/);
+  assert.equal(state.job_facts.frozen,false);assert.equal(state.dispatch_attempt!.outcome,'issued');assert.match(state.dispatch_attempt!.next_action!,/resume/);
   const events=await c.service.journal.events(first.job);
   const match=events.findIndex(e=>e.body.detail.identity_matched===true);
   assert.ok(match>=0);assert.equal(events.slice(match+1).some(e=>e.body.detail.uncertain===true),false);
@@ -114,7 +114,7 @@ test('R08 the submit tool cannot be reused by any automatically polled role',asy
 test('R09 a risk disposition is visible and does not pretend the original effect was resent',async t=>{
   const c=await setup({mode:'reject'});t.after(()=>c.close());const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
   const state=await c.service.dispose(c.admin,first.job,{choice:'mark_failed',reason:'synthetic risk decision',acceptPossibleDuplicateEffects:true});
-  assert.equal(state.outcome,'unknown');assert.ok(state.marks?.includes('disposed'));assert.equal(state.disposition,'mark_failed');assert.equal(state.decided_by,c.admin.id);assert.ok(state.missing_fact && state.next_action);
+  assert.equal(state.dispatch_attempt!.outcome,'unknown');assert.ok(state.job_facts.marks?.includes('disposed'));assert.equal(state.job_facts.disposition,'mark_failed');assert.equal(state.job_facts.decided_by,c.admin.id);assert.ok(state.dispatch_attempt!.missing_fact && state.dispatch_attempt!.next_action);
   const decision=(await c.service.journal.events(first.job)).find(e=>e.body.detail.risk_confirmed===true)!;assert.equal(decision.body.detail.possible_duplicate,undefined);
 });
 
@@ -122,7 +122,7 @@ test('R10 the booking must cover submission plus the entire observation window',
   const c=await setup();t.after(()=>c.close());
   await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'synthetic short booking'});
   await c.leases.acquire({keys:c.executor.definition.resources,prefix:'synthetic/',ttlSeconds:15,maxTtlSeconds:3600,holder:{user:c.owner.id,run:c.run}});
-  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).dispatch_attempt!.outcome,'not_dispatched');
   assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
 });
 
@@ -131,7 +131,7 @@ test('R11 positive reconciliation treats foreign timestamps as records regardles
     const c=await setup({mode:'reject',alter:(name,v)=>name==='read_blob'?{...v,submitted:'2026-10-22T23:59:59.000Z'}:v});t.after(()=>c.close());
     const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
     if(tolerance)await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,clock_skew_ms:tolerance});
-    assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).outcome,'effective');
+    assert.equal((await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'})).dispatch_attempt!.outcome,'effective');
     assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
   }
 });
@@ -141,7 +141,7 @@ test('R11 submission timeout consumes only the remaining committed window',async
   const transaction=c.kit.store.withTransaction.bind(c.kit.store);let changed=false;
   c.kit.store.withTransaction=async(fn,parent)=>{const value=await transaction(fn,parent);if(!changed && await c.kit.store.getByKey('action',`dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`)){changed=true;c.clock.ms+=100;}return value;};
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.outcome,'unknown');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  assert.equal(result.dispatch_attempt!.outcome,'unknown');assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
 
 test('R12 every main condition is recorded and cited by the intent',async t=>{
@@ -180,7 +180,7 @@ test('R19 an administrator choice is a validation rather than a fictitious readb
 
 test('R22 an existing receipt cannot be reconciled to another remote job with equal bytes',async t=>{
   const c=await setup({mode:'lost',alter:(name,v)=>name==='read_blob'?{...v,key:'different-remote'}:v});t.after(()=>c.close());
-  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.frozen,true);assert.match(first.next_action!,/synthetic-remote/);
+  const first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.job_facts.frozen,true);assert.match(first.dispatch_attempt!.next_action!,/synthetic-remote/);
   await assert.rejects(c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'different-remote'}),/原|回执/);
   assert.equal(c.calls.filter(n=>n==='read_blob').length,0);
 });
@@ -188,7 +188,7 @@ test('R22 an existing receipt cannot be reconciled to another remote job with eq
 test('R22 recovered target evidence is not fabricated as an original receipt',async t=>{
   const c=await setup({mode:'reject'});t.after(()=>c.close());const first=await c.service.dispatch(c.admin,c.run,c.executor.id);
   const state=await c.service.dispose(c.admin,first.job,{choice:'reconcile',remote_id:'synthetic-remote'});
-  assert.equal(state.outcome,'effective');const events=await c.service.journal.events(first.job);
+  assert.equal(state.dispatch_attempt!.outcome,'effective');const events=await c.service.journal.events(first.job);
   assert.equal(events.filter(e=>e.body.detail.phase==='receipt').length,0);assert.ok(events.some(e=>e.body.detail.phase==='reconciled' && e.body.detail.acceptance==='accepted'));
 });
 
@@ -235,12 +235,12 @@ test('R28 failed preconditions identify their pointers without publishing observ
   const check=events.find(e=>e.body.detail.phase==='precheck.evaluated')!;
   const failed=(check.body.detail.conditions as any[]).filter(v=>!v.matched);
   assert.equal(failed[0].pointer,'/build');assert.equal(failed[0].operator,'equals');assert.equal(failed[0].actual,undefined);
-  assert.ok(state.failed_conditions?.some(v=>v.pointer==='/build'));
+  assert.ok(state.dispatch_attempt!.failed_conditions?.some(v=>v.pointer==='/build'));
 });
 
 test('R34 an ordinary lineage renewal preserves the lease and is not reported as drift',async t=>{
   let c:Awaited<ReturnType<typeof setup>>;
   c=await setup({onSubmit:async()=>{const result=await c.leases.extend({keys:c.executor.definition.resources,holder:{user:c.owner.id,run:c.run},ttlSeconds:3600,maxTtlSeconds:3600});assert.equal(result.ok,true);}});t.after(()=>c.close());
-  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const source=await c.kit.artifacts.source(c.owner,state.result!.slice(4));assert.ok(source?.bytes);
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const source=await c.kit.artifacts.source(c.owner,state.job_facts.result!.slice(4));assert.ok(source?.bytes);
   const result=JSON.parse(new TextDecoder().decode(source.bytes));assert.equal(result.lease_drift,false);
 });

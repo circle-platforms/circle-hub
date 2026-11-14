@@ -79,9 +79,9 @@ test('one dispatch runs each frozen round through its own intent', { timeout: 60
   const c = await openCertified(); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 3);
-  assert.equal(state.outcome, 'effective');
-  assert.deepEqual(state.rounds?.map(round => round.round), [1, 2, 3]);
-  assert.deepEqual(state.rounds?.map(round => round.terminal), ['pass', 'pass', 'pass']);
+  assert.equal(state.dispatch_attempt?.outcome, 'effective');
+  assert.deepEqual(state.job_facts.rounds?.map(round => round.round), [1, 2, 3]);
+  assert.deepEqual(state.job_facts.rounds?.map(round => round.terminal), ['pass', 'pass', 'pass']);
   const written = await intents(c);
   assert.equal(written.length, 3);
   assert.deepEqual(written.map(row => row.body.detail.round), [1, 2, 3]);
@@ -97,9 +97,9 @@ test('first pass stops at the second round and keeps the unrun round in the deno
   const c = await openCertified({ aggregation: 'first_pass', outcomes: ['bad', 'good'] }); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
-  assert.deepEqual(state.rounds?.map(round => [round.round, round.terminal]), [[1, 'fail'], [2, 'pass'], [3, 'not_run']]);
-  assert.match(state.reason ?? '', /第 2 轮通过，按策略提前停，剩 1 轮未跑/);
-  const report = await reportOf(c, state.result!);
+  assert.deepEqual(state.job_facts.rounds?.map(round => [round.round, round.terminal]), [[1, 'fail'], [2, 'pass'], [3, 'not_run']]);
+  assert.match(state.job_facts.reason ?? '', /第 2 轮通过，按策略提前停，剩 1 轮未跑/);
+  const report = await reportOf(c, state.job_facts.result!);
   assert.equal(report.rounds.filter(round => round.early_stop).length, 1);
   const written = await intents(c);
   assert.equal(written.some(row => row.body.detail.round === 3), false);
@@ -120,7 +120,7 @@ test('fresh context takes a distinct lease for each round', { timeout: 60000 }, 
 test('a failed baseline round is not_run and does not count as a failure', { timeout: 60000 }, async t => {
   const c = await openCertified({ baseline_first: true, failVersion: 3 }); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  const rounds = state.rounds ?? [];
+  const rounds = state.job_facts.rounds ?? [];
   assert.deepEqual(rounds.map(round => round.terminal), ['pass', 'not_run', 'pass']);
   assert.equal(rounds[1]?.reason, 'integrity_unproven');
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
@@ -130,7 +130,7 @@ test('a failed baseline round is not_run and does not count as a failure', { tim
 test('residue found at a later round\'s baseline makes that round not_run, like any other baseline mismatch', { timeout: 60000 }, async t => {
   const c = await openCertified({ baseline_first: true, dirtyResidueRead: 5 }); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  const rounds = state.rounds ?? [];
+  const rounds = state.job_facts.rounds ?? [];
   assert.deepEqual(rounds.map(round => round.terminal), ['pass', 'not_run', 'pass']);
   assert.equal(rounds[1]?.reason, 'integrity_unproven');
   assert.equal((await intents(c)).some(row => row.body.detail.round === 2), false);
@@ -146,8 +146,8 @@ test('a round outside the window stays in the denominator as budget_exhausted', 
   t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
-  assert.deepEqual(state.rounds?.map(round => [round.round, round.terminal, round.reason ?? null]), [[1, 'pass', null], [2, 'not_run', 'budget_exhausted'], [3, 'not_run', 'budget_exhausted']]);
-  const report = await reportOf(c, state.result!);
+  assert.deepEqual(state.job_facts.rounds?.map(round => [round.round, round.terminal, round.reason ?? null]), [[1, 'pass', null], [2, 'not_run', 'budget_exhausted'], [3, 'not_run', 'budget_exhausted']]);
+  const report = await reportOf(c, state.job_facts.result!);
   assert.equal(report.rounds.length, 3);
 });
 
@@ -157,8 +157,8 @@ test('an ended round with a pending report pauses readback without starting anot
   install(c, policy(2, 'all'));
   await certify(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.report_pending,true);assert.deepEqual(state.rounds?.map(round=>round.terminal),['no_verdict']);assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  const report = await reportOf(c, state.result!);
+  assert.equal(state.job_facts.report_pending,true);assert.deepEqual(state.job_facts.rounds?.map(round=>round.terminal),['no_verdict']);assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+  const report = await reportOf(c, state.job_facts.result!);
   assert.ok(report.rounds.every(round => round.terminal === 'no_verdict' && (round as { lost?: boolean }).lost === true));
 });
 
@@ -166,7 +166,7 @@ test('an uncertified result ownership premise makes every round no_verdict', { t
   const c = await openCertified(); t.after(() => c.close());
   await certify(c, false);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.deepEqual(state.rounds?.map(round => round.terminal), ['no_verdict', 'no_verdict', 'no_verdict']);
+  assert.deepEqual(state.job_facts.rounds?.map(round => round.terminal), ['no_verdict', 'no_verdict', 'no_verdict']);
 });
 
 test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
@@ -190,7 +190,7 @@ test('resume reconciles the started round and a new dispatch continues at the ne
   const resumed = await c.service.resume(c.admin, String(first.body.detail.job));
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   assert.equal((await c.service.journal.events(String(first.body.detail.job))).some(event => event.body.detail.phase === 'intent' && event.body.detail.round === 2), false);
-  assert.equal(resumed.outcome, 'effective');
+  assert.equal(resumed.dispatch_attempt?.outcome, 'effective');
   const continued = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 3);
   assert.deepEqual((await intents(c)).map(row => row.body.detail.round).sort(), [1, 2, 3]);
@@ -203,19 +203,23 @@ test('revoking before round two preserves the executed first round and refuses e
   c.service.options.beforeRound=async round=>{if(round===2)await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);};
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  assert.equal(state.outcome,'effective','the completed first effect must not become globally not_dispatched');
-  assert.equal(state.error_code,'SOURCE_NOT_PERMITTED');assert.equal(state.not_sent,undefined);assert.equal(state.frozen,false);
-  assert.deepEqual(state.rounds?.map(round=>[round.round,round.terminal]),[[1,'pass'],[2,'not_run'],[3,'not_run']]);
-  const report=await reportOf(c,state.result!);
+  assert.equal(state.dispatch_attempt?.outcome,'not_dispatched','the completed first effect must not become globally not_dispatched');
+  assert.equal(state.dispatch_attempt?.error_code,'SOURCE_NOT_PERMITTED');assert.equal(state.dispatch_attempt?.not_sent,true);assert.equal(state.job_facts.frozen,false);
+  assert.deepEqual(state.job_facts.rounds?.map(round=>[round.round,round.terminal]),[[1,'pass'],[2,'not_run'],[3,'not_run']]);
+  const report=await reportOf(c,state.job_facts.result!);
   assert.equal((report as unknown as {rows:Array<{dynamic_terminal:string}>}).rows[0].dynamic_terminal,'pass');
-  assert.match(state.reason??'',/前轮已执行.*后轮未开始/);
+  const refusedScope=state.dispatch_attempt?.scope;
+  assert.ok(refusedScope&&refusedScope.operation==='dispatch');
+  assert.equal(refusedScope.round,2);
+  assert.equal(state.job_facts.rounds?.[0]?.dispatch_attempt?.outcome,'effective');
+  assert.equal(state.job_facts.reason,undefined,'a later-round refusal is not a global job physical reason');
   const events=await c.service.journal.events(state.job);
   assert.equal(events.filter(event=>event.body.detail.phase==='intent').length,1);
   assert.ok(!events.some(event=>event.body.detail.phase==='boundary_refused'),'a later refusal is not a job-wide no-send record');
   const effects=await c.kit.store.findMany<{outcome:string}>({kind:'effect',key:'effect.job',values:[state.job]});
   assert.equal(effects.at(-1)?.body.outcome,'effective');
   const again=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(again.error_code,'SOURCE_NOT_PERMITTED');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+  assert.equal(again.job_facts.error_code,'SOURCE_NOT_PERMITTED');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
 });
 
 test('revoking while round one is running neither releases its lease nor hides its result',async t=>{
@@ -230,15 +234,15 @@ test('revoking while round one is running neither releases its lease nor hides i
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
   assert.equal(c.calls.filter(name=>name==='close_slot').length,0,'revocation must not release an active round lease');
   const blocked=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(blocked.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(blocked.job_facts.error_code,'SOURCE_NOT_PERMITTED');
   assert.equal(c.calls.filter(name=>name==='close_slot').length,0);
   finish();const state=await running;
-  assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);assert.equal(state.not_sent,undefined);
-  assert.ok(state.result,'the first round report remains readable after assignment withdrawal');
-  const report=await reportOf(c,state.result!);
+  assert.equal(state.dispatch_attempt?.outcome,'not_dispatched');assert.equal(state.job_facts.rounds?.[0]?.dispatch_attempt?.outcome,'effective');assert.equal(state.job_facts.frozen,false);assert.equal(state.dispatch_attempt?.not_sent,true);
+  assert.ok(state.job_facts.result,'the first round report remains readable after assignment withdrawal');
+  const report=await reportOf(c,state.job_facts.result!);
   assert.equal((report as unknown as {rows:Array<{dynamic_terminal:string}>}).rows[0].dynamic_terminal,'pass');
   assert.equal((await intents(c)).length,1);
-  assert.deepEqual(state.rounds?.map(round=>round.terminal),['pass','not_run','not_run']);
+  assert.deepEqual(state.job_facts.rounds?.map(round=>round.terminal),['pass','not_run','not_run']);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
 });
 
@@ -259,12 +263,12 @@ test('revocation in the second intent transaction keeps the first effect and its
   };
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(checks,2,'the denial reached the later intent transaction, not just its earlier precheck');
-  assert.equal(state.outcome,'effective');assert.equal(state.error_code,'SOURCE_NOT_PERMITTED');
-  assert.equal(state.not_sent,undefined);assert.equal(state.frozen,false);
+  assert.equal(state.dispatch_attempt?.outcome,'not_dispatched');assert.equal(state.dispatch_attempt?.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(state.dispatch_attempt?.not_sent,true);assert.equal(state.job_facts.frozen,false);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  assert.deepEqual(state.rounds?.map(round=>round.terminal),['pass','not_run','not_run']);
+  assert.deepEqual(state.job_facts.rounds?.map(round=>round.terminal),['pass','not_run','not_run']);
   assert.equal((await intents(c)).length,1,'the denied transaction never commits a second intent');
-  const report=await reportOf(c,state.result!);
+  const report=await reportOf(c,state.job_facts.result!);
   assert.equal((report as unknown as {rows:Array<{dynamic_terminal:string}>}).rows[0].dynamic_terminal,'pass');
   const effects=await c.kit.store.findMany<{outcome:string;intent_key:string}>({kind:'effect',key:'effect.job',values:[state.job]});
   assert.equal(effects.at(-1)?.body.outcome,'effective');
@@ -286,14 +290,15 @@ test('a later admitted intent that expires before sending does not erase the ear
   };
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
-  assert.equal(state.outcome,'effective');assert.equal(state.not_sent,undefined);assert.equal(state.frozen,false);
-  assert.deepEqual(state.rounds?.map(round=>round.terminal),['pass','not_run']);
+  assert.equal(state.dispatch_attempt?.outcome,'not_dispatched');assert.equal(state.dispatch_attempt?.not_sent,true);
+  assert.equal(state.job_facts.rounds?.[0]?.dispatch_attempt?.outcome,'effective','the earlier round retains its own executed outcome');assert.equal(state.job_facts.frozen,false);
+  assert.deepEqual(state.job_facts.rounds?.map(round=>round.terminal),['pass','not_run']);
   const issued=await intents(c);assert.equal(issued.length,2);
   const effects=await c.kit.store.findMany<{outcome:string;intent_key:string}>({kind:'effect',key:'effect.job',values:[state.job]});
   const latest=new Map(effects.map(effect=>[effect.body.intent_key,effect.body.outcome]));
   assert.equal(latest.get(String(issued[0].body.detail.intent_key)),'effective');
   assert.equal(latest.get(String(issued[1].body.detail.intent_key)),'not_dispatched');
   const again=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(again.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,2,'only the known-unsent round retries');
+  assert.equal(again.dispatch_attempt?.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,2,'only the known-unsent round retries');
   assert.equal((await intents(c)).filter(event=>event.body.detail.round===1).length,1);
 });

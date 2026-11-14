@@ -130,7 +130,7 @@ test('an unrestored bed keeps the reported pass, attaches the diff, and blocks t
   assert.equal(report.bed_state.recovery, 'unrestored');
   assert.deepEqual(report.bed_state.differences, [{ item: 'addresses', kind: 'extra', identity: '192.0.2.9/24' }]);
   assert.deepEqual(report.bed_state.limits, ['未排除共享床影响', '床面未恢复']);
-  assert.match(report.bed_state.next_action, /synthetic-clear-addresses/);
+  assert.match(report.bed_state.dispatch_attempt!.next_action, /synthetic-clear-addresses/);
   assert.ok(report.rows[0].limits.includes('床面未恢复'));
   await rotate(c, 'synthetic verified bytes again');
   const blocked = await c.service.dispatch(c.admin, c.run, c.executor.id);

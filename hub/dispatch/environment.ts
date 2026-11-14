@@ -6,7 +6,7 @@
 // reservation that was not read-only, and the reported version is what the executor said of itself (serverInfo.version)
 // in the newest MCP initialize the Hub kept. A fact that could not be read is false in `known` and named in `missing`:
 // unknown, never shown as free, as none or as held.
-import type { EffectOutcome } from '../../contracts/generated/vocabulary.ts';
+import type { DispatchJobFacts, DispatchAttemptFacts } from '../../contracts/api.ts';
 import type { ActionBody, Page, StoredRecord } from '../records/api.ts';
 
 /** A JSON value as an object: the value when it is one, else an empty one. */
@@ -17,9 +17,8 @@ export interface EnvironmentJob {
   /** The run the job verified, from its reservation; null when the reservation names none. */
   run: string | null;
   /** The job waits for a disposition of an unconfirmed result (an open uncertain request, isFrozen). */
-  frozen: boolean;
-  outcome: EffectOutcome;
-  phase: string;
+  job_facts: DispatchJobFacts;
+  dispatch_attempt?: DispatchAttemptFacts;
 }
 
 export interface EnvironmentFacts {
@@ -37,7 +36,7 @@ export interface EnvironmentFacts {
   /** The bed a job left unrestored (an open bed hold); null when there is none or it could not be read. */
   bed_hold: { job: string; bed: string } | null;
   /** The newest dispatch that was not read-only, with the current status of its job; null when there is none. */
-  latest: { job: string; run: string | null; at: string; outcome: EffectOutcome; frozen: boolean } | null;
+  latest: (EnvironmentJob & { at: string }) | null;
   /** The version the executor reported in the newest session the Hub kept; null when none was kept or none reported. */
   reported_version: string | null;
   /** What could not be read, in words, for the page. */

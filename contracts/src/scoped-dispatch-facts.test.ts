@@ -126,3 +126,23 @@ test('conservative freeze and awaiting disposition remain independent job observ
   assert.equal(json.properties.awaiting_disposition.type,'boolean');
   assert.equal(json.required.includes('awaiting_disposition'),false);
 });
+
+
+test('job historical raw output survives a later not-sent attempt without claiming that attempt executed', () => {
+  const device_return = `src:${'d'.repeat(64)}`;
+  const value = {
+    job_facts:{scope:{job},result,device_return},
+    dispatch_attempt:{scope:{operation:'dispatch',job,round:2},outcome:'not_dispatched',not_sent:true},
+  };
+  const parsed = ScopedDispatchFactsSchema.parse(value);
+  assert.equal(parsed.dispatch_attempt?.device_return,undefined);
+  assert.equal(parsed.dispatch_attempt?.result,undefined);
+  assert.equal(parsed.dispatch_attempt?.submit_invoked,undefined);
+  assert.equal('outcome' in parsed.job_facts,false);
+  assert.deepEqual(parsed,value);
+  assert.equal(DispatchJobFactsSchema.parse({scope:{job}}).device_return,undefined);
+  assert.equal(DispatchJobFactsSchema.safeParse({scope:{job},device_return:'d'.repeat(64)}).success,false);
+  const schema = JSON.parse(readFileSync(new URL('../generated/schemas/dispatch-job-facts.v1.schema.json',import.meta.url),'utf8'));
+  assert.equal(schema.properties.device_return.description,'Authorized job-historical raw device-output reference, retained across attempts; not evidence that the current attempt executed.');
+  assert.equal(schema.required.includes('device_return'),false);
+});
