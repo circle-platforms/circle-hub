@@ -102,7 +102,7 @@ export class LeaseService {
   }
 
   /** Acquires every key under one lease (all or nothing) for the holder; refusal carries the earliest free moment. */
-  async acquire(input: { keys: string[]; ttlSeconds?: number; holder: Holder; prefix: string; maxTtlSeconds?: number }): Promise<AcquireOutcome> {
+  async acquire(input: { keys: string[]; ttlSeconds?: number; holder: Holder; prefix: string; maxTtlSeconds?: number }, outer?: Transaction): Promise<AcquireOutcome> {
     // The holder's ids are real ids (the action record's LeaseDetail demands them).
     if (!isId('usr', input.holder.user) || !isId('run', input.holder.run)) {
       return { ok: false, code: 'LEASE_UNAVAILABLE', message: '持有者要写成真实的用户号和运行号' };
@@ -113,43 +113,54 @@ export class LeaseService {
     const keys = [...input.keys].sort();
     return this.#db
       .transaction(async (tx) => {
-        await this.#ownershipLock(tx);
-        const now = await this.#nowIn(tx);
-        const until = input.maxTtlSeconds === undefined ? null : new Date(now.getTime() + input.ttlSeconds! * 1000);
-        const lease = newId('lse');
-        const rows: Array<{ key: string; token: number }> = [];
-        for (const key of keys) {
-          const taken = await this.#db.query<{ token: bigint }>(
-            `UPDATE leases SET lease_id = $2, run_id = $3, user_id = $4, token = token + 1, acquired_at = $6, expires_at = $5, released_at = NULL
-             WHERE key = $1 AND (expires_at <= $6 OR released_at IS NOT NULL) RETURNING token`,
-            [key, lease, input.holder.run, input.holder.user, until, now],
-            tx,
-          );
-          if (taken.rows.length > 0) {
-            rows.push({ key, token: Number(taken.rows[0].token) });
-            continue;
+        // A refusal must roll back this acquire even when its caller owns the surrounding transaction.
+        if (outer) await this.#db.query('SAVEPOINT leases_acquire', [], tx);
+        try {
+          await this.#ownershipLock(tx);
+          const now = await this.#nowIn(tx);
+          const until = input.maxTtlSeconds === undefined ? null : new Date(now.getTime() + input.ttlSeconds! * 1000);
+          const lease = newId('lse');
+          const rows: Array<{ key: string; token: number }> = [];
+          for (const key of keys) {
+            const taken = await this.#db.query<{ token: bigint }>(
+              `UPDATE leases SET lease_id = $2, run_id = $3, user_id = $4, token = token + 1, acquired_at = $6, expires_at = $5, released_at = NULL
+               WHERE key = $1 AND (expires_at <= $6 OR released_at IS NOT NULL) RETURNING token`,
+              [key, lease, input.holder.run, input.holder.user, until, now],
+              tx,
+            );
+            if (taken.rows.length > 0) {
+              rows.push({ key, token: Number(taken.rows[0].token) });
+              continue;
+            }
+            // ON CONFLICT DO NOTHING keeps the transaction usable after a lost race (an errored-out transaction can
+            // run no further statement); the loser reads the row it collided with for the earliest-free moment.
+            const inserted = await this.#db.query<{ token: bigint }>(
+              `INSERT INTO leases (key, lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)
+               VALUES ($1, $2, $3, $4, 1, $6, $5, NULL)
+               ON CONFLICT (key) DO NOTHING RETURNING token`,
+              [key, lease, input.holder.run, input.holder.user, until, now],
+              tx,
+            );
+            if (inserted.rows.length === 0) {
+              const busy = await this.#earliestFree(key, tx);
+              const holder = await this.#takenBy(key, tx);
+              throw new RefusedLease({ ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${key} 上有未到期的占用`, ...(busy === null ? {} : { earliestFree: busy }), ...(holder === null ? {} : { holder }) });
+            }
+            rows.push({ key, token: Number(inserted.rows[0].token) });
           }
-          // ON CONFLICT DO NOTHING keeps the transaction usable after a lost race (an errored-out transaction can
-          // run no further statement); the loser reads the row it collided with for the earliest-free moment.
-          const inserted = await this.#db.query<{ token: bigint }>(
-            `INSERT INTO leases (key, lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)
-             VALUES ($1, $2, $3, $4, 1, $6, $5, NULL)
-             ON CONFLICT (key) DO NOTHING RETURNING token`,
-            [key, lease, input.holder.run, input.holder.user, until, now],
-            tx,
-          );
-          if (inserted.rows.length === 0) {
-            const busy = await this.#earliestFree(key, tx);
-            const holder = await this.#takenBy(key, tx);
-            throw new RefusedLease({ ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${key} 上有未到期的占用`, ...(busy === null ? {} : { earliestFree: busy }), ...(holder === null ? {} : { holder }) });
+          const token = Math.max(...rows.map((r) => r.token));
+          await this.#appendAction(tx, 'acquire', lease, keys, input.holder, until?.toISOString() ?? null, token);
+          const granted: AcquireOutcome = { ok: true, lease, keys, until: until?.toISOString() ?? null, token };
+          if (outer) await this.#db.query('RELEASE SAVEPOINT leases_acquire', [], tx);
+          return granted;
+        } catch (error) {
+          if (outer && error instanceof RefusedLease) {
+            await this.#db.query('ROLLBACK TO SAVEPOINT leases_acquire', [], tx);
+            await this.#db.query('RELEASE SAVEPOINT leases_acquire', [], tx);
           }
-          rows.push({ key, token: Number(inserted.rows[0].token) });
+          throw error;
         }
-        const token = Math.max(...rows.map((r) => r.token));
-        await this.#appendAction(tx, 'acquire', lease, keys, input.holder, until?.toISOString() ?? null, token);
-        const granted: AcquireOutcome = { ok: true, lease, keys, until: until?.toISOString() ?? null, token };
-        return granted;
-      })
+      }, outer)
       .catch((error: unknown): AcquireOutcome => {
         if (error instanceof RefusedLease) return error.outcome as AcquireOutcome;
         throw error;
@@ -169,8 +180,8 @@ export class LeaseService {
   }
 
   /** Serialize reservation insertion and guarded release; never hold this lock across network I/O. */
-  async withMutationLock<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
-    return this.#db.transaction(async tx=>{await this.#ownershipLock(tx);return fn(tx);});
+  async withMutationLock<T>(fn: (tx: Transaction) => Promise<T>, outer?: Transaction): Promise<T> {
+    return this.#db.transaction(async tx=>{await this.#ownershipLock(tx);return fn(tx);}, outer);
   }
 
   async #ownershipLock(tx: PgTransaction): Promise<void> {
@@ -178,8 +189,8 @@ export class LeaseService {
   }
 
   /** Extends the lease of every key for its holder by ttlSeconds from the service's own clock, inside the cumulative cap. */
-  async extend(input: { keys: string[]; holder: Holder; ttlSeconds: number; maxTtlSeconds?: number }): Promise<ChangeOutcome> {
-    return this.#change(input.keys, input.holder, 'extend', input.ttlSeconds, input.maxTtlSeconds);
+  async extend(input: { keys: string[]; holder: Holder; ttlSeconds: number; maxTtlSeconds?: number }, outer?: Transaction): Promise<ChangeOutcome> {
+    return this.#change(input.keys, input.holder, 'extend', input.ttlSeconds, input.maxTtlSeconds, outer);
   }
 
   /** Releases the keys for their holder (D04 R[0]: delivery, cancel or expiry). */
@@ -286,7 +297,7 @@ export class LeaseService {
 
   /** The shared body of extend and release: rows locked FOR UPDATE, every update must affect its row, and the
    * service's own clock decides (no caller-supplied moment: a caller could lie a lease young again). */
-  async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
+  async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined, outer?: Transaction): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
       const now = await this.#nowIn(tx);
@@ -330,7 +341,7 @@ export class LeaseService {
       }
       await this.#appendAction(tx, op, lease, ordered, holder, until, token);
       return { ok: true, lease, until, token };
-    });
+    }, outer);
   }
 
   #validate(keys: string[], prefix: string, ttlSeconds: number | undefined, maxTtlSeconds: number | undefined): { ok: false; code: 'LEASE_PREFIX' | 'LEASE_TTL'; message: string } | null {

@@ -63,3 +63,29 @@ test('retained legacy registration rows neither authorize cleanup nor populate t
   assert.deepEqual((await f.db.query('SELECT prefix,owner,registered_at FROM lease_registrations ORDER BY prefix')).rows, legacy);
   assert.ok((await service.release({ keys, holder: f.holder })).ok);
 });
+
+test('outer acquire refusal leaves no partial reservation and outer extend rolls back with its caller', async t => {
+  const f = await fixture(t), now = new Date('2026-11-14T08:00:00.000Z');
+  const service = new LeaseService(f.db, { records: f.kit.store, now: async () => now });
+  const otherHolder = { user: f.other, run: newId('run') };
+  assert.ok((await service.acquire({ keys: ['synthetic/z-busy'], holder: otherHolder, prefix: 'synthetic/' })).ok);
+  const before = await service.holderSnapshot(['synthetic/z-busy']);
+  await f.db.transaction(async tx => {
+    const refused = await service.acquire({ keys: ['synthetic/a-free', 'synthetic/z-busy'], holder: f.holder, prefix: 'synthetic/' }, tx);
+    assert.equal(refused.ok, false);
+    assert.deepEqual(await service.holderSnapshot(['synthetic/a-free'], tx), []);
+    assert.deepEqual(await service.holderSnapshot(['synthetic/z-busy'], tx), before);
+    await f.db.query('SELECT 1', [], tx);
+  });
+  assert.deepEqual(await service.holderSnapshot(['synthetic/a-free']), []);
+  assert.ok((await service.acquire({ keys: ['synthetic/capped'], holder: f.holder, prefix: 'synthetic/', ttlSeconds: 60, maxTtlSeconds: 300 })).ok);
+  const capped = await service.holderSnapshot(['synthetic/capped']);
+  const actions = await service.actionLog('synthetic/');
+  const rollback = new Error('synthetic caller rollback');
+  await assert.rejects(f.db.transaction(async tx => {
+    assert.ok((await service.extend({ keys: ['synthetic/capped'], holder: f.holder, ttlSeconds: 120, maxTtlSeconds: 300 }, tx)).ok);
+    throw rollback;
+  }), error => error === rollback);
+  assert.deepEqual(await service.holderSnapshot(['synthetic/capped']), capped);
+  assert.deepEqual(await service.actionLog('synthetic/'), actions);
+});
