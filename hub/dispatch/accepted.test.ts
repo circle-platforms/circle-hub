@@ -91,13 +91,13 @@ test('the notes of a run stay within the answer limits: the newest, after a line
 test('the runner note names no administrator command in any job state', () => {
   const job = 'a'.repeat(64);
   const status = (extra: Record<string, unknown>) => scopedStatus(job, { next_action: `circle-hub job resume ${job}`, ...extra });
-  const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp }> = [
+  const rows: Array<{ ended: 'done' | 'unknown' | null; boundary_refused?: boolean; status: JobStatus; expect: RegExp; expectNext?: string }> = [
     { ended: null, status: status({}), expect: /还在进行/ },
     { ended: 'unknown', status: status({ frozen: true, awaiting_disposition:true, requests:[{id:'d'.repeat(64),question_sha256:null,deadline:null}], request_id: 'synthetic-intent:1' }), expect: /上机验证结果未知.*不要重交.*管理员处置/ },
     { ended: 'done', status: status({ outcome: 'not_dispatched', phase:'round_refused',not_sent:true, reason: '合成：最终边界需要新核验' }), expect: /本作业不会整份重试/ },
     { ended: 'done', boundary_refused: true, status: status({ outcome: 'not_dispatched', phase:'round_refused',not_sent:true, reason: '合成：缺整个自动化测试环境的租约' }), expect: /Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'not_dispatched', not_sent: true, reason: '合成：目标没有给出租约' }), expect: /第 1 轮派发.*用例数据.*没有发出|第 1 轮派发.*没有发出用例数据/ },
-    { ended: 'done', status: status({ outcome: 'target_rejected', rejection_stage: 'admission' }), expect: /第 1 轮派发.*目标拒绝.*admission.*拒绝/ },
+    { ended: 'done', status: status({ outcome: 'target_rejected', rejection_stage: 'admission' }), expect: /第 1 轮派发.*目标拒绝.*admission.*拒绝/, expectNext: '第 1 轮派发目标没有接收，也没有执行；按该次拒绝原因修正后原样重交，Hub 会再试一次' },
     { ended: 'done', status: status({ outcome: 'proven_not_executed' }), expect: /已证明目标没有执行；原样重交，Hub 会再试一次/ },
     { ended: 'done', status: status({ outcome: 'target_rejected', decided_by: 'admin-1' }), expect: /管理员已处置本作业/ },
     { ended: 'done', status: status({ outcome: 'effective', result: `src:${'b'.repeat(64)}` }), expect: /读结果引用看逐条结论/ },
@@ -106,6 +106,12 @@ test('the runner note names no administrator command in any job state', () => {
   for (const row of rows) {
     const note = runnerNote({ job, boundary_refused: row.boundary_refused ?? false, ended: row.ended, status: row.status }, 'admin-1');
     assert.match(note.text, row.expect); assert.doesNotMatch(JSON.stringify(note), /circle-hub|job resume|job dispose|synthetic-intent:1|admin-1/);
+    if (row.expectNext !== undefined) {
+      assert.deepEqual(note.dispatch_attempt?.scope, { operation: 'dispatch', job, round: 1 });
+      assert.equal(note.dispatch_attempt?.next_action, row.expectNext);
+      assert.ok(note.text.includes('第 1 轮派发下一步：' + row.expectNext));
+      assert.doesNotMatch(note.text, /整个作业没有执行|整个作业什么都没发到目标/);
+    }
   }
 });
 
