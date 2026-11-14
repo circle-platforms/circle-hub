@@ -15,7 +15,7 @@ import { cookiesOf, sendJson } from '../http.ts';
 import { sendConsoleAsset } from './assets.ts';
 import { authorizePage, authorizeRefusal, devicePage } from './authorize-page.ts';
 import { api } from './console-api-http.ts';
-import { type ConsoleOptions, ENDED_COOKIE, SECURE_ENDED_COOKIE, HOME, sendHtml, redirect, anonymous, pageContext } from './console-http.ts';
+import { type ConsoleOptions, ENDED_COOKIE, SECURE_ENDED_COOKIE, HOME, sendHtml, redirect, anonymous, pageContext, principalOfConsoleSession } from './console-http.ts';
 import { handleAuthenticatedConsole } from './console-posts.ts';
 import { FAVICON_SVG, html, page } from './html.ts';
 import { login, loginPage, logout, passwordPage, setup, setupPage } from './login-pages.ts';
@@ -67,7 +67,7 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     request.resume();
     return sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>退出只接受 POST</p>`), { allow: 'POST' });
   }
-  const signedIn = session === null ? null : await step('authenticate', () => options.deps.records.principals.authenticate('Bearer ' + session.token), { type: 'guardrail' });
+  const signedIn = session === null ? null : await step('authenticate', () => principalOfConsoleSession(options.deps.records.principals, session.token), { type: 'guardrail' });
   if (signedIn !== null) {
     updateTrace({ userId: signedIn.id });
     identifyRequest(request, { userId: signedIn.id });
@@ -90,10 +90,10 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
       ? sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>管理操作只接受 POST</p>`), { allow: 'POST' })
       : sendHtml(response, 405, page(anonymous('方法不允许'), html`<p>这个页面只接受 GET</p>`), { allow: 'GET' });
   }
-  const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
+  const principal: Principal | null = session === null ? null : await principalOfConsoleSession(options.deps.records.principals, session.token);
   if (principal === null) {
     if (isAction || isKnowledgeAction) request.resume();
-    if (session !== null) options.sessions.close(session.id);
+    if (session !== null) options.sessions.close(session.token);
     // A session cookie the store no longer knows, or one whose token stopped working: the login page says the sign-in ended.
     const sent = cookiesOf(request).get(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE) !== undefined;
     const cookies = sent ? [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure), cookie(secure ? SECURE_ENDED_COOKIE : ENDED_COOKIE, '1', '/console/login', 120, secure)] : [];

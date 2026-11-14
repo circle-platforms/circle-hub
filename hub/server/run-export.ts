@@ -15,6 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { RunId } from '../../contracts/src/common.ts';
 import { canonicalBytes, sha256Hex, type CallLogInput, type Principal } from '../records/api.ts';
 import type { ServerDeps } from './api.ts';
+import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { setCommonHeaders } from './http.ts';
 import { digestHeader } from './local-tools.ts';
 import { newTraceId } from './trace.ts';
@@ -22,6 +23,7 @@ import { newTraceId } from './trace.ts';
 const PREFIX = '/run-export/';
 const ABSENT = Buffer.from('没有这个运行或原件，或它不是你的运行\n');
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
+const CONSOLE_REFUSED = Buffer.from(CONSOLE_SESSION_REFUSED + '\n');
 export function runExportTarget(target: string | undefined): boolean { return /^(?:http:\/\/[^/]+)?\/run-export(?:[\/\\%]|$)/i.test(target ?? ''); }
 
 /** Runs whose produced digests one process keeps. */
@@ -91,9 +93,11 @@ export async function handleRunExport(request: IncomingMessage, response: Server
   const headers: Record<string, string> = { 'content-type': 'text/plain; charset=utf-8' };
   request.resume();
   try {
-    principal = await deps.records.principals.authenticate(typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
-    if (principal === null) { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
-    else if (request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
+    const access = await authenticateAccessOnly(deps.records.principals, typeof request.headers.authorization === 'string' ? request.headers.authorization : null);
+    if (!access.ok) {
+      if (access.reason === 'console_session') { status = 403; bytes = CONSOLE_REFUSED; note = '控制台会话令牌'; }
+      else { status = 401; bytes = UNAUTHENTICATED; note = '令牌不可用'; headers['www-authenticate'] = 'Bearer realm="circle-hub"'; }
+    } else if ((principal = access.principal) && request.method !== 'GET' && request.method !== 'HEAD') { status = 405; bytes = Buffer.from('只接受 GET 和 HEAD\n'); note = '方法不可用'; headers.allow = 'GET, HEAD'; }
     else if (/[?%#\\]/.test(raw) || !RunId.safeParse(run).success || !(parts.length === 1 || runOnly || jobsOnly || successorsOnly || knowledgeOnly || sha !== null && /^[0-9a-f]{64}$/.test(sha))) { status = 404; bytes = ABSENT; note = '路径形状不对'; }
     else {
       status = 404; bytes = ABSENT; note = '运行不可见';

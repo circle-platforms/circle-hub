@@ -79,12 +79,12 @@ export async function login(request: IncomingMessage, response: ServerResponse, 
   if (token === null) return loginPage(options, response, 401, '用户名或密码无效，或账号不可用', secure);
   options.sessions.clearLoginAttempts(accountKey); options.sessions.clearLoginAttempts(peerKey);
   const session = options.sessions.open(token, secure);
-  const principal = await principals.authenticate('Bearer ' + token);
+  const principal = await (principals.authenticateConsoleSession?.('Bearer ' + token) ?? principals.authenticate('Bearer ' + token));
   const state = principal ? await principals.passwordState?.(principal.id) : null;
   const next = safeNext(form.get('next'));
   const home = principal?.role === 'admin' ? HOME : '/console/me';
   const destination = next === HOME && principal?.role !== 'admin' ? home : next;
-  redirect(response, state?.mustChange ? '/console/password?next=' + encodeURIComponent(destination) : destination, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.id, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
+  redirect(response, state?.mustChange ? '/console/password?next=' + encodeURIComponent(destination) : destination, [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, session.token, '/console', undefined, secure), cookie(secure ? SECURE_LOGIN_COOKIE : LOGIN_COOKIE, '', '/console/login', 0, secure)]);
 }
 
 /** Password forms have no data navigation until the forced first change is complete. */
@@ -117,7 +117,7 @@ ${postForm({
     const principals = options.deps.records.principals;
     if (!await principals.changePassword(principal, form.get('current') ?? '', password)) return show(400, '当前密码无效，或新密码与当前密码相同');
     options.sessions.clearLoginAttempts(key);
-    options.sessions.close(session.id);
+    options.sessions.close(session.token);
     // The change revoked every console session of the account. Whoever just proved both passwords continues in a fresh
     // session bound to the new revision, so no second sign-in follows the change (owner report, 2026-11-02); a reset
     // that lands in between leaves only the sign-in.
@@ -125,7 +125,7 @@ ${postForm({
     const token = state.mustChange ? null : (await principals.openConsoleSession(principal.id, state.revision))?.token ?? null;
     if (token !== null) {
       const fresh = options.sessions.open(token, secure);
-      return sendHtml(response, 200, page(anonymous('密码已修改'), html`<p>密码已修改；该账户其他的控制台会话已失效。</p><p>${link(next, '继续')}</p>`), { 'set-cookie': cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, fresh.id, '/console', undefined, secure) });
+      return sendHtml(response, 200, page(anonymous('密码已修改'), html`<p>密码已修改；该账户其他的控制台会话已失效。</p><p>${link(next, '继续')}</p>`), { 'set-cookie': cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, fresh.token, '/console', undefined, secure) });
     }
     sendHtml(response, 200, page(anonymous('密码已修改'), html`<p>请用新密码重新登录。</p><p>${link('/console/login', '登录', { next })}</p>`), { 'set-cookie': cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure) });
   } catch (error) {
@@ -151,7 +151,8 @@ export async function logout(request: IncomingMessage, response: ServerResponse,
     forbidden(response, '表单已过期或不是本控制台发出的');
     return;
   }
-  options.sessions.close(session.id);
+  await options.deps.records.principals.revokeTokenValue(session.token);
+  options.sessions.close(session.token);
   redirect(response, '/console/login', [cookie(secure ? SECURE_SESSION_COOKIE : SESSION_COOKIE, '', '/console', 0, secure)]);
 }
 

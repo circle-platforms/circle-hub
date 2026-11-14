@@ -31,6 +31,8 @@ async function bed(t: TestContext, closeGraceMs = 5000, initiallyIdle = false) {
     records: {
       principals: {
         authenticate: async (value: string) => value === `Bearer ${TOKEN}` ? principal : null,
+        authenticateConsoleSession: async (value: string) => value === `Bearer ${TOKEN}` ? principal : null,
+        revokeTokenValue: async () => true,
         verifyPassword: async (name: string, password: string) => name === principal.name && password === 'synthetic-password' ? { user: principal, revision: 0 } : null,
         openConsoleSession: async () => ({ token: TOKEN }),
       },
