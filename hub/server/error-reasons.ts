@@ -1,14 +1,10 @@
 // Local ProtocolCode → call-error category map for D1 (Boss 13:05 / afternoon 1114).
 // Codex will land the same table in contracts/generated; this file mirrors requests-to-codex until then.
-import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
+import { callErrorCategory as registeredCallErrorCategory, type ProtocolCode } from '../../contracts/generated/protocol.ts';
+import { labelOf, CALL_ERROR_CATEGORY_LABEL } from '../../contracts/generated/vocabulary.ts';
 
 /** Closed set of call-refusal category words (owner 2026-11-14). */
-export type CallErrorCategory =
-  | '参数无效'
-  | '无权限'
-  | '不存在'
-  | '已被占用'
-  | '暂时不可用';
+export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY_LABEL)[keyof typeof CALL_ERROR_CATEGORY_LABEL];
 
 /**
  * How a protocol error is presented to the reader:
@@ -116,6 +112,8 @@ export function errorPresentationOf(code: string): ErrorPresentation {
   if (Object.hasOwn(CATEGORY_BY_CODE, code)) {
     return { kind: 'category', category: CATEGORY_BY_CODE[code as keyof typeof CATEGORY_BY_CODE] };
   }
+  const registered = registeredCallErrorCategory(code);
+  if (registered !== null) return { kind: 'category', category: labelOf('call_error_category', registered) as CallErrorCategory };
   // Pack function refused the whole call (no item accepted): 参数无效, never the conclusion string.
   if (isPackScopedCode(code)) return { kind: 'category', category: '参数无效' };
   return { kind: 'conclusion' };
