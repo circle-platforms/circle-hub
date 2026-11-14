@@ -3,8 +3,8 @@ import {withoutNonces} from './console/testing-security.ts';
 import {THEME_TAGS,LIVE_TAG} from './console/html.ts';
 // The seven places of the redesigned console (proposal decisions 3 and 6 of 2026-10-31) over HTTP with the fake services:
 // every page of an administrator and of a member answers with the side navigation, interface terms only, no style attribute
-// and no script; a task's result is derived in one place (display rule 20); the four operations are the only forms; every
-// other operation is a command dialog with the real ids; members see only their own Circles and calls.
+// and no script; task results follow display rule 20; registered management forms retain exact targets and CSRF;
+// remaining command dialogs retain real ids; members see only their own clients and calls.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {parse} from 'parse5';
@@ -19,6 +19,14 @@ import { CSS } from './console/style.ts';
 import { NEUTRAL } from './console/context.ts';
 import { taskResultOf } from './console/status.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
+
+function managementForm(body: string, action: string, values: Record<string,string>): void {
+  const form = [...body.matchAll(/<form\b[^>]*>[\s\S]*?<\/form>/g)].map(match=>match[0]).find(value=>value.includes(`action="/console/admin/do/${action}"`));
+  assert.ok(form, action);
+  assert.match(form, /method="post"/i);
+  assert.match(form, /name="csrf" value="[^"]+"/);
+  for (const [name,value] of Object.entries(values)) assert.ok(form.includes(`name="${name}" value="${escapeHtml(value)}"`), `${action}: ${name}`);
+}
 
 let server: TestServer;
 let counter = 0;
@@ -367,7 +375,7 @@ describe('operations and commands', () => {
     assert.match((await get('/console/settings',session)).body,/<a href="\/console\/settings" aria-current="page">我的客户端/);
     const detail=await get(`/console/team/${user.user.id}?workflow=review`,admin);
     assert.match(detail.body,/成员详情|权限|工作流分配|已连接的客户端/);
-    assert.ok(detail.body.includes(`circle-hub pack unassign ${user.user.id} review`));
+    managementForm(detail.body,'pack-unassign',{user:user.user.id,pack:'review'});
     assert.equal((await get(`/console/team/${other.user.id}`,session)).status,404);
     assert.equal((await get('/console/team/absent',admin)).status,404);
     const mine=await get('/console/team',session);
@@ -381,15 +389,13 @@ describe('operations and commands', () => {
     assert.ok(disabled.body.includes(uiLabelOf('account_status','disabled')));
     assert.doesNotMatch(disabled.body,/使用中/);
   });
-  test('settings, connections and packs offer the other operations as commands with the real ids, never as forms', async () => {
+  test('registered management forms and remaining command dialogs retain exact administrative targets', async () => {
     const user = await member();
     const admin = await signIn(server.admin.token);
     const settings = await get('/console/team/'+user.user.id, admin);
     const [token] = await server.records.principals.tokens(user.user.id);
-    for (const command of [`circle-hub user disable ${user.user.id}`, `circle-hub token issue ${user.user.id} '--label=客户端'`]) assert.ok(settings.body.includes(escapeHtml(command)), command);
-    assert.match(settings.body, /<div class="ch-dialog" id="cmd-user-disable-[^"]+" role="dialog"/);
-    assert.match(settings.body, /href="#cmd-user-disable-[^"]+"/, 'the button opens its dialog by fragment');
-    assert.doesNotMatch(settings.body, /action="\/console\/admin\/do\/(?:user-disable|token-revoke|token-issue)/, 'these management actions remain command dialogs');
+    managementForm(settings.body,'user-disable',{user:user.user.id});
+    managementForm(settings.body,'token-issue',{user:user.user.id,label:'客户端'});
     const [resource] = await server.deps.resources.list(server.admin.principal);
     const connections = await get('/console/connections?system='+resource.id, admin);
     const circle = await get('/console/team?circle='+token.id,admin);
@@ -397,7 +403,7 @@ describe('operations and commands', () => {
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
     assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
     const pack = await get('/console/workflows/review', admin);
-    assert.ok(pack.body.includes('circle-hub pack retire review@1.0.0'));
+    managementForm(pack.body,'pack-retire',{pack:'review@1.0.0'});
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
     for (const path of ['/console/workflows/absent', '/console/workflows/__proto__', '/console/packs', '/console/operations/backup']) assert.equal((await get(path, admin)).status, 404, path);
     assert.match(CSS, /\.ch-dialog:target/);
@@ -462,7 +468,7 @@ test('member and Circle selection moves exact administrative targets to danger c
  const user=await member(),other=await member(),admin=await signIn(server.admin.token),mine=await signIn(user.token);
  const [token]=await server.records.principals.tokens(other.user.id);
  const root=await get('/console/team',admin);assert.doesNotMatch(root.body,/circle-hub user disable|circle-hub token revoke/);
- const selected=await get('/console/team/'+other.user.id,admin);assert.match(selected.body,/aria-selected="true"/);assert.match(selected.body,/class="ch-btn ch-btn--danger" href="#cmd-user-disable-/);
+ const selected=await get('/console/team/'+other.user.id,admin);assert.match(selected.body,/aria-selected="true"/);managementForm(selected.body,'user-disable',{user:other.user.id});
  const circle=await get('/console/team?circle='+token.id,admin);assert.match(circle.body,/class="ch-btn ch-btn--danger" href="#cmd-token-revoke-/);assert.ok(circle.body.includes('circle-hub token revoke '+token.id));
  assert.equal((await server.records.principals.get(other.user.id))?.disabled,false);assert.equal((await server.records.principals.tokens(other.user.id)).find(t=>t.id===token.id)?.revoked_at,null);
  for(const path of ['/console/team','/console/connections']){const hidden=await get(path+'?circle='+token.id,mine),absent=await get(path+'?circle=synthetic-missing',mine);assert.equal(hidden.status,404);assert.equal(withoutNonces(hidden.body),withoutNonces(absent.body));}
