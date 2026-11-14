@@ -297,8 +297,13 @@ describe('list_task_packs', () => {
     assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['review']);
     assert.match(exact.content[0].text ?? '', /^你能用的工作流和技能共 1 个。\n合成评审\n合成评审，合成评审（合成）/);
     const prefix = await client.call('list_task_packs', { pack_id: 'revie' });
-    assert.deepEqual(prefix.structuredContent.packs, []);
+    assert.equal(prefix.isError, true);
+    assert.equal(firstError(prefix).code, 'SOURCE_ABSENT');
+    assert.equal(firstError(prefix).path, '/pack_id');
+    assert.match(prefix.content[0].text ?? '', /Hub 里没有任务包 revie/);
     const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
+    // Assigned workflow filtered by kind: absence is null → keep empty ok list.
+    assert.equal(incompatibleKind.isError, false);
     assert.deepEqual(incompatibleKind.structuredContent.packs, []);
     const continued = await client.call('list_task_packs', { kind: 'workflow', offset: 1 });
     assert.deepEqual((continued.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ids.slice(1));
@@ -312,9 +317,16 @@ describe('list_task_packs', () => {
     const limited = await connect(await person(['review']));
     const unavailable = await limited.call('list_task_packs', { pack_id: 'local-review' });
     const absent = await limited.call('list_task_packs', { pack_id: 'not-a-pack' });
-    assert.deepEqual(unavailable.structuredContent.packs, []);
-    assert.deepEqual(absent.structuredContent.packs, []);
-    assert.deepEqual(comparable(unavailable), comparable(absent));
+    assert.equal(unavailable.isError, true);
+    assert.equal(firstError(unavailable).code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(firstError(unavailable).path, '/pack_id');
+    assert.match(unavailable.content[0].text ?? '', /任务包 local-review 存在，没有分配给你/);
+    assert.doesNotMatch(unavailable.content[0].text ?? '', /共 0 个/);
+    assert.equal(absent.isError, true);
+    assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
+    assert.equal(firstError(absent).path, '/pack_id');
+    assert.match(absent.content[0].text ?? '', /Hub 里没有任务包 not-a-pack/);
+    assert.notDeepEqual(comparable(unavailable), comparable(absent));
     await limited.close();
   });
 

@@ -23,7 +23,7 @@ import {
   UploadFileInput,
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
-import type { CallContext } from '../ports.ts';
+import type { CallContext, WorkflowStore } from '../ports.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
@@ -304,6 +304,43 @@ function checkReadCancellation(call: ToolCall): void {
   if (call.context.signal?.aborted) throw new McpError(ErrorCode.ConnectionClosed, '请求已取消');
 }
 
+/** Exact pack_id with zero hits: same codes and sentences as start_run (Boss 12:10 D4 A). */
+const LIST_PACKS_HINT = '用 list_task_packs 看你能用的任务包';
+
+export function packIdAbsenceError(packId: string, absence: NonNullable<Awaited<ReturnType<NonNullable<WorkflowStore['absence']>>>>): ProtocolError {
+  if (absence === 'unassigned') {
+    return {
+      code: 'SOURCE_NOT_PERMITTED',
+      message: `任务包 ${packId} 存在，没有分配给你`,
+      fix: `请管理员把它分配给你；${LIST_PACKS_HINT}`,
+      path: '/pack_id',
+    };
+  }
+  if (absence === 'withdrawn') {
+    return {
+      code: 'SOURCE_ABSENT',
+      message: `Hub 里没有任务包 ${packId} 的可用版本（已退役）`,
+      fix: LIST_PACKS_HINT,
+      path: '/pack_id',
+    };
+  }
+  if (absence === 'uninstalled') {
+    return {
+      code: 'SOURCE_ABSENT',
+      message: `Hub 里没有安装技能包 ${packId}`,
+      fix: `请管理员安装它；${LIST_PACKS_HINT}`,
+      path: '/pack_id',
+    };
+  }
+  // unknown | disabled — determined absence
+  return {
+    code: 'SOURCE_ABSENT',
+    message: `Hub 里没有任务包 ${packId}`,
+    fix: `核对任务包名；${LIST_PACKS_HINT}`,
+    path: '/pack_id',
+  };
+}
+
 const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const parsed = ListTaskPacksInput.safeParse(args);
@@ -321,6 +358,14 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
+  // Exact pack_id and nothing visible: distinguish absent vs unassigned (disclosure-audit D3 / brief D4).
+  if (packId !== undefined && filtered.length === 0) {
+    const absence = await deps.workflows.absence?.(call.principal, packId) ?? null;
+    if (absence !== null) {
+      call.context.adminNote(`list_task_packs: pack_id ${packId} is ${absence} for ${call.principal.id}`.slice(0, 1000));
+      return { answer: errorAnswer('list_task_packs', [packIdAbsenceError(packId, absence)]) };
+    }
+  }
   // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
   const index = filtered.map((pack) => ({ pack: pack.pack, title: pack.title, kind: pack.kind }));
   let context: Awaited<ReturnType<NonNullable<ServerDeps['runs']['packContext']>>> = null;
