@@ -5,7 +5,7 @@ import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { SpaceTreeNode } from '../../../contracts/src/spaces.ts';
 import { sha256Hex, canonicalize } from '../../records/api.ts';
 import { quoteIdentifier, type SqlSession } from '../../platform/api.ts';
-import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord, type CurrentReference, type RecordSelection } from './selection.ts';
+import { classifyCurrentRecord, currentRecordReferences, resolveCurrentRecordScopes, resourceDefinitionReferences, selectCurrentRecords, type CurrentRecord, type CurrentReference, type CurrentExternalRoot, type RecordSelection } from './selection.ts';
 import { resetScopes, type ResetRequest, type ResetProblem, type ResetCount, type ResetDataScope } from './types.ts';
 
 // Each whole-table choice comes from the current table's responsibility, never its spelling.
@@ -26,7 +26,9 @@ const RECORD_LINKS: Readonly<Record<string, string>> = {
 const SYNC_TABLES = ['personal_sync_aborts','personal_sync_bindings','personal_sync_clients','personal_sync_edges','personal_sync_exports',
   'personal_sync_heads','personal_sync_identities','personal_sync_memory_reservations','personal_sync_mode_operations','personal_sync_native_credits',
   'personal_sync_notes','personal_sync_objects','personal_sync_operations','personal_sync_retained','personal_sync_session_objects','personal_sync_sessions'];
-const SHARED_TABLES = ['objects','personal_payloads','personal_objects','schema_migrations'];
+// Migration identity and one-time cutover evidence are shared foundations, not selectable business data.
+const SHARED_TABLES = ['objects','personal_payloads','personal_objects','schema_migrations',
+  'hub_migration_compatibility','environment_assignment_cutover','environment_assignment_snapshot','environment_assignment_completion'];
 
 export interface CurrentResetState { records: CurrentRecord[]; selection: RecordSelection; counts: ResetCount[]; blocked: ResetProblem[]; tables: string[]; clearTables: string[]; }
 export async function tableNames(session: SqlSession): Promise<string[]> { return (await session.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).map(row => String(row.tablename)); }
@@ -39,7 +41,36 @@ function condition(table: string, state: CurrentResetState): string {
 function values(sql: string, state: CurrentResetState): unknown[] { return sql.includes('$1') ? [state.selection.cleared] : []; }
 function rowObject(value: unknown): Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
+/** Exact JSON edges of retained M2 evidence; actual relational edges are checked by checkForeignKeySelection. */
+async function migrationEvidenceRoots(session: SqlSession, tables: readonly string[], blocked: ResetProblem[]): Promise<CurrentExternalRoot[]> {
+  const roots: CurrentExternalRoot[] = [];
+  const references = (value: unknown, field: string): CurrentReference[] | null => Array.isArray(value) && value.every(digest => typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest))
+    ? value.map((digest, index) => ({ kind: 'record', digest, field: field + '/' + index, recordAlias: false })) : null;
+  if (tables.includes('environment_assignment_snapshot')) {
+    const rows = await session.query('SELECT snapshot_sha256,snapshot,responsible_user FROM public.environment_assignment_snapshot ORDER BY singleton');
+    rows.forEach((row, index) => {
+      const payload = rowObject(row.snapshot), edges = references(payload.sourceRecords, '/snapshot/sourceRecords');
+      let intact = false;
+      try { intact = sha256Hex(canonicalize(payload)) === row.snapshot_sha256 && payload.responsibleUser === row.responsible_user; } catch { /* Invalid evidence blocks below. */ }
+      if (!edges || !intact) blocked.push({ table: 'environment_assignment_snapshot', row: index + 1,
+        reason: '保留的迁移快照 sourceRecords、摘要或 responsible_user 来源不能核对', nextAction: '核对原保权来源后重试，或显式选择全部初始化；程序不会改写保留证据' });
+      else roots.push({ table: 'environment_assignment_snapshot', row: index + 1, references: edges });
+    });
+  }
+  if (tables.includes('environment_assignment_completion')) {
+    const rows = await session.query('SELECT authorization_records FROM public.environment_assignment_completion ORDER BY singleton');
+    rows.forEach((row, index) => {
+      const edges = references(row.authorization_records, '/authorization_records');
+      if (!edges) blocked.push({ table: 'environment_assignment_completion', row: index + 1,
+        reason: '保留的完成事实 authorization_records 不是已核对的记录引用数组', nextAction: '核对原完成回执后重试，或显式选择全部初始化；程序不会跳过保留依赖' });
+      else roots.push({ table: 'environment_assignment_completion', row: index + 1, references: edges });
+    });
+  }
+  return roots;
+}
+
 export async function inspectCurrentState(session: SqlSession, request: ResetRequest, readObject: (hash: string) => Promise<Uint8Array | null>): Promise<CurrentResetState> {
+  const tables = await tableNames(session);
   const selectedScopes = new Set(resetScopes(request));
   if (request.keepConfig) selectedScopes.delete('config');
   const rows = await session.query(`WITH logical AS MATERIALIZED (SELECT DISTINCT ON (digest) digest,body FROM hub_read_records())
@@ -88,7 +119,8 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
   for (const record of records) for (const scope of recordOwners.get(record.digest) ?? []) {
     for (const reference of currentRecordReferences(record)) if (reference.kind === 'object') addOwner(reference.digest, scope);
   }
-  const selection = selectCurrentRecords(records, selectedScopes, { recordAliases: aliases, objectScopes, objectReferences, retainedObjects });
+  const externalRoots = await migrationEvidenceRoots(session, tables, blocked);
+  const selection = selectCurrentRecords(records, selectedScopes, { recordAliases: aliases, objectScopes, objectReferences, retainedObjects, externalRoots });
   blocked.push(...selection.blocked);
   const counts = RESET_DATA_SCOPE.map(scope => ({ scope, retained: 0, cleared: 0 }));
   const clearedSet = new Set(selection.cleared);
@@ -98,7 +130,6 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
       if (clearedSet.has(record.digest)) count.cleared++; else count.retained++;
     }
   });
-  const tables = await tableNames(session);
   const clearTables = tables.filter(table => TABLE_SCOPES[table] && selectedScopes.has(TABLE_SCOPES[table]!));
   const sync = tables.filter(table => SYNC_TABLES.includes(table));
   if (selectedScopes.has('knowledge') || selectedScopes.has('packs')) {
@@ -134,7 +165,7 @@ export async function checkForeignKeySelection(session: SqlSession, state: Curre
     const childPredicate = childWhere.replaceAll(/"([^"]+)"/g, 'c."$1"');
     const sql = `SELECT count(*)::text AS n FROM ${quoteIdentifier(child)} c JOIN ${quoteIdentifier(parent)} p ON ${join} WHERE (${parentPredicate}) AND NOT (${childPredicate})`;
     const [row] = await session.query(sql, sql.includes('$1') ? [state.selection.cleared] : []);
-    if (Number(row!.n)) state.blocked.push({ table: child, reason: `保留行有 ${Number(row!.n)} 条实际外键指向所清范围`, nextAction: '显式调整范围或保留配置；程序不会连带清除保留行' });
+    if (Number(row!.n)) state.blocked.push({ table: child, reason: `保留行有 ${Number(row!.n)} 条实际外键 ${child}.${left.join(",")} → ${parent}.${right.join(",")} 指向所清范围`, nextAction: '显式调整范围或保留配置；程序不会连带清除保留行' });
   }
 }
 
