@@ -651,7 +651,7 @@ export type WorkflowParameter = z.infer<typeof WorkflowParameter>;
 export const WorkflowFile = z
   .strictObject({
     schema: z.literal('workflow@1'),
-    steps: z.array(z.strictObject({id: Key, name: z.string().min(1)})).optional().describe('Author-declared business steps and their user-facing names; not tool calls, dispatch phases or an execution graph'),
+    steps: z.array(z.strictObject({id: Key, name: z.string().min(1).refine(value => value.trim().length > 0, 'a name is not whitespace')})).optional().describe('Author-declared business steps and their user-facing names; not tool calls, dispatch phases or an execution graph'),
     incremental_submissions:z.boolean().optional().describe('Opt-in: preserving all previous material while first filling empty slots does not charge unknown-only requirements as repairs; edits, removals and actual violations keep normal budgets'),
     predecessor_access:z.literal('view').optional().describe('Read-only predecessor visibility; never grants mutation or lineage lease rights'),
     criterion_review:z.boolean().optional().describe('W10 review protocol over an explicitly bound declaration submission'),
