@@ -249,8 +249,7 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
         const parts = [attempt ? `${dispatchScopeLabel(attempt.scope)}：${attempt.outcome === undefined ? '结局尚未取得' : uiLabelOf('effect_outcome', attempt.outcome)}` : '尚无按范围可核对的派发结局'];
         const environment = environments.find((entry) => entry.id === job.executor);
         if (environment !== undefined) parts.push(`运行环境 ${environment.target}（当前${environmentState(environment).text}）`);
-        const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
-        if (facts.frozen) parts.push(held !== undefined && !held.job_facts.awaiting_disposition ? '等待派发结果中，不可重发' : '运行环境有待处理的效果核对事项，不可重发');
+        if (facts.frozen) parts.push(facts.awaiting_disposition === true ? '本作业有待处置的效果核对事项，不可重发' : '本作业结局尚未核对，不可重发');
         if (facts.disposition !== undefined) parts.push(`作业处置：${uiLabelOf('disposition', facts.disposition)}`);
         if (facts.admission_error) parts.push(facts.admission_error.message);
         steps.push({ name: attempt ? dispatchScopeLabel(attempt.scope) : '作业派发进度', sub: parts.join(' · '), fill: attempt?.outcome === undefined || attempt.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: attempt?.outcome === undefined ? 'idle' : DISPATCH_DOT[attempt.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
