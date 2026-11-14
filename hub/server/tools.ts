@@ -24,6 +24,7 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext } from '../ports.ts';
+import { findSubschema, renderExpected } from '../runs/engine/api.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
@@ -145,7 +146,11 @@ export function pointerOfPath(path: readonly PropertyKey[]): string {
   return path.map((part) => `/${String(part).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
 }
 
-const ARGUMENT_FIX = '按工具的输入模式改正这个参数后再调用';
+/** Default fix only for handwritten violations that omit a custom one; schemaErrors never uses this alone. */
+const ARGUMENT_FIX = '这次按 tools/list 该工具的 inputSchema 改正参数后再调用';
+
+/** The retired generic fix; tests assert schemaErrors never returns this alone. */
+export const LEGACY_ARGUMENT_FIX = '按工具的输入模式改正这个参数后再调用';
 
 function violation(tool: ToolName, path: string, message: string, fix = ARGUMENT_FIX): ProtocolError {
   return { code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数不符合 ${tool} 的输入模式：${message}`, fix, path };
@@ -154,8 +159,273 @@ function violation(tool: ToolName, path: string, message: string, fix = ARGUMENT
 /** Longest pointer an error carries; a longer one (a huge key) points at the whole call instead, so the answer stays valid. */
 const MAX_ERROR_POINTER = 1024;
 
+function leafOf(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  return (parts[parts.length - 1] ?? '').replaceAll('~1', '/').replaceAll('~0', '~');
+}
+
+function parentPointer(path: string): string {
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length <= 1) return '';
+  return `/${parts.slice(0, -1).join('/')}`;
+}
+
+function pointerTokens(path: string): string[] {
+  if (!path || path === '/') return [];
+  return path.split('/').slice(1).map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
+}
+
+function valueAt(args: unknown, path: string): unknown {
+  if (!path) return args;
+  let cur: unknown = args;
+  for (const token of pointerTokens(path)) {
+    if (cur === null || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[token];
+  }
+  return cur;
+}
+
+function typeWord(type: unknown): string {
+  if (type === 'string') return '字符串';
+  if (type === 'number') return '数字';
+  if (type === 'integer') return '整数';
+  if (type === 'boolean') return '布尔值';
+  if (type === 'object' || type === 'record') return '对象';
+  if (type === 'array') return '数组';
+  if (type === 'null') return 'null';
+  return '取值';
+}
+
+function receivedWord(issue: z.ZodIssue): string | null {
+  const raw = (issue as { received?: unknown }).received ?? /received (\w+)/.exec(issue.message)?.[1];
+  if (raw === 'undefined' || raw === undefined) return null;
+  return typeWord(raw);
+}
+
+function shortExpected(schema: Record<string, unknown> | null, issue: z.ZodIssue): string {
+  if (schema !== null) {
+    if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+      return `枚举（${schema.enum.map((v) => JSON.stringify(v)).join('、')}）`;
+    }
+    if (schema.type === 'integer') {
+      return typeof schema.minimum === 'number' ? `整数（≥${schema.minimum}）` : '整数';
+    }
+    if (typeof schema.type === 'string') return typeWord(schema.type);
+    if (schema.type === undefined && schema.properties !== undefined) return '对象';
+    if (schema.type === undefined && schema.items !== undefined) return '数组';
+  }
+  if (issue.code === 'invalid_type') return typeWord((issue as { expected?: unknown }).expected);
+  return '取值';
+}
+
+function propertyNames(schema: Record<string, unknown> | null): string[] {
+  if (schema === null || typeof schema.properties !== 'object' || schema.properties === null) return [];
+  return Object.keys(schema.properties as Record<string, unknown>);
+}
+
+function isOptionalProperty(root: Record<string, unknown>, path: string): boolean {
+  const leaf = leafOf(path);
+  if (!leaf) return true;
+  const parent = locateSubschema(root, parentPointer(path));
+  if (parent === null) return true;
+  const required = Array.isArray(parent.required) ? parent.required.map(String) : [];
+  return !required.includes(leaf);
+}
+
+function ruleRef(tool: ToolName, path: string, suffix = ''): string {
+  const leaf = leafOf(path);
+  if (!leaf) return `规则全文：tools/list → ${tool}.inputSchema${suffix}`;
+  return `规则全文：tools/list → ${tool}.inputSchema 的 ${leaf}${suffix}`;
+}
+
+function thisCallFix(writing: string, rule: string): string {
+  return `这次可以这样写：${writing}；${rule}`;
+}
+
+function formatReceivedValue(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return '数组';
+  if (typeof value === 'object') return '对象';
+  return '该值';
+}
+
+function writingForField(tool: ToolName, path: string, schema: Record<string, unknown> | null, expected: string): string {
+  const leaf = leafOf(path);
+  if (tool === 'start_run' && leaf === 'pack') {
+    return `在 ${path} 写 list_task_packs 返回的包 id（可带 @version），并保留 /inputs`;
+  }
+  if (tool === 'list_task_packs' && leaf === 'kind') {
+    return `在 ${path} 写 "workflow"（或去掉 kind 以列出全部）`;
+  }
+  if (leaf === 'offset') return `在 ${path} 写数字 0（或上一页续读的整数下标）`;
+  if (leaf === 'inputs') return `在 ${path} 给出对象，键为输入槽名，值为引用或外部对象`;
+  if (leaf === 'reference' && typeof schema?.description === 'string' && /reference/i.test(schema.description)) {
+    return `在 ${path} 写符合 REFERENCE_FORMS 的引用字符串（如 upload_file 返回的 src:…）`;
+  }
+  return `在 ${path} 写${expected}`;
+}
+
+function isSchemaObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Locate a subschema, unwrapping nested anyOf/oneOf/allOf that findSubschema stops on for tool inputs. */
+function locateSubschema(root: Record<string, unknown>, path: string): Record<string, unknown> | null {
+  const direct = findSubschema(root, path);
+  if (direct !== null) return direct;
+  const tokens = pointerTokens(path);
+  if (tokens.length === 0) return root;
+  let curr: Record<string, unknown> | null = root;
+  for (const token of tokens) {
+    if (curr === null) return null;
+    const next = stepSchema(curr, token, root);
+    curr = next;
+  }
+  return curr;
+}
+
+function stepSchema(node: Record<string, unknown>, token: string, root: Record<string, unknown>): Record<string, unknown> | null {
+  let cur = node;
+  if (typeof cur.$ref === 'string') {
+    const via = findSubschema(root, cur.$ref.startsWith('#/') ? cur.$ref.slice(1) : '');
+    if (via) cur = via;
+  }
+  if (/^\d+$/.test(token)) {
+    if (isSchemaObject(cur.items)) return cur.items;
+    return firstBranch(cur, (branch) => (isSchemaObject(branch.items) ? branch.items : null));
+  }
+  if (isSchemaObject(cur.properties) && token in cur.properties) {
+    const prop = (cur.properties as Record<string, unknown>)[token];
+    return isSchemaObject(prop) ? prop : null;
+  }
+  const fromBranch = firstBranch(cur, (branch) => {
+    if (isSchemaObject(branch.properties) && token in (branch.properties as Record<string, unknown>)) {
+      const prop = (branch.properties as Record<string, unknown>)[token];
+      return isSchemaObject(prop) ? prop : null;
+    }
+    return null;
+  });
+  if (fromBranch) return fromBranch;
+  if (isSchemaObject(cur.additionalProperties)) return cur.additionalProperties;
+  return firstBranch(cur, (branch) => stepSchema(branch, token, root));
+}
+
+function firstBranch(node: Record<string, unknown>, pick: (branch: Record<string, unknown>) => Record<string, unknown> | null): Record<string, unknown> | null {
+  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+    if (!Array.isArray(node[key])) continue;
+    for (const branch of node[key] as unknown[]) {
+      if (!isSchemaObject(branch)) continue;
+      const hit = pick(branch);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** Whether a schemaErrors path points at a published inputSchema location (declared field or refused extra key). */
+export function pathInInputSchema(schema: Record<string, unknown>, path: string): boolean {
+  if (path === '') return true;
+  if (locateSubschema(schema, path) !== null) return true;
+  const parentPath = parentPointer(path);
+  const parent = locateSubschema(schema, parentPath);
+  if (parent === null || parent.additionalProperties !== false) return false;
+  const leaf = leafOf(path);
+  return leaf.length > 0 && !propertyNames(parent).includes(leaf);
+}
+
+function argumentShape(tool: ToolName, path: string, issue: z.ZodIssue, root: Record<string, unknown>, args: unknown): { message: string; fix: string } {
+  const target = locateSubschema(root, path);
+  const parent = locateSubschema(root, parentPointer(path));
+
+  if (issue.code === 'unrecognized_keys' || (target === null && parent?.additionalProperties === false && leafOf(path) && !propertyNames(parent).includes(leafOf(path)))) {
+    const key = leafOf(path);
+    const shown = key.length > 100 ? `${key.slice(0, 100)}…` : key;
+    const legal = propertyNames(parent);
+    const legalText = legal.length > 0 ? `合法字段见 inputSchema（${legal.join('、')}）` : '合法字段见 inputSchema';
+    return {
+      message: `不认识的参数 ${shown}`,
+      fix: thisCallFix(`去掉 ${path}；${legalText}`, ruleRef(tool, '')),
+    };
+  }
+
+  if (issue.code === 'invalid_value' || (target !== null && Array.isArray(target.enum))) {
+    const allowed = (issue.code === 'invalid_value' ? (issue as { values?: unknown[] }).values : undefined) ?? (target?.enum as unknown[] | undefined) ?? [];
+    const labels = allowed.map((v) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v)));
+    const got = valueAt(args, path);
+    const seen = got === undefined ? '未给出合法枚举值' : formatReceivedValue(got);
+    const optional = isOptionalProperty(root, path);
+    const preferred = labels.includes('workflow') ? 'workflow' : labels[0];
+    const sample = preferred !== undefined ? JSON.stringify(preferred) : expectedSample(target);
+    const omit = optional ? `（或去掉 ${leafOf(path)} 以列出全部）` : '';
+    const writing = tool === 'list_task_packs' && leafOf(path) === 'kind'
+      ? writingForField(tool, path, target, sample)
+      : `在 ${path} 写 ${sample}${omit}`;
+    return {
+      message: `${path} 收到的是 ${seen}；允许的取值只有 ${labels.join('、')}`,
+      fix: thisCallFix(writing, ruleRef(tool, path, '.enum')),
+    };
+  }
+
+  const missing = issue.code === 'invalid_type' && receivedWord(issue) === null;
+  if (missing) {
+    const expected = shortExpected(target, issue);
+    return {
+      message: `${path} 是必填的${expected}，这次没有给出`,
+      fix: thisCallFix(writingForField(tool, path, target, expected), ruleRef(tool, path)),
+    };
+  }
+
+  if (target !== null) {
+    const expected = shortExpected(target, issue);
+    const typeMismatch = issue.code === 'invalid_type';
+    const shownExpected =
+      !typeMismatch && typeof target.pattern === 'string' && expected === '字符串'
+        ? '符合模式的字符串'
+        : expected === '对象' || expected === '数组'
+          ? renderExpected(target)
+          : expected;
+    const received = receivedWord(issue) ?? formatReceivedValue(valueAt(args, path));
+    const got = valueAt(args, path);
+    const seenText =
+      typeMismatch || typeof got !== 'string' || got.length === 0 || got.length > 80
+        ? `收到的是${received}`
+        : `收到的是 ${JSON.stringify(got)}`;
+    return {
+      message: `${path} 要的是${shownExpected}，${seenText}`,
+      fix: thisCallFix(writingForField(tool, path, target, expected), ruleRef(tool, path)),
+    };
+  }
+
+  if (issue.code === 'invalid_type') {
+    const expected = typeWord((issue as { expected?: unknown }).expected);
+    const received = receivedWord(issue) ?? '其他类型';
+    return {
+      message: `${path} 要的是${expected}，收到的是${received}`,
+      fix: thisCallFix(writingForField(tool, path, null, expected), ruleRef(tool, path)),
+    };
+  }
+
+  const detail = issue.message.slice(0, 500);
+  return {
+    message: detail,
+    fix: thisCallFix(`按 ${tool} 的 inputSchema 改正 ${path || '参数'}`, ruleRef(tool, path)),
+  };
+}
+
+function expectedSample(schema: Record<string, unknown> | null): string {
+  if (schema === null) return '"…"';
+  if (Array.isArray(schema.enum) && schema.enum[0] !== undefined) return JSON.stringify(schema.enum[0]);
+  if (schema.type === 'string') return '"…"';
+  if (schema.type === 'integer' || schema.type === 'number') return '0';
+  if (schema.type === 'boolean') return 'true';
+  return '符合模式的值';
+}
+
 /** One protocol error per zod issue (at most 20); an unknown key points at the key itself. */
-export function schemaErrors(tool: ToolName, error: z.ZodError): ProtocolError[] {
+export function schemaErrors(tool: ToolName, error: z.ZodError, args: unknown = undefined): ProtocolError[] {
+  const root = (PUBLISHED.get(tool)?.inputSchema ?? { type: 'object', additionalProperties: false }) as Record<string, unknown>;
   const out: ProtocolError[] = [];
   const at = (path: readonly PropertyKey[]): string => {
     const pointer = pointerOfPath(path);
@@ -163,9 +433,16 @@ export function schemaErrors(tool: ToolName, error: z.ZodError): ProtocolError[]
   };
   for (const issue of error.issues) {
     if (issue.code === 'unrecognized_keys') {
-      for (const key of issue.keys) out.push(violation(tool, at([...issue.path, key]), `不认识的参数 ${key.length > 100 ? `${key.slice(0, 100)}…` : key}`));
+      for (const key of issue.keys) {
+        const path = at([...issue.path, key]);
+        const shaped = argumentShape(tool, path, issue, root, args);
+        out.push(violation(tool, path, shaped.message, shaped.fix));
+        if (out.length >= 20) break;
+      }
     } else {
-      out.push(violation(tool, at(issue.path), issue.message.slice(0, 500)));
+      const path = at(issue.path);
+      const shaped = argumentShape(tool, path, issue, root, args);
+      out.push(violation(tool, path, shaped.message, shaped.fix));
     }
     if (out.length >= 20) break;
   }
@@ -307,7 +584,7 @@ function checkReadCancellation(call: ToolCall): void {
 const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const parsed = ListTaskPacksInput.safeParse(args);
-  if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
+  if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error, args)) };
   const summaries = await deps.workflows.summaries(call.principal);
   const capabilities = await deps.memberCapabilities(call.principal, undefined, summaries);
   const available = [...capabilities.workflows, ...capabilities.skills];
@@ -346,7 +623,7 @@ const uploadFile: Handler = async (deps, call, args) => ({ answer: await upload(
 
 async function upload(deps: ServerDeps, call: ToolCall, args: Record<string, unknown>): Promise<Answer> {
   const parsed = UploadFileInput.safeParse(args);
-  if (!parsed.success) return errorAnswer('upload_file', schemaErrors('upload_file', parsed.error));
+  if (!parsed.success) return errorAnswer('upload_file', schemaErrors('upload_file', parsed.error, args));
   if(parsed.data.memory||parsed.data.memory_share){
     const memory=deps.knowledge.memory;if(!memory)return errorAnswer('upload_file',[unavailable()]);
     try{
@@ -462,7 +739,7 @@ const recordReference = (digest: unknown): string | null => (typeof digest === '
  */
 const startRun: Handler = async (deps, call, args) => {
   const parsed = StartRunInput.safeParse(args);
-  if (!parsed.success) return { answer: errorAnswer('start_run', schemaErrors('start_run', parsed.error)) };
+  if (!parsed.success) return { answer: errorAnswer('start_run', schemaErrors('start_run', parsed.error, args)) };
   let answer: Answer;
   let text: TextContext = {};
   if (deps.runsDetail !== undefined) {
@@ -525,7 +802,7 @@ export async function acceptedBy(deps: Pick<ServerDeps, 'workflows'>, principal:
 const resolveTool: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const parsed = ResolveReferenceInput.safeParse(args);
-  if (!parsed.success) return { answer: errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error)) };
+  if (!parsed.success) return { answer: errorAnswer('resolve_reference', schemaErrors('resolve_reference', parsed.error, args)) };
   call.state.runId = parsed.data.run ?? null;
   const answer = await deps.runs.resolveReference(call.principal, parsed.data, call.context);
   checkReadCancellation(call);
@@ -568,7 +845,7 @@ const CURSOR_FIX = '照抄上一页末尾给出的 cursor，和它的引用一�
 
 const getNodes: Handler = async (deps, call, args) => {
   const parsed = GetNodesInput.safeParse(args);
-  if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error)) };
+  if (!parsed.success) return { answer: errorAnswer('get_nodes', schemaErrors('get_nodes', parsed.error, args)) };
   const input = parsed.data;
   if(input.memory){
     if(!deps.knowledge.memory)return {answer:errorAnswer('get_nodes',[unavailable()])};
