@@ -1,3 +1,4 @@
+import { prepareBookingPrefixRegistration, isBookingPrefixRegistration } from './booking-prefix-registration.ts';
 import { adoptUnregisteredPrefixes } from './test-environment-adoption.ts';
 import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
 import { prepareTestEnvironmentRegistration } from './test-environment-registration.ts';
@@ -29,11 +30,13 @@ export interface TestEnvironmentOwnership {
   prefixes: readonly { prefix: string; owner: string }[];
   resources: readonly { key: string; owner: string }[];
 }
-export type TestEnvironmentEntry = TestEnvironment & { isTestEnvironment: boolean };
+export type TestEnvironmentEntry = TestEnvironment & { isTestEnvironment: boolean; isBookingPrefix: boolean };
+export type BookingPrefixEntry = TestEnvironmentEntry & { isTestEnvironment: false; isBookingPrefix: true };
 export interface TestEnvironmentResolution { environments: TestEnvironment[]; unregistered: TestEnvironment[] }
 export interface TestEnvironments {
   list(by: Principal, tx?: Transaction): Promise<TestEnvironmentEntry[]>;
   get(by: Principal, id: string, tx?: Transaction): Promise<TestEnvironmentEntry | null>;
+  registerBookingPrefix(by: Principal, input: { prefix: string; owner: string }, tx?: Transaction): Promise<BookingPrefixEntry>;
   register(by: Principal, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
   update(by: Principal, id: string, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
   remove(by: Principal, id: string, tx?: Transaction): Promise<void>;
@@ -103,7 +106,7 @@ export class RecordTestEnvironments implements TestEnvironments {
     return this.store.withTransaction(async tx => {
       const permission = await this.reader(by, tx);
       if (!permission.user || permission.user.disabled || permission.user.deleted_at) return [];
-      const values = (await this.catalog(tx)).map(value => ({ ...value, isTestEnvironment: value.target !== null }));
+      const values = (await this.catalog(tx)).map(value => ({ ...value, isTestEnvironment: value.target !== null, isBookingPrefix: isBookingPrefixRegistration(value) }));
       if (isAdmin(permission.user)) return values;
       return values.filter(value => value.isTestEnvironment && value.enabled && [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, value.id))));
     }, outer);
@@ -114,7 +117,8 @@ export class RecordTestEnvironments implements TestEnvironments {
     return this.store.withTransaction(async tx => {
       const matches = (await this.catalog(tx)).filter(environment => keys.every(value => covers(environment, value)));
       const environments = matches.filter(value => value.target !== null);
-      const unregistered = matches.filter(value => value.target === null);
+      const unregistered = matches.filter(isBookingPrefixRegistration);
+      if (matches.some(value => value.target === null && !isBookingPrefixRegistration(value))) throw new IntegrityError('所需键的目标或责任归属尚未核对；不能当成普通预订前缀');
       for (const environment of environments) await this.validateExecutors(environment, tx);
       return { environments, unregistered };
     }, outer);
@@ -136,6 +140,25 @@ export class RecordTestEnvironments implements TestEnvironments {
   }
   private unique(environment: TestEnvironment, values: readonly TestEnvironment[]) {
     if (values.some(value => value.id !== environment.id && (environment.name !== null && value.name === environment.name || environment.target !== null && value.target === environment.target))) throw new ConflictError('测试环境的名字或目标已经登记');
+  }
+  async registerBookingPrefix(by: Principal, input: { prefix: string; owner: string }, outer?: Transaction): Promise<BookingPrefixEntry> {
+    return withEnvironmentPermissionLock(this.store, async tx => {
+      await this.leaseLock(tx);
+      const actor = await this.admin(by, tx);
+      const environment = prepareBookingPrefixRegistration(input, await this.at(tx));
+      await this.validateOwners(environment, tx);
+      const values = await this.catalog(tx);
+      for (const value of values) {
+        const same = value.prefixes.find(row => row.prefix === input.prefix);
+        if (same) {
+          if (!isBookingPrefixRegistration(value) || same.owner !== input.owner) throw new ConflictError('这个前缀已登记为测试环境或属于另一责任人');
+          return { ...value, isTestEnvironment: false, isBookingPrefix: true };
+        }
+        if (value.prefixes.some(row => row.prefix.startsWith(input.prefix) || input.prefix.startsWith(row.prefix))) throw new ConflictError('预订前缀不能与已有登记互相包含');
+      }
+      await this.write(actor, environment, tx);
+      return { ...environment, isTestEnvironment: false, isBookingPrefix: true };
+    }, outer);
   }
   async register(by: Principal, input: TestEnvironmentInput, outer?: Transaction): Promise<TestEnvironment> {
     return withEnvironmentPermissionLock(this.store, async tx => {
@@ -254,7 +277,7 @@ export class RecordTestEnvironments implements TestEnvironments {
         const matches = [...environments, ...added].filter(value => value.target !== null && value.resources.some(row => row.key.startsWith(registration.prefix)));
         if (matches.length === 1 && added.includes(matches[0])) matches[0].prefixes.push(registration);
         else if (matches.length === 1 && matches[0].prefixes.some(row => row.prefix === registration.prefix && row.owner === registration.owner && row.registered_at === registration.registered_at)) continue;
-        else added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: null, target: null, prefixes: [registration], resources: [], executors: [], enabled: true, missing_facts: ['原前缀登记没有唯一可核对的目标归属', '原登记尚未提供测试环境名字'] }));
+        else added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: null, target: null, prefixes: [registration], resources: [], executors: [], enabled: true, missing_facts: [] }));
       }
       for (const environment of added) {
         this.unique(environment, environments);
