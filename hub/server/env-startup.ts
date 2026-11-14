@@ -1,5 +1,5 @@
 // Startup observes durable conversion facts; a failed observation never authorizes legacy environment use.
-import { isAdmin, type Principal, type RecordsKit } from '../records/api.ts';
+import { isAdmin, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import { deploymentKeyService, fileOperatorTokens, type OperatorTokenStore } from './assemble/operator-token.ts';
 
@@ -13,7 +13,7 @@ export interface EnvironmentPermissionStartup {
 
 /** The records owner supplies verified absence/history and the atomic, actor-rechecking writer. */
 export interface EnvironmentPermissionStartupPort {
-  read(): Promise<{ completed: boolean | null }>;
+  read(tx?: Transaction): Promise<{ completed: boolean | null }>;
   convert(actor: Principal): Promise<void>;
 }
 
@@ -75,7 +75,7 @@ export function environmentStartupAuthority(
 /** The public records service verifies history and rechecks the delegate inside its own conversion transaction. */
 export function recordsEnvironmentPermissionStartup(records: RecordsKit): EnvironmentPermissionStartupPort {
   return {
-    read: () => records.testEnvironments.inheritance(),
+    read: tx => records.testEnvironments.inheritance(tx),
     convert: async actor => {
       const { environmentPermissionSources } = await import('./env-permission-sources.ts');
       await records.testEnvironments.inherit(actor, environmentPermissionSources());
