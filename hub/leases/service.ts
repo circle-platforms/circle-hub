@@ -10,8 +10,9 @@ import { createRecordStore, type RecordStore, type ActionBody, type Page, type S
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/api.ts';
+import { ownsLeaseKeys, registrationsOf, type LeaseOwnership, type LeaseOwnershipCatalog } from './ownership.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
-import { LeaseRegistrationDetail, LeaseDetail } from '../../contracts/src/records.ts';
+import { LeaseDetail } from '../../contracts/src/records.ts';
 
 /** The holder of a lease: the user and the run (a lease is held by a run, D04 R[0]). */
 export interface Holder {
@@ -54,10 +55,9 @@ export interface HolderSnapshot {
   expires_at: string | null;
 }
 
-export type RegistrationOutcome = { ok: true; prefix: string; owner: string } |
-  { ok: false; code: 'LEASE_UNAVAILABLE'; message: string };
-
 export interface ServiceOptions {
+  /** Required by production wiring; the single environment catalog supplies current cleanup responsibilities. */
+  catalog?: LeaseOwnershipCatalog;
   /** The clock the service reads (never Date.now of the process); default: the database clock. */
   now?: () => Promise<Date>;
   /** The configured records store, sharing the lease transaction; defaults to the standard record limit. */
@@ -92,9 +92,11 @@ export class LeaseService {
   readonly #db: Database;
   readonly #now: (tx?: PgTransaction) => Promise<Date>;
   readonly #records: RecordStore;
+  readonly #catalog: LeaseOwnershipCatalog | undefined;
 
   constructor(db: Database, options: ServiceOptions = {}) {
     this.#db = db;
+    this.#catalog = options.catalog;
     this.#records = options.records ?? createRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
     this.#now = options.now ?? (async (tx?: PgTransaction) => (await db.query<{ now: Date }>('SELECT clock_timestamp()::timestamptz AS now',[],tx)).rows[0]!.now);
   }
@@ -155,53 +157,15 @@ export class LeaseService {
   }
 
 
-  /** Ownership changes are serialized with acquisition so unregister cannot race a new holder. */
-  async register(input: { prefix: string; declaredPrefix: string; owner: string; by: string; reason: string; admin?: boolean }): Promise<RegistrationOutcome> {
-    const { prefix } = input;
-    if (!KEY.test(prefix) || !prefix.endsWith('/') || !input.declaredPrefix.endsWith('/') ||
-        !prefix.startsWith(input.declaredPrefix) || prefix === input.declaredPrefix) {
-      return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记的键前缀须以 / 结尾，严格位于声明前缀下，不能等于声明前缀' };
-    }
-    if (!isId('usr', input.owner) || !input.reason.trim() || (!input.admin && input.owner !== input.by)) {
-      return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记须写有效用户和理由，普通用户只能登记给自己' };
-    }
-    return this.#db.transaction(async tx => {
-      await this.#ownershipLock(tx);
-      const existing = await this.#db.query<{prefix:string;owner:string}>(
-        'SELECT prefix, owner FROM lease_registrations WHERE starts_with(prefix,$1) OR starts_with($1,prefix) ORDER BY prefix', [prefix], tx);
-      if (existing.rows.some(r => r.prefix !== prefix)) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记前缀不能和已有登记互相包含' };
-      const previous = existing.rows[0]?.owner ?? null;
-      if (previous && !input.admin) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀已经有主人' };
-      const now = await this.#nowIn(tx);
-      await this.#db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3) ON CONFLICT(prefix) DO UPDATE SET owner=excluded.owner, registered_at=excluded.registered_at', [prefix,input.owner,now],tx);
-      await this.#registrationAction(tx, 'register', prefix, input.owner, previous, input.by, input.reason, now);
-      return { ok: true, prefix, owner: input.owner };
-    });
+  /** Trusted ownership projection from the single environment catalog; never consult the retired table. */
+  async registrations(prefix: string, tx?: Transaction): Promise<Array<{ prefix: string; owner: string }>> {
+    return registrationsOf(await this.#ownership(tx), prefix);
   }
 
-  async unregister(input: { prefix: string; by: string; reason: string; admin?: boolean }): Promise<RegistrationOutcome> {
-    if (!input.reason.trim()) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '注销须写理由' };
-    return this.#db.transaction(async tx => {
-      await this.#ownershipLock(tx);
-      const registered = await this.#db.query<{owner:string}>('SELECT owner FROM lease_registrations WHERE prefix=$1 FOR UPDATE',[input.prefix],tx);
-      const owner = registered.rows[0]?.owner;
-      if (!owner || (!input.admin && owner !== input.by)) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀不能由你注销' };
-      const now = await this.#nowIn(tx);
-      const held = await this.#db.query('SELECT 1 FROM leases WHERE starts_with(key,$1) AND released_at IS NULL AND (expires_at IS NULL OR expires_at>$2) LIMIT 1',[input.prefix,now],tx);
-      if (held.rows.length) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀还有未释放的租约，先强制释放，或等它释放' };
-      await this.#db.query('DELETE FROM lease_registrations WHERE prefix=$1',[input.prefix],tx);
-      await this.#registrationAction(tx, 'unregister', input.prefix, owner, owner, input.by, input.reason, now);
-      return { ok: true, prefix: input.prefix, owner };
-    });
-  }
-
-  /** Trusted ownership rows; the run boundary strips owners that its viewer cannot see. */
-  async registrations(prefix: string): Promise<Array<{ prefix: string; owner: string }>> {
-    return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations WHERE starts_with(prefix,$1) ORDER BY prefix',[prefix])).rows;
-  }
-
-  private async registrationsForTransaction(tx: PgTransaction): Promise<Array<{prefix:string;owner:string}>> {
-    return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations',[],tx)).rows;
+  // This read must not acquire the environment boundary after the lease mutation lock.
+  async #ownership(tx?: Transaction): Promise<LeaseOwnership> {
+    if (!this.#catalog) throw new Error('测试环境登记目录尚未接入，当前不能核对责任归属');
+    return this.#catalog.ownership(tx);
   }
 
   /** Serialize reservation insertion and guarded release; never hold this lock across network I/O. */
@@ -211,15 +175,6 @@ export class LeaseService {
 
   async #ownershipLock(tx: PgTransaction): Promise<void> {
     await this.#db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx);
-  }
-
-  async #registrationAction(tx: PgTransaction, op: Extract<LeaseOp, 'register' | 'unregister'>, prefix: string, owner: string, previous: string | null, by: string, reason: string, now: Date): Promise<void> {
-    const detail = LeaseRegistrationDetail.parse({ op, prefix, owner, previous_owner: previous, by, reason });
-    const time = now.toISOString();
-    const body: ActionBody = { action: 'lease', run: null, item: null, inputs: [prefix], component: 'leases@1',
-      lease: null, started_at: time, ended_at: time, result: 'completed', error_code: null, acceptance: null, codes: [], detail };
-    await this.#records.put<ActionBody>({kind:'action',schema:RECORD_SCHEMAS.action,provenance:'observed',created_at:time,body,
-      index:[{key:'action.kind',value:'lease'},{key:'lease.prefix',value:prefix}]},tx);
   }
 
   /** Extends the lease of every key for its holder by ttlSeconds from the service's own clock, inside the cumulative cap. */
@@ -238,8 +193,8 @@ export class LeaseService {
     return this.#db.transaction(async (tx) => {
       await this.#ownershipLock(tx);
       if (input.owner) {
-        const registered = await this.registrationsForTransaction(tx);
-        if (!input.keys.every(key=>registered.some(row=>row.owner===input.owner && key.startsWith(row.prefix)))) return {ok:false,code:'LEASE_UNAVAILABLE',message:'这些键不在你登记的前缀下'};
+        const ownership = await this.#ownership(tx);
+        if (!ownsLeaseKeys(ownership, input.owner, input.keys)) return {ok:false,code:'LEASE_UNAVAILABLE',message:'这些租约键不属于当前账户负责的测试环境，不能强制释放'};
       }
       // Rows are read FOR UPDATE so a concurrent extend of the same key waits, and every row is present.
       const rows = await this.#rowsLocked(input.keys, tx);
