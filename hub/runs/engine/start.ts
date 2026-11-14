@@ -199,7 +199,7 @@ async function checkEnvironmentKeys(ctx:EngineContext,user:Principal,environment
   }
 
 function rethrowBoundaryRefusal(error:unknown):void {
-  if(error instanceof EffectBoundaryError)throw new Refusal([protocolError(error.failure.code,error.failure.message,{fix:error.failure.fix})]);
+  if(error instanceof EffectBoundaryError)throw new Refusal([protocolError(error.failure.code,error.failure.message,{fix:error.failure.fix,...(error.failure.grounds?{grounds:error.failure.grounds}:{})})]);
 }
 
 export async function askClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, asks: ReadonlyArray<DeviceHelpTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {

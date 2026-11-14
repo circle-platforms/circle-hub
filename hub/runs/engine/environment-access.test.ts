@@ -190,3 +190,21 @@ test('a final device permission refusal cannot be swallowed into an unknown devi
   await assert.rejects(askClaims(ctx,actor,workflow,[{inventory:'a'.repeat(64),device:'/devices/0',label:'合成设备',line:'help',keys:['meadow/allowed']}],run,undefined,'synthetic-trace'),unavailable);
   assert.equal(asks,1);
 });
+
+
+test('later device permission refusal preserves earlier observation references in the tool error',async()=>{
+  const {ctx}=fixture(true,async()=>null);
+  const reference='src:'+'f'.repeat(64);
+  const fact='测试环境的权限核对现在不能进行，后续请求没有执行；此前观察记录保留';
+  ctx.deps.observations={latest:async()=>[],observe:async()=>({observed:[],missing:null}),ask:async()=>{
+    throw new EffectBoundaryError({ok:false,clause:1,code:'ENVIRONMENT_PERMISSION_UNAVAILABLE',message:fact,fix:'请联系管理员；先前尝试按原请求核对，不要盲目重试',grounds:[reference]});
+  }};
+  let errors:ProtocolError[]=[];
+  try{await askClaims(ctx,actor,workflow,[{inventory:'a'.repeat(64),device:'/devices/0',label:'合成设备',line:'help',keys:['meadow/allowed']}],run,undefined,'synthetic-trace');}
+  catch(error){assert.ok(error instanceof Refusal);errors=error.errors;}
+  assert.equal(errors[0].message,fact);
+  assert.deepEqual(errors[0].grounds,[reference]);
+  const text=toolText('start_run',{call_result:'error',errors},{caller:{role:'user'}});
+  assert.ok(text.includes('后续请求没有执行'));
+  for(const wrong of ['这次没有执行','原因缺资料','状态未知'])assert.equal(text.includes(wrong),false);
+});
