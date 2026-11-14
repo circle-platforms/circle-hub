@@ -140,7 +140,8 @@ test('a later vault set survives a revocation audit committed afterwards', async
     kit.vault.unsetSecret = async (name, by, at) => {
         const result = await unset(name, by, at);
         interposed = true;
-        await kit.variables.setSecrets(admin, [{ name, value: later }], 'DEMO_LATER');
+        // Interleave the independent vault write before the revocation audit commits.
+        await kit.vault.putSecret({ name, value: later, digest_rule: 'plain', set_by: by, set_at: at, reason: 'DEMO_LATER' });
         return result;
     };
     await kit.variables.unsetSecret(admin, 'DEMO_AUTH', 'DEMO_WITHDRAW');
@@ -148,4 +149,6 @@ test('a later vault set survives a revocation audit committed afterwards', async
     const [latest] = await kit.variables.readSecrets([{ name: 'DEMO_AUTH' }]);
     assert.ok(latest.value === later);
     assert.equal(latest.version, 2);
+    const audit = await kit.store.find<import('./api.ts').AuthorizationRecord['body']>({ kind: 'authorization', key: 'authz.key', value: 'resource_config|*|secret:DEMO_AUTH', newestFirst: true, limit: 1 });
+    assert.equal(audit.items[0]?.body.revoked, true, 'the later vault version remains current despite the committed revocation audit');
 });
