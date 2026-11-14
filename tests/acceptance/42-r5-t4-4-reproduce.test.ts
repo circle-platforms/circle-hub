@@ -167,7 +167,7 @@ test('T4-4 synthetic reproduction: ticket, bed search, observation quotes, lease
   const booking = booked.out.run?.run;
   assert.ok(booking);
   assert.match(booked.text, /测试环境 orbit-bed\/orbit0，构建 /);
-  assert.match(booked.text, new RegExp(`orbit-bed/orbit0，构建 ${ticketBuild}，读取时间 \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}；状态已确认；决定者程序`));
+  assert.match(booked.text, new RegExp(`orbit-bed/orbit0，构建 ${ticketBuild}，读取时间 \\d{2}-\\d{2} \\d{2}:\\d{2}（UTC[+-]\\d+(?::\\d{2})?）；状态已确认；决定者程序`));
   assert.ok(gateway.calls.some((call) => call.params.name === 'inspect_seat' && (call.params.arguments as Record<string, unknown>).command === 'inspect version'));
   assert.ok(!gateway.calls.some((call) => call.params.name === 'send_blob'), 'nothing is dispatched');
 

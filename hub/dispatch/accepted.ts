@@ -10,7 +10,7 @@ import { callErrorCategory, formatCallError } from '../../contracts/generated/pr
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
-import { toolLocalMinute } from '../tool-time.ts';
+import { toolLocalMinute } from '../telemetry/api.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 

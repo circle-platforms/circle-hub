@@ -4,7 +4,7 @@
 import { QualifierMarkSchema, type Reason } from '../../../contracts/generated/vocabulary.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { DeviceHelpPosition, DeviceHelpResult, DeviceObservation } from '../../../contracts/src/pack.ts';
-import { toolLocalMinute } from '../../tool-time.ts';
+import { toolLocalMinute } from '../../telemetry/api.ts';
 
 const PROBE_RULE = 'dispatch.version_probe@1';
 const OBSERVE_RULE = 'runs.observe_devices@1';

@@ -216,12 +216,16 @@ describe('scenario 1: a normal review', () => {
       const id = item.fields.autoid;
       const name = `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${item.label}`;
       const line = lines[index];
-      assert.ok(line.startsWith(name + '，'), line);
-      assert.match(line, /；状态未知；/);
+      assert.ok(line.startsWith(name + '：'), line); // 决定 20:32：结论句编号与陈述之间用冒号
       assert.match(line, /；原因.+；下一步.+；决定者/);
       const checked = itemsOf(result).find(entry => entry.item.item === item.id)!.item;
-      if (checked.requirements.some(requirement => requirement.unsatisfied_reason === 'outcome_mismatch')) assert.match(line, /；判断错误；/);
-      else assert.doesNotMatch(line, /；判断正确；|；判断错误；/);
+      // 06:48：程序能确定的错误行写「状态已确认；判断错误」；未知仍写「状态未知」、不带判断词
+      if (checked.requirements.some(requirement => requirement.unsatisfied_reason === 'outcome_mismatch')) {
+        assert.match(line, /；状态已确认；判断错误；/);
+      } else {
+        assert.match(line, /；状态未知；/);
+        assert.doesNotMatch(line, /；判断正确；|；判断错误；/);
+      }
     }
     assert.ok(receiptText.startsWith('脚本合并已核对。\n'), receiptText.slice(0, 200));
     assert.doesNotMatch(receiptText, /回执：|分区：|本层不适用|静态：|动态：|rec:|src:/);

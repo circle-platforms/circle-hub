@@ -148,7 +148,7 @@ describe('scenario 16: whole review of ~150-node agile mind map with linked expe
     assert.ok(!submitAnswer.text.includes('个字符为限'), 'nothing left out for a budget');
     const conclusions=submitAnswer.text.split('\n').filter(line=>line.startsWith('原始用例 '));
     assert.equal(conclusions.length,95,'every original case has one conclusion');
-    for (const it of bigRun.items) assert.ok(conclusions.some(line=>line.startsWith(`原始用例 ${it.label}，`) && line.includes('；状态未知；')), `${it.label} is in the answer`);
+    for (const it of bigRun.items) assert.ok(conclusions.some(line=>line.startsWith(`原始用例 ${it.label}：`) && line.includes('；状态未知；')), `${it.label} is in the answer`);
     const result=resultOf(submitAnswer);
     assert.deepEqual(Object.values(result.partitions).flat().map(item=>item.item).sort(),bigRun.items.map(item=>item.id).sort(),'the complete machine-readable result retains every original item id');
     const counts=submitAnswer.out.counts!;

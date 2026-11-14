@@ -4,7 +4,7 @@ import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, label
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
 import { EXIT_NOT_RECORDED, isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
-import { toolLocalMinute } from '../tool-time.ts';
+import { toolLocalMinute } from '../telemetry/api.ts';
 
 type DisplayLabel = (typeof DISPLAY_ORDER)[number];
 
