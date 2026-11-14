@@ -11,6 +11,12 @@ export interface UpgradeStartupDecision {
   problems: string[];
   nextActions: string[];
 }
+export function environmentUpgradeNextActions(): string[] {
+  return [
+    '以现有操作令牌对应的启用管理员执行 circle-hub upgrade preview --owner-role <数据库拥有者> --json，保存预检JSON',
+    '预检可应用后执行 circle-hub upgrade apply --preview <预检JSON文件> --expected-snapshot <该JSON的sha256> --owner-role <数据库拥有者>，然后重新启动本版本',
+  ];
+}
 export function upgradeStartupDecision(observation: UpgradeStartupObservation): UpgradeStartupDecision {
   const result: UpgradeStartupDecision = { canServe: false, enforceEnvironmentAssignments: false, problems: [], nextActions: [] };
   if (observation.compatibility.status !== 'compatible' || observation.compatibility.compatible !== true) {
@@ -19,8 +25,7 @@ export function upgradeStartupDecision(observation: UpgradeStartupObservation): 
   }
   if (observation.environmentAssignmentCompleted !== true) {
     result.problems.push(observation.environmentAssignmentCompleted === false ? '运行环境保权升级尚未完成；未启用新守卫、未启动业务' : '运行环境保权完成事实不可读取；不能当作已完成');
-    result.nextActions.push('以现有操作令牌对应的启用管理员执行 circle-hub upgrade preview --owner-role <数据库拥有者> --json，保存预检JSON');
-    result.nextActions.push('预检可应用后执行 circle-hub upgrade apply --preview <预检JSON文件> --expected-snapshot <该JSON的sha256> --owner-role <数据库拥有者>，然后重新启动本版本');
+    result.nextActions.push(...environmentUpgradeNextActions());
   }
   if (!result.problems.length) { result.canServe = true; result.enforceEnvironmentAssignments = true; }
   return result;
