@@ -167,7 +167,13 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   const { status } = job;
   const diagnostics = statusDiagnostics(job, administrative);
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '上机验证结果未知' : '进行中';
-  const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
+  const refusalCategory = status.error_code==='SOURCE_UNAVAILABLE' ? null : status.error_code==='LEASE_UNAVAILABLE'||status.error_code==='LEASE_EXPIRED'||status.error_code==='FENCING_STALE'||status.error_code==='IDEMPOTENCY_MISMATCH' ? '已被占用'
+    : status.error_code==='SOURCE_NOT_PERMITTED'||status.error_code==='EFFECT_RELEASE_UNMET'||status.error_code==='EFFECT_NOT_ALLOWED'||status.error_code==='BOUNDARY_POLICY_DENIED'||status.error_code==='PACK_POLICY_DENIED' ? '无权限'
+    : status.error_code==='EFFECT_PARAMETER_OUT_OF_RANGE'||status.error_code==='SUBMISSION_SCHEMA_VIOLATION' ? '参数无效'
+    : status.error_code==='SOURCE_ABSENT' ? '不存在'
+    : status.error_code==='SOURCE_RETRYABLE'||status.error_code==='SOURCE_READ_FAILED'||status.not_sent&&status.failed_conditions?.length ? '暂时不可用' : null;
+  const memberRefusal = !administrative && job.ended==='done' && status.outcome==='not_dispatched' && !status.frozen && refusalCategory;
+  const parts = [administrative ? `作业 ${job.job}：${state}（阶段 ${status.phase}）` : memberRefusal ? `${refusalCategory}：本次上机验证未发出（${state}）` : `上机验证${state}`, `${labelOf('effect_outcome', status.outcome)}`];
   if (status.outcome === 'target_rejected' && status.rejection_stage) parts.push(`目标在“${status.rejection_stage}”阶段拒绝`);
   // The id the Hub asks the target about: told only while the answer is missing, where it is what an administrator needs.
   if (administrative && (job.ended === 'unknown' || status.frozen) && status.request_id) parts.push(`请求号 ${status.request_id}`);
@@ -178,8 +184,8 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
     : `结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   if (administrative && status.reason) parts.push(`原因：${status.reason}`);
   if (administrative) parts.push(...details(status));
-  else if (diagnostics.missing_facts.length) parts.push(`原因：${diagnostics.missing_facts.map(fact => fact.fact).join('；')}`);
-  const next = administrative ? diagnostics.next_action : diagnostics.missing_facts.length && status.member_missing_facts?.length ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job, '');
-  parts.push(retried ? '这次重交 Hub 已再试，见后面的条目' : `下一步：${next}`);
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: clip(parts.join('；')) };
+  else if (diagnostics.missing_facts.length) parts.push(diagnostics.missing_facts.map(fact => fact.fact).join('；'));
+  const next = administrative ? diagnostics.next_action : job.ended==='unknown'||status.frozen||status.outcome==='unknown' ? nextStep(job, '') : diagnostics.missing_facts.length && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job, '');
+  parts.push(retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : `下一步：${next}`);
+  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: clip(parts.join(memberRefusal ? '。' : '；')) };
 }
