@@ -35,7 +35,8 @@ import type { Principal, User } from '../records/api.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import type { PackVersionInfo } from '../runs/api.ts';
 import type { TemporaryPostgres } from '../testing/postgres.ts';
-import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
+import type { TestRecordsKit } from '../testing/records.ts';
+import { openAssemblyRuntimeRecords } from './assemble/testing-runtime-records.ts';
 import type { HubApp, ServerDeps } from './api.ts';
 import { createApp } from './app.ts';
 import { removeTree } from './assemble/files.ts';
@@ -212,7 +213,7 @@ export async function createTestHub(options: TestHubOptions = {}): Promise<TestH
   const scratch = await mkdtemp(join(tmpdir(), 'circle-hub-testhub-'));
   let records: TestRecordsKit;
   try {
-    records = await openTestRecords({ postgres: options.postgres, now: options.now, limits: options.limits });
+    records = await openAssemblyRuntimeRecords({ postgres: options.postgres, now: options.now, limits: options.limits });
   } catch (error) {
     await removeTree(scratch);
     throw error;
