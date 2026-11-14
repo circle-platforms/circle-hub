@@ -77,7 +77,10 @@ export async function observeDevices(this: DeviceContext, by: Principal, run: st
       }
       for (const seat of seats) pending.delete(`${d.manifest_sha256}#${seat.manifest.device}`);
     }
-    for (const t of pending.values()) problems.push(`${t.label}：没有绑定同一份清单、指向这台设备的执行器版本探针`);
+    const uncovered = [...pending.values()].map((t) => t.label);
+    if (uncovered.length) {
+      problems.push(`${uncovered.join('、')} 共 ${uncovered.length} 台不接收命令，未读取构建版本`);
+    }
     return { observed, missing: problems.length ? problems.join('；') : null };
   }
 

@@ -4,6 +4,7 @@ import { DYNAMIC_TERMINAL, LAYER, STATIC_TERMINAL, axisLabel, axisUiLabel, label
 import type { Claim } from '../../contracts/src/claim.ts';
 import type { Coverage } from '../../contracts/src/common.ts';
 import { EXIT_NOT_RECORDED, isUnknownTerminal, type LayerResult, type RequirementResult } from '../../contracts/src/validation.ts';
+import { toolLocalMinute } from '../telemetry/api.ts';
 
 type DisplayLabel = (typeof DISPLAY_ORDER)[number];
 
@@ -45,7 +46,7 @@ const fieldsOf = ({ of: labelOf }: Labels) => ({
       c.qualifier.source_role && labelOf('source_role', c.qualifier.source_role),
       ...c.qualifier.marks.map((mark) => labelOf('qualifier_mark', mark)),
       coverageText(c.qualifier.coverage),
-      c.qualifier.collected_at && `采集于 ${c.qualifier.collected_at}`,
+      c.qualifier.collected_at && `采集于 ${toolLocalMinute(c.qualifier.collected_at)}`,
       c.qualifier.control && labelOf('control', c.qualifier.control),
       c.qualifier.discriminating_power && labelOf('discriminating_power', c.qualifier.discriminating_power),
     ]),

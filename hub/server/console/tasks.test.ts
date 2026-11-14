@@ -35,6 +35,9 @@ test('bounded summary loading keeps unavailable and unknown outcomes honest and 
  const rows=await loadTasks(ctx,input);assert.equal(rows.length,12);assert.equal(legacyReads,0);
  for(const index of [1,2]){assert.equal(rows[index].pending,0);assert.equal(rows[index].result,null);assert.match(String(resultCell(rows[index])),/未知/);}
  assert.equal(rows[0].result,'awaiting');assert.equal(rows[3].result,'delivered_pending');assert.equal(rows[3].pending,1);
+ assert.match(String(resultCell({...rows[0],lastActivityAt:'2026-11-14T05:00:00.000Z'})),/还没有提交结果（最近一次活动/);
+ assert.match(String(resultCell({...rows[0],lastActivityAt:'2026-11-14T05:00:00.000Z'})),/data-local-minute/);
+ assert.doesNotMatch(String(resultCell(rows[3])),/还没有提交结果/);
  delete ctx.deps.runs.getRunSummary;ctx.deps.runs.getRun=async(_user,id)=>{legacyReads++;return {...summary(input.find(run=>run.run===id)!),submissions:[],results:[]};};
  const legacy=await loadTasks(ctx,input);assert.equal(legacyReads,12);assert.deepEqual(legacy.map(row=>row.run.run),input.map(run=>run.run));
  assert.deepEqual(await loadTasks(ctx,[]),[]);
