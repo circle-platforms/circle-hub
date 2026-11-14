@@ -427,6 +427,11 @@ test('an unreadable environment permission port is unavailable, not a negative p
 
 test('a verified submission without booking reports authorized environment facts without raw lease keys',async t=>{
   const c=await setup({mode:'lineage'});t.after(()=>c.close());
+  const readStatus=c.service.status.bind(c.service);
+  t.mock.method(c.service,'status',async (...args:Parameters<typeof readStatus>)=>{
+    const status=await readStatus(...args);
+    return {...status,job_facts:{...status.job_facts,reason:'diagnostic with private keys '+c.executor.definition.resources.join(' ')}};
+  });
   let observed: Attempted | undefined;
   const original=c.service.dispatchAccepted.bind(c.service);
   t.mock.method(c.service,'dispatchAccepted',async (...args:Parameters<typeof original>)=>{observed=await original(...args);return observed;});
@@ -441,7 +446,7 @@ test('a verified submission without booking reports authorized environment facts
   assert.ok(note.job_facts);assert.equal(note.dispatch_attempt,undefined);
   assert.deepEqual(note.run_facts?.scope,{run:c.run});assert.equal(note.run_facts?.worker_settled,true);
   for(const key of c.executor.definition.resources)assert.ok(!JSON.stringify(note).includes(key));
-  assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|原因.*未查清/);
+  assert.doesNotMatch(JSON.stringify(note),/diagnostic with private keys|usr_|exe_|原因.*未查清/);
   assert.equal(c.calls.length,0);
 });
 

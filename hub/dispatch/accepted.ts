@@ -47,7 +47,7 @@ async function jobNote(service: DispatchService, job: RunJob, admin: string, ret
   const facts = [...note.job_facts?.missing_facts ?? [], ...report.missing_facts].slice(0, 16);
   return { ...note, run: job.verification_run, ...(administrative && job.executor ? { executor: job.executor } : {}),
     job_facts: { ...note.job_facts!, missing_facts: facts },
-    ...(report.no_verdict ? { text: clip(note.text + '；作业结果核对：' + report.missing_facts.map(fact => fact.fact).join('；')) } : {}) };
+    ...(report.no_verdict ? { text: clip(note.text + '。作业结果核对：' + report.missing_facts.map(fact => fact.fact).join('；')) } : {}) };
 }
 
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
@@ -148,8 +148,8 @@ function attemptNext(attempt: DispatchAttemptFacts, job: Pick<RunJob, 'status' |
   const scope = attemptLabel(attempt);
   if (attempt.outcome === 'unknown') return `${scope}上机验证结果未知：目标可能已经执行；不要重交或另开运行重发，联系管理员只读核对；之后原样重交读进展`;
   if (attempt.report_pending) return `${scope}报告尚未取全，原样重交原提交读取进展；不要重新发送`;
-  if (attempt.not_sent === true) return retriable(job) ? `${scope}没有发出，原因消除后可原样重交，Hub会再试一次` : `${scope}没有发出；此前各轮记录保留，本作业不会整份重发，请按各轮结果处理`;
-  if (attempt.outcome === 'target_rejected') return `${scope}被目标拒绝；` + (retriable(job) ? '修正该次拒绝原因后可原样重交' : '此前各轮记录保留，不要整份重发');
+  if (attempt.not_sent === true) return retriable(job) ? `${scope}没有发出，原因消除后可原样重交，Hub会再试一次` : `${scope}没有发出；请按该次缺失事实处理，不自行重新发送`;
+  if (attempt.outcome === 'target_rejected') return `${scope}被目标拒绝；` + (retriable(job) ? '修正该次拒绝原因后可原样重交' : '请读取该次结局并按任务包规程继续，不自行重新发送');
   if (attempt.outcome === 'proven_not_executed') return `${scope}已证明目标没有执行；` + (retriable(job) ? '可原样重交' : '此前各轮记录保留，不要整份重发');
   return `${scope}按该范围的结果引用读取结论，缺结论不当作通过`;
 }
@@ -168,7 +168,8 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   const facts = job.status.job_facts;
   const diagnostics = statusDiagnostics(job, administrative), projected = diagnostics.job_facts, attempt = diagnostics.dispatch_attempt;
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '状态仍待核对' : '进行中';
-  const parts = [administrative ? `作业 ${job.job}：${state}${projected.phase ? `（阶段 ${projected.phase}）` : ''}` : `本上机验证作业${state}`];
+  const jobLabel = projected.operation === 'precheck' ? '本次只读预检作业' : projected.operation === 'conformance' ? '本次一致性核对作业' : projected.operation === 'dispatch' ? '本次上机验证作业' : '本作业';
+  const parts = [administrative ? `作业 ${job.job}：${state}${projected.phase ? `（阶段 ${projected.phase}）` : ''}` : `${jobLabel}${state}`];
   if (projected.operation === 'precheck') parts.push(projected.readonly_verified === true ? '本作业的只读预检条件已核对通过' : '本作业的只读预检条件尚无全部通过的观察');
   if (projected.frozen === true) parts.push('本作业保持重发保护，需按作业记录继续核对');
   if (projected.result) parts.push(`作业结果引用 ${projected.result}；该引用不替代各轮结局`);
@@ -191,5 +192,5 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   if (next) parts.push(`作业下一步：${next}`);
   if (retried) parts.push('本次运行已重新申请上机验证作业，见后面的条目');
   const category = !attempt && projected.admission_error ? invocationCategory(facts) : null;
-  return { job: job.job, ...diagnostics, text: clip(category ? formatCallError(category, parts.join('；'), next ?? '') : parts.join('；')) };
+  return { job: job.job, ...diagnostics, text: clip(category ? formatCallError(category, parts.join('。'), next ?? '') : parts.join('。')) };
 }
