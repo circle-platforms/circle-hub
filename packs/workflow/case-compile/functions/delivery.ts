@@ -457,21 +457,6 @@ export function timeline(outcome: CaseOutcome, excluded: boolean): string {
   return outcome.history.map((h) => `第 ${h.ordinal} 次上机验证${h.audit ? `状态未知，设备输出有执行失败原话“${h.audit.line}”，自动化用例没有检查这一行` : `判断${terminalLabel(h.terminal)}`}`).join('；') + '。';
 }
 
-export interface OutOfScopeCase {
-  autoid: string;
-  title: string | null;
-  inExcluded: boolean;
-  status: 'out_of_scope';
-  statusText: string;
-}
-
-export interface ScopeSummary {
-  file: string;
-  totalPopulation: number;
-  inScope: string[];
-  outOfScope: OutOfScopeCase[];
-}
-
 export interface ReportInput {
   name: string; generatedAt: string; build: string | null;
   assembly: Assembly; notes: Notes; originals: Record<string, Original>; excluded: string[];
@@ -481,7 +466,6 @@ export interface ReportInput {
   /** The pass review: how many markers the contracts declared (null: none declared), passes read, turned into no verdict, and passes with no device words saved. */
   passAudit?: { markers: number | null; read: number; downgraded: number; wordless: number };
   placedLast?: { pass: MovedCase[]; unsuccessful: MovedCase[] };
-  scope?: ScopeSummary;
 }
 const title = (input: ReportInput, autoid: string) => input.originals[autoid]?.title || '标题未知';
 export function closingCounts(cases: CaseOutcome[]): string {
@@ -505,13 +489,6 @@ function head(input: ReportInput): string[] {
     unsuccessful && input.files.unsuccessful ? `自动化用例 Excel unsuccessful_cases.xlsx 包含 ${unsuccessful.items.length} 条仍有错误或未知的原始用例，使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。` : '没有其他自动化用例 Excel。',
   ];
   if (input.build) lines.push(`构建 ${input.build}。`);
-  if (input.scope) {
-    lines.push(
-      input.scope.outOfScope.length
-        ? `交付范围按 ${input.scope.file} 统计：全批 ${input.scope.totalPopulation} 条原始用例中，本次范围内 ${input.scope.inScope.length} 条，范围外 ${input.scope.outOfScope.length} 条（未纳入本次自动化用例 Excel）。`
-        : `交付范围按 ${input.scope.file} 统计：本次纳入全批 ${input.scope.totalPopulation} 条原始用例。`,
-    );
-  }
   for (const moved of [input.placedLast?.pass, input.placedLast?.unsuccessful]) if (moved?.length) lines.push(movedText(moved, new Map(moved.map((row) => [row.autoid, input.originals[row.autoid]?.title ?? ''] as const))));
   const audit = input.passAudit;
   if (audit?.markers === null) lines.push('状态未知。原因缺资料，执行器规则没有说明哪些设备输出表示执行失败；下一步由使用者补齐执行器规则，再核对设备输出。决定者程序。');
@@ -539,12 +516,6 @@ const DELIVERABLES = '自动化用例 Excel：`case.xlsx`、`unsuccessful_cases.
 export function deliveryReport(input: ReportInput): string {
   const lines = [`# 交付报告 — ${input.name}`, `> 生成 ${input.generatedAt}`, '', ...head(input)];
   for (const outcome of input.assembly.cases) lines.push('', ...(outcome.status === 'delivered' ? [caseConclusion(input, outcome)] : section(input, outcome)));
-  if (input.scope?.outOfScope.length) {
-    lines.push('', '## 范围外原始用例', '');
-    for (const item of input.scope.outOfScope) {
-      lines.push(`- 原始用例 ${item.autoid} ${item.title ?? '标题未知'}：${item.statusText}。`);
-    }
-  }
   lines.push('', '---', DELIVERABLES);
   return lines.join('\n') + '\n';
 }

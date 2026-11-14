@@ -5,8 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
-import { parseScopePopulation } from '../functions/scope.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
@@ -14,18 +13,21 @@ import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
-const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false, scope: false } as const;
+const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false } as const;
 function options(argv: string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
-    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) throw new Error('参数写法：--hub --runs --notes --out 必填，--recompose --name --scope 可选，每个只写一次');
+    if (key === 'scope') {
+      throw new Error('参数无效：交付时不允许从本地 --scope 文件收窄范围（范围须在开运行时锚定到运行记录，方案完成前 --scope 不随 3.20.3 开放）。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
+    }
+    if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) throw new Error('参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
     values[key] = argv[i + 1];
   }
   const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
   if (missing.length) {
     throw new Error(
-      `参数无效：缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name --scope 可选，每个只写一次`,
+      `参数无效：缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次`,
     );
   }
   return values;
@@ -79,10 +81,7 @@ function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack
 }
 /** The answer the model gives the person, made here so it holds the counts and paths and nothing else. */
 export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = [], input?: ReportInput): string {
-  const scopeLine = input?.scope && input.scope.outOfScope.length
-    ? [`范围：本次共 ${input.scope.inScope.length} / ${input.scope.totalPopulation} 条原始用例，另有 ${input.scope.outOfScope.length} 条不在本次范围内（详见交付报告）。`]
-    : [];
-  return [`交付目录 ${out}`, ...scopeLine, ...(input ? cases.map((outcome) => caseConclusion(input, outcome)) : [`共 ${totals.cases} 条原始用例。`]), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+  return [`交付目录 ${out}`, ...(input ? cases.map((outcome) => caseConclusion(input, outcome)) : [`共 ${totals.cases} 条原始用例。`]), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
 }
 
 /**
@@ -174,7 +173,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     // The notes are a file the model writes and edits by hand: a break in it is named with its place and the text around it, as
     // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
-    const scopeText = args.scope ? decode(await readSubmittedFileBytes(args.scope, 'scope')) : null;
     await emptyOrAbsent(args.out);
     const origin = hubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
@@ -241,37 +239,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       if (!args.recompose && !population.includes(autoid)) population.push(autoid);
     }
     if (!args.recompose) for (const autoid of excluded) if (!population.includes(autoid)) population.push(autoid);
-    const fullPopulation = population.filter((v, k, all) => all.indexOf(v) === k);
-    let scopeInfo: ScopeSummary | undefined;
-    if (scopeText !== null) {
-      const selection = parseScopePopulation(scopeText, fullPopulation, basename(args.scope));
-      population = selection.inScope;
-      scopeInfo = {
-        file: basename(args.scope),
-        totalPopulation: fullPopulation.length,
-        inScope: selection.inScope,
-        outOfScope: selection.outOfScope.map((autoid) => {
-          const inExcluded = excluded.includes(autoid);
-          return {
-            autoid,
-            title: originals[autoid]?.title ?? null,
-            inExcluded,
-            status: 'out_of_scope' as const,
-            statusText: inExcluded ? '未纳入本次范围（脚本编写运行中已排除，未上机验证）' : '未纳入本次范围（未上机验证）',
-          };
-        }),
-      };
-      const outSet = new Set(selection.outOfScope);
-      for (const d of dispatches) {
-        const stray = d.items.filter((item) => outSet.has(item));
-        if (stray.length) {
-          const named = stray.map((id) => (originals[id]?.title ? `${id}（${originals[id].title}）` : id));
-          throw new Error(`上机验证 ${d.run} 包含范围外的原始用例 ${named.join('、')}；--runs 请只选择本次范围内的上机验证，或更新 --scope 范围文件`);
-        }
-      }
-    } else {
-      population = fullPopulation;
-    }
+    population = population.filter((v, k, all) => all.indexOf(v) === k);
 
     const inputsOf = (plan: RunInputs) => ({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
     const recipesOf = (plan: RunInputs) => satisfiedRecipes(inputsOf(plan));
@@ -396,24 +364,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     if (unproven.length) throw new Error(unproven.join('；'));
     assembly.cases = settled.cases;
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
-    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeInfo ? { scope: scopeInfo } : {}) };
+    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast } };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
       schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, totals: assembly.totals,
-      ...(scopeInfo ? {
-        scope: {
-          file: scopeInfo.file,
-          total_cases: scopeInfo.totalPopulation,
-          in_scope: scopeInfo.inScope,
-          out_of_scope: scopeInfo.outOfScope.map((o) => ({
-            autoid: o.autoid,
-            title: o.title,
-            in_excluded: o.inExcluded,
-            status: o.status,
-            status_text: o.statusText,
-          })),
-        },
-      } : {}),
       dispatches: dispatches.map((d) => ({ run: d.run, job: d.job, plan_run: d.plan_run, sha256: d.sha256, items: d.items })),
       added_runs: added,
       pass_audit: { markers: markerCount, read, downgraded: [...hits.entries()].map(([key, hit]) => { const [run, item] = key.split('\u0000'); return { run, item, where: hit.where, line: hit.line }; }), wordless },

@@ -106,6 +106,23 @@ test('baseline without release/* tags falls back to merge-base with the default 
   }
 });
 
+test('repository with neither release/* tags nor a resolvable default branch fails closed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pack-version-nodefault-'));
+  try {
+    gitIn(root, 'init', '-b', 'topic-a');
+    commitPack(root, '1.0.0', 'one', 'Commit on topic-a');
+    gitIn(root, 'checkout', '-b', 'topic-b');
+    commitPack(root, '1.0.1', 'two', 'Commit on topic-b');
+
+    assert.throws(() => publishedBaseline(root), /cannot determine published baseline: no release\/\* tag or default branch found/);
+    const problems = versionReuseProblems(root);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /cannot determine published baseline: no release\/\* tag or default branch found/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('editing content twice after baseline with a single version bump passes when final manifest matches bytes', () => {
   const root = mkdtempSync(join(tmpdir(), 'pack-version-twice-'));
   try {
