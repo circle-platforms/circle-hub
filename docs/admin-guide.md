@@ -89,7 +89,7 @@ nav_order: 3
 | **通用技能（`skill`）** | **当前不支持按团队分配，且控制台无安装表单**；管理员须在 Hub 主机执行：<br>`./bin/circle-hub pack install <技能ID>@<版本>` | 通用技能仅发布不生效，必须 `install` 精确版本；**一经安装对全站所有成员可见**（如 `mindmap-format` 等 8 个格式技能无团队隔离） |
 | **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队ID>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队ID> \| --all)` | 新建连接默认先不分配；**防坑提醒**：若连接已分给**全体**（`--all`），再追加分配给某团队**不会产生隔离效果**（未加入该团队的成员照样可见可用），且 `4a1fbdee57` 控制台尚无「撤回全体」表单，须在主机执行 `./bin/circle-hub resource unassign <资源ID> --all` |
 | **产品知识库（`product`）** | **当前不支持按团队分配，且控制台仅显示命令指引**；须在 Hub 主机启用整站产品源后，再到控制台 `/console/operations/knowledge` 或 CLI 导入：<br>`./bin/circle-hub pack activate <产品ID>`<br>`./bin/circle-hub knowledge sync --product <产品ID>` | 产品包 `activate` 对**整个 Hub 生效**；必须先在主机 `activate` 后才会出现在知识导入页面下拉里 |
-| **自动化测试环境（`executor` / `bed`）** | 见下节「登记测试环境」：先在主机做好 `doc put bed-topology`、`executor add`、`secret set`、`lease register` 与 `bed baseline record` | **当前权限边界（`4a1fbdee57`）**：Hub 此时尚无「按团队隔离测试环境」守卫，`lease register --owner` 只决定谁能注销和强释；**只要被分配了 `test-bed` 工作流，就能预订清单里的测试环境**（按团队隔离执行器授权与控制态表单正在合入中） |
+| **自动化测试环境（`executor` / `bed`）** | 见下节「登记测试环境」：先在主机做好 `doc put bed-topology`、`executor add --name=<明确名字>`、`secret set`、`lease register` 与 `bed baseline record` | **当前权限边界（`4a1fbdee57`）**：Hub 此时尚无「按团队隔离测试环境」守卫，`lease register --owner` 只决定谁能注销和强释；**只要被分配了 `test-bed` 工作流，就能预订清单里的测试环境**（按团队隔离执行器授权与控制态表单正在合入中） |
 
 ---
 
@@ -171,7 +171,7 @@ printf '%s\n' '<值>' | ./bin/circle-hub var set <变量名> --text --not-secret
 准备好执行器定义 JSON（当前基线无控制台上传表单或下载模板，可参照仓库 `hub/dispatch/testing/` 夹具写法自行整理约 40 个字段：声明目标网关地址、写操作开关、只读版本探针、基线探针、前提认证证据等；若网关采用 `https://` 端点，必须同时配置固定 CA 证书，且若格式被拒时当前 CLI 报错可能不带字段路径，须逐项核对 `endpoint` 与 CA 字段），执行：
 
 ```bash
-./bin/circle-hub executor add <执行器定义.json>
+./bin/circle-hub executor add <执行器定义.json> --name=<管理员明确指定的执行器名字>
 ./bin/circle-hub executor list
 ```
 

@@ -65,10 +65,12 @@ export const NO_ASSIGNMENT_LABEL = '已无分配';
 export const ENVIRONMENT_ASSIGNMENT_PREVIEW =
   '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。';
 
-export function environmentAssignmentPreviewNotice(enforced: boolean): Html {
-  return enforced
-    ? html``
-    : html`<p class="ch-meta" data-environment-assignment-preview>${ENVIRONMENT_ASSIGNMENT_PREVIEW}</p>`;
+export function environmentAssignmentPreviewNotice(enforced: boolean | undefined): Html {
+  if (enforced === true) return html``;
+  if (enforced === false) {
+    return html`<p class="ch-meta" data-environment-assignment-preview>${ENVIRONMENT_ASSIGNMENT_PREVIEW}</p>`;
+  }
+  return html`<p class="ch-meta" data-environment-assignment-preview>测试环境分配校验的启用状态尚未取得；不据此作执行许可。</p>`;
 }
 
 type AssignmentFlags = { assigned?: boolean; can_use?: boolean; canUse?: boolean };
@@ -383,18 +385,18 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  if(ctx.admin&&ctx.deps.dispatch){try{executors=await ctx.deps.dispatch.executors(ctx.principal);}catch{executorsFailed=true;}}
  // Assigned targets for members come from the capability port; administrators group registered executors by target.
  let memberTargets:string[]=[];
- let environmentAssignmentsEnforced=false;
+ let environmentAssignmentsEnforced:boolean|undefined;
  {
   try{
    const capabilities=await ctx.deps.memberCapabilities(ctx.principal);
-   environmentAssignmentsEnforced=capabilities.environmentAccess.enforced === true;
+   environmentAssignmentsEnforced=capabilities.environmentAccess.enforced;
    if(!ctx.admin)memberTargets=[...new Set(capabilities.environments.map(item=>item.name))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
   }catch{memberTargets=[];}
  }
  const readinessTargets=ctx.admin
   ?[...new Set((executors??[]).map(executor=>executor.target))].sort((a,b)=>a.localeCompare(b,'zh-CN'))
   :memberTargets;
- const readinessCards=await loadReadinessReports(ctx.deps.dispatch?.readiness,ctx.principal,readinessTargets);
+ const readinessCards=await loadReadinessReports(ctx.deps.dispatch?.readiness,ctx.principal,readinessTargets,environmentAssignmentsEnforced);
  const systemId=ctx.url.searchParams.get('system'),circleId=ctx.url.searchParams.get('circle'),environmentId=ctx.url.searchParams.get('environment');
  const chosen=resources.find(resource=>resource.id===systemId),circle=circles.find(circle=>circle.token.id===circleId),environment=executors?.find(executor=>executor.id===environmentId);
  if([systemId,circleId,environmentId].filter(Boolean).length>1||systemId&&!chosen||circleId&&!circle||environmentId&&!environment)return neutralPage(ctx);

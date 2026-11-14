@@ -3,6 +3,8 @@ import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForC
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
 import { ExecutorDefinition } from './definition.ts';
+import { ExecutorStableName } from '../../contracts/api.ts';
+import { ExecutorNames } from './executor-names.ts';
 import { ExecutorSource, resolveExecutor, checkedReferences } from './source.ts';
 export { ExecutorSource } from './source.ts';
 export type RegisteredExecutor = {
@@ -67,12 +69,12 @@ export class ExecutorRegistry {
     constructor(records: RecordsKit) { this.records = records; }
     async admin(by: Principal) { const user = await this.records.principals.get(by.id); if (!user || user.disabled || !isAdmin(user))
         throw new Error('只有启用中的管理员能操作执行器和作业'); }
-    async add(by: Principal, input: unknown): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); return this.configure(by, this.validate({ ...input as object, id: newId('exe') })); }
+    async add(by: Principal, input: unknown, name?:string): Promise<RegisteredExecutor> { await this.admin(by); refuseBuildBaseline(input); const explicit=name===undefined?undefined:ExecutorStableName.parse(name);return this.configure(by, this.validate({ ...input as object, id: newId('exe') }),undefined,undefined,explicit); }
     async update(by: Principal, id: string, input: unknown): Promise<RegisteredExecutor> {
         await this.admin(by);
         const current = await this.readSource(id);
         if (!current)
-            throw new Error('执行器对你不可用');
+            throw new Error('执行器对当前账户不可用');
         refuseBuildBaseline(input);
         const source = this.validate({ ...input as object, id });
         const rebind = current.source.target !== source.target || current.source.endpoint !== source.endpoint || current.source.ca !== source.ca || canonicalize([...current.source.resources].sort()) !== canonicalize([...source.resources].sort());
@@ -110,7 +112,7 @@ export class ExecutorRegistry {
         return result;
     }
     async disable(by: Principal, id: string) { await this.admin(by); const current = await this.readSource(id); if (!current)
-        throw new Error('执行器对你不可用'); return this.configure(by, { ...current.source, enabled: false }, undefined, { digest: current.digest, source: current.source, target: current.source.target, rebind: false }); }
+        throw new Error('执行器对当前账户不可用'); return this.configure(by, { ...current.source, enabled: false }, undefined, { digest: current.digest, source: current.source, target: current.source.target, rebind: false }); }
     async readSource(id: string): Promise<{
         id: string;
         digest: string;
@@ -182,7 +184,7 @@ export class ExecutorRegistry {
         throw new Error('执行器源定义不是可规范化的 JSON；核对结构和取值');
     } if (scanForCredentials(bytes).findings.length)
         throw new Error('执行器定义不能含凭据原文；请使用 credential 密钥引用'); return structuredClone(parsed.data); }
-    private async configure(by: Principal, source: ExecutorSource, migration?: SecretWrite, guard?: UpdateGuard): Promise<RegisteredExecutor> {
+    private async configure(by: Principal, source: ExecutorSource, migration?: SecretWrite, guard?: UpdateGuard, name?:string): Promise<RegisteredExecutor> {
         const names = referencesIn(source).filter(ref => ref.kind === 'secret').map(ref => ref.name);
         for (const m of await this.records.variables.recentSecrets(names))
             if (containsSecret(source, m.value))
@@ -191,10 +193,8 @@ export class ExecutorRegistry {
         for (const m of await this.records.variables.recentSecrets(names))
             if (containsSecret(resolved.definition, m.value))
                 throw new Error('解析后的执行器定义不能包含所引用密钥的当前或上一版原文');
-        const stored = await this.records.objects.put(canonicalBytes(source), 'application/json');
-        const pinned = await this.records.objects.put(canonicalBytes(resolved.definition), 'application/json');
         const prepared = migration ? await this.records.variables.prepareSecrets(by, [migration], `从执行器 ${source.id} 迁移来`) : undefined;
-        await this.records.store.withTransaction(async (tx) => {
+        const configured=await this.records.store.withTransaction(async (tx) => {
             await lockExecutorConfiguration(this.records.store, tx, source.id!, [...source.resources, ...(guard?.source.resources ?? [])], [resolved.definition.target, ...(guard ? [guard.target] : [])], [new URL(source.endpoint).origin, ...(guard ? [new URL(guard.source.endpoint).origin] : [])]);
             if (guard) {
                 const current = await this.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|executor.${source.id}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);
@@ -210,11 +210,17 @@ export class ExecutorRegistry {
                 if (rows.items[0]?.body.revoked || rows.items[0]?.digest !== snapshot.get(ref.name))
                     throw new Error('引用的变量在配置时已变；请先 var set 后重做 executor update');
             }
+            const names=name===undefined?undefined:new ExecutorNames(this.records);
+            if(names)await names.checkInTransaction(by,source.id!,name!,tx);
+            const stored=await this.records.objects.put(canonicalBytes(source),'application/json',tx);
+            const pinned=await this.records.objects.put(canonicalBytes(resolved.definition),'application/json',tx);
             if (prepared)
                 await this.records.variables.commitSecrets(by, prepared, tx);
             await this.records.authorizations.configureResourceInTransaction(by, 'executor.' + source.id, stored.sha256, '执行器定义配置', tx);
+            if(names)await names.assignInTransaction(by,source.id!,name!,tx);
+            return {stored,pinned};
         });
-        return { id: source.id!, digest: stored.sha256, source, ...resolved, resolved_digest: pinned.sha256 };
+        return { id: source.id!, digest: configured.stored.sha256, source, ...resolved, resolved_digest: configured.pinned.sha256 };
     }
 }
 export function containsSecret(value: unknown, secret: string): boolean { if (typeof value === 'string')

@@ -58,13 +58,14 @@ describe('scenario 60: a writer asks a booked device what it expects', () => {
     const raw = definition(gateway.endpoint);
     const seats = [{ ...probes.seats[0]!, seat: 'afamx0', manifest: { ...probes.seats[0]!.manifest, device: '/beds/0/devices/0' } }];
     const d = ExecutorDefinition.parse({
-      ...raw, target: 'bed-a', resources: ['bed/bed-a/afamx0'], manifest_sha256: sha,
+      ...raw, target: 'bed-a', resources: ['bed/bed-a/afamx0', 'bed/bed-a/client0'], manifest_sha256: sha,
       allowed_tools: [...raw.allowed_tools, 'inspect_seat', 'ask_position'],
       probes: { ...probes, seats, help: HELP },
       premises: { read_only: { version: '1', evidence: [`src:${proof.body.sha256}`] } },
     });
-    await addSyntheticExecutor(bed.hub.records, bed.hub.hub.dispatch!.registry, bed.hub.admin.principal, d, 'synthetic-help-key');
+    const executor = await addSyntheticExecutor(bed.hub.records, bed.hub.hub.dispatch!.registry, bed.hub.admin.principal, d, 'synthetic-help-key');
     const user = await bed.user('问设备的写手', ['test-bed']);
+    await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal, executor.id, user.user.id);
     client = await bed.connect(user, 'sess-s60');
   });
 

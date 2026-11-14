@@ -119,6 +119,7 @@ export const AXES = {
   source_location_status: { label: '原文定位状态', owner: 'B03', values: [{ code: 'resolved', label: '已定位' }, { code: 'ambiguous', label: '多处匹配' }, { code: 'unresolved', label: '未定位' }] },
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
   reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
+  call_error_category: { label: '调用错误类别', owner: 'D05', values: [{ code: 'invalid_parameters', label: '参数无效' }, { code: 'permission_denied', label: '无权限' }, { code: 'not_found', label: '不存在' }, { code: 'occupied', label: '已被占用' }, { code: 'temporarily_unavailable', label: '暂时不可用' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1283,6 +1284,16 @@ export function isResetScope(value: unknown): value is ResetScope {
   return (RESET_SCOPE as readonly unknown[]).includes(value);
 }
 
+/** 调用错误类别 (D05) */
+export const CALL_ERROR_CATEGORY = ['invalid_parameters', 'permission_denied', 'not_found', 'occupied', 'temporarily_unavailable'] as const;
+export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY)[number];
+export const CALL_ERROR_CATEGORY_LABEL = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies { readonly [K in CallErrorCategory]: string };
+export const CALL_ERROR_CATEGORY_UI = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies { readonly [K in CallErrorCategory]: string };
+export const CallErrorCategorySchema = z.enum(CALL_ERROR_CATEGORY);
+export function isCallErrorCategory(value: unknown): value is CallErrorCategory {
+  return (CALL_ERROR_CATEGORY as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1400,6 +1411,7 @@ export interface AxisValues {
   source_location_status: SourceLocationStatus;
   capacity_unit: CapacityUnit;
   reset_scope: ResetScope;
+  call_error_category: CallErrorCategory;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1519,6 +1531,7 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   source_location_status: SOURCE_LOCATION_STATUS_LABEL,
   capacity_unit: CAPACITY_UNIT_LABEL,
   reset_scope: RESET_SCOPE_LABEL,
+  call_error_category: CALL_ERROR_CATEGORY_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1638,6 +1651,7 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   source_location_status: SOURCE_LOCATION_STATUS_UI,
   capacity_unit: CAPACITY_UNIT_UI,
   reset_scope: RESET_SCOPE_UI,
+  call_error_category: CALL_ERROR_CATEGORY_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

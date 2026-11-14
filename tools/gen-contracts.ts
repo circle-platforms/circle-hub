@@ -32,7 +32,7 @@ type Model = {
   vocabulary: Axis[];
   formatProposals: {
     references: { scheme: string; form: string; example?: string; note?: string }[];
-    protocolCodes: { code: string; when: string; fix: string }[];
+    protocolCodes: { code: string; when: string; fix: string; callErrorCategory: string | null }[];
     recordKinds: string[];
     packFiles: { path: string; content: string; elements: string[] }[];
     displayOrder: string[];
@@ -285,6 +285,9 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
     const vocab = isRecord(axis) ? list(axis.values).map((v) => (isRecord(v) ? String(v.code) : '')) : [];
     if (vocab.join() !== schemes.join()) p.push(`${M}: formatProposals.references schemes [${schemes}] must equal the reference_scheme axis [${vocab}] in order`);
     const protocol: string[] = [];
+    const callErrorAxis = list(model.vocabulary).find(a => isRecord(a) && a.axis === 'call_error_category');
+    if (!isRecord(callErrorAxis)) p.push(`${M}: call_error_category vocabulary axis is required`);
+    const callErrorCategories = new Set(isRecord(callErrorAxis) ? list(callErrorAxis.values).map(v => isRecord(v) ? v.code : undefined) : []);
     list(f.protocolCodes).forEach((c, i) => {
       const at = `${M}: formatProposals.protocolCodes[${i}]`;
       if (!isRecord(c)) {
@@ -294,6 +297,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
       if (typeof c.code !== 'string' || !PROTOCOL_CODE.test(c.code)) p.push(`${at}: code ${JSON.stringify(c.code)} must be UPPER_SNAKE_CASE`);
       if (!isText(c.when) || !CJK.test(c.when)) p.push(`${at} (${String(c.code)}): when must be Chinese text`);
       if (!isText(c.fix) || !CJK.test(c.fix)) p.push(`${at} (${String(c.code)}): fix must be Chinese text`);
+      if (!Object.hasOwn(c, 'callErrorCategory') || c.callErrorCategory !== null && !callErrorCategories.has(c.callErrorCategory)) p.push(`${at} (${String(c.code)}): callErrorCategory must explicitly be null or a call_error_category value`);
       protocol.push(String(c.code));
     });
     if (protocol.length === 0) p.push(`${M}: formatProposals.protocolCodes must be a non-empty array`);
@@ -339,7 +343,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
 }
 
 /** Names the generator itself declares in vocabulary.ts and protocol.ts; index.ts re-exports both with export *. */
-const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'CORE_VIOLATION_CODES', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION'];
+const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'CORE_VIOLATION_CODES', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION', 'CALL_ERROR_CATEGORY_BY_CODE', 'callErrorCategory', 'formatCallError'];
 const FIXED_TYPES = ['AxisName', 'AxisValues', 'ProtocolCode', 'CoreViolationCode', 'RecordKind'];
 
 /** Names the vocabulary module declares; two axes must never render to the same name, nor to a fixed one. */
@@ -406,10 +410,26 @@ function renderVocabulary(model: Model): string {
 
 function renderProtocol(model: Model, codes: Codes): string {
   const out: string[] = [HEADER];
+  out.push("import { labelOf, type CallErrorCategory } from './vocabulary.ts';\n");
   const f = model.formatProposals;
   out.push('export const PROTOCOL_CODES = {');
   for (const c of f.protocolCodes) out.push(`  ${c.code}: { when: ${q(c.when)}, fix: ${q(c.fix)} },`);
   out.push('} as const;\n', 'export type ProtocolCode = keyof typeof PROTOCOL_CODES;\n');
+  out.push('export const CALL_ERROR_CATEGORY_BY_CODE = {');
+  for (const c of f.protocolCodes) out.push(`  ${c.code}: ${c.callErrorCategory === null ? 'null' : q(c.callErrorCategory)},`);
+  out.push('} as const satisfies Record<ProtocolCode, CallErrorCategory | null>;\n');
+  out.push(`/** Only the caller can identify a package invocation refusal; unknown and review codes stay unclassified. */
+export function callErrorCategory(code: string, packageCode = false): CallErrorCategory | null {
+  if (Object.hasOwn(CALL_ERROR_CATEGORY_BY_CODE, code)) return CALL_ERROR_CATEGORY_BY_CODE[code as ProtocolCode];
+  if (code.startsWith('core.')) return null;
+  return packageCode === true ? 'invalid_parameters' : null;
+}
+
+/** Formats caller-supplied facts and actions; never classifies a message or invents missing facts. */
+export function formatCallError(category: CallErrorCategory, fact: string, nextAction: string): string {
+  const sentence = (text: string): string => text.trim().replace(/[。.!！?？]+$/u, '') + '。';
+  return labelOf('call_error_category', category) + '：' + sentence(fact) + sentence(nextAction);
+}\n`);
   out.push('export const CORE_VIOLATION_CODES = {');
   for (const c of codes.codes) out.push(`  ${q(c.code)}: { interpreter: ${q(c.interpreter)}, when: ${q(c.when)}, fix: ${q(c.fix)} },`);
   out.push('} as const;\n', 'export type CoreViolationCode = keyof typeof CORE_VIOLATION_CODES;\n');

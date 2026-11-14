@@ -30,10 +30,11 @@ function noConclusion(clause:2|7,id:string,outcomes:readonly CheckOutcome[]|unde
   :first.data?.sandbox==='SANDBOX_UNAVAILABLE'
   ?[`没有运行完：Hub 的沙箱没能运行它（${count} 条结果是未知），未取得${verdict}`,'原样重核同一参数对象；仍出现时请 Hub 管理员按管理员日志里这次重核的沙箱记录处理']
   :[`没有给出${verdict}：${count} 条结果是未知${first.reason?`（${labelOf('reason',first.reason)}）`:''}，缺 ${first.missing??first.statement}`,'补上“缺”的内容后重核同一参数对象；没写下一步的，请 Hub 管理员按管理员日志处理'];
- return new EffectBoundaryError(unconcluded(clause,`${check} ${id} ${what}`,fix,row));
+ const publicCause=!first?'没有可采用的检查结果':first.data?.sandbox==='SANDBOX_UNAVAILABLE'?'沙箱未能运行检查':first.reason?labelOf('reason',first.reason):'尚缺核对前提';
+ return new EffectBoundaryError({...unconcluded(clause,`${check} ${id} ${what}`,fix,row),member_missing_facts:[{fact:`核对项目 ${id} 尚未取得${verdict}（${publicCause}）`,next_action:'请管理员核对该检查的声明输入与执行记录，补齐前提后重新核对'}]});
 }
 export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationPort;workflows:Pick<WorkflowStore,'byDigest'>;recheck?:EffectCheckReplay;by:Principal;run:string;executor:string;definition:ExecutorDefinition;resolved_digest:string;now:()=>Date}){
- const detail=await o.runs.getRun(o.by,o.run);if(!detail)throw new Error('运行对你不可用；请核对运行编号和读取权限');
+ const detail=await o.runs.getRun(o.by,o.run);if(!detail)throw new Error('运行对当前账户不可用；请核对运行编号和读取权限');
  const workflow=await o.workflows.byDigest(detail.run.pack_digest);
  const effects=workflow?RequirementsFile.parse(await workflow.readJson('requirements.json')).effects??[]:[];
  const d=o.definition;

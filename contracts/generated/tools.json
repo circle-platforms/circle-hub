@@ -1011,7 +1011,7 @@
   {
     "name": "upload_file",
     "title": "Upload a file",
-    "description": "Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.",
+    "description": "Upload a file for a run, or set space=personal to import a private original. For uploaded workbooks and other workflow input files, use provenance_type=declared or omit it. client_captured is only for original model/client operation records: declaration-grade knowledge feeding, not ordinary workflow inputs or verification evidence. Generating or uploading a workbook on the client does not make it an operation capture. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.",
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1301,7 +1301,7 @@
           "type": "string"
         },
         "provenance_type": {
-          "description": "Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.",
+          "description": "Use declared (or omit this field) for uploaded workbooks and other user-supplied or generated workflow input files. client_captured is only for original model/client operation records, such as tool-hook captures, not merely a file generated or uploaded by a client. These captures stay declaration grade for operation-record knowledge feeding only; they cannot be used as ordinary workflow inputs or as verification, scoring or release evidence. Neither value makes an upload a Hub observation.",
           "type": "string",
           "enum": [
             "declared",
@@ -2140,7 +2140,7 @@
           "pattern": "^(?:tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?)$"
         },
         "reference": {
-          "description": "src:<sha256> of the stored bytes, to use as a run input; only when accepted",
+          "description": "src:<sha256> of accepted stored bytes; the reference alone does not establish input eligibility or verified evidence. For an ordinary declared upload, the returned artifact can select the exact capture when binding a workflow input. client_captured references are for operation-record knowledge feeding only, not ordinary workflow inputs.",
           "type": "string",
           "maxLength": 8192,
           "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?)$"

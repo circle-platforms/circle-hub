@@ -222,7 +222,7 @@ function stringMap(value: Record<string, string> | undefined, key: string): Reco
 }
 
 /** What a function is told of a request that failed for a credential or login reason (D05 R[3], decision 112). */
-const NEUTRAL_PHASE_MESSAGE = '应答对你不可用（原因只记在管理员记录里）';
+const NEUTRAL_PHASE_MESSAGE = '应答对当前账户不可用（原因只记在管理员记录里）';
 const NEUTRAL_CODE = 'SOURCE_UNAVAILABLE';
 
 function zodProblem(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): string {

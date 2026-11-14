@@ -8,7 +8,7 @@ import { startPostgres, type TemporaryPostgres } from '../../hub/testing/postgre
 import { osIsolationAvailable } from '../../hub/rules/api.ts';
 import { recognize } from '../../hub/refs/api.ts';
 import { sha256Hex, type ActionBody } from '../../hub/records/api.ts';
-import { ExecutorDefinition, readRunJobs, type JobStatus } from '../../hub/dispatch/api.ts';
+import { ExecutorDefinition, readRunJobs, type JobStatus, type DispatchNote } from '../../hub/dispatch/api.ts';
 import { definition } from '../../hub/dispatch/testing/definition.ts';
 import { startEndpoint } from '../../hub/dispatch/testing/server.ts';
 import { CONTRACT_DOC as BASE_CONTRACT, PROFILE_DOC as BASE_PROFILE, MANIFEST_DOC as BASE_MANIFEST, goodData } from '../../packs/workflow/case-compile/functions/test-support.ts';
@@ -220,6 +220,7 @@ before(async () => {
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
+  await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal,executor,bed.reviewer.principal.id);
 });
 after(async () => { await client?.close(); await endpoint?.close(); await opened?.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 
@@ -296,17 +297,25 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     assert.ok((await bed.hub.leases.view('bed/')).entries.length > 0);
     const before = submissions; const v = await verify(await plan(partial));
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
-    const note = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
-    assert.match(note.text, /^上机验证没有发出：.*租约/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
-    // Like the reference compile skill's failed bed check, the refusal names what is missing: every device key of the bed the run did not book.
+    const note: DispatchNote | undefined = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
+    assert.match(note.text, /^不存在：.*预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    // Members get the authorized environment and missing count; administrators retain exact resource keys.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
-    assert.ok(missing.length > 0); for (const key of missing) assert.ok(note.text.includes(key), `${key} named: ${note.text}`);
+    assert.ok(missing.length > 0);
+    assert.equal(note.booking?.missing_resources,missing.length);
+    assert.equal(note.booking?.target,'bed-a');
+    assert.ok(note.text.includes('bed-a'),note.text);
+    assert.match(note.text,new RegExp(`缺少 ${missing.length} 项`));
+    for (const key of missing) assert.equal(note.text.includes(key),false,`member does not receive ${key}`);
+    const explanation=await dispatch().explainRelease(bed.hub.admin.principal,v.run,executor);
+    for (const key of missing) assert.ok(explanation.lease_coverage?.missing_fact?.includes(key),`administrator receives ${key}`);
+    assert.equal(note.text.includes(note.job!),false);assert.doesNotMatch(note.text,/boundary_refused/);
     // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
     // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
     const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
-    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /未发出；原因：.*租约.*这次重交 Hub 已再试/);
-    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^上机验证没有发出：.*租约/);
+    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /^不存在：.*未发出.*预订.*这次重交 Hub 已再试/);
+    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^不存在：.*预订/);
     assert.equal(submissions, before);
     await release(partial);
   });
@@ -352,7 +361,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
       assert.deepEqual(state.failed_conditions, [{ pointer: '/seats', operator: 'at_least' }], JSON.stringify(state));
       const text = (await client.call('submit_result', v.sent!)).out.dispatch?.[0]?.text ?? '';
       assert.match(text, /已结束/); assert.doesNotMatch(text, /还在进行/);
-      assert.match(text, /未满足的条件：\/seats at_least/); for (const check of state.failed_checks ?? []) assert.ok(text.includes(check.missing_fact), text);
+      assert.match(text, /核对项目 \/seats.*至少数量/);assert.match(text,/请管理员/);
+      assert.equal(text.includes(state.job),false);assert.doesNotMatch(text,/boundary_refused|circle-hub/);
       assert.equal(submissions, before);
     }
     finally { mismatch = false; await release(booked); }

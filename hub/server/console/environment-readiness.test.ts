@@ -108,3 +108,32 @@ test('null-target report discloses safe missing without echoing a hidden target'
   assert.match(body, /该目标当前没有可查看的执行器配置/);
   assert.doesNotMatch(body, /hidden-target|exe_|usr_/);
 });
+
+test('assignment copy uses the actual enforced flag and never infers it from assignment facts', () => {
+  const assignment = { condition: 'assignment', label: '当前账户使用分配', satisfied: false, observed_at: instant, references: [], missing_fact: '当前账户没有使用分配', next_action: '请管理员分配' };
+  const active = readinessCheckBlock(assignment, true).text;
+  assert.match(active, /分配校验已启用/); assert.doesNotMatch(active, /还没有启用|按原工作流/);
+  assert.match(active, /错误/); assert.match(active, /当前账户没有使用分配/); assert.match(active, /请管理员分配/);
+  assert.match(active, /不作执行许可/);
+  const staged = readinessCheckBlock({ ...assignment, satisfied: true }, false).text;
+  assert.match(staged, /测试环境的分配还没有启用/); assert.match(staged, /配置预览/);
+  assert.doesNotMatch(staged, /已确认/);
+  const unknown = readinessCheckBlock(assignment).text;
+  assert.match(unknown, /启用状态尚未取得/); assert.match(unknown, /配置预览/);
+  assert.doesNotMatch(unknown, /校验已启用|还没有启用|错误/);
+});
+
+test('loader forwards actual enforcement to every executor without changing caller, target, or evidence verdicts', async () => {
+  const source = report({ executors: [{ ...report().executors[0], checks: [{ condition: 'assignment', label: '当前账户使用分配', satisfied: true, observed_at: instant, references: [] }] }, { ...report().executors[0], ordinal: 2, checks: [{ condition: 'manifest', label: '清单核对', satisfied: false, observed_at: instant, references: [], missing_fact: '清单摘要不一致' }] }] });
+  const before = JSON.stringify(source), calls: unknown[][] = [];
+  const read = async (by: Principal, target: string) => { calls.push([by, target]); return source; };
+  const active = await loadReadinessReports(read, caller, ['合成测试环境甲'], true);
+  assert.deepEqual(calls, [[caller, '合成测试环境甲']]);
+  assert.match(active[0].body.text, /分配校验已启用/); assert.match(active[0].body.text, /清单摘要不一致/);
+  assert.doesNotMatch(active[0].body.text, /还没有启用/); assert.equal(JSON.stringify(source), before);
+  const staged = await loadReadinessReports(read, caller, ['合成测试环境甲'], false);
+  assert.match(staged[0].body.text, /测试环境的分配还没有启用/);
+  const unknown = await loadReadinessReports(read, caller, ['合成测试环境甲']);
+  assert.match(unknown[0].body.text, /启用状态尚未取得/);
+  assert.doesNotMatch(unknown[0].body.text, /校验已启用|还没有启用/);
+});
