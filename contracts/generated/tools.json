@@ -108,8 +108,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -1412,8 +1510,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -2516,8 +2712,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -4997,8 +5291,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -5518,8 +5910,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -14499,8 +14989,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -15466,8 +16054,106 @@
                   "lease_missing_for_lineage",
                   "lease_expired",
                   "lease_released",
-                  "lease_reader_unavailable"
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
                 ]
+              },
+              "object_kind": {
+                "type": "string",
+                "enum": [
+                  "pack",
+                  "knowledge",
+                  "knowledge_root",
+                  "system",
+                  "source_artifact",
+                  "record",
+                  "named_document",
+                  "test_environment"
+                ]
+              },
+              "object_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "environment_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "holder_relation": {
+                "type": "string",
+                "enum": [
+                  "current_account",
+                  "other_account",
+                  "unknown"
+                ]
+              },
+              "holder_display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+              },
+              "acquired_at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "lease_key": {
+                "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                "type": "string",
+                "minLength": 1
+              },
+              "registration_comparison": {
+                "type": "object",
+                "properties": {
+                  "issue": {
+                    "type": "string",
+                    "enum": [
+                      "executor_identity",
+                      "target",
+                      "resources",
+                      "booking_scope"
+                    ]
+                  },
+                  "left_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "right_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "left_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "right_values": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "issue"
+                ],
+                "additionalProperties": {},
+                "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
               },
               "fix": {
                 "type": "string"
@@ -15863,8 +16549,106 @@
                       "lease_missing_for_lineage",
                       "lease_expired",
                       "lease_released",
-                      "lease_reader_unavailable"
+                      "lease_reader_unavailable",
+                      "pack_unassigned",
+                      "knowledge_root_unassigned",
+                      "system_unassigned",
+                      "content_read_not_permitted",
+                      "named_document_run_scope_denied",
+                      "run_submission_not_owned"
                     ]
+                  },
+                  "object_kind": {
+                    "type": "string",
+                    "enum": [
+                      "pack",
+                      "knowledge",
+                      "knowledge_root",
+                      "system",
+                      "source_artifact",
+                      "record",
+                      "named_document",
+                      "test_environment"
+                    ]
+                  },
+                  "object_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "environment_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "holder_relation": {
+                    "type": "string",
+                    "enum": [
+                      "current_account",
+                      "other_account",
+                      "unknown"
+                    ]
+                  },
+                  "holder_display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                  },
+                  "acquired_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "lease_key": {
+                    "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "registration_comparison": {
+                    "type": "object",
+                    "properties": {
+                      "issue": {
+                        "type": "string",
+                        "enum": [
+                          "executor_identity",
+                          "target",
+                          "resources",
+                          "booking_scope"
+                        ]
+                      },
+                      "left_display_name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                      },
+                      "right_display_name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                      },
+                      "left_values": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "right_values": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "issue"
+                    ],
+                    "additionalProperties": {},
+                    "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
                   },
                   "fix": {
                     "type": "string"
@@ -22457,6 +23241,121 @@
           "items": {
             "type": "object",
             "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "issued",
+                  "effective",
+                  "read_back_consistent",
+                  "read_back_mismatch",
+                  "target_rejected",
+                  "not_dispatched",
+                  "proven_not_executed",
+                  "unknown"
+                ]
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "precheck",
+                  "dispatch",
+                  "conformance"
+                ]
+              },
+              "phase": {
+                "type": "string",
+                "description": "Program stage only, never an effect outcome."
+              },
+              "not_sent": {
+                "type": "boolean",
+                "description": "Only an observed not-sent fact for this operation; never inferred from missing receipts."
+              },
+              "rejection_stage": {
+                "type": "string"
+              },
+              "frozen": {
+                "type": "boolean"
+              },
+              "report_pending": {
+                "type": "boolean"
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null",
+                    "const": null
+                  }
+                ]
+              },
+              "call_error_reason": {
+                "type": "string",
+                "enum": [
+                  "actor_disabled",
+                  "actor_not_active",
+                  "environment_disabled",
+                  "environment_unassigned",
+                  "environment_not_registered",
+                  "environment_registration_inconsistent",
+                  "environment_permission_unavailable",
+                  "lease_held_by_other_account",
+                  "lease_already_held_by_current_account",
+                  "lease_missing_for_lineage",
+                  "lease_expired",
+                  "lease_released",
+                  "lease_reader_unavailable",
+                  "pack_unassigned",
+                  "knowledge_root_unassigned",
+                  "system_unassigned",
+                  "content_read_not_permitted",
+                  "named_document_run_scope_denied",
+                  "run_submission_not_owned"
+                ]
+              },
+              "missing_facts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "next_action": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "next_action"
+                  ],
+                  "additionalProperties": {}
+                }
+              },
+              "next_action": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "device_return": {
+                "type": "string",
+                "maxLength": 8192,
+                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+              },
+              "submit_invoked": {
+                "type": "boolean"
+              },
+              "reservation_recorded": {
+                "type": "boolean"
+              },
+              "worker_settled": {
+                "type": "boolean"
+              },
               "job": {
                 "description": "The job the Hub dispatched for this run",
                 "type": "string",
@@ -22467,12 +23366,6 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 200
-              },
-              "result": {
-                "description": "The job result once it is complete (src:), readable by the runner: one row per dispatched item",
-                "type": "string",
-                "maxLength": 8192,
-                "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
               },
               "text": {
                 "type": "string",

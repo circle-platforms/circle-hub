@@ -91,6 +91,9 @@ export type FeedingRetraction = z.infer<typeof FeedingRetractionSchema>;
 export const KnowledgeStructureSchema = z.union([FedCaseSchema, FedDefectSchema, FedSpecSchema, FedBuildSchema, FedNoteSchema, FedObservationSchema, FedProcedureSchema, FedPitfallSchema, VersionBindingSchema, FeedingUsageSchema, FeedingOffsetSchema, FeedingRetractionSchema]).meta({ title: 'knowledge-structure@1', description: 'Closed versioned family of feeding object projections, Circle operation records (observation, procedure, pitfall), direct binding claims, usages, frozen offsets and administrator retractions beside seedlings. Identity, authorization, quotation and closed-set membership are boundary checks; nothing enters root content hashes. Operation-record identity is only the canonical statement and quotations.' });
 export type KnowledgeStructure = z.infer<typeof KnowledgeStructureSchema>;
 
+export const DispatchOutcomeFactsSchema = z.strictObject({ 'outcome': V.EffectOutcomeSchema.optional(), 'operation': V.DispatchOperationSchema.optional(), 'phase': z.string().describe('Program stage only, never an effect outcome.').optional(), 'not_sent': z.boolean().describe('Only an observed not-sent fact for this operation; never inferred from missing receipts.').optional(), 'rejection_stage': z.string().optional(), 'frozen': z.boolean().optional(), 'report_pending': z.boolean().optional(), 'error_code': z.union([z.string().min(1), z.literal(null)]).optional(), 'call_error_reason': V.CallErrorReasonSchema.optional(), 'missing_facts': z.array(z.strictObject({ 'fact': z.string(), 'next_action': z.string() })).optional(), 'next_action': z.string().optional(), 'result': Reference.ReferenceUri.optional(), 'device_return': Reference.ReferenceUri.optional(), 'submit_invoked': z.boolean().optional(), 'reservation_recorded': z.boolean().optional(), 'worker_settled': z.boolean().optional() }).meta({ title: 'dispatch-outcome@1', description: 'Public optional observed dispatch facts. Operation, stage and effect outcome are independent; complete is a stage, not_dispatched is an effect value. Missing observation stays absent, never default false. References require source authorization; schema shape cannot prove visibility or physical effects. Old records without operation are not inferred from prose.' });
+export type DispatchOutcomeFacts = z.infer<typeof DispatchOutcomeFactsSchema>;
+
 export const SharedInterfaceSchemas = {
   'source-span@1': SourceSpanSchema,
   'expected-quote-identity@1': ExpectedQuoteIdentitySchema,
@@ -120,4 +123,5 @@ export const SharedInterfaceSchemas = {
   'feeding-offset@1': FeedingOffsetSchema,
   'retraction@1': FeedingRetractionSchema,
   'knowledge-structure@1': KnowledgeStructureSchema,
+  'dispatch-outcome@1': DispatchOutcomeFactsSchema,
 } as const;
