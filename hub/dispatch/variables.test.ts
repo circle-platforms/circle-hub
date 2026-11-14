@@ -61,6 +61,14 @@ test('two executors share one vault name and rotate without re-enrolling a confi
  const {secretNameOf}=await import('../../contracts/src/variables.ts');
  const c=await setup();t.after(()=>c.close());
  const first=c.executor;const second=await c.registry.add(c.admin,{...first.source,id:undefined});const name=secretNameOf(first.definition.credential!)!;
+ const grant=await c.kit.authorizations.latest('resource_assign',c.environmentTeam.id,c.environment.id);assert.ok(grant);
+ const {schema:_schema,id:_id,...registration}=c.environment;
+ assert.ok(registration.name!==null&&registration.target!==null);
+ const environment=await c.kit.testEnvironments.update(c.admin,c.environment.id,{...registration,name:registration.name,target:registration.target,executors:[first.id,second.id]});
+ assert.equal(environment.id,c.environment.id);assert.deepEqual(environment.executors,[first.id,second.id]);
+ assert.equal((await c.kit.authorizations.latest('resource_assign',c.environmentTeam.id,environment.id))?.digest,grant.digest);
+ assert.equal(await c.kit.testEnvironments.canUseExecutor(c.admin,environment.id,first.id),true);
+ assert.equal(await c.kit.testEnvironments.canUseExecutor(c.admin,environment.id,second.id),true);
  const set=(value:string)=>c.kit.variables.setSecrets(c.admin,[{name,value}],'DEMO_ROTATION');
  await set('DEMO!Executor42');
  await c.service.precheck(c.admin,first.id);await c.service.precheck(c.admin,second.id);
