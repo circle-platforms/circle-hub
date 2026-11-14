@@ -1,11 +1,8 @@
-export { authenticateEnvironmentUpgradeActor, readEnvironmentAssignmentActivation, previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE, type EnvironmentUpgradeSources, type EnvironmentUpgradeReadContext, type EnvironmentUpgradePreview, type EnvironmentUpgradeReceipt } from './environment-assignment-upgrade.ts';
 export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpgradeGrant } from './environment-upgrade-types.ts';
 export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
 export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
 import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
-export { diagnoseRecordsSchema, diagnoseRecordsSchemaForMaintenance, currentRecordMigrations, inspectRecordsSchema, RECORDS_READER_LEVEL, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
-export { evaluateMigrationCompatibility, previewMigrationCompatibility, checkMigrationCompatibilityDeclarations, type MigrationCompatibilityDeclaration, type MigrationCompatibilityObservation, type MigrationCompatibilityResult } from './migration-compatibility.ts';
-export { readMigrationCompatibility, appendMigrationCompatibility } from './migration-compatibility-store.ts';
+export { diagnoseRecordsSchema, currentRecordMigrations, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
 export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type TeamDeletion, type Teams } from './teams.ts';
 export { canUseEnvironment } from './environment-permissions.ts';
 export { isAdmin, canSeeRun, memberCapabilities, type MemberCapabilities, type MemberCapabilitySources, type MemberPackCapability, type MemberConnectionCapability, type MemberEnvironmentCapability } from './permissions.ts';

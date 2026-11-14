@@ -7,7 +7,7 @@ export interface EnvironmentUpgradeSnapshot {
   at: string;
   members: ReadonlyArray<Pick<User, 'id' | 'disabled' | 'deleted_at' | 'created_at'> & { packs: readonly string[] }>;
   workflows: ReadonlyArray<{
-    id: string; digest: string; kind: PackKind; publishedAt: string; available: boolean; space?: string; installedMethod?: boolean;
+    id: string; digest: string; kind: PackKind; publishedAt: string; available: boolean; space?: string;
     declaration: Pick<WorkflowFile, 'leases' | 'context'>;
   }>;
   executors: ReadonlyArray<{ id: string; registeredAt: string; keys: readonly string[] }>;
