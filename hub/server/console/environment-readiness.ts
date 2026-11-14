@@ -1,4 +1,4 @@
-// Read-only rendering of EnvironmentReadiness for 连接 → 运行环境. The page never judges, summarizes, or invents links.
+// Read-only rendering of EnvironmentReadiness for 连接 → 测试环境. The page never judges, summarizes, or invents links.
 import type { EnvironmentReadiness, EnvironmentReadinessCheck, EnvironmentReadinessExecutor } from '../../dispatch/api.ts';
 import { code, html, type Html } from './html.ts';
 import { technical } from './presentation.ts';

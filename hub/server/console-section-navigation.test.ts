@@ -13,7 +13,7 @@ test('the connections page is one list a tab, each tab an address of its own, an
  const admin=await openConsole(hub,hub.admin.token);
  const tabsOf=(body:string)=>[...(/<nav class="ch-seg" aria-label="连接内容" data-connection-tabs>([\s\S]*?)<\/nav>/.exec(body)?.[1]??'').matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)/g)].map(match=>[match[1],!!match[2],match[3].trim()]);
  const first=await admin.get('/console/connections');assert.equal(first.status,200,first.body);
- assert.deepEqual(tabsOf(first.body),[['/console/connections',true,'业务系统'],['/console/connections?tab=packs',false,'业务系统接入'],['/console/connections?tab=clients',false,'客户端'],['/console/connections?tab=environments',false,'运行环境']]);
+ assert.deepEqual(tabsOf(first.body),[['/console/connections',true,'业务系统'],['/console/connections?tab=packs',false,'业务系统接入'],['/console/connections?tab=clients',false,'客户端'],['/console/connections?tab=environments',false,'测试环境']]);
  // Decision 151: no directory of anchors down one long page, no diagram that repeats two of its lists, nothing planned.
  assert.doesNotMatch(first.body,/ch-page-toc|本页内容|已登记的连接关系|多终端协同|消息通知|ch-stats/);
  const lists={systems:'live-systems',packs:'live-system-sources',clients:'live-circles',environments:'live-environments'};
@@ -26,13 +26,13 @@ test('the connections page is one list a tab, each tab an address of its own, an
  assert.match((await admin.get('/console/connections?tab=packs')).body,/业务系统接入，再在连接页配置具体系统/);
  const member=await openConsole(hub,user.token);
  const memberHome=await member.get('/console/connections');assert.equal(memberHome.status,200);
- assert.deepEqual(tabsOf(memberHome.body),[['/console/connections',true,'客户端'],['/console/connections?tab=environments',false,'运行环境']]);
+ assert.deepEqual(tabsOf(memberHome.body),[['/console/connections',true,'客户端'],['/console/connections?tab=environments',false,'测试环境']]);
  assert.match(memberHome.body,/ id="live-circles"/);assert.doesNotMatch(memberHome.body,/ id="live-(?:systems|system-sources)"/);
  assert.match(memberHome.body,/业务系统的配置仅管理员可见/);assert.doesNotMatch(memberHome.body,/href="\/console\/operations\/system"/);
  const memberEnvironments=await member.get('/console/connections?tab=environments');assert.equal(memberEnvironments.status,200);
  assert.match(memberEnvironments.body,/ id="live-environments"/);
  assert.deepEqual(tabsOf(memberEnvironments.body).filter(row=>row[1]).map(row=>row[0]),['/console/connections?tab=environments']);
- assert.match(memberEnvironments.body,/只读就绪报告|尚无已分配的运行环境|只读报告未知/);
+ assert.match(memberEnvironments.body,/只读就绪报告|尚无已分配的测试环境|只读报告未知|我能做的事/);
  assert.doesNotMatch(memberEnvironments.body,/ id="live-(?:systems|system-sources)"/);
  for(const path of ['/console/connections?tab=systems']){
   const mine=await member.get(path);assert.equal(mine.status,200,path);

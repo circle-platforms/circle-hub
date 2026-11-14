@@ -401,7 +401,7 @@ describe('operations and commands', () => {
     const circle = await get('/console/team?circle='+token.id,admin);
     assert.ok(circle.body.includes(`circle-hub token revoke ${token.id}`));
     assert.ok(connections.body.includes(`circle-hub resource disable ${resource.id}`) || connections.body.includes(`circle-hub resource enable ${resource.id}`));
-    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('这个 Hub 进程未接入派发'), 'no runtime environments without the dispatch port');
+    assert.ok((await get('/console/connections?tab=environments', admin)).body.includes('请管理员配置测试环境目录'), 'catalog empty state without the test-environments port');
     const pack = await get('/console/workflows/review', admin);
     managementForm(pack.body,'pack-retire',{pack:'review@1.0.0'});
     assert.ok(pack.body.includes('要求项') && pack.body.includes('检查项'));
