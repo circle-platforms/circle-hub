@@ -22,7 +22,7 @@ export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
   /** Legacy caller metadata; admission reads the provider on every new use. */
   enforceEnvironmentAssignments?: boolean;
-  environmentAccess?: { inheritance(tx?: Transaction): Promise<{completed:boolean|null}>; authorizeKeys(actor: Principal, keys: readonly string[]): Promise<import('../../../contracts/api.ts').ProtocolError | null> };
+  environmentAccess?: { inheritance(tx?: Transaction): Promise<{completed:boolean|null}>; authorizeKeys(actor: Principal, keys: readonly string[], tx?: Transaction): Promise<import('../../../contracts/api.ts').ProtocolError | null> };
   dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string,reservations?:import('../../dispatch/api.ts').RunReservations):Promise<import('../../dispatch/api.ts').RunJob[]>;
     /** The reservations of all runs in one reading, for `jobs`; without it maintenance reads them again for every run. */
     reservations?():Promise<import('../../dispatch/api.ts').RunReservations>;

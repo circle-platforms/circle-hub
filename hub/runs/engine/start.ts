@@ -1,3 +1,4 @@
+import {withEnvironmentPermissionLock, type Transaction} from '../../records/api.ts';
 import {ProjectionOutput} from '../../../contracts/src/pack.ts';
 import {groundsAudience,guardedRecords} from './grounds.ts';
 import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
@@ -23,7 +24,7 @@ import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 import { z } from 'zod';
 import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
-import type { ProtocolError } from '../../../contracts/src/common.ts';
+import { ProtocolError } from '../../../contracts/src/common.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
 import type { ContextBuild, RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
@@ -182,6 +183,27 @@ async function lineageOf(ctx: EngineContext, runId: string, predecessor: string 
   return lineage;
 }
 
+async function checkEnvironmentKeys(ctx:EngineContext,user:Principal,environmentKeys:readonly string[],tx?:Transaction):Promise<void> {
+    if(!environmentKeys.length)return;
+    let completed:boolean|null;
+    try { completed = ctx.deps.environmentAccess ? (await ctx.deps.environmentAccess.inheritance(tx)).completed : null; }
+    catch { completed = null; }
+    if (completed === null || completed !== true && completed !== false) throw new Refusal([protocolError('ENVIRONMENT_PERMISSION_UNAVAILABLE', PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when, {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]);
+    if (completed) {
+      let denied:ProtocolError|null;
+      try { denied = await ctx.deps.environmentAccess!.authorizeKeys(user, environmentKeys, tx); }
+      catch { throw new Refusal([protocolError('ENVIRONMENT_PERMISSION_UNAVAILABLE', PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when, {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]); }
+      if (denied) throw new Refusal([denied]);
+    }
+  }
+
+function rethrowBoundaryRefusal(error:unknown):void {
+  if(!(error instanceof Error)||!('failure' in error)||!error.failure||typeof error.failure!=='object')return;
+  const candidate=error.failure;
+  const parsed=ProtocolError.safeParse({code:Reflect.get(candidate,'code'),message:Reflect.get(candidate,'message'),fix:Reflect.get(candidate,'fix')});
+  if(parsed.success)throw new Refusal([parsed.data]);
+}
+
 export async function askClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, asks: ReadonlyArray<DeviceHelpTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {
   if (asks.length === 0) return [];
   const declared = workflow.workflow.leases;
@@ -198,12 +220,14 @@ export async function askClaims(ctx: EngineContext, user: Principal, workflow: L
     if (!row || row.user !== user.id || !lineage.has(row.run)) refuse('LEASE_UNAVAILABLE', `设备的租约 ${key} 不在这次运行的血缘持有之下，不能往它的终端里打字`, '先预订这台设备，开始这次运行时 predecessor 写预订那次运行的编号');
     if (row.released || (row.expires_at !== null && Date.parse(row.expires_at) <= now.getTime())) refuse('LEASE_EXPIRED', `设备的租约 ${key} 已释放或过期`, '重新预订后再问');
   }
+  await checkEnvironmentKeys(ctx,user,keys);
   const at = now.toISOString();
   let results: DeviceHelpResult[];
   try {
     if (ctx.deps.observations?.ask === undefined) throw new Error('Hub 没有接问设备的端口（派发服务）');
     results = await ctx.deps.observations.ask(user, runId, asks);
   } catch (error) {
+    rethrowBoundaryRefusal(error);
     ctx.log({ traceId, run: runId, what: 'device_help', detail: describe(error) });
     const fact = 'Hub 这次没能向设备问（原因在管理员记录里）';
     results = asks.map((ask) => ({ inventory: ask.inventory, device: ask.device, label: ask.label, line: ask.line, mode: ask.mode ?? null, words: 0, positions: [], missing: { fact: `${ask.label}：${fact}`, next_action: '稍后再问一次；连续出现时请管理员检查派发服务' } }));
@@ -232,18 +256,11 @@ export async function grantLeases(
   }
   const prefix = declared.prefix; const cap = declared.max_ttl_seconds;
   const environmentKeys = [...new Set(requests.filter(request => request.op === undefined || request.op === 'acquire' || request.op === 'extend').flatMap(requestKeys))];
-  if (environmentKeys.length) {
-    let completed:boolean|null;
-    try { completed = ctx.deps.environmentAccess ? (await ctx.deps.environmentAccess.inheritance()).completed : null; }
-    catch { completed = null; }
-    if (completed === null || completed !== true && completed !== false) throw new Refusal([protocolError('SOURCE_UNAVAILABLE', '测试环境的权限核对现在不能进行，这次没有执行。', {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]);
-    if (completed) {
-      let denied:ProtocolError|null;
-      try { denied = await ctx.deps.environmentAccess!.authorizeKeys(user, environmentKeys); }
-      catch { throw new Refusal([protocolError('SOURCE_UNAVAILABLE', '测试环境的权限核对现在不能进行，这次没有执行。', {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]); }
-      if (denied) throw new Refusal([denied]);
-    }
-  }
+  await checkEnvironmentKeys(ctx,user,environmentKeys);
+  const newUse=async<T>(write:(tx:Transaction)=>Promise<T>):Promise<T>=>withEnvironmentPermissionLock(ctx.deps.records.store,async tx=>{
+    await checkEnvironmentKeys(ctx,user,environmentKeys,tx);
+    return write(tx);
+  });
   const now = ctx.now(); const service=ctx.deps.leases;
   const lineage=await lineageOf(ctx,runId,predecessor);
   const rows=await service.holders([...new Set(requests.flatMap(requestKeys))]);
@@ -289,13 +306,13 @@ export async function grantLeases(
       }
       if(request.op==='extend'||request.op==='release'){
         const selected=rows.filter(row=>request.keys.includes(row.key));const holder={user:selected[0]!.user,run:selected[0]!.run};
-        const outcome=request.op==='extend'?await service.extend({keys:request.keys,holder,ttlSeconds:request.ttl_seconds,maxTtlSeconds:cap}):await service.release({keys:request.keys,holder});
+        const outcome=request.op==='extend'?await newUse(tx=>service.extend({keys:request.keys,holder,ttlSeconds:request.ttl_seconds,maxTtlSeconds:cap},tx)):await service.release({keys:request.keys,holder});
         if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取租约状态并核对血缘');
         done.push(request.op==='extend'?{op:'extend',lease:outcome.lease,keys:request.keys,until:outcome.until}:{op:'release',keys:request.keys,until:outcome.until});
       }
     }
     for(const request of requests)if(request.op===undefined||request.op==='acquire'){
-      const outcome=await service.acquire({keys:request.keys,ttlSeconds:request.ttl_seconds,holder:{user:user.id,run:runId},prefix,maxTtlSeconds:cap});
+      const outcome=await newUse(tx=>service.acquire({keys:request.keys,ttlSeconds:request.ttl_seconds,holder:{user:user.id,run:runId},prefix,maxTtlSeconds:cap},tx));
       if(!outcome.ok){
         // The refusal names the holding run and when it took the key (B01 grounds), and says when that run is the caller's own.
         const when=outcome.earliestFree?'，最早空闲时刻 '+outcome.earliestFree:'';const holder=outcome.holder;const own=holder!==undefined&&holder.user===user.id;
@@ -678,7 +695,10 @@ async function startFresh(
     grantedLeases = await grantLeases(ctx, user, workflow, projection.leaseRequests, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run);
     // Once an acquire is granted, the Hub looks at the booked devices the projection named (decision 112); it never throws.
     if (projection.observe.length > 0 && grantedLeases.some((done) => !('op' in done) || done.op === 'acquire')) {
-      const looked = ctx.deps.observations ? await ctx.deps.observations.observe(user, runId, projection.observe) : { observed: [], missing: 'Hub 没有接设备观察（派发服务）' };
+      await checkEnvironmentKeys(ctx,user,[...new Set(projection.leaseRequests.filter(request=>request.op===undefined||request.op==='acquire').flatMap(requestKeys))]);
+      let looked:{observed:DeviceObservation[];missing:string|null};
+      try {looked = ctx.deps.observations ? await ctx.deps.observations.observe(user, runId, projection.observe) : { observed: [], missing: 'Hub 没有接设备观察（派发服务）' };}
+      catch(error){rethrowBoundaryRefusal(error);throw error;}
       deviceClaims = observationClaims(looked, ctx.now().toISOString());
     }
     helpClaims = await askClaims(ctx, user, workflow, projection.ask, runId, workflow.workflow.predecessor_access==='view'?undefined:predecessor?.body.run, call.traceId);

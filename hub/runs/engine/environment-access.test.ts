@@ -1,3 +1,4 @@
+import {toolText} from '../../server/text.ts';
 import {MemberEnvironments} from '../../dispatch/member-environments.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -5,7 +6,7 @@ import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { LoadedWorkflow } from '../../ports.ts';
 import type { EngineContext } from './deps.ts';
 import { Refusal } from './errors.ts';
-import { grantLeases, type LeaseRequest } from './start.ts';
+import { askClaims, grantLeases, type LeaseRequest } from './start.ts';
 
 const actor = {id:'usr_0'+'a'.repeat(25),name:'合成成员',role:'user' as const};
 const run = 'run_0'+'a'.repeat(25);
@@ -14,17 +15,20 @@ const workflow = {pack:{id:'synthetic-workflow'},workflow:{leases:{prefix:'meado
 
 function fixture(enforceEnvironmentAssignments: boolean | undefined, authorizeKeys?: (by: typeof actor, keys: readonly string[]) => Promise<ProtocolError|null>, completion: () => boolean|null = () => true) {
   const events: string[] = [];
+  const tx={} as import('../../records/api.ts').Transaction;
+  const locks:string[]=[];
   const holder = {key:'meadow/allowed',user:actor.id,run,released:false,expires_at:'2026-11-14T06:00:00.000Z',lease:'lse_0'+'a'.repeat(25),fencing:1};
   const mutate = async () => { events.push('write'); return {ok:true,lease:holder.lease,keys:[holder.key],until:holder.expires_at}; };
   const ctx = {now:()=>new Date('2026-11-14T03:00:00.000Z'),deps:{
+    records:{store:{withTransaction:async(fn:(tx:import('../../records/api.ts').Transaction)=>Promise<unknown>)=>fn(tx),lock:async(key:string,supplied:unknown)=>{assert.equal(supplied,tx);locks.push(key);}}},
     ...(enforceEnvironmentAssignments !== undefined ? {enforceEnvironmentAssignments} : {}),
     leases:{holders:async()=>[holder],registrations:async()=>[],acquire:mutate,extend:mutate,release:mutate},
     ...(authorizeKeys?{environmentAccess:{inheritance:async()=>({completed:completion()}),authorizeKeys:async(by:typeof actor,keys:readonly string[])=>{events.push('authorize');return authorizeKeys(by,keys);}}}:{}),
   }} as unknown as EngineContext;
-  return {ctx,events};
+  return {ctx,events,tx,locks};
 }
 
-const unavailable = (error: unknown): boolean => error instanceof Refusal && error.errors[0]?.code === 'SOURCE_UNAVAILABLE';
+const unavailable = (error: unknown): boolean => error instanceof Refusal && error.errors[0]?.code === 'ENVIRONMENT_PERMISSION_UNAVAILABLE';
 const refused = (error: unknown): boolean => error instanceof Refusal && error.errors[0]?.code === 'SOURCE_NOT_PERMITTED' && /没有分配|未配置/.test(error.errors[0].message);
 
 test('booking without the environment permission provider is refused before every lease mutation', async () => {
@@ -55,7 +59,7 @@ test('authorized acquire and extend keep their known lease checks and write afte
       assert.equal(by,actor);assert.deepEqual(keys,['meadow/allowed']);return null;
     });
     assert.equal((await grantLeases(ctx,actor,workflow,[{op,keys:['meadow/allowed'],ttl_seconds:30}],run,undefined)).length,1);
-    assert.deepEqual(events,['authorize','write']);
+    assert.deepEqual(events,['authorize','authorize','write']);
   }
 });
 
@@ -119,12 +123,69 @@ test('confirmed non-environment booking has identical output before and after in
   completed=true;
   const after=await grantLeases(ctx,actor,workflow,requests,run,undefined);
   assert.deepEqual(after,before,'all returned lease fields remain identical with the controlled same lease outcome');
-  assert.deepEqual(events,['write','authorize','write']);
+  assert.deepEqual(events,['write','authorize','authorize','write']);
 
   await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['outside/key'],ttl_seconds:30}],run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='LEASE_PREFIX');
-  assert.deepEqual(events,['write','authorize','write','authorize'],'skipping only environment authorization cannot write outside the workflow prefix');
+  assert.deepEqual(events,['write','authorize','authorize','write','authorize'],'skipping only environment authorization cannot write outside the workflow prefix');
 
   catalog.records.testEnvironments.resolve=async()=>{throw new Error('synthetic catalog unavailable');};
   await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),unavailable);
-  assert.deepEqual(events,['write','authorize','write','authorize','authorize'],'unreadable catalog causes no lease mutation');
+  assert.deepEqual(events,['write','authorize','authorize','write','authorize','authorize'],'unreadable catalog causes no lease mutation');
+});
+
+
+test('final booking permission and acquire or extend use the same locked transaction',async()=>{
+  for(const op of ['acquire','extend'] as const) {
+    const {ctx,events,tx,locks}=fixture(true,async()=>null);
+    const reads:unknown[]=[];
+    ctx.deps.environmentAccess!.inheritance=async supplied=>{reads.push(supplied);return {completed:true};};
+    ctx.deps.environmentAccess!.authorizeKeys=async(_by,_keys,supplied)=>{reads.push(supplied);return null;};
+    if(op==='acquire') {
+      const original=ctx.deps.leases!.acquire.bind(ctx.deps.leases);
+      ctx.deps.leases!.acquire=async(input,supplied)=>{assert.equal(supplied,tx);return original(input,supplied);};
+    } else {
+      const original=ctx.deps.leases!.extend.bind(ctx.deps.leases);
+      ctx.deps.leases!.extend=async(input,supplied)=>{assert.equal(supplied,tx);return original(input,supplied);};
+    }
+    await grantLeases(ctx,actor,workflow,[{op,keys:['meadow/allowed'],ttl_seconds:30}],run,undefined);
+    assert.deepEqual(reads,[undefined,undefined,tx,tx]);
+    assert.equal(locks.length,1);
+    assert.deepEqual(events,['write']);
+  }
+});
+
+
+test('the unavailable permission producer renders as a call error instead of a source-status chain',async()=>{
+  for(const role of ['user','admin'] as const) {
+    const {ctx}=fixture(false);
+    let errors:ProtocolError[]=[];
+    try {await grantLeases(ctx,{...actor,role},workflow,[{keys:['meadow/allowed'],ttl_seconds:30}],run,undefined);}
+    catch(error){assert.ok(error instanceof Refusal);errors=error.errors;}
+    assert.equal(errors[0]?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');
+    assert.equal(errors[0]?.message,'测试环境的权限核对现在不能进行，这次没有执行');
+    const text=toolText('start_run',{call_result:'error',errors},{caller:{role}});
+    assert.ok(text.includes('暂时不可用：测试环境的权限核对现在不能进行，这次没有执行。'));
+    assert.ok(text.includes(role==='admin'?'联系维护人员恢复测试环境权限核对':'请联系管理员'));
+    for(const wrong of ['状态未知','原因缺资料','读不到这份资料'])assert.equal(text.includes(wrong),false);
+  }
+});
+
+
+test('asking devices rechecks current permission before invoking even an injected observation provider',async()=>{
+  const {ctx}=fixture(true,async()=>denied);
+  let asks=0;
+  ctx.deps.observations={latest:async()=>[],observe:async()=>({observed:[],missing:null}),ask:async()=>{asks++;return [];}};
+  await assert.rejects(askClaims(ctx,actor,workflow,[{inventory:'a'.repeat(64),device:'/devices/0',label:'合成设备',line:'help',keys:['meadow/allowed']}],run,undefined,'synthetic-trace'),refused);
+  assert.equal(asks,0);
+});
+
+test('a final device permission refusal cannot be swallowed into an unknown device observation',async()=>{
+  const {ctx}=fixture(true,async()=>null);
+  let asks=0;
+  ctx.deps.observations={latest:async()=>[],observe:async()=>({observed:[],missing:null}),ask:async()=>{
+    asks++;
+    throw Object.assign(new Error('synthetic admission refusal'),{failure:{code:'ENVIRONMENT_PERMISSION_UNAVAILABLE',message:'测试环境的权限核对现在不能进行，这次没有执行',fix:'请联系管理员'}});
+  }};
+  await assert.rejects(askClaims(ctx,actor,workflow,[{inventory:'a'.repeat(64),device:'/devices/0',label:'合成设备',line:'help',keys:['meadow/allowed']}],run,undefined,'synthetic-trace'),unavailable);
+  assert.equal(asks,1);
 });
