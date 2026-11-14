@@ -666,7 +666,8 @@ test('scoped accepted notes preserve the first round after a zero-write second a
   const projected = (await readRunJobs(c.kit, c.service, c.admin, c.run, { unbound: true })).find(row => row.job === state.job);
   assert.ok(projected);
   const oldReport = projected.status.job_facts.result;
-  assert.ok(oldReport?.startsWith('src:'), 'the first round left an actual job report snapshot');
+  assert.ok(oldReport);
+  assert.ok(oldReport.startsWith('src:'), 'the first round left an actual job report snapshot');
   const readObject = c.kit.objects.get.bind(c.kit.objects), readReports: string[] = [];
   t.mock.method(c.kit.objects, 'get', async (...args: Parameters<typeof readObject>) => { readReports.push(args[0]); return readObject(...args); });
   const { reportMissingFacts } = await import('./reasons.ts');

@@ -380,7 +380,7 @@ export class DispatchService {
     const riskDisposed=choice==='mark_failed'&&decision?.body.detail.risk_confirmed===true;
     const marks:EffectMark[]=decision?.body.detail.effect_mark==='disposed'&&(riskDisposed||choice==='reconcile'&&decision.body.detail.identity_matched===true)?['disposed']:[];
     const result=projectedResult(events);
-    const historicalReturn=events.findLast(event=>event.body.detail.phase==='result'&&typeof event.body.detail.device_return==='string');
+    const recordedDeviceOutput=events.findLast(event=>event.body.detail.phase==='result'&&typeof event.body.detail.device_return==='string');
     const frozen=isConservativelyFrozen(events,base.missing_receipt===true||events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent')&&!base.dispatch_attempt);
     const hasAttempt=events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'||event.body.detail.phase==='round_refused'||event.body.detail.phase==='round_context'||event.body.detail.phase==='boundary_refused'&&Object.hasOwn(event.body.detail,'scope')||event.body.detail.phase==='reservation'&&object(event.body.detail.binding)&&Object.hasOwn(event.body.detail.binding,'attempt_scope'));
     const readonlyOrAdmission=!hasAttempt;
@@ -399,7 +399,7 @@ export class DispatchService {
       ...(typeof decision?.body.detail.decided_at==='string'?{decided_at:decision.body.detail.decided_at}:{}),
       frozen,
       ...(typeof result?.body.detail.reference==='string'?{result:result.body.detail.reference}:{}),
-      ...(historicalReturn?{device_return:String(historicalReturn.body.detail.device_return)}:{}),
+      ...(recordedDeviceOutput?{device_return:String(recordedDeviceOutput.body.detail.device_return)}:{}),
       ...(typeof result?.body.detail.report_pending==='boolean'?{report_pending:result.body.detail.report_pending}:{}),
       ...(base.job_facts.next_action||jobDiagnostics.next_action?{}:frozen?{next_action:`circle-hub job resume ${job}；只读核对作业各轮记录，不重派`}:{}),
     },...(base.dispatch_attempt?{dispatch_attempt:base.dispatch_attempt}:{})};
