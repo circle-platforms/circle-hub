@@ -1,3 +1,4 @@
+import {ProjectionOutput} from '../../../contracts/src/pack.ts';
 import {groundsAudience,guardedRecords} from './grounds.ts';
 import {isPersonalSpace,personalWorkflowProblems,personalCapabilityError} from '../packs/personal-capabilities.ts';
 import {uiLabelOf} from '../../../contracts/generated/vocabulary.ts';
@@ -24,7 +25,7 @@ import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../.
 import { Ground } from '../../../contracts/src/reference.ts';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
-import type { ContextBuild, RequirementTemplate, RunContext, ProjectionOutput } from '../../../contracts/src/pack.ts';
+import type { ContextBuild, RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
 import { StartRunInput, type StartRunOutput } from '../../../contracts/src/tools.ts';
 import { partitionCountsOf, type PartitionCounts, type ValidationResult } from '../../../contracts/src/validation.ts';
@@ -167,7 +168,7 @@ async function contextObservations(ctx: EngineContext): Promise<DeviceObservatio
  * with the earliest free moment. Returns the granted leases for the run record. */
 export type LeaseRequest = NonNullable<Extract<z.infer<typeof ProjectionOutput>,{items:unknown}>['lease_requests']>[number];
 export type LeaseDone = NonNullable<RunRecord['leases']>[number];
-const requestKeys = (request: LeaseRequest): string[] => 'keys' in request ? request.keys : [request.prefix];
+const requestKeys = (request: LeaseRequest): string[] => request.keys;
 
 /** The run ids of this run's lineage: itself and up to 20 predecessors (D04 R[0]: a booking lease is held by the lineage). */
 async function lineageOf(ctx: EngineContext, runId: string, predecessor: string | undefined): Promise<Set<string>> {
@@ -219,8 +220,8 @@ export async function grantLeases(
   predecessor: string | undefined,
 ): Promise<Array<LeaseDone>> {
   if (requests.length === 0) return [];
-  if (requests.some(request => request.op === 'register' || request.op === 'unregister')) {
-    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '任务包投影不能登记或注销测试环境前缀', {path:'/lease_requests',fix:'请任务包作者移除 register/unregister 投影；由管理员统一登记测试环境'})]);
+  if (!ProjectionOutput.safeParse({items:[],warnings:[],lease_requests:requests}).success) {
+    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '任务包的租约投影不符合当前契约', {path:'/lease_requests',fix:'请任务包作者移除 register/unregister 投影；由管理员统一登记测试环境'})]);
   }
   if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
   const declared = workflow.workflow.leases;
