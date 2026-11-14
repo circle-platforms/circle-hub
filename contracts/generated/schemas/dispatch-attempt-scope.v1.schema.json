@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "job": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "job",
+    "round"
+  ],
+  "additionalProperties": false,
+  "title": "dispatch-attempt-scope@1",
+  "description": "One real dispatch attempt: job and positive round are required, optional request_id belongs to this exact intent. Never synthesize a round from a latest job summary or for readonly precheck."
+}
