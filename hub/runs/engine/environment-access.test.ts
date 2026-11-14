@@ -266,3 +266,16 @@ test('a completed marker with mixed keys still authorizes the entire request rat
   await assert.rejects(grantLeases(ctx,actor,workflow,[{keys,ttl_seconds:30}],run,undefined),refused);
   assert.deepEqual(events,['authorize']);
 });
+
+
+for(const stage of ['preflight','locked'] as const)test('an unavailable assignment provider at '+stage+' rejects without any lease mutation',async()=>{
+  let calls=0;
+  const {ctx,events,locks}=fixture(true,async()=>{
+    calls++;
+    if(calls===(stage==='preflight'?1:2))throw new Error('synthetic permission provider unavailable');
+    return null;
+  });
+  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['meadow/allowed'],ttl_seconds:30}],run,undefined),unavailable);
+  assert.deepEqual(events,stage==='preflight'?['authorize']:['authorize','authorize']);
+  assert.equal(locks.length,stage==='preflight'?0:1);
+});
