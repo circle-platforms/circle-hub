@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { sha256Hex, type RecordsKit } from '../records/api.ts';
 import type { DispatchAttemptFacts, DispatchJobFacts, ScopedDispatchFacts } from '../../contracts/api.ts';
 import type { JobStatus } from './service.ts';
@@ -63,7 +64,14 @@ function diagnosticFacts(source: JobStatus['job_facts'] | NonNullable<JobStatus[
     }
     if (!missing.length && (source.missing_fact || source.reason || source.failed_conditions?.length)) missing.push({ fact: `${label}仍缺少可供成员读取的具体核对事实`, next_action: next });
   }
+  if (source.booking?.coverage_complete === false && source.error_code === 'LEASE_UNAVAILABLE' && source.booking.declared_device_count !== null) {
+    missing.push({ fact: `${label}所需测试环境「${source.booking.target}」的清单声明 ${source.booking.declared_device_count} 台设备；缺少 ${source.booking.missing_resources} 项所需资源的预订（共 ${source.booking.required_resources} 项）`, next_action: admin ? source.next_action ?? next : source.member_missing_facts?.[0]?.next_action ?? next });
+  }
   return [...new Map(missing.map(fact => [fact.fact + '\0' + fact.next_action, fact])).values()].slice(0, 16);
+}
+
+export function attemptScopeLabel(scope: DispatchAttemptFacts['scope']): string {
+  return scope.operation === 'dispatch' ? `第 ${scope.round} 轮派发` : `本次${labelOf('dispatch_operation', scope.operation)}`;
 }
 
 export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
@@ -73,7 +81,7 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     : facts.awaiting_disposition === true ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
     : job.ended === null ? admin ? `circle-hub job status ${job.job}` : '原样重交原提交读取本作业进展，不要重新发送作业'
     : facts.frozen === true ? admin ? `circle-hub job status ${job.job}` : '本作业保持重发保护；原样读取进展，不要重新发送作业'
-    : admin ? `circle-hub job status ${job.job}` : '读取本作业结果引用及各轮结论；没有结论时不要当作通过';
+    : admin ? `circle-hub job status ${job.job}` : facts.result ? '读取本作业结果引用及各轮结论；没有结论时不要当作通过' : '请联系管理员只读核对本作业的缺失事实';
   // Once an attempt exists, its stage diagnostics never fall back to a job-wide summary.
   const jobMissing = attempt
     ? admin
@@ -95,10 +103,11 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     ...(facts.result ? { result: facts.result } : {}),
     ...(facts.device_return ? { device_return: facts.device_return } : {}),
     ...(facts.admission_error ? { admission_error: { code: facts.admission_error.code, message: admin ? clip(facts.admission_error.message) : jobMissing.map(fact => fact.fact).join('；') || '本作业的准入核对未通过，请联系管理员核对', fix: admin ? facts.admission_error.fix : jobMissing.map(fact => fact.next_action).join('；') || next } } : {}),
-    missing_facts: jobMissing, next_action: next,
+    missing_facts: jobMissing,
+    ...(!attempt || attempt.phase === 'round_refused' && !job.boundary_refused || facts.frozen === true || facts.awaiting_disposition === true || facts.result || job.ended === null || jobMissing.length ? { next_action: !attempt && jobMissing.length ? [...new Set(jobMissing.map(fact => fact.next_action))].join('；') : next } : {}),
   };
   if (!attempt) return { job_facts };
-  const label = attempt.scope.operation === 'dispatch' ? `第 ${attempt.scope.round} 轮派发` : '本次一致性核对';
+  const label = attemptScopeLabel(attempt.scope);
   const attemptNext = attempt.outcome === 'unknown' ? admin ? `circle-hub job resume ${job.job}` : `${label}结果未知，不要重交或另开运行重发，原样读取进展；需要时联系管理员只读核对`
     : admin ? attempt.next_action ?? `circle-hub job status ${job.job}` : `读取${label}的结果与缺失事实，不要把该次结局推广为整个作业`;
   const scope: DispatchAttemptFacts['scope'] = admin ? attempt.scope : attempt.scope.operation === 'dispatch'

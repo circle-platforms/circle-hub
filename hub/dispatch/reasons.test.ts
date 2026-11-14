@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
@@ -95,7 +96,7 @@ test('historical read-only condition facts retain the item name without disclosi
   assert.match(member.text,/核对项目 \/seats.*至少数量/);assert.match(member.text,/请管理员/);
   assert.doesNotMatch(member.text,/private expected values|circle-hub|private/);
   const retried=runnerNote(source,'usr_private',true);
-  assert.match(retried.text,/请管理员/);assert.match(retried.text,/本次运行已重新申请上机验证作业/);
+  assert.match(retried.text,/请管理员/);assert.match(retried.text,/本次运行：这次重交 Hub 已再试/);
   assert.ok(retried.text.includes('/seats'));
 });
 
@@ -176,7 +177,7 @@ test('conformance scope names the operation without inventing a round and readon
   source.status.job_facts.operation = 'conformance';
   source.status.dispatch_attempt = { scope: { operation: 'conformance', job: jobId, request_id: 'private-request' }, outcome: 'proven_not_executed' };
   const conform = runnerNote(source, 'usr_private');
-  assert.match(conform.text, /本次一致性核对/); assert.doesNotMatch(conform.text, /第.*轮/);
+  assert.ok(conform.text.includes('本次'+labelOf('dispatch_operation','conformance'))); assert.doesNotMatch(conform.text, /第.*轮/);
   assert.equal(Object.hasOwn(conform.dispatch_attempt!.scope, 'round'), false);
   assert.equal(JSON.stringify(conform).includes('private-request'), false);
   source.status.job_facts.operation = 'precheck'; source.status.job_facts.readonly_verified = false;
@@ -299,4 +300,25 @@ test('final boundary after a target response does not restart the whole job whil
     assert.equal(notes[0].dispatch_attempt?.outcome, 'not_dispatched');
     if (phase === 'round_refused') assert.match(notes[0].job_facts?.next_action ?? '', /不会整份重试.*重新开始核验/);
   }
+});
+
+test('a resolved job-status-unavailable wrapper is run uncertainty and never a confirmed admission refusal or retry license', async () => {
+  const { acceptedDispatch } = await import('./accepted.ts');
+  const run = 'run_00000000000000000000000003';
+  const user = { id: 'usr_00000000000000000000000003', name: '合成成员', role: 'user' as const };
+  const admin = { id: 'usr_00000000000000000000000002', name: '合成管理员', role: 'admin' as const, disabled: false };
+  const records = { store: { find: async () => ({ items: [], next: null }) }, principals: { list: async () => [admin], get: async () => user } } as unknown as Pick<import('../records/api.ts').RecordsKit, 'store' | 'principals'>;
+  let calls = 0;
+  const service = { options: { runs: { getRun: async () => ({}) } }, dispatchAccepted: async () => {
+    calls++; return { started: false, job_status_unavailable: true, reason: 'PRIVATE_STATUS_EXCEPTION' };
+  } } as unknown as import('./service.ts').DispatchService;
+  for (let n = 0; n < 2; n++) {
+    const [note] = await acceptedDispatch(records, service, run, true, 0, user);
+    assert.deepEqual(note.run_facts?.scope, { run }); assert.equal(note.run_facts?.worker_settled, true);
+    assert.equal(note.run_facts?.admission_error, undefined);
+    assert.equal(note.job_facts, undefined); assert.equal(note.dispatch_attempt, undefined); assert.equal(note.job, undefined);
+    assert.match(note.text, /事实尚未确认/); assert.doesNotMatch(note.text, /准入核对未通过|PRIVATE_STATUS_EXCEPTION/);
+    for (const old of ['outcome', 'not_sent', 'frozen', 'job_status_unavailable']) assert.equal(Object.hasOwn(note, old), false);
+  }
+  assert.equal(calls, 1, 'an unavailable status is not permission to start another worker');
 });

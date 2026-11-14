@@ -11,7 +11,7 @@ import type { DispatchNoteFacts, DispatchRunFacts, DispatchAttemptFacts } from '
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
-import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
+import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, attemptScopeLabel, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
 export interface DispatchNote extends DispatchNoteFacts { run?: string; job?: string; executor?: string; text: string }
@@ -47,7 +47,7 @@ async function jobNote(service: DispatchService, job: RunJob, admin: string, ret
   const facts = [...note.job_facts?.missing_facts ?? [], ...report.missing_facts].slice(0, 16);
   return { ...note, run: job.verification_run, ...(administrative && job.executor ? { executor: job.executor } : {}),
     job_facts: { ...note.job_facts!, missing_facts: facts },
-    ...(report.no_verdict ? { text: clip(note.text + '。作业结果核对：' + report.missing_facts.map(fact => fact.fact).join('；')) } : {}) };
+    ...(report.no_verdict ? { text: clip(note.text + '。作业历史报告中部分条目没有判定；缺失事实：' + report.missing_facts.map(fact => fact.fact).join('；')) } : {}) };
 }
 
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
@@ -142,17 +142,17 @@ function retriable(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): 
 }
 
 function attemptLabel(attempt: DispatchAttemptFacts): string {
-  return attempt.scope.operation === 'dispatch' ? `第 ${attempt.scope.round} 轮派发` : '本次一致性核对';
+  return attemptScopeLabel(attempt.scope);
 }
 
 function attemptNext(attempt: DispatchAttemptFacts, job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): string {
   const scope = attemptLabel(attempt);
-  if (attempt.outcome === 'unknown') return `${scope}上机验证结果未知：目标可能已经执行；不要重交或另开运行重发，联系管理员只读核对；之后原样重交读进展`;
-  if (attempt.report_pending) return `${scope}报告尚未取全，原样重交原提交读取进展；不要重新发送`;
-  if (attempt.not_sent === true) return retriable(job) ? `${scope}没有发出，原因消除后可原样重交，Hub会再试一次` : `${scope}没有发出；请按该次缺失事实处理，不自行重新发送`;
-  if (attempt.outcome === 'target_rejected') return `${scope}被目标拒绝；` + (retriable(job) ? '修正该次拒绝原因后可原样重交' : '请读取该次结局并按任务包规程继续，不自行重新发送');
-  if (attempt.outcome === 'proven_not_executed') return `${scope}已证明目标没有执行；` + (retriable(job) ? '可原样重交' : '此前各轮记录保留，不要整份重发');
-  return `${scope}按该范围的结果引用读取结论，缺结论不当作通过`;
+  if (attempt.outcome === 'unknown') return `${scope}结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；之后原样重交读进展，需要时联系管理员只读核对`;
+  if (attempt.report_pending) return `${scope}目标报告还没取全；原样重交原提交补读报告，不要重新发送作业`;
+  if (attempt.not_sent === true) return retriable(job) ? `${scope}没有发出用例数据；原因消除后原样重交，Hub 会再试一次` : `${scope}没有发出用例数据；按本作业的放行说明处理，不自行重新发送`;
+  if (attempt.outcome === 'target_rejected') return `${scope}目标没有接收，也没有执行；` + (retriable(job) ? '按该次拒绝原因修正后原样重交，Hub 会再试一次' : '读取该次拒绝记录，不自行重发整个作业');
+  if (attempt.outcome === 'proven_not_executed') return `${scope}已证明目标没有执行；` + (retriable(job) ? '原样重交，Hub 会再试一次' : '读取该次记录，不自行重发整个作业');
+  return attempt.device_return ? `${scope}读设备返回，读完再判断` : `${scope}读结果引用看逐条结论；没有结论时不要当作通过`;
 }
 
 function invocationCategory(facts: Pick<JobStatus['job_facts'], 'error_code' | 'call_error_category' | 'booking'>): CallErrorCategory | null {
@@ -168,12 +168,13 @@ function invocationCategory(facts: Pick<JobStatus['job_facts'], 'error_code' | '
 export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): DispatchNote {
   const facts = job.status.job_facts;
   const diagnostics = statusDiagnostics(job, administrative), projected = diagnostics.job_facts, attempt = diagnostics.dispatch_attempt;
-  const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '状态仍待核对' : '进行中';
-  const jobLabel = projected.operation === 'precheck' ? '本次只读预检作业' : projected.operation === 'conformance' ? '本次一致性核对作业' : projected.operation === 'dispatch' ? '本次上机验证作业' : '本作业';
+  const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '还有未决事项' : '还在进行';
+  const jobLabel = projected.operation === 'precheck' ? '本次只读预检作业' : projected.operation === 'conformance' ? `本次${labelOf('dispatch_operation', 'conformance')}作业` : projected.operation === 'dispatch' ? '本次上机验证作业' : '本作业';
   const parts = [administrative ? `作业 ${job.job}：${state}${projected.phase ? `（阶段 ${projected.phase}）` : ''}` : `${jobLabel}${state}`];
   if (projected.operation === 'precheck') parts.push(projected.readonly_verified === true ? '本作业的只读预检条件已核对通过' : '本作业的只读预检条件尚无全部通过的观察');
+  if (facts.decided_by) parts.push('管理员已处置本作业；要再上机请重新开始上机验证');
   if (projected.frozen === true) parts.push('本作业保持重发保护，需按作业记录继续核对');
-  if (projected.result) parts.push(`作业结果引用 ${projected.result}；该引用不替代各轮结局`);
+  if (projected.result) parts.push(projected.operation === 'precheck' ? `本作业的上机验证前核对结论 ${projected.result}（只读预检报告，不是用例在设备上的执行结果）` : `作业结果引用 ${projected.result}；读它看逐条结论，不代替各轮的执行事实`);
   if (projected.admission_error) parts.push(`本作业准入核对：${projected.admission_error.message}`);
   if (projected.missing_facts?.length) parts.push(`作业缺失事实：${projected.missing_facts.map(fact => fact.fact).join('；')}`);
   if (attempt) {
@@ -184,14 +185,19 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
     if (attempt.missing_facts?.length) parts.push(`${scope}缺失事实：${attempt.missing_facts.map(fact => fact.fact).join('；')}`);
     if (attempt.result) parts.push(`${scope}结果引用 ${attempt.result}`);
     if (attempt.device_return && attempt.outcome !== 'not_dispatched' && attempt.not_sent !== true) parts.push(`${scope}设备返回 ${attempt.device_return}（原文引用不证明通过）`);
-    const nextAttempt = administrative ? attempt.next_action ?? diagnostics.job_facts.next_action ?? attemptNext(attempt, job) : attempt.outcome === 'unknown' ? attemptNext(attempt, job) : attempt.missing_facts?.length ? attempt.missing_facts.map(fact => fact.next_action).join('；') : attemptNext(attempt, job);
+    const hasSpecificMemberAction = (job.status.dispatch_attempt?.member_missing_facts?.length ?? 0) > 0 || (job.status.dispatch_attempt?.failed_conditions?.length ?? 0) > 0 || (job.status.dispatch_attempt?.failed_checks?.length ?? 0) > 0;
+    const nextAttempt = administrative ? attempt.next_action ?? diagnostics.job_facts.next_action ?? attemptNext(attempt, job) : attempt.outcome === 'unknown' ? attemptNext(attempt, job) : hasSpecificMemberAction && attempt.missing_facts?.length ? [...new Set(attempt.missing_facts.map(fact => fact.next_action))].join('；') : attemptNext(attempt, job);
     attempt.next_action = nextAttempt;
     parts.push(`${scope}下一步：${nextAttempt}`);
   }
-  if (projected.awaiting_disposition === true) parts.push('本作业有待处置事项，请按作业记录处理');
+  if (projected.awaiting_disposition === true) parts.push(facts.requests?.length ? '本作业已交给管理员处置，请按作业记录处理' : '本作业有待处置事项，请按作业记录处理');
   const next = administrative ? projected.next_action : projected.missing_facts?.map(fact => fact.next_action).join('；') || projected.next_action;
   if (next) parts.push(`作业下一步：${next}`);
-  if (retried) parts.push('本次运行已重新申请上机验证作业，见后面的条目');
+  if (retried) parts.push('本次运行：这次重交 Hub 已再试，见后面的条目');
   const category = !attempt && projected.admission_error ? invocationCategory(facts) : null;
-  return { job: job.job, ...diagnostics, text: clip(category ? formatCallError(category, parts.join('。'), next ?? '') : parts.join('。')) };
+  const attemptCategory = attempt?.outcome === 'not_dispatched' ? invocationCategory(job.status.dispatch_attempt!) : null;
+  const refusal = attempt && attemptCategory ? formatCallError(attemptCategory,
+    `${attemptLabel(attempt)}：${labelOf('effect_outcome', attempt.outcome!)}${attempt.missing_facts?.length ? '；' + attempt.missing_facts.map(fact => fact.fact).join('；') : ''}`,
+    attempt.next_action ?? attemptNext(attempt, job)) : undefined;
+  return { job: job.job, ...diagnostics, text: clip(refusal ? [refusal,...parts].join('。') : category ? formatCallError(category, parts.join('。'), next ?? '') : parts.join('。')) };
 }
