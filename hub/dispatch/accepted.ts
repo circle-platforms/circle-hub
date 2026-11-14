@@ -10,6 +10,7 @@ import { callErrorCategory, formatCallError } from '../../contracts/generated/pr
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
+import { toolLocalMinute } from '../tool-time.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
@@ -25,8 +26,8 @@ function capped(notes: DispatchNote[], run: string): DispatchNote[] {
   const kept = notes.slice(-(MAX_NOTES - 1));
   return [{ run, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept.map(note=>({...note,run:note.run??run}))];
 }
-// the reference compile skill reads a running task's status by its id and never resubmits it; here the progress read is the same submission.
-const PROGRESS = '稍后逐字原样重交上机验证时的那次提交读进展';
+// Progress reread: the model repeats the same script-merge submission (Boss 20:53; no「任务包」「提交」).
+const REREAD = '下一步由模型稍后把这次脚本合并原样再交一次，读取进展';
 
 async function activeAdmin(records: Pick<RecordsKit, 'principals'>) {
   return (await records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
@@ -48,7 +49,7 @@ async function jobNote(service: DispatchService, job: RunJob, admin: string, ret
 }
 
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
-/** One dispatch attempt of a run in this process. A repeat of the submission reads it (PROGRESS) instead of starting another,
+/** One dispatch attempt of a run in this process. A repeat of the submission reads it (REREAD) instead of starting another,
  * so a refusal that comes after the answer, when the release checks take longer than the wait, reaches the next repeat. */
 interface Attempt { woken: Promise<void>; reserved?: { job: string; executor: string }; settled?: Settled; uncertain?: boolean }
 const attempts = new WeakMap<DispatchService, Map<string, Attempt>>();
@@ -88,9 +89,9 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     await Promise.race([attempt.woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
     clearTimeout(timer);
   }
-  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行开始上机验证；${PROGRESS}，结束后同样的答复带结果引用`) }]); }
+  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按工作流的规定自动开始上机验证；${REREAD}；上机验证结束后，同样的答复里带设备输出的引用`) }]); }
   const settled = attempt.settled;
-  if (!settled) return answer([{ text: `Hub 正在做上机验证前核对；${PROGRESS}` }]);
+  if (!settled) return answer([{ text: `Hub 正在做上机验证前的核对；${REREAD}` }]);
   if (attempt.uncertain || settled.outcome==='unknown') { const next=administrative?`circle-hub run show ${run} --json`:'不要重新发送或另开运行；联系管理员只读核对原作业';return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:next}],next_action:next,text:clip(`上机验证状态尚未确认；不要重新发送或另开运行；下一步：${next}`)}]); }
   // A settled attempt is answered once; a repeat after that tries again, as before (a cause the runner fixes, as a booking).
   open.delete(run);
@@ -140,17 +141,18 @@ function retriable(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): 
 /** What the runner can do next in the job's state. The administrator's next action (a CLI command) is never forwarded. */
 function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, admin: string): string {
   const { status } = job;
-  if (job.ended === null) return `作业还在进行；${PROGRESS}`;
+  if (job.ended === null) return `上机验证还在进行；${REREAD}`;
   if (status.decided_by) return '管理员已处置这个作业；要再上机请重新开始上机验证';
   if (job.ended === 'unknown' || status.frozen) {
     // The Hub asks the target by the request id where the executor declares a query; what stays unresolved is a request to
     // the named administrator, and only then does the note say it was handed over.
     const due = status.requests?.find((request) => request.deadline !== null)?.deadline;
-    const handling = status.requests?.length ? `已交给管理员处置${due ? `（期限 ${due}）` : ''}` : `Hub 会按请求号向目标查询，查不清再交给管理员处置`;
+    const dueText = due ? `（期限 ${toolLocalMinute(due)}）` : '';
+    const handling = status.requests?.length ? `已交给管理员处置${dueText}` : `Hub 会按请求号向目标查询，查不清再交给管理员处置`;
     // Unknown means no information yet (not “someone concluded and it is unchecked”).
     return `上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；${handling}；之后原样重交读进展`;
   }
-  if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${PROGRESS}`;
+  if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${REREAD}`;
   if (status.outcome === 'not_dispatched') return job.boundary_refused ? `按原因补齐（例如预订整个自动化测试环境）后${RETRY}` : status.not_sent ? `什么都没有发到目标；原因消除后${RETRY}` : NO_MORE;
   if (status.outcome === 'target_rejected') return `目标没有接收，也没有执行；按拒绝的原因修正后${RETRY}`;
   if (status.outcome === 'proven_not_executed') return `已证明目标没有执行；${RETRY}`;

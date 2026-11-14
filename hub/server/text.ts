@@ -18,6 +18,7 @@ import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
 import { ENVIRONMENT_ASSIGNMENT_PREVIEW, packListHead } from './pack-words.ts';
+import { toolLocalMinute } from '../tool-time.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -330,8 +331,9 @@ export function startRunExample(pack: PackSummary): string {
   return JSON.stringify(StartRunInput.safeParse(call).success ? call : { pack: pack.pack, inputs: {} });
 }
 
+/** Tool-facing clock: month-day, minute, Hub zone (Boss 20:53). Console keeps browser-local formatting. */
 function localMinute(value: string): string {
-  return new Date(value).toLocaleString('sv-SE', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).slice(0, 16);
+  return toolLocalMinute(value);
 }
 
 function listText(v: ListOut, context: TextContext): string {
@@ -519,6 +521,16 @@ function conclusionStatements(texts: readonly string[]): string[] {
   return withoutPlaceholder.length > 0 ? withoutPlaceholder : unique;
 }
 
+function awaitingExcel(item: ItemResult): boolean {
+  if (item.requirements.some((requirement) => requirement.requirement === 'workbook_verified' && requirement.status !== 'satisfied')) return true;
+  const texts = item.requirements.flatMap((requirement) => [
+    messageOf(requirement) ?? '',
+    ...requirement.claims.map((claim) => claim.statement.text),
+    ...requirement.claims.map((claim) => (typeof claim.statement.data?.missing === 'string' ? claim.statement.data.missing : '')),
+  ]).join('\n');
+  return /自动化用例 Excel|工作簿/.test(texts);
+}
+
 function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
   const pending = item.requirements.some(requirement => requirement.status === 'pending' || requirement.unsatisfied_reason === 'independence_unknown');
   const wrong = item.requirements.filter(requirement => requirement.status === 'unsatisfied' && requirement.unsatisfied_reason === 'outcome_mismatch');
@@ -528,16 +540,28 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const unknown = partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
   const status = unknown ? '未知' : model ? '未确认' : '已确认';
   const judgment = wrong.length ? '错误' : unknown ? null : '正确';
+  const excel = unknown && !wrong.length && awaitingExcel(item);
+  const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
+  const layers = problems.flatMap(requirement => requirement.layers.filter(layer => layer.terminal !== 'pass' && layer.terminal !== 'judgment'));
+  // In progress: waiting on the next step / device output — keep 状态未知, do not force a reason word (Boss 20:53).
+  // Concrete layer reasons (not_covered, missing_input, check_error, …) stay on the reason-word path.
+  const concreteGap = layers.some((layer) => (layer.reason !== undefined && layer.reason !== 'awaiting_step') || layer.attribution !== undefined);
+  const inFlight = unknown && !wrong.length && !excel && !partial && !concreteGap
+    && (pending || item.requirements.length === 0 || layers.some((layer) => layer.reason === 'awaiting_step' || layer.terminal === 'incomplete' || isUnknownTerminal(layer)));
   const statement = wrong.length
     ? conclusionStatements(wrong.map(requirement => messageOf(requirement)).filter((text): text is string => Boolean(text))).join('；') || '核对发现错误'
-    : unknown
-      ? '还没有确认结论'
-      : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
+    : inFlight
+      ? '上机验证还在进行，还没有设备输出'
+      : unknown
+        ? '还没有确认结论'
+        : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
   const parts = [`${caseName(original, item.label)}：${statement}`, `状态${status}`];
   if (judgment !== null) parts.push(`判断${judgment}`);
-  if (unknown || judgment === '错误') {
-    const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
-    const layers = problems.flatMap(requirement => requirement.layers.filter(layer => layer.terminal !== 'pass' && layer.terminal !== 'judgment'));
+  if (excel) {
+    parts.push('下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查');
+  } else if (inFlight) {
+    parts.push('下一步由模型在上机验证结束后读取设备输出');
+  } else if (unknown || judgment === '错误') {
     parts.push(`原因${partial ? '缺资料' : [...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
     parts.push(`下一步${partial ? '使用者补齐资料后重新交给 Hub 检查' : [...new Set(layers.map(userNextStep))].join('；') || '使用者核对资料后重新交给 Hub 检查'}`);
   }
@@ -570,6 +594,11 @@ function startText(v: StartOut, context: TextContext): string {
   }
   for (const observation of run.device_observations ?? []) {
     const data = observation.statement.data;
+    // Booking fact for devices that take no commands: one plain line, no verification conclusion chain (Boss 20:53).
+    if (data?.kind === 'no_command_devices' && typeof observation.statement.text === 'string') {
+      lines.push(observation.statement.text);
+      continue;
+    }
     if (typeof data?.label === 'string') {
       const text = `测试环境 ${data.label}，${typeof data.build === 'string' ? `构建 ${data.build}` : '构建未知'}${observation.qualifier.collected_at ? `，读取时间 ${localMinute(observation.qualifier.collected_at)}` : ''}`;
       lines.push(claimLine({ ...observation, statement: { ...observation.statement, text } }));
@@ -822,6 +851,16 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
       ?? (note.missing_facts?.length ? note.missing_facts.map((row) => row.next_action).join('；') : note.next_action)
       ?? undefined;
     return callErrorLine(parts.category, parts.fact, next);
+  }
+
+  // In-progress dispatch notes already say what is waiting and who acts next — no reason-word chain (Boss 20:53).
+  if (
+    message.includes('下一步由模型稍后把这次脚本合并原样再交一次，读取进展')
+    || /已按工作流的规定自动开始上机验证/.test(message)
+    || message.includes('正在做上机验证前的核对')
+    || (message.includes('上机验证还在进行') && !message.includes('上机验证结果未知'))
+  ) {
+    return message;
   }
 
   // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.

@@ -621,7 +621,7 @@ const packs=Array.from({length:300},(_,i)=>packOf(i));const answer=ListTaskPacks
 });
 
   test('every pack is in the index whatever the offset, then the declared run context, then the details (decision 113)', () => {
-const index=[0,1,2].map(i=>({pack:packOf(i).pack,title:packOf(i).title,kind:'workflow' as const}));const context={leases:[],observations:[{label:'合成设备',build:'Toy_1_0_7',base:'Toy_1_0_7',observed_at:'2026-01-02T00:00:00.000Z',packs:['toy-pack-1@1.0.1']}]};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[packOf(2)],index,context,trace:TRACE});const text=toolText('list_task_packs',answer,{packList:{offset:2}});assert.deepEqual(linesOf(text).slice(1,4),index.map(row=>row.title));assert.match(text,/测试环境 合成设备，构建 Toy_1_0_7；读取时间 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);assert.doesNotMatch(text,/2026-01-02T|run_|租约/);
+const index=[0,1,2].map(i=>({pack:packOf(i).pack,title:packOf(i).title,kind:'workflow' as const}));const context={leases:[],observations:[{label:'合成设备',build:'Toy_1_0_7',base:'Toy_1_0_7',observed_at:'2026-01-02T00:00:00.000Z',packs:['toy-pack-1@1.0.1']}]};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[packOf(2)],index,context,trace:TRACE});const text=toolText('list_task_packs',answer,{packList:{offset:2}});assert.deepEqual(linesOf(text).slice(1,4),index.map(row=>row.title));assert.match(text,/测试环境 合成设备，构建 Toy_1_0_7；读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）/);assert.doesNotMatch(text,/2026-01-02T|run_|租约/);
 });
 
   test('a knowledge view input is shown in the form its parser requires, not as a bare number', () => {
@@ -812,11 +812,12 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
     ...base,
     dispatch: [
       { text: '上机验证没有发出：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' },
-      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）；稍后逐字原样重交上机验证时的那次提交读进展，结束后同样的答复带结果引用' },
+      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按工作流的规定自动开始上机验证（执行器 synthetic-executor）；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用' },
     ],
   }), { items: items(1) });
   assert.match(many, /上机验证没有发出：预检条件不满足/);
-  assert.match(many, /Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）/);
+  assert.match(many, /Hub 已再次按工作流的规定自动开始上机验证（执行器 synthetic-executor）/);
+  assert.doesNotMatch(many, /任务包|下一步由使用者继续读取设备输出/);
   assert.equal(linesOf(many).filter(line => line.includes('上机验证')).length >= 2, true);
 });
 
@@ -920,4 +921,78 @@ test('booking rewrite does not wipe occupied or expired call-error categories', 
   const expiredLine = linesOf(expired).find((line) => line.startsWith('不存在：')) ?? '';
   assert.equal(expiredLine, '不存在：当前账户的原预订已过期；本运行没有覆盖测试环境 合成环境 的完整预订。先预订整个测试环境后重新核验。');
   assert.doesNotMatch(expiredLine, /脚本合并正确|没有带着测试环境的预订|状态已确认|判断错误|决定者程序/);
+});
+
+test('booking no-command devices stay one plain line; in-flight and Excel rows skip reason words (Boss 20:53)', () => {
+  const at = '2026-11-14T09:35:00.000Z';
+  const list = [{ ...items(1)[0], fields: { case_id: '253651793153361064', title: '253 字符域名 DNS 解析正常' } }];
+  const run = runOf(list);
+  run.device_observations = [
+    {
+      statement: { text: 'apv0 装的是 Toy', data: { label: 'apv0', build: 'Toy', inventory: H('e'), device: '/d/0' } },
+      qualifier: { nature: 'fact', provenance: 'observed', marks: [], collected_at: at },
+      grounds: [`src:${H('d')}`],
+      warrant: { producer: 'function', id: 'dispatch.version_probe@1' },
+      validity: { status: 'valid', bound: [H('e')], premises: [] },
+    },
+    {
+      statement: {
+        text: 'clientc、clientd、cliente、console、routera、routerb、server213、server231、server232 共 9 台不接收命令，未读取构建版本',
+        data: { missing: 'x', kind: 'no_command_devices' },
+      },
+      qualifier: { nature: 'fact', provenance: 'projected', marks: [], collected_at: at },
+      grounds: [],
+      warrant: { producer: 'function', id: 'runs.observe_devices@1' },
+      validity: { status: 'valid', bound: [], premises: [] },
+    },
+  ];
+  const booking = toolText('start_run', startAnswer(run));
+  assert.match(booking, /测试环境 apv0，构建 Toy，读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）；状态已确认；决定者程序/);
+  assert.match(booking, /^clientc、clientd、cliente、console、routera、routerb、server213、server231、server232 共 9 台不接收命令，未读取构建版本$/m);
+  assert.doesNotMatch(booking, /不接收命令.*状态未知|没有绑定同一份清单/);
+
+  const inFlightItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'awaiting_step',
+    requirements: [{
+      requirement: 'structure',
+      status: 'pending',
+      layers: [{ layer: 'dynamic', terminal: 'incomplete', reason: 'awaiting_step' }],
+      claims: [],
+    }],
+  };
+  const inFlight = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [inFlightItem] })), { items: list });
+  assert.match(inFlight, /^原始用例 253651793153361064 253 字符域名 DNS 解析正常：上机验证还在进行，还没有设备输出；状态未知；下一步由模型在上机验证结束后读取设备输出；决定者程序$/m);
+  assert.doesNotMatch(inFlight, /原因缺资料|原因还没查清|下一步使用者/);
+
+  const excelItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'missing_input',
+    requirements: [{
+      requirement: 'workbook_verified',
+      status: 'pending',
+      layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }],
+      claims: [{
+        statement: { text: '缺自动化用例 Excel', verdict: 'unknown', reason: 'missing_input' },
+        qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
+        grounds: [],
+        warrant: { producer: 'function', id: 'case-compile.workbook@1' },
+        validity: { status: 'valid', bound: [], premises: [] },
+      }],
+    }],
+  };
+  const excel = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [excelItem] })), { items: list });
+  assert.match(excel, /^原始用例 253651793153361064 253 字符域名 DNS 解析正常：还没有确认结论；状态未知；下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查；决定者程序$/m);
+  assert.doesNotMatch(excel, /原因缺资料|下一步使用者补齐资料/);
+
+  const started = toolText('submit_result', SubmitResultOutput.parse({
+    ...submitAnswer(resultOf(items(1))),
+    dispatch: [{ text: 'Hub 已按工作流的规定自动开始上机验证；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用' }],
+  }), { items: items(1) });
+  assert.match(started, /^Hub 已按工作流的规定自动开始上机验证；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用$/m);
+  assert.doesNotMatch(started, /任务包|状态未知；原因还没查清；下一步由使用者继续读取设备输出/);
 });
