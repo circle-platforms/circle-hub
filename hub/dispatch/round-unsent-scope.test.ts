@@ -85,12 +85,6 @@ test('a scoped second-round no-send preserves the first effect and removes every
   assert.equal(state.dispatch_attempt?.outcome, 'not_dispatched');
   assert.equal(state.dispatch_attempt?.not_sent, true);
   assert.ok(state.job_facts.result, 'the earlier round result remains readable at job scope');
-  const earlierRaw = events.findLast(event => event.body.detail.phase === 'result' && typeof event.body.detail.device_return === 'string');
-  assert.ok(earlierRaw, 'the real first round recorded a raw device output reference');
-  assert.equal(state.job_facts.device_return, earlierRaw.body.detail.device_return, 'the later job summary must not hide the earlier raw output');
-  const rawReference = state.job_facts.device_return!;
-  const earlierRawBytes = (await c.kit.artifacts.source(c.owner, rawReference.slice(4)))?.bytes;
-  assert.ok(earlierRawBytes, 'the runner can still read the original raw output');
   assert.equal(state.job_facts.reason,undefined);
   assert.equal(state.job_facts.missing_fact,undefined);
   assert.equal(state.job_facts.next_action,undefined);
@@ -139,7 +133,6 @@ test('a scoped second-round no-send preserves the first effect and removes every
   assert.deepEqual((await c.service.journal.events(state.job)).map(event=>event.digest),beforeRead,'negative summary and retry leave original records intact');
   const oldReport=await c.kit.artifacts.source(c.owner,state.job_facts.result!.slice(4));
   assert.ok(oldReport?.bytes,'the original first-round report remains readable');
-  assert.deepEqual((await c.kit.artifacts.source(c.owner, rawReference.slice(4)))?.bytes, earlierRawBytes, 'later reads and retries preserve the earlier raw output bytes');
   t.diagnostic(JSON.stringify({ historical_repro: 'e046950bc', original_gateway_submits: 1, successful_gateway_submits_after_retry:2, intent_rounds: [1, 2], accepted_receipts: receipts.length, first_round: firstRound?.body.detail.terminal, second_submit_bytes: zeroWrite.body.detail.request_bytes_written, outcome: state.dispatch_attempt?.outcome, not_sent: state.dispatch_attempt?.not_sent, summary_round_present: Object.hasOwn(state, 'round') }));
 });
 
@@ -397,4 +390,28 @@ test('a parsed scope conflicting with the actual round remains unknown for defau
     assert.ok(scoped.job_facts.grounds?.includes(`rec:${intent.digest}`));
   }
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+});
+
+
+test('a recorded raw device return survives a later job summary that does not repeat that reference', { timeout: 60000 }, async t => {
+  const c = await setup(); t.after(() => c.close());
+  const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(first.dispatch_attempt?.outcome, 'effective');
+  assert.ok(first.job_facts.result);
+  assert.match(first.job_facts.device_return ?? '', /^src:[a-f0-9]{64}$/);
+  const raw = first.job_facts.device_return!;
+  const before = (await c.kit.artifacts.source(c.owner, raw.slice(4)))?.bytes;
+  assert.ok(before, 'the first dispatch really saved readable raw output');
+  const binding = await c.service.journal.binding(first.job);
+  // Historical-writer fixture: append only the job-level report summary. The
+  // original execution, raw artifact and receipt came from the real dispatcher.
+  // This is not a claim that the repeated fixture creates a per-round raw artifact.
+  await c.service.journal.append({ ...binding, input: null, run: c.run }, 'result', 'read_back', 'completed', { reference: first.job_facts.result, items: 1 }, [first.job_facts.result]);
+  const count = (await c.service.journal.events(first.job)).length;
+  const read = await c.service.status(c.admin, first.job);
+  assert.equal(read.job_facts.result, first.job_facts.result);
+  assert.equal(read.job_facts.device_return, raw, 'a summary that omits raw output cannot erase the recorded historical reference');
+  assert.deepEqual((await c.kit.artifacts.source(c.owner, raw.slice(4)))?.bytes, before);
+  assert.equal((await c.service.journal.events(first.job)).length, count, 'reading the reference never repairs or writes history');
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
 });
