@@ -73,7 +73,8 @@
         "system_unassigned",
         "content_read_not_permitted",
         "named_document_run_scope_denied",
-        "run_submission_not_owned"
+        "run_submission_not_owned",
+        "environment_registration_incomplete"
       ]
     },
     "missing_facts": {
