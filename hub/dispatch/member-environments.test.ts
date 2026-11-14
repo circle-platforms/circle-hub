@@ -85,9 +85,8 @@ test('member occupancy shows names and times only within assigned keys and never
   const visible = await w.environments.list(w.alice);
   assert.equal(visible.length,1);assert.equal(visible[0].occupancy?.[0].name,'其他成员');
   assert.equal((await w.environments.list({...w.alice,role:'admin'}))[0].occupancy?.[0].name,'其他成员','claimed admin role cannot expose a holder');
-  const {schema,id,...content}=w.firstEnvironment;
-  await w.records.testEnvironments.update(w.admin,id,{...content,name:content.name!,target:content.target!,prefixes:[...content.prefixes,{prefix:'synthetic/zone/',owner:w.alice.id,registered_at:new Date().toISOString()}]});
-  assert.equal((await w.environments.list(w.alice))[0].occupancy?.[0].name,w.bob.name,'the current catalog prefix owner can see the name');
+  await w.records.testEnvironments.reassignOwner(w.admin,w.firstEnvironment.id,{key:'synthetic/zone/allowed',owner:w.alice.id});
+  assert.equal((await w.environments.list(w.alice))[0].occupancy?.[0].name,w.bob.name,'the current catalog resource owner can see the name');
   assert.equal(visible[0].occupancy?.[0].mine,false);assert.ok(visible[0].occupancy?.[0].since);
   assert.ok(visible[0].occupancy?.[0].until);
   const text = JSON.stringify(visible);
@@ -125,7 +124,7 @@ test('revocation keeps only the callers existing occupancy visible, denies exten
   assert.deepEqual(await w.environments.list(outsider),[]);
   assert.deepEqual(await w.environments.unattributedHoldings(outsider),[]);
   assert.deepEqual(await w.environments.list(w.admin),[],'management alone exposes no unassigned environment');
-  const ctx = {now:()=>new Date(),deps:{leases:w.leases,environmentAccess:w.environments,enforceEnvironmentAssignments:true}} as unknown as EngineContext;
+  const ctx = {now:()=>new Date(),deps:{records:w.records,leases:w.leases,environmentAccess:w.environments,enforceEnvironmentAssignments:true}} as unknown as EngineContext;
   const workflow = {pack:{id:'synthetic-workflow'},workflow:{leases:{prefix:'synthetic/',max_ttl_seconds:600}}} as LoadedWorkflow;
   await assert.rejects(grantLeases(ctx,w.alice,workflow,[{op:'extend',keys:['synthetic/zone/allowed'],ttl_seconds:60}],ownRun,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='SOURCE_NOT_PERMITTED');
   assert.equal(await leaseBytes(),before,'revocation, viewing and denied extension change no lease byte');
@@ -195,7 +194,7 @@ test('ordinary owner prefix preserves the same holders booking result across inh
   await db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3)',[prefix,member.id,now]);
   const leases=new LeaseService(db,{now:async()=>now,catalog:records.testEnvironments});
   const environments=new MemberEnvironments(records,new ExecutorRegistry(records),leases);
-  const ctx={now:()=>now,deps:{leases,environmentAccess:environments}} as unknown as EngineContext;
+  const ctx={now:()=>now,deps:{records,leases,environmentAccess:environments}} as unknown as EngineContext;
   const workflow={pack:{id:'synthetic-ordinary-workflow'},workflow:{leases:{prefix:'ordinary/',max_ttl_seconds:600}}} as LoadedWorkflow;
   const requests=[{op:'extend' as const,keys:[key],ttl_seconds:60}];
   assert.equal((await leases.acquire({keys:[key],prefix:'ordinary/',holder:{user:member.id,run},ttlSeconds:60,maxTtlSeconds:600})).ok,true);
