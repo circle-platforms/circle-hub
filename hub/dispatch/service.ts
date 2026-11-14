@@ -54,9 +54,9 @@ export interface DispatchOptions {
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
-  /** Explicit staged policy switch. Only true enables the new environment-assignment guard. */
+  /** Legacy caller metadata; admission reads the provider on every new use. */
   enforceEnvironmentAssignments?: boolean;
-  environmentAccess?: { canUse(actor: Principal, executor: string): Promise<boolean>; permission(actor: Principal, executor: string, tx: Transaction): Promise<boolean> };
+  environmentAccess?: { inheritance(tx?: Transaction): Promise<{completed:boolean|null}>; canUse(actor: Principal, executor: string): Promise<boolean>; permission(actor: Principal, executor: string, tx: Transaction): Promise<boolean> };
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
   /** Test seam: called before a later round is opened. Production leaves it unset. */
   beforeRound?: (round: number) => Promise<void>;
@@ -716,12 +716,15 @@ export class DispatchService {
   }
   /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
   private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
-    if(this.options.enforceEnvironmentAssignments!==true)return null;
-    if(!this.options.environmentAccess)return deny(1,'SOURCE_UNAVAILABLE','环境使用权限检查未装配，尚不能核对；请管理员恢复检查接线');
+    const unavailable=()=>deny(1,'SOURCE_UNAVAILABLE','测试环境的权限核对现在不能进行，这次没有执行。请联系管理员。');
+    if(!this.options.environmentAccess)return unavailable();
     try {
+      const {completed}=await this.options.environmentAccess.inheritance(tx);
+      if(completed===false)return null;
+      if(completed!==true)return unavailable();
       if (tx) {
         // Config is already locked and its bound digest checked in this transaction. The guard reloads account and grants.
-        if (typeof this.options.environmentAccess.permission !== 'function') return deny(1,'SOURCE_UNAVAILABLE','事务内环境权限读取未装配；不能派发，请管理员恢复接线');
+        if (typeof this.options.environmentAccess.permission !== 'function') return unavailable();
         const allowed=await this.options.environmentAccess.permission({id:userId,name:'',role:'user'},executor,tx);
         return allowed?null:deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
       }
@@ -729,7 +732,7 @@ export class DispatchService {
       if(!actor||actor.disabled)return deny(1,'SOURCE_NOT_PERMITTED','运行发起账户当前不可用，不能使用本测试环境');
       if(!await this.options.environmentAccess.canUse(actor,executor))return deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
       return null;
-    } catch { return deny(1,'SOURCE_UNAVAILABLE','本次环境使用权限尚未核对，不能派发；请管理员恢复权限读取后再核验'); }
+    } catch { return unavailable(); }
   }
   private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure,facts:Pick<JobStatus,'submission_verified'|'booking'|'call_error_category'>={},expiredBooking=false):Promise<JobStatus>{
     let adminReleaseSha:string|undefined,adminReleaseMissing=false;

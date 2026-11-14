@@ -82,7 +82,7 @@ function pack(id: string, projection: string, declare = true): PackSpec {
 before(async () => {
   if (skip) return;
   postgres = await startPostgres();
-  h = await openHarness(postgres, { leases: true, environmentAccess: { authorizeKeys: (actor, keys) => environments.authorizeKeys(actor, keys) }, observations: {
+  h = await openHarness(postgres, { leases: true, environmentAccess: { inheritance:async()=>({completed:true}), authorizeKeys: (actor, keys) => environments.authorizeKeys(actor, keys) }, observations: {
     latest: async () => [],
     observe: async () => ({ observed: [], missing: null }),
     ask: async (user, run, targets) => { asked.push({ user: user.id, run, targets: [...targets] }); return port(targets); },
