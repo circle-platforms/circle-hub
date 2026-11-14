@@ -49,9 +49,9 @@ test('restarting the hub process continues a pending device report and keeps the
   const quiet = { ...c.service.options, sleep: async () => {} };
   const first = new DispatchService(quiet);
   const pending = await first.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(pending.report_pending, true);
-  assert.ok(pending.result);
-  const stored = Buffer.from((await c.kit.objects.get(pending.result.slice(4)))!);
+  assert.equal(pending.job_facts.report_pending, true);
+  assert.ok(pending.job_facts.result);
+  const stored = Buffer.from((await c.kit.objects.get(pending.job_facts.result.slice(4)))!);
   const config = {
     dataDir: c.kit.dataDir,
     logDir: join(c.kit.dataDir, 'logs'),
@@ -72,10 +72,10 @@ test('restarting the hub process continues a pending device report and keeps the
     assert.ok(restarted.dispatch);
     ready = true;
     const continued = await restarted.dispatch.resume(c.admin, pending.job);
-    assert.deepEqual(Buffer.from((await c.kit.objects.get(pending.result.slice(4)))!), stored);
+    assert.deepEqual(Buffer.from((await c.kit.objects.get(pending.job_facts.result.slice(4)))!), stored);
     assert.equal(c.calls.filter((name) => name === 'send_blob').length, 1);
-    assert.equal(continued.report_pending, undefined);
-    const source = await c.kit.artifacts.source(c.admin, continued.result!.slice(4));
+    assert.equal(continued.job_facts.report_pending, undefined);
+    const source = await c.kit.artifacts.source(c.admin, continued.job_facts.result!.slice(4));
     assert.ok(source?.bytes);
     const report = JSON.parse(Buffer.from(source.bytes).toString()) as { rows: Array<{ dynamic_terminal: string }> };
     assert.equal(report.rows[0]?.dynamic_terminal, 'pass');
