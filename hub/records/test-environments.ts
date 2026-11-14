@@ -1,7 +1,9 @@
 import { withDefinitionOwners, withDefinitionAssignment, restoresDisabledOwner } from './definition-restoration.ts';
 import { prepareTestEnvironmentOwnerChange, type TestEnvironmentOwnerChange } from './test-environment-owner.ts';
 import { visibleTestEnvironments } from './test-environment-visibility.ts';
-import { resolveTestEnvironmentExecutorTarget, type TestEnvironmentVariableReader } from './test-environment-executor-target.ts';
+import { assertNoNewEnvironmentOverlap, namespaceIsRetained, EnvironmentWriteError, type OrdinaryVariableWrite, type OrdinaryVariableOverrides } from './environment-write-consistency.ts';
+import { ExecutorTargetValueError, resolveTestEnvironmentExecutorTarget, type TestEnvironmentVariableReader } from './test-environment-executor-target.ts';
+import { referencesIn } from '../../contracts/src/variables.ts';
 import { prepareBookingPrefixRegistration, isBookingPrefixRegistration } from './booking-prefix-registration.ts';
 import { adoptUnregisteredPrefixes } from './test-environment-adoption.ts';
 import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
@@ -10,6 +12,7 @@ import {
   TestEnvironment, TestEnvironmentInput, TestEnvironmentId, TestEnvironmentPrefix, TestEnvironmentInheritanceCompletion,
   TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY, TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION,
   TeamId,
+  ExecutorNameBinding, EXECUTOR_NAME_PREFIX,
 } from '../../contracts/api.ts';
 import { ExecutorSource } from '../../contracts/src/resources.ts';
 import { UserId, PackId } from '../../contracts/src/common.ts';
@@ -38,6 +41,8 @@ export type TestEnvironmentEntry = TestEnvironment & { isTestEnvironment: boolea
 export type BookingPrefixEntry = TestEnvironmentEntry & { isTestEnvironment: false; isBookingPrefix: true };
 export interface TestEnvironmentResolution { environments: TestEnvironment[]; unregistered: TestEnvironment[] }
 export interface TestEnvironments {
+  assertExecutorWrite(by: Principal, executorId: string, source: ExecutorSource, tx: Transaction, variableOverrides?: OrdinaryVariableOverrides): Promise<void>;
+  assertVariableWrite(by: Principal, change: OrdinaryVariableWrite, tx: Transaction): Promise<void>;
   list(by: Principal, tx?: Transaction): Promise<TestEnvironmentEntry[]>;
   get(by: Principal, id: string, tx?: Transaction): Promise<TestEnvironmentEntry | null>;
   registerFromDefinition(by: Principal, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
@@ -116,6 +121,93 @@ export class RecordTestEnvironments implements TestEnvironments {
     }
     return inspected;
   }
+  private async executorLabel(id: string, rows: Map<string, AuthorizationRecord>, tx: Transaction): Promise<string> {
+    const row = rows.get(`resource_config|*|${EXECUTOR_NAME_PREFIX}${id}`);
+    if (!row || row.body.revoked) return '名字尚未登记的执行器';
+    try {
+      const binding = ExecutorNameBinding.parse(await this.content(row.body.bound, tx));
+      return binding.executor === id ? binding.name : '名字尚未核对的执行器';
+    } catch { return '名字尚未核对的执行器'; }
+  }
+  private async checkExecutorCandidate(environment: TestEnvironment, id: string, source: ExecutorSource, tx: Transaction, rows: Map<string, AuthorizationRecord>, overrides?: OrdinaryVariableOverrides, previous?: TestEnvironment): Promise<void> {
+    const executorName = await this.executorLabel(id, rows, tx), environmentName = environment.name ?? '名字尚未登记的测试环境';
+    const retained = previous?.executors.includes(id) === true && previous.target === environment.target;
+    if (source.id !== id) {
+      if (retained) return;
+      throw new EnvironmentWriteError(`执行器“${executorName}”的候选身份与所选登记不一致`, { environment: environment.id, expected_executor: id, actual_executor: source.id });
+    }
+    let resolved: Awaited<ReturnType<typeof resolveTestEnvironmentExecutorTarget>> | null = null;
+    try { resolved = await resolveTestEnvironmentExecutorTarget(source, this.variables, tx, overrides); }
+    catch (error) {
+      if (!retained) {
+        if (error instanceof ExecutorTargetValueError) throw new EnvironmentWriteError(`执行器“${executorName}”的候选目标值不符合测试环境“${environmentName}”所需的字符串目标`, { environment: environment.id, executor: id, expected_target: environment.target });
+        throw error;
+      }
+    }
+    if (resolved && resolved.target !== environment.target && !retained) throw new EnvironmentWriteError(`测试环境“${environmentName}”登记的目标是“${environment.target}”，执行器“${executorName}”的候选目标是“${resolved.target}”，两者不一致`, { environment: environment.id, executor: id, expected_target: environment.target, proposed_target: resolved.target });
+    const missing = source.resources.filter(value => !covers(environment, value) && (!retained || covers(previous!, value)));
+    if (missing.length) throw new EnvironmentWriteError(`执行器“${executorName}”的资源键“${missing.join('、')}”不在测试环境“${environmentName}”登记的前缀或资源键内`, { environment: environment.id, executor: id, proposed_resources: source.resources, environment_prefixes: environment.prefixes.map(row => row.prefix), environment_resources: environment.resources.map(row => row.key), uncovered: missing });
+  }
+  private async validateExecutorLinksForWrite(environment: TestEnvironment, tx: Transaction, previous?: TestEnvironment): Promise<void> {
+    const rows = this.latest(await this.allAuthorizations(tx)), at = await this.at(tx);
+    for (const id of environment.executors) {
+      const row = rows.get(`resource_config|*|executor.${id}`);
+      const retained = previous?.executors.includes(id) === true && previous.target === environment.target;
+      if (!enabledAt(row, at)) {
+        if (retained) continue;
+        throw new EnvironmentWriteError(`测试环境“${environment.name ?? '尚未命名'}”选择的执行器没有当前有效登记`, { environment: environment.id, executor: id });
+      }
+      let source: ExecutorSource;
+      try { source = ExecutorSource.parse(await this.content(row!.body.bound, tx)); }
+      catch (error) {
+        if (retained && previous && namespaceIsRetained({ ...environment, name: previous.name }, previous) && namespaceIsRetained({ ...previous, name: environment.name }, environment)) continue;
+        throw error;
+      }
+      await this.checkExecutorCandidate(environment, id, source, tx, rows, undefined, previous);
+    }
+  }
+  async assertExecutorWrite(by: Principal, executorId: string, input: ExecutorSource, outer: Transaction, overrides?: OrdinaryVariableOverrides): Promise<void> {
+    await withEnvironmentPermissionLock(this.store, async tx => {
+      await this.admin(by, tx);
+      const parsed = ExecutorSource.safeParse(input);
+      if (!parsed.success) throw new EnvironmentWriteError('执行器候选源定义不符合结构或引用位置要求');
+      const source = parsed.data;
+      if (source.id !== executorId) throw new EnvironmentWriteError('执行器候选身份与本次所选登记不一致', { expected_executor: executorId, actual_executor: source.id });
+      const rows = this.latest(await this.allAuthorizations(tx));
+      const current = rows.get(`resource_config|*|executor.${executorId}`);
+      if (current && !current.body.revoked) {
+        try {
+          const old = ExecutorSource.parse(await this.content(current.body.bound, tx));
+          const targetOverridden = referencesIn({ target: source.target }).some(ref => overrides?.has(ref.name));
+          if (old.id === source.id && old.target === source.target && !targetOverridden && [...old.resources].sort().join('\0') === [...source.resources].sort().join('\0')) return;
+          const before = await resolveTestEnvironmentExecutorTarget(old, this.variables, tx);
+          const after = await resolveTestEnvironmentExecutorTarget(source, this.variables, tx, overrides);
+          if (old.id === source.id && before.target === after.target && [...old.resources].sort().join('\0') === [...source.resources].sort().join('\0')) return;
+        } catch (error) { if (error instanceof EnvironmentWriteError) throw error; }
+      }
+      for (const environment of await this.catalog(tx)) {
+        if (environment.target === null || !environment.executors.includes(executorId)) continue;
+        await this.checkExecutorCandidate(environment, executorId, source, tx, rows, overrides);
+      }
+    }, outer);
+  }
+  async assertVariableWrite(by: Principal, change: OrdinaryVariableWrite, outer: Transaction): Promise<void> {
+    await withEnvironmentPermissionLock(this.store, async tx => {
+      await this.admin(by, tx);
+      const overrides: OrdinaryVariableOverrides = new Map([[change.name, 'revoked' in change ? { revoked: true as const } : { value: change.value }]]);
+      const environments = (await this.catalog(tx)).filter(value => value.target !== null);
+      const linked = new Set(environments.flatMap(value => value.executors));
+      if (!linked.size) return;
+      const rows = this.latest(await this.allAuthorizations(tx)), at = await this.at(tx);
+      for (const row of rows.values()) {
+        if (row.body.permission !== 'resource_config' || row.body.subject !== '*' || !row.body.object.startsWith('executor.') || !enabledAt(row, at)) continue;
+        if (!linked.has(row.body.object.slice('executor.'.length))) continue;
+        const source = ExecutorSource.parse(await this.content(row.body.bound, tx));
+        if (!referencesIn({ target: source.target }).some(ref => ref.kind === 'var' && ref.name === change.name)) continue;
+        await this.assertExecutorWrite(by, row.body.object.slice('executor.'.length), source, tx, overrides);
+      }
+    }, outer);
+  }
   private matching(keys: readonly string[], values: readonly TestEnvironment[]): TestEnvironmentResolution {
     const matches = values.filter(environment => keys.every(value => covers(environment, value)));
     const environments = matches.filter(value => value.target !== null);
@@ -176,7 +268,7 @@ export class RecordTestEnvironments implements TestEnvironments {
     return environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(by, TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id, stored.sha256, note ?? (environment.target !== null ? '测试环境登记' : isBookingPrefixRegistration(environment) ? '预订前缀责任登记（不是测试环境）' : '保留尚未归属目标的登记事实'), tx));
   }
   private unique(environment: TestEnvironment, values: readonly TestEnvironment[]) {
-    if (values.some(value => value.id !== environment.id && (environment.name !== null && value.name === environment.name || environment.target !== null && value.target === environment.target))) throw new ConflictError('测试环境的名字或目标已经登记');
+    if (values.some(value => value.id !== environment.id && (environment.name !== null && value.name === environment.name || environment.target !== null && value.target === environment.target))) throw new EnvironmentWriteError('测试环境的名字或目标已经登记');
   }
   async registerFromDefinition(by: Principal, input: TestEnvironmentInput, outer?: Transaction): Promise<TestEnvironment> {
     return withEnvironmentPermissionLock(this.store, async tx => {
@@ -240,7 +332,8 @@ export class RecordTestEnvironments implements TestEnvironments {
       const adoption = adoptUnregisteredPrefixes(prepared, input, values.filter(value => value.target === null));
       const environment = adoption.environment;
       this.unique(environment, values);
-      await this.validateOwners(environment, tx); await this.validateExecutors(environment, tx);
+      assertNoNewEnvironmentOverlap(environment, values);
+      await this.validateOwners(environment, tx); await this.validateExecutorLinksForWrite(environment, tx);
       for (const retained of adoption.retained) await this.write(actor, retained, tx);
       for (const id of adoption.archived) await environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(actor, TEST_ENVIRONMENT_CONFIG_PREFIX + id, null, '原非环境前缀已并入新测试环境；原责任事实保留', tx, true));
       await this.write(actor, environment, tx); return environment;
@@ -253,7 +346,8 @@ export class RecordTestEnvironments implements TestEnvironments {
       const previous = values.find(value => value.id === id);
       if (!previous) throw new ConflictError('测试环境不存在或已删除');
       const environment = prepareTestEnvironmentRegistration(input, actor.id, await this.at(tx), previous);
-      this.unique(environment, values); await this.validateOwners(environment, tx); await this.validateExecutors(environment, tx);
+      this.unique(environment, values); assertNoNewEnvironmentOverlap(environment, values, previous);
+      await this.validateOwners(environment, tx); await this.validateExecutorLinksForWrite(environment, tx, previous);
       await this.write(actor, environment, tx); return environment;
     }, outer);
   }
