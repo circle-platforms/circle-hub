@@ -9,6 +9,13 @@ function call(signal: AbortSignal): ToolCall {
   return { principal, context: { traceId: '1'.repeat(32), sessionId: null, signal, adminNote: () => {} }, state: { method: 'tools/call', tool: 'list_task_packs', args: {}, started: 0, runId: null, callResult: null, acceptance: null, errorCode: null, notes: [] } };
 }
 const cancelled = (error: unknown) => error instanceof McpError && error.code === ErrorCode.ConnectionClosed;
+function emptyCapabilities() {
+  return {
+    member: { name: principal.name, enabled: true }, teams: [], workflows: [], skills: [],
+    unassigned_workflows_count: 0, connections: [], environments: [], unattributed_holdings: [],
+    environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null }, denials: [],
+  };
+}
 
 test('an already cancelled pack read never starts its provider', async () => {
   let reads = 0;
@@ -20,8 +27,8 @@ test('an already cancelled pack read never starts its provider', async () => {
 test('cancellation during a pending pack read prevents the next context read', async () => {
   const controller = new AbortController();
   const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<[]>();
-  let contexts = 0;
-  const deps = { workflows: { summaries: () => { started.resolve(); return finish.promise; } }, runs: { packContext: async () => { contexts++; return null; } } } as unknown as ServerDeps;
+  let contexts = 0, capabilities = 0;
+  const deps = { memberCapabilities: async () => { capabilities++; return emptyCapabilities(); }, workflows: { summaries: () => { started.resolve(); return finish.promise; } }, runs: { packContext: async () => { contexts++; return null; } } } as unknown as ServerDeps;
   const result = callTool(deps, call(controller.signal), 'list_task_packs', {});
   const rejected = assert.rejects(result, cancelled);
   await started.promise;
@@ -29,6 +36,7 @@ test('cancellation during a pending pack read prevents the next context read', a
   finish.resolve([]);
   await rejected;
   assert.equal(contexts, 0);
+  assert.equal(capabilities, 0);
 });
 
 test('an already cancelled reference read never starts its provider', async () => {
@@ -48,6 +56,7 @@ test('socket disconnect cancels a pending read before its next stage and still r
   const logs: Array<{ callResult: string }> = [];
   const deps = {
     records: { principals: { authenticate: async () => principal }, callLog: { append: async (line: { callResult: string }) => { logs.push(line); } } },
+    memberCapabilities: async () => emptyCapabilities(),
     workflows: { summaries: () => { started.resolve(); return finish.promise; } },
     runs: { packContext: async () => { contexts++; return null; } },
   } as unknown as ServerDeps;
@@ -89,6 +98,7 @@ test('cancellation notifications reach only the same authenticated token and cli
     let contexts = 0;
     const deps = {
       records: { principals: { authenticate: async () => principal }, callLog: { append: async () => {} } },
+      memberCapabilities: async () => emptyCapabilities(),
       workflows: { summaries: () => { started.resolve(); return finish.promise; } },
       runs: { packContext: async () => { contexts++; return null; } },
     } as unknown as ServerDeps;
