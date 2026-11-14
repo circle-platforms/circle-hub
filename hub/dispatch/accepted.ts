@@ -102,7 +102,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   }
   const settled = attempt.settled;
   if (!settled) return answer([{ run_facts, text: `本次运行正在做上机验证前核对；${PROGRESS}` }]);
-  if (attempt.uncertain || settled.outcome === 'unknown') {
+  if (attempt.uncertain || settled.job_status_unavailable === true) {
     const next = administrative ? `circle-hub run show ${run} --json` : '不要重新发送或另开运行；联系管理员只读核对原作业';
     return answer([{ run_facts: { ...run_facts, missing_facts: [{ fact: '本次运行的派发处理未取得可核对的作业记录', next_action: next }], next_action: next }, text: clip(`本次运行的派发处理已结束，但作业事实尚未确认；下一步：${next}`) }]);
   }
