@@ -1,5 +1,13 @@
 # hub/server
 
+## Incomplete registration capture presentation (C51 candidate)
+
+The new presentation branch trusts only the exact generated code/reason/object tuple and the authenticated recipient role. It handles the two tool-error exits, accepted dispatch notes and the CLI refusal through one formatter; it never parses a message to infer incomplete registration. Concrete capture arguments and definition-update help come from command parameter registration. Other reason paths retain their existing behavior.
+
+The CLI reads the real bootstrap result and completion records plus their matching src report before returning collection success. It does not infer success from the effect outcome, verification or registration flags. Successful collection points to checking the observations and updating the definition; failed collection retains the source-selected recovery action. Reports are readable artifact references rather than files an administrator must fetch from the host. The ordinary administrator gate remains in place.
+
+This independent candidate is not deployed, and its two new sentences remain review candidates. ENV rollout additionally requires the package changes and version retirement ordered by C54; local synthetic checks do not establish an outcome on a real device.
+
 ## Sharing and personal publication (decision 134)
 
 The console has a share action on the owner's verified entry and `/console/knowledge/submissions` for the owner's merged
