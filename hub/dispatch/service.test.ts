@@ -26,7 +26,21 @@ test('preflight refuses unmet package requirements, incorrect manifest, wrong li
   for (const mode of ['wrong-package', 'manifest', 'requirement', 'lineage', 'expiry']) {
     const c = await setup({ mode }); t.after(() => c.close());
     const refused = await c.service.dispatch(c.admin,c.run,c.executor.id);
-    assert.equal(refused.dispatch_attempt, undefined);assert.equal(refused.job_facts.operation, 'dispatch');
+    assert.equal(refused.job_facts.operation, 'dispatch');
+    if (mode === 'lineage' || mode === 'expiry') {
+      assert.equal(refused.dispatch_attempt!.scope.operation, 'dispatch');
+      assert.equal(refused.dispatch_attempt!.scope.job, refused.job);
+      assert.equal(refused.dispatch_attempt!.error_code, 'LEASE_UNAVAILABLE');
+      assert.equal(refused.dispatch_attempt!.outcome, 'not_dispatched');
+      assert.equal(refused.dispatch_attempt!.not_sent, true);
+    } else {
+      assert.equal(refused.dispatch_attempt, undefined);
+      const code = mode === 'manifest' ? 'EFFECT_PARAMETER_OUT_OF_RANGE' : 'EFFECT_RELEASE_UNMET';
+      assert.equal(refused.job_facts.admission_error?.code, code);
+      const refusal = (await c.service.journal.events(refused.job)).find(event => event.body.detail.phase === 'boundary_refused');
+      assert.equal(refusal?.body.error_code, code);
+      assert.equal(refusal?.body.detail.boundary_clause, mode === 'manifest' ? 2 : 3);
+    }
     assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
   }
 });
@@ -63,6 +77,7 @@ test('plan_run must equal the verification predecessor and cannot be omitted', a
     proof.plan_run = value;
     const refused = await c.service.dispatch(c.admin,c.run,c.executor.id);
     assert.equal(refused.dispatch_attempt, undefined);assert.equal(refused.job_facts.operation, 'dispatch');
+    assert.equal(refused.job_facts.admission_error?.code, 'EFFECT_RELEASE_UNMET');
     assert.equal(c.calls.includes('send_blob'), false);
   }
 });
@@ -102,7 +117,8 @@ test('a different function cannot substitute for the declared verification funct
   const c = await setup(); t.after(() => c.close());
   c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].warrant.id = 'synthetic.other@1';
   const refused = await c.service.dispatch(c.admin,c.run,c.executor.id);
-    assert.equal(refused.dispatch_attempt, undefined);assert.equal(refused.job_facts.operation, 'dispatch');
+  assert.equal(refused.dispatch_attempt, undefined);assert.equal(refused.job_facts.operation, 'dispatch');
+  assert.equal(refused.job_facts.admission_error?.code, 'EFFECT_RELEASE_UNMET');
   assert.equal(c.calls.includes('send_blob'), false);
 });
 

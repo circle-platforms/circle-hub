@@ -69,7 +69,8 @@ function diagnosticFacts(source: JobStatus['job_facts'] | NonNullable<JobStatus[
 export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
   const facts = job.status.job_facts, attempt = job.status.dispatch_attempt;
   if (job.status.job !== job.job || facts.scope.job !== job.job || attempt && attempt.scope.job !== job.job) throw new Error('派发事实范围与作业身份不一致');
-  const next = facts.awaiting_disposition === true ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
+  const next = attempt?.phase === 'round_refused' && !job.boundary_refused ? '本作业不会整份重试；修正放行条件后，按任务包规程重新开始核验'
+    : facts.awaiting_disposition === true ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
     : job.ended === null ? admin ? `circle-hub job status ${job.job}` : '原样重交原提交读取本作业进展，不要重新发送作业'
     : facts.frozen === true ? admin ? `circle-hub job status ${job.job}` : '本作业保持重发保护；原样读取进展，不要重新发送作业'
     : admin ? `circle-hub job status ${job.job}` : '读取本作业结果引用及各轮结论；没有结论时不要当作通过';

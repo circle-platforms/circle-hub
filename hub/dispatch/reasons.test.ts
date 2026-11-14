@@ -271,3 +271,32 @@ test('member source projection never copies raw job facts into facts or admissio
   assert.equal(administrator.dispatch_attempt?.scope.request_id, marker + ' request');
   assert.equal(administrator.job_facts.device_return, source.status.job_facts.device_return);
 });
+
+test('final boundary after a target response does not restart the whole job while complete busy or build failures can retry', async () => {
+  const { acceptedDispatch } = await import('./accepted.ts');
+  const run = 'run_00000000000000000000000001';
+  const admin = { id: 'usr_00000000000000000000000002', name: '合成管理员', role: 'admin' as const, disabled: false };
+  for (const phase of ['round_refused', 'complete'] as const) {
+    const history = phase === 'round_refused' ? [
+      { digest: 'c'.repeat(64), body: { detail: { phase: 'precheck.response' } } },
+      { digest: 'd'.repeat(64), body: { detail: { phase: 'boundary_refused', done: true } } },
+    ] : [
+      { digest: 'c'.repeat(64), body: { detail: { phase: 'acquire.response' } } },
+      { digest: 'd'.repeat(64), body: { detail: { phase: 'complete', done: true } } },
+    ];
+    const records = { store: {
+      find: async () => ({ items: [{ body: { detail: { binding: { job: jobId, run } } } }], next: null }),
+      findMany: async () => history,
+    }, principals: { list: async () => [admin] } } as unknown as Pick<import('../records/api.ts').RecordsKit, 'store' | 'principals'>;
+    const publicJob = DispatchJobFactsSchema.parse({ scope: { job: jobId }, frozen: false });
+    const attempt = DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job: jobId, round: 1 }, phase, outcome: 'not_dispatched', not_sent: true });
+    let started = 0;
+    const service = { options: { records }, status: async () => ({ job: jobId, events: 2, job_facts: publicJob, dispatch_attempt: attempt }), dispatchAccepted: async () => { started++; return { started: false, error_code: 'SOURCE_NOT_PERMITTED', member_missing_facts: [{ fact: '合成后续准入拒绝', next_action: '联系管理员' }] }; } } as unknown as import('./service.ts').DispatchService;
+    const notes = await acceptedDispatch(records, service, run, true, 0);
+    assert.equal(started, phase === 'round_refused' ? 0 : 1);
+    assert.equal(notes.length, phase === 'round_refused' ? 1 : 2);
+    assert.equal(notes[0].dispatch_attempt?.not_sent, true);
+    assert.equal(notes[0].dispatch_attempt?.outcome, 'not_dispatched');
+    if (phase === 'round_refused') assert.match(notes[0].job_facts?.next_action ?? '', /不会整份重试.*重新开始核验/);
+  }
+});

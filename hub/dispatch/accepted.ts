@@ -137,6 +137,7 @@ function retriable(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): 
   if (job.ended !== 'done' || facts.frozen || facts.decided_by || facts.rounds?.length) return false;
   if (!attempt) return facts.admission_error !== undefined;
   if (attempt.scope.operation !== 'dispatch' || attempt.scope.round !== 1) return false;
+  if (attempt.phase === 'round_refused' && !job.boundary_refused) return false;
   return attempt.outcome === 'not_dispatched' && attempt.not_sent === true || attempt.outcome === 'target_rejected' || attempt.outcome === 'proven_not_executed';
 }
 
