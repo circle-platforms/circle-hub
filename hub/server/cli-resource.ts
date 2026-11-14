@@ -231,7 +231,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
       const missingLegacy=(previous?.credentials??[]).filter(c=>!c.entry.startsWith('${secret:')&&!c.set&&changes.credentials?.[c.name]);
       const record = await decided(() => hub.connectors.admin.updateResource(admin, positionals[0], changes));
       for(const item of missingLegacy)session.out(`原值不在密钥库里：接着用 circle-hub secret set --name ${changes.credentials![item.name]} 设置`);
-      session.out(`已更新资源 ${record.id}：${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
+      session.out(`已更新资源 ${record.name}（业务系统接入 ${record.system_pack}，环境 ${labelOf('environment', record.environment)}）`);
       if (values['clear-plaintext']) session.out('已清空所有明文放行');
       else if (clearedRoles.length > 0) session.out(`已清掉角色 ${clearedRoles.sort().join('、')} 的明文放行`);
       await resourceWarnings(session,record);
@@ -241,7 +241,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
       const {positionals,values}=parse(rest,{values:{type:'boolean'}},1);
       const by=await session.admin(), hub=await session.hub(false), kit=await session.records();
       const d=await hub.connectors.admin.describe(by,positionals[0]);if(!d)throw new CliError('资源不可用');
-      session.out(`${d.id} ${d.name} ${d.system_pack}`);
+      session.out(`${d.name} ${d.system_pack}`);
       const config=await kit.authorizations.resourceConfig(d.id);let bound=config?.body.bound??null;
       let cursor:string|null=null;
       while(!bound){const page=await kit.authorizations.history({permission:'resource_config',subject:WHOLE_HUB,object:d.id,newestFirst:true,limit:500,cursor});bound=page.items.find(row=>!row.body.revoked&&row.body.bound)?.body.bound??null;if(bound||!page.next)break;cursor=page.next;}
@@ -284,7 +284,7 @@ export async function resourceCommand(session: Session, args: readonly string[])
       // unreadable key costs one refusal, not one per resource.
       const keyProblem = listings.some((resource) => resource.enabled) ? await vaultKeyProblem(hub.records) : null;
       for (const resource of listings) {
-        const fields = [resource.id, resource.name, resource.system_pack, labelOf('environment', resource.environment as Environment), resource.enabled ? '启用' : '停用'];
+        const fields = [resource.name, resource.system_pack, labelOf('environment', resource.environment as Environment), resource.enabled ? '启用' : '停用'];
         fields.push(Object.entries(resource.origins ?? {}).map(([role, url]) => `${role}=${url}`).join(' '));
         if ((resource.allow_plaintext ?? []).length > 0) fields.push(`允许明文 ${(resource.allow_plaintext ?? []).join(' ')}`);
         if (resource.enabled) {
