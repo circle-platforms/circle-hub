@@ -13,6 +13,7 @@ function fixture(failCommit = false) {
   const objects = new Map<string, Uint8Array>();
   // Deliberately minimal scripted ports: no PostgreSQL, network, credential file or real vault is used.
   const ports = {
+    validateEnvironmentWrite: async () => {},
     database: { query: async (_sql: string, _args: unknown[], supplied: Transaction) => {
       assert.equal(supplied, tx); events.push('actor-row');
       return { rows: [{ ...admin, disabled: false, deleted_at: null }] };

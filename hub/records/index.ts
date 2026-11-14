@@ -67,13 +67,17 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   const vault = new FileVault(join(config.dataDir, 'vault'), options.keyProvider);
   const principals = new PgPrincipals(db, now, store);
   const teams = new PgTeams(db, store, objects, principals, authorizations, now);
-  const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now });
+  const variables = new RecordVariables({ database: db, store, objects, vault, principals, authorizations, now,
+    validateEnvironmentWrite: (by, change, tx) => testEnvironments.assertVariableWrite(by, change, tx),
+  });
+  const testEnvironments = new RecordTestEnvironments(db, store, objects, authorizations, variables);
+  authorizations.setVariableWriteValidator((by, change, tx) => testEnvironments.assertVariableWrite(by, change, tx));
   const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,now);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs'),{shared:true});
   let closed: Promise<void> | undefined;
   return {
-    testEnvironments: new RecordTestEnvironments(db, store, objects, authorizations, variables),
+    testEnvironments,
     teams,
     memberDeletions,
     personalSync:new PgPersonalSync(db,store,store.personalPayloads,config.limits,now),
