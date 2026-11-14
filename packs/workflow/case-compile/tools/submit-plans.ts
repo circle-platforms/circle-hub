@@ -5,11 +5,24 @@ import { fileURLToPath } from 'node:url';
 import { fidelityBrief, fidelityProblems, type FidelityCode, type FidelityProblem } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { argumentsOf, bearerFrom, hubOrigin, itemFiles, RUN_ID, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { isRecord } from '../functions/text.ts';
+import { readSubmittedItemFiles, readTokenFromStdin, requireBearerToken, getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
+import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { formatCallError } from '../functions/text.ts';
 
-export const planItems = itemFiles;
+export async function planItems(directory: string): Promise<Array<{ [key: string]: unknown }>> {
+  return readSubmittedItemFiles(directory, {
+    flag: 'plans',
+    itemKind: '自动化用例',
+    repairHint: '再做脚本合并',
+    validateItem: (value, fileName) => {
+      if (!isRecord(value) || typeof value.item !== 'string' || !value.item || typeof value.handling !== 'string') {
+        throw new Error(`${fileName} 不是一个条目；写 {"item":"<编号>","handling":"handled","slots":{"plan":[…]}}`);
+      }
+      return value;
+    },
+  });
+}
 
 const SHOWN_CHARS = 12_000;
 
@@ -82,7 +95,7 @@ async function runItems(origin: string, bearer: string, run: string, retry?: Ret
   }));
 }
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, retry?: RetryControl): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'model', 'plans']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次脚本编写的编号');
@@ -90,7 +103,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const expanded = await expandPlanFiles(args.plans);
     if (expanded.length) process.stdout.write(`自动化用例的具体取值已写回文件：\n${expanded.join('\n')}\n`);
     const files = await planItems(args.plans);
-    const bearer = await bearerFrom(readToken);
+    const bearer = await requireBearerToken(readToken);
     const held = await runItems(origin, bearer, args.run, retry);
     const items = files.filter((item) => held.has(String(item.item))), left = files.filter((item) => !held.has(String(item.item)));
     if (!items.length) throw new Error(`--plans 目录里没有本次脚本编写的自动化用例，本次共有 ${held.size} 条原始用例；请使用下载的原始用例继续编写`);

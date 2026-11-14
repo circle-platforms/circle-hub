@@ -239,3 +239,17 @@ test('download-run and recompose download-run retry 503 Retry-After and ECONNREF
     await assert.rejects(readdir(failDir), `${label}: nothing written after retry exhaustion`);
   }
 });
+
+test('download-run and recompose download-run reject empty stdin without token with same-line heredoc guidance', async (t) => {
+  const h = await hub(); t.after(h.close);
+  for (const [label, entry] of [['plan', main], ['recompose', recomposeMain]] as const) {
+    for (const rawToken of ['', '   \n\t ']) {
+      const out = join(await mkdtemp(join(tmpdir(), `cc-dl-notok-${label}-`)), 'run');
+      const res = await outputOf(() => entry(['--hub', h.url, '--run', RUN, '--out', out], async () => rawToken));
+      assert.equal(res.code, 1, label);
+      assert.match(res.stderr, /^参数无效：标准输入里没有令牌/, label);
+      assert.match(res.stderr, /切勿在 <<'EOF' 前换行/, label);
+      await assert.rejects(readdir(out), `${label}: nothing written without token`);
+    }
+  }
+});

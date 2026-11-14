@@ -1,9 +1,37 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import projectRecompose from '../recompose/functions/project.ts';
 import { fixture } from '../testing/recompose.ts';
 import { checkRecomposition } from './recompose-check.ts';
 const outcomes = (f: ReturnType<typeof fixture>) => checkRecomposition({ subject: f.subject });
-test('the migrated synthetic complete path has exact original atoms and verified receipts', () => { const f = fixture(); assert.deepEqual(outcomes(f).map(o => o.verdict), ['support'], JSON.stringify(outcomes(f))); });
+test('the migrated synthetic complete path has exact original atoms and verified receipts', () => {
+  const f = fixture();
+  const out = outcomes(f);
+  assert.deepEqual(out.map(o => o.verdict), ['support'], JSON.stringify(out));
+  assert.match(out[0].statement, /原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写/);
+  assert.doesNotMatch(out[0].statement, /四账|四本账/);
+});
+test('recompose projection exposes fields.title from the case intent atom when present', () => {
+  const model = {
+    nodes: [
+      { text: 'ORBIT synthetic root', selector: 'n/0', data: { id: 'root' }, children: [1, 2] },
+      { text: '合成用例意图：验证健康检查间隔', selector: 'n/0/0', data: { id: 'c1', autoid: 'orbit-case-0001' }, children: [3] },
+      { text: 'widget health interval pool1 5', selector: 'n/0/1', data: { id: 'c2', autoid: 'orbit-case-0002', compile_layout: 'case_body_expectations' }, children: [5] },
+      { text: 'widget health interval pool1 5', selector: 'n/0/0/0', data: { id: 's1' }, children: [4] },
+      { text: 'show health 显示 pool1 的探测间隔为 5 秒', selector: 'n/0/0/0/0', data: { id: 'e1' }, children: [] },
+      { text: 'show health 显示 pool1 的探测间隔为 5 秒', selector: 'n/0/1/0', data: { id: 'e2' }, children: [] },
+    ],
+  };
+  const sha256 = 'a'.repeat(64);
+  const projected = projectRecompose({ inputs: [{ slot: 'subject', parser: 'kityminder@1', model, sha256 }], parameters: { case_depths: [1] } });
+  assert.equal(projected.items?.length, 2);
+  const withIntent = projected.items![0].fields;
+  assert.equal(withIntent.atoms.find((a: { kind: string }) => a.kind === 'intent')?.text, '合成用例意图：验证健康检查间隔');
+  assert.equal(withIntent.title, '合成用例意图：验证健康检查间隔');
+  const withoutIntent = projected.items![1].fields;
+  assert.equal(withoutIntent.atoms.find((a: { kind: string }) => a.kind === 'intent'), undefined);
+  assert.equal(withoutIntent.title, undefined);
+});
 for (const name of ['underdetermined', 'missing-prerequisite'] as const)
     test(name + ' goes on to the writer with its reason, as in InfoTest (decision 155)', () => { const f = fixture(name); f.record.status = 'complete'; f.record.unknowns = f.record.unknowns ?? []; const result = outcomes(f); assert.ok(!result.some(o => /^用例原句 .* 状态 /.test(o.statement)), JSON.stringify(result)); assert.ok(f.record.sources.states.some((s: any) => s.state !== 'settled')); });
 test('conflict between two signed sources refuses completion without choosing a side', () => { const f = fixture('conflict'); assert.ok(outcomes(f).some(o => o.verdict === 'refute' && o.data?.status === 'refused')); });
@@ -52,4 +80,78 @@ test("a user's ruling on an author step against the manual is carried by the fie
   for (const state of conflict.record.sources.states) state.adjudicated_by = null;
   conflict.record.sources.states[0].state = 'conflict';
   assert.ok(outcomes(conflict).some(o => o.verdict === 'refute' && o.code === 'recompose.candidate_signed'), JSON.stringify(outcomes(conflict)));
+});
+
+test('adapted catalog and syntax errors emit repairable recompose.command_syntax while unchecked or absent catalog stays unknown', () => {
+  for (const [label, line, expectedKind, expectedPiece] of [
+    ['typed placeholder in string slot', 'widget health interval <arg1:string> 5', 'template_placeholder', '<arg1:string>'],
+    ['quoted Chinese placeholder', 'widget pool add "<域名>"', 'template_placeholder', '"<域名>"'],
+    ['unreplaced multi-placeholder', 'widget pool add <arg1:string> [extra]', 'template_placeholder', '<arg1:string>'],
+    ['invalid argument for matched command', 'widget health interval pool1 not-an-int', 'signature_mismatch', 'not-an-int'],
+    ['missing trailing required argument', 'widget health interval pool1', 'signature_mismatch', 'int'],
+    ['excess argument after complete signature', 'widget health interval pool1 5 extra', 'signature_mismatch', 'extra'],
+    ['unknown command head in complete catalog', 'nonexistent subcmd 1', 'unknown_command_head', 'nonexistent'],
+  ] as const) {
+    const f = fixture();
+    (f.subject as any).catalog = { ...f.subject.catalog, complete: true };
+    f.record.ledgers.adapted[0].commands = [line];
+    const out = outcomes(f);
+    const hit = out.find(o => o.code === 'recompose.command_syntax');
+    assert.ok(hit, `${label}: expected recompose.command_syntax, got ${JSON.stringify(out)}`);
+    assert.equal(hit.verdict, 'refute');
+    assert.equal(hit.pointer, '/record/ledgers/adapted/0/commands/0');
+    assert.equal(hit.data?.owner, '重组模型');
+    assert.equal(hit.data?.determination, 'error');
+    assert.equal(hit.data?.reason_kind, expectedKind);
+    assert.ok(hit.statement.includes(line) && hit.statement.includes(f.record.ledgers.adapted[0].atom) && hit.statement.includes(expectedPiece), hit.statement);
+    assert.ok(hit.statement.includes('第 1 条命令'), hit.statement);
+    if (expectedKind === 'signature_mismatch') {
+      if (expectedPiece === 'extra') {
+        assert.ok(hit.statement.includes('不接受多余参数'), JSON.stringify(hit));
+      } else {
+        assert.ok(hit.statement.includes('要求 int') && Array.isArray(hit.data?.expected_types) && hit.data.expected_types.some((t: string) => t.startsWith('int')), JSON.stringify(hit));
+      }
+    }
+    if (expectedKind === 'template_placeholder') {
+      assert.ok(!hit.statement.includes('；请改写为'), hit.statement);
+    }
+  }
+
+  const unchecked = fixture();
+  unchecked.subject.catalog.entries[2].signatures[0].params = [{
+    name: 'pool',
+    type: undefined as any,
+    native_type: { name: 'synthetic-raw', declaration: 'src:' + 'b'.repeat(64) + '/xml@1/x/arg', grammar: 'synthetic-tree@1' },
+  }];
+  unchecked.record.ledgers.adapted[0].commands = ['widget pool add pool1'];
+  const uncheckedOut = outcomes(unchecked);
+  assert.ok(!uncheckedOut.some(o => o.code === 'recompose.command_syntax'), JSON.stringify(uncheckedOut));
+  assert.ok(uncheckedOut.some(o => o.verdict === 'unknown' && o.data?.owner === '产品包作者'), JSON.stringify(uncheckedOut));
+
+  const emptyCatalog = fixture();
+  emptyCatalog.subject.catalog = { root: 'b'.repeat(64), entries: [] };
+  const emptyOut = outcomes(emptyCatalog);
+  assert.ok(!emptyOut.some(o => o.code === 'recompose.command_syntax'), JSON.stringify(emptyOut));
+  assert.ok(emptyOut.some(o => o.verdict === 'unknown' && o.data?.owner === '产品包作者'), JSON.stringify(emptyOut));
+
+  const valid = fixture();
+  const baseDecl = (valid.auth.run.model.body as any).groups[0].authority.values[0];
+  const poolRef = baseDecl.ref + '/pool';
+  (valid.auth.run.model.body as any).groups[0].authority.values.push({
+    ...baseDecl,
+    ref: poolRef,
+    slot: 'pool',
+    values: ['192.0.2.10', '{{name:16}}'],
+  });
+  valid.record.ledgers.adapted[0].commands = ['widget health interval pool1 5', 'widget pool add "192.0.2.10"', 'widget pool add {{name:16}}'];
+  valid.record.ledgers.concretizations.push(
+    { atom: 'a1', slot: 'pool', value: '192.0.2.10', value_ref: poolRef + '/0', source_of_value: poolRef, source_kind: 'catalog', decided_by: 'scripted-model', authority: poolRef },
+    { atom: 'a1', slot: 'pool', value: '{{name:16}}', value_ref: poolRef + '/1', source_of_value: poolRef, source_kind: 'catalog', decided_by: 'scripted-model', authority: poolRef },
+  );
+  valid.subject.evidence.push(
+    { reference: poolRef, resolved: true, text: '192.0.2.10, {{name:16}}' },
+    { reference: poolRef + '/0', resolved: true, text: '192.0.2.10' },
+    { reference: poolRef + '/1', resolved: true, text: '{{name:16}}' },
+  );
+  assert.deepEqual(outcomes(valid).map(o => o.verdict), ['support'], JSON.stringify(outcomes(valid)));
 });

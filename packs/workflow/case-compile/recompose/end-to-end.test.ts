@@ -202,6 +202,35 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.equal(carried.length, wholeRun.items.length);
         assert.ok(carried.every((proof: any) => proof?.record?.status === 'complete'), JSON.stringify(carried));
         assert.equal(carried[1].record.sources.states[0].state, 'missing_prerequisite');
+
+        // Scoped recompose: downloads the whole mindmap as context (full subject sha) while projecting & sealing only in-scope items.
+        const firstId = String((wholeRun.items[0] as any).fields.case_id), secondId = String((wholeRun.items[1] as any).fields.case_id);
+        const scopedStart = await h.service.startRunDetailed(h.alice, { ...start, pack: 'recompose', inputs: { subject: { external: multiExternal } }, parameters: { case_depths: [1], scope: { words: '本次仅范围验证第一条', cases: [firstId] } } }, call());
+        assert.equal(scopedStart.answer.call_result, 'ok', JSON.stringify(scopedStart.answer.errors));
+        const scopedRun = scopedStart.answer.run!;
+        assert.deepEqual(scopedRun.items.map((i: any) => i.fields.case_id), [firstId]);
+        const scopedFile = { item: (scopedRun.items[0] as any).id, method: { kind: 'recomposed', text: '从作者动作取验证方法', sources: [(scopedRun.items[0] as any).fields.atoms[0].reference], basis: '合成范围验证' } };
+        const scopedDone = await h.service.submitResult(h.alice, submissionFor(scopedRun as any, [scopedFile], 'scripted-recomposer') as any, call());
+        assert.equal(scopedDone.acceptance, 'accepted', JSON.stringify(scopedDone.errors));
+        assert.ok(scopedDone.result!.cross_item.some(c => c.requirement === 'full_set' && c.statement.verdict === 'support'));
+        const scopedRecord = (await h.kit.store.find({ kind: 'run', key: INDEX.runId, value: scopedRun.run })).items[0];
+        assert.equal((scopedRecord.body as any).sources.find((s: any) => s.slot === 'subject')?.reference, multiRef, 'full mindmap digest stays bound as context');
+        const recomposeGroup = (scopedRecord.body as any).groups.find((g: any) => g.kind === 'recompose-scope@1');
+        assert.equal(recomposeGroup.scope?.words, '本次仅范围验证第一条');
+        assert.deepEqual(recomposeGroup.scope?.out_of_scope.map((c: any) => c.autoid), [secondId]);
+
+        const scopedCompileInputs = { ...compileInputs, subject: { external: multiExternal }, recomposition_run: { reference: 'rec:' + scopedRecord.digest }, recomposition_result: { run: scopedRun.run } };
+        const tooWideWhole = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed' } }, call());
+        assert.equal(tooWideWhole.answer.call_result, 'error', 'whole-doc compile exceeding scoped recompose must refuse fail-closed');
+        const tooWideScope = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed', scope: { words: '临时加第二条', cases: [firstId, secondId] } } }, call());
+        assert.equal(tooWideScope.answer.call_result, 'error', 'wider case-compile scope must refuse fail-closed');
+        const outsideAutoid = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed', autoid: secondId } }, call());
+        assert.equal(outsideAutoid.answer.call_result, 'error', 'out-of-scope autoid against scoped recompose must refuse fail-closed');
+
+        const matchingCompile = await h.service.startRunDetailed(h.alice, { ...start, pack: 'case-compile', inputs: scopedCompileInputs, parameters: { pipeline: 'recomposed', scope: { words: '本次仅范围验证第一条', cases: [firstId] } } }, call());
+        assert.equal(matchingCompile.answer.call_result, 'ok', JSON.stringify(matchingCompile.answer.errors));
+        assert.deepEqual(matchingCompile.answer.run!.items.map((i: any) => i.fields.autoid), [firstId]);
+        assert.equal((matchingCompile.answer.run!.items[0] as any).fields.recomposition?.record?.status, 'complete');
     }
     finally {
         await h?.close();

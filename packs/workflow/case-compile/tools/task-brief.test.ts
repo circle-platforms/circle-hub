@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -12,9 +12,15 @@ import {
   SUBAGENT_ROLES,
 } from '../functions/subagent-roles.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
+import { PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
 import { stage } from '../pack-files.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
-import { buildTaskBrief, main } from './task-brief.ts';
+import {
+  buildTaskBrief,
+  main,
+  VERBATIM_LINE_DISCLOSURE_THRESHOLD,
+  writeTaskBrief,
+} from './task-brief.ts';
 
 test('single-source roles drive both bundled agents/*.md and rendered task briefs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-roles-'));
@@ -24,6 +30,10 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     await mkdir(workDir);
     const scopeVerbatim = '只做 101、102 两条核心转发用例；103 先不做。\n补充：保持主接口地址不变。';
     await writeFile(join(workDir, 'scope.md'), scopeVerbatim, 'utf8');
+    await mkdir(join(workDir, 'briefs'), { recursive: true });
+    await writeFile(join(workDir, 'briefs', '01.md'), '# 合成编写简报\n', 'utf8');
+    await mkdir(join(workDir, 'returns'), { recursive: true });
+    await writeFile(join(workDir, 'returns', 'index.json'), '{"jobs":[]}', 'utf8');
 
     const writerRole = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
     const writerBrief = await buildTaskBrief({
@@ -41,7 +51,7 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     assert.ok(writerBrief.includes(scopeVerbatim));
     assert.ok(writerBrief.includes('使用者原话，由主会话记录'));
     assert.ok(writerBrief.includes(`技能目录：${packDir}`));
-    assert.ok(writerBrief.includes(`node "${packDir}/tools/check-plan.ts" --file`));
+    assert.ok(writerBrief.includes(`node ${packDir}/tools/check-plan.ts --file`));
     assert.ok(!writerBrief.includes('<技能目录>'));
     assert.ok(writerBrief.includes('按测试环境改写、前置与清理'));
     assert.ok(writerBrief.includes('本轮补充：先查前置配置'));
@@ -214,6 +224,8 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     await mkdir(workDir);
     const scope = '只重跑 batch2 新增的两条用例；不要修改已完成用例。';
     await writeFile(join(workDir, 'scope.md'), scope, 'utf8');
+    await mkdir(join(workDir, 'audit'), { recursive: true });
+    await writeFile(join(workDir, 'audit', 'case-201.abcdef12.brief.json'), '{"schema":"fidelity-brief@1"}', 'utf8');
 
     const run = spawnSync(
       process.execPath,
@@ -227,15 +239,22 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
         'audit/case-201.abcdef12.brief.json',
         '--out',
         'audit/case-201.abcdef12.verdict.json',
+        '--task-file',
+        'audit/case-201.abcdef12.task.md',
       ],
       { cwd: workDir, encoding: 'utf8' },
     );
     assert.equal(run.status, 0, run.stderr);
     assert.ok(run.stdout.includes('compile-fidelity'));
-    assert.ok(run.stdout.includes(scope));
-    assert.ok(run.stdout.includes(`技能目录：${packDir}`));
-    assert.ok(!run.stdout.includes('<技能目录>'));
-    assert.ok(run.stdout.includes('node "' + packDir + '/tools/check-plan.ts" --file <verdict相对路径> --brief <brief相对路径>'));
+    assert.ok(run.stdout.includes('audit/case-201.abcdef12.task.md'));
+    assert.ok(!run.stdout.includes(scope));
+    assert.ok(run.stdout.length <= 500);
+    const taskContent = await readFile(join(workDir, 'audit/case-201.abcdef12.task.md'), 'utf8');
+    assert.ok(taskContent.includes('compile-fidelity'));
+    assert.ok(taskContent.includes(scope));
+    assert.ok(taskContent.includes(`技能目录：${packDir}`));
+    assert.ok(!taskContent.includes('<技能目录>'));
+    assert.ok(taskContent.includes('node ' + packDir + '/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>'));
 
     // Invalid option format exits non-zero with formatted stderr.
     const errChunks: string[] = [];
@@ -390,6 +409,8 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
         'run/briefs/00.md',
         '--out',
         'plans-r3/00.json',
+        '--task-file',
+        'briefs/r3-00.task.md',
         '--round',
         '3',
         '--prior-plans',
@@ -404,16 +425,21 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
       { cwd: workDir, encoding: 'utf8' },
     );
     assert.equal(r3Cli.status, 0, r3Cli.stderr);
-    assert.ok(r3Cli.stdout.includes('当前轮次：第 3 轮'));
-    assert.ok(r3Cli.stdout.includes('最后一次机会'));
-    assert.ok(!r3Cli.stdout.includes('FINAL attempt'));
-    assert.ok(r3Cli.stdout.includes('连续 2 轮命中同类错误'));
-    assert.ok(r3Cli.stdout.includes('widget init-alpha') && r3Cli.stdout.includes('widget init-beta'));
-    assert.ok(r3Cli.stdout.includes('最近一次失败分析（轮次未记录）'));
-    assert.ok(!r3Cli.stdout.includes('上一轮（第 2 轮）失败分析'));
-    assert.ok(r3Cli.stdout.includes('confidence: "hypothesis"'));
-    assert.ok(r3Cli.stdout.includes('先建对象再查询'));
-    assert.ok(!r3Cli.stdout.includes('另一个用例的归因'));
+    assert.ok(r3Cli.stdout.includes('briefs/r3-00.task.md'));
+    assert.ok(r3Cli.stdout.includes('第 3 轮'));
+    assert.ok(!r3Cli.stdout.includes('widget init-alpha') && !r3Cli.stdout.includes('先建对象再查询'));
+    assert.ok(r3Cli.stdout.length <= 500);
+    const r3TaskText = await readFile(join(workDir, 'briefs/r3-00.task.md'), 'utf8');
+    assert.ok(r3TaskText.includes('当前轮次：第 3 轮'));
+    assert.ok(r3TaskText.includes('最后一次机会'));
+    assert.ok(!r3TaskText.includes('FINAL attempt'));
+    assert.ok(r3TaskText.includes('连续 2 轮命中同类错误'));
+    assert.ok(r3TaskText.includes('widget init-alpha') && r3TaskText.includes('widget init-beta'));
+    assert.ok(r3TaskText.includes('最近一次失败分析（轮次未记录）'));
+    assert.ok(!r3TaskText.includes('上一轮（第 2 轮）失败分析'));
+    assert.ok(r3TaskText.includes('confidence: "hypothesis"'));
+    assert.ok(r3TaskText.includes('先建对象再查询'));
+    assert.ok(!r3TaskText.includes('另一个用例的归因'));
 
     // Round 2 without prior history fails closed
     await assert.rejects(
@@ -687,6 +713,336 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       }),
       /未找到当前用例/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('task-brief --help and -h return 0 with complete usage, and missing --brief lists actual sibling files before dispatch', async () => {
+  for (const flag of ['--help', '-h'] as const) {
+    const out: string[] = [], err: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout), stderr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string | Uint8Array) => { out.push(String(chunk)); return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { err.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    let code = -1;
+    try { code = await main([flag]); } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
+    assert.equal(code, 0, `${flag}: stderr=${err.join('')}`);
+    assert.equal(err.join(''), '');
+    const help = out.join('');
+    assert.match(help, /--role/);
+    assert.match(help, /--brief/);
+    assert.match(help, /--out/);
+    assert.match(help, /用例重组/);
+    assert.match(help, /脚本编写/);
+    assert.match(help, /保真核对/);
+    assert.match(help, /失败分析/);
+  }
+
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-exists-'));
+  try {
+    await writeFile(join(root, 'scope.md'), '全部合成用例\n', 'utf8');
+    await mkdir(join(root, 'plan_run', 'briefs'), { recursive: true });
+    await writeFile(join(root, 'plan_run', 'briefs', '0.md'), '# 0\n', 'utf8');
+    await writeFile(join(root, 'plan_run', 'briefs', '1.md'), '# 1\n', 'utf8');
+    await mkdir(join(root, 'plans'), { recursive: true });
+
+    await assert.rejects(
+      () => buildTaskBrief({
+        role: '脚本编写',
+        caseRef: '990000000000000101',
+        briefPath: 'plan_run/briefs/00.md',
+        outPath: 'plans/00.json',
+        cwd: root,
+      }),
+      (error: Error) => /^不存在：找不到.*--brief/.test(error.message) && /0\.md/.test(error.message) && /1\.md/.test(error.message),
+    );
+
+    await assert.rejects(
+      () => buildTaskBrief({
+        role: '脚本编写',
+        caseRef: '990000000000000101',
+        briefPath: 'plan_run/briefs/0.md',
+        outPath: 'plans',
+        cwd: root,
+      }),
+      (error: Error) => /--out/.test(error.message) && (/目录/.test(error.message) || /\.json/.test(error.message)),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-char verbatim device line byte-for-byte with shifted 1-based line disclosure, and prints only a short stdout notice', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-file-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    const workDir = join(root, 'work');
+    await mkdir(workDir);
+
+    const CASE = '990000000000000401';
+    const longScopeLine = `原始范围逐字保留_${'S'.repeat(2100)}_结尾`;
+    const secretScopeSnippet = '机密范围原文绝对禁止出现在标准输出短提示中';
+    await writeFile(join(workDir, 'scope.md'), `${secretScopeSnippet}\n${longScopeLine}\n`, 'utf8');
+    await mkdir(join(workDir, 'briefs'), { recursive: true });
+    await writeFile(join(workDir, 'briefs', '0.md'), '# 合成编写简报\n', 'utf8');
+    await mkdir(join(workDir, 'plans'), { recursive: true });
+
+    const planDoc = {
+      item: CASE,
+      handling: 'handled',
+      slots: {
+        plan: [
+          {
+            text: '合成自动化用例',
+            quotes: [{ reference: `src:${'3'.repeat(64)}/kityminder@1/n/e1`, text: '期望' }],
+            data: {
+              bucket: 'bed-a',
+              blocks: [],
+              replacements: [],
+              steps: [
+                { object: 'dut0', method: 'exec', args: ['show health status'], keywords: {}, description: '检查' },
+              ],
+              expects: [{ after: 0, text: '期望', mode: 'substring', pattern: 'status=ok' }],
+            },
+          },
+        ],
+      },
+    };
+    await writeFile(join(workDir, 'plan-r1.json'), JSON.stringify(planDoc), 'utf8');
+
+    const exactDevice5000 = 'X'.repeat(5000);
+    const r1CaseDir = join(workDir, 'r1-returns', 'e'.repeat(12), 'cases', CASE);
+    await mkdir(r1CaseDir, { recursive: true });
+    await writeFile(
+      join(r1CaseDir, 'dut0.txt'),
+      `seat#show health status\n${exactDevice5000}\nError: object missing\nseat#\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(r1CaseDir, 'log.txt'),
+      'dispatched show health status\nError: object missing\n',
+      'utf8',
+    );
+    await writeFile(
+      join(workDir, 'r1-returns', 'index.json'),
+      JSON.stringify({
+        schema: 'device-returns@1',
+        run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
+        jobs: [
+          {
+            job: 'e'.repeat(64),
+            verification_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
+            rows: [
+              {
+                item: CASE,
+                verdict: 'fail',
+                log: join('e'.repeat(12), 'cases', CASE, 'log.txt'),
+                sessions: { 'dut0.txt': join('e'.repeat(12), 'cases', CASE, 'dut0.txt') },
+                execution_refused: [{ session: 'dut0.txt', prompt: 'seat#', command: 'show health status', reply: ['Error: object missing'] }],
+              },
+            ],
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const longEvidenceQuote = `Q_${'E'.repeat(1900)}_QUOTE`;
+    const longJudged = `分析结论_${'解'.repeat(2400)}_结论末`;
+    const longRemedy = `修复建议_${'建'.repeat(2300)}_建议末`;
+    const longNote = `本轮说明_${'说'.repeat(2500)}_说明末`;
+    await writeFile(
+      join(workDir, 'notes-r1.json'),
+      JSON.stringify({
+        cases: {
+          [CASE]: {
+            round: 1,
+            confidence: 'hypothesis',
+            judged: longJudged,
+            remedy: longRemedy,
+            evidence: longEvidenceQuote,
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const written = await writeTaskBrief({
+      role: '脚本编写',
+      caseRef: CASE,
+      briefPath: 'briefs/0.md',
+      outPath: 'plans/0.json',
+      taskFilePath: 'briefs/0.task.md',
+      note: longNote,
+      round: 2,
+      priorPlans: 'plan-r1.json',
+      priorReturns: 'r1-returns',
+      priorNotes: 'notes-r1.json',
+      cwd: workDir,
+      packRoot: packDir,
+    });
+
+    const onDisk = await readFile(join(workDir, 'briefs', '0.task.md'), 'utf8');
+    assert.equal(onDisk, written.brief);
+    const diskLines = onDisk.slice(0, -1).split('\n');
+    assert.equal(diskLines.length, written.lineCount);
+
+    // Explanatory prose bullets were wrapped so every emitted prose segment stays <= PROSE_WRAP_MAX_CHARS.
+    for (const prefix of ['- 本轮补充：', '- 失败分析结论（未确认）：', '- 建议下一步：']) {
+      const idx = diskLines.findIndex((line) => line.startsWith(prefix));
+      assert.ok(idx >= 0, `missing ${prefix}`);
+      assert.ok(diskLines[idx]!.length <= PROSE_WRAP_MAX_CHARS, `${prefix} exceeded wrap cap`);
+      assert.ok(diskLines[idx + 1]?.startsWith('  '), `${prefix} did not wrap onto continuation line`);
+      assert.ok(diskLines[idx + 1]!.length <= PROSE_WRAP_MAX_CHARS);
+    }
+
+    // Verbatim lines (> 1800 chars) were NEVER split or mutated anywhere, and header line numbers match exact shifted 1-based lines.
+    assert.ok(written.longLines.length >= 3, `longLines=${JSON.stringify(written.longLines)} briefLen=${written.brief.length}`);
+    for (const [label, expectedVerbatim] of [
+      ['scope', longScopeLine],
+      ['device5000', exactDevice5000],
+      ['evidenceQuote', `- 引用证据原句：${longEvidenceQuote}`],
+    ] as const) {
+      assert.ok(expectedVerbatim.length > VERBATIM_LINE_DISCLOSURE_THRESHOLD, label);
+      const exactIdx = diskLines.indexOf(expectedVerbatim);
+      assert.ok(exactIdx >= 0, `${label}: verbatim line of length ${expectedVerbatim.length} was altered or wrapped`);
+      assert.ok(
+        written.longLines.some((entry) => entry.line === exactIdx + 1 && entry.length === expectedVerbatim.length && diskLines[entry.line - 1] === expectedVerbatim),
+        `${label}: disclosure header missed shifted 1-based line ${exactIdx + 1}`,
+      );
+      assert.ok(onDisk.includes(`- 第 ${exactIdx + 1} 行（${expectedVerbatim.length} 字符）`));
+    }
+
+    // Short stdout dispatch notice stays compact and leaks zero case content or long verbatim chunks.
+    assert.ok(written.dispatchPrompt.length <= 500, `dispatchPrompt too long: ${written.dispatchPrompt.length}`);
+    assert.ok(written.dispatchPrompt.includes(CIRCLE_GENERAL_PURPOSE_NOTICE));
+    assert.ok(written.dispatchPrompt.includes('briefs/0.task.md'));
+    assert.ok(written.dispatchPrompt.includes(`共 ${written.lineCount} 行`));
+    assert.ok(written.dispatchPrompt.includes('plans/0.json'));
+    assert.ok(written.dispatchPrompt.includes('read_file'));
+    assert.ok(!written.dispatchPrompt.includes(secretScopeSnippet));
+    assert.ok(!written.dispatchPrompt.includes('机密'));
+    assert.ok(!written.dispatchPrompt.includes('解解解'));
+    assert.ok(!written.dispatchPrompt.includes('XXXX'));
+
+    // Reject invalid --task-file arguments (.json extension, collision with input/out, symlink).
+    await assert.rejects(
+      () => writeTaskBrief({
+        role: '脚本编写',
+        caseRef: CASE,
+        briefPath: 'briefs/0.md',
+        outPath: 'plans/0.json',
+        taskFilePath: 'plans/0.task.json',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /必须是 \.md 文件路径/,
+    );
+    await assert.rejects(
+      () => writeTaskBrief({
+        role: '脚本编写',
+        caseRef: CASE,
+        briefPath: 'briefs/0.md',
+        outPath: 'plans/0.json',
+        taskFilePath: 'scope.md',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /不能与输入、范围或目标输出文件相同/,
+    );
+    await symlink(join(workDir, 'briefs', '0.md'), join(workDir, 'briefs', 'link.md'));
+    await assert.rejects(
+      () => writeTaskBrief({
+        role: '脚本编写',
+        caseRef: CASE,
+        briefPath: 'briefs/0.md',
+        outPath: 'plans/0.json',
+        taskFilePath: 'briefs/link.md',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /符号链接/,
+    );
+
+    // CLI subprocess with --task-file prints short notice on stdout and writes full file on disk.
+    const toolPath = join(packDir, 'tools', 'task-brief.ts');
+    const cli = spawnSync(
+      process.execPath,
+      [
+        toolPath,
+        '--role', '脚本编写',
+        '--case', CASE,
+        '--brief', 'briefs/0.md',
+        '--out', 'plans/0.json',
+        '--task-file', 'briefs/cli-task.md',
+      ],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.equal(cli.stderr, '');
+    assert.ok(cli.stdout.trim().length <= 500);
+    assert.ok(cli.stdout.includes('briefs/cli-task.md'));
+    assert.ok(!cli.stdout.includes(secretScopeSnippet));
+    const cliWritten = await readFile(join(workDir, 'briefs', 'cli-task.md'), 'utf8');
+    assert.ok(cliWritten.includes(secretScopeSnippet));
+    assert.ok(cliWritten.includes(longScopeLine));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and supports --batch generation for plans and fidelity briefs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-batch-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    const workDir = join(root, 'work');
+    await mkdir(join(workDir, 'briefs'), { recursive: true });
+    await mkdir(join(workDir, 'audit'), { recursive: true });
+    await writeFile(join(workDir, 'scope.md'), '仅重测批内 00、01 两条用例。\n', 'utf8');
+    await writeFile(join(workDir, 'briefs', '00.md'), '# 用例 00 编写简报\n', 'utf8');
+    await writeFile(join(workDir, 'briefs', '01.md'), '# 用例 01 编写简报\n', 'utf8');
+    await writeFile(join(workDir, 'audit', '00.aaaaaaaa.brief.json'), JSON.stringify({ schema: 'fidelity-brief@1', item: 'doc:0', brief_sha256: 'a'.repeat(64) }), 'utf8');
+    await writeFile(join(workDir, 'audit', '01.bbbbbbbb.brief.json'), JSON.stringify({ schema: 'fidelity-brief@1', item: 'doc:1', brief_sha256: 'b'.repeat(64) }), 'utf8');
+    await writeFile(
+      join(workDir, 'batch-plan.json'),
+      JSON.stringify([
+        { case: '100000000000000000', brief: 'briefs/00.md', out: 'plans/00.json', task_file: 'briefs/00.task.md' },
+        { case: '100000000000000001', brief: 'briefs/01.md', out: 'plans/01.json', task_file: 'briefs/01.task.md', note: '按新配置核对' },
+      ]),
+      'utf8',
+    );
+
+    const toolPath = join(packDir, 'tools', 'task-brief.ts');
+    const singleRun = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '脚本编写', '--case', '100000000000000000', '--brief', 'briefs/00.md', '--out', 'plans/00.json', '--task-file', 'briefs/single.task.md'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(singleRun.status, 0, singleRun.stderr);
+    assert.ok(singleRun.stdout.length <= 500);
+    assert.ok(singleRun.stdout.includes(`技能目录：${packDir}`), 'dispatchPrompt must expose real skillDir');
+
+    const batchPlan = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '脚本编写', '--batch', 'batch-plan.json'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(batchPlan.status, 0, batchPlan.stderr);
+    const planSummary = JSON.parse(batchPlan.stdout);
+    assert.equal(planSummary.schema, 'task-brief-batch@1');
+    assert.equal(planSummary.written, 2);
+    assert.equal(planSummary.tasks.length, 2);
+    assert.ok((await readFile(join(workDir, 'briefs', '01.task.md'), 'utf8')).includes('按新配置核对'));
+
+    const batchFidelity = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '保真核对', '--batch', 'audit', '--task-dir', 'audit-tasks'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(batchFidelity.status, 0, batchFidelity.stderr);
+    const fidSummary = JSON.parse(batchFidelity.stdout);
+    assert.equal(fidSummary.written, 2);
+    assert.ok((await readFile(join(workDir, 'audit-tasks', '00.aaaaaaaa.task.md'), 'utf8')).includes('compile-fidelity'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

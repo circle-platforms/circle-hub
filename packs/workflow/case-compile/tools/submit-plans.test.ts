@@ -365,3 +365,17 @@ test('submit_plans retries ONLY on 503 saying 这次调用没有执行, and neve
     assert.match(failed.err, /^暂时不可用：.*没有自动重发。请先查回原调用.*。$/m);
   }
 });
+
+test('planItems reports offending filename without saying re-export bytes, and empty stdin fails with same-line heredoc guidance', async (t) => {
+  const dir = await plans({ '01.json': item('doc:a'), '02.json': '{broken json' });
+  await assert.rejects(
+    () => planItems(dir),
+    (error: Error) => /--plans/.test(error.message) && /02\.json/.test(error.message) && !/重新导出该运行对应输入的原始字节/.test(error.message),
+  );
+  const h = await hub(said('受理')); t.after(h.close);
+  const okDir = await plans({ '01.json': item('doc:a') });
+  const emptyTok = await run(h.url, okDir, '');
+  assert.equal(emptyTok.code, 1);
+  assert.match(emptyTok.err, /^参数无效：标准输入里没有令牌/);
+  assert.match(emptyTok.err, /切勿在 <<'EOF' 前换行/);
+});
