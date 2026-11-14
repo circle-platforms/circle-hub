@@ -22,7 +22,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit, type Transaction } from '../../records/api.ts';
+import { memberCapabilities, type Principal, type RecordsKit, type Transaction } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -221,12 +221,12 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
   const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, catalog: records.testEnvironments, ...(now === undefined ? {} : { now: async () => now() }) });
-  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id, tx) => canUseEnvironment(records, actor, id, tx)) : null;
+  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases) : null;
   const environmentAccess = environments ? {
     inheritance: (tx?: Transaction) => environmentPort.read(tx),
-    authorizeKeys: (actor: Principal, keys: readonly string[]) => environments.authorizeKeys(actor, keys),
+    authorizeKeys: (actor: Principal, keys: readonly string[], tx?: Transaction) => environments.authorizeKeys(actor, keys, tx),
     canUse: (actor: Principal, executor: string) => environments.canUse(actor, executor),
-    permission: (actor: Principal, executor: string, tx: Transaction) => environments.permission(actor, executor, tx),
+    permission: environments.permission,
   } : undefined;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
@@ -314,7 +314,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
-      ...(dispatch && leases ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, (actor, id) => canUseEnvironment(records, actor, id), now) } : {}),
+      ...(dispatch && leases && environments ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, environments.permission, now) } : {}),
       executors: async (by) => {
         const views: ExecutorView[] = [];
         for (const entry of await new ExecutorRegistry(records).sources(by)) {
