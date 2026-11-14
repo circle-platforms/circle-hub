@@ -5,7 +5,7 @@ import { RunRecord } from '../../contracts/src/run.ts';
 import { idOf } from '../../contracts/src/common.ts';
 import { PACK_FILE_PATHS } from '../../contracts/generated/protocol.ts';
 import { PACK_VERSION_SCHEMA, parsePackRef, type PackVersionBody } from '../runs/api.ts';
-import { WHOLE_HUB, sha256Hex, canonicalBytes, parseStrictJson, type ActionBody, type EnvironmentUpgradeReadContext, type EnvironmentUpgradeSources, type EnvironmentUpgradeSnapshot } from '../records/api.ts';
+import { WHOLE_HUB, sha256Hex, canonicalBytes, parseStrictJson, type ActionBody, type Page, type StoredRecord, type EnvironmentUpgradeReadContext, type EnvironmentUpgradeSources, type EnvironmentUpgradeSnapshot } from '../records/api.ts';
 import { planEnvironmentAssignmentUpgrade } from './environment-assignment-upgrade.ts';
 
 const ExecutorId = idOf('exe');
@@ -32,7 +32,7 @@ export async function collectEnvironmentAssignmentUpgradeSnapshot(ctx: Environme
   const seenPublications = new Set<string>();
   let cursor: string | null = null;
   do {
-    const page = await ctx.store.list<PackVersionBody>({ kind: 'pack_version', limit: 500, newestFirst: false, cursor }, ctx.tx);
+    const page: Page<StoredRecord<PackVersionBody>> = await ctx.store.list<PackVersionBody>({ kind: 'pack_version', limit: 500, newestFirst: false, cursor }, ctx.tx);
     for (const row of page.items) {
       const manifest = PackManifest.parse(row.body.manifest);
       if (row.schema !== PACK_VERSION_SCHEMA || manifest.id !== row.body.pack || manifest.version !== row.body.version || manifest.kind !== row.body.kind || sha256Hex(canonicalBytes(manifest)) !== row.body.digest)
@@ -98,7 +98,7 @@ export async function collectEnvironmentAssignmentUpgradeSnapshot(ctx: Environme
   const holdingBindings: NonNullable<EnvironmentUpgradeSnapshot['holdingBindings']>[number][] = [];
   cursor = null;
   do {
-    const page = await ctx.store.find<ActionBody>({ kind: 'action', key: 'dispatch.phase', value: 'reservation', limit: 500, cursor }, ctx.tx);
+    const page: Page<StoredRecord<ActionBody>> = await ctx.store.find<ActionBody>({ kind: 'action', key: 'dispatch.phase', value: 'reservation', limit: 500, cursor }, ctx.tx);
     for (const row of page.items) {
       const binding = row.body.detail.binding;
       if (row.body.component !== 'dispatch@1' || row.body.detail.phase !== 'reservation' || !object(binding) || !Array.isArray(binding.fences)) continue;
