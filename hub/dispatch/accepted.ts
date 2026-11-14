@@ -146,7 +146,7 @@ function attemptLabel(attempt: DispatchAttemptFacts): string {
 
 function attemptNext(attempt: DispatchAttemptFacts, job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): string {
   const scope = attemptLabel(attempt);
-  if (attempt.outcome === 'unknown') return `${scope}结果未知：目标可能已经执行；不要重交或另开运行重发，联系管理员只读核对；之后原样重交读进展`;
+  if (attempt.outcome === 'unknown') return `${scope}上机验证结果未知：目标可能已经执行；不要重交或另开运行重发，联系管理员只读核对；之后原样重交读进展`;
   if (attempt.report_pending) return `${scope}报告尚未取全，原样重交原提交读取进展；不要重新发送`;
   if (attempt.not_sent === true) return retriable(job) ? `${scope}没有发出，原因消除后可原样重交，Hub会再试一次` : `${scope}没有发出；此前各轮记录保留，本作业不会整份重发，请按各轮结果处理`;
   if (attempt.outcome === 'target_rejected') return `${scope}被目标拒绝；` + (retriable(job) ? '修正该次拒绝原因后可原样重交' : '此前各轮记录保留，不要整份重发');
@@ -179,8 +179,10 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
     if (attempt.rejection_stage) parts.push(`${scope}在目标的“${attempt.rejection_stage}”阶段被拒绝`);
     if (administrative && attempt.scope.request_id) parts.push(`${scope}请求号 ${attempt.scope.request_id}`);
     if (attempt.result) parts.push(`${scope}结果引用 ${attempt.result}`);
-    if (attempt.device_return) parts.push(`${scope}设备返回 ${attempt.device_return}（原文引用不证明通过）`);
-    parts.push(`${scope}下一步：${attemptNext(attempt, job)}`);
+    if (attempt.device_return && attempt.outcome !== 'not_dispatched' && attempt.not_sent !== true) parts.push(`${scope}设备返回 ${attempt.device_return}（原文引用不证明通过）`);
+    const nextAttempt = administrative ? attempt.next_action ?? diagnostics.job_facts.next_action ?? attemptNext(attempt, job) : attemptNext(attempt, job);
+    attempt.next_action = nextAttempt;
+    parts.push(`${scope}下一步：${nextAttempt}`);
   }
   const next = administrative ? projected.next_action : projected.missing_facts?.map(fact => fact.next_action).join('；') || projected.next_action;
   if (next) parts.push(`作业下一步：${next}`);
