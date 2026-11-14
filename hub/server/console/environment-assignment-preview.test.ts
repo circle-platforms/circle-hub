@@ -27,7 +27,7 @@ test('member allocation preview does not turn assigned false into a current use 
 
 test('readonly assignment check is a preview while real evidence failures remain errors', () => {
   const check = { condition: 'assignment', label: '当前账户使用分配', satisfied: false, observed_at: '2026-11-14T00:00:00.000Z', references: [], missing_fact: '当前账户没有该执行器的使用分配', next_action: '请管理员分配' };
-  const preview = readinessCheckBlock(check).text;
+  const preview = readinessCheckBlock(check, false).text;
   assert.ok(preview.includes(notice)); assert.match(preview, /配置预览/);
   assert.doesNotMatch(preview, /错误|当前账户没有该执行器/);
   assert.match(readinessCheckBlock({ ...check, condition: 'manifest', label: '清单摘要核对' }).text, /错误/);
