@@ -22,7 +22,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
+import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit, type Transaction } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -220,12 +220,18 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
-  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
+  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, catalog: records.testEnvironments, ...(now === undefined ? {} : { now: async () => now() }) });
   const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id, tx) => canUseEnvironment(records, actor, id, tx)) : null;
+  const environmentAccess = environments ? {
+    inheritance: (tx?: Transaction) => environmentPort.read(tx),
+    authorizeKeys: (actor: Principal, keys: readonly string[]) => environments.authorizeKeys(actor, keys),
+    canUse: (actor: Principal, executor: string) => environments.canUse(actor, executor),
+    permission: (actor: Principal, executor: string, tx: Transaction) => environments.permission(actor, executor, tx),
+  } : undefined;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
     enforceEnvironmentAssignments,
-    ...(environments && environmentStartup.completed !== null ? { environmentAccess: environments } : {}),
+    ...(environmentAccess ? { environmentAccess } : {}),
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
     dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready,caller)=>dispatch?acceptedDispatch(records,dispatch,run,ready,undefined,caller):Promise.resolve([]),inFlight:(run,caller)=>dispatch?runInFlight(records,dispatch,run,caller):Promise.resolve(null)},
     records,
@@ -259,7 +265,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments, records, leases, runs, workflows, knowledge, ...(environments && environmentStartup.completed !== null ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments, records, leases, runs, workflows, knowledge, ...(environmentAccess ? { environmentAccess } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
     environmentPermissionStartup: readEnvironmentStartup,

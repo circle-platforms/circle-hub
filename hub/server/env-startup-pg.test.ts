@@ -56,7 +56,7 @@ async function scenario(input: { completed: boolean | null; token: 'admin' | 'me
         assert.equal(view.environmentAccess.enforced, startup.completed !== false);
         if (startup.completed === null) {
           assert.equal(view.environmentAccess.ready, false);
-          assert.equal(hub.dispatch?.options.environmentAccess, undefined, 'unverified completion never permits use through an already-present grant');
+          assert.equal((await hub.dispatch!.options.environmentAccess!.inheritance()).completed, null, 'unverified completion reaches the dynamic provider rather than permitting use through an already-present grant');
         }
         assert.equal(hub.deps.rebuildNeeded, undefined, 'a conversion wait is not schema incompatibility');
         if (input.afterAssembly !== undefined) {
