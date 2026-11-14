@@ -243,6 +243,7 @@ test('only the bounded definition restore reproduces disabled nondeleted respons
     assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
     await assert.rejects(f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: environment.id }), /分配对象不存在或未启用/);
     // Existing deleted source state in a synthetic fixture is never admitted, even by the restore capability.
+    await f.kit.principals.setDisabled(f.admin, f.other.id, true);
     await f.db.query('UPDATE users SET deleted_at=$1 WHERE id=$2', [new Date().toISOString(), f.other.id]);
     await assert.rejects(f.kit.testEnvironments.registerFromDefinition(f.admin, { ...f.input('删除账户不能恢复', 'other-target'), prefixes: [{ ...f.input().prefixes[0], owner: f.other.id }] }), /责任账户/);
     await assert.rejects(f.kit.testEnvironments.assignFromDefinition(f.admin, { environment: environment.id, subject: f.other.id }), /分配对象不存在或未启用/);
