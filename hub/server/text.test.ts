@@ -996,3 +996,113 @@ test('booking no-command devices stay one plain line; in-flight and Excel rows s
   assert.match(started, /^Hub 已按工作流的规定自动开始上机验证；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用$/m);
   assert.doesNotMatch(started, /任务包|状态未知；原因还没查清；下一步由使用者继续读取设备输出/);
 });
+
+test('recompose refusal: one next actor, verbatim（×N）, determined-error branch (Boss 06:48)', () => {
+  const list = [{ ...items(1)[0], fields: { case_id: '253651793153361064', title: '标题未知' }, label: '标题未知' }];
+  const fact = '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产';
+  const identical = Array.from({ length: 5 }, () => ({
+    code: 'missing_input',
+    message: fact,
+    fix: '补齐点名的事实后重交；不能补齐的按具名请求处理；运行者用 upload_file 补齐点名的运行输入',
+    path: '/items/0',
+    item: list[0].id,
+    requirement: 'record',
+    rounds_left: 2,
+  }));
+  const shape = {
+    code: 'SUBMISSION_SCHEMA_VIOLATION',
+    message: '来源状态缺完整 action/object/owner/due 出口；写明缺的事实、由谁在何时补，再重交',
+    fix: '写明缺的事实、由谁在何时补，再重交',
+    path: '/items/0',
+    item: list[0].id,
+    requirement: 'record',
+    rounds_left: 2,
+  };
+  const refused = ValidationResult.parse({
+    ...resultOf(items(1)),
+    acceptance: 'not_accepted',
+    errors: [...identical, shape],
+    partitions: { delivered: [], rejected: [], quarantined: [], incomplete: [] },
+    cross_item: [],
+  });
+  const text = toolText('submit_result', submitAnswer(refused), { items: list });
+  assert.match(text, /^脚本合并有错误。$/m);
+  assert.match(text, /^原始用例 253651793153361064 标题未知：$/m);
+  assert.match(text, /^- 改写后的命令没有锁定目录的完整语法身份（×5）$/m);
+  assert.equal(linesOf(text).filter((line) => line.includes('改写后的命令没有锁定目录的完整语法身份')).length, 1);
+  assert.equal(linesOf(text).filter((line) => line.includes('还可以重交 2 次')).length, 1);
+  assert.equal(linesOf(text).filter((line) => line.includes('决定者程序')).length, 1);
+  assert.match(text, /下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(text, /产品包作者|下一步使用者补齐资料|运行者用 upload_file/);
+  assert.match(text, /参数无效：来源状态缺完整 action\/object\/owner\/due 出口；写明缺的事实、由谁在何时补，再重交/);
+  assert.doesNotMatch(text, /再重交。写明缺的事实/);
+
+  // Near-identical facts must NOT merge (only verbatim equality).
+  const near = toolText('submit_result', submitAnswer(ValidationResult.parse({
+    ...refused,
+    errors: [
+      { ...identical[0], message: '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产' },
+      { ...identical[0], message: '改写后的命令没有锁定目录的完整语法身份（命令 sdns listener）；等待产品包作者在重新提交之前补事实并重产' },
+    ],
+  })), { items: list });
+  assert.doesNotMatch(near, /（×/);
+  assert.equal(linesOf(near).filter((line) => line.startsWith('- ')).length, 2);
+
+  // Accepted unknown record gap: name the missing fact; next actor is the model.
+  const unknownItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'missing_input',
+    requirements: [{
+      requirement: 'record',
+      status: 'pending',
+      layers: [{
+        layer: 'static',
+        terminal: 'unchecked',
+        reason: 'missing_input',
+        missing: '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产',
+        attribution: 'data_gap',
+        exit: { action: 'request', request_kind: 'clarification', audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-01-04T00:00:00.000Z' },
+      }],
+      claims: [{
+        statement: { text: '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产', verdict: 'unknown', reason: 'missing_input' },
+        qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
+        grounds: [],
+        warrant: { producer: 'function', id: 'recompose-check@1' },
+        validity: { status: 'valid', bound: [], premises: [] },
+      }],
+    }],
+  };
+  const acceptedUnknown = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [unknownItem] })), { items: list });
+  assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；状态未知；原因缺资料；下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(acceptedUnknown, /产品包作者|下一步使用者补齐资料|还没有确认结论/);
+
+  // Pack-marked determined error (data.determination === 'error'): render as 判断错误, not 状态未知 (Boss 06:48 b).
+  const determinedItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'check_error',
+    requirements: [{
+      requirement: 'record',
+      status: 'pending',
+      layers: [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }],
+      claims: [{
+        statement: {
+          text: '改写后的命令没有锁定目录的完整语法身份',
+          verdict: 'unknown',
+          reason: 'check_error',
+          data: { determination: 'error' },
+        },
+        qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
+        grounds: [],
+        warrant: { producer: 'function', id: 'recompose-check@1' },
+        validity: { status: 'valid', bound: [], premises: [] },
+      }],
+    }],
+  };
+  const determined = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [determinedItem] })), { items: list });
+  assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因编写模型的问题；下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(determined, /状态未知；原因缺资料/);
+});
