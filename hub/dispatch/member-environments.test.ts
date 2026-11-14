@@ -58,8 +58,8 @@ test('only assigned environments are visible and booking uses exact keys from en
   assert.deepEqual(await w.environments.list(w.bob),[]);
   assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed']))?.code,'SOURCE_NOT_PERMITTED','unassigned overlapping target is still an ambiguity before access filtering');
   assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed','synthetic/zone/hidden']))?.code,'SOURCE_NOT_PERMITTED');
-  assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed/child']))?.code,'SOURCE_NOT_PERMITTED');
-  assert.equal((await w.environments.authorizeKeys(w.alice,['unregistered/non-environment']))?.code,'SOURCE_NOT_PERMITTED');
+  assert.equal(await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed/child']),null,'an exact resource declaration does not turn its undeclared child into an environment');
+  assert.equal(await w.environments.authorizeKeys(w.alice,['unregistered/non-environment']),null,'the environment-only gate leaves confirmed ordinary keys to the workflow lease rules');
   assert.equal(await w.environments.canUse(w.alice,w.second.id),false,'overlapping keys do not authorize another provider');
   await w.records.authorizations.assignResource(w.admin,w.secondEnvironment.id,w.bob.id);
   assert.deepEqual((await w.environments.list(w.bob)).map(row=>row.name),['synthetic-hidden']);
@@ -86,8 +86,8 @@ test('member occupancy shows names and times only within assigned keys and never
   assert.equal(visible.length,1);assert.equal(visible[0].occupancy?.[0].name,'其他成员');
   assert.equal((await w.environments.list({...w.alice,role:'admin'}))[0].occupancy?.[0].name,'其他成员','claimed admin role cannot expose a holder');
   const {schema,id,...content}=w.firstEnvironment;
-  await w.records.testEnvironments.update(w.admin,id,{...content,name:content.name!,target:content.target!,resources:content.resources.map(row=>({...row,owner:w.alice.id}))});
-  assert.equal((await w.environments.list(w.alice))[0].occupancy?.[0].name,w.bob.name,'the current catalog resource owner can see the name');
+  await w.records.testEnvironments.update(w.admin,id,{...content,name:content.name!,target:content.target!,prefixes:[...content.prefixes,{prefix:'synthetic/zone/',owner:w.alice.id,registered_at:new Date().toISOString()}]});
+  assert.equal((await w.environments.list(w.alice))[0].occupancy?.[0].name,w.bob.name,'the current catalog prefix owner can see the name');
   assert.equal(visible[0].occupancy?.[0].mine,false);assert.ok(visible[0].occupancy?.[0].since);
   assert.ok(visible[0].occupancy?.[0].until);
   const text = JSON.stringify(visible);

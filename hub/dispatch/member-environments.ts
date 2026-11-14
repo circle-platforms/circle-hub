@@ -21,7 +21,7 @@ export interface UnattributedHolding {
   since: string;
   until: string | null;
   target: null;
-  assigned: false;
+  assigned: false | null;
   can_use: false;
   assignment_reason: string;
   target_missing: string;
@@ -50,7 +50,7 @@ export class MemberEnvironments {
     if(!keys.length)return null;
     const environments=new Map<string,TestEnvironment>();
     for(const key of new Set(keys)) {
-      const matches=(await this.records.testEnvironments.resolve([key],tx)).filter(environment=>environment.target!==null);
+      const {environments:matches}=await this.records.testEnvironments.resolve([key],tx);
       if(matches.length>1)return null;
       if(matches.length===1)environments.set(matches[0].id,matches[0]);
     }
@@ -125,19 +125,25 @@ export class MemberEnvironments {
   async unattributedHoldings(actor: Principal): Promise<UnattributedHolding[] | null> {
     try {
       if (!this.records.artifacts.capturePermissionSnapshot) return null;
-      const viewer = (await this.records.artifacts.capturePermissionSnapshot(actor)).user;
+      const snapshot = await this.records.artifacts.capturePermissionSnapshot(actor);
+      const viewer = snapshot.user;
       if (!viewer || viewer.disabled || viewer.deleted_at) return [];
       const held = (await this.leases.view('', true)).entries.filter(lease => lease.user === viewer.id);
       if (!held.length) return [];
-      const assigned = await this.assigned(actor);
+      const subjects=[viewer.id,...snapshot.teams(),'*'];
       const holdings = new Map<string, UnattributedHolding>();
       for (const lease of held) {
-        if (assigned.some(environment=>this.covers(environment,lease.key))) continue;
-        holdings.set([lease.run, lease.since, lease.until].join('\0'), {
+        const {environments:matches}=await this.records.testEnvironments.resolve([lease.key]);
+        if(matches.length===0)continue;
+        const ambiguous=matches.length>1;
+        if(!ambiguous && subjects.some(subject=>snapshot.enabled(snapshot.latest('resource_assign',subject,matches[0].id))))continue;
+        const group=[lease.run,lease.since,lease.until].join('\0');
+        if(holdings.get(group)?.assigned===null)continue;
+        holdings.set(group, {
           booking_run: lease.run, since: lease.since, until: lease.until,
-          target: null, assigned: false, can_use: false,
-          assignment_reason: '当前没有分配，不能续期或开始新的上机验证；预订仍由当前账户持有',
-          target_missing: '预订没有可核验的执行器绑定，目标归属未知',
+          target: null, assigned: ambiguous ? null : false, can_use: false,
+          assignment_reason: ambiguous ? '预订对应的测试环境不能唯一核对，不能开始新的使用；预订仍由当前账户持有' : '当前没有分配，不能续期或开始新的上机验证；预订仍由当前账户持有',
+          target_missing: ambiguous ? '预订对应多个已登记目标，归属不能唯一核对' : '预订没有可核验的执行器绑定，目标归属未知',
         });
       }
       return [...holdings.values()];
