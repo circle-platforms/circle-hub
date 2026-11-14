@@ -525,33 +525,198 @@ test('model calls cannot create links or rename directories through direct tools
   }finally{f.close();}
 });
 
-test('the case-compile skill commands, filled in as Circle hands them to hooks, pass the skills home guard', () => {
+type ParsedSkillCommand = { source: string; template: string; hasHeredoc: boolean };
+
+function splitAlternativesOutsideAngles(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '<') depth++;
+    else if (text[i] === '>' && depth > 0) depth--;
+    else if (text[i] === '|' && depth === 0) { parts.push(text.slice(start, i)); start = i + 1; }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand[] {
+  const out: ParsedSkillCommand[] = [];
+  // Every ```sh block line must be blank, a # comment, or a strict node <技能目录>/tools/*.ts command (with optional 3-line <<'EOF'/%HUB_TOKEN%/EOF heredoc).
+  for (const match of text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)) {
+    const lines = match[1].split('\n');
+    for (let i = 0; i < lines.length;) {
+      const line = lines[i];
+      if (line === '' || line.startsWith('#')) { i += 1; continue; }
+      assert.ok(line.startsWith('node <技能目录>/tools/'), `${docPath}: unparseable command line in sh block: ${line}`);
+      if (line.includes('<<')) {
+        assert.match(line, / <<'EOF'$/, `${docPath}: malformed heredoc start on line: ${line}`);
+        assert.equal(lines[i + 1], '%HUB_TOKEN%', `${docPath}: missing %HUB_TOKEN% heredoc line after: ${line}`);
+        assert.equal(lines[i + 2], 'EOF', `${docPath}: missing EOF closing line after: ${line}`);
+        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), hasHeredoc: true });
+        i += 3;
+      } else {
+        assert.ok(!line.includes('%HUB_URL%') && !line.includes('%HUB_TOKEN%'), `${docPath}: Hub command missing <<'EOF': ${line}`);
+        out.push({ source: docPath, template: line, hasHeredoc: false });
+        i += 1;
+      }
+    }
+  }
+  // Explicit "label: [node <技能目录>/]tools/..." command declarations in ```text summaries.
+  const heredocNote = " <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）";
+  for (const line of text.split('\n')) {
+    const labelled = /^[^:\n]+: ((?:node <技能目录>\/)?tools\/\S+\.ts(?: [^\n]*)?)$/.exec(line);
+    if (!labelled) continue;
+    let cmd = labelled[1], hasHeredoc = false;
+    if (cmd.endsWith(heredocNote)) { cmd = cmd.slice(0, -heredocNote.length); hasHeredoc = true; }
+    assert.ok(!cmd.includes('<<') && !cmd.includes('（'), `${docPath}: unparseable labelled command: ${line}`);
+    if (cmd.startsWith('tools/')) cmd = `node <技能目录>/${cmd}`;
+    out.push({ source: docPath, template: cmd, hasHeredoc });
+  }
+  // Inline backticked `node <技能目录>...` invocations (excluding the exact prose meta-syntax illustration).
+  for (const match of text.matchAll(/`(node <技能目录>[^`]*)`/g)) {
+    const cmd = match[1];
+    if (cmd === 'node <技能目录>/tools/<脚本>.ts --选项 值') continue;
+    assert.ok(!cmd.includes('<<') && !cmd.includes('\n'), `${docPath}: unparseable inline command: ${cmd}`);
+    out.push({ source: docPath, template: cmd, hasHeredoc: false });
+  }
+  return out;
+}
+
+function expandCommandVariants(source: string, template: string, values: Record<string, string>): string[] {
+  const groups: Array<{ start: number; end: number; branches: string[] }> = [];
+  for (const match of template.matchAll(/\[([^\[\]]+)\]/g)) {
+    groups.push({ start: match.index, end: match.index + match[0].length, branches: splitAlternativesOutsideAngles(match[1]) });
+  }
+  const renderBrackets = (chosen: Map<number, string>): string => {
+    let cursor = 0, result = '';
+    for (let idx = 0; idx < groups.length; idx++) {
+      result += template.slice(cursor, groups[idx].start);
+      result += chosen.get(idx) ?? '';
+      cursor = groups[idx].end;
+    }
+    result += template.slice(cursor);
+    const collapsed = result.replace(/ +/g, ' ').trim();
+    assert.ok(!/[\[\]]/.test(collapsed), `${source}: unmatched brackets in expanded command: ${collapsed}`);
+    return collapsed;
+  };
+  const bracketForms = new Set<string>([renderBrackets(new Map())]);
+  for (let idx = 0; idx < groups.length; idx++) {
+    for (const branch of groups[idx].branches) bracketForms.add(renderBrackets(new Map([[idx, branch]])));
+  }
+  if (groups.length > 1) {
+    bracketForms.add(renderBrackets(new Map(groups.map((group, idx) => [idx, group.branches[0]]))));
+  }
+
+  const concretes: string[] = [];
+  for (const form of bracketForms) {
+    const choices = [...form.matchAll(/<([^<>'\s]+\|[^<>'\s]+)>/g)];
+    assert.ok(choices.length <= 1, `${source}: expected at most one choice placeholder per command: ${form}`);
+    const choiceForms = choices.length === 1
+      ? choices[0][1].split('|').map((opt) => form.slice(0, choices[0].index) + opt + form.slice(choices[0].index + choices[0][0].length))
+      : [form];
+    for (const choiceForm of choiceForms) {
+      // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
+      const substituted = choiceForm.replace(/<([^<>'\s]+)>/g, (whole, name: string) => {
+        assert.ok(Object.hasOwn(values, name), `${source}: placeholder ${whole} has no synthetic value`);
+        return values[name];
+      });
+      assert.ok(!/[<>]/.test(substituted), `${source}: unreplaced angle bracket in command: ${substituted}`);
+      concretes.push(substituted);
+    }
+  }
+  return concretes;
+}
+
+test('the case-compile and recompose skill commands, filled in as Circle hands them to hooks, pass the skills home guard', () => {
   const dir = scratch();
   try {
     const home = join(dir, 'home'), hubUrl = 'https://hub.example.invalid/mcp';
     const written = writeHome({ home, profile: 'skills', hubUrl }, endpointFrom(entries, 'qwen'), 'synthetic-token');
-    const pack = fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)), skill = join(home, 'skills', 'case-compile');
-    const manifest = JSON.parse(readFileSync(join(pack, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> };
-    for (const { path } of manifest.files.filter((file) => file.path === 'SKILL.md' || file.path.startsWith('tools/'))) { mkdirSync(dirname(join(skill, path)), { recursive: true }); writeFileSync(join(skill, path), readFileSync(join(pack, path))); }
     const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
-    const decide = (command: string) => { const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }), encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
-    const text = readFileSync(join(pack, 'SKILL.md'), 'utf8');
-    const commands = [
-      ...[...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => m[1].split('\n').filter((line) => line.length > 0)),
-      ...[...text.matchAll(/^[^:\n]+: (tools\/\S+\.ts(?: [^\n]*)?)$/gm)].map((m) => `node <技能目录>/${m[1]}`),
-      ...[...text.matchAll(/`(node <技能目录>[^`]*)`/g)].map((m) => m[1]),
+    const decide = (command: string) => {
+      const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }), encoding: 'utf8', timeout: 5000 });
+      assert.equal(child.status, 0, child.stderr);
+      return JSON.parse(child.stdout) as { decision: string; reason: string };
+    };
+
+    const packs = [
+      {
+        name: 'case-compile',
+        dir: fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)),
+        expectedScripts: ['assemble-delivery.ts', 'check-plan.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'submit-plans.ts', 'task-brief.ts'],
+      },
+      {
+        name: 'recompose',
+        dir: fileURLToPath(new URL('../../packs/workflow/case-compile/recompose/', import.meta.url)),
+        expectedScripts: ['check-record.ts', 'download-run.ts', 'submit-records.ts'],
+      },
     ];
-    assert.ok(commands.length >= 3, 'published command lines and local tool declarations');
-    const values: Record<string, string> = { 技能目录: skill, 脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 模型: 'synthetic-model', 自动化用例目录: 'case-plans', 新目录: 'case-compile-run', 导出文件: 'export.json', 规整文件: 'normalized.json' };
-    for (const raw of commands) {
-      // Circle substitutes variables before hooks run and hands secrets over as their %NAME% placeholders.
-      const command = raw.replaceAll('%HUB_URL%', hubUrl).replace(/<([^<>'\s]+)>/g, (whole, name: string) => { assert.ok(Object.hasOwn(values, name), `placeholder ${whole} has no synthetic value`); return values[name]; });
-      assert.ok(existsSync(/^node (\S+)/.exec(command)?.[1] ?? ''), `installed script: ${command}`);
-      const supplied = raw.includes('%HUB_URL%') ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
-      const decision = decide(supplied); assert.equal(decision.decision, 'allow', `${supplied}\n${decision.reason}`);
+
+    for (const pack of packs) {
+      const skill = join(home, 'skills', pack.name);
+      const manifest = JSON.parse(readFileSync(join(pack.dir, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> };
+      const staged = manifest.files.filter((file) => file.path === 'SKILL.md' || file.path.startsWith('tools/'));
+      for (const { path } of staged) {
+        mkdirSync(dirname(join(skill, path)), { recursive: true });
+        writeFileSync(join(skill, path), readFileSync(join(pack.dir, path)));
+      }
+      const docs = staged.map((f) => f.path).filter((path) => path === 'SKILL.md' || (path.startsWith('tools/') && path.endsWith('.md')));
+      const parsed = docs.flatMap((docPath) => extractSkillCommands(`${pack.name}/${docPath}`, readFileSync(join(pack.dir, docPath), 'utf8')));
+      assert.ok(parsed.length >= pack.expectedScripts.length, `${pack.name}: extracted commands from ${docs.join(', ')}`);
+
+      const values: Record<string, string> = {
+        技能目录: skill,
+        脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
+        用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
+        脚本合并编号: 'run_01cccccccccccccccccccccccc',
+        合并或上机编号: 'run_01cccccccccccccccccccccccc',
+        脚本编写目录: 'case-compile-run',
+        运行目录: 'case-compile-run',
+        核对目录: 'fidelity',
+        核对文件: 'fidelity/0.brief.json',
+        自动化用例目录: 'plans',
+        重组后的用例目录: 'records',
+        下载运行目录: 'recompose-run',
+        新目录: 'run-out',
+        导出文件: 'export.json',
+        规整文件: 'normalized.json',
+        '说明.json': 'notes.json',
+        'scope.md': 'scope.md',
+        用例或范围: 'case-01',
+        简报或输入路径: 'briefs/0.md',
+        目标路径: 'plans/0.json',
+        任务文件路径: 'tasks/0.md',
+        补充: '合成补充说明',
+        轮次: '2',
+        条目JSON: 'items/0.json',
+        '路径...': 'plans/r1/0.json',
+        '目录...': 'returns/r1',
+        结构简报JSON: 'briefs/0.json',
+        计划或判断JSON: 'plans/0.json',
+        模型: 'synthetic-model',
+      };
+      const seenScripts = new Set<string>();
+      for (const usage of parsed) {
+        for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
+          const command = concrete.replaceAll('%HUB_URL%', hubUrl);
+          const scriptPath = /^node (\S+)/.exec(command)?.[1] ?? '';
+          assert.ok(existsSync(scriptPath), `${usage.source}: installed script exists: ${command}`);
+          seenScripts.add(scriptPath.split('/').pop()!);
+          const supplied = usage.hasHeredoc ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
+          const decision = decide(supplied);
+          assert.equal(decision.decision, 'allow', `${usage.source}: ${supplied}\n${decision.reason}`);
+        }
+      }
+      for (const script of pack.expectedScripts) {
+        assert.ok(seenScripts.has(script), `${pack.name}: missing parsed usage for tools/${script}`);
+      }
     }
+
+    const ccSkill = join(home, 'skills', 'case-compile');
     // The 3.9.5 spelling, a here-string after a relative script, is what this home refused.
     assert.equal(decide(`node tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
-    assert.equal(decide(`node ${skill}/tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
+    assert.equal(decide(`node ${ccSkill}/tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
+    // Unquoted non-ASCII role argument is refused by skillsGuard, which is why SKILL.md quotes --role and --note.
+    assert.equal(decide(`node ${ccSkill}/tools/task-brief.ts --role 脚本编写 --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`).decision, 'deny');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

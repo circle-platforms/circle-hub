@@ -622,6 +622,6 @@ test('--scope refuses unknown case IDs or dispatches that ran out-of-scope cases
   const outMixed = join(dir, 'out-mixed');
   const refusedMixed = await run(h, await notes({}), outMixed, `${WHOLE},${FINAL}`, undefined, ['--scope', narrowScope]);
   assert.equal(refusedMixed.code, 1);
-  assert.match(refusedMixed.stderr, new RegExp(`范围外的原始用例.*${CASES[1]}`));
+  assert.match(refusedMixed.stderr, new RegExp(`范围外的原始用例.*${CASES[1]}（合成用例 102）`));
   await assert.rejects(readdir(outMixed));
 });

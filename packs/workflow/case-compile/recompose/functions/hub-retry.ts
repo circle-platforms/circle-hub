@@ -575,7 +575,7 @@ export async function requireBearerToken(readToken: () => Promise<string> = read
   const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
   if (placeholder) {
     throw new Error(
-      `Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出；所有者用 /secrets ${placeholder[1]} 存入 Hub 令牌后重跑`,
+      `无权限：Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出。请所有者/管理员用 /secrets ${placeholder[1]} 存入 Hub 令牌后，再重跑本命令`,
     );
   }
   if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) {
@@ -583,7 +583,7 @@ export async function requireBearerToken(readToken: () => Promise<string> = read
       ? '标准输入收到的令牌包含空白、换行或长度不在 8..4096 可见 ASCII 范围内'
       : "标准输入为空，常见原因是 node 命令行与 <<'EOF' 之间多打了换行或漏了 <<'EOF'";
     throw new Error(
-      `标准输入里没有令牌（${detail}）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF`,
+      `参数无效：标准输入里没有令牌（${detail}）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF`,
     );
   }
   return bearer;

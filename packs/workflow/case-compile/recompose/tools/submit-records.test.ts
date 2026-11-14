@@ -208,6 +208,6 @@ test('H1/H3/H4: submit-records checks empty stdin, names --records and offending
   await writeFile(join(dirValid, '00.json'), JSON.stringify({ item: 'n/case', method }));
   const noTokRes = await runCapture(['--hub', 'http://127.0.0.1:1/mcp', '--run', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', '--model', 'scripted', '--records', dirValid], '');
   assert.equal(noTokRes.code, 1);
-  assert.match(noTokRes.err, /^无权限：标准输入里没有令牌/);
+  assert.match(noTokRes.err, /^参数无效：标准输入里没有令牌/);
   assert.match(noTokRes.err, /切勿在 <<'EOF' 前换行/);
 });

@@ -754,7 +754,7 @@ test('task-brief --help and -h return 0 with complete usage, and missing --brief
         outPath: 'plans/00.json',
         cwd: root,
       }),
-      (error: Error) => /找不到.*--brief/.test(error.message) && /0\.md/.test(error.message) && /1\.md/.test(error.message),
+      (error: Error) => /^不存在：找不到.*--brief/.test(error.message) && /0\.md/.test(error.message) && /1\.md/.test(error.message),
     );
 
     await assert.rejects(

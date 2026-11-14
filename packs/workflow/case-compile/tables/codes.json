@@ -110,7 +110,7 @@
     },
     {
       "code": "case-compile.expect_value",
-      "when": "断言文字不符合工作簿 G 取值规则",
+      "when": "断言文字不符合自动化用例 Excel G 取值规则",
       "fix": "断言写成单行原文片段，去掉首尾空白、等号前缀和 {} 或 {0} 占位符"
     },
     {
@@ -135,12 +135,12 @@
     },
     {
       "code": "case-compile.combination_forbidden",
-      "when": "产品命令规则声明互斥的两侧命令出现在同一卷里：同一个用例的计划里，或同一份工作簿的不同用例里；返回结果写明两侧的用例、命令和产品文档的依据",
+      "when": "产品命令规则声明互斥的两侧命令出现在同一卷里：同一个用例的计划里，或同一份自动化用例 Excel 的不同用例里；返回结果写明两侧的用例、命令和产品文档的依据",
       "fix": "互斥的两侧不放同一卷：把其中一侧的用例写进 parameters.exclude 后重新开计划运行，另开运行用 autoid 单独编；作者要测的正是这个组合时，是作者步骤与产品文档冲突，按“问用户”处理，不自己改"
     },
     {
       "code": "case-compile.expect_not_in_criterion",
-      "when": "引用的期望与本运行冻结的已受理判据声明不一致",
+      "when": "引用的期望与本运行冻结的、已通过脚本合并核对的判据声明不一致",
       "fix": "逐字引用本运行冻结的新判据，或使用原件逐字引文"
     },
     {
@@ -247,13 +247,13 @@
     },
     {
       "code": "case-compile.workbook_input",
-      "when": "绑定工作簿不是完整的 xlsx@1 原件，或解析模型超过核验预算",
+      "when": "绑定自动化用例 Excel 不是完整的 xlsx@1 原件，或解析模型超过核验预算",
       "fix": "上传原始 xlsx 并按返回的 src: 绑定；超预算时减少用例的非必要内容，或把脑图拆成几份分别上传、各开一次运行后重新生成，不截断模型或删除执行行"
     },
     {
       "code": "case-compile.workbook_context",
-      "when": "绑定工作簿时没有合式的已满足计划运行号 parameters.plan_run；多于一个用例时缺计划运行的已受理结果 inputs.plan_result，或它没有受理每个用例的唯一计划和命令目录回执",
-      "fix": "从已满足的计划编写运行复制运行号，将其同时填入顶层 predecessor 与 parameters.plan_run（多于一个用例时并在 inputs.plan_result 填 {\"run\": \"<同一运行号>\"}），再绑定 inputs.workbook 开始核验运行"
+      "when": "绑定自动化用例 Excel 时没有合式的已确认正确的脚本编写运行号 parameters.plan_run；多于一个用例时缺脚本编写运行经脚本合并核对的结果 inputs.plan_result，或它没有逐用例核对唯一计划和命令目录的记录",
+      "fix": "从已确认正确的脚本编写运行复制运行号，将其同时填入顶层 predecessor 与 parameters.plan_run（多于一个用例时并在 inputs.plan_result 填 {\"run\": \"<同一运行号>\"}），再绑定 inputs.workbook 开始脚本合并运行"
     },
     {
       "code": "case-compile.too_many_cases",

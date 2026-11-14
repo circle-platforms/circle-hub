@@ -23,7 +23,11 @@ function options(argv: string[]): Record<string, string> {
     values[key] = argv[i + 1];
   }
   const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
-  if (missing.length) throw new Error(`缺少参数：${missing.join('、')}`);
+  if (missing.length) {
+    throw new Error(
+      `参数无效：缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name --scope 可选，每个只写一次`,
+    );
+  }
   return values;
 }
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
@@ -260,7 +264,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       const outSet = new Set(selection.outOfScope);
       for (const d of dispatches) {
         const stray = d.items.filter((item) => outSet.has(item));
-        if (stray.length) throw new Error(`上机验证 ${d.run} 包含范围外的原始用例 ${stray.join('、')}；--runs 请只选择本次范围内的上机验证，或更新 --scope 范围文件`);
+        if (stray.length) {
+          const named = stray.map((id) => (originals[id]?.title ? `${id}（${originals[id].title}）` : id));
+          throw new Error(`上机验证 ${d.run} 包含范围外的原始用例 ${named.join('、')}；--runs 请只选择本次范围内的上机验证，或更新 --scope 范围文件`);
+        }
       }
     } else {
       population = fullPopulation;

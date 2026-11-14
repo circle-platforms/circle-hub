@@ -247,7 +247,7 @@ test('download-run and recompose download-run reject empty stdin without token w
       const out = join(await mkdtemp(join(tmpdir(), `cc-dl-notok-${label}-`)), 'run');
       const res = await outputOf(() => entry(['--hub', h.url, '--run', RUN, '--out', out], async () => rawToken));
       assert.equal(res.code, 1, label);
-      assert.match(res.stderr, /^无权限：标准输入里没有令牌/, label);
+      assert.match(res.stderr, /^参数无效：标准输入里没有令牌/, label);
       assert.match(res.stderr, /切勿在 <<'EOF' 前换行/, label);
       await assert.rejects(readdir(out), `${label}: nothing written without token`);
     }

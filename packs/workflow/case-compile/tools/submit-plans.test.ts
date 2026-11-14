@@ -376,6 +376,6 @@ test('planItems reports offending filename without saying re-export bytes, and e
   const okDir = await plans({ '01.json': item('doc:a') });
   const emptyTok = await run(h.url, okDir, '');
   assert.equal(emptyTok.code, 1);
-  assert.match(emptyTok.err, /^无权限：标准输入里没有令牌/);
+  assert.match(emptyTok.err, /^参数无效：标准输入里没有令牌/);
   assert.match(emptyTok.err, /切勿在 <<'EOF' 前换行/);
 });

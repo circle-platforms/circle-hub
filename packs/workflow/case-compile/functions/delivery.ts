@@ -433,11 +433,11 @@ const MISSING_SHOWN = 240;
 export function closingLine(outcome: CaseOutcome): string | null {
   if (outcome.closing === 'authoring_failure' && outcome.missing?.kind === 'repair_exhausted') {
     const said = outcome.missing.missing.length > MISSING_SHOWN ? `${outcome.missing.missing.slice(0, MISSING_SHOWN)}…` : outcome.missing.missing;
-    return `${CLOSING.authoring_failure}：它的计划在计划运行 ${outcome.missing.plan_run} 交给 Hub，修正轮次用完也没有受理${said ? `（Hub 原话：${said}）` : ''}，没有上机；按 InfoTest 的收口规则，编写每次都被提交规则拒绝、拒满轮次的，记为模型未找到解决方案。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+    return `${CLOSING.authoring_failure}：它的计划在脚本编写运行 ${outcome.missing.plan_run} 交给 Hub，修正轮次用完也没有被脚本合并接受${said ? `（Hub 原话：${said}）` : ''}，没有上机；按结办规则，编写每次都被提交规则拒绝、拒满轮次的，记为模型未找到解决方案。下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'authoring_failure') {
     const dropped = outcome.history.filter((h) => h.audit).length;
-    return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过${dropped ? `（其中 ${dropped} 次上机运行器报通过，通过复核改记无判定，照 InfoTest 算没通过）` : ''}，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
+    return `${CLOSING.authoring_failure}：编写 ${outcome.rounds} 轮，每一轮上机都没通过${dropped ? `（其中 ${dropped} 次上机运行器报通过，通过复核改记无判定，按规则算没通过）` : ''}，作者内容未改、没有核对得上的缺陷候选；下面“怎么判断的”是模型自述，不是定下结论的依据。`;
   }
   if (outcome.closing === 'device_defect') return `${CLOSING.device_defect}：作者期望原文和设备原话已逐字核对，只形成待仲裁的缺陷候选，不是已确认的产品缺陷。`;
   if (outcome.closing === 'author_conflict') {

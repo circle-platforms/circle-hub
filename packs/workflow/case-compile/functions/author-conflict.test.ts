@@ -122,6 +122,11 @@ test('the report names the closing and what was and was not checked, in plain wo
   assert.match(closingLine({ ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT })!, /。它没有上机，裁定前不再为它上机/);
   assert.match(closingLine({ ...failed('c1', 'unsettled'), closing: 'author_conflict', conflict: CONFLICT })!, /。它已上机 1 次，裁定前不再为它上机/, 'no authored rounds are counted for a case with no verdict, so none is claimed');
   assert.equal(closingLine({ ...failed('c1'), closing: 'authoring_failure', rounds: 3 })!.startsWith('模型未找到解决方案：编写 3 轮'), true, 'the other closings read as before');
+  const exhaustedLine = closingLine({ autoid: 'c4', rounds: 0, status: 'unrun', closing: 'authoring_failure', missing: { kind: 'repair_exhausted', plan_run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', requirement: 'plan', missing: '合成拒绝原话' }, history: [] })!;
+  assert.doesNotMatch(exhaustedLine, /InfoTest|收口|受理|计划运行/);
+  assert.match(exhaustedLine, /脚本编写运行.*也没有被脚本合并接受.*按结办规则/);
+  const auditedLine = closingLine({ ...failed('c5'), rounds: 2, closing: 'authoring_failure', history: [{ ordinal: 1, run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', job: 'job_1', terminal: 'pass', audit: { where: 'stdout', line: 'ERROR: bad' } }] })!;
+  assert.doesNotMatch(auditedLine, /InfoTest/);
   assert.equal(closingCounts([at(1), { ...failed('c2'), rounds: 3, closing: 'authoring_failure' }, { ...failed('c3', 'unrun'), closing: 'author_conflict', conflict: CONFLICT }]), '原始用例 c1，原因原始用例的问题。原始用例 c2，原因编写模型的问题。原始用例 c3，原因原始用例的问题。');
 });
 

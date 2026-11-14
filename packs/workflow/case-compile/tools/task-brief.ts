@@ -1,5 +1,5 @@
 // 只读装配单条或指定范围子代理任务说明写入 `--task-file`（不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
-//   node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
+//   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
 import { realpathSync } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -46,7 +46,7 @@ const OPTIONS: Record<string, boolean> = {
   'prior-notes': false,
 };
 const USAGE =
-  'node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
+  "node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]";
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
 /** Threshold above which a raw verbatim line is disclosed at the top of `--task-file` without wrapping. */
@@ -263,11 +263,11 @@ async function assertExistingBriefPath(
         ? entries.slice(0, 10).join('、') + (entries.length > 10 ? ` 等 ${entries.length} 项` : '')
         : '目录为空';
       throw new Error(
-        `找不到 --brief ${kindLabel} ${briefRelative}（目录 ${parentRel} 下实际有：${listing}）。请先等待前置下载或生成完成，并用 ls 核对真实文件名（如总数不足 10 条时为 0.md 而非 00.md）后再调用 task-brief`,
+        `不存在：找不到 --brief ${kindLabel} ${briefRelative}（目录 ${parentRel} 下实际有：${listing}）。请先等待前置下载或生成完成，并用 ls 核对真实文件名（如总数不足 10 条时为 0.md 而非 00.md）后再调用 task-brief`,
       );
     }
     throw new Error(
-      `找不到 --brief ${kindLabel} ${briefRelative}（所在目录 ${parentRel} 尚未生成）。请先完成前置 download-run / fidelity-brief / download-returns 步骤并确认文件落盘后再派发`,
+      `不存在：找不到 --brief ${kindLabel} ${briefRelative}（所在目录 ${parentRel} 尚未生成）。请先完成前置 download-run / fidelity-brief / download-returns 步骤并确认文件落盘后再派发`,
     );
   }
   if (stat.isSymbolicLink()) {
@@ -759,6 +759,7 @@ const HELP_TEXT = [
   '  2. --brief 与 --scope 等输入文件必须已落盘；调用前先用 ls 核对实际文件名（总数 <10 条时通常为 0.md 而非 00.md）。',
   '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示。',
   '  4. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
+  "  5. 含中文或空格的参数值（如 --role、--note）用单引号括起，如 --role '脚本编写'；或使用英文标识 recompose|plan|fidelity|attribute。",
 ].join('\n');
 
 export async function main(argv: string[]): Promise<number> {

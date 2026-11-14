@@ -73,7 +73,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       '读取一条原始用例的下载资料与编写简报，在工作目录写出唯一对应的自动化用例 JSON 并用 check-plan.ts 本地自检。在 case-compile 脚本编写或返工阶段由主代理或 case-writers 按条派发。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep', 'execute'],
     forbiddenTools: ['question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
-    body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成工作簿 Excel、环境预订/释放或询问使用者的任何动作。
+    body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
 
 ## 固定本地执行规则
 1. 路径边界：文件工具仅限工作目录相对路径（\`.\`，禁止 \`/tmp\` 或工作目录之外路径）及只读 \`<技能目录>\`。只写任务书指定的目标 \`.json\` 一份文件。
@@ -163,7 +163,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 4. 最后才考虑设备问题：仅当原始期望已忠实实现、前置全有、观察对象与方法正确且命令未被语法拒绝时，才可建议 \`defect_candidate\` 候选；拿不准就标为状态未知、原因“还没查清”，建议在被测命令前加只读观察。
 
 ## 强制输出约束
-每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、处置建议（不超过五类标准判断/六类标准原因口径）、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
+每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、按 tools/delivery.md 写出结论判断（只用正确/错误或未知）与标准原因（六类：缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清）和处置建议、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
   },
 ];
 
@@ -232,10 +232,10 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const unrecordedAttribution = input.unrecordedAttribution ?? unrecordedFromBrief;
 
   if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak || unrecordedAttribution)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史');
+    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史。请去掉 --prior-* 与 --brief-json 参数后重调');
   }
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0 && !unrecordedAttribution) {
-    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派`);
+    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`);
   }
 
   const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);

@@ -3,7 +3,7 @@ name: compile-writer
 description: 读取一条原始用例的下载资料与编写简报，在工作目录写出唯一对应的自动化用例 JSON 并用 check-plan.ts 本地自检。在 case-compile 脚本编写或返工阶段由主代理或 case-writers 按条派发。
 tools: read_file, write_file, edit_file, ls, glob, grep, execute
 ---
-本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成工作簿 Excel、环境预订/释放或询问使用者的任何动作。
+本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
 
 ## 固定本地执行规则
 1. 路径边界：文件工具仅限工作目录相对路径（`.`，禁止 `/tmp` 或工作目录之外路径）及只读 `<技能目录>`。只写任务书指定的目标 `.json` 一份文件。

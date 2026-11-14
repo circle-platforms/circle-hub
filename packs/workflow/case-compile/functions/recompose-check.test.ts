@@ -1,9 +1,37 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import projectRecompose from '../recompose/functions/project.ts';
 import { fixture } from '../testing/recompose.ts';
 import { checkRecomposition } from './recompose-check.ts';
 const outcomes = (f: ReturnType<typeof fixture>) => checkRecomposition({ subject: f.subject });
-test('the migrated synthetic complete path has exact original atoms and verified receipts', () => { const f = fixture(); assert.deepEqual(outcomes(f).map(o => o.verdict), ['support'], JSON.stringify(outcomes(f))); });
+test('the migrated synthetic complete path has exact original atoms and verified receipts', () => {
+  const f = fixture();
+  const out = outcomes(f);
+  assert.deepEqual(out.map(o => o.verdict), ['support'], JSON.stringify(out));
+  assert.match(out[0].statement, /原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写/);
+  assert.doesNotMatch(out[0].statement, /四账|四本账/);
+});
+test('recompose projection exposes fields.title from the case intent atom when present', () => {
+  const model = {
+    nodes: [
+      { text: 'ORBIT synthetic root', selector: 'n/0', data: { id: 'root' }, children: [1, 2] },
+      { text: '合成用例意图：验证健康检查间隔', selector: 'n/0/0', data: { id: 'c1', autoid: 'orbit-case-0001' }, children: [3] },
+      { text: 'widget health interval pool1 5', selector: 'n/0/1', data: { id: 'c2', autoid: 'orbit-case-0002', compile_layout: 'case_body_expectations' }, children: [5] },
+      { text: 'widget health interval pool1 5', selector: 'n/0/0/0', data: { id: 's1' }, children: [4] },
+      { text: 'show health 显示 pool1 的探测间隔为 5 秒', selector: 'n/0/0/0/0', data: { id: 'e1' }, children: [] },
+      { text: 'show health 显示 pool1 的探测间隔为 5 秒', selector: 'n/0/1/0', data: { id: 'e2' }, children: [] },
+    ],
+  };
+  const sha256 = 'a'.repeat(64);
+  const projected = projectRecompose({ inputs: [{ slot: 'subject', parser: 'kityminder@1', model, sha256 }], parameters: { case_depths: [1] } });
+  assert.equal(projected.items?.length, 2);
+  const withIntent = projected.items![0].fields;
+  assert.equal(withIntent.atoms.find((a: { kind: string }) => a.kind === 'intent')?.text, '合成用例意图：验证健康检查间隔');
+  assert.equal(withIntent.title, '合成用例意图：验证健康检查间隔');
+  const withoutIntent = projected.items![1].fields;
+  assert.equal(withoutIntent.atoms.find((a: { kind: string }) => a.kind === 'intent'), undefined);
+  assert.equal(withoutIntent.title, undefined);
+});
 for (const name of ['underdetermined', 'missing-prerequisite'] as const)
     test(name + ' goes on to the writer with its reason, as in InfoTest (decision 155)', () => { const f = fixture(name); f.record.status = 'complete'; f.record.unknowns = f.record.unknowns ?? []; const result = outcomes(f); assert.ok(!result.some(o => /^用例原句 .* 状态 /.test(o.statement)), JSON.stringify(result)); assert.ok(f.record.sources.states.some((s: any) => s.state !== 'settled')); });
 test('conflict between two signed sources refuses completion without choosing a side', () => { const f = fixture('conflict'); assert.ok(outcomes(f).some(o => o.verdict === 'refute' && o.data?.status === 'refused')); });
