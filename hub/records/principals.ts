@@ -122,10 +122,10 @@ function validRole(role: unknown): PermissionRole {
 export class PgPrincipals implements Principals {
   readonly #db: Database;
   readonly #now: () => Date;
-  readonly #store: Pick<RecordStore, 'put'>;
+  readonly #store: Pick<RecordStore, 'put' | 'lock'>;
 
   /** `store` is the kit's record store; without one, a store on the same database writes the token_issuance records. */
-  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put'>) {
+  constructor(db: Database, now: () => Date, store?: Pick<RecordStore, 'put' | 'lock'>) {
     this.#db = db;
     this.#now = now;
     this.#store = store ?? createRecordStore(db, { maxRecordBytes: TOKEN_RECORD_BYTES, now });
