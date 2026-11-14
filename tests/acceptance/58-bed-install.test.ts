@@ -109,7 +109,8 @@ before(async () => {
     // The finish marker is deployment data of the executor definition, never of the pack (decision 144).
     result: { ...raw.result, request_id: '/request', log: '/log', closing_marker: FINISH },
     proof: { ...raw.proof, package: 'bed-install', requirement: 'install', slot: 'request', warrant_id: `bed-install.install@${BED_INSTALL_PACK.version}` } });
-  await addSyntheticExecutor(bed.hub.records, dispatch().registry, bed.hub.admin.principal, configured, 'synthetic-install-key');
+  const registered = await addSyntheticExecutor(bed.hub.records, dispatch().registry, bed.hub.admin.principal, configured, 'synthetic-install-key');
+  await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal,registered.id,bed.user.principal.id);
 });
 after(async () => { await client?.close(); await endpoint?.close(); await opened?.close(); await postgres?.stop(); });
 beforeEach(async () => {
