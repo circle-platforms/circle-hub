@@ -1,3 +1,4 @@
+import type { CallErrorReason } from '../../contracts/api.ts';
 import { isAdmin } from '../records/api.ts';
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
@@ -13,7 +14,7 @@ import { readRunJobs, type RunJob } from './read-runs.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
-export interface DispatchNote extends Partial<DispatchDiagnostics> { run?: string; job?: string; executor?: string; result?: string; text: string }
+export interface DispatchNote extends Partial<DispatchDiagnostics> { call_error_reason?:CallErrorReason; run?: string; job?: string; executor?: string; result?: string; text: string }
 /** How long an accepted submission waits for the job to be reserved before it answers that the release check still runs. */
 export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
@@ -103,12 +104,13 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     const diagnostics = statusDiagnostics({ job: status.job, status, ended: null, boundary_refused: false }, administrative);
     return answer([{ job: status.job, ...diagnostics, text: clip(`上机验证核对尚未完成；${diagnostics.next_action}`) }]);
   }
+  if(settled.call_error_reason==='environment_registration_incomplete')return answer([{outcome:'not_dispatched',error_code:settled.error_code,call_error_reason:settled.call_error_reason,...(administrative&&settled.executor?{executor:settled.executor}:{}),text:settled.reason??''}]);
   if(settled.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE')return answer([{...permissionUnavailableNote(administrative),...(administrative&&settled.executor?{executor:settled.executor}:{})}]);
   const missing = !administrative ? settled.member_missing_facts ?? (settled.checks ? releaseMissingFacts(settled.checks) : []) : [];
   const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
   const category=invocationCategory(settled);
   const fact=facts.map(row=>row.fact).join('；'),next=facts.map(row=>row.next_action).join('；');
-  return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:next,text:clip(category?formatCallError(category,fact,next):'上机验证没有发出：'+fact) }]);
+  return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.call_error_reason?{call_error_reason:settled.call_error_reason}:{}), ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:next,text:clip(category?formatCallError(category,fact,next):'上机验证没有发出：'+fact) }]);
 }
 
 function permissionUnavailableNote(administrative:boolean):DispatchNote {

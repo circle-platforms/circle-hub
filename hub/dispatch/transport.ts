@@ -33,13 +33,14 @@ export class RpcClient {
   readonly #job: string;
   readonly #save: SaveResponse;
   readonly #now: () => Date;
+  readonly #beforeRequest: ((operation:string,tool?:string)=>Promise<void>) | undefined;
   serverVersion: string | null = null;
   #schemas = new Map<string,Record<string,unknown>>();
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
-  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date(),redactor?:Redactor) {
-    this.#redactor=redactor;
+  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date(),redactor?:Redactor,beforeRequest?:(operation:string,tool?:string)=>Promise<void>) {
+    this.#redactor=redactor; this.#beforeRequest=beforeRequest;
     this.definition = definition; this.#secret = secret; this.#job = job; this.#save = save; this.#now = now;
     if (definition.actor && (job.length > definition.actor.max_length || /[\r\n]/.test(job) || !new RegExp(definition.actor.pattern).test(job))) throw new Error('代表身份不符合执行器声明；修正代表身份约束后再连接，尚未发请求');
     if (!secret || /[\r\n]/.test(secret)) throw new Error('执行器密钥缺失或无效');
@@ -127,6 +128,7 @@ export class RpcClient {
     return { ...response,tool_error:response.value.isError===true, value: toolContent(response.value, operation === 'submit') };
   }
   private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange<Record<string, unknown>>> {
+    if(this.#beforeRequest)await this.#beforeRequest(operation,object(params)&&typeof params.name==='string'?params.name:undefined);
     const id = ++this.#id;
     const started_at = this.#now().toISOString();
     const body = JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params });
