@@ -334,6 +334,18 @@ export const CALL_ERROR_REASON_RULES = {
       "user": "请用 start_run 开始自己的运行，再提交",
       "admin": "请用 start_run 开始自己的运行，再提交"
     }
+  },
+  "environment_registration_incomplete": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "not_found"
+    },
+    "next_by_role": {
+      "user": "请联系管理员完成该测试环境的登记",
+      "admin": "请先只读采集该测试环境的资源，再将采集到的资源填入定义"
+    }
   }
 } as const satisfies Record<CallErrorReason, CallErrorReasonRule>;
 

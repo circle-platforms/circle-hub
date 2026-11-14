@@ -1,5 +1,5 @@
 {
-  "version": 85,
+  "version": 88,
   "elements": [
     {
       "id": "B01",
@@ -3500,6 +3500,9 @@
       "changes85": [
         "登记8值call_error_object_kind、3值dispatch_operation、3值lease_holder_relation及6个仅SOURCE_NOT_PERMITTED的动作拒绝原因；Common的flat可选事实由源形状生成JSON，不反向加载shared模块。DispatchOutcomeFacts完整model-shape@1登记dispatch-outcome@1，复用effect_outcome八值和ReferenceUri；phase只string，无默认观察或同义bool。来源：Boss21:16、主精确接口及本人提交边界补充。人句与命令接口待审，六输入/描述原字节和四格式包字节保持。",
         "Boss2026-11-14 21:33审句：actor_not_active两角色只用有效账户重新开始；登记不一致管理员下一步四事实共用精确bed update句；新增并列registration_comparison与4值issue轴，成员不含左右原始值，比较不成为原因第三维。其余已审26句不动，字节基线等源端真实原文验证后再审，不由schema实现猜权限。"
+      ],
+      "changes88": [
+        "C51基于ENV review da378fbde97f的模型85新增测试环境登记未完成原因，临时编号88避开独立C49模型87，最终编号由Boss整合；不携入C49布局。来源：Boss2026-11-15 01:12及主C51授权。复用SOURCE_NOT_PERMITTED和ProtocolError既有公开载体；分类not_found，只有实际已登记启用且目标确定而resources为空才选，非canUse=false推断。旧19原因及已审句不改，新两句候选，具体命令由server登记表构造。"
       ]
     },
     {
@@ -9513,6 +9516,21 @@
         },
         "when": "仅engine/submit本人运行提交检查确认拒绝；读取他人run可走内容分享许可，不得因此取得写入许可",
         "meaning": "不能向他人运行提交；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "environment_registration_incomplete",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请联系管理员完成该测试环境的登记",
+          "admin": "请先只读采集该测试环境的资源，再将采集到的资源填入定义"
+        },
+        "when": "实际执行器已登记、已启用，真实目标已确定，且资源声明resources为空；缺的是资源清单前提。不能从canUse=false推断，不能覆盖账户停用、环境停用、目标未知或读取失败；资源一旦声明即不适用。",
+        "meaning": "测试环境登记未完成；Boss2026-11-15 01:12授权只读采集边界。两角色下一步为C51候选句，具体只读采集命令由server统一登记表构造并验证可解析，不在合同手写CLI。"
       }
     ],
     "callErrorReasonCandidates": []
@@ -12477,6 +12495,10 @@
         {
           "code": "run_submission_not_owned",
           "label": "不能向他人运行提交"
+        },
+        {
+          "code": "environment_registration_incomplete",
+          "label": "测试环境登记未完成"
         }
       ]
     },
