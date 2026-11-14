@@ -16,6 +16,10 @@ export const searchPath = (): string => '/console/search';
 export const runsPath = (): string => '/console/runs';
 export const runPath = (runId: string): string => `/console/runs/${enc(runId)}`;
 
+/** Round compile projection (one mindmap → one build), anchored at a run. */
+export const roundsPath = (): string => '/console/rounds';
+export const roundDevicePath = (): string => '/console/rounds/device';
+
 export const resultsPath = (): string => '/console/results';
 export const resultPath = (runId: string): string => `/console/results/${enc(runId)}`;
 
