@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { sha256Hex, type ActionBody } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
+import * as Dispatch from './api.ts';
+import { resolveCallErrorReason } from '../../contracts/generated/protocol.ts';
 import { setup } from './testing/context.ts';
 
 type Context = Awaited<ReturnType<typeof setup>>;
@@ -97,14 +99,20 @@ test('capture-only additional sources retain their originals and release the rea
 test('a member cannot use incomplete registration as bootstrap admission', async t => {
   const c = await setup(); t.after(() => c.close());
   await draft(c); const before = await bookings(c);
-  const state = await c.service.precheck(c.owner, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.equal(state.call_error_category, 'not_found');
-  assert.match(state.missing_fact ?? state.reason ?? '', /登记.*未完成|还没有登记完成/);
-  assert.match(state.next_action ?? '', /管理员.*登记/);
-  assert.doesNotMatch(state.missing_fact ?? state.reason ?? '', /没有.*使用.*分配/);
+  const actual = await c.kit.principals.get(c.owner.id); assert.ok(actual);
+  await assert.rejects(c.service.precheck(c.owner, c.executor.id), (error: unknown) => {
+    assert.ok(error instanceof Dispatch.EnvironmentRegistrationIncompleteError);
+    assert.equal(error.protocol.code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(error.protocol.call_error_reason, 'environment_registration_incomplete');
+    assert.equal(error.protocol.object_kind, 'test_environment');
+    assert.deepEqual(resolveCallErrorReason(error.protocol.code, error.protocol.call_error_reason, actual.role)?.classification, { category: 'not_found' });
+    assert.equal(error.administratorExecutor, undefined);
+    for (const alias of ['code', 'reason', 'facts']) assert.equal(Object.hasOwn(error, alias), false);
+    for (const privateValue of [c.executor.definition.target, c.executor.definition.endpoint, c.executor.id, ...c.executor.definition.resources]) assert.equal(error.message.includes(privateValue), false);
+    return true;
+  });
   assert.equal(c.endpoint.calls.length, 0);
-  await noEffects(c, before, state.job);
+  await noEffects(c, before);
 });
 
 test('a forged administrator role on an unassigned stored member neither admits capture nor reveals the target', async t => {
@@ -113,13 +121,22 @@ test('a forged administrator role on an unassigned stored member neither admits 
   const member = await c.kit.principals.createUser(c.admin, '合成未分配成员');
   assert.equal((await c.kit.principals.get(member.id))?.role, 'user');
   const before = await bookings(c);
-  const state = await c.service.precheck({ ...member, role: 'admin' }, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.equal(state.call_error_category, 'not_found');
-  assert.match(state.missing_fact ?? state.reason ?? '', /登记.*未完成|还没有登记完成/);
-  assert.doesNotMatch(JSON.stringify(state), /synthetic-bed/);
+  const actual = await c.kit.principals.get(member.id); assert.ok(actual);
+  await assert.rejects(c.service.precheck({ ...member, role: 'admin' }, c.executor.id), (error: unknown) => {
+    assert.ok(error instanceof Dispatch.EnvironmentRegistrationIncompleteError);
+    assert.equal(error.protocol.code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(error.protocol.call_error_reason, 'environment_registration_incomplete');
+    assert.equal(error.protocol.object_kind, 'test_environment');
+    assert.deepEqual(resolveCallErrorReason(error.protocol.code, error.protocol.call_error_reason, actual.role)?.classification, { category: 'not_found' });
+    assert.equal(error.protocol.environment_display_name, undefined);
+    assert.equal(error.administratorExecutor, undefined);
+    const visible = JSON.stringify({ message: error.message, protocol: error.protocol });
+    for (const privateValue of [c.executor.definition.target, c.executor.definition.endpoint, c.executor.id, ...c.executor.definition.resources]) assert.equal(visible.includes(privateValue), false);
+    for (const alias of ['code', 'reason', 'facts']) assert.equal(Object.hasOwn(error, alias), false);
+    return true;
+  });
   assert.equal(c.endpoint.calls.length, 0);
-  await noEffects(c, before, state.job);
+  await noEffects(c, before);
 });
 
 test('declaring resources closes bootstrap and an administrator still needs the ordinary environment use grant', async t => {
