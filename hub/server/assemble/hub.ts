@@ -269,11 +269,11 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
       })),
       personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
       environments: async target => environments === null ? {
-        ready: false, items: [], missing: '测试环境租约服务未接线',
+        ready: false, enforceEnvironmentAssignments, items: [], missing: '测试环境租约服务未接线',
         nextAction: '请管理员恢复测试环境租约服务后重新查询',
       } : { ready: true, enforceEnvironmentAssignments, items: await environments.list(target), missing: null, nextAction: null },
       unattributedHoldings: target => environments === null ? Promise.resolve(null) : environments.unattributedHoldings(target),
-    }, by, userId),
+    }, by, userId).then(view => ({ ...view, environmentAccess: { ...view.environmentAccess, enforced: enforceEnvironmentAssignments } })),
     runs,
     runsDetail: runs,
     registry,
