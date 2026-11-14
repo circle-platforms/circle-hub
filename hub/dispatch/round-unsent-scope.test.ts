@@ -85,6 +85,12 @@ test('a scoped second-round no-send preserves the first effect and removes every
   assert.equal(state.dispatch_attempt?.outcome, 'not_dispatched');
   assert.equal(state.dispatch_attempt?.not_sent, true);
   assert.ok(state.job_facts.result, 'the earlier round result remains readable at job scope');
+  const earlierRaw = events.findLast(event => event.body.detail.phase === 'result' && typeof event.body.detail.device_return === 'string');
+  assert.ok(earlierRaw, 'the real first round recorded a raw device output reference');
+  assert.equal(state.job_facts.device_return, earlierRaw.body.detail.device_return, 'the later job summary must not hide the earlier raw output');
+  const rawReference = state.job_facts.device_return!;
+  const earlierRawBytes = (await c.kit.artifacts.source(c.owner, rawReference.slice(4)))?.bytes;
+  assert.ok(earlierRawBytes, 'the runner can still read the original raw output');
   assert.equal(state.job_facts.reason,undefined);
   assert.equal(state.job_facts.missing_fact,undefined);
   assert.equal(state.job_facts.next_action,undefined);
@@ -133,6 +139,7 @@ test('a scoped second-round no-send preserves the first effect and removes every
   assert.deepEqual((await c.service.journal.events(state.job)).map(event=>event.digest),beforeRead,'negative summary and retry leave original records intact');
   const oldReport=await c.kit.artifacts.source(c.owner,state.job_facts.result!.slice(4));
   assert.ok(oldReport?.bytes,'the original first-round report remains readable');
+  assert.deepEqual((await c.kit.artifacts.source(c.owner, rawReference.slice(4)))?.bytes, earlierRawBytes, 'later reads and retries preserve the earlier raw output bytes');
   t.diagnostic(JSON.stringify({ historical_repro: 'e046950bc', original_gateway_submits: 1, successful_gateway_submits_after_retry:2, intent_rounds: [1, 2], accepted_receipts: receipts.length, first_round: firstRound?.body.detail.terminal, second_submit_bytes: zeroWrite.body.detail.request_bytes_written, outcome: state.dispatch_attempt?.outcome, not_sent: state.dispatch_attempt?.not_sent, summary_round_present: Object.hasOwn(state, 'round') }));
 });
 
