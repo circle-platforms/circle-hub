@@ -1,5 +1,5 @@
 import {MemoryWriteInput,MemoryShareInput,MemoryWriteReceipt,MemoryShareBody,MemoryPage,MemoryDocumentView,MemoryCheckResult,MemoryQuery} from './memory.ts';
-import {FeedingOffsetSchema,ModelIdentitySchema,DispatchOutcomeFactsSchema} from '../generated/shared-interfaces.ts';
+import {FeedingOffsetSchema,ModelIdentitySchema,DispatchNoteFactsSchema} from '../generated/shared-interfaces.ts';
 // The six MCP tools of the Hub (D06). Schemas here are the single source for the server, the tests and contracts/generated/tools.json.
 // Every answer conforms to its output schema, a protocol error included: the envelope plus the tool's empty shape (D05 R[3]),
 // never invented run ids, locks or digests.
@@ -332,7 +332,8 @@ export const SubmitResultOutput = Envelope.safeExtend({
     'The validation result (validation@1) when the submission was validated against a run you may use; absent on a protocol error such as an unknown or unavailable run. A repeated submission returns the stored result, whose trace is that of the call that produced it',
   ),
   counts: PartitionCounts.optional().describe('Counts derived from result.partitions, only when the submission was accepted'),
-  dispatch: z.array(DispatchOutcomeFactsSchema.safeExtend({
+  dispatch: z.array(DispatchNoteFactsSchema.safeExtend({
+    run: RunId.optional().describe('The run whose dispatch handler produced these facts'),
     job: Sha256.optional().describe('The job the Hub dispatched for this run'),
     executor: z.string().min(1).max(200).optional().describe('The executor the job runs on'),
     text: z.string().min(1).max(800).describe('What happened or what is missing, in the user language'),
