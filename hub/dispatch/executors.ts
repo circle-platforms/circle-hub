@@ -211,6 +211,7 @@ export class ExecutorRegistry {
                 if (rows.items[0]?.body.revoked || rows.items[0]?.digest !== snapshot.get(ref.name))
                     throw new Error('引用的变量在配置时已变；请先 var set 后重做 executor update');
             }
+            await this.records.testEnvironments.assertExecutorWrite(by, source.id!, source, tx);
             const names=name===undefined?undefined:new ExecutorNames(this.records);
             if(names)await names.checkInTransaction(by,source.id!,name!,tx);
             const stored=await this.records.objects.put(canonicalBytes(source),'application/json',tx);
