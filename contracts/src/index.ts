@@ -20,6 +20,7 @@ import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
 import { SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
 import { CallErrorReasonSchema } from '../generated/vocabulary.ts';
+import { DispatchOutcomeFactsSchema } from '../generated/shared-interfaces.ts';
 import { RecordEnvelope } from './records.ts';
 import { RunRecord, RunSummary, PackSummary } from './run.ts';
 import { ReceivedSubmission, Submission } from './submission.ts';
@@ -28,6 +29,8 @@ import { ValidationResult } from './validation.ts';
 
 export * from '../generated/vocabulary.ts';
 export * from '../generated/protocol.ts';
+export { DispatchOutcomeFactsSchema } from '../generated/shared-interfaces.ts';
+export type { DispatchOutcomeFacts } from '../generated/shared-interfaces.ts';
 export * from './common.ts';
 export { TestEnvironmentId, TestEnvironmentPrefix, TestEnvironmentResource, TestEnvironmentInput, TestEnvironment, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY, TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION } from './resources.ts';
 export * from './reference.ts';
@@ -62,6 +65,7 @@ function registry(parts: Record<string, Record<string, z.ZodType>>): Record<stri
 
 export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
+    'dispatch-outcome@1': DispatchOutcomeFactsSchema,
     'call-error-reason@1': CallErrorReasonSchema,
     'team-id@1': TeamId,
     'team-assignment-subject@1': TeamAssignmentSubject,

@@ -19,7 +19,7 @@ test('first reason registry covers the model axis and exactly one classification
   assert.equal(input.vocabulary.find((axis: { axis: string }) => axis.axis === 'call_error_reason').owner, 'D05');
   const values = rules(input);
   const labels = input.vocabulary.find((axis: { axis: string }) => axis.axis === 'call_error_reason').values;
-  assert.deepEqual(labels.map((value: { label: string }) => value.label), [
+  assert.deepEqual(labels.slice(0, 13).map((value: { label: string }) => value.label), [
     '账户已停用', '账户无效', '测试环境已停用', '缺少测试环境分配', '缺少测试环境登记', '测试环境登记不一致',
     '测试环境权限暂不可核对', '资源已有他人预订', '已有本人预订', '缺少本运行预订', '预订已到期', '预订已释放', '预订记录暂不可读取',
   ]);

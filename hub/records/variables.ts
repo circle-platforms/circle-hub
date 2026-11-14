@@ -1,4 +1,5 @@
 import { lockEnvironmentPermission } from './environment-permission-lock.ts';
+import type { OrdinaryVariableWrite } from './environment-write-consistency.ts';
 import { isAdmin } from './permissions.ts';
 // Ordinary variables use record decisions; secret versions live in the vault and records provide audit only.
 import { createHash } from 'node:crypto';
@@ -43,6 +44,7 @@ export interface VariableWriteOptions {
 }
 export type SecretMaterial = VaultSecretMaterial;
 export interface VariablePorts {
+    validateEnvironmentWrite(by: Principal, change: OrdinaryVariableWrite, tx: Transaction): Promise<void>;
     database: Database;
     store: RecordStore;
     objects: ObjectStore;
@@ -126,6 +128,7 @@ export class RecordVariables {
             await this.assertAdmin(by, tx);
             await this.lockNames([name, ...(options.names ?? [])], tx);
             await this.#kindFree(name, 'var', tx);
+            await this.#p.validateEnvironmentWrite(by, { name, value: definition.value }, tx);
             await options.validate?.(tx);
             const object = await this.#p.objects.put(canonicalBytes(definition), 'application/json', tx);
             const history = await this.#history('var', name, tx), previous = history[0];
@@ -227,6 +230,7 @@ export class RecordVariables {
             await this.assertAdmin(by, tx);
             await this.lockNames([name], tx);
             await this.#kindFree(name, kind, tx);
+            await this.#p.validateEnvironmentWrite(by, { name, revoked: true }, tx);
             await validate?.(tx);
             const history = await this.#history(kind, name, tx);
             if (!history.length) throw new VariableError('名字没有设置决定；请核对名字');
