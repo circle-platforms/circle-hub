@@ -120,7 +120,7 @@ export const UploadFileInput = z.strictObject({
   space: KnowledgeSpaceKindSchema.extract(['personal']).optional().describe('Import a file into the caller personal knowledge space; the Hub never drafts an entry'),
   media_type: z.string().optional().describe('Media type if known, for example text/markdown'),
   name: z.string().optional().describe('Original file name, for display'),
-  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Client-declared upload provenance; defaults to declared. client_captured is for Circle operation captures and stays declaration grade.'),
+  provenance_type: ProvenanceTypeSchema.extract(['declared', 'client_captured']).optional().describe('Use declared (or omit this field) for uploaded workbooks and other user-supplied or generated workflow input files. client_captured is only for original model/client operation records, such as tool-hook captures, not merely a file generated or uploaded by a client. These captures stay declaration grade for operation-record knowledge feeding only; they cannot be used as ordinary workflow inputs or as verification, scoring or release evidence. Neither value makes an upload a Hub observation.'),
   captured_at: IsoTime.optional().describe('The original capture moment declared by the client, not the Hub receipt moment; Hub receipt is kept separately in the record created_at'),
 }).refine(input => [input.file_path,input.personal_entry,input.share_entry,input.withdraw_entry,input.memory,input.memory_share].filter(value=>value!==undefined).length===1, 'provide exactly one payload mode').refine(input=>!(input.memory||input.memory_share)||[input.space,input.media_type,input.name,input.provenance_type,input.captured_at].every(v=>v===undefined),'memory mode accepts no file metadata');
 // safeExtend: the receipt, optional in the envelope, is required here, and the envelope's refinements stay.
@@ -131,7 +131,7 @@ export const UploadFileOutput = Envelope.safeExtend({
   share: KnowledgeShareReceipt.optional(),
   withdrawn_reference: referenceUriOf('tree').optional(),
   acceptance: AcceptanceSchema,
-  reference: referenceUriOf('src').optional().describe('src:<sha256> of the stored bytes, to use as a run input; only when accepted'),
+  reference: referenceUriOf('src').optional().describe('src:<sha256> of accepted stored bytes; the reference alone does not establish input eligibility or verified evidence. For an ordinary declared upload, the returned artifact can select the exact capture when binding a workflow input. client_captured references are for operation-record knowledge feeding only, not ordinary workflow inputs.'),
   artifact: Sha256.optional().describe('Exact source_artifact record, so equal-byte captures can be bound independently; only when accepted'),
   sha256: Sha256.optional(),
   size: z.number().int().nonnegative().optional(),
@@ -390,7 +390,7 @@ export const TOOLS: ToolDefinition[] = ([
     name: 'upload_file',
     label: '上传文件',
     title: 'Upload a file',
-    description: 'Upload a file for a run, or set space=personal to import a private original. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
+    description: 'Upload a file for a run, or set space=personal to import a private original. For uploaded workbooks and other workflow input files, use provenance_type=declared or omit it. client_captured is only for original model/client operation records: declaration-grade knowledge feeding, not ordinary workflow inputs or verification evidence. Generating or uploading a workbook on the client does not make it an operation capture. Instead of file_path, personal_entry stores caller-authored personal knowledge: grounds and verbatim quotations are checked; a note without grounds stays unverified. The Hub drafts no content. Identical file bytes give the same source reference. Use memory or memory_share instead for versioned session preferences: no evidence reference is returned.',
     input: UploadFileInput,
     output: UploadFileOutput,
     effect: 'none',
