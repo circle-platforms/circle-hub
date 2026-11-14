@@ -7,16 +7,16 @@ import { jobCommand, type JobCommandSession } from './cli-job.ts';
 const job = 'a'.repeat(64);
 const scope = { job };
 
-async function show(state: JobStatus) {
+async function show(state: JobStatus, sub: 'status' | 'resume' = 'status', json = false) {
   const lines: string[] = [];
   let closed = false;
   const session = {
     ctx: { io: { cwd: '/synthetic/commands' } }, options: {},
     out: (line: string) => lines.push(line), err: () => {},
     admin: async () => ({ id: 'usr_' + '0'.repeat(26), role: 'admin', name: '合成管理员' }),
-    hub: async () => ({ dispatch: { options: {}, status: async () => state, close: async () => { closed = true; } } }),
+    hub: async () => ({ dispatch: { options: {}, status: async () => state, resume: async () => state, close: async () => { closed = true; } } }),
   } as unknown as JobCommandSession;
-  const code = await jobCommand(session, ['status', job]);
+  const code = await jobCommand(session, [sub, job, ...(json ? ['--json'] : [])]);
   assert.equal(closed, true);
   return { code, text: lines.join('\n') };
 }
@@ -60,4 +60,22 @@ test('CLI does not return success for a readonly check whose verified conclusion
     const { code } = await show({ job, events: 2, job_facts: { scope, operation, readonly_verified: false, conformance_verified: false, frozen: false } });
     assert.equal(code, 1);
   }
+});
+
+
+test('CLI JSON status exposes the exact scoped object without human text or flat effect aliases', async () => {
+  const state: JobStatus = { job, events: 7, job_facts: { scope, operation: 'dispatch', result: 'src:' + 'b'.repeat(64) }, dispatch_attempt: { scope: { operation: 'dispatch', job, round: 2 }, outcome: 'not_dispatched', not_sent: true } };
+  const { code, text } = await show(state, 'status', true);
+  assert.equal(code, 0);
+  assert.deepEqual(JSON.parse(text), state);
+  assert.equal(text.split('\n').length, 1);
+  for (const field of ['outcome', 'not_sent', 'frozen', 'result']) assert.equal(Object.hasOwn(JSON.parse(text), field), false);
+});
+
+test('CLI JSON resume keeps missing scope explicit and preserves the unknown exit code', async () => {
+  const state: JobStatus = { job, events: 1, job_facts: { scope, operation: 'dispatch', frozen: true } };
+  const { code, text } = await show(state, 'resume', true);
+  assert.equal(code, 1);
+  assert.deepEqual(JSON.parse(text), state);
+  assert.equal(Object.hasOwn(JSON.parse(text), 'dispatch_attempt'), false);
 });

@@ -16,7 +16,7 @@ import { decided } from './cli-arguments.ts';
 import type { DispatchView } from './api.ts';
 import { dispatchScopeLabel } from './dispatch-scope-label.ts';
 export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
-export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
+export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> [--json] | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
   options: { readSecret?: (label: string) => Promise<string> };
@@ -29,7 +29,8 @@ export interface JobCommandSession {
 async function service(s: JobCommandSession, requireKey = true): Promise<DispatchService> {
   const hub = await s.hub(requireKey); if (hub.dispatch && hub.knowledge) hub.dispatch.options.knowledge = hub.knowledge; if (!hub.dispatch) throw new Error('作业服务没有可用的租约服务'); return hub.dispatch;
 }
-function output(s: JobCommandSession, state: JobStatus): void {
+function output(s: JobCommandSession, state: JobStatus, json = false): void {
+  if (json) { s.out(JSON.stringify(state)); return; }
   const facts = state.job_facts;
   const attempt = state.dispatch_attempt;
   s.out(`作业摘要 ${state.job}；作业阶段 ${facts.phase ?? '未记录'}；冻结 ${facts.frozen === undefined ? '未核对' : Number(facts.frozen)}；动作 ${state.events}`);
@@ -196,11 +197,11 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   const [sub, ...rest] = args;
   let parsed;
   try { parsed = parseArgs({ args: [...rest], allowPositionals: true, strict: true, options: {
-    executor: { type: 'string' }, booking: { type: 'string' }, save: { type: 'string' }, run: { type: 'string' }, reconcile: { type: 'string' },
+    json: { type: 'boolean' }, executor: { type: 'string' }, booking: { type: 'string' }, save: { type: 'string' }, run: { type: 'string' }, reconcile: { type: 'string' },
     'keep-unknown': { type: 'boolean' }, 'mark-failed': { type: 'boolean' }, reason: { type: 'string' }, 'accept-possible-duplicate-effects': { type: 'boolean' }, 'numeric-id': { type: 'boolean' },
   } }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   const { positionals, values } = parsed;
-  const flags: Record<string, Record<string, boolean>> = { list: {executor:true}, conformance: { executor: true, save: true }, precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, 'explain-release':{run:true,executor:true}, status: {}, resume: {}, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
+  const flags: Record<string, Record<string, boolean>> = { list: {executor:true}, conformance: { executor: true, save: true }, precheck: { executor: true, booking: true, save: true }, dispatch: { run: true, executor: true }, 'explain-release':{run:true,executor:true}, status: { json: true }, resume: { json: true }, dispose: { reconcile: true, 'keep-unknown': true, 'mark-failed': true, reason: true, 'accept-possible-duplicate-effects': true, 'numeric-id': true } };
   if (!sub || !Object.hasOwn(flags, sub) || Object.keys(values).some(key => !Object.hasOwn(flags[sub], key))) throw new UsageError('该子命令不能使用这些参数');
   const by = await s.admin(); const dispatch = await service(s, sub !== 'status' && sub !== 'list' && sub !== 'explain-release');
   try {
@@ -243,7 +244,7 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     const state = await dispatch.dispatch(by, values.run, values.executor, job => s.out(`阶段已预留；作业摘要 ${job}`)); output(s, state); return state.dispatch_attempt?.outcome === 'effective' && state.job_facts.frozen !== true ? 0 : 1;
   }
   if ((sub === 'status' || sub === 'resume') && positionals.length === 1) {
-    const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state);
+    const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state, values.json === true);
     const facts = state.job_facts, attempt = state.dispatch_attempt;
     if (facts.frozen === true) return 1;
     if (attempt) return attempt.outcome === undefined || attempt.outcome === 'unknown' ? 1 : 0;
