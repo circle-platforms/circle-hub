@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULT_LIMITS, type HubConfig } from '../config/index.ts';
-import type { Principal } from '../records/api.ts';
+import type { Principal, RecordsKit, Transaction } from '../records/api.ts';
 import { memoryOperatorTokens } from './assemble/operator-token.ts';
-import { environmentStartupAuthority, prepareEnvironmentPermissionStartup, readEnvironmentPermissionStartup, type EnvironmentPermissionStartupPort } from './env-startup.ts';
+import { environmentStartupAuthority, prepareEnvironmentPermissionStartup, readEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartupPort } from './env-startup.ts';
 
 const admin: Principal = { id: 'usr_' + '0'.repeat(26), name: '合成管理员', role: 'admin' };
 const member: Principal = { ...admin, name: '合成成员', role: 'user' };
@@ -111,4 +111,22 @@ test('the product-store adapter uses memory injection and ignores an environment
   assert.equal(await authority.readToken(), 'synthetic-stored');
   assert.deepEqual(await authority.authenticate('Bearer synthetic-stored'), admin);
   assert.deepEqual(calls, ['Bearer synthetic-stored']);
+});
+
+test('the public records adapter forwards the exact admission transaction when rereading completion', async () => {
+  const tx: Transaction = { transactionId: 17 };
+  const records = { testEnvironments: { inheritance: async (current?: Transaction) => {
+    assert.equal(current, tx); return { completed: null, record: null, missingFacts: ['合成不可核对'] };
+  } } } as unknown as RecordsKit;
+  assert.equal((await recordsEnvironmentPermissionStartup(records).read(tx)).completed, null);
+});
+
+test('the public records adapter passes the actual actor and the signed source collector to the atomic writer', async () => {
+  let calls = 0;
+  const records = { testEnvironments: { inherit: async (actor: Principal, sources: { collect: unknown }) => {
+    calls++; assert.equal(actor, admin); assert.equal(typeof sources.collect, 'function');
+    return { completed: true, record: 'a'.repeat(64), assignments: 0 };
+  } } } as unknown as RecordsKit;
+  await recordsEnvironmentPermissionStartup(records).convert(admin);
+  assert.equal(calls, 1);
 });
