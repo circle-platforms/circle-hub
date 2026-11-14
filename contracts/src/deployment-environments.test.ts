@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { DeploymentDefinition, DEPLOYMENT_SCHEMA, SCHEMA_REGISTRY } from '../api.ts';
 import { DeploymentTestEnvironment, DeploymentEnvironmentAssignment } from './deployment.ts';
@@ -77,4 +77,15 @@ test('model revision 83 records the deployment decision without replacing histor
   const byId = (id: string) => model.elements.find((element: { id: string }) => element.id === id);
   assert.ok(byId('B04').changes83.some((text: string) => text.includes('16:56') && text.includes('deployment@3')));
   assert.ok(byId('D04').changes79.some((text: string) => text.includes('17:15') && text.includes('18:50')));
+});
+
+test('generated deployment schema publishes version three without a second lease directory or internal registration events', () => {
+  const schema = JSON.parse(readFileSync(new URL('../generated/schemas/deployment.v3.schema.json', import.meta.url), 'utf8'));
+  assert.equal(existsSync(new URL('../generated/schemas/deployment.v2.schema.json', import.meta.url)), false);
+  assert.equal(schema.properties.schema.const, 'deployment@3');
+  assert.equal('leaseRegistrations' in schema.properties, false);
+  const fields = schema.properties.testEnvironments.items.properties;
+  assert.deepEqual(Object.keys(fields.prefixes.items.properties), ['prefix', 'owner']);
+  assert.deepEqual(Object.keys(fields.resources.items.properties), ['key', 'owner']);
+  for (const branch of schema.properties.environmentAssignments.items.anyOf) assert.ok(branch.properties.expiresAt);
 });

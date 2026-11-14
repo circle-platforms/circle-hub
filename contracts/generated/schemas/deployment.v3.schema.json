@@ -4,7 +4,7 @@
   "properties": {
     "schema": {
       "type": "string",
-      "const": "deployment@2"
+      "const": "deployment@3"
     },
     "accounts": {
       "default": [],
@@ -2538,6 +2538,202 @@
         "additionalProperties": false
       }
     },
+    "testEnvironments": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "prefixes": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "prefix": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9:._/-]{0,199}$"
+                },
+                "owner": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "prefix",
+                "owner"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "resources": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9:._/-]{0,199}$"
+                },
+                "owner": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "key",
+                "owner"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "executors": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "target",
+          "prefixes",
+          "resources",
+          "executors",
+          "enabled"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "environmentAssignments": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "environment": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "user": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "expiresAt": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "environment",
+              "user",
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "environment": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "team": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "expiresAt": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "environment",
+              "team",
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "environment": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "all": {
+                "type": "boolean",
+                "const": true
+              },
+              "expiresAt": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "environment",
+              "all",
+              "expiresAt"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "workflowAssignments": {
       "default": [],
       "type": "array",
@@ -2739,37 +2935,6 @@
         "additionalProperties": false
       }
     },
-    "leaseRegistrations": {
-      "default": [],
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "prefix": {
-            "type": "string",
-            "minLength": 1,
-            "allOf": [
-              {
-                "pattern": ".*\\/$"
-              },
-              {
-                "pattern": "^[a-z0-9][a-z0-9:._/-]{0,199}$"
-              }
-            ]
-          },
-          "owner": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
-        },
-        "required": [
-          "prefix",
-          "owner"
-        ],
-        "additionalProperties": false
-      }
-    },
     "missingConfiguration": {
       "default": [],
       "type": "array",
@@ -2786,12 +2951,13 @@
     "packs",
     "resources",
     "executors",
+    "testEnvironments",
+    "environmentAssignments",
     "workflowAssignments",
     "resourceAssignments",
     "knowledgeSources",
     "variables",
     "documents",
-    "leaseRegistrations",
     "missingConfiguration"
   ],
   "additionalProperties": false
