@@ -7,6 +7,8 @@ import { handleRunExport } from './run-export.ts';
 import type { ServerDeps } from './api.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
+const RUN_REFERENCE = `rec:${'a'.repeat(64)}`;
+const ACCEPTED_RESULT_REFERENCE = `rec:${'b'.repeat(64)}`;
 const bytes = Buffer.from('{"synthetic":"contract"}');
 const SHA = createHash('sha256').update(bytes).digest('hex');
 const users: Record<string, { id: string; role: string }> = { 'Bearer runner-token': { id: 'u_runner', role: 'user' }, 'Bearer other-token': { id: 'u_other', role: 'user' } };
@@ -17,7 +19,7 @@ function deps(accepted = true): ServerDeps {
       artifacts: { sourceForRun: async (principal: { id: string }, sha: string, run: string) => principal.id === 'u_runner' && run === RUN && sha === SHA ? { bytes } : null },
       callLog: { append: async () => {} },
     },
-    runs: { exportRun: async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run: { run: RUN, sources: [{ slot: 'contract', reference: `src:${SHA}` }] }, result: accepted ? { run: RUN, acceptance: 'accepted', submission: 'd'.repeat(64) } : null, submission: accepted ? { run: RUN, items: [] } : null } : null },
+    runs: { exportRun: async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run_reference: RUN_REFERENCE, accepted_result_reference: accepted ? ACCEPTED_RESULT_REFERENCE : null, run: { run: RUN, sources: [{ slot: 'contract', reference: `src:${SHA}` }] }, result: accepted ? { run: RUN, acceptance: 'accepted', submission: 'd'.repeat(64) } : null, submission: accepted ? { run: RUN, items: [] } : null } : null },
   } as unknown as ServerDeps;
 }
 async function serve(d: ServerDeps) {
@@ -31,7 +33,10 @@ test('the runner reads its run, accepted result and submission, and the exact by
   const s = await serve(deps()); t.after(s.close);
   const own = await fetch(`${s.origin}/run-export/${RUN}`, { headers: { authorization: 'Bearer runner-token' } });
   assert.equal(own.status, 200); const body = await own.json() as Record<string, any>;
-  assert.equal(body.schema, 'run-export@1'); assert.equal(body.run.run, RUN); assert.equal(body.result.acceptance, 'accepted'); assert.deepEqual(body.submission, { run: RUN, items: [] });
+  assert.equal(body.schema, 'run-export@1');
+  assert.equal(body.run_reference, RUN_REFERENCE, 'the immutable run reference supplied by the service');
+  assert.equal(body.accepted_result_reference, ACCEPTED_RESULT_REFERENCE, 'the immutable reference supplied with this accepted result, not its submission digest');
+  assert.equal(body.run.run, RUN); assert.equal(body.result.acceptance, 'accepted'); assert.deepEqual(body.submission, { run: RUN, items: [] });
   const source = await fetch(`${s.origin}/run-export/${RUN}/sources/${SHA}`, { headers: { authorization: 'Bearer runner-token' } });
   assert.equal(source.status, 200); assert.deepEqual(Buffer.from(await source.arrayBuffer()), bytes);
   assert.match(source.headers.get('content-digest') ?? '', /^sha-256=:/);
@@ -52,8 +57,9 @@ test('the run alone is readable before anything is accepted, and only by the one
   const pending = await serve(deps(false)); t.after(() => pending.close());
   const answer = await fetch(`${pending.origin}/run-export/${RUN}/run`, { headers: { authorization: 'Bearer runner-token' } });
   assert.equal(answer.status, 200);
-  const body = await answer.json() as { schema: string; run: unknown; result?: unknown };
+  const body = await answer.json() as { schema: string; run_reference: string; run: unknown; result?: unknown };
   assert.equal(body.schema, 'run-export@1');
+  assert.equal(body.run_reference, RUN_REFERENCE, 'the run reference is available before any accepted result exists');
   assert.ok(body.run);
   assert.equal(body.result, undefined);
   assert.equal((await fetch(`${pending.origin}/run-export/${RUN}/run`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
@@ -125,7 +131,7 @@ test('the run\'s locked knowledge root comes as one batch, kept by the process a
   ];
   const asked: Array<{ root: string; composition: string | null; reader: string }> = []; const checked: string[] = []; let readable = true;
   const d = deps();
-  (d.runs as unknown as { exportRun: unknown }).exportRun = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run: { run: RUN, root: ROOT, target_basis: [{ statement: { data: { root: ROOT, composition: COMPOSITION } } }], sources: [] }, result: null, submission: null } : null;
+  (d.runs as unknown as { exportRun: unknown }).exportRun = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run_reference: RUN_REFERENCE, accepted_result_reference: null, run: { run: RUN, root: ROOT, target_basis: [{ statement: { data: { root: ROOT, composition: COMPOSITION } } }], sources: [] }, result: null, submission: null } : null;
   (d as unknown as { knowledge: unknown }).knowledge = {
     subtree: async (query: { root: string; composition: string | null }, reader: { id: string }) => { asked.push({ root: query.root, composition: query.composition, reader: reader.id }); return readable ? nodes : null; },
     treeReader: () => ({ hasRoot: async (root: string, reader: { user: string }) => { checked.push(`${reader.user}:${root.slice(0, 4)}`); return readable; } }),
