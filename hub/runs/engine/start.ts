@@ -219,6 +219,9 @@ export async function grantLeases(
   predecessor: string | undefined,
 ): Promise<Array<LeaseDone>> {
   if (requests.length === 0) return [];
+  if (requests.some(request => request.op === 'register' || request.op === 'unregister')) {
+    throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', '任务包投影不能登记或注销测试环境前缀', {path:'/lease_requests',fix:'请任务包作者移除 register/unregister 投影；由管理员统一登记测试环境'})]);
+  }
   if (ctx.deps.leases === undefined) throw new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `任务包 ${workflow.pack.id} 的投影要租约，但这个 Hub 没有配置租约服务`, { path: '/pack', fix: '请管理员配置租约服务' })]);
   const declared = workflow.workflow.leases;
   if (declared === undefined) {
@@ -242,18 +245,6 @@ export async function grantLeases(
   for(const request of requests){
     const keys=requestKeys(request); const op=request.op ?? 'acquire';
     if(!keys.length || new Set(keys).size!==keys.length || keys.some(key=>!key.startsWith(prefix)))refuse('LEASE_PREFIX','租约键不在声明的前缀下或有重复', '每个键仅写一次，且以前缀 '+prefix+' 开头');
-    if(request.op==='register'){
-      if(!request.prefix.endsWith('/') || request.prefix===prefix || !/^[a-z0-9][a-z0-9:._/-]{0,199}$/.test(request.prefix))refuse('LEASE_UNAVAILABLE','登记前缀须以 / 结尾并严格在声明前缀下','改用声明前缀下的键前缀');
-      if(registered.some(row=>row.prefix.startsWith(request.prefix)||request.prefix.startsWith(row.prefix)))refuse('LEASE_UNAVAILABLE','这个前缀已经有主人或与已有登记互相包含','请管理员核对登记；不要重复登记');
-      if(requests.some(other=>other!==request && other.op==='register' && (other.prefix.startsWith(request.prefix)||request.prefix.startsWith(other.prefix))))refuse('LEASE_UNAVAILABLE','同一请求里的登记前缀不能互相包含','每个互不包含的前缀只登记一次');
-      continue;
-    }
-    if(request.op==='unregister'){
-      const owner=registered.find(row=>row.prefix===request.prefix);
-      if(!owner || user.role!=='admin'&&owner.owner!==user.id)refuse('LEASE_UNAVAILABLE','这个前缀不能由你注销','由主人或管理员带理由注销');
-      if((await service.view(request.prefix)).entries.length)refuse('LEASE_UNAVAILABLE','这个前缀还有未释放的租约','先强制释放，或等它释放');
-      continue;
-    }
     if(request.op==='force_release'){
       if(!request.reason.trim())refuse('LEASE_UNAVAILABLE','强制释放须写理由','reason 写用户原话');
       for(const key of keys){
@@ -280,11 +271,6 @@ export async function grantLeases(
   const compensate=async()=>{if(acquired.length)await service.release({keys:acquired,holder:{user:user.id,run:runId}}).catch(()=>undefined);};
   try{
     for(const request of requests){
-      if(request.op==='register'||request.op==='unregister'){
-        const outcome=request.op==='register'?await service.register({prefix:request.prefix,declaredPrefix:prefix,owner:user.id,by:user.id,reason:'用户登记'}):await service.unregister({prefix:request.prefix,by:user.id,admin:user.role==='admin',reason:request.reason});
-        if(!outcome.ok)refuse(outcome.code,outcome.message,'重新读取登记状态，注销前先强制释放，或等它释放');
-        done.push({op:request.op,prefix:request.prefix,owner:outcome.owner});
-      }
       if(request.op==='force_release'){
         const outcome=await service.forceRelease({keys:request.keys,by:user.id,reason:request.reason,guard:async()=>{
           const jobs=await ctx.deps.leaseJobs!(request.keys);
