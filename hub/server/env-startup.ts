@@ -1,5 +1,5 @@
 // Startup observes durable conversion facts; a failed observation never authorizes legacy environment use.
-import { isAdmin, type Principal } from '../records/api.ts';
+import { isAdmin, type Principal, type RecordsKit } from '../records/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import { deploymentKeyService, fileOperatorTokens, type OperatorTokenStore } from './assemble/operator-token.ts';
 
@@ -29,7 +29,7 @@ function unknown(): EnvironmentPermissionStartup {
   return { completed: null, enforced: true, missing: UNKNOWN, nextAction: '请联系维护人员恢复完成事实的核对；本次不重新授予权限。' };
 }
 function pending(): EnvironmentPermissionStartup {
-  return { completed: false, enforced: false, missing: WAITING, nextAction: '请管理员在普通管理页面检查操作委托；服务继续按原规则运行。' };
+  return { completed: false, enforced: false, missing: WAITING, nextAction: '请管理员在普通管理页面查看继承待办；服务继续按原规则运行。' };
 }
 function complete(): EnvironmentPermissionStartup {
   return { completed: true, enforced: true, missing: null, nextAction: null };
@@ -69,5 +69,16 @@ export function environmentStartupAuthority(
   return {
     authenticate: authorization => principals.authenticate(authorization),
     readToken: async () => (await tokens(config, await deploymentKeyService(env)).read()),
+  };
+}
+
+/** The public records service verifies history and rechecks the delegate inside its own conversion transaction. */
+export function recordsEnvironmentPermissionStartup(records: RecordsKit): EnvironmentPermissionStartupPort {
+  return {
+    read: () => records.testEnvironments.inheritance(),
+    convert: async actor => {
+      const { environmentPermissionSources } = await import('./env-permission-sources.ts');
+      await records.testEnvironments.inherit(actor, environmentPermissionSources());
+    },
   };
 }

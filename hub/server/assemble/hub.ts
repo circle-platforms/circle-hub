@@ -1,3 +1,4 @@
+import { readEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartup } from '../env-startup.ts';
 import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
@@ -50,6 +51,8 @@ import { terminalSafe } from './terminal.ts';
 import { requireVaultKey } from './vault.ts';
 
 export interface AssemblyOptions {
+  /** Verified startup inheritance observation; command assemblies reread the durable public records service. */
+  environmentPermissionStartup?: EnvironmentPermissionStartup;
   /**
    * Pack functions run under macOS sandbox-exec, which denies the network (default true). Only synthetic test environments
    * where it is missing may pass false (hub/rules).
@@ -136,6 +139,8 @@ export function sandboxRefusal(reason: string | undefined, platform: NodeJS.Plat
 }
 
 export async function assembleHub(config: HubConfig, records: RecordsKit, options: AssemblyOptions = {}): Promise<AssembledHub> {
+  const environmentStartup = options.environmentPermissionStartup ?? await readEnvironmentPermissionStartup(recordsEnvironmentPermissionStartup(records));
+  const enforceEnvironmentAssignments = environmentStartup.completed !== false;
   const notes = new CallNotes(options.log ?? stderrLog);
   const notices: string[] = [];
   // 1. The vault master key: read (never created) and checked against the vault before anything else.
@@ -215,8 +220,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id, tx) => canUseEnvironment(records, actor, id, tx)) : null;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
-    enforceEnvironmentAssignments: false,
-    ...(environments ? { environmentAccess: environments } : {}),
+    enforceEnvironmentAssignments,
+    ...(environments && environmentStartup.completed !== null ? { environmentAccess: environments } : {}),
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
     dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready,caller)=>dispatch?acceptedDispatch(records,dispatch,run,ready,undefined,caller):Promise.resolve([]),inFlight:(run,caller)=>dispatch?runInFlight(records,dispatch,run,caller):Promise.resolve(null)},
     records,
@@ -250,15 +255,17 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments: false, records, leases, runs, workflows, knowledge, ...(environments ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments, records, leases, runs, workflows, knowledge, ...(environments && environmentStartup.completed !== null ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    environmentPermissionStartup: () => ({ ...environmentStartup, enforced: enforceEnvironmentAssignments }),
     startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
     close: () => dispatch?.close() ?? Promise.resolve(),
     records,
-    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
+    memberCapabilities: async (by, userId, packSummaries) => {
+      const result = await memberCapabilities(records, {
       canUsePack: (target, pack) => registry.canUse(target.id, pack),
       publicWorkflowIds: async () => (await registry.listPacks()).filter(pack => pack.kind === 'workflow' && pack.latest !== null).map(pack => pack.id),
       packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
@@ -266,12 +273,16 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
       })),
       personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
-      environments: async target => environments === null ? {
-        ready: false, items: [], missing: '测试环境租约服务未接线',
+      environments: async target => environmentStartup.completed === null ? {
+        ready: false, enforceEnvironmentAssignments, items: [], missing: environmentStartup.missing, nextAction: environmentStartup.nextAction,
+      } : environments === null ? {
+        ready: false, enforceEnvironmentAssignments, items: [], missing: '测试环境租约服务未接线',
         nextAction: '请管理员恢复测试环境租约服务后重新查询',
-      } : { ready: true, enforceEnvironmentAssignments: false, items: await environments.list(target), missing: null, nextAction: null },
+      } : { ready: true, enforceEnvironmentAssignments, items: await environments.list(target), missing: null, nextAction: null },
       unattributedHoldings: target => environments === null ? Promise.resolve(null) : environments.unattributedHoldings(target),
-    }, by, userId),
+      }, by, userId);
+      return { ...result, environmentAccess: { ...result.environmentAccess, enforced: enforceEnvironmentAssignments } };
+    },
     runs,
     runsDetail: runs,
     registry,
@@ -321,8 +332,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
  * it), and every notice written to the operator's log once at start-up. For `serve` only: a CLI command's dependencies come from createCommandAssembly.
  */
 export function createAssembly(options: AssemblyOptions = {}): AssembleFunction {
-  return async (config, records) => {
-    const hub = await assembleHub(config, records, { requireVaultKey: true, checkSandbox: true, ...options, sweepStages:true });
+  return async (config, records, startup?: EnvironmentPermissionStartup) => {
+    const hub = await assembleHub(config, records, { requireVaultKey: true, checkSandbox: true, ...options, ...(startup ? { environmentPermissionStartup: startup } : {}), sweepStages:true });
     for (const notice of hub.notices) hub.notes.log(`注意：${notice}`);
     return hub.deps;
   };
