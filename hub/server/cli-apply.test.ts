@@ -464,6 +464,10 @@ async function separateApplyRuntime(kit: import('../testing/records.ts').TestRec
   const owner = new Database(createPool(kit.database, 1));
   try {
     await owner.query('CREATE ROLE synthetic_apply_runtime LOGIN NOSUPERUSER');
+    if (kit.database.password !== undefined) {
+      const password = "'" + kit.database.password.replaceAll("'", "''") + "'";
+      await owner.query(`ALTER ROLE synthetic_apply_runtime PASSWORD ${password}`);
+    }
     const database = '"' + kit.database.database.replaceAll('"', '""') + '"';
     await owner.query(`REVOKE TEMPORARY ON DATABASE ${database} FROM PUBLIC`);
     await migrateRecords({ database: kit.database }, { runtimeRole: 'synthetic_apply_runtime' });
