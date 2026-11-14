@@ -232,6 +232,8 @@ export class DispatchService {
     const note=end?.body.detail.admin_release_sha256;
     if(typeof note==='string'){try{const bytes=await this.options.records.objects.get(note);if(!bytes||sha256Hex(bytes)!==note)throw new Error('missing');adminRelease=JSON.parse(new TextDecoder().decode(bytes)).checks;}catch{adminReleaseMissing=true;}}
     if(end?.body.detail.admin_release_missing===true)adminReleaseMissing=true;
+    const missingFact=[...new Set([end?.body.detail.missing_fact,gap?.missing_fact].filter((value):value is string=>typeof value==='string'))].join('；');
+    const nextAction=typeof gap?.next_action==='string'?gap.next_action:typeof end?.body.detail.next_action==='string'?end.body.detail.next_action:undefined;
     const category=end?.body.detail.call_error_category;
     return {
       ...(category===null||isCallErrorCategory(category)?{call_error_category:category}:{}),
@@ -239,14 +241,14 @@ export class DispatchService {
       ...(booking?{booking}:{}),...(end?.body.error_code?{error_code:end.body.error_code}:{}),
       ...(memberFacts.length?{member_missing_facts:memberFacts,missing_facts:memberFacts}:{}),
       ...(typeof end?.body.detail.public_reason==='string'?{reason:end.body.detail.public_reason}:{}),
-      ...(typeof end?.body.detail.missing_fact==='string'?{missing_fact:end.body.detail.missing_fact}:{}),
-      ...(typeof end?.body.detail.next_action==='string'?{next_action:end.body.detail.next_action}:{}),
+      ...(missingFact?{missing_fact:missingFact}:{}),
+      ...(nextAction!==undefined?{next_action:nextAction}:{}),
       ...(adminRelease?{admin_release:adminRelease}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{}),
       ...(unprobed?.length?{unprobed_devices:unprobed}:{}),...(unjudged.length?{unjudged}:{}),
       ...(failedChecks.length?{failed_checks:failedChecks}:{}),...(failedConditions.length?{failed_conditions:failedConditions}:{}),
     };
   }
-  private async observedFacts(by: Principal, job: string, events: Event[], round?: number, selectedIntent?: Event): Promise<Pick<JobStatus,'job_facts'|'dispatch_attempt'>> {
+  private async observedFacts(by: Principal, job: string, events: Event[], round?: number, selectedIntent?: Event): Promise<Pick<JobStatus,'job_facts'|'dispatch_attempt'> & {missing_receipt?:boolean}> {
     if (round !== undefined && (!Number.isInteger(round) || round < 1)) throw new Error('轮次必须是正整数');
     if (!events.length || events.some(event => event.body.detail.job !== job)) throw new Error('作业记录缺少一致的身份');
     const reservation = events.find(event => event.body.detail.phase === 'reservation');
@@ -330,7 +332,7 @@ export class DispatchService {
     const rejection = records.findLast(event => event.body.detail.phase === 'rejection');
     const result = records.findLast(event => event.body.detail.phase === 'result' && object(event.body.detail.execution_integrity) && event.body.detail.execution_integrity.intent === intent.digest);
     const refusal = intent.body.detail.phase==='round_refused'||intent.body.detail.phase==='boundary_refused' ? intent : records.findLast(event=>event.body.detail.phase==='round_refused'&&event.body.inputs.includes(`rec:${intent.digest}`));
-    const end = complete ?? refusal ?? uncertain ?? observation;
+    const end = complete ?? refusal ?? observation;
     const provenLocal = complete?.body.detail.done === true && complete.body.detail.not_sent === true || refusal?.body.detail.not_sent===true;
     const riskConsent=records.some(event=>event.body.detail.phase==='dispose'&&event.body.detail.disposition==='mark_failed'&&event.body.detail.risk_confirmed===true&&event.body.detail.unfreeze===true);
     const chosen = unresolvedUnknown || riskConsent&&uncertain ? 'unknown' : terminalNotSent || provenLocal ? 'not_dispatched'
@@ -338,7 +340,8 @@ export class DispatchService {
       : isEffectOutcome(rejection?.body.detail.outcome) ? rejection.body.detail.outcome : receipt ? 'issued' : uncertain ? 'unknown' : responses.length || intent.body.detail.phase==='round_context'||intent.body.detail.phase==='reservation' ? undefined : 'unknown';
     const stage = rejection?.body.detail.stage;
     const pending = result?.body.detail.report_pending ?? observation?.body.detail.report_pending;
-    const diagnostics=await this.readDiagnostics([intent,...records],refusal??end);
+    const pendingRead=records.findLast(event=>event.body.detail.phase==='read_pending'||event.body.detail.phase==='report_wait');
+    const diagnostics=await this.readDiagnostics([intent,...records],refusal??complete??pendingRead??uncertain??observation);
     const dispatch_attempt = DispatchAttemptFactsSchema.parse({
       scope: scope.data,
       ...(responses.length ? { submit_invoked: true } : refusal ? { submit_invoked:false } : provenLocal && typeof complete?.body.detail.submit_invoked === 'boolean' ? { submit_invoked: complete.body.detail.submit_invoked } : {}),
@@ -351,10 +354,14 @@ export class DispatchService {
       ...(end?.body.error_code ? { error_code: end.body.error_code } : {}),
       ...(diagnostics.next_action?{next_action:diagnostics.next_action}:{}),
       ...(diagnostics.missing_facts?{missing_facts:diagnostics.missing_facts}:{}),
-      ...(complete ? { phase: 'complete' } : refusal ? {phase:'round_refused'} : observation ? { phase: 'round' } : uncertain ? { phase: 'unknown' } : receipt ? { phase: 'receipt' } : zeroWrite ? { phase: 'submit.response' } : {}),
+      ...(complete ? { phase: 'complete' } : refusal ? {phase:'round_refused'} : pendingRead ? {phase:String(pendingRead.body.detail.phase)} : observation ? { phase: 'round' } : uncertain ? { phase: 'unknown' } : receipt ? { phase: 'receipt' } : zeroWrite ? { phase: 'submit.response' } : {}),
       grounds: [...new Map([...(begin?[begin]:[]),intent, ...responses, ...[receipt, complete, observation, uncertain, rejection, result].filter((event): event is Event => event !== undefined)].map(event => [event.digest, event])).values()].map(event => `rec:${event.digest}`),
     });
-    return { job_facts, dispatch_attempt:{...dispatch_attempt,...diagnostics} };
+    const wireIntent=linkedIntent?.body.detail.phase==='intent'||linkedIntent?.body.detail.phase==='probe_intent';
+    const accountedTerminal=complete?.body.detail.done===true&&(terminalNotSent||provenLocal||retrySafeOutcome(complete.body.detail.outcome)||scope.data.operation==='conformance'&&complete.body.detail.effect_accounted===true);
+    // Private control evidence is derived from this scope's receipts/terminal, not its effect label.
+    const missing_receipt=wireIntent&&!receipt&&!accountedTerminal;
+    return { job_facts, dispatch_attempt:{...dispatch_attempt,...diagnostics},missing_receipt };
   }
   async scopedFacts(by: Principal, job: string, round?: number): Promise<ScopedDispatchFacts> {
     const projected = await this.projectStatus(by, job, round);
@@ -374,7 +381,7 @@ export class DispatchService {
     const marks:EffectMark[]=decision?.body.detail.effect_mark==='disposed'&&(riskDisposed||choice==='reconcile'&&decision.body.detail.identity_matched===true)?['disposed']:[];
     const result=projectedResult(events);
     const historicalReturn=events.findLast(event=>event.body.detail.phase==='result'&&typeof event.body.detail.device_return==='string');
-    const frozen=isConservativelyFrozen(events,base.dispatch_attempt?.outcome==='unknown'||events.some(event=>event.body.detail.phase==='intent')&&!base.dispatch_attempt);
+    const frozen=isConservativelyFrozen(events,base.missing_receipt===true||events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent')&&!base.dispatch_attempt);
     const hasAttempt=events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'||event.body.detail.phase==='round_refused'||event.body.detail.phase==='round_context'||event.body.detail.phase==='boundary_refused'&&Object.hasOwn(event.body.detail,'scope')||event.body.detail.phase==='reservation'&&object(event.body.detail.binding)&&Object.hasOwn(event.body.detail.binding,'attempt_scope'));
     const readonlyOrAdmission=!hasAttempt;
     const jobDiagnostics=readonlyOrAdmission?await this.readDiagnostics(events,eventOf(events,'complete')??eventOf(events,'boundary_refused')):{};

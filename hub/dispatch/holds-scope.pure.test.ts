@@ -32,7 +32,7 @@ test('accepted history does not hold forever when every request has trustworthy 
 });
 
 
-test('unresolved effects freeze until a real control decision exists',()=>{
+test('a missing receipt freezes control until a real control decision exists',()=>{
   assert.equal(isConservativelyFrozen([reservation()],true),true);
 });
 test('confirmed risk consent unfreezes control while the physical effect remains unknown',()=>{
@@ -56,7 +56,7 @@ test('old risk consent never clears a later unresolved use or unknown observatio
   assert.equal(isConservativelyFrozen(history,true),true);
   assert.equal(holdsPhysicalTarget(history),true);
 });
-test('reconcile label alone cannot establish an unresolved physical outcome',()=>{
+test('reconcile label alone cannot substitute for a genuinely missing receipt',()=>{
   const unknown=event({phase:'unknown',uncertain:true,outcome:'unknown'});
   const repaired=event({phase:'dispose',disposition:'reconcile',identity_matched:true,digest_matched:true,unfreeze:true,effect_mark:'disposed',answers:[`rec:${unknown.digest}`]});
   assert.equal(isConservativelyFrozen([reservation(),unknown,repaired],true),true);
@@ -67,4 +67,17 @@ test('reconcile label alone cannot establish an unresolved physical outcome',()=
 test('an unscoped terminal with unknown effects remains conservatively frozen',()=>{
   assert.equal(isConservativelyFrozen([reservation(),event({phase:'complete',done:true,outcome:'unknown'})],false),true);
   assert.equal(isConservativelyFrozen([reservation(),event({phase:'complete',done:true})],false),true);
+});
+
+
+test('a matched current receipt and closed question permit observation without claiming effects ended',()=>{
+  const intent=event({phase:'intent',round:1,request_id:'synthetic-request'});
+  const unknown=event({phase:'unknown',uncertain:true,outcome:'unknown'});
+  const match=event({phase:'dispose',disposition:'reconcile',identity_matched:true,digest_matched:true,unfreeze:true,answers:[`rec:${unknown.digest}`]});
+  const receipt=event({phase:'reconciled',acceptance:'accepted',remote_id:'synthetic-remote'},[`rec:${intent.digest}`]);
+  const pending=event({phase:'read_pending',missing_fact:'synthetic report unavailable'});
+  const history=[reservation(),intent,unknown,match,receipt,pending];
+  assert.equal(isConservativelyFrozen(history,false),false);
+  assert.equal(holdsPhysicalTarget(history),true,'no physical terminal was proved, so occupancy stays exclusive');
+  assert.equal(unknown.body.detail.outcome,'unknown','closing the question does not rewrite its effect claim');
 });

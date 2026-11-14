@@ -158,7 +158,7 @@ export function holdsPhysicalTarget(events:readonly Event[]):boolean{
  });
 }
 /** Administrative risk consent changes control, never the unresolved physical outcome. */
-export function isConservativelyFrozen(events:readonly Event[],unresolved:boolean):boolean {
+export function isConservativelyFrozen(events:readonly Event[],missingReceipt:boolean):boolean {
  if(isFrozen(events))return true;
  const decision=eventOf(events,'dispose');
  const consent=decision?.body.detail;
@@ -166,7 +166,7 @@ export function isConservativelyFrozen(events:readonly Event[],unresolved:boolea
  const released=consent?.disposition==='mark_failed'&&consent.risk_confirmed===true&&consent.unfreeze===true&&consent.done===true&&consent.effect_mark==='disposed'
    &&!events.slice(decisionIndex+1).some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'||event.body.detail.phase==='round_context'||event.body.detail.outcome==='unknown');
  const unscopedTerminal=!events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent')&&isDone(events)&&holdsPhysicalTarget(events);
- return (unresolved||unscopedTerminal)&&!released;
+ return (missingReceipt||unscopedTerminal)&&!released;
 }
 export const isDone = (events: readonly Event[]) => events.some(e => e.body.detail.done === true);
 export const eventOf = (events: readonly Event[], phase: string) => [...events].reverse().find(e => e.body.detail.phase === phase);
