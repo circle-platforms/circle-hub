@@ -8,14 +8,14 @@ import type { RunJob } from './read-runs.ts';
 
 const jobId = 'a'.repeat(64), content = 'b'.repeat(64);
 function job(extra: Record<string, unknown> = {}): RunJob {
-  const { outcome = 'not_dispatched', not_sent, rejection_stage, request_id, device_return, ...job_facts } = extra;
+  const { outcome = 'not_dispatched', not_sent, rejection_stage, request_id, device_return, result, frozen, phase, awaiting_disposition, ...diagnostics } = extra;
   const hasAttempt = Object.hasOwn(extra, 'outcome') || not_sent === true && extra.error_code === undefined || request_id !== undefined || device_return !== undefined;
   const admission_error = extra.admission_error ?? (!hasAttempt && typeof extra.error_code === 'string' ? { code: extra.error_code, message: String(extra.reason ?? extra.missing_fact ?? 'synthetic admission failure'), fix: String(extra.next_action ?? 'synthetic action') } : undefined);
-  const publicJob=DispatchJobFactsSchema.parse({scope:{job:jobId},phase:extra.phase??'complete',frozen:extra.frozen??false,...(extra.result?{result:extra.result}:{}),...(admission_error?{admission_error}:{})});
+  const publicJob=DispatchJobFactsSchema.parse({scope:{job:jobId},phase:extra.phase??'complete',frozen:extra.frozen??false,...(awaiting_disposition!==undefined?{awaiting_disposition}:{}),...(extra.result?{result:extra.result}:{}),...(admission_error?{admission_error}:{})});
   return { job: jobId, verification_run: 'synthetic-run', plan_run: 'synthetic-plan', verification_item: 'synthetic-item', items: ['synthetic-case'], sha256: content, boundary_refused: false, ended: 'done', status: {
     job: jobId, events: 3,
-    job_facts: { ...job_facts, ...publicJob },
-    ...(hasAttempt ? { dispatch_attempt: DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job: jobId, round: 1, ...(request_id ? { request_id } : {}) }, outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}), ...(typeof extra.error_code === 'string' ? { error_code: extra.error_code } : {}) }) } : {}),
+    job_facts: { ...(!hasAttempt?diagnostics:{}), ...publicJob },
+    ...(hasAttempt ? { dispatch_attempt: { ...diagnostics, ...DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job: jobId, round: 1, ...(request_id ? { request_id } : {}) }, outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}), ...(typeof extra.error_code === 'string' ? { error_code: extra.error_code } : {}) }) } } : {}),
   } };
 }
 
@@ -192,7 +192,7 @@ test('job-wide control freeze never replaces the current attempt effect or prior
   assert.equal(note.job_facts?.frozen, true);
   assert.equal(note.dispatch_attempt?.outcome, 'issued');
   assert.equal(note.dispatch_attempt?.not_sent, undefined);
-  assert.match(note.text, /本作业的派发保护仍冻结/);
+  assert.match(note.text, /本作业保持重发保护/);
   assert.match(note.text, /第 1 轮派发：/);
   assert.doesNotMatch(note.text, /第 1 轮派发上机验证结果未知|整个作业没有执行|什么都没有发到目标/);
   assert.equal(note.job_facts?.result, `src:${'c'.repeat(64)}`);
@@ -221,4 +221,29 @@ test('a real begin-handler promise reports pending and settled only in run scope
   assert.equal(settled.job_facts, undefined); assert.equal(settled.dispatch_attempt, undefined);
   assert.doesNotMatch(JSON.stringify(settled), /private admin|private keys|circle-hub|调度管理员/);
   for (const field of ['outcome', 'error_code', 'worker_settled', 'not_sent', 'frozen', 'round']) assert.equal(Object.hasOwn(settled, field), false);
+});
+
+test('conservative freeze and awaiting disposition remain independent job controls and never become attempt effects', () => {
+  for (const [frozen, awaiting] of [[false, false], [true, false], [true, true]] as const) {
+    const source = job({ outcome: 'issued', frozen, awaiting_disposition: awaiting });
+    const note = runnerNote(source, 'usr_private');
+    assert.equal(note.job_facts?.frozen, frozen); assert.equal(note.job_facts?.awaiting_disposition, awaiting);
+    assert.equal(note.dispatch_attempt?.outcome, 'issued'); assert.equal(note.dispatch_attempt?.not_sent, undefined);
+    assert.equal(note.text.includes('待处置事项'), awaiting);
+    assert.equal(Object.hasOwn(note, 'frozen'), false); assert.equal(Object.hasOwn(note, 'awaiting_disposition'), false);
+  }
+  const source = job({ outcome: 'issued' });
+  delete source.status.job_facts.frozen; delete source.status.job_facts.awaiting_disposition;
+  const note = runnerNote(source, 'usr_private');
+  assert.equal(Object.hasOwn(note.job_facts!, 'frozen'), false);
+  assert.equal(Object.hasOwn(note.job_facts!, 'awaiting_disposition'), false);
+});
+
+test('source note refuses mismatched job and attempt identities instead of joining unrelated scope facts', () => {
+  const source = job({ outcome: 'issued' });
+  source.status.job_facts.scope = { job: 'd'.repeat(64) };
+  assert.throws(() => runnerNote(source, 'usr_private'), /范围/);
+  source.status.job_facts.scope = { job: jobId };
+  source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: 'd'.repeat(64), round: 1 };
+  assert.throws(() => runnerNote(source, 'usr_private'), /范围/);
 });

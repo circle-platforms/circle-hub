@@ -16,12 +16,12 @@ import { DispatchAttemptFactsSchema, DispatchJobFactsSchema } from '../../contra
 
 // These pure fixtures explicitly describe one synthetic dispatch intent; runtime never manufactures a round.
 function scopedStatus(job: string, extra: Record<string, unknown> = {}) {
-  const { outcome = 'unknown', not_sent, request_id, rejection_stage, device_return, ...facts } = extra;
-  const publicJob = DispatchJobFactsSchema.parse({ scope: { job }, phase: extra.phase ?? 'synthetic', frozen: extra.frozen ?? false,
+  const { outcome = 'unknown', not_sent, request_id, rejection_stage, device_return, result, frozen, phase, awaiting_disposition, ...diagnostics } = extra;
+  const publicJob = DispatchJobFactsSchema.parse({ scope: { job }, phase: extra.phase ?? 'synthetic', frozen: extra.frozen ?? false, ...(awaiting_disposition!==undefined?{awaiting_disposition}:{}),
     ...(extra.result !== undefined ? { result: extra.result } : {}), ...(extra.next_action !== undefined ? { next_action: extra.next_action } : {}) });
-  return { job, events: 3, job_facts: { ...facts, ...publicJob },
-    dispatch_attempt: DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job, round: 1, ...(request_id ? { request_id } : {}) },
-      outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}) }) };
+  return { job, events: 3, job_facts: publicJob,
+    dispatch_attempt: { ...diagnostics, ...DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job, round: 1, ...(request_id ? { request_id } : {}) },
+      outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}) }) } };
 }
 
 type C = Awaited<ReturnType<typeof setup>>;

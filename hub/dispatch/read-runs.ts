@@ -77,7 +77,9 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
     const current = await dispatch.status(by, job);
     if (current.job !== job || current.job_facts.scope.job !== job || current.dispatch_attempt && current.dispatch_attempt.scope.job !== job) throw new IntegrityError('派发事实的范围与预订作业不一致');
     const {admin_release:_privateRelease,admin_release_missing:_privateMissing,...job_facts}=current.job_facts;
-    const status: JobStatus = {...current, job_facts};
+    const attempt = current.dispatch_attempt;
+    const projectedAttempt = attempt ? (({admin_release:_release,admin_release_missing:_missing,...visible}) => visible)(attempt) : undefined;
+    const status: JobStatus = { job: current.job, events: current.events, job_facts, ...(projectedAttempt ? { dispatch_attempt: projectedAttempt } : {}) };
     const history=await records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:[job]});
     const prefix=history.slice(0,status.events);
     const choice=[...prefix].reverse().find(e=>e.body.detail.phase==='dispose'&&e.body.detail.disposition===status.job_facts.disposition);

@@ -47,43 +47,51 @@ export function readConditionFact(condition: {pointer:string;operator:string}): 
   return {fact:`缺少通过环境只读核对项目 ${condition.pointer}（${operation}）的有效前提`,next_action:'请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验'};
 }
 
-export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
-  const facts = job.status.job_facts;
-  const uncertain = facts.frozen === true || job.ended === 'unknown';
-  const next = uncertain ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
-    : facts.report_pending ? admin ? `circle-hub job resume ${job.job}` : '原样重交原提交读取本作业报告；不要重新发送作业'
-    : admin ? `circle-hub job status ${job.job}` : '读取本作业结果引用及各轮结论；没有结论时不要当作通过';
-  const missing_facts: DispatchMissingFact[] = [];
+function diagnosticFacts(source: JobStatus['job_facts'] | NonNullable<JobStatus['dispatch_attempt']>, admin: boolean, next: string, label: string): DispatchMissingFact[] {
+  const missing: DispatchMissingFact[] = [];
   if (admin) {
-    for (const check of facts.failed_checks ?? []) missing_facts.push({ fact: clip(check.missing_fact), next_action: clip(check.next_action) });
-    if (facts.missing_fact || facts.reason) missing_facts.push({ fact: clip(facts.missing_fact ?? facts.reason!), next_action: clip(facts.next_action ?? next) });
-    missing_facts.push(...facts.missing_facts ?? []);
+    for (const check of source.failed_checks ?? []) missing.push({ fact: clip(check.missing_fact), next_action: clip(check.next_action) });
+    if (source.missing_fact || source.reason) missing.push({ fact: clip(source.missing_fact ?? source.reason!), next_action: clip(source.next_action ?? next) });
+    missing.push(...source.missing_facts ?? []);
   } else {
-    for (const fact of facts.member_missing_facts ?? []) missing_facts.push({ fact: clip(fact.fact), next_action: clip(fact.next_action) });
-    if (facts.admin_release) missing_facts.push(...releaseMissingFacts(facts.admin_release));
-    for (const condition of facts.failed_conditions ?? []) missing_facts.push(readConditionFact(condition));
-    for (const check of facts.failed_checks ?? []) {
-      if (!check.seat && !check.check && missing_facts.length) continue;
-      missing_facts.push({ fact: check.seat || check.check ? `核对项目 ${[check.seat, check.check].filter(Boolean).join(' ')}：` + (check.check === 'version' ? '设备报告的版本尚未与本次核验要求匹配' : check.check === 'interfaces' ? '设备接口集合尚未与本次绑定清单匹配' : '本次环境核对仍有未满足的条件') : '环境只读核对缺少可供成员读取的项目说明', next_action: '请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验' });
+    missing.push(...(source.member_missing_facts ?? []).map(fact => ({ fact: clip(fact.fact), next_action: clip(fact.next_action) })));
+    if (source.admin_release) missing.push(...releaseMissingFacts(source.admin_release));
+    for (const condition of source.failed_conditions ?? []) missing.push(readConditionFact(condition));
+    for (const check of source.failed_checks ?? []) {
+      if (!check.seat && !check.check && missing.length) continue;
+      missing.push({ fact: check.seat || check.check ? `核对项目 ${[check.seat, check.check].filter(Boolean).join(' ')}：` + (check.check === 'version' ? '设备报告的版本尚未与本次核验要求匹配' : check.check === 'interfaces' ? '设备接口集合尚未与本次绑定清单匹配' : '本次环境核对仍有未满足的条件') : '环境只读核对缺少可供成员读取的项目说明', next_action: '请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验' });
     }
-    if (!missing_facts.length && (facts.missing_fact || facts.reason || facts.failed_conditions?.length)) missing_facts.push({ fact: uncertain ? '本作业的状态仍有未核对的事实' : facts.report_pending ? '本作业的完整报告尚未取得' : '本作业仍缺少可供成员读取的具体核对事实', next_action: next });
+    if (!missing.length && (source.missing_fact || source.reason || source.failed_conditions?.length)) missing.push({ fact: `${label}仍缺少可供成员读取的具体核对事实`, next_action: next });
   }
-  const distinct = [...new Map(missing_facts.map(fact => [fact.fact + '\0' + fact.next_action, fact])).values()].slice(0, 16);
+  return [...new Map(missing.map(fact => [fact.fact + '\0' + fact.next_action, fact])).values()].slice(0, 16);
+}
+
+export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
+  const facts = job.status.job_facts, attempt = job.status.dispatch_attempt;
+  if (job.status.job !== job.job || facts.scope.job !== job.job || attempt && attempt.scope.job !== job.job) throw new Error('派发事实范围与作业身份不一致');
+  const next = facts.awaiting_disposition === true ? admin ? `circle-hub job resume ${job.job}` : '联系管理员只读核对本作业；不要重新发送作业'
+    : job.ended === null ? admin ? `circle-hub job status ${job.job}` : '原样重交原提交读取本作业进展，不要重新发送作业'
+    : facts.frozen === true ? admin ? `circle-hub job status ${job.job}` : '本作业保持重发保护；原样读取进展，不要重新发送作业'
+    : admin ? `circle-hub job status ${job.job}` : '读取本作业结果引用及各轮结论；没有结论时不要当作通过';
+  // Once an attempt exists, its stage diagnostics never fall back to a job-wide summary.
+  const jobMissing = attempt ? (facts.missing_facts ?? []).map(fact => ({ fact: clip(fact.fact), next_action: admin ? clip(fact.next_action) : next })) : diagnosticFacts(facts, admin, next, '本作业');
   const job_facts: DispatchJobFacts = {
     scope: facts.scope,
     ...(facts.operation !== undefined ? { operation: facts.operation } : {}),
     ...(admin && facts.phase !== undefined ? { phase: facts.phase } : {}),
     ...(facts.reservation_recorded !== undefined ? { reservation_recorded: facts.reservation_recorded } : {}),
     ...(facts.frozen !== undefined ? { frozen: facts.frozen } : {}),
+    ...(facts.awaiting_disposition !== undefined ? { awaiting_disposition: facts.awaiting_disposition } : {}),
     ...(facts.readonly_verified !== undefined ? { readonly_verified: facts.readonly_verified } : {}),
     ...(facts.conformance_verified !== undefined ? { conformance_verified: facts.conformance_verified } : {}),
     ...(facts.result ? { result: facts.result } : {}),
-    ...(facts.admission_error ? { admission_error: { code: facts.admission_error.code, message: admin ? clip(facts.admission_error.message) : distinct.map(fact => fact.fact).join('；') || '本作业的准入核对未通过，请联系管理员核对', fix: admin ? facts.admission_error.fix : distinct.map(fact => fact.next_action).join('；') || next } } : {}),
-    missing_facts: distinct,
-    next_action: next,
+    ...(facts.admission_error ? { admission_error: { code: facts.admission_error.code, message: admin ? clip(facts.admission_error.message) : jobMissing.map(fact => fact.fact).join('；') || '本作业的准入核对未通过，请联系管理员核对', fix: admin ? facts.admission_error.fix : jobMissing.map(fact => fact.next_action).join('；') || next } } : {}),
+    missing_facts: jobMissing, next_action: next,
   };
-  const attempt = job.status.dispatch_attempt;
   if (!attempt) return { job_facts };
+  const label = attempt.scope.operation === 'dispatch' ? `第 ${attempt.scope.round} 轮派发` : '本次一致性核对';
+  const attemptNext = attempt.outcome === 'unknown' ? admin ? `circle-hub job resume ${job.job}` : `${label}结果未知，不要重交或另开运行重发，原样读取进展；需要时联系管理员只读核对`
+    : admin ? attempt.next_action ?? `circle-hub job status ${job.job}` : `读取${label}的结果与缺失事实，不要把该次结局推广为整个作业`;
   const scope: DispatchAttemptFacts['scope'] = admin ? attempt.scope : attempt.scope.operation === 'dispatch'
     ? { operation: attempt.scope.operation, job: attempt.scope.job, round: attempt.scope.round }
     : { operation: attempt.scope.operation, job: attempt.scope.job };
@@ -99,8 +107,7 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     ...(attempt.device_return ? { device_return: attempt.device_return } : {}),
     ...(attempt.error_code !== undefined ? { error_code: attempt.error_code } : {}),
     ...(attempt.call_error_reason !== undefined ? { call_error_reason: attempt.call_error_reason } : {}),
-    ...(admin && attempt.missing_facts ? { missing_facts: attempt.missing_facts.map(fact => ({ fact: clip(fact.fact), next_action: clip(fact.next_action) })) } : {}),
-    ...(admin && attempt.next_action ? { next_action: clip(attempt.next_action) } : {}),
+    missing_facts: diagnosticFacts(attempt, admin, attemptNext, label), next_action: attemptNext,
   };
   return { job_facts, dispatch_attempt };
 }
