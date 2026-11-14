@@ -4,7 +4,7 @@ nav_order: 3
 
 # 管理员手册：成员授权、新增能力、升级和降级
 
-> **适用范围与基线声明**：本手册面向部署并日常管理 Circle Hub 的管理员，基于已合入的 `hub-final`（`4a1fbdee57`）实装界面与命令编写；正在推进中的网页控制台一键表单、测试环境按团队隔离与在途请求原地升降级能力（参见[兼容矩阵](compatibility.md)），本文均逐项标明「当前可用入口」与「后续能力说明」，绝不把未合入设计写成现状。
+> **适用范围与基线声明**：本手册面向部署并日常管理 Circle Hub 的管理员，基于已合入 `wp/codex/integration` 的实装界面与命令编写（`0125163e9b` 基线及第一、二批更新，核对提交 `7c5f72c600`；参见[兼容矩阵](compatibility.md)）。控制台现已补齐工作流批量分配、通用技能安装/卸载、产品知识来源启用/停用、成员账户内联表单与视角预览，以及测试环境清单与执行器上传登记；但须特别留意：**测试环境按团队/账户隔离的执行守卫当前尚未启用（`enforceEnvironmentAssignments` 固定为 `false`），控制台中的环境分配字段仅供预览，不代表当前执行与预订许可**；在途请求平滑退场已支持（未入场请求返回 `503` 与 `Retry-After`，已受理请求及运行资料响应在预算内等待发完），但不宣称任意强杀或跨不兼容库结构自动原地升降级。
 
 如果你还没有搭起实例、初始化首个管理员并建立基本配置，先走[十分钟上手](quickstart.md)完成初始化（或使用发行版 `install.sh` 一键安装 + `/console/setup` 完成首次初始化）。本手册接在「服务已启动、管理员已登录」之后，讲清楚日常最常做的三件事：
 
@@ -43,27 +43,32 @@ nav_order: 3
      - 成员控制台**初始密码**（仅显示一次；无过期倒计时，但首次登录 `/console/login` 必须到 `/console/password` 改密，改密后当前会话失效须用新密码重登）；
      - 24 小时有效的**一次性邀请码**（仅显示一次，用过一次即作废）；
      - 一段 `mcp_servers` 示例片段。
-     - **发给终端版 Circle 成员时的注意**：在 `4a1fbdee57` 上，添加成员结果页与成员 `/console/settings#mine` 给出的片段名是 `"circle-hub"` 且**不带 `placeholders`**，结果页文字还会带有内部编号与 CLI 提示。如果成员用的是**终端版 Circle**（需运行技能本地工具），按该片段写入配置会导致 `%HUB_URL%`、`%HUB_TOKEN%` 无法展开；请指引成员改用 **Circle 桌面版 Hub 连接卡片**（自动带全配置），或在终端配置里改写为 `"name": "Hub"` 并加上 `"placeholders": {"url": "HUB_URL", "token": "HUB_TOKEN"}`（详见[成员手册](member-guide.md)）。
+     - **发给 Circle 成员时的注意**：当前版本在添加成员结果页、成员 `/console/settings#mine` 与成员首页 `/console/me` 的「连接新的客户端」卡片中，均已直接给出带 `"name": "Hub"`、`"transport": "streamable_http"` 与 `"placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }` 的 `mcp_servers` 示例，且管理结果页已将 `usr_…`/`tm_…`/`exe_…`/`res_…` 等内部编号脱敏替换为显示名称。如果成员使用 **Circle 桌面版**，可直接使用 Hub 连接卡片自动写入配置；如果使用 **Circle 终端版**，指引成员按[成员手册](member-guide.md)启用内置 `hub` 扩展并写入带 `placeholders` 的片段即可，确保后续运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正常展开。
    - **访问令牌**：仅在客户端不支持标准 MCP 连接确认时选用（填「令牌标签」方便区分多台设备），提交后同样仅显示一次完整令牌。
 4. 把初始密码、MCP 地址、一次性邀请码及上述连接提示发给成员本人（切勿写进仓库、群公共日志或命令行参数历史）。
 
 ### 2. 邀请码过期、补发令牌、停用或改密
 
-- 在 `/console/team` 查看成员列表（所属团队、连接与启用状态）。
-- **在 `4a1fbdee57` 上的实际操作边界**：
-  - `/console/operations` 页面标题虽然自称只执行四种操作，实际团队创建、加人、分工作流/连接、改密、设密钥、导知识等都已有控制台表单；
-  - 反过来，给**已有成员**重新签发 24 小时邀请码、补发访问令牌，以及安装技能、启用产品知识源、登记测试环境，`4a1fbdee57` 的 `/console/team/<成员>` 等详情页按钮目前只会弹出命令指引（向全表单切换的 N2 正在对齐），仍须管理员到运行 Hub 的主机执行：
-    ```bash
-    # 重新签发一次 24 小时一次性邀请码（仅标准输出显示一次）
-    ./bin/circle-hub user invite <用户名>
+- 在 `/console/team`（默认展示「团队」页签，管理员可切到 `?tab=members`「成员」或 `?tab=clients`「已连接的客户端」页签）查看成员列表、所属团队与启用状态。
+- **在网页控制台直接操作**：点开某个成员进入详情页 `/console/team/<成员>`，现在可直接通过内联表单提交：
+  - **启用 / 停用账户**（停用后该成员现有令牌与登录会话立即失效）；
+  - **签发邀请码**（为已有成员重新签发 24 小时一次性邀请码，仅在结果页显示一次）；
+  - **签发客户端访问令牌**（可填写设备标签，仅在结果页显示一次）；
+  - **重置密码**（为成员重设控制台登录密码）；
+  - **加入 / 移出使用范围**（直接向该成员个人分配或取消工作流）；
+  - **按这个成员的视角看**（跳转到 `/console/me?user=<id>`，以管理员身份预览该成员实际可见的团队、工作流、通用技能、连接、测试环境预览与未归属预订）。
+- 仅「调整发布权」（`pack grant-publish` / `revoke-publish`）与「删除成员」（须先确认预览再按 `usr_…` 永久删除）在详情页仍以命令行弹窗给出指引；若需脚本化或在运行 Hub 的主机执行，也可使用对应 CLI 命令：
+  ```bash
+  # 重新签发一次 24 小时一次性邀请码（仅标准输出显示一次）
+  ./bin/circle-hub user invite <用户名>
 
-    # 或签发独立访问令牌
-    ./bin/circle-hub token issue <用户名> --label "workstation" --raw
+  # 签发独立访问令牌
+  ./bin/circle-hub token issue <用户名> --label "workstation" --raw
 
-    # 若需重置控制台密码
-    ./bin/circle-hub user password-reset <用户名>
-    ```
-  - 停用与删人：`user disable <用户名>` 会让其现有令牌与会话立即失效；永久删除须先带确认预览再按 `usr_…` 执行（见 CLI `user delete` 指引）。
+  # 重置控制台密码 / 停用成员
+  ./bin/circle-hub user password-reset <用户名>
+  ./bin/circle-hub user disable <用户名>
+  ```
 
 ### 3. 建团队、拉成员并按团队分配能力
 
@@ -79,17 +84,21 @@ nav_order: 3
 ./bin/circle-hub team show <团队ID>
 ```
 
-> **实测核对提示（`4a1fbdee57`）**：控制台的加人与分工作流结果页目前还会直接写出内部 `usr_…` / `tm_…` 编号；且在团队详情页分配工作流和业务系统连接**一次只能提交一项**（10 个工作流要提交 10 次并每次返回，支持按组多选的 N2 表单在后续跟进中）。若要快速检查团队汇总，CLI `team list` 只显示编号与名字，需 `team show <团队ID>` 查看绑定项；另外使用管理员令牌执行 `resource list --as <成员>` 会被拒绝（有令牌时只读命令只以令牌所属账号读取），且控制台 `/console/team/<成员>` 在此基线上尚不展示有效连接、知识与测试环境。
+> **控制台与 CLI 实测说明**：
+> - 管理操作结果页现已把 `usr_…`、`tm_…`、`exe_…`、`res_…` 等内部编号脱敏替换为可读名称；
+> - 进入 `/console/teams/<团队ID>`（或 `/console/team/<团队ID>`）后，页面下方提供 **`批量分配工作流`** 多选卡片，可一次勾选多个工作流分配给该团队，列表中也可单行直接「分配 / 撤回」工作流或撤回团队业务系统连接；
+> - 欲从控制台核对某成员最终实际拿到的工作流、连接与环境预览，点击 `/console/team/<成员>` 的 **按这个成员的视角看**（`/console/me?user=<id>`）；
+> - 在运行 Hub 的主机上使用管理员操作令牌时，只读 CLI 命令（如 `resource list --as <成员>`）会被拒绝（有令牌时只按令牌所属账户读取）；`team list` 只显示编号与名字，查看绑定明细仍用 `team show <团队ID>`。
 
 随后按团队需求分别分配能力（成员具体怎么使用见[成员手册](member-guide.md)）：
 
-| 能力类别 | 分配/启用做法（控制台 + CLI） | 实测限制与说明 |
+| 能力类别 | 分配/启用做法（控制台 + CLI） | 当前限制与说明 |
 |---|---|---|
-| **工作流（`workflow`）** | 控制台 `/console/teams`（当前一次一条）或 CLI：<br>`./bin/circle-hub pack assign <工作流ID> --team=<团队ID>`<br>（也可直接分给个人：`pack assign <用户名> <工作流ID>`） | 例如 `test-bed`、`case-compile`、`case-compile-criterion-review` 等；不传 `@版本号`，成员自动看到在架版本；`pack list` 当前把团队分配展开成成员名而非团队名 |
-| **通用技能（`skill`）** | **当前不支持按团队分配，且控制台无安装表单**；管理员须在 Hub 主机执行：<br>`./bin/circle-hub pack install <技能ID>@<版本>` | 通用技能仅发布不生效，必须 `install` 精确版本；**一经安装对全站所有成员可见**（如 `mindmap-format` 等 8 个格式技能无团队隔离） |
-| **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队ID>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队ID> \| --all)` | 新建连接默认先不分配；**防坑提醒**：若连接已分给**全体**（`--all`），再追加分配给某团队**不会产生隔离效果**（未加入该团队的成员照样可见可用），且 `4a1fbdee57` 控制台尚无「撤回全体」表单，须在主机执行 `./bin/circle-hub resource unassign <资源ID> --all` |
-| **产品知识库（`product`）** | **当前不支持按团队分配，且控制台仅显示命令指引**；须在 Hub 主机启用整站产品源后，再到控制台 `/console/operations/knowledge` 或 CLI 导入：<br>`./bin/circle-hub pack activate <产品ID>`<br>`./bin/circle-hub knowledge sync --product <产品ID>` | 产品包 `activate` 对**整个 Hub 生效**；必须先在主机 `activate` 后才会出现在知识导入页面下拉里 |
-| **自动化测试环境（`executor` / `bed`）** | 见下节「登记测试环境」：先在主机做好 `doc put bed-topology`、`executor add`、`secret set`、`lease register` 与 `bed baseline record` | **当前权限边界（`4a1fbdee57`）**：Hub 此时尚无「按团队隔离测试环境」守卫，`lease register --owner` 只决定谁能注销和强释；**只要被分配了 `test-bed` 工作流，就能预订清单里的测试环境**（按团队隔离执行器授权与控制态表单正在合入中） |
+| **工作流（`workflow`）** | 控制台 `/console/teams/<团队ID>` 支持 **`批量分配工作流`**，工作流详情页 `/console/workflows/<工作流ID>` 与发布结果页支持「分配给团队」；或 CLI：<br>`./bin/circle-hub pack assign <工作流ID> --team=<团队ID>`<br>（也可直接分给个人：`pack assign <用户名> <工作流ID>`） | 例如 `test-bed`、`case-compile`、`case-compile-criterion-review` 等；不传 `@版本号`，成员自动看到在架版本；控制台工作流详情页「使用范围」现已直接显示 `团队 <名>` |
+| **通用技能（`skill`）** | 发布结果页可点 **立即安装**，或进入 `/console/skills/<技能ID>` 点 **安装这个版本** / **卸载通用技能**；也可主机 CLI：<br>`./bin/circle-hub pack install <技能ID>@<版本>` | 通用技能仅发布不生效，必须 `install` 精确版本；**当前仍不支持按团队分配，一经安装对全站所有成员可见**（如格式化等通用技能无团队隔离） |
+| **业务系统连接（`system`）** | 控制台 `/console/operations/system` 接入时选「使用对象：某个团队 / 全体 / 先不分配」，或在 `/console/teams/<团队ID>` 分配/撤回团队连接；或 CLI：<br>`./bin/circle-hub resource add … --team=<团队ID>`<br>`./bin/circle-hub resource assign <资源ID> (--team=<团队ID> \| --all)` | 新建连接默认先不分配；**防坑提醒**：若连接已分给**全体**（`--all`），再追加分配给某团队**不会产生隔离效果**（未加入该团队的成员照样可见可用），且控制台当前**尚无「撤回全体（`--all`）」表单**，团队页仅能撤回单个团队授权，撤回 `--all` 仍须在主机执行 `./bin/circle-hub resource unassign <资源ID> --all` |
+| **产品知识库（`product`）** | 发布结果页可点 **启用** 并跳转 `/console/operations/knowledge` 导入，或从 `/console/knowledge/products` 点开对应产品（`/console/workflows/<产品ID>`）点 **启用产品知识来源 / 停用产品知识来源**；也可主机 CLI：<br>`./bin/circle-hub pack activate <产品ID>`<br>`./bin/circle-hub knowledge sync --product <产品ID>` | 产品包 `activate` 对**整个 Hub 生效**（不支持按团队隔离）；必须先启用后才会出现在知识导入页面的产品下拉里 |
+| **自动化测试环境（`executor` / `bed`）** | 控制台 `/console/connections?tab=environments` 已提供上传 `bed-topology`（`doc-put`）、上传执行器定义（`executor-add`）及按目标分组分配（`executor-assign`）表单；普通变量 `var set`、修改执行器、租约前缀 `lease register` 与干净基线 `bed baseline record` 见下节主机 CLI 步骤 | **当前测试环境权限守卫尚未启用（`enforceEnvironmentAssignments` 为 `false`）**：控制台或成员首页上展示的执行器/环境分配字段**仅供预览，不代表当前执行许可**；目前成员只要被分配了 `test-bed` 工作流，预订与上机门禁仍按原工作流授权、租约归属与基线/就绪核对规则执行 |
 
 ---
 
@@ -125,13 +134,13 @@ nav_order: 3
 
 #### 第三步：切记完成「发布后生效动作」（仅 `publish` 不会自动可用）
 
-> *当前基线提示*：`4a1fbdee57` 的控制台发布结果页尚不会自动弹出安装/分配表单（正在通过 N2 补齐），发布成功后请补做对应一步：
+在网页控制台 `/console/operations/pack` 点击发布后，**结果页现已直接提供对应的后续动作表单/入口**（也可以稍后到包详情页或主机 CLI 执行）：
 
-- **通用技能（`skill`）→ 必须安装精确版本**：
+- **通用技能（`skill`）→ 必须安装精确版本**：发布结果页直接提供 **立即安装** 按钮，或在 `/console/skills/<技能ID>` 点击 **安装这个版本**（需要下线时同页提供 **卸载通用技能** 与 **退役这个版本**）；主机 CLI 等价命令：
   ```bash
   ./bin/circle-hub pack install <技能ID>@<版本>
   ```
-- **工作流（`workflow`）→ 首次须分配给团队，升版可按需退役旧版**：
+- **工作流（`workflow`）→ 首次须分配给团队，升版可按需退役旧版**：发布结果页直接提供 **分配给团队** 下拉表单，也可到 `/console/workflows/<工作流ID>` 分配或点 **退役这个版本**，或在 `/console/teams/<团队ID>` 批量勾选多个工作流；主机 CLI 等价命令：
   ```bash
   # 首次上线分给团队（之后升新小版不用重复 assign，已获权团队自动可见新版）
   ./bin/circle-hub pack assign <工作流ID> --team=<团队ID>
@@ -139,62 +148,69 @@ nav_order: 3
   # 升版后不再让新运行使用旧版时退役旧版（已有运行照常可看/可结束）
   ./bin/circle-hub pack retire <工作流ID>@<旧版本>
   ```
-- 完成后可用 `./bin/circle-hub pack list` 核对状态（已发布 / 已安装 / 已退役）与分配范围。
+- **产品知识库（`product`）→ 先启用再导入知识**：发布结果页提供 **启用** 按钮与 **去导入公共知识** 链接（`/console/operations/knowledge`），从 `/console/knowledge/products` 进入产品详情页（`/console/workflows/<产品ID>`）也提供 **启用产品知识来源 / 停用产品知识来源** 按钮。
+- **业务系统适配器（`system`）→ 接入实例**：发布结果页提供 **立即接入** 按钮，直接带 `system_pack` 参数跳转到 `/console/operations/system`。
+- 完成后可用控制台对应列表页或 `./bin/circle-hub pack list` 核对状态（已发布 / 已安装 / 已退役）与使用范围。
 
 ### 2. 新增一个自动化测试环境
 
-自动化测试环境由「命名清单文档 `bed-topology` + 命名密钥 + 执行器 `executor` + 租约前缀 + 干净基线」共同组成。在 `4a1fbdee57` 基线上，这部分在网页控制台 `/console/connections?tab=environments` 仅只读展示，登记与更新在运行 Hub 的服务器上按下面 5 步执行：
+自动化测试环境由「命名清单文档 `bed-topology` + 命名密钥/普通变量 + 执行器 `executor` + 租约前缀 + 干净基线」共同组成。在当前基线上：**上传环境清单、上传登记执行器、设置命名密钥以及执行器分配预览，都已可直接通过网页控制台完成，无需登录 Hub 主机**；修改既有执行器、设置普通变量、登记租约前缀主人、录制干净基线与解除冻结仍通过主机 CLI 执行（或按详情页命令指引复制执行）。
 
-#### 第一步：更新并发布测试环境清单（`doc:doc:bed-topology`）
+#### 第一步：上传并登记测试环境清单（`doc:doc:bed-topology`）
 
-在 `<清单.json>` 中按 `test-bed-manifest@1` 格式写好该环境（参考仓库 `packs/workflow/test-bed/examples/bed-topology.json`，使用 `192.0.2.0/24` 文档网段或实机可核对网段）：包含环境 `name`、`devices[]`（每台设备的 `name`、`type`、网口地址 `ipv4`/`ipv6`）、`services[]` 与保留段 `reserved[]`（不要靠清单声明的 `installed` 当现行构建，实机构建由探针观察得出）。发布（或替换）命名文档：
+在 `<清单.json>` 中按 `test-bed-manifest@1` 格式写好该环境（参考仓库 `packs/workflow/test-bed/examples/bed-topology.json`，使用 `192.0.2.0/24` 文档网段或实机可核对网段）：包含环境 `name`、`devices[]`（每台设备的 `name`、`type`、网口地址 `ipv4`/`ipv6`）、`services[]` 与保留段 `reserved[]`（不要靠清单声明的 `installed` 当现行构建，实机构建由探针观察得出）。
 
-```bash
-./bin/circle-hub doc put bed-topology <清单.json>
-./bin/circle-hub doc list
-```
+- **方式 A — 网页控制台上传（无需上主机）**：打开 `/console/connections?tab=environments`，在 **登记或更新环境清单** 卡片保持文档名为 `bed-topology`，选择本地 `<清单.json>` 点击 **登记清单**（表单会先经已有上传入口转为原件引用后交给命令桥，不在服务器落地临时文件，也不要求填写主机路径）。
+- **方式 B — 主机 CLI**：
+  ```bash
+  ./bin/circle-hub doc put bed-topology <清单.json>
+  ./bin/circle-hub doc list
+  ```
 
 #### 第二步：写入执行器引用的命名密钥与普通变量
 
 如果执行器定义 JSON 里使用了 `${secret:<大写密钥名>}` 或 `${var:<变量名>}`，先写入：
 
-```bash
-# 密文通过标准输入喂入，不写进命令行参数
-printf '%s\n' '<合成口令>' | ./bin/circle-hub secret set --name <大写密钥名> --reason "register test environment"
+- **命名密钥（控制台或主机 CLI）**：可在 `/console/settings`「凭据」页签下方的 **设置凭据** 卡片填写（内容仅进密钥库，不进命令参数与页面），或在主机上经标准输入喂入：
+  ```bash
+  # 密文通过标准输入喂入，不写进命令行参数
+  printf '%s\n' '<合成口令>' | ./bin/circle-hub secret set --name <大写密钥名> --reason "register test environment"
+  ```
+- **普通变量（主机 CLI）**：如果执行器引用了普通变量（如绑定清单 SHA-256），控制台暂不直接配置变量值，请在主机 CLI 执行：
+  ```bash
+  printf '%s\n' '<值>' | ./bin/circle-hub var set <变量名> --text --not-secret --reason "bind manifest"
+  ```
 
-# 若有普通变量（如绑定了清单 SHA-256 等非密文变量，值通过标准输入或 --file 传入）
-printf '%s\n' '<值>' | ./bin/circle-hub var set <变量名> --text --not-secret --reason "bind manifest"
-```
+#### 第三步：上传登记执行器（及按目标预览分配）
 
-#### 第三步：登记执行器
+准备好执行器定义 JSON（参照仓库 `hub/dispatch/testing/` 夹具写法：声明目标网关地址、写操作开关、只读版本探针、基线探针、前提认证证据等；若网关采用 `https://` 端点，必须同时配置固定 CA 证书，且若格式被拒时校验报错可能不带字段路径，须逐项核对 `endpoint` 与 CA 字段）：
 
-准备好执行器定义 JSON（当前基线无控制台上传表单或下载模板，可参照仓库 `hub/dispatch/testing/` 夹具写法自行整理约 40 个字段：声明目标网关地址、写操作开关、只读版本探针、基线探针、前提认证证据等；若网关采用 `https://` 端点，必须同时配置固定 CA 证书，且若格式被拒时当前 CLI 报错可能不带字段路径，须逐项核对 `endpoint` 与 CA 字段），执行：
+- **方式 A — 网页控制台上传（无需上主机）**：在 `/console/connections?tab=environments` 的 **登记测试环境执行器** 卡片上传 `<执行器定义.json>` 并点击 **登记执行器**。页面下方会按环境 `target` 分组展示已登记执行器（**注意**：每组下方的「分配所选」表单可把同组多个执行器分给同一团队或账户，但**当前测试环境权限守卫尚未启用，分配字段仅供预览，不代表实际执行许可**）。
+- **方式 B — 主机 CLI 登记与后续更新/停用**：
+  ```bash
+  ./bin/circle-hub executor add <执行器定义.json>
+  ./bin/circle-hub executor list
+  ```
+  确认输出里 `启用 1`、`具备派发登记 1` 且无缺失变量/密钥。需要修改已有执行器定义或停用执行器时，在主机执行 `./bin/circle-hub executor update <exe_…> <新定义.json>` 或 `./bin/circle-hub executor disable <exe_…>`（详情页「停用…」仅弹出命令指引）。
 
-```bash
-./bin/circle-hub executor add <执行器定义.json>
-./bin/circle-hub executor list
-```
+#### 第四步：在主机登记租约前缀主人（按需指定强释与归属）
 
-确认输出里 `启用 1`、`具备派发登记 1` 且无缺失变量/密钥（若后期要改定义，执行 `./bin/circle-hub executor update <exe_…> <新定义.json>`，停用用 `executor disable <exe_…>`）。
-
-#### 第四步：登记租约前缀主人（按需指定归属）
-
-若该环境归指定责任人管理归属与强制释放权，登记其租约前缀：
+若该环境归指定责任人管理归属与强制释放权，控制台环境页目前未单独挂出该表，请在运行 Hub 的主机执行：
 
 ```bash
 ./bin/circle-hub lease register bed/<环境名>/ --owner <责任人用户名> --reason "initial bed registration"
 ./bin/circle-hub lease list --prefix bed/
 ```
 
-#### 第五步：确认现场干净并录制环境基线
+#### 第五步：确认现场干净并在主机录制环境基线
 
-确认物理测试环境与网关就绪且**设备上没有残余测试配置**后，为声明了基线探针的执行器录制干净基线：
+确认物理测试环境与网关就绪且**设备上没有残余测试配置**后，在主机上为声明了基线探针的执行器录制干净基线（控制台当前同样未挂出单独基线表单）：
 
 ```bash
 ./bin/circle-hub bed baseline record <exe_…> --probe <探针id> --reason "clean baseline verified"
 ```
 
-> 漏录基线或密钥/清单变量对不上时，成员在预订或脚本合并触发自动上机阶段会被拦下；若之前残留占用导致状态在 `/console/connections?tab=environments` 显示「已冻结」，现场核清并恢复设备后可执行 `./bin/circle-hub bed hold clear <exe_…> --reason "<理由>"`。
+> 漏录基线或密钥/清单变量对不上时，成员在预订或脚本合并触发自动上机阶段会被拦下；若之前残留占用导致状态在 `/console/connections?tab=environments` 显示「已冻结」，可在环境详情里点开 **确认已恢复…** / **处置派发结果…** 命令指引对话框，并在现场核清恢复设备后到主机执行 `./bin/circle-hub bed hold clear <exe_…> --reason "<理由>"` 或 `job dispose`。
 
 ---
 
@@ -202,8 +218,9 @@ printf '%s\n' '<值>' | ./bin/circle-hub var set <变量名> --text --not-secret
 
 Hub 当前明确区分「**同一数据库结构基线内的部署切换 / 回退**」与「**跨不兼容基线（`needsRebuild`）的重建**」两条路线。操作前务必先确认新旧版本的[兼容矩阵](compatibility.md)与变更日志是否涉及结构变更。
 
-> **重要现状诚实说明（`4a1fbdee57`）**：
-> 在当前基线上，支持「成员在途会话不断线、免重新授权、在途请求自动重试、旧版本读新记录兼容提示」的**原地零中断升级与降级（N5）仍在方案审定与开发中**。截至本版，标准部署变更仍遵循「停写核查 → 备份/升级 → 失败按备份回滚」或「不兼容重建」规程；请不要在仍有活跃写入作业期间直接重启替换进程并期待在途状态自动衔接。
+> **重要现状诚实说明（`wp/codex/integration` 第一、二批后）**：
+> - **已合入的平滑退场能力**：服务端关停时会在原关闭预算内等待已受理的 MCP 请求和运行资料响应完整发送，会释放装配拥有的租约连接池，并在关停期间对尚未进入入场流程的新请求返回 **`HTTP 503` 与 `Retry-After`**；
+> - **仍未改变的边界**：不宣称进程被任意强杀后或真实测试设备状态能跨重启自动恢复；在几十秒切换断连窗口内（`ECONNREFUSED`），现有技能本地工具（`download-run.ts` 等）**仍不会自动重试**；**涉及数据库结构变化的版本不支持跨版原地升级或降级**，仍走 `/console/rebuild`（`needsRebuild`）与 `reset` 重建规程。请尽量在无活跃长时上机写入前安排切换。
 
 ### 1. 先核清当前实例的部署方式，再选升级命令
 
@@ -242,7 +259,7 @@ curl -sS http://127.0.0.1:7420/healthz
 ```
 
 - 确认 `/healthz` 返回的 `release` 与目标提交/版本一致；若改动了工作流或通用技能版本，按需补做 `pack publish --stage` + `pack install` / `pack retire`。
-- **实测重启影响预期**：在数十秒的停机切换窗口内，新 MCP 请求及技能本地下载工具（`download-run.ts` 等）会立即报 `ECONNREFUSED`（本地工具当前不会自动重试）；服务拉起后首轮维护期间首次读取会短暂变慢，随后恢复正常；**成员已持有的访问令牌全部有效、已连接的 Circle 会话无需重新登录或重新连接（仅内存中的控制台网页登录会话会被清空，网页端需重新登录）**。
+- **服务停机与重启期间影响预期**：在服务进入关闭阶段到重新拉起期间，Hub 会在关闭预算内等待已受理请求与正在传输的运行资料响应发完，未入场的新请求会收到 `HTTP 503` 与 `Retry-After`；进程真正切换的窗口内，新 MCP 请求及技能本地下载工具（`download-run.ts` 等）会报 `ECONNREFUSED`（本地工具当前不会自动重试）。服务拉起后首轮首次读取会短暂变慢，随后恢复正常；**成员已持有的访问令牌全部有效、已连接的 Circle 会话无需重新登录或重新连接（仅内存中的控制台网页登录会话会被清空，网页端需重新登录）**。
 
 ### 2. 同结构降级 / 回退边界
 
