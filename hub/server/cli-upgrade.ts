@@ -1,7 +1,7 @@
 // Administrator-owned environment preservation. Preview has no persistence side effects.
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
-import { canonicalBytes, isAdmin, isSha256, sha256Hex, type EnvironmentUpgradePreview, type EnvironmentUpgradeReceipt, type Principal, type RecordsSchemaCompatibility } from '../records/api.ts';
+import { canonicalBytes, isAdmin, isSha256, sha256Hex, AccessError, IntegrityError, RecordsError, EnvironmentUpgradeRequiredError, type EnvironmentUpgradePreview, type EnvironmentUpgradeReceipt, type Principal, type RecordsSchemaCompatibility } from '../records/api.ts';
 import type { HubConfig } from '../config/index.ts';
 import { CliError, UsageError } from './errors.ts';
 
@@ -33,7 +33,11 @@ export async function upgradeCommand(session: UpgradeCommandSession, args: reado
   if (token === null) throw new CliError('升级需要已有操作令牌对应的启用管理员；未读取或写入升级状态');
   let actor: Principal | null;
   try { actor = await ports.authenticate(config, `Bearer ${token}`); }
-  catch { throw new CliError('无法只读核验操作令牌；检查连接、已知迁移身份及读取权限后重试，升级未执行'); }
+  catch (error) {
+    if (error instanceof AccessError) throw new CliError('操作令牌无效或不属于当前启用的管理员；升级未执行');
+    if (error instanceof IntegrityError) throw new CliError('迁移身份或摘要不能核对；保留现库并使用兼容发布，升级未执行');
+    throw new CliError('无法只读核验操作令牌；检查连接、已知迁移身份及读取权限后重试，升级未执行');
+  }
   if (!actor || !isAdmin(actor)) throw new CliError('操作令牌无效或不属于当前启用的管理员；升级未执行');
   const owner = values['owner-role'];
   const ownerConfig = owner === undefined ? config : { ...config, database: { ...config.database, user: owner } };
@@ -57,7 +61,12 @@ export async function upgradeCommand(session: UpgradeCommandSession, args: reado
   let digest: string;
   try { digest = sha256Hex(canonicalBytes(preview.payload)); } catch { throw new UsageError('预检快照不是可核对的JSON'); }
   if (preview.sha256 !== values['expected-snapshot'] || digest !== values['expected-snapshot'] || preview.canApply !== true || preview.freshDatabase !== false || preview.payload === null) throw new CliError('预检快照摘要或可应用状态不匹配；未应用升级，请重新预检');
-  const receipt = await ports.apply(ownerConfig, actor, preview, config.database.user);
+  let receipt: EnvironmentUpgradeReceipt;
+  try { receipt = await ports.apply(ownerConfig, actor, preview, config.database.user); }
+  catch (error) {
+    if (error instanceof RecordsError || error instanceof EnvironmentUpgradeRequiredError) throw error;
+    throw new CliError('升级事务结果尚未确认；不要假定未执行，也不要重新补授', '恢复连接后先执行 upgrade preview --json 核对完成回执；保留现库，不自动重试写入');
+  }
   let compatibility: RecordsSchemaCompatibility | null;
   try { compatibility = await ports.compatibility(config); } catch { compatibility = null; }
   if (compatibility?.compatible !== true) throw new CliError('保权事务已有完成回执，但当前运行角色可读性尚未确认；保留现库，不重授、不重建', '检查兼容发布及运行角色读取权限后重新启动；不要使用 reset');

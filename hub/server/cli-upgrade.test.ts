@@ -98,3 +98,11 @@ test('public CLI help lists the real upgrade command without opening records or 
   const code = await main(['help'], { io: { env: {}, cwd: '/synthetic/upgrade', stdout: line => output.push(line), stderr: line => output.push(line) } });
   assert.equal(code, 0); assert.match(output.join('\n'), /upgrade.*preview/); assert.match(output.join('\n'), /--expected-snapshot/);
 });
+
+test('a lost owner-transaction response stays unknown and advises readonly receipt inspection without replaying writes', async () => {
+  const f = fixture(); let attempts = 0;
+  f.ports.apply = async () => { attempts++; throw new Error(token); };
+  await assert.rejects(upgradeCommand(f.session, ['apply', '--preview=preview.json', '--expected-snapshot=' + f.preview.sha256], f.ports), error => error instanceof Error && error.message.includes('结果尚未确认') && !error.message.includes(token));
+  assert.equal(attempts, 1); assert.equal(f.calls.filter(call => call[0] === 'compatibility').length, 0);
+  assert.ok(!f.output.some(line => line.includes('升级已完成')));
+});
