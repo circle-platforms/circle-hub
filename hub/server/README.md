@@ -1002,8 +1002,9 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 - **ensureHubDatabase** is called only when the database is the platform's own socket (`<data dir>/run`); a server
   configured with another database (tests, development) never touches a cluster.
 - **Call log**: protocol methods are logged too (B08: every MCP call), and transport refusals of authenticated callers;
-  a GET is not (it is the client's probe the specification answers 405, in every session); no `argsPreview` is produced
-  (brief: digest and size only; records' open question on B08 F[7]).
+  a GET is not (it is the client's probe the specification answers 405, in every session). `argsPreview` carries only
+  bounded schema-declared structure, explicit run presence and typed reference metadata; upload bytes, free text,
+  unknown field names, selectors and tree paths are never copied. References are caller-declared, not proof of readability.
 - **Batches** are refused (decision 5). A client that negotiated protocol 2025-03-26, which still had batching, must send
   one request per POST; the SDK clients do.
 - **Console form posts** must come from this server's own origin (stricter than "a loopback origin"): SameSite does not

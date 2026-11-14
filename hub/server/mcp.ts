@@ -1,3 +1,4 @@
+import { requestSummary } from './request-summary.ts';
 // POST /mcp: the streamable HTTP transport of the official SDK in stateless JSON mode, one Server and one JSON-RPC request per
 // HTTP request. Batches are refused (MCP 2025-06-18 removed them; in a batch, requests sharing an id or a cancellation of a
 // sibling would run calls the call log never sees). The bearer token is checked on every request (a revoked token or a
@@ -188,6 +189,7 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
     tool,
     runId: state.runId !== null && LOGGED_RUN.test(state.runId) ? state.runId : null,
     arguments: state.args,
+    argsPreview: requestSummary(tool, state.args),
     callResult: state.callResult ?? 'error',
     acceptance: state.acceptance,
     errorCode,

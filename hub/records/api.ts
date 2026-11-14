@@ -909,7 +909,7 @@ export interface CallLogInput {
   /** Tool name or protocol method. */
   tool: string;
   runId: string | null;
-  /** The call arguments. Only their digest and size are kept; the content is never stored. */
+  /** Full arguments are reduced to digest and size; the server may separately supply the redacted metadata preview below. */
   arguments: unknown;
   /**
    * B08 F[7]: at most 1024 bytes of the arguments after the server redacted them by the tool's input schema (every free-text,

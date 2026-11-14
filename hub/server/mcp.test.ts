@@ -1294,7 +1294,7 @@ describe('the isError matrix and output schemas', () => {
 });
 
 describe('call log, trace and session', () => {
-  test('one line per call with the trace id, the session id, the run and the receipt; never the argument content', async () => {
+  test('one line per call with trace, session, receipt and safe structure but never free text or upload content', async () => {
     const user = await person(['review']);
     const client = await connect(user, { sessionId: 'sess-log-1', traceparent: TRACEPARENT });
     const marker = 'MARKER-UPLOAD-7f3a91';
@@ -1313,7 +1313,11 @@ describe('call log, trace and session', () => {
       assert.equal(line.session, 'sess-log-1');
       assert.match(line.args_digest, /^[0-9a-f]{64}$/);
       assert.ok(line.args_size >= 0);
-      assert.equal(line.args_preview, null);
+      if (['upload_file','start_run','submit_result','get_nodes'].includes(line.tool)) {
+        assert.ok(line.args_preview,'known tool records safe request structure');
+        const summary=JSON.parse(line.args_preview);assert.equal(summary.schema,'mcp-request-summary@1');
+        assert.ok(!line.args_preview.includes('MARKER-PARAM-9c1d')&&!line.args_preview.includes('MARKER-SUBMIT-2b8e'));
+      } else assert.equal(line.args_preview,null);
     }
     const startLine = lines.find((line) => line.tool === 'start_run')!;
     assert.equal(startLine.run, runId);
