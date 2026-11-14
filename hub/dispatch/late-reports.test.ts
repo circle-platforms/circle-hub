@@ -29,8 +29,8 @@ async function report(c:Awaited<ReturnType<typeof fixture>>,reference:string){co
 test('an ended gateway with a late report is polled until the second complete case_results, with one submit',async t=>{
  const c=await fixture(false,2);t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
  assert.equal(c.reportReads,2);assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
- const value=await report(c,state.job_facts.result!);assert.equal(value.rows[0].dynamic_terminal,'pass');assert.equal(state.job_facts.report_pending,undefined);
- const events=await c.service.journal.events(state.job);assert.equal(events.filter(event=>event.body.detail.phase==='intent').length,1);assert.ok(events.some(event=>event.body.detail.phase==='report_wait'));
+ const value=await report(c,state.job_facts.result!);assert.equal(value.rows[0].dynamic_terminal,'pass');assert.equal(state.job_facts.report_pending,false);
+ const events=await c.service.journal.events(state.job);assert.equal(events.findLast(event=>event.body.detail.phase==='result')!.body.detail.report_pending,false);assert.equal(events.filter(event=>event.body.detail.phase==='intent').length,1);assert.ok(events.some(event=>event.body.detail.phase==='report_wait'));
 });
 test('a bounded report wait can resume read-only after lease release and append a usable result',async t=>{
  const c=await fixture();t.after(()=>c.close());
