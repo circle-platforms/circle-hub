@@ -1,3 +1,4 @@
+import {EffectBoundaryError} from '../../dispatch/api.ts';
 import {withEnvironmentPermissionLock, type Transaction} from '../../records/api.ts';
 import {ProjectionOutput} from '../../../contracts/src/pack.ts';
 import {groundsAudience,guardedRecords} from './grounds.ts';
@@ -24,7 +25,7 @@ import type { ExecutionHost } from '../../../contracts/generated/vocabulary.ts';
 import { z } from 'zod';
 import { NatureSchema, VerdictSchema, isSourceRole, type SourceRole } from '../../../contracts/generated/vocabulary.ts';
 import { Ground } from '../../../contracts/src/reference.ts';
-import { ProtocolError } from '../../../contracts/src/common.ts';
+import type { ProtocolError } from '../../../contracts/src/common.ts';
 import type { KnownBuild } from '../../../contracts/src/product.ts';
 import type { ContextBuild, RequirementTemplate, RunContext } from '../../../contracts/src/pack.ts';
 import { RunRecord, RunSummary, type RequirementSummary, type RunRecordView } from '../../../contracts/src/run.ts';
@@ -198,10 +199,7 @@ async function checkEnvironmentKeys(ctx:EngineContext,user:Principal,environment
   }
 
 function rethrowBoundaryRefusal(error:unknown):void {
-  if(!(error instanceof Error)||!('failure' in error)||!error.failure||typeof error.failure!=='object')return;
-  const candidate=error.failure;
-  const parsed=ProtocolError.safeParse({code:Reflect.get(candidate,'code'),message:Reflect.get(candidate,'message'),fix:Reflect.get(candidate,'fix')});
-  if(parsed.success)throw new Refusal([parsed.data]);
+  if(error instanceof EffectBoundaryError)throw new Refusal([protocolError(error.failure.code,error.failure.message,{fix:error.failure.fix})]);
 }
 
 export async function askClaims(ctx: EngineContext, user: Principal, workflow: LoadedWorkflow, asks: ReadonlyArray<DeviceHelpTarget>, runId: string, predecessor: string | undefined, traceId: string): Promise<Claim[]> {
