@@ -13,17 +13,17 @@ import { readRunJobs, type RunJob } from './read-runs.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
-export interface DispatchNote extends Partial<DispatchDiagnostics> { job?: string; executor?: string; result?: string; text: string }
+export interface DispatchNote extends Partial<DispatchDiagnostics> { run?: string; job?: string; executor?: string; result?: string; text: string }
 /** How long an accepted submission waits for the job to be reserved before it answers that the release check still runs. */
 export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
 export const MAX_NOTES = 16, MAX_NOTE_TEXT = 800;
 const clip = (text: string) => text.length <= MAX_NOTE_TEXT ? text : `${text.slice(0, MAX_NOTE_TEXT - 1)}…`;
 /** The newest notes within the limit, after one line that counts the older jobs left out. */
-function capped(notes: DispatchNote[]): DispatchNote[] {
-  if (notes.length <= MAX_NOTES) return notes;
+function capped(notes: DispatchNote[], run: string): DispatchNote[] {
+  if (notes.length <= MAX_NOTES) return notes.map(note=>({...note,run:note.run??run}));
   const kept = notes.slice(-(MAX_NOTES - 1));
-  return [{ text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept];
+  return [{ run, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept.map(note=>({...note,run:note.run??run}))];
 }
 // the reference compile skill reads a running task's status by its id and never resubmits it; here the progress read is the same submission.
 const PROGRESS = '稍后逐字原样重交上机验证时的那次提交读进展';
@@ -44,7 +44,7 @@ async function jobNote(service: DispatchService, job: RunJob, admin: string, ret
   const note = runnerNote(job, admin, retried, administrative);
   const report = await reportMissingFacts(service.options.records, job, administrative);
   const facts = [...note.missing_facts ?? [], ...report.missing_facts].slice(0, 16);
-  return { ...note, ...(report.no_verdict !== undefined ? { no_verdict: report.no_verdict } : {}), missing_facts: facts, ...(report.no_verdict ? {text:clip(note.text+'；'+report.missing_facts.map(fact=>fact.fact).join('；'))} : {}) };
+  return { ...note, run:job.verification_run, ...(administrative&&job.executor?{executor:job.executor}:{}), ...(report.no_verdict !== undefined ? { no_verdict: report.no_verdict } : {}), missing_facts: facts, ...(report.no_verdict ? {text:clip(note.text+'；'+report.missing_facts.map(fact=>fact.fact).join('；'))} : {}) };
 }
 
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
@@ -69,18 +69,18 @@ function begin(service: DispatchService, run: string): Attempt {
 export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'principals'>, service: DispatchService, run: string, ready: boolean, wait = RESERVE_WAIT_MS, caller?: Principal): Promise<DispatchNote[]> {
   const administrative = await callerAdmin(records, service, run, caller);
   const admin = await activeAdmin(records);
-  if (!admin) return ready ? [{ text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动上机验证；等管理员开通账号' }] : [];
+  if (!admin) return ready ? [{ run, text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动上机验证；等管理员开通账号' }] : [];
   const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
   // Every job of the run ended without an effect that could repeat (see `retriable`): a repeat of the ready submission
   // tries again, as the reference compile skill resubmits a workbook its gateway refused. Any other job is only read.
   const retry = ready && jobs.length > 0 && jobs.every(retriable);
-  if (jobs.length && !retry) { open.delete(run); return capped(await Promise.all(jobs.map(job => jobNote(service, job, admin.id, false, administrative)))); }
+  if (jobs.length && !retry) { open.delete(run); return capped(await Promise.all(jobs.map(job => jobNote(service, job, admin.id, false, administrative))),run); }
   if (!ready) return [];
   // What the earlier jobs came to is told beside the new attempt: the runner learns why the last one ended before it reads
   // that the Hub tried again. Keep our in-process Attempt map so a late refusal after the wait still reaches the next repeat.
   const earlier = await Promise.all(jobs.map(job => jobNote(service, job, admin.id, true, administrative)));
-  const answer = (notes: DispatchNote[]) => capped([...earlier, ...notes]);
+  const answer = (notes: DispatchNote[]) => capped([...earlier, ...notes],run);
   let attempt = open.get(run);
   if (!attempt) { attempt = begin(service, run); open.set(run, attempt); }
   if (!attempt.settled && !attempt.reserved) {
@@ -116,7 +116,7 @@ export async function runInFlight(records: Pick<RecordsKit, 'store' | 'principal
   if (!admin) return null;
   const administrative = await callerAdmin(records, service, run, caller);
   const running = (await readRunJobs(records, service, admin, run)).filter((job) => job.ended === null);
-  return running.length ? { jobs: running.map((job) => job.job), notes: capped(await Promise.all(running.map(job => jobNote(service, job, admin.id, false, administrative)))) } : null;
+  return running.length ? { jobs: running.map((job) => job.job), notes: capped(await Promise.all(running.map(job => jobNote(service, job, admin.id, false, administrative))),run) } : null;
 }
 
 const NO_MORE = '这次上机验证不会再做上机验证：能在自动化用例、自动化用例 Excel 或预订上改的，改好后重新开始上机验证；其余等管理员处理';

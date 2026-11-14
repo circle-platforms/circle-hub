@@ -560,3 +560,32 @@ test('an actual policy replay with no conclusion remains unclassified and preser
   assert.equal(note.error_code,'PACK_POLICY_DENIED');
   assert.equal(c.calls.includes('send_blob'),false);assert.equal(c.submitted.length,0);
 });
+
+test('dispatch notes preserve the verification run when read through a plan and keep member text private',async t=>{
+  const c=await setup({mode:'manifest'});t.after(()=>c.close());
+  const [admin]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.admin);
+  assert.equal(admin.run,c.run);assert.equal(admin.executor,c.executor.id);
+  assert.equal((await c.service.explainRelease(c.admin,admin.run!,admin.executor!)).satisfied,false);
+  const [member]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.equal(member.run,c.run);assert.equal(member.executor,undefined);
+  assert.equal(member.text.includes(c.run),false);assert.equal(member.text.includes(c.executor.id),false);
+  let release!:()=>void,entered!:()=>void;
+  const waiting=new Promise<void>(resolve=>{release=resolve;});
+  const submitting=new Promise<void>(resolve=>{entered=resolve;});
+  const live=await setup({onSubmit:async()=>{entered();await waiting;}});t.after(()=>live.close());
+  const running=live.service.dispatchAccepted(live.run);
+  try{
+    await submitting;
+    const {runInFlight}=await import('./accepted.ts');
+    const plan=live.detail.run.predecessor!;
+    const current=await runInFlight(live.kit,live.service,plan,live.admin);
+    assert.ok(current);assert.equal(current.notes[0].run,live.run);assert.equal(current.notes[0].executor,live.executor.id);
+    const [read]=await acceptedDispatch(live.kit,live.service,plan,false,undefined,live.admin);
+    assert.equal(read.run,live.run);assert.notEqual(read.run,plan);assert.equal(read.executor,live.executor.id);
+    const command=`circle-hub job explain-release --run ${read.run} --executor ${read.executor}`;
+    assert.equal(command,`circle-hub job explain-release --run ${live.run} --executor ${live.executor.id}`);
+    const visible=await runInFlight(live.kit,live.service,plan,live.owner);
+    assert.ok(visible);assert.equal(visible.notes[0].run,live.run);assert.equal(visible.notes[0].executor,undefined);
+    assert.equal(visible.notes[0].text.includes(live.run),false);assert.equal(visible.notes[0].text.includes(live.executor.id),false);
+  }finally{release();await running;}
+});
