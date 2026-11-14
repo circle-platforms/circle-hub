@@ -1,3 +1,4 @@
+import {EffectBoundaryError} from '../../dispatch/api.ts';
 import {toolText} from '../../server/text.ts';
 import {MemberEnvironments} from '../../dispatch/member-environments.ts';
 import assert from 'node:assert/strict';
@@ -184,7 +185,7 @@ test('a final device permission refusal cannot be swallowed into an unknown devi
   let asks=0;
   ctx.deps.observations={latest:async()=>[],observe:async()=>({observed:[],missing:null}),ask:async()=>{
     asks++;
-    throw Object.assign(new Error('synthetic admission refusal'),{failure:{code:'ENVIRONMENT_PERMISSION_UNAVAILABLE',message:'测试环境的权限核对现在不能进行，这次没有执行',fix:'请联系管理员'}});
+    throw new EffectBoundaryError({ok:false,clause:1,code:'ENVIRONMENT_PERMISSION_UNAVAILABLE',message:'测试环境的权限核对现在不能进行，这次没有执行',fix:'请联系管理员'});
   }};
   await assert.rejects(askClaims(ctx,actor,workflow,[{inventory:'a'.repeat(64),device:'/devices/0',label:'合成设备',line:'help',keys:['meadow/allowed']}],run,undefined,'synthetic-trace'),unavailable);
   assert.equal(asks,1);
