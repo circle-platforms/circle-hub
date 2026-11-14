@@ -96,7 +96,7 @@ test('historical read-only condition facts retain the item name without disclosi
   assert.match(member.text,/核对项目 \/seats.*至少数量/);assert.match(member.text,/请管理员/);
   assert.doesNotMatch(member.text,/private expected values|circle-hub|private/);
   const retried=runnerNote(source,'usr_private',true);
-  assert.match(retried.text,/请管理员/);assert.match(retried.text,/本次运行已重新申请上机验证作业/);
+  assert.match(retried.text,/请管理员/);assert.match(retried.text,/本次运行：这次重交 Hub 已再试/);
   assert.ok(retried.text.includes('/seats'));
 });
 
