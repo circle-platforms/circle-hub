@@ -6,12 +6,12 @@ import { DYNAMIC_TERMINAL, DynamicTerminalSchema, NatureSchema, QualifierMarkSch
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult, LayerResult } from '../../../contracts/src/validation.ts';
-import type { RunJob } from '../../dispatch/api.ts';
+import { statusDiagnostics, type RunJob } from '../../dispatch/api.ts';
 import { parseReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
 import type { ExportedJobV1, ExportedJobV2 } from '../../ports.ts';
 import { DispatchJobFactsSchema, DispatchAttemptFactsSchema, ScopedDispatchFactsSchema } from '../../../contracts/api.ts';
-import type { ActionBody, StoredRecord } from '../../records/api.ts';
+import type { ActionBody, StoredRecord, Principal } from '../../records/api.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
 import { bindRecovery, expectationFor, meets, requirementStatus } from './terminals.ts';
 import { aggregate, INTERMITTENT_MARK, repetitionSummary, type RoundOutcome } from './repetition.ts';
@@ -36,17 +36,20 @@ export function dispatchNotExecuted(job:RunJob):boolean {
   const rounds=facts.rounds??[];
   const attempts=rounds.length?rounds.map(round=>round.dispatch_attempt):[job.status.dispatch_attempt];
   if(!attempts.length||attempts.some(attempt=>!attempt))return false;
-  const numbered=attempts.map(attempt=>attempt!.scope.round).sort((a,b)=>a-b);
+  const numbered:number[]=[];
+  for(const attempt of attempts){if(!attempt||attempt.scope.operation!=='dispatch')return false;numbered.push(attempt.scope.round);}
+  numbered.sort((a,b)=>a-b);
   if(numbered.some((round,index)=>round!==index+1))return false;
   return attempts.every(attempt=>attempt!.outcome==='not_dispatched'||attempt!.outcome==='proven_not_executed'||attempt!.outcome==='target_rejected');
 }
-export function publicDispatchFacts(job:RunJob) {
-  const job_facts=Object.fromEntries(Object.entries(job.status.job_facts).filter(([key])=>key!=='grounds'&&Object.hasOwn(DispatchJobFactsSchema.shape,key)));
-  const dispatch_attempt=job.status.dispatch_attempt?Object.fromEntries(Object.entries(job.status.dispatch_attempt).filter(([key])=>key!=='grounds'&&Object.hasOwn(DispatchAttemptFactsSchema.shape,key))):undefined;
+export function publicDispatchFacts(job:RunJob,administrative:boolean) {
+  const projected=statusDiagnostics(job,administrative);
+  const job_facts=Object.fromEntries(Object.entries(projected.job_facts).filter(([key])=>key!=='grounds'&&Object.hasOwn(DispatchJobFactsSchema.shape,key)));
+  const dispatch_attempt=projected.dispatch_attempt?Object.fromEntries(Object.entries(projected.dispatch_attempt).filter(([key])=>key!=='grounds'&&Object.hasOwn(DispatchAttemptFactsSchema.shape,key))):undefined;
   return ScopedDispatchFactsSchema.parse({job_facts,...(dispatch_attempt?{dispatch_attempt}:{})});
 }
 /** Version-one wire rules, isolated from all internal scoped readers. No attempt is converted to a whole-job outcome. */
-export function legacyJobState(events:readonly StoredRecord<ActionBody>[]):{outcome:string;frozen:boolean} {
+export function legacyJobState(events:readonly StoredRecord<ActionBody>[]):{outcome:string;frozen:boolean;result:string|null;device_return:string|null} {
   const last=(phase:string)=>events.findLast(event=>event.body.detail.phase===phase);
   const end=last('complete')??last('boundary_refused'),intent=last('intent'),probeIntent=last('probe_intent');
   const receipt=last('receipt')??events.findLast(event=>event.body.detail.phase==='reconciled'&&event.body.detail.acceptance==='accepted'&&event.body.detail.remote_id!==undefined);
@@ -57,7 +60,9 @@ export function legacyJobState(events:readonly StoredRecord<ActionBody>[]):{outc
   const missingReceipt=!events.some(event=>event.body.detail.done===true&&(probeIntent&&event.body.detail.effect_accounted===true||safe(event.body.detail.outcome)||event.body.detail.outcome==='not_dispatched'&&event.body.detail.submit_invoked===false))&&Boolean(intent??probeIntent)&&!receipt&&!events.some(event=>event.body.detail.unfreeze===true);
   const decision=last('dispose');
   const outcome=decision?.body.detail.disposition==='mark_failed'&&decision.body.detail.risk_confirmed===true?'unknown':end?.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?'not_dispatched':end&&safe(end.body.detail.outcome)?String(end.body.detail.outcome):unknown||missingReceipt||intent&&!receipt?'unknown':end?.body.detail.outcome==='not_dispatched'?'not_dispatched':end?'effective':intent?'issued':events.length?'not_dispatched':'unknown';
-  return {outcome,frozen:unknown||missingReceipt};
+  const lastIntent=events.findLastIndex(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');
+  const result=events.findLast((event,index)=>index>lastIntent&&event.body.detail.phase==='result'&&typeof event.body.detail.reference==='string');
+  return {outcome,frozen:unknown||missingReceipt,result:typeof result?.body.detail.reference==='string'?result.body.detail.reference:null,device_return:typeof result?.body.detail.device_return==='string'?result.body.detail.device_return:null};
 }
 const Row=z.object({item:z.string(),dynamic_terminal:DynamicTerminalSchema,qualifier:z.object({nature:NatureSchema.extract(['judgment','unknown']),marks:z.array(QualifierMarkSchema)}),accepted_as_fact:z.literal(false),missing_facts:z.array(z.string()).optional(),code:z.string().optional(),judgment_premises:z.array(Claim).optional(),report_check:z.object({condition:z.string(),pointer:z.string(),declared_pointer:z.string(),resolved:z.boolean(),present:z.boolean(),actual_sha256:z.string(),result_definition_sha256:z.string(),mapped_terminal:DynamicTerminalSchema.optional(),missing_fact:z.string().optional(),next_action:z.string().optional()}).optional(),missing_fact:z.string().optional(),next_action:z.string().optional(),evidence:z.object({log:z.string().optional(),sessions:z.record(z.string(),z.string()).optional()}).optional()});
 const RoundNote=z.object({round:z.number().int(),terminal:DynamicTerminalSchema,code:z.string().optional(),meets:z.boolean().nullable().optional(),reason:ReasonSchema.optional(),early_stop:z.boolean().optional(),pending:z.boolean().optional(),lost:z.boolean().optional()});
@@ -66,9 +71,9 @@ export function appliesTo(job:RunJob,run:string,item:string):boolean{return job.
 type Admin={id:string;name:string;role:'admin'};
 async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
 /** The job's result projection when it is the dispatch service's own, bound to this job and its workbook, one row per item; else null. */
-async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<z.infer<typeof Projection>|null>{
-  if(!job.status.job_facts.result)return null;
-  const ref=parseReference(job.status.job_facts.result);
+async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob,reference:string|null|undefined=job.status.job_facts.result):Promise<z.infer<typeof Projection>|null>{
+  if(!reference)return null;
+  const ref=parseReference(reference);
   if(ref.scheme!=='src')return null;
   const source=await ctx.deps.records.artifacts.source(admin,ref.sha256,{consumer:'function'});
   if(!(source?.bytes&&'generated'in source.artifact.body.origin&&source.artifact.body.origin.generated.generator==='dispatch@1'&&source.artifact.body.author.user===null&&source.artifact.body.provenance_type==='projected'))return null;
@@ -87,21 +92,21 @@ export async function exportedJobs(ctx:EngineContext,run:string):Promise<Exporte
   if(!admin)return [];
   const out:ExportedJobV1[]=[];
   for(const job of await ctx.deps.dispatch.jobs(admin,run)){
-    const report=await readProjection(ctx,admin,job);
     const history=(await ctx.deps.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:[job.job]})).slice(0,job.status.events);
     if(!history.length)throw new Error('旧版作业导出缺少原始观察记录');
     const legacy=legacyJobState(history);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...legacy,result:job.status.job_facts.result??null,device_return:job.status.job_facts.device_return??null,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+    const report=await readProjection(ctx,admin,job,legacy.result);
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...legacy,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
   }
   return out;
 }
-export async function exportedScopedJobs(ctx:EngineContext,run:string):Promise<ExportedJobV2[]> {
+export async function exportedScopedJobs(ctx:EngineContext,run:string,caller:Principal):Promise<ExportedJobV2[]> {
   if(!ctx.deps.dispatch)return [];
   const admin=await activeAdmin(ctx);if(!admin)return [];
   const out:ExportedJobV2[]=[];
   for(const job of await ctx.deps.dispatch.jobs(admin,run)){
     const report=await readProjection(ctx,admin,job);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...publicDispatchFacts(job),rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...publicDispatchFacts(job,caller.role==='admin'),rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
   }
   return out;
 }
