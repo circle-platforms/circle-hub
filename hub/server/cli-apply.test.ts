@@ -459,6 +459,19 @@ test('fresh database definition apply rejects before mutations when no administr
   assert.deepEqual(f.calls, []);
 });
 
+async function separateApplyRuntime(kit: import('../testing/records.ts').TestRecordsKit) {
+  const { Database, createPool, migrateRecords } = await import('../records/api.ts');
+  const owner = new Database(createPool(kit.database, 1));
+  try {
+    await owner.query('CREATE ROLE synthetic_apply_runtime LOGIN NOSUPERUSER');
+    const database = '"' + kit.database.database.replaceAll('"', '""') + '"';
+    await owner.query(`REVOKE TEMPORARY ON DATABASE ${database} FROM PUBLIC`);
+    await migrateRecords({ database: kit.database }, { runtimeRole: 'synthetic_apply_runtime' });
+  } finally { await owner.end(); }
+  assert.notEqual(kit.database.user, 'synthetic_apply_runtime');
+  return { ...kit.database, user: 'synthetic_apply_runtime' };
+}
+
 test('[PG] a fresh database requires standard init-admin before definition apply and never auto-creates an administrator', { timeout: 120000 }, async t => {
   const { openTestRecords } = await import('../testing/records.ts');
   const { Session: ActualSession } = await import('./cli-session.ts');
@@ -466,20 +479,23 @@ test('[PG] a fresh database requires standard init-admin before definition apply
   const { memoryOperatorTokens } = await import('./assemble/operator-token.ts');
   const { removeTree } = await import('./assemble/files.ts');
   const kit = await openTestRecords();
-  const config: import('../config/index.ts').HubConfig = { ...kit.config, database: kit.database, host: '127.0.0.1', port: 0 };
+  const database = await separateApplyRuntime(kit);
+  const config: import('../config/index.ts').HubConfig = { ...kit.config, database, host: '127.0.0.1', port: 0 };
+  const { openRecords } = await import('../records/api.ts');
+  const runtime = await openRecords(config, { migrate: false, keyProvider: kit.keyProvider });
   const output: string[] = [];
   const tokens = memoryOperatorTokens(null, '合成首次设置令牌库');
   const password = 'Synthetic-initial-password-58!';
   const context: import('./api.ts').CliContext = {
     io: { env: {}, cwd: kit.dataDir, stdout: line => output.push(line), stderr: line => output.push(line) },
-    config: () => config, records: async () => kit,
+    config: () => config, records: async () => runtime,
     deps: async () => { throw new Error('synthetic context does not expose unrelated deps'); },
     actingAdmin: async () => { throw new Error('first setup must not infer an administrator'); },
   };
   const session = new ActualSession(context, { tokens: () => tokens, readSecret: async () => password, assembly: { requireOsIsolation: false } });
   t.after(async () => {
     try { await session.close(); await removeTree(join(kit.dataDir, 'packs')); }
-    finally { await kit.close(); }
+    finally { try { await runtime.close(); } finally { await kit.close(); } }
   });
   const definition = { schema: 'deployment@2', accounts: [{ name: '合成成员', role: 'user' }] };
   await assert.rejects(applyDeployment(session, definition), error => {
@@ -523,13 +539,14 @@ test('[PG] actual CLI children perform fresh init-admin stdin then apply and exp
     } finally { await postgres.stop(); }
   });
   kit = await openTestRecords({ postgres, initKey: false });
+  const database = await separateApplyRuntime(kit);
   assert.equal((await kit.principals.list()).length, 0);
   const home = join(kit.dataDir, 'synthetic-home'); await mkdir(home, { mode: 0o700 });
   const env: NodeJS.ProcessEnv = {
     HOME: home, PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8', NODE_NO_WARNINGS: '1',
     CIRCLE_HUB_DATA_DIR: kit.dataDir, CIRCLE_HUB_LOG_DIR: kit.config.logDir, CIRCLE_HUB_PORT: '0',
     CIRCLE_HUB_DATABASE_SOCKET_DIR: kit.database.host, CIRCLE_HUB_DATABASE_PORT: String(kit.database.port),
-    CIRCLE_HUB_DATABASE_NAME: kit.database.database, CIRCLE_HUB_DATABASE_USER: kit.database.user,
+    CIRCLE_HUB_DATABASE_NAME: database.database, CIRCLE_HUB_DATABASE_USER: database.user,
   };
   const documentBytes = Buffer.from('{"topology":"synthetic-fresh"}\r\n');
   const definition = {
