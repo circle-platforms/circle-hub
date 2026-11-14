@@ -51,3 +51,44 @@ test('a long command the terminal redrew is given up to its first control charac
   // The same refusal met twice is listed once.
   assert.equal(executionRefusals(SESSION + '\n' + SESSION, MARKERS).length, 2);
 });
+
+test('generic device CLI Error/Failed replies without the contract generic line are still captured with trailing details bounded', () => {
+  const peerSyncSession = [
+    'seat(config)#widget peer r1 192.0.2.71',
+    'Warning: For security consideration, please set a challenge code.',
+    'seat(config)#widget sync to r1',
+    'checking version and licenses....',
+    'Error: Wrong peer configurations or the challenge codes on the peers are mismatched.',
+    'Failed to synchronize configuration to 192.0.2.71.',
+    'seat(config)#widget sync rollback r1',
+    'Error: destination 192.0.2.71 is unreachable',
+    '  peer link check did not respond',
+    'note 1',
+    'note 2',
+    'note 3',
+    'note 4',
+    'note 5',
+    'note 6',
+    'note 7',
+    'seat(config)#',
+  ].join('\n');
+  assert.deepEqual(executionRefusals(peerSyncSession, MARKERS), [
+    {
+      command: 'widget sync to r1',
+      prompt: 'seat(config)#',
+      reply: [
+        'checking version and licenses....',
+        'Error: Wrong peer configurations or the challenge codes on the peers are mismatched.',
+        'Failed to synchronize configuration to 192.0.2.71.',
+      ],
+    },
+    {
+      command: 'widget sync rollback r1',
+      prompt: 'seat(config)#',
+      reply: [
+        'Error: destination 192.0.2.71 is unreachable',
+        'peer link check did not respond',
+      ],
+    },
+  ]);
+});

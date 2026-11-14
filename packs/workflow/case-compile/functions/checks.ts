@@ -144,7 +144,7 @@ export function checkAddresses(input: unknown): Outcome[] {
   }
   // The reference engine's driver_no_declared_path (InfoTest structural_gate.py:951, env_facts.py:346): a query whose output an
   // assertion reads is sent from a host with an interface on the target's segment. A segment with some trigger device is not
-  // enough when the step runs on another host (run 12: routera queried 172.16.35.70 six times and never reached it). A target the
+  // enough when the step runs on another host (for example, a query from another host failed six times without reaching its target). A target the
   // author wrote that no listed host reaches is kept and disclosed, as there; any other unreachable pair is refused.
   for(const [index,step]of slots.steps.entries()){
     const host=s.profile!.hosts.find(h=>h.object===step.object&&h.method===step.method);

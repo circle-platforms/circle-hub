@@ -1,6 +1,7 @@
 // Client-side lossless assembly only. This never confers Hub admission or chooses a semantic state.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { formatCallError } from '../functions/text.ts';
 const object = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const body = (v: any, kind: string) => object(v) && v.kind === kind && object(v.body) ? v.body : v;
 export function assembleRecompose(runExport: unknown, parts: unknown[], model: string) {
@@ -53,7 +54,7 @@ if (import.meta.main) {
         console.log(JSON.stringify({ preview: true, admitted: false, items: result.draft.items.length, missing: result.missing.length, sha256: createHash('sha256').update(bytes).digest('hex'), next_action: result.missing.length ? '用例重组模型继续逐条补齐原始用例' : '把重组后的用例交给 Hub，重新核对全部原始用例' }));
     }
     catch (error) {
-        console.error(error instanceof Error ? error.message : '重组后的用例未合并');
+        process.stderr.write(formatCallError(error) + '\n');
         process.exitCode = 1;
     }
 }

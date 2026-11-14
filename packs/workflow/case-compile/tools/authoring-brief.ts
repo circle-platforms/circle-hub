@@ -1,15 +1,36 @@
-// The authoring briefs of a downloaded plan run (functions/authoring-brief.ts): one text file per case, `briefs/<index>.md`,
-// beside `items/` and `knowledge/`, so a writer starts from the tree entries its case already names and from the envelope of
-// its plan file instead of searching for them reply by reply. tools/download-run.ts writes them with the run; run alone, this tool writes them for a directory that
-// was downloaded before. It reads local files only, decides nothing and never overwrites a brief.
-//   node <skill directory>/tools/authoring-brief.ts --run <downloaded run directory>
+// Internal library helpers for building authoring briefs (`briefs/<index>.md`) and single-case structured `compile-brief@1` context:
+// `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
+// It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { authoringBrief, canonicalPath, parameterRows, policyOf, type BriefKnowledge, type BriefNode } from '../functions/authoring-brief.ts';
+import {
+  authoringBrief,
+  buildCompileBrief,
+  canonicalPath,
+  parameterRows,
+  policyOf,
+  renderCompileBriefMd,
+  type BriefKnowledge,
+  type BriefNode,
+  type BriefPolicy,
+  type CompileBriefMode,
+  type CompileBriefV1,
+} from '../functions/authoring-brief.ts';
+import { bedFacts, triggerTypesOf, type BedFacts } from '../functions/bed.ts';
+import { parseManifest } from '../functions/manifest.ts';
+import { parseProfile } from '../functions/profile.ts';
+import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
+import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { isRecord } from '../functions/text.ts';
-import { argumentsOf, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { loadCasePriorRounds } from './rework-inputs.ts';
+import {
+  isInsideRoot,
+  resolveCwdRoots,
+  resolveExistingDirInsideCwd,
+  resolveInsideCwd,
+} from './workspace-path.ts';
 
 const parsed = (name: string, text: string): unknown => { try { return JSON.parse(text); } catch { throw new Error(`${name} 不是完整的 JSON`); } };
 
@@ -79,12 +100,264 @@ export async function writeBriefs(directory: string): Promise<BriefReport> {
   return report;
 }
 
-export async function main(argv: string[]): Promise<number> {
-  try {
-    const args = argumentsOf(argv, ['run']);
-    const report = await writeBriefs(args.run);
-    process.stdout.write(JSON.stringify({ directory: resolve(args.run, 'briefs'), ...report }) + '\n');
-    return 0;
-  } catch (error) { process.stderr.write(`脚本编写所需的资料未保存：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+const VALID_MODES = new Set<CompileBriefMode>(['initial', 'rework_gate', 'rework_device', 'fidelity_fix']);
+
+export interface WriteStructuredBriefsOptions {
+  runDir: string;
+  cwd?: string;
+  round?: number;
+  mode?: CompileBriefMode;
+  priorPlans?: string;
+  returns?: string;
+  answers?: string;
+  attributions?: string;
+  briefOut?: string;
+  caseFilter?: string;
 }
-if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));
+
+export interface RunStructuredContext {
+  directory: string;
+  knowledge: BriefKnowledge;
+  policy: BriefPolicy | null;
+  runMeta: {
+    run: string;
+    product: string;
+    version: string;
+    build: string;
+    exclusions: string[];
+  };
+  bedFactsData: BedFacts | null;
+  triggerTypes: string[];
+  failureMarkers: string[];
+}
+
+export interface StructuredBriefReport {
+  directory: string;
+  round: number;
+  mode: CompileBriefMode;
+  json_files: string[];
+  md_files: string[];
+  kept: number;
+  without_record: number;
+}
+
+async function loadOptionalBoundSources(
+  directory: string,
+  bedHint: string | null,
+): Promise<{
+  bedFactsData: BedFacts | null;
+  triggerTypes: string[];
+  failureMarkers: string[];
+}> {
+  let rawSources: unknown;
+  try {
+    rawSources = parsed('sources.json', await readFile(join(directory, 'sources.json'), 'utf8'));
+  } catch {
+    return { bedFactsData: null, triggerTypes: [], failureMarkers: [] };
+  }
+  if (!Array.isArray(rawSources)) return { bedFactsData: null, triggerTypes: [], failureMarkers: [] };
+
+  const readSlotJson = async (slot: string): Promise<unknown> => {
+    const row = rawSources.find((v) => isRecord(v) && v.slot === slot && typeof v.file === 'string');
+    if (!isRecord(row) || typeof row.file !== 'string') return null;
+    try {
+      const target = resolve(directory, row.file);
+      if (!isInsideRoot(target, realpathSync(directory))) return null;
+      return parsed(row.file, await readFile(target, 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+
+  const [invRaw, contractRaw, profileRaw] = await Promise.all([
+    readSlotJson('inventory'),
+    readSlotJson('contract'),
+    readSlotJson('profile'),
+  ]);
+
+  const parsedInv = invRaw ? parseManifest(invRaw) : null;
+  const beds = parsedInv?.ok ? parsedInv.beds : [];
+  const parsedContract = contractRaw ? parseRuntimeContract(contractRaw) : null;
+  const contract = parsedContract?.ok ? parsedContract.contract : null;
+  const failureMarkers = contract?.failureMarkers?.lines ? [...contract.failureMarkers.lines] : [];
+
+  const parsedProf = contract && profileRaw ? parseProfile(profileRaw, contract, beds) : null;
+  const profile = parsedProf?.ok ? parsedProf.profile : null;
+  const selectedBedName = profile?.bed ?? bedHint;
+  const manifestBed = selectedBedName ? beds.find((b) => b.name === selectedBedName) ?? null : null;
+  const triggerSet = triggerTypesOf(profile?.trigger_types);
+  const bedFactsData = manifestBed ? bedFacts(manifestBed, triggerSet) : null;
+
+  return {
+    bedFactsData,
+    triggerTypes: [...triggerSet].sort(),
+    failureMarkers,
+  };
+}
+
+/**
+ * Loads shared run metadata, frozen knowledge, bed facts, and failure markers once for a downloaded run directory.
+ * Reusable by `task-brief.ts` for single-case in-memory `compile-brief@1` generation without touching sibling items.
+ */
+export async function loadRunStructuredContext(directory: string): Promise<RunStructuredContext | null> {
+  const knowledge = await readKnowledge(directory);
+  if (!knowledge) return null;
+
+  const runRaw = parsed('run.json', await readFile(join(directory, 'run.json'), 'utf8'));
+  const runRec = isRecord(runRaw) ? runRaw : {};
+  const policy = policyOf(runRec.command_policy ?? null);
+  const groups = Array.isArray(runRec.groups) ? runRec.groups.filter(isRecord) : [];
+  const bedHint =
+    groups.map((g) => (isRecord(g.profile) && typeof g.profile.bed === 'string' ? g.profile.bed : null)).find((v) => v !== null) ?? null;
+
+  const { bedFactsData, triggerTypes, failureMarkers } = await loadOptionalBoundSources(directory, bedHint);
+  const params = isRecord(runRec.parameters) ? runRec.parameters : {};
+  const exclusions = Array.isArray(params.exclude) ? params.exclude.filter((v): v is string => typeof v === 'string') : [];
+  const runMeta = {
+    run: typeof runRec.run === 'string' ? runRec.run : '',
+    product: typeof runRec.product === 'string' ? runRec.product : '',
+    version: typeof runRec.version === 'string' ? runRec.version : '',
+    build: typeof runRec.build === 'string' ? runRec.build : '',
+    exclusions,
+  };
+
+  return {
+    directory,
+    knowledge,
+    policy,
+    runMeta,
+    bedFactsData,
+    triggerTypes,
+    failureMarkers,
+  };
+}
+
+/** Builds an in-memory `compile-brief@1` for ONE case item using an already loaded `RunStructuredContext`. */
+export function buildSingleCaseStructuredBrief(params: {
+  ctx: RunStructuredContext;
+  item: unknown;
+  index: string;
+  round: number;
+  mode?: CompileBriefMode;
+  targetPlanPath?: string;
+  planExists?: boolean;
+  priorRounds?: readonly PriorRoundRecord[];
+  unrecordedAttribution?: PriorAttributionItem | null;
+}): CompileBriefV1 | null {
+  const mode: CompileBriefMode = params.mode ?? (params.round > 1 ? 'rework_device' : 'initial');
+  return buildCompileBrief({
+    item: params.item,
+    index: params.index,
+    knowledge: params.ctx.knowledge,
+    policy: params.ctx.policy,
+    runMeta: params.ctx.runMeta,
+    bedFacts: params.ctx.bedFactsData,
+    triggerTypes: params.ctx.triggerTypes,
+    executionFailureMarkers: params.ctx.failureMarkers,
+    round: params.round,
+    mode,
+    ...(params.targetPlanPath !== undefined ? { targetPlanPath: params.targetPlanPath } : {}),
+    ...(params.planExists !== undefined ? { planExists: params.planExists } : {}),
+    ...(params.priorRounds ? { priorRounds: params.priorRounds } : {}),
+    ...(params.unrecordedAttribution ? { unrecordedAttribution: params.unrecordedAttribution } : {}),
+  });
+}
+
+/**
+ * Generates versioned structured `compile-brief@1` JSON and round-scoped Markdown (`briefs/<index>.round-<n>.json` & `.md`),
+ * leaving earlier round briefs untouched and injecting `bedFacts`, `prerequisites`, `prior_device_history`, and `round_history`.
+ */
+export async function writeStructuredBriefs(options: WriteStructuredBriefsOptions): Promise<StructuredBriefReport> {
+  const cwd = resolveCwdRoots(options.cwd);
+  const runResolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+  const directory = runResolved.canonical;
+  const ctx = await loadRunStructuredContext(directory);
+  if (!ctx) {
+    throw new Error('不存在：运行目录中没有 knowledge/nodes.jsonl，无法生成结构化编写简报');
+  }
+
+  const round = options.round ?? 1;
+  if (!Number.isInteger(round) || round < 1) {
+    throw new Error(`参数无效：--round 必须为正整数（收到 ${round}）`);
+  }
+  const mode: CompileBriefMode = options.mode ?? (round > 1 ? 'rework_device' : 'initial');
+  if (!VALID_MODES.has(mode)) {
+    throw new Error(`参数无效：--mode 必须是 initial|rework_gate|rework_device|fidelity_fix`);
+  }
+
+  const outRel = options.briefOut ? resolveInsideCwd(cwd, options.briefOut, '--brief-out').relative : join(runResolved.relative, 'briefs');
+  const outDir = resolveInsideCwd(cwd, outRel, '--brief-out').canonical;
+  await mkdir(outDir, { recursive: true, mode: 0o700 });
+  const existing = new Set(await readdir(outDir).catch(() => [] as string[]));
+
+  const report: StructuredBriefReport = {
+    directory: outDir,
+    round,
+    mode,
+    json_files: [],
+    md_files: [],
+    kept: 0,
+    without_record: 0,
+  };
+
+  const caseFilter = options.caseFilter?.trim();
+  for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
+    const index = name.slice(0, -'.json'.length);
+    const item = parsed(`items/${name}`, await readFile(join(directory, 'items', name), 'utf8'));
+    const caseIds = buildCaseIdSet('', item);
+    if (caseFilter && index !== caseFilter && !caseIds.has(caseFilter)) {
+      continue;
+    }
+
+    let priorRounds: PriorRoundRecord[] = [];
+    let unrecordedAttribution: PriorAttributionItem | null = null;
+    const hasPriorInput =
+      options.priorPlans !== undefined
+      || options.returns !== undefined
+      || options.answers !== undefined
+      || options.attributions !== undefined;
+
+    if (round >= 2 && hasPriorInput) {
+      const loaded = await loadCasePriorRounds({
+        cwd,
+        round,
+        caseIds,
+        priorPlansArg: options.priorPlans,
+        priorReturnsArg: options.returns,
+        priorAnswersArg: options.answers,
+        priorNotesArg: options.attributions,
+        markers: ctx.failureMarkers,
+      });
+      priorRounds = loaded.rounds;
+      unrecordedAttribution = loaded.unrecordedAttribution;
+    }
+
+    const compiled = buildSingleCaseStructuredBrief({
+      ctx,
+      item,
+      index,
+      round,
+      mode,
+      priorRounds,
+      unrecordedAttribution,
+    });
+    if (!compiled) {
+      report.without_record++;
+      continue;
+    }
+
+    const jsonName = `${index}.round-${round}.json`;
+    const mdName = `${index}.round-${round}.md`;
+    if (existing.has(jsonName) || existing.has(mdName)) {
+      report.kept++;
+      continue;
+    }
+
+    await writeNew(join(outDir, jsonName), Buffer.from(JSON.stringify(compiled, null, 2) + '\n'));
+    await writeNew(join(outDir, mdName), Buffer.from(renderCompileBriefMd(compiled)));
+    report.json_files.push(join(outDir, jsonName));
+    report.md_files.push(join(outDir, mdName));
+  }
+
+  return report;
+}

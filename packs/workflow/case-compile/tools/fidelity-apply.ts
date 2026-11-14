@@ -8,7 +8,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityProblems } from '../functions/fidelity.ts';
-import { isRecord } from '../functions/text.ts';
+import { formatCallError, isRecord } from '../functions/text.ts';
 import { argumentsOf } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { briefFile, planCases, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -51,6 +51,6 @@ export async function main(argv: string[]): Promise<number> {
     }
     process.stdout.write(JSON.stringify({ ready: attention.length === 0, merged, attention, skipped }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(`自动化用例的核对结果未合并：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

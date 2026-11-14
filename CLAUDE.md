@@ -18,7 +18,7 @@ npm run typecheck                 # tsc --noEmit
 npm run verify:contracts          # contracts/generated matches model.json, codes.json, contracts/src
 npm run gen:contracts             # regenerate contracts/generated (never hand-edit it)
 npm run test:unit                 # runs tools/run-unit-tests.ts (contracts, hub, packs, scripts)
-npm run test:acceptance           # tests/acceptance, temporary loopback PostgreSQL, concurrency 1
+npm run test:acceptance           # tests/acceptance, shared loopback PostgreSQL up to concurrency 8 (ACCEPTANCE_SHARD=i/n: concurrency 1)
 npm run test:docs                 # .github/checks/*.test.ts
 npm test                          # contracts check + unit + docs + acceptance
 

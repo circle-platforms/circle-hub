@@ -59,7 +59,7 @@ test('the client generator refuses a volume with both sides of a forbidden combi
   assert.equal(done.status, 1);
   assert.equal(done.written, false);
   assert.equal(done.stdout, '');
-  for (const part of ['自动化用例 Excel 未生成：同一份自动化用例 Excel 中有产品文档声明不能一起使用的命令', A, C, BOOT_ON, RELOAD, '未生成自动化用例 Excel', '请使用者决定是否修改原始用例']) assert.ok(done.stderr.includes(part), part);
+  for (const part of ['参数无效：同一份自动化用例 Excel 中有产品文档声明不能一起使用的命令', A, C, BOOT_ON, RELOAD, '未生成自动化用例 Excel', '请使用者决定是否修改原始用例']) assert.ok(done.stderr.includes(part), part);
   assert.ok(!done.stderr.includes(B), 'a case on neither side is not named');
 });
 

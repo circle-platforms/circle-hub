@@ -7,43 +7,33 @@ description: 把原始用例写成自动化用例，交给 Hub 核对，生成�
 
 原始用例先做用例重组，再做脚本编写、脚本合并、上机验证和失败分析。模型写自动化用例，Hub 核对并重算，不生成内容、不调用模型。
 
-本地工具装在客户端给出的 `<技能目录>`。有安装工具时用它安装；没有时照 Hub 给的安装命令做。命令中的 `%HUB_URL%` 和 `%HUB_TOKEN%` 由客户端执行时展开，令牌从标准输入给工具，不写进文件、结果、日志或 Git。
+接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减）；若单条用例范围不同，可用 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只向子代理传入全局原文与本案分节；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，**统一且只用** `task-brief.ts` 只读命令生成完整任务说明，再把标准输出全文原样传给 `task`（`subagent_type="general-purpose"`）的 `description` 参数，不删改或手写简报：
+
+```sh
+node "<技能目录>/tools/task-brief.ts" --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标路径> [--scope scope.md] [--note <补充>] [--round <轮次> --run <运行目录> --item <条目JSON> --prior-plans <路径...> --prior-returns <目录...> --prior-answers <路径...> --prior-notes <路径...>|--brief-json <结构简报JSON>]
+```
+
+本地工具在 `<技能目录>`（优先用安装工具，否则按 Hub 命令**装进当前主目录的 `skills` 目录**；装在别处时验收主目录的守卫会拒绝执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。`execute` 只跑单行 `node "<技能目录>/tools/<脚本>.ts" --选项 值`（禁 `=`）或 `sleep`，禁 shell/`node -e`/管道重定向。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令末接三行标准输入 `<<'EOF'` / `%HUB_TOKEN%` / `EOF`，令牌不落盘。
 
 每条结论只写一句，带原始用例 ID 加标题、结论、状态和判断。状态只用未确认、已确认、未知；模型的判断是未确认。判断只用正确或错误，未知不替它写正确或错误。错误或未知才写原因和下一步。原因只用缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清。证据和决定者放最后；决定者只用程序、模型、使用者。内部引用和工具参数留在机器可读部分，不转述给使用者。
 
 ## 1. 用例重组
 
-先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理整份原始用例，写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。确实跳过用例重组时，在最终报告说明原因。
+先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理整份原始用例（单条或分批经 `tools/task-brief.ts --role 用例重组` 生成说明后以 `subagent_type="general-purpose"` 派发），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
 
-原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写。主代理把整份原始用例的这类问题攒齐问一次，带 ID、标题、原句和构建号及手册原话。重组时使用者已决定的照做，不再问。尚未决定的先排除，并按 tools/delivery.md 写原因和下一步。
+原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写。主代理把整份原始用例的这类问题攒齐问一次，带 ID、标题、原句和构建号及手册原话。重组时使用者已决定的照做，不再问。尚未决定的先排除，并按 `tools/delivery.md` 写原因和下一步。
 
 ## 2. 脚本编写
 
-先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的文件列有命令、手册对各参数的说明、配置恢复方法、同级命令写法，末尾是要填写的自动化用例。先读它，只查它没有的。
+先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的 `items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数约束、配置恢复方法、同级命令写法与待填自动化用例。
 
-一条原始用例一个子代理，同时派出，各读自己的资料。装了 case-writers 扩展用 write_case_plans；否则同时用 task 派出，不把几条原始用例交给同一个子代理，也不分批等。子代理不问使用者：定不了的写进给主代理的报告。
+一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role 脚本编写` 生成完整任务说明，**在同一条消息里以前台方式并列多个 `task` 调用（`subagent_type="general-purpose"`，严禁用 `background`；后台最多同时 4 个且第 5 个直接报错）**，不合并用例，**每批最多 6 个**，失败或超时的条目单独重派、不整批重来。单条编写、环境改写、前置清理与字段语法守则均由 `task-brief.ts` 同源注入，且已声明自动化用例的受限结构在根目录 `<技能目录>/slots.schema.json`（不在 `tables/`）、完整例子在 `<技能目录>/examples/submit-result.json`、分块格式在 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
-每条原始用例都照原意写。设备配置和观察的方法来自执行器规则；命令必须由对应构建的命令树完整解析，不接受缩写、前缀、字形或大小写折叠，不从散文捞命令。原始用例里的命令可以改参数，不能删命令；作者没有写的对象或动作不能自己加。
+每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，缺资料的原始用例先排除、其余继续。只读自检单个计划或目录跑 `tools/check-plan.ts`。
 
-执行器规则关掉的动作不能作为排除原始用例的理由。先按同一构建的手册和命令树，用该设备已开放的命令方法完成原始用例要求的效果，保留原来的对象、动作和场景；在自动化用例里说明对应关系，不要求开放被关掉的动作。
+### 主会话参数与本地工具命令
 
-执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐，向使用者说明谁在补什么。不要改已确定的测试环境配置、加本地角色或确认标记绕过。只用发布的执行器规则，不从 help 散文推断，也不复制默认值、内部内容、认证候选或脱敏凭据。缺资料的原始用例先排除，其余继续；不能只凭自己写的“跳过”结束。
-
-### 按测试环境改写、前置与清理
-
-- 接口和地址来自测试环境清单。不得选用承载监听或触发通路的接口与地址；更改接口地址后在清理时恢复原地址。只在执行器规则标明为地址的位置换地址，不扫描全文找 IP。原始用例的外部地址保留并说明，自己改出的外部地址不用。
-- 要查询的记录先在步骤前部创建，配置先写入再查询，前置操作都在触发前。原始用例要测前置不存在时，保留这个场景，不用补配置把它改掉。
-- 设备上的配置和观察都用执行器规则为该设备声明的方法。要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限；等设备回到提示符再继续，不用固定等待猜时长。
-- 参数取值：写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值。只有设备执行时才产生的值，要在同一条自动化用例里先取出再用；手册允许指定名字时，由生成器指定，本条先创建，再配置、查询和清理，全部使用同一个名字。不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西。
-- 期望优先选设备实际输出里可核对的文字，如应答状态码、应答条数、表项计数、存在或不存在的关键行。原始用例的期望逐字保留；改用模型判断时，text 必须是设备执行后实际会输出、能在设备输出里逐字找到的一行原文，例如 SDNS Query Statistics Summary，不写“输出含……”或“状态为……”等描述。对应原始用例哪句期望、为什么选择这段原文，写在 rationale 里，不能只凭描述性原文臆造设备输出。功能失效时也会出现的文字，不能判断功能正确。
-- 原始用例说“不存在”“无残留”“不再包含”时，不把这句话当设备输出去找，也不删掉这项检查；检查设备输出里没有对应记录。要求删除成功时，删除后再查询，指向这次查询的设备输出，不另立判定标准、不请评审员复核。不能把“查询一个不存在的名字”当成“访问成功”。顺序步骤在对应查询的 expects 写 op:"not_found"，text 使用原始期望的具体原文，或本条先配置再按已声明逆操作撤销的名字，after 指向对应查询。
-- 清理段在每条自动化用例末尾，同一设备按改动逆序排列，恢复原地址。查询类步骤不需要清理；执行器已声明会清理的可以省略。按产品给出的恢复方法，只恢复主体结束后仍生效的配置，不从命令名字猜用途。
-
-自动化用例 Excel 的行序是前置、被测动作、查询判断、清理，都在本条自动化用例结束前完成。每步写一句做什么，放进 Excel 和报告。清理对象仍是改动的那台设备；设备序号按测试环境清单核对，越界时整份 Excel 都不能上机验证。
-
-### 工具填写规则
-
-以下参数和引用供模型填写，不放进使用者答复。自动化用例的受限结构见 slots.schema.json，完整例子见 examples/submit-result.json。
+以下参数供主会话调用 Hub 与工具填写，不放进使用者答复：
 
 ```text
 start_run: pack=case-compile; predecessor=<test-bed acquire run>
@@ -53,90 +43,47 @@ profile: device_count 只读预检及可选 fold_newlines
 整份原始用例: 不填 parameters.autoid；单条: 原样复制 autoid 字符串
 排除: parameters.exclude=[autoid,...]，脚本编写和脚本合并用同一列表
 跳过用例重组: parameters.pipeline=legacy
-重组结果: inputs.recomposition_run=<运行记录引用>；inputs.recomposition_result=<重组编号>
+沿用已核对正确的重组（同脑图同构建）:
+  inputs.recomposition_run={"reference":"<run_reference>"}（取下载重组目录 references.json 或导出顶层 run_reference）
+  inputs.recomposition_result={"run":"<重组运行编号>"}（Hub 解析成已接收的结果）
 本地导出: tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>
 上传中性文件名，说明写两边摘要和“客户端规整”，不改内容或编号
 下载: tools/download-run.ts --hub %HUB_URL% --run <脚本编写编号> --out <新目录>
 本地读取: items/<序号>.json、sources.json、sources/<摘要>、knowledge/、briefs/<序号>.md
 ```
 
-普通参数是单行文字，无首尾空白，不带未展开占位或等号前缀。按原文恢复配置时使用执行器规定的占位除外。定长名字或域名由工具展开并写回文件，不手打长串。等待秒数为执行器规则上限内的正整数。主机 shell 不能冒充设备命令；只使用执行器规则允许的具体方法、程序、静态参数和效果，不用动作名或正文里的词判断安全。没有参数的方法同样要有执行器规则允许的效果；收紧配置、方法名或确认标记不能代替这项规则。
-
-手册允许指定名字时，在本条的创建、使用、查询和清理命令里写相同的 `{{name:N|前缀|后缀}}`，前后缀取手册允许的字符并区分本条；`tools/fidelity-brief.ts` 和 `tools/submit-plans.ts` 会展开成同一个具体名字并写回自动化用例文件，Hub 核对展开后的命令。设备自行生成且不能指定的值，只能按执行器规则已有的取值和引用方式在本条传递；`CAPTURE` 保存原文，`EXPECT_FROM` 用于检查，整段原文不直接插入普通参数，`RESTORE_FROM` 仍只用于执行器已声明的恢复方法。没有对应传递方式时写明缺什么，不能猜文件名或拿旧设备输出补上。
-
-设备生成的值，在本条先保存设备输出，按表格列和选行条件取一格；后续命令用 {} 引用它。
-数据行按声明的字面分隔符和列数识别；取不到、零行或多行就停止并带设备原话说明，不猜值、不用上一次的输出。
-
+确认各目标计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检正确（`ok: true`）后，再进入脚本合并。**返工与重开运行规则（必守）**：一旦需要修改或返工任何已交计划（尤其是已经开始脚本合并运行之后，或上机失败需重写时），禁止往已被核对锁定的旧脚本编写运行重交，也禁止直接往脚本合并运行提交改过的计划；必须先用 `start_run` 新开一次脚本编写运行（`predecessor` 填原 `test-bed` 预订号，沿用 `recomposition_run`/`recomposition_result` 与 `exclude`，完成后再重新生成 Excel、上传并新开脚本合并运行）。可照抄单行 `start_run` 模板（不排除用例时删去 `parameters.exclude`）：
 ```text
-每条文件: {item,handling,slots}；plan.data.bucket=<测试环境>
-地址替换: replacements=[{case,bed},...]，一一对应，只用于类型确认的地址位置
-顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description},...]；expects 至少一项
-设备 method: contract.output_methods 给该设备声明的方法
-args: 文字；keywords: 文字或安全非负整数
-期望: {text,quote:{reference,text},after}；after 从 1 开始，指产生设备输出的命令，不指等待
-检查不存在: {text,quote,after,op:"not_found"}；保留本条原始期望引文，文字只用原句片段或本条配置后已安排撤销的名字，不写描述或另发起复核
-禁止 steps 中 literal_assertion
-未写 basis: text 是地址替换后引文的精确片段，不改字形或吞空白
-改用可观察文字: {text,quote,after,basis:"model_judgment",rationale}；text 写设备输出里能逐字找到的一行原文；rationale 说明对应哪句原始期望及选择理由；状态未确认，决定者模型
-quote: 本条原始用例的期望原句及来源，不引用标题、步骤或其他用例
-长度占位: {{domain:N}}、{{domain:N|前缀|后缀}}、{{name:N}}
-长命令读窗: keywords.timeout <= max_wait_seconds
-清理: steps 末尾连续 cleanup:true；主体省略
-需确认的命令: keywords.prompt 写产品给定提示符，下一步同对象同方法写给定应答
-command_identities 通常省略；提供时仅核对完整解析结果，不替代命令树解析
-原始用例有 data.command_identities 时: 自动化用例解析结果须与其一致，仅做显式类型化地址替换
-case_index 仅在已有原始用例身份说明时使用
+start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
 ```
-
-需要一次设备输出核对多项期望、跨步保存文字或按原文恢复时，按 README 和 tables/blocks-format.json 填写，不把两种结构混用。保存的文字只在本条自动化用例内用，先取后用且不覆盖。比较同值须双向字面包含；比较差异须用执行器规则给出的全值字面方法，不用正则代替。
-
-```text
-组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
-取一格: 先查下载的 contract.json 中 runtime.block_model.cell_inputs 与 cell_methods（以及对应 object/method 的可用条目）；未声明就按缺资料处理并写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指前序原输出保存名，table 写 format/separator/columns/header，column 是列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}
-每条判断: output、原始用例 expectation 引用和 quote
-block_context.preconditions/causal_links/responders 写全；没有就写空表；主机观察写明谁应答
-obligations 覆盖全部原始期望: 实际判断 id，或 unmet+missing/next_action
-原始用例的否定结果: 常量用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获；执行器须声明寄存器的字面否定方法，不抄旧设备输出；quote 保留原始期望，这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run
-其它描述性期望无作者闭集字面说明: criteria 写类型、算子、值、原引文、scope_root 和理由
-criteria 由 review 阶段的非作者账号核对，使用真实 criteria_review/criteria_review_run
-literal 仍选设备可观察文字；模型对含义的判断保持未确认
-RESTORE_FROM: 改动前取原文；末尾同设备逆序恢复；for 指配置块
-仅用已声明 guarded restore；root/target 由构建、产品规则和测试环境清单得出
-缺执行器恢复能力: 未知，找维护者补实现和发布说明；不拿普通命令加 {} 冒充产品声明的恢复方法（上面允许的 input_register 回填除外）
-OBSERVE_DIST/MEMBER/EXIT 暂未提供，不自造正则或成功标记
-重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}
-receipt/case_id 取 fields.recomposition；每个期望对应 expects 的序号或 blocks 的判断 id
-断言 quote 逐字等于对应原始期望；某条还没有对应判断就记未知，不省略
-本次已有可用的新期望时: quote.reference 指 Hub 已确定的声明，quote.text 逐字复制
-text 仍是其精确片段；只用 Hub 保存的字节；来源缺失先补读，不记正确
-command_scope 与逐条 commands 同时存在时取交集，不能用身份说明代替解析
-```
+第 2 轮及以上返工派发 `脚本编写` 或 `失败分析` 前，统一经 `task-brief.ts --round <n>` 传入同案 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（按第 `1..n-1` 轮顺序用英文逗号分隔，缺失轮次用 `-` 占位；只需传单轮或上一轮时可直接传单个路径）；`task-brief.ts` 会在传入运行目录或 `--run`/`--brief briefs/<序号>.md` 时在内存中自动拼入同案 `compile-brief@1`（含执行器失败标志、测试环境与前置）与精简机械规则拒收 `{code, path, message, fix}`、区分“末尾 12,000 字符截断 / 输出无法唯一定位 / 未找到命令”的报错步设备逐字摘录、未确认的失败分析结论（`confidence: "hypothesis"`；`notes.json` 缺 `round` 时标为轮次未记录且不冒充第 1 轮），并对总篇幅按固定顺序截断披露；禁止手写摘要、传整批 `submission.json` 或跨用例拼接；`保真核对` 继续严格盲审，只传 `.brief.json`。
 
 ## 3. 脚本合并
 
-先把全部自动化用例写好，再按下面顺序走完场景保真审计并一次交给 Hub（缺审计、摘要过期或格式不对时 `submit-plans.ts` 会直接在本地退出，不占用仅有的修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后从第 1 步重算核对资料并重新审计；不要把 Hub 已接收内容当成全部正确。只有缺少自动化用例 Excel 时可以继续生成，其他检查都要正确。检查写成步骤符合执行器规则、期望能在原始用例里找到原句、命令在手册和命令树里、地址在测试环境里、没改掉原始用例的场景、自动化用例 Excel 和自动化用例一致、自动化用例本身写对了。
+先把全部自动化用例写好，再按下面顺序走完场景保真审计并一次提交给 Hub（缺审、摘要过期或格式错会在本地退出，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后从第 1 步重算核对资料并重新审计；不要把 Hub 已接收内容当成全部正确。只有缺少自动化用例 Excel 时可以继续生成，其他检查都要正确。检查写成步骤符合执行器规则、期望能在原始用例里找到原句、命令在手册和命令树里、地址在测试环境里、没改掉原始用例的场景、自动化用例 Excel 和自动化用例一致、自动化用例本身写对了。
 
 ```sh
+node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
 node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
-# 用新开的子代理逐份读取 to_audit 中的 .brief.json，严格只按文件内 rules 独立判断并将结果写到同目录同名的 .verdict.json
+# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role 保真核对，将全文传给前台并行 task（subagent_type="general-purpose"，不用 background，每批最多 6 个，失败单独重派）写同名 .verdict.json
 node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
-# 确认输出 ready=true 后再提交
+# 确认工具输出为正确（ready=true）后再提交
 node <技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <脚本编写编号> --model <模型> --plans <自动化用例目录>
 node <技能目录>/tools/fetch-run.ts --hub %HUB_URL% --run <脚本编写编号> --out <新目录>
 node <技能目录>/tools/generate-workbook.ts --run <新目录>/run.json --result <新目录>/result.json --submission <新目录>/submission.json --contract <新目录>/contract.json --profile <新目录>/profile.json --inventory <新目录>/inventory.json --out <新目录>/case.xlsx
 ```
 
-submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。改了自动化用例就重新生成、上传并核对。
+submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。改了自动化用例就必须回到第 2 节用 `start_run` 新开一次脚本编写运行（`predecessor` 填 `test-bed` 预订号）提交并核对，再重新生成、上传并新开脚本合并运行，禁止直接往当前脚本合并运行或已锁定的旧脚本编写运行提交改动。
 
 ```text
-首次只有 workbook_verified 缺文件可继续；其他必需项须 satisfied
+首次只有 workbook_verified 缺文件可继续；其他必需项的结论须为正确（`satisfied`）
 upload_file: 普通上传 case.xlsx 原文件（不标捕获原件）；核对 SHA 与生成工具一致
 第二次 start_run（同 subject/contract/inventory/profile/product/build/version 及 exclude）:
   predecessor: "<脚本编写编号>"（脚本编写的运行编号）
   parameters.plan_run: "<脚本编写编号>"（与 predecessor 同一脚本编写运行号，必填）
   inputs.plan_result: {"run": "<脚本编写编号>"}（同一脚本编写运行号；多用例必填，单用例也可填）
-  inputs.workbook: {"reference": "src:<upload_file 返回的 sha256>"}
-用 tools/submit-plans.ts --hub %HUB_URL% --run <第二次 start_run 编号> --model <模型> --plans <自动化用例目录> 原样重交（不用 reuse 简写）
+  inputs.workbook: {"reference": "src:<upload_file 返回的 sha256>"}（`src:` 后填上传返回的 64 位摘要）
+用 submit-plans.ts（参数同上，--run 填第二次 start_run 编号）加三行 %HUB_TOKEN% here-doc 重交。`reuse` 只认本次 `start_run` 返回的 `rec:` 前驱引用；自动化用例 Excel 的核对结论不提供该项，禁拿 fetch-run/submission.json 填 `reuse`。
 Hub 上机前核对 Excel、构建、设备数、测试环境使用权及前后对应关系
 ```
 
@@ -144,12 +91,14 @@ Hub 上机前核对 Excel、构建、设备数、测试环境使用权及前后�
 
 脚本合并核对正确且仍持有整个测试环境时，Hub 开始上机验证。只说明已按合成执行器规则或发布的执行器规则核对，不证明在真实设备上跑得通。状态未知就写明缺什么，并继续补资料或重新核对，不拿未知结束。
 
-把 tools/delivery.md 的下载命令加等待参数作为后台命令启动，客户端在设备输出写好后通知你。等待时不 sleep，也不重交自动化用例读进展。Hub 尚未开始时，原样重交全部自动化用例读取说明；开始后要改内容，等这次完成再重新做脚本合并。所有上机验证结束后，用 test-bed release 释放测试环境。
+```sh
+node <技能目录>/tools/download-returns.ts --hub %HUB_URL% --run <合并或上机编号> --out <新目录> --wait 600
+```
+
+tools/delivery.md 下载命令加等待参数后台启动，等通知，不 sleep 轮询。完成后只停在报告，不释放 test-bed 预订；要继续修正重跑，可复用同一个预订。
 
 ## 5. 失败分析
 
-完整读设备输出，再给错误的原始用例写原因和下一步。先看设备构建与手册和命令树是不是同一版，再查配置是否真正生效、手册要求的前置是否都写了；多个原始用例同一症状时找共同前置，也解释为什么其他原始用例正确。
+完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条设备会话文本与 `log.txt`（框架日志只记下发命令和超时，设备 CLI 报错同时记入会话文本与 `index.json`；必要时用 `tools/task-brief.ts --role 失败分析 --case <autoid> --brief returns/index.json --out <失败分析输出> --round <n> --item items/<序号>.json --prior-plans ... --prior-returns ... [--prior-answers ...]` 派发 `general-purpose` 子代理只读失败分析，并在 `notes.json` 按 `tools/delivery.md` 记录 `"round"` 字段，不改计划），再给错误的原始用例写原因和下一步。先看设备构建与手册和命令树是不是同一版，再查配置是否真正生效、手册要求的前置是否都写了；多个原始用例同一症状时找共同前置，也解释为什么其他原始用例正确。确认改动并开始返工时，先按第 2 节 `start_run` 模板新开一次脚本编写运行再走第 2～3 节全流程，禁止重交到上一轮旧运行。
 
-排除这些后才判断设备的问题。原始用例的期望已忠实实现、手册前置全有、观察方法和对象正确，才能提出设备的问题；说不清就写状态未知、原因还没查清，在被测命令前加只读观察，下一次上机验证区分。设备输出只帮你理解错误，不抄进期望；其中点名的命令或配置，先在相同构建的手册和命令树中读到再改。时序、等待的推测是未确认的模型判断，预测不符就换解释。
-
-只改错误的自动化用例，已确认正确的逐字不变。按 tools/delivery.md 完成重新编写、最后一次上机验证和交付目录。只在答案会改变做法、资料里又查不到时问使用者；设备的问题还是原始用例的问题，需要使用者决定。能查清的自己查并在报告说明。
+排除这些后才判断设备的问题。原始用例的期望已忠实实现、手册前置全有、观察方法和对象正确，才能提出设备的问题；说不清就写状态未知、原因还没查清，在被测命令前加只读观察，下一次上机验证区分。设备输出只帮助理解错误，不抄进期望；其中点名的命令或配置，先在相同构建的手册和命令树中读到再改。时序、等待的推测是未确认的模型判断，预测不符就换解释。
