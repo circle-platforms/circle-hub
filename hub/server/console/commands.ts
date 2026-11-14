@@ -101,6 +101,12 @@ export const commands = {
     text: '核实运行环境已恢复原状（例如设备已重启、作业留下的配置已清除）后再执行；执行后该运行环境恢复接受派发，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
   }),
   /**
+   * Boss 15:02 — consequence on the reclaim-assignment confirmation (account or team).
+   * Bookings stay with the holder; in-progress runs finish; new use is blocked once Codex wires the guards.
+   */
+  executorUnassignConsequence:
+    '撤回后立即挡住新的预订、续期、上机验证、问设备和观察；正在进行的上机验证会跑完。预订仍留在持有人名下，持有人只能释放。',
+  /**
    * Boss 04:30 — force-release a booking that remains after assignment revoke.
    * When `heldKeys` is known, the dialog offers those keys as a single choice (no blank「租约键」placeholder).
    */
@@ -116,7 +122,7 @@ export const commands = {
     }
     return {
       id: dialogId('lease-release', executor.id), title: `强制释放预订：${executor.target}`,
-      text: `${preface}当前没有读到该运行环境上仍持有的键；请在主机上用 circle-hub lease list 核对后，把命令里的「租约键」换成实际键再执行。`,
+      text: `${preface}当前没有读到该测试环境上仍持有的键；请在主机上用 circle-hub lease list 核对后，把命令里的「租约键」换成实际键再执行。`,
       command: command('lease', 'release', '租约键', REASON),
     };
   },

@@ -7,7 +7,8 @@ import {commands} from './commands.ts';
 import {memberSpaceMetadata} from './member-space-metadata.ts';
 import {tokensForMembers,assignmentsForMembers} from './member-reads.ts';
 import {connectedClients,clientLabel,type ConnectedClient} from './circles.ts';
-import {CLIENT_COLUMNS,clientRow,clientInspector,noClients,environmentAssignmentPreviewNotice} from './connections.ts';
+import {CLIENT_COLUMNS,clientRow,clientInspector,noClients,environmentAssignmentPreviewNotice,heldOccupancyForEnvironment,unassignOccupancyFields} from './connections.ts';
+import type { ExecutorView } from '../api.ts';
 import {definitions,html,href,link,liveModule,page,pageLayout,table,type Html} from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { count, emptyBlock, postForm, segments, selectControl } from './components.ts';
@@ -261,18 +262,18 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     ctx.deps.resources.list(ctx.principal),
     ctx.deps.records.principals.list(),
   ]);
-  let executors: Array<{ id: string; target: string }> = [];
+  let executors: ExecutorView[] = [];
   if (ctx.deps.dispatch) {
     try { executors = await ctx.deps.dispatch.executors(ctx.principal); } catch { executors = []; }
   }
-  const executorTarget = new Map(executors.map((row) => [row.id, row.target]));
+  const executorById = new Map(executors.map((row) => [row.id, row]));
   let environmentAssignmentsEnforced = false;
   try {
     environmentAssignmentsEnforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
   } catch { /* staged notice stays when the capability port is unavailable */ }
   const workflows = packs.filter((pack) => pack.kind === 'workflow' && !pack.space && !pack.withdrawn);
   const resourceName = (id: string) => resources.find((row) => row.id === id)?.name ?? '名称暂不可读';
-  const environmentName = (id: string) => executorTarget.get(id) ?? '名称暂不可读';
+  const environmentName = (id: string) => executorById.get(id)?.target ?? '名称暂不可读';
   const activeUsers = users.filter((user) => !user.disabled && !user.deleted_at);
   const memberIds = new Set(members.map((row) => row.user.id));
   const memberRows = members.map((row) => {
@@ -296,11 +297,31 @@ export async function teamDetailPage(ctx: PageContext, teamId: string): Promise<
     const form = actionForm('resource-unassign', ctx.csrf ?? '', html`<input type="hidden" name="resource" value="${id}"><input type="hidden" name="audience" value="${RESOURCE_AUDIENCE.team}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, '撤回', { inline: true });
     return [resourceName(id), when(row.body.decided_at), form];
   });
-  const environmentRows = assignedEnvironments.map((row) => {
+  // Boss 15:02 — reclaim confirmation lists occupied 测试环境 + since, with force-release checkboxes.
+  const environmentConfirmations: Html[] = [];
+  const environmentRows: unknown[][] = [];
+  for (const row of assignedEnvironments) {
     const id = row.body.object;
-    const form = actionForm('executor-unassign', ctx.csrf ?? '', html`<input type="hidden" name="executor" value="${id}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">`, '撤回', { inline: true });
-    return [environmentName(id), when(row.body.decided_at), form];
-  });
+    const target = environmentName(id);
+    // Fragment id must not surface exe_… (admin pages hide internal ids; value= stays in the POST form only).
+    const dialogId = `unassign-environment-${environmentConfirmations.length}`;
+    const view = executorById.get(id) ?? { id, target, endpoint: '', enabled: true, resources: [] };
+    const occupancy = await heldOccupancyForEnvironment(ctx, view, memberIds);
+    environmentConfirmations.push(dialog(
+      dialogId,
+      `撤回测试环境分配：${target}`,
+      html`<p>${commands.executorUnassignConsequence}</p>`,
+      postForm({
+        action: '/console/admin/do/executor-unassign',
+        csrf: ctx.csrf ?? '',
+        // Occupancy checkboxes must sit inside the POST form so force_release values submit.
+        fields: html`<input type="hidden" name="executor" value="${id}"><input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${unassignOccupancyFields(occupancy)}`,
+        submit: '确认撤回',
+        danger: true,
+      }),
+    ));
+    environmentRows.push([target, when(row.body.decided_at), actionLink(`#${dialogId}`, '撤回…', 'danger')]);
+  }
   const addCandidates = activeUsers.filter((user) => !memberIds.has(user.id));
   const addMember = card({ title: '加入成员' }, actionForm('team-add', ctx.csrf ?? '', html`<input type="hidden" name="team" value="${team.id}"><input type="hidden" name="team_label" value="${team.name}">${field('成员', selectControl(
     'user',
@@ -331,7 +352,7 @@ ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], re
 ${assignResource}
 ${environmentAssignmentPreviewNotice(environmentAssignmentsEnforced)}
 ${card({ title: '测试环境分配', hint: environmentAssignmentsEnforced ? undefined : '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' }, table(['目标', '分配时间', ''], environmentRows, '尚未分配测试环境'))}
-${deleteDialog}
+${environmentConfirmations}${deleteDialog}
 </div>`, { back: link('/console/team', '返回团队') })),
   };
 }

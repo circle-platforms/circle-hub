@@ -252,4 +252,12 @@ test('teamDetailPage lists executor assignments under 测试环境 with target n
   const environmentSection = body.slice(body.indexOf('测试环境分配'));
   assert.match(environmentSection, /合成实验室/);
   assert.doesNotMatch(environmentSection.replace(/value="exe_[^"]+"/g, 'value="hidden"'), /exe_/);
+  // Boss 15:02 — reclaim goes through a confirmation dialog with occupancy + force-release, not an inline POST.
+  assert.match(environmentSection, /href="#unassign-environment-0"/);
+  assert.match(environmentSection, /撤回…/);
+  assert.match(environmentSection, /id="unassign-environment-0"/);
+  assert.match(environmentSection, /确认撤回/);
+  assert.match(environmentSection, /预订仍留在持有人名下/);
+  assert.match(environmentSection, /data-unassign-occupancy/);
+  assert.doesNotMatch(environmentSection, /运行环境/);
 });
