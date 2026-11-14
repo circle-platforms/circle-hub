@@ -109,7 +109,7 @@ test('confirmed non-environment booking has identical output before and after in
   let completed=false;
   const catalog=new MemberEnvironments({
     testEnvironments:{
-      resolve:async()=>[],
+      resolve:async()=>({environments:[],unregistered:[]}),
       canUse:async()=>{throw new Error('ordinary prefixes do not acquire environment grants');},
     },
   } as unknown as ConstructorParameters<typeof MemberEnvironments>[0],{} as ConstructorParameters<typeof MemberEnvironments>[1],{} as ConstructorParameters<typeof MemberEnvironments>[2]);
