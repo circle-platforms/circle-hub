@@ -80,7 +80,7 @@ test('dispatch recomputation keeps an unruled static judgment unmet for a fact-o
   assert.equal(requirementOf(pending).layers.find(layer=>layer.layer==='dynamic')!.terminal,'no_verdict');
   assert.deepEqual([requirementOf(pending).status,requirementOf(pending).unsatisfied_reason],['unsatisfied','outcome_mismatch']);
   const artifact=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:job.job,sha256:job.sha256,rows:[{item,dynamic_terminal:'pass',accepted_as_fact:false,qualifier:{nature:'judgment',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},missing_facts:[]}]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
-  job.status={...job.status,phase:'complete',outcome:'effective',frozen:false,events:2,result:`src:${artifact.body.sha256}`};
+  job.status={...job.status,events:2,job_facts:{...job.status.job_facts,phase:'complete',frozen:false,result:`src:${artifact.body.sha256}`},dispatch_attempt:{scope:{operation:'dispatch',job:job.job,round:1},outcome:'effective'}};
   const observed=structuredClone(result);
   await applyDispatchResults(ctx,record,observed,[job]);
   assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='static')!.terminal,'judgment');
@@ -137,12 +137,14 @@ test('the runner exports the jobs of its run, with verdicts only from the dispat
   const forged = await ingest({ job: id, sha256: workbook, rows, note: 'not the dispatch service' }, 'synthetic@1');
   const otherWorkbook = await ingest({ job: id, sha256: 'a'.repeat(64), rows }, 'dispatch@1');
   let result = `src:${own.body.sha256}`;
-  const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, events: 3, job_facts:{scope:{job:id},phase:'complete',frozen:false,result,device_return:deviceReturn},dispatch_attempt:{scope:{operation:'dispatch',job:id,round:1},outcome:'effective'} }, ended: 'done', boundary_refused: false });
+  let events=2;
+  const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, events, job_facts:{scope:{job:id},phase:'complete',frozen:false,result,device_return:deviceReturn},dispatch_attempt:{scope:{operation:'dispatch',job:id,round:1},outcome:'effective'} }, ended: 'done', boundary_refused: false });
   await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read_back',run:run.run,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:new Date().toISOString(),ended_at:new Date().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{job:id,phase:'complete',done:true,outcome:'effective'}},index:[{key:'dispatch.job',value:id}]});
+  await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:run.run,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:new Date().toISOString(),ended_at:new Date().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{job:id,phase:'result',reference:result,device_return:deviceReturn}},index:[{key:'dispatch.job',value:id}]});
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch: { jobs: async () => [job()], reconcile: async () => job().status } });
   const exported = await service.exportJobs!(h.alice, run.run);
   assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows: [{ item, dynamic_terminal: 'fail', evidence: { log } }] }] });
   assert.ok(!('record' in exported!.jobs[0]), 'the administrative proof stays out');
-  for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
+  for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; events++; await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:run.run,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:new Date().toISOString(),ended_at:new Date().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{job:id,phase:'result',reference:result,device_return:deviceReturn}},index:[{key:'dispatch.job',value:id}]}); assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
   assert.equal(await service.exportJobs!({ id: 'u_01aaaaaaaaaaaaaaaaaaaaaaaa', name: '合成路人', role: 'user' }, run.run), null);
 });

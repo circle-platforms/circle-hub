@@ -290,7 +290,6 @@ export interface ExportedJobV2 extends ScopedDispatchFacts {
   job:string; verification_run:string; plan_run:string; items:string[]; sha256:string; ended:'done'|'unknown'|null;
   rows:ExportedJobV1['rows'];
 }
-export type RunJobsVersion = 'run-jobs@1' | 'run-jobs@2';
 
 export interface RunsService {
   abandonRun?(user:Principal,run:string,request:string,reason:string):Promise<{record:string;result:ValidationResult;decision:string;created:boolean;current:boolean}>;
