@@ -113,6 +113,40 @@ test('fixture exact grouping retains whole structured fields instead of inferrin
   assert.deepEqual(hits('function render(rows:{kind:string;missing:string;next_action:string}[]){const groups=new Map<string,unknown>();for(const row of rows){const key=JSON.stringify([row.kind,row.missing,row.next_action]);const group=groups.get(key)??{kind:row.kind,missing:row.missing,next_action:row.next_action};groups.set(key,group);}return groups;}'), []);
   bad('function render(error:{message:string}){const table=new Map([["anything","category"]]);return table.get(error.message);}', 'text-key');
 });
+test('review 1 local function-value alias and alias chain still classify prose', () => {
+  const classify='function classify(value:string){return value.includes("synthetic-token")?"occupied":"not_found";}';
+  bad(classify+'function render(error:{message:string}){const alias=classify;return {category:alias(error.message)};}', 'includes');
+  bad(classify+'function render(error:{message:string}){const one=classify;const two=one;return {category:two(error.message)};}', 'includes');
+  assert.deepEqual(hits(classify+'function render(code:string){const alias=classify;return alias(code);}'), []);
+});
+for(const [name,expression,setup] of [
+  ['capture','replacement','const replacement="category-a";'],
+  ['property','config.replacement','const config={replacement:"category-a"};'],
+  ['helper','replacement()','function replacement(){return "category-a";}'],
+  ['unknown','replacement()','declare function replacement():string;'],
+  ['mutable','replacement','let replacement="&amp;";replacement="category-a";'],
+] as const) test(`review 2 ${name} callback output is not silently safe`,()=>{
+  bad('function render(error:{fix:string}){'+setup+'return {next_action:error.fix.replace(/[。]/g,()=>'+expression+')};}', 'replace');
+});
+test('review 2 captured encoding constants, properties and helper results stay allowed',()=>{
+  for(const [value,setup] of [
+    ['replacement','const replacement="&amp;";'],
+    ['config.replacement','const config={replacement:"&amp;"};'],
+    ['replacement()','function replacement(){return "&amp;";}'],
+  ]) assert.deepEqual(hits('function render(error:{message:string}){'+setup+'return error.message.replace(/[&]/g,()=>'+value+');}'), []);
+});
+const authored='declare namespace z{type infer<T>=T;}declare const InputSchema:{text:string};';
+for(const [name,setup,value] of [
+  ['alias','const value=input.text;','value'],
+  ['destructure','const {text:value}=input;','value'],
+  ['helper','function identity(value:string){return value;}const value=identity(input.text);','value'],
+] as const) test(`review 3 formal URI ${name} preserves authored grammar origin`,()=>{
+  assert.deepEqual(hits(authored+'function parse(input:z.infer<typeof InputSchema>){'+setup+'return '+value+'.trim().startsWith("ref:");}'), []);
+});
+test('review 3 same-shaped message aliases and overwritten formal values are still prose',()=>{
+  bad('function render(error:{message:string}){const value=error.message;return value.trim().startsWith("ref:");}', 'startsWith');
+  bad(authored+'function render(input:z.infer<typeof InputSchema>,error:{message:string}){let value=input.text;value=error.message;return value.startsWith("ref:");}', 'startsWith');
+});
 test('repository renderers contain zero prose routing and have no exceptions', () => {
   assert.deepEqual(proseRoutingProblems(root), []);
 });

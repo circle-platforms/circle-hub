@@ -88,13 +88,15 @@ export function proseRoutingHits(modules: readonly SourceModule[]): ProseRouting
     }
     return found;
   }
-  function functionOf(expression: ts.Expression): Fn | undefined {
+  function functionOf(expression: ts.Expression, seen = new Set<ts.Node>()): Fn | undefined {
     const value = unwrap(expression);
+    if (seen.has(value)) return undefined;
+    const next = new Set(seen); next.add(value);
     if (isFn(value)) return value;
     const found = symbol(ts.isPropertyAccessExpression(value) ? value.name : value);
     for (const declaration of found?.declarations ?? []) {
       if (isFn(declaration)) return declaration;
-      if (ts.isVariableDeclaration(declaration) && declaration.initializer && isFn(unwrap(declaration.initializer))) return unwrap(declaration.initializer) as Fn;
+      if (ts.isVariableDeclaration(declaration) && declaration.initializer) return functionOf(declaration.initializer, next);
     }
     return undefined;
   }
@@ -126,13 +128,28 @@ export function proseRoutingHits(modules: readonly SourceModule[]): ProseRouting
     }
     return contains(checker.getTypeAtLocation(base));
   }
-  function formalInput(base: ts.Expression): boolean {
-    const value=unwrap(base);if(!ts.isIdentifier(value))return false;
-    const declaration=symbol(value)?.valueDeclaration;
-    if(!declaration||!ts.isParameter(declaration)||!declaration.type)return false;
-    // z.infer<typeof AnInputSchema> is an authored parameter grammar, not a message/fix text slot.
-    const type=declaration.type;
-    return ts.isTypeReferenceNode(type)&&type.typeArguments?.some(arg=>ts.isTypeQueryNode(arg))===true;
+  type GrammarBindings=ReadonlyMap<ts.Symbol,ts.Expression>;
+  function grammarBindings(fn:Fn,args:readonly ts.Expression[],outer:GrammarBindings):Map<ts.Symbol,ts.Expression>{
+    const result=new Map(outer);
+    fn.parameters.forEach((parameter,index)=>{const key=ts.isIdentifier(parameter.name)?symbol(parameter.name):undefined;if(key&&args[index])result.set(key,args[index]);});
+    return result;
+  }
+  function authoredParameter(declaration:ts.Node|undefined):boolean{
+    return !!declaration&&ts.isParameter(declaration)&&!!declaration.type&&ts.isTypeReferenceNode(declaration.type)&&declaration.type.typeArguments?.some(ts.isTypeQueryNode)===true;
+  }
+  function formalInput(base: ts.Expression, bindings:GrammarBindings=new Map(),seen=new Set<ts.Node>()): boolean {
+    const value=unwrap(base);if(seen.has(value))return false;const next=new Set(seen);next.add(value);
+    if(ts.isIdentifier(value)){
+      const key=symbol(value),bound=key&&bindings.get(key),declaration=key?.valueDeclaration;
+      if(bound)return [bound,...assignedValues(value)].every(input=>formalInput(input,bindings,next));
+      const init=initializer(value);if(init)return [init,...assignedValues(value)].every(input=>formalInput(input,bindings,next));
+      return authoredParameter(declaration)&&assignedValues(value).every(input=>formalInput(input,bindings,next));
+    }
+    if(ts.isCallExpression(value)){
+      const fn=functionOf(value.expression),returned=fn?returnedExpressions.get(fn)??[]:[];
+      return !!fn&&returned.length>0&&returned.every(input=>formalInput(input,grammarBindings(fn,value.arguments,bindings),next));
+    }
+    return ts.isConditionalExpression(value)&&formalInput(value.whenTrue,bindings,next)&&formalInput(value.whenFalse,bindings,next);
   }
   function property(base: ts.Expression, key: string, seen: Set<ts.Node>): number {
     const value = unwrap(base);
@@ -270,19 +287,82 @@ export function proseRoutingHits(modules: readonly SourceModule[]): ProseRouting
     return ts.isObjectLiteralExpression(base) && base.properties.length > 0 && base.properties.every(entry => ts.isPropertyAssignment(entry) &&
       nameOf(entry.name)?.length === 1 && punctuation(nameOf(entry.name)!) && typeof literal(entry.initializer) === 'string' && encodingText(literal(entry.initializer)!));
   }
+  function assignedValues(name: ts.Node): ts.Expression[] {
+    const key=symbol(name);if(!key)return [];
+    return nodes.flatMap(node=>ts.isBinaryExpression(node)&&node.operatorToken.kind===ts.SyntaxKind.EqualsToken&&symbol(ts.isPropertyAccessExpression(node.left)?node.left.name:node.left)===key?[node.right]:[]);
+  }
   function safeReplacement(expression: ts.Expression | undefined): boolean {
     if (!expression) return false;
-    const text = literal(expression); if (text !== undefined) return encodingText(text);
-    const fn = functionOf(expression); if (!fn) return false;
-    let safe = true;
-    function walk(node: ts.Node): void {
-      if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) && !encodingText(node.text)) {
-        const parent=node.parent;
-        if (!(node.text === '0' && ts.isCallExpression(parent) && operation(parent)?.method === 'padStart')) safe = false;
-      }
-      ts.forEachChild(node, walk);
+    const callback=functionOf(expression);
+    const characters=new Set<ts.Symbol>();
+    if(callback?.parameters[0]&&ts.isIdentifier(callback.parameters[0].name)){const key=symbol(callback.parameters[0].name);if(key)characters.add(key);}
+    type Bindings=ReadonlyMap<ts.Symbol,ts.Expression>;
+    function parameterBindings(fn:Fn,args:readonly ts.Expression[],outer:Bindings):Map<ts.Symbol,ts.Expression>{
+      const result=new Map(outer);
+      fn.parameters.forEach((parameter,index)=>{const key=ts.isIdentifier(parameter.name)?symbol(parameter.name):undefined;if(key&&args[index])result.set(key,args[index]);});
+      return result;
     }
-    walk(fn); return safe;
+    function certainReturn(node:ts.Node):boolean{
+      if(ts.isReturnStatement(node))return node.expression!==undefined;
+      if(ts.isBlock(node))return !!node.statements.length&&certainReturn(node.statements[node.statements.length-1]);
+      return ts.isIfStatement(node)&&!!node.elseStatement&&certainReturn(node.thenStatement)&&certainReturn(node.elseStatement);
+    }
+    function outputs(fn:Fn):readonly ts.Expression[]{
+      if(!fn.body)return [];
+      if(!ts.isBlock(fn.body))return [fn.body];
+      return certainReturn(fn.body)?returnedExpressions.get(fn)??[]:[];
+    }
+    function properties(base:ts.Expression,key:string,bindings:Bindings,seen:Set<ts.Node>):ts.Expression[]|undefined{
+      const value=unwrap(base);if(seen.has(value))return undefined;const next=new Set(seen);next.add(value);
+      if(ts.isIdentifier(value)){
+        const identity=symbol(value),bound=identity&&bindings.get(identity),init=bound??initializer(value);
+        const variants=[...(init?[init]:[]),...assignedValues(value)];if(!variants.length)return undefined;
+        const values=variants.map(variant=>properties(variant,key,bindings,next));
+        return values.every((part):part is ts.Expression[]=>part!==undefined)?values.flat():undefined;
+      }
+      if(!ts.isObjectLiteralExpression(value)||value.properties.some(ts.isSpreadAssignment))return undefined;
+      const entry=value.properties.find(property=>'name'in property&&nameOf(property.name)===key);
+      if(!entry||!ts.isPropertyAssignment(entry))return undefined;
+      return [entry.initializer,...assignedValues(entry.name)];
+    }
+    function character(expression:ts.Expression,bindings:Bindings,seen=new Set<ts.Node>()):boolean{
+      const value=unwrap(expression);if(seen.has(value))return false;const next=new Set(seen);next.add(value);
+      if(!ts.isIdentifier(value)||assignedValues(value).length)return false;
+      const key=symbol(value),bound=key&&bindings.get(key);if(bound)return character(bound,bindings,next);
+      if(key&&characters.has(key))return true;
+      const init=initializer(value);return !!init&&character(init,bindings,next);
+    }
+    function characterCode(expression:ts.Expression,bindings:Bindings):boolean{
+      const value=unwrap(expression);if(!ts.isCallExpression(value))return false;const op=operation(value);if(!op)return false;
+      if(['charCodeAt','codePointAt'].includes(op.method))return character(op.receiver,bindings)&&value.arguments.every(arg=>ts.isNumericLiteral(arg)&&Number(arg.text)===0);
+      if(op.method==='toString')return characterCode(op.receiver,bindings)&&value.arguments.every(arg=>ts.isNumericLiteral(arg)&&[10,16].includes(Number(arg.text)));
+      return op.method==='padStart'&&characterCode(op.receiver,bindings)&&value.arguments.length===2&&ts.isNumericLiteral(value.arguments[0])&&literal(value.arguments[1])==='0';
+    }
+    function encoded(expression:ts.Expression,bindings:Bindings,seen=new Set<ts.Node>()):boolean{
+      const value=unwrap(expression);if(seen.has(value))return false;const next=new Set(seen);next.add(value);
+      if(ts.isIdentifier(value)){
+        const key=symbol(value),bound=key&&bindings.get(key),init=bound??initializer(value),assignments=assignedValues(value);
+        if(!init)return !!key&&characters.has(key)&&assignments.length===0;
+        return [init,...assignments].every(part=>encoded(part,bindings,next));
+      }
+      if(ts.isPropertyAccessExpression(value)){
+        const values=properties(value.expression,value.name.text,bindings,next);
+        return !!values?.length&&values.every(part=>encoded(part,bindings,next));
+      }
+      if(ts.isElementAccessExpression(value))return encodingLookup(value);
+      if(ts.isStringLiteral(value)||ts.isNoSubstitutionTemplateLiteral(value))return encodingText(value.text);
+      if(ts.isTemplateExpression(value))return encodingText(value.head.text)&&value.templateSpans.every(span=>encoded(span.expression,bindings,next)&&encodingText(span.literal.text));
+      if(ts.isBinaryExpression(value)&&value.operatorToken.kind===ts.SyntaxKind.PlusToken)return encoded(value.left,bindings,next)&&encoded(value.right,bindings,next);
+      if(ts.isConditionalExpression(value))return encoded(value.whenTrue,bindings,next)&&encoded(value.whenFalse,bindings,next);
+      if(characterCode(value,bindings))return true;
+      if(ts.isCallExpression(value)){
+        const fn=functionOf(value.expression),returns=fn?outputs(fn):[];
+        return !!fn&&returns.length>0&&returns.every(part=>encoded(part,parameterBindings(fn,value.arguments,bindings),next));
+      }
+      return false;
+    }
+    if(!callback)return encoded(expression,new Map());
+    const results=outputs(callback);return results.length>0&&results.every(result=>encoded(result,new Map()));
   }
   function decoration(expression: ts.Expression, subject: ts.Expression): { valid: boolean; contains: boolean } {
     const trimmed = (node: ts.Expression): ts.Expression => {
@@ -326,10 +406,29 @@ export function proseRoutingHits(modules: readonly SourceModule[]): ProseRouting
     if(init)return markupPattern(init,seen);const text=literal(value);
     return text!==undefined?markupNeedle(text):ts.isTemplateExpression(value)&&markupNeedle(value.head.text);
   }
-  function parameterText(expression: ts.Expression): boolean {
-    const value=unwrap(expression);
-    if(ts.isCallExpression(value)){const op=operation(value);return !!op&&['trim','trimStart','trimEnd'].includes(op.method)&&parameterText(op.receiver);}
-    return ts.isPropertyAccessExpression(value)&&value.name.text==='text'&&formalInput(value.expression);
+  function parameterText(expression: ts.Expression,bindings:GrammarBindings=new Map(),seen=new Set<ts.Node>()): boolean {
+    const value=unwrap(expression);if(seen.has(value))return false;const next=new Set(seen);next.add(value);
+    if(ts.isIdentifier(value)){
+      const key=symbol(value),bound=key&&bindings.get(key),declaration=key?.valueDeclaration;
+      if(bound)return [bound,...assignedValues(value)].every(input=>parameterText(input,bindings,next));
+      const init=initializer(value);if(init)return [init,...assignedValues(value)].every(input=>parameterText(input,bindings,next));
+      if(declaration&&ts.isBindingElement(declaration)&&ts.isObjectBindingPattern(declaration.parent)){
+        const field=nameOf(declaration.propertyName??(ts.isIdentifier(declaration.name)?declaration.name:undefined));
+        const owner=declaration.parent.parent;
+        const origin=ts.isVariableDeclaration(owner)&&owner.initializer?formalInput(owner.initializer,bindings,next):authoredParameter(owner);
+        return field==='text'&&origin&&(!declaration.initializer||parameterText(declaration.initializer,bindings,next))&&assignedValues(value).every(input=>parameterText(input,bindings,next));
+      }
+      const inputs=key&&parameterInputs.get(key);
+      return !!inputs?.size&&[...inputs,...assignedValues(value)].every(input=>parameterText(input,bindings,next));
+    }
+    if(ts.isCallExpression(value)){
+      const op=operation(value);
+      if(op&&['trim','trimStart','trimEnd'].includes(op.method)&&value.arguments.length===0)return parameterText(op.receiver,bindings,next);
+      const fn=functionOf(value.expression),returned=fn?returnedExpressions.get(fn)??[]:[];
+      return !!fn&&returned.length>0&&returned.every(input=>parameterText(input,grammarBindings(fn,value.arguments,bindings),next));
+    }
+    if(ts.isConditionalExpression(value))return parameterText(value.whenTrue,bindings,next)&&parameterText(value.whenFalse,bindings,next);
+    return ts.isPropertyAccessExpression(value)&&value.name.text==='text'&&formalInput(value.expression,bindings,next);
   }
   function markupNeedle(text: string): boolean { return /<\/?[A-Za-z][^>]*|(?:^|[\s>])[a-z][a-z0-9-]*=["']/i.test(text); }
   function cwdValue(expression: ts.Expression, seen = new Set<ts.Node>()): boolean {
