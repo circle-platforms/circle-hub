@@ -40,8 +40,8 @@ export const DEPLOYMENT_SCHEMA = 'deployment@3';
 /** Public exports require complete names and targets; unknown canonical registrations must be reported, never guessed or omitted. */
 export const DeploymentTestEnvironment = z.strictObject({
   name, target: z.string().min(1).max(200),
-  prefixes: z.array(TestEnvironmentPrefix.safeExtend({ owner: name, registered_at: IsoTime })).default([]),
-  resources: z.array(TestEnvironmentResource.safeExtend({ owner: name, registered_at: IsoTime })).default([]),
+  prefixes: z.array(TestEnvironmentPrefix.pick({ prefix: true, owner: true }).safeExtend({ owner: name })).default([]),
+  resources: z.array(TestEnvironmentResource.pick({ key: true, owner: true }).safeExtend({ owner: name })).default([]),
   executors: z.array(name).default([]), enabled: z.boolean().default(true),
 }).superRefine((value, ctx) => {
   if (!value.prefixes.length && !value.resources.length) ctx.addIssue({ code: 'custom', path: ['prefixes'], message: '测试环境须声明前缀或精确资源键' });
