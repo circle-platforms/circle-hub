@@ -204,7 +204,24 @@ export const ACTIONS: Record<string, Action> = {
       }));
     },
   },
-  'executor-unassign': { title: '撤回测试环境分配', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-unassign', form) },
+  'executor-unassign': {
+    title: '撤回测试环境分配',
+    back: `${RESOURCES}?tab=environments`,
+    active: 'connections',
+    // Boss 15:02: optional force_release checkboxes on the confirm page run lease release after unassign.
+    build: (form) => {
+      const unassign = fromRegistration('executor-unassign', form);
+      const keys = [...new Set(form.get('force_release').split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
+      if (keys.length === 0) return unassign;
+      const reason = form.get('release_reason').trim() || '管理员收回测试环境分配时强制释放';
+      return [
+        unassign,
+        ...keys.map((key) => fromRegistration('lease-release', {
+          get: (name) => (name === 'key' ? key : name === 'reason' ? reason : ''),
+        })),
+      ];
+    },
+  },
   'doc-put': { title: '登记环境清单文档', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('doc-put', form) },
   'lease-register': { title: '登记租约前缀归属', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('lease-register', form) },
   'lease-unregister': { title: '注销租约前缀登记', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('lease-unregister', form) },

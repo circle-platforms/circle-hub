@@ -101,6 +101,67 @@ export async function heldLeaseKeysForEnvironment(ctx: PageContext, view: Execut
   }
 }
 
+/** One held booking on a test environment, for the unassign confirmation (Boss 15:02). */
+export type HeldOccupancy = {
+  key: string;
+  environment: string;
+  since: string;
+  holderId: string;
+  holderName: string;
+};
+
+/**
+ * Held leases on this executor's resources by the given holders (account or team members).
+ * null when the lease port is absent or the read fails — the confirmation stays honest and still allows unassign.
+ */
+export async function heldOccupancyForEnvironment(
+  ctx: PageContext,
+  view: ExecutorView,
+  holderIds: ReadonlySet<string>,
+): Promise<HeldOccupancy[] | null> {
+  const leases = ctx.deps.leases;
+  if (leases === undefined) return null;
+  const declared = new Set(view.resources);
+  if (declared.size === 0 || holderIds.size === 0) return [];
+  try {
+    const { entries } = await leases.view('', true);
+    const matched = entries.filter(
+      (entry) => declared.has(entry.key) && entry.user !== undefined && holderIds.has(entry.user),
+    );
+    const out: HeldOccupancy[] = [];
+    for (const entry of matched) {
+      const holderId = entry.user!;
+      const name = await ctx.userName(holderId);
+      out.push({
+        key: entry.key,
+        environment: view.target,
+        since: entry.since,
+        holderId,
+        holderName: name !== '' && name !== holderId ? name : '账户',
+      });
+    }
+    return out.sort(
+      (a, b) => a.since.localeCompare(b.since) || a.holderName.localeCompare(b.holderName, 'zh-CN') || a.key.localeCompare(b.key),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Boss 15:02 — confirmation fields for reclaiming an assignment: list occupied 测试环境 + since, with force-release checkboxes.
+ * Checkboxes post as `force_release` (newline-joined when several); manage runs lease-release after unassign.
+ */
+export function unassignOccupancyFields(occupancy: HeldOccupancy[] | null): Html {
+  if (occupancy === null) {
+    return html`<p class="ch-meta" data-unassign-occupancy="unknown">当前占用暂不可读；撤回后预订仍留在持有人名下，可稍后在连接页强制释放。</p>`;
+  }
+  if (occupancy.length === 0) {
+    return html`<p class="ch-meta" data-unassign-occupancy="none">当前没有读到该账户或团队成员在此测试环境上的预订。</p>`;
+  }
+  return html`<div data-unassign-occupancy="held"><p>下列测试环境仍被占用；勾选后将在撤回分配时一并强制释放（本地释放不证明远端已停）。</p><div data-fields>${occupancy.map((row) => html`<label class="check" data-wide-field><input type="checkbox" name="force_release" value="${row.key}"> 测试环境「${row.environment}」· ${row.holderName} · 自 ${when(row.since)}</label>`)}</div></div>`;
+}
+
 export function noAssignmentMark(flags: AssignmentFlags): Html {
   return environmentLacksAssignment(flags) ? chip(NO_ASSIGNMENT_LABEL, 'unchecked') : html``;
 }
