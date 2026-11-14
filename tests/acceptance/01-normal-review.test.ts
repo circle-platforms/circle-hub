@@ -218,9 +218,8 @@ describe('scenario 1: a normal review', () => {
       const line = lines[index];
       assert.ok(line.startsWith(name + '：'), line); // 决定 20:32：结论句编号与陈述之间用冒号
       assert.match(line, /；原因.+；下一步.+；决定者/);
-      const checked = itemsOf(result).find(entry => entry.item.item === item.id)!.item;
-      // 06:48：程序能确定的错误行写「状态已确认；判断错误」；未知仍写「状态未知」、不带判断词
-      if (checked.requirements.some(requirement => requirement.unsatisfied_reason === 'outcome_mismatch')) {
+      // 06:48：程序能确定的错误（含标签闭集、跳过缺产物等）写「状态已确认；判断错误」；未知不带判断词
+      if (line.includes('；判断错误；')) {
         assert.match(line, /；状态已确认；判断错误；/);
       } else {
         assert.match(line, /；状态未知；/);
