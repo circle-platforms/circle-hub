@@ -567,11 +567,12 @@ test('[PG] actual CLI children perform fresh init-admin stdin then apply and exp
   const exported = await child(['export']);
   assert.equal(exported.code, 0, 'Definition export child failed');
   const actual = parseDeployment(JSON.parse(exported.stdout));
-  const names = new Map(actual.accounts.map(account => [account.id, account.name]));
+  assert.ok(actual.accounts.every(account => !('id' in account)));
+  assert.ok(actual.teams.every(team => !('id' in team)));
   const normalized = {
     ...actual,
     accounts: actual.accounts.map(account=>account).sort((a, b) => a.name.localeCompare(b.name)),
-    teams: actual.teams.map(({ id: _id, ...team }) => ({ ...team, members: team.members.map(id => names.get(id) ?? id).sort() })).sort((a, b) => a.name.localeCompare(b.name)),
+    teams: actual.teams.map(team => ({ ...team, members: [...team.members].sort() })).sort((a, b) => a.name.localeCompare(b.name)),
   };
   const expected = parseDeployment(definition);
   expected.accounts.sort((a, b) => a.name.localeCompare(b.name));
@@ -701,7 +702,8 @@ test('portable export retains all named executors at the same target and reappli
 
 test('an explicit executor name never also selects another executor target',async t=>{
   const f=fake(t),one=ExecutorSource.parse({...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-first'}),two=ExecutorSource.parse({...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'2',target:'synthetic-name'});
-  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source})));
+  assert.ok(one.id); assert.ok(two.id);
+  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>{ assert.ok(source.id); return {id:source.id,digest:sha256Hex(canonicalBytes(source)),source}; }));
   f.executorNames.push({schema:'executor-name@1',executor:one.id,name:'synthetic-name'},{schema:'executor-name@1',executor:two.id,name:'synthetic-other'});
   const {id,...definition}=one;
   const report=await applyDeployment(f.session,{schema:'deployment@2',executors:[{name:'synthetic-name',definition}]});
