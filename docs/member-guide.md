@@ -4,7 +4,7 @@ nav_order: 4
 
 # 成员手册：登录、看能力、占用测试环境、编译
 
-> **适用范围与基线声明**：本手册写给使用 Circle 连接 Circle Hub 的团队成员，基于 `wp/codex/integration`（`0125163e9b` 基线及第一、二批更新，核对提交 `7c5f72c600`）实装界面与 MCP 返回编写。成员统一首页 `/console/me`、成员页「运行环境」就绪视图、带 `placeholders` 的配置片段以及 `list_task_packs` / `start_run` 权限披露均已合入；**仅测试环境按团队/账户隔离的执行守卫当前尚未启用（`enforceEnvironmentAssignments` 为 `false`），控制台与能力投影里显示的「分配」字段目前仅供预览，不代表实际执行与预订许可**。
+> **适用范围与基线声明**：本手册写给使用 Circle 连接 Circle Hub 的团队成员，基于 `wp/codex/integration` 收口基线（核对至冻结提交 `777fee3752`，含第一、二批实装控制台、权限披露与平滑退场；工作流本地操作说明同步到 `case-compile 3.19.2+` / `3.20.x`）。注：对照实测记录中，前半套操作（步 1–14）运行在较早基线 `9d842b79e7ee` 上，后续升级/重启与控制台重做在 `7c5f72c600` 上完成，文中涉及新旧差异处均已标出。**另外请注意：测试环境按团队/账户分配的权限守卫在本版未启用（服务端 `enforceEnvironmentAssignments` 为 `false`），控制台与 `list_task_packs` 投影里显示的「分配」字段目前仅供预览，不参与预订或执行校验；只要已获分配 `test-bed` 工作流的成员均可按既有规则预订测试环境**。
 
 成员使用 Hub 只需要两样东西：**管理员给你的账户（用户名 + 一次性初始密码）**，以及**连接地址 + 24 小时一次性邀请码（或兼容访问令牌）**。全流程只使用标准 MCP 连接，无需上服务器操作。
 
@@ -24,20 +24,20 @@ Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；
 
 #### 方式 A — Circle 桌面版（推荐，无需手改配置文件）
 
-1. 打开 Circle 桌面版 **设置 → 能力 → 扩展 → 界面组件**，打开 **启用 Hub 界面**（注意「运行时扩展」页签里另有一个 `启用 hub` 开关，实测只需打开「启用 Hub 界面」并进入扩展详情即可）。
+1. 若首次启动弹出「新版本说明」，先关闭弹窗；随后打开 Circle 桌面版 **设置 → 能力 → 扩展 → 界面组件**，打开 **启用 Hub 界面**（注意「运行时扩展」页签里另有一个 `启用 hub` 开关，实测只需打开「启用 Hub 界面」并进入扩展详情即可）。
 2. 点开该卡片的 **插件详情**，在「Hub 的 IP 地址」栏填入管理员给的地址（如 `<Hub主机>:<端口>`），点击 **连接**。
-3. Circle 会自动向你的配置写入带 `placeholders` 的 Hub 条目，并在右侧打开 Hub 网页授权流程（见下面「网页授权确认三步」）。
+3. Circle 会自动向你的配置写入带 `placeholders` 的 Hub 条目，并在右侧打开 Hub 网页授权流程（见下面「网页授权确认」；此处 3 步为逻辑环节，按页面逐级菜单点击与网页 4 个动作细计共约 12 次界面操作）。
 
 #### 方式 B — Circle 终端版（需启用内置扩展并手动编辑 `settings.json`）
 
-全新主目录的 Circle `1.17.0` 终端版目前没有一行自动写配置命令（内置 Hub 扩展默认关闭），实际操作共 5 步：
+全新主目录的 Circle `1.17.0` 终端版**目前尚无一条交互命令可自动写入 Hub 配置**（须等后续 Circle 客户端版本支持，且内置 Hub 扩展默认关闭），当前须按以下 5 步手工接入（连同网页 4 个确认动作共约 8–10 个动作）：
 
 1. 在终端进入你的工作目录启动 Circle，首屏按提示选择信任该工作目录。
 2. 先启用内置 Hub 扩展（直接敲 `/hub` 会报错 `Unknown command`）：
    - 执行 `/extensions enable hub`
    - 再执行 `/hub` 查看连接说明。
 3. **将 Hub 条目写入 `settings.json` 的 `mcp_servers`**：
-   - 现在 Hub 控制台的 **`/console/settings#mine`** 与 **`/console/me`**（「连接新的客户端」卡片）以及管理员建号结果页均已直接提供**完整带 `"name": "Hub"` 与 `placeholders` 的片段**，可直接复制使用（确保运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正确展开；注意按实际协议填写 `http://` 或 `https://`，使用标准 OAuth 授权流程时无需手加 `headers`）：
+   - 现在 Hub 控制台的 **`/console/settings#mine`** 与 **`/console/me`**（「连接新的客户端」卡片）以及管理员建号结果页均已直接提供**完整带 `"name": "Hub"` 与 `placeholders` 的片段**，可直接复制使用（确保运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正确展开；注意按实际协议填写 `http://` 或 `https://`，使用标准 OAuth 授权流程时**切勿手加 `headers`**，带 `headers` 会绕过 OAuth）：
      ```json
      {
        "name": "Hub",
@@ -46,14 +46,15 @@ Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；
        "placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }
      }
      ```
-4. 执行 `/reload` 让 Circle 读取配置，再执行 `/mcp` 触发登录与浏览器授权页。
+4. 执行 `/reload`（或 `/mcp reload`，若配置仍未生效则退出重开一次 Circle 会话）让 Circle 读取配置，再执行 `/mcp` 触发登录与浏览器授权页。
 
-#### 网页授权确认三步（两种客户端通用，勿被提示误导）
+#### 网页授权确认（三个确认环节、页面上共 4 次动作，勿被提示误导）
 
-- Circle 客户端里的提示文案可能会写「在网页上用 Hub 的用户名和密码登录」，但首次连接实际上是**设备码 + 一次性邀请码**三步确认：
+- Circle 客户端里的提示文案可能会写「在网页上用 Hub 的用户名和密码登录」，但首次连接实际上是**设备码 + 一次性邀请码**流程（页面上 4 次点击/输入动作）：
   1. 核对页面上的**设备码**与客户端一致后，点 **继续**；
-  2. 在「邀请码」框输入管理员发给你的 **24 小时一次性邀请码**，点 **验证邀请码**（如邀请码已用过或过期，也可点 **登录控制台** 改用你的账号与已修改好的控制台密码授权）；
-  3. 核对请求客户端名字和访问范围后，点 **允许连接**，客户端即自动取得长期 MCP 连接凭据（每条邀请码只用一次，再连第二台设备请登录控制台授权或请管理员重签）。
+  2. 在「邀请码」框输入管理员发给你的 **24 小时一次性邀请码**；
+  3. 点 **验证邀请码**（如邀请码已用过或过期，也可点 **登录控制台** 改用你的账号与已修改好的控制台密码授权）；
+  4. 核对请求客户端名字和访问范围后，点 **允许连接**，客户端即自动取得长期 MCP 连接凭据（每条邀请码只用一次，再连第二台设备请登录控制台授权或请管理员重签）。
 - **不支持标准授权的客户端兼容做法**：请管理员签发个人访问令牌并保存为密钥 `CIRCLE_HUB_TOKEN`（按 `Bearer ${secret:CIRCLE_HUB_TOKEN}` 配置请求头）；切勿把真实令牌写入普通文件或 Git。
 
 ---
@@ -134,7 +135,7 @@ Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；
 - **记住预订运行号（`<booking>`）**：记录返回里的 `run.run`（形如 `run_…`）。后面的用例重组、脚本编写、脚本合并都要带着 `predecessor: "<booking>"` 沿用同一份租约；**只在同一份编译任务自己的这条谱系内使用你自己的预订，绝不猜用或混用其他成员/其他会话的预订**。
 - **预订时的版本观察、权限边界与缺执行器提醒**：
   - 预订成功后 Hub 会立刻在预订到的设备上做一次只读版本探测并报告看到的构建；如果环境已被别人占用或基线/前置不满足，`acquire` 会拒绝。
-  - **测试环境权限守卫当前未启用**：截至本版，`enforceEnvironmentAssignments` 固定为 `false`，`/console/me` 与 `/console/connections?tab=environments` 上显示的执行器分配字段**仅供预览，不作当前预订或执行门禁**；成员是否能发起预订仍沿用 `test-bed` 工作流分配与既有租约/基线规则（建议在「运行环境」页签或与管理员核对环境归属后再预订，避免误占他人常用环境）。
+  - **测试环境权限守卫在本版未启用（分配字段仅供预览）**：截至本版，`enforceEnvironmentAssignments` 固定为 `false`，无论是 `/console/me`、`/console/connections?tab=environments` 还是 `list_task_packs` 返回里显示的执行器/环境分配字段都**仅供预览，不作当前预订或执行门禁**；**只要已获分配 `test-bed` 工作流的成员均可按既有租约与基线规则发起预订**（建议先在「运行环境」页签或与管理员核对用途后再预订，避免误占他人常用环境）。
   - **防坑提醒**：如果你订到了一份只有清单、尚未在 Hub 登记执行器的环境，回复第一段仍可能写「状态已确认；判断正确」，后半段才逐台报错「没有绑定同一份清单、指向这台设备的执行器版本探针」且无法上机。看到这类回执应立即调用 `test-bed` `release` 释放，并请管理员在 `/console/connections?tab=environments` 补登执行器与主机基线。
 
 ### 3. 查设备命令行提示（`help`）与用完释放（`release`）
@@ -155,7 +156,7 @@ Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；
 
 ## 四、完成用例编译与上机验证（`case-compile`）
 
-确认管理员已为你的团队分配 `case-compile` 及目标产品敏捷平台/手册/构建站资源、并且你已拿好上一步的 `<booking>` 后，按以下六步跑通：
+确认管理员已为你的团队分配 `case-compile` 及目标产品敏捷平台/手册/构建站资源、并且你已拿好上一步的 `<booking>` 后，按以下**六个工作流逻辑阶段**跑通（注：这里「六步」按工作流步骤划分，不含默认 `manual` 审批模式下的 `skill_install`/工具审批确认与返工重交操作——旧版 `3.19.0` 含报错重试与审批曾实测计 `14` 次成员操作，配合 `/mode auto` 与现行技能规程后成员介入可降至 `2–3` 次）：
 
 ### 第 1 步：安装工作流自带的本地工具
 
@@ -175,13 +176,15 @@ circle-hub local-tools verify <本地技能目录> --digest <包摘要>
 
 调用 `get_nodes({"pack": "case-compile"})` 读最新规程。常规流程先对目标原始脑图做用例重组（`recompose`；仅当后续需要同租约上机时才带 `predecessor: "<booking>"`），整理要点、步骤改写和缺项问题并取得重组记录（`recomposition_run` 与 `recomposition_result`）；如确实跳过重组，按 `case-compile` 规定写明参数 `"pipeline": "legacy"`。
 
-> **整批规则与范围外用例提示（实测必知）**：`recompose`（如 `1.2.3`）会按**整张冻结脑图的全部条目**逐条核对并封批（`functions/seal.ts`）：哪怕你这一次只想编其中 2 条用例，脑图里共有 17 条时也必须整批重组齐备才能封批；若整批中不属于你本次目标的其他用例触发了与手册冲突的弹窗确认（不要替原作者改动其业务规则），一般选保留原写法并等作者答复即可。
+> **整批规则、范围外用例与 `rec:` 引用当场保存提示（实测必知）**：
+> - `recompose`（如 `1.2.3+`）会按**整张冻结脑图的全部条目**逐条核对并封批（`functions/seal.ts`）：哪怕你这一次只想编其中 2 条用例，脑图里共有 17 条时也必须整批重组齐备才能封批；若整批中不属于你本次目标的其他用例触发了与手册冲突的弹窗确认（不要替原作者改动其业务规则），一般选保留原写法并等作者答复即可。
+> - **当场保存 `rec:` 重组引用（不能从控制台跨会话反查）**：Hub 网页控制台不会代为记下 `recomposition_run`（`{"reference": "<run_reference>"}`）与 `recomposition_result`（`{"run": "<重组运行编号>"}`）。`recompose` 完成后务必立刻在当前工作目录记下这两份引用（运行 `download-run.ts` / `recompose/tools/download-run.ts` 时会自动落盘到 `<目录>/references.json`）；若换用新会话或换人想在同一脑图同一构建下复用已核对正确的重组，必须由原保存者把这两份引用交给你，否则找不到只能整批重跑一次 `recompose`。
 
 ### 第 3 步：发起脚本编写运行（第一次 `start_run`）并下载资料
 
 - **什么时候要带 `predecessor: "<booking>"`**：只有在你准备**接着上机验证**时，才先订测试环境并把 `predecessor: "<booking>"` 从 `recompose` 一路传到 `case-compile`；如果你**只做脚本编写和脚本合并、不上机验证**，当前版本可以**不先预订、不传 `predecessor`** 直接启动 `case-compile`。
 - **子代理继承限制提醒**：在当前 Circle 版本里，父会话里你对模型下的指令（例如「不预订测试环境、不要把已有预订当作前驱」）**不会自动传递到模型派出的子代理的任务文本里**。只要这次不想占环境，给模型指令时除了开头说明外，还要明确叮嘱「在每个编写子代理的任务要求里都写明：不预订测试环境、不复用预订」。
-- 启动脚本编写时，在 `start_run` 顶层写明 `pack: "case-compile"`、`product`、`version`、`build`（若上机验证加 `predecessor: "<booking>"`）；`inputs` 传入脑图 `subject`、执行器契约 `contract`（`doc:doc:runner-contract`）、环境清单 `inventory`（`doc:doc:bed-topology`）、契约配置 `profile`（`doc:doc:runtime-profile`），以及对应的 `recomposition_run`（传 `recompose` **运行记录** `{ "run": "<重组run_…>" }`，不要写成提交记录）和 `recomposition_result`（如需排除项写进 `parameters.exclude`）。
+- 启动脚本编写时，在 `start_run` 顶层写明 `pack: "case-compile"`、`product`、`version`、`build`（若上机验证加 `predecessor: "<booking>"`）；`inputs` 传入脑图 `subject`、执行器契约 `contract`（`doc:doc:runner-contract`）、环境清单 `inventory`（`doc:doc:bed-topology`）、契约配置 `profile`（`doc:doc:runtime-profile`），以及对应的 `recomposition_run`（传 `{"reference": "<run_reference>"}`，取自 `recompose` 运行通过 `download-run` 落盘的 `references.json` 或导出顶层 `run_reference` 里的 `rec:` 完整运行记录，不要写成提交记录）和 `recomposition_result`（传 `{"run": "<重组运行编号>"}`；如需排除项写进 `parameters.exclude`）。
 
 记下返回的 `<脚本编写 run_…>`，运行本地下载工具把规则与原始用例整份落到本地新目录（注意依赖前面终端 `settings.json` 中已配置 `placeholders`，令牌经标准输入传入）：
 
@@ -189,18 +192,22 @@ circle-hub local-tools verify <本地技能目录> --digest <包摘要>
 node <本地技能目录>/tools/download-run.ts --hub %HUB_URL% --run <脚本编写编号> --out <工作目录>
 ```
 
-> **遇 Hub 升级或重启窗口怎么办**：现在 Hub 在停止阶段会先等待已受理请求与正在传输的运行资料在预算内发完，并对尚未进入入场流程的新请求返回 `HTTP 503` 与 `Retry-After`；若仍遇到服务正在切换的几十秒断连窗口，本地工具（`download-run.ts`、`download-returns.ts` 等）会报 `503` 或 `ECONNREFUSED`（`下载失败：Hub 不可达`），**当前本地工具仍不会自动等待重试**。稍等几十秒服务恢复后**重跑该命令或重新发起这一步即可，你的 Circle 客户端无需重新登录、也不用重新配置连接**（仅网页控制台需要重新登录）。
+> **遇 Hub 升级或重启窗口怎么办**：现在 Hub 在停止阶段会先等待已受理请求与正在传输的运行资料在预算内发完，并对尚未进入入场流程的新请求返回 `HTTP 503`（`这次调用没有执行`）与 `Retry-After`。从 `case-compile 3.19.2`（`recompose 1.2.4`）起，本地读取工具（`download-run.ts`、`download-returns.ts`、`fetch-run.ts`、`assemble-delivery.ts`）遇到 `503` 或 `ECONNREFUSED` 会按 `Retry-After` 或 `2/4/8` 秒退避最多自动等待 `60` 秒，`submit-plans.ts` / `submit-records.ts` 仅在 Hub 明确回答 `503` 含「这次调用没有执行」时才自动重发；若使用更早版本的本地工具或跨过最长等待窗口仍报不可达，等几秒重跑该命令或重新发起这一步即可，**你的 Circle 客户端无需重新登录、也不用重新配置连接**（仅网页控制台需要重新登录）。
 
 在本地目录读清各原始用例对应条目、执行器规则、同构建手册和命令树。
 
-### 第 4 步：编写计划、提交核对并生成工作簿（`case.xlsx`）
+### 第 4 步：编写计划、本地预检与保真核对、提交核对并生成工作簿（`case.xlsx`）
 
-1. 按 `slots.schema.json`、`tables/blocks-format.json` 和执行器规则为每条纳入范围的原始用例写出自动化用例 JSON 计划（遇到地址从环境清单替换、期望必须逐字取自原始期望/实机可观察行、清理步骤按逆序放在每条末尾）。
-2. 提交每条计划交给 Hub 校验（不覆盖文件，若有不符按工具返回精确行和原因改错后重交）：
+1. 按 `slots.schema.json`、`tables/blocks-format.json` 和执行器规则为每条纳入范围的原始用例写出自动化用例 JSON 计划（遇到地址从环境清单替换、期望必须逐字取自原始期望/实机可观察行、清理步骤按逆序放在每条末尾；提交前可先跑只读工具 `node <本地技能目录>/tools/check-plan.ts` 离线核对格式与占位符）。
+2. **场景保真核对三步（提交前必做，缺则被本地拦截）**：`3.19.1` 起 `submit-plans.ts` 在连接 Hub 前会先在本地校验每份计划的 `data.fidelity`；缺少该字段或简报摘要过期时会被本地直接退回（退出码 `1`，不消耗 Hub 修复次数，详见包内 `SKILL.md`）：
+   - ① 运行 `node <本地技能目录>/tools/fidelity-brief.ts ...` 生成 `.brief.json`；
+   - ② 派发独立只读子代理（按 `task-brief.ts --role 保真核对 ...` 模板，保持盲审不读上一轮返工历史）逐份核对 `.brief.json` 并写出 `.verdict.json`；
+   - ③ 运行 `node <本地技能目录>/tools/fidelity-apply.ts ...` 写回 `data.fidelity` 并确认 `ready: true`。
+3. 提交每条已过保真核对的计划交给 Hub 校验（不覆盖文件，若有不符按工具返回精确行和原因改错后重交；若此前已进入脚本合并阶段又需要修改计划，必须先回到第 3 步用 `start_run` 新开一次脚本编写运行，禁止重交到已被核对锁定的旧运行）：
    ```bash
    node <本地技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <脚本编写编号> --model <模型名> --plans <计划目录>
    ```
-3. 核对确认除仅缺 `workbook_verified` 外的全部必需检查项通过后，取回已通过数据并生成本地工作簿：
+4. 核对确认除仅缺 `workbook_verified` 外的全部必需检查项通过后，取回已通过数据并生成本地工作簿：
    ```bash
    node <本地技能目录>/tools/fetch-run.ts --hub %HUB_URL% --run <脚本编写编号> --out <工作目录>
    node <本地技能目录>/tools/generate-workbook.ts \
@@ -220,7 +227,7 @@ node <本地技能目录>/tools/download-run.ts --hub %HUB_URL% --run <脚本编
    - `inputs.workbook`: `{"reference": "src:<sha256>"}`（对应上一步 `upload_file` 返回的 `src:` 引用）；
    - `inputs.plan_result`: `{"run": "<脚本编写编号>"}`；
    - `parameters.plan_run`: `"<脚本编写编号>"`。
-3. **自动上机与拒单处理**：当脚本合并核对通过、仍持有同一 `<booking>` 的有效租约，且环境基线、认证证据与清单摘要核对全部就绪时，**Hub 自动发起上机验证**，无需再调用其他派发工具；若此时未派发（如缺基线、认证证据不可读、环境被冻结或租约不匹配），答复会给出缺什么和由成员或管理员采取的下一步（如遇到需管理员补基线/处置的拒因，按回执内容转请管理员处理）。
+3. **自动上机与拒单处理**：当脚本合并核对通过、仍持有同一 `<booking>` 的有效租约，且环境基线、认证证据与清单摘要核对全部就绪时，**Hub 自动发起上机验证**，无需再调用其他派发工具；若此时未派发（如缺基线、认证证据不可读、环境被冻结、租约不匹配，或工作流刚升级而管理员尚未在执行器定义里同步新版的「核验函数身份」），答复会给出缺什么和由成员或管理员采取的下一步（如遇到需管理员更新执行器、补基线或处置的拒因，按回执内容转请管理员处理）。
 
 ### 第 6 步：等待设备输出、失败分析（最多 3 轮）、组交付目录并释放环境
 
