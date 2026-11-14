@@ -19,6 +19,7 @@ import { maskCommand, MASK_USAGE } from './cli-mask.ts';
 import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED_USAGE } from './cli-job.ts';
 import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
 import { commandParameterHelp } from './command-parameters.ts';
+import { UPGRADE_USAGE } from './cli-upgrade.ts';
 type BuiltinHandler = (args: readonly string[], ctx: CliContext, options: CliOptions) => Promise<number>;
 type AdminHandler = (session: Session, args: readonly string[]) => Promise<number>;
 interface CommandMetadata { name: string; summary: string; bridge: boolean; step: `run-${string}`; reserved?: string }
@@ -35,7 +36,8 @@ const builtins: { name: string; help: string[]; handler: BuiltinHandler; bridge:
   { name: 'crashes', help: [`  crashes [--limit <N>] [--json] [--as <管理员>]   进程的启动、停止和异常退出，异常退出带当时在处理的请求和崩溃报告摘要（仅管理员；默认 ${DEFAULT_EVENT_LIMIT} 条，新到旧）`], handler: (args, ctx, options) => import('./cli.ts').then(module => module.crashesCommand(args, ctx, options)), bridge: false },
  ];
 export const BUILTIN_COMMANDS = builtins.map(command => ({ ...command, summary: command.help[0].trim(), step: `run-${command.name}` as const }));
-const administrative: { name: string; summary: string; handler: AdminHandler; bridge?: boolean; reserved?: string }[] = [
+const administrative: { name: string; summary: string; handler: AdminHandler; bridge?: boolean; reserved?: string; step?: `run-${string}` }[] = [
+{ name: 'upgrade', summary: UPGRADE_USAGE.slice('upgrade '.length), step: 'run-command', handler: (session, args) => import('./upgrade-production.ts').then(module => module.productionUpgradeCommand(session, args)) },
 { name: 'apply', summary: APPLY_USAGE.slice('apply '.length), handler: (session, args) => import('./cli-apply.ts').then(module => module.applyCommand(session, args)) },
   { name: 'export', summary: EXPORT_USAGE, handler: (session, args) => import('./cli-apply.ts').then(module => module.exportCommand(session, args)) },
 {name:'share',summary:SHARE_USAGE.slice('share '.length),handler: (session,args) => import('./cli-admin.ts').then(module => module.sharingCommand(session,args))},
@@ -58,7 +60,7 @@ const administrative: { name: string; summary: string; handler: AdminHandler; br
   { name: 'init-admin', reserved: '初始化管理员', summary: INIT_ADMIN_USAGE.slice('init-admin '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.initAdminCommand(session,args)) },
   { name: 'operator-token', reserved: '管理操作令牌', summary: OPERATOR_TOKEN_USAGE.slice('operator-token '.length), handler: (session,args) => import('./cli-admin.ts').then(module => module.operatorTokenCommand(session,args)) },
 ];
-export const ADMIN_COMMANDS = administrative.map(command => ({ ...command, bridge: command.bridge ?? false, step: `run-${command.name}` as const }));
+export const ADMIN_COMMANDS = administrative.map(command => ({ ...command, bridge: command.bridge ?? false, step: command.step ?? `run-${command.name}` as const }));
 export const COMMAND_METADATA: readonly CommandMetadata[] = [...BUILTIN_COMMANDS, ...ADMIN_COMMANDS, ...PLATFORM_COMMAND_METADATA];
 export const RESERVED_DESCRIPTIONS = Object.fromEntries(ADMIN_COMMANDS.filter(command => command.reserved !== undefined).map(command => [command.name, command.reserved!]));
 export const BRIDGED_COMMANDS: ReadonlySet<string> = new Set(COMMAND_METADATA.filter(command => command.bridge).map(command => command.name));
