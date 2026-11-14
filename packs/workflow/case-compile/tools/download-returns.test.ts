@@ -43,12 +43,12 @@ async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[
 }
 /** A clock the test moves: every pause advances it by the time asked for and is recorded. */
 function clock(): Timing & { pauses: number[] } { let at = 0; const pauses: number[] = []; return { pauses, now: () => at, pause: async (ms) => { pauses.push(ms); at += ms; } }; }
-async function run(url: string, out: string, extra: string[] = [], timing?: Timing) {
+async function run(url: string, out: string, extra: string[] = [], timing?: Timing, retry?: Parameters<typeof main>[3]) {
   const err: string[] = [], outText: string[] = [];
   const stderr = process.stderr.write.bind(process.stderr), stdout = process.stdout.write.bind(process.stdout);
   process.stderr.write = ((chunk: string | Uint8Array) => { err.push(String(chunk)); return true; }) as typeof process.stderr.write;
   process.stdout.write = ((chunk: string | Uint8Array) => { outText.push(String(chunk)); return true; }) as typeof process.stdout.write;
-  try { return { code: await main(['--hub', url, '--run', RUN, '--out', out, ...extra], async () => TOKEN, timing), stderr: err.join(''), stdout: outText.join('') }; }
+  try { return { code: await main(['--hub', url, '--run', RUN, '--out', out, ...extra], async () => TOKEN, timing, retry), stderr: err.join(''), stdout: outText.join('') }; }
   finally { process.stderr.write = stderr; process.stdout.write = stdout; }
 }
 
@@ -202,4 +202,46 @@ test('--wait gives up at its limit, and sooner when the run shows no job at all,
   assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数写法/);
   // Without --wait a run that was never dispatched is refused at once, as before.
   assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
+});
+
+test('download-returns retries 503 Retry-After and ECONNREFUSED on reads, honors Retry-After in --wait, and reports waited time and attempts', async (t) => {
+  const h = await hub(jobs(), [deviceReturn, log, session, held]); t.after(h.close);
+  let calls = 0;
+  const t1 = clock();
+  const out1 = join(await mkdtemp(join(tmpdir(), 'cc-returns-retry-')), 'ok');
+  const r1 = await run(h.url, out1, [], t1, {
+    fetch: async (input, init) => {
+      calls++;
+      if (calls === 1) return new Response('重启中', { status: 503, headers: { 'retry-after': '5' } });
+      if (calls === 2) throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) });
+      return globalThis.fetch(input, init);
+    },
+  });
+  assert.equal(r1.code, 0, r1.stderr);
+  assert.deepEqual(t1.pauses, [5_000, 2_000]);
+  assert.deepEqual(await readFile(join(out1, 'c'.repeat(12), 'device-return.txt')), deviceReturn);
+
+  // Inside --wait, 503 Retry-After: 5 uses 5_000ms instead of POLL_MS, and if Hub remains unreachable/503 when --wait runs out, error reports waited duration & attempts.
+  let pollStep = 0;
+  const t2 = clock();
+  const out2 = join(await mkdtemp(join(tmpdir(), 'cc-returns-wait-retry-')), 'ok');
+  const r2 = await run(h.url, out2, ['--wait', '60'], t2, {
+    fetch: async (input, init) => {
+      pollStep++;
+      if (pollStep === 1) return new Response(JSON.stringify(running()), { status: 200 });
+      if (pollStep === 2) return new Response('过载', { status: 503, headers: { 'retry-after': '5' } });
+      return globalThis.fetch(input, init);
+    },
+  });
+  assert.equal(r2.code, 0, r2.stderr);
+  assert.deepEqual(t2.pauses, [POLL_MS, 5_000]);
+
+  const t3 = clock();
+  const out3 = join(await mkdtemp(join(tmpdir(), 'cc-returns-wait-fail-')), 'out');
+  const r3 = await run(h.url, out3, ['--wait', '12'], t3, {
+    fetch: async () => new Response('Hub 繁忙', { status: 503 }),
+  });
+  assert.equal(r3.code, 1);
+  assert.match(r3.stderr, /^暂时不可用：Hub 答复 503：Hub 繁忙，已等待 12 秒并尝试 4 次仍未恢复。请.*。$/m);
+  await assert.rejects(readFile(join(out3, 'index.json')));
 });

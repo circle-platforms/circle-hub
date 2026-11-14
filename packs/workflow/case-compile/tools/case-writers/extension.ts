@@ -12,7 +12,7 @@ export const WRITER_DESCRIPTION = 'Writes the plan file of one case of a downloa
 export const WRITER_SYSTEM_PROMPT = [
   '你是自动化用例的编写者，一次只写一条用例的自动化用例文件。',
   '',
-  '- 收到的第一条消息给出这条用例的编写简报、要写的文件路径和几个目录。先读完简报，再读技能目录里的 SKILL.md，按它写自动化用例的规则写。开运行、提交、生成工作簿、上机、释放预订是主代理的事，你不做。',
+  '- 收到的第一条消息给出这条用例的编写简报、要写的文件路径和几个目录。先读完简报，再读技能目录里的 SKILL.md，按它写自动化用例的规则写。开运行、提交、生成工作簿、上机以及测试环境预订的沿用由主代理按规则处理，编写者不做。',
   '- 只写一个文件，就是消息里给的路径，内容是这条用例的自动化用例（简报末尾有文件外壳）。不写别的文件，也不往自动化用例目录放任何别的东西。该文件已经存在时，它是这条用例上一轮的自动化用例，先读它。',
   '- 你没有问使用者的工具，也不能开子代理。资料里查得到的自己查；定不了的不要猜，写进报告。',
   '- 最后一条回复就是交给主代理的报告，最多 8 行：写出的文件路径；没定下来的缺口，每条一行，写明缺什么事实、你怎么处理的。不重述自动化用例内容。',
@@ -56,18 +56,18 @@ export function parseArguments(args: Json, workspace: string): { ok: true; value
   const runDirectory = directory('run_directory'), plansDirectory = directory('plans_directory'), skillDirectory = directory('skill_directory');
   if (runDirectory === null || plansDirectory === null || skillDirectory === null) {
     const missing = [['原始用例目录', runDirectory], ['自动化用例目录', plansDirectory], ['脚本编写所用的技能目录', skillDirectory]].filter(([, value]) => value === null).map(([name]) => name);
-    return { ok: false, problem: `${missing.join('、')}请填写目录路径` };
+    return { ok: false, problem: `参数无效：${missing.join('、')}尚未填写目录路径。请补齐必填目录路径后重试。` };
   }
   let only: string[] | null = null;
   if (args.only !== undefined) {
-    if (!Array.isArray(args.only) || !args.only.every((value) => typeof value === 'string' && /^\d+$/.test(value))) return { ok: false, problem: '请选择要继续脚本编写的原始用例，填写对应文件名的数字列表' };
+    if (!Array.isArray(args.only) || !args.only.every((value) => typeof value === 'string' && /^\d+$/.test(value))) return { ok: false, problem: '参数无效：only 必须是数字编号数组。请选择要继续脚本编写的原始用例，填写对应文件名的数字列表后重试。' };
     only = [...new Set(args.only as string[])];
   }
   const notes = new Map<string, string>();
   if (args.notes !== undefined) {
-    if (!isRecord(args.notes)) return { ok: false, problem: '补充说明请按原始用例分别填写' };
+    if (!isRecord(args.notes)) return { ok: false, problem: '参数无效：notes 格式不对。补充说明请按原始用例编号分别填写后重试。' };
     for (const [index, text] of Object.entries(args.notes)) {
-      if (!/^\d+$/.test(index) || typeof text !== 'string' || text.trim() === '' || Array.from(text).length > NOTE_CHARS) return { ok: false, problem: `第 ${index} 份原始用例的补充说明请填写 1 到 ${NOTE_CHARS} 字` };
+      if (!/^\d+$/.test(index) || typeof text !== 'string' || text.trim() === '' || Array.from(text).length > NOTE_CHARS) return { ok: false, problem: `参数无效：第 ${index} 份原始用例的补充说明格式或字数不合规。请填写 1 到 ${NOTE_CHARS} 字后重试。` };
       notes.set(index, text);
     }
   }
@@ -86,7 +86,7 @@ export function planFileName(item: string): string {
 export function planFanOut(input: { cases: readonly RunCase[]; only: readonly string[] | null; notes: ReadonlyMap<string, string>; plansDirectory: string; existing: ReadonlySet<string>; fileOfItem?: ReadonlyMap<string, string> }): { planned: PlannedCase[]; skipped: SkippedCase[]; problems: string[] } {
   const planned: PlannedCase[] = [], skipped: SkippedCase[] = [], problems: string[] = [];
   const only = input.only;
-  for (const index of only ?? []) if (!input.cases.some((value) => sameIndex(value.index, index))) problems.push(`本次脚本编写没有第 ${index} 份原始用例`);
+  for (const index of only ?? []) if (!input.cases.some((value) => sameIndex(value.index, index))) problems.push(`不存在：本次脚本编写没有第 ${index} 份原始用例。请核对 items 目录中的文件编号后重填 only。`);
   for (const value of input.cases) {
     if (only !== null && !only.some((index) => sameIndex(index, value.index))) continue;
     const item = isRecord(value.item) && typeof value.item.id === 'string' && value.item.id !== '' ? value.item.id : null;
@@ -100,10 +100,10 @@ export function planFanOut(input: { cases: readonly RunCase[]; only: readonly st
   const seen = new Map<string, string>();
   for (const value of planned) {
     const earlier = seen.get(value.item);
-    if (earlier !== undefined) problems.push(`第 ${earlier} 份和第 ${value.index} 份原始用例相同，每条原始用例只能有一份自动化用例`);
+    if (earlier !== undefined) problems.push(`已被占用：第 ${earlier} 份和第 ${value.index} 份原始用例相同，每条原始用例只能有一份自动化用例。请保留一份后重试。`);
     seen.set(value.item, value.index);
   }
-  for (const index of input.notes.keys()) if (!planned.some((value) => sameIndex(value.index, index))) problems.push(`第 ${index} 份原始用例不在本次脚本编写中，请删除它的补充说明`);
+  for (const index of input.notes.keys()) if (!planned.some((value) => sameIndex(value.index, index))) problems.push(`参数无效：第 ${index} 份原始用例不在本次脚本编写中。请删除它的补充说明后重试。`);
   return { planned, skipped, problems };
 }
 
@@ -113,7 +113,7 @@ export function writerMessage(value: PlannedCase, where: { runDirectory: string;
     '',
     `原始用例 ${value.item}。`,
     `运行下载目录：${where.runDirectory}（items/${value.index}.json 是这条用例，briefs/${value.index}.md 是下面的简报，knowledge/ 和 sources/ 也在其中）。`,
-    `技能目录：${where.skillDirectory}（SKILL.md 是写自动化用例的规则，slots.schema.json 和 examples/submit-result.json 是自动化用例的形状）。`,
+    `技能目录：${where.skillDirectory}（SKILL.md 是写自动化用例的规则，slots.schema.json（在技能根目录，不在 tables/）和 examples/submit-result.json 是自动化用例的形状，可用 tools/check-plan.ts --file <文件路径> 本地核对）。`,
     `要写的文件：${value.path}。${value.exists ? '它已经存在，是这条用例上一轮的自动化用例，先读它；返工的规矩见技能目录里 tools/delivery.md 的第 1 步。' : '它还不存在。'}`,
     '只写这一个文件。最后一条回复是给主代理的报告，格式照系统提示。',
     ...(value.note === null ? [] : ['', '## 主代理的补充', '', value.note]),
@@ -185,7 +185,7 @@ async function plansByItem(directory: string, names: Iterable<string>): Promise<
     try { value = JSON.parse(await readFile(join(directory, name), 'utf8')); } catch { continue; }
     if (!isRecord(value) || typeof value.item !== 'string' || value.item === '') continue;
     const earlier = found.get(value.item);
-    if (earlier !== undefined) throw new FanOutProblem(`自动化用例目录里 ${earlier} 和 ${name} 对应同一条原始用例；请使用者决定保留哪份自动化用例，移走另一份后继续脚本编写`);
+    if (earlier !== undefined) throw new FanOutProblem(`已被占用：自动化用例目录里 ${earlier} 和 ${name} 对应同一条原始用例。请使用者决定保留哪份自动化用例，移走另一份后继续脚本编写。`);
     found.set(value.item, name);
   }
   return found;
@@ -193,9 +193,9 @@ async function plansByItem(directory: string, names: Iterable<string>): Promise<
 
 async function readRunCases(directory: string): Promise<RunCase[]> {
   let names: string[];
-  try { names = await readdir(join(directory, 'items')); } catch { throw new FanOutProblem(`原始用例目录 ${directory} 中没有原始用例，请先下载本次脚本编写的原始用例`); }
+  try { names = await readdir(join(directory, 'items')); } catch { throw new FanOutProblem(`不存在：原始用例目录 ${directory} 中没有原始用例。请先下载本次脚本编写的原始用例后重试。`); }
   const files = names.filter((name) => /^\d+\.json$/.test(name)).sort((a, b) => Number(a.slice(0, -5)) - Number(b.slice(0, -5)));
-  if (!files.length) throw new FanOutProblem(`${join(directory, 'items')} 里没有 <序号>.json`);
+  if (!files.length) throw new FanOutProblem(`不存在：${join(directory, 'items')} 里没有 <序号>.json。请先下载或核对原始用例目录后重试。`);
   const out: RunCase[] = [];
   for (const name of files) {
     const index = name.slice(0, -'.json'.length);
@@ -221,12 +221,12 @@ export interface FanOutResult {
 export async function writeCasePlans(options: { args: Arguments; runWriter: RunWriter; signal: AbortSignal; limit: number; progress?: (done: number, total: number) => void }): Promise<FanOutResult> {
   const { args } = options;
   const skill = await stat(join(args.skillDirectory, 'SKILL.md')).catch(() => null);
-  if (skill === null || !skill.isFile()) throw new FanOutProblem(`技能目录 ${args.skillDirectory} 中没有脚本编写说明，请选择已经安装的脚本编写技能`);
+  if (skill === null || !skill.isFile()) throw new FanOutProblem(`不存在：技能目录 ${args.skillDirectory} 中没有脚本编写说明。请选择已经安装的脚本编写技能后重试。`);
   const cases = await readRunCases(args.runDirectory);
-  try { await mkdir(args.plansDirectory, { recursive: true }); } catch { throw new FanOutProblem(`自动化用例目录 ${args.plansDirectory} 无法写入，请选择可写的目录`); }
+  try { await mkdir(args.plansDirectory, { recursive: true }); } catch { throw new FanOutProblem(`无权限：自动化用例目录 ${args.plansDirectory} 无法写入。请选择可写的工作目录路径后重试。`); }
   const before = await stamps(args.plansDirectory);
   const plan = planFanOut({ cases, only: args.only, notes: args.notes, plansDirectory: args.plansDirectory, existing: new Set(before.keys()), fileOfItem: await plansByItem(args.plansDirectory, before.keys()) });
-  if (plan.problems.length) throw new FanOutProblem(plan.problems.join('；'));
+  if (plan.problems.length) throw new FanOutProblem(plan.problems.join('\n'));
   // A file that is already there is the last round's plan. A writer that leaves it byte for byte as it was has not written.
   const earlier = new Map<string, string>();
   for (const value of plan.planned) if (value.exists) earlier.set(value.file, sha256(await readFile(value.path)));
@@ -288,7 +288,7 @@ export interface ExtensionApi {
   registerMiddleware(handler: ModelMiddlewareLike, slot?: 'model_call' | 'tool_boundary' | 'after_model'): void;
 }
 
-const NO_TASK_TOOL = '没有取到客户端的 task 工具（这个客户端版本不让扩展启动子代理，或本次会话没有 task 工具），所以不能由代码同时派出编写者，什么都没有启动。不要自己分组派发；告诉使用者，并按技能说明用 task 工具一条用例一个子代理、同时派出。';
+const NO_TASK_TOOL = '暂时不可用：没有取到客户端的 task 工具（这个客户端版本不让扩展启动子代理，或本次会话没有 task 工具），所以不能由代码同时派出编写者，什么都没有启动。不要自己分组派发；告诉使用者，并按技能说明用 task 工具一条原始用例一个子代理、同时派出。';
 
 export function register(api: ExtensionApi): void {
   let task: TaskTool | null = null;

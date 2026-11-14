@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "4773993737593d545bba1c62ba01ae123ad657ee2a108c06774322d9728d81aa",
-      "size": 6600
+      "sha256": "83f632d231299e3c05aa8a51bcf77828976eebc65e43d758016a28e531dd0ce7",
+      "size": 7266
     },
     {
       "path": "checks.json",
@@ -74,6 +74,11 @@
       "size": 18728
     },
     {
+      "path": "functions/hub-retry.ts",
+      "sha256": "233ab3538beab7fc18c511c0c8b15e69d6e48b29f453626908954d3b87c76623",
+      "size": 23320
+    },
+    {
       "path": "functions/project.ts",
       "sha256": "70a6a81e06ade74876e9a66a3c87e80e47380bf271cb8049947400e21e2ac0ae",
       "size": 1494
@@ -85,8 +90,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "9ed14e716be0e4e17f37520ba67b1d79e23ef37938cbc28b3e9e5955ae2c03e1",
-      "size": 4473
+      "sha256": "9eac3805fe76740bee5ffe4da1cce04103f4949e5e27160769c80ebd10abf61c",
+      "size": 4491
     },
     {
       "path": "functions/schema.ts",
@@ -105,8 +110,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "3653a8283e766edf0503f2fbf94b682168bcafafe7f13484fa7ace6a0ee86a22",
-      "size": 3487
+      "sha256": "8d0483c8067c387bf523c4435ffe3d61929309cecdf0015cedf841b4a6aae38e",
+      "size": 8347
     },
     {
       "path": "requirements.json",
@@ -175,13 +180,13 @@
     },
     {
       "path": "tools/download-run.ts",
-      "sha256": "4c87fe85a9fd726d916504b45d5987c41bfee858bb5ff56aa1178ca34d341e79",
-      "size": 1624
+      "sha256": "6c17bcbb7fdeeed7c6c7e9cb63cff41322f88b97b5485af2902d1235ba828937",
+      "size": 2606
     },
     {
       "path": "tools/submit-records.ts",
-      "sha256": "c8a6452b3f944f387d738fcea82283ed08549eaf156dde8f6a873dbd173cdd87",
-      "size": 7330
+      "sha256": "85fae9238ac5e1fdd4be29815835fc2f06ad2daf4b28204f1ea74a2e6cad75b1",
+      "size": 7460
     },
     {
       "path": "workflow.json",

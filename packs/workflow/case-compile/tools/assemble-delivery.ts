@@ -2,12 +2,13 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRecord } from '../functions/text.ts';
+import { formatCallError, isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
 import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
-import { bearerFrom, get, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { bearerFrom, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -124,35 +125,40 @@ export function planDigest(plan: RunInputs, autoid: string): string {
 }
 
 // A whole knowledge root uses the run download's larger response limit.
-const KNOWLEDGE_MAX_BYTES = 256 * 1024 * 1024;
-const KNOWLEDGE_TIMEOUT_MS = 300_000;
-async function knowledgeBatch(origin: string, bearer: string, run: string): Promise<Uint8Array> {
-  let reply: Response, bytes: Uint8Array;
+async function knowledgeBatch(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<Uint8Array> {
+  let bytes: Uint8Array;
+  let digest: string | null;
   try {
-    reply = await fetch(`${origin}/run-export/${run}/knowledge`, { headers: { authorization: `Bearer ${bearer}` }, signal: AbortSignal.timeout(KNOWLEDGE_TIMEOUT_MS) });
-    bytes = new Uint8Array(await reply.arrayBuffer());
-  } catch { throw new Error(`Hub 尚未返回脚本编写时使用的手册和命令树，请稍后用同一命令重新下载`); }
-  if (reply.status === 404) throw new Error(`Hub 无法读取脚本编写时使用的手册和命令树，原始用例与手册冲突的判断尚未核对`);
-  if (!reply.ok) throw new HubReplyError(reply.status, `Hub 答复 ${reply.status}：${new TextDecoder().decode(bytes).trim().slice(0, 300)}`);
-  if (bytes.length > KNOWLEDGE_MAX_BYTES) throw new Error(`手册和命令树超过可读取的大小，原始用例与手册冲突的判断尚未核对`);
-  const digest = /^sha-256=:([A-Za-z0-9+/=]+):$/.exec(reply.headers.get('content-digest') ?? '');
-  if (!digest || Buffer.from(digest[1], 'base64').toString('hex') !== sha256(bytes)) throw new Error('手册和命令树与保存的原件不一致，原始用例与手册冲突的判断尚未核对');
+    ({ bytes, digest } = await fetchBytesRetrying(`${origin}/run-export/${run}/knowledge`, bearer, KNOWLEDGE_MAX_BYTES, {
+      ...retry,
+      timeoutMs: retry?.timeoutMs ?? KNOWLEDGE_TIMEOUT_MS,
+      oversizeMessage: '手册和命令树超过可读取的大小，原始用例与手册冲突的判断尚未核对',
+    }));
+  } catch (error) {
+    if (error instanceof HubReplyError && error.status === 404) {
+      throw new Error(`Hub 无法读取脚本编写时使用的手册和命令树，原始用例与手册冲突的判断尚未核对`);
+    }
+    if (error instanceof RetryExhaustedError || error instanceof HubReplyError) throw error;
+    if (error instanceof Error && error.message === '手册和命令树超过可读取的大小，原始用例与手册冲突的判断尚未核对') throw error;
+    throw new Error(`暂时不可用：Hub 尚未返回脚本编写时使用的手册和命令树。请稍后用同一命令重新下载`);
+  }
+  if (!digest || digest !== sha256(bytes)) throw new Error('手册和命令树与保存的原件不一致，原始用例与手册冲突的判断尚未核对');
   return bytes;
 }
-async function citedStatements(origin: string, bearer: string, cited: ReadonlySet<string>, planRuns: readonly string[], rootOf: (run: string) => unknown): Promise<Map<string, string>> {
+async function citedStatements(origin: string, bearer: string, cited: ReadonlySet<string>, planRuns: readonly string[], rootOf: (run: string) => unknown, retry?: RetryControl): Promise<Map<string, string>> {
   const statements = new Map<string, string>();
   const roots = new Set([...cited].flatMap((reference) => { const root = /^tree:([0-9a-f]{64})\//.exec(reference)?.[1]; return root ? [root] : []; }));
   for (const root of roots) {
     const holder = [...planRuns].reverse().find((run) => rootOf(run) === root);
     if (!holder) continue;
-    const batch = lockedStatements(await knowledgeBatch(origin, bearer, holder), holder, cited);
+    const batch = lockedStatements(await knowledgeBatch(origin, bearer, holder, retry), holder, cited);
     if (batch.root !== root) throw new Error(`手册和命令树与脚本编写时使用的构建不一致，原始用例与手册冲突的判断尚未核对`);
     for (const [reference, statement] of batch.statements) statements.set(reference, statement);
   }
   return statements;
 }
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date()): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date(), retry?: RetryControl): Promise<number> {
   try {
     const args = options(argv);
     const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
@@ -164,10 +170,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const origin = hubOrigin(args.hub);
     const bearer = await bearerFrom(readToken);
 
-    const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await get(`${origin}/run-export/${run}/jobs`, bearer))), run);
-    const successorsOf = async (run: string) => parseSuccessors(JSON.parse(decode(await get(`${origin}/run-export/${run}/successors`, bearer))), run);
+    const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/jobs`, bearer, retry))), run);
+    const successorsOf = async (run: string) => parseSuccessors(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/successors`, bearer, retry))), run);
     const plans = new Map<string, RunInputs>();
-    const planOf = async (run: string) => { if (!plans.has(run)) plans.set(run, await fetchRunInputs(origin, bearer, run)); return plans.get(run)!; };
+    const planOf = async (run: string) => { if (!plans.has(run)) plans.set(run, await fetchRunInputs(origin, bearer, run, retry)); return plans.get(run)!; };
     const given = new Map<string, Dispatch>();
     for (const run of runs) given.set(run, settledDispatch(run, await jobsOf(run)));
 
@@ -175,7 +181,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     // under the same booking bound to the same recomposition, or the same document without one) is read from the Hub's lineage,
     // so a dispatch the model left out still counts (decision 162).
     const keys = new Set<string>(), roots = new Set<string>(), started = new Map<string, string>(), planRuns = new Map<string, string>();
-    const runOf = async (run: string): Promise<Record<string, unknown> | null> => { const exported = JSON.parse(decode(await get(`${origin}/run-export/${run}/run`, bearer))); return isRecord(exported) && isRecord(exported.run) && exported.run.run === run ? exported.run : null; };
+    const runOf = async (run: string): Promise<Record<string, unknown> | null> => { const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry))); return isRecord(exported) && isRecord(exported.run) && exported.run.run === run ? exported.run : null; };
     const ours = (run: Record<string, unknown> | null, key: string) => !!run && typeof run.pack === 'string' && run.pack.split('@')[0] === 'case-compile' && lineageKey(run) === key;
     for (const d of given.values()) { const key = lineageKey((await planOf(d.plan_run)).run as Record<string, unknown>); if (key) keys.add(key); }
     if (keys.size !== 1) throw new Error('--runs 中的自动化用例不是来自同一份重组后的用例或原始用例，请只选择这份原始用例的上机验证');
@@ -200,7 +206,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
         queue.push(next.run);
       }
     }
-    for (const run of given.keys()) if (!started.has(run)) { const exported = JSON.parse(decode(await get(`${origin}/run-export/${run}/run`, bearer))); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
+    for (const run of given.keys()) if (!started.has(run)) { const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry))); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
     const dispatches: Dispatch[] = [], added: string[] = [];
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {
       if (given.has(run)) { dispatches.push(given.get(run)!); continue; }
@@ -215,7 +221,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     // The document's cases: the recomposition run's, or else every case and exclusion the plan runs name, in first-seen order.
     const originals: Record<string, Original> = {}; let population: string[] = [];
     if (args.recompose) {
-      const exported = JSON.parse(decode(await get(`${origin}/run-export/${args.recompose}/run`, bearer)));
+      const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${args.recompose}/run`, bearer, retry)));
       if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 返回的重组后的用例不完整或与本次用例重组不符');
       for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组后的用例缺少原始用例 ID 或原句'); population.push(read.autoid); originals[read.autoid] = read.original; }
     }
@@ -237,7 +243,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const texts = new Map<string, string | null>();
     const textOf = async (run: string, reference: string): Promise<string | null> => {
       const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) return null;
-      if (!texts.has(found[1])) { try { const bytes = await get(`${origin}/run-export/${run}/sources/${found[1]}`, bearer); texts.set(found[1], sha256(bytes) === found[1] ? new TextDecoder('utf-8').decode(bytes) : null); } catch { texts.set(found[1], null); } }
+      if (!texts.has(found[1])) { try { const bytes = await getRetrying(`${origin}/run-export/${run}/sources/${found[1]}`, bearer, retry); texts.set(found[1], sha256(bytes) === found[1] ? new TextDecoder('utf-8').decode(bytes) : null); } catch { texts.set(found[1], null); } }
       return texts.get(found[1]) ?? null;
     };
     const hits = new Map<string, RowAudit>(); let markerCount: number | null = null, read = 0, wordless = 0;
@@ -298,7 +304,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     for (const outcome of assembly.cases.filter((c) => c.status !== 'delivered')) {
       const last = outcome.history.at(-1); const found = last?.log ? /^src:([0-9a-f]{64})$/.exec(last.log) : null;
       if (!last || !found) continue;
-      try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) !== found[1]) throw new Error('设备输出与保存的原件不一致'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
+      try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, retry); if (sha256(bytes) !== found[1]) throw new Error('设备输出与保存的原件不一致'); logs[outcome.autoid] = { reference: last.log!, job: last.job, text: new TextDecoder('utf-8').decode(bytes) }; }
       catch (error) { logs[outcome.autoid] = { reference: last.log!, job: last.job, text: null, withheld: error instanceof HubReplyError && error.status === 403 ? '没有读取这份设备输出的权限' : `没有取到：${error instanceof Error ? error.message : '读取失败'}` }; }
     }
     // The reference engine's attribution rule: a case not delivered that went to the bed is explained with the device's own words,
@@ -309,7 +315,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       const texts: string[] = []; const logText = logs[outcome.autoid]?.text; if (logText) texts.push(logText);
       for (const reference of Object.values(last.sessions ?? {})) {
         const found = /^src:([0-9a-f]{64})$/.exec(reference); if (!found) continue;
-        try { const bytes = await get(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer); if (sha256(bytes) === found[1]) texts.push(new TextDecoder('utf-8').decode(bytes)); } catch { /* an unreadable session is evidence neither way */ }
+        try { const bytes = await getRetrying(`${origin}/run-export/${last.run}/sources/${found[1]}`, bearer, retry); if (sha256(bytes) === found[1]) texts.push(new TextDecoder('utf-8').decode(bytes)); } catch { /* an unreadable session is evidence neither way */ }
       }
       deviceTexts[outcome.autoid] = texts;
     }
@@ -321,7 +327,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const authored = Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, original.lines.flatMap((line) => line.expected)]));
     const conflictGround: ConflictGround = {
       authored: Object.fromEntries(Object.entries(originals).map(([autoid, original]) => [autoid, [original.title, ...original.lines.flatMap((line) => [line.text, ...line.expected])].filter((text) => text.length > 0)])),
-      statements: await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root),
+      statements: await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root, retry),
     };
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts, conflictGround);
     // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
@@ -338,7 +344,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
         for (const holder of latestFirst.filter((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid))) {
           const item = itemsOf.get(holder)!.find((i) => autoidOf(i) === autoid);
           if (!isRecord(item) || typeof item.id !== 'string') continue;
-          if (!answered.has(holder)) { let exported: unknown = null; try { exported = JSON.parse(decode(await get(`${origin}/run-export/${holder}`, bearer))); } catch { /* no accepted submission */ } answered.set(holder, exported); }
+          if (!answered.has(holder)) { let exported: unknown = null; try { exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${holder}`, bearer, retry))); } catch { /* no accepted submission */ } answered.set(holder, exported); }
           const exported = answered.get(holder);
           if (!isRecord(exported) || !isRecord(exported.result)) continue; // never answered: no plan was judged there
           const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
@@ -373,6 +379,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const out = resolve(args.out);
     process.stdout.write(JSON.stringify({ out, totals: assembly.totals, files, runs: dispatches.map((d) => d.run), added_runs: added, reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input) }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(`交付报告未生成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));
