@@ -9186,7 +9186,7 @@
               },
               "result": {
                 "$ref": "contract:reference/ReferenceUri",
-                "description": "The job result once it is complete (src:), readable by the runner: one row per dispatched item"
+                "description": "Authorized result reference for this attempt's job and round; never an aggregate job outcome."
               },
               "device_return": {
                 "$ref": "contract:reference/ReferenceUri"

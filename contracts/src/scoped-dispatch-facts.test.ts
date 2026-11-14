@@ -69,6 +69,7 @@ test('four additive declarations and public JSON schemas derive from the registe
   assert.deepEqual(json.required, ['job_facts']);
   assert.deepEqual(json.properties.dispatch_attempt.properties.scope.required, ['job', 'round']);
   assert.equal(json.properties.dispatch_attempt.properties.not_sent.const, true);
+  assert.equal(json.properties.dispatch_attempt.properties.result.description, "Authorized result reference for this attempt's job and round; never an aggregate job outcome.");
   assert.equal('outcome' in json.properties.job_facts.properties, false);
   assert.equal(DispatchOutcomeFactsSchema.safeParse({ operation: 'precheck', phase: 'complete', outcome: 'not_dispatched' }).success, true, 'version-85 carrier stays available and unchanged');
 });
