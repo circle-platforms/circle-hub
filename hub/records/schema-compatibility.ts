@@ -1,5 +1,5 @@
 // Read-only migration diagnostics: no bootstrap, migration execution or business-schema probing.
-import type { RecordsConfig } from './api.ts';
+import type { RecordsConfig, Transaction } from './api.ts';
 import { createPool, Database } from './db.ts';
 import { MIGRATIONS, migrationChecksum } from './migrations.ts';
 import { readMigrationCompatibility } from './migration-compatibility-store.ts';
@@ -36,12 +36,14 @@ export function unavailableRecordsSchema():RecordsSchemaCompatibility {
     problems:['无法读取迁移登记，尚不能确认记录库是否兼容；请检查连接与读取权限后重试，当前不能执行重建']};
 }
 
+async function readCurrentRecordsSchema(db: Database, tx: Transaction): Promise<MigrationCompatibilityResult> {
+  return evaluateMigrationCompatibility(currentRecordMigrations(), await readMigrationCompatibility(db, tx), RECORDS_READER_LEVEL);
+}
+
 /** Shared runtime and diagnostic reader; transaction establishment failures stay unobservable. */
 export async function inspectRecordsSchema(db: Database): Promise<MigrationCompatibilityResult> {
   try {
-    return await db.transaction(async tx => evaluateMigrationCompatibility(
-      currentRecordMigrations(), await readMigrationCompatibility(db, tx), RECORDS_READER_LEVEL,
-    ));
+    return await db.transaction(tx => readCurrentRecordsSchema(db, tx));
   } catch {
     return { ...unavailableRecordsSchema(), effectiveFloor: null, acceptedUnknown: [] };
   }
@@ -51,6 +53,21 @@ export async function diagnoseRecordsSchema(config: Pick<RecordsConfig, 'databas
   const db = new Database(createPool(config.database, 1));
   try {
     return await inspectRecordsSchema(db);
+  } finally {
+    await db.end();
+  }
+}
+
+/** Maintenance connects as owner but observes actual application-role ACLs, even when CONNECT is revoked. */
+export async function diagnoseRecordsSchemaForMaintenance(config: Pick<RecordsConfig, 'database'>, applicationUser: string): Promise<MigrationCompatibilityResult> {
+  const db = new Database(createPool(config.database, 1));
+  try {
+    return await db.transaction(async tx => {
+      await db.query('SET LOCAL ROLE "' + applicationUser.replaceAll('"', '""') + '"', [], tx);
+      return readCurrentRecordsSchema(db, tx);
+    });
+  } catch {
+    return { ...unavailableRecordsSchema(), effectiveFloor: null, acceptedUnknown: [] };
   } finally {
     await db.end();
   }

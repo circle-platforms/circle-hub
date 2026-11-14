@@ -3,7 +3,7 @@ export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpg
 export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
 export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
 import type { SecretCipherIdentity } from '../../contracts/src/variables.ts';
-export { diagnoseRecordsSchema, currentRecordMigrations, inspectRecordsSchema, RECORDS_READER_LEVEL, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
+export { diagnoseRecordsSchema, diagnoseRecordsSchemaForMaintenance, currentRecordMigrations, inspectRecordsSchema, RECORDS_READER_LEVEL, type RecordsSchemaCompatibility, type RecordMigrationReceipt } from './schema-compatibility.ts';
 export { evaluateMigrationCompatibility, previewMigrationCompatibility, checkMigrationCompatibilityDeclarations, type MigrationCompatibilityDeclaration, type MigrationCompatibilityObservation, type MigrationCompatibilityResult } from './migration-compatibility.ts';
 export { readMigrationCompatibility, appendMigrationCompatibility } from './migration-compatibility-store.ts';
 export { PgTeams, type Team, type TeamRow, type TeamMember, type TeamAssignments, type TeamDeletion, type Teams } from './teams.ts';
