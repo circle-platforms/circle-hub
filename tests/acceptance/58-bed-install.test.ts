@@ -125,12 +125,18 @@ describe('scenario 58: installing a build on a whole booked bed from the publish
     assert.deepEqual(run.items, CASES, 'one upgrade case of the profile per load balancer of the bed, in inventory order');
     assert.equal(run.result.acceptance, 'accepted', JSON.stringify(run.result.errors));
     assert.ok(run.result.result!.partitions.delivered.every((item) => item.requirements.every((requirement) => requirement.status === 'satisfied')), JSON.stringify(run.result.result));
-    const note = run.result.dispatch?.[0]; assert.match(note?.text ?? '', /已按任务包的效果行开始上机验证/, JSON.stringify(run.result.dispatch));
+    const note = run.result.dispatch?.[0]; assert.ok(note?.job, JSON.stringify(run.result.dispatch));
+    assert.equal(note.job_facts?.scope.job, note.job);
+    assert.equal(note.job_facts?.reservation_recorded, true, 'reservation alone does not assert a physical dispatch');
     const state = await settled(run.run, note);
-    assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+    assert.equal(state.job_facts.scope.job, state.job);
+    assert.equal(state.dispatch_attempt?.scope.job, state.job);
+    assert.equal(state.dispatch_attempt?.scope.operation, 'dispatch');
+    assert.equal(state.dispatch_attempt?.outcome, 'effective'); assert.equal(state.job_facts.frozen, false);
+    assert.equal(state.job_facts.awaiting_disposition, false);
     assert.equal(sent.length, 1); assert.deepEqual(JSON.parse(sent[0].toString()), REQUEST, 'the gateway receives exactly the checked request bytes');
     assert.deepEqual(latest!.ids, CASES, 'the dispatched items are the profile\'s upgrade cases');
-    const source = await bed.hub.records.artifacts.source(bed.user.principal, state.result!.slice(4)); assert.ok(source?.bytes);
+    const source = await bed.hub.records.artifacts.source(bed.user.principal, state.job_facts.result!.slice(4)); assert.ok(source?.bytes);
     const report = JSON.parse(Buffer.from(source.bytes).toString()) as { rows: Array<{ item: string; reported_terminal: string }> };
     assert.deepEqual(report.rows.map((row) => [row.item, row.reported_terminal]), CASES.map((id) => [id, 'pass']));
     // Repeating the same submission reads the job; it never installs again.

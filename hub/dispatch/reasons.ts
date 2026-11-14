@@ -74,7 +74,14 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     : facts.frozen === true ? admin ? `circle-hub job status ${job.job}` : '本作业保持重发保护；原样读取进展，不要重新发送作业'
     : admin ? `circle-hub job status ${job.job}` : '读取本作业结果引用及各轮结论；没有结论时不要当作通过';
   // Once an attempt exists, its stage diagnostics never fall back to a job-wide summary.
-  const jobMissing = attempt ? (facts.missing_facts ?? []).map(fact => ({ fact: clip(fact.fact), next_action: admin ? clip(fact.next_action) : next })) : diagnosticFacts(facts, admin, next, '本作业');
+  const jobMissing = attempt
+    ? admin
+      ? (facts.missing_facts ?? []).map(fact => ({ fact: clip(fact.fact), next_action: clip(fact.next_action) }))
+      : (facts.member_missing_facts ?? []).map(fact => ({ fact: clip(fact.fact), next_action: clip(fact.next_action) }))
+    : diagnosticFacts(facts, admin, next, '本作业');
+  if (!admin && !jobMissing.length && (facts.missing_facts?.length || facts.admission_error)) {
+    jobMissing.push({ fact: '本作业尚缺可向当前账户提供的具体核对说明', next_action: next });
+  }
   const job_facts: DispatchJobFacts = {
     scope: facts.scope,
     ...(facts.operation !== undefined ? { operation: facts.operation } : {}),
@@ -85,6 +92,7 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     ...(facts.readonly_verified !== undefined ? { readonly_verified: facts.readonly_verified } : {}),
     ...(facts.conformance_verified !== undefined ? { conformance_verified: facts.conformance_verified } : {}),
     ...(facts.result ? { result: facts.result } : {}),
+    ...(facts.device_return ? { device_return: facts.device_return } : {}),
     ...(facts.admission_error ? { admission_error: { code: facts.admission_error.code, message: admin ? clip(facts.admission_error.message) : jobMissing.map(fact => fact.fact).join('；') || '本作业的准入核对未通过，请联系管理员核对', fix: admin ? facts.admission_error.fix : jobMissing.map(fact => fact.next_action).join('；') || next } } : {}),
     missing_facts: jobMissing, next_action: next,
   };

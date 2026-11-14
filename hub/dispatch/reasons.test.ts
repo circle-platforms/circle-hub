@@ -23,6 +23,7 @@ test('member diagnostics preserve three distinct producer-authored missing facts
   const facts = ['本次测试环境尚未登记基线', '认证所需的证据文件当前不可读取', '本次绑定清单的摘要与可取得原件不一致'];
   const answers = facts.map(fact => statusDiagnostics(job({ missing_fact: 'private administrator detail usr_synthetic', next_action: 'circle-hub executor update exe_synthetic', member_missing_facts: [{ fact, next_action: '联系管理员补齐该事实后重新核对本次环境' }] }), false));
   for (const [index, answer] of answers.entries()) {
+    assert.ok(answer.job_facts.missing_facts);
     assert.equal(answer.job_facts.missing_facts[0]?.fact, facts[index]);
     assert.doesNotMatch(JSON.stringify(answer), /usr_synthetic|exe_synthetic|circle-hub/);
   }
@@ -246,4 +247,27 @@ test('source note refuses mismatched job and attempt identities instead of joini
   source.status.job_facts.scope = { job: jobId };
   source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: 'd'.repeat(64), round: 1 };
   assert.throws(() => runnerNote(source, 'usr_private'), /范围/);
+});
+
+test('member source projection never copies raw job facts into facts or admission text when an attempt exists', () => {
+  const source = job({ outcome: 'not_dispatched', not_sent: true, result: `src:${'c'.repeat(64)}` });
+  const marker = 'PRIVATE_ADMIN_DIAGNOSTIC_SENTINEL';
+  source.status.job_facts.device_return = `src:${'e'.repeat(64)}`;
+  source.status.job_facts.missing_facts = [{ fact: marker + ' job fact', next_action: marker + ' job next' }];
+  source.status.job_facts.admission_error = { code: 'SOURCE_NOT_PERMITTED', message: marker + ' admission message', fix: marker + ' admission fix' };
+  source.status.dispatch_attempt!.scope = { operation: 'dispatch', job: jobId, round: 2, request_id: marker + ' request' };
+  source.status.dispatch_attempt!.missing_facts = [{ fact: marker + ' attempt fact', next_action: marker + ' attempt next' }];
+  source.status.dispatch_attempt!.next_action = marker + ' attempt next';
+  const member = statusDiagnostics(source, false);
+  assert.doesNotMatch(JSON.stringify(member), new RegExp(marker));
+  assert.equal(member.job_facts.result, source.status.job_facts.result);
+  assert.equal(member.job_facts.device_return, source.status.job_facts.device_return);
+  assert.equal(member.dispatch_attempt?.scope.request_id, undefined);
+  assert.ok(member.job_facts.missing_facts?.length, 'withheld diagnostic details are not claimed to be no missing facts');
+  const administrator = statusDiagnostics(source, true);
+  assert.match(JSON.stringify(administrator), new RegExp(marker + ' job fact'));
+  assert.match(JSON.stringify(administrator), new RegExp(marker + ' attempt fact'));
+  assert.equal(administrator.job_facts.admission_error?.message, marker + ' admission message');
+  assert.equal(administrator.dispatch_attempt?.scope.request_id, marker + ' request');
+  assert.equal(administrator.job_facts.device_return, source.status.job_facts.device_return);
 });
