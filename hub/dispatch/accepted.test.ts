@@ -251,7 +251,7 @@ test('not sent (the target cannot be reached): the reason names no address, and 
   const first = await acceptedDispatch(c.kit, c.service, c.run, true);
   const [job] = await ended(c, 1);
   assert.deepEqual({ ended: job.ended, outcome: job.status.dispatch_attempt?.outcome, not_sent: job.status.dispatch_attempt?.not_sent }, { ended: 'done', outcome: 'not_dispatched', not_sent: true }, JSON.stringify(job.status));
-  assert.equal(job.status.reason, '目标没有给出完整应答：连不上、超时或应答超限');
+  assert.equal(job.status.dispatch_attempt?.reason, '目标没有给出完整应答：连不上、超时或应答超限');
   const again = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(again.length, 2, JSON.stringify(again));
   assert.match(again[0].text, /未发出；目标没有给出完整应答：连不上、超时或应答超限/);
@@ -282,7 +282,7 @@ test('sent without an answer: the note gives the request id, forbids a resend an
   const [job] = await ended(c, 1);
   assert.deepEqual({ ended: job.ended, outcome: job.status.dispatch_attempt?.outcome, frozen: job.status.job_facts.frozen }, { ended: 'unknown', outcome: 'unknown', frozen: true });
   assert.ok(job.status.dispatch_attempt?.scope.request_id, 'the request id of the submit intent');
-  assert.equal(job.status.requests?.length, 1, 'the unresolved outcome is a request to the administrator');
+  assert.equal(job.status.job_facts.requests?.length, 1, 'the unresolved outcome is a request to the administrator');
   const sent = c.calls.filter((name) => name === 'send_blob').length, reached = c.calls.length;
   for (const ready of [true, false]) {
     const again = await acceptedDispatch(c.kit, c.service, c.run, ready);
@@ -302,11 +302,11 @@ test('an exception after starting dispatch reports unknown and never starts a se
   c.service.dispatchAccepted=async()=>{attempts++;throw new Error('private-host usr_private');};
   for (let n=0;n<2;n++) {
     const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.owner);
-    assert.equal(note.dispatch_attempt,undefined);assert.equal(note.job_facts,undefined);assert.equal(note.run_facts?.worker_settled,true);assert.equal(note.dispatch_attempt?.not_sent,undefined);assert.equal(note.job_facts?.frozen,undefined,'no journal observation proves a durable freeze');assert.match(note.run_facts?.next_action!,/不要重新发送/);
+    assert.equal(note.dispatch_attempt,undefined);assert.equal(note.job_facts,undefined);assert.equal(note.run_facts?.worker_settled,true);assert.equal(Object.hasOwn(note,'not_sent'),false);assert.equal(Object.hasOwn(note,'frozen'),false,'no journal observation proves a durable freeze');assert.match(note.run_facts?.next_action!,/不要重新发送/);
     assert.doesNotMatch(JSON.stringify(note),/private-host|usr_private|circle-hub/);
   }
   const [administrator]=await acceptedDispatch(c.kit,c.service,c.run,true,5,c.admin);
-  assert.equal(administrator.dispatch_attempt,undefined);assert.equal(administrator.job_facts,undefined);assert.equal(administrator.run_facts?.worker_settled,true);assert.equal(administrator.dispatch_attempt?.not_sent,undefined);assert.equal(administrator.run_facts?.next_action,`circle-hub run show ${c.run} --json`);
+  assert.equal(administrator.dispatch_attempt,undefined);assert.equal(administrator.job_facts,undefined);assert.equal(administrator.run_facts?.worker_settled,true);assert.equal(Object.hasOwn(administrator,'not_sent'),false);assert.equal(administrator.run_facts?.next_action,`circle-hub run show ${c.run} --json`);
   assert.equal(attempts,1,'an unobserved failure never authorizes a second dispatch');
 });
 
@@ -661,7 +661,10 @@ test('scoped accepted notes preserve the first round after a zero-write second a
   assert.equal(Object.hasOwn(note, 'not_sent'), false, 'a second-round no-send fact is never a root job fact');
   assert.ok(Reflect.get(note, 'job_facts'));
   const attempt = Reflect.get(note, 'dispatch_attempt');
-  assert.deepEqual(attempt?.scope && { job: attempt.scope.job, round: attempt.scope.round }, { job: state.job, round: 2 });
+  assert.ok(attempt);
+  assert.equal(attempt.scope.job,state.job);
+  if(attempt.scope.operation!=='dispatch')assert.fail('the stored intent is a dispatch scope');
+  assert.equal(attempt.scope.round,2);
   assert.equal(attempt?.not_sent, true);
   assert.match(note.text, /第 2 轮/);
   assert.doesNotMatch(note.text, /什么都没有发到目标|整个作业没有执行/);

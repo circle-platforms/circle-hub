@@ -23,6 +23,7 @@ test('member diagnostics preserve three distinct producer-authored missing facts
   const facts = ['本次测试环境尚未登记基线', '认证所需的证据文件当前不可读取', '本次绑定清单的摘要与可取得原件不一致'];
   const answers = facts.map(fact => statusDiagnostics(job({ missing_fact: 'private administrator detail usr_synthetic', next_action: 'circle-hub executor update exe_synthetic', member_missing_facts: [{ fact, next_action: '联系管理员补齐该事实后重新核对本次环境' }] }), false));
   for (const [index, answer] of answers.entries()) {
+    assert.ok(answer.job_facts.missing_facts);
     assert.equal(answer.job_facts.missing_facts[0]?.fact, facts[index]);
     assert.doesNotMatch(JSON.stringify(answer), /usr_synthetic|exe_synthetic|circle-hub/);
   }
