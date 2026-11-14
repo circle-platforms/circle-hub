@@ -77,6 +77,314 @@
             "description": "reference a claim rests on: src, tree or rec; a knowledge entry is cited by its tree address"
           },
           "description": "Only source-authorized real references for this group; the schema does not establish provenance or visibility."
+        },
+        "readonly_verified": {
+          "type": "boolean",
+          "description": "Observed fact that all readonly conditions positively passed; false is not a device error verdict and this is not inferred from complete/not_dispatched."
+        },
+        "admission_error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string"
+            },
+            "call_error_reason": {
+              "type": "string",
+              "enum": [
+                "actor_disabled",
+                "actor_not_active",
+                "environment_disabled",
+                "environment_unassigned",
+                "environment_not_registered",
+                "environment_registration_inconsistent",
+                "environment_permission_unavailable",
+                "lease_held_by_other_account",
+                "lease_already_held_by_current_account",
+                "lease_missing_for_lineage",
+                "lease_expired",
+                "lease_released",
+                "lease_reader_unavailable",
+                "pack_unassigned",
+                "knowledge_root_unassigned",
+                "system_unassigned",
+                "content_read_not_permitted",
+                "named_document_run_scope_denied",
+                "run_submission_not_owned"
+              ]
+            },
+            "object_kind": {
+              "type": "string",
+              "enum": [
+                "pack",
+                "knowledge",
+                "knowledge_root",
+                "system",
+                "source_artifact",
+                "record",
+                "named_document",
+                "test_environment"
+              ]
+            },
+            "object_display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+            },
+            "environment_display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+            },
+            "holder_relation": {
+              "type": "string",
+              "enum": [
+                "current_account",
+                "other_account",
+                "unknown"
+              ]
+            },
+            "holder_display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+            },
+            "acquired_at": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "lease_key": {
+              "description": "Only when the source has verified actual administrator visibility; never returned to members. The schema does not prove authorization.",
+              "type": "string",
+              "minLength": 1
+            },
+            "registration_comparison": {
+              "type": "object",
+              "properties": {
+                "issue": {
+                  "type": "string",
+                  "enum": [
+                    "executor_identity",
+                    "target",
+                    "resources",
+                    "booking_scope"
+                  ]
+                },
+                "left_display_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                },
+                "right_display_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "Actual display name supplied by the source, not an identifier substituted for a name. String shape cannot prove semantic origin or visibility."
+                },
+                "left_values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "right_values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "issue"
+              ],
+              "additionalProperties": false,
+              "description": "Source-observed comparison, parallel to reason. Members receive only issue and the environment name; both sides are populated only for actual source-verified administrator visibility. Shape cannot prove authorization."
+            },
+            "fix": {
+              "type": "string"
+            },
+            "path": {
+              "description": "JSON Pointer into the call arguments; for submit_result, into the submission",
+              "type": "string",
+              "maxLength": 8192,
+              "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$"
+            },
+            "item": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "requirement": {
+              "type": "string"
+            },
+            "rounds_left": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "options_coverage": {
+              "description": "how many options there are and how many are listed; note says where the rest are (A05 R[1])",
+              "type": "object",
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "examined": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "complete",
+                "examined"
+              ],
+              "additionalProperties": false
+            },
+            "coverage": {
+              "description": "of the lookup the statement rests on",
+              "type": "object",
+              "properties": {
+                "complete": {
+                  "type": "boolean"
+                },
+                "examined": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "complete",
+                "examined"
+              ],
+              "additionalProperties": false
+            },
+            "grounds": {
+              "description": "references and external ids the error rests on",
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "warrant": {
+              "description": "the rule or component that decided it, as id@version",
+              "type": "string",
+              "minLength": 1
+            },
+            "provenance": {
+              "description": "declared, observed or projected (A02)",
+              "type": "string",
+              "enum": [
+                "observed",
+                "projected",
+                "declared",
+                "candidate",
+                "client_captured"
+              ]
+            },
+            "collected_at": {
+              "description": "when the facts it rests on were read; an observation holds only for that moment (A05 R[3])",
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            },
+            "missing": {
+              "description": "the missing fact, written instead of a next step nobody can take",
+              "type": "string",
+              "minLength": 1
+            },
+            "hypotheses": {
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "prediction": {
+                    "type": "string"
+                  },
+                  "support": {
+                    "description": "observations and references that agree with the hypothesis",
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "refute": {
+                    "description": "observations and references that disagree with it",
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "excluded"
+                    ]
+                  }
+                },
+                "required": [
+                  "statement",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "conformance_verified": {
+          "type": "boolean",
+          "description": "Whether conformance was explicitly verified by the source; absent when not recorded."
         }
       },
       "required": [
@@ -84,35 +392,70 @@
       ],
       "additionalProperties": false,
       "title": "dispatch-job-facts@1",
-      "description": "Job-scoped metadata and result observations, never a round-level effect outcome or history-any invocation summary. scope contains only job. No outcome, not_sent, submit_invoked or anyInvoke here."
+      "description": "Job-scoped metadata and result observations, never a round-level effect outcome or history-any invocation summary. scope contains only job. No outcome, not_sent, submit_invoked or anyInvoke here. Optional readonly_verified and admission_error describe actual admission/readonly observations, not a job effect outcome."
     },
     "dispatch_attempt": {
       "type": "object",
       "properties": {
         "scope": {
-          "type": "object",
-          "properties": {
-            "job": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "dispatch"
+                  ]
+                },
+                "job": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "round": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "request_id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "operation",
+                "job",
+                "round"
+              ],
+              "additionalProperties": false
             },
-            "round": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            },
-            "request_id": {
-              "type": "string",
-              "minLength": 1
+            {
+              "type": "object",
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "conformance"
+                  ]
+                },
+                "job": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "request_id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "operation",
+                "job"
+              ],
+              "additionalProperties": false
             }
-          },
-          "required": [
-            "job",
-            "round"
           ],
-          "additionalProperties": false,
           "title": "dispatch-attempt-scope@1",
-          "description": "One real dispatch attempt: job and positive round are required, optional request_id belongs to this exact intent. Never synthesize a round from a latest job summary or for readonly precheck."
+          "description": "Canonical tagged attempt identity. Dispatch requires a real positive round; conformance is a distinct operation with no fabricated round. Precheck is readonly job metadata, never an attempt. request_id belongs only to this exact operation intent."
         },
         "outcome": {
           "type": "string",
