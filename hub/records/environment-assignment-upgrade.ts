@@ -12,7 +12,10 @@ import { FileObjectStore } from './objects.ts';
 import { RecordAuthorizations } from './authorizations.ts';
 import { isAdmin } from './permissions.ts';
 import { RequestPermissions } from './request-permissions.ts';
-import { AccessError, IntegrityError } from './errors.ts';
+import { readMigrationCompatibility } from './migration-compatibility-store.ts';
+import { evaluateMigrationCompatibility } from './migration-compatibility.ts';
+import { currentRecordMigrations, RECORDS_READER_LEVEL } from './schema-compatibility.ts';
+import { AccessError, IntegrityError, MigrationError } from './errors.ts';
 import { MIGRATIONS, migrationChecksum, verifyMigrations, migrateEnvironmentAssignments, lockRecordMigrations, grantRuntime } from './migrations.ts';
 import { EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE } from './environment-upgrade-errors.ts';
 export { EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE } from './environment-upgrade-errors.ts';
@@ -148,8 +151,8 @@ export async function authenticateEnvironmentUpgradeActor(config: Pick<RecordsCo
 export async function readEnvironmentAssignmentActivation(config: Config): Promise<EnvironmentUpgradeReceipt> {
   const db = new Database(createPool(config.database, 1));
   try { return await db.transaction(async tx => {
-    await db.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY', [], tx);
-    if (await schema(db, tx)) throw new EnvironmentUpgradeRequiredError();
+    const compatibility = evaluateMigrationCompatibility(currentRecordMigrations(), await readMigrationCompatibility(db, tx), RECORDS_READER_LEVEL);
+    if (compatibility.compatible !== true) throw new MigrationError(compatibility.problems.join('；'));
     const receipt = await completed(db, new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now: () => new Date() }), tx);
     if (!receipt) throw new EnvironmentUpgradeRequiredError();
     return receipt;
