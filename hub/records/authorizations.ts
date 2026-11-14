@@ -11,7 +11,7 @@ import {mayUsePersonalPack} from './personal-packs.ts';
 // (permission, subject, object) wins. Every decision names the record it follows (`supersedes`), so it is a distinct record
 // even when it repeats an earlier one in the same millisecond. A permission is not evidence, and a passed check is not a
 // permission (B04 R[0]).
-import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject, TestEnvironmentId, TEST_ENVIRONMENT_CONFIG_PREFIX } from '../../contracts/api.ts';
+import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject, TestEnvironmentId, TestEnvironment, TEST_ENVIRONMENT_CONFIG_PREFIX } from '../../contracts/api.ts';
 import { idOf, PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
@@ -34,7 +34,7 @@ import type {
 import { RECORD_SCHEMAS, WHOLE_HUB } from './constants.ts';
 import { normalizeTime } from './db.ts';
 import type { Database } from './db.ts';
-import { digestOf, isSha256 } from './digest.ts';
+import { digestOf, isSha256, sha256Hex } from './digest.ts';
 import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 import { captureRequestPermissions, capturePermissionSnapshots, requestPermissions } from './request-permissions.ts';
@@ -391,6 +391,10 @@ export class RecordAuthorizations implements Authorizations {
         if (!revoked && TestEnvironmentId.safeParse(object).success) {
           const environment = await this.#latest(RESOURCE_CONFIG, WHOLE_HUB, TEST_ENVIRONMENT_CONFIG_PREFIX + object, tx);
           if (!environment || !this.#active(environment)) throw new ConflictError('测试环境不存在或已删除');
+          const bytes = environment.body.bound === null ? null : await this.#objects.get(environment.body.bound, tx);
+          if (!bytes || sha256Hex(bytes) !== environment.body.bound) throw new IntegrityError('测试环境登记原件缺失或摘要不符');
+          const definition = TestEnvironment.parse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
+          if (definition.id !== object || definition.target === null) throw new ConflictError('只有有目标的测试环境可以分配使用权');
         }
       }
       const decider = await this.#decider(by, tx);

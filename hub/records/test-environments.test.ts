@@ -158,3 +158,67 @@ test('a failure after directory creation rolls back all environment, assignment 
     assert.equal((await f.kit.authorizations.history({ permission: 'resource_config' })).items.some(row => row.body.object.startsWith(TEST_ENVIRONMENT_CONFIG_PREFIX)), false);
   } finally { await f.close(); }
 });
+
+test('formal booking-prefix registration is not an environment and adoption archives its old identity with zero automatic grants', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    const prefix = await f.kit.testEnvironments.registerBookingPrefix(f.admin, { prefix: 'ordinary/', owner: f.member.id });
+    assert.equal(prefix.isTestEnvironment, false);
+    assert.equal(prefix.isBookingPrefix, true);
+    assert.deepEqual(prefix.missing_facts, []);
+    await assert.rejects(f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: prefix.id }), /有目标的测试环境/);
+    const resolution = await f.kit.testEnvironments.resolve(['ordinary/key']);
+    assert.deepEqual(resolution.environments, []);
+    assert.equal(resolution.unregistered[0].id, prefix.id);
+    const environment = await f.kit.testEnvironments.register(f.admin, { ...f.input('由前缀登记的新环境', 'new-target'), prefixes: prefix.prefixes });
+    assert.notEqual(environment.id, prefix.id);
+    assert.deepEqual(environment.prefixes, prefix.prefixes);
+    assert.equal(await f.kit.testEnvironments.get(f.admin, prefix.id), null);
+    assert.equal((await f.kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_CONFIG_PREFIX + prefix.id))?.body.revoked, true);
+    assert.equal(await f.kit.authorizations.latest('resource_assign', f.member.id, environment.id), null);
+    assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
+    assert.equal((await f.kit.testEnvironments.ownership()).prefixes.filter(row => row.prefix === 'ordinary/').length, 1);
+  } finally { await f.close(); }
+});
+
+test('a non-environment prefix preserves complete lease refusal and ownership results across conversion and still permits ordinary booking', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    const prefix = 'ordinary/', keys = ['ordinary/key'], holder = { user: f.member.id, run: newId('run') };
+    await f.kit.authorizations.grant(f.admin, { permission: 'assign', subject: f.member.id, object: 'ordinary-workflow' });
+    await f.db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3)', [prefix, f.member.id, f.at]);
+    // Test-only historical input adapter, never a runtime fallback: before conversion the prefix table is the source.
+    const beforeService = new LeaseService(f.db, { records: f.kit.store, now: async () => new Date(f.at), catalog: { ownership: async tx => ({ prefixes: (await f.db.query<{ prefix: string; owner: string }>('SELECT prefix,owner FROM lease_registrations ORDER BY prefix', [], tx)).rows, resources: [] }) } });
+    const input = { keys, prefix, holder, ttlSeconds: 900, maxTtlSeconds: 3600 };
+    assert.equal(await f.kit.authorizations.canUse(f.member.id, 'ordinary-workflow'), true);
+    const first = await beforeService.acquire(input);
+    assert.ok(first.ok);
+    const busyBefore = await beforeService.acquire(input);
+    assert.equal(busyBefore.ok, false);
+    const deniedCleanupBefore = await beforeService.forceRelease({ keys, by: f.other.id, owner: f.other.id, reason: 'synthetic wrong owner' });
+    const registrationsBefore = await beforeService.registrations('');
+    const leaseBytes = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
+    const sources: TestEnvironmentInheritanceSources = { collect: async ctx => {
+      const original = await f.sources.collect(ctx);
+      return { ...original, workflows: [{ ...original.workflows[0], id: 'ordinary-workflow', prefix }] };
+    } };
+    assert.equal((await f.kit.testEnvironments.inherit(f.admin, sources)).assignments, 0);
+    const resolution = await f.kit.testEnvironments.resolve(keys);
+    assert.deepEqual(resolution.environments, []);
+    assert.equal(resolution.unregistered.length, 1);
+    assert.deepEqual(resolution.unregistered[0].prefixes, [{ prefix, owner: f.member.id, registered_at: f.at }]);
+    const afterService = new LeaseService(f.db, { records: f.kit.store, now: async () => new Date(f.at), catalog: f.kit.testEnvironments });
+    assert.deepEqual(await afterService.registrations(''), registrationsBefore);
+    assert.deepEqual(await afterService.acquire(input), busyBefore, 'all actual refusal fields, including holder and earliest-free evidence, remain identical');
+    assert.deepEqual(await afterService.forceRelease({ keys, by: f.other.id, owner: f.other.id, reason: 'synthetic wrong owner' }), deniedCleanupBefore);
+    assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, leaseBytes);
+    assert.equal(await f.kit.authorizations.canUse(f.member.id, 'ordinary-workflow'), true);
+    assert.equal((await afterService.release({ keys, holder })).ok, true);
+    const next = await afterService.acquire(input);
+    assert.ok(next.ok, 'ordinary booking after explicit release still succeeds without an environment assignment');
+    assert.deepEqual(next.keys, first.keys);
+    assert.equal(next.until, first.until);
+    assert.notEqual(next.lease, first.lease, 'new real booking must have a new identity');
+    assert.equal(next.token, first.token + 2, 'release and reacquire keep the actual fencing progression');
+  } finally { await f.close(); }
+});
