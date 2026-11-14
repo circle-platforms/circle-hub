@@ -30,7 +30,7 @@ test('an unbounded current holder passes the full synthetic dispatch lifecycle',
 test('owner release increments the fence and rejects the former lineage before a synthetic executor submission', async t => {
   const c=await setup();t.after(()=>c.close());
   const owner=await c.kit.principals.createUser(c.admin,'合成登记主人');
-  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id);
+  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id,c.executor.definition.resources);
   const keys=c.executor.definition.resources;
   const before=await c.leases.holderSnapshot(keys);
   assert.ok((await c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成主人收回'})).ok);
@@ -44,7 +44,7 @@ test('a force release and a new reservation serialize through the same durable l
   const c=await setup();t.after(()=>c.close());
   const owner=await c.kit.principals.createUser(c.admin,'合成并发主人');
   const keys=c.executor.definition.resources;
-  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id);
+  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id,c.executor.definition.resources);
   let checked!:()=>void;const checkReached=new Promise<void>(resolve=>checked=resolve);
   let release!:()=>void;const pause=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
   const forcing=c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成并发释放',guard:async()=>{
@@ -67,7 +67,7 @@ test('a committed reservation wins the release race and the owner guard leaves i
   let finishTarget!:()=>void;const targetWait=new Promise<void>(resolve=>finishTarget=resolve);t.after(()=>finishTarget());
   const c=await setup({onSubmit:async()=>targetWait});t.after(()=>c.close());
   const owner=await c.kit.principals.createUser(c.admin,'合成等待主人');const keys=c.executor.definition.resources;
-  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id);
+  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id,c.executor.definition.resources);
   const before=await c.leases.holderSnapshot(keys);
   let committed!:()=>void;const commitReached=new Promise<void>(resolve=>committed=resolve);
   let releaseReservation!:()=>void;const reservationWait=new Promise<void>(resolve=>releaseReservation=resolve);t.after(()=>releaseReservation());
