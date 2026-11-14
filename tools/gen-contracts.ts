@@ -520,6 +520,7 @@ const SHARED_PRIMITIVES: Readonly<Record<string,string>> = {
   'contract:product/Applicability':'Product.Applicability',
   'contract:common/Versioned':'Common.Versioned',
   'contract:common/ItemId':'Common.ItemId',
+  'contract:common/ProtocolError':'Common.ProtocolError',
   'contract:reference/ReferenceUri':'Reference.ReferenceUri',
   'contract:reference/Ground':'Reference.Ground',
   'contract:reference/SrcUri':"Reference.referenceUriOf('src')",

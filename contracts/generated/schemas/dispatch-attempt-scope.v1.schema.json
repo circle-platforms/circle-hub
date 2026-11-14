@@ -1,26 +1,61 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "job": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "dispatch"
+          ]
+        },
+        "job": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation",
+        "job",
+        "round"
+      ],
+      "additionalProperties": false
     },
-    "round": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
-    },
-    "request_id": {
-      "type": "string",
-      "minLength": 1
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "conformance"
+          ]
+        },
+        "job": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "operation",
+        "job"
+      ],
+      "additionalProperties": false
     }
-  },
-  "required": [
-    "job",
-    "round"
   ],
-  "additionalProperties": false,
   "title": "dispatch-attempt-scope@1",
-  "description": "One real dispatch attempt: job and positive round are required, optional request_id belongs to this exact intent. Never synthesize a round from a latest job summary or for readonly precheck."
+  "description": "Canonical tagged attempt identity. Dispatch requires a real positive round; conformance is a distinct operation with no fabricated round. Precheck is readonly job metadata, never an attempt. request_id belongs only to this exact operation intent."
 }
