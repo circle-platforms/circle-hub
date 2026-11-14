@@ -38,3 +38,5 @@ export { readEnvironmentReadiness, createEnvironmentReadiness, type EnvironmentR
 export { ExecutorNames } from './executor-names.ts';
 
 export { EffectBoundaryError } from './boundary.ts';
+
+export { EnvironmentRegistrationIncompleteError } from './bootstrap-capture.ts';
