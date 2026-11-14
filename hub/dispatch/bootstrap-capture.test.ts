@@ -81,7 +81,15 @@ test('an unassigned real administrator captures an enabled known target without 
   const before = await bookings(c);
   const state = await c.service.precheck(c.admin, c.executor.id);
   await auditedCapture(c, state, registered.resolved_digest, ['precheck.response', 'release.response']);
-  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /先 precheck.*update/);
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), (error: unknown) => {
+    assert.ok(error instanceof Dispatch.EnvironmentRegistrationIncompleteError);
+    assert.equal(error.protocol.code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(error.protocol.call_error_reason, 'environment_registration_incomplete');
+    assert.equal(error.protocol.object_kind, 'test_environment');
+    assert.equal(error.administratorExecutor, c.executor.id);
+    assert.deepEqual(resolveCallErrorReason(error.protocol.code, error.protocol.call_error_reason, c.admin.role)?.classification, { category: 'not_found' });
+    return true;
+  });
   await noEffects(c, before, state.job);
 });
 
