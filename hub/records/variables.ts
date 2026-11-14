@@ -87,12 +87,12 @@ export class RecordVariables {
         out.push(...page.items);
         cursor = page.next;
     } while (cursor); return out; }
-    async #definition(decision: AuthorizationRecord, kind: VariableKind, name: string) {
+    async #definition(decision: AuthorizationRecord, kind: VariableKind, name: string, tx?: Transaction) {
         if (decision.body.revoked)
             return null;
         if (!decision.body.bound)
             throw new IntegrityError('变量决定缺少绑定内容');
-        const bytes = await this.#p.objects.get(decision.body.bound);
+        const bytes = await this.#p.objects.get(decision.body.bound, tx);
         if (!bytes)
             throw new IntegrityError('变量决定绑定的对象不可读');
         const parsed = VariableRecord.safeParse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
@@ -248,29 +248,29 @@ export class RecordVariables {
         } while (cursor);
         return Promise.all([...latest].sort(([a], [b]) => a.localeCompare(b)).map(([key, row]) => this.#version('var', key.slice(key.indexOf(':') + 1), row)));
     }
-    async snapshot(): Promise<VariableSnapshot> {
+    async snapshot(tx?: Transaction): Promise<VariableSnapshot> {
         const prefix = CONFIG + '|' + WHOLE_HUB + '|var:';
-        const rows = await this.#p.database.query(`SELECT DISTINCT ON (i.value) r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM record_index i JOIN records r ON r.digest=i.digest WHERE i.key='authz.key' AND left(i.value,length($1))=$1 AND r.kind='authorization' ORDER BY i.value,i.record_seq DESC`, [prefix]);
+        const rows = await this.#p.database.query(`SELECT DISTINCT ON (i.value) r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body FROM record_index i JOIN records r ON r.digest=i.digest WHERE i.key='authz.key' AND left(i.value,length($1))=$1 AND r.kind='authorization' ORDER BY i.value,i.record_seq DESC`, [prefix], tx);
         const out = new Map<string, string>();
         for (const raw of rows.rows) {
-            const row = verifiedRecord<AuthorizationRecord['body']>(raw);
+            const row = verifiedRecord<AuthorizationRecord['body']>(raw, tx);
             if (row.body.permission === CONFIG && row.body.subject === WHOLE_HUB && row.body.object.startsWith('var:') && !row.body.revoked)
                 out.set(row.body.object.slice(4), row.digest);
         }
         return out;
     }
-    async valueAt(name: string, decision: string): Promise<unknown> { name = this.#name(name, 'var'); const row = await this.#p.store.get<AuthorizationRecord['body']>(decision); if (!row || row.kind !== 'authorization' || row.body.permission !== CONFIG || row.body.subject !== WHOLE_HUB || row.body.object !== 'var:' + name || row.body.revoked)
-        throw new VariableError('变量版本不可用；请先 circle-hub var set <名字>', name); return (await this.#definition(row, 'var', name) as VariableRecord).value; }
-    async resolveVariables(value: unknown, at: string, snapshot?: VariableSnapshot): Promise<{
+    async valueAt(name: string, decision: string, tx?: Transaction): Promise<unknown> { name = this.#name(name, 'var'); const row = await this.#p.store.get<AuthorizationRecord['body']>(decision, tx); if (!row || row.kind !== 'authorization' || row.body.permission !== CONFIG || row.body.subject !== WHOLE_HUB || row.body.object !== 'var:' + name || row.body.revoked)
+        throw new VariableError('变量版本不可用；请先 circle-hub var set <名字>', name); return (await this.#definition(row, 'var', name, tx) as VariableRecord).value; }
+    async resolveVariables(value: unknown, at: string, snapshot?: VariableSnapshot, tx?: Transaction): Promise<{
         value: unknown;
         uses: OrdinaryVariableUse[];
-    }> { const refs = referencesIn(value); const frozen = snapshot ?? await this.snapshot(); const values = new Map<string, unknown>(), uses: OrdinaryVariableUse[] = []; for (const ref of refs) {
+    }> { const refs = referencesIn(value); const frozen = snapshot ?? await this.snapshot(tx); const values = new Map<string, unknown>(), uses: OrdinaryVariableUse[] = []; for (const ref of refs) {
         if (ref.kind !== 'var')
             throw new VariableError('这里只能引用普通变量，密钥只许用于凭据项');
         const decision = frozen.get(ref.name);
         if (!decision)
             throw new VariableError(snapshot ? `本次变量快照缺少 ${ref.name} 的决定：先确认 circle-hub var set ${ref.name}，再重开运行或同步` : `变量 ${ref.name} 没有设置：先 circle-hub var set ${ref.name}`, ref.name);
-        values.set(ref.name, await this.valueAt(ref.name, decision));
+        values.set(ref.name, await this.valueAt(ref.name, decision, tx));
         uses.push({ kind: 'var', at: at + '#' + ref.at, name: ref.name, decision });
     } return { value: resolveValue(value, (_kind, name) => values.get(name)), uses }; }
     async readSecrets(requests: readonly { name: string }[]): Promise<SecretMaterial[]> {
