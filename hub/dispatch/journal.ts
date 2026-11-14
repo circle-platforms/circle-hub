@@ -88,7 +88,7 @@ export class Journal {
   }
   async binding(job: string): Promise<JobBinding> {
     const event = (await this.events(job)).find(e => e.body.detail.phase === 'reservation');
-    if (!event) throw new Error('作业对你不可用');
+    if (!event) throw new Error('作业对当前账户不可用');
     return event.body.detail.binding as unknown as JobBinding;
   }
 }

@@ -33,7 +33,7 @@ function noConclusion(clause:2|7,id:string,outcomes:readonly CheckOutcome[]|unde
  return new EffectBoundaryError(unconcluded(clause,`${check} ${id} ${what}`,fix,row));
 }
 export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationPort;workflows:Pick<WorkflowStore,'byDigest'>;recheck?:EffectCheckReplay;by:Principal;run:string;executor:string;definition:ExecutorDefinition;resolved_digest:string;now:()=>Date}){
- const detail=await o.runs.getRun(o.by,o.run);if(!detail)throw new Error('运行对你不可用；请核对运行编号和读取权限');
+ const detail=await o.runs.getRun(o.by,o.run);if(!detail)throw new Error('运行对当前账户不可用；请核对运行编号和读取权限');
  const workflow=await o.workflows.byDigest(detail.run.pack_digest);
  const effects=workflow?RequirementsFile.parse(await workflow.readJson('requirements.json')).effects??[]:[];
  const d=o.definition;
