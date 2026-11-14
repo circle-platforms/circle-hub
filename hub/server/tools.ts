@@ -24,7 +24,7 @@ import {
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
 import type { CallContext, WorkflowStore } from '../ports.ts';
-import { findSubschema, renderExpected } from '../runs/engine/api.ts';
+import { findSubschema, renderExpected } from '../runs/api.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
 import { ParseLimitError, ParseSyntaxError, ParseEncodingError, ReferenceSyntaxError, UNAVAILABLE_MESSAGE, createDocumentCache, parseReference, resolveReference, sandboxReadDiagnostic, type ReaderIdentity, type Reference } from '../refs/api.ts';
@@ -153,7 +153,7 @@ export function pointerOfPath(path: readonly PropertyKey[]): string {
 const ARGUMENT_FIX = '这次按 tools/list 该工具的 inputSchema 改正参数后再调用';
 
 /** The retired generic fix; tests assert schemaErrors never returns this alone. */
-export const LEGACY_ARGUMENT_FIX = '按工具的输入模式改正这个参数后再调用';
+export const GENERIC_ARGUMENT_FIX = '按工具的输入模式改正这个参数后再调用';
 
 function violation(_tool: ToolName, path: string, message: string, fix = ARGUMENT_FIX): ProtocolError {
   return { code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数无效：${message}`, fix, path };

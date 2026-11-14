@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { GetNodesInput, ListTaskPacksInput, ResolveReferenceInput, StartRunInput, UploadFileInput } from '../../contracts/src/tools.ts';
-import { LEGACY_ARGUMENT_FIX, PUBLISHED, pathInInputSchema, schemaErrors } from './tools.ts';
+import { GENERIC_ARGUMENT_FIX, PUBLISHED, pathInInputSchema, schemaErrors } from './tools.ts';
 
 const schemas = {
   list_task_packs: ListTaskPacksInput,
@@ -26,7 +26,7 @@ function assertSchemaError(tool: Tool, error: ProtocolError) {
   const input = PUBLISHED.get(tool)!.inputSchema as Record<string, unknown>;
   assert.equal(typeof error.path === 'string' && pathInInputSchema(input, error.path), true, `path ${error.path} must resolve in ${tool} inputSchema`);
   assert.equal(typeof error.fix, 'string');
-  assert.notEqual(error.fix, LEGACY_ARGUMENT_FIX);
+  assert.notEqual(error.fix, GENERIC_ARGUMENT_FIX);
   assert.match(error.message, /^参数无效：/);
   assert.match(error.fix!, /^请/);
   assert.match(error.fix!, /规则见 /);

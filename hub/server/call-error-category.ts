@@ -4,7 +4,7 @@
  * Object words come from pack-words / source messages.
  */
 import type { ProtocolError } from '../../contracts/src/common.ts';
-import { SYNC_MODE_UI } from '../../contracts/generated/vocabulary.ts';
+import { SYNC_MODE_UI, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { callErrorCategoryOf, type CallErrorCategory } from './error-reasons.ts';
 import { circleHubFromMetadata, circleHubFromParameters, fillCallerAccountName } from './fix-by-role.ts';
 
@@ -40,8 +40,8 @@ export function notPermittedKindOf(message: string, fix: string | undefined): No
 function packNameFromMessage(message: string): string | undefined {
   const quoted = /「([^」]+)」/.exec(message);
   if (quoted) return quoted[1];
-  const legacy = /(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给/.exec(message);
-  return legacy?.[1];
+  const assignedNameMatch = /(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给/.exec(message);
+  return assignedNameMatch?.[1];
 }
 
 /** HH:MM in the process local zone from an ISO timestamp. */
@@ -93,7 +93,7 @@ function leaseKeyFromMessage(message: string): string {
 
 /**
  * Fact clause for the category sentence: no category prefix, no 任务包, no 「你」 as subject.
- * Prefers source messages that already use owner wording; only normalises legacy shapes.
+ * Prefers source messages that already use owner wording; only normalises prior shapes.
  */
 export function callErrorFact(code: string, message: string): string {
   let fact = message.split('；')[0]!.trim();
@@ -103,7 +103,7 @@ export function callErrorFact(code: string, message: string): string {
     return '当前账户未获授权读取这条产品线的手册和命令树';
   }
 
-  // Legacy pack-denial shapes → owner form (kind unknown at rewrite time → 工作流, matching prior MCP default).
+  // Prior pack-denial shapes → owner form (kind unknown at rewrite time → 工作流, matching prior MCP default).
   const packDenied = /^(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给(?:你|当前账户)$/.exec(fact);
   if (packDenied) return unassignedPackFact(packDenied[1]!, 'workflow');
 
@@ -322,7 +322,7 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
  */
 export function callErrorNext(
   code: string,
-  role: 'admin' | 'user',
+  role: PermissionRole,
   fix: string | undefined,
   message = '',
   callerName?: string,
@@ -356,7 +356,7 @@ export function callErrorNext(
 /** Full reader line when the code is a mapped call refusal; otherwise null. */
 export function renderCallError(
   error: ProtocolError,
-  role: 'admin' | 'user',
+  role: PermissionRole,
   fix: string | undefined,
   callerName?: string,
 ): string | null {
