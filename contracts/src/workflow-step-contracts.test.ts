@@ -62,3 +62,14 @@ test('model and public generated schemas register the optional declarations with
   assert.equal(outputSchema.properties.step_name.minLength,1);
   assert.equal(outputSchema.required.includes('step_name'),false);
 });
+
+
+test('step display names reject whitespace-only values and preserve authored surrounding whitespace', () => {
+  for (const name of [' ', '\t\r\n', '\u3000']) {
+    assert.equal(WorkflowFile.safeParse({...workflow,steps:[{id:'author',name}]}).success,false);
+    assert.equal(SubmitResultOutput.safeParse({...output,step_name:name}).success,false);
+  }
+  const name = ' \t合成步骤\u3000 ';
+  assert.equal(WorkflowFile.parse({...workflow,steps:[{id:'author',name}]}).steps?.[0].name,name);
+  assert.equal(SubmitResultOutput.parse({...output,step_name:name}).step_name,name);
+});
