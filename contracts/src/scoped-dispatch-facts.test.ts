@@ -107,3 +107,22 @@ test('readonly and conformance verification are optional source observations, no
   assert.equal(DispatchJobFactsSchema.parse({scope:{job}}).conformance_verified,undefined);
   assert.equal(DispatchJobFactsSchema.safeParse({...value,admission_error:{code:'SOURCE_NOT_PERMITTED'}}).success,false);
 });
+
+
+test('conservative freeze and awaiting disposition remain independent job observations', () => {
+  for (const frozen of [false,true]) for (const awaiting_disposition of [false,true]) {
+    const value = {scope:{job},frozen,awaiting_disposition};
+    const parsed = DispatchJobFactsSchema.parse(value);
+    assert.equal('outcome' in parsed,false);
+    assert.deepEqual(parsed,value);
+  }
+  const absent = DispatchJobFactsSchema.parse({scope:{job}});
+  assert.equal(absent.frozen,undefined);
+  assert.equal(absent.awaiting_disposition,undefined);
+  assert.equal(DispatchJobFactsSchema.safeParse({scope:{job},awaiting_disposition:'true'}).success,false);
+  assert.equal(DispatchAttemptFactsSchema.safeParse({scope:{operation:'dispatch',job,round:1},awaiting_disposition:true}).success,false);
+  assert.equal(DispatchRunFactsSchema.safeParse({scope:{run:'run_0'+'a'.repeat(25)},awaiting_disposition:true}).success,false);
+  const json = JSON.parse(readFileSync(new URL('../generated/schemas/dispatch-job-facts.v1.schema.json',import.meta.url),'utf8'));
+  assert.equal(json.properties.awaiting_disposition.type,'boolean');
+  assert.equal(json.required.includes('awaiting_disposition'),false);
+});
