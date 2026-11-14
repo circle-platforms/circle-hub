@@ -89,6 +89,39 @@ test('occupancy without until shows unlimited duration', () => {
   assert.doesNotMatch(html, /到何时未知/);
 });
 
+test('occupied without assignment shows 已无分配; assigned occupancy does not', () => {
+  const revokedEnvs = [{
+    name: '本人仍占用的合成环境',
+    assigned: false,
+    can_use: false,
+    occupancy: [
+      { name: '合成成员甲', since: '2026-11-14T04:30:00.000Z', until: null, mine: true },
+    ],
+    missing: ['占着但已无分配'],
+  }] as unknown as MemberCapabilities['environments'];
+  const revoked = renderMemberCapabilities(sample({
+    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environments: revokedEnvs,
+  })).text;
+  assert.match(revoked, /已无分配/);
+  assert.match(revoked, /本人占用/);
+  assert.match(revoked, /不限时长/);
+  assert.doesNotMatch(revoked, /到何时未知/);
+
+  const assignedEnvs = [{
+    name: '合成实验室',
+    assigned: true,
+    can_use: true,
+    occupancy: { since: '2026-11-09T02:00:00.000Z', until: '2026-11-09T03:00:00.000Z', mine: true },
+  }] as unknown as MemberCapabilities['environments'];
+  const assigned = renderMemberCapabilities(sample({
+    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environments: assignedEnvs,
+  })).text;
+  assert.match(assigned, /本人占用/);
+  assert.doesNotMatch(assigned, /已无分配/);
+});
+
 test('unassigned member sees empty team guidance', async () => {
   const page = await memberCapabilitiesPage(context({
     view: sample({
