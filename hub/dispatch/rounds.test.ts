@@ -250,7 +250,7 @@ test('revocation in the second intent transaction keeps the first effect and its
   const permission=c.environmentAccess.permission;
   trace.attach(c.service);
   c.service.options.environmentAccess={
-    inheritance:c.service.options.environmentAccess!.inheritance,
+    inheritance:c.environmentAccess.inheritance.bind(c.environmentAccess),
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
       if(trace.isIntent(tx))checks++;
@@ -277,7 +277,7 @@ test('a later admitted intent that expires before sending does not erase the ear
   const permission=c.environmentAccess.permission;
   trace.attach(c.service);
   c.service.options.environmentAccess={
-    inheritance:c.service.options.environmentAccess!.inheritance,
+    inheritance:c.environmentAccess.inheritance.bind(c.environmentAccess),
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
       if(trace.isIntent(tx)&&++checks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;

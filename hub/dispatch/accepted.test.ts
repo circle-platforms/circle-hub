@@ -362,7 +362,7 @@ test('revoking environment use after precheck is rechecked in the intent transac
   });
   trace.attach(c.service);
   c.service.options.environmentAccess={
-    inheritance:c.service.options.environmentAccess!.inheritance,
+    inheritance:c.environmentAccess.inheritance.bind(c.environmentAccess),
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
       if(trace.isIntent(tx))checks++;
@@ -402,7 +402,7 @@ test('an unreadable environment permission port is unavailable, not a negative p
   const c=await setup();t.after(()=>c.close());
   assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true);
   c.service.options.environmentAccess={
-    inheritance:c.service.options.environmentAccess!.inheritance,
+    inheritance:c.environmentAccess.inheritance.bind(c.environmentAccess),
     canUse:async()=>{throw new Error('private connection failure');},
     permission:c.environmentAccess.permission,
   };
