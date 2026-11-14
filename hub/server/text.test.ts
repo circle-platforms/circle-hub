@@ -581,6 +581,21 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
     assert.doesNotMatch(text, /toy-pack|没有这个包/);
   });
 
+  test('list_task_packs prose carries the environment-assignment preview while enforcement is off', () => {
+    const base = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [], index: [], trace: TRACE });
+    const preview = '新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。';
+    const off = toolText('list_task_packs', {
+      ...base,
+      member_capabilities: { unassigned_workflows_count: 0, environmentAccess: { enforced: false } },
+    } as typeof base);
+    assert.ok(off.includes(preview));
+    const on = toolText('list_task_packs', {
+      ...base,
+      member_capabilities: { unassigned_workflows_count: 0, environmentAccess: { enforced: true } },
+    } as typeof base);
+    assert.equal(on.includes(preview), false);
+  });
+
   test('a long task-pack list and an oversized pack are given whole, every detail of every pack (decision 158)', () => {
 const packs=Array.from({length:300},(_,i)=>packOf(i));const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs,trace:TRACE});const text=toolText('list_task_packs',answer);for(const pack of packs)assert.ok(text.includes(pack.title+'，'+pack.description));assert.doesNotMatch(text,/toy-pack-|start_run|sha256/);const oversized={...packOf(1),inputs:Array.from({length:300},(_,i)=>({...packOf(1).inputs[0],slot:'input_'+i,description:'说明'+i}))};const large=toolText('list_task_packs',ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[oversized],trace:TRACE}));assert.equal(linesOf(large).filter(line=>/^说明\d+，/.test(line)).length,300);
 });

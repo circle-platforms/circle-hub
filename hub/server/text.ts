@@ -17,7 +17,7 @@ import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymb
 import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
-import { packListHead } from './pack-words.ts';
+import { ENVIRONMENT_ASSIGNMENT_PREVIEW, packListHead } from './pack-words.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -330,8 +330,13 @@ function listText(v: ListOut, context: TextContext): string {
   if (v.call_result === 'error') return errorText(v, context);
   const index = v.index ?? v.packs;
   // Boss 03:45 #4: when Codex projects unassigned_workflows_count, disclose that Hub has more packs than this member can use.
-  const unassigned = (v as ListOut & { member_capabilities?: { unassigned_workflows_count?: number } })
-    .member_capabilities?.unassigned_workflows_count;
+  const capabilities = (v as ListOut & {
+    member_capabilities?: {
+      unassigned_workflows_count?: number;
+      environmentAccess?: { enforced?: boolean };
+    };
+  }).member_capabilities;
+  const unassigned = capabilities?.unassigned_workflows_count;
   const role = callerRole(context);
   const head = typeof unassigned === 'number' && unassigned > 0
     ? proseByRole(role, 'unassigned_packs', { usable: index.length, unassigned })
@@ -348,6 +353,8 @@ function listText(v: ListOut, context: TextContext): string {
     lines.push(...pack.parameters.map(parameter => `${parameter.description}，${required(parameter.required)}`));
     if (pack.local_tools) lines.push(`已提供 ${pack.local_tools.count} 个本地工具。`);
   }
+  // 15:20: same preview fact as the console banner while environment assignment is not enforced.
+  if (capabilities?.environmentAccess?.enforced === false) lines.push(ENVIRONMENT_ASSIGNMENT_PREVIEW);
   return lines.join('\n');
 }
 

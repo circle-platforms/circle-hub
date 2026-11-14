@@ -62,3 +62,10 @@ export function packListHeadForMember(usable: number, unassigned: number): strin
   }
   return head;
 }
+
+/**
+ * Same fact as the console environment-assignment preview banner (connections / team / me).
+ * Shown in list_task_packs prose while enforceEnvironmentAssignments is off.
+ */
+export const ENVIRONMENT_ASSIGNMENT_PREVIEW =
+  '新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。';
