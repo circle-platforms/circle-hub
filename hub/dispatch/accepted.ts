@@ -5,7 +5,8 @@ import { isAdmin } from '../records/api.ts';
 // kinds. Not sent: the reason, and a repeat tries again. Rejected by the target: the stage, and a repeat tries again
 // after the fix. Sent without an answer: the request id, and no repeat sends again, since the target may have run it; the
 // Hub asks the target by that id and only what stays unresolved goes to a named administrator.
-import { labelOf } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type CallErrorCategory } from '../../contracts/generated/vocabulary.ts';
+import { callErrorCategory, formatCallError } from '../../contracts/generated/protocol.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
@@ -104,7 +105,9 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   }
   const missing = !administrative ? settled.member_missing_facts ?? (settled.checks ? releaseMissingFacts(settled.checks) : []) : [];
   const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
-  return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:facts.map(fact=>fact.next_action).join('；'),text:clip((settled.member_missing_facts ? '已被占用：' : '上机验证没有发出：')+facts.map(fact=>fact.fact).join('；')+(settled.member_missing_facts ? '。'+facts.map(fact=>fact.next_action).join('；')+'。' : '')) }]);
+  const category=invocationCategory(settled);
+  const fact=facts.map(row=>row.fact).join('；'),next=facts.map(row=>row.next_action).join('；');
+  return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:next,text:clip(category?formatCallError(category,fact,next):'上机验证没有发出：'+fact) }]);
 }
 
 /** The run's jobs that have not ended, with their notes, or null: submit_result keeps a different submission from them. */
@@ -162,18 +165,26 @@ function details(status: JobStatus): string[] {
   return parts;
 }
 
+/** LEASE_UNAVAILABLE needs caller-verified evidence; absent evidence never means occupied. */
+function invocationCategory(status: Pick<JobStatus,'error_code'|'call_error_category'|'booking'|'not_sent'|'failed_conditions'>): CallErrorCategory | null {
+  if (status.call_error_category===null) return null;
+  if (!status.error_code&&status.call_error_category) return status.call_error_category;
+  const category=callErrorCategory(status.error_code??'');
+  if (category) return category;
+  if (status.error_code==='LEASE_UNAVAILABLE') {
+    if (status.call_error_category) return status.call_error_category;
+    if (status.booking?.coverage_complete===false) return 'not_found';
+  }
+  if (!status.error_code&&status.not_sent&&status.failed_conditions?.length) return callErrorCategory('EFFECT_RELEASE_UNMET');
+  return null;
+}
+
 /** The runner's note on one job of the run; `retried` when the answer that carries it dispatches again after it. */
 export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): DispatchNote {
   const { status } = job;
   const diagnostics = statusDiagnostics(job, administrative);
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '上机验证结果未知' : '进行中';
-  const refusalCategory = status.error_code==='SOURCE_UNAVAILABLE' ? null : status.error_code==='LEASE_UNAVAILABLE'||status.error_code==='LEASE_EXPIRED'||status.error_code==='FENCING_STALE'||status.error_code==='IDEMPOTENCY_MISMATCH' ? '已被占用'
-    : status.error_code==='SOURCE_NOT_PERMITTED'||status.error_code==='EFFECT_RELEASE_UNMET'||status.error_code==='EFFECT_NOT_ALLOWED'||status.error_code==='BOUNDARY_POLICY_DENIED'||status.error_code==='PACK_POLICY_DENIED' ? '无权限'
-    : status.error_code==='EFFECT_PARAMETER_OUT_OF_RANGE'||status.error_code==='SUBMISSION_SCHEMA_VIOLATION' ? '参数无效'
-    : status.error_code==='SOURCE_ABSENT' ? '不存在'
-    : status.error_code==='SOURCE_RETRYABLE'||status.error_code==='SOURCE_READ_FAILED'||status.not_sent&&status.failed_conditions?.length ? '暂时不可用' : null;
-  const memberRefusal = !administrative && job.ended==='done' && status.outcome==='not_dispatched' && !status.frozen && refusalCategory;
-  const parts = [administrative ? `作业 ${job.job}：${state}（阶段 ${status.phase}）` : memberRefusal ? `${refusalCategory}：本次上机验证未发出（${state}）` : `上机验证${state}`, `${labelOf('effect_outcome', status.outcome)}`];
+  const parts = [administrative ? `作业 ${job.job}：${state}（阶段 ${status.phase}）` : `上机验证${state}`, `${labelOf('effect_outcome', status.outcome)}`];
   if (status.outcome === 'target_rejected' && status.rejection_stage) parts.push(`目标在“${status.rejection_stage}”阶段拒绝`);
   // The id the Hub asks the target about: told only while the answer is missing, where it is what an administrator needs.
   if (administrative && (job.ended === 'unknown' || status.frozen) && status.request_id) parts.push(`请求号 ${status.request_id}`);
@@ -186,6 +197,7 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   if (administrative) parts.push(...details(status));
   else if (diagnostics.missing_facts.length) parts.push(diagnostics.missing_facts.map(fact => fact.fact).join('；'));
   const next = administrative ? diagnostics.next_action : job.ended==='unknown'||status.frozen||status.outcome==='unknown' ? nextStep(job, '') : diagnostics.missing_facts.length && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job, '');
-  parts.push(retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : `下一步：${next}`);
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: clip(parts.join(memberRefusal ? '。' : '；')) };
+  const action = retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : next;
+  const category = job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen ? invocationCategory(status) : null;
+  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: clip(category?formatCallError(category,parts.join('；'),action):[...parts,`下一步：${action}`].join('；')) };
 }

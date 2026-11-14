@@ -209,7 +209,7 @@ async function ended(c: C, count: number) {
   throw new Error('the dispatched jobs did not end');
 }
 
-for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（取得租约或只读核对）/], ['build', /核对项目 \/build.*相等条件未满足/]] as const) {
+for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（取得租约或只读核对）/], ['build', /核对项目 \/build.*相等/]] as const) {
   test(`not sent (${mode}): the next answer says why and the same submission dispatches again`, async (t) => {
     const c = await setup({ mode }); t.after(() => c.close());
     const [first] = await acceptedDispatch(c.kit, c.service, c.run, true);
@@ -474,7 +474,7 @@ test('a settled byte reuse preserves the member cause without exposing the prior
   assert.equal(first.started,true);
   const repeat = await secondDisclosureRun(c,c.owner,false);
   const [note] = await acceptedDispatch(c.kit,c.service,repeat,true,undefined,c.owner);
-  assert.match(note.text,/^已被占用：.*同一份字节只派发一次/);
+  assert.match(note.text,/^参数无效：.*同一份字节只派发一次/);
   assert.doesNotMatch(note.text,/条件尚未满足|circle-hub|[0-9a-f]{64}|usr_|exe_/);
   assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
   const [admin] = await acceptedDispatch(c.kit,c.service,repeat,true,undefined,c.admin);
@@ -529,4 +529,34 @@ test('failed declared read-only conditions keep their item names and safe next s
   assert.match(member.text,/请管理员/);
   assert.doesNotMatch(member.text,/阶段|boundary_refused|[0-9a-f]{64}|circle-hub|192\.0\.2\./);
   assert.equal(c.calls.includes('send_blob'),false);
+});
+
+
+test('a genuinely absent or expired own booking is not_found and never invents another holder',async t=>{
+  for(const mode of ['absent','expired'] as const){
+    const c=await setup(mode==='expired'?{mode:'expiry'}:{});t.after(()=>c.close());
+    if(mode==='expired')c.clock.ms+=2_000;
+    else await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'合成：当前没有有效预订'});
+    const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+    assert.match(note.text,/^不存在：/);assert.doesNotMatch(note.text,/已被占用|由其他运行持有/);
+    assert.match(note.text,/缺少/);assert.equal(note.booking?.coverage_complete,false);
+    assert.equal(note.error_code,'LEASE_UNAVAILABLE');
+    if(mode==='expired')assert.match(note.text,/过期/);
+    assert.equal(c.calls.length,0,'missing prerequisites never reach the target');
+  }
+});
+
+test('an actual policy replay with no conclusion remains unclassified and preserves its public missing fact',async t=>{
+  const c=await setup();t.after(()=>c.close());
+  c.service.options.recheckChecks=async()=>({policy_check:[{verdict:'unknown',reason:'missing_input',missing:'private-evidence-body circle-hub admin-command usr_private',statement:'合成政策尚无结论',grounds:[],tier:'blocking'}]});
+  const [first]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  assert.ok(first.job);await ended(c,1);
+  const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
+  assert.doesNotMatch(note.text,/^(参数无效|无权限|不存在|已被占用|暂时不可用)：/);
+  assert.match(note.text,/policy_check.*尚未取得政策结论.*缺输入/);
+  assert.doesNotMatch(note.text,/private-evidence-body|circle-hub|usr_private/);
+  const [admin]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.admin);
+  assert.match(admin.text,/private-evidence-body/);
+  assert.equal(note.error_code,'PACK_POLICY_DENIED');
+  assert.equal(c.calls.includes('send_blob'),false);assert.equal(c.submitted.length,0);
 });
