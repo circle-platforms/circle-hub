@@ -42,6 +42,12 @@ function output(s: JobCommandSession, state: JobStatus): void {
     if (attempt.result) s.out(`${scope}结果引用 ${attempt.result}`);
     if (attempt.device_return) s.out(`${scope}设备输出引用 ${attempt.device_return}`);
     if (attempt.next_action) s.out(`${scope}下一步：${attempt.next_action}`);
+    for (const condition of attempt.failed_conditions ?? []) s.out(`${scope}未满足条件：${JSON.stringify(condition.pointer)}；运算 ${condition.operator}`);
+    for (const check of attempt.failed_checks ?? []) s.out(`${scope}未满足核对：步骤 ${JSON.stringify(check.step)}；缺事实：${check.missing_fact}；下一步：${check.next_action}`);
+    if (attempt.admin_release) for (const check of attempt.admin_release.filter(check => check.satisfied !== true)) s.out(`${scope}管理员放行说明：${JSON.stringify(check)}`);
+    if (attempt.admin_release_missing) s.out(`${scope}管理员放行说明：诊断记录未能保存或读取，请查看管理员日志`);
+    if (attempt.reason) s.out(`${scope}说明：${attempt.reason}`);
+    if (attempt.missing_fact) s.out(`${scope}缺事实：${attempt.missing_fact}`);
   } else if (facts.operation === 'precheck') {
     s.out(`只读预检：${facts.readonly_verified === true ? '已取得全部条件通过的核对' : facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
   } else {
