@@ -79,36 +79,6 @@ export function noAssignmentMark(flags: AssignmentFlags): Html {
 }
 
 /**
- * When Codex has not stamped assigned/can_use on ExecutorView, ask authorizations whether any grant remains.
- * Returns null when the read fails (do not invent 「已无分配」).
- */
-export async function readExecutorAssignmentGone(ctx: PageContext, executorId: string): Promise<boolean | null> {
-  const authorizations = ctx.deps.records.authorizations as {
-    teamsOf?(by: PageContext['principal'], kind: 'pack' | 'resource', object: string): Promise<{ teams: unknown[]; all: boolean }>;
-    history?(query: { permission: string; object: string; newestFirst?: boolean; limit?: number }): Promise<{ items: Array<{ body: { subject: string; revoked: boolean; expires_at?: string | null } }> }>;
-  };
-  if (authorizations.teamsOf === undefined || authorizations.history === undefined) return null;
-  try {
-    const { teams, all } = await authorizations.teamsOf(ctx.principal, 'resource', executorId);
-    if (all || teams.length > 0) return false;
-    const page = await authorizations.history({ permission: 'resource_assign', object: executorId, newestFirst: true, limit: 500 });
-    const latest = new Map<string, (typeof page.items)[number]>();
-    for (const row of page.items) {
-      if (!latest.has(row.body.subject)) latest.set(row.body.subject, row);
-    }
-    const now = (ctx.deps.now?.() ?? new Date()).getTime();
-    for (const row of latest.values()) {
-      if (row.body.revoked) continue;
-      const expires = row.body.expires_at;
-      if (typeof expires === 'string' && expires.length > 0 && Date.parse(expires) <= now) continue;
-      return false;
-    }
-    return true;
-  } catch {
-    return null;
-  }
-
-/**
  * N3: last environment-check projection from Codex's unified gate (optional on EnvironmentFacts).
  * Field absent → 尚无核对; null → 未知 (read failed); object → result + time. Never treat latest dispatch as a check.
  */
@@ -288,6 +258,8 @@ async function environmentAdminForms(ctx: PageContext, executors: readonly Execu
       )}${targetAssignForm(csrf, target, rows, teamChoices, userChoices)}`,
     ))}`;
   return html`<div class="ch-stack" data-environment-admin>${docPut}${executorAdd}${grouped}</div>`;
+}
+
 /** Who may use a business system: 全体 / 团队名 / 尚未分配 — never expand to member ids (findings N2 §6). */
 export async function resourceAudienceText(ctx: PageContext, resourceId: string): Promise<string> {
   if (!ctx.admin) return '未知';
@@ -305,10 +277,12 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  if(ctx.admin&&ctx.deps.dispatch){try{executors=await ctx.deps.dispatch.executors(ctx.principal);}catch{executorsFailed=true;}}
  // Assigned targets for members come from the capability port; administrators group registered executors by target.
  let memberTargets:string[]=[];
- if(!ctx.admin){
+ let environmentAssignmentsEnforced=false;
+ {
   try{
    const capabilities=await ctx.deps.memberCapabilities(ctx.principal);
-   memberTargets=[...new Set(capabilities.environments.map(item=>item.name))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
+   environmentAssignmentsEnforced=capabilities.environmentAccess.enforced === true;
+   if(!ctx.admin)memberTargets=[...new Set(capabilities.environments.map(item=>item.name))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
   }catch{memberTargets=[];}
  }
  const readinessTargets=ctx.admin
@@ -343,7 +317,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
  const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
- const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
  const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const readinessSection=html`<div class="ch-stack" data-environment-readiness>${readinessTargets.length?readinessCards.map(card=>card.body):ctx.deps.dispatch?.readiness?html`<p class="ch-meta">${ctx.admin?'尚无运行环境目标。':'尚无已分配的运行环境；请管理员分配后重读。'}</p>`:readinessUnknownNotice()}${!ctx.deps.dispatch?.readiness&&readinessTargets.length?html`<p class="ch-meta">上列目标的只读报告尚未接线；页面不作许可判断。</p>`:''}</div>`;
  const dialogs:CommandDialog[]=[];let inspector:Html;
@@ -357,8 +331,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   let assignmentGone: boolean | null = environmentLacksAssignment(flags)
     ? true
     : (flags.assigned === true || flags.can_use === true || flags.canUse === true) ? false : null;
-  if (assignmentGone === null && environmentIsOccupied(environment)) assignmentGone = await readExecutorAssignmentGone(ctx, environment.id);
-  const showRevoked = environmentIsOccupied(environment) && assignmentGone === true;
+  const showRevoked = environmentAssignmentsEnforced && environmentIsOccupied(environment) && assignmentGone === true;
   if (showRevoked) {
     const holders = (environment.state?.holding ?? []).map((job) => `作业 ${shortJob(job.job)}${job.frozen ? '（派发结果未确认）' : ''}`);
     const detail = holders.length > 0
@@ -377,6 +350,6 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   :tab==='systems'?liveModule('systems',['system.added','system.status'],html`${systemFacts}${box(null,systems,{flush:true})}`)
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})
   :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${readinessSection}${box(null,environmentTable,{flush:true})}${ctx.admin?await environmentAdminForms(ctx,executors):''}`);
- const body=html`<div class="ch-stack" data-connections>${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
+ const body=html`<div class="ch-stack" data-connections>${environmentAssignmentsEnforced?'':html`<p class="ch-meta" data-environment-assignment-preview>新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。</p>`}${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
  return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境就绪为本地只读观察；占用与冻结取派发记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
 }

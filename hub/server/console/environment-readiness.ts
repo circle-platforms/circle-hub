@@ -13,10 +13,12 @@ export function readinessSatisfiedChip(satisfied: boolean | null): { text: strin
 
 /** Unknown and error rows keep the report's missing_fact / next_action verbatim. */
 export function readinessCheckBlock(check: EnvironmentReadinessCheck): Html {
-  const state = readinessSatisfiedChip(check.satisfied);
-  const disclose = check.satisfied !== true && (check.missing_fact !== undefined || check.next_action !== undefined);
+  const allocationPreview=check.condition==='assignment';
+  const state=allocationPreview?{text:'配置预览',tone:'plain' as const}:readinessSatisfiedChip(check.satisfied);
+  const disclose = !allocationPreview && check.satisfied !== true && (check.missing_fact !== undefined || check.next_action !== undefined);
   return html`<div class="ch-stack" data-readiness-check data-condition="${check.condition}">
 <div class="ch-actions">${chip(state.text, state.tone)}<span>${check.label}</span><span class="ch-meta" data-condition-id>${check.condition}</span><span class="ch-meta">${when(check.observed_at)}</span></div>
+${allocationPreview?html`<p class="ch-meta">新测试环境分配尚未启用，当前仍按原工作流和预订规则。此项仅为分配配置事实，不作执行许可。</p>`:''}
 ${disclose ? html`<p class="ch-meta">缺什么：${check.missing_fact ?? '未说明'}；下一步：${check.next_action ?? '未说明'}</p>` : ''}
 </div>`;
 }

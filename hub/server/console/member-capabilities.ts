@@ -56,9 +56,9 @@ export function environmentLacksAssignment(item: EnvironmentRow): boolean {
   return (item.missing ?? []).some((line) => line.includes(NO_ASSIGNMENT_LABEL) || line.includes('占着但已无分配'));
 }
 
-function occupancyCell(item: EnvironmentRow): Html {
+function occupancyCell(item: EnvironmentRow, enforced: boolean): Html {
   const text = occupancyText(item.occupancy);
-  if (environmentIsOccupied(item.occupancy) && environmentLacksAssignment(item)) {
+  if (enforced && environmentIsOccupied(item.occupancy) && environmentLacksAssignment(item)) {
     return html`${text} ${chip(NO_ASSIGNMENT_LABEL, 'unchecked')}`;
   }
   return text;
@@ -91,7 +91,7 @@ function environmentSection(view: MemberCapabilities): Html {
   const access = view.environmentAccess;
   if (!access.ready) {
     return card(
-      { title: '测试环境', hint: '未就绪只表示尚未核对；缺什么和下一步写在下面。' },
+      { title: '测试环境', hint: access.enforced === false ? '新测试环境分配尚未启用，当前仍按原工作流和预订规则' : '未就绪只表示尚未核对；缺什么和下一步写在下面。' },
       definitions([
         ['状态', '未知'],
         ['缺什么', access.missing ?? '未知'],
@@ -100,10 +100,10 @@ function environmentSection(view: MemberCapabilities): Html {
     );
   }
   return card(
-    { title: '测试环境' },
+    { title: '测试环境', hint: access.enforced === true ? undefined : '新测试环境分配尚未启用，当前仍按原工作流和预订规则' },
     table(
       ['名称', '占用'],
-      view.environments.map((item) => [item.name, occupancyCell(item as EnvironmentRow)]),
+      view.environments.map((item) => [item.name, occupancyCell(item as EnvironmentRow, access.enforced === true)]),
       { title: '当前没有已核对可占用的测试环境', text: '这只反映已核对的分配与本地租约，不证明物理空闲或无权。' },
     ),
   );
@@ -127,6 +127,7 @@ export function renderMemberCapabilities(
     : html``;
   return html`<div class="ch-stack" data-member-capabilities>
 ${heading}
+${view.environmentAccess.enforced === true ? '' : html`<p class="ch-meta" data-environment-assignment-preview>新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。</p>`}
 ${card({ title: '账户' }, definitions([['名字', view.member.name], ['状态', status]]))}
 ${card({ title: '团队' }, teamsBody)}
 ${card({ title: uiLabelOf('pack_kind', 'workflow') }, table(['名称', '引用', '归属'], packRows(view.workflows), '尚无可用的已分配工作流'))}
@@ -134,7 +135,7 @@ ${card({ title: uiLabelOf('pack_kind', 'skill') }, table(['名称', '引用', '�
 ${card({ title: '连接' }, table(['名称', '系统包', '测试环境'], view.connections.map((item) => [item.name, item.systemPack, item.environment]), '尚无可用的已分配连接'))}
 ${environmentSection(view)}
 ${options.connect ?? ''}
-${card({ title: '当前不能做的事' }, denials)}
+${card({ title: view.environmentAccess.enforced === true ? '当前不能做的事' : '当前限制与配置预览' }, denials)}
 </div>`;
 }
 
