@@ -1,6 +1,7 @@
 // D5: escalate repeated refusals (same account + tool + error code within one hour).
 // Counts come from call_logs (not process memory). Examples must pass the tool input schema;
-// pack codes take only pack-declared examples. Boss 12:45 / 12:55: structure first; Chinese copy is not a frozen product baseline.
+// pack codes take only pack-declared examples. Boss 13:05: escalate next-step uses the call-error
+// category sentence form `<类别词>：<事实>。<下一步>。` (no 状态/判断/原因/决定者).
 import type { z } from 'zod';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import type { CallLog } from '../records/api.ts';
@@ -18,19 +19,41 @@ const SKIP_CODES = new Set([
   'REQUEST_CANCELED',
 ]);
 
+/** Closed category words for call refusals (owner 2026-11-14 / Boss 13:05). */
+export type CallErrorCategory =
+  | '参数无效'
+  | '无权限'
+  | '不存在'
+  | '已被占用'
+  | '暂时不可用';
+
+const CATEGORY_BY_CODE: Record<string, CallErrorCategory> = {
+  SUBMISSION_SCHEMA_VIOLATION: '参数无效',
+  REFERENCE_UNRESOLVED: '参数无效',
+  REFERENCE_AMBIGUOUS: '参数无效',
+  QUOTE_MISMATCH: '参数无效',
+  SOURCE_NOT_PERMITTED: '无权限',
+  SOURCE_ABSENT: '不存在',
+  LEASE_UNAVAILABLE: '已被占用',
+  LEASE_EXPIRED: '已被占用',
+  SOURCE_RETRYABLE: '暂时不可用',
+  SOURCE_INTEGRITY_UNPROVEN: '暂时不可用',
+  SOURCE_READ_FAILED: '暂时不可用',
+};
+
 export type EscalationTier = 1 | 2 | 3;
 
 export interface EscalationParts {
   /** This call's occurrence: prior matching call_logs + 1. */
   occurrence: number;
   tier: EscalationTier;
-  /** Structural count marker (not a frozen product sentence). */
+  /** Structural count marker for the 下一步 clause. */
   countLabel: string;
   /** JSON text of a schema-checked example, or null when none is available. */
   exampleJson: string | null;
   /** Structural alternative-path marker for tier 3+. */
   alternative: string | null;
-  /** Suffix merged into structuredContent.errors[].fix (and therefore into 下一步 text). */
+  /** Suffix merged into structuredContent.errors[].fix (the 下一步 clause). */
   fixSuffix: string | null;
 }
 
@@ -173,10 +196,11 @@ export function checkedPackDeclaredExample(declared: unknown, input: z.ZodType):
 }
 
 function alternativePath(hasExample: boolean): string {
+  // Structural markers only (Boss 12:55); 工作流/技能 not 任务包; 当前账户 not 你; no 状态串.
   if (hasExample) {
-    return '替代路径：换写法（按完整正确示例改参数再调用）；找谁（权限或分配请管理员）；收尾（同一写法再试无益，改不了就停下）';
+    return '替代路径：换写法（按完整正确示例改参数再调用）；找谁（权限或分配请联系管理员）；收尾（同一写法再试无益，改不了就停下）';
   }
-  return '替代路径：换写法（先用 list_task_packs 或 get_nodes 核对允许的写法再调用）；找谁（权限或分配请管理员）；收尾（同一写法再试无益，改不了就停下）';
+  return '替代路径：换写法（先用 list_task_packs 或 get_nodes 核对允许的写法再调用）；找谁（权限或分配请联系管理员）；收尾（同一写法再试无益，改不了就停下）';
 }
 
 export function buildEscalation(options: {
@@ -201,10 +225,60 @@ export function buildEscalation(options: {
   return { occurrence, tier, countLabel, exampleJson, alternative, fixSuffix: parts.join('；') };
 }
 
-/** Merge escalation into an error's fix so structuredContent and 下一步 text stay aligned (Boss 12:10). */
+/** Category word for a known call-refusal code; null when unmapped (D1 owns the full table). */
+export function categoryOfCallError(code: string): CallErrorCategory | null {
+  return CATEGORY_BY_CODE[code] ?? null;
+}
+
+function asSentence(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return '';
+  return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
+}
+
+/**
+ * Fact body without a leading category word (message may already be `参数无效：…` from schemaErrors).
+ */
+export function factOfCallError(message: string, category: CallErrorCategory): string {
+  const trimmed = message.trim();
+  const prefix = `${category}：`;
+  if (trimmed.startsWith(prefix)) return trimmed.slice(prefix.length).trim();
+  for (const word of ['参数无效', '无权限', '不存在', '已被占用', '暂时不可用'] as const) {
+    const other = `${word}：`;
+    if (trimmed.startsWith(other)) return trimmed.slice(other.length).trim();
+  }
+  return trimmed;
+}
+
+/**
+ * Full call-error prose in the owner form `<类别词>：<事实>。<下一步>。`
+ * Escalation markers live only in the 下一步 clause (fix).
+ */
+export function formatCategoryCallError(options: {
+  category: CallErrorCategory;
+  message: string;
+  fix: string | null | undefined;
+}): string {
+  const fact = asSentence(factOfCallError(options.message, options.category));
+  const next = asSentence(
+    typeof options.fix === 'string' && options.fix.trim().length > 0
+      ? options.fix
+      : '由使用者核对输入资料',
+  );
+  return `${options.category}：${fact}${next}`;
+}
+
+/** True when a fix string already carries a D5 escalation count marker. */
+export function fixHasEscalation(fix: string | null | undefined): boolean {
+  return typeof fix === 'string' && /最近一小时内第 \d+ 次/.test(fix);
+}
+
+/** Merge escalation into an error's fix so structuredContent and 下一步 text stay aligned (Boss 12:10 / 13:05). */
 export function withEscalatedFix(error: ProtocolError, parts: EscalationParts): ProtocolError {
   if (parts.fixSuffix === null) return error;
   const base = typeof error.fix === 'string' && error.fix.length > 0 ? error.fix : '由使用者核对输入资料';
+  // Avoid doubling the count marker when tools and text both append.
+  if (fixHasEscalation(base)) return error;
   return { ...error, fix: `${base}；${parts.fixSuffix}` };
 }
 

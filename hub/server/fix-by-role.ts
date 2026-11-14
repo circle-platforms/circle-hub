@@ -124,12 +124,18 @@ function rewriteAskAdmin(fix: string): string {
 /**
  * Fix string for this caller. Member (default): contract / provided fix. Admin: registry-backed next steps;
  * never imperative「请管理员…」pointing at self.
+ * When tools already wrote the admin fix and D5 appended an escalation suffix, keep that memberFix so
+ * structuredContent and reader text stay aligned.
  */
 export function fixByRole(code: string, role: CallerRole, memberFix?: string): string | undefined {
   const member = memberDefault(code, memberFix);
   if (role !== 'admin') return member;
   const mapped = adminForCode(code);
   if (mapped !== undefined) {
+    if (typeof memberFix === 'string' && memberFix.startsWith(mapped)) {
+      assertRegisteredNames(memberFix);
+      return memberFix;
+    }
     assertRegisteredNames(mapped);
     return mapped;
   }
