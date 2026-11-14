@@ -61,7 +61,7 @@ export class MemberEnvironments {
   readonly permission:EnvironmentPermission = async(actor,executor,tx)=>{
     const snapshot=await this.records.artifacts.capturePermissionSnapshot?.(actor,tx);
     const config=snapshot?.latest('resource_config','*','executor.'+executor);
-    if(!snapshot?.user || snapshot.user.disabled || snapshot.user.deleted_at || !snapshot.enabled(config) || !config?.body.bound)return false;
+    if(!snapshot?.user || snapshot.user.disabled || snapshot.user.deleted_at || !config || !snapshot.enabled(config) || !config.body.bound)return false;
     const bytes=await this.records.objects.get(config.body.bound,tx);
     if(!bytes || sha256Hex(bytes)!==config.body.bound)throw new Error('测试环境关联执行器的登记原件不可核对');
     const source=ExecutorSource.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
