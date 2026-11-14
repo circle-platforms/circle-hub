@@ -190,7 +190,12 @@ test('resume reconciles the started round and a new dispatch continues at the ne
   const resumed = await c.service.resume(c.admin, String(first.body.detail.job));
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   assert.equal((await c.service.journal.events(String(first.body.detail.job))).some(event => event.body.detail.phase === 'intent' && event.body.detail.round === 2), false);
-  assert.equal(resumed.dispatch_attempt?.outcome, 'effective');
+  const pendingScope=resumed.dispatch_attempt?.scope;
+  assert.ok(pendingScope&&pendingScope.operation==='dispatch');
+  assert.equal(pendingScope.round,2,'the worker recorded its real next-round context before exiting');
+  assert.equal(pendingScope.request_id,undefined,'round two must not borrow the first intent request identity');
+  assert.equal(resumed.dispatch_attempt?.outcome,undefined,'reading the first result does not invent a second-round outcome');
+  assert.equal(resumed.job_facts.rounds?.find(round=>round.round===1)?.dispatch_attempt?.outcome,'effective');
   const continued = await c.service.dispatch(c.admin, c.run, c.executor.id);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 3);
   assert.deepEqual((await intents(c)).map(row => row.body.detail.round).sort(), [1, 2, 3]);
