@@ -15,7 +15,7 @@ test('first reason registry covers the model axis and exactly one classification
   const values = rules(input);
   const labels = input.vocabulary.find((axis: { axis: string }) => axis.axis === 'call_error_reason').values;
   assert.deepEqual(labels.map((value: { label: string }) => value.label), [
-    '账户已停用', '账户无效', '测试环境已停用', '缺少测试环境分配', '缺少测试环境登记', '测试环境归属不唯一',
+    '账户已停用', '账户无效', '测试环境已停用', '缺少测试环境分配', '缺少测试环境登记', '测试环境登记不一致',
     '测试环境权限暂不可核对', '资源已有他人预订', '已有本人预订', '缺少本运行预订', '预订已到期', '预订已释放', '预订记录暂不可读取',
   ]);
   for (const row of input.formatProposals.callErrorReasons) {
@@ -23,7 +23,8 @@ test('first reason registry covers the model axis and exactly one classification
     assert.equal(typeof row.meaning, 'string');
     assert.equal('source_condition' in row, false);
   }
-  for (const name of ['actor_disabled', 'environment_disabled', 'environment_unassigned']) assert.deepEqual(values[name].classification, { category: 'permission_denied' });
+  for (const name of ['actor_disabled', 'environment_unassigned']) assert.deepEqual(values[name].classification, { category: 'permission_denied' });
+  assert.deepEqual(values.environment_disabled.classification, { category: 'temporarily_unavailable' });
   assert.notDeepEqual(values.actor_disabled.next_by_role, values.environment_unassigned.next_by_role);
   assert.notDeepEqual(values.environment_disabled.next_by_role, values.environment_unassigned.next_by_role);
 });
@@ -76,15 +77,19 @@ test('unreadable lease observations remain unknown and cannot become missing lea
   assert.equal(resolveCallErrorReasonRule(registry, 'SOURCE_UNAVAILABLE', 'lease_missing_for_lineage', 'user'), null);
 });
 
-test('known binding, target and resource mismatch candidates cannot be emitted before a unique category decision', () => {
+test('Boss 20:41 coalesces observed registration contradictions into one temporary reason', () => {
   const input = model(), registry = rules(input);
-  assert.deepEqual(input.formatProposals.callErrorReasonCandidates.map((row: { reason: string }) => row.reason), [
+  assert.deepEqual(input.formatProposals.callErrorReasonCandidates, []);
+  for (const retired of [
     'environment_binding_mismatch', 'environment_target_mismatch', 'environment_resource_mismatch',
-  ]);
-  for (const candidate of input.formatProposals.callErrorReasonCandidates) {
-    assert.equal(reasons(input).includes(candidate.reason), false);
-    assert.deepEqual(candidate.category_candidates, ['invalid_parameters', 'temporarily_unavailable']);
-    assert.equal(resolveCallErrorReasonRule(registry, candidate.codes[0], candidate.reason, 'user'), null);
-    assert.equal(Object.hasOwn(candidate, 'classification'), false, 'pending category is not an unknown-fact classification');
+    'environment_registration_ambiguous',
+  ]) {
+    assert.equal(reasons(input).includes(retired), false);
+    assert.equal(resolveCallErrorReasonRule(registry, 'SOURCE_NOT_PERMITTED', retired, 'user'), null);
   }
+  for (const code of ['SOURCE_NOT_PERMITTED', 'LEASE_UNAVAILABLE', 'ENVIRONMENT_PERMISSION_UNAVAILABLE']) assert.deepEqual(
+    resolveCallErrorReasonRule(registry, code, 'environment_registration_inconsistent', 'user')?.classification,
+    { category: 'temporarily_unavailable' },
+  );
+  assert.equal(registry.environment_registration_inconsistent.next_by_role.user, '请联系管理员；改正之前重试结果不会变');
 });

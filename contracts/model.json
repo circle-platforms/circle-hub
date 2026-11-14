@@ -3493,7 +3493,8 @@
       ],
       "changes84": [
         "R7第一块登记12个env/lease结构化原因及公开可选字段，新增call_error_reason轴；分类不添第六词，code/message不改。来源：Boss2026-11-14 18:55；成员/管理员下一步为待审提案，五行拆分提案待批后方可生成，不更新字节基线。",
-        "原因标签改为简短使用者词，内部谓词移入when/meaning；新增租约读取未取得事实的明确unknown原因并保原SOURCE_UNAVAILABLE。binding/target/resource已知错配只列候选，待唯一类别裁定后才登记入公开轴，不能套无分配/缺预订。成员/管理员整句仍待Cursor送Boss审。"
+        "原因标签改为简短使用者词，内部谓词移入when/meaning；新增租约读取未取得事实的明确unknown原因并保原SOURCE_UNAVAILABLE。binding/target/resource已知错配只列候选，待唯一类别裁定后才登记入公开轴，不能套无分配/缺预订。成员/管理员整句仍待Cursor送Boss审。",
+        "Boss2026-11-14 20:41裁定：身份/目标/资源错配及归属歧义合一environment_registration_inconsistent，暂时不可用；environment_disabled同改暂时不可用。事实按动作/登记名/两侧名值由源给，内部编号只留引用。角色句草稿去内部术语，管理员自行处理或按追踪号查调用记录；命令登记表插值/解析检查与已审占用句复用仍待server接缝，不得先生成或更新基线。"
       ]
     },
     {
@@ -9081,8 +9082,8 @@
           "category": "permission_denied"
         },
         "next_by_role": {
-          "user": "请联系其他启用的管理员核对并启用当前账户；启用后重新登录",
-          "admin": "请由其他启用的管理员核对并启用该账户；启用后重新登录"
+          "user": "请联系管理员启用该账户；启用后重新登录",
+          "admin": "请启用该账户后重试"
         },
         "when": "fresh账户明确disabled=true",
         "meaning": "账户已停用"
@@ -9096,8 +9097,8 @@
           "category": "permission_denied"
         },
         "next_by_role": {
-          "user": "请联系管理员核对当前账户的有效状态",
-          "admin": "请核对该账户是否仍有效，不要通过补分配代替账户核对"
+          "user": "请管理员重新开通账户",
+          "admin": "请重新开通账户"
         },
         "when": "fresh读取明确账户不存在或已删除，不包括读取失败",
         "meaning": "账户无效"
@@ -9108,11 +9109,11 @@
           "SOURCE_NOT_PERMITTED"
         ],
         "classification": {
-          "category": "permission_denied"
+          "category": "temporarily_unavailable"
         },
         "next_by_role": {
-          "user": "请管理员核对并启用该测试环境；启用后重新核对当前账户的分配",
-          "admin": "请在测试环境登记中核对启用状态；启用后重新核对该账户的分配"
+          "user": "请联系管理员启用该测试环境后原样重试",
+          "admin": "请启用该测试环境后原样重试"
         },
         "when": "登记唯一且明确enabled=false；不从canUse=false推断",
         "meaning": "测试环境已停用"
@@ -9126,8 +9127,8 @@
           "category": "permission_denied"
         },
         "next_by_role": {
-          "user": "请管理员为当前账户、所属团队或全体账户分配对应测试环境；分配后重试",
-          "admin": "请在测试环境分配中配置该账户、所属团队或全体账户的使用分配；完成后重试"
+          "user": "请联系管理员为该账户或所属团队分配该测试环境",
+          "admin": "请为该账户或所属团队分配该测试环境后重试"
         },
         "when": "fresh有效账户+唯一启用环境+有效user/team/all授予集合确认为空",
         "meaning": "缺少测试环境分配"
@@ -9142,27 +9143,28 @@
           "category": "not_found"
         },
         "next_by_role": {
-          "user": "请管理员登记对应测试环境；登记核对完成后重试",
-          "admin": "请核对本次资源的测试环境登记；补齐目标与前缀或资源键后重试"
+          "user": "请联系管理员登记本次所需的测试环境",
+          "admin": "请登记本次所需的测试环境后重试"
         },
         "when": "应属测试环境的新使用缺登记；正式非环境bookingPrefix不可走此拒绝",
         "meaning": "缺少测试环境登记"
       },
       {
-        "reason": "environment_registration_ambiguous",
+        "reason": "environment_registration_inconsistent",
         "codes": [
           "SOURCE_NOT_PERMITTED",
-          "LEASE_UNAVAILABLE"
+          "LEASE_UNAVAILABLE",
+          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
         ],
         "classification": {
-          "category": "invalid_parameters"
+          "category": "temporarily_unavailable"
         },
         "next_by_role": {
-          "user": "请管理员核对测试环境的前缀或资源键登记；归属明确后重试",
-          "admin": "请修正重叠的测试环境前缀或资源键登记；归属唯一后重试"
+          "user": "请联系管理员；改正之前重试结果不会变",
+          "admin": "请将事实句列明的测试环境与执行器登记改为一致后，原样重试"
         },
-        "when": "同一资源匹配多个不同环境，先全候选再查权限，不按已分配者消歧",
-        "meaning": "测试环境归属不唯一"
+        "when": "已观察到执行器登记身份/关联、实际目标或资源声明不一致，或资源匹配多个不同测试环境；本次被拒的预订/上机验证尚未执行。不是调用参数错误，也不是事实unknown；不覆盖之前已发或可能已发原轮",
+        "meaning": "测试环境登记不一致；四种事实只由抛出处区分并写两边名字/值，类别与下一步同一份"
       },
       {
         "reason": "environment_permission_unavailable",
@@ -9174,7 +9176,7 @@
         },
         "next_by_role": {
           "user": "请联系管理员",
-          "admin": "请联系维护人员恢复测试环境权限核对"
+          "admin": "原因记在调用记录里，追踪号见本条"
         },
         "when": "尚未执行的新使用前权限观察缺失/抛错/marker不可核对",
         "meaning": "测试环境权限暂不可核对"
@@ -9203,8 +9205,8 @@
           "category": "invalid_parameters"
         },
         "next_by_role": {
-          "user": "请沿用已有预订；跨运行使用时按前驱血缘关联，增加资源前按原规则释放后重新预订",
-          "admin": "请核对当前账户已有预订及运行血缘并沿用；增加资源前按原规则释放后重新预订"
+          "user": "请直接使用已有的预订；开始新运行时把取得该预订的那次运行写成前一次运行",
+          "admin": "请直接使用已有的预订；开始新运行时把取得该预订的那次运行写成前一次运行"
         },
         "when": "仅重复acquire被拒且有效lease属于当前账户；合法沿用/extend不得套用",
         "meaning": "已有本人预订"
@@ -9219,8 +9221,8 @@
           "category": "not_found"
         },
         "next_by_role": {
-          "user": "请先取得所需预订，再开始新的使用",
-          "admin": "请先核对运行血缘并取得所需预订，再重试新的使用"
+          "user": "请先预订这次运行所需的测试环境，再重试",
+          "admin": "请先预订这次运行所需的测试环境，再重试"
         },
         "when": "已核对当前血缘没有所需有效预订；不覆盖真实他人有效占用",
         "meaning": "缺少本运行预订"
@@ -9234,8 +9236,8 @@
           "category": "not_found"
         },
         "next_by_role": {
-          "user": "请重新预订，取得有效预订后重试",
-          "admin": "请核对预订的到期事实并重新预订，再重试"
+          "user": "请重新预订所需的测试环境后重试",
+          "admin": "请重新预订所需的测试环境后重试"
         },
         "when": "已读到expires_at且实际过期，不凭字符串或holder存在判断",
         "meaning": "预订已到期"
@@ -9250,8 +9252,8 @@
           "category": "not_found"
         },
         "next_by_role": {
-          "user": "请重新预订，取得有效预订后重试",
-          "admin": "请核对释放记录并重新预订，再重试"
+          "user": "请重新预订所需的测试环境后重试",
+          "admin": "请重新预订所需的测试环境后重试"
         },
         "when": "已知released_at或正式释放事实；记录读取失败不能归此",
         "meaning": "预订已释放"
@@ -9265,87 +9267,14 @@
           "unknown": true
         },
         "next_by_role": {
-          "user": "请联系管理员恢复预订记录读取后，再核对预订覆盖范围",
-          "admin": "请联系维护人员恢复租约记录读取；恢复后重新核对本次预订覆盖范围"
+          "user": "请联系管理员恢复预订记录读取后重试",
+          "admin": "原因记在调用记录里，追踪号见本条"
         },
         "when": "实际LeaseUseReadError，lease_check.rows_read=false、allowed=null、missing_keys=null；不包括成功读到零行或已确认到期/释放",
-        "meaning": "未能取得可核对的预订记录，不是已确认没有预订，也不表示已发或可能已发操作没有执行"
+        "meaning": "这次运行的预订有没有包含所需测试环境尚未核对；预订记录当前读不到，不是已确认没有预订。本次被拒动作未执行，不能否认之前已发或可能已发原轮"
       }
     ],
-    "callErrorReasonCandidates": [
-      {
-        "reason": "environment_binding_mismatch",
-        "label": "测试环境关联不一致",
-        "codes": [
-          "SOURCE_NOT_PERMITTED",
-          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
-        ],
-        "category_candidates": [
-          "invalid_parameters",
-          "temporarily_unavailable"
-        ],
-        "when": "已验证登记原件身份与期望执行器身份不一致，或明确登记关联不成立；不从canUse=false倒推",
-        "meaning": "已确认的配置错配；类别待裁，不作为事实unknown发布，也不归无分配/无预订",
-        "next_by_role": {
-          "user": "请管理员核对测试环境与执行器的关联登记；修正后重试",
-          "admin": "请核对当前测试环境与执行器的登记身份及关联，修正后重试"
-        },
-        "review_message_example": "执行器源定义与登记身份不一致",
-        "source_basis": [
-          "hub/records/test-environments.ts:104-115",
-          "hub/dispatch/member-environments.ts:60-73"
-        ],
-        "code_basis": "现有permission已知false保SOURCE_NOT_PERMITTED，读取/校验抛错的当前捕获点保ENVIRONMENT_PERMISSION_UNAVAILABLE；实际抛出处选原码，不靠message解析"
-      },
-      {
-        "reason": "environment_target_mismatch",
-        "label": "测试环境目标不一致",
-        "codes": [
-          "SOURCE_NOT_PERMITTED",
-          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
-        ],
-        "category_candidates": [
-          "invalid_parameters",
-          "temporarily_unavailable"
-        ],
-        "when": "两侧实际目标均已成功读取并解析，resolved.target与environment.target明确不等；读取失败不是此原因",
-        "meaning": "已确认的配置错配；类别待裁，不作为事实unknown发布，也不归无分配/无预订",
-        "next_by_role": {
-          "user": "请管理员核对测试环境与执行器的目标登记；修正后重试",
-          "admin": "请核对已解析的执行器目标与测试环境目标，修正不一致的登记后重试"
-        },
-        "review_message_example": "测试环境与关联执行器的目标或资源声明不一致",
-        "source_basis": [
-          "hub/records/test-environments.ts:104-115",
-          "hub/dispatch/member-environments.ts:60-73"
-        ],
-        "code_basis": "现有permission已知false保SOURCE_NOT_PERMITTED，读取/校验抛错的当前捕获点保ENVIRONMENT_PERMISSION_UNAVAILABLE；实际抛出处选原码，不靠message解析"
-      },
-      {
-        "reason": "environment_resource_mismatch",
-        "label": "测试环境资源不一致",
-        "codes": [
-          "SOURCE_NOT_PERMITTED",
-          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
-        ],
-        "category_candidates": [
-          "invalid_parameters",
-          "temporarily_unavailable"
-        ],
-        "when": "源资源声明或已核对的唯一资源归属与所选环境明确不一致；多候选另用归属歧义，不从无分配推资源错配",
-        "meaning": "已确认的配置错配；类别待裁，不作为事实unknown发布，也不归无分配/无预订",
-        "next_by_role": {
-          "user": "请管理员核对测试环境与执行器的资源登记；修正后重试",
-          "admin": "请核对执行器资源声明与测试环境的前缀或精确资源键，修正不一致的登记后重试"
-        },
-        "review_message_example": "测试环境与关联执行器的目标或资源声明不一致",
-        "source_basis": [
-          "hub/records/test-environments.ts:104-115",
-          "hub/dispatch/member-environments.ts:60-73"
-        ],
-        "code_basis": "现有permission已知false保SOURCE_NOT_PERMITTED，读取/校验抛错的当前捕获点保ENVIRONMENT_PERMISSION_UNAVAILABLE；实际抛出处选原码，不靠message解析"
-      }
-    ]
+    "callErrorReasonCandidates": []
   },
   "objectStandard": {
     "note": "四个对象就是 C01 的四个家（知识 B、政策 C、方法 E、资源 D）。五要素按已定的决定表第 11 行留作设计检查单和记录页布局，不作存储分区；下表是全模型按五格的对照。",
@@ -12253,8 +12182,8 @@
           "label": "缺少测试环境登记"
         },
         {
-          "code": "environment_registration_ambiguous",
-          "label": "测试环境归属不唯一"
+          "code": "environment_registration_inconsistent",
+          "label": "测试环境登记不一致"
         },
         {
           "code": "environment_permission_unavailable",
