@@ -70,5 +70,86 @@ test('characterize the old job-wide no-send summary after an accepted first roun
   assert.equal(state.not_sent, true);
   assert.equal(Object.hasOwn(state, 'round'), false);
   assert.equal(Object.hasOwn(complete.body.detail, 'round'), false);
+  t.mock.method(c.service, 'status', () => { throw new Error('the scoped reader must not call the legacy summary'); });
+  const beforeRead = events.map(event => event.digest);
+  const scoped = await c.service.scopedFacts(c.admin, state.job);
+  assert.deepEqual(scoped.job_facts.scope, { job: state.job });
+  assert.equal(scoped.job_facts.reservation_recorded, true);
+  assert.equal(Object.hasOwn(scoped.job_facts, 'outcome'), false);
+  assert.equal(Object.hasOwn(scoped.job_facts, 'not_sent'), false);
+  assert.equal(Object.hasOwn(scoped.job_facts, 'submit_invoked'), false);
+  assert.equal(Object.hasOwn(scoped.job_facts, 'worker_settled'), false, 'journal history does not observe this process worker settlement');
+  assert.deepEqual(scoped.dispatch_attempt?.scope, { job: state.job, round: 2, request_id: intents[1].body.detail.request_id });
+  assert.equal(scoped.dispatch_attempt?.outcome, 'not_dispatched');
+  assert.equal(scoped.dispatch_attempt?.not_sent, true);
+  assert.equal(scoped.dispatch_attempt?.submit_invoked, true, 'the program called submit even though the transport wrote zero bytes');
+  assert.ok(scoped.dispatch_attempt?.grounds?.includes(`rec:${intents[1].digest}`));
+  assert.ok(scoped.dispatch_attempt?.grounds?.includes(`rec:${zeroWrite.digest}`));
+  assert.ok(scoped.dispatch_attempt?.grounds?.includes(`rec:${complete.digest}`));
+  assert.ok(!scoped.dispatch_attempt?.grounds?.includes(`rec:${receipts[0].digest}`));
+  const firstScope = await c.service.scopedFacts(c.admin, state.job, 1);
+  assert.deepEqual(firstScope.dispatch_attempt?.scope, { job: state.job, round: 1, request_id: intents[0].body.detail.request_id });
+  assert.equal(firstScope.dispatch_attempt?.outcome, 'issued', 'a receipt proves acceptance, not additional physical effects');
+  assert.equal(firstScope.dispatch_attempt?.not_sent, undefined, 'the second-round complete cannot become a first-round no-send fact');
+  assert.equal(firstScope.dispatch_attempt?.submit_invoked, true);
+  assert.ok(firstScope.dispatch_attempt?.grounds?.includes(`rec:${receipts[0].digest}`));
+  assert.ok(!firstScope.dispatch_attempt?.grounds?.includes(`rec:${complete.digest}`));
+  const absentScope = await c.service.scopedFacts(c.admin, state.job, 3);
+  assert.equal(absentScope.dispatch_attempt, undefined, 'a requested but unobserved round is not manufactured');
+  await assert.rejects(c.service.scopedFacts(c.owner, state.job));
+  assert.deepEqual((await c.service.journal.events(state.job)).map(event => event.digest), beforeRead, 'the scoped reader never rewrites or adds events');
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1, 'the scoped reader never makes an RPC');
+  assert.equal((await c.service.journal.events(state.job)).find(event => event.digest === receipts[0].digest)?.body.detail.acceptance, 'accepted');
+  assert.equal((await c.service.journal.events(state.job)).find(event => event.digest === firstRound?.digest)?.body.detail.terminal, 'pass');
   t.diagnostic(JSON.stringify({ baseline: 'd44fadfb72', gateway_submits: 1, intent_rounds: [1, 2], accepted_receipts: receipts.length, first_round: firstRound?.body.detail.terminal, second_submit_bytes: zeroWrite.body.detail.request_bytes_written, outcome: state.outcome, not_sent: state.not_sent, summary_round_present: Object.hasOwn(state, 'round') }));
+});
+
+
+test('new single-round intents provide explicit scope while precheck has no invented attempt', { timeout: 60000 }, async t => {
+  const c = await setup();
+  t.after(() => c.close());
+  const precheck = await c.service.precheck(c.admin, c.executor.id);
+  const readOnly = await c.service.scopedFacts(c.admin, precheck.job);
+  assert.equal(readOnly.dispatch_attempt, undefined);
+  const precheckBinding = await c.service.journal.binding(precheck.job);
+  assert.equal(Reflect.get(precheckBinding, 'operation'), 'precheck');
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const events = await c.service.journal.events(state.job);
+  const intent = events.find(event => event.body.detail.phase === 'intent');
+  assert.ok(intent);
+  assert.equal(intent.body.detail.round, 1, 'the writer knows the program round; the reader does not guess');
+  assert.equal(Reflect.get(await c.service.journal.binding(state.job), 'operation'), 'dispatch');
+  const scoped = await c.service.scopedFacts(c.admin, state.job);
+  assert.deepEqual(scoped.dispatch_attempt?.scope, { job: state.job, round: 1, request_id: intent.body.detail.request_id });
+});
+
+
+test('a real single-round flow without the new intent metadata stays unscoped when read', { timeout: 60000 }, async t => {
+  const c = await setup();
+  t.after(() => c.close());
+  const append = c.service.journal.append.bind(c.service.journal);
+  // Historical-writer fixture: omit only the newly added round metadata before the
+  // real journal persists the intent. All responses, receipts and completions are
+  // still produced by the real service and gateway, never fabricated or rewritten.
+  t.mock.method(c.service.journal, 'append', (...args: Parameters<typeof append>) => {
+    const [binding, phase, action, result, detail = {}, ...rest] = args;
+    if (phase === 'intent') {
+      const { round: _newMetadata, ...historicalDetail } = detail;
+      return append(binding, phase, action, result, historicalDetail, ...rest);
+    }
+    return append(...args);
+  });
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  const events = await c.service.journal.events(state.job);
+  const intent = events.find(event => event.body.detail.phase === 'intent');
+  assert.ok(intent);
+  assert.equal(Object.hasOwn(intent.body.detail, 'round'), false);
+  assert.ok(events.some(event => event.body.detail.phase === 'receipt' && event.body.detail.acceptance === 'accepted'));
+  assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+  const scoped = await c.service.scopedFacts(c.admin, state.job);
+  assert.equal(scoped.dispatch_attempt, undefined);
+  assert.deepEqual(scoped.job_facts.scope, { job: state.job });
+  assert.equal(scoped.job_facts.reservation_recorded, true);
+  assert.equal((await c.service.scopedFacts(c.admin, state.job, 1)).dispatch_attempt, undefined);
+  assert.deepEqual((await c.service.journal.events(state.job)).map(event => event.digest), events.map(event => event.digest));
 });

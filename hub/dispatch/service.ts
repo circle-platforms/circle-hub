@@ -1,3 +1,4 @@
+import { DispatchAttemptScopeSchema, DispatchJobFactsSchema, ScopedDispatchFactsSchema, type DispatchJobFacts, type DispatchAttemptFacts, type ScopedDispatchFacts } from '../../contracts/api.ts';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {withEnvironmentPermissionLock} from '../records/api.ts';
 import { isAdmin } from '../records/api.ts';
@@ -158,6 +159,49 @@ export class DispatchService {
     this.registry = new ExecutorRegistry(options.records); this.journal = new Journal(options.records, this.now);
   }
   async close(): Promise<void> { await (this.#closing ??= this.options.close?.() ?? Promise.resolve()); }
+  /** An additive administrative view of observed scopes, independent of the legacy job summary. */
+  async scopedFacts(by: Principal, job: string, round?: number): Promise<ScopedDispatchFacts> {
+    await this.registry.admin(by);
+    if (round !== undefined && (!Number.isInteger(round) || round < 1)) throw new Error('轮次必须是正整数');
+    const events = await this.journal.events(job);
+    if (!events.length || events.some(event => event.body.detail.job !== job)) throw new Error('作业记录缺少一致的身份');
+    const reservation = events.find(event => event.body.detail.phase === 'reservation');
+    const binding = reservation?.body.detail.binding;
+    const operation = DispatchJobFactsSchema.shape.operation.safeParse(object(binding) ? binding.operation : undefined);
+    const job_facts = DispatchJobFactsSchema.parse({
+      scope: { job },
+      ...(reservation ? { reservation_recorded: true, grounds: [`rec:${reservation.digest}`] } : {}),
+      ...(operation.success && operation.data !== undefined ? { operation: operation.data } : {}),
+      ...(typeof events.at(-1)!.body.detail.phase === 'string' ? { phase: events.at(-1)!.body.detail.phase } : {}),
+      frozen: isFrozen(events),
+    });
+    const intents = events.filter(event => event.body.detail.phase === 'intent');
+    const intent = round === undefined ? intents.at(-1) : intents.findLast(event => event.body.detail.round === round);
+    if (!intent) return ScopedDispatchFactsSchema.parse({ job_facts });
+    const scope = DispatchAttemptScopeSchema.safeParse({ job, round: intent.body.detail.round,
+      ...(typeof intent.body.detail.request_id === 'string' ? { request_id: intent.body.detail.request_id } : {}) });
+    if (!scope.success) return ScopedDispatchFactsSchema.parse({ job_facts });
+    // Only records between this intent and the next intent can describe this attempt.
+    const start = events.indexOf(intent);
+    const next = events.findIndex((event, index) => index > start && event.body.detail.phase === 'intent');
+    const records = events.slice(start + 1, next < 0 ? undefined : next);
+    const responses = records.filter(event => event.body.detail.phase === 'submit.response');
+    const receipt = records.findLast(event => event.body.detail.phase === 'receipt' && event.body.detail.acceptance === 'accepted');
+    const complete = records.findLast(event => event.body.detail.phase === 'complete' && event.body.inputs.includes(`rec:${intent.digest}`));
+    // One recorded, incomplete zero-write response is direct local no-send evidence.
+    // Do not apply it to retries, an earlier accepted submission, or another intent.
+    const zeroWrite = responses.length === 1 && !receipt && !records.some(event => event.body.detail.phase === 'resend')
+      && responses[0].body.detail.complete === false && responses[0].body.detail.http_status === 0
+      && responses[0].body.detail.request_bytes_written === 0 ? responses[0] : undefined;
+    const dispatch_attempt: DispatchAttemptFacts = {
+      scope: scope.data,
+      ...(responses.length ? { submit_invoked: true } : {}),
+      ...(zeroWrite ? { outcome: 'not_dispatched', not_sent: true } : receipt ? { outcome: 'issued' } : {}),
+      ...(complete ? { phase: 'complete' } : receipt ? { phase: 'receipt' } : zeroWrite ? { phase: 'submit.response' } : {}),
+      grounds: [intent, ...responses, ...(receipt ? [receipt] : []), ...(complete ? [complete] : [])].map(event => `rec:${event.digest}`),
+    };
+    return ScopedDispatchFactsSchema.parse({ job_facts, dispatch_attempt });
+  }
   async status(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by); const events = await this.journal.events(job);
     if (!events.length) throw new Error('作业对当前账户不可用');
@@ -354,7 +398,7 @@ export class DispatchService {
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     const booked = booking ? await this.options.runs.getRun(by, booking) : null;
     if (booking && !booked) throw new Error('预订运行对当前账户不可用');
-    const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()), input: null,
+    const binding: JobBinding & Pick<DispatchJobFacts, 'operation'> = { operation: 'precheck', job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()), input: null,
       user: booked?.run.runner ?? by.id, resources: [], context: { ...environmentOf(d.precheck_context), ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
     await this.assertNoSecrets(binding);
     await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, read_only: true });
@@ -386,7 +430,7 @@ export class DispatchService {
     await this.assertNoSecrets(d);
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
-    const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:environmentOf(d.precheck_context)};
+    const binding: JobBinding & Pick<DispatchJobFacts, 'operation'> = {operation:'conformance',job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:environmentOf(d.precheck_context)};
     await this.reserve(binding);
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
@@ -518,7 +562,7 @@ export class DispatchService {
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (registrationMissing(d).filter(name=>name!=='environment').length) throw new Error(`派发登记缺事实：${registrationMissing(d).filter(name=>name!=='environment').join('、')}；请先 precheck 采证、转换并发布清单，再 update 补齐`);
     const gate=await prepareEffectGate({records:this.options.records,runs:this.options.runs,workflows:this.options.workflows,recheck:this.options.recheckChecks,by,run,executor,definition:d,resolved_digest:registered.resolved_digest,now:this.now});
-    const provisional:JobBinding={run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
+    const provisional:JobBinding & Pick<DispatchJobFacts, 'operation'>={operation:'dispatch',run,job:newJob(),initiated_by:options.initiatedBy??by.id,...(options.initiatedBy?{acting_by:by.id}:{}),executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,input:null,user:gate.detail.run.runner??by.id,resources:d.resources,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort())};
     const preflight=await gate.preflight();if(!preflight.ok)return this.boundaryRefused(by,provisional,preflight);
     const input=preflight.input;
     const useFailure=await this.environmentUseFailure(input.user,executor);
@@ -647,7 +691,7 @@ export class DispatchService {
         if (!permitted.created) throw new Error('作业已经恢复或关闭，不能再提交');
         const ordinal = attempt === 1 ? await this.journal.append(binding, 'sequence', 'validate', 'completed', { sequence }, [], `dispatch.sequence:${input.lineage}:${sequence}`, tx) : { created: true };
         if (!ordinal.created) throw new Error('血缘次序已由另一派发占用；未提交');
-        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row:boundary.row.id,effect_duration_ms:d.max_run_ms,intent_key: key, verification_result:currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, ...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, ...(multi ? { round } : {}), not_after: notAfter, sequence, action_digest: actionDigest,
+        const intent = await this.journal.append(binding, 'intent', 'dispatch', 'completed', { effect_row:boundary.row.id,effect_duration_ms:d.max_run_ms,intent_key: key, verification_result:currentProof.result, request_id: context.request_id, dispatch_sequence:context.dispatch_sequence,sequence_scope:context.sequence_scope, ...requestSnapshot, device_identity_proven: !!d.probes && deviceIdentity, device_lease_digest: digestOfValue([context.lease_id,context.lease_token]), attempt, round, not_after: notAfter, sequence, action_digest: actionDigest,
           dispatch_binding_digest: digestOfValue([input.run, input.item, input.sha256, fresh, remote]), target_key: binding.target_key, ...intentSemantics, on_behalf_of: input.user,
           before_state_bound: beforeState.bound,before_state:beforeState,fences: fresh, remote_lease: remote, window: { from: this.now().toISOString(), to: notAfter } }, [`src:${input.sha256}`, `rec:${currentProof.result}`,...precheckSources,...requestSources], bytesKey(input.sha256, round, attempt, multi,input.lineage), tx);
         if (!intent.created) throw new Error('这份字节已经写过意图；未重复提交');
