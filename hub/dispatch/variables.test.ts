@@ -32,28 +32,42 @@ test('only declared expected positions accept ordinary variables and a variable 
 
 test('a value changing between binding and intent causes zero submissions',async t=>{
  const c=await setup();t.after(()=>c.close());
- await c.kit.variables.setVariable(c.admin,'DEMO_TARGET',c.executor.definition.target,'DEMO_REASON');
- await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,target:'${var:DEMO_TARGET}'});
+ const initial=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-build','DEMO_REASON');
+ const registered=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,conditions:c.executor.definition.conditions.map((condition,index)=>index===0?{pointer:'/build',equals:'${var:DEMO_BUILD}'}:condition)});
+ await c.freezeExecutor();
+ assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(c.detail.run.executors))!).toString())[c.executor.id],registered.resolved_digest);
+ assert.equal(registered.definition.conditions[0].equals,'synthetic-build');
+ assert.notEqual(registered.resolved_digest,c.executor.resolved_digest);
  const get=c.service.registry.get.bind(c.service.registry);let calls=0;
- c.service.registry.get=async(id,...args)=>{if(++calls===2)await c.kit.variables.setVariable(c.admin,'DEMO_TARGET','DEMO_OTHER','DEMO_CHANGE');return get(id,...args);};
- const result=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(result.dispatch_attempt!.outcome,'not_dispatched');assert.equal(c.submitted.length,0);
+ let changed=false;
+ c.service.registry.get=async(id,...args)=>{if(++calls===2){const write=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-other-build','DEMO_CHANGE');assert.notEqual(write.value.decision.digest,initial.value.decision.digest);assert.equal((await c.kit.authorizations.latest('resource_config','*','var:DEMO_BUILD'))?.digest,write.value.decision.digest);changed=true;}return get(id,...args);};
+ const result=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(result.dispatch_attempt!.outcome,'not_dispatched');assert.equal(c.submitted.length,0);assert.equal(changed,true);
  const events=await c.service.journal.events(result.job);assert.ok(events.some(e=>String(e.body.detail.reason).includes('执行器配置已变')));assert.ok(!events.some(e=>e.body.detail.phase==='intent'));
 });
 
 test('resume keeps the resolved definition after drift and a withdrawn credential yields an explicit recoverable gap',async t=>{
  const {DispatchService}=await import('./api.ts');const {secretNameOf}=await import('../../contracts/src/variables.ts');
  const c=await setup({mode:'transient-status'});t.after(()=>c.close());
- await c.kit.variables.setVariable(c.admin,'DEMO_TARGET',c.executor.definition.target,'DEMO_REASON');
- const registered=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,target:'${var:DEMO_TARGET}'});
+ const initial=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-build','DEMO_REASON');
+ const registered=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,conditions:c.executor.definition.conditions.map((condition,index)=>index===0?{pointer:'/build',equals:'${var:DEMO_BUILD}'}:condition)});
+ await c.freezeExecutor();
+ assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(c.detail.run.executors))!).toString())[c.executor.id],registered.resolved_digest);
+ assert.equal(registered.definition.conditions[0].equals,'synthetic-build');
+ assert.notEqual(registered.resolved_digest,c.executor.resolved_digest);
  const interrupted=new DispatchService({...c.service.options,sleep:async()=>{throw new Error('DEMO_INTERRUPTED');}});
  const first=await interrupted.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.submitted.length,1);
- const binding=await c.service.journal.binding(first.job);assert.equal(binding.executor_source_digest,registered.digest);assert.equal(binding.executor_digest,registered.resolved_digest);assert.equal(binding.variables?.[0].name,'DEMO_TARGET');
- await c.kit.variables.setVariable(c.admin,'DEMO_TARGET','DEMO_CHANGED_TARGET','DEMO_DRIFT');
+ const binding=await c.service.journal.binding(first.job);assert.equal(binding.executor_source_digest,registered.digest);assert.equal(binding.executor_digest,registered.resolved_digest);assert.equal(binding.variables?.[0].name,'DEMO_BUILD');assert.equal(binding.variables?.[0].decision,initial.value.decision.digest);
+ assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(binding.executor_digest))!).toString()).conditions[0].equals,'synthetic-build');
+ const changed=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-changed-build','DEMO_DRIFT');
+ assert.notEqual(changed.value.decision.digest,initial.value.decision.digest);
+ assert.equal((await c.kit.authorizations.latest('resource_config','*','var:DEMO_BUILD'))?.digest,changed.value.decision.digest);
  const name=secretNameOf(registered.definition.credential!)!;await c.kit.variables.unsetSecret(c.admin,name,'DEMO_REVOKE');
  const restarted=new DispatchService({...c.service.options});const before=c.calls.length;
  const missing=await restarted.resume(c.admin,first.job);assert.equal(c.calls.length,before);assert.match(missing.dispatch_attempt!.next_action??'',/secret set --name/);assert.match(missing.dispatch_attempt!.next_action??'',/job resume/);
  await c.kit.variables.setSecrets(c.admin,[{name,value:'synthetic-secret'}],'DEMO_RESTORE');
  const result=await restarted.resume(c.admin,first.job);assert.equal(result.dispatch_attempt!.outcome,'effective');assert.equal(c.submitted.length,1);
+ const restoredBinding=await restarted.journal.binding(first.job);assert.equal(restoredBinding.executor_digest,registered.resolved_digest);assert.equal(restoredBinding.executor_source_digest,registered.digest);assert.equal(restoredBinding.variables?.[0].decision,initial.value.decision.digest);
+ assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(restoredBinding.executor_digest))!).toString()).conditions[0].equals,'synthetic-build');
  const events=await restarted.journal.events(first.job);assert.equal(events.filter(e=>e.body.detail.phase==='configuration_drift').length,1);
 });
 
@@ -92,14 +106,23 @@ test('executor material migration uses the current administrator-approved endpoi
 
 test('compatible read repairs and certification use original variable decisions after current values drift',async t=>{
  const c=await setup({mode:'unmapped'});t.after(()=>c.close());
- await c.kit.variables.setVariable(c.admin,'DEMO_TARGET',c.executor.definition.target,'DEMO_REASON');
- const original=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,target:'${var:DEMO_TARGET}'});
+ const initial=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-build','DEMO_REASON');
+ const original=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,conditions:c.executor.definition.conditions.map((condition,index)=>index===0?{pointer:'/build',equals:'${var:DEMO_BUILD}'}:condition)});
+ await c.freezeExecutor();
+ assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(c.detail.run.executors))!).toString())[c.executor.id],original.resolved_digest);
+ assert.equal(original.definition.conditions[0].equals,'synthetic-build');
+ assert.notEqual(original.resolved_digest,c.executor.resolved_digest);
  const job=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(job.job_facts.frozen,true);
- await c.kit.variables.setVariable(c.admin,'DEMO_TARGET','DEMO_CURRENT_TARGET','DEMO_DRIFT');
+ const binding=await c.service.journal.binding(job.job);assert.equal(binding.executor_digest,original.resolved_digest);assert.equal(binding.executor_source_digest,original.digest);assert.equal(binding.variables?.[0].decision,initial.value.decision.digest);
+ const changed=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-current-build','DEMO_DRIFT');
+ assert.notEqual(changed.value.decision.digest,initial.value.decision.digest);
+ assert.equal((await c.kit.authorizations.latest('resource_config','*','var:DEMO_BUILD'))?.digest,changed.value.decision.digest);
  await c.registry.update(c.admin,c.executor.id,{...original.source,status:{...original.source.status,map:{...original.source.status.map,unmapped:{action_result:'completed',effect_outcome:'effective'}}}});
  const repaired=await c.service.dispose(c.admin,job.job,{choice:'reconcile',remote_id:'synthetic-remote'});assert.equal(repaired.dispatch_attempt!.outcome,'effective');assert.equal(c.submitted.length,1);
  const events=await c.service.journal.events(job.job);const use=events.find(e=>e.body.detail.phase==='reading_definition');assert.ok(use);
- const bytes=await c.kit.objects.get(String(use.body.detail.reading_definition_sha256));assert.equal(JSON.parse(Buffer.from(bytes!).toString()).target,c.executor.definition.target);
+ const bytes=await c.kit.objects.get(String(use.body.detail.reading_definition_sha256));assert.equal(JSON.parse(Buffer.from(bytes!).toString()).conditions[0].equals,'synthetic-build');
+ assert.equal((await c.service.journal.binding(job.job)).executor_digest,original.resolved_digest);
+ assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(original.resolved_digest))!).toString()).conditions[0].equals,'synthetic-build');
  assert.equal((use.body.detail.variables as any[])[0].decision,original.variables[0].decision);
 });
 
