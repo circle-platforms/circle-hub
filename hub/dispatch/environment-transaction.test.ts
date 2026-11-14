@@ -1,3 +1,4 @@
+import {tracePermissionBoundary} from './testing/permission-boundary.ts';
 import assert from 'node:assert/strict';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { test } from 'node:test';
@@ -35,27 +36,30 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
     return execute.call(this, text, values, tx);
   };
   t.after(() => { Database.prototype.query = originalQuery; });
+  const trace=tracePermissionBoundary(records,c.executor.id,async()=>{
+    if(revoke&&!revoked&&c.calls.includes('inspect_slot')){
+      revoked=true;
+      await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
+      const old=requestPermissions(c.owner.id);
+      assert.ok(old?.enabled(old.latest('resource_assign',c.environmentTeam.id,c.environment.id)),'an older request snapshot still carries the grant');
+    }
+  });
   const canonical = new MemberEnvironments(records, new ExecutorRegistry(records), c.leases);
   const permission = async (actor: Parameters<typeof canUseEnvironment>[1], executor: string, tx?: Transaction) => {
     if (tx) {
-      transactionChecks++;
+      if(trace.isIntent(tx))transactionChecks++;
       assert.equal(tx, scope.getStore(), 'fresh permission query must receive the held outer transaction');
-      if (revoke && !revoked) {
-        // The independent fixture connection commits after the intent transaction began, before its fresh read.
-        await c.kit.authorizations.unassignResource(c.admin, c.environment.id, c.environmentTeam.id);
-        revoked = true;
-        const old = requestPermissions(c.owner.id);
-        assert.ok(old?.enabled(old.latest('resource_assign', c.environmentTeam.id, c.environment.id)), 'an older request snapshot still carries the grant');
-      }
+
     }
     return canonical.permission(actor,executor,mode==='broken-port'?undefined:tx);
   };
-  const environmentAccess = {inheritance:async(tx?:Transaction)=>{assert.equal(tx,scope.getStore());return {completed:true};},canUse:canonical.canUse.bind(canonical),permission};
+  const environmentAccess = {inheritance:async(tx?:Transaction)=>{assert.equal(tx,scope.getStore());return canonical.inheritance(tx);},canUse:canonical.canUse.bind(canonical),permission};
   const service = new DispatchService({ ...c.service.options, records, environmentAccess });
+  trace.attach(service);
   const result = await withRequestPermissions(records.artifacts, c.owner, () => service.dispatch(c.admin, c.run, c.executor.id));
   if(mode==='broken-port'){
     assert.ok(reborrows>0,'the negative control actually attempts a second client lease');
-    assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(c.calls.includes('send_blob'),false);
+    assert.equal(result.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.includes('send_blob'),false);
     return;
   }
   assert.equal(reborrows, 0, 'no query in the held intent transaction may rent a second client');

@@ -1,3 +1,4 @@
+import {tracePermissionBoundary} from './testing/permission-boundary.ts';
 import { isAdmin } from '../records/api.ts';
 // Decision 105 (W03, D06): the Hub dispatches an accepted run whose release holds, as the runner's run with a named
 // administrator responsible for unknown outcomes, at most once; the runner reads the jobs' progress. Synthetic executor only.
@@ -355,13 +356,16 @@ test('the responsibility administrator cannot lend environment use to an unassig
 
 test('revoking environment use after precheck is rechecked in the intent transaction',async t=>{
   const c=await setup();t.after(()=>c.close());
-  const permission=c.environmentAccess.permission;let checks=0;
+  const permission=c.environmentAccess.permission;let checks=0,revoked=false;
+  const trace=tracePermissionBoundary(c.kit,c.executor.id,async()=>{
+    if(!revoked&&c.calls.includes('inspect_slot')) {revoked=true;await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);}
+  });
+  trace.attach(c.service);
   c.service.options.environmentAccess={
     inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
-      checks++;
-      await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
+      if(trace.isIntent(tx))checks++;
       return permission(actor,executor,tx);
     },
   };
@@ -387,10 +391,10 @@ test('a missing environment provider is unavailable evidence, never a claim of n
   assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true,'this actor really has an assignment');
   c.service.options.environmentAccess=undefined;
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(result.outcome,'not_dispatched');
+  assert.equal(result.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(result.outcome,'not_dispatched');
   assert.equal(c.calls.length,0);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
+  assert.equal(note.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
   assert.doesNotMatch(JSON.stringify(note),/没有.*分配|usr_|exe_|circle-hub/);
 });
 
@@ -403,9 +407,9 @@ test('an unreadable environment permission port is unavailable, not a negative p
     permission:c.environmentAccess.permission,
   };
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.error_code,'SOURCE_UNAVAILABLE');assert.equal(c.calls.length,0);
+  assert.equal(result.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.length,0);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact.includes('尚未核对')));
+  assert.equal(note.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
   assert.doesNotMatch(JSON.stringify(note),/private connection|没有.*分配|usr_|exe_|circle-hub/);
 });
 
