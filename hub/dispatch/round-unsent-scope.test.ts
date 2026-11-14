@@ -57,6 +57,13 @@ test('characterize the old job-wide no-send summary after an accepted first roun
   assert.equal(receipts[0].body.detail.remote_id, 'synthetic-remote');
   const firstRound = events.find(event => event.body.detail.phase === 'round' && event.body.detail.round === 1);
   assert.equal(firstRound?.body.detail.terminal, 'pass');
+  const effects = await c.kit.store.findMany<{ intent_key: string | null; request_id: string | null; previous: string | null; outcome: string }>({ kind: 'effect', key: 'effect.job', values: [state.job] });
+  const secondEffects = effects.filter(effect => effect.body.request_id === intents[1].body.detail.request_id);
+  assert.ok(secondEffects.length);
+  assert.equal(secondEffects[0].body.previous, null, 'a new request cannot inherit the previous round effect chain');
+  assert.equal(effects.filter(effect => effect.body.request_id === intents[0].body.detail.request_id).at(-1)?.body.outcome, 'effective');
+  const budgetIntents = await c.kit.store.findMany({ kind: 'action', key: 'dispatch.effect_row', values: [`${c.run}:${intents[0].body.detail.effect_row}`] });
+  assert.equal(budgetIntents.length, 2, 'the zero-write intent still consumes its recorded intent budget');
   const secondIntentIndex = events.indexOf(intents[1]);
   assert.ok(events.indexOf(receipts[0]) < secondIntentIndex);
   const zeroWrite = events.slice(secondIntentIndex + 1).find(event => event.body.detail.phase === 'submit.response');

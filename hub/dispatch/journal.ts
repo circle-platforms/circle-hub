@@ -62,9 +62,10 @@ export class Journal {
   private async effect(binding:JobBinding,event:Event,tx?:Transaction):Promise<void>{
     await this.records.store.withTransaction(async transaction=>{
       await this.records.store.lock(`dispatch.effect:${binding.job}`,transaction);
-      const previous=(await this.records.store.findMany<EffectRecord>({kind:'effect',key:'effect.job',values:[binding.job]},transaction)).at(-1);
       const intent=eventOf(await this.events(binding.job,transaction),'intent');
       const detail=event.body.detail,values=intent?.body.detail??{};
+      const previous=(await this.records.store.findMany<EffectRecord>({kind:'effect',key:'effect.job',values:[binding.job]},transaction))
+        .findLast(record => record.body.intent_key === (values.intent_key ?? null) && record.body.request_id === (values.request_id ?? null));
       const definitionBytes=await this.records.objects.get(binding.executor_digest);if(!definitionBytes)throw new Error('缺少固定执行器原件；请恢复后对账');
       const d=JSON.parse(new TextDecoder().decode(definitionBytes));
       const write=d.calls.submit.write;
