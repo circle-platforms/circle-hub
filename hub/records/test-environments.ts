@@ -1,3 +1,5 @@
+import { withDefinitionOwners, withDefinitionAssignment, restoresDisabledOwner } from './definition-restoration.ts';
+import { prepareTestEnvironmentOwnerChange, type TestEnvironmentOwnerChange } from './test-environment-owner.ts';
 import { prepareBookingPrefixRegistration, isBookingPrefixRegistration } from './booking-prefix-registration.ts';
 import { adoptUnregisteredPrefixes } from './test-environment-adoption.ts';
 import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
@@ -24,6 +26,7 @@ import { withEnvironmentPermissionLock } from './environment-permission-lock.ts'
 import { environmentProgramWrite } from './environment-program-write.ts';
 import { PermissionRoleSchema } from '../../contracts/generated/vocabulary.ts';
 
+export type { TestEnvironmentOwnerChange } from './test-environment-owner.ts';
 export type { TestEnvironment, TestEnvironmentInput } from '../../contracts/api.ts';
 export interface TestEnvironmentInheritanceState { completed: boolean | null; record: string | null; missingFacts: string[] }
 export interface TestEnvironmentOwnership {
@@ -36,6 +39,10 @@ export interface TestEnvironmentResolution { environments: TestEnvironment[]; un
 export interface TestEnvironments {
   list(by: Principal, tx?: Transaction): Promise<TestEnvironmentEntry[]>;
   get(by: Principal, id: string, tx?: Transaction): Promise<TestEnvironmentEntry | null>;
+  registerFromDefinition(by: Principal, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
+  registerBookingPrefixFromDefinition(by: Principal, input: { prefix: string; owner: string }, tx?: Transaction): Promise<BookingPrefixEntry>;
+  assignFromDefinition(by: Principal, input: { environment: string; subject: string; expiresAt?: string | null }, tx?: Transaction): Promise<AuthorizationRecord>;
+  reassignOwner(by: Principal, id: string, input: TestEnvironmentOwnerChange, tx?: Transaction): Promise<TestEnvironmentEntry>;
   registerBookingPrefix(by: Principal, input: { prefix: string; owner: string }, tx?: Transaction): Promise<BookingPrefixEntry>;
   register(by: Principal, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
   update(by: Principal, id: string, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
@@ -134,12 +141,47 @@ export class RecordTestEnvironments implements TestEnvironments {
     }, outer);
   }
   private async leaseLock(tx: Transaction) { await this.db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx); }
-  private async write(by: Principal, environment: TestEnvironment, tx: Transaction): Promise<AuthorizationRecord> {
+  private async write(by: Principal, environment: TestEnvironment, tx: Transaction, note?: string): Promise<AuthorizationRecord> {
     const stored = await this.objects.put(canonicalBytes(TestEnvironment.parse(environment)), 'application/json', tx);
-    return environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(by, TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id, stored.sha256, '测试环境登记', tx));
+    return environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(by, TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id, stored.sha256, note ?? (environment.target !== null ? '测试环境登记' : isBookingPrefixRegistration(environment) ? '预订前缀责任登记（不是测试环境）' : '保留尚未归属目标的登记事实'), tx));
   }
   private unique(environment: TestEnvironment, values: readonly TestEnvironment[]) {
     if (values.some(value => value.id !== environment.id && (environment.name !== null && value.name === environment.name || environment.target !== null && value.target === environment.target))) throw new ConflictError('测试环境的名字或目标已经登记');
+  }
+  async registerFromDefinition(by: Principal, input: TestEnvironmentInput, outer?: Transaction): Promise<TestEnvironment> {
+    return withEnvironmentPermissionLock(this.store, async tx => {
+      await this.leaseLock(tx);
+      const actor = await this.admin(by, tx);
+      const owners = [...input.prefixes, ...input.resources].flatMap(row => row.owner === null ? [] : [row.owner]);
+      return withDefinitionOwners(tx, owners, () => this.register(actor, input, tx));
+    }, outer);
+  }
+  async registerBookingPrefixFromDefinition(by: Principal, input: { prefix: string; owner: string }, outer?: Transaction): Promise<BookingPrefixEntry> {
+    return withEnvironmentPermissionLock(this.store, async tx => {
+      await this.leaseLock(tx);
+      const actor = await this.admin(by, tx);
+      return withDefinitionOwners(tx, [input.owner], () => this.registerBookingPrefix(actor, input, tx));
+    }, outer);
+  }
+  async assignFromDefinition(by: Principal, input: { environment: string; subject: string; expiresAt?: string | null }, outer?: Transaction): Promise<AuthorizationRecord> {
+    TestEnvironmentId.parse(input.environment);
+    return withEnvironmentPermissionLock(this.store, async tx => {
+      const actor = await this.admin(by, tx);
+      return withDefinitionAssignment(tx, input.subject, input.environment, () => this.authorizations.grant(actor, { permission: 'resource_assign', subject: input.subject, object: input.environment, expiresAt: input.expiresAt, note: '按部署定义恢复原有测试环境分配；不启用账户' }, tx));
+    }, outer);
+  }
+  async reassignOwner(by: Principal, id: string, input: TestEnvironmentOwnerChange, outer?: Transaction): Promise<TestEnvironmentEntry> {
+    TestEnvironmentId.parse(id);
+    return withEnvironmentPermissionLock(this.store, async tx => {
+      await this.leaseLock(tx); const actor = await this.admin(by, tx);
+      const old = (await this.catalog(tx)).find(value => value.id === id);
+      if (!old) throw new ConflictError('没有这个登记');
+      const replacement = (await this.db.query('SELECT id,disabled,deleted_at FROM users WHERE id=$1 FOR SHARE', [input.owner], tx)).rows[0];
+      if (!replacement || replacement.disabled || replacement.deleted_at) throw new ConflictError('新的责任人必须是当前启用且未删除的账户');
+      const environment = prepareTestEnvironmentOwnerChange(old, input, await this.at(tx));
+      await this.write(actor, environment, tx, '管理员明确改派登记责任人；不改变使用分配或已有租约');
+      return { ...environment, isTestEnvironment: environment.target !== null, isBookingPrefix: isBookingPrefixRegistration(environment) };
+    }, outer);
   }
   async registerBookingPrefix(by: Principal, input: { prefix: string; owner: string }, outer?: Transaction): Promise<BookingPrefixEntry> {
     return withEnvironmentPermissionLock<BookingPrefixEntry>(this.store, async tx => {
@@ -197,7 +239,7 @@ export class RecordTestEnvironments implements TestEnvironments {
     const owners = [...new Set([...environment.prefixes, ...environment.resources].flatMap(row => row.owner === null ? [] : [row.owner]))].sort();
     if (!owners.length) return;
     const rows = (await this.db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE', [owners], tx)).rows;
-    if (rows.length !== owners.length || rows.some(row => row.deleted_at || row.disabled)) throw new ConflictError('测试环境登记的责任账户不存在、已停用或已删除');
+    if (rows.length !== owners.length || rows.some(row => row.deleted_at || row.disabled && !restoresDisabledOwner(tx, String(row.id)))) throw new ConflictError('测试环境登记的责任账户不存在、已停用或已删除');
   }
   async ownership(outer?: Transaction): Promise<TestEnvironmentOwnership> {
     return this.store.withTransaction(async tx => {
