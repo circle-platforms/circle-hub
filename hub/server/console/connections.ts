@@ -107,6 +107,7 @@ export async function readExecutorAssignmentGone(ctx: PageContext, executorId: s
   } catch {
     return null;
   }
+}
 
 /**
  * N3: last environment-check projection from Codex's unified gate (optional on EnvironmentFacts).
