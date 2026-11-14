@@ -76,6 +76,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   await leases.acquire({ keys: d.resources, prefix: 'synthetic/', ttlSeconds: options.mode === 'expiry' ? 1 : 3600, maxTtlSeconds: 3600, holder: { user: owner.id, run: options.mode === 'lineage' ? newId('run') : run } });
   const environmentTeam=await kit.teams.create(admin,'合成环境使用团队');
   await kit.teams.add(admin,environmentTeam.id,owner.id);
+  await kit.teams.add(admin,environmentTeam.id,admin.id);
   const environment=await registerEnvironment(kit,admin,{name:'synthetic-bed',target:executor.source.target,executors:[executor.id],resources:d.resources,owner:admin.id,at:now().toISOString()});
   await kit.authorizations.assignResource(admin,environment.id,environmentTeam.id);
   await kit.testEnvironments.inherit(admin,{collect:async()=>({workflows:[],executors:[],sourceRecords:[]})});
