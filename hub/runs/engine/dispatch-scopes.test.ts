@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RunJob } from '../../dispatch/api.ts';
 import { canonicalBytes, type ActionBody, type StoredRecord } from '../../records/api.ts';
-import { dispatchNotExecuted, dispatchUncertain, dispatchFinalized, publicDispatchFacts, legacyJobState, exportedScopedJobs, exportedJobs } from './dispatch-results.ts';
+import { dispatchNotExecuted, dispatchUncertain, dispatchFinalized, publicDispatchFacts, versionOneJobState, exportedScopedJobs, exportedJobs } from './dispatch-results.ts';
 import { withDispatch, type SubmitAnswer } from './submit.ts';
 import { RunRecord } from '../../../contracts/src/run.ts';
 import { accepted, runRecord } from '../../../contracts/src/fixtures.ts';
@@ -71,10 +71,10 @@ test('public scoped export strips internal diagnostics and administrative ground
 
 test('version one outcome reads original journal rules, not a version two last-attempt alias',()=>{
   const event=(detail:Record<string,unknown>)=>({digest:'f'.repeat(64),body:{detail}} as unknown as StoredRecord<ActionBody>);
-  assert.equal(legacyJobState([event({phase:'complete',done:true,outcome:'effective'})]).outcome,'effective');
-  assert.equal(legacyJobState([event({phase:'complete',done:true,outcome:'target_rejected'})]).outcome,'target_rejected');
-  assert.equal(legacyJobState([event({phase:'intent'}),event({phase:'receipt'}),event({phase:'complete',done:true,outcome:'effective'})]).outcome,'effective');
-  assert.equal(legacyJobState([event({phase:'intent'}),event({phase:'complete',done:true,outcome:'not_dispatched'})]).outcome,'unknown');
+  assert.equal(versionOneJobState([event({phase:'complete',done:true,outcome:'effective'})]).outcome,'effective');
+  assert.equal(versionOneJobState([event({phase:'complete',done:true,outcome:'target_rejected'})]).outcome,'target_rejected');
+  assert.equal(versionOneJobState([event({phase:'intent'}),event({phase:'receipt'}),event({phase:'complete',done:true,outcome:'effective'})]).outcome,'effective');
+  assert.equal(versionOneJobState([event({phase:'intent'}),event({phase:'complete',done:true,outcome:'not_dispatched'})]).outcome,'unknown');
 });
 
 test('canonical export reads the job report even when the last attempt names a different report',async()=>{
@@ -272,7 +272,7 @@ const originalV1Fixtures = [
   }
 ];
 
-test('version one output matches the fixed original bytes for seven scoped and legacy histories',async()=>{
+test('version one output matches the fixed original bytes for seven scoped and historical histories',async()=>{
   for(const fixture of originalV1Fixtures){
     const value=observed();
     const events=fixture.details.map((detail,index)=>({digest:index.toString(16).padStart(64,'0'),body:{detail}})) as unknown as StoredRecord<ActionBody>[];

@@ -49,7 +49,7 @@ export function publicDispatchFacts(job:RunJob,administrative:boolean) {
   return ScopedDispatchFactsSchema.parse({job_facts,...(dispatch_attempt?{dispatch_attempt}:{})});
 }
 /** Version-one wire rules, isolated from all internal scoped readers. No attempt is converted to a whole-job outcome. */
-export function legacyJobState(events:readonly StoredRecord<ActionBody>[]):{outcome:string;frozen:boolean;result:string|null;device_return:string|null} {
+export function versionOneJobState(events:readonly StoredRecord<ActionBody>[]):{outcome:string;frozen:boolean;result:string|null;device_return:string|null} {
   const last=(phase:string)=>events.findLast(event=>event.body.detail.phase===phase);
   const end=last('complete')??last('boundary_refused'),intent=last('intent'),probeIntent=last('probe_intent');
   const receipt=last('receipt')??events.findLast(event=>event.body.detail.phase==='reconciled'&&event.body.detail.acceptance==='accepted'&&event.body.detail.remote_id!==undefined);
@@ -94,9 +94,9 @@ export async function exportedJobs(ctx:EngineContext,run:string):Promise<Exporte
   for(const job of await ctx.deps.dispatch.jobs(admin,run)){
     const history=(await ctx.deps.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:[job.job]})).slice(0,job.status.events);
     if(!history.length)throw new Error('旧版作业导出缺少原始观察记录');
-    const legacy=legacyJobState(history);
-    const report=await readProjection(ctx,admin,job,legacy.result);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...legacy,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+    const versionOne=versionOneJobState(history);
+    const report=await readProjection(ctx,admin,job,versionOne.result);
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...versionOne,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
   }
   return out;
 }
