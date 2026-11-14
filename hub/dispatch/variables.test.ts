@@ -35,6 +35,7 @@ test('a value changing between binding and intent causes zero submissions',async
  const initial=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-build','DEMO_REASON');
  const registered=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,conditions:c.executor.definition.conditions.map((condition,index)=>index===0?{pointer:'/build',equals:'${var:DEMO_BUILD}'}:condition)});
  await c.freezeExecutor();
+ assert.ok(c.detail.run.executors);
  assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(c.detail.run.executors))!).toString())[c.executor.id],registered.resolved_digest);
  assert.equal(registered.definition.conditions[0].equals,'synthetic-build');
  assert.notEqual(registered.resolved_digest,c.executor.resolved_digest);
@@ -51,6 +52,7 @@ test('resume keeps the resolved definition after drift and a withdrawn credentia
  const initial=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-build','DEMO_REASON');
  const registered=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,conditions:c.executor.definition.conditions.map((condition,index)=>index===0?{pointer:'/build',equals:'${var:DEMO_BUILD}'}:condition)});
  await c.freezeExecutor();
+ assert.ok(c.detail.run.executors);
  assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(c.detail.run.executors))!).toString())[c.executor.id],registered.resolved_digest);
  assert.equal(registered.definition.conditions[0].equals,'synthetic-build');
  assert.notEqual(registered.resolved_digest,c.executor.resolved_digest);
@@ -109,6 +111,7 @@ test('compatible read repairs and certification use original variable decisions 
  const initial=await c.kit.variables.setVariable(c.admin,'DEMO_BUILD','synthetic-build','DEMO_REASON');
  const original=await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,conditions:c.executor.definition.conditions.map((condition,index)=>index===0?{pointer:'/build',equals:'${var:DEMO_BUILD}'}:condition)});
  await c.freezeExecutor();
+ assert.ok(c.detail.run.executors);
  assert.equal(JSON.parse(Buffer.from((await c.kit.objects.get(c.detail.run.executors))!).toString())[c.executor.id],original.resolved_digest);
  assert.equal(original.definition.conditions[0].equals,'synthetic-build');
  assert.notEqual(original.resolved_digest,c.executor.resolved_digest);
