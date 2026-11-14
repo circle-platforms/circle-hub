@@ -775,3 +775,14 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
   assert.match(many, /Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）/);
   assert.equal(linesOf(many).filter(line => line.includes('上机验证')).length >= 2, true);
 });
+
+
+test('known missing booking keeps a verified merge separate from an unsent job', () => {
+  const base = submitAnswer(resultOf(items(1)));
+  const text = toolText('submit_result', { ...base, dispatch: [{ text: 'diagnostic with private keys', outcome: 'not_dispatched', frozen: false, submission_verified: true, booking: { target: '合成实验室', coverage_complete: false, required_resources: 11, missing_resources: 11, declared_device_count: 11 } }] }, { items: items(1) });
+  assert.match(text, /脚本合并正确（已确认）/);
+  assert.match(text, /这次运行没有带着测试环境的预订/);
+  assert.match(text, /合成实验室（共 11 台设备）/);
+  assert.match(text, /先预订整个测试环境，再从脚本编写重开/);
+  assert.doesNotMatch(text, /原因还没查清|diagnostic with private keys/);
+});

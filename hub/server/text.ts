@@ -2,6 +2,7 @@
 // Reader-facing text; the original tool data stays in structuredContent.
 // Reader-facing text; the original tool data stays in structuredContent.
 import { createHash } from 'node:crypto';
+import type { DispatchNote } from '../dispatch/api.ts';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
 import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, isKnowledgeEntryStatus, type KnowledgeEntryStatus, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
@@ -590,7 +591,12 @@ function resolveText(v: ResolveOut): string {
  * Decision 155 puts three dispatch outcomes in `dispatch[].text` (not sent, rejected by the target, sent without an
  * answer). Keep each note verbatim — reader wording is owned by hub/dispatch/accepted.ts; do not rewrite at the exit.
  */
-function dispatchNoteLine(note: { text: string; result?: string }): string {
+function dispatchNoteLine(note: DispatchNote): string {
+  if (note.submission_verified === true && note.outcome === 'not_dispatched' && note.frozen !== true && note.booking?.coverage_complete === false) {
+    const count = note.booking.declared_device_count;
+    const devices = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? `共 ${count} 台设备` : '设备数量尚未核对';
+    return `脚本合并正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再从脚本编写重开并核验合并。`;
+  }
   if (note.result !== undefined) {
     return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
   }
