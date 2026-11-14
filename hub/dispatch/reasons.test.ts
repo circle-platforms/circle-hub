@@ -300,3 +300,24 @@ test('final boundary after a target response does not restart the whole job whil
     if (phase === 'round_refused') assert.match(notes[0].job_facts?.next_action ?? '', /不会整份重试.*重新开始核验/);
   }
 });
+
+test('a resolved job-status-unavailable wrapper is run uncertainty and never a confirmed admission refusal or retry license', async () => {
+  const { acceptedDispatch } = await import('./accepted.ts');
+  const run = 'run_00000000000000000000000003';
+  const user = { id: 'usr_00000000000000000000000003', name: '合成成员', role: 'user' as const };
+  const admin = { id: 'usr_00000000000000000000000002', name: '合成管理员', role: 'admin' as const, disabled: false };
+  const records = { store: { find: async () => ({ items: [], next: null }) }, principals: { list: async () => [admin], get: async () => user } } as unknown as Pick<import('../records/api.ts').RecordsKit, 'store' | 'principals'>;
+  let calls = 0;
+  const service = { options: { runs: { getRun: async () => ({}) } }, dispatchAccepted: async () => {
+    calls++; return { started: false, job_status_unavailable: true, reason: 'PRIVATE_STATUS_EXCEPTION' };
+  } } as unknown as import('./service.ts').DispatchService;
+  for (let n = 0; n < 2; n++) {
+    const [note] = await acceptedDispatch(records, service, run, true, 0, user);
+    assert.deepEqual(note.run_facts?.scope, { run }); assert.equal(note.run_facts?.worker_settled, true);
+    assert.equal(note.run_facts?.admission_error, undefined);
+    assert.equal(note.job_facts, undefined); assert.equal(note.dispatch_attempt, undefined); assert.equal(note.job, undefined);
+    assert.match(note.text, /事实尚未确认/); assert.doesNotMatch(note.text, /准入核对未通过|PRIVATE_STATUS_EXCEPTION/);
+    for (const old of ['outcome', 'not_sent', 'frozen', 'job_status_unavailable']) assert.equal(Object.hasOwn(note, old), false);
+  }
+  assert.equal(calls, 1, 'an unavailable status is not permission to start another worker');
+});
