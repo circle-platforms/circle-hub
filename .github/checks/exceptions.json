@@ -1030,107 +1030,9 @@
   },
   {
     "check": "no-compat-paths",
-    "path": "hub/refs/api.ts",
-    "what": "symbol:bindLegacyParser",
-    "reason": "Legacy/compatibility path (bindLegacyParser on line(s) 79); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/api.ts",
-    "what": "symbol:bindLegacySkills",
-    "reason": "Legacy/compatibility path (bindLegacySkills on line(s) 79); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/parser.ts",
-    "what": "symbol:bindingDisclosure",
-    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 97); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/parser.ts",
-    "what": "symbol:bindingRecord",
-    "reason": "Legacy/compatibility path (bindingRecord on line(s) 95); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/parser.ts",
-    "what": "symbol:bindingRecords",
-    "reason": "Legacy/compatibility path (bindingRecords on line(s) 96); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/resolve.ts",
-    "what": "literal:bind-legacy",
-    "reason": "Legacy/compatibility path (bind-legacy on line(s) 398); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/resolve.ts",
-    "what": "symbol:bindingDisclosure",
-    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 410); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
     "path": "hub/refs/resolve.ts",
     "what": "word:legacy",
     "reason": "Legacy/compatibility path (LEGACY_DOCUMENT_OVERHEAD, legacyDocumentBytes on line(s) 178,182,183,224); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "literal:bind-legacy",
-    "reason": "Legacy/compatibility path (bind-legacy on line(s) 17,250,297,329,331); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "symbol:bindingDisclosure",
-    "reason": "Legacy/compatibility path (bindingDisclosure on line(s) 296,329); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "symbol:bindingRecord",
-    "reason": "Legacy/compatibility path (bindingRecord on line(s) 328); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "symbol:bindingRecords",
-    "reason": "Legacy/compatibility path (bindingRecords on line(s) 296,328); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "symbol:bindLegacyParser",
-    "reason": "Legacy/compatibility path (bindLegacyParser on line(s) 375); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "symbol:bindLegacySkills",
-    "reason": "Legacy/compatibility path (bindLegacySkills on line(s) 338); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/refs/skills.ts",
-    "what": "word:legacy",
-    "reason": "Legacy/compatibility path (LegacySkillBinding, legacy on line(s) 20,295,383,384,392); remove in C3",
     "removeWhen": "C3"
   },
   {
@@ -1194,13 +1096,6 @@
     "path": "hub/runs/engine/management.ts",
     "what": "word:legacy",
     "reason": "Legacy/compatibility path (legacy_unwritten_fields on line(s) 75); remove in C3",
-    "removeWhen": "C3"
-  },
-  {
-    "check": "no-compat-paths",
-    "path": "hub/runs/engine/preview.ts",
-    "what": "literal:bind-legacy",
-    "reason": "Legacy/compatibility path (bind-legacy on line(s) 58); remove in C3",
     "removeWhen": "C3"
   },
   {

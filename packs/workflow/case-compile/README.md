@@ -1,3 +1,7 @@
+# case-compile 3.20.3
+
+本地修正 3.20.3（2026-11-14）：随合约协议生成拆分与格式技能包仅镜像自身声明子集（`mindmap-format` 1.0.26、`workbook-format` 1.0.24、`html-format` 1.0.23、`xml-format` 1.0.24），同步内嵌 `mindmap-format` `case-structure` 版本为 `1.0.26`（内嵌模块字节不变）、独立子包 `recompose` 为 `1.2.6` 及共享证据模块所属 `recompose-authority` / `recompose-adjudication` 为 `1.1.10`（同步 `functions/recompose-evidence.ts` 接受 `1.2.6` 与 `1.1.10`），刷新生成器身份、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与四个包清单，未发布或部署。
+
 # case-compile 3.20.2
 
 本地修正 3.20.2（2026-11-14）：移除两处手写词表字面枚举，统一引用 `tools/gen-contracts.ts` 为本包生成的 `./generated/vocabulary.ts`（增列 `acceptance` 与 `item_handling` 两轴）使 `packs/workflow/case-review/packs.test.ts` 通过：`functions/rework-history.ts` 引用 `isAcceptance` / `type Acceptance`，并将「未解析出受理情况」拆为 `acceptanceParsed: boolean` 与 `acceptance: Acceptance | null`（不向 `Acceptance` 混入 `'unknown'`）；`tools/check-plan.ts` 引用 `isItemHandling` / `ITEM_HANDLING` / `type ItemHandling`。同步升本地 `case-compile` 为 `3.20.2`（原样保留 `3.20.1` 提交；`recompose`、`recompose-authority`、`recompose-adjudication` 字节未变，版本维持 `1.2.5` 与 `1.1.9`），刷新 `tables/workbook-format.json`、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与 `pack.json`，未发布或部署。

@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "mindmap-format",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "kind": "skill",
   "title": "脑图格式",
   "description": "按原件结构读取 KityMinder，不承担工作角色判断",
@@ -13,13 +13,13 @@
     },
     {
       "path": "functions/format.ts",
-      "sha256": "391b7639d3dcd5b8de625b7255e629d86b7b6411f7105f71928ac6259abb0fcc",
-      "size": 10517
+      "sha256": "2bbc51a42b729dcabb7f587fcc3a400f867679e66f072210ec686eb73f222ff2",
+      "size": 10431
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "724c754057fc875c74c30989973402d58b3c4e194dc20389b9fce09a6e99610c",
-      "size": 13905
+      "sha256": "ae29107e817a335b6fea62b616d96f3ce49ff79341d1dd51dadd2467933ad809",
+      "size": 259
     },
     {
       "path": "functions/json-walk.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/selectors.ts",
-      "sha256": "4eb68ce5a3893c8fb3d32d146da71180960b9c8b515353132a9520893db05b32",
-      "size": 7836
+      "sha256": "2bad7714b6e7bb3a37fd1402717194b82c616739c7b45b354d2e73be60fab669",
+      "size": 7783
     },
     {
       "path": "functions/text-decoding.ts",

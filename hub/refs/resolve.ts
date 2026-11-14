@@ -395,7 +395,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
     }catch(error){
       ctx.onDiagnostic?.({reference:canonical,scheme:ref.scheme,message:'locked parser package could not be loaded'});
       const failed=unavailable(canonical,ctx,error instanceof IntegrityError?'integrity_unproven':'check_error');
-      return Object.assign(failed,{parser_missing:ref.parser,message:'缺少解析器 '+ref.parser+' 的已核验技能包摘要，当前不能复核这条引用',fix:'管理员恢复运行锁定的已发布包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明，再按原引用重读'});
+      return Object.assign(failed,{parser_missing:ref.parser,message:'运行 '+ctx.reader.run+' 锁定的解析器 '+ref.parser+' 技能包版本在包库中不可读取，当前不能复核这条引用',fix:'请管理员从发布库或备份恢复该运行锁定的技能包版本后重试，或重开一次运行'});
     }
   }
   if (ctx.visited?.has(canonical)) {
@@ -406,8 +406,7 @@ export async function resolveReference(input: string | Reference, ctx: ResolveCo
   const diagnose = (message: string): void => ctx.onDiagnostic?.({ reference: canonical, scheme: ref.scheme, message });
   switch (ref.scheme) {
     case 'src': {
-      const result=await resolveSource(ref, canonical, ctx, consumer, diagnose);
-      return result.resolved&&ctx.parsers.bindingDisclosure?{...result,note:[result.note,ctx.parsers.bindingDisclosure].filter(Boolean).join('；')}:result;
+      return await resolveSource(ref, canonical, ctx, consumer, diagnose);
     }
     case 'tree':
     case 'entry': {
@@ -591,7 +590,7 @@ async function resolveSource(
   const parser = ref.parser === undefined ? null : ctx.parsers.get(ref.parser);
   if (ref.parser !== undefined && !parser) {
     const why=ctx.parsers.unavailable?.(ref.parser);
-    if(why)return {resolved:false,reference:canonical,code:'SOURCE_READ_FAILED',message:why,fix:why,parser_missing:ref.parser};
+    if(why)return {resolved:false,reference:canonical,code:'SOURCE_READ_FAILED',message:why,fix:ctx.parsers.unavailableFix?.(ref.parser)??'请管理员安装所需通用技能包并重开运行重试，或改用已锁定该技能包摘要的运行号重读',parser_missing:ref.parser};
     return unresolved(canonical, `解析器 ${ref.parser} 没有登记`);
   }
   if (!ctx.sources) {

@@ -1,3 +1,7 @@
+# recompose 1.2.6
+
+本地修正 1.2.6（2026-11-14）：将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.25` 对齐为 `1.0.26`（内嵌模块字节不变），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 authority/adjudicate `1.1.10`）；能力与核对规则相对 1.2.5 不变；未发布或部署。
+
 # recompose 1.2.5
 
 本地修正 1.2.5（2026-11-14）：将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.24` 对齐为 `1.0.25`（内嵌模块字节不变），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/text.ts` 与 `functions/recompose-evidence.ts`（接受 recompose `1.2.5` 与 authority/adjudicate `1.1.9`）；`SKILL.md` 另按用词把关补清开始重组运行前须传入 `full_set`（整份重组）。能力与核对规则相对 1.2.4 不变；未发布或部署。

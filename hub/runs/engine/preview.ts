@@ -55,7 +55,7 @@ export async function previewReference(ctx: EngineContext, user: Principal, raw:
     }
     if (ctx.parsers.forRun) {
       try { ctx = { ...ctx, parsers: await ctx.parsers.forRun(stored.body.run) }; }
-      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_READ_FAILED', message: '缺少本运行锁定的解析技能包摘要', fix: '管理员恢复原技能包；历史运行缺锁时用 circle-hub skill bind-legacy <解析器 id@版本> <技能包 id@版本> 追加迁移声明后重读' }], references: [], diagnostics: [] }; }
+      catch { return { call_result: 'error', errors: [{ code: 'SOURCE_READ_FAILED', message: `运行 ${stored.body.run} 锁定的解析技能包版本在包库中不可读取`, fix: '请管理员从发布库或备份恢复本运行锁定的技能包版本后重读，或重开一次运行' }], references: [], diagnostics: [] }; }
     }
     // What the model will be shown: text the model may read (consumer model).
     const artifacts = ctx.deps.records.artifacts;
