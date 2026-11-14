@@ -28,14 +28,7 @@ export interface CurrentRecord {
   /** Additional formal edges resolved by the current schema's reader, never strings found in prose. */
   references?: readonly CurrentReference[];
 }
-/** Retained table evidence with formal edges; it is not a record and owns no reset scope. */
-export interface CurrentExternalRoot {
-  table: string;
-  row: number;
-  references: readonly CurrentReference[];
-}
 export interface SelectionOptions {
-  externalRoots?: readonly CurrentExternalRoot[];
   /** A content-addressed node/entry digest to its actual records.digest. */
   recordAliases?: ReadonlyMap<string, string>;
   /** Scopes with a current, verified holder of these exact object bytes. */
@@ -452,27 +445,10 @@ export function selectCurrentRecords(records: readonly CurrentRecord[], scopes: 
       nextAction: record.available === false ? '恢复该记录的可读取状态后重新预检；不可读取不表示模式不兼容' : '核对当前写入格式并补充明确的范围规则后重试' });
     else (owned.every(scope => scopes.has(scope)) ? cleared : retained).push(record.digest);
   });
-  const checkReferences = (pending: CurrentReference[], source: Pick<ResetProblem, 'scope' | 'table' | 'row' | 'name'>): void => {
-    const visitedObjects = new Set<string>();
-    for (let at = 0; at < pending.length; at++) {
-      const reference = pending[at]!;
-      const target = recordTarget(reference, options);
-      const targetScopes = reference.kind === 'record' ? (target === undefined ? undefined : owners.get(target)) : options.objectScopes?.get(reference.digest);
-      const objectKept = reference.kind === 'object' && options.retainedObjects?.has(reference.digest);
-      if (!objectKept && (!targetScopes?.length || targetScopes.every(targetScope => scopes.has(targetScope)))) blocked.push({ ...source, reason: !targetScopes?.length ? `正式引用 ${reference.field} 缺少已核对的目标范围或别名` : `${source.table === 'records' ? '保留记录' : '保留基础表行'}的正式引用 ${reference.field} 指向所清范围`,
-        nextAction: '补齐引用目标的范围或显式调整所选范围；程序不会扩大清除范围' });
-      else if (reference.kind === 'object' && !visitedObjects.has(reference.digest)) {
-        visitedObjects.add(reference.digest);
-        const edges = options.objectReferences?.get(reference.digest);
-        if (!edges) blocked.push({ ...source,
-          reason: `正式引用 ${reference.field} 的对象内部引用尚未核对`, nextAction: '由当前模式读取器核对该对象的正式引用后重试' });
-        else pending.push(...edges);
-      }
-    }
-  };
   records.forEach((record, index) => {
     const scope = owners.get(record.digest)?.find(scope => !scopes.has(scope));
     if (!scope) return;
+    const visitedObjects = new Set<string>();
     const pending = currentRecordReferences(record);
     for (const field of untypedDigestFields(record)) {
       if (record.references?.some(reference => reference.field === field.field && reference.digest === field.digest)) continue;
@@ -484,9 +460,23 @@ export function selectCurrentRecords(records: readonly CurrentRecord[], scopes: 
         reason: `正式输入 ${field.field} 的裸摘要目标类型尚未核对`,
         nextAction: '按当前 writer 声明记录、树内容别名或对象引用后重试；不把裸摘要默认当记录' });
     }
-    checkReferences(pending, { scope, table: 'records', row: index + 1, name: record.digest });
+    for (let at = 0; at < pending.length; at++) {
+      const reference = pending[at]!;
+      const target = recordTarget(reference, options);
+      const targetScopes = reference.kind === 'record' ? (target === undefined ? undefined : owners.get(target)) : options.objectScopes?.get(reference.digest);
+      const objectKept = reference.kind === 'object' && options.retainedObjects?.has(reference.digest);
+      if (!objectKept && (!targetScopes?.length || targetScopes.every(targetScope => scopes.has(targetScope)))) blocked.push({ scope, table: 'records',
+        row: index + 1, name: record.digest, reason: !targetScopes?.length ? `正式引用 ${reference.field} 缺少已核对的目标范围或别名` : `保留记录的正式引用 ${reference.field} 指向所清范围`,
+        nextAction: '补齐引用目标的范围或显式调整所选范围；程序不会扩大清除范围' });
+      else if (reference.kind === 'object' && !visitedObjects.has(reference.digest)) {
+        visitedObjects.add(reference.digest);
+        const edges = options.objectReferences?.get(reference.digest);
+        if (!edges) blocked.push({ scope, table: 'records', row: index + 1, name: record.digest,
+          reason: `正式引用 ${reference.field} 的对象内部引用尚未核对`, nextAction: '由当前模式读取器核对该对象的正式引用后重试' });
+        else pending.push(...edges);
+      }
+    }
   });
-  for (const root of options.externalRoots ?? []) checkReferences([...root.references], { table: root.table, row: root.row });
   return { retained, cleared, blocked };
 }
 

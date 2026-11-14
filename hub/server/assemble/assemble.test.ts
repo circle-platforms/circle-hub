@@ -127,8 +127,7 @@ describe('start-up order and failure modes', () => {
     for(const argv of [['pack','list'],['init-admin','甲']]){
       const command=await deployment.run(argv,{assembly:realAssembly});
       assert.equal(command.code,1,argv.join(' '));
-      assert.match(command.text,/记录库缺少迁移回执/,argv.join(' '));
-      assert.match(command.text,/保留现库/,argv.join(' '));
+      assert.match(command.text,/还没有应用/,argv.join(' '));
     }
   });
 

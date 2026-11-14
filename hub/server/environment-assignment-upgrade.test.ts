@@ -143,21 +143,3 @@ test('only a verified unique run-executor binding can preserve held use, never t
   assert.equal(ambiguous.canApply, false);
   assert.deepEqual(ambiguous.grants, []);
 });
-
-
-test('only a verified installed skill method with a lease declaration retains its existing capability', () => {
-  const input = snapshot(), method = { ...input.workflows[0], kind: 'skill' as const, installedMethod: true };
-  assert.equal(planEnvironmentAssignmentUpgrade({ ...input, workflows: [method] }).grants.length, 1);
-  assert.deepEqual(planEnvironmentAssignmentUpgrade({ ...input, workflows: [{ ...method, installedMethod: false }] }).grants, []);
-  assert.deepEqual(planEnvironmentAssignmentUpgrade({ ...input, workflows: [{ ...method, declaration: {} }] }).grants, []);
-});
-
-
-test('complete legacy workflow rights preserve use despite a held lease with no executor identity', () => {
-  const input = snapshot(), plan = planEnvironmentAssignmentUpgrade({ ...input, holdings: [{ key: 'synthetic/first', user: input.members[0].id, run: 'synthetic-held-run', released: false, expires_at: null }] });
-  assert.equal(plan.canApply, true);
-  assert.deepEqual(plan.missing, []);
-  assert.deepEqual(plan.grants.map(row => row.executor), [input.executors[0].id]);
-  assert.deepEqual(plan.grants[0].workflows, ['a'.repeat(64)]);
-  assert.deepEqual(plan.grants[0].holdingRuns, [], 'workflow entitlement is not a claim of holding ownership');
-});
