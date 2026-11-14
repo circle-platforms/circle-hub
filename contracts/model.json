@@ -9112,7 +9112,8 @@
                 "type": "string"
               },
               "result": {
-                "$ref": "contract:reference/ReferenceUri"
+                "$ref": "contract:reference/ReferenceUri",
+                "description": "The job result once it is complete (src:), readable by the runner: one row per dispatched item"
               },
               "device_return": {
                 "$ref": "contract:reference/ReferenceUri"

@@ -100,6 +100,10 @@ test('public carrier is one generated model schema and requires valid authorized
   assert.equal(json.properties.phase.type, 'string');
   assert.equal(json.properties.outcome.enum.length, 8);
   assert.deepEqual(json.properties.operation.enum, ['precheck', 'dispatch', 'conformance']);
+  const description = 'The job result once it is complete (src:), readable by the runner: one row per dispatched item';
+  assert.equal(json.properties.result.description, description);
+  const tools = JSON.parse(readFileSync(new URL('../generated/tools.json', import.meta.url), 'utf8'));
+  assert.equal(tools.find((tool: { name: string }) => tool.name === 'submit_result').outputSchema.properties.dispatch.items.properties.result.description, description);
 });
 
 test('Common and shared schemas load cold in either order without a shared-module TDZ', () => {
