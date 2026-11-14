@@ -1057,7 +1057,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
         errors.push({
           code: r.outcome.outcome.code ?? r.outcome.outcome.reason ?? 'check_error',
           message: r.outcome.outcome.missing ?? r.outcome.outcome.statement,
-          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '') ?? '按陈述改正后重交'),
+          fix: runtimeCatalogGaps.get(r.outcome.check)?.next_action ?? (r.outcome.check===ADMISSION_CHECK&&typeof r.outcome.outcome.data?.fix==='string' ? r.outcome.outcome.data.fix : fixOf(r.outcome.outcome.code ?? '', workflow) ?? '按陈述改正后重交'),
           ...(path !== undefined ? { path } : {}),
           item: it.id,
           requirement: t.key,
