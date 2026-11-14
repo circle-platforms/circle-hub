@@ -112,7 +112,7 @@ function environmentSection(view: MemberCapabilities): Html {
   const access = view.environmentAccess;
   if (!access.ready) {
     return card(
-      { title: '测试环境', hint: access.enforced === false ? '新测试环境分配尚未启用，当前仍按原工作流和预订规则' : '未就绪只表示尚未核对；缺什么和下一步写在下面。' },
+      { title: '测试环境', hint: access.enforced === false ? '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' : '未就绪只表示尚未核对；缺什么和下一步写在下面。' },
       definitions([
         ['状态', '未知'],
         ['缺什么', access.missing ?? '未知'],
@@ -121,7 +121,7 @@ function environmentSection(view: MemberCapabilities): Html {
     );
   }
   return card(
-    { title: '测试环境', hint: access.enforced === true ? undefined : '新测试环境分配尚未启用，当前仍按原工作流和预订规则' },
+    { title: '测试环境', hint: access.enforced === true ? undefined : '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' },
     table(
       ['名称', '占用'],
       view.environments.map((item) => [item.name, occupancyCell(item as EnvironmentRow, access.enforced === true)]),
@@ -145,7 +145,7 @@ export function renderMemberCapabilities(
     : html``;
   return html`<div class="ch-stack" data-member-capabilities>
 ${heading}
-${view.environmentAccess.enforced === true ? '' : html`<p class="ch-meta" data-environment-assignment-preview>新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。</p>`}
+${view.environmentAccess.enforced === true ? '' : html`<p class="ch-meta" data-environment-assignment-preview>测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。</p>`}
 ${card({ title: '账户' }, definitions([['名字', view.member.name], ['状态', status]]))}
 ${card({ title: '团队' }, teamsBody)}
 ${card({ title: uiLabelOf('pack_kind', 'workflow') }, table(['名称', '引用', '归属'], packRows(view.workflows), '尚无可用的已分配工作流'))}

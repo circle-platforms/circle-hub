@@ -63,7 +63,7 @@ export const NO_ASSIGNMENT_LABEL = '已无分配';
 
 /** Staged environment-assignment policy (Boss 15:20 #2): same wording wherever such assignments appear. */
 export const ENVIRONMENT_ASSIGNMENT_PREVIEW =
-  '新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。';
+  '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。';
 
 export function environmentAssignmentPreviewNotice(enforced: boolean): Html {
   return enforced

@@ -16,13 +16,14 @@ export function unassignedPackFact(name: string, kind?: PackKind | null): string
   return `当前账户未获授权使用${packObjectWord(kind)}「${name}」`;
 }
 
-/** Next step when a pack is unassigned (member wording). */
+/** Next step when a pack is unassigned (member wording; Boss 14:12 — two sentences). */
 export function unassignedPackNext(kind?: PackKind | null): string {
   const word = packObjectWord(kind);
-  if (word === '工作流或技能') {
-    return '请联系管理员为该账户或所在团队分配此工作流或技能';
-  }
-  return `请联系管理员为该账户或所在团队分配此${word}`;
+  const assign =
+    word === '工作流或技能'
+      ? '请联系管理员为该账户或所在团队分配此工作流或技能'
+      : `请联系管理员为该账户或所在团队分配此${word}`;
+  return `${assign}。当前账户可用的工作流和技能用 list_task_packs 查看`;
 }
 
 /** Full unassigned refusal line (MCP content / local-tools body share this). */
@@ -45,21 +46,25 @@ export function absentPackRefusal(name: string): string {
   return `不存在：${absentPackFact(name)}。${absentPackNext()}。`;
 }
 
+const ZERO_USABLE_NEXT = '请联系管理员把该账户加入团队或分配工作流。';
+
 /** List header: usable count; optional unassigned remainder (names withheld). */
 export function packListHead(usable: number, unassigned?: number): string {
-  const head = `当前账户可用的工作流和技能共 ${usable} 个。`;
+  let head = `当前账户可用的工作流和技能共 ${usable} 个。`;
   if (typeof unassigned === 'number' && unassigned > 0) {
-    return `${head}另有 ${unassigned} 个未分配给当前账户，名称不列出。`;
+    head = `${head}另有 ${unassigned} 个未分配给当前账户，名称不列出。`;
   }
+  if (usable === 0) head = `${head}${ZERO_USABLE_NEXT}`;
   return head;
 }
 
 /** Admin list head when disclosing another member's usable set. */
 export function packListHeadForMember(usable: number, unassigned: number): string {
-  const head = `该成员可用的工作流和技能共 ${usable} 个。`;
+  let head = `该成员可用的工作流和技能共 ${usable} 个。`;
   if (unassigned > 0) {
-    return `${head}另有 ${unassigned} 个未分配给该成员，名称不列出。`;
+    head = `${head}另有 ${unassigned} 个未分配给该成员，名称不列出。`;
   }
+  if (usable === 0) head = `${head}请联系管理员把该账户加入团队或分配工作流。`;
   return head;
 }
 
@@ -68,4 +73,4 @@ export function packListHeadForMember(usable: number, unassigned: number): strin
  * Shown in list_task_packs prose while enforceEnvironmentAssignments is off.
  */
 export const ENVIRONMENT_ASSIGNMENT_PREVIEW =
-  '新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。';
+  '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。';

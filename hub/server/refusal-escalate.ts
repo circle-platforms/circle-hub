@@ -28,7 +28,7 @@ export interface EscalationParts {
   /** This call's occurrence: prior matching call_logs + 1. */
   occurrence: number;
   tier: EscalationTier;
-  /** 「这是一小时内第 N 次同样的错误」 */
+  /** 「这是一小时内第 N 次同样的错误」或参数无效无 path 时的工具级计数句 */
   countLabel: string;
   /** JSON text of a schema-checked example, or null when none is available. */
   exampleJson: string | null;
@@ -51,7 +51,17 @@ export function escalationTier(occurrence: number): EscalationTier {
   return 3;
 }
 
-export function countLabelOf(occurrence: number): string {
+/**
+ * Count sentence (Boss 14:12): 参数无效 without error_path → tool-level wording;
+ * otherwise「第 N 次同样的错误」.
+ */
+export function countLabelOf(
+  occurrence: number,
+  options: { category?: CallErrorCategory | null; hasPath?: boolean } = {},
+): string {
+  if (options.category === '参数无效' && options.hasPath !== true) {
+    return `这是一小时内这个工具第 ${occurrence} 次参数无效`;
+  }
   return `这是一小时内第 ${occurrence} 次同样的错误`;
 }
 
@@ -202,10 +212,12 @@ export function buildEscalation(options: {
   exampleJson: string | null;
   category?: CallErrorCategory | null;
   retryAfterSeconds?: number;
+  /** When false/absent for 参数无效, use the tool-level count sentence (Boss 14:12). */
+  hasPath?: boolean;
 }): EscalationParts {
   const occurrence = Math.max(1, Math.floor(options.occurrence));
   const tier = escalationTier(occurrence);
-  const countLabel = countLabelOf(occurrence);
+  const countLabel = countLabelOf(occurrence, { category: options.category, hasPath: options.hasPath });
   const exampleJson = options.exampleJson;
   if (tier === 1) {
     return { occurrence, tier, countLabel, exampleJson: null, categoryClose: null, fixSuffix: null };
@@ -264,7 +276,7 @@ export function formatCategoryCallError(options: {
 }
 
 export function fixHasEscalation(fix: string | null | undefined): boolean {
-  return typeof fix === 'string' && /这是一小时内第 \d+ 次同样的错误/.test(fix);
+  return typeof fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(fix);
 }
 
 export function withEscalatedFix(error: ProtocolError, parts: EscalationParts): ProtocolError {
@@ -349,14 +361,16 @@ export async function escalateProtocolErrors(options: {
     const exampleJson = isPackScopedCode(error.code)
       ? checkedPackDeclaredExample(options.packDeclaredExample, options.input)
       : schemaExample;
+    const category = callErrorCategoryOf(error.code);
     out.push(
       withEscalatedFix(
         error,
         buildEscalation({
           occurrence,
           exampleJson,
-          category: callErrorCategoryOf(error.code),
+          category,
           retryAfterSeconds: options.retryAfterSeconds,
+          hasPath: typeof error.path === 'string' && error.path.length > 0,
         }),
       ),
     );

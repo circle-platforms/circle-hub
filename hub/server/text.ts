@@ -203,6 +203,9 @@ const D3_FACT_REWRITE = new Set([
   'SYNC_MODE_LOCAL',
   'SOURCE_PENDING_REVIEW',
   'SYNC_PURGE_CONFIRMATION_REQUIRED',
+  'RUN_SUPERSEDED',
+  'RUN_ABANDONED',
+  'EFFECT_UNKNOWN_DISPOSED',
 ]);
 
 /**
@@ -246,7 +249,7 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error) => {
     // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
-    const escalated = typeof error.fix === 'string' && /这是一小时内第 \d+ 次同样的错误/.test(error.fix);
+    const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
     const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix);
     const presentation = errorPresentationOf(error.code);
     if (presentation.kind === 'unavailable') {
@@ -724,7 +727,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
     const original = context.items?.find(item => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
-    const escalated = typeof error.fix === 'string' && /这是一小时内第 \d+ 次同样的错误/.test(error.fix);
+    const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
     const fix = missingRecord
       ? proseByRole(role, 'missing_result_record')
       : escalated

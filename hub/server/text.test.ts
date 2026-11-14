@@ -420,8 +420,8 @@ const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SC
 
   test('D1: call refusals use the five-category sentence form without a status string', () => {
 const absent=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_ABSENT',message:'Hub 里没有名为「toy-missing」的工作流或技能',fix:'请核对名称',path:'/pack'}],trace:TRACE}));assert.equal(absent,'不存在：Hub 里没有名为「toy-missing」的工作流或技能。请核对名称。');assert.doesNotMatch(absent,/这次核对有错误|资料尚未取得|状态已确认|判断错误|决定者程序|原因|任务包/);
-const denied=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_NOT_PERMITTED',message:'当前账户未获授权使用工作流「recompose」',fix:'请联系管理员为该账户或所在团队分配此工作流',path:'/pack'}],trace:TRACE}));assert.equal(denied,'无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。');assert.doesNotMatch(denied,/这次核对有错误|资料尚未取得|状态已确认|判断错误|决定者程序|原因|任务包/);
-const legacy=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_NOT_PERMITTED',message:'任务包 recompose 存在，没有分配给你',fix:'请管理员把它分配给你；用 list_task_packs 看你能用的任务包',path:'/pack'}],trace:TRACE}));assert.equal(legacy,'无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。');
+const denied=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_NOT_PERMITTED',message:'当前账户未获授权使用工作流「recompose」',fix:'请联系管理员为该账户或所在团队分配此工作流',path:'/pack'}],trace:TRACE}));assert.equal(denied,'无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。');assert.doesNotMatch(denied,/这次核对有错误|资料尚未取得|状态已确认|判断错误|决定者程序|原因|任务包/);
+const legacy=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_NOT_PERMITTED',message:'任务包 recompose 存在，没有分配给你',fix:'请管理员把它分配给你；用 list_task_packs 看你能用的任务包',path:'/pack'}],trace:TRACE}));assert.equal(legacy,'无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。');
 const schema=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SUBMISSION_SCHEMA_VIOLATION',message:'/pack 是必填的字符串，这次没有给出',fix:'请在 /pack 写 list_task_packs 返回的编号',path:'/pack'}],trace:TRACE}));assert.equal(schema,'参数无效：/pack 是必填的字符串，这次没有给出。请在 /pack 写 list_task_packs 返回的编号。');
 const retryable=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_RETRYABLE',message:'来源暂时读不到',fix:'按给出的下次时刻重读'}],trace:TRACE}));assert.equal(retryable,'暂时不可用：来源暂时读不到。按给出的下次时刻重读。');assert.doesNotMatch(retryable,/这次核对有错误|状态已确认|判断错误|决定者程序|原因/);
 });
@@ -577,13 +577,13 @@ describe('list_task_packs, upload_file and resolve_reference texts', () => {
   test('member list names usable count and unassigned remainder without listing names (Boss 03:45 #4)', () => {
     const base = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [], index: [], trace: TRACE });
     const text = toolText('list_task_packs', { ...base, member_capabilities: { unassigned_workflows_count: 5 } } as typeof base);
-    assert.match(text, /^当前账户可用的工作流和技能共 0 个。另有 5 个未分配给当前账户，名称不列出。/);
+    assert.match(text, /^当前账户可用的工作流和技能共 0 个。另有 5 个未分配给当前账户，名称不列出。请联系管理员把该账户加入团队或分配工作流。/);
     assert.doesNotMatch(text, /toy-pack|没有这个包/);
   });
 
   test('list_task_packs prose carries the environment-assignment preview while enforcement is off', () => {
     const base = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [], index: [], trace: TRACE });
-    const preview = '新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。';
+    const preview = '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。下面列出的测试环境分配只是预览，不代表现在的许可。';
     const off = toolText('list_task_packs', {
       ...base,
       member_capabilities: { unassigned_workflows_count: 0, environmentAccess: { enforced: false } },

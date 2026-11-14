@@ -55,7 +55,7 @@ test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替�
   const first = buildEscalation({ occurrence: 1, exampleJson: '{"pack":"<工作流编号>","inputs":{}}' });
   assert.equal(first.fixSuffix, null);
   assert.equal(first.exampleJson, null);
-  const second = buildEscalation({ occurrence: 2, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效' });
+  const second = buildEscalation({ occurrence: 2, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效', hasPath: true });
   assert.equal(second.tier, 2);
   assert.match(second.countLabel, /这是一小时内第 2 次同样的错误/);
   assert.ok(second.fixSuffix?.includes(second.countLabel));
@@ -64,7 +64,9 @@ test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替�
   assert.equal(second.categoryClose, null);
   assert.doesNotMatch(second.fixSuffix!, FORBIDDEN_CALL_ERROR);
   assert.doesNotMatch(second.fixSuffix!, /"x"/);
-  const third = buildEscalation({ occurrence: 3, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效' });
+  const noPath = buildEscalation({ occurrence: 2, exampleJson: null, category: '参数无效', hasPath: false });
+  assert.equal(noPath.countLabel, '这是一小时内这个工具第 2 次参数无效');
+  const third = buildEscalation({ occurrence: 3, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效', hasPath: true });
   assert.equal(third.tier, 3);
   assert.match(third.countLabel, /这是一小时内第 3 次同样的错误/);
   assert.ok(third.categoryClose?.includes('照原样重试不会成功'));
@@ -90,7 +92,7 @@ test('1st / 2nd / 3rd composed prose uses D2 first sentence then escalation', ()
   );
   assert.doesNotMatch(first, FORBIDDEN_CALL_ERROR);
 
-  const secondParts = buildEscalation({ occurrence: 2, exampleJson: example, category });
+  const secondParts = buildEscalation({ occurrence: 2, exampleJson: example, category, hasPath: true });
   const secondFix = withEscalatedFix({ code: 'SUBMISSION_SCHEMA_VIOLATION', message, fix: baseFix }, secondParts).fix!;
   const second = formatCategoryCallError({ category, message, fix: secondFix });
   assert.match(second, /^参数无效：/);
@@ -99,7 +101,7 @@ test('1st / 2nd / 3rd composed prose uses D2 first sentence then escalation', ()
   assert.ok(second.includes(example));
   assert.doesNotMatch(second, FORBIDDEN_CALL_ERROR);
 
-  const thirdParts = buildEscalation({ occurrence: 3, exampleJson: example, category });
+  const thirdParts = buildEscalation({ occurrence: 3, exampleJson: example, category, hasPath: true });
   const thirdFix = withEscalatedFix({ code: 'SUBMISSION_SCHEMA_VIOLATION', message, fix: baseFix }, thirdParts).fix!;
   const third = formatCategoryCallError({ category, message, fix: thirdFix });
   assert.match(third, /这是一小时内第 3 次同样的错误/);

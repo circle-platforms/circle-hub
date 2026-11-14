@@ -18,7 +18,7 @@ export function readinessCheckBlock(check: EnvironmentReadinessCheck): Html {
   const disclose = !allocationPreview && check.satisfied !== true && (check.missing_fact !== undefined || check.next_action !== undefined);
   return html`<div class="ch-stack" data-readiness-check data-condition="${check.condition}">
 <div class="ch-actions">${chip(state.text, state.tone)}<span>${check.label}</span><span class="ch-meta" data-condition-id>${check.condition}</span><span class="ch-meta">${when(check.observed_at)}</span></div>
-${allocationPreview?html`<p class="ch-meta">新测试环境分配尚未启用，当前仍按原工作流和预订规则。此项仅为分配配置事实，不作执行许可。</p>`:''}
+${allocationPreview?html`<p class="ch-meta">测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断。此项仅为分配配置事实，不作执行许可。</p>`:''}
 ${disclose ? html`<p class="ch-meta">缺什么：${check.missing_fact ?? '未说明'}；下一步：${check.next_action ?? '未说明'}</p>` : ''}
 </div>`;
 }

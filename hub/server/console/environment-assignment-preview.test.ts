@@ -7,7 +7,7 @@ import { renderMemberCapabilities } from './member-capabilities.ts';
 import { readinessCheckBlock } from './environment-readiness.ts';
 import { connectionsPage } from './connections.ts';
 
-const notice = '新测试环境分配尚未启用，当前仍按原工作流和预订规则';
+const notice = '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断';
 function capabilities(enforced: boolean): MemberCapabilities {
   return {
     member: { name: '合成成员', enabled: true }, teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [],

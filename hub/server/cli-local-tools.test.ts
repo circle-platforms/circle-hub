@@ -156,7 +156,7 @@ test('a stopped hub, a bad token, an absent version and an unassigned one each s
   try {
     const unassigned = io();
     assert.equal(await localToolsCommand(['install', ref, '--digest', source.digest, '--into', join(root, 'unassigned'), '--hub', `http://127.0.0.1:${(refusing.address() as import('node:net').AddressInfo).port}`], unassigned, { input: Readable.from([token + '\n']) }), 1);
-    assert.equal(unassigned.err.join('\n'), '无权限：当前账户未获授权使用工作流「synthetic-workflow」。请联系管理员为该账户或所在团队分配此工作流后再试');
+    assert.equal(unassigned.err.join('\n'), '无权限：当前账户未获授权使用工作流「synthetic-workflow」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。');
   } finally {
     await new Promise<void>((done) => refusing.close(() => done()));
   }

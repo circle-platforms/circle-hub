@@ -149,6 +149,6 @@ test('executor-assign result page carries the staged environment-assignment prev
   );
   const body = String(page.body);
   assert.match(body, /data-environment-assignment-preview/);
-  assert.match(body, /新测试环境分配尚未启用，当前仍按原工作流和预订规则/);
+  assert.match(body, /测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断/);
   assert.doesNotMatch(body, /exe_/);
 });

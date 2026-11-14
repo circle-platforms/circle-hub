@@ -134,7 +134,7 @@ export function unavailable(): ProtocolError {
 
 /** The fixes for a knowledge root a caller cannot read, the same in get_nodes and resolve_reference. */
 export const ROOT_ABSENT_FIX = '核对知识根；知识根来自运行或 get_nodes';
-export const ROOT_FORBIDDEN_FIX = '请联系管理员为该账户分配一个绑定这条产品线的工作流或技能；或改读当前账户运行锁定的根';
+export const ROOT_FORBIDDEN_FIX = '请联系管理员为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树';
 
 /** Not found or no permission (D05 R[3], decision 112): `what` as the caller wrote it, e.g. "运行 run_…". */
 export function missingObject(exists: boolean, what: string, fix?: string): ProtocolError {

@@ -58,7 +58,8 @@ test('SOURCE_NOT_PERMITTED member keeps assignment ask; admin gets pack.assign f
   const admin = fixByRole('SOURCE_NOT_PERMITTED', 'admin', memberFix)!;
   assert.doesNotMatch(admin, /请管理员/);
   assert.match(admin, /circle-hub pack assign /);
-  assert.match(admin, /\/console\/team/);
+  assert.match(admin, /控制台「团队」页/);
+  assert.doesNotMatch(admin, /分享读取权限|用法见该命令登记/);
   assertCommandsRegistered(admin);
 });
 
@@ -68,7 +69,8 @@ test('LEASE_UNAVAILABLE member keeps contract; admin gets lease.release from reg
   const admin = fixByRole('LEASE_UNAVAILABLE', 'admin')!;
   assert.doesNotMatch(admin, /请管理员/);
   assert.match(admin, /circle-hub lease release /);
-  assert.match(admin, /\/console\/connections/);
+  assert.match(admin, /控制台「连接」页/);
+  assert.doesNotMatch(admin, /不补造到期时刻/);
   assertCommandsRegistered(admin);
 });
 
@@ -121,32 +123,33 @@ test('toolText and structured-style fix stay role-split for SOURCE_NOT_PERMITTED
 
 test('toolText role-split for LEASE_UNAVAILABLE', () => {
   const memberFix = PROTOCOL_CODES.LEASE_UNAVAILABLE.fix;
+  const message = '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z，是你自己的运行）';
   const answer = StartRunOutput.parse({
     call_result: 'error',
-    errors: [{ code: 'LEASE_UNAVAILABLE', message: '租约键已被预订', fix: memberFix }],
+    errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: memberFix }],
     trace: TRACE,
   });
   const memberText = toolText('start_run', answer, { caller: { role: 'user' } });
-  assert.match(memberText, /^已被占用：/);
-  assert.match(memberText, /请/);
-  assert.doesNotMatch(memberText, /状态|判断|决定者/);
+  assert.match(memberText, /^已被占用：测试环境「合成环境」正由当前账户的另一次运行占用/);
+  assert.match(memberText, /请等待释放后重试，或改订其他测试环境。$/);
+  assert.doesNotMatch(memberText, /状态|判断|决定者|租约键|主人/);
   const adminFix = fixByRole('LEASE_UNAVAILABLE', 'admin', memberFix)!;
   const adminText = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
-    errors: [{ code: 'LEASE_UNAVAILABLE', message: '租约键已被预订', fix: adminFix }],
+    errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: adminFix }],
     trace: TRACE,
   }), { caller: { role: 'admin' } });
-  assert.doesNotMatch(adminText, /请管理员|状态|判断|决定者/);
-  assert.match(adminText, /^已被占用：/);
-  assert.match(adminText, /circle-hub lease release /);
+  assert.doesNotMatch(adminText, /请管理员|状态|判断|决定者|不补造到期时刻/);
+  assert.match(adminText, /^已被占用：测试环境「合成环境」/);
+  assert.match(adminText, /circle-hub lease release bed\/合成环境\/client0 --reason <理由>/);
   assertCommandsRegistered(adminText);
 });
 
 test('proseByRole covers the five hardcoded text.ts ask-admin lines', () => {
   const memberList = proseByRole('user', 'unassigned_packs', { usable: 0, unassigned: 5 });
-  assert.equal(memberList, '当前账户可用的工作流和技能共 0 个。另有 5 个未分配给当前账户，名称不列出。');
+  assert.equal(memberList, '当前账户可用的工作流和技能共 0 个。另有 5 个未分配给当前账户，名称不列出。请联系管理员把该账户加入团队或分配工作流。');
   const adminList = proseByRole('admin', 'unassigned_packs', { usable: 0, unassigned: 5 });
-  assert.match(adminList, /该成员可用的工作流和技能共 0 个。另有 5 个未分配给该成员，名称不列出。/);
+  assert.match(adminList, /该成员可用的工作流和技能共 0 个。另有 5 个未分配给该成员，名称不列出。请联系管理员把该账户加入团队或分配工作流。/);
   assert.match(adminList, /circle-hub pack assign /);
   assert.doesNotMatch(adminList, /请管理员/);
   assertCommandsRegistered(adminList);

@@ -56,9 +56,9 @@ function memberDefault(code: string, memberFix: string | undefined): string | un
 function adminForCode(code: string): string | undefined {
   switch (code) {
     case 'SOURCE_NOT_PERMITTED':
-      return `用 ${circleHubFromParameters('pack.assign')} 为该账户或所在团队分配工作流或通用技能；或在控制台 ${teamPath()} 分配。分享读取权限用 ${circleHubFromMetadata('share', { brief: true })}（用法见该命令登记）；也可以换一个当前账户能读的引用`;
+      return `请执行 circle-hub pack assign <当前账户的名字> <工作流> 为该账户分配，或在控制台「团队」页为所在团队分配`;
     case 'LEASE_UNAVAILABLE':
-      return `有确定空闲时刻的可等候后重试；无期限预订可改用别的键，或用 ${circleHubFromParameters('lease.release')} 按既有带理由规则强制释放；也可在控制台 ${connectionsPath()} 处理。不补造到期时刻`;
+      return `请等待释放后重试，或改订其他测试环境；需要强制释放时执行 circle-hub lease release <键> --reason <理由>，或在控制台「连接」页操作`;
     case 'SOURCE_INTEGRITY_UNPROVEN':
       return `用 ${circleHubFromMetadata('restore', { brief: true })} 从备份恢复原件，再用 ${circleHubFromMetadata('records', { brief: true })} 核验摘要，恢复后按原引用重读`;
     case 'SOURCE_UNAVAILABLE':

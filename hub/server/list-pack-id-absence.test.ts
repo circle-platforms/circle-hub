@@ -12,7 +12,7 @@ describe('list_task_packs exact pack_id absence errors', () => {
     assert.deepEqual(packIdAbsenceError('local-review', 'unassigned'), {
       code: 'SOURCE_NOT_PERMITTED',
       message: '当前账户未获授权使用工作流「local-review」',
-      fix: '请联系管理员为该账户或所在团队分配此工作流',
+      fix: '请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看',
       path: '/pack_id',
     });
     const text = toolText(
@@ -26,7 +26,7 @@ describe('list_task_packs exact pack_id absence errors', () => {
     );
     assert.equal(
       text,
-      '无权限：当前账户未获授权使用工作流「local-review」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
+      '无权限：当前账户未获授权使用工作流「local-review」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。',
     );
   });
 

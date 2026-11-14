@@ -18,7 +18,7 @@ test('SOURCE_NOT_PERMITTED pack refusal uses the 无权限 category sentence', (
   }));
   assert.equal(
     text,
-    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
+    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
   assert.doesNotMatch(text, /这次核对有错误|资料尚未取得|状态已确认|判断错误|决定者程序|原因|任务包|没有分配给你/);
 });
@@ -51,6 +51,6 @@ test('legacy pack-denial message is rewritten into the category form', () => {
   }));
   assert.equal(
     text,
-    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
+    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
 });

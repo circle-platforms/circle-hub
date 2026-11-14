@@ -1,13 +1,14 @@
 /**
- * D3 fact/next for call errors (Boss 13:05 / afternoon 1114). Category words come from
- * error-reasons.callErrorCategoryOf. Next steps are table-driven by code × role — never
- * keyword-rewritten from「分配」. Object words come from pack-words / source messages.
+ * D3 fact/next for call errors (Boss 13:05 / 14:12). Category words come from
+ * error-reasons.callErrorCategoryOf. Next steps are table-driven by code × role × object kind.
+ * Object words come from pack-words / source messages.
  */
 import type { ProtocolError } from '../../contracts/src/common.ts';
+import { SYNC_MODE_UI } from '../../contracts/generated/vocabulary.ts';
 import { callErrorCategoryOf, type CallErrorCategory } from './error-reasons.ts';
 import { circleHubFromMetadata, circleHubFromParameters } from './fix-by-role.ts';
 import { connectionsPath, knowledgePath, settingsPath, teamPath } from './console/routes.ts';
-import { unassignedPackFact } from './pack-words.ts';
+import { unassignedPackFact, unassignedPackNext } from './pack-words.ts';
 
 export { callErrorCategoryOf as callErrorCategory } from './error-reasons.ts';
 export type { CallErrorCategory };
@@ -17,8 +18,75 @@ export { packObjectWord, unassignedPackFact, unassignedPackNext } from './pack-w
 export const CALL_ERROR_CATEGORIES = ['参数无效', '无权限', '不存在', '已被占用', '暂时不可用'] as const satisfies readonly CallErrorCategory[];
 
 /** Knowledge-tree-root unauthorised: keep「绑定产品线」semantics (contributions / ROOT_FORBIDDEN). */
-function isKnowledgeRootDenial(message: string, fix: string | undefined): boolean {
-  return /知识树根/.test(message) || /绑定这条产品线/.test(fix ?? '') || /绑定这条产品线/.test(message);
+export function isKnowledgeRootDenial(message: string, fix: string | undefined): boolean {
+  return /知识树根/.test(message) || /手册和命令树/.test(message) || /绑定这条产品线/.test(fix ?? '') || /绑定这条产品线/.test(message);
+}
+
+/** Object kind for SOURCE_NOT_PERMITTED next-step selection (Boss 14:12). */
+export type NotPermittedKind = 'pack' | 'knowledge' | 'system' | 'root';
+
+export function notPermittedKindOf(message: string, fix: string | undefined): NotPermittedKind {
+  if (isKnowledgeRootDenial(message, fix)) return 'root';
+  if (/未获授权使用(?:工作流|技能|工作流或技能|产品知识来源|业务系统接入)/.test(message) || /(?:任务包|工作流|技能) .+ 存在，没有分配给/.test(message)) {
+    return 'pack';
+  }
+  if (/业务系统/.test(message) || /未获授权使用业务系统/.test(message)) return 'system';
+  if (/未获授权读取/.test(message) || /没有读取权限/.test(message) || /分享读取权限/.test(fix ?? '')) return 'knowledge';
+  return 'pack';
+}
+
+function packNameFromMessage(message: string): string | undefined {
+  const quoted = /「([^」]+)」/.exec(message);
+  if (quoted) return quoted[1];
+  const legacy = /(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给/.exec(message);
+  return legacy?.[1];
+}
+
+/** HH:MM in the process local zone from an ISO timestamp. */
+export function localClockOf(iso: string): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(ms));
+  const hour = parts.find((part) => part.type === 'hour')?.value;
+  const minute = parts.find((part) => part.type === 'minute')?.value;
+  if (hour === undefined || minute === undefined) return null;
+  return `${hour}:${minute}`;
+}
+
+/** Test-environment display name from a lease key; unregistered keys use the key itself (Boss 14:12). */
+export function environmentNameFromLeaseKey(key: string): string {
+  const bed = /^bed\/([^/]+)\//.exec(key);
+  if (bed) return bed[1]!;
+  return key;
+}
+
+/**
+ * Fact for LEASE_UNAVAILABLE: which environment, who holds it, since when.
+ * Parses engine messages that append（持有运行 …，取得于 …）.
+ */
+export function leaseUnavailableFact(message: string): string {
+  const keyMatch = /键\s+(\S+)\s+上有/.exec(message) ?? /lease release\s+(\S+)/.exec(message);
+  const key = keyMatch?.[1];
+  const name = key !== undefined ? environmentNameFromLeaseKey(key) : /租约键/.test(message) ? '该键' : '该键';
+  const sinceMatch = /取得于\s+(\S+)/.exec(message);
+  const since = sinceMatch ? localClockOf(sinceMatch[1]!.replace(/[，,).].*$/, '')) : null;
+  const sinceClause = since !== null ? `（自 ${since} 起）` : '';
+  const own = /是你自己的运行|当前账户的另一次运行/.test(message);
+  if (own) {
+    return `测试环境「${name}」正由当前账户的另一次运行占用${sinceClause}`;
+  }
+  const named = /正由「([^」]+)」占用/.exec(message) ?? /持有者「([^」]+)」/.exec(message);
+  if (named) return `测试环境「${name}」正由「${named[1]}」占用${sinceClause}`;
+  if (/正被占用|已被预订|已占用|未到期的占用|由别的运行持有/.test(message)) {
+    return `测试环境「${name}」正由「其他成员」占用${sinceClause}`;
+  }
+  return `测试环境「${name}」正由「其他成员」占用${sinceClause}`;
+}
+
+function leaseKeyFromMessage(message: string): string {
+  const keyMatch = /键\s+(\S+)\s+上有/.exec(message);
+  if (keyMatch) return keyMatch[1]!;
+  return '<键>';
 }
 
 /**
@@ -29,6 +97,10 @@ export function callErrorFact(code: string, message: string): string {
   let fact = message.split('；')[0]!.trim();
   fact = fact.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '');
 
+  if (code === 'SOURCE_NOT_PERMITTED' && isKnowledgeRootDenial(message, undefined)) {
+    return '当前账户未获授权读取这条产品线的手册和命令树';
+  }
+
   // Legacy pack-denial shapes → owner form (kind unknown at rewrite time → 工作流, matching prior MCP default).
   const packDenied = /^(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给(?:你|当前账户)$/.exec(fact);
   if (packDenied) return unassignedPackFact(packDenied[1]!, 'workflow');
@@ -38,10 +110,11 @@ export function callErrorFact(code: string, message: string): string {
   const noRead = /^(.+?)存在，你没有读取权限(?::|：)?(.*)$/.exec(fact);
   if (noRead) {
     const object = noRead[1]!.trimEnd();
-    const detail = noRead[2]!.trim();
-    return detail.length > 0
-      ? `当前账户未获授权读取${object}（${detail}）`
-      : `当前账户未获授权读取${object}`;
+    return `当前账户未获授权读取「${object}」`;
+  }
+  if (/^当前账户未获授权读取/.test(fact) && !/「/.test(fact)) {
+    const rest = fact.slice('当前账户未获授权读取'.length).replace(/（.*$/, '').trim();
+    return `当前账户未获授权读取「${rest}」`;
   }
 
   if (code === 'SOURCE_INTEGRITY_UNPROVEN') {
@@ -49,7 +122,7 @@ export function callErrorFact(code: string, message: string): string {
   }
 
   if (code === 'LEASE_UNAVAILABLE') {
-    fact = fact.replace(/已被预订|已占用/, '正被占用');
+    return leaseUnavailableFact(message);
   }
 
   if (code === 'LEASE_EXPIRED') {
@@ -62,6 +135,26 @@ export function callErrorFact(code: string, message: string): string {
   if (code === 'MEMORY_CURSOR_STALE') return '游标已失效';
   if (code === 'EFFECT_CONTENT_UNVERIFIED') {
     return '这次运行还没有判断为正确的脚本合并结果，不能上机验证';
+  }
+  if (code === 'EFFECT_RELEASE_UNMET') {
+    const named = /「([^」]+)」/.exec(message);
+    if (named) return `上机验证要求的核对结果还缺「${named[1]}」`;
+    return '上机验证要求的核对结果还缺一项';
+  }
+  if (code === 'TEAM_PARSER_REQUIRED') {
+    return '所在团队还没有能解析这种格式的解析器';
+  }
+  if (code === 'SYNC_MODE_LOCAL') {
+    return `Hub 上没有这个来源的内容，它的同步方式是「${SYNC_MODE_UI.local}」`;
+  }
+  if (code === 'RUN_SUPERSEDED') {
+    return '这次运行已被新的运行取代，不再接受提交';
+  }
+  if (code === 'RUN_ABANDONED') {
+    return '这次运行已放弃，不再接受提交';
+  }
+  if (code === 'EFFECT_UNKNOWN_DISPOSED') {
+    return '这次效果的结局还没有证明，运行者已将其标记为失败处置';
   }
   if (code === 'SOURCE_PENDING_REVIEW' && !/评审/.test(fact)) {
     return '该观察仍在评审中、尚未生效';
@@ -77,22 +170,46 @@ export function stripSentenceEnd(text: string): string {
   return text.replace(/[。．]\s*$/u, '').trim();
 }
 
-type NextRow = { member: string; admin: () => string };
+type NextRow = { member: string; admin: (message: string) => string };
+
+const PACK_NEXT: NextRow = {
+  member: unassignedPackNext('workflow'),
+  admin: (message) => {
+    const name = packNameFromMessage(message) ?? '<工作流>';
+    return `请执行 circle-hub pack assign <当前账户的名字> ${name} 为该账户分配，或在控制台「团队」页为所在团队分配`;
+  },
+};
+
+const KNOWLEDGE_NEXT: NextRow = {
+  member: '请联系管理员或条目的所有者分享读取权限，或改用当前账户能读的引用',
+  admin: () =>
+    `请执行 circle-hub share run <运行编号> --users <当前账户的名字> 分享读取权限，或改用当前账户能读的引用`,
+};
+
+const SYSTEM_NEXT: NextRow = {
+  member: '请联系管理员为该账户或所在团队分配此业务系统',
+  admin: () =>
+    `请执行 circle-hub resource assign <业务系统> --team=<团队> 为所在团队分配，或在控制台「团队」页分配`,
+};
+
+const KNOWLEDGE_ROOT_NEXT: NextRow = {
+  member: '请联系管理员为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树',
+  admin: () =>
+    `用 ${circleHubFromParameters('pack.assign')} 为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树`,
+};
 
 /**
  * Next-step table: error code × admin|member. Knowledge-tree-root denial is a separate row
  * keyed off the message/fix, not a keyword rewrite of「分配」.
  */
 const NEXT_BY_CODE: Record<string, NextRow> = {
-  SOURCE_NOT_PERMITTED: {
-    member: '请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看',
-    admin: () =>
-      `用 ${circleHubFromParameters('pack.assign')} 为该账户或所在团队分配工作流或通用技能；或在控制台 ${teamPath()} 分配。分享读取权限用 ${circleHubFromMetadata('share', { brief: true })}（用法见该命令登记）；也可以换一个当前账户能读的引用`,
-  },
+  SOURCE_NOT_PERMITTED: PACK_NEXT,
   LEASE_UNAVAILABLE: {
-    member: '请等待释放后重试，或改订其他键；无期限预订可请主人按既有带理由规则处理',
-    admin: () =>
-      `有确定空闲时刻的可等候后重试；无期限预订可改用别的键，或用 ${circleHubFromParameters('lease.release')} 按既有带理由规则强制释放；也可在控制台 ${connectionsPath()} 处理。不补造到期时刻`,
+    member: '请等待释放后重试，或改订其他测试环境',
+    admin: (message) => {
+      const key = leaseKeyFromMessage(message);
+      return `请等待释放后重试，或改订其他测试环境；需要强制释放时执行 circle-hub lease release ${key} --reason <理由>，或在控制台「连接」页操作`;
+    },
   },
   LEASE_EXPIRED: {
     member: '请重新预订',
@@ -117,20 +234,32 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
     admin: () => '请先完成脚本合并后再上机验证',
   },
   EFFECT_RELEASE_UNMET: {
-    member: '请先完成声明的核验要求项，再派发其已核验产物；缺的项请联系管理员核对发布条件',
-    admin: () => '请先完成声明的核验要求项，再派发其已核验产物',
+    member: '请先完成对应的脚本合并，判断正确后再上机验证',
+    admin: () => '请先完成对应的脚本合并，判断正确后再上机验证',
   },
   TEAM_PARSER_REQUIRED: {
-    member: '请联系管理员先将解析器发布并安装到团队，或改用团队已支持的格式后重新核对引文',
-    admin: () => '请先将解析器发布并安装到团队，或改用团队已支持的格式后重新核对引文',
+    member: '请联系管理员为团队安装对应的解析器，或改用团队已支持的格式后重试',
+    admin: () => '请为团队安装对应的解析器，或改用团队已支持的格式后重试',
   },
   SYNC_MODE_LOCAL: {
-    member: 'Hub 上没有这个来源的内容，因为同步方式是仅保存在客户端设备；请在客户端设置同步方式后重试',
-    admin: () => 'Hub 上没有这个来源的内容，因为同步方式是仅保存在客户端设备；请在客户端设置同步方式后重试',
+    member: '请在客户端读取；需要 Hub 读取时，先在客户端改同步方式再重试',
+    admin: () => '请在客户端读取；需要 Hub 读取时，先在客户端改同步方式再重试',
   },
   SHARE_DUPLICATE: {
-    member: '请使用已有公共空间条目，或修改陈述后重新核对依据',
-    admin: () => '请使用已有公共空间条目，或修改陈述后重新核对依据',
+    member: '请使用已有的条目，或修改陈述后重新核对依据',
+    admin: () => '请使用已有的条目，或修改陈述后重新核对依据',
+  },
+  RUN_SUPERSEDED: {
+    member: '请对新的运行提交',
+    admin: () => '请对新的运行提交',
+  },
+  RUN_ABANDONED: {
+    member: '请开始新的运行',
+    admin: () => '请开始新的运行',
+  },
+  EFFECT_UNKNOWN_DISPOSED: {
+    member: '请按处置记录归入已拒收；原效果结局与冻结或解除许可仍按原记录，不把这次处置当作已证明未执行',
+    admin: () => '请按处置记录归入已拒收；原效果结局与冻结或解除许可仍按原记录，不把这次处置当作已证明未执行',
   },
   SYNC_PURGE_CONFIRMATION_REQUIRED: {
     member: '请在 10 分钟内于 Hub 控制台的同步方式中确认这次清除，再用同一请求重试',
@@ -194,15 +323,9 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
   },
 };
 
-const KNOWLEDGE_ROOT_NEXT: NextRow = {
-  member: '请联系管理员为该账户分配一个绑定这条产品线的工作流或技能后重交；或改读当前账户运行锁定的根',
-  admin: () =>
-    `用 ${circleHubFromParameters('pack.assign')} 为该账户分配一个绑定这条产品线的工作流或技能；或改读该账户运行锁定的根`,
-};
-
 /**
  * Next-step clause for the category sentence (no leading「下一步」).
- * Table-driven; knowledge-tree-root denial is a dedicated row.
+ * Table-driven; knowledge-tree-root / knowledge-read / system denial are dedicated rows.
  */
 export function callErrorNext(
   code: string,
@@ -210,12 +333,15 @@ export function callErrorNext(
   fix: string | undefined,
   message = '',
 ): string {
-  if (code === 'SOURCE_NOT_PERMITTED' && isKnowledgeRootDenial(message, fix)) {
-    return role === 'admin' ? KNOWLEDGE_ROOT_NEXT.admin() : KNOWLEDGE_ROOT_NEXT.member;
+  if (code === 'SOURCE_NOT_PERMITTED') {
+    const kind = notPermittedKindOf(message, fix);
+    const row =
+      kind === 'root' ? KNOWLEDGE_ROOT_NEXT : kind === 'knowledge' ? KNOWLEDGE_NEXT : kind === 'system' ? SYSTEM_NEXT : PACK_NEXT;
+    return role === 'admin' ? row.admin(message) : row.member;
   }
   const row = NEXT_BY_CODE[code];
   if (row !== undefined) {
-    return role === 'admin' ? row.admin() : row.member;
+    return role === 'admin' ? row.admin(message) : row.member;
   }
   const raw = fix === undefined ? '' : stripSentenceEnd(fix);
   if (role === 'admin') {

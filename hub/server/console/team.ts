@@ -330,7 +330,7 @@ ${card({ title: '批量分配工作流', hint: '可一次勾选多个工作流�
 ${card({ title: '业务系统分配' }, table(['名称', '分配时间', ''], resourceRows, '尚未分配业务系统'))}
 ${assignResource}
 ${environmentAssignmentPreviewNotice(environmentAssignmentsEnforced)}
-${card({ title: '测试环境分配', hint: environmentAssignmentsEnforced ? undefined : '新测试环境分配尚未启用，当前仍按原工作流和预订规则' }, table(['目标', '分配时间', ''], environmentRows, '尚未分配测试环境'))}
+${card({ title: '测试环境分配', hint: environmentAssignmentsEnforced ? undefined : '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断' }, table(['目标', '分配时间', ''], environmentRows, '尚未分配测试环境'))}
 ${deleteDialog}
 </div>`, { back: link('/console/team', '返回团队') })),
   };

@@ -60,7 +60,7 @@ test('pack denial fact uses 工作流 and 当前账户; no replaceAll 任务包'
   );
   assert.equal(
     callErrorFact('SOURCE_NOT_PERMITTED', '运行 run_abc 存在，你没有读取权限'),
-    '当前账户未获授权读取运行 run_abc',
+    '当前账户未获授权读取「运行 run_abc」',
   );
   assert.equal(
     callErrorFact('SOURCE_NOT_PERMITTED', '当前账户未获授权使用技能「toy-skill」'),
@@ -77,7 +77,7 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
   )!;
   assert.equal(
     member,
-    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
+    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
   assert.doesNotMatch(member, /状态|判断|原因|决定者|任务包|没有分配给你/);
 
@@ -87,9 +87,11 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
     'admin',
     adminFix,
   )!;
-  assert.match(admin, /^无权限：当前账户未获授权使用工作流「recompose」。/);
-  assert.doesNotMatch(admin, /请管理员|状态|判断|决定者|任务包/);
-  assert.match(admin, /circle-hub pack assign /);
+  assert.equal(
+    admin,
+    '无权限：当前账户未获授权使用工作流「recompose」。请执行 circle-hub pack assign <当前账户的名字> recompose 为该账户分配，或在控制台「团队」页为所在团队分配。',
+  );
+  assert.doesNotMatch(admin, /请管理员|状态|判断|决定者|任务包|分享读取权限|换一个|用法见该命令登记/);
   assertCommandsRegistered(admin);
   assertCommandsRegistered(adminFix);
 });
@@ -101,8 +103,10 @@ test('knowledge-tree-root denial keeps 绑定产品线 semantics', () => {
     '请管理员给你分配绑定这条产品线的任务包后重交',
     '知识树根 abc 存在，当前账户没有读取权限',
   );
-  assert.match(member, /绑定这条产品线/);
-  assert.doesNotMatch(member, /分配此工作流$/);
+  assert.equal(
+    member,
+    '请联系管理员为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树',
+  );
   const admin = callErrorNext(
     'SOURCE_NOT_PERMITTED',
     'admin',
@@ -111,27 +115,38 @@ test('knowledge-tree-root denial keeps 绑定产品线 semantics', () => {
   );
   assert.match(admin, /绑定这条产品线/);
   assert.match(admin, /circle-hub pack assign /);
+  assert.equal(
+    renderCallError(
+      { code: 'SOURCE_NOT_PERMITTED', message: '知识树根 abc 存在，当前账户没有读取权限', fix: '绑定这条产品线' },
+      'user',
+      '绑定这条产品线',
+    ),
+    '无权限：当前账户未获授权读取这条产品线的手册和命令树。请联系管理员为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树。',
+  );
 });
 
 test('LEASE_UNAVAILABLE category form splits member and admin next steps', () => {
+  const message =
+    '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z）';
   const memberFix = PROTOCOL_CODES.LEASE_UNAVAILABLE.fix;
   const member = renderCallError(
-    { code: 'LEASE_UNAVAILABLE', message: '租约键已被预订', fix: memberFix },
+    { code: 'LEASE_UNAVAILABLE', message, fix: memberFix },
     'user',
     fixByRole('LEASE_UNAVAILABLE', 'user', memberFix),
   )!;
-  assert.match(member, /^已被占用：租约键正被占用。请/);
-  assert.doesNotMatch(member, /状态|判断|决定者/);
+  assert.match(member, /^已被占用：测试环境「合成环境」正由「其他成员」占用（自 \d{2}:\d{2} 起）。请等待释放后重试，或改订其他测试环境。$/);
+  assert.doesNotMatch(member, /状态|判断|决定者|租约键|主人|按既有带理由规则/);
 
   const adminFix = fixByRole('LEASE_UNAVAILABLE', 'admin', memberFix)!;
   const admin = renderCallError(
-    { code: 'LEASE_UNAVAILABLE', message: '租约键已被预订', fix: adminFix },
+    { code: 'LEASE_UNAVAILABLE', message, fix: adminFix },
     'admin',
     adminFix,
   )!;
-  assert.match(admin, /^已被占用：/);
-  assert.match(admin, /circle-hub lease release /);
-  assert.doesNotMatch(admin, /请管理员|状态|判断|决定者/);
+  assert.match(admin, /^已被占用：测试环境「合成环境」正由「其他成员」占用/);
+  assert.match(admin, /circle-hub lease release bed\/合成环境\/client0 --reason <理由>/);
+  assert.match(admin, /控制台「连接」页/);
+  assert.doesNotMatch(admin, /请管理员|状态|判断|决定者|不补造到期时刻/);
   assertCommandsRegistered(admin);
 });
 
@@ -175,7 +190,7 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
   }), { caller: { role: 'user' } });
   assert.equal(
     denied,
-    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
+    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
 
   const adminFix = fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请管理员把它分配给你')!;
@@ -189,19 +204,26 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
     }],
     trace: TRACE,
   }), { caller: { role: 'admin' } });
-  assert.match(adminDenied, /^无权限：当前账户未获授权使用工作流「recompose」。/);
-  assert.match(adminDenied, /circle-hub pack assign /);
-  assert.doesNotMatch(adminDenied, /状态|判断|决定者|请管理员/);
+  assert.equal(
+    adminDenied,
+    '无权限：当前账户未获授权使用工作流「recompose」。请执行 circle-hub pack assign <当前账户的名字> recompose 为该账户分配，或在控制台「团队」页为所在团队分配。',
+  );
+  assert.doesNotMatch(adminDenied, /状态|判断|决定者|请管理员|分享读取权限|用法见该命令登记/);
   assertCommandsRegistered(adminDenied);
 
   const leaseAdmin = fixByRole('LEASE_UNAVAILABLE', 'admin')!;
   const leaseText = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
-    errors: [{ code: 'LEASE_UNAVAILABLE', message: '租约键已被预订', fix: leaseAdmin }],
+    errors: [{
+      code: 'LEASE_UNAVAILABLE',
+      message: '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z）',
+      fix: leaseAdmin,
+    }],
     trace: TRACE,
   }), { caller: { role: 'admin' } });
-  assert.match(leaseText, /^已被占用：/);
-  assert.match(leaseText, /circle-hub lease release /);
+  assert.match(leaseText, /^已被占用：测试环境「合成环境」/);
+  assert.match(leaseText, /circle-hub lease release bed\/合成环境\/client0 --reason <理由>/);
+  assert.doesNotMatch(leaseText, /不补造到期时刻|租约键|主人/);
   assertCommandsRegistered(leaseText);
 
   const integrityFix = fixByRole('SOURCE_INTEGRITY_UNPROVEN', 'admin')!;
