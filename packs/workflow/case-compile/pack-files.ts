@@ -14,7 +14,7 @@ export const PACK_DIR = fileURLToPath(new URL('./', import.meta.url));
 export const IDENTITY = {
   schema: 'pack@1',
   id: 'case-compile',
-  version: '3.19.2',
+  version: '3.20.0',
   kind: 'workflow',
   dependencies: [{pack:'mindmap-format'},{pack:'workbook-format'}],
   embeds: [{pack:'mindmap-format',version:'1.0.24',module:'case-structure'},{pack:'run-tools',version:'1.0.2',module:'hub-client'},{pack:'runner-workbook',version:'1.0.0',module:'workbook-writer'},{pack:'command-tools',version:'1.1.0',module:'command-check'}],
@@ -24,7 +24,7 @@ export const IDENTITY = {
 
 /** Top-level declaration files and the folders whose files belong to the pack. */
 const TOP = ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'];
-const FOLDERS = ['functions', 'tables', 'policies', 'samples', 'examples', 'tools'];
+const FOLDERS = ['functions', 'tables', 'policies', 'samples', 'examples', 'tools', 'agents'];
 /** Tests and their helpers and the harness live beside the functions but are never loaded by a pack function. */
 const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/');
 

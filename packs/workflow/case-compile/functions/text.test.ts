@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatCallError } from './text.ts';
+import { formatCallError, parseCliOptions } from './text.ts';
 
 test('formatCallError outputs one of the five closed categories with fact and next step', () => {
   assert.equal(
@@ -34,4 +34,20 @@ test('formatCallError strips disallowed words, preserves internal periods and ne
     formatted,
     '参数无效：传入的 未填写 不合法。工作流未完成。1) 第一步\n2) 第二步。',
   );
+});
+
+test('parseCliOptions parses required/optional flags and rejects malformed arguments', () => {
+  const spec = { file: true, brief: false };
+  const usage = 'cmd --file <f> [--brief <b>]';
+  assert.deepEqual(parseCliOptions(['--file', 'a.json'], spec, usage), { file: 'a.json' });
+  assert.deepEqual(parseCliOptions(['--file', 'a.json', '--brief', 'b.json'], spec, usage), {
+    file: 'a.json',
+    brief: 'b.json',
+  });
+  assert.throws(() => parseCliOptions(['a.json'], spec, usage), /不支持单独的参数/);
+  assert.throws(() => parseCliOptions(['--file=a.json'], spec, usage), /不能用 = 连接参数值/);
+  assert.throws(() => parseCliOptions(['--unknown', 'x'], spec, usage), /未知选项 --unknown/);
+  assert.throws(() => parseCliOptions(['--file', '--brief', 'b.json'], spec, usage), /必须只写一次且紧跟一个值/);
+  assert.throws(() => parseCliOptions(['--file', 'a.json', '--file', 'b.json'], spec, usage), /必须只写一次且紧跟一个值/);
+  assert.throws(() => parseCliOptions(['--brief', 'b.json'], spec, usage), /缺少必填参数 --file/);
 });

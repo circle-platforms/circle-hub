@@ -14,7 +14,7 @@ import {
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
 import { readSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord, type CallErrorCategory } from '../functions/text.ts';
+import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, brief: false };
@@ -44,30 +44,8 @@ export interface PlanCheckResult {
 }
 
 function parseOptions(argv: string[]): { file: string; brief?: string } {
-  const values: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const token = argv[i];
-    if (!token?.startsWith('--')) {
-      throw new Error(`参数写法不对，不支持单独的参数 ${token ?? ''}`.trim() + `。请使用 ${USAGE}`);
-    }
-    const eq = token.indexOf('=');
-    if (eq >= 0) {
-      throw new Error(`选项 ${token.slice(0, eq)} 不能用 = 连接参数值。请改为 ${token.slice(0, eq)} <路径> 后重试`);
-    }
-    const key = token.slice(2);
-    if (!Object.hasOwn(OPTIONS, key)) {
-      throw new Error(`未知选项 --${key}。只允许 --file 和可选 --brief，请按 ${USAGE} 重试`);
-    }
-    const val = argv[i + 1];
-    if (!val || val.startsWith('--') || Object.hasOwn(values, key)) {
-      throw new Error(`选项 --${key} 必须只写一次且紧跟一个路径值。请按 ${USAGE} 重试`);
-    }
-    values[key] = val;
-  }
-  if (!values.file) {
-    throw new Error(`缺少必填参数 --file。请按 ${USAGE} 重试`);
-  }
-  return values.brief !== undefined ? { file: values.file, brief: values.brief } : { file: values.file };
+  const values = parseCliOptions(argv, OPTIONS, USAGE);
+  return values.brief !== undefined ? { file: values.file!, brief: values.brief } : { file: values.file! };
 }
 
 function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {

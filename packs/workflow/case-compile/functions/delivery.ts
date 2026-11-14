@@ -184,15 +184,17 @@ export function syntaxRejections(session: string): SyntaxRejection[] {
 /** A command the device answered with a declared execution-failure line: the prompt it was typed at, the command as the session echoes it, and the device's reply up to that line. */
 export interface ExecutionRefusal { command: string; prompt: string; reply: string[]; echo_cut?: true }
 const REPLY_LINES = 6, REPLY_CHARS = 400;
+const CLI_ERROR_LINE = /^(?:Error:\s*\S|Failed to\s+\S|%\s*(?:Invalid|Error|Unknown|Unrecognized)\b)/i;
 /**
  * The commands a session shows the device refusing to execute. A line that begins with a prompt is a command typed at it and
  * the lines down to the next such line are the device's reply; a reply that carries one of the execution-failure lines the
- * runner contract declares is the device's own verdict on that command, and the lines before it are its reason. Read by
- * position in the terminal transcript and by the declared lines alone (the reference keeps one authority for a device's CLI
- * errors, device_errors.py, and hands the lines of the last run that carry one to the next writer with the directive that the
- * fault is in the case's own command sequence, compile_engine/briefs.py execution_failures). What the refusal means is not
- * decided here. A long command is echoed with the terminal's own redrawing, so the command is the echo up to its first
- * control character and `echo_cut` says it is only the beginning; the run log holds the whole line.
+ * runner contract declares, or a generic CLI refusal/failure reply when the contract's markers are loaded, is the device's
+ * own verdict on that command, and the lines before/at it are its reason. Read by position in the terminal transcript (the
+ * reference keeps one authority for a device's CLI errors, device_errors.py, and hands the lines of the last run that carry
+ * one to the next writer with the directive that the fault is in the case's own command sequence, compile_engine/briefs.py
+ * execution_failures). What the refusal means is not decided here. A long command is echoed with the terminal's own
+ * redrawing, so the command is the echo up to its first control character and `echo_cut` says it is only the beginning; the
+ * run log holds the whole line.
  */
 export function executionRefusals(session: string, markers: readonly string[]): ExecutionRefusal[] {
   if (!markers.length) return [];
@@ -204,15 +206,19 @@ export function executionRefusals(session: string, markers: readonly string[]): 
     const command = (control < 0 ? echoed : echoed.slice(0, control)).trim();
     if (!command) continue;
     const reply: string[] = [];
-    let refused = false;
+    let markerHit = false, cliErrorAt = -1;
     for (let j = i + 1; j < lines.length && !LEADING_PROMPT.test(lines[j]); j++) {
       const line = lines[j].trim();
       if (!line) continue;
       reply.push(line.length > REPLY_CHARS ? line.slice(0, REPLY_CHARS) + '…' : line);
-      if (markers.some((marker) => line.includes(marker))) { refused = true; break; }
+      if (markers.some((marker) => line.includes(marker))) { markerHit = true; break; }
+      if (CLI_ERROR_LINE.test(line)) cliErrorAt = reply.length - 1;
     }
-    if (!refused) continue;
-    const refusal: ExecutionRefusal = { command, prompt: typed[1], reply: reply.slice(-REPLY_LINES), ...(control < 0 ? {} : { echo_cut: true as const }) };
+    if (!markerHit && cliErrorAt < 0) continue;
+    const trimmedReply = markerHit
+      ? reply.slice(-REPLY_LINES)
+      : reply.slice(0, reply.length <= REPLY_LINES ? reply.length : Math.min(reply.length, cliErrorAt + 2)).slice(-REPLY_LINES);
+    const refusal: ExecutionRefusal = { command, prompt: typed[1], reply: trimmedReply, ...(control < 0 ? {} : { echo_cut: true as const }) };
     const key = JSON.stringify([refusal.command, refusal.prompt, refusal.reply]);
     if (!seen.has(key)) { seen.add(key); found.push(refusal); }
   }
