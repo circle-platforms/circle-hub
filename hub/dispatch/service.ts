@@ -1,3 +1,5 @@
+import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
+import {withEnvironmentPermissionLock} from '../records/api.ts';
 import { isAdmin } from '../records/api.ts';
 import type { Heartbeat, LeaseClock, RemoteLease } from './session-types.ts';
 import * as bedOperations from './bed-lifecycle.ts';
@@ -360,15 +362,16 @@ export class DispatchService {
     const client = this.session(binding, d, material);
     let lease: RemoteLease | undefined; let stop = async () => {}; let verified = false; let publicReason: string | undefined;let stage='connect';
     try {
+      await this.admitNewUse(by,binding,'precheck');
       await client.connect();stage='acquire'; lease = await this.acquire(binding, d, client, this.context(binding));
       stop = this.heartbeat(binding, d, client, lease).stop;
       const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
       stage='precheck';
       try { const response = await this.retryRead(binding, client, 'precheck', context, Infinity); verified = await this.assessConditions(binding,d.conditions,response,context,'precheck.evaluated'); } catch(error) { verified = false;const failure=precheckFailure(error,stage);publicReason=failure.missing_fact;await this.journal.append(binding,'precheck.failure','validate','completed',{step:stage,...failure}); }
       const extra = await this.extraPrechecks(binding, d, client, context, true);
-      stage='probe';const probed = await this.probeSeats(binding,d,client,context);
+      stage='probe';await this.admitNewUse(by,binding,'device_probe');const probed = await this.probeSeats(binding,d,client,context);
       verified = verified && extra && probed;
-    } catch (error) { verified = false;const failure=precheckFailure(error instanceof CapabilityPolicyError?new PrecheckFactError(error.message,'管理员更换仅允许运行的密钥，并复核该身份可见的工具目录后再采证'):error,stage);publicReason=failure.missing_fact;await this.journal.append(binding,'precheck.failure','validate','completed',{step:stage,...failure}); }
+    } catch (error) { if(error instanceof EffectBoundaryError)return this.boundaryRefused(by,binding,error.failure);verified = false;const failure=precheckFailure(error instanceof CapabilityPolicyError?new PrecheckFactError(error.message,'管理员更换仅允许运行的密钥，并复核该身份可见的工具目录后再采证'):error,stage);publicReason=failure.missing_fact;await this.journal.append(binding,'precheck.failure','validate','completed',{step:stage,...failure}); }
     finally { await stop(); if (lease) await this.release(binding, client, lease); }
     const issues=precheckIssues(await this.journal.events(binding.job));
     await this.journal.append(binding, 'complete', 'validate', 'completed', { done: true, outcome: 'not_dispatched', ...(issues.length?{missing_fact:issues.map(i=>i.missing_fact).join('；')}:{}), ...(publicReason?{public_reason:publicReason}:{}), readonly_verified: verified, registration_ready: registrationMissing(d).length === 0, registration_missing: registrationMissing(d),
@@ -389,7 +392,7 @@ export class DispatchService {
     const client = this.session(binding,d,material);
     let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;const ambiguous=false;
     try {
-      await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
+      await this.admitNewUse(by,binding,'conformance');await client.connect(); lease = await this.acquire(binding,d,client,this.context(binding));
       const context = {...this.context(binding),lease_id:lease.id,lease_token:lease.token,request_id:`${binding.job}:absent`,not_after:new Date(this.now().getTime()-d.conformance.expiry_margin_ms-1000).toISOString(),items:[]};
       const missing = await this.read(binding,client,'query',context); observations.push(missing);
       const r = d.reconciliation;
@@ -397,7 +400,7 @@ export class DispatchService {
       checks.push(!!expectedIdentity && at(missing.value,r.found) === false);
       if (!checks[0]) {failure={missing_fact:'缺少可靠日志身份或本次探测查空回答；时间记录不作判据',next_action:'管理员核对日志身份和主体声明后重试；不提交探测字节'}; throw new Error('缺少查账事实');}
       failure={missing_fact:'只有只读查空原件，缺少已核验的序号回收拒收和同键去重事实；管理员提供的探测字节未经核验，不得外发，须补受限审计证据',next_action:'管理员从目标自己的受限审计记录只读取证，将完整协议事实、目标版本和证据引用登记到执行器前提；conformance 不提交探测字节'};
-    } catch { checks.push(false);failure??={missing_fact:'探测所需的连接、租约或请求记录未完整取得；未确认四项协议事实',next_action:'管理员检查受限调用原件、目标连接和租约配置，恢复缺失的读取事实后再采证'}; }
+    } catch (error) { if(error instanceof EffectBoundaryError)return this.boundaryRefused(by,binding,error.failure);checks.push(false);failure??={missing_fact:'探测所需的连接、租约或请求记录未完整取得；未确认四项协议事实',next_action:'管理员检查受限调用原件、目标连接和租约配置，恢复缺失的读取事实后再采证'}; }
     finally { if (lease) await this.release(binding,client,lease); }
     const init = eventOf(await this.journal.events(binding.job),'initialize.response');
     const artifact = await this.options.records.artifacts.ingest({bytes:canonicalBytes({target:d.target,version:client.serverVersion,checks,sources:observations.map(o=>o.source)}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[...observations.map(o=>o.source),...(init?.body.inputs.filter(r=>r.startsWith('src:')) ?? [])]}},author:{user:null},provenanceType:'projected',visibility:{readers:[by.id],admins:true,packs:[],shareable:false}});
@@ -566,6 +569,7 @@ export class DispatchService {
       const held = await this.options.records.store.tryHold(`dispatch.observation:${binding.job}`);
       if (!held) throw new Error('同一作业的观察仍在进行；请等它结束，或在原进程退出后用 circle-hub job resume 只读继续');
       unlockObservation = held;
+      await this.admitNewUse({id:input.user,name:'',role:'user'},binding,'dispatch');
       await session.connect();
       remote = await this.acquire(binding, d, session, this.context(binding));
       pulse = this.heartbeat(binding,d,session,remote);stop=pulse.stop;
@@ -573,6 +577,7 @@ export class DispatchService {
       const precheck = await this.retryRead(binding, session, 'precheck', context, Infinity);
       if (!await this.assessConditions(binding,d.conditions,precheck,context,'precheck.evaluated')) throw new Error('只读核对未满足；未提交，请核对当前环境后重新核验');
       if (!await this.extraPrechecks(binding, d, session, context, false)) throw new Error('附加只读核对未满足；未提交，请重新核对缓存来源');
+      await this.admitNewUse({id:input.user,name:'',role:'user'},binding,'device_probe');
       const deviceIdentity = await this.probeSeats(binding,d,session,context);
       if (!deviceIdentity) throw new Error('设备版本、接口或残留核对有误。管理员查看设备输出后重新核对测试环境');
       await this.gateBed(binding, d, session, context);
@@ -627,7 +632,7 @@ export class DispatchService {
       const precheckSources=[...new Set((await this.journal.events(binding.job)).filter(e=>e.body.detail.phase==='precheck.evaluated' || /^precheck\.[0-9]+$/.test(String(e.body.detail.phase)) || e.body.detail.phase==='device_probe').flatMap(e=>e.body.inputs))];
       const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
       if(!pulse.held())throw new Error('目标租约中断或近期确认已过期；恢复租约后重新预检，尚未提交');
-      await this.options.records.store.withTransaction(async tx => {
+      await withEnvironmentPermissionLock(this.options.records.store,async tx => {
         await lockExecutorConfiguration(this.options.records.store,tx,binding.executor,binding.resources,[d.target],[new URL(d.endpoint).origin]);
         await this.options.records.variables.lockNames((binding.variables??[]).map(use=>use.name),tx);
         const config=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|executor.${binding.executor}`,kind:'authorization',newestFirst:true,limit:1},tx);
@@ -716,7 +721,7 @@ export class DispatchService {
   }
   /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
   private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
-    const unavailable=()=>deny(1,'SOURCE_UNAVAILABLE','测试环境的权限核对现在不能进行，这次没有执行。请联系管理员。');
+    const unavailable=()=>deny(1,'ENVIRONMENT_PERMISSION_UNAVAILABLE',PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when);
     if(!this.options.environmentAccess)return unavailable();
     try {
       const {completed}=await this.options.environmentAccess.inheritance(tx);
@@ -733,6 +738,14 @@ export class DispatchService {
       if(!await this.options.environmentAccess.canUse(actor,executor))return deny(1,'SOURCE_NOT_PERMITTED','运行发起账户没有本测试环境的使用权限；请管理员明确分配后重新核验');
       return null;
     } catch { return unavailable(); }
+  }
+  /** A logical new-use admission, persisted under the permission lock; no RPC inside the transaction. */
+  private async admitNewUse(by:Principal,binding:JobBinding,operation:string):Promise<void> {
+    await withEnvironmentPermissionLock(this.options.records.store,async tx=>{
+      const failure=await this.environmentUseFailure(by.id,binding.executor,tx);
+      if(failure)throw new EffectBoundaryError(failure);
+      await this.journal.append(binding,'permission_admission','validate','completed',{operation,submit_invoked:false},[],undefined,tx);
+    });
   }
   private async boundaryRefused(by:Principal,binding:JobBinding,failure:BoundaryFailure,facts:Pick<JobStatus,'submission_verified'|'booking'|'call_error_category'>={},expiredBooking=false):Promise<JobStatus>{
     let adminReleaseSha:string|undefined,adminReleaseMissing=false;
@@ -754,7 +767,7 @@ export class DispatchService {
     const memberFacts=facts.booking?[{fact:facts.booking.coverage_complete===false?(facts.call_error_category==='occupied'?`测试环境 ${facts.booking.target} 有资源由其他运行持有；`:expiredBooking?'当前账户的原预订已过期；':'')+`本运行没有覆盖测试环境 ${facts.booking.target} 的完整预订，缺少 ${facts.booking.missing_resources} 项所需资源（共 ${facts.booking.required_resources} 项）`:`测试环境 ${facts.booking.target} 的本运行预订覆盖尚未核对`,
       next_action:facts.booking.coverage_complete===false?bookingNext:'联系管理员恢复预订记录读取后重新核对覆盖范围；当前不能派发'}]:undefined;
 
-    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,...facts,...(failure.no_conclusion?{call_error_category:null}:{}),...(memberFacts?{member_missing_facts:memberFacts}:failure.no_conclusion?{member_missing_facts:failure.member_missing_facts??[{fact:'冻结包的政策或参数检查尚未给出结论',next_action:'请管理员核对该检查声明的输入与执行记录，补齐前提后重新核对'}]}:failure.code==='SOURCE_NOT_PERMITTED'?{member_missing_facts:[{fact:failure.message,next_action:'联系管理员核对本测试环境的有效分配及账户状态后重新核验'}]}:failure.code==='SOURCE_UNAVAILABLE'?{member_missing_facts:[{fact:'本次测试环境的使用权限尚未核对，缺少可读取的核对事实',next_action:'联系管理员恢复环境权限检查接线或读取能力后重新核验；当前不能派发'}]}:{}),next_action:facts.booking?(facts.booking.coverage_complete===false?bookingNext:'恢复预订记录的读取能力后重新核对覆盖范围；当前不能派发'):failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
+    await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,...facts,...(failure.no_conclusion?{call_error_category:null}:{}),...(memberFacts?{member_missing_facts:memberFacts}:failure.no_conclusion?{member_missing_facts:failure.member_missing_facts??[{fact:'冻结包的政策或参数检查尚未给出结论',next_action:'请管理员核对该检查声明的输入与执行记录，补齐前提后重新核对'}]}:failure.code==='SOURCE_NOT_PERMITTED'?{member_missing_facts:[{fact:failure.message,next_action:'联系管理员核对本测试环境的有效分配及账户状态后重新核验'}]}:failure.code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'?{member_missing_facts:[{fact:PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when,next_action:PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.fix}]}:failure.code==='SOURCE_UNAVAILABLE'?{member_missing_facts:[{fact:'本次测试环境的使用权限尚未核对，缺少可读取的核对事实',next_action:'联系管理员恢复环境权限检查接线或读取能力后重新核验；当前不能派发'}]}:{}),next_action:facts.booking?(facts.booking.coverage_complete===false?bookingNext:'恢复预订记录的读取能力后重新核对覆盖范围；当前不能派发'):failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
     return this.status(by,binding.job);
   }
 
@@ -1227,6 +1240,7 @@ export class DispatchService {
       options: this.options,
       registry: this.registry,
       observeSeats: this.observeSeats.bind(this),
+      admitNewUse: this.admitNewUse.bind(this),
       assertNoSecrets: this.assertNoSecrets.bind(this),
       secret: this.secret.bind(this),
       session: this.session.bind(this),
@@ -1291,7 +1305,7 @@ export class DispatchService {
     };
   }
   private async frozenValue(binding: JobBinding, d: ExecutorDefinition, pointer: string): Promise<unknown> { return bedOperations.frozenValue.call(this.bedContext(), binding, d, pointer); }
-  async recordBaseline(by: Principal, executor: string, probeId: string, reason?: string | null): Promise<BedBaselineRecord> { return baselineOperations.recordBaseline.call({ registry: this.registry, options: this.options, now: this.now, getBaseline: this.getBaseline.bind(this), assertNoSecrets: this.assertNoSecrets.bind(this), secret: this.secret.bind(this), session: this.session.bind(this), acquire: this.acquire.bind(this), context: this.context.bind(this), heartbeat: this.heartbeat.bind(this), release: this.release.bind(this) }, by, executor, probeId, reason); }
+  async recordBaseline(by: Principal, executor: string, probeId: string, reason?: string | null): Promise<BedBaselineRecord> { return baselineOperations.recordBaseline.call({ registry: this.registry, options: this.options, now: this.now, getBaseline: this.getBaseline.bind(this), admitNewUse:this.admitNewUse.bind(this), assertNoSecrets: this.assertNoSecrets.bind(this), secret: this.secret.bind(this), session: this.session.bind(this), acquire: this.acquire.bind(this), context: this.context.bind(this), heartbeat: this.heartbeat.bind(this), release: this.release.bind(this) }, by, executor, probeId, reason); }
 
   async setBaseline(by: Principal, executor: string, probeId: string, text: string, reason?: string | null): Promise<BedBaselineRecord> { return baselineOperations.setBaseline.call(this, by, executor, probeId, text, reason); }
 
@@ -1579,7 +1593,7 @@ export class DispatchService {
     const early = notes.filter(event => event.body.detail.early_stop === true);
     const passed = notes.find(event => event.body.detail.meets === true);
     const sentence = early.length > 0 && passed ? earlyStopSentence(Number(passed.body.detail.round), early.length) : undefined;
-    const refusalFact=refusal?.failure.code==='SOURCE_NOT_PERMITTED'?'前轮已执行，后轮未开始：后续轮次的环境使用权限未成立':refusal?.failure.code==='SOURCE_UNAVAILABLE'?'前轮已执行，后轮未开始：后续轮次的权限核对事实尚未取得':'前轮已执行，后轮未开始：后续轮次的派发前提未满足';
+    const refusalFact=refusal?.failure.code==='SOURCE_NOT_PERMITTED'?'前轮已执行，后轮未开始：后续轮次的环境使用权限未成立':refusal?.failure.code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'?'前轮已执行，后轮未开始：测试环境的权限核对现在不能进行':refusal?.failure.code==='SOURCE_UNAVAILABLE'?'前轮已执行，后轮未开始：后续轮次的权限核对事实尚未取得':'前轮已执行，后轮未开始：后续轮次的派发前提未满足';
     const refusalNext='读取本次结果引用核对已完成与未开始的轮次；需要恢复权限或核对事实时联系管理员，不要重新发送已执行的轮次';
 
     const artifact = await this.options.records.artifacts.ingest({ bytes: canonicalBytes({ job: binding.job, sha256: input.sha256, rows: projected,...(input.judgments?.length?{judgment_premises:input.judgments}:{}), ...(rounds.length ? { rounds } : {}), ...(refusal?{round_refusal:{round:refusal.round,error_code:refusal.failure.code,fact:refusalFact,next_action:refusalNext}}:{}), ...(bed ? { bed_state: bed } : {}) }), mediaType: 'application/json',
@@ -1623,6 +1637,8 @@ export class DispatchService {
       if (!roundAllowed(next, policy)) return this.stopUnstartedRounds(by,binding,d,session,remote,pulse.stop,next,policy.count,deny(4, 'EFFECT_BUDGET_EXHAUSTED', `第 ${next} 轮超过冻结次数或效果行的重复预算；请开始新修订`, args.gate.context.effects.find(row => row.release.requirements.includes(d.proof.requirement))));
       if (policy.fresh_context) {
         await pulse.stop();
+        try {await this.admitNewUse({id:args.input.user,name:'',role:'user'},binding,'dispatch_round');}
+        catch(error){if(error instanceof EffectBoundaryError)return this.stopUnstartedRounds(by,binding,d,session,remote,pulse.stop,next,policy.count,error.failure);throw error;}
         await this.release(binding, session, remote);
         session = this.session(binding, d, args.secret);
         hold.setSession(session);
@@ -1633,6 +1649,8 @@ export class DispatchService {
         hold.setStop(pulse.stop);
       }
       if (policy.baseline_first || policy.fresh_context) {
+        try {await this.admitNewUse({id:args.input.user,name:'',role:'user'},binding,'device_probe');}
+        catch(error){if(error instanceof EffectBoundaryError)return this.stopUnstartedRounds(by,binding,d,session,remote,pulse.stop,next,policy.count,error.failure);throw error;}
         const ok = await this.baselineOk(binding, d, session, remote);
         if (!ok && policy.baseline_first) { await this.noteRound(binding, { round: next, terminal: 'not_run', meets: null, reason: 'integrity_unproven' }); continue; }
         if (!ok) throw new Error('设备版本、接口或残留核对有误。管理员查看设备输出后重新核对测试环境');
@@ -1684,7 +1702,7 @@ export class DispatchService {
     const actionDigest = digestOfValue({ content: input.sha256, tool: d.calls.submit.tool, arguments: session.prepareSubmit(context) });
     if (!pulse.held()) throw new Error('目标租约中断或近期确认已过期；恢复租约后重新预检，尚未提交');
     try {
-      await this.options.records.store.withTransaction(async tx => {
+      await withEnvironmentPermissionLock(this.options.records.store,async tx => {
         await lockExecutorConfiguration(this.options.records.store, tx, binding.executor, binding.resources, [d.target], [new URL(d.endpoint).origin]);
         await this.options.records.variables.lockNames((binding.variables ?? []).map(use => use.name), tx);
         const config = await this.options.records.store.find<AuthorizationRecord['body']>({ key: 'authz.key', value: `resource_config|${WHOLE_HUB}|executor.${binding.executor}`, kind: 'authorization', newestFirst: true, limit: 1 }, tx);

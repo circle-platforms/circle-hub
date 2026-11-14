@@ -6,7 +6,7 @@ import { isAdmin } from '../records/api.ts';
 // after the fix. Sent without an answer: the request id, and no repeat sends again, since the target may have run it; the
 // Hub asks the target by that id and only what stays unresolved goes to a named administrator.
 import { labelOf, type CallErrorCategory } from '../../contracts/generated/vocabulary.ts';
-import { callErrorCategory, formatCallError } from '../../contracts/generated/protocol.ts';
+import { PROTOCOL_CODES, callErrorCategory, formatCallError } from '../../contracts/generated/protocol.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
@@ -103,11 +103,20 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     const diagnostics = statusDiagnostics({ job: status.job, status, ended: null, boundary_refused: false }, administrative);
     return answer([{ job: status.job, ...diagnostics, text: clip(`上机验证核对尚未完成；${diagnostics.next_action}`) }]);
   }
+  if(settled.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'&&settled.outcome!=='unknown')return answer([{...permissionUnavailableNote(administrative),...(administrative&&settled.executor?{executor:settled.executor}:{})}]);
   const missing = !administrative ? settled.member_missing_facts ?? (settled.checks ? releaseMissingFacts(settled.checks) : []) : [];
   const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
   const category=invocationCategory(settled);
   const fact=facts.map(row=>row.fact).join('；'),next=facts.map(row=>row.next_action).join('；');
   return answer([{ ...(administrative && settled.executor ? { executor: settled.executor } : {}), outcome:'not_dispatched', ...(settled.error_code?{error_code:settled.error_code}:{}), missing_facts:facts,next_action:next,text:clip(category?formatCallError(category,fact,next):'上机验证没有发出：'+fact) }]);
+}
+
+function permissionUnavailableNote(administrative:boolean):DispatchNote {
+  const code='ENVIRONMENT_PERMISSION_UNAVAILABLE';
+  const entry=PROTOCOL_CODES[code],category=callErrorCategory(code);
+  if(category===null)throw new Error('环境权限调用错误缺少正式类别');
+  const next=administrative?'请联系维护人员恢复测试环境权限核对':entry.fix;
+  return {outcome:'not_dispatched',error_code:code,missing_facts:[{fact:entry.when,next_action:next}],next_action:next,text:formatCallError(category,entry.when,next)};
 }
 
 /** The run's jobs that have not ended, with their notes, or null: submit_result keeps a different submission from them. */
@@ -183,6 +192,7 @@ function invocationCategory(status: Pick<JobStatus,'error_code'|'call_error_cate
 export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): DispatchNote {
   const { status } = job;
   const diagnostics = statusDiagnostics(job, administrative);
+  if(status.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'&&job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen)return {job:job.job,...permissionUnavailableNote(administrative)};
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '上机验证结果未知' : '进行中';
   const parts = [administrative ? `作业 ${job.job}：${state}（阶段 ${status.phase}）` : `上机验证${state}`, `${labelOf('effect_outcome', status.outcome)}`];
   if (status.outcome === 'target_rejected' && status.rejection_stage) parts.push(`目标在“${status.rejection_stage}”阶段拒绝`);

@@ -1,3 +1,4 @@
+import {EffectBoundaryError} from './effect-gate.ts';
 import { isAdmin } from '../records/api.ts';
 import type { RemoteLease, Heartbeat } from './session-types.ts';
 import { type ActionBody, type Principal } from '../records/api.ts';
@@ -16,6 +17,7 @@ const OBSERVATION_KEY = 'dispatch.device_observation';
 type AdminLogEntry = Parameters<NonNullable<DispatchService['options']['adminLog']>>[0];
 
 interface DeviceContext extends Pick<DispatchService, 'now' | 'options' | 'registry' | 'recordObservation' | 'activeLeaseJobs' | 'journal' | 'sleep'> {
+  admitNewUse(by:Principal,binding:JobBinding,operation:string):Promise<void>;
   observeSeats(by: Principal, run: string, registered: RegisteredExecutor, seats: NonNullable<ExecutorDefinition['probes']>['seats'], targets: ReadonlyMap<string, { label: string }>): Promise<DeviceObservation[]>;
   assertNoSecrets(value:unknown):Promise<void>;
   secret(binding:JobBinding,d:ExecutorDefinition):Promise<string|null>;
@@ -72,6 +74,7 @@ export async function observeDevices(this: DeviceContext, by: Principal, run: st
       try {
         for (const o of await this.observeSeats(by, run, registered, seats, pending)) observed.push(o);
       } catch (error) {
+        if(error instanceof EffectBoundaryError)throw error;
         this.options.adminLog?.({ traceId: null, run, what: 'device_observation', detail: `executor ${registered.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
         problems.push(`执行器 ${registered.id} 这次没能连上设备（原因在管理员记录里）`);
       }
@@ -95,12 +98,14 @@ export async function observeSeats(this: DeviceContext, by: Principal, run: stri
     let lease: RemoteLease | undefined;
     let stop = async () => {};
     try {
+      await this.admitNewUse(by,binding,'device_observation');
       await client.connect();
       lease = await this.acquire(binding, d, client, this.context(binding));
       stop = this.heartbeat(binding, d, client, lease).stop;
       const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
       const out: DeviceObservation[] = [];
       for (const seat of seats) {
+        await this.admitNewUse(by,binding,'device_observation');
         const response = await client.declaredRead(d.probes!.call, { ...context, command: seat.version.command, seat_index: seat.index }, `observe.${seat.index}.version`);
         const label = targets.get(`${d.manifest_sha256}#${seat.manifest.device}`)?.label ?? seat.seat;
         out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product }));
@@ -142,6 +147,7 @@ export async function askDevice(this: DeviceContext, by: Principal, run: string,
     if (busy.length) return nothing(`设备上还有作业没有结束（${[...new Set(busy.map((b) => b.job))].join('、')}），现在不往它的终端里打字`, '等这些作业结束，或让管理员用 job status 核对、用 job dispose 处置后再问');
     try { return await this.queued(found.registered.id, () => this.askSeat(by, run, found.registered, found.seat, target, checked.asked)); }
     catch (error) {
+      if(error instanceof EffectBoundaryError)throw error;
       this.options.adminLog?.({ traceId: null, run, what: 'device_help', detail: `executor ${found.registered.id}: ${error instanceof Error ? error.message : String(error)}`.slice(0, 1000) } as AdminLogEntry);
       return nothing('这次没能连上设备（原因在管理员记录里）', '稍后再问一次；连续出现时请管理员检查执行器的连接、凭据和租约');
     }
@@ -162,6 +168,7 @@ export async function askSeat(this: DeviceContext, by: Principal, run: string, r
     let lease: RemoteLease | undefined;
     let stop = async () => {};
     try {
+      await this.admitNewUse(by,binding,'device_help');
       await client.connect();
       // Certification is version-bound and precedes any gateway lease or typed text.
       const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
@@ -176,6 +183,7 @@ export async function askSeat(this: DeviceContext, by: Principal, run: string, r
       for (const prefix of asked.prefixes) {
         let response: Exchange | undefined; let failure: 'refused' | 'unusable' | undefined; let failedSource: string | undefined;
         for (let attempt = 1; attempt <= 3 && response === undefined && failure === undefined; attempt++) {
+          await this.admitNewUse(by,binding,'device_help');
           try { response = await client.declaredRead(spec.call, { ...context, line: prefix.text, seat_index: seat.index, ...(target.mode === undefined ? {} : { mode: target.mode }) }, `help.${seat.index}.${prefix.words}`); }
           catch (error) {
             const retry = canRetryRead(error, d, context);
