@@ -1,8 +1,8 @@
 /**
  * D3 fact/next for call errors (Boss 13:05 / 14:12). When ProtocolError.call_error_reason
  * is set, category and next come only from contracts/generated (reason × actual role);
- * source.message is the fact and is not rewritten. Legacy code-only paths keep the tables
- * below until throw sites fill reason / object_kind (structured-render-interface-2116).
+ * facts come from structured fields when present, otherwise source.message unchanged.
+ * No prose matching of category prefixes, knowledge-root wording, lease clauses, or noRead.
  */
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import {
@@ -10,7 +10,14 @@ import {
   formatCallErrorReason,
   resolveCallErrorReason,
 } from '../../contracts/generated/protocol.ts';
-import { CallErrorReasonSchema, SYNC_MODE_UI, type CallErrorReason, type PermissionRole } from '../../contracts/generated/vocabulary.ts';
+import {
+  CallErrorReasonSchema,
+  SYNC_MODE_UI,
+  type CallErrorObjectKind,
+  type CallErrorReason,
+  type EnvironmentRegistrationIssue,
+  type PermissionRole,
+} from '../../contracts/generated/vocabulary.ts';
 import { callErrorCategoryOf, type CallErrorCategory } from './error-reasons.ts';
 import { circleHubFromMetadata, circleHubFromParameters, fillCallerAccountName } from './fix-by-role.ts';
 
@@ -42,7 +49,7 @@ export function formatStructuredCallError(
   const parsed = CallErrorReasonSchema.safeParse(error.call_error_reason);
   if (!parsed.success) return null;
   const reason: CallErrorReason = parsed.data;
-  const fact = options.factOverride ?? error.message;
+  const fact = options.factOverride ?? structuredCallErrorFact(error, role) ?? error.message;
   const resolved = resolveCallErrorReason(error.code, reason, role);
   if (resolved === null) return null;
 
@@ -80,27 +87,30 @@ export function formatStructuredCallError(
 /** Closed five (hub-terms); mirrored here for tests that assert the set without importing D1 internals. */
 export const CALL_ERROR_CATEGORIES = ['参数无效', '无权限', '不存在', '已被占用', '暂时不可用'] as const satisfies readonly CallErrorCategory[];
 
-/** Knowledge-tree-root unauthorised: keep「绑定产品线」semantics (contributions / ROOT_FORBIDDEN). */
-export function isKnowledgeRootDenial(message: string, fix: string | undefined): boolean {
-  return /知识树根/.test(message) || /手册和命令树/.test(message) || /绑定这条产品线/.test(fix ?? '') || /绑定这条产品线/.test(message);
-}
-
-/** Object kind for SOURCE_NOT_PERMITTED next-step selection (Boss 16:34: structured clues only). */
+/** Object kind for SOURCE_NOT_PERMITTED next-step selection; never inferred from message prose. */
 export type NotPermittedKind = 'pack' | 'knowledge' | 'system' | 'root';
 
-/**
- * Prefer path / registered fix clues over prose. Default `pack` when no clue — see
- * briefs/whitepaper-1113/requests-to-codex.md §16:34 for misclassification cases.
- */
-export function notPermittedKindOf(message: string, fix: string | undefined, path?: string): NotPermittedKind {
-  if (isKnowledgeRootDenial(message, fix)) return 'root';
+const READ_OBJECT_KINDS = new Set<CallErrorObjectKind>([
+  'knowledge',
+  'source_artifact',
+  'record',
+  'named_document',
+]);
+
+/** Map structured object_kind (or path-only clue) to the legacy next-step row key. No default pack. */
+export function notPermittedKindOf(
+  objectKind: CallErrorObjectKind | undefined,
+  path?: string,
+): NotPermittedKind | null {
+  if (objectKind === 'knowledge_root') return 'root';
+  if (objectKind === 'pack') return 'pack';
+  if (objectKind === 'system') return 'system';
+  if (objectKind !== undefined && READ_OBJECT_KINDS.has(objectKind)) return 'knowledge';
   if (path === '/pack' || (typeof path === 'string' && path.startsWith('/pack'))) return 'pack';
-  const fixText = fix ?? '';
-  if (/分享读取权限/.test(fixText) || /\bshare\b/i.test(fixText)) return 'knowledge';
-  if (/resource assign/.test(fixText) || /为所在团队分配此业务系统|分配此业务系统/.test(fixText)) return 'system';
-  // Temporary path clues for knowledge reads (no prose match on 未获授权使用 / 存在，没有分配给).
-  if (path === '/run' || path === '/reference' || (typeof path === 'string' && path.startsWith('/inputs'))) return 'knowledge';
-  return 'pack';
+  if (path === '/run' || path === '/reference' || (typeof path === 'string' && path.startsWith('/inputs'))) {
+    return 'knowledge';
+  }
+  return null;
 }
 
 function packNameFromMessage(message: string): string | undefined {
@@ -118,72 +128,102 @@ export function localClockOf(iso: string): string | null {
   return `${hour}:${minute}`;
 }
 
-/** Test-environment display name from a lease key; unregistered keys use the key itself (Boss 14:12). */
-export function environmentNameFromLeaseKey(key: string): string {
-  const bed = /^bed\/([^/]+)\//.exec(key);
-  if (bed) return bed[1]!;
-  return key;
+function registrationIssueLabel(issue: EnvironmentRegistrationIssue): string {
+  switch (issue) {
+    case 'executor_identity':
+      return '执行器';
+    case 'target':
+      return '目标';
+    case 'resources':
+      return '资源';
+    case 'booking_scope':
+      return '预订';
+  }
 }
 
 /**
- * Fact for LEASE_UNAVAILABLE: which environment, who holds it, since when.
- * Parses engine messages that append（持有运行 …，取得于 …）.
+ * Fact built only from structured ProtocolError fields. Returns null when required fields are absent —
+ * callers keep source.message and never invent from prose.
  */
-export function leaseUnavailableFact(message: string): string {
-  const keyMatch = /键\s+(\S+)\s+上有/.exec(message) ?? /lease release\s+(\S+)/.exec(message);
-  const key = keyMatch?.[1];
-  const name = key !== undefined ? environmentNameFromLeaseKey(key) : /租约键/.test(message) ? '该键' : '该键';
-  const sinceMatch = /取得于\s+(\S+)/.exec(message);
-  const since = sinceMatch ? localClockOf(sinceMatch[1]!.replace(/[，,).].*$/, '')) : null;
-  const sinceClause = since !== null ? `（自 ${since} 起）` : '';
-  const own = /是你自己的运行|当前账户的另一次运行/.test(message);
-  if (own) {
-    return `测试环境「${name}」正由当前账户的另一次运行占用${sinceClause}`;
+export function structuredCallErrorFact(error: ProtocolError, role: PermissionRole = 'user'): string | null {
+  const env = error.environment_display_name;
+  const comparison = error.registration_comparison;
+  if (env !== undefined && comparison !== undefined) {
+    const issue = comparison.issue;
+    if (role === 'admin') {
+      if (issue === 'executor_identity' && comparison.left_display_name !== undefined && comparison.right_display_name !== undefined) {
+        return `测试环境「${env}」关联的执行器登记的是「${comparison.left_display_name}」，它的定义里写的是「${comparison.right_display_name}」，两处不一致，这次上机验证没有执行`;
+      }
+      if (
+        issue === 'target'
+        && comparison.left_display_name !== undefined
+        && comparison.right_display_name !== undefined
+        && comparison.right_values?.[0] !== undefined
+      ) {
+        return `测试环境「${env}」登记的目标是「${comparison.left_display_name}」，执行器「${comparison.right_display_name}」的目标是「${comparison.right_values[0]}」，两处不一致，这次上机验证没有执行`;
+      }
+      if (
+        issue === 'resources'
+        && comparison.right_display_name !== undefined
+        && (comparison.left_values?.[0] !== undefined || comparison.left_display_name !== undefined)
+        && comparison.right_values?.[0] !== undefined
+      ) {
+        const left = comparison.left_values?.[0] ?? comparison.left_display_name!;
+        return `测试环境「${env}」登记的预订前缀是「${left}」，执行器「${comparison.right_display_name}」的资源是「${comparison.right_values[0]}」，两处不一致，这次上机验证没有执行`;
+      }
+      if (issue === 'booking_scope' && comparison.right_display_name !== undefined) {
+        return `测试环境「${env}」与「${comparison.right_display_name}」的预订前缀重叠，不能预订测试环境「${env}」，这次没有执行`;
+      }
+    }
+    if (issue === 'booking_scope') {
+      return `测试环境「${env}」的预订登记存在重叠，不能预订该测试环境，这次没有执行`;
+    }
+    return `测试环境「${env}」的${registrationIssueLabel(issue)}登记不一致，这次上机验证没有执行`;
   }
-  const named = /正由「([^」]+)」占用/.exec(message) ?? /持有者「([^」]+)」/.exec(message);
-  if (named) return `测试环境「${name}」正由「${named[1]}」占用${sinceClause}`;
-  if (/正被占用|已被预订|已占用|未到期的占用|由别的运行持有/.test(message)) {
-    return `测试环境「${name}」正由「其他成员」占用${sinceClause}`;
+
+  if (env !== undefined && error.holder_relation !== undefined) {
+    const since = error.acquired_at !== undefined ? localClockOf(error.acquired_at) : null;
+    const sinceClause = since !== null ? `（自 ${since} 起）` : '';
+    if (error.holder_relation === 'current_account') {
+      return `测试环境「${env}」正由当前账户的另一次运行占用${sinceClause}`;
+    }
+    if (error.holder_relation === 'other_account') {
+      const holder = error.holder_display_name ?? '其他成员';
+      return `测试环境「${env}」正由「${holder}」占用${sinceClause}`;
+    }
+    return `测试环境「${env}」正被占用${sinceClause}`;
   }
-  return `测试环境「${name}」正由「其他成员」占用${sinceClause}`;
-}
 
-function leaseKeyFromMessage(message: string): string {
-  const keyMatch = /键\s+(\S+)\s+上有/.exec(message);
-  if (keyMatch) return keyMatch[1]!;
-  return '<键>';
-}
-
-/**
- * Fact clause for the category sentence: no category prefix, no 任务包, no 「你」 as subject.
- * Prefers source messages that already use owner wording; only normalises prior shapes.
- */
-export function callErrorFact(code: string, message: string): string {
-  let fact = message.split('；')[0]!.trim();
-  fact = fact.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '');
-
-  if (code === 'SOURCE_NOT_PERMITTED' && isKnowledgeRootDenial(message, undefined)) {
+  if (error.object_kind === 'knowledge_root') {
     return '当前账户未获授权读取这条产品线的手册和命令树';
   }
 
-  if (/^当前账户未获授权使用/.test(fact)) return fact;
+  if (
+    error.object_display_name !== undefined
+    && (
+      error.call_error_reason === 'content_read_not_permitted'
+      || (error.object_kind !== undefined && READ_OBJECT_KINDS.has(error.object_kind))
+    )
+  ) {
+    return `当前账户未获授权读取「${error.object_display_name}」`;
+  }
 
-  const noRead = /^(.+?)存在，你没有读取权限(?::|：)?(.*)$/.exec(fact);
-  if (noRead) {
-    const object = noRead[1]!.trimEnd();
-    return `当前账户未获授权读取「${object}」`;
+  return null;
+}
+
+/**
+ * Fact clause for the category sentence. Structured fields win; otherwise pass source.message
+ * (no category-prefix strip, no noRead / lease / knowledge-root prose rewrite).
+ */
+export function callErrorFact(code: string, message: string, error?: ProtocolError): string {
+  if (error !== undefined) {
+    const structured = structuredCallErrorFact(error);
+    if (structured !== null) return structured;
   }
-  if (/^当前账户未获授权读取/.test(fact) && !/「/.test(fact)) {
-    const rest = fact.slice('当前账户未获授权读取'.length).replace(/（.*$/, '').trim();
-    return `当前账户未获授权读取「${rest}」`;
-  }
+  let fact = message.split('；')[0]!.trim();
 
   if (code === 'SOURCE_INTEGRITY_UNPROVEN') {
     if (/缺少经摘要核验的知识原件/.test(fact)) return '缺少经摘要核验的知识原件';
-  }
-
-  if (code === 'LEASE_UNAVAILABLE') {
-    return leaseUnavailableFact(message);
   }
 
   if (code === 'LEASE_EXPIRED') {
@@ -222,7 +262,7 @@ export function stripSentenceEnd(text: string): string {
   return text.replace(/[。．]\s*$/u, '').trim();
 }
 
-type NextRow = { member: string; admin: (message: string) => string };
+type NextRow = { member: string; admin: (message: string, leaseKey?: string) => string };
 
 const PACK_NEXT: NextRow = {
   member: unassignedPackNext('workflow'),
@@ -250,16 +290,21 @@ const KNOWLEDGE_ROOT_NEXT: NextRow = {
     `用 ${circleHubFromParameters('pack.assign')} 为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树`,
 };
 
+const GENERIC_NOT_PERMITTED_NEXT: NextRow = {
+  member: '请联系管理员处理',
+  admin: () => '请核对后重试',
+};
+
 /**
  * Next-step table: error code × admin|member. Knowledge-tree-root denial is a separate row
- * keyed off the message/fix, not a keyword rewrite of「分配」.
+ * keyed off structured object_kind (or path clue), never message prose.
  */
 const NEXT_BY_CODE: Record<string, NextRow> = {
   SOURCE_NOT_PERMITTED: PACK_NEXT,
   LEASE_UNAVAILABLE: {
     member: '请等待释放后重试，或改订其他测试环境',
-    admin: (message) => {
-      const key = leaseKeyFromMessage(message);
+    admin: (_message, leaseKey) => {
+      const key = leaseKey !== undefined && leaseKey.length > 0 ? leaseKey : '<键>';
       return `请等待释放后重试，或改订其他测试环境；需要强制释放时执行 circle-hub lease release ${key} --reason <理由>，或在控制台「连接」页操作`;
     },
   },
@@ -373,7 +418,7 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
 
 /**
  * Next-step clause for the category sentence (no leading「下一步」).
- * Table-driven; knowledge-tree-root / knowledge-read / system denial are dedicated rows.
+ * Table-driven; object kind comes from structured fields or path, never message prose.
  */
 export function callErrorNext(
   code: string,
@@ -382,17 +427,22 @@ export function callErrorNext(
   message = '',
   callerName?: string,
   path?: string,
+  error?: ProtocolError,
 ): string {
   let next: string;
   if (code === 'SOURCE_NOT_PERMITTED') {
-    const kind = notPermittedKindOf(message, fix, path);
+    const kind = notPermittedKindOf(error?.object_kind, path ?? error?.path);
     const row =
-      kind === 'root' ? KNOWLEDGE_ROOT_NEXT : kind === 'knowledge' ? KNOWLEDGE_NEXT : kind === 'system' ? SYSTEM_NEXT : PACK_NEXT;
+      kind === 'root' ? KNOWLEDGE_ROOT_NEXT
+        : kind === 'knowledge' ? KNOWLEDGE_NEXT
+          : kind === 'system' ? SYSTEM_NEXT
+            : kind === 'pack' ? PACK_NEXT
+              : GENERIC_NOT_PERMITTED_NEXT;
     next = role === 'admin' ? row.admin(message) : row.member;
   } else {
     const row = NEXT_BY_CODE[code];
     if (row !== undefined) {
-      next = role === 'admin' ? row.admin(message) : row.member;
+      next = role === 'admin' ? row.admin(message, error?.lease_key) : row.member;
     } else {
       const raw = fix === undefined ? '' : stripSentenceEnd(fix);
       if (role === 'admin') {
@@ -420,7 +470,7 @@ export function renderCallError(
   if (structured !== null) return structured;
   const category = callErrorCategoryOf(error.code);
   if (category === null) return null;
-  const fact = callErrorFact(error.code, error.message);
-  const next = callErrorNext(error.code, role, fix, error.message, callerName, error.path);
+  const fact = callErrorFact(error.code, error.message, error);
+  const next = callErrorNext(error.code, role, fix, error.message, callerName, error.path, error);
   return `${category}：${fact}。${next}。`;
 }

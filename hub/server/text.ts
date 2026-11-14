@@ -217,7 +217,8 @@ const D3_FACT_REWRITE = new Set([
  * 规则见… → 这是一小时内第 N 次… → 还可以重交 N 次。
  */
 function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
-  const fact = asSentence(message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, ''));
+  // Category comes only from the code/reason table; throw sites must not pre-write the five heads into message.
+  const fact = asSentence(message);
   const nextRaw = fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料';
   // fix may already contain independent sentences (规则见 / 这是一小时内第 N 次 / 完整的正确写法).
   const next = asSentence(nextRaw);
@@ -269,12 +270,12 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
     const category = callErrorCategoryOf(error.code);
     if (category !== null) {
       const fact = D3_FACT_REWRITE.has(error.code)
-        ? callErrorFact(error.code, error.message)
-        : error.message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '');
+        ? callErrorFact(error.code, error.message, error)
+        : error.message;
       const next = escalated
         ? fix
         : D3_FACT_REWRITE.has(error.code)
-          ? callErrorNext(error.code, role, fix, error.message, account, error.path)
+          ? callErrorNext(error.code, role, fix, error.message, account, error.path, error)
           : (fix ?? '由使用者核对输入资料');
       return callErrorLine(category, fact, next, error.rounds_left);
     }
@@ -682,9 +683,6 @@ function resolveText(v: ResolveOut, context: TextContext): string {
 
 // ---------------------------------------------------------------- submit_result
 
-/** Five call-error category heads (owner 2026-11-14): no status/judgment/decider chain after these. */
-const CALL_ERROR_HEAD = /^(参数无效|无权限|不存在|已被占用|暂时不可用)：/;
-
 /**
  * Member next steps aligned with formatReleaseRefusal (hub/dispatch/refusal-text.ts).
  * Used when accepted/reasons dropped the self-serve path and left only「联系管理员…」.
@@ -754,31 +752,24 @@ function releaseNextByRole(note: DispatchNote, role: CallerRole): string | null 
   return RELEASE_GENERIC_MEMBER_NEXT;
 }
 
-/** Split `<类别词>：<事实>。<下一步>。` (formatCallError / callErrorLine); last sentence is the next step when ≥2. */
-function splitCallErrorProse(message: string): { category: string; fact: string; next: string } | null {
-  const matched = message.trim().match(/^(参数无效|无权限|不存在|已被占用|暂时不可用)：(.+)$/s);
-  if (!matched) return null;
-  const body = matched[2].trim();
-  const sentences = body.match(/[^。！？]+[。！？]/gu);
-  if (sentences && sentences.length >= 2) {
-    const next = sentences[sentences.length - 1].replace(/[。！？]$/u, '').trim();
-    const fact = sentences.slice(0, -1).join('').replace(/[。！？]$/u, '').trim();
-    return { category: matched[1], fact, next };
-  }
-  return { category: matched[1], fact: body.replace(/[。！？]$/u, '').trim(), next: '' };
+/** Call-refusal dispatch notes are keyed by error_code / call_error_reason, never by five-category prose heads. */
+function isCallErrorDispatchNote(note: DispatchNote): boolean {
+  if (note.call_error_reason !== undefined) return true;
+  return typeof note.error_code === 'string' && callErrorCategoryOf(note.error_code) !== null;
 }
 
 /**
  * Decision 155 puts three dispatch outcomes in `dispatch[].text`. Reader wording is usually owned by hub/dispatch;
- * this exit still (Boss 15:02): (1) never appends a conclusion chain onto five-category call-error prose;
+ * this exit (Boss 15:02 / structured-render): (1) never appends a conclusion chain onto five-category call errors;
  * (2) restores formatReleaseRefusal member/admin next steps when accepted/reasons dropped them;
- * (3) does not let the booking rewrite cover an existing occupied/absent/expired category sentence.
+ * (3) does not let the booking rewrite cover an existing occupied/absent/expired category sentence;
+ * (4) picks conclusion chains from DispatchOutcomeFacts fields only — never from note.text prose.
  */
 function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
   const message = note.text;
-  const callError = CALL_ERROR_HEAD.test(message.trim());
+  const callError = isCallErrorDispatchNote(note);
 
-  // Booking rewrite: only when the note is not already a five-category call-error sentence (E1 must not wipe 已被占用/不存在).
+  // Booking rewrite: only when the note is not already a five-category call-error (E1 must not wipe 已被占用/不存在).
   if (
     !callError
     && note.submission_verified === true
@@ -790,45 +781,47 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
     const devices = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? `共 ${count} 台设备` : '设备数量尚未核对';
     return `脚本合并正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再从脚本编写重开并核验合并。`;
   }
-  if (note.result !== undefined) {
+  if (note.result !== undefined || note.device_return !== undefined) {
     return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
   }
 
-  // Five-category call errors: keep `<类别词>：<事实>。<下一步>。` — no 状态/判断/决定者 chain.
+  // Five-category call errors: keep throw-site text (or rebuild from missing_facts + role next); no 状态/判断/决定者 chain.
   if (callError) {
-    const parts = splitCallErrorProse(message);
-    if (parts === null) return message;
     const better = releaseNextByRole(note, role);
-    const next = better
-      ?? (parts.next.length > 0 ? parts.next : undefined)
-      ?? (note.missing_facts?.length ? note.missing_facts.map((row) => row.next_action).join('；') : note.next_action)
-      ?? undefined;
-    return callErrorLine(parts.category, parts.fact, next);
+    const category = typeof note.error_code === 'string' ? callErrorCategoryOf(note.error_code) : null;
+    const fact = note.missing_facts?.[0]?.fact;
+    if (better && category !== null && fact !== undefined) {
+      return callErrorLine(category, fact, better);
+    }
+    if (better && category !== null) {
+      return callErrorLine(category, message, better);
+    }
+    return message;
   }
 
-  // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.
-  if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
+  // Structured DispatchOutcomeFacts — absent fields stay absent; do not infer from prose.
+  if (note.outcome === 'unknown' || note.frozen === true) {
     return `${message}；状态未知；原因还没查清；决定者程序`;
   }
   if (
-    message.includes('上机验证没有发出') ||
-    message.includes('什么都没有发到目标') ||
-    message.includes('目标没有接收') ||
-    /目标在“.+”阶段拒绝/.test(message) ||
-    message.includes('已证明目标没有执行')
+    note.outcome === 'not_dispatched'
+    || note.outcome === 'target_rejected'
+    || note.outcome === 'proven_not_executed'
+    || note.not_sent === true
   ) {
-    // C14: when release refusal already names the错误 and next step, do not append「原因还没查清」.
-    const diagnosed = message.includes('放行条件里有 ') || message.includes('还没有核对');
+    const diagnosed = (note.missing_facts?.length ?? 0) > 0;
     const better = releaseNextByRole(note, role);
     let body = message;
-    if (better && !/现在可以做：|先确认预订|按脚本合并返回的错误逐条改正/.test(message)) {
-      body = /下一步/.test(message)
-        ? message.replace(/下一步：[^；]*/u, `下一步：${better}`)
-        : `${message.replace(/[。；]?$/u, '')}。现在可以做：${better}`;
+    if (better) {
+      body = `${message.replace(/[。；]?$/u, '')}。现在可以做：${better}`;
     }
     return diagnosed
       ? `${body}；状态已确认；判断错误；决定者程序`
       : `${body}；状态已确认；判断错误；原因还没查清；决定者程序`;
+  }
+  if (note.outcome === undefined && note.not_sent === undefined && note.frozen === undefined) {
+    // Old notes without outcome fields: leave text as written; do not guess a conclusion chain from wording.
+    return message;
   }
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }

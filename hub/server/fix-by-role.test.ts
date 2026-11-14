@@ -123,10 +123,17 @@ test('toolText and structured-style fix stay role-split for SOURCE_NOT_PERMITTED
 
 test('toolText role-split for LEASE_UNAVAILABLE', () => {
   const memberFix = PROTOCOL_CODES.LEASE_UNAVAILABLE.fix;
-  const message = '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z，是你自己的运行）';
+  const lease = {
+    code: 'LEASE_UNAVAILABLE',
+    message: '原预订事实',
+    environment_display_name: '合成环境',
+    holder_relation: 'current_account' as const,
+    acquired_at: '2026-11-14T05:00:00.000Z',
+    lease_key: 'bed/合成环境/client0',
+  };
   const answer = StartRunOutput.parse({
     call_result: 'error',
-    errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: memberFix }],
+    errors: [{ ...lease, fix: memberFix }],
     trace: TRACE,
   });
   const memberText = toolText('start_run', answer, { caller: { role: 'user' } });
@@ -136,7 +143,7 @@ test('toolText role-split for LEASE_UNAVAILABLE', () => {
   const adminFix = fixByRole('LEASE_UNAVAILABLE', 'admin', memberFix)!;
   const adminText = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
-    errors: [{ code: 'LEASE_UNAVAILABLE', message, fix: adminFix }],
+    errors: [{ ...lease, fix: adminFix }],
     trace: TRACE,
   }), { caller: { role: 'admin' } });
   assert.doesNotMatch(adminText, /请管理员|状态|判断|决定者|不补造到期时刻/);

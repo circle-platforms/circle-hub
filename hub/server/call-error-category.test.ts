@@ -61,8 +61,19 @@ test('pack denial fact uses 工作流 and 当前账户; no replaceAll 任务包'
     callErrorFact('SOURCE_NOT_PERMITTED', '当前账户未获授权使用工作流「recompose」'),
     '当前账户未获授权使用工作流「recompose」',
   );
+  // Without object fields, do not rewrite noRead prose — leave the throw-site message.
   assert.equal(
     callErrorFact('SOURCE_NOT_PERMITTED', '运行 run_abc 存在，你没有读取权限'),
+    '运行 run_abc 存在，你没有读取权限',
+  );
+  assert.equal(
+    callErrorFact('SOURCE_NOT_PERMITTED', '原事实', {
+      code: 'SOURCE_NOT_PERMITTED',
+      message: '原事实',
+      object_kind: 'record',
+      object_display_name: '运行 run_abc',
+      call_error_reason: 'content_read_not_permitted',
+    }),
     '当前账户未获授权读取「运行 run_abc」',
   );
   assert.equal(
@@ -112,11 +123,20 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
 });
 
 test('knowledge-tree-root denial keeps 绑定产品线 semantics', () => {
+  const root = {
+    code: 'SOURCE_NOT_PERMITTED',
+    message: '原事实',
+    object_kind: 'knowledge_root' as const,
+    fix: '绑定这条产品线',
+  };
   const member = callErrorNext(
     'SOURCE_NOT_PERMITTED',
     'user',
-    '请管理员给你分配绑定这条产品线的任务包后重交',
-    '知识树根 abc 存在，当前账户没有读取权限',
+    root.fix,
+    root.message,
+    undefined,
+    undefined,
+    root,
   );
   assert.equal(
     member,
@@ -125,27 +145,32 @@ test('knowledge-tree-root denial keeps 绑定产品线 semantics', () => {
   const admin = callErrorNext(
     'SOURCE_NOT_PERMITTED',
     'admin',
-    '请管理员给你分配绑定这条产品线的任务包后重交',
-    '知识树根 abc 存在，当前账户没有读取权限',
+    root.fix,
+    root.message,
+    undefined,
+    undefined,
+    root,
   );
   assert.match(admin, /绑定这条产品线/);
   assert.match(admin, /circle-hub pack assign /);
   assert.equal(
-    renderCallError(
-      { code: 'SOURCE_NOT_PERMITTED', message: '知识树根 abc 存在，当前账户没有读取权限', fix: '绑定这条产品线' },
-      'user',
-      '绑定这条产品线',
-    ),
+    renderCallError(root, 'user', root.fix),
     '无权限：当前账户未获授权读取这条产品线的手册和命令树。请联系管理员为该账户分配绑定这条产品线的工作流；或改读这次运行锁定的构建的手册和命令树。',
   );
 });
 
 test('LEASE_UNAVAILABLE category form splits member and admin next steps', () => {
-  const message =
-    '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z）';
+  const lease = {
+    code: 'LEASE_UNAVAILABLE',
+    message: '原预订事实',
+    environment_display_name: '合成环境',
+    holder_relation: 'other_account' as const,
+    acquired_at: '2026-11-14T05:00:00.000Z',
+    lease_key: 'bed/合成环境/client0',
+  };
   const memberFix = PROTOCOL_CODES.LEASE_UNAVAILABLE.fix;
   const member = renderCallError(
-    { code: 'LEASE_UNAVAILABLE', message, fix: memberFix },
+    lease,
     'user',
     fixByRole('LEASE_UNAVAILABLE', 'user', memberFix),
   )!;
@@ -153,11 +178,7 @@ test('LEASE_UNAVAILABLE category form splits member and admin next steps', () =>
   assert.doesNotMatch(member, /状态|判断|决定者|租约键|主人|按既有带理由规则/);
 
   const adminFix = fixByRole('LEASE_UNAVAILABLE', 'admin', memberFix)!;
-  const admin = renderCallError(
-    { code: 'LEASE_UNAVAILABLE', message, fix: adminFix },
-    'admin',
-    adminFix,
-  )!;
+  const admin = renderCallError(lease, 'admin', adminFix)!;
   assert.match(admin, /^已被占用：测试环境「合成环境」正由「其他成员」占用/);
   assert.match(admin, /circle-hub lease release bed\/合成环境\/client0 --reason <理由>/);
   assert.match(admin, /控制台「连接」页/);
@@ -247,7 +268,11 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
     call_result: 'error',
     errors: [{
       code: 'LEASE_UNAVAILABLE',
-      message: '键 bed/合成环境/client0 上有未到期的占用（持有运行 run_abc，取得于 2026-11-14T05:00:00.000Z）',
+      message: '原预订事实',
+      environment_display_name: '合成环境',
+      holder_relation: 'other_account',
+      acquired_at: '2026-11-14T05:00:00.000Z',
+      lease_key: 'bed/合成环境/client0',
       fix: leaseAdmin,
     }],
     trace: TRACE,
@@ -324,9 +349,10 @@ test('Boss 14:32 admin next steps fill the caller account name; <理由> stays',
     'SOURCE_NOT_PERMITTED',
     'admin',
     '分享读取权限',
-    '条目 foo 存在，你没有读取权限',
+    '原事实',
     '合成成员',
     '/reference',
+    { code: 'SOURCE_NOT_PERMITTED', message: '原事实', object_kind: 'knowledge', object_display_name: '条目 foo' },
   );
   assert.equal(
     knowledge,
@@ -336,10 +362,19 @@ test('Boss 14:32 admin next steps fill the caller account name; <理由> stays',
     'LEASE_UNAVAILABLE',
     'admin',
     PROTOCOL_CODES.LEASE_UNAVAILABLE.fix,
-    '键 bed/合成环境/client0 上有未到期的占用',
+    '原预订事实',
     '合成成员',
+    undefined,
+    {
+      code: 'LEASE_UNAVAILABLE',
+      message: '原预订事实',
+      lease_key: 'bed/合成环境/client0',
+      environment_display_name: '合成环境',
+      holder_relation: 'other_account',
+    },
   );
   assert.match(lease, /--reason <理由>/);
+  assert.match(lease, /bed\/合成环境\/client0/);
   assert.doesNotMatch(lease, /<当前账户的名字>/);
 });
 

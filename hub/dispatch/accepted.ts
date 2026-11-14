@@ -5,15 +5,24 @@ import { isAdmin } from '../records/api.ts';
 // kinds. Not sent: the reason, and a repeat tries again. Rejected by the target: the stage, and a repeat tries again
 // after the fix. Sent without an answer: the request id, and no repeat sends again, since the target may have run it; the
 // Hub asks the target by that id and only what stays unresolved goes to a named administrator.
-import { labelOf, type CallErrorCategory } from '../../contracts/generated/vocabulary.ts';
+import { labelOf, type CallErrorCategory, type CallErrorReason } from '../../contracts/generated/vocabulary.ts';
 import { PROTOCOL_CODES, callErrorCategory, formatCallError } from '../../contracts/generated/protocol.ts';
+import type { DispatchOutcomeFacts } from '../../contracts/src/index.ts';
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
 import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
-export interface DispatchNote extends Partial<DispatchDiagnostics> { run?: string; job?: string; executor?: string; result?: string; text: string }
+/** Reader note: DispatchDiagnostics plus optional DispatchOutcomeFacts (schema may carry fields the producer has not filled yet). */
+export interface DispatchNote extends Partial<DispatchDiagnostics>, Partial<DispatchOutcomeFacts> {
+  run?: string;
+  job?: string;
+  executor?: string;
+  result?: string;
+  text: string;
+  call_error_reason?: CallErrorReason;
+}
 /** How long an accepted submission waits for the job to be reserved before it answers that the release check still runs. */
 export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */

@@ -751,7 +751,11 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
   const base = submitAnswer(result);
   const notSent = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '上机验证没有发出：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' }],
+    dispatch: [{
+      text: '上机验证没有发出：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次',
+      outcome: 'not_dispatched',
+      not_sent: true,
+    }],
   }), { items: items(1) });
   assert.match(notSent, /上机验证没有发出：目标没有给出租约/);
   assert.match(notSent, /什么都没有发到目标/);
@@ -759,7 +763,11 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
 
   const diagnosed = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '上机验证没有发出：放行条件里有 1 条错误。「核验目标与清单等于执行器声明」判定为错误。这次脚本合并核对的是：测试环境 bed-a，清单 eeeeeeeeeeee，和执行器声明的不一样。另有 2 条因为上面的错误还没有核对。现在可以做：先确认预订的是哪个测试环境' }],
+    dispatch: [{
+      text: '上机验证没有发出：放行条件里有 1 条错误。「核验目标与清单等于执行器声明」判定为错误。这次脚本合并核对的是：测试环境 bed-a，清单 eeeeeeeeeeee，和执行器声明的不一样。另有 2 条因为上面的错误还没有核对。现在可以做：先确认预订的是哪个测试环境',
+      outcome: 'not_dispatched',
+      missing_facts: [{ fact: '放行条件里有 1 条错误', next_action: '先确认预订的是哪个测试环境' }],
+    }],
   }), { items: items(1) });
   assert.match(diagnosed, /放行条件里有 1 条错误/);
   assert.match(diagnosed, /先确认预订的是哪个测试环境/);
@@ -768,7 +776,11 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
 
   const rejected = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次' }],
+    dispatch: [{
+      text: '已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次',
+      outcome: 'target_rejected',
+      rejection_stage: 'admission',
+    }],
   }), { items: items(1) });
   assert.match(rejected, /目标在“admission”阶段拒绝/);
   assert.match(rejected, /目标没有接收，也没有执行/);
@@ -776,7 +788,11 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
 
   const unanswered = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
-    dispatch: [{ text: '上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；已交给管理员处置；之后原样重交读进展' }],
+    dispatch: [{
+      text: '上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；已交给管理员处置；之后原样重交读进展',
+      outcome: 'unknown',
+      frozen: true,
+    }],
   }), { items: items(1) });
   assert.match(unanswered, /上机验证结果未知：不要重交，也不要另开运行重发/);
   assert.match(unanswered, /状态未知；原因还没查清/);
@@ -791,8 +807,12 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
   const many = toolText('submit_result', SubmitResultOutput.parse({
     ...base,
     dispatch: [
-      { text: '上机验证没有发出：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' },
-      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）；稍后逐字原样重交上机验证时的那次提交读进展，结束后同样的答复带结果引用' },
+      {
+        text: '上机验证没有发出：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次',
+        outcome: 'not_dispatched',
+        not_sent: true,
+      },
+      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）；稍后逐字原样重交上机验证时的那次提交读进展，结束后同样的答复带结果引用', outcome: 'issued' },
     ],
   }), { items: items(1) });
   assert.match(many, /上机验证没有发出：预检条件不满足/);
