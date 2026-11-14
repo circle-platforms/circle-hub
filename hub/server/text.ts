@@ -14,7 +14,9 @@ import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type Reso
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
+import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
+import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -42,6 +44,12 @@ export interface TextContext {
   unavailable?: readonly { external: string; role: SourceRole }[];
   /** start_run: what the pack's expected-sources function reported, its failure included (further evidence gaps). */
   gaps?: readonly { code: string; message: string }[];
+  /** Caller role for D3 next-step wording; omit or non-admin → member projection. */
+  caller?: { role: CallerRole };
+}
+
+function callerRole(context: TextContext): CallerRole {
+  return context.caller?.role === 'admin' ? 'admin' : 'user';
 }
 /** The longest a field is shown inside a line; a longer one keeps its start and is marked (Clip). */
 const CLIP = { name: 300, code: 200, label: 300, summary: 300, problemLabel: 80, problemMessage: 200, field: 1500, message: 1000, fix: 500, path: 1000, data: 4000, line: 3000 } as const;
@@ -179,6 +187,9 @@ function asSentence(text: string): string {
   return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
 }
 
+/** Codes D3 rewrites into owner wording (工作流 / 当前账户 / role-specific next). Others keep message+fix. */
+const D3_FACT_REWRITE = new Set(['SOURCE_NOT_PERMITTED', 'LEASE_UNAVAILABLE', 'SOURCE_INTEGRITY_UNPROVEN']);
+
 /** Call-refusal line: category word, this call's fact, next step (no 状态/判断/原因/决定者). */
 function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
   const fact = asSentence(message);
@@ -200,14 +211,22 @@ function conclusionErrorLine(error: ProtocolError, message: string, fix: string 
   ].filter((part) => part !== null).join('；');
 }
 
-function errorText(v: { errors: ProtocolError[]; trace: string }): string {
+function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextContext = {}): string {
+  const role = callerRole(context);
   const allUnknown = v.errors.length > 0 && v.errors.every(unknownError);
   // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error) => {
+    const fix = fixByRole(error.code, role, error.fix);
     const category = callErrorCategoryOf(error.code);
-    if (category !== null) return callErrorLine(category, error.message, error.fix, error.rounds_left);
-    return conclusionErrorLine(error, error.message, error.fix);
+    if (category !== null) {
+      const fact = D3_FACT_REWRITE.has(error.code) ? callErrorFact(error.code, error.message) : error.message;
+      const next = D3_FACT_REWRITE.has(error.code)
+        ? callErrorNext(error.code, role, fix)
+        : (fix ?? '由使用者核对输入资料');
+      return callErrorLine(category, fact, next, error.rounds_left);
+    }
+    return conclusionErrorLine(error, error.message, fix);
   });
   return [lead, ...lines].filter((part): part is string => part !== null && part.length > 0).join('\n');
 }
@@ -270,19 +289,20 @@ function localMinute(value: string): string {
 }
 
 function listText(v: ListOut, context: TextContext): string {
-  if (v.call_result === 'error') return errorText(v);
+  if (v.call_result === 'error') return errorText(v, context);
   const index = v.index ?? v.packs;
   // Boss 03:45 #4: when Codex projects unassigned_workflows_count, disclose that Hub has more packs than this member can use.
   const unassigned = (v as ListOut & { member_capabilities?: { unassigned_workflows_count?: number } })
     .member_capabilities?.unassigned_workflows_count;
+  const role = callerRole(context);
   const head = typeof unassigned === 'number' && unassigned > 0
-    ? `你能用的 ${index.length} 个；Hub 上另有 ${unassigned} 个没有分配给你（名字不列出），需要哪个请管理员分配。`
+    ? proseByRole(role, 'unassigned_packs', { usable: index.length, unassigned })
     : `你能用的工作流和技能共 ${index.length} 个。`;
   const lines = [head, ...index.map(pack => pack.title)];
   for (const observation of v.context?.observations ?? []) {
     lines.push(`测试环境 ${observation.label}，${observation.build === null ? '构建未知' : `构建 ${observation.build}`}；读取时间 ${localMinute(observation.observed_at)}`);
   }
-  if (context.packList?.contextUnread) lines.push('测试环境的资料尚未读出；状态未知；原因缺资料；下一步由使用者请管理员核对读取权限。');
+  if (context.packList?.contextUnread) lines.push(proseByRole(role, 'context_unread'));
   for (const pack of v.packs) {
     lines.push(`${pack.title}，${pack.description}`);
     if (pack.products.length) lines.push(`产品 ${pack.products.join('、')}`);
@@ -295,8 +315,8 @@ function listText(v: ListOut, context: TextContext): string {
 
 // ---------------------------------------------------------------- upload_file
 
-function uploadText(v: UploadOut): string {
-  if (v.call_result === 'error') return errorText(v);
+function uploadText(v: UploadOut, context: TextContext): string {
+  if (v.call_result === 'error') return errorText(v, context);
   if (v.memory_write) return '记忆已保存。';
   if (v.memory_share) return '记忆共享已核对。';
   if (v.share) return '共享已核对，个人资料保留。';
@@ -459,7 +479,7 @@ function resultConclusions(result: ValidationResult, originals: readonly ItemPro
 }
 
 function startText(v: StartOut, context: TextContext): string {
-  if (v.call_result === 'error' || v.run === undefined) return errorText(v);
+  if (v.call_result === 'error' || v.run === undefined) return errorText(v, context);
   const run = v.run;
   const lines = [run.build === undefined ? '资料已读取。' : `资料已读取，本次核对采用构建 ${run.build}。`];
   if (context.production !== undefined && context.production !== null) lines.push(...resultConclusions(context.production, run.items), ...context.production.cross_item.map(claimLine));
@@ -488,7 +508,7 @@ function startText(v: StartOut, context: TextContext): string {
 }
 
 /** A node: its line, all its entries (the definitions to cite), its children and the related references the service gave. */
-function nodeEntry(node: KnowledgeNode, _root: string): Entry {
+function nodeEntry(node: KnowledgeNode, _root: string, role: CallerRole): Entry {
   const lines = [node.name, ...node.entries.map(entry => entry.statement)];
   for (const entry of node.entries) {
     for (const ground of entry.grounds ?? []) lines.push(`证据${ground.quotation}`);
@@ -500,7 +520,7 @@ function nodeEntry(node: KnowledgeNode, _root: string): Entry {
       continue;
     }
     if (!('statement' in contribution)) {
-      lines.push('原文不可读取；状态未知；原因缺资料；下一步由使用者请管理员核对读取权限。');
+      lines.push(proseByRole(role, 'contribution_unreadable'));
       if (view.note !== null) lines.push(view.note);
       continue;
     }
@@ -531,7 +551,7 @@ const ENTRY_QUALIFICATION = {
 } as const satisfies Record<KnowledgeEntryStatus, string>;
 
 function nodesText(v: NodesOut, context: TextContext): string {
-  if (v.call_result === 'error') return errorText(v);
+  if (v.call_result === 'error') return errorText(v, context);
   if (v.memory_document) return `${v.memory_document.title}\n${MEMORY_NOTE}\n${v.memory_document.markdown}`;
   if (v.memory_page) return [MEMORY_NOTE, ...v.memory_page.items.map(document => document.title)].join('\n');
   if (v.matches !== undefined) return [`找到 ${v.matches.length} 份相关资料，仅作参考。`, ...v.matches.map(hit => hit.statement), ...(v.warnings ?? []).map(warning => `${warning.message}；下一步${warning.fix ?? '使用者核对资料'}`)].join('\n');
@@ -548,7 +568,8 @@ function nodesText(v: NodesOut, context: TextContext): string {
     return entryQualification + groundsQualification + contentText(content, v.trace, context);
   }
   const nodes = v.nodes ?? [];
-  return ['手册和命令树', ...nodes.flatMap(node => entryLines(nodeEntry(node, v.root ?? ''))), ...(v.next ? ['还有资料未列出，请继续读取。'] : [])].join('\n');
+  const role = callerRole(context);
+  return ['手册和命令树', ...nodes.flatMap(node => entryLines(nodeEntry(node, v.root ?? '', role))), ...(v.next ? ['还有资料未列出，请继续读取。'] : [])].join('\n');
 }
 
 /** Whether UTF-16 offset `at` of `text` falls between the two halves of a surrogate pair (no page starts there). */
@@ -565,7 +586,7 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
     if (c.read_tier === 'retain_only') {
       return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步：这份来源只保留，不会放开；需要其中的内容时，按原对象重新读取，得到一份可读的新记录。`;
     }
-    return `${c.note ? `${c.note}；` : ''}原文尚未读出；状态未知；原因缺资料；下一步由使用者请管理员核对读取权限。`;
+    return `${c.note ? `${c.note}；` : ''}${proseByRole(callerRole(context), 'content_unread')}`;
   }
   if (c.reference.startsWith('rec:')) {
     let value: unknown;
@@ -592,8 +613,8 @@ function contentText(c: Content, _trace: string, context: TextContext): string {
 
 // ---------------------------------------------------------------- resolve_reference
 
-function resolveText(v: ResolveOut): string {
-  if (v.call_result === 'error' || v.resolution === undefined) return errorText(v);
+function resolveText(v: ResolveOut, context: TextContext): string {
+  if (v.call_result === 'error' || v.resolution === undefined) return errorText(v, context);
   const state = v.resolution === 'resolved' ? '已确认' : '未知';
   const lines = [`原句核对状态${state}。`, ...v.references.map(reference => reference.text)];
   if (state === '未知') lines.push('原因还没查清；下一步由使用者给出更完整的原句。');
@@ -652,16 +673,23 @@ function submitText(v: SubmitOut, context: TextContext): string {
     }
   }
   for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note));
+  const role = callerRole(context);
   for (const error of v.errors) {
     if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find(item => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
-    const fix = missingRecord ? '由使用者请管理员核对保存的结果后重新读取' : error.fix;
+    const fix = missingRecord ? proseByRole(role, 'missing_result_record') : fixByRole(error.code, role, error.fix);
     const fact = original === undefined ? message : `${caseName(original, original.label)}，${message}`;
     const category = callErrorCategoryOf(error.code);
     if (category !== null) {
-      lines.push(callErrorLine(category, fact, fix, error.rounds_left));
+      const next = !missingRecord && D3_FACT_REWRITE.has(error.code)
+        ? callErrorNext(error.code, role, fix)
+        : fix;
+      const factText = !missingRecord && D3_FACT_REWRITE.has(error.code) && original === undefined
+        ? callErrorFact(error.code, error.message)
+        : fact;
+      lines.push(callErrorLine(category, factText, next, error.rounds_left));
       continue;
     }
     lines.push(conclusionErrorLine(error, fact, fix));
@@ -696,6 +724,6 @@ export function toolText(tool: string, value: unknown, context: TextContext = {}
 }
 
 /** A readable failure when a validated answer cannot be rendered. */
-export function fallbackText(_tool: string, _value: unknown, _context: TextContext = {}): string {
-  return '答复正文未能显示；状态未知；原因临时故障；下一步由使用者查看机器可读答复，或请管理员检查。';
+export function fallbackText(_tool: string, _value: unknown, context: TextContext = {}): string {
+  return proseByRole(callerRole(context), 'fallback');
 }

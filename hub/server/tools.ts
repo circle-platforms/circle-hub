@@ -33,6 +33,7 @@ import { step } from '../telemetry/api.ts';
 import type { ServerDeps } from './api.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { recordReaderFor, sourceReaderFor } from './readers.ts';
+import { fixByRole, type CallerRole } from './fix-by-role.ts';
 import { modelReferencesText, fallbackText, pageCursorProblem, toolText, type TextContext } from './text.ts';
 import { callStatus } from './call-status.ts';
 import { cachedReadReply } from './read-replies.ts';
@@ -1159,11 +1160,22 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
     call.context.adminNote(`the answer of ${name} does not conform to its output schema and was not sent: ${issues.join('; ')}`);
     throw internalError(call.context.traceId);
   }
-  const value = checked.data as Answer & { call_result: CallResult; errors: ProtocolError[]; acceptance?: Acceptance };
+  let value = checked.data as Answer & { call_result: CallResult; errors: ProtocolError[]; acceptance?: Acceptance };
   call.state.callResult = value.call_result;
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
-  const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items };
+  const role: CallerRole = call.principal.role === 'admin' ? 'admin' : 'user';
+  // D3: structured fix and reader text stay in sync for administrators.
+  if (role === 'admin' && Array.isArray(value.errors) && value.errors.length > 0) {
+    value = {
+      ...value,
+      errors: value.errors.map((error) => {
+        const fix = fixByRole(error.code, 'admin', error.fix);
+        return fix === undefined ? error : { ...error, fix };
+      }),
+    };
+  }
+  const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items, caller: { role } };
   let text: string;
   try {
     text = toolText(name, value, context);
