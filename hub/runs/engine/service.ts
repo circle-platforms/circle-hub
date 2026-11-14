@@ -17,7 +17,10 @@ import { createEngineContext, type EngineContext, type RunsEngineDeps } from './
 import { unavailableError } from './errors.ts';
 import { previewReference, type ResolveAnswer } from './preview.ts';
 import { getResult, getRun, getRunStatistics, getRunSummary, listRuns, runHeader, runsFor, resultState, runVisible, type StoredResult } from './queries.ts';
-import { submissionByDigest, successorsOf } from './store.ts';
+import { runById, submissionByDigest, successorsOf } from './store.ts';
+import { latestSubmittedResult } from './predecessor-defaults.ts';
+import { resultReadableBy } from './grounds.ts';
+import { recReference } from '../../refs/api.ts';
 import { exportedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
@@ -154,9 +157,13 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
       return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
         const detail = await getRun(current, user, run);
         if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
-        const result = detail.latest?.result.acceptance === 'accepted' ? detail.latest.result : null;
+        const stored = await runById(current.deps.records.store, run);
+        if (stored === null) return null;
+        const selected = await latestSubmittedResult(current, stored);
+        const readable = selected !== null && await resultReadableBy(current, stored.body, selected.body, user);
+        const result = readable ? selected.body : null;
         const submission = result ? (await submissionByDigest(current.deps.records.store, run, result.submission))?.body ?? null : null;
-        return { run: detail.run, result, submission };
+        return { run: detail.run, run_reference: recReference(stored.digest), accepted_result_reference: readable ? recReference(selected.digest) : null, result, submission };
       }));
     },
     exportJobs(user, run) {
