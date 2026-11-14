@@ -7,6 +7,7 @@ import { againstBaseline, bedName, parseBaseline, parseReply, captureText, lineD
 import { ExecutorDefinition } from './definition.ts';
 import { definition } from './testing/definition.ts';
 import { setup } from './testing/context.ts';
+import type { JobStatus } from './api.ts';
 
 const addressItem = {
   id: 'addresses',
@@ -129,7 +130,7 @@ test('an unrestored bed keeps the reported pass, attaches the diff, and blocks t
   assert.equal(report.bed_state.recovery, 'unrestored');
   assert.deepEqual(report.bed_state.differences, [{ item: 'addresses', kind: 'extra', identity: '192.0.2.9/24' }]);
   assert.deepEqual(report.bed_state.limits, ['未排除共享床影响', '床面未恢复']);
-  assert.match(report.bed_state.dispatch_attempt!.next_action, /synthetic-clear-addresses/);
+  assert.match(report.bed_state.next_action, /synthetic-clear-addresses/);
   assert.ok(report.rows[0].limits.includes('床面未恢复'));
   await rotate(c, 'synthetic verified bytes again');
   const blocked = await c.service.dispatch(c.admin, c.run, c.executor.id);
@@ -808,7 +809,7 @@ test('a resume during the last post probe does not open a second session or an o
   const queue = [echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC)];
   let job = '';
   let posts = 0;
-  let late: Promise<{ outcome?: string }> | undefined;
+  let late: Promise<JobStatus> | undefined;
   const c = await setup({ ttl: 300, extraTools: ['show_bed'], alter: async (name, value) => {
     if (name !== 'show_bed') return value;
     const next = queue.shift() ?? value;
@@ -818,7 +819,9 @@ test('a resume during the last post probe does not open a second session or an o
       late = c.service.resume(c.admin, job);
       await new Promise(resolve => setTimeout(resolve, 400));
       const status = await late;
-      assert.equal(status.dispatch_attempt!.outcome, 'issued');
+      assert.ok(status);
+      assert.ok(status.dispatch_attempt);
+      assert.equal(status.dispatch_attempt.outcome, 'issued');
       assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, before);
     }
     return next;
