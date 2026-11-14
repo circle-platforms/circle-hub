@@ -682,3 +682,42 @@ test('empty-database apply directs initial setup before reading a stale or absen
   });
   assert.deepEqual(f.calls, []);
 });
+
+test('export retains every executor at the same target and explicit identities reapply without new executors',async t=>{
+  const f=fake(t),one={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-shared'},two={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'2',target:'synthetic-shared'};
+  const sources=[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source}));
+  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>sources);
+  t.mock.method(ExecutorRegistry.prototype,'add',async()=>{f.calls.push('executor');throw new Error('must not add');});
+  const exported=await exportDeployment(f.session);
+  assert.deepEqual(exported.executors,parseDeployment({schema:'deployment@1',executors:[one,two]}).executors);
+  for(let n=0;n<2;n++)assert.equal((await applyDeployment(f.session,{...exported,missingConfiguration:[]})).created,0);
+  assert.deepEqual(f.calls,[]);
+});
+
+test('an explicit executor identity never also matches another executor target',async t=>{
+  const f=fake(t),one={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-first'},two={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'2',target:'exe_'+ '0'.repeat(25)+'1'};
+  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source})));
+  const report=await applyDeployment(f.session,{schema:'deployment@1',executors:[one]});
+  assert.equal(report.created,0);assert.deepEqual(report.differences,[]);assert.deepEqual(f.calls,[]);
+});
+
+test('ambiguous executor targets refuse before an otherwise new account or any other write',async t=>{
+  const f=fake(t),one={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-shared'},two={...one,id:'exe_'+ '0'.repeat(25)+'2'};
+  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source})));
+  await assert.rejects(applyDeployment(f.session,{schema:'deployment@1',accounts:[{name:'synthetic-new-account',role:'user'}],executors:[{...syntheticExecutor(),target:'synthetic-shared'}]}),/synthetic-shared.*多个/);
+  assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
+});
+
+test('two unqualified new executors at one target cannot silently merge after an earlier account write',async t=>{
+  const f=fake(t),executor={...syntheticExecutor(),target:'synthetic-new-target'};
+  await assert.rejects(applyDeployment(f.session,{schema:'deployment@1',accounts:[{name:'synthetic-new-account',role:'user'}],executors:[executor,executor]}),/synthetic-new-target.*多个/);
+  assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
+});
+
+test('an explicit id and unqualified target cannot declare the same executor twice before account writes',async t=>{
+  const f=fake(t),source={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-shared'};
+  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[{id:source.id,digest:sha256Hex(canonicalBytes(source)),source}]);
+  const {id:_id,...withoutId}=source;
+  await assert.rejects(applyDeployment(f.session,{schema:'deployment@1',accounts:[{name:'synthetic-new-account',role:'user'}],executors:[source,withoutId]}),/同一个.*执行器/);
+  assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
+});

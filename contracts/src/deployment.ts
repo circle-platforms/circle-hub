@@ -75,8 +75,8 @@ export const DeploymentDefinition = z.strictObject({
   if (new Set(prefixes).size !== prefixes.length) ctx.addIssue({ code: 'custom', path: ['leaseRegistrations'], message: '预订登记前缀重复' });
   const resourceNames = value.resources.map(row => row.definition.name);
   if (new Set(resourceNames).size !== resourceNames.length) ctx.addIssue({ code: 'custom', path: ['resources'], message: '资源名字重复' });
-  const targets = value.executors.map(row => row.target);
-  if (new Set(targets).size !== targets.length) ctx.addIssue({ code: 'custom', path: ['executors'], message: '执行器目标重复' });
+  const executorIds = value.executors.flatMap(row => row.id === undefined ? [] : [row.id]);
+  if (new Set(executorIds).size !== executorIds.length) ctx.addIssue({ code: 'custom', path: ['executors'], message: '执行器身份重复' });
   for (const executor of value.executors) {
     if (executor.credential !== undefined && !SecretReference.safeParse(executor.credential).success)
       ctx.addIssue({ code: 'custom', path: ['executors'], message: '凭据只能引用命名密钥' });
