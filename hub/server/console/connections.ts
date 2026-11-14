@@ -288,6 +288,7 @@ async function environmentAdminForms(ctx: PageContext, executors: readonly Execu
       )}${targetAssignForm(csrf, target, rows, teamChoices, userChoices)}`,
     ))}`;
   return html`<div class="ch-stack" data-environment-admin>${docPut}${executorAdd}${grouped}</div>`;
+}
 /** Who may use a business system: 全体 / 团队名 / 尚未分配 — never expand to member ids (findings N2 §6). */
 export async function resourceAudienceText(ctx: PageContext, resourceId: string): Promise<string> {
   if (!ctx.admin) return '未知';
