@@ -46,7 +46,7 @@ export function projectItems(input: unknown): unknown {
   if (subject.parser !== 'kityminder@1') return refusal('subject_not_mindmap', '用例文档不是 kityminder@1 解析的脑图', '绑定敏捷平台导出的 KityMinder 脑图');
   const contractSlot = slotOf(inputs, 'contract');
   if (contractSlot === undefined || contractSlot.model === null || contractSlot.model === undefined) {
-    return refusal('no_contract', '没有运行器原格式合约', '在 inputs.contract 绑定管理员发布的原格式合约命名文档');
+    return refusal('no_contract', '没有运行器原格式合约', '在 inputs.contract 绑定管理员发布的原格式合约命名文档', [], '/inputs/contract');
   }
   const contractRead = parseRuntimeContract(contractSlot.model);
   if (!contractRead.ok) {
@@ -56,11 +56,12 @@ export function projectItems(input: unknown): unknown {
       `运行器合约有 ${contractRead.problems.length} 个问题，整份拒绝`,
       first === undefined ? '按合约的运行器原格式改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
       problemWarnings('case-compile.contract_problem', contractRead.problems),
+      '/inputs/contract',
     );
   }
   const inventorySlot = slotOf(inputs, 'inventory');
   if (inventorySlot === undefined || inventorySlot.model === null || inventorySlot.model === undefined) {
-    return refusal('no_inventory', '没有自动化测试环境清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:bed-topology"}（管理员用 circle-hub doc put 发布）');
+    return refusal('no_inventory', '没有自动化测试环境清单', '在 inputs.inventory 里写命名文档 {"external": "doc:doc:bed-topology"}（管理员用 circle-hub doc put 发布）', [], '/inputs/inventory');
   }
   const manifestRead = parseManifest(inventorySlot.model);
   if (!manifestRead.ok) {
@@ -70,21 +71,22 @@ export function projectItems(input: unknown): unknown {
       `自动化测试环境清单有 ${manifestRead.problems.length} 个问题，整份拒绝`,
       first === undefined ? '按清单的形状（test-bed-manifest@1）改正后重新发布' : `${first.pointer === '' ? '整份' : first.pointer}：${first.fix}`,
       problemWarnings('case-compile.manifest_problem', manifestRead.problems),
+      '/inputs/inventory',
     );
   }
   const profileSlot = slotOf(inputs, 'profile');
-  if (!profileSlot || profileSlot.model == null) return refusal('no_profile', '没有运行环境配置', '在 inputs.profile 绑定发布的 runtime-profile@1 命名文档');
+  if (!profileSlot || profileSlot.model == null) return refusal('no_profile', '没有运行环境配置', '在 inputs.profile 绑定发布的 runtime-profile@1 命名文档', [], '/inputs/profile');
   const profileRead = parseProfile(profileSlot.model, contractRead.contract, manifestRead.beds);
-  if (!profileRead.ok) return refusal('profile_invalid', profileRead.problems.find(problem=>problem.capacityExceeded)?.message??`运行环境配置有 ${profileRead.problems.length} 个问题，整份拒绝`, `${profileRead.problems[0].pointer}：${profileRead.problems[0].fix}`, problemWarnings('case-compile.profile_problem', profileRead.problems));
+  if (!profileRead.ok) return refusal('profile_invalid', profileRead.problems.find(problem=>problem.capacityExceeded)?.message??`运行环境配置有 ${profileRead.problems.length} 个问题，整份拒绝`, `${profileRead.problems[0].pointer}：${profileRead.problems[0].fix}`, problemWarnings('case-compile.profile_problem', profileRead.problems), '/inputs/profile');
   const parameters = isRecord(params.parameters) ? params.parameters : {};
   if (parameters.case_rule !== undefined && parameters.case_rule !== 'tagged' && parameters.case_rule !== 'marked') {
-    return refusal('invalid_parameter', `case_rule 的取值 ${String(parameters.case_rule)} 无效`, 'case_rule 写 tagged 或 marked（默认 marked）');
+    return refusal('invalid_parameter', `case_rule 的取值 ${String(parameters.case_rule)} 无效`, 'case_rule 写 tagged 或 marked（默认 marked）', [], '/parameters/case_rule');
   }
   const workbook = slotOf(inputs, 'workbook');
   if (workbook) {
-    if (workbook.parser !== 'xlsx@1' || typeof workbook.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(workbook.sha256) || !readWorkbookModel(workbook.model)) return refusal('workbook_input', '工作簿不是完整的 xlsx@1 绑定原件', '上传原始 xlsx，按 upload_file 返回的 src: 引用绑定，不上传自行转换的 JSON');
-    if (Buffer.byteLength(JSON.stringify(workbook.model), 'utf8') > WORKBOOK_FORMAT.max_model_bytes) return refusal('workbook_input', '工作簿模型超过核验预算', '减少用例内的非必要内容，或把脑图拆成几份分别上传、各开一次运行（也可填 autoid 一次编一条）后重新生成；不能截断模型或拆掉要执行的行');
-    if (typeof parameters.plan_run !== 'string' || !/^run_[a-z0-9]+$/.test(parameters.plan_run)) return refusal('workbook_context', '缺少已满足的计划运行号 plan_run', '从已满足提交及结果复制计划运行号，以其为 predecessor 开新运行并绑定原工作簿');
+    if (workbook.parser !== 'xlsx@1' || typeof workbook.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(workbook.sha256) || !readWorkbookModel(workbook.model)) return refusal('workbook_input', '工作簿不是完整的 xlsx@1 绑定原件', '用普通 upload_file（不标客户端捕获）上传原始 xlsx，在 inputs.workbook 填 {"reference":"<upload_file 返回的 src: 引用>"}，不上传自行转换的 JSON', [], '/inputs/workbook');
+    if (Buffer.byteLength(JSON.stringify(workbook.model), 'utf8') > WORKBOOK_FORMAT.max_model_bytes) return refusal('workbook_input', '工作簿模型超过核验预算', '减少用例内的非必要内容，或把脑图拆成几份分别上传、各开一次运行（也可填 autoid 一次编一条）后重新生成；不能截断模型或拆掉要执行的行', [], '/inputs/workbook');
+    if (typeof parameters.plan_run !== 'string' || !/^run_[a-z0-9]+$/.test(parameters.plan_run)) return refusal('workbook_context', '缺少已满足的计划运行号 parameters.plan_run', '在 parameters.plan_run 填已满足计划编写的运行号（如 run_…），并以同一运行号填顶层 predecessor；多于一个用例时同时在 inputs.plan_result 填 {"run":"<同一运行号>"}，再绑定 inputs.workbook 开新运行', [], '/parameters/plan_run');
   }
   const rule: CaseRule = parameters.case_rule === 'tagged' ? 'tagged' : 'marked';
   const extraction = extractCases(subject.model, rule,true);
@@ -94,7 +96,7 @@ export function projectItems(input: unknown): unknown {
   // run instead of silently dropping its case; a case without an autoid is not compiled and is counted in the summary. With
   // autoid, exactly that case, as before.
   const whole = parameters.autoid === undefined, autoidShape = new RegExp(profileRead.profile.workbook.autoid_pattern, 'u');
-  if (!whole && (typeof parameters.autoid !== 'string' || !autoidShape.test(parameters.autoid))) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行；要编译整份文档就不填 autoid');
+  if (!whole && (typeof parameters.autoid !== 'string' || !autoidShape.test(parameters.autoid))) return refusal('autoid_invalid', 'autoid 必须是符合配置形状的原始文字', '从用例原文复制完整 autoid 字符串，不能转为数字，改正后重新开始运行；要编译整份文档就不填 autoid', [], '/parameters/autoid');
   const structure=analyzeStructure(subject.model,subject.sha256??'');
   const nodeAt=(index:number):any=>(subject.model as any)?.nodes?.[index];
   const ruled=structure.cases.filter(c=>!c.excluded.length&&(rule!=='tagged'||(isRecord(nodeAt(c.node)?.data)&&Array.isArray(nodeAt(c.node).data.resource)&&nodeAt(c.node).data.resource.length>0)));
@@ -111,11 +113,11 @@ export function projectItems(input: unknown): unknown {
   // the rule takes, so a mistyped one is refused instead of silently excluding nothing. InfoTest isolates such a case the same way.
   const excludeAsked=parameters.exclude;
   if(excludeAsked!==undefined){
-    if(!whole)return refusal('invalid_parameter','exclude 只用于整份文档编译，不能与 autoid 同时填','要编译整份文档时不填 autoid；只编一条时不填 exclude');
-    if(!Array.isArray(excludeAsked)||excludeAsked.length===0||excludeAsked.length>DISPATCH.max_items||excludeAsked.some(value=>typeof value!=='string'||!autoidShape.test(value))||new Set(excludeAsked).size!==excludeAsked.length)return refusal('invalid_parameter','exclude 必须是不重复的 autoid 文字列表，每个符合配置形状','写成 ["<autoid>", ...]，从用例原文复制 autoid');
+    if(!whole)return refusal('invalid_parameter','exclude 只用于整份文档编译，不能与 autoid 同时填','要编译整份文档时不填 autoid；只编一条时不填 exclude', [], '/parameters/exclude');
+    if(!Array.isArray(excludeAsked)||excludeAsked.length===0||excludeAsked.length>DISPATCH.max_items||excludeAsked.some(value=>typeof value!=='string'||!autoidShape.test(value))||new Set(excludeAsked).size!==excludeAsked.length)return refusal('invalid_parameter','exclude 必须是不重复的 autoid 文字列表，每个符合配置形状','写成 ["<autoid>", ...]，从用例原文复制 autoid', [], '/parameters/exclude');
     const numbered=new Set(ruled.map(c=>c.autoid).filter((value):value is string=>value!==null&&autoidShape.test(value)));
     const unknown=(excludeAsked as string[]).filter(value=>!numbered.has(value));
-    if(unknown.length)return refusal('autoid_not_found',`exclude 里的 ${unknown.slice(0,5).join('、')} 在按规则取到的用例里找不到`,'核对文档、case_rule 和 autoid 原文后重新开始运行');
+    if(unknown.length)return refusal('autoid_not_found',`exclude 里的 ${unknown.slice(0,5).join('、')} 在按规则取到的用例里找不到`,'核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/exclude');
   }
   const excluded=new Set<string>(Array.isArray(excludeAsked)?excludeAsked as string[]:[]);
   const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid)&&!excluded.has(c.autoid):c.autoid===parameters.autoid).map(c=>{
@@ -150,8 +152,8 @@ export function projectItems(input: unknown): unknown {
   const recompositionRun=slotOf(inputs,'recomposition_run'),recompositionResult=slotOf(inputs,'recomposition_result');
   const recompositionRequested=!!recompositionRun||!!recompositionResult||parameters.pipeline==='recomposed';
   // Decision 155: a whole mind map goes through recomposition, as in InfoTest. Skipping it has to be said out loud.
-  if (!recompositionRequested && selected.length > 1 && parameters.pipeline !== 'legacy') return refusal('invalid_parameter', '整份脑图要先走重组：缺重组记录，写手拿不到改写后的步骤和缺口', '先用 recompose 工作流重组这份脑图，再绑定 recomposition_run 和 recomposition_result；确实要跳过时写 parameters.pipeline=legacy，并在最终报告里说明');
-  if (parameters.pipeline === 'recomposed' && selected.length > 1 && (!recompositionRun || !recompositionResult)) return refusal('invalid_parameter', '整份脑图写了 recomposed，却没有绑定重组记录', '绑定 recomposition_run 和 recomposition_result；还没重组就先用 recompose 工作流');
+  if (!recompositionRequested && selected.length > 1 && parameters.pipeline !== 'legacy') return refusal('invalid_parameter', '整份脑图要先走重组：缺重组记录，写手拿不到改写后的步骤和缺口', '先用 recompose 工作流重组这份脑图，再绑定 recomposition_run 和 recomposition_result；确实要跳过时写 parameters.pipeline=legacy，并在最终报告里说明', [], '/parameters/pipeline');
+  if (parameters.pipeline === 'recomposed' && selected.length > 1 && (!recompositionRun || !recompositionResult)) return refusal('invalid_parameter', '整份脑图写了 recomposed，却没有绑定重组记录', '绑定 recomposition_run 和 recomposition_result；还没重组就先用 recompose 工作流', [], '/inputs');
   const proofOf = (selector: string | null | undefined) => recompositionRequested ? admittedRecomposition(recompositionRun, recompositionResult, context, 'src:' + sha256, selector ?? '') : null;
   const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const items = selected.map((found) => ({
@@ -192,7 +194,7 @@ export function projectItems(input: unknown): unknown {
   const planResult = slotOf(inputs, 'plan_result');
   if (workbook && (planResult || items.length > 1)) {
     const accepted = planResult && isRecord(planResult.meta) && planResult.meta.kind === 'validation_result' && typeof planResult.meta.record === 'string' && planResult.external === null && isRecord(planResult.model) && planResult.model.kind === 'validation_result' && isRecord(planResult.model.body) ? planResult.model.body : null;
-    if (!accepted || accepted.schema !== 'validation@1' || accepted.acceptance !== 'accepted' || accepted.run !== parameters.plan_run || !isRecord(accepted.locks) || accepted.locks.pack !== WORKBOOK_FORMAT.generator || !isRecord(accepted.partitions) || !Array.isArray(accepted.partitions.delivered)) return refusal('workbook_context', '整份文档的工作簿要按计划运行受理的全部计划核验，缺可用的 plan_result', '在 inputs.plan_result 写计划运行号（与 plan_run 相同，Hub 换成它最近一次受理的结果），以同版包的计划运行为前驱重开核验运行');
+    if (!accepted || accepted.schema !== 'validation@1' || accepted.acceptance !== 'accepted' || accepted.run !== parameters.plan_run || !isRecord(accepted.locks) || accepted.locks.pack !== WORKBOOK_FORMAT.generator || !isRecord(accepted.partitions) || !Array.isArray(accepted.partitions.delivered)) return refusal('workbook_context', '整份文档的工作簿要按计划运行受理的全部计划核验，缺可用的 inputs.plan_result', '在 inputs.plan_result 填 {"run":"<计划运行号>"}（与顶层 predecessor、parameters.plan_run 同一运行号，Hub 会换成它最近一次受理的结果），并以同版包的该计划运行为 predecessor 重开核验运行', [], '/inputs/plan_result');
     planSet = [];
     for (const item of items) {
       const delivered = (accepted.partitions.delivered as unknown[]).filter((row) => isRecord(row) && row.item === item.id);
@@ -201,7 +203,7 @@ export function projectItems(input: unknown): unknown {
       // receipt is the commands_known rule verdict that supports with the catalog.
       const plans = requirement('plan').filter((claim: any) => isRecord(claim.statement.data) && claim.statement.verdict === undefined);
       const catalogs = requirement('commands_known').filter((claim: any) => claim.statement.verdict === 'support' && isRecord(claim.statement.data) && Object.hasOwn(claim.statement.data, 'command_catalog'));
-      if (plans.length !== 1 || catalogs.length !== 1) return refusal('workbook_context', `计划运行没有受理用例 ${item.fields.autoid} 的唯一计划和命令目录回执`, '先在计划运行里让每个用例的计划要求项都满足并被受理，再按其运行号绑定 plan_result');
+      if (plans.length !== 1 || catalogs.length !== 1) return refusal('workbook_context', `计划运行没有受理用例 ${item.fields.autoid} 的唯一计划和命令目录回执`, '先在计划运行里让每个用例的计划要求项都满足并被受理，再在 inputs.plan_result 填 {"run":"<该运行号>"}', [], '/inputs/plan_result');
       const data = (catalogs[0] as any).statement.data;
       planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, path: item.fields.path, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
     }

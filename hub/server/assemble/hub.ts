@@ -308,6 +308,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         ...(job.status.next_action === undefined ? {} : { next_action: job.status.next_action }),
       }))),
     },
+    // N7: lease list for health alerts (held with no until). LeaseService rechecks keys; console shows names via userName.
+    ...(leases !== undefined ? { leases: { view: (prefix: string, withHolder?: true) => withHolder === true ? leases.view(prefix, true) : leases.view(prefix) } } : {}),
   };
   return { deps, config, records, parsers, registry, packs, workflows, catalog, connectors, external, runsExternal, resources, docs, knowledge, runs, leases: leases as LeaseService, dispatch, notes, notices };
 }

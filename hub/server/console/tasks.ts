@@ -14,7 +14,7 @@ import type { RunDetail, RunRequestView, RunStatistics } from '../../ports.ts';
 import type { CallLogLine } from '../../records/api.ts';
 import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
-import { TASK_DOT, TASK_FILL, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
+import { TASK_DOT, TASK_FILL, confirmationChip, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
 import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
 import type { PageContext } from './context.ts';
 import { environmentState } from './connections.ts';
@@ -72,8 +72,8 @@ export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles:
 }
 
 export function resultCell(row: Pick<TaskRow, 'result' | 'pending'>): Html {
-  if (row.result === null) return chip('结果暂不可用', 'unchecked');
-  return html`${taskChip(row.result)}${row.result === 'delivered_pending' && row.pending > 0 ? html` ${chip(`${row.pending} 项未决`, 'unknown')}` : ''}`;
+  // N7: visible status is only 未确认 / 已确认 / 未知; task_result stays in the chip title.
+  return html`${confirmationChip(row.result, row.pending)}${row.result === 'delivered_pending' && row.pending > 0 ? html` ${chip(`${row.pending} 项未决`, 'unknown')}` : ''}`;
 }
 
 // ---------------------------------------------------------------- the head of one task

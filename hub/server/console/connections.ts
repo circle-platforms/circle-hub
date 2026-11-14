@@ -6,7 +6,7 @@ import {technical,technicalCode,facts,actionLink,evidence,tooltip} from './prese
 // reads business systems; a write route is never opened here. Enabling, disabling and re-authenticating a system or an
 // environment are commands for the administrator's Circle (proposal decision 6 of 2026-10-31); connecting a business
 // system is one of the console's four operations.
-import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState } from '../../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState, type DynamicTerminal, type Verdict } from '../../../contracts/generated/vocabulary.ts';
 import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
@@ -107,6 +107,55 @@ export async function readExecutorAssignmentGone(ctx: PageContext, executorId: s
   } catch {
     return null;
   }
+
+/**
+ * N3: last environment-check projection from Codex's unified gate (optional on EnvironmentFacts).
+ * Field absent → 尚无核对; null → 未知 (read failed); object → result + time. Never treat latest dispatch as a check.
+ */
+export type EnvironmentLastCheck = {
+  at: string;
+  outcome: Extract<DynamicTerminal, 'pass' | 'fail'> | Extract<Verdict, 'unknown'>;
+  items: Array<{ name: string; ok: boolean | null; detail?: string; next_action?: string }>;
+};
+
+export function environmentLastCheck(view: ExecutorView): EnvironmentLastCheck | null | undefined {
+  const state = view.state as (NonNullable<ExecutorView['state']> & { last_check?: EnvironmentLastCheck | null }) | undefined;
+  if (state === undefined || !('last_check' in state)) return undefined;
+  return state.last_check ?? null;
+}
+
+const CHECK_OUTCOME: Readonly<Record<EnvironmentLastCheck['outcome'], { text: string; tone: Tone }>> = {
+  pass: { text: '已确认', tone: 'pass' },
+  fail: { text: '错误', tone: 'fail' },
+  unknown: { text: '未知', tone: 'unknown' },
+};
+
+/** Cell for the environments table: time + three-word status; missing projection stays honest. */
+export function environmentCheckCell(view: ExecutorView): Html {
+  const check = environmentLastCheck(view);
+  if (check === undefined) return html`<span class="ch-meta">尚无核对</span>`;
+  if (check === null) return html`<span class="t-unknown">未知</span>`;
+  const { text, tone } = CHECK_OUTCOME[check.outcome];
+  const failed = check.items.filter((item) => item.ok === false).length;
+  const note = failed > 0 ? `${failed} 项未通过` : check.items.some((item) => item.ok === null) ? '含未知项' : '各项已通过';
+  return html`${when(check.at)}<div class="ch-meta">${chip(text, tone)} · ${note}</div>`;
+}
+
+/** Inspector block listing each check item once Codex projects them. */
+export function environmentCheckFacts(view: ExecutorView): Array<[string, unknown]> {
+  const check = environmentLastCheck(view);
+  if (check === undefined) return [['最近核对', '尚无核对']];
+  if (check === null) return [['最近核对', html`<span class="t-unknown">未知</span>`]];
+  const { text, tone } = CHECK_OUTCOME[check.outcome];
+  const rows: Array<[string, unknown]> = [
+    ['最近核对', html`${when(check.at)} ${chip(text, tone)}`],
+  ];
+  for (const item of check.items) {
+    const status = item.ok === true ? '已确认' : item.ok === false ? '错误' : '未知';
+    const detail = [item.detail, item.next_action].filter(Boolean).join('；');
+    rows.push([item.name, detail ? html`${status}<div class="ch-meta">${detail}</div>` : status]);
+  }
+  return rows;
 }
 
 /**
@@ -239,6 +288,14 @@ async function environmentAdminForms(ctx: PageContext, executors: readonly Execu
       )}${targetAssignForm(csrf, target, rows, teamChoices, userChoices)}`,
     ))}`;
   return html`<div class="ch-stack" data-environment-admin>${docPut}${executorAdd}${grouped}</div>`;
+/** Who may use a business system: 全体 / 团队名 / 尚未分配 — never expand to member ids (findings N2 §6). */
+export async function resourceAudienceText(ctx: PageContext, resourceId: string): Promise<string> {
+  if (!ctx.admin) return '未知';
+  const of = await ctx.deps.records.authorizations.teamsOf(ctx.principal, 'resource', resourceId);
+  const parts: string[] = [];
+  if (of.all) parts.push('全体');
+  for (const team of of.teams) parts.push(`团队 ${team.name}`);
+  return parts.length > 0 ? parts.join('、') : '尚未分配';
 }
 
 /** Read-only lists and a single authorized selection share one inspector. */
@@ -280,15 +337,17 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   :liveModule('connections',['member.connected','environment.status'],segments('连接内容',[...memberTabs],'data-connection-tabs'));
  // The reads of the last day are worked out only where they show: the list of systems, or the pane of a selected one.
  const reads=tab==='systems'?await systemReads(ctx,resources.map(resource=>resource.id)):new Map<string,never>();
- const systems=ctx.admin?table(['系统',uiLabelOf('pack_kind','system'),'环境','访问地址','访问方式','状态',tooltip('近 24 小时读取','读取次数取自读取清单，耗时为已完成读取从开始到结束的时间中位数。')],resources.map(resource=>{const state=systemState(resource);return [link('/console/connections',resource.name,{system:resource.id}),systemPackTitle(resource),isEnvironment(resource.environment)?uiLabelOf('environment',resource.environment):resource.environment,resource.origins?html`${Object.entries(resource.origins).map(([role,origin])=>html`<div>${role}：${origin}${resource.allow_plaintext?.includes(origin)?html` <span class="ch-meta">明文 http</span>`:''}</div>`)}`:'未配置',html`${chip('只读','judgment')}${plaintextElsewhere(resource).length?html`<p class="ch-meta">明文 http：${plaintextElsewhere(resource).join('、')}</p>`:''}`,html`${chip(state.text,state.tone)}${resource.binding_error?errorLine(resource.binding_error.message):''}`,reads===null?'暂不可用':readsText(reads.get(resource.id))];}),'尚无业务系统',undefined,{selected:resources.findIndex(resource=>resource.id===systemId),hrefs:resources.map(resource=>href('/console/connections',{system:resource.id}))}):html`<p class="ch-meta">业务系统的配置仅管理员可见；任务中的读取显示在各任务的执行过程中。</p>`;
+ const audienceById=new Map<string,string>();
+ if(ctx.admin)for(const resource of resources)audienceById.set(resource.id,await resourceAudienceText(ctx,resource.id));
+ const systems=ctx.admin?table(['系统',uiLabelOf('pack_kind','system'),'环境','使用范围','访问地址','访问方式','状态',tooltip('近 24 小时读取','读取次数取自读取清单，耗时为已完成读取从开始到结束的时间中位数。')],resources.map(resource=>{const state=systemState(resource);return [link('/console/connections',resource.name,{system:resource.id}),systemPackTitle(resource),isEnvironment(resource.environment)?uiLabelOf('environment',resource.environment):resource.environment,audienceById.get(resource.id)??'未知',resource.origins?html`${Object.entries(resource.origins).map(([role,origin])=>html`<div>${role}：${origin}${resource.allow_plaintext?.includes(origin)?html` <span class="ch-meta">明文 http</span>`:''}</div>`)}`:'未配置',html`${chip('只读','judgment')}${plaintextElsewhere(resource).length?html`<p class="ch-meta">明文 http：${plaintextElsewhere(resource).join('、')}</p>`:''}`,html`${chip(state.text,state.tone)}${resource.binding_error?errorLine(resource.binding_error.message):''}`,reads===null?'暂不可用':readsText(reads.get(resource.id))];}),'尚无业务系统',undefined,{selected:resources.findIndex(resource=>resource.id===systemId),hrefs:resources.map(resource=>href('/console/connections',{system:resource.id}))}):html`<p class="ch-meta">业务系统的配置仅管理员可见；任务中的读取显示在各任务的执行过程中。</p>`;
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
  const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
- const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
- const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const readinessSection=html`<div class="ch-stack" data-environment-readiness>${readinessTargets.length?readinessCards.map(card=>card.body):ctx.deps.dispatch?.readiness?html`<p class="ch-meta">${ctx.admin?'尚无运行环境目标。':'尚无已分配的运行环境；请管理员分配后重读。'}</p>`:readinessUnknownNotice()}${!ctx.deps.dispatch?.readiness&&readinessTargets.length?html`<p class="ch-meta">上列目标的只读报告尚未接线；页面不作许可判断。</p>`:''}</div>`;
  const dialogs:CommandDialog[]=[];let inspector:Html;
- if(chosen){const toggle=commands.resourceToggle(chosen),relogin=commands.resourceResetLogin(chosen);dialogs.push(toggle,relogin);inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">业务系统</span>${chip(systemState(chosen).text,systemState(chosen).tone)}</div><h2 class="ch-panel-title">${chosen.name}</h2>${facts([['环境',isEnvironment(chosen.environment)?uiLabelOf('environment',chosen.environment):chosen.environment],['访问方式','只读'],['访问地址',html`${Object.values(chosen.origins??{}).map(origin=>html`<p>${origin}</p>`)}`],['近 24 小时读取',reads===null?'暂不可用':readsText(reads.get(chosen.id))]])}${technical(html`${code(chosen.id)} ${code(chosen.system_pack)}`)}<footer class="ch-inspector-actions">${commandLink(toggle,chosen.enabled?'停用…':'启用…',chosen.enabled?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary')}${commandLink(relogin,'重新认证…')}</footer></div>`;
+ if(chosen){const toggle=commands.resourceToggle(chosen),relogin=commands.resourceResetLogin(chosen);dialogs.push(toggle,relogin);inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">业务系统</span>${chip(systemState(chosen).text,systemState(chosen).tone)}</div><h2 class="ch-panel-title">${chosen.name}</h2>${facts([['环境',isEnvironment(chosen.environment)?uiLabelOf('environment',chosen.environment):chosen.environment],['使用范围',audienceById.get(chosen.id)??'未知'],['访问方式','只读'],['访问地址',html`${Object.values(chosen.origins??{}).map(origin=>html`<p>${origin}</p>`)}`],['近 24 小时读取',reads===null?'暂不可用':readsText(reads.get(chosen.id))]])}${technical(html`${code(chosen.id)} ${code(chosen.system_pack)}`)}<footer class="ch-inspector-actions">${commandLink(toggle,chosen.enabled?'停用…':'启用…',chosen.enabled?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary')}${commandLink(relogin,'重新认证…')}</footer></div>`;
  }else if(circle){const revoke=commands.tokenRevoke(circle.token,circle.owner);if(ctx.admin)dialogs.push(revoke);inspector=html`<div data-inspector-content>${clientInspector(circle)}<footer class="ch-inspector-actions">${ctx.admin?commandLink(revoke,'断开…','ch-btn ch-btn--danger'):'由管理员断开'}</footer></div>`;
  }else if(environment){const state=environmentState(environment),actions:Html[]=[];
   if(environment.enabled){const disable=commands.executorDisable(environment);dialogs.push(disable);actions.push(commandLink(disable,'停用…','ch-btn ch-btn--danger'));}
@@ -309,7 +368,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
     dialogs.push(release);
     actions.push(commandLink(release, '强制释放预订…', 'ch-btn ch-btn--danger'));
   }
-  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">运行环境</span>${chip(state.text,state.tone)}${showRevoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}</div><h2 class="ch-panel-title">${environment.target}</h2>${state.detail.map(line=>html`<p>${line}</p>`)}${showRevoked?html`<p class="ch-meta">分配已收回；预订仍留在原持有者名下，管理员可强制释放。</p>`:''}${facts([['资源',environment.resources.length],['网关',environment.endpoint]])}${technicalCode(environment.id)}<footer class="ch-inspector-actions">${actions}</footer></div>`;
+  inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">运行环境</span>${chip(state.text,state.tone)}${showRevoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}</div><h2 class="ch-panel-title">${environment.target}</h2>${state.detail.map(line=>html`<p>${line}</p>`)}${showRevoked?html`<p class="ch-meta">分配已收回；预订仍留在原持有者名下，管理员可强制释放。</p>`:''}${facts([...environmentCheckFacts(environment),['资源',environment.resources.length],['网关',environment.endpoint]])}${technicalCode(environment.id)}<footer class="ch-inspector-actions">${actions}</footer></div>`;
  }else inspector=html``;
  // Decision 151: with nothing selected there is no pane. The figures it repeated stand in the row at the top of the page.
  const selected=!!(chosen||circle||environment);

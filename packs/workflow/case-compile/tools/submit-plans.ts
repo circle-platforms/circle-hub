@@ -2,7 +2,9 @@ import { realpathSync } from 'node:fs';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fidelityBrief, fidelityProblems, type FidelityCode, type FidelityProblem } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
+import { planDataOf } from '../functions/subject.ts';
 import { argumentsOf, bearerFrom, get, hubOrigin, itemFiles, RUN_ID, submitResult, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { isRecord } from '../functions/text.ts';
 
@@ -42,10 +44,41 @@ export async function expandPlanFiles(directory: string): Promise<string[]> {
   return lines;
 }
 
-async function runItems(origin: string, bearer: string, run: string): Promise<Map<string, string>> {
+export interface HeldRunItem { label: string; recomposition: unknown }
+const LOCAL_FIDELITY_BLOCKS = new Set<FidelityCode>(['fidelity_missing', 'fidelity_stale', 'fidelity_shape']);
+
+/** Local precheck sharing functions/fidelity with the Hub: refuses missing/stale/malformed data.fidelity before spending a repair round. */
+export function localFidelityBlocks(
+  items: readonly Record<string, unknown>[],
+  held: ReadonlyMap<string, HeldRunItem>,
+): Array<{ item: string; label: string; problem: FidelityProblem }> {
+  const blocks: Array<{ item: string; label: string; problem: FidelityProblem }> = [];
+  for (const record of items) {
+    if (record.handling === 'skipped') continue;
+    const id = String(record.item);
+    const info = held.get(id);
+    if (!info) continue;
+    const data = planDataOf(record);
+    const { fidelity, ...plan } = isRecord(data) ? data : {};
+    const brief = fidelityBrief(id, info.recomposition, plan);
+    if (!brief) continue;
+    const { problems } = fidelityProblems(brief, fidelity);
+    for (const problem of problems) {
+      if (LOCAL_FIDELITY_BLOCKS.has(problem.code)) blocks.push({ item: id, label: info.label, problem });
+    }
+  }
+  return blocks;
+}
+
+async function runItems(origin: string, bearer: string, run: string): Promise<Map<string, HeldRunItem>> {
   const value: unknown = JSON.parse(new TextDecoder('utf-8').decode(await get(`${origin}/run-export/${run}/run`, bearer)));
   if (!isRecord(value) || value.schema !== 'run-export@1' || !isRecord(value.run) || value.run.run !== run || !Array.isArray(value.run.items)) throw new Error('Hub 返回的原始用例不完整或与本次脚本编写不符');
-  return new Map(value.run.items.filter(isRecord).map((item) => { const fields = isRecord(item.fields) ? item.fields : {}; return [String(item.id), [fields.autoid, fields.title].filter((text) => typeof text === 'string' && text).join(' ') || '编号和标题未知']; }));
+  return new Map(value.run.items.filter(isRecord).map((item) => {
+    const fields = isRecord(item.fields) ? item.fields : {};
+    const label = [fields.autoid, fields.title].filter((text) => typeof text === 'string' && text).join(' ') || '编号和标题未知';
+    const recomposition = isRecord(fields.recomposition) ? fields.recomposition.record : undefined;
+    return [String(item.id), { label, recomposition }];
+  }));
 }
 
 export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
@@ -60,13 +93,25 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const held = await runItems(origin, bearer, args.run);
     const items = files.filter((item) => held.has(String(item.item))), left = files.filter((item) => !held.has(String(item.item)));
     if (!items.length) throw new Error(`--plans 目录里没有本次脚本编写的自动化用例，本次共有 ${held.size} 条原始用例；请使用下载的原始用例继续编写`);
+    const fidelityBlocks = localFidelityBlocks(items, held);
+    if (fidelityBlocks.length) {
+      const detail = fidelityBlocks.map((b) => `- ${b.label}（${b.item}）：${b.problem.message}`).join('\n');
+      throw new Error(
+        `以下 ${fidelityBlocks.length} 份自动化用例尚未完成场景保真审计，未发往 Hub（不占修复次数；Hub 的核对结论仍为准）：\n`
+        + `${detail}\n`
+        + '请依次执行下面 3 步后再重跑 submit-plans.ts：\n'
+        + '1) node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>\n'
+        + '2) 用新开的子代理逐份读取 to_audit 中的 .brief.json，按文件内 rules 写出同名 .verdict.json\n'
+        + '3) node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>（确认 ready=true）',
+      );
+    }
     if (left.length) process.stdout.write(`另有 ${left.length} 份自动化用例不属于本次脚本编写，未做脚本合并\n`);
     const { text, failed } = await submitResult(origin, bearer, { run: args.run, model: args.model, items });
     const path = join(args.plans, `answer-${Date.now()}.txt`);
     await writeNew(path, Buffer.from(text));
     const clipped = text.length > SHOWN_CHARS;
     process.stdout.write(`${items.length} 份自动化用例已交给 Hub 做脚本合并\n${text.slice(0, SHOWN_CHARS)}\n${clipped ? `Hub 答复共 ${text.length} 字符，全文在 ${path}，请分段读完\n` : `全文在 ${path}\n`}`);
-    const skipped = items.filter((item) => item.handling === 'skipped').map((item) => held.get(String(item.item))!);
+    const skipped = items.filter((item) => item.handling === 'skipped').map((item) => held.get(String(item.item))!.label);
     if (skipped.length) process.stdout.write(SKIPPED_NOTE(skipped));
     return failed ? 1 : 0;
   } catch (error) { process.stderr.write(`脚本合并未完成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }

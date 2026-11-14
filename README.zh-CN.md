@@ -59,7 +59,7 @@ node --test ".github/checks/*.test.ts"   # 文档检查
 
 ## 文档
 
-- [十分钟上手](docs/quickstart.md) · [改一个工作流或技能怎么做](docs/edit-pack.md) · [重置和重建](docs/reset.md)
+- [十分钟上手](docs/quickstart.md) · [管理员手册](docs/admin-guide.md) · [成员手册](docs/member-guide.md) · [改一个工作流或技能怎么做](docs/edit-pack.md) · [重置和重建](docs/reset.md)
 - [架构](docs/hub-r4-architecture.md) · [进度与决定](docs/hub-r4-progress.md)
 - [通用模型](docs/design/generic-model.md) · [五要素检查单](docs/design/object-standard.md) · [设计索引](docs/design/README.md)
 - [兼容矩阵](docs/compatibility.md)：circle、circle-hub、circle-packs 三个仓库彼此的要求。

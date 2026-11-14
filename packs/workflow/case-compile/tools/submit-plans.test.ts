@@ -5,6 +5,7 @@ import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fidelityBrief } from '../functions/fidelity.ts';
 import { main, planItems } from './submit-plans.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
@@ -16,10 +17,11 @@ async function plans(files: Record<string, unknown>) {
   return directory;
 }
 let RUN_ITEMS = ['doc:a', 'doc:b'];
+let RUN_RECOMPOSITION: Record<string, unknown> | undefined;
 async function hub(answer: unknown, status = 200) {
   const seen: Array<{ url?: string; authorization?: string; body: any }> = [];
   const server = createServer((request, response) => {
-    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id, index) => ({ id, fields: { autoid: `99000000000000010${index + 1}`, title: `合成用例 ${index + 1}` } })) } })); return; }
+    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id, index) => ({ id, fields: { autoid: `99000000000000010${index + 1}`, title: `合成用例 ${index + 1}`, ...(RUN_RECOMPOSITION ? { recomposition: { record: RUN_RECOMPOSITION } } : {}) } })) } })); return; }
     let body = '';
     request.on('data', (chunk) => { body += chunk; });
     request.on('end', () => {
@@ -190,4 +192,76 @@ test('a case file that is not valid JSON is named with the place and the text ar
   const bad = await run(stub2.url, bytes);
   await stub2.close();
   assert.match(bad.err, /01\.json 不是合法的 UTF-8 文本/);
+});
+
+test('local fidelity precheck blocks missing, stale, or malformed data.fidelity before calling Hub, while valid fidelity and skipped cases pass through', async () => {
+  const record = {
+    schema: 'recompose-record@1',
+    atoms: [
+      { id: 'A1', kind: 'action', text: 'Configure interval 60' },
+      { id: 'E1', kind: 'expectation', text: 'Interval is 60' },
+    ],
+    ledgers: { original: [{ atom: 'A1', text: 'Configure interval 60' }], adapted: [], rebindings: [] },
+    contract: { intent: { text: 'Configure interval' } },
+  };
+  const plan = { bucket: 'bed-0', blocks: [], steps: [{ object: 'Device_0', method: 'cli', args: ['interval 60'], keywords: {} }], expects: [{ text: '60', quote: { text: 'Interval is 60', reference: 'doc:a#1' }, after: 1 }], replacements: [] };
+  const brief = fidelityBrief('doc:a', record, plan);
+  assert.ok(brief !== null);
+  RUN_ITEMS = ['doc:a'];
+  RUN_RECOMPOSITION = record;
+  try {
+    // 1. Missing data.fidelity -> exit 1 locally, 0 POST /mcp requests, prints 3-step instructions
+    const missingDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: plan }] } } });
+    const stubMissing = await hub(said('受理'));
+    const resMissing = await run(stubMissing.url, missingDir);
+    await stubMissing.close();
+    assert.equal(resMissing.code, 1);
+    assert.equal(stubMissing.seen.length, 0);
+    assert.match(resMissing.err, /990000000000000101 合成用例 1（doc:a）/);
+    assert.match(resMissing.err, /fidelity-brief\.ts/);
+    assert.match(resMissing.err, /\.verdict\.json/);
+    assert.match(resMissing.err, /fidelity-apply\.ts/);
+
+    // 2. Stale brief_sha256 -> exit 1 locally, 0 POST /mcp requests
+    const stalePlan = { ...plan, steps: [{ object: 'Device_0', method: 'cli', args: ['interval 120'], keywords: {} }], fidelity: { brief_sha256: brief.brief_sha256, steps: [{ n: 'A1', verdict: 'preserved', step_indices: [1], rationale: 'ok' }], disclosure: '保住' } };
+    const staleDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: stalePlan }] } } });
+    const stubStale = await hub(said('受理'));
+    const resStale = await run(stubStale.url, staleDir);
+    await stubStale.close();
+    assert.equal(resStale.code, 1);
+    assert.equal(stubStale.seen.length, 0);
+    assert.match(resStale.err, /不是这份计划的简报/);
+    assert.match(resStale.err, /fidelity-apply\.ts/);
+
+    // 3. Malformed shape -> exit 1 locally, 0 POST /mcp requests
+    const badShapePlan = { ...plan, fidelity: { brief_sha256: brief.brief_sha256, steps: [], disclosure: '空步骤' } };
+    const shapeDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: badShapePlan }] } } });
+    const stubShape = await hub(said('受理'));
+    const resShape = await run(stubShape.url, shapeDir);
+    await stubShape.close();
+    assert.equal(resShape.code, 1);
+    assert.equal(stubShape.seen.length, 0);
+    assert.match(resShape.err, /fidelity-brief\.ts/);
+
+    // 4. Valid matching data.fidelity -> sent to Hub
+    const validPlan = { ...plan, fidelity: { brief_sha256: brief.brief_sha256, steps: [{ n: 'A1', verdict: 'preserved', step_indices: [1], rationale: '第 1 步实现' }], disclosure: '已保住' } };
+    const validDir = await plans({ '01.json': { item: 'doc:a', handling: 'handled', slots: { plan: [{ text: 'p', quotes: [], data: validPlan }] } } });
+    const stubValid = await hub(said('受理'));
+    const resValid = await run(stubValid.url, validDir);
+    await stubValid.close();
+    assert.equal(resValid.code, 0, resValid.err);
+    assert.equal(stubValid.seen.length, 1);
+
+    // 5. Skipped item -> passes through even without data.fidelity
+    const skippedDir = await plans({ '01.json': { item: 'doc:a', handling: 'skipped', reason: '缺执行器声明' } });
+    const stubSkipped = await hub(said('受理'));
+    const resSkipped = await run(stubSkipped.url, skippedDir);
+    await stubSkipped.close();
+    assert.equal(resSkipped.code, 0, resSkipped.err);
+    assert.equal(stubSkipped.seen.length, 1);
+    assert.match(resSkipped.out, /还没有完成脚本编写/);
+  } finally {
+    RUN_ITEMS = ['doc:a', 'doc:b'];
+    RUN_RECOMPOSITION = undefined;
+  }
 });
