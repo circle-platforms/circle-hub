@@ -56,6 +56,14 @@ test('a manifest parses and names what is wrong with a bad one', () => {
   assert.ok(!PackManifest.safeParse({ ...manifest, owner: 'x' }).success, 'unknown keys are refused');
 });
 
+test('agent definitions are optional manifest files under the declared agents directory', () => {
+  const path = 'agents/sample-review-writer.md';
+  assert.equal(packPathProblem(path), null);
+  assert.ok(PackManifest.safeParse({ ...manifest, files: [...manifest.files, file(path)].sort((a,b)=>a.path<b.path?-1:1) }).success);
+  assert.ok(PackManifest.safeParse(manifest).success, 'packs without agents keep their existing shape');
+  for (const invalid of ['agents', 'agents/../outside.md', 'agents/.hidden.md', '/agents/sample-review-writer.md', 'agent/sample-review-writer.md']) assert.notEqual(packPathProblem(invalid), null, invalid);
+});
+
 test('every pack kind has required files that are legal pack paths', () => {
   for (const [kind, files] of Object.entries(REQUIRED_FILES)) {
     for (const f of files) assert.equal(packPathProblem(f), null, `${kind}: ${f}`);

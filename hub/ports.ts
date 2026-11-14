@@ -304,9 +304,9 @@ export interface RunsService {
   /** Recheck an individual immutable result against current run and ground permissions. */
   resultState?(user:Principal,result:ValidationResult):Promise<{readable:boolean;grounds_withdrawn:string[];grounds_withdrawn_hidden_count?:number}>;
   requestReadable?(user:Principal,request:import('./requests/api.ts').RequestBody):Promise<boolean>;
-  /** Decision 104: what a client needs to generate from its own run without an administrator export: the run, its latest
-   * accepted result and that result's submission as stored. Only the runner and administrators; null when absent or forbidden. */
-  exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; result: ValidationResult | null; submission: unknown | null } | null>;
+  /** Decision 104: the run, its newest accepted submitted result and that submission, with their stored record references.
+   * Uses the same reusable-result selection as start_run. Only the runner and administrators; null when absent or forbidden. */
+  exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; run_reference: string; accepted_result_reference: string | null; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Decision 160 (relay): the jobs the run was dispatched in, each item's verdict from the checked result projection and the
    * references of what the target returned; same readers as exportRun. */
   exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;

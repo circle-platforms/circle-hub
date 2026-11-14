@@ -112,9 +112,9 @@ export async function handleRunExport(request: IncomingMessage, response: Server
         else note = '运行没有锁定知识根，或读者读不到它';
       } else if (exported && sha === null) {
         // The run alone, before anything is accepted: a client tool needs the frozen items to prepare the first submission.
-        if (runOnly) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run })); note = '运行'; headers['content-type'] = 'application/json'; }
+        if (runOnly) { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run_reference: exported.run_reference, run: exported.run })); note = '运行'; headers['content-type'] = 'application/json'; }
         else if (!exported.result || exported.submission === null) { status = 409; bytes = Buffer.from('这个运行还没有已受理的提交；按回执改正并重交，被受理后再导出\n'); note = '没有已受理结果'; }
-        else { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run: exported.run, result: exported.result, submission: exported.submission })); note = '运行与已受理结果'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
+        else { status = 200; bytes = Buffer.from(canonicalBytes({ schema: 'run-export@1', run_reference: exported.run_reference, accepted_result_reference: exported.accepted_result_reference, run: exported.run, result: exported.result, submission: exported.submission })); note = '运行与已受理结果'; headers['content-type'] = 'application/json'; headers['content-digest'] = digestHeader(bytes); }
       } else if (exported && sha !== null) {
         const source = await deps.records.artifacts.sourceForRun(principal, sha, run) ?? await jobOutput(deps, principal, run, sha);
         if (!source) note = '原件没有绑定在这个运行上，也不是它的作业产出';

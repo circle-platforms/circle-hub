@@ -35,10 +35,11 @@ test('all is selectable alone and cannot widen or enter an explicit scope list',
   for (const scopes of [[], ['all'], ['all', 'history'], ['history', 'all'], ['history', 'history'], ['unknown']]) assert.equal(ResetScopesSchema.safeParse(scopes).success, false);
 });
 
-test('the reset model revision records the owner and Boss approval sources', () => {
+test('reset axis registration at model revision 79 records the owner and Boss approval sources', () => {
   const model = JSON.parse(readFileSync(new URL('../model.json', import.meta.url), 'utf8'));
   assert.equal(MODEL_VERSION, model.version);
   const owner = model.elements.find((element: { id: string }) => element.id === 'D04');
-  const changes: string[] = owner['changes' + model.version];
+  const changes: string[] = owner.changes79;
+  assert.ok(Array.isArray(changes), 'D04 registered reset_scope at revision 79; unrelated later model revisions need no duplicate change entry');
   assert.ok(changes.some(text => text.includes('17:15') && text.includes('18:50')));
 });
