@@ -239,13 +239,17 @@ test('repository manifest paths directly name ordinary files with their declared
     assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,file.path);
   }
 });
-test('SKILL.md and delivery.md require opening a new plan run via start_run before editing plans', () => {
+test('SKILL.md and delivery.md distinguish same-run resubmit from the three start_run rework boundaries', () => {
   const skill = read('SKILL.md');
   const delivery = read('tools/delivery.md');
   assert.ok(skill.includes('start_run {"pack":"case-compile"'));
-  assert.ok(skill.includes('禁止往已被核对锁定的旧脚本编写运行重交'));
-  assert.ok(skill.includes('禁止直接往脚本合并运行提交改过的计划'));
+  assert.ok(skill.includes('同一 `plan_run` 尚未进入 `merge_run`'), 'must allow same-run resubmit before merge_run');
+  assert.ok(skill.includes('rounds_left=0'), 'must name repair_exhausted boundary');
+  assert.ok(skill.includes('scope`/`exclude`/`inputs` 变化'), 'must name scope/exclude/inputs change boundary');
+  assert.ok(skill.includes('禁止把改过的计划直接交进 `merge_run`'), 'must forbid direct plan edits into merge_run');
+  assert.ok(skill.includes('carry-plans.ts'), 'SKILL.md must reference carry-plans.ts on new-run restarts');
   assert.ok(delivery.includes('start_run` 新开一次脚本编写运行'));
+  assert.ok(delivery.includes('tools/carry-plans.ts'), 'delivery.md must show carry-plans.ts command');
 });
 
 test('H1/H4/Effort-AB: SKILL.md, recompose/SKILL.md, delivery.md and compile-recomposer enforce single lite shape, same-line heredoc, no direct terminal connection, 3-round stop and ls before dispatch', () => {
@@ -274,4 +278,56 @@ test('H1/H4/Effort-AB: SKILL.md, recompose/SKILL.md, delivery.md and compile-rec
   assert.ok(skill.includes('--wait 3600') && delivery.includes('--wait 3600') && !skill.includes('--wait 600'), 'SKILL.md and delivery.md unify --wait 3600 with background');
   assert.ok(!skill.includes('管道或重定向') && !skill.includes('管道重定向'), 'SKILL.md drops unenforceable pipe/redirection ban');
   assert.ok(recomposeSkill.includes('check-record.ts'), 'recompose/SKILL.md runs check-record.ts before submit-records.ts');
+});
+
+test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidelity.md uses task-brief, and recomposer teaches concrete CLI syntax', () => {
+  const recomposer = read('agents/compile-recomposer.md');
+  const writer = read('agents/compile-writer.md');
+  const fidelityAgent = read('agents/compile-fidelity.md');
+  const attributor = read('agents/compile-attributor.md');
+  const recomposeSkill = read('recompose/SKILL.md');
+  const fidelityDoc = read('tools/fidelity.md');
+
+  // Exact file-tool schema guidance across roles (write_file for new/full writes, read_file before edit_file, ls({path}))
+  for (const [name, content] of [
+    ['compile-recomposer', recomposer],
+    ['compile-writer', writer],
+    ['compile-fidelity', fidelityAgent],
+    ['compile-attributor', attributor],
+  ] as const) {
+    assert.ok(content.includes('file_path'), `${name} must state file_path parameter`);
+    assert.ok(content.includes('write_file('), `${name} must state write_file parameter schema`);
+    assert.ok(content.includes('ls({'), `${name} must state ls({ "path": ... }) parameter schema`);
+  }
+  for (const [name, content] of [
+    ['compile-recomposer', recomposer],
+    ['compile-writer', writer],
+    ['compile-fidelity', fidelityAgent],
+  ] as const) {
+    assert.ok(content.includes('edit_file(') && content.includes('read_file'), `${name} must require read_file before edit_file`);
+  }
+  assert.ok(attributor.includes('无 `edit_file`') || attributor.includes('没有 edit_file'), 'attributor must note lack of edit_file');
+
+  // Execute rules tailored per role: ban on recomposer & attributor, exact CLI on writer & fidelity
+  assert.ok(recomposer.includes('严禁调用 execute'), 'recomposer must ban execute even if exposed');
+  assert.ok(attributor.includes('严禁调用'), 'attributor must ban execute even if exposed');
+  assert.ok(!writer.includes('严禁调用 execute'), 'writer must keep check-plan.ts execute permission');
+  assert.ok(!fidelityAgent.includes('严禁调用 execute'), 'fidelity must keep check-plan.ts execute permission');
+  assert.ok(writer.includes('node <技能目录>/tools/check-plan.ts --file'));
+  assert.ok(fidelityAgent.includes('node <技能目录>/tools/check-plan.ts --file'));
+
+  // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
+  assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));
+  assert.ok(fidelityDoc.includes("task-brief.ts --role '保真核对'"));
+
+  // P2: recomposer & recompose/SKILL.md teach executable CLI rules + RFC test IP + positive & negative examples
+  assert.ok(!recomposer.includes('保持命令树可解析原值'));
+  assert.ok(!recomposeSkill.includes('保持 command_tree 可解析的原值'));
+  assert.ok(!recomposeSkill.includes('<名字> <IP>'));
+  for (const doc of [recomposer, recomposeSkill]) {
+    assert.ok(doc.includes('192.0.2.10'), 'must demonstrate RFC 5737 test IP');
+    assert.ok(doc.includes('sdns service ip "web1" 192.0.2.10'), 'must include positive CLI example');
+    assert.ok(doc.includes('sdns listener <arg1:ipv4/ipv6>'), 'must include negative template placeholder example');
+  }
+  assert.ok(!recomposer.includes('recompose-record.schema.json'));
 });

@@ -1,5 +1,6 @@
-// 只读装配单条或指定范围子代理任务说明写入 `--task-file`（不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
+// 只读装配单条或批量子代理任务说明写入 `--task-file`（或 `--batch` 批量写盘，不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
 //   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
+//   node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --batch <批量清单JSON或核对目录> --task-dir <任务目录> [--out-dir <目标输出目录>] [--scope <范围文件>] [--note '<补充说明>']
 import { realpathSync } from 'node:fs';
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -30,10 +31,13 @@ import {
 
 const OPTIONS: Record<string, boolean> = {
   role: true,
-  case: true,
-  brief: true,
-  out: true,
-  'task-file': true,
+  case: false,
+  brief: false,
+  out: false,
+  'task-file': false,
+  batch: false,
+  'task-dir': false,
+  'out-dir': false,
   scope: false,
   note: false,
   round: false,
@@ -46,7 +50,7 @@ const OPTIONS: Record<string, boolean> = {
   'prior-notes': false,
 };
 const USAGE =
-  "node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]";
+  "node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note '<补充说明>'] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>] | --batch <批量清单或核对目录> --task-dir <核对任务目录>";
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
 /** Threshold above which a raw verbatim line is disclosed at the top of `--task-file` without wrapping. */
@@ -434,6 +438,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
   briefPath: string;
   outPath: string;
   scopeRelative: string;
+  skillDir: string;
 }> {
   const role = resolveSubagentRole(options.role);
   if (!role) {
@@ -594,6 +599,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     briefPath,
     outPath,
     scopeRelative: scopeResolved.relative,
+    skillDir: packReal,
   };
 }
 
@@ -687,7 +693,7 @@ export function formatTaskBriefFileContent(rawBrief: string): {
   };
 }
 
-/** Fixed short dispatch notice emitted to stdout (`~250-350` chars, zero case content). */
+/** Fixed short dispatch notice emitted to stdout (`~350-450` chars, zero case content). */
 export function renderTaskDispatchPrompt(params: {
   roleAgentName: string;
   roleStageLabel: string;
@@ -697,6 +703,7 @@ export function renderTaskDispatchPrompt(params: {
   outPath: string;
   lineCount: number;
   longLineCount: number;
+  skillDir?: string;
 }): string {
   const longHint = params.longLineCount > 0
     ? `；含 ${params.longLineCount} 行超 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符逐字行，见文件开头行号提示`
@@ -705,14 +712,19 @@ export function renderTaskDispatchPrompt(params: {
     CIRCLE_GENERAL_PURPOSE_NOTICE,
     '',
     `请以 \`subagent_type="general-purpose"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
+    ...(params.skillDir ? [`- 技能目录：${params.skillDir}`] : []),
     `- 任务文件：${params.taskFile}（共 ${params.lineCount} 行${longHint}）`,
     `- 目标输出：${params.outPath}`,
-    `先用 \`read_file\` 分段完整读完 \`${params.taskFile}\` 再动手（只写 \`${params.outPath}\`，完成后简要回复路径）。`,
+    `用 \`read_file\` 完整读完 \`${params.taskFile}\` 后按要求只写 \`${params.outPath}\`，完工简复路径。`,
   ].join('\n');
 }
 
-/** Writes the full brief to `--task-file` inside cwd and returns a short dispatch prompt for stdout. */
-export async function writeTaskBrief(options: WriteTaskBriefOptions): Promise<WriteTaskBriefResult> {
+/** Validates, formats, and prepares one task brief without writing to disk yet. */
+async function stageTaskBrief(options: WriteTaskBriefOptions): Promise<{
+  canonical: string;
+  bytes: Buffer;
+  result: WriteTaskBriefResult;
+}> {
   const meta = await buildTaskBriefWithMeta(options);
   const taskResolved = await assertValidTaskFilePath(meta.cwd, options.taskFilePath, [
     meta.briefPath,
@@ -722,9 +734,7 @@ export async function writeTaskBrief(options: WriteTaskBriefOptions): Promise<Wr
     options.itemPath,
   ]);
   const formatted = formatTaskBriefFileContent(meta.brief);
-  await mkdir(dirname(taskResolved.canonical), { recursive: true });
   const bytes = Buffer.from(formatted.content, 'utf8');
-  await writeFile(taskResolved.canonical, bytes);
   const dispatchPrompt = renderTaskDispatchPrompt({
     roleAgentName: meta.role.agentName,
     roleStageLabel: meta.role.stageLabel,
@@ -734,15 +744,166 @@ export async function writeTaskBrief(options: WriteTaskBriefOptions): Promise<Wr
     outPath: meta.outPath,
     lineCount: formatted.lineCount,
     longLineCount: formatted.longLines.length,
+    skillDir: meta.skillDir,
   });
   return {
-    taskFile: taskResolved.relative,
-    lineCount: formatted.lineCount,
-    byteCount: bytes.byteLength,
-    longLines: formatted.longLines,
-    brief: formatted.content,
-    dispatchPrompt,
+    canonical: taskResolved.canonical,
+    bytes,
+    result: {
+      taskFile: taskResolved.relative,
+      lineCount: formatted.lineCount,
+      byteCount: bytes.byteLength,
+      longLines: formatted.longLines,
+      brief: formatted.content,
+      dispatchPrompt,
+    },
   };
+}
+
+/** Writes the full brief to `--task-file` inside cwd and returns a short dispatch prompt for stdout. */
+export async function writeTaskBrief(options: WriteTaskBriefOptions): Promise<WriteTaskBriefResult> {
+  const staged = await stageTaskBrief(options);
+  await mkdir(dirname(staged.canonical), { recursive: true });
+  await writeFile(staged.canonical, staged.bytes);
+  return staged.result;
+}
+
+function optionalTaskField(entry: Record<string, unknown>, key: string): string | undefined {
+  const val = entry[key];
+  if (val === undefined) return undefined;
+  if (typeof val !== 'string' || !val.trim()) {
+    throw new Error(`参数无效：批量任务项字段 ${key} 必须是非空字符串`);
+  }
+  return val;
+}
+
+async function resolveBatchItems(
+  args: Partial<Record<string, string>>,
+  cwd: ResolvedCwd,
+  packReal: string,
+): Promise<WriteTaskBriefOptions[]> {
+  const role = resolveSubagentRole(args.role!);
+  if (!role) {
+    throw new Error(`参数无效：未知子代理角色 ${args.role}。可用：用例重组、脚本编写、保真核对、失败分析`);
+  }
+  const batchTarget = resolveInsideCwd(cwd, args.batch!, '--batch');
+  const st = await lstat(batchTarget.lexical).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') {
+      throw new Error(`不存在：找不到 --batch 路径 ${args.batch}`);
+    }
+    throw err;
+  });
+  if (st.isSymbolicLink()) {
+    throw new Error(`参数无效：--batch 路径 ${args.batch} 不能是符号链接`);
+  }
+
+  const baseDefaults = {
+    ...(args.scope !== undefined ? { scopePath: args.scope } : {}),
+    ...(args.note !== undefined ? { note: args.note } : {}),
+    ...(args.round !== undefined ? { round: args.round } : {}),
+    ...(args.run !== undefined ? { runDir: args.run } : {}),
+    packRoot: packReal,
+    cwd: cwd.canonical,
+  };
+
+  if (st.isDirectory()) {
+    if (role.key !== 'fidelity') {
+      throw new Error('参数无效：目录形式的 --batch 目前仅支持保真核对（--role 保真核对，扫描 *.brief.json）；脚本编写/重组请传入批量任务清单 JSON');
+    }
+    if (!args['task-dir']) {
+      throw new Error('参数无效：使用目录形式的 --batch 时必须同时指定 --task-dir <核对任务目录>');
+    }
+    if (args.run !== undefined || args['brief-json'] !== undefined || args['prior-plans'] !== undefined || args['prior-returns'] !== undefined || args['prior-answers'] !== undefined || args['prior-notes'] !== undefined) {
+      throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json、--run 或 --prior-* 历史参数');
+    }
+    const batchDir = resolveExistingDirInsideCwd(cwd, args.batch!, '--batch');
+    const taskDir = resolveInsideCwd(cwd, args['task-dir'], '--task-dir');
+    const outDir = args['out-dir'] ? resolveInsideCwd(cwd, args['out-dir'], '--out-dir') : batchDir;
+    const files = (await readdir(batchDir.canonical)).filter((n) => n.endsWith('.brief.json')).sort();
+    if (!files.length) {
+      throw new Error(`不存在：--batch 目录 ${batchDir.relative} 下没有 .brief.json 文件`);
+    }
+    const jobs: WriteTaskBriefOptions[] = [];
+    for (const fileName of files) {
+      const briefFile = resolveExistingFileInsideCwd(cwd, join(batchDir.relative, fileName), '--batch');
+      const parsed = parsedPlanFile(fileName, await readFile(briefFile.canonical));
+      if (!isRecord(parsed)) {
+        throw new Error(`参数无效：${briefFile.relative} 不是合法的 JSON 对象`);
+      }
+      const stem = fileName.slice(0, -'.brief.json'.length);
+      const caseStem = stem.replace(/\.[0-9a-f]{8}$/, '');
+      const caseRef =
+        typeof parsed.autoid === 'string' && parsed.autoid
+          ? parsed.autoid
+          : typeof parsed.item === 'string' && parsed.item
+            ? parsed.item
+            : caseStem;
+      jobs.push({
+        ...baseDefaults,
+        role: args.role!,
+        caseRef,
+        briefPath: briefFile.relative,
+        outPath: join(outDir.relative, `${stem}.verdict.json`),
+        taskFilePath: join(taskDir.relative, `${stem}.task.md`),
+      });
+    }
+    return jobs;
+  }
+
+  if (!st.isFile()) {
+    throw new Error(`参数无效：--batch ${args.batch} 必须是普通 JSON 文件或保真核对目录`);
+  }
+  const batchFile = resolveExistingFileInsideCwd(cwd, args.batch!, '--batch');
+  const parsed = parsedPlanFile(basename(batchFile.canonical), await readFile(batchFile.canonical));
+  let rawTasks: unknown[];
+  let fileDefaults: Record<string, unknown> = {};
+  if (Array.isArray(parsed)) {
+    rawTasks = parsed;
+  } else if (isRecord(parsed) && Array.isArray(parsed.tasks)) {
+    rawTasks = parsed.tasks;
+    if (isRecord(parsed.defaults)) fileDefaults = parsed.defaults;
+  } else {
+    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 必须是任务数组或含 tasks 数组的对象`);
+  }
+  if (!rawTasks.length) {
+    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 为空`);
+  }
+  return rawTasks.map((entry, idx) => {
+    if (!isRecord(entry)) {
+      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须是对象`);
+    }
+    const merged: Record<string, unknown> = { ...fileDefaults, ...entry };
+    const caseRef = optionalTaskField(merged, 'case');
+    const briefPath = optionalTaskField(merged, 'brief');
+    const outPath = optionalTaskField(merged, 'out');
+    const taskFilePath = optionalTaskField(merged, 'task_file');
+    if (!caseRef || !briefPath || !outPath || !taskFilePath) {
+      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须包含 case、brief、out、task_file 字段`);
+    }
+    const roundRaw = merged.round;
+    const round =
+      typeof roundRaw === 'number' || typeof roundRaw === 'string'
+        ? roundRaw
+        : baseDefaults.round;
+    return {
+      ...baseDefaults,
+      role: typeof merged.role === 'string' && merged.role ? merged.role : args.role!,
+      caseRef,
+      briefPath,
+      outPath,
+      taskFilePath,
+      ...(optionalTaskField(merged, 'scope') !== undefined ? { scopePath: optionalTaskField(merged, 'scope') } : {}),
+      ...(optionalTaskField(merged, 'note') !== undefined ? { note: optionalTaskField(merged, 'note') } : {}),
+      ...(round !== undefined ? { round } : {}),
+      ...(optionalTaskField(merged, 'run') !== undefined ? { runDir: optionalTaskField(merged, 'run') } : {}),
+      ...(optionalTaskField(merged, 'brief_json') !== undefined ? { briefJsonPath: optionalTaskField(merged, 'brief_json') } : {}),
+      ...(optionalTaskField(merged, 'item') !== undefined ? { itemPath: optionalTaskField(merged, 'item') } : {}),
+      ...(optionalTaskField(merged, 'prior_plans') !== undefined ? { priorPlans: optionalTaskField(merged, 'prior_plans') } : {}),
+      ...(optionalTaskField(merged, 'prior_returns') !== undefined ? { priorReturns: optionalTaskField(merged, 'prior_returns') } : {}),
+      ...(optionalTaskField(merged, 'prior_answers') !== undefined ? { priorAnswers: optionalTaskField(merged, 'prior_answers') } : {}),
+      ...(optionalTaskField(merged, 'prior_notes') !== undefined ? { priorNotes: optionalTaskField(merged, 'prior_notes') } : {}),
+    };
+  });
 }
 
 const HELP_TEXT = [
@@ -754,10 +915,14 @@ const HELP_TEXT = [
   '  保真核对（fidelity）    生成盲审保真核对子代理任务简报（--out 须为 .json 文件路径；禁传 --brief-json/--run/--prior-*）',
   '  失败分析（attribute）   生成单条上机失败分析子代理任务简报',
   '',
+  '批量模式：',
+  '  --batch <清单.json>                         一次为数组/tasks 清单中的多条用例生成任务文件，stdout 输出 task-brief-batch@1 JSON',
+  '  --role 保真核对 --batch <核对目录> --task-dir <目录>   一次为核对目录内全部 .brief.json 生成盲审任务文件（可用 --out-dir 指定判决输出目录）',
+  '',
   '注意事项：',
   '  1. 所有路径参数须在当前工作目录下，且不能为符号链接；--task-file 须为工作目录下不冲突的 .md 路径。',
   '  2. --brief 与 --scope 等输入文件必须已落盘；调用前先用 ls 核对实际文件名（总数 <10 条时通常为 0.md 而非 00.md）。',
-  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示。',
+  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示（含真实技能目录）。',
   '  4. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
   "  5. 含中文或空格的参数值（如 --role、--note）用单引号括起，如 --role '脚本编写'；或使用英文标识 recompose|plan|fidelity|attribute。",
 ].join('\n');
@@ -769,6 +934,58 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
     const args = parseCliOptions(argv, OPTIONS, USAGE);
+    if (args.batch !== undefined) {
+      if (args.case !== undefined || args.brief !== undefined || args.out !== undefined || args['task-file'] !== undefined) {
+        throw new Error('参数无效：--batch 模式不能同时传入单条参数 --case/--brief/--out/--task-file');
+      }
+      const cwd = resolveCwdRoots();
+      const jobSpecs = await resolveBatchItems(args, cwd, DEFAULT_PACK_ROOT);
+      const stagedList: Array<Awaited<ReturnType<typeof stageTaskBrief>>> = [];
+      const seenTaskFiles = new Set<string>();
+      for (const spec of jobSpecs) {
+        const staged = await stageTaskBrief(spec);
+        if (seenTaskFiles.has(staged.canonical)) {
+          throw new Error(`参数无效：批量任务中存在重复的目标任务文件 ${staged.result.taskFile}`);
+        }
+        seenTaskFiles.add(staged.canonical);
+        stagedList.push(staged);
+      }
+      for (const staged of stagedList) {
+        await mkdir(dirname(staged.canonical), { recursive: true });
+        await writeFile(staged.canonical, staged.bytes);
+      }
+      const firstRole = resolveSubagentRole(args.role!)!;
+      process.stdout.write(
+        JSON.stringify(
+          {
+            schema: 'task-brief-batch@1',
+            role: firstRole.agentName,
+            skill_dir: DEFAULT_PACK_ROOT,
+            written: stagedList.length,
+            tasks: stagedList.map((s, index) => ({
+              case: jobSpecs[index]!.caseRef,
+              out: jobSpecs[index]!.outPath,
+              task_file: s.result.taskFile,
+              line_count: s.result.lineCount,
+              byte_count: s.result.byteCount,
+              dispatch_prompt: s.result.dispatchPrompt,
+            })),
+          },
+          null,
+          2,
+        ) + '\n',
+      );
+      return 0;
+    }
+
+    if (args['task-dir'] !== undefined || args['out-dir'] !== undefined) {
+      throw new Error('参数无效：--task-dir 与 --out-dir 只能配合 --batch 使用');
+    }
+    const missingSingle = (['case', 'brief', 'out', 'task-file'] as const).filter((k) => !args[k]);
+    if (missingSingle.length) {
+      throw new Error(`参数无效：缺少 ${missingSingle.map((k) => '--' + k).join('、')}。用法：${USAGE}`);
+    }
+
     const written = await writeTaskBrief({
       role: args.role!,
       caseRef: args.case!,

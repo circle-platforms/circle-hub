@@ -990,3 +990,60 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and supports --batch generation for plans and fidelity briefs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-batch-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    const workDir = join(root, 'work');
+    await mkdir(join(workDir, 'briefs'), { recursive: true });
+    await mkdir(join(workDir, 'audit'), { recursive: true });
+    await writeFile(join(workDir, 'scope.md'), '仅重测批内 00、01 两条用例。\n', 'utf8');
+    await writeFile(join(workDir, 'briefs', '00.md'), '# 用例 00 编写简报\n', 'utf8');
+    await writeFile(join(workDir, 'briefs', '01.md'), '# 用例 01 编写简报\n', 'utf8');
+    await writeFile(join(workDir, 'audit', '00.aaaaaaaa.brief.json'), JSON.stringify({ schema: 'fidelity-brief@1', item: 'doc:0', brief_sha256: 'a'.repeat(64) }), 'utf8');
+    await writeFile(join(workDir, 'audit', '01.bbbbbbbb.brief.json'), JSON.stringify({ schema: 'fidelity-brief@1', item: 'doc:1', brief_sha256: 'b'.repeat(64) }), 'utf8');
+    await writeFile(
+      join(workDir, 'batch-plan.json'),
+      JSON.stringify([
+        { case: '100000000000000000', brief: 'briefs/00.md', out: 'plans/00.json', task_file: 'briefs/00.task.md' },
+        { case: '100000000000000001', brief: 'briefs/01.md', out: 'plans/01.json', task_file: 'briefs/01.task.md', note: '按新配置核对' },
+      ]),
+      'utf8',
+    );
+
+    const toolPath = join(packDir, 'tools', 'task-brief.ts');
+    const singleRun = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '脚本编写', '--case', '100000000000000000', '--brief', 'briefs/00.md', '--out', 'plans/00.json', '--task-file', 'briefs/single.task.md'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(singleRun.status, 0, singleRun.stderr);
+    assert.ok(singleRun.stdout.length <= 500);
+    assert.ok(singleRun.stdout.includes(`技能目录：${packDir}`), 'dispatchPrompt must expose real skillDir');
+
+    const batchPlan = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '脚本编写', '--batch', 'batch-plan.json'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(batchPlan.status, 0, batchPlan.stderr);
+    const planSummary = JSON.parse(batchPlan.stdout);
+    assert.equal(planSummary.schema, 'task-brief-batch@1');
+    assert.equal(planSummary.written, 2);
+    assert.equal(planSummary.tasks.length, 2);
+    assert.ok((await readFile(join(workDir, 'briefs', '01.task.md'), 'utf8')).includes('按新配置核对'));
+
+    const batchFidelity = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '保真核对', '--batch', 'audit', '--task-dir', 'audit-tasks'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(batchFidelity.status, 0, batchFidelity.stderr);
+    const fidSummary = JSON.parse(batchFidelity.stdout);
+    assert.equal(fidSummary.written, 2);
+    assert.ok((await readFile(join(workDir, 'audit-tasks', '00.aaaaaaaa.task.md'), 'utf8')).includes('compile-fidelity'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

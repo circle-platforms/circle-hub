@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "2b2541035a3c3389df8abdc8e3372fb687283b367469bfb214863408fdcc57ec",
-      "size": 9128
+      "sha256": "4ad8f0f87e01c749c51ce6b38046b83bc47525153a09b1fb5c3802b0aaa822ae",
+      "size": 9579
     },
     {
       "path": "checks.json",
@@ -85,8 +85,8 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "3229f64f00b4be0901978f3120d68c420d4a0c214c76726651c8ce2408c5a72c",
-      "size": 23478
+      "sha256": "4c2b71bc48e48dfcf0ef2c635f7411838f2b748718cc4f5e0d8e945c0c3b8b8c",
+      "size": 31981
     },
     {
       "path": "functions/recompose-evidence.ts",
@@ -115,8 +115,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "51dc29071554842c8ab5ff399958c16b61675c2e151b5863954cc479751b392a",
-      "size": 1736
+      "sha256": "fb903be4370a5cbff727073eba12c66b920858da17aeeb0808ad9b0cc930b2ad",
+      "size": 1859
     },
     {
       "path": "samples/negative/full_set.json",
@@ -165,8 +165,8 @@
     },
     {
       "path": "tables/recompose-codes.json",
-      "sha256": "1ded22f14242a2d601c47986594db6a3506af818b51d6787591938989e9cb407",
-      "size": 1434
+      "sha256": "a2161cc837f84e258a472fe78b27e847b2e5a5ca4861c356265de691ab55903b",
+      "size": 1714
     },
     {
       "path": "tables/recompose-format.json",
