@@ -334,7 +334,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
  * for it. An accepted answer whose result is ready lets the Hub dispatch when the run has no job yet; a repeat of the same
  * submission reads the jobs' progress. Ready is every item delivered without error with every release requirement of the
  * hub_template rows that the item lists satisfied, so a run whose artifact is not verified yet (a plan run) does not try. */
-async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null, user: Principal): Promise<SubmitAnswer> {
+export async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAnswer, traceId: string | null, user: Principal): Promise<SubmitAnswer> {
   if (answer.acceptance !== 'accepted' || !answer.result || !ctx.deps.dispatch?.accepted) return answer;
   const workflow = await ctx.deps.workflows.byDigest(run.pack_digest);
   const rows = workflow?.effects?.filter((row) => row.trigger === 'hub_template') ?? [];
@@ -350,7 +350,7 @@ async function withDispatch(ctx: EngineContext, run: RunRecord, answer: SubmitAn
     ctx.log({ traceId, run: run.run, what: 'hub dispatch', detail: describe(error) });
     const current=await ctx.deps.records.principals.get(user.id).catch(()=>null);
     const next=current&&!current.disabled&&isAdmin(current)?`circle-hub run show ${run.run} --json`:'不要重新发送或另开运行重发；稍后原样重交原提交只读记录，或联系管理员核对';
-    return { ...answer, dispatch: [{ outcome: 'unknown', missing_facts: [{fact:'本次调用未能取得可核对的作业状态',next_action:next}], next_action:next, text:'上机验证状态尚未确认：本次未取得可核对的作业状态；不要重新发送或另开运行重发；下一步：'+next }] };
+    return { ...answer, dispatch: [{ run_facts: {scope:{run:run.run},missing_facts:[{fact:'本次调用未能取得可核对的作业状态',next_action:next}],next_action:next}, text:'上机验证状态尚未确认：本次未取得可核对的作业状态；不要重新发送或另开运行重发；下一步：'+next }] };
   }
 }
 
