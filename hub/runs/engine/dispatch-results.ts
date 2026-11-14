@@ -9,12 +9,56 @@ import type { ValidationResult, LayerResult } from '../../../contracts/src/valid
 import type { RunJob } from '../../dispatch/api.ts';
 import { parseReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
-import type { ExportedJob } from '../../ports.ts';
+import type { ExportedJobV1, ExportedJobV2 } from '../../ports.ts';
+import { DispatchJobFactsSchema, DispatchAttemptFactsSchema, ScopedDispatchFactsSchema } from '../../../contracts/api.ts';
+import type { ActionBody, StoredRecord } from '../../records/api.ts';
 import { partitionItems, type PartitionInput } from './partitions.ts';
 import { bindRecovery, expectationFor, meets, requirementStatus } from './terminals.ts';
 import { aggregate, INTERMITTENT_MARK, repetitionSummary, type RoundOutcome } from './repetition.ts';
 import { earlyStopSentence } from '../../dispatch/rounds.ts';
 
+/** Management exits do not clear a physical freeze or manufacture an execution verdict. */
+export function dispatchFinalized(job:RunJob):boolean {
+  const facts=job.status.job_facts;
+  return Boolean(facts.decided_by&&facts.decided_at&&(facts.disposition==='mark_failed'||facts.disposition==='abandon'));
+}
+export function dispatchUncertain(job:RunJob,includeIssued=false):boolean {
+  if(dispatchFinalized(job))return false;
+  const facts=job.status.job_facts;
+  const attempts=[...(facts.rounds??[]).flatMap(round=>round.dispatch_attempt?[round.dispatch_attempt]:[]),...(job.status.dispatch_attempt?[job.status.dispatch_attempt]:[])];
+  return facts.frozen===true||facts.awaiting_disposition===true||attempts.some(attempt=>attempt.outcome==='unknown'||attempt.outcome==='read_back_mismatch'||includeIssued&&attempt.outcome==='issued');
+}
+/** A later unsent round is never proof that the whole job did not execute. */
+export function dispatchNotExecuted(job:RunJob):boolean {
+  const facts=job.status.job_facts;
+  if(facts.result||dispatchUncertain(job)||job.ended!=='done')return false;
+  if(job.boundary_refused&&facts.admission_error&&!job.status.dispatch_attempt)return true;
+  const rounds=facts.rounds??[];
+  const attempts=rounds.length?rounds.map(round=>round.dispatch_attempt):[job.status.dispatch_attempt];
+  if(!attempts.length||attempts.some(attempt=>!attempt))return false;
+  const numbered=attempts.map(attempt=>attempt!.scope.round).sort((a,b)=>a-b);
+  if(numbered.some((round,index)=>round!==index+1))return false;
+  return attempts.every(attempt=>attempt!.outcome==='not_dispatched'||attempt!.outcome==='proven_not_executed'||attempt!.outcome==='target_rejected');
+}
+export function publicDispatchFacts(job:RunJob) {
+  const job_facts=Object.fromEntries(Object.entries(job.status.job_facts).filter(([key])=>key!=='grounds'&&Object.hasOwn(DispatchJobFactsSchema.shape,key)));
+  const dispatch_attempt=job.status.dispatch_attempt?Object.fromEntries(Object.entries(job.status.dispatch_attempt).filter(([key])=>key!=='grounds'&&Object.hasOwn(DispatchAttemptFactsSchema.shape,key))):undefined;
+  return ScopedDispatchFactsSchema.parse({job_facts,...(dispatch_attempt?{dispatch_attempt}:{})});
+}
+/** Version-one wire rules, isolated from all internal scoped readers. No attempt is converted to a whole-job outcome. */
+export function legacyJobState(events:readonly StoredRecord<ActionBody>[]):{outcome:string;frozen:boolean} {
+  const last=(phase:string)=>events.findLast(event=>event.body.detail.phase===phase);
+  const end=last('complete')??last('boundary_refused'),intent=last('intent'),probeIntent=last('probe_intent');
+  const receipt=last('receipt')??events.findLast(event=>event.body.detail.phase==='reconciled'&&event.body.detail.acceptance==='accepted'&&event.body.detail.remote_id!==undefined);
+  const safe=(value:unknown)=>value==='target_rejected'||value==='proven_not_executed';
+  const pending=new Map<string,StoredRecord<ActionBody>>();
+  for(const event of events){const detail=event.body.detail;if(detail.uncertain===true&&!Array.isArray(detail.answers))pending.set(event.digest,event);if(detail.unfreeze===true){if(Array.isArray(detail.answers)){for(const ref of detail.answers)if(typeof ref==='string'&&ref.startsWith('rec:'))pending.delete(ref.slice(4));}else for(const [key,request] of pending)if(!request.body.detail.question_sha256)pending.delete(key);}}
+  const unknown=pending.size>0;
+  const missingReceipt=!events.some(event=>event.body.detail.done===true&&(probeIntent&&event.body.detail.effect_accounted===true||safe(event.body.detail.outcome)||event.body.detail.outcome==='not_dispatched'&&event.body.detail.submit_invoked===false))&&Boolean(intent??probeIntent)&&!receipt&&!events.some(event=>event.body.detail.unfreeze===true);
+  const decision=last('dispose');
+  const outcome=decision?.body.detail.disposition==='mark_failed'&&decision.body.detail.risk_confirmed===true?'unknown':end?.body.detail.outcome==='not_dispatched'&&end.body.detail.submit_invoked===false?'not_dispatched':end&&safe(end.body.detail.outcome)?String(end.body.detail.outcome):unknown||missingReceipt||intent&&!receipt?'unknown':end?.body.detail.outcome==='not_dispatched'?'not_dispatched':end?'effective':intent?'issued':events.length?'not_dispatched':'unknown';
+  return {outcome,frozen:unknown||missingReceipt};
+}
 const Row=z.object({item:z.string(),dynamic_terminal:DynamicTerminalSchema,qualifier:z.object({nature:NatureSchema.extract(['judgment','unknown']),marks:z.array(QualifierMarkSchema)}),accepted_as_fact:z.literal(false),missing_facts:z.array(z.string()).optional(),code:z.string().optional(),judgment_premises:z.array(Claim).optional(),report_check:z.object({condition:z.string(),pointer:z.string(),declared_pointer:z.string(),resolved:z.boolean(),present:z.boolean(),actual_sha256:z.string(),result_definition_sha256:z.string(),mapped_terminal:DynamicTerminalSchema.optional(),missing_fact:z.string().optional(),next_action:z.string().optional()}).optional(),missing_fact:z.string().optional(),next_action:z.string().optional(),evidence:z.object({log:z.string().optional(),sessions:z.record(z.string(),z.string()).optional()}).optional()});
 const RoundNote=z.object({round:z.number().int(),terminal:DynamicTerminalSchema,code:z.string().optional(),meets:z.boolean().nullable().optional(),reason:ReasonSchema.optional(),early_stop:z.boolean().optional(),pending:z.boolean().optional(),lost:z.boolean().optional()});
 const Projection=z.object({job:z.string(),sha256:z.string(),rows:z.array(Row),rounds:z.array(RoundNote).optional()});
@@ -23,8 +67,8 @@ type Admin={id:string;name:string;role:'admin'};
 async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
 /** The job's result projection when it is the dispatch service's own, bound to this job and its workbook, one row per item; else null. */
 async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<z.infer<typeof Projection>|null>{
-  if(!job.status.result)return null;
-  const ref=parseReference(job.status.result);
+  if(!job.status.job_facts.result)return null;
+  const ref=parseReference(job.status.job_facts.result);
   if(ref.scheme!=='src')return null;
   const source=await ctx.deps.records.artifacts.source(admin,ref.sha256,{consumer:'function'});
   if(!(source?.bytes&&'generated'in source.artifact.body.origin&&source.artifact.body.origin.generated.generator==='dispatch@1'&&source.artifact.body.author.user===null&&source.artifact.body.provenance_type==='projected'))return null;
@@ -37,14 +81,27 @@ async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<
  * engine applies, so a client tool reads the outcome by structure instead of re-reading the device return's prose. Nothing is
  * judged here; the administrative proof record of a job stays out.
  */
-export async function exportedJobs(ctx:EngineContext,run:string):Promise<ExportedJob[]>{
+export async function exportedJobs(ctx:EngineContext,run:string):Promise<ExportedJobV1[]>{
   if(!ctx.deps.dispatch)return [];
   const admin=await activeAdmin(ctx);
   if(!admin)return [];
-  const out:ExportedJob[]=[];
+  const out:ExportedJobV1[]=[];
   for(const job of await ctx.deps.dispatch.jobs(admin,run)){
     const report=await readProjection(ctx,admin,job);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+    const history=(await ctx.deps.records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:[job.job]})).slice(0,job.status.events);
+    if(!history.length)throw new Error('旧版作业导出缺少原始观察记录');
+    const legacy=legacyJobState(history);
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...legacy,result:job.status.job_facts.result??null,device_return:job.status.job_facts.device_return??null,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+  }
+  return out;
+}
+export async function exportedScopedJobs(ctx:EngineContext,run:string):Promise<ExportedJobV2[]> {
+  if(!ctx.deps.dispatch)return [];
+  const admin=await activeAdmin(ctx);if(!admin)return [];
+  const out:ExportedJobV2[]=[];
+  for(const job of await ctx.deps.dispatch.jobs(admin,run)){
+    const report=await readProjection(ctx,admin,job);
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,...publicDispatchFacts(job),rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
   }
   return out;
 }
@@ -63,16 +120,16 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
   const inputs:PartitionInput[]=[];
   for(const [partition,items] of Object.entries(result.partitions))for(const item of items){
     const relevant=jobs.filter(job=>appliesTo(job,run.run,item.item));
-    const disposed=(job:RunJob)=>Boolean(job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon'));
-    const frozen=relevant.some(job=>!disposed(job)&&(job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch'));
-    const rejectDisposed=relevant.some(job=>disposed(job)&&job.status.disposition==='mark_failed');
-    const abandonDisposed=relevant.some(job=>disposed(job)&&job.status.disposition==='abandon');
+    const disposed=dispatchFinalized;
+    const frozen=relevant.some(job=>dispatchUncertain(job));
+    const rejectDisposed=relevant.some(job=>disposed(job)&&job.status.job_facts.disposition==='mark_failed');
+    const abandonDisposed=relevant.some(job=>disposed(job)&&job.status.job_facts.disposition==='abandon');
     for(const requirement of item.requirements){
       const template=workflow.requirements.find(t=>t.key===requirement.requirement);
       if(!template?.layers.includes('dynamic')||template.observation!=='dispatch@1'||!relevant.length)continue;
       const rows=relevant.flatMap(job=>(reports.get(job.job)?.rows??[]).filter(r=>job.verification_run===run.run||r.item===item.item));
       const allKnown=rows.length>0&&relevant.every(j=>reports.get(j.job)!==null)&&!frozen;
-      const notExecuted=relevant.every(j=>j.status.outcome==='not_dispatched'||j.status.outcome==='proven_not_executed'||j.status.outcome==='target_rejected')&&!frozen;
+      const notExecuted=relevant.every(dispatchNotExecuted)&&!frozen;
       const terminal:DynamicTerminal=notExecuted?'not_run':allKnown&&rows.every(r=>r.dynamic_terminal==='pass')?'pass':allKnown&&rows.some(r=>r.dynamic_terminal==='fail')?'fail':'no_verdict';
       const due=new Date(ctx.now().getTime()+86400000).toISOString();
       let dynamic:LayerResult;
@@ -90,7 +147,7 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
       requirement.claims=requirement.claims.filter(c=>c.warrant.id!=='dispatch@1');
       for(const job of relevant)for(const row of reports.get(job.job)?.rows??[]){
         if(job.verification_run!==run.run&&row.item!==item.item)continue;
-        requirement.claims.push(Claim.parse({item:item.item,requirement:requirement.requirement,statement:{text:`作业 ${job.job} 的条目 ${row.item} 动态观察：${labelOf('dynamic_terminal',row.dynamic_terminal)}`,data:{job:job.job,item:row.item,terminal:row.dynamic_terminal,accepted_as_fact:row.accepted_as_fact,missing_facts:row.missing_facts??[],...(row.judgment_premises?.length?{judgment_premises:row.judgment_premises}:{}),...(row.report_check?{report_check:row.report_check}:{}),...(row.missing_fact?{missing_fact:row.missing_fact,next_action:row.next_action}:{})}},qualifier:{nature:row.qualifier.nature,provenance:'projected',marks:row.qualifier.marks},grounds:[job.status.result!],warrant:{producer:'function',id:'dispatch@1'},validity:{status:'valid',bound:[run.pack_digest,job.sha256],premises:[]}}));
+        requirement.claims.push(Claim.parse({item:item.item,requirement:requirement.requirement,statement:{text:`作业 ${job.job} 的条目 ${row.item} 动态观察：${labelOf('dynamic_terminal',row.dynamic_terminal)}`,data:{job:job.job,item:row.item,terminal:row.dynamic_terminal,accepted_as_fact:row.accepted_as_fact,missing_facts:row.missing_facts??[],...(row.judgment_premises?.length?{judgment_premises:row.judgment_premises}:{}),...(row.report_check?{report_check:row.report_check}:{}),...(row.missing_fact?{missing_fact:row.missing_fact,next_action:row.next_action}:{})}},qualifier:{nature:row.qualifier.nature,provenance:'projected',marks:row.qualifier.marks},grounds:[job.status.job_facts.result!],warrant:{producer:'function',id:'dispatch@1'},validity:{status:'valid',bound:[run.pack_digest,job.sha256],premises:[]}}));
       }
       const expectation=expectationFor(template,run.items.find(i=>i.id===item.item)?.fields??{});
       const staticRefutes=requirement.claims.filter(c=>c.statement.verdict==='refute');
@@ -108,7 +165,7 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
         return {round:note.round,terminal:note.terminal,...(note.code?{code:note.code}:{}),...(settled?{meets:note.meets===true}:{})};
       }):relevant.map((job,at)=>{
         const row=(reports.get(job.job)?.rows??[]).find(r=>r.item===item.item);
-        const terminal:DynamicTerminal=row?.dynamic_terminal??(job.status.outcome==='not_dispatched'||job.status.outcome==='proven_not_executed'||job.status.outcome==='target_rejected'?'not_run':'no_verdict');
+        const terminal:DynamicTerminal=row?.dynamic_terminal??(dispatchNotExecuted(job)?'not_run':'no_verdict');
         const settled=terminal==='pass'||terminal==='fail';
         const roundLayer={layer:'dynamic' as const,terminal,...(row?.code?{code:row.code}:{})};
         return {round:at+1,terminal,...(row?.code?{code:row.code}:{}),...(settled?{meets:meets(roundLayer,expectation,roundRefutation,template.accepted_producer)}:{})};
@@ -130,7 +187,7 @@ export async function applyDispatchResults(ctx:EngineContext,run:RunRecord,resul
       }) as typeof requirement.layers;
       if(byRound.size>0){
         const parts=DYNAMIC_TERMINAL.flatMap(name=>{const found=rolled.distribution.byTerminal[name];return found>0?[`${found} 次${labelOf('dynamic_terminal',name)}`]:[];});
-        const grounds=relevant.flatMap(job=>job.status.result?[job.status.result]:[]);
+        const grounds=relevant.flatMap(job=>job.status.job_facts.result?[job.status.job_facts.result]:[]);
         const marks:QualifierMark[]=[];
         marks.push('target_reported','report_for_dispatch','local_ops_not_excluded',...(rows.some(row=>row.qualifier.marks.includes('conditional_on_judgment'))?['conditional_on_judgment' as const]:[]));
         requirement.claims.push(Claim.parse({item:item.item,requirement:requirement.requirement,statement:{text:`目标报告：${rolled.distribution.count} 次里 ${parts.join('、')}${rolled.marks.includes(INTERMITTENT_MARK)?'（间歇）':''}`,verdict:'unknown',data:{distribution:rolled.distribution.byTerminal,count:rolled.distribution.count}},qualifier:{nature:'unknown',provenance:'projected',marks},grounds,warrant:{producer:'function',id:'dispatch@1'},validity:{status:'valid',bound:[run.pack_digest],premises:[]}}));
