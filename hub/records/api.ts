@@ -1,3 +1,4 @@
+export type { TestEnvironments, TestEnvironment, TestEnvironmentInput, TestEnvironmentInheritanceState, TestEnvironmentOwnership } from './test-environments.ts';
 export { withEnvironmentPermissionLock } from './environment-permission-lock.ts';
 export type { TestEnvironmentInheritanceContext, TestEnvironmentInheritanceInput, TestEnvironmentInheritanceSources } from './environment-inheritance-types.ts';
 export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpgradeGrant } from './environment-upgrade-types.ts';
@@ -1010,6 +1011,7 @@ export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type {PurgeRequester,PurgePending,PurgeRequestBody} from './personal-sync.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'purgeRequests'|'confirmPurge'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
+  testEnvironments: import('./test-environments.ts').TestEnvironments;
   memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerHandover'>;
   personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'|'purgedRunOriginals'>;
