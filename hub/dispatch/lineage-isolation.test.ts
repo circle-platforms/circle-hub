@@ -44,8 +44,24 @@ test('inconsistent historical lineage metadata is refused without modifying orig
 
 test('independent repetition starts with its own rounds and window instead of inheriting old byte history',{timeout:30000},async t=>{
  const c=await setup();t.after(()=>c.close());c.detail.run.requirements=[{key:'workbook_verified',name:'合成核验',description:'合成',layers:['dynamic'],done_rule:'gating',accepted_producer:'fact',repair_rounds:0,rules:[],run_interpreters:[],repetition:{count:2,aggregation:'all',basis:'explicit',declared:{count:true,aggregation:true,k:false},window_seconds:2}}];
- const next=await independent(c),first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.dispatch_attempt!.outcome,'effective');assert.equal(c.submitted.length,2);await transferLease(c,next.run);c.clock.ms+=5000;const second=await c.service.dispatch(c.admin,next.run,c.executor.id);assert.equal(second.dispatch_attempt!.outcome,'effective');assert.equal(c.submitted.length,4);assert.deepEqual(second.job_facts.rounds?.map(row=>row.round),[1,2]);for(const row of second.job_facts.rounds!){const scope=row.dispatch_attempt!.scope;assert.equal(scope.operation,'dispatch');assert.equal(scope.job,second.job);assert.ok('round' in scope);assert.equal(scope.round,row.round);}assert.ok(second.job_facts.rounds?.every(row=>row.reason!=='budget_exhausted'));
+ await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,result:{...c.executor.definition.result,request_id:'/request'}});
+ await c.freezeExecutor();
+ const next=await independent(c),first=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(first.dispatch_attempt!.outcome,'effective',JSON.stringify(first));assert.equal(c.submitted.length,2);await transferLease(c,next.run);c.clock.ms+=5000;const second=await c.service.dispatch(c.admin,next.run,c.executor.id);assert.equal(second.dispatch_attempt!.outcome,'effective');assert.equal(c.submitted.length,4);assert.deepEqual(second.job_facts.rounds?.map(row=>row.round),[1,2]);for(const row of second.job_facts.rounds!){const scope=row.dispatch_attempt!.scope;assert.equal(scope.operation,'dispatch');assert.equal(scope.job,second.job);assert.ok('round' in scope);assert.equal(scope.round,row.round);}assert.ok(second.job_facts.rounds?.every(row=>row.reason!=='budget_exhausted'));
  const original=await c.service.journal.events(first.job),current=await c.service.journal.events(second.job);assert.deepEqual(current.filter(row=>row.body.detail.phase==='intent').map(row=>[row.body.detail.round,row.body.detail.attempt]),[[1,1],[2,1]]);assert.equal(new Set([...original,...current].filter(row=>row.body.detail.phase==='intent').map(row=>row.body.detail.intent_key)).size,4);assert.deepEqual((await readRunJobs(c.kit,c.service,c.admin,next.run)).map(row=>row.job),[second.job]);
+ const sentRequests=c.endpoint.calls.filter(call=>call.params.name==='send_blob').map(call=>{const args=call.params.arguments;assert.ok(args&&typeof args==='object'&&'request' in args);return args.request;});
+ const allIntents=[...original,...current].filter(event=>event.body.detail.phase==='intent');
+ assert.deepEqual(sentRequests,allIntents.map(event=>event.body.detail.request_id));assert.equal(new Set(sentRequests).size,4);
+ for(const [state,events] of [[first,original],[second,current]] as const){
+  assert.deepEqual(state.job_facts.rounds?.map(row=>row.round),[1,2]);
+  for(const row of state.job_facts.rounds!){
+   const scope=row.dispatch_attempt!.scope;assert.equal(scope.operation,'dispatch');assert.equal(scope.job,state.job);assert.ok('round' in scope);assert.equal(scope.round,row.round);
+   const intent=events.find(event=>event.body.detail.phase==='intent'&&event.body.detail.round===row.round);assert.ok(intent);
+   assert.equal(scope.request_id,intent.body.detail.request_id);assert.ok(sentRequests.includes(scope.request_id));
+  }
+  const latestScope=state.dispatch_attempt!.scope;assert.ok('round' in latestScope);assert.equal(latestScope.round,2);
+  assert.equal(latestScope.request_id,events.findLast(event=>event.body.detail.phase==='intent')!.body.detail.request_id);
+ }
+
 });
 
 test('risk disposition frees physical occupancy without erasing the original unknown or permitting its retry',{timeout:30000},async t=>{
