@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { withDefinitionOwners, withDefinitionAssignment, restoresDisabledOwner, restoresDisabledAssignment } from './definition-restoration.ts';
 import type { Transaction } from './api.ts';
 
-const tx: Transaction = { transactionId: 1 }, other: Transaction = { transactionId: 2 };
+const tx: Transaction = { transactionId: 1 }, other: Transaction = { transactionId: 1 };
 
 test('definition owner authority is confined to the exact transaction, selected owner and async restore chain', async () => {
   let entered!: () => void, release!: () => void;

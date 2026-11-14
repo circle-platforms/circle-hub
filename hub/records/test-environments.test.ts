@@ -4,7 +4,7 @@ import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
 import { canonicalBytes } from './canonical.ts';
 import { ExecutorSource } from '../../contracts/src/resources.ts';
-import { TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY } from '../../contracts/api.ts';
+import { TestEnvironment, TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY } from '../../contracts/api.ts';
 import { LeaseService } from '../leases/api.ts';
 import { definition } from '../dispatch/testing/definition.ts';
 import { newId } from './ids.ts';
@@ -220,5 +220,57 @@ test('a non-environment prefix preserves complete lease refusal and ownership re
     assert.equal(next.until, first.until);
     assert.notEqual(next.lease, first.lease, 'new real booking must have a new identity');
     assert.equal(next.token, first.token + 2, 'release and reacquire keep the actual fencing progression');
+  } finally { await f.close(); }
+});
+
+test('only the bounded definition restore reproduces disabled nondeleted responsibility and environment grants without enabling the account', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    await f.kit.principals.setDisabled(f.admin, f.member.id, true);
+    await assert.rejects(f.kit.testEnvironments.register(f.admin, f.input()), /责任账户/);
+    await assert.rejects(f.kit.testEnvironments.registerBookingPrefix(f.admin, { prefix: 'ordinary/', owner: f.member.id }), /责任账户/);
+    await assert.rejects(f.kit.testEnvironments.registerFromDefinition({ ...f.member, role: 'admin' }, f.input()), /真实管理员/);
+    const environment = await f.kit.testEnvironments.registerFromDefinition(f.admin, f.input());
+    assert.equal(environment.prefixes[0].owner, f.member.id);
+    const prefix = await f.kit.testEnvironments.registerBookingPrefixFromDefinition(f.admin, { prefix: 'ordinary/', owner: f.member.id });
+    assert.equal(prefix.prefixes[0].owner, f.member.id);
+    assert.equal(prefix.isTestEnvironment, false);
+    const restored = await f.kit.testEnvironments.assignFromDefinition(f.admin, { environment: environment.id, subject: f.member.id, expiresAt: '2099-01-01T00:00:00.000Z' });
+    assert.equal(restored.body.decided_by, f.admin.id);
+    assert.equal(restored.body.subject, f.member.id);
+    assert.equal(restored.body.expires_at, '2099-01-01T00:00:00.000Z');
+    assert.equal((await f.kit.principals.get(f.member.id))?.disabled, true);
+    assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
+    await assert.rejects(f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: environment.id }), /分配对象不存在或未启用/);
+    // Existing deleted source state in a synthetic fixture is never admitted, even by the restore capability.
+    await f.db.query('UPDATE users SET deleted_at=$1 WHERE id=$2', [new Date().toISOString(), f.other.id]);
+    await assert.rejects(f.kit.testEnvironments.registerFromDefinition(f.admin, { ...f.input('删除账户不能恢复', 'other-target'), prefixes: [{ ...f.input().prefixes[0], owner: f.other.id }] }), /责任账户/);
+    await assert.rejects(f.kit.testEnvironments.assignFromDefinition(f.admin, { environment: environment.id, subject: f.other.id }), /分配对象不存在或未启用/);
+  } finally { await f.close(); }
+});
+
+test('explicit reassignment from a disabled owner appends responsibility without changing grants or releasing the old reservation', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    const environment = await f.kit.testEnvironments.register(f.admin, f.input());
+    const config = await f.kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id);
+    assert.ok(config?.body.bound);
+    const grant = await f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: environment.id });
+    const booked = await new LeaseService(f.db, { records: f.kit.store, catalog: f.kit.testEnvironments }).acquire({ keys: ['synthetic/device/a'], prefix: 'synthetic/', ttlSeconds: 900, maxTtlSeconds: 3600, holder: { user: f.member.id, run: newId('run') } });
+    assert.ok(booked.ok);
+    const leaseBytes = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
+    await f.kit.principals.setDisabled(f.admin, f.member.id, true);
+    const changed = await f.kit.testEnvironments.reassignOwner(f.admin, environment.id, { prefix: 'synthetic/device/', owner: f.other.id });
+    assert.equal(changed.id, environment.id);
+    assert.equal(changed.target, environment.target);
+    assert.equal(changed.prefixes[0].owner, f.other.id);
+    const original = TestEnvironment.parse(JSON.parse(Buffer.from((await f.kit.objects.get(config.body.bound))!).toString()));
+    assert.equal(original.prefixes[0].owner, f.member.id);
+    assert.equal((await f.kit.authorizations.latest('resource_assign', f.member.id, environment.id))?.digest, grant.digest);
+    assert.equal(await f.kit.authorizations.latest('resource_assign', f.other.id, environment.id), null);
+    assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
+    assert.equal(await f.kit.testEnvironments.canUse(f.other, environment.id), false);
+    assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, leaseBytes);
+    await assert.rejects(f.kit.testEnvironments.reassignOwner(f.admin, environment.id, { prefix: 'synthetic/device/', owner: f.member.id }), /当前启用/);
   } finally { await f.close(); }
 });
