@@ -74,7 +74,7 @@ test('restarting the hub process continues a pending device report and keeps the
     const continued = await restarted.dispatch.resume(c.admin, pending.job);
     assert.deepEqual(Buffer.from((await c.kit.objects.get(pending.job_facts.result.slice(4)))!), stored);
     assert.equal(c.calls.filter((name) => name === 'send_blob').length, 1);
-    assert.equal(continued.job_facts.report_pending, undefined);
+    assert.equal(continued.job_facts.report_pending, false);
     const source = await c.kit.artifacts.source(c.admin, continued.job_facts.result!.slice(4));
     assert.ok(source?.bytes);
     const report = JSON.parse(Buffer.from(source.bytes).toString()) as { rows: Array<{ dynamic_terminal: string }> };
