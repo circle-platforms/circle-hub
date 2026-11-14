@@ -29,12 +29,23 @@ test('recognize reports only the last refusal after every registered candidate r
 test('malformed JSON, XML, XHTML and XLSX uploads return the definite parser reason and fix over MCP', async (t) => {
   const server = await createTestServer(); t.after(() => server.close());
   const client = await server.client(server.admin.token); t.after(() => client.close());
-  for (const [mediaType, text, parser, reason] of vectors) {
+  // D5: same caller+tool+code within an hour escalates fix (count + schema example for this tool's file_path mode).
+  const EXAMPLE = '{"file_path":"YQ=="}';
+  const CLOSE = '照原样重试不会成功。请照上面的完整写法改；改后仍被拒绝，就停止重试，把这条错误原样报告给使用者';
+  for (const [i, [mediaType, text, parser, reason]] of vectors.entries()) {
     const result = await client.call('upload_file', { file_path: Buffer.from(text).toString('base64'), media_type: mediaType });
     assert.equal(result.isError, true);
     const errors = result.structuredContent.errors as { code: string; message: string; fix: string }[];
-    assert.equal(errors[0].code, 'SOURCE_UNPARSEABLE'); assert.match(errors[0].message, reason); assert.ok(errors[0].message.includes(parser)); assert.equal(errors[0].fix, FIX);
-    assert.doesNotMatch(JSON.stringify(result), /private-synthetic|synthetic-private-label/); assert.ok(result.content.some((block) => block.text?.includes(FIX)));
+    assert.equal(errors[0].code, 'SOURCE_UNPARSEABLE'); assert.match(errors[0].message, reason); assert.ok(errors[0].message.includes(parser));
+    const occurrence = i + 1;
+    if (occurrence === 1) {
+      assert.equal(errors[0].fix, FIX);
+    } else if (occurrence === 2) {
+      assert.equal(errors[0].fix, `${FIX}。这是一小时内这个工具第 ${occurrence} 次参数无效。完整的正确写法：${EXAMPLE}。`);
+    } else {
+      assert.equal(errors[0].fix, `${FIX}。这是一小时内这个工具第 ${occurrence} 次参数无效。完整的正确写法：${EXAMPLE}。${CLOSE}。`);
+    }
+    assert.doesNotMatch(JSON.stringify(result), /private-synthetic|synthetic-private-label|memory_share/); assert.ok(result.content.some((block) => block.text?.includes(FIX)));
   }
 });
 

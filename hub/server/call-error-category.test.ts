@@ -57,7 +57,7 @@ test('pack-scoped codes default to 参数无效, not conclusion', () => {
 
 test('pack denial fact uses 工作流 and 当前账户; no replaceAll 任务包', () => {
   assert.equal(
-    callErrorFact('SOURCE_NOT_PERMITTED', '任务包 recompose 存在，没有分配给你'),
+    callErrorFact('SOURCE_NOT_PERMITTED', '当前账户未获授权使用工作流「recompose」'),
     '当前账户未获授权使用工作流「recompose」',
   );
   assert.equal(
@@ -71,9 +71,9 @@ test('pack denial fact uses 工作流 and 当前账户; no replaceAll 任务包'
 });
 
 test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands are registered', () => {
-  const memberFix = '请管理员把它分配给你；用 list_task_packs 看你能用的任务包';
+  const memberFix = '请联系管理员为该账户或所在团队分配此工作流';
   const member = renderCallError(
-    { code: 'SOURCE_NOT_PERMITTED', message: '任务包 recompose 存在，没有分配给你', fix: memberFix },
+    { code: 'SOURCE_NOT_PERMITTED', message: '当前账户未获授权使用工作流「recompose」', fix: memberFix, path: '/pack' },
     'user',
     fixByRole('SOURCE_NOT_PERMITTED', 'user', memberFix),
   )!;
@@ -85,7 +85,7 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
 
   const adminFix = fixByRole('SOURCE_NOT_PERMITTED', 'admin', memberFix)!;
   const admin = renderCallError(
-    { code: 'SOURCE_NOT_PERMITTED', message: '任务包 recompose 存在，没有分配给你', fix: adminFix },
+    { code: 'SOURCE_NOT_PERMITTED', message: '当前账户未获授权使用工作流「recompose」', fix: adminFix, path: '/pack' },
     'admin',
     adminFix,
   )!;
@@ -98,7 +98,7 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
   assertCommandsRegistered(adminFix);
 
   const named = renderCallError(
-    { code: 'SOURCE_NOT_PERMITTED', message: '任务包 recompose 存在，没有分配给你', fix: adminFix },
+    { code: 'SOURCE_NOT_PERMITTED', message: '当前账户未获授权使用工作流「recompose」', fix: adminFix, path: '/pack' },
     'admin',
     adminFix,
     '合成成员',
@@ -196,8 +196,8 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
     call_result: 'error',
     errors: [{
       code: 'SOURCE_NOT_PERMITTED',
-      message: '任务包 recompose 存在，没有分配给你',
-      fix: '请管理员把它分配给你；用 list_task_packs 看你能用的任务包',
+      message: '当前账户未获授权使用工作流「recompose」',
+      fix: '请联系管理员为该账户或所在团队分配此工作流',
       path: '/pack',
     }],
     trace: TRACE,
@@ -207,12 +207,12 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
     '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
 
-  const adminFix = fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请管理员把它分配给你')!;
+  const adminFix = fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请联系管理员为该账户或所在团队分配此工作流')!;
   const adminDenied = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
     errors: [{
       code: 'SOURCE_NOT_PERMITTED',
-      message: '任务包 recompose 存在，没有分配给你',
+      message: '当前账户未获授权使用工作流「recompose」',
       fix: adminFix,
       path: '/pack',
     }],
@@ -229,8 +229,8 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
     call_result: 'error',
     errors: [{
       code: 'SOURCE_NOT_PERMITTED',
-      message: '任务包 recompose 存在，没有分配给你',
-      fix: fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请管理员把它分配给你', '合成成员')!,
+      message: '当前账户未获授权使用工作流「recompose」',
+      fix: fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请联系管理员为该账户或所在团队分配此工作流', '合成成员')!,
       path: '/pack',
     }],
     trace: TRACE,
@@ -325,6 +325,7 @@ test('Boss 14:32 admin next steps fill the caller account name; <理由> stays',
     '分享读取权限',
     '条目 foo 存在，你没有读取权限',
     '合成成员',
+    '/reference',
   );
   assert.equal(
     knowledge,

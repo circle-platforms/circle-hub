@@ -268,7 +268,7 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
       const next = escalated
         ? fix
         : D3_FACT_REWRITE.has(error.code)
-          ? callErrorNext(error.code, role, fix, error.message, account)
+          ? callErrorNext(error.code, role, fix, error.message, account, error.path)
           : (fix ?? '由使用者核对输入资料');
       return callErrorLine(category, fact, next, error.rounds_left);
     }
@@ -862,7 +862,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
       const next = escalated
         ? fix
         : !missingRecord && D3_FACT_REWRITE.has(error.code)
-          ? callErrorNext(error.code, role, fix, error.message, account)
+          ? callErrorNext(error.code, role, fix, error.message, account, error.path)
           : fix;
       const factText = !missingRecord && D3_FACT_REWRITE.has(error.code) && original === undefined
         ? callErrorFact(error.code, error.message)

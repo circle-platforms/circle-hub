@@ -140,9 +140,13 @@ test('an unknown pack is absent and an unassigned pack is not permitted (D05 R[3
   const before = h.logs.length;
   const unknown = await h.service.startRun(h.alice, { pack: 'no-such-pack', inputs: {} }, h.call());
   const unassigned = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: { map: { reference: map } } }, h.call());
-  assert.deepEqual(unknown.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有任务包 no-such-pack']]);
-  assert.deepEqual(unassigned.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_NOT_PERMITTED', '/pack', '任务包 toy-review 存在，没有分配给你']]);
-  assert.match(unassigned.errors[0]!.fix ?? '', /请管理员把它分配给你/);
+  assert.deepEqual(unknown.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有名为「no-such-pack」的工作流或技能']]);
+  assert.equal(unknown.errors[0]!.fix, '请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看');
+  assert.deepEqual(unassigned.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_NOT_PERMITTED', '/pack', '当前账户未获授权使用工作流「toy-review」']]);
+  assert.equal(
+    unassigned.errors[0]!.fix,
+    '请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看',
+  );
   valid(unknown);
   valid(unassigned);
   assert.equal(h.logs.length, before + 2);
