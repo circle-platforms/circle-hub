@@ -52,6 +52,8 @@
 
 ## 历史
 
+- 2026-11-14：按测试环境分配的独立功能分支采用模型84；ProtocolError 增加可选 call_error_reason，原因词表、原因与真实角色的类别及下一步表、call-error-reason@1 模式均由合约生成。六个工具的输入与描述保持原字节，四个格式技能包的版本与清单不因本次原因生成改变。源端原因、命令接缝与角色整句审阅仍在接线，本文不表示今晚生产已启用。
+
 - 2026-11-14：按测试环境分配的独立功能分支采用模型83及唯一deployment@3定义，登记合并前缀、目标、具名执行器和责任账户，并完整导出/应用账户、团队、全体分配及到期时间，以及不是测试环境的bookingPrefixes责任前缀；只有定义恢复可重现停用账户的owner/分配，账户仍停用，普通交互不放宽；deployment@2与leaseRegistrations拒绝并提示从现有实例重新export，不转换旧文件。使用既有authorization@1和配置对象，不新增SQL迁移。此条不属于今晚71386e72e3候选。
 
 - 2026-11-14：将 `contracts/generated/protocol.ts` 拆为仅含机器码表与判别/分类函数的 `contracts/generated/protocol-codes.ts`（含 `PROTOCOL_CODE_NAMES`、`ProtocolCode`、`isProtocolCode`、`CALL_ERROR_CATEGORY_BY_CODE`、`callErrorCategory`、`CORE_VIOLATION_CODE_NAMES`、`CoreViolationCode`、`CORE_VIOLATION_CODE_INTERPRETERS`、`isCoreViolationCode`、`RECORD_KINDS`、`RecordKind`、`PACK_FILE_PATHS`、`MODEL_VERSION`）和含人类句子的 `contracts/generated/protocol.ts`（兼容重导出 `protocol-codes.ts`）；四个格式技能包（`mindmap-format`、`workbook-format`、`xml-format`、`html-format`）只在 `functions/generated/protocol.ts` 镜像 `tools/gen-contracts.ts` 清单内各自声明的协议码子集（`SOURCE_UNPARSEABLE`、`REFERENCE_UNRESOLVED`）与 `ProtocolCode` 类型、不含 `when`/`fix` 句子、默认 `fix` 改为空串（包引文或码名超子集则在生成或 `--check` 时报错），后续仅调整错误改法句子或新增其他错误码时格式包摘要与版本不再联动变化。本次随拆分与内嵌 `mindmap-format` 升版同步更新候选版本：`mindmap-format` 1.0.26、`workbook-format` 1.0.24、`xml-format` 1.0.24、`html-format` 1.0.23、`case-compile` 3.20.3、`recompose` 1.2.6、`recompose-authority` / `recompose-adjudication` 1.1.10；未发布或部署。
