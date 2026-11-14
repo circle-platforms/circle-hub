@@ -106,7 +106,7 @@ test('revocation keeps only the callers existing occupancy visible, denies exten
   assert.deepEqual(await w.environments.list(outsider),[]);
   assert.deepEqual(await w.environments.unattributedHoldings(outsider),[]);
   assert.deepEqual(await w.environments.list(w.admin),[],'management alone exposes no unassigned environment');
-  const ctx = {now:()=>new Date(),deps:{leases:w.leases,environmentAccess:w.environments}} as unknown as EngineContext;
+  const ctx = {now:()=>new Date(),deps:{leases:w.leases,environmentAccess:w.environments,enforceEnvironmentAssignments:true}} as unknown as EngineContext;
   const workflow = {pack:{id:'synthetic-workflow'},workflow:{leases:{prefix:'synthetic/',max_ttl_seconds:600}}} as LoadedWorkflow;
   await assert.rejects(grantLeases(ctx,w.alice,workflow,[{op:'extend',keys:['synthetic/zone/allowed'],ttl_seconds:60}],ownRun,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='SOURCE_NOT_PERMITTED');
   assert.equal(await leaseBytes(),before,'revocation, viewing and denied extension change no lease byte');
