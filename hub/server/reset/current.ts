@@ -1,6 +1,6 @@
 // Current-schema, offline selection. No previous schema or business-data conversion is supported here.
 import { RESET_DATA_SCOPE } from '../../../contracts/api.ts';
-import { ResourceRecord, ResourceId, ExecutorSource } from '../../../contracts/src/resources.ts';
+import { ResourceRecord, ResourceId, ExecutorSource, TEST_ENVIRONMENT_INHERITANCE_KEY, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT_CONFIG_PREFIX, TestEnvironment } from '../../../contracts/src/resources.ts';
 import { SCHEMA_REGISTRY } from '../../../contracts/src/index.ts';
 import { SpaceTreeNode } from '../../../contracts/src/spaces.ts';
 import { sha256Hex, canonicalize } from '../../records/api.ts';
@@ -68,6 +68,24 @@ export async function inspectCurrentState(session: SqlSession, request: ResetReq
     if (record.kind !== 'authorization') continue;
     const body = rowObject(record.body);
     if (body.permission !== 'resource_config' || body.revoked || typeof body.bound !== 'string') continue;
+    if (body.object === TEST_ENVIRONMENT_INHERITANCE_KEY || typeof body.object === 'string' && body.object.startsWith(TEST_ENVIRONMENT_CONFIG_PREFIX)) {
+      try {
+        const bytes = await readObject(body.bound);
+        if (!bytes || sha256Hex(bytes) !== body.bound) throw new Error();
+        const value = JSON.parse(Buffer.from(bytes).toString('utf8'));
+        if (body.object === TEST_ENVIRONMENT_INHERITANCE_KEY) {
+          const completion = TestEnvironmentInheritanceCompletion.parse(value);
+          objectReferences.set(body.bound, [...completion.source_records.map(digest => ({kind:'record' as const,digest,field:'/source_records'})),
+            ...completion.grant_records.map(digest => ({kind:'record' as const,digest,field:'/grant_records'}))]);
+        } else {
+          const environment = TestEnvironment.parse(value);
+          if (body.object !== TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id) throw new Error();
+          objectReferences.set(body.bound, []);
+        }
+      } catch {
+        blocked.push({table:'records',row:position+1,reason:'测试环境登记或分配继承记录的原件不能核对',nextAction:'恢复登记及继承原件后重试；程序不会清除完成事实后重新分配'});
+      }
+    }
     if (ResourceId.safeParse(body.object).success || typeof body.object === 'string' && /^executor\.exe_[0-9a-hjkmnp-tv-z]{26}$/.test(body.object)) {
       try {
         const bytes = await readObject(body.bound); if (!bytes || sha256Hex(bytes) !== body.bound) throw new Error();
