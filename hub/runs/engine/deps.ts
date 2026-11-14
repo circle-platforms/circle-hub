@@ -20,6 +20,8 @@ export interface AdminLogEntry {
 
 export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
+  /** Explicit staged policy switch; defaults to false independently of stored migration state. */
+  enforceEnvironmentAssignments?: boolean;
   environmentAccess?: { authorizeKeys(actor: Principal, keys: readonly string[]): Promise<import('../../../contracts/api.ts').ProtocolError | null> };
   dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string,reservations?:import('../../dispatch/api.ts').RunReservations):Promise<import('../../dispatch/api.ts').RunJob[]>;
     /** The reservations of all runs in one reading, for `jobs`; without it maintenance reads them again for every run. */
