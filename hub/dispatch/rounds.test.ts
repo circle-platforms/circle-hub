@@ -1,3 +1,4 @@
+import {tracePermissionBoundary} from './testing/permission-boundary.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { test } from 'node:test';
@@ -242,14 +243,17 @@ test('revoking while round one is running neither releases its lease nor hides i
 });
 
 test('revocation in the second intent transaction keeps the first effect and its result intact',async t=>{
-  const c=await openCertified();t.after(()=>c.close());let checks=0;
+  const c=await openCertified();t.after(()=>c.close());let checks=0,revoked=false;
+  const trace=tracePermissionBoundary(c.kit,c.executor.id,async()=>{
+    if(!revoked&&c.calls.filter(name=>name==='send_blob').length===1){revoked=true;await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);}
+  });
   const permission=c.environmentAccess.permission;
+  trace.attach(c.service);
   c.service.options.environmentAccess={
     inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
-      checks++;
-      if(checks===2)await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
+      if(trace.isIntent(tx))checks++;
       return permission(actor,executor,tx);
     },
   };
@@ -269,12 +273,14 @@ test('revocation in the second intent transaction keeps the first effect and its
 
 test('a later admitted intent that expires before sending does not erase the earlier executed effect',async t=>{
   const c=await openCertified({count:2});t.after(()=>c.close());let checks=0;
+  const trace=tracePermissionBoundary(c.kit,c.executor.id,async()=>{});
   const permission=c.environmentAccess.permission;
+  trace.attach(c.service);
   c.service.options.environmentAccess={
     inheritance:c.service.options.environmentAccess!.inheritance,
     canUse:c.environmentAccess.canUse.bind(c.environmentAccess),
     permission:async(actor,executor,tx)=>{
-      if(++checks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;
+      if(trace.isIntent(tx)&&++checks===2)c.clock.ms+=c.executor.definition.submit_timeout_ms+1;
       return permission(actor,executor,tx);
     },
   };
