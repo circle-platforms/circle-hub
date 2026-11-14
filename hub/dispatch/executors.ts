@@ -1,4 +1,4 @@
-import { isAdmin } from '../records/api.ts';
+import { isAdmin, withEnvironmentPermissionLock } from '../records/api.ts';
 import { VariableError, WHOLE_HUB, canonicalBytes, canonicalize, newId, scanForCredentials, sha256Hex, type Principal, type RecordsKit, type VariableSnapshot, type AuthorizationRecord, type ActionBody, type RecordStore, type Transaction, type SecretWrite } from '../records/api.ts';
 import { VariableInputError, secretNameOf, referencesIn, resolve as maskReferences } from '../../contracts/src/variables.ts';
 import { Journal, isDone, isFrozen } from './journal.ts';
@@ -38,6 +38,7 @@ interface UpdateGuard {
 }
 /** One order for configuration, reservation and intent locks; no network I/O while holding them. */
 export async function lockExecutorConfiguration(store: RecordStore, tx: Transaction, id: string, resources: readonly string[], targets: readonly string[], origins: readonly string[]) {
+    await withEnvironmentPermissionLock(store, async () => {}, tx);
     const keys = ['dispatch-config:executor:' + id, ...resources.map(v => 'dispatch-config:resource:' + sha256Hex(v)), ...targets.map(v => 'dispatch-config:target:' + sha256Hex(v)), ...origins.map(v => 'dispatch-config:origin:' + sha256Hex(v))];
     for (const key of [...new Set(keys)].sort())
         await store.lock(key, tx);

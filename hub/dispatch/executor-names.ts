@@ -1,5 +1,5 @@
 import { ExecutorNameBinding, ExecutorStableName, EXECUTOR_NAME_PREFIX, idOf } from '../../contracts/api.ts';
-import { canonicalBytes, isAdmin, parseStrictJson, sha256Hex, WHOLE_HUB, type AuthorizationRecord, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
+import { withEnvironmentPermissionLock, canonicalBytes, isAdmin, parseStrictJson, sha256Hex, WHOLE_HUB, type AuthorizationRecord, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 
 /** Names are separate immutable identity declarations, never an edit of a frozen executor source. */
 export class ExecutorNames {
@@ -46,6 +46,7 @@ export class ExecutorNames {
   }
 
   async checkInTransaction(by: Principal, executor: string, name: string, tx: Transaction): Promise<ExecutorNameBinding|null> {
+    await withEnvironmentPermissionLock(this.records.store, async () => {}, tx);
     const identity=idOf('exe').parse(executor), explicitName=ExecutorStableName.parse(name);
     const actor=await this.records.principals.lockActive(by,tx);
     if (!isAdmin(actor)) throw new Error('只有启用的管理员可以给执行器命名');
