@@ -152,8 +152,8 @@ const ARGUMENT_FIX = '这次按 tools/list 该工具的 inputSchema 改正参数
 /** The retired generic fix; tests assert schemaErrors never returns this alone. */
 export const LEGACY_ARGUMENT_FIX = '按工具的输入模式改正这个参数后再调用';
 
-function violation(tool: ToolName, path: string, message: string, fix = ARGUMENT_FIX): ProtocolError {
-  return { code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数不符合 ${tool} 的输入模式：${message}`, fix, path };
+function violation(_tool: ToolName, path: string, message: string, fix = ARGUMENT_FIX): ProtocolError {
+  return { code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数无效：${message}`, fix, path };
 }
 
 /** Longest pointer an error carries; a longer one (a huge key) points at the whole call instead, so the answer stays valid. */
@@ -239,7 +239,7 @@ function ruleRef(tool: ToolName, path: string, suffix = ''): string {
 }
 
 function thisCallFix(writing: string, rule: string): string {
-  return `这次可以这样写：${writing}；${rule}`;
+  return `请${writing}；${rule}`;
 }
 
 function formatReceivedValue(value: unknown): string {
@@ -254,7 +254,7 @@ function formatReceivedValue(value: unknown): string {
 function writingForField(tool: ToolName, path: string, schema: Record<string, unknown> | null, expected: string): string {
   const leaf = leafOf(path);
   if (tool === 'start_run' && leaf === 'pack') {
-    return `在 ${path} 写 list_task_packs 返回的包 id（可带 @version），并保留 /inputs`;
+    return `在 ${path} 写 list_task_packs 返回的编号`;
   }
   if (tool === 'list_task_packs' && leaf === 'kind') {
     return `在 ${path} 写 "workflow"（或去掉 kind 以列出全部）`;

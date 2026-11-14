@@ -222,7 +222,7 @@ test('schema issues become protocol errors with JSON Pointers; an unknown key po
   const nested = StartRunInput.safeParse(nestedArgs);
   assert.ok(!nested.success);
   const errors = schemaErrors('start_run', nested.error, nestedArgs);
-  assert.ok(errors.every((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.fix && e.message.startsWith('参数不符合 start_run 的输入模式')));
+  assert.ok(errors.every((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.fix && e.message.startsWith('参数无效：')));
   assert.ok(errors.every((e) => e.fix !== '按工具的输入模式改正这个参数后再调用' && !/undefined/i.test(`${e.message}${e.fix}`)));
   assert.ok(errors.some((e) => e.path?.startsWith('/inputs/s')));
 });
