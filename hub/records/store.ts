@@ -1,3 +1,4 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import {verifiedReadValue} from './read-scope.ts';
 import {PgPersonalPayloads,personalRecordOwner,isPersonalPackRecord,captureRecordOwner} from './personal-payloads.ts';
 import { RecordsError } from './errors.ts';
@@ -65,6 +66,7 @@ export class PgRecordStore implements RecordStore {
     const meta = { kind: kind.data, schema: input.schema, provenance: input.provenance, created_at: createdAt };
     const digest = envelopeDigest(meta, body);
     return this.#db.transaction(async (t) => {
+      if (kind.data === 'authorization') await lockEnvironmentPermission(this, t);
       if (input.unique_key !== undefined) {
         await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [UNIQUE_KEY_LOCK_SPACE, `${meta.kind}:${input.unique_key}`], t);
         const existing = await this.getByKey<B>(meta.kind, input.unique_key, t);

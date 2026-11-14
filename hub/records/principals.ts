@@ -1,3 +1,4 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { isAdmin } from './permissions.ts';
 import {retireReadScope} from './read-scope.ts';
 // Users and long-lived revocable tokens (R01; adapted from the earlier hashed-token auth). A token is 32 random bytes shown
@@ -134,6 +135,7 @@ export class PgPrincipals implements Principals {
     const clean = validName(name);
     const hash = credential ? await hashPassword(credential.password) : null;
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#db.query('SELECT pg_advisory_xact_lock($1)', [ADMIN_SET_LOCK], tx);
       const admins = await this.#db.query('SELECT 1 FROM users WHERE role = $1 LIMIT 1', [ADMIN], tx);
       if ((admins.rowCount ?? 0) > 0) throw new ConflictError('已经有管理员；第一位管理员只能引导一次，之后由管理员添加用户');
@@ -148,6 +150,7 @@ export class PgPrincipals implements Principals {
     const wanted = validRole(role);
     const hash = credential ? await hashPassword(credential.password) : null;
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#decider(tx, by, true);
       return this.#insertUser(tx, clean, wanted, by.id, hash, credential?.mustChange);
     });
@@ -167,6 +170,7 @@ export class PgPrincipals implements Principals {
 
   async openConsoleSession(userId: string, revision: number): Promise<IssuedToken | null> {
     return this.#db.transaction(async tx => {
+      await lockEnvironmentPermission(this.#store, tx);
       const row = (await this.#db.query('SELECT * FROM users WHERE id = $1 FOR SHARE', [userId], tx)).rows[0];
       if (!row || row.disabled || row.password_hash === null || Number(row.password_revision) !== revision) return null;
       const token = await this.#issue(tx,userId,'控制台登录',userId,null,true);
@@ -177,6 +181,7 @@ export class PgPrincipals implements Principals {
   async resetPassword(by: Principal, userId: string): Promise<string> {
     const password=initialPassword(), hash=await hashPassword(password);
     await this.#db.transaction(async tx => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#decider(tx,by,true);
       await this.#locked(tx,userId);
       await this.#replacePassword(tx,by,userId,hash,true);
@@ -190,6 +195,7 @@ export class PgPrincipals implements Principals {
     if (!row || !await matchesPassword(current,row.password_hash === null ? null : String(row.password_hash)) || next === current) return false;
     const hash=await hashPassword(next);
     return this.#db.transaction(async tx => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#decider(tx,by,false);
       const locked=(await this.#db.query('SELECT password_revision FROM users WHERE id = $1 FOR UPDATE',[by.id],tx)).rows[0];
       if (Number(locked?.password_revision) !== Number(row.password_revision)) return false;
@@ -209,6 +215,7 @@ export class PgPrincipals implements Principals {
   async setRole(by: Principal, userId: string, role: PermissionRole): Promise<User> {
     const wanted = validRole(role);
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#db.query('SELECT pg_advisory_xact_lock($1)', [ADMIN_SET_LOCK], tx);
       await this.#decider(tx, by, true);
       const current = await this.#locked(tx, userId);
@@ -221,6 +228,7 @@ export class PgPrincipals implements Principals {
   async setDisabled(by: Principal, userId: string, disabled: boolean): Promise<User> {
     if (typeof disabled !== 'boolean') throw new TypeError('disabled must be a boolean');
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#db.query('SELECT pg_advisory_xact_lock($1)', [ADMIN_SET_LOCK], tx);
       await this.#decider(tx, by, true);
       const current = await this.#locked(tx, userId);
@@ -233,6 +241,7 @@ export class PgPrincipals implements Principals {
   async rename(by: Principal, userId: string, name: string): Promise<User> {
     const clean = validName(name);
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#decider(tx, by, true);
       // Refuses an unknown account and a deleted member (whose row the tombstone trigger also keeps as it is).
       const current = await this.#locked(tx, userId);
@@ -307,6 +316,7 @@ export class PgPrincipals implements Principals {
     if (typeof label !== 'string' || [...label].length > 100 || /\p{Cc}/u.test(label)) throw new TypeError('token labels are at most 100 characters without control characters');
     if (client !== undefined && (typeof client !== 'string' || !CLIENT_ID.test(client))) throw new TypeError('client ids are cli_<ULID>');
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       const decider = await this.#decider(tx, by, false);
       if (!isAdmin(decider) && decider.id !== userId) throw new AccessError('只有管理员可以为别人签发令牌');
       const target = await this.#locked(tx, userId);
@@ -319,6 +329,7 @@ export class PgPrincipals implements Principals {
   async revokeToken(by: Principal, tokenId: string): Promise<boolean> {
     if (typeof tokenId !== 'string' || !TOKEN_ID.test(tokenId)) return false;
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       const decider = await this.#decider(tx, by, false);
       const row = (await this.#db.query('SELECT user_id FROM tokens WHERE id = $1 FOR UPDATE', [tokenId], tx)).rows[0];
       // Someone else's token looks exactly like an absent one.
@@ -338,6 +349,7 @@ export class PgPrincipals implements Principals {
   async revokeTokenValue(token: string): Promise<boolean> {
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       const at = this.#now().toISOString();
       const row = (await this.#db.query(
         'UPDATE tokens SET revoked_at = $2, revoked_by = user_id WHERE sha256 = $1 AND revoked_at IS NULL RETURNING id, user_id',
@@ -363,6 +375,7 @@ export class PgPrincipals implements Principals {
 
   async invite(by: Principal, userId: string): Promise<IssuedInvitation> {
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       const decider = await this.#decider(tx, by, true);
       const target = await this.#locked(tx, userId);
       if (target.disabled) throw new ConflictError(`用户${labelOf('account_status','disabled')}，不能邀请`);
@@ -396,6 +409,7 @@ export class PgPrincipals implements Principals {
   async takeInvitation(invitationId: string, clientId: string): Promise<User | null> {
     if (typeof invitationId !== 'string' || !INVITATION_ID.test(invitationId) || typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) return null;
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       const at = this.#now().toISOString();
       const taken = (
         await this.#db.query(
@@ -427,6 +441,7 @@ export class PgPrincipals implements Principals {
       throw new TypeError('a client has 1 to 10 redirect URIs of at most 2000 characters');
     }
     return this.#db.transaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       await this.#db.query('SELECT pg_advisory_xact_lock($1)', [CLIENT_LOCK], tx);
       const at = this.#now();
       // Registrations cost nothing, so the ones that never led anywhere do not stay: a bounded batch per registration.

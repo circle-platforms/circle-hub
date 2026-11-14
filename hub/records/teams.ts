@@ -1,3 +1,4 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { verifiedRecord } from './store.ts';
 // Team tables are projections; verified authorization decisions and their bound definition bytes are authoritative.
 import { TeamId, UserId, PackId } from '../../contracts/api.ts';
@@ -154,6 +155,7 @@ export class PgTeams implements Teams {
   async create(by: Principal, name: string): Promise<Team> {
     if (typeof name !== 'string' || !NAME.test(name)) throw new TypeError('团队名是1至100个字符，不能含控制字符或首尾空格');
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       await this.#writer(by, tx);
       await this.store.lock('teams.name:' + name, tx);
       if ((await this.#all(tx)).some(team => team.name === name)) throw new ConflictError('团队名已经存在');
@@ -165,6 +167,7 @@ export class PgTeams implements Teams {
   }
   async delete(by: Principal, id: string): Promise<TeamDeletion> {
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       await this.#writer(by, tx);
       const team = await this.#locked(id, tx);
       const related=new Map<string,AuthorizationRecord>();
@@ -194,6 +197,7 @@ export class PgTeams implements Teams {
   async add(by: Principal, id: string, userId: string): Promise<TeamMember> {
     UserId.parse(userId);
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       const user = (await this.#writer(by, tx, userId, true))!;
       await this.#locked(id, tx);
       const decision = await this.authorizations.grant(by, { permission: 'assign', subject: userId, object: id }, tx);
@@ -205,6 +209,7 @@ export class PgTeams implements Teams {
   async remove(by: Principal, id: string, userId: string): Promise<boolean> {
     UserId.parse(userId);
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       await this.#writer(by, tx, userId);
       await this.#locked(id, tx);
       const previous = (await this.#decisions({ subject: userId }, tx)).find(row => row.body.object === id);
