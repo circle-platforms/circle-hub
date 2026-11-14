@@ -184,7 +184,7 @@ export class RecordTestEnvironments implements TestEnvironments {
     }, outer);
   }
   async registerBookingPrefix(by: Principal, input: { prefix: string; owner: string }, outer?: Transaction): Promise<BookingPrefixEntry> {
-    return withEnvironmentPermissionLock(this.store, async tx => {
+    return withEnvironmentPermissionLock<BookingPrefixEntry>(this.store, async tx => {
       await this.leaseLock(tx);
       const actor = await this.admin(by, tx);
       const environment = prepareBookingPrefixRegistration(input, await this.at(tx));

@@ -1,3 +1,4 @@
+import { TestEnvironment } from '../../contracts/api.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { newId } from './ids.ts';
@@ -14,6 +15,7 @@ test('formal booking prefixes preserve explicit responsibility without inventing
   assert.deepEqual(value.executors, []);
   assert.deepEqual(value.missing_facts, []);
   assert.equal(isBookingPrefixRegistration(value), true);
+  assert.deepEqual(TestEnvironment.parse(value), value, 'the signed canonical schema accepts a known non-environment prefix without invented missing facts');
 });
 
 test('a malformed owner or prefix cannot become a formal registration', () => {
