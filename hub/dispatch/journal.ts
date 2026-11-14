@@ -122,13 +122,16 @@ export function holdsPhysicalTarget(events:readonly Event[]):boolean{
  const terminal=events.findLastIndex(event=>event.body.detail.done===true);
  if(terminal<0||lastIntent>terminal)return true;
  const end=events[terminal].body.detail;
- // A confirmed disposition releases the reservation without asserting that its old effect never happened.
+ if(events.slice(terminal+1).some(event=>event.body.detail.outcome==='unknown'||event.body.detail.phase==='round_context'))return true;
+ // A confirmed disposition releases this reservation, never a later unresolved use.
  if(end.effect_mark==='disposed'&&end.disposition==='mark_failed'&&end.risk_confirmed===true&&end.unfreeze===true)return false;
- if(events.slice(terminal+1).some(event=>event.body.detail.outcome==='unknown'))return true;
  const intents=events.filter(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');
  const activeContext=events.findLastIndex(event=>event.body.detail.phase==='round_context');
  if(activeContext>terminal)return true;
- if(!intents.length)return end.phase!=='complete'&&end.phase!=='boundary_refused';
+ if(!intents.length){
+   if(!isEffectOutcome(end.outcome)||end.outcome==='unknown'||end.outcome==='issued')return true;
+   return end.outcome==='not_dispatched'&&end.not_sent!==true&&end.submit_invoked!==false;
+ }
  return intents.some(intent=>{
    const start=events.indexOf(intent);
    const next=events.findIndex((event,index)=>index>start&&(
@@ -144,8 +147,8 @@ export function holdsPhysicalTarget(events:readonly Event[]):boolean{
      const observedRound=d.phase==='round'&&typeof intent.body.detail.round==='number'&&d.round===intent.body.detail.round;
      // A sole legacy intent can have a terminal without a rec link; this does not
      // infer or publish a round and must never lend its summary to another intent.
-     const soleLegacy=intents.length===1&&d.phase==='complete'&&d.done===true;
-     if(!(linked||observedRound||soleLegacy))return false;
+     const soleIntentTerminal=intents.length===1&&d.phase==='complete'&&d.done===true;
+     if(!(linked||observedRound||soleIntentTerminal))return false;
      if(d.outcome==='effective'||d.outcome==='target_rejected'||d.outcome==='proven_not_executed')return true;
      return d.outcome==='not_dispatched'&&(d.not_sent===true||d.submit_invoked===false)
        &&!accepted&&submitted.every(response=>response.body.detail.request_bytes_written===0);
@@ -153,6 +156,17 @@ export function holdsPhysicalTarget(events:readonly Event[]):boolean{
    if(!terminalForIntent)return true;
    return own.slice(own.indexOf(terminalForIntent)+1).some(event=>event.body.detail.outcome==='unknown');
  });
+}
+/** Administrative risk consent changes control, never the unresolved physical outcome. */
+export function isConservativelyFrozen(events:readonly Event[],unresolved:boolean):boolean {
+ if(isFrozen(events))return true;
+ const decision=eventOf(events,'dispose');
+ const consent=decision?.body.detail;
+ const decisionIndex=decision?events.indexOf(decision):-1;
+ const released=consent?.disposition==='mark_failed'&&consent.risk_confirmed===true&&consent.unfreeze===true&&consent.done===true&&consent.effect_mark==='disposed'
+   &&!events.slice(decisionIndex+1).some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'||event.body.detail.phase==='round_context'||event.body.detail.outcome==='unknown');
+ const unscopedTerminal=!events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent')&&isDone(events)&&holdsPhysicalTarget(events);
+ return (unresolved||unscopedTerminal)&&!released;
 }
 export const isDone = (events: readonly Event[]) => events.some(e => e.body.detail.done === true);
 export const eventOf = (events: readonly Event[], phase: string) => [...events].reverse().find(e => e.body.detail.phase === phase);
