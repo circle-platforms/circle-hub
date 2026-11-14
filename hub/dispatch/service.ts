@@ -387,7 +387,7 @@ export class DispatchService {
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     if (!d.conformance || !d.reconciliation || !d.calls.query || !d.receipt.stage || !d.receipt.reached_device) throw new Error('缺少只读查账、拒绝阶段或一致性探测字节声明；请补齐定义');
     const binding: JobBinding = {job:newJob(),initiated_by:by.id,executor,executor_digest:registered.resolved_digest,executor_source_digest:registered.digest,variables:registered.variables,scope:{target:d.target,origin:new URL(d.endpoint).origin},target_key:digestOfValue([...d.resources].sort()),input:null,user:by.id,resources:d.resources,context:environmentOf(d.precheck_context)};
-    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
+    await this.reserve(binding);
     const material=await this.secret(binding,d);if(material===null)return this.credentialUnavailable(by,binding,true);
     const client = this.session(binding,d,material);
     let lease: RemoteLease | undefined; const observations: Exchange[] = []; const checks: boolean[] = [];let failure:Record<string,string>|undefined;const ambiguous=false;
@@ -553,7 +553,7 @@ export class DispatchService {
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
     delete binding.run; // Restricted response captures deliberately clear input; never leave a second run binding behind.
-    await this.options.leases.withMutationLock(tx=>this.reserve(binding,tx));
+    await this.reserve(binding);
     try { onReserved?.(binding.job); } catch { /* A terminal sink never controls an effect already authorized by the command. */ }
     const secret=await this.secret(binding,d);if(secret===null)return this.credentialUnavailable(by,binding,true);
     let session = this.session(binding, d, secret);
@@ -998,9 +998,8 @@ export class DispatchService {
     return true;
   }
 
-  private async reserve(binding: JobBinding, tx?: Transaction): Promise<void> {
+  private async reserve(binding: JobBinding, outer?: Transaction): Promise<void> {
     await this.assertNoSecrets(binding);
-    if(binding.fences?.length && !this.sameFences(binding.fences,await this.options.leases.holderSnapshot(binding.resources,tx)))throw new Error('预留前围栏或血缘已改变，尚未提交；重新读取登记和租约后重开核验');
     const definition=await this.pinned(binding);
     // Read the CAS heads before checking occupancy. A reservation committed during
     // that check must either be observed as a blocker or invalidate our CAS head.
@@ -1009,21 +1008,22 @@ export class DispatchService {
     if(blocked.length){const actions=await Promise.all(blocked.map(async job=>isFrozen(await this.journal.events(job))?`circle-hub job dispose ${job} --reconcile <原远端编号>`:`circle-hub job resume ${job}`));throw new TargetOccupiedError(blocked,`物理目标被作业 ${blocked.join('、')} 占用；下一步：${actions.join('；')}`);}
     const resources = binding.resources.map(r => sha256Hex(r)).sort();
     const identities=[['executor',binding.executor],['target',definition.target],['origin',new URL(definition.endpoint).origin]].map(digestOfValue).sort();
-    await this.options.records.store.withTransaction(async tx => {
-      await lockExecutorConfiguration(this.options.records.store,tx,binding.executor,binding.resources,[definition.target],[new URL(definition.endpoint).origin]);
-      const config=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|executor.${binding.executor}`,kind:'authorization',newestFirst:true,limit:1},tx);
+    await withEnvironmentPermissionLock(this.options.records.store,tx=>this.options.leases.withMutationLock(async leaseTx=>{
+      if(binding.fences?.length && !this.sameFences(binding.fences,await this.options.leases.holderSnapshot(binding.resources,leaseTx)))throw new Error('预留前围栏或血缘已改变，尚未提交；重新读取登记和租约后重开核验');
+      await lockExecutorConfiguration(this.options.records.store,leaseTx,binding.executor,binding.resources,[definition.target],[new URL(definition.endpoint).origin]);
+      const config=await this.options.records.store.find<AuthorizationRecord['body']>({key:'authz.key',value:`resource_config|${WHOLE_HUB}|executor.${binding.executor}`,kind:'authorization',newestFirst:true,limit:1},leaseTx);
       if(config.items[0]?.body.revoked||config.items[0]?.body.bound!==(binding.executor_source_digest??binding.executor_digest))throw new PrecheckFactError('执行器配置已变；未提交，请按当前配置重新核验','用当前配置重新核验后再派发；没有提交');
       for(const identity of identities) {
         const previous=[...history].reverse().find(e=>e.body.detail.reserved_identity===identity);
-        const claim=await this.journal.append(binding,'reservation','validate','completed',{binding,reserved_identity:identity,previous_reservation:previous?.digest??null},previous?[`rec:${previous.digest}`]:[],`dispatch.reserve.identity:${identity}:${previous?.digest??'first'}`,tx);
+        const claim=await this.journal.append(binding,'reservation','validate','completed',{binding,reserved_identity:identity,previous_reservation:previous?.digest??null},previous?[`rec:${previous.digest}`]:[],`dispatch.reserve.identity:${identity}:${previous?.digest??'first'}`,leaseTx);
         if(!claim.created)throw new Error('另一进程已经预留执行器或目标；未提交');
       }
       for (const resource of resources) {
         const previous = [...history].reverse().find(e => e.body.detail.phase === 'reservation' && e.body.detail.reserved_resource === resource);
-        const claim = await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, reserved_resource: resource, previous_reservation: previous?.digest ?? null }, previous ? [`rec:${previous.digest}`] : [], `dispatch.reserve:${resource}:${previous?.digest ?? 'first'}`, tx);
+        const claim = await this.journal.append(binding, 'reservation', 'validate', 'completed', { binding, reserved_resource: resource, previous_reservation: previous?.digest ?? null }, previous ? [`rec:${previous.digest}`] : [], `dispatch.reserve:${resource}:${previous?.digest ?? 'first'}`, leaseTx);
         if (!claim.created) throw new Error('另一进程已经预留物理目标；未提交');
       }
-    });
+    },tx),outer);
   }
   /** Which declared keys the lineage does not hold for the whole dispatch window; the one rule dispatch and explain-release share. */
   private async coverage(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<{ rows: HolderSnapshot[]; missing: string[] }> {

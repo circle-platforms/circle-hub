@@ -53,7 +53,7 @@ test('a force release and a new reservation serialize through the same durable l
   await Promise.race([checkReached,forcing.then(()=>{throw new Error('force release skipped its atomic job guard');})]);
   let arrived!:()=>void;const reserving=new Promise<void>(resolve=>arrived=resolve);
   const lock=c.leases.withMutationLock.bind(c.leases);
-  c.leases.withMutationLock=async fn=>{arrived();return lock(fn);};
+  c.leases.withMutationLock=async(fn,outer)=>{arrived();return lock(fn,outer);};
   let reserved=false;
   const dispatching=c.service.dispatch(c.admin,c.run,c.executor.id,()=>{reserved=true;});
   const rejected=assert.rejects(dispatching,/围栏|血缘/);
@@ -72,7 +72,7 @@ test('a committed reservation wins the release race and the owner guard leaves i
   let committed!:()=>void;const commitReached=new Promise<void>(resolve=>committed=resolve);
   let releaseReservation!:()=>void;const reservationWait=new Promise<void>(resolve=>releaseReservation=resolve);t.after(()=>releaseReservation());
   const lock=c.leases.withMutationLock.bind(c.leases);
-  c.leases.withMutationLock=fn=>lock(async tx=>{const value=await fn(tx);committed();await reservationWait;return value;});
+  c.leases.withMutationLock=(fn,outer)=>lock(async tx=>{const value=await fn(tx);committed();await reservationWait;return value;},outer);
   const dispatching=c.service.dispatch(c.admin,c.run,c.executor.id);
   await commitReached;
   const forcing=c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成并发释放',guard:async()=>{
