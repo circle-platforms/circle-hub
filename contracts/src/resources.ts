@@ -89,7 +89,9 @@ const TestEnvironmentContent = z.strictObject({
     ['resources', input.resources.map(row => row.key)], ['executors', input.executors],
   ] as const) if (new Set(values).size !== values.length) ctx.addIssue({ code: 'custom', path: [field], message: 'duplicate declarations are not allowed' });
   if (input.target === null && input.executors.length) ctx.addIssue({ code: 'custom', path: ['executors'], message: 'unknown target cannot bind candidate executors' });
-  const unknown = input.name === null || input.target === null || !input.prefixes.length && !input.resources.length ||
+  const knownBookingPrefixes = input.name === null && input.target === null && !input.resources.length && !input.executors.length &&
+    input.prefixes.length > 0 && input.prefixes.every(row => row.owner !== null && row.registered_at !== null);
+  const unknown = (!knownBookingPrefixes && (input.name === null || input.target === null)) || (!input.prefixes.length && !input.resources.length) ||
     [...input.prefixes, ...input.resources].some(row => row.owner === null || row.registered_at === null);
   if (unknown && !input.missing_facts.length) ctx.addIssue({ code: 'custom', path: ['missing_facts'], message: 'unknown registration facts must be stated explicitly' });
 });
