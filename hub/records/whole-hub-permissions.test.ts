@@ -13,7 +13,11 @@ test('whole-Hub workflow grants reach fresh and request snapshots without restor
     await kit.authorizations.grant(admin, input);
     assert.equal(await kit.authorizations.canUse(member.id, pack), true);
     assert.deepEqual(await kit.authorizations.packsFor(member.id), [pack]);
+    assert.ok(kit.authorizations.packsForMany, 'the production multi-account snapshot port is required');
     assert.deepEqual((await kit.authorizations.packsForMany([member.id])).get(member.id), [pack]);
+    assert.ok(kit.artifacts.capturePermissionSnapshot, 'the production permission snapshot port is required');
+    const snapshot = await kit.artifacts.capturePermissionSnapshot(member);
+    assert.equal(snapshot.canUse(pack), true);
     await withRequestPermissions(kit.artifacts, member, async () => {
       assert.equal(await kit.authorizations.canUse(member.id, pack), true);
     });
