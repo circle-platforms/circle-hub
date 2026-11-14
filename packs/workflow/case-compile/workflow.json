@@ -55,7 +55,7 @@
     {
       "slot": "plan_result",
       "role": "expected",
-      "description": "绑定 workbook 时写计划运行号（与 plan_run 相同）；Hub 换成该计划运行最近一次受理的结果，冻结全部用例已受理的计划和命令目录回执，每个用例按它们重算整份工作簿。多于一个用例时必填",
+      "description": "绑定 workbook 时脚本编写运行号（与 plan_run 相同）；Hub 换成该计划运行最近一次受理的结果，冻结全部用例已受理的计划和命令目录回执，每个用例按它们重算整份工作簿。多于一个用例时必填",
       "accepts": [
         "application/json"
       ],

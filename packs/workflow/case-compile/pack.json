@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.20.0",
+  "version": "3.20.1",
   "kind": "workflow",
   "dependencies": [
     {
@@ -14,7 +14,7 @@
   "embeds": [
     {
       "pack": "mindmap-format",
-      "version": "1.0.24",
+      "version": "1.0.25",
       "module": "case-structure"
     },
     {
@@ -353,8 +353,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "9eac3805fe76740bee5ffe4da1cce04103f4949e5e27160769c80ebd10abf61c",
-      "size": 4491
+      "sha256": "bcf86695e3ca73cec1f1053c0cde8ba68dff9fca858e2875d904bbe72b3d05ca",
+      "size": 4509
     },
     {
       "path": "functions/recomposition.ts",
@@ -503,7 +503,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "da7a3c430b698e28fcb70d155c86109b069fda0c75cb0ccbfd95236599e2a8a9",
+      "sha256": "337df193dcee388c378c4b23d58abbda417629a15143f1d190db71819c978f72",
       "size": 202654
     },
     {
@@ -548,7 +548,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "48246e10e54feb1e85e23d158d50eadf13d654def0ca481d7f53383f6dc9e03c",
+      "sha256": "b9cba8941b76d596087d1153cc0ffd3a8b2ea06f7afcee150732427fc8690d4d",
       "size": 202658
     },
     {
@@ -633,7 +633,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "978ce3397b502b24bf9020410c0aa7a5f8fb1ade5f5c8784669dabe8c4445e02",
+      "sha256": "2c5fb5d53938d9309be4aac01714a20362094950f73672bd99e718a0438149c0",
       "size": 202608
     },
     {
@@ -678,7 +678,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "24e42475cd988acb32f7a881172120541eaa10bc707b8941edfb90b4afc892ea",
+      "sha256": "98f9420ceee0348ee2e9a7581746e39feaf316441e1ceaa3ca4aff00a6b7778f",
       "size": 202612
     },
     {
@@ -773,7 +773,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "7ebb1e46f82cae70a251c773848c38c560aabb4d2a239dad0768cbe920900160",
+      "sha256": "0de356e0900981e874f37fdf3cddcf85f2ea9340b9f8ad90efb46d8fdc39230c",
       "size": 406
     },
     {
@@ -883,8 +883,8 @@
     },
     {
       "path": "workflow.json",
-      "sha256": "1fe1afb04575fea9df5377441d75d8dff3470cd2746c821d8907b8e374f5becd",
-      "size": 6890
+      "sha256": "0da6bb73704ac83b61999303ddd623966c8f695499c76e69817240d514b41301",
+      "size": 6893
     }
   ]
 }

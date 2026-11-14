@@ -184,3 +184,42 @@ export function formatCallError(
   return `${category}：${fact}。${nextStep}。`;
 }
 
+/**
+ * Parses `--name value` CLI pairs against a declared boolean `required` table.
+ * Rejects `=` assignments, repeated keys, bare positional arguments, and unknown flags.
+ */
+export function parseCliOptions<K extends string>(
+  argv: readonly string[],
+  options: Record<K, boolean>,
+  usage: string,
+): Partial<Record<K, string>> {
+  const values: Partial<Record<K, string>> = {};
+  const allowedKeys = Object.keys(options) as K[];
+  const optionList = allowedKeys.map((key) => `${options[key] ? '' : '可选 '}--${key}`).join('、');
+  for (let i = 0; i < argv.length; i += 2) {
+    const token = argv[i];
+    if (!token?.startsWith('--')) {
+      throw new Error(`参数写法不对，不支持单独的参数 ${token ?? ''}`.trim() + `。请使用 ${usage}`);
+    }
+    const eq = token.indexOf('=');
+    if (eq >= 0) {
+      throw new Error(`选项 ${token.slice(0, eq)} 不能用 = 连接参数值。请改为 ${token.slice(0, eq)} <值> 后重试`);
+    }
+    const key = token.slice(2) as K;
+    if (!Object.hasOwn(options, key)) {
+      throw new Error(`未知选项 --${key}。只允许 ${optionList}，请按 ${usage} 重试`);
+    }
+    const val = argv[i + 1];
+    if (!val || val.startsWith('--') || Object.hasOwn(values, key)) {
+      throw new Error(`选项 --${key} 必须只写一次且紧跟一个值。请按 ${usage} 重试`);
+    }
+    values[key] = val;
+  }
+  for (const key of allowedKeys) {
+    if (options[key] && !values[key]) {
+      throw new Error(`缺少必填参数 --${key}。请按 ${usage} 重试`);
+    }
+  }
+  return values;
+}
+
