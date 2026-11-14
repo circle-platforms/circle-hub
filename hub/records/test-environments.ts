@@ -219,15 +219,17 @@ export class RecordTestEnvironments implements TestEnvironments {
       const legacy = (await this.db.query('SELECT prefix,owner,registered_at FROM lease_registrations ORDER BY prefix', [], tx)).rows.map(row => ({ prefix: String(row.prefix), owner: String(row.owner), registered_at: iso(row.registered_at) }));
       const environments = await this.catalog(tx), added: TestEnvironment[] = [];
       const groups = new Map<string, ExecutorSource[]>();
+      const unresolved: ExecutorSource[][] = [];
       for (const value of source.executors) {
         const executor = ExecutorSource.parse(value);
         if (!executor.id) throw new IntegrityError('执行器缺少真实登记身份');
         const target = referencesIn(executor.target).length ? null : executor.target;
-        const group = target === null ? [] : groups.get(target) ?? [];
+        if (target === null) { unresolved.push([executor]); continue; }
+        const group = groups.get(target) ?? [];
         group.push(executor);
-        groups.set(target ?? executor.id, group);
+        groups.set(target, group);
       }
-      for (const group of groups.values()) {
+      for (const group of [...groups.values(), ...unresolved]) {
         const target = referencesIn(group[0].target).length ? null : group[0].target;
         const existing = target === null ? undefined : environments.find(value => value.target === target);
         if (existing) continue;
