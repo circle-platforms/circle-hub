@@ -7,10 +7,12 @@ const admin:Principal={id:'usr_00000000000000000000000001',name:'合成管理员
 test('run dispatch reads traverse all reservation pages, retain exact bindings and never write',async()=>{
   const records={store:{find:async(query:{cursor:string|null})=>({items:query.cursor?[]:[{body:{detail:{binding:{job:'a'.repeat(64),input:{run,plan_run:plan,item:'verification',items:['case-a'],sha256:'b'.repeat(64)}}}}}],next:query.cursor?null:'second'}),findMany:async()=>Array.from({length:3},()=>({digest:'d'.repeat(64),body:{detail:{}}})),put:()=>{throw new Error('read API attempted a write');}}} as unknown as Pick<RecordsKit,'store'>;
   const seen:string[]=[];
-  const dispatch={status:async(_by:Principal,job:string)=>{seen.push(job);return{job,phase:'result',outcome:'effective' as const,frozen:false,events:3,result:`src:${'c'.repeat(64)}`,admin_release:[{condition:'private_condition',label:'管理员说明',satisfied:false,fields:[]}],admin_release_missing:true};}};
+  const dispatch={status:async(_by:Principal,job:string)=>{seen.push(job);return{job,events:3,job_facts:{scope:{job},phase:'result',frozen:false,result:`src:${'c'.repeat(64)}`,admin_release:[{condition:'private_condition',label:'管理员说明',satisfied:false,fields:[]}],admin_release_missing:true},dispatch_attempt:{scope:{operation:'dispatch' as const,job,round:1},admin_release:[{condition:'private_attempt',label:'private',satisfied:false,fields:[]}],admin_release_missing:true}};}};
   const jobs=await readRunJobs(records,dispatch,admin,plan);
   assert.equal(jobs.length,1);assert.equal(jobs[0].verification_run,run);assert.deepEqual(jobs[0].items,['case-a']);
-  assert.equal(jobs[0].status.admin_release,undefined);assert.equal(jobs[0].status.admin_release_missing,undefined);
+  assert.equal(jobs[0].status.job_facts.admin_release,undefined);assert.equal(jobs[0].status.job_facts.admin_release_missing,undefined);
+  assert.equal(jobs[0].status.dispatch_attempt?.admin_release,undefined);assert.equal(jobs[0].status.dispatch_attempt?.admin_release_missing,undefined);
+  assert.deepEqual(Object.keys(jobs[0].status).sort(),['dispatch_attempt','events','job','job_facts']);
   assert.equal(jobs[0].sha256,'b'.repeat(64));assert.equal(seen.length,1);
   assert.deepEqual(await readRunJobs(records,dispatch,admin,'run_00000000000000000000000003'),[]);
 });
@@ -21,9 +23,9 @@ test('read-only management projection takes the named exit from the original jou
     {digest:question,body:{detail:{audience_user:admin.id,deadline:due}}},
     {digest:'d'.repeat(64),body:{ended_at:at,detail:{phase:'dispose',disposition:'mark_failed',acting_by:admin.id,answers:['rec:'+question]}}}
   ],put:()=>{throw new Error('unexpected write');}}} as unknown as Pick<RecordsKit,'store'>;
-  const jobs=await readRunJobs(records,{status:async()=>({job:'a'.repeat(64),phase:'disposed',outcome:'unknown',frozen:true,events:2,disposition:'mark_failed'})},admin,run);
+  const jobs=await readRunJobs(records,{status:async()=>({job:'a'.repeat(64),events:2,job_facts:{scope:{job:'a'.repeat(64)},phase:'disposed',frozen:true,disposition:'mark_failed'}})},admin,run);
   assert.deepEqual(jobs[0].management_exit,{action:'request',request_kind:'disposition',audience:{user:admin.id},due});
-  assert.equal(jobs[0].status.decided_by,admin.id);assert.equal(jobs[0].status.decided_at,at);assert.equal(jobs[0].status.frozen,true);
+  assert.equal(jobs[0].status.job_facts.decided_by,admin.id);assert.equal(jobs[0].status.job_facts.decided_at,at);assert.equal(jobs[0].status.job_facts.frozen,true);
 });
 
 test('a run job names the executor its reservation bound, and none when the reservation names no valid one', async () => {
@@ -34,7 +36,7 @@ test('a run job names the executor its reservation bound, and none when the rese
     findMany: async (query: { values: string[] }) => [{ digest: 'd'.repeat(64), body: { detail: { job: query.values[0] } } }],
     put: () => { throw new Error('unexpected write'); },
   } } as unknown as Pick<RecordsKit, 'store'>;
-  const jobs = await readRunJobs(records, { status: async (_by: Principal, job: string) => ({ job, phase: 'result', outcome: 'effective' as const, frozen: false, events: 1 }) }, admin, run);
+  const jobs = await readRunJobs(records, { status: async (_by: Principal, job: string) => ({ job, events: 1, job_facts: { scope: { job }, phase: 'result', frozen: false } }) }, admin, run);
   assert.equal(jobs.find((job) => job.job === 'a'.repeat(64))?.executor, executor);
   assert.equal(jobs.find((job) => job.job === 'c'.repeat(64))?.executor, undefined);
 });
@@ -52,7 +54,7 @@ test('one reading of the reservations gives each run what a reading of its own g
     findMany: async (query: { values: string[] }) => [{ digest: 'e'.repeat(64), body: { detail: { job: query.values[0] } } }],
     put: () => { throw new Error('unexpected write'); },
   } } as unknown as Pick<RecordsKit, 'store'>;
-  const dispatch = { status: async (_by: Principal, id: string) => ({ job: id, phase: 'result', outcome: 'effective' as const, frozen: false, events: 1 }) };
+  const dispatch = { status: async (_by: Principal, id: string) => ({ job: id, events: 1, job_facts: { scope: { job: id }, phase: 'result', frozen: false } }) };
   const reservations = await runReservations(records);
   assert.equal(reads, 2, 'every page is read');
   reads = 0;
