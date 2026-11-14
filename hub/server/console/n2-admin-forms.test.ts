@@ -21,12 +21,13 @@ test('N2 registered actions cover member, pack install, and environment registra
   for (const action of [
     'user-invite', 'token-issue', 'password-reset', 'user-disable', 'user-enable',
     'pack-install', 'pack-uninstall', 'pack-activate', 'pack-deactivate', 'pack-retire',
-    'executor-add', 'executor-assign', 'doc-put',
+    'executor-add', 'executor-update', 'executor-disable', 'executor-assign', 'doc-put',
   ] as const) {
     assert.equal(typeof REGISTERED_ACTIONS[action], 'string');
     assert.ok(Object.hasOwn(ACTIONS, action), action);
   }
   assert.ok(UPLOAD_REFERENCE_ACTIONS.has('executor-add'));
+  assert.ok(UPLOAD_REFERENCE_ACTIONS.has('executor-update'));
   assert.ok(UPLOAD_REFERENCE_ACTIONS.has('doc-put'));
 });
 
@@ -125,4 +126,29 @@ test('resultPage command echo and stdout hide internal ids', async () => {
   assert.match(body, /circle-hub pack unassign case-compile --team=合成团队/);
   assert.match(body, /已撤回团队 合成团队/);
   assert.doesNotMatch(body, /tm_|usr_|exe_|res_/);
+});
+
+test('executor-assign result page carries the staged environment-assignment preview', async () => {
+  const ctx = {
+    principal: { id: user, name: '合成管理员', role: 'admin' },
+    userName: async () => '合成成员',
+    chrome: (title: string, extra = {}) => ({ title, user: { name: '合成管理员', role: '管理员', admin: true }, ...extra }),
+    deps: {
+      records: { teams: { get: async () => ({ id: team, name: '合成团队' }) } },
+      resources: { list: async () => [] },
+      dispatch: { executors: async () => [{ id: executor, target: 'APV_1', endpoint: 'https://192.0.2.1', enabled: true, resources: [] }] },
+      memberCapabilities: async () => ({ environmentAccess: { enforced: false, ready: true, missing: null, nextAction: null } }),
+    },
+    url: new URL('http://192.0.2.1/console/admin/do/executor-assign'),
+  } as unknown as PageContext;
+  const page = await resultPage(
+    ctx,
+    ACTIONS['executor-assign'],
+    [{ argv: ['executor', 'assign', executor, `--team=${team}`], run: { code: 0, stdout: ['已分配'], stderr: [] } }],
+    formOf({ executor, team }),
+  );
+  const body = String(page.body);
+  assert.match(body, /data-environment-assignment-preview/);
+  assert.match(body, /新测试环境分配尚未启用，当前仍按原工作流和预订规则/);
+  assert.doesNotMatch(body, /exe_/);
 });

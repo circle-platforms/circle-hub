@@ -136,8 +136,8 @@ test('unassigned member sees empty team guidance', async () => {
       ],
     }),
   }));
-  assert.match(page.body.text, /请管理员把你加入团队/);
-  assert.doesNotMatch(page.body.text, /team-a/);
+  assert.match(page.body.text, /请管理员把当前账户加入团队/);
+  assert.doesNotMatch(page.body.text, /team-a|请管理员把你加入团队/);
 });
 
 test('administrator view-as uses the target projection', async () => {

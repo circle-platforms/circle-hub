@@ -34,6 +34,7 @@ import { packHome, publication, publishingKind } from './pack-display.ts';
 import { buildRegisteredAction, registeredActionForm, type RegisteredActionName } from './command-form.ts';
 import { UsageError } from '../errors.ts';
 import { field } from './presentation.ts';
+import { environmentAssignmentPreviewNotice } from './connections.ts';
 
 /** A form's fields, trimmed; absent fields are the empty string. */
 export type Form = { get(name: string): string };
@@ -482,7 +483,16 @@ export async function resultPage(ctx: PageContext, action: Action, runs: Command
   const afterSystem = last.code === 0 && action === ACTIONS['system-add'] && form !== undefined && (form.get('audience') === 'none' || form.get('audience') === '')
     ? card({ title: '使用对象' }, html`<p>还没有分配，暂时谁都不能使用。可在连接页或团队页再分配。</p>`)
     : '';
-  const after = html`${afterMember}${afterSystem}`;
+  // Boss 15:20 #2: environment assignment result pages carry the same staged-policy notice as the connections page.
+  let environmentPreview = html``;
+  if (last.code === 0 && (action === ACTIONS['executor-assign'] || action === ACTIONS['executor-unassign'])) {
+    let enforced = false;
+    try {
+      enforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
+    } catch { /* preview notice stays when capability port is unavailable */ }
+    environmentPreview = environmentAssignmentPreviewNotice(enforced);
+  }
+  const after = html`${afterMember}${afterSystem}${environmentPreview}`;
   return {
     status: last.code === 0 ? 200 : last.code === 2 ? 400 : 409,
     body: page({...actionChrome(ctx, action),...(last.code===0?{notice:doneNotice(action.title)}:{})}, html`<div class="ch-section">${body}${after}</div><p>${link(action.back, '返回')}</p>`),
