@@ -111,6 +111,8 @@ test('new single-round intents provide explicit scope while precheck has no inve
   const precheck = await c.service.precheck(c.admin, c.executor.id);
   const readOnly = await c.service.scopedFacts(c.admin, precheck.job);
   assert.equal(readOnly.dispatch_attempt, undefined);
+  assert.equal(readOnly.job_facts.missing_facts, undefined, 'precheck without an intent has no missing dispatch round');
+  assert.equal(readOnly.job_facts.next_action, undefined);
   const precheckBinding = await c.service.journal.binding(precheck.job);
   assert.equal(Reflect.get(precheckBinding, 'operation'), 'precheck');
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
@@ -150,6 +152,13 @@ test('a real single-round flow without the new intent metadata stays unscoped wh
   assert.equal(scoped.dispatch_attempt, undefined);
   assert.deepEqual(scoped.job_facts.scope, { job: state.job });
   assert.equal(scoped.job_facts.reservation_recorded, true);
+  assert.deepEqual(scoped.job_facts.missing_facts, [{
+    fact: '原派发意图缺少可核对的轮次范围，当前不能确定它属于哪一轮',
+    next_action: '只读核对该原意图记录，保留范围未知；不要为了补齐轮次而重新派发',
+  }]);
+  assert.ok(scoped.job_facts.missing_facts);
+  assert.equal(scoped.job_facts.next_action, scoped.job_facts.missing_facts[0].next_action);
+  assert.ok(scoped.job_facts.grounds?.includes(`rec:${intent.digest}`));
   assert.equal((await c.service.scopedFacts(c.admin, state.job, 1)).dispatch_attempt, undefined);
   assert.deepEqual((await c.service.journal.events(state.job)).map(event => event.digest), events.map(event => event.digest));
 });

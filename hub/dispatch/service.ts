@@ -180,7 +180,15 @@ export class DispatchService {
     if (!intent) return ScopedDispatchFactsSchema.parse({ job_facts });
     const scope = DispatchAttemptScopeSchema.safeParse({ job, round: intent.body.detail.round,
       ...(typeof intent.body.detail.request_id === 'string' ? { request_id: intent.body.detail.request_id } : {}) });
-    if (!scope.success) return ScopedDispatchFactsSchema.parse({ job_facts });
+    if (!scope.success) {
+      const next = '只读核对该原意图记录，保留范围未知；不要为了补齐轮次而重新派发';
+      return ScopedDispatchFactsSchema.parse({ job_facts: {
+        ...job_facts,
+        missing_facts: [{ fact: '原派发意图缺少可核对的轮次范围，当前不能确定它属于哪一轮', next_action: next }],
+        next_action: next,
+        grounds: [...job_facts.grounds ?? [], `rec:${intent.digest}`],
+      } });
+    }
     // Only records between this intent and the next intent can describe this attempt.
     const start = events.indexOf(intent);
     const next = events.findIndex((event, index) => index > start && event.body.detail.phase === 'intent');
