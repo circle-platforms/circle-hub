@@ -703,7 +703,8 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       const started = await startRun(client, reference);
       const text = started.content[0].text ?? '';
       const summary = started.structuredContent.run as { items: Array<{ id: string; label: string; summary: string; location: string }>; slots: { sha256: string; schema: { properties: Record<string, unknown> } } };
-      for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}：摘要 ${i}；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i} keeps its summary`);
+      // start_run pending lines still use 「，」 before the summary; itemConclusion uses 「：」(决定 20:32)
+      for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}，摘要 ${i}；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i} keeps its summary`);
       assert.ok(summary.items.every((item) => item.location === reference), 'every machine-readable item keeps its location');
       assert.deepEqual(summary.items.map((item) => [item.id, item.label, item.summary]), Array.from({ length: 60 }, (_, i) => [`doc-9:n${i}`, `合成用例 ${i}`, `摘要 ${i}`]));
       assert.match(summary.slots.sha256, /^[0-9a-f]{64}$/);
@@ -718,7 +719,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       server.fakes.runs.items = null;
     }
     const short = await startRun(client, reference);
-    assert.match(short.content[0].text ?? '', /\n原始用例 合成用例一：等待核对；状态未知；/);
+    assert.match(short.content[0].text ?? '', /\n原始用例 合成用例一，等待核对；状态未知；/);
     const runId = (short.structuredContent.run as { run: string }).run;
     const submitted = await client.call('submit_result', { run: runId, model: 'scripted-model@test', items: [{ item: 'doc-1:n1', handling: 'handled', slots: { findings: [{ text: '期望结果缺失' }] } }] });
     const lines = (submitted.content[0].text ?? '').split('\n');

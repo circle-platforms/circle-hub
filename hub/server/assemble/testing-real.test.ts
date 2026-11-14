@@ -88,7 +88,8 @@ describe('createTestHub', () => {
     assert.ok(run.sources.some((s) => s.role === 'subject' && s.external?.startsWith(`agile:mindmap:${AGILE_DOCUMENT}`)));
     assert.equal(stubs.agile.logins, 1, 'one login with the stored digest');
     const startText = started.content[0].text ?? '';
-    assert.ok(run.items.every(item => startText.includes(`原始用例 ${item.label}：1 个期望结果；状态未知`)));
+    // start_run pending projection lines keep 「，」; conclusions use 「：」(决定 20:32)
+    assert.ok(run.items.every(item => startText.includes(`原始用例 ${item.label}，1 个期望结果；状态未知`)));
     assert.ok(run.items.every(item => item.summary === '1 个期望结果'));
     assert.match(String(started.structuredContent.record), /^rec:[0-9a-f]{64}$/);
     assert.match(JSON.stringify(run.slots?.schema), /"notes"/);
