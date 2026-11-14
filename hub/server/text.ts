@@ -14,7 +14,7 @@ import { StartRunInput, type GetNodesOutput, type ListTaskPacksOutput, type Reso
 import { PartitionCounts, StoredValidationResult, StoredPartitionItem, Partitions, ValidationResult, partitionCountsOf, isUnknownTerminal, type ItemResult, type RequirementResult } from '../../contracts/src/validation.ts';
 import { oneLine, type Entry, type Omission } from './budget.ts';
 import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymbol, userClaimText, userVerdict, userReason, userNextStep, USER_DECIDER, type Labels, type LayerTerminal } from './claims.ts';
-import { SOURCE_UNKNOWN_CODES, errorReasonOf } from './error-reasons.ts';
+import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -172,26 +172,43 @@ function unknownError(error: ProtocolError): boolean {
   return isReason(error.code) || Object.hasOwn(SOURCE_UNKNOWN_CODES, error.code);
 }
 
-/** D1: determined protocol errors take a registered reason or omit the reason segment; never fill with 「还没查清」. */
-function errorStatusParts(error: ProtocolError): string[] {
-  if (unknownError(error)) return ['状态未知', '原因缺资料'];
-  const reason = errorReasonOf(error.code);
-  if (reason === 'judgment_no_reason') return ['状态已确认', '判断错误'];
-  return ['状态已确认', '判断错误', `原因${reason}`];
+/** Ensure a clause ends with a sentence stop (owner 13:05: `<类别词>：<事实>。<下一步>。`). */
+function asSentence(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return '';
+  return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
+}
+
+/** Call-refusal line: category word, this call's fact, next step (no 状态/判断/原因/决定者). */
+function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
+  const fact = asSentence(message);
+  const next = asSentence(fix && fix.trim().length > 0 ? fix : '由使用者核对输入资料');
+  const rounds = roundsLeft === undefined ? '' : asSentence(`最多重交 ${roundsLeft} 次`);
+  return `${category}：${fact}${next}${rounds}`;
+}
+
+/** Unavailable / unmapped-conclusion lines keep the 状态串 (SOURCE_UNAVAILABLE unchanged per Boss 13:05). */
+function conclusionErrorLine(error: ProtocolError, message: string, fix: string | undefined): string {
+  const presentation = errorPresentationOf(error.code);
+  const status = presentation.kind === 'unavailable' || unknownError(error)
+    ? ['状态未知', '原因缺资料']
+    : ['状态已确认', '判断错误'];
+  return [
+    message, ...status,
+    fix ? `下一步${fix}` : '下一步由使用者核对输入资料',
+    error.rounds_left === undefined ? null : `最多重交 ${error.rounds_left} 次`, '决定者程序',
+  ].filter((part) => part !== null).join('；');
 }
 
 function errorText(v: { errors: ProtocolError[]; trace: string }): string {
-  const allUnknown = v.errors.every(unknownError);
-  // ABSENT / NOT_PERMITTED are refusals (no submission was checked): no lead line (Boss 12:10).
-  const allRefusal = v.errors.length > 0 && v.errors.every(
-    (error) => error.code === 'SOURCE_ABSENT' || error.code === 'SOURCE_NOT_PERMITTED',
-  );
-  const lead = allRefusal ? null : allUnknown ? '资料尚未取得。' : '这次核对有错误。';
-  const lines = v.errors.map((error) => [
-    error.message, ...errorStatusParts(error),
-    error.fix ? `下一步${error.fix}` : '下一步由使用者核对输入资料',
-    error.rounds_left === undefined ? null : `最多重交 ${error.rounds_left} 次`, '决定者程序',
-  ].filter((part) => part !== null).join('；'));
+  const allUnknown = v.errors.length > 0 && v.errors.every(unknownError);
+  // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
+  const lead = allUnknown ? '资料尚未取得。' : null;
+  const lines = v.errors.map((error) => {
+    const category = callErrorCategoryOf(error.code);
+    if (category !== null) return callErrorLine(category, error.message, error.fix, error.rounds_left);
+    return conclusionErrorLine(error, error.message, error.fix);
+  });
   return [lead, ...lines].filter((part): part is string => part !== null && part.length > 0).join('\n');
 }
 
@@ -641,11 +658,13 @@ function submitText(v: SubmitOut, context: TextContext): string {
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
     const fix = missingRecord ? '由使用者请管理员核对保存的结果后重新读取' : error.fix;
-    const parts = [original === undefined ? message : `${caseName(original, original.label)}，${message}`, ...errorStatusParts(error)];
-    if (fix) parts.push(`下一步${fix}`);
-    if (error.rounds_left !== undefined) parts.push(`最多重交 ${error.rounds_left} 次`);
-    parts.push('决定者程序');
-    lines.push(parts.join('；'));
+    const fact = original === undefined ? message : `${caseName(original, original.label)}，${message}`;
+    const category = callErrorCategoryOf(error.code);
+    if (category !== null) {
+      lines.push(callErrorLine(category, fact, fix, error.rounds_left));
+      continue;
+    }
+    lines.push(conclusionErrorLine(error, fact, fix));
   }
   return lines.join('\n');
 }
