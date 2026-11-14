@@ -16411,6 +16411,11 @@
             "additionalProperties": {}
           }
         },
+        "step_name": {
+          "description": "The declared user-facing step name only when the nonempty set of requirements actually checked by this submission explicitly resolves to one workflow step; absent for missing declarations, multiple steps or an unproven checked scope",
+          "type": "string",
+          "minLength": 1
+        },
         "record": {
           "description": "Immutable validation result record reference for machine readers",
           "type": "string",

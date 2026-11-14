@@ -15,6 +15,11 @@
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "step": {
+            "description": "Explicit reference to workflow.json steps[].id; cross-file resolution is checked when the workflow pack is validated",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
           "name": {
             "type": "string",
             "minLength": 1
