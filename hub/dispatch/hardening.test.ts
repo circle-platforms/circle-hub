@@ -12,26 +12,27 @@ test('prototype names are unmapped states and outcomes, not inherited dictionary
   const c = await setup({ alter: (name, value) => name === 'inspect_blob' ? { state: '__proto__' } : value }); t.after(() => c.close());
   let waits = 0; (c.service as any).sleep = async () => { waits++; c.clock.ms += 1000000; };
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.frozen, true); assert.equal(waits, 0);
+  assert.equal(state.job_facts.frozen, true); assert.equal(waits, 0);
   const r = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome: 'constructor' }] } : value }); t.after(() => r.close());
   const result = await r.service.dispatch(r.admin, r.run, r.executor.id);
-  const source = await r.kit.artifacts.source(r.owner, result.result!.slice(4));
+  const source = await r.kit.artifacts.source(r.owner, result.job_facts.result!.slice(4));
   assert.equal(JSON.parse(new TextDecoder().decode(source!.bytes!)).rows[0].reported_terminal, null);
 });
 
 test('minimum conditions may bind seat counts and topology digest failures prevent all submissions', async t => {
   const c = await setup(); t.after(() => c.close());
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, conditions: [{ pointer: '/seats', at_least: { $value: 'seats' } }] });
-  assert.equal((await c.service.precheck(c.admin, c.executor.id)).frozen, false);
+  assert.equal((await c.service.precheck(c.admin, c.executor.id)).job_facts.frozen, false);
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, conditions: [{ pointer: '/topology', sha256: 'f'.repeat(64) }] });
-  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'not_dispatched');
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).dispatch_attempt!.outcome, 'not_dispatched');
   assert.equal(c.calls.includes('send_blob'), false);
 });
 
 test('the verified bytes must occupy the declared artifact slot', async t => {
   const c = await setup(); t.after(() => c.close());
   c.detail.run.sources[0].slot = 'untrusted-slot';
-  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.admission_error?.code,'EFFECT_RELEASE_UNMET');
   assert.equal(c.calls.includes('send_blob'), false);
 });
 
@@ -62,6 +63,7 @@ test('one artifact proof cannot silently select the first item of a multi-item v
   const c = await setup(); t.after(() => c.close());
   c.detail.run.items.push({ ...c.detail.run.items[0], id: 'another-synthetic-item' });
   c.detail.latest!.result.partitions.delivered.push({ ...c.detail.latest!.result.partitions.delivered[0], item: 'another-synthetic-item' });
-  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.admission_error?.code,'EFFECT_RELEASE_UNMET');
   assert.equal(c.calls.includes('send_blob'), false);
 });

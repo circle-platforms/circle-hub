@@ -7,17 +7,17 @@ test('release denial records private administrator conditions and logs while pub
  const c=await setup();t.after(()=>c.close());const logs:unknown[]=[];c.service.options.adminLog=entry=>logs.push(entry);
  c.effectDocument.requirements.push({...c.effectDocument.requirements[0],key:'private_source_marker',required:false});c.effectDocument.effects[0].release.artifact='private_source_marker';
  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
- assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.length,0);
- assert.ok(state.admin_release?.some(check=>check.condition==='release.artifact'&&check.satisfied===false&&check.fields[0].field==='row.release.artifact'));
+ assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.admission_error?.code,'EFFECT_RELEASE_UNMET');assert.equal(c.calls.length,0);
+ assert.ok(state.job_facts.admin_release?.some(check=>check.condition==='release.artifact'&&check.satisfied===false&&check.fields[0].field==='row.release.artifact'));
  assert.ok(logs.some(entry=>JSON.stringify(entry).includes('release.artifact')&&JSON.stringify(entry).includes(state.job)));
  assert.ok(!JSON.stringify(logs).includes('private_source_marker'));assert.ok(!JSON.stringify(state).includes('private_source_marker'));
- assert.ok(!state.reason?.includes('release.artifact'));assert.ok(!state.missing_fact?.includes('row.release'));
+ assert.ok(!state.job_facts.reason?.includes('release.artifact'));assert.ok(!state.job_facts.missing_fact?.includes('row.release'));
  const refused=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
  assert.equal(refused.body.error_code,'EFFECT_RELEASE_UNMET');assert.equal(refused.body.detail.admin_checks,undefined);
  const sha=String(refused.body.detail.admin_release_sha256);assert.equal(sha.length,64);
  assert.equal(await c.kit.artifacts.source(c.owner,sha),null);
  assert.ok(await c.kit.artifacts.source(c.admin,sha));
- assert.ok((await c.service.status(c.admin,state.job)).admin_release?.length);
+ assert.ok((await c.service.status(c.admin,state.job)).job_facts.admin_release?.length);
  await assert.rejects(c.service.status(c.owner,state.job));
 });
 test('an administrator diagnostic storage or log failure cannot replace or authorize the neutral denial',async t=>{
@@ -25,7 +25,7 @@ test('an administrator diagnostic storage or log failure cannot replace or autho
  c.service.options.adminLog=()=>{throw new Error('private-log-marker');};
  c.kit.artifacts.ingest=async()=>{throw new Error('private-note-marker');};
  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
- assert.equal(state.outcome,'not_dispatched');assert.equal(state.admin_release_missing,true);assert.equal(c.calls.length,0);
+ assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.admission_error?.code,'EFFECT_RELEASE_UNMET');assert.equal(state.job_facts.admin_release_missing,true);assert.equal(c.calls.length,0);
  assert.ok(!JSON.stringify(state).includes('private-'));
 });
 test('explain-release is an admin-only read with no storage writes, vault key, replay, RPC or job reservation',async t=>{
@@ -73,8 +73,8 @@ test('proof failures before release still reach private administrator notes with
   const receipt=c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0];
   if(missing)delete (receipt.statement.data as any).generator;else receipt.warrant.id='synthetic_other@1';
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.length,0);
-  assert.ok(state.admin_release?.some(check=>check.condition===(missing?'proof.fields.generator':'proof.claims.warrant_id')&&check.satisfied===false));
+  assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.admission_error?.code,'EFFECT_RELEASE_UNMET');assert.equal(c.calls.length,0);
+  assert.ok(state.job_facts.admin_release?.some(check=>check.condition===(missing?'proof.fields.generator':'proof.claims.warrant_id')&&check.satisfied===false));
   assert.ok(logs.length>0);
  }
 });
@@ -93,10 +93,10 @@ test('explain-release lists the declared resource keys the run lineage does not 
  assert.match(check.next_action??'',/整个自动化测试环境|全部键/);
  // Dispatch refuses on exactly this ground and names the same keys.
  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
- assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.length,0);
+ assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);assert.equal(c.calls.length,0);
  const refused=(await c.service.journal.events(state.job)).find(event=>event.body.detail.phase==='boundary_refused')!;
  assert.equal(refused.body.error_code,'LEASE_UNAVAILABLE');
- for(const key of c.executor.definition.resources)assert.ok(String(state.reason??state.missing_fact??'').includes(key)||JSON.stringify(state).includes(key),`dispatch names ${key}`);
+ for(const key of c.executor.definition.resources)assert.ok(String(state.dispatch_attempt!.reason??state.dispatch_attempt!.missing_fact??'').includes(key)||JSON.stringify(state).includes(key),`dispatch names ${key}`);
 });
 
 test('explain-release names only the keys a partial hold lacks and is satisfied once the lineage holds all of them',async t=>{
