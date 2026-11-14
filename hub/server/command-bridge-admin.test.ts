@@ -15,7 +15,7 @@ test('executor and document upload forms retain exclusive source modes and reach
     return 0;
   } });
   for (const [id, values, expected] of [
-    ['executor.add', { reference }, ['executor', 'add', '--reference=' + reference]],
+    ['executor.add', { name: 'synthetic-runner', reference }, ['executor', 'add', '--name=synthetic-runner', '--reference=' + reference]],
     ['executor.update', { executor: 'synthetic-executor', reference }, ['executor', 'update', 'synthetic-executor', '--reference=' + reference]],
     ['doc.put', { name: 'synthetic-topology', reference }, ['doc', 'put', 'synthetic-topology', '--reference=' + reference]],
   ] as const) {
@@ -26,7 +26,7 @@ test('executor and document upload forms retain exclusive source modes and reach
     assert.throws(() => buildCommandArgv(id, { ...values, reference: 'rec:' + 'a'.repeat(64) }), UsageError);
   }
   assert.equal(argvSeen.length, 3);
-  assert.deepEqual(buildCommandArgv('executor.add', { file: 'local.json' }), ['executor', 'add', 'local.json']);
+  assert.deepEqual(buildCommandArgv('executor.add', { name: 'synthetic-runner', file: 'local.json' }), ['executor', 'add', 'local.json', '--name=synthetic-runner']);
   assert.deepEqual(buildCommandArgv('doc.put', { name: 'synthetic-topology', file: 'local.json' }), ['doc', 'put', 'synthetic-topology', 'local.json']);
 });
 
@@ -43,7 +43,7 @@ test('installed skill forms call existing pack handlers without new audience or 
 test('web command bridge requires upload references while local CLI paths remain a separate capability', async () => {
   let calls = 0;
   const bridge = createCommandBridge({ env: {}, cwd: '/synthetic/commands', main: async () => { calls++; return 0; } });
-  for (const argv of [['executor', 'add', '/synthetic/private.json'], ['executor', 'update', 'synthetic-executor', '/synthetic/private.json'], ['doc', 'put', 'synthetic-topology', '/synthetic/private.json'], ['executor', 'add', '/synthetic/private.json', '--reference=' + reference]]) {
+  for (const argv of [['executor', 'add', '/synthetic/private.json', '--name=synthetic-runner'], ['executor', 'update', 'synthetic-executor', '/synthetic/private.json'], ['doc', 'put', 'synthetic-topology', '/synthetic/private.json'], ['executor', 'add', '/synthetic/private.json', '--name=synthetic-runner', '--reference=' + reference]]) {
     assert.equal((await bridge.run(argv, { token: 'synthetic-token' })).code, 2);
   }
   assert.equal(calls, 0);
