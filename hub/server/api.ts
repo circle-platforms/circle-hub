@@ -25,6 +25,8 @@ export type { TextContext } from './text.ts';
 /** Everything the server needs; the assembly builds it from the real packages, tests from fakes (hub/server/testing.ts). */
 export interface ServerDeps {
   rebuildNeeded?: RebuildNeeded | null;
+  /** Current automatic environment-permission conversion state; never contains a credential. */
+  environmentPermissionStartup?(): Promise<import('./env-startup.ts').EnvironmentPermissionStartup>;
   /** Administrator-only startup observations, not proof of current resource readiness. */
   startupSecretIssues?(): readonly VaultReadinessIssue[];
   config: HubConfig;
@@ -175,7 +177,7 @@ export interface HubApp {
 }
 
 /** Builds the server's dependencies from the opened configuration and records, for `serve` (the vault key required). */
-export type AssembleFunction = (config: HubConfig, records: RecordsKit) => Promise<ServerDeps> | ServerDeps;
+export type AssembleFunction = (config: HubConfig, records: RecordsKit, startup?: import('./env-startup.ts').EnvironmentPermissionStartup) => Promise<ServerDeps> | ServerDeps;
 
 /** Where a command-time assembly writes its operator's log lines: the invoking CLI's standard error. */
 export interface CommandIo {

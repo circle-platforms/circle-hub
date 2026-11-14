@@ -1365,3 +1365,13 @@ reported as zero usage. Errors from a present capacity service still propagate r
 ## Reset orchestration ownership (2026-11-13)
 
 The owner's 18:40 decision moves reset orchestration into `hub/server/reset`. The server classifies current records, checks references, invokes migrations and protected export/apply, controls the dedicated worker and restores the original database after a failed operation. The CLI and console use these same operations. Platform provides only verified native backup, database archival and empty-database creation; no platform module reads Hub records or configuration shapes. Protocol schema identities use their declared contract constants, including `KNOWLEDGE_CONTRIBUTION_SCHEMA`. No dependency exception is added for reset.
+
+## Automatic test-environment assignment conversion
+
+The approved environment-permission branch uses existing `authorization@1` decisions and content-addressed configuration objects, with no database migration. One environment object owns its target, lease prefixes or exact keys, executor links and registration responsibility. Independent lease-prefix registration commands are removed.
+
+Ordinary startup may use the deployment's existing operator-token store for this one approved conversion only. It authenticates the actual enabled administrator, and the records transaction rechecks the administrator before writing. It does not select an administrator, use an operating-system role as an account, accept an environment token for serve, or retain a token in the runtime dependencies. Confirmed absence without a valid delegate remains pending while the service starts; unreadable completion never authorizes repeating conversion or reverting to old permissions.
+
+The startup display and new-use admission read the durable completion state afresh. A startup observation is neither a second permission source nor a permanent enforcement switch. Declared reservation capability, effective prior assignments, directory conversion, generated assignments and completion are sampled and committed in one coordinated transaction. Held leases do not establish permission or environment identity.
+
+This work is isolated from the nightly candidate. Synthetic unit and integration evidence is reported per component; existing physical jobs surviving restart remains a separate work item. The same-data rollback matrix and ordinary console form counts remain required before this feature is declared complete.
