@@ -296,11 +296,11 @@ describe('tool shapes: zod and the published schema agree', () => {
     const input = { ...submission, items: [{ ...submission.items[0], future_item: true }] };
     assert.equal(TOOLS.find(t => t.name === 'submit_result')!.input.safeParse(input).success, false);
   });
-  test('the C7 input and model-text baseline retains its bytes', () => {
+  test('the C7 input and model-text baseline includes the authorized E4 descriptions', () => {
     const hash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
-    assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), 'b171810f08479e3d2da46dc2e820b70c3d34dc729b2e923bd3b279795721c9ab');
+    assert.equal(hash(JSON.stringify(published.map(({ name, inputSchema }) => ({ name, inputSchema })))), 'b59d781d05f8189d77c29cc26f2c8aadde039c97b8af83a85b856c5464aa24fc');
     assert.deepEqual(TOOLS.map(({ name, input }) => ({ name, inputSchema: z.toJSONSchema(input, { target: 'draft-2020-12', io: 'input', unrepresentable: 'throw' }) })), published.map(({ name, inputSchema }) => ({ name, inputSchema })));
-    assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), 'e83acbe3e321e3606062adcb8c6076fbb720387fa6b822f68989df04134ec91f');
+    assert.equal(hash(JSON.stringify(TOOLS.map(({ name, title, description }) => ({ name, title, description })))), '42686402812824e439d197015cf7be5fe5b3a44faa2e5641ea8c3fa3763b8534');
     assert.equal(hash(SERVER_INSTRUCTIONS), '4ea85478bba489029ce4625f71695309ecae6fcb2751a9793011cf70dca7fc90');
     assert.equal(hash(readFileSync(new URL('../../hub/server/text.ts', import.meta.url))), '4a1edd5a5ec17bd128140496244fe4dcde7ac56dc0b90bbe73dd006befe15686');
   });
