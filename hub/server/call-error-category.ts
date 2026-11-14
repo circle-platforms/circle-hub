@@ -10,7 +10,7 @@ import { circleHubFromMetadata, circleHubFromParameters, fillCallerAccountName }
 
 export { fillCallerAccountName } from './fix-by-role.ts';
 import { connectionsPath, knowledgePath, settingsPath, teamPath } from './console/routes.ts';
-import { unassignedPackFact, unassignedPackNext } from './pack-words.ts';
+import { unassignedPackNext } from './pack-words.ts';
 
 export { callErrorCategoryOf as callErrorCategory } from './error-reasons.ts';
 export type { CallErrorCategory };
@@ -24,24 +24,26 @@ export function isKnowledgeRootDenial(message: string, fix: string | undefined):
   return /知识树根/.test(message) || /手册和命令树/.test(message) || /绑定这条产品线/.test(fix ?? '') || /绑定这条产品线/.test(message);
 }
 
-/** Object kind for SOURCE_NOT_PERMITTED next-step selection (Boss 14:12). */
+/** Object kind for SOURCE_NOT_PERMITTED next-step selection (Boss 16:34: structured clues only). */
 export type NotPermittedKind = 'pack' | 'knowledge' | 'system' | 'root';
 
-export function notPermittedKindOf(message: string, fix: string | undefined): NotPermittedKind {
+/**
+ * Prefer path / registered fix clues over prose. Default `pack` when no clue — see
+ * briefs/whitepaper-1113/requests-to-codex.md §16:34 for misclassification cases.
+ */
+export function notPermittedKindOf(message: string, fix: string | undefined, path?: string): NotPermittedKind {
   if (isKnowledgeRootDenial(message, fix)) return 'root';
-  if (/未获授权使用(?:工作流|技能|工作流或技能|产品知识来源|业务系统接入)/.test(message) || /(?:任务包|工作流|技能) .+ 存在，没有分配给/.test(message)) {
-    return 'pack';
-  }
-  if (/业务系统/.test(message) || /未获授权使用业务系统/.test(message)) return 'system';
-  if (/未获授权读取/.test(message) || /没有读取权限/.test(message) || /分享读取权限/.test(fix ?? '')) return 'knowledge';
+  if (path === '/pack' || (typeof path === 'string' && path.startsWith('/pack'))) return 'pack';
+  const fixText = fix ?? '';
+  if (/分享读取权限/.test(fixText) || /\bshare\b/i.test(fixText)) return 'knowledge';
+  if (/resource assign/.test(fixText) || /为所在团队分配此业务系统|分配此业务系统/.test(fixText)) return 'system';
+  // Temporary path clues for knowledge reads (no prose match on 未获授权使用 / 存在，没有分配给).
+  if (path === '/run' || path === '/reference' || (typeof path === 'string' && path.startsWith('/inputs'))) return 'knowledge';
   return 'pack';
 }
 
 function packNameFromMessage(message: string): string | undefined {
-  const quoted = /「([^」]+)」/.exec(message);
-  if (quoted) return quoted[1];
-  const assignedNameMatch = /(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给/.exec(message);
-  return assignedNameMatch?.[1];
+  return /「([^」]+)」/.exec(message)?.[1];
 }
 
 /** HH:MM in the process local zone from an ISO timestamp. */
@@ -103,10 +105,6 @@ export function callErrorFact(code: string, message: string): string {
     return '当前账户未获授权读取这条产品线的手册和命令树';
   }
 
-  // Prior pack-denial shapes → owner form (kind unknown at rewrite time → 工作流, matching prior MCP default).
-  const packDenied = /^(?:任务包|工作流|技能|产品知识来源|业务系统接入|工作流或技能) (.+) 存在，没有分配给(?:你|当前账户)$/.exec(fact);
-  if (packDenied) return unassignedPackFact(packDenied[1]!, 'workflow');
-
   if (/^当前账户未获授权使用/.test(fact)) return fact;
 
   const noRead = /^(.+?)存在，你没有读取权限(?::|：)?(.*)$/.exec(fact);
@@ -128,9 +126,7 @@ export function callErrorFact(code: string, message: string): string {
   }
 
   if (code === 'LEASE_EXPIRED') {
-    return fact
-      .replace(/对你不可用/g, '对当前账户不可用')
-      .replace(/没有分配给你/g, '未获授权给当前账户');
+    return fact.replace(/对你不可用/g, '对当前账户不可用');
   }
 
   if (code === 'SHARE_DUPLICATE') return '公共空间里已有这一条目';
@@ -157,9 +153,7 @@ export function callErrorFact(code: string, message: string): string {
     return '该观察仍在评审中、尚未生效';
   }
 
-  return fact
-    .replace(/没有分配给你/g, '未获授权给当前账户')
-    .replace(/对你不可用/g, '对当前账户不可用');
+  return fact.replace(/对你不可用/g, '对当前账户不可用');
 }
 
 /** Strip a trailing 。 so the renderer can add exactly one. */
@@ -326,10 +320,11 @@ export function callErrorNext(
   fix: string | undefined,
   message = '',
   callerName?: string,
+  path?: string,
 ): string {
   let next: string;
   if (code === 'SOURCE_NOT_PERMITTED') {
-    const kind = notPermittedKindOf(message, fix);
+    const kind = notPermittedKindOf(message, fix, path);
     const row =
       kind === 'root' ? KNOWLEDGE_ROOT_NEXT : kind === 'knowledge' ? KNOWLEDGE_NEXT : kind === 'system' ? SYSTEM_NEXT : PACK_NEXT;
     next = role === 'admin' ? row.admin(message) : row.member;
@@ -363,6 +358,6 @@ export function renderCallError(
   const category = callErrorCategoryOf(error.code);
   if (category === null) return null;
   const fact = callErrorFact(error.code, error.message);
-  const next = callErrorNext(error.code, role, fix, error.message, callerName);
+  const next = callErrorNext(error.code, role, fix, error.message, callerName, error.path);
   return `${category}：${fact}。${next}。`;
 }

@@ -152,9 +152,6 @@ export function pointerOfPath(path: readonly PropertyKey[]): string {
 /** Default fix only for handwritten violations that omit a custom one; schemaErrors never uses this alone. */
 const ARGUMENT_FIX = '这次按 tools/list 该工具的 inputSchema 改正参数后再调用';
 
-/** The retired generic fix; tests assert schemaErrors never returns this alone. */
-export const GENERIC_ARGUMENT_FIX = '按工具的输入模式改正这个参数后再调用';
-
 function violation(_tool: ToolName, path: string, message: string, fix = ARGUMENT_FIX): ProtocolError {
   return { code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数无效：${message}`, fix, path };
 }

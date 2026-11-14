@@ -37,8 +37,8 @@ describe('scenario 6: user without pack', () => {
     assert.equal(unassignedAnswer.isError, true);
     assert.equal(unassignedAnswer.out.call_result, 'error');
     assert.equal(unassignedAnswer.out.errors[0]?.code, 'SOURCE_NOT_PERMITTED');
-    assert.ok(unassignedAnswer.text.includes('任务包 case-review 存在，没有分配给你'), unassignedAnswer.text);
-    assert.ok(unassignedAnswer.text.includes('请管理员把它分配给你'), 'the fix names who can assign it');
+    assert.ok(unassignedAnswer.text.includes('当前账户未获授权使用工作流「case-review」'), unassignedAnswer.text);
+    assert.ok(unassignedAnswer.text.includes('请联系管理员为该账户或所在团队分配此工作流'), 'the fix names who can assign it');
     assert.equal(unassignedAnswer.out.run, undefined);
 
     // 2. Calling start_run for a completely non-existent pack
