@@ -1,4 +1,4 @@
-import { environmentUpgradeRequired, readProductionMigrationCompatibility } from './upgrade-production.ts';
+import { environmentUpgradeRequired, requireProductionUpgradeActivation } from './upgrade-production.ts';
 import { createRebuildApp } from './rebuild-app.ts';
 import { createPlatformRebuildBridge } from './rebuild-platform.ts';
 import { rebuildRequiredState } from './rebuild-state.ts';
@@ -27,7 +27,7 @@ import { createApp } from './app.ts';
 import { createCommandBridge } from './command-bridge.ts';
 import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
 import { terminalSafe } from './assemble/terminal.ts';
-import { isAssemblyMissing, CliError, UsageError } from './errors.ts';
+import { isAssemblyMissing, UsageError } from './errors.ts';
 import { describeError } from './notes.ts';
 
 export interface ServeOptions {
@@ -172,8 +172,8 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     });
   } catch (error) {
     if (error instanceof EnvironmentUpgradeRequiredError) return reportFailure(io, environmentUpgradeRequired());
-    const compatibility = await readProductionMigrationCompatibility(config);
-    if (compatibility.compatible !== true) return reportFailure(io, new CliError('记录库兼容声明未核对通过，业务未启动；保留现库', '检查连接与运行角色读取权限，使用满足迁移最低安全级别的发布；不执行 reset'));
+    try { await requireProductionUpgradeActivation(config); }
+    catch (admissionError) { return reportFailure(io, admissionError); }
     const diagnosis = await diagnoseRecordsSchema(config);
     const needed = rebuildRequiredState(diagnosis);
     if (needed !== null) {

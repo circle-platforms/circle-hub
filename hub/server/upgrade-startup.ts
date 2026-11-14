@@ -25,7 +25,11 @@ export function upgradeStartupDecision(observation: UpgradeStartupObservation): 
   }
   if (observation.environmentAssignmentCompleted !== true) {
     result.problems.push(observation.environmentAssignmentCompleted === false ? '运行环境保权升级尚未完成；未启用新守卫、未启动业务' : '运行环境保权完成事实不可读取；不能当作已完成');
-    result.nextActions.push(...environmentUpgradeNextActions());
+    if (observation.environmentAssignmentCompleted === false) result.nextActions.push(...environmentUpgradeNextActions());
+    else result.nextActions.push(
+      '以现有操作令牌对应的启用管理员执行 circle-hub upgrade preview --owner-role <数据库拥有者> --json，只读核对升级问题',
+      '保留现库并核对原事务回执及来源可读性；不要自动补授，确认完成事实后重新启动本版本',
+    );
   }
   if (!result.problems.length) { result.canServe = true; result.enforceEnvironmentAssignments = true; }
   return result;

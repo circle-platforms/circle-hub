@@ -9,7 +9,8 @@ test('readable floor is never a substitute for completed environment preservatio
     const result = upgradeStartupDecision({ compatibility: compatible, environmentAssignmentCompleted });
     assert.equal(result.canServe, false); assert.equal(result.enforceEnvironmentAssignments, false);
     assert.ok(result.nextActions.some(line => line.includes('upgrade preview')));
-    assert.ok(result.nextActions.some(line => line.includes('--expected-snapshot')));
+    if (environmentAssignmentCompleted === false) assert.ok(result.nextActions.some(line => line.includes('--expected-snapshot')));
+    else { assert.ok(result.nextActions.some(line => line.includes('原事务回执'))); assert.ok(result.nextActions.every(line => !line.includes('upgrade apply'))); }
     assert.doesNotMatch(JSON.stringify(result), /reset|重建库/);
   }
 });
