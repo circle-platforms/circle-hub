@@ -14,21 +14,21 @@ async function report(c: Awaited<ReturnType<typeof setup>>, reference: string) {
 test('reports retain target outcomes but never assert dynamic verdicts without certified attribution', async t => {
   const c = await setup(); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  const value = await report(c, state.result!);
+  const value = await report(c, state.job_facts.result!);
   assert.equal(value.rows[0].reported_terminal, 'pass'); assert.equal(value.rows[0].dynamic_terminal, 'no_verdict');
   assert.ok(value.rows[0].limits.includes('目标对本次派发的报告'));
   assert.ok(value.rows[0].limits.includes('未排除本地操作'));
   const other = await c.kit.principals.createUser(c.admin, '其他合成用户');
-  assert.equal(await c.kit.artifacts.source(other, state.result!.slice(4)), null);
-  assert.ok((await c.kit.artifacts.source(c.admin, state.result!.slice(4)))?.bytes);
+  assert.equal(await c.kit.artifacts.source(other, state.job_facts.result!.slice(4)), null);
+  assert.ok((await c.kit.artifacts.source(c.admin, state.job_facts.result!.slice(4)))?.bytes);
 });
 
 test('incomplete channels and empty or unmapped rows have no verdict; mismatched result digest freezes', async t => {
   for (const mode of ['partial', 'empty', 'unmapped-row', 'result-sha']) {
     const c = await setup({ mode, alter: (name, v) => name !== 'read_blob' ? v : mode === 'empty' ? { ...v, rows: [{}] } : mode === 'unmapped-row' ? { ...v, rows: [{ id: 'synthetic-case', outcome: 'unmapped' }] } : v }); t.after(() => c.close());
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    if (mode === 'result-sha') { assert.equal(state.frozen, true); assert.equal(state.result, undefined); }
-    else { const r = await report(c, state.result!); assert.equal(r.rows[0].dynamic_terminal, 'no_verdict'); assert.equal(r.rows[0].reported_terminal, null); }
+    if (mode === 'result-sha') { assert.equal(state.job_facts.frozen, true); assert.equal(state.job_facts.result, undefined); }
+    else { const r = await report(c, state.job_facts.result!); assert.equal(r.rows[0].dynamic_terminal, 'no_verdict'); assert.equal(r.rows[0].reported_terminal, null); }
   }
 });
 
@@ -36,14 +36,14 @@ test('heartbeat deadlines and interruptions are recorded while status reads cont
   for (const mode of ['heartbeat-failure', 'fencing']) {
     const c = await setup({ mode, ...(mode==='heartbeat-failure'?{ttl:60,delay:{inspect_slot:160}}:{}) }); t.after(() => c.close());
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    if(mode==='heartbeat-failure'){assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);continue;}
+    if(mode==='heartbeat-failure'){assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);continue;}
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
     const events = await c.service.journal.events(state.job);
     if (mode === 'heartbeat-failure') {
       assert.ok(c.calls.includes('touch_slot'));
       assert.ok(events.some(e => e.body.detail.lease_interrupted === true));
-      const r = await report(c, state.result!); assert.equal(r.lease_interrupted, true);
-    } else assert.equal((await report(c, state.result!)).lease_drift, true);
+      const r = await report(c, state.job_facts.result!); assert.equal(r.lease_interrupted, true);
+    } else assert.equal((await report(c, state.job_facts.result!)).lease_drift, true);
     assert.ok(c.calls.includes('read_blob'));
   }
 });
@@ -51,7 +51,7 @@ test('heartbeat deadlines and interruptions are recorded while status reads cont
 test('secrets are absent from every record, object, file, and reply projection even when echoed by the target', async t => {
   const c = await setup({ alter: (_name, value) => ({ ...value, debug: 'Bearer synthetic-secret' }) }); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective');
+  assert.equal(state.dispatch_attempt!.outcome, 'effective');
   const walk = async (path: string): Promise<void> => {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const file = join(path, entry.name);
@@ -69,7 +69,7 @@ test('secrets are absent from every record, object, file, and reply projection e
 test('a fence change during result retrieval is recorded before publishing the result', async t => {
   const c = await setup({ mode: 'fencing-result' }); t.after(() => c.close());
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal((await report(c, state.result!)).lease_drift, true);
+  assert.equal((await report(c, state.job_facts.result!)).lease_drift, true);
 });
 
 test('deployment-specific limitations are copied as executor declarations rather than inferred by the core', async t => {
@@ -77,7 +77,7 @@ test('deployment-specific limitations are copied as executor declarations rather
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, limitations: ['合成运行环境使用实时文件，内容一致性未认证'] });
     await c.freezeExecutor();
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  const result = await report(c, state.result!);
+  const result = await report(c, state.job_facts.result!);
   assert.equal(result.executor_declarations.provenance, 'declared');
   assert.deepEqual(result.executor_declarations.limitations, ['合成运行环境使用实时文件，内容一致性未认证']);
   assert.ok(result.executor_declarations.definition_sha256);
@@ -87,7 +87,7 @@ test('runner declarations are observations of saved literal markers even in an i
   const c=await setup({alter:(name,value)=>name==='read_blob'?{...value,complete:false,rows:[{id:'synthetic-case',outcome:'good',log:'SYNTHETIC_PRESENT',sessions:{'synthetic.txt':'another session'}}]}:value});t.after(()=>c.close());
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,result:{...c.executor.definition.result,log:'/log',sessions:'/sessions'},side_effects:[{message:'合成动作一',marker:'SYNTHETIC_PRESENT'},{message:'合成动作二',marker:'SYNTHETIC_ABSENT'},{message:'合成声明'}]});
     await c.freezeExecutor();
-  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.result!);
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.job_facts.result!);
   assert.equal(value.side_effects[0].marker_present,true);assert.equal(value.side_effects[1].marker_present,false);
   assert.match(value.side_effects[0].text,/本次日志里有这一项的标记/);assert.match(value.side_effects[1].text,/本次日志里没有这一项的标记/);
   assert.match(value.side_effects[2].text,/运行器会这样做（执行器定义声明，Hub 看不见）/);
@@ -112,7 +112,7 @@ test('certified owned reports become qualified judgments only after per-seat pro
     const proof=await c.kit.artifacts.ingest({bytes:new TextEncoder().encode('synthetic ownership certification'),mediaType:'text/plain',origin:{upload:{session:'synthetic'}},author:{user:c.admin.id},provenanceType:'declared',visibility:{readers:[c.admin.id],admins:true,packs:[],shareable:false}});
     await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,manifest_sha256:manifest.body.sha256,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes,premises:{result_ownership:{version:'1',evidence:[`src:${proof.body.sha256}`]}},result:{...c.executor.definition.result,ownership:{pointer:'/ownership',value:'staging_directory',reason:'/ownership_reason'},request_id:'/request',log:'/log',log_stale:'/stale',closing_marker:'SYNTHETIC_END'}});
     await c.freezeExecutor();
-    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.result!);
+    const state=await c.service.dispatch(c.admin,c.run,c.executor.id);const value=await report(c,state.job_facts.result!);
     assert.equal(value.rows[0].dynamic_terminal,outcome==='good'?'pass':'fail');assert.equal(value.rows[0].qualifier.nature,'judgment');assert.equal(value.rows[0].accepted_as_fact,false);
   }
 });
@@ -122,7 +122,7 @@ test('every row names its log as a source its runner reads, and a row that did n
     const c = await setup({ alter: (name, value) => name === 'read_blob' ? { ...value, rows: [{ id: 'synthetic-case', outcome, log: `synthetic log ${outcome}`, sessions: { 'device-a.txt': 'synthetic session', 'device-b.txt': '' } }] } : value }); t.after(() => c.close());
     await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
     await c.freezeExecutor();
-    const state = await c.service.dispatch(c.admin, c.run, c.executor.id); const row = (await report(c, state.result!)).rows[0];
+    const state = await c.service.dispatch(c.admin, c.run, c.executor.id); const row = (await report(c, state.job_facts.result!)).rows[0];
     // A pass keeps its log, which the reference engine reviews for a command the device refused; device sessions are kept for
     // a row that did not pass only, as the reference engine fetches them. An empty session names no source; the raw report stays
     // readable by functions only.
@@ -146,14 +146,14 @@ test('the device return gives the runner what the target said word for word: eve
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
   await c.freezeExecutor();
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.match(state.device_return ?? '', /^src:[a-f0-9]{64}$/, JSON.stringify(state));
-  const source = await c.kit.artifacts.source(c.owner, state.device_return!.slice(4));
+  assert.match(state.job_facts.device_return ?? '', /^src:[a-f0-9]{64}$/, JSON.stringify(state));
+  const source = await c.kit.artifacts.source(c.owner, state.job_facts.device_return!.slice(4));
   const text = new TextDecoder().decode(source!.bytes!);
   assert.ok(text.includes('synthetic-case：无判定'), text);
   assert.ok(text.includes(said), 'the device reply is quoted whole');
   assert.equal(text.split('synthetic log').length, 2, 'a piece two places share is written once');
   assert.ok(text.includes('heldvalue'), 'decision 161: looking like a credential does not withhold the session text');
-  assert.equal(await c.kit.artifacts.source(await c.kit.principals.createUser(c.admin, '其他合成用户'), state.device_return!.slice(4)).then(read => read?.bytes ?? null), null);
+  assert.equal(await c.kit.artifacts.source(await c.kit.principals.createUser(c.admin, '其他合成用户'), state.job_facts.device_return!.slice(4)).then(read => read?.bytes ?? null), null);
 });
 
 test('a passing row is a verdict line in the device return, and its words stay out', async t => {
@@ -161,7 +161,7 @@ test('a passing row is a verdict line in the device return, and its words stay o
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
   await c.freezeExecutor();
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  const text = new TextDecoder().decode((await c.kit.artifacts.source(c.owner, state.device_return!.slice(4)))!.bytes!);
+  const text = new TextDecoder().decode((await c.kit.artifacts.source(c.owner, state.job_facts.device_return!.slice(4)))!.bytes!);
   assert.match(text, /^作业 .* 的设备返回。逐条结论：\nsynthetic-case：/); assert.doesNotMatch(text, /synthetic passing/);
 });
 
@@ -171,8 +171,8 @@ test('a session name that is no valid source name still saves the session under 
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, result: { ...c.executor.definition.result, log: '/log', sessions: '/sessions' } });
   await c.freezeExecutor();
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective', JSON.stringify(state)); assert.ok(state.result);
-  const row = (await report(c, state.result!)).rows[0];
+  assert.equal(state.dispatch_attempt!.outcome, 'effective', JSON.stringify(state)); assert.ok(state.job_facts.result);
+  const row = (await report(c, state.job_facts.result!)).rows[0];
   // The row keeps the names the target reported; the sources take positional names.
   assert.deepEqual(Object.keys(row.evidence.sessions).sort(), ['bad\u0007name', long].sort());
   for (const [index, name] of ['bad\u0007name', long].entries()) {

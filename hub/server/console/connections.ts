@@ -1,3 +1,5 @@
+import { dispatchScopeLabel } from '../dispatch-scope-label.ts';
+import type { ScopedDispatchFacts } from '../../../contracts/api.ts';
 import {dot} from './ui.ts';
 import {technical,technicalCode,facts,actionLink,evidence,tooltip} from './presentation.ts';
 // 连接 (the design canvas's Connections board): the Circles connected with a token, the business systems the Hub reads
@@ -24,6 +26,15 @@ import { field } from './presentation.ts';
 import { byId, shownVersion } from './packs.ts';
 
 export type Circle = ConnectedClient;
+
+/** Scope text accompanies every status colour; report absence is not a no-send conclusion. */
+export function environmentJobText(job: ScopedDispatchFacts): string {
+  const attempt = job.dispatch_attempt;
+  if (attempt) return `${dispatchScopeLabel(attempt.scope)}：${attempt.outcome === undefined ? '结局尚未取得' : uiLabelOf('effect_outcome', attempt.outcome)}`;
+  if (job.job_facts.operation === 'precheck') return `${uiLabelOf('dispatch_operation', 'precheck')}：${job.job_facts.readonly_verified === true ? '已取得全部条件通过的核对' : job.job_facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`;
+  return '尚无按范围可核对的派发结局';
+}
+
 
 /** The tabs of the connections page, in the order shown. */
 const CONNECTION_TABS = ['systems', 'packs', 'clients', 'environments'] as const;
@@ -227,18 +238,18 @@ export function environmentState(view: ExecutorView): { code: EnvironmentState; 
   const as = (code: EnvironmentState, tone: Tone, dot: DotState, detail: string[]) => ({ code, text: uiLabelOf('environment_state', code), tone, dot, detail });
   const state = view.state;
   if (!view.enabled) {
-    const waiting = state?.holding?.filter((job) => job.frozen).length ?? 0;
+    const waiting = state?.holding?.filter((job) => job.job_facts.awaiting_disposition).length ?? 0;
     return as('deactivated', 'unchecked', 'idle', waiting > 0 ? [`仍有 ${waiting} 个作业的派发结果未确认，等待处置中`] : []);
   }
   if (state === undefined || !state.known.occupancy || state.holding === null) {
     return as('unknown', 'unknown', 'unknown', state !== undefined && state.missing.length > 0 ? [...state.missing] : ['占用与冻结状态暂不可读']);
   }
-  const frozen = state.holding.filter((job) => job.frozen);
+  const frozen = state.holding.filter((job) => job.job_facts.awaiting_disposition);
   const detail: string[] = [];
   for (const job of frozen) detail.push(`作业 ${shortJob(job.job)} 的派发结果未确认，等待处置中`);
   if (state.bed_hold !== null) detail.push(`作业 ${shortJob(state.bed_hold.job)} 结束后运行环境未恢复（${state.bed_hold.bed}），等待管理员确认中`);
   if (frozen.length > 0 || state.bed_hold !== null) return as('frozen', 'fail', 'down', detail);
-  if (state.holding.length > 0) return as('in_use', 'judgment', 'info', state.holding.map((job) => `作业 ${shortJob(job.job)}（${axisUiLabel('effect_outcome')}：${uiLabelOf('effect_outcome', job.outcome)}）`));
+  if (state.holding.length > 0) return as('in_use', 'judgment', 'info', state.holding.map((job) => `作业 ${shortJob(job.job)}（${environmentJobText(job)}）`));
   return as('available', 'pass', 'ok', []);
 }
 
@@ -425,7 +436,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
  const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
- const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${environmentJobText(latest)}${latest.job_facts.awaiting_disposition?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
  const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const readinessSection=html`<div class="ch-stack" data-environment-readiness>${readinessTargets.length?readinessCards.map(card=>card.body):ctx.deps.dispatch?.readiness?html`<p class="ch-meta">${ctx.admin?'尚无运行环境目标。':'尚无已分配的运行环境；请管理员分配后重读。'}</p>`:readinessUnknownNotice()}${!ctx.deps.dispatch?.readiness&&readinessTargets.length?html`<p class="ch-meta">上列目标的只读报告尚未接线；页面不作许可判断。</p>`:''}</div>`;
  const dialogs:CommandDialog[]=[];let inspector:Html;
@@ -450,14 +461,14 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
     }));
   }
   if(environment.state?.bed_hold){const clear=commands.bedHoldClear(environment);dialogs.push(clear);actions.push(commandLink(clear,'确认已恢复…'));}
-  const frozen=environment.state?.holding?.find(job=>job.frozen);if(frozen){const dispose=commands.jobDispose(frozen.job);dialogs.push(dispose);actions.push(commandLink(dispose,'处置派发结果…','ch-btn ch-btn--danger'));if(frozen.run)actions.push(link('/console/runs/'+frozen.run,'查看任务'));}
+  const frozen=environment.state?.holding?.find(job=>job.job_facts.awaiting_disposition);if(frozen){const dispose=commands.jobDispose(frozen.job);dialogs.push(dispose);actions.push(commandLink(dispose,'处置派发结果…','ch-btn ch-btn--danger'));if(frozen.run)actions.push(link('/console/runs/'+frozen.run,'查看任务'));}
   const flags=environment as AssignmentFlags;
   let assignmentGone: boolean | null = environmentLacksAssignment(flags)
     ? true
     : (flags.assigned === true || flags.can_use === true || flags.canUse === true) ? false : null;
   const showRevoked = environmentAssignmentsEnforced && environmentIsOccupied(environment) && assignmentGone === true;
   if (showRevoked) {
-    const holders = (environment.state?.holding ?? []).map((job) => `作业 ${shortJob(job.job)}${job.frozen ? '（派发结果未确认）' : ''}`);
+    const holders = (environment.state?.holding ?? []).map((job) => `作业 ${shortJob(job.job)}${job.job_facts.awaiting_disposition ? '（派发结果未确认）' : ''}`);
     const detail = holders.length > 0
       ? `当前占用：${holders.join('、')}。`
       : '当前仍有占用记录。';

@@ -24,14 +24,14 @@ async function fixture(kind:'correct'|'pointer'|'map'='correct'){
 }
 async function report(c:Awaited<ReturnType<typeof fixture>>,reference:string){const source=await c.kit.artifacts.source(c.admin,reference.slice(4));assert.ok(source?.bytes);return JSON.parse(Buffer.from(source.bytes).toString());}
 test('same-shaped pass result without optional sessions is a qualified PASS with the exact declared map',async t=>{
- const c=await fixture();t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id),value=await report(c,state.result!);
+ const c=await fixture();t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id),value=await report(c,state.job_facts.result!);
  assert.equal(value.rows[0].dynamic_terminal,'pass');assert.deepEqual(value.rows[0].missing_facts,[]);assert.equal(value.rows[0].report_check.resolved,true);assert.equal(value.rows[0].report_check.pointer,'/cases/0/result');
  assert.equal(c.calls.filter(call=>call==='send_blob').length,1);assert.equal(value.rows[0].accepted_as_fact,false);
 });
 for(const kind of ['pointer','map'] as const)test('report gap names '+kind+' and a read-only definition repair resolves it without another submit',async t=>{
- const c=await fixture(kind);t.after(()=>c.close());const initial=await c.service.dispatch(c.admin,c.run,c.executor.id),old=await report(c,initial.result!);const row=old.rows[0];
+ const c=await fixture(kind);t.after(()=>c.close());const initial=await c.service.dispatch(c.admin,c.run,c.executor.id),old=await report(c,initial.job_facts.result!);const row=old.rows[0];
  assert.equal(row.dynamic_terminal,'no_verdict');assert.deepEqual(row.missing_facts,['report']);assert.equal(row.report_check.condition,kind==='pointer'?'result.item_outcome':'result.map');assert.equal(row.report_check.pointer,kind==='pointer'?'/cases/0/outcome':'/cases/0/result');
- assert.ok(row.missing_fact.includes(row.report_check.pointer));assert.ok(initial.missing_fact?.includes(row.report_check.pointer));assert.ok(c.logs.some(log=>JSON.stringify(log).includes(row.report_check.condition)));assert.ok(!JSON.stringify(row.report_check).includes('successed'));
+ assert.ok(row.missing_fact.includes(row.report_check.pointer));assert.ok(initial.dispatch_attempt!.missing_fact?.includes(row.report_check.pointer));assert.ok(c.logs.some(log=>JSON.stringify(log).includes(row.report_check.condition)));assert.ok(!JSON.stringify(row.report_check).includes('successed'));
  const definition=(await c.registry.get(c.executor.id))!.definition;await c.registry.update(c.admin,c.executor.id,{...definition,result:{...definition.result,item_outcome:'/result',map:{pass:'pass',fail:'fail'}}});const before=c.calls.length;
- const refreshed=await c.service.resume(c.admin,initial.job),next=await report(c,refreshed.result!);assert.equal(next.rows[0].dynamic_terminal,'pass');assert.notEqual(refreshed.result,initial.result);assert.ok(c.calls.slice(before).every(call=>call==='inspect_blob'||call==='read_blob'));assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
+ const refreshed=await c.service.resume(c.admin,initial.job),next=await report(c,refreshed.job_facts.result!);assert.equal(next.rows[0].dynamic_terminal,'pass');assert.notEqual(refreshed.job_facts.result,initial.job_facts.result);assert.ok(c.calls.slice(before).every(call=>call==='inspect_blob'||call==='read_blob'));assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
 });

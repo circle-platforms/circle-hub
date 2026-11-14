@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { executorCommand, jobCommand, bedCommand } from '../server/cli-job.ts';
 import { adminCommands } from '../server/cli-admin.ts';
+import { UsageError } from '../server/errors.ts';
+import { TEST_ENVIRONMENT_USAGE } from '../server/cli-test-environment.ts';
 import { setup } from './testing/context.ts';
 import { definition } from './testing/definition.ts';
 
@@ -41,9 +43,9 @@ test('mark-failed does not unfreeze without the explicit risk flag and always re
   const job = await c.service.dispatch(c.admin, c.run, c.executor.id);
   await assert.rejects(jobCommand(s, ['dispose', job.job, '--mark-failed', '--accept-possible-duplicate-effects']));
   assert.equal(await jobCommand(s, ['dispose', job.job, '--mark-failed', '--reason', '合成原因']), 1);
-  assert.equal((await c.service.status(c.admin, job.job)).frozen, true);
+  assert.equal((await c.service.status(c.admin, job.job)).job_facts.frozen, true);
   await jobCommand(s, ['dispose', job.job, '--mark-failed', '--reason', '合成原因', '--accept-possible-duplicate-effects']);
-  assert.equal((await c.service.status(c.admin, job.job)).frozen, false);
+  assert.equal((await c.service.status(c.admin, job.job)).job_facts.frozen, false);
 });
 
 test('invalid or misplaced flags never echo argument values and commands close owned resources on failure', async t => {
@@ -92,7 +94,8 @@ test('conformance CLI exports evidence without printing deployment data or submi
   assert.equal(await jobCommand(s,['conformance','--executor',c.executor.id,'--save',save]),1);
   assert.equal((await readdir(save)).length,2);
   assert.doesNotMatch(s.lines.join('\n'),/synthetic-secret|synthetic-bed|synthetic-remote|127\.0\.0\.1/);
-  assert.ok(s.lines.some(line=>line.includes('结果引用 src:')));
+  const [result] = await c.kit.store.findMany<{ detail: { reference: string } }>({kind:'action',key:'dispatch.phase',values:['result']});
+  assert.ok(s.lines.includes(`作业报告引用 ${result!.body.detail.reference}`));
 });
 
 test('precheck exports every seat response with its operation and selector without printing raw values',async t=>{
@@ -129,7 +132,11 @@ test('bed baseline CLI records baseline via probe, lists registered baselines an
   const s = session(c);
 
   // Invalid arguments
-  await assert.rejects(bedCommand(s, ['invalid']), /bed 的子命令/);
+  await assert.rejects(bedCommand(s, ['invalid']), error => {
+    assert.ok(error instanceof UsageError);
+    assert.equal(error.message, `bed 的测试环境管理命令：${TEST_ENVIRONMENT_USAGE}`);
+    return true;
+  });
   await assert.rejects(bedCommand(s, ['baseline', 'record', c.executor.id]), /用法/);
   await assert.rejects(bedCommand(s, ['baseline', 'show', c.executor.id]), /用法/);
 

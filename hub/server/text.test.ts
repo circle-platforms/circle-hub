@@ -745,159 +745,117 @@ test('superseded criterion declarations are displayed as replaced rather than un
 const run=runOf(items(1));run.criterion_changes=[{item:run.items[0].id,criterion:SUBJECT,assertion:'旧修改意见',old:'旧要求',new:'先前提议',grounds:[{reference:SUBJECT,quote:'合成'}],request:'rec:'+H('7'),declaration:'rec:'+H('8')+'#/criterion_changes/0',audience:'usr_'+'1'.repeat(26),due:'2026-10-25T08:00:00.000Z',answered:true,expired:false,superseded_by:'rec:'+H('6'),next_action:'使用者核对新的修改意见'}] as any;const text=toolText('start_run',startAnswer(run));assert.match(text,/已有新的修改意见/);assert.doesNotMatch(text,/rec:|尚未确认/);
 });
 
-test('submit_result keeps the three dispatch outcomes distinct under reader wording', () => {
-  // Non-call-error dispatch notes keep the conclusion chain; five-category prose must not (Boss 15:02).
-  const result = resultOf(items(1));
-  const base = submitAnswer(result);
-  const notSent = toolText('submit_result', SubmitResultOutput.parse({
-    ...base,
-    dispatch: [{ text: '上机验证没有发出：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' }],
-  }), { items: items(1) });
-  assert.match(notSent, /上机验证没有发出：目标没有给出租约/);
-  assert.match(notSent, /什么都没有发到目标/);
-  assert.match(notSent, /状态已确认；判断错误；原因还没查清/);
-
-  const diagnosed = toolText('submit_result', SubmitResultOutput.parse({
-    ...base,
-    dispatch: [{ text: '上机验证没有发出：放行条件里有 1 条错误。「核验目标与清单等于执行器声明」判定为错误。这次脚本合并核对的是：测试环境 bed-a，清单 eeeeeeeeeeee，和执行器声明的不一样。另有 2 条因为上面的错误还没有核对。现在可以做：先确认预订的是哪个测试环境' }],
-  }), { items: items(1) });
-  assert.match(diagnosed, /放行条件里有 1 条错误/);
-  assert.match(diagnosed, /先确认预订的是哪个测试环境/);
-  assert.match(diagnosed, /状态已确认；判断错误；决定者程序/);
-  assert.doesNotMatch(diagnosed, /原因还没查清/);
-
-  const rejected = toolText('submit_result', SubmitResultOutput.parse({
-    ...base,
-    dispatch: [{ text: '已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次' }],
-  }), { items: items(1) });
-  assert.match(rejected, /目标在“admission”阶段拒绝/);
-  assert.match(rejected, /目标没有接收，也没有执行/);
-  assert.match(rejected, /状态已确认；判断错误；原因还没查清/);
-
-  const unanswered = toolText('submit_result', SubmitResultOutput.parse({
-    ...base,
-    dispatch: [{ text: '上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；已交给管理员处置；之后原样重交读进展' }],
-  }), { items: items(1) });
-  assert.match(unanswered, /上机验证结果未知：不要重交，也不要另开运行重发/);
-  assert.match(unanswered, /状态未知；原因还没查清/);
-
-  const withResult = toolText('submit_result', SubmitResultOutput.parse({
-    ...base,
-    dispatch: [{ job: H('1'), executor: 'synthetic-executor', result: `src:${H('2')}`, text: '已结束；结果引用 src:合成' }],
-  }), { items: items(1) });
-  assert.match(withResult, /设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出/);
-  assert.doesNotMatch(withResult, /结果引用 src:/);
-
-  const many = toolText('submit_result', SubmitResultOutput.parse({
-    ...base,
-    dispatch: [
-      { text: '上机验证没有发出：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' },
-      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）；稍后逐字原样重交上机验证时的那次提交读进展，结束后同样的答复带结果引用' },
-    ],
-  }), { items: items(1) });
-  assert.match(many, /上机验证没有发出：预检条件不满足/);
-  assert.match(many, /Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）/);
-  assert.equal(linesOf(many).filter(line => line.includes('上机验证')).length >= 2, true);
+test('submit_result preserves distinct source-selected dispatch outcomes without adding a conclusion chain', () => {
+  const base = submitAnswer(resultOf(items(1)));
+  const scope = { operation: 'dispatch' as const, job: H('1'), round: 1 };
+  const notes: NonNullable<z.infer<typeof SubmitResultOutput>['dispatch']> = [
+    { text: '上机验证没有发出：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次', dispatch_attempt: { scope, outcome: 'not_dispatched', not_sent: true } },
+    { text: '上机验证没有发出：放行条件里有 1 条错误。「核验目标与清单等于执行器声明」判定为错误。另有 2 条因为上面的错误还没有核对。现在可以做：先确认预订的是哪个测试环境', dispatch_attempt: { scope, outcome: 'not_dispatched', not_sent: true } },
+    { text: '目标在准入时拒绝，没有接收这一次派发；按拒绝原因修正后再重交。', dispatch_attempt: { scope, outcome: 'not_dispatched', not_sent: true } },
+    { text: '上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；已交给管理员处置；之后原样重交读进展', dispatch_attempt: { scope, outcome: 'unknown' } },
+    { text: '设备输出已取回，下一步由模型核对设备输出；这份报告不是设备判定。', job_facts: { scope: { job: H('1') }, result: `src:${H('2')}` } },
+  ];
+  for (const note of notes) {
+    const answer = SubmitResultOutput.parse({ ...base, dispatch: [note] });
+    const text = toolText('submit_result', answer, { items: items(1) });
+    assert.deepEqual(answer.dispatch?.[0], note);
+    assert.equal(linesOf(text).filter(line => line === note.text).length, 1, note.text);
+    assert.equal(text.includes(note.text + '；状态'), false);
+    assert.equal(text.includes(note.text + '；判断'), false);
+  }
+  const manyNotes = [notes[0], {
+    job_facts: { scope: { job: H('3') } },
+    dispatch_attempt: { scope: { operation: 'dispatch' as const, job: H('3'), round: 2 }, outcome: 'issued' as const },
+    text: 'Hub 已开始测试环境「合成环境」的下一轮上机验证；稍后原样重交以读取进展。',
+  }];
+  const many = toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: manyNotes }), { items: items(1) });
+  for (const note of manyNotes) assert.equal(linesOf(many).filter(line => line === note.text).length, 1);
+  assert.ok(many.indexOf(manyNotes[0].text) < many.indexOf(manyNotes[1].text), 'both independent source notes retain their order');
 });
 
-test('dispatch call-error prose keeps category form and restores member release next steps', () => {
-  // Extra DispatchNote fields survive production extensibleOutput; unit calls pass them without SubmitResultOutput.parse.
+test('dispatch call-error prose keeps source-selected member and administrator actions without role conversion', () => {
   const base = submitAnswer(resultOf(items(1)));
-  const occupied = toolText('submit_result', {
-    ...base,
-    dispatch: [{
-      text: '已被占用：自动化测试环境正被作业占用，这次上机验证没有发出。等占用结束后原样重交。',
-      outcome: 'not_dispatched',
-      error_code: 'LEASE_UNAVAILABLE',
-    }],
-  }, { items: items(1) });
-  const occupiedLine = linesOf(occupied).find((line) => line.startsWith('已被占用：')) ?? '';
-  assert.equal(occupiedLine, '已被占用：自动化测试环境正被作业占用，这次上机验证没有发出。等占用结束后原样重交。');
+  const scope = { operation: 'dispatch' as const, job: H('1'), round: 1 };
+  const occupiedText = '已被占用：自动化测试环境正被作业占用，这次上机验证没有发出。等占用结束后原样重交。';
+  const occupiedNote = { text: occupiedText, dispatch_attempt: { scope, outcome: 'not_dispatched' as const, error_code: 'LEASE_UNAVAILABLE', not_sent: true as const } };
+  const occupied = toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: [occupiedNote] }), { items: items(1) });
+  const occupiedLine = linesOf(occupied).find(line => line.startsWith('已被占用：')) ?? '';
+  assert.equal(occupiedLine, occupiedText);
   assert.doesNotMatch(occupiedLine, /状态已确认|判断错误|决定者程序|原因还没查清/);
 
-  const memberRelease = toolText('submit_result', {
-    ...base,
-    dispatch: [{
-      text: '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验。',
-      outcome: 'not_dispatched',
-      error_code: 'EFFECT_RELEASE_UNMET',
-      missing_facts: [{ fact: '核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致', next_action: '联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验' }],
-    }],
-  }, { items: items(1), caller: { role: 'user' } });
-  const memberLine = linesOf(memberRelease).find((line) => line.startsWith('不存在：')) ?? '';
-  assert.equal(
-    memberLine,
-    '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。先确认预订的是哪个测试环境，用它对应的运行环境配置重新做脚本编写和脚本合并，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明。',
-  );
-  assert.doesNotMatch(memberLine, /联系管理员核对当前环境的清单绑定|状态已确认|判断错误|决定者程序/);
+  // The producer has already selected the safe member wording; the adapter must not select a different action.
+  const memberText = '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。先确认预订的是哪个测试环境，用它对应的运行环境配置重新做脚本编写和脚本合并，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明。';
+  const memberNote = { text: memberText, job_facts: { scope: { job: H('1') }, admission_error: { code: 'EFFECT_RELEASE_UNMET', message: 'private resource key usr_private', fix: 'circle-hub executor update exe_private' } }, dispatch_attempt: { scope, outcome: 'not_dispatched' as const, error_code: 'EFFECT_RELEASE_UNMET', not_sent: true as const } };
+  for (const role of ['user', 'admin'] as const) {
+    const text = toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: [memberNote] }), { items: items(1), caller: { role } });
+    assert.equal(linesOf(text).find(line => line.startsWith('不存在：')), memberText);
+    assert.doesNotMatch(text, /circle-hub|exe_|usr_|boundary_refused|private resource key|[0-9a-f]{64}/);
+    assert.equal(text.includes(memberText + '；状态'), false);
+  }
 
-  const adminRelease = toolText('submit_result', {
-    ...base,
-    dispatch: [{
-      text: '不存在：核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致。联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验。',
-      outcome: 'not_dispatched',
-      error_code: 'EFFECT_RELEASE_UNMET',
-      executor: 'exe_01syntheticrefusal0000000001',
-      missing_facts: [{ fact: '核对项目“核验目标与清单等于执行器声明”：本次核验的目标或清单摘要与当前执行器声明不一致', next_action: '联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验' }],
-    }],
-  }, { items: items(1), caller: { role: 'admin', name: '合成管理员' } });
-  const adminLine = linesOf(adminRelease).find((line) => line.startsWith('不存在：')) ?? '';
-  assert.match(adminLine, /按执行器声明的测试环境和清单重新做脚本编写和脚本合并/);
-  assert.match(adminLine, /circle-hub job explain-release --executor exe_01syntheticrefusal0000000001/);
-  assert.doesNotMatch(adminLine, /先确认预订|状态已确认|判断错误|决定者程序/);
+  const executor = 'exe_01syntheticrefusal0000000001';
+  const adminText = `不存在：本次核验目标或清单与执行器声明不一致。按执行器声明的测试环境和清单重新做脚本编写和脚本合并；用 circle-hub job explain-release --run ${RUN} --executor ${executor} 核对原因。`;
+  const adminNote = { text: adminText, run: RUN, executor, job_facts: { scope: { job: H('1') } }, dispatch_attempt: { scope, outcome: 'not_dispatched' as const, error_code: 'EFFECT_RELEASE_UNMET', not_sent: true as const } };
+  const administrator = toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: [adminNote] }), { items: items(1), caller: { role: 'admin', name: '合成管理员' } });
+  assert.equal(linesOf(administrator).find(line => line.startsWith('不存在：')), adminText);
+  assert.ok(administrator.includes(`circle-hub job explain-release --run ${RUN} --executor ${executor}`));
+  assert.equal(administrator.includes(adminText + '；状态'), false);
+  const unchangedByCaller = toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: [adminNote] }), { items: items(1), caller: { role: 'user' } });
+  assert.ok(linesOf(unchangedByCaller).includes(adminText), 'privacy must be enforced at the source, not by reinterpreting caller role in this adapter');
 
-  const legacyIdentity = toolText('submit_result', {
-    ...base,
-    dispatch: [{
-      text: '上机验证没有发出：本次核验的目标或清单摘要与当前执行器声明不一致',
-      outcome: 'not_dispatched',
-      missing_facts: [{ fact: '本次核验的目标或清单摘要与当前执行器声明不一致', next_action: '联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验' }],
-    }],
-  }, { items: items(1), caller: { role: 'user' } });
-  const legacyLine = linesOf(legacyIdentity).find((line) => line.includes('上机验证没有发出')) ?? '';
-  assert.match(legacyLine, /现在可以做：先确认预订的是哪个测试环境/);
-  assert.match(legacyLine, /状态已确认；判断错误/);
+  const preJobText = '上机验证没有发出：本次核验的目标或清单摘要与当前执行器声明不一致。现在可以做：先确认预订的是哪个测试环境，再重新核验。';
+  const preJob = { text: preJobText, run_facts: { scope: { run: RUN }, admission_error: { code: 'EFFECT_RELEASE_UNMET', message: '本次核验的目标或清单摘要与当前执行器声明不一致', fix: '先确认预订的是哪个测试环境，再重新核验' } } };
+  const beforeReservation = SubmitResultOutput.parse({ ...base, dispatch: [preJob] });
+  const preJobOutput = toolText('submit_result', beforeReservation, { items: items(1), caller: { role: 'user' } });
+  assert.ok(linesOf(preJobOutput).includes(preJobText));
+  assert.equal(beforeReservation.dispatch?.[0].job_facts, undefined);
+  assert.equal(beforeReservation.dispatch?.[0].dispatch_attempt, undefined, 'a pre-job note does not invent a job or round');
+  assert.equal(preJobOutput.includes(preJobText + '；状态'), false);
 });
 
-test('known missing booking keeps a verified merge separate from an unsent job', () => {
+test('known missing booking keeps an accepted merge separate from the source-reported unsent attempt', () => {
   const base = submitAnswer(resultOf(items(1)));
-  const text = toolText('submit_result', { ...base, dispatch: [{ text: 'diagnostic with private keys', outcome: 'not_dispatched', frozen: false, submission_verified: true, booking: { target: '合成实验室', coverage_complete: false, required_resources: 11, missing_resources: 11, declared_device_count: 11 } }] }, { items: items(1) });
-  assert.match(text, /脚本合并正确（已确认）/);
-  assert.match(text, /这次运行没有带着测试环境的预订/);
-  assert.match(text, /合成实验室（共 11 台设备）/);
-  assert.match(text, /先预订整个测试环境，再从脚本编写重开/);
-  assert.doesNotMatch(text, /原因还没查清|diagnostic with private keys/);
+  const sourceText = '不存在：这次运行没有带着测试环境 合成实验室（共 11 台设备）的完整预订。先预订整个测试环境，再从脚本编写重开并重新核验脚本合并。';
+  const note = {
+    text: sourceText,
+    job_facts: { scope: { job: H('4') }, admission_error: { code: 'LEASE_UNAVAILABLE', message: 'diagnostic with private keys', fix: 'circle-hub job status private' } },
+    dispatch_attempt: { scope: { operation: 'dispatch' as const, job: H('4'), round: 1 }, outcome: 'not_dispatched' as const, not_sent: true as const, missing_facts: [{ fact: '合成实验室缺少 11 台设备的预订', next_action: '先预订整个测试环境，再从脚本编写重开并重新核验脚本合并' }] },
+  };
+  const answer = SubmitResultOutput.parse({ ...base, dispatch: [note] });
+  const text = toolText('submit_result', answer, { items: items(1), caller: { role: 'user' } });
+  assert.equal(answer.acceptance, 'accepted', 'accepted merge is not rewritten into the attempt result');
+  assert.ok(text.startsWith('脚本合并已核对。'));
+  assert.equal(linesOf(text).filter(line => line === sourceText).length, 1);
+  assert.doesNotMatch(text, /diagnostic with private keys|private resource key|circle-hub|exe_|usr_/);
+  assert.equal(text.includes(sourceText + '；状态'), false);
 });
 
-test('booking rewrite does not wipe occupied or expired call-error categories', () => {
+test('source-selected occupied and expired categories are not replaced by a booking explanation', () => {
   const base = submitAnswer(resultOf(items(1)));
-  const occupied = toolText('submit_result', {
-    ...base,
-    dispatch: [{
-      text: '已被占用：上机验证已结束；未发出；测试环境由另一运行持有。等该运行释放后原样重试。',
-      outcome: 'not_dispatched',
-      frozen: false,
-      submission_verified: true,
-      error_code: 'LEASE_UNAVAILABLE',
-      booking: { target: '合成环境', coverage_complete: false, required_resources: 2, missing_resources: 2, declared_device_count: 2 },
-    }],
-  }, { items: items(1) });
-  const occupiedLine = linesOf(occupied).find((line) => line.startsWith('已被占用：')) ?? '';
-  assert.equal(occupiedLine, '已被占用：上机验证已结束；未发出；测试环境由另一运行持有。等该运行释放后原样重试。');
-  assert.doesNotMatch(occupiedLine, /脚本合并正确|没有带着测试环境的预订|状态已确认|判断错误|决定者程序/);
+  const sources = [
+    { text: '已被占用：上机验证已结束；未发出；测试环境由另一运行持有。等该运行释放后原样重试。', error_code: 'LEASE_UNAVAILABLE' },
+    { text: '不存在：当前账户的原预订已过期；本运行没有覆盖测试环境 合成环境 的完整预订。先预订整个测试环境后重新核验。', error_code: 'LEASE_EXPIRED' },
+  ];
+  for (const source of sources) {
+    const note = { text: source.text, job_facts: { scope: { job: H('5') }, frozen: false }, dispatch_attempt: { scope: { operation: 'dispatch' as const, job: H('5'), round: 1 }, outcome: 'not_dispatched' as const, not_sent: true as const, error_code: source.error_code } };
+    const text = toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: [note] }), { items: items(1) });
+    const line = linesOf(text).find(line => line === source.text) ?? '';
+    assert.equal(line, source.text);
+    assert.equal(linesOf(text).filter(value => value === line).length, 1);
+    assert.doesNotMatch(line, /脚本合并正确|没有带着测试环境的预订|状态已确认|判断错误|决定者程序/);
+  }
+});
 
-  const expired = toolText('submit_result', {
-    ...base,
-    dispatch: [{
-      text: '不存在：当前账户的原预订已过期；本运行没有覆盖测试环境 合成环境 的完整预订。先预订整个测试环境后重新核验。',
-      outcome: 'not_dispatched',
-      frozen: false,
-      submission_verified: true,
-      error_code: 'LEASE_EXPIRED',
-      booking: { target: '合成环境', coverage_complete: false, required_resources: 2, missing_resources: 2, declared_device_count: 2 },
-    }],
-  }, { items: items(1) });
-  const expiredLine = linesOf(expired).find((line) => line.startsWith('不存在：')) ?? '';
-  assert.equal(expiredLine, '不存在：当前账户的原预订已过期；本运行没有覆盖测试环境 合成环境 的完整预订。先预订整个测试环境后重新核验。');
-  assert.doesNotMatch(expiredLine, /脚本合并正确|没有带着测试环境的预订|状态已确认|判断错误|决定者程序/);
+test('a later unsent attempt cannot make the adapter rewrite an earlier job report or quoted diagnostic words', () => {
+  const base = submitAnswer(resultOf(items(1)));
+  const sourceText = '第1轮已有设备报告；第2轮上机验证没有发出。来源引用了“上机验证结果未知”，这段引用不是整个作业的结局。';
+  const note = { text: sourceText, job_facts: { scope: { job: H('6') }, result: `src:${H('7')}`, frozen: true }, dispatch_attempt: { scope: { operation: 'dispatch' as const, job: H('6'), round: 2 }, outcome: 'not_dispatched' as const, not_sent: true as const, submit_invoked: true } };
+  const answer = SubmitResultOutput.parse({ ...base, dispatch: [note] });
+  const text = toolText('submit_result', answer, { items: items(1) });
+  assert.ok(linesOf(text).includes(sourceText));
+  assert.equal(answer.dispatch?.[0].job_facts?.result, `src:${H('7')}`);
+  assert.deepEqual(answer.dispatch?.[0].dispatch_attempt?.scope, { operation: 'dispatch', job: H('6'), round: 2 });
+  assert.equal(text.includes('设备输出已取回'), false, 'a job report alone does not establish the current attempt outcome');
+  assert.equal(text.includes(sourceText + '；状态'), false);
+  assert.doesNotMatch(text, /666666666666666666666666|777777777777777777777777|src:/);
 });

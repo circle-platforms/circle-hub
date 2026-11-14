@@ -1,3 +1,4 @@
+import { dispatchScopeLabel } from '../dispatch-scope-label.ts';
 import {timeline,comparisons} from './charts.ts';
 import {technicalCode} from './presentation.ts';
 import { count } from './numbers.ts';
@@ -243,15 +244,15 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
       const environments = jobs.some((job) => job.executor !== undefined) ? await ctx.deps.dispatch.executors(ctx.principal).catch(() => []) : [];
       for (const job of jobs) {
         const at = resultAt ?? Date.parse(run.started_at);
-        const parts = [uiLabelOf('effect_outcome', job.outcome)];
-        const environment = environments.find((e) => e.id === job.executor);
+        const facts = job.job_facts;
+        const attempt = job.dispatch_attempt;
+        const parts = [attempt ? `${dispatchScopeLabel(attempt.scope)}：${attempt.outcome === undefined ? '结局尚未取得' : uiLabelOf('effect_outcome', attempt.outcome)}` : '尚无按范围可核对的派发结局'];
+        const environment = environments.find((entry) => entry.id === job.executor);
         if (environment !== undefined) parts.push(`运行环境 ${environment.target}（当前${environmentState(environment).text}）`);
-        // A job that holds its environment without an open disposition request has not been declared unconfirmed: its
-        // result has not arrived yet (D03 R[1], R[7]: the target is frozen with the disposition request).
-        const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
-        if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待派发结果中，不可重发' : '运行环境已冻结，不可重发');
-        if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
-        steps.push({ name: '派发到运行环境', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
+        if (facts.frozen) parts.push(facts.awaiting_disposition === true ? '本作业有待处置的效果核对事项，不可重发' : '本作业结局尚未核对，不可重发');
+        if (facts.disposition !== undefined) parts.push(`作业处置：${uiLabelOf('disposition', facts.disposition)}`);
+        if (facts.admission_error) parts.push(facts.admission_error.message);
+        steps.push({ name: attempt ? dispatchScopeLabel(attempt.scope) : '作业派发进度', sub: parts.join(' · '), fill: attempt?.outcome === undefined || attempt.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: attempt?.outcome === undefined ? 'idle' : DISPATCH_DOT[attempt.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }
     } catch {
       steps.push({ name: '派发到运行环境', sub: '派发记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { uiLabelOf, type EnvironmentState } from '../../contracts/generated/vocabulary.ts';
+import type { DispatchJobFacts, DispatchAttemptFacts } from '../../contracts/api.ts';
 import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness } from '../dispatch/api.ts';
 import type { DispatchView, ExecutorView, JobView } from './api.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
@@ -15,14 +16,16 @@ let counter = 0;
 const RUN = 'run_00000000000000000000000077';
 const job = (n: number): string => String(n).repeat(64).slice(0, 64);
 const id = (n: number): string => `exe_${String(n).padStart(26, '0')}`;
+const jobFacts = (n: number, facts: Omit<DispatchJobFacts, 'scope'>): DispatchJobFacts => ({ scope: { job: job(n) }, ...facts });
+const dispatchAttempt = (n: number, round: number, facts: Omit<DispatchAttemptFacts, 'scope'>): DispatchAttemptFacts => ({ scope: { operation: 'dispatch', job: job(n), round }, ...facts });
 const state = (facts: Partial<EnvironmentFacts> = {}): EnvironmentFacts => ({
   executor: 'x', enabled: true, registration: { digest: 'd'.repeat(64), decided_at: '2026-11-01T00:00:00.000Z' }, known: { occupancy: true, latest: true, version: true },
   holding: [], bed_hold: null, latest: null, reported_version: null, missing: [], ...facts,
 });
 const environments: ExecutorView[] = [
-  { id: id(1), target: '合成运行环境甲', endpoint: 'https://192.0.2.10:8443/mcp', enabled: true, resources: ['synthetic/a'], state: state({ reported_version: 'gateway 2.4.1', latest: { job: job(1), run: RUN, at: '2026-11-01T08:00:00.000Z', outcome: 'effective', frozen: false } }) },
-  { id: id(2), target: '合成运行环境乙', endpoint: 'https://192.0.2.11:8443/mcp', enabled: true, resources: ['synthetic/b'], state: state({ holding: [{ job: job(2), run: null, frozen: false, outcome: 'issued', phase: 'intent' }] }) },
-  { id: id(3), target: '合成运行环境丙', endpoint: 'https://192.0.2.12:8443/mcp', enabled: true, resources: ['synthetic/c'], state: state({ holding: [{ job: job(3), run: RUN, frozen: true, outcome: 'unknown', phase: 'unknown' }], known: { occupancy: true, latest: false, version: false }, missing: ['最近派发暂不可读', '执行器版本暂不可读'] }) },
+  { id: id(1), target: '合成运行环境甲', endpoint: 'https://192.0.2.10:8443/mcp', enabled: true, resources: ['synthetic/a'], state: state({ reported_version: 'gateway 2.4.1', latest: { job: job(1), run: RUN, at: '2026-11-01T08:00:00.000Z', job_facts: jobFacts(1, { frozen: false, awaiting_disposition: false }), dispatch_attempt: dispatchAttempt(1, 1, { outcome: 'effective' }) } }) },
+  { id: id(2), target: '合成运行环境乙', endpoint: 'https://192.0.2.11:8443/mcp', enabled: true, resources: ['synthetic/b'], state: state({ holding: [{ job: job(2), run: null, job_facts: jobFacts(2, { frozen: false, awaiting_disposition: false, phase: 'intent' }), dispatch_attempt: dispatchAttempt(2, 1, { outcome: 'issued', phase: 'intent' }) }] }) },
+  { id: id(3), target: '合成运行环境丙', endpoint: 'https://192.0.2.12:8443/mcp', enabled: true, resources: ['synthetic/c'], state: state({ holding: [{ job: job(3), run: RUN, job_facts: jobFacts(3, { frozen: true, awaiting_disposition: true, phase: 'unknown' }), dispatch_attempt: dispatchAttempt(3, 1, { outcome: 'unknown', phase: 'unknown' }) }], known: { occupancy: true, latest: false, version: false }, missing: ['最近派发暂不可读', '执行器版本暂不可读'] }) },
   { id: id(4), target: '合成运行环境丁', endpoint: 'https://192.0.2.13:8443/mcp', enabled: true, resources: ['synthetic/d'], state: state({ bed_hold: { job: job(4), bed: 'synthetic-bed' } }) },
   { id: id(5), target: '合成运行环境戊', endpoint: 'https://192.0.2.14:8443/mcp', enabled: false, resources: [], state: state() },
   { id: id(6), target: '合成运行环境己', endpoint: 'https://192.0.2.15:8443/mcp', enabled: true, resources: [] },
@@ -132,7 +135,8 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境己'), /暂不可用/);
     assert.match(rowOf(page, '合成运行环境甲'), new RegExp(`/console/runs/${RUN}`), 'the latest dispatch leads to its task');
     assert.match(rowOf(page, '合成运行环境乙'), /使用中/);
-    assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`作业 ${job(2).slice(0, 12)}（效果结局：已发出）`));
+    assert.match(rowOf(page, '合成运行环境乙'), new RegExp(`作业 ${job(2).slice(0, 12)}（第1轮正式派发：已发出）`));
+    assert.doesNotMatch(rowOf(page, '合成运行环境乙'), /派发结果未确认|等待处置/);
     assert.match(rowOf(page, '合成运行环境乙'), /未上报/, 'a session that reported no version');
     assert.match(rowOf(page, '合成运行环境乙'), /尚无派发/);
     assert.match(rowOf(page, '合成运行环境丙'), /已冻结/);
@@ -227,15 +231,15 @@ describe('runtime environments', () => {
     await client.close();
     const run = (started.structuredContent.run as { run: string }).run;
     jobsByRun.set(run, [
-      { job: job(3), executor: id(3), outcome: 'unknown', frozen: true, phase: 'unknown' },
+      { job: job(3), executor: id(3), job_facts: jobFacts(3, { frozen: true, awaiting_disposition: true, phase: 'unknown' }), dispatch_attempt: dispatchAttempt(3, 1, { outcome: 'unknown', phase: 'unknown' }) },
       // Sent and not yet answered: the job status counts it frozen, the environment holds it without a disposition request.
-      { job: job(2), executor: id(2), outcome: 'unknown', frozen: true, phase: 'intent' },
-      { job: job(9), outcome: 'not_dispatched', frozen: false, phase: 'boundary_refused' },
+      { job: job(2), executor: id(2), job_facts: jobFacts(2, { frozen: true, awaiting_disposition: false, phase: 'intent' }), dispatch_attempt: dispatchAttempt(2, 1, { outcome: 'unknown', phase: 'intent' }) },
+      { job: job(9), job_facts: jobFacts(9, { frozen: false, awaiting_disposition: false, phase: 'boundary_refused' }) },
     ]);
     // The dispatch step is part of the execution process, the 过程 tab of the task page (decision 151).
     const page = (await send(`/console/runs/${run}?tab=process`, { headers: { cookie: await signIn(server.admin.token) } })).body;
-    assert.match(page, /运行环境 合成运行环境丙（当前已冻结） · 运行环境已冻结，不可重发/);
-    assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 等待派发结果中，不可重发/);
+    assert.match(page, /运行环境 合成运行环境丙（当前已冻结） · 本作业有待处置的效果核对事项，不可重发/);
+    assert.match(page, /运行环境 合成运行环境乙（当前使用中） · 本作业结局尚未核对，不可重发/);
     assert.equal(page.split('以表格查看')[1].match(/运行环境 合成运行环境/g)?.length, 2, 'a job whose reservation names no environment names none');
   });
 });
