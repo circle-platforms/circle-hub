@@ -22,7 +22,7 @@ function fixture(values:TestEnvironment[], configured=true) {
     canUse:async(_by:unknown,id:string,supplied?:Transaction)=>{if(supplied)assert.equal(supplied,tx);events.push('permission:'+id);return true;},list:async()=>values,
   }} as unknown as RecordsKit;
   const instance=new MemberEnvironments(records,{readSource:async()=>{throw new Error('no unscoped executor read');}},{view:async()=>({entries:[]}),registrations:async()=>[]} as ConstructorParameters<typeof MemberEnvironments>[2]);
-  return {instance,events,tx};
+  return {instance,events,tx,records};
 }
 
 test('ambiguity is found before authorization and reveals no hidden environment identity',async()=>{
@@ -66,4 +66,28 @@ test('missing executor configuration is refused before dereferencing or reading 
   const {instance,events,tx}=fixture([environment('a')],false);
   assert.equal(await instance.permission(actor,first,tx),false);
   assert.deepEqual(events,[]);
+});
+
+
+test('confirmed ordinary prefixes skip only environment authorization',async()=>{
+  const generic={...environment('a',[]),name:null,target:null,missing_facts:['原前缀没有目标']};
+  const {instance,events}=fixture([generic]);
+  assert.equal(await instance.authorizeKeys(actor,['synthetic/device/a']),null);
+  assert.deepEqual(events,['resolve:synthetic/device/a']);
+  assert.equal(await instance.authorizeKeys(actor,['synthetic/unregistered']),null);
+});
+
+test('a known environment overlapping a generic prefix still requires its grant',async()=>{
+  const generic={...environment('a',[]),name:null,target:null,missing_facts:['原前缀没有目标']};
+  const known=environment('b');
+  const {instance,records,events}=fixture([generic,known]);
+  records.testEnvironments.canUse=async()=>false;
+  assert.equal((await instance.authorizeKeys(actor,['synthetic/device/a']))?.code,'SOURCE_NOT_PERMITTED');
+  assert.deepEqual(events,['resolve:synthetic/device/a']);
+});
+
+test('unreadable catalog is not treated as an unregistered prefix',async()=>{
+  const {instance,records}=fixture([]);
+  records.testEnvironments.resolve=async()=>{throw new Error('synthetic unreadable catalog');};
+  await assert.rejects(instance.authorizeKeys(actor,['synthetic/unregistered']),/synthetic unreadable catalog/);
 });

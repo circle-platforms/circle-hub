@@ -1,3 +1,4 @@
+import {MemberEnvironments} from '../../dispatch/member-environments.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ProtocolError } from '../../../contracts/src/common.ts';
@@ -17,7 +18,7 @@ function fixture(enforceEnvironmentAssignments: boolean | undefined, authorizeKe
   const mutate = async () => { events.push('write'); return {ok:true,lease:holder.lease,keys:[holder.key],until:holder.expires_at}; };
   const ctx = {now:()=>new Date('2026-11-14T03:00:00.000Z'),deps:{
     ...(enforceEnvironmentAssignments !== undefined ? {enforceEnvironmentAssignments} : {}),
-    leases:{holders:async()=>[holder],registrations:async()=>[],acquire:mutate,extend:mutate,release:mutate,register:mutate},
+    leases:{holders:async()=>[holder],registrations:async()=>[],acquire:mutate,extend:mutate,release:mutate},
     ...(authorizeKeys?{environmentAccess:{inheritance:async()=>({completed:completion()}),authorizeKeys:async(by:typeof actor,keys:readonly string[])=>{events.push('authorize');return authorizeKeys(by,keys);}}}:{}),
   }} as unknown as EngineContext;
   return {ctx,events};
@@ -101,4 +102,29 @@ test('the same provider observes pending then completed then unknown despite a s
   completed=null;
   await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),unavailable);
   assert.deepEqual(events,['write','authorize']);
+});
+
+
+test('confirmed non-environment booking has identical output before and after inheritance and retains lease checks',async()=>{
+  let completed=false;
+  const catalog=new MemberEnvironments({
+    testEnvironments:{
+      resolve:async()=>[],
+      canUse:async()=>{throw new Error('ordinary prefixes do not acquire environment grants');},
+    },
+  } as unknown as ConstructorParameters<typeof MemberEnvironments>[0],{} as ConstructorParameters<typeof MemberEnvironments>[1],{} as ConstructorParameters<typeof MemberEnvironments>[2]);
+  const {ctx,events}=fixture(false,(by,keys)=>catalog.authorizeKeys(by,keys),()=>completed);
+  const requests:LeaseRequest[]=[{keys:['meadow/allowed'],ttl_seconds:30}];
+  const before=await grantLeases(ctx,actor,workflow,requests,run,undefined);
+  completed=true;
+  const after=await grantLeases(ctx,actor,workflow,requests,run,undefined);
+  assert.deepEqual(after,before,'all returned lease fields remain identical with the controlled same lease outcome');
+  assert.deepEqual(events,['write','authorize','write']);
+
+  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['outside/key'],ttl_seconds:30}],run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='LEASE_PREFIX');
+  assert.deepEqual(events,['write','authorize','write','authorize'],'skipping only environment authorization cannot write outside the workflow prefix');
+
+  catalog.records.testEnvironments.resolve=async()=>{throw new Error('synthetic catalog unavailable');};
+  await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),unavailable);
+  assert.deepEqual(events,['write','authorize','write','authorize','authorize'],'unreadable catalog causes no lease mutation');
 });
