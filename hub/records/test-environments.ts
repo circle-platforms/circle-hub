@@ -109,8 +109,9 @@ export class RecordTestEnvironments implements TestEnvironments {
       const row = latest.get(`resource_config|*|executor.${id}`);
       if (!enabledAt(row, at)) throw new IntegrityError('关联执行器的当前登记不可核对');
       const source = ExecutorSource.parse(await this.content(row!.body.bound, tx));
+      if (source.id !== id) throw new IntegrityError('执行器源定义与登记身份不一致');
       const resolved = await resolveTestEnvironmentExecutorTarget(source, this.variables, tx);
-      if (source.id !== id || resolved.target !== environment.target || source.resources.some(value => !covers(environment, value))) throw new IntegrityError('测试环境与关联执行器的目标或资源声明不一致');
+      if (resolved.target !== environment.target || source.resources.some(value => !covers(environment, value))) throw new IntegrityError('测试环境与关联执行器的目标或资源声明不一致');
       inspected.set(id, source);
     }
     return inspected;
