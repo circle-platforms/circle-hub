@@ -322,3 +322,10 @@ test('a resolved job-status-unavailable wrapper is run uncertainty and never a c
   }
   assert.equal(calls, 1, 'an unavailable status is not permission to start another worker');
 });
+
+test('unknown missing-resource counts are never displayed as null items or zero items', () => {
+  const source=job({error_code:'LEASE_UNAVAILABLE',booking:{target:'合成环境',coverage_complete:false,required_resources:11,missing_resources:null,declared_device_count:3},member_missing_facts:[{fact:'具体缺少数量尚未核对',next_action:'联系管理员只读核对预订'}]});
+  const note=runnerNote(source,'usr_private');
+  assert.match(note.text,/清单声明 3 台设备.*所缺资源数量尚未核对/);
+  assert.doesNotMatch(note.text,/null 项|缺少 0 项/);
+});
