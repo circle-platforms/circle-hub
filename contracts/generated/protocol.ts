@@ -122,8 +122,8 @@ export const CALL_ERROR_REASON_RULES = {
       "category": "permission_denied"
     },
     "next_by_role": {
-      "user": "请管理员重新开通账户",
-      "admin": "请重新开通账户"
+      "user": "请由有效的账户重新开始运行",
+      "admin": "请由有效的账户重新开始运行"
     }
   },
   "environment_disabled": {
@@ -174,7 +174,7 @@ export const CALL_ERROR_REASON_RULES = {
     },
     "next_by_role": {
       "user": "请联系管理员；改正之前重试结果不会变",
-      "admin": "请将事实句列明的测试环境与执行器登记改为一致后，原样重试"
+      "admin": "请在控制台「测试环境」页或用 circle-hub bed update 把上面不一致的这一项改正；改正后原样重试"
     }
   },
   "environment_permission_unavailable": {
@@ -261,6 +261,78 @@ export const CALL_ERROR_REASON_RULES = {
     "next_by_role": {
       "user": "请联系管理员恢复预订记录读取后重试",
       "admin": "原因记在调用记录里，追踪号见本条"
+    }
+  },
+  "pack_unassigned": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "permission_denied"
+    },
+    "next_by_role": {
+      "user": "请联系管理员分配所需工作流或技能后重试",
+      "admin": "请为该账户或所属团队分配所需工作流或技能后重试"
+    }
+  },
+  "knowledge_root_unassigned": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "permission_denied"
+    },
+    "next_by_role": {
+      "user": "请联系管理员分配绑定该产品线的工作流后重读",
+      "admin": "请为该账户或所属团队分配绑定该产品线的工作流后重读"
+    }
+  },
+  "system_unassigned": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "permission_denied"
+    },
+    "next_by_role": {
+      "user": "请联系管理员为所属团队或全体成员分配该业务系统后重读",
+      "admin": "请为该账户所属团队或全体成员分配该业务系统后重读"
+    }
+  },
+  "content_read_not_permitted": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "permission_denied"
+    },
+    "next_by_role": {
+      "user": "请联系内容的主人或管理员分享读取权限，或改用可读引用",
+      "admin": "请按共享权限核对并分享该内容，或改用可读引用"
+    }
+  },
+  "named_document_run_scope_denied": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "permission_denied"
+    },
+    "next_by_role": {
+      "user": "请通过自己的、声明了该命名文档输入的工作流运行读取；没有这样的工作流时请管理员分配",
+      "admin": "请通过自己的、声明了该命名文档输入的工作流运行读取；需要时先为该账户分配相应工作流"
+    }
+  },
+  "run_submission_not_owned": {
+    "codes": [
+      "SOURCE_NOT_PERMITTED"
+    ],
+    "classification": {
+      "category": "permission_denied"
+    },
+    "next_by_role": {
+      "user": "请用 start_run 开始自己的运行，再提交",
+      "admin": "请用 start_run 开始自己的运行，再提交"
     }
   }
 } as const satisfies Record<CallErrorReason, CallErrorReasonRule>;

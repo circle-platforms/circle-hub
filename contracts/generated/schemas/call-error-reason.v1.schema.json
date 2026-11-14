@@ -14,6 +14,12 @@
     "lease_missing_for_lineage",
     "lease_expired",
     "lease_released",
-    "lease_reader_unavailable"
+    "lease_reader_unavailable",
+    "pack_unassigned",
+    "knowledge_root_unassigned",
+    "system_unassigned",
+    "content_read_not_permitted",
+    "named_document_run_scope_denied",
+    "run_submission_not_owned"
   ]
 }
