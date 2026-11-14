@@ -139,7 +139,7 @@ function leasesPack(
 before(async () => {
   postgres = await startPostgres();
   // Later functional cases are not OS-isolation tests and still need their synthetic harness.
-  h = await openHarness(postgres, { leases: true, environmentAccess: { inheritance:async()=>({completed:true}), authorizeKeys: (actor, keys) => environments.authorizeKeys(actor, keys) }, leaseJobs: async keys => keys.filter(key=>key===["meadow","/visib","ility/","k"].join('')||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})), observations: {
+  h = await openHarness(postgres, { leases: true, environmentAccess: { inheritance:async()=>({completed:true}), authorizeKeys: (actor, keys,tx) => environments.authorizeKeys(actor, keys,tx) }, leaseJobs: async keys => keys.filter(key=>key===["meadow","/visib","ility/","k"].join('')||key==='meadow/force/pending/k').map(key=>({key,job:'synthetic-running'})), observations: {
     latest: async () => [OBSERVED_BEFORE],
     observe: async (user, run, targets) => { observeCalls.push({ user: user.id, run, targets: [...targets] }); return { observed: [{ ...OBSERVED_BEFORE, build: 'synthetic-build-now', base: 'synthetic-build-now', values: ['synthetic-build-now'], observed_at: '2026-10-22T08:00:30.000Z', run, reference: `src:${'d'.repeat(64)}` }], missing: null }; },
   } });
