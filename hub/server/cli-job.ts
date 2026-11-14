@@ -1,3 +1,4 @@
+import { bootstrapCapturePresentation } from './env-bootstrap-capture.ts';
 import { testEnvironmentCommand, TEST_ENVIRONMENT_USAGE } from './cli-test-environment.ts';
 import { ExecutorStableName } from '../../contracts/api.ts';
 import { secretUseLabels } from './secret-use-labels.ts';
@@ -199,7 +200,16 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     return (await dispatch.journal.events(state.job)).some(e=>e.body.detail.conformance_verified === true) ? 0 : 1;
   }
   if (sub === 'precheck' && values.executor && positionals.length === 0) {
-    const state = await dispatch.precheck(by, values.executor, values.booking); output(s, state);
+    const state = await dispatch.precheck(by, values.executor, values.booking);
+    const events = await dispatch.journal.events(state.job);
+    const capture = bootstrapCapturePresentation(events.map(event => event.body.detail), values.executor, state.result);
+    // Keep the actual failure diagnostics, but replace this mode's generic result/next labels.
+    output(s, capture ? { ...state, result: undefined, next_action: undefined } : state);
+    if (capture) {
+      for (const line of capture.lines) s.out(line);
+      if (values.save) s.out(`已导出观察 ${await exportPrecheck(s, dispatch, state.job, values.save)} 份`);
+      return capture.exitCode;
+    }
     try {
       const view = (await s.hub(false)).deps?.dispatch;
       if (!view?.readiness) s.out('本地只读就绪报告未知：报告尚未接线；原预检结论不变');
@@ -210,7 +220,7 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
       }
     } catch { s.out('本地只读就绪报告未知：读取未完成；原预检结论不变'); }
     if (values.save) s.out(`已导出观察 ${await exportPrecheck(s, dispatch, state.job, values.save)} 份`);
-    const events = await dispatch.journal.events(state.job); return events.some(e => e.body.detail.readonly_verified === true) ? 0 : 1;
+    return events.some(e => e.body.detail.readonly_verified === true) ? 0 : 1;
   }
   if (sub === 'dispatch' && values.run && values.executor && positionals.length === 0) {
     const state = await dispatch.dispatch(by, values.run, values.executor, job => s.out(`阶段已预留；作业摘要 ${job}`)); output(s, state); return state.outcome === 'effective' && !state.frozen ? 0 : 1;

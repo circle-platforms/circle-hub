@@ -25,3 +25,26 @@ export function registrationIncompletePresentation(error: ProtocolError, actualR
   }
   return { category: labelOf('call_error_category', rule.classification.category), fact, next };
 }
+
+/** Reads existing journal facts only; a saved artifact is not proof of a completed observation. */
+export function bootstrapCapturePresentation(
+  details: readonly Readonly<Record<string, unknown>>[],
+  executor: string,
+  resultReference?: string,
+) {
+  if (!details.some(detail => detail.bootstrap_capture === true)) return null;
+  const complete = details.findLast(detail => detail.phase === 'complete' && detail.bootstrap_capture === true);
+  const result = details.findLast(detail => detail.phase === 'result' && detail.bootstrap_capture === true);
+  const report = typeof result?.reference === 'string' && /^src:[a-f0-9]{64}$/.test(result.reference) && result.reference === resultReference
+    ? result.reference : undefined;
+  const collected = complete?.capture_completed === true && result?.capture_completed === true && report !== undefined;
+  const lines = [
+    '模式：登记未完成时的管理员只读采集；不是正式派发或登记验证通过',
+    collected ? '只读采集已完成；资源仍须核实并填入定义' : '没有完整的只读采集观察；不能据此声明资源已核实',
+    report === undefined ? '采集报告引用尚未取得' : `只读观察索引 ${report}（不是主机文件路径或设备执行结果）`,
+  ];
+  if (complete?.registration_ready === false) lines.push('登记尚未完成');
+  const presentation = registrationIncompletePresentation({ code: 'SOURCE_NOT_PERMITTED', call_error_reason: 'environment_registration_incomplete', object_kind: 'test_environment', message: '' }, 'admin', executor)!;
+  lines.push(`下一步：${presentation.next}`);
+  return { lines, exitCode: collected ? 0 : 1 };
+}
