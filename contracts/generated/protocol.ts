@@ -12,7 +12,7 @@ export const PROTOCOL_CODES = {
   SOURCE_NOT_PERMITTED: { when: '团队、产品或业务系统的对象存在，读者没有读取权限（D05 R[3]）', fix: '请对象的主人或管理员分享读取权限，工作流和通用技能请管理员分配；也可以换一个你能读的引用' },
   IDEMPOTENCY_MISMATCH: { when: '同一步骤键或意图键内容不同（D05、B06）', fix: '改了内容就不要带原键' },
   IDENTITY_UNMAPPED: { when: '外部回答映射不到 Hub 用户（B07）', fix: '由管理员补身份映射' },
-  RUN_SUPERSEDED: { when: '运行已被新修订取代（W06）', fix: '对新运行提交' },
+  RUN_SUPERSEDED: { when: '运行已被新修订取代（W06）', fix: '要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续' },
   RUN_ABANDONED: { when: '运行已由具名操作者管理放弃，新提交仍原样保存但不受理（W06、B07）', fix: '用 start_run 以本运行为 predecessor 开新修订；不改写已放弃运行和旧结果' },
   CREDENTIAL_IN_UPLOAD: { when: '上传里扫出明文凭据（B02）', fix: '去掉凭据后重传' },
   LEASE_UNAVAILABLE: { when: '请求的租约键已占用或不可取得（D04 R[0]、R[10]）；有期限占用可给确定到期或空闲时刻，无期限预订只说明持有到释放', fix: '有确定空闲时刻的可等候后重试；无期限预订可改用别的键，或请主人、管理员按既有带理由释放规则处理，不补造到期时刻' },
