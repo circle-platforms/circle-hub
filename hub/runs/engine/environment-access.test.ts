@@ -31,7 +31,7 @@ test('booking without the environment permission provider is refused before ever
   assert.deepEqual(events,[]);
 });
 
-test('the entire acquire and extend key set is authorized before register, extend or acquire can write', async () => {
+test('the entire acquire and extend key set is authorized before extend or acquire can write', async () => {
   for (const op of ['acquire','extend'] as const) {
     const {ctx,events} = fixture(true,async(by,keys)=>{
       assert.equal(by,actor);
@@ -39,7 +39,6 @@ test('the entire acquire and extend key set is authorized before register, exten
       return denied;
     });
     const requests: LeaseRequest[] = [
-      {op:'register',prefix:'meadow/new/'},
       {keys:['meadow/allowed'],ttl_seconds:30},
       {op,keys:['meadow/unassigned'],ttl_seconds:30},
     ];
@@ -74,5 +73,16 @@ test('default-off and explicit-off skip the new guard while existing lease exclu
     };
     await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['meadow/allowed'],ttl_seconds:30}],run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='LEASE_UNAVAILABLE');
     assert.deepEqual(events,['lease-conflict']);
+  }
+});
+
+
+test('obsolete prefix registration projections are rejected before any lease read or write', async () => {
+  for (const op of ['register', 'unregister'] as const) {
+    const {ctx,events} = fixture(false);
+    ctx.deps.leases!.holders = async()=>{ throw new Error('obsolete projection must fail before reading holders'); };
+    const requests = [{keys:['meadow/allowed'],ttl_seconds:30},{op,prefix:'meadow/new/',reason:'synthetic removal'}] as LeaseRequest[];
+    await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='SUBMISSION_SCHEMA_VIOLATION');
+    assert.deepEqual(events,[]);
   }
 });
