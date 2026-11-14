@@ -24,11 +24,18 @@ export async function readProductionMigrationCompatibility(config: HubConfig): P
   return diagnoseRecordsSchema(config);
 }
 
-export function productionUpgradePorts(): UpgradeCommandPorts {
+export function productionUpgradePorts(runtime: HubConfig): UpgradeCommandPorts {
   const sources = environmentAssignmentUpgradeSources();
   return {
     authenticate: (config, authorization) => authenticateEnvironmentUpgradeActor(config, authorization),
-    preview: (config, actor) => previewEnvironmentAssignmentUpgrade(config, actor, sources),
+    preview: async (config, actor) => {
+      const preview = await previewEnvironmentAssignmentUpgrade(config, actor, sources);
+      if (preview.canApply && !preview.alreadyCompleted && config.database.user === runtime.database.user) return {
+        ...preview, canApply: false,
+        problems: [...preview.problems, '迁移拥有者与运行角色相同，不能满足运行角色只读兼容声明的约束；请先配置分离的运行角色'],
+      };
+      return preview;
+    },
     apply: (config, actor, preview, runtimeRole) => applyEnvironmentAssignmentUpgrade(config, actor, sources, preview, { runtimeRole }),
     compatibility: readProductionMigrationCompatibility,
     readPreview: async path => parseStrictJson(await readFile(path, 'utf8')),
@@ -36,7 +43,7 @@ export function productionUpgradePorts(): UpgradeCommandPorts {
 }
 
 export function productionUpgradeCommand(session: UpgradeCommandSession, args: readonly string[]): Promise<number> {
-  return upgradeCommand(session, args, productionUpgradePorts());
+  return upgradeCommand(session, args, productionUpgradePorts(session.config()));
 }
 
 export async function readProductionUpgradeStartup(config: HubConfig): Promise<UpgradeStartupObservation> {

@@ -174,3 +174,31 @@ test('repository CLI script carries the actual token to zero-write preview and e
   assert.equal(applied.code, 0, applied.err);
   assert.equal(upgradeStartupDecision(await readProductionUpgradeStartup(f.config)).enforceEnvironmentAssignments, true);
 });
+
+test('preview does not promise applicability when the configured runtime is also the migration owner', { timeout: 180000 }, async t => {
+  const f = await fixture(t);
+  const out: string[] = [], err: string[] = [];
+  const operator = await f.records.principals.issueToken(f.actor, f.actor.id, '合成拥有者配置');
+  const measured = await f.snapshot();
+  const code = await main(['upgrade', 'preview', '--json'], { io: { env: { ...f.env, CIRCLE_HUB_DATABASE_USER: f.database.user, CIRCLE_HUB_TOKEN: operator.token }, cwd: f.root, stdout: line => out.push(line), stderr: line => err.push(line) } });
+  const preview = JSON.parse(out.join('\n'));
+  assert.equal(code, 1, 'apply would refuse owner-as-runtime inside grantRuntime; readonly preview must disclose that boundary first');
+  assert.equal(preview.canApply, false); assert.match(preview.problems.join('；'), /拥有者.*运行角色|运行角色.*拥有者/);
+  assert.deepEqual(await f.snapshot(), measured);
+  assert.ok(!out.join('\n').includes(operator.token)); assert.ok(!err.join('\n').includes(operator.token));
+});
+
+test('unverifiable completed snapshots stop business with read-only investigation instructions and no automatic regrant', { timeout: 180000 }, async t => {
+  const f = await fixture(t); await applyCurrentPreview(f);
+  await f.owner.transaction(async tx => {
+    await f.owner.query('ALTER TABLE public.environment_assignment_snapshot DISABLE TRIGGER USER', [], tx);
+    await f.owner.query("UPDATE public.environment_assignment_snapshot SET snapshot='{}'::jsonb", [], tx);
+    await f.owner.query('ALTER TABLE public.environment_assignment_snapshot ENABLE TRIGGER USER', [], tx);
+  });
+  const before = await f.snapshot(); const errors: string[] = []; let assembled = false;
+  const code = await serve([], { io: { env: { ...f.env }, cwd: f.root, stdout: () => {}, stderr: line => errors.push(line) }, ensureDatabase: async () => {}, stopSignal: () => Promise.resolve(), assembly: async () => ({ assemble: () => { assembled = true; throw new Error('must not assemble unverifiable receipts'); } }) });
+  assert.equal(code, 1); assert.equal(assembled, false);
+  assert.match(errors.join('\n'), /upgrade preview/); assert.match(errors.join('\n'), /回执|来源/);
+  assert.doesNotMatch(errors.join('\n'), /upgrade apply|记录库需要重建/);
+  assert.deepEqual(await f.snapshot(), before, 'a startup diagnosis neither repairs nor regrants an unverifiable cutover');
+});
