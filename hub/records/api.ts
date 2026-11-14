@@ -1,4 +1,4 @@
-export type { TestEnvironments, TestEnvironment, TestEnvironmentInput, TestEnvironmentInheritanceState, TestEnvironmentOwnership } from './test-environments.ts';
+export type { TestEnvironments, TestEnvironment, TestEnvironmentInput, TestEnvironmentEntry, TestEnvironmentResolution, TestEnvironmentInheritanceState, TestEnvironmentOwnership } from './test-environments.ts';
 export { withEnvironmentPermissionLock } from './environment-permission-lock.ts';
 export type { TestEnvironmentInheritanceContext, TestEnvironmentInheritanceInput, TestEnvironmentInheritanceSources } from './environment-inheritance-types.ts';
 export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpgradeGrant } from './environment-upgrade-types.ts';

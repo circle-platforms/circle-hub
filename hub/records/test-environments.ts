@@ -1,3 +1,4 @@
+import { adoptUnregisteredPrefixes } from './test-environment-adoption.ts';
 import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
 import { prepareTestEnvironmentRegistration } from './test-environment-registration.ts';
 import {
@@ -28,13 +29,15 @@ export interface TestEnvironmentOwnership {
   prefixes: readonly { prefix: string; owner: string }[];
   resources: readonly { key: string; owner: string }[];
 }
+export type TestEnvironmentEntry = TestEnvironment & { isTestEnvironment: boolean };
+export interface TestEnvironmentResolution { environments: TestEnvironment[]; unregistered: TestEnvironment[] }
 export interface TestEnvironments {
-  list(by: Principal, tx?: Transaction): Promise<TestEnvironment[]>;
-  get(by: Principal, id: string, tx?: Transaction): Promise<TestEnvironment | null>;
+  list(by: Principal, tx?: Transaction): Promise<TestEnvironmentEntry[]>;
+  get(by: Principal, id: string, tx?: Transaction): Promise<TestEnvironmentEntry | null>;
   register(by: Principal, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
   update(by: Principal, id: string, input: TestEnvironmentInput, tx?: Transaction): Promise<TestEnvironment>;
   remove(by: Principal, id: string, tx?: Transaction): Promise<void>;
-  resolve(keys: readonly string[], tx?: Transaction): Promise<TestEnvironment[]>;
+  resolve(keys: readonly string[], tx?: Transaction): Promise<TestEnvironmentResolution>;
   canUse(by: Principal, id: string, tx?: Transaction): Promise<boolean>;
   ownership(tx?: Transaction): Promise<TestEnvironmentOwnership>;
   inheritance(tx?: Transaction): Promise<TestEnvironmentInheritanceState>;
@@ -96,28 +99,30 @@ export class RecordTestEnvironments implements TestEnvironments {
     }
   }
   private async reader(by: Principal, tx: Transaction) { return captureRequestPermissions(this.db, by, new Date(await this.at(tx)), tx); }
-  async list(by: Principal, outer?: Transaction): Promise<TestEnvironment[]> {
+  async list(by: Principal, outer?: Transaction): Promise<TestEnvironmentEntry[]> {
     return this.store.withTransaction(async tx => {
       const permission = await this.reader(by, tx);
       if (!permission.user || permission.user.disabled || permission.user.deleted_at) return [];
-      const values = await this.catalog(tx);
+      const values = (await this.catalog(tx)).map(value => ({ ...value, isTestEnvironment: value.target !== null }));
       if (isAdmin(permission.user)) return values;
-      return values.filter(value => value.enabled && [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, value.id))));
+      return values.filter(value => value.isTestEnvironment && value.enabled && [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, value.id))));
     }, outer);
   }
   async get(by: Principal, id: string, tx?: Transaction) { return (await this.list(by, tx)).find(value => value.id === id) ?? null; }
-  async resolve(keys: readonly string[], outer?: Transaction): Promise<TestEnvironment[]> {
-    if (!keys.length) return [];
+  async resolve(keys: readonly string[], outer?: Transaction): Promise<TestEnvironmentResolution> {
+    if (!keys.length) return { environments: [], unregistered: [] };
     return this.store.withTransaction(async tx => {
       const matches = (await this.catalog(tx)).filter(environment => keys.every(value => covers(environment, value)));
-      for (const environment of matches) await this.validateExecutors(environment, tx);
-      return matches;
+      const environments = matches.filter(value => value.target !== null);
+      const unregistered = matches.filter(value => value.target === null);
+      for (const environment of environments) await this.validateExecutors(environment, tx);
+      return { environments, unregistered };
     }, outer);
   }
   async canUse(by: Principal, id: string, outer?: Transaction): Promise<boolean> {
     return this.store.withTransaction(async tx => {
       const environment = (await this.catalog(tx)).find(value => value.id === id);
-      if (!environment?.enabled) return false;
+      if (!environment?.enabled || environment.target === null) return false;
       await this.validateExecutors(environment, tx);
       const permission = await this.reader(by, tx);
       if (!permission.user || permission.user.disabled || permission.user.deleted_at) return false;
@@ -135,9 +140,14 @@ export class RecordTestEnvironments implements TestEnvironments {
   async register(by: Principal, input: TestEnvironmentInput, outer?: Transaction): Promise<TestEnvironment> {
     return withEnvironmentPermissionLock(this.store, async tx => {
       await this.leaseLock(tx); const actor = await this.admin(by, tx);
-      const environment = prepareTestEnvironmentRegistration(input, actor.id, await this.at(tx));
-      this.unique(environment, await this.catalog(tx));
+      const values = await this.catalog(tx);
+      const prepared = prepareTestEnvironmentRegistration(input, actor.id, await this.at(tx));
+      const adoption = adoptUnregisteredPrefixes(prepared, input, values.filter(value => value.target === null));
+      const environment = adoption.environment;
+      this.unique(environment, values);
       await this.validateOwners(environment, tx); await this.validateExecutors(environment, tx);
+      for (const retained of adoption.retained) await this.write(actor, retained, tx);
+      for (const id of adoption.archived) await environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(actor, TEST_ENVIRONMENT_CONFIG_PREFIX + id, null, '原非环境前缀已并入新测试环境；原责任事实保留', tx, true));
       await this.write(actor, environment, tx); return environment;
     }, outer);
   }
@@ -238,7 +248,7 @@ export class RecordTestEnvironments implements TestEnvironments {
           const owners = legacy.filter(row => key.startsWith(row.prefix));
           return { key, owner: owners.length === 1 ? owners[0].owner : null, registered_at: owners.length === 1 ? owners[0].registered_at : null };
         });
-        added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: target, target, prefixes: [], resources, executors: target === null ? [] : group.map(value => value.id), enabled: group.some(value => value.enabled), missing_facts: [...(target === null ? ['原登记尚未提供测试环境名字', '执行器目标包含未解析引用'] : []), ...(resources.some(row => row.owner === null) ? ['部分资源没有已核对的登记责任人'] : [])] }));
+        added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: target, target, prefixes: [], resources, executors: target === null ? [] : group.map(value => value.id), enabled: group.some(value => value.enabled), missing_facts: [...(target === null ? ['原登记尚未提供测试环境名字', '执行器目标包含未解析引用'] : []), ...(resources.some(row => row.owner === null) ? ['部分资源没有已核对的登记责任人'] : []), ...(!resources.length ? ['原执行器尚未声明资源键'] : [])] }));
       }
       for (const registration of legacy) {
         const matches = [...environments, ...added].filter(value => value.target !== null && value.resources.some(row => row.key.startsWith(registration.prefix)));
@@ -253,9 +263,10 @@ export class RecordTestEnvironments implements TestEnvironments {
       }
       const accounts = (await this.db.query('SELECT id,disabled,deleted_at FROM users ORDER BY id FOR SHARE', [], tx)).rows;
       const validUser = (id: string) => accounts.some(row => row.id === id && !row.disabled && !row.deleted_at);
+      const knownEnvironments = environments.filter(value => value.target !== null);
       const grants = new Map<string, { subject: string; environment: string; until: number }>();
       for (const workflow of source.workflows) {
-        if (!workflowBooksTestEnvironments(workflow.prefix, environments)) continue;
+        if (!workflowBooksTestEnvironments(workflow.prefix, knownEnvironments)) continue;
         const assignments = [...latest.values()].filter(row => row.body.permission === 'assign' && row.body.object === workflow.id && enabledAt(row, at));
         for (const assignment of assignments) {
           const subject = assignment.body.subject;
@@ -263,7 +274,7 @@ export class RecordTestEnvironments implements TestEnvironments {
           if (workflow.installedMethod && subject !== '*') continue;
           const deadlines = [assignment, ...workflow.sourceRecords.flatMap(digest => authorizations.filter(row => row.digest === digest))].map(row => row.body.expires_at === null ? Infinity : Date.parse(row.body.expires_at));
           const until = Math.min(...deadlines);
-          for (const environment of environments) {
+          for (const environment of knownEnvironments) {
             const key = subject + '|' + environment.id, previous = grants.get(key);
             if (!previous || until > previous.until) grants.set(key, { subject, environment: environment.id, until });
           }
@@ -277,7 +288,7 @@ export class RecordTestEnvironments implements TestEnvironments {
         written.push(decision.digest);
       }
       authorizations.forEach(row => references.add(row.digest));
-      const completion = TestEnvironmentInheritanceCompletion.parse({ schema: 'test-environment-inheritance-completion@1', rule_version: TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION, completed_at: at, source_records: [...references].sort(), grant_records: written, environment_ids: environments.map(value => value.id) });
+      const completion = TestEnvironmentInheritanceCompletion.parse({ schema: 'test-environment-inheritance-completion@1', rule_version: TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION, completed_at: at, source_records: [...references].sort(), grant_records: written, environment_ids: knownEnvironments.map(value => value.id) });
       const object = await this.objects.put(canonicalBytes(completion), 'application/json', tx);
       const marker = await environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(actor, TEST_ENVIRONMENT_INHERITANCE_KEY, object.sha256, '已批准规则的测试环境分配一次继承完成', tx));
       return { completed: true, record: marker.digest, assignments: written.length };

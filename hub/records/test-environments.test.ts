@@ -64,11 +64,11 @@ test('catalog registration rejects foreign executor targets and current executor
     const executor = await f.executor();
     await assert.rejects(f.kit.testEnvironments.register(f.admin, { ...f.input('错误目标', 'different-target'), executors: [executor.id!] }), /目标或资源/);
     const environment = await f.kit.testEnvironments.register(f.admin, { ...f.input(), executors: [executor.id!] });
-    assert.equal((await f.kit.testEnvironments.resolve(['synthetic/device/a']))[0].id, environment.id);
+    assert.equal((await f.kit.testEnvironments.resolve(['synthetic/device/a'])).environments[0].id, environment.id);
     const changed = await f.kit.objects.put(canonicalBytes({ ...executor, target: 'different-target' }), 'application/json');
     await f.kit.authorizations.configureResource(f.admin, 'executor.' + executor.id, changed.sha256);
     await assert.rejects(f.kit.testEnvironments.resolve(['synthetic/device/a']), /目标或资源/);
-    assert.deepEqual(await f.kit.testEnvironments.resolve(['unrelated/key']), []);
+    assert.deepEqual(await f.kit.testEnvironments.resolve(['unrelated/key']), { environments: [], unregistered: [] });
   } finally { await f.close(); }
 });
 
@@ -88,7 +88,7 @@ test('one conversion keeps account, team and whole-Hub subjects, real owner fact
     assert.equal(before.length, 1, 'preservation checks a real preexisting reservation, not an empty table');
     assert.equal((await f.kit.testEnvironments.inheritance()).completed, false);
     const receipt = await f.kit.testEnvironments.inherit(f.admin, f.sources);
-    assert.equal(receipt.assignments, 9);
+    assert.equal(receipt.assignments, 6);
     assert.equal((await f.kit.testEnvironments.inheritance()).completed, true);
     const environments = await f.kit.testEnvironments.list(f.admin);
     const environment = environments.find(value => value.target === 'synthetic-bed')!;
@@ -102,6 +102,12 @@ test('one conversion keeps account, team and whole-Hub subjects, real owner fact
     const unbound = environments.find(value => value.target === null)!;
     assert.deepEqual(unbound.prefixes, [{ prefix: 'unbound/owner/', owner: f.member.id, registered_at: f.at }]);
     assert.deepEqual(unbound.executors, []);
+    assert.equal(unbound.isTestEnvironment, false);
+    assert.equal(await f.kit.authorizations.latest('resource_assign', f.member.id, unbound.id), null);
+    assert.equal(await f.kit.testEnvironments.canUse(f.member, unbound.id), false);
+    const resolution = await f.kit.testEnvironments.resolve(['unbound/owner/key']);
+    assert.deepEqual(resolution.environments, []);
+    assert.equal(resolution.unregistered[0].id, unbound.id);
     assert.equal((await f.kit.testEnvironments.ownership()).prefixes.length, 2);
     assert.equal((await f.kit.authorizations.latest('resource_assign', f.member.id, environment.id))?.body.expires_at, '2099-01-01T00:00:00.000Z');
     for (const subject of [f.member.id, team.id, '*']) await f.kit.authorizations.unassignResource(f.admin, environment.id, subject);
