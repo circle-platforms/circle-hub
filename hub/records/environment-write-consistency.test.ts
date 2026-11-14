@@ -39,7 +39,13 @@ async function fixture() {
     const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object: 'var:' + name, revoked: false, bound: object.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting value, not a new interactive write', supersedes: old?.digest ?? null };
     await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: 'resource_config|*|var:' + name }, { key: 'authz.subject', value: 'resource_config|*' }, { key: 'authz.object', value: 'resource_config|var:' + name }] });
   }
-  return { kit, db, admin, member, input, executor, state, legacyEnvironment, legacyVariable, close: async () => { await db.end(); await kit.close(); } };
+  async function legacyExecutor(id: string, source: ExecutorSource) {
+    const prior = await kit.authorizations.latest('resource_config', '*', 'executor.' + id);
+    const object = await kit.objects.put(canonicalBytes(source), 'application/json');
+    const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object: 'executor.' + id, revoked: false, bound: object.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting identity mismatch, not ordinary configure', supersedes: prior?.digest ?? null };
+    await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: 'resource_config|*|executor.' + id }] });
+  }
+  return { kit, db, admin, member, input, executor, state, legacyEnvironment, legacyVariable, legacyExecutor, close: async () => { await db.end(); await kit.close(); } };
 }
 const invalid = (error: unknown) => error instanceof EnvironmentWriteError && error.code === 'SUBMISSION_SCHEMA_VIOLATION';
 
@@ -174,8 +180,7 @@ test('a retained bad source identity cannot bypass a newly uncovered resource or
     const environment = await f.kit.testEnvironments.register(f.admin, f.input('旧身份矛盾环境', 'legacy-target', ['p/'], [], [source.id!]));
     // A structurally valid historical body is bound under the wrong identity, without changing old records.
     const bad = ExecutorSource.parse({ ...source, id: newId('exe') });
-    const object = await f.kit.objects.put(canonicalBytes(bad), 'application/json');
-    await f.kit.authorizations.configureResource(f.admin, 'executor.' + source.id, object.sha256, 'synthetic historical identity mismatch');
+    await f.legacyExecutor(source.id!, bad);
     await assert.rejects(f.kit.testEnvironments.resolve(['p/x']), /登记身份不一致/);
     const before = await f.state();
     await assert.rejects(f.kit.testEnvironments.update(f.admin, environment.id, f.input('旧身份矛盾环境', 'legacy-target', ['q/'], [], [source.id!])), invalid);
@@ -186,5 +191,18 @@ test('a retained bad source identity cannot bypass a newly uncovered resource or
     await f.kit.testEnvironments.update(f.admin, environment.id, f.input('只修正名字', 'legacy-target', [], ['p/x'], [source.id!]));
     assert.equal((await f.kit.testEnvironments.get(f.admin, environment.id))?.resources[0].key, 'p/x');
     await assert.rejects(f.kit.testEnvironments.resolve(['p/x']), /登记身份不一致/, 'runtime was already rejecting the bad identity and remains unchanged');
+  } finally { await f.close(); }
+});
+
+test('ordinary raw executor configuration and revocation cannot bypass the domain reverse validator', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    const source = await f.executor('bound-target', ['p/x'], 'raw-api-executor');
+    await f.kit.testEnvironments.register(f.admin, f.input('直接API环境', 'bound-target', ['p/'], [], [source.id!]));
+    const bad = await f.kit.objects.put(canonicalBytes({ ...source, id: newId('exe') }), 'application/json');
+    const before = await f.state();
+    await assert.rejects(f.kit.authorizations.configureResource(f.admin, 'executor.' + source.id, bad.sha256), invalid);
+    await assert.rejects(f.kit.authorizations.revoke(f.admin, { permission: 'resource_config', subject: '*', object: 'executor.' + source.id }), invalid);
+    assert.deepEqual(await f.state(), before);
   } finally { await f.close(); }
 });

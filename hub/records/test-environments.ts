@@ -196,6 +196,13 @@ export class RecordTestEnvironments implements TestEnvironments {
       }
     }, outer);
   }
+  async assertExecutorRemoval(by: Principal, executorId: string, outer: Transaction): Promise<void> {
+    await withEnvironmentPermissionLock(this.store, async tx => {
+      await this.admin(by, tx);
+      const referenced = (await this.catalog(tx)).find(environment => environment.executors.includes(executorId));
+      if (referenced) throw new EnvironmentWriteError(`执行器登记仍被测试环境“${referenced.name ?? '尚未命名'}”关联，不能撤回`, { environment: referenced.id, executor: executorId });
+    }, outer);
+  }
   async assertVariableWrite(by: Principal, change: OrdinaryVariableWrite, outer: Transaction): Promise<void> {
     await withEnvironmentPermissionLock(this.store, async tx => {
       await this.admin(by, tx);
