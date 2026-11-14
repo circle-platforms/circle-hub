@@ -8,6 +8,7 @@ import {
   type PriorRoundRecord,
   type StreakAnalysis,
 } from './rework-history.ts';
+import { wrapProseLine } from './text.ts';
 
 export type SubagentRoleKey = 'recompose' | 'plan' | 'fidelity' | 'attribute';
 
@@ -39,6 +40,36 @@ export interface TaskBriefInput {
 
 const SKILL_DIR_PLACEHOLDER = '<技能目录>';
 
+function toolUsageBoundary(opts: {
+  hasEdit: boolean;
+  hasGrep: boolean;
+  hasExecute: boolean;
+  executeRule?: string;
+}): string {
+  const schemaParts = [
+    '`read_file({ "file_path": "<路径>" })`',
+    opts.hasEdit
+      ? '`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建文件或整份重写小 JSON 时必须直接调 `write_file`，严禁对未读或不存在文件调 `edit_file`）'
+      : '`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建、写入或更新结果一律调 `write_file`；本子代理无 `edit_file`）',
+  ];
+  if (opts.hasEdit) {
+    schemaParts.push('`edit_file({ "file_path": "<路径>", "old_string": "<原片段>", "new_string": "<新片段>" })`（仅限修改**已先调 `read_file` 读过**的既有文件局部）');
+  }
+  schemaParts.push('`ls({ "path": "<目录>" })`（禁传 `pattern`）');
+  schemaParts.push('`glob({ "pattern": "<通配>", "path": "<目录>" })`');
+  if (opts.hasGrep) {
+    schemaParts.push('`grep({ "pattern": "<字面文字>", "path": "<目录或文件>" })`（按字面匹配，非正则）');
+  }
+  const execText = opts.hasExecute
+    ? opts.executeRule!
+    : '本子代理无 `execute` 工具（即便环境暴露了也**严禁调用 execute**），禁止经 shell 运行 `ls`/`grep`/`node -e` 等命令或任何脚本。';
+  return `工具调用参数精确格式（严格按声明参数名，禁猜字段）：${schemaParts.join('；')}。${execText}`;
+}
+
+/**
+ * Single source of truth for Circle subagent prompts (packaged into agents/compile-*.md
+ * and composed with scope.md by tools/task-brief.ts at runtime dispatch).
+ */
 export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
   {
     key: 'recompose',
@@ -51,13 +82,13 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
     body: `本子代理只承担脑图用例重组（recompose）单条或指定范围记录的整理职责，不执行父会话提示词中与脚本编写、保真核对、上机验证、环境预订或 Hub 交互相关的任何动作。
 
 ## 固定执行边界
-1. 路径限制：文件工具限工作目录相对路径（\`.\`）与只读 \`<技能目录>\`；禁止读写 \`/tmp\` 或工作目录之外的路径。本子代理无 \`execute\` 工具，列出文件用 \`ls\`/\`glob\`，全文检索用 \`grep\`，不得尝试 shell 或 \`node -e\`。
+1. 路径限制：文件工具限工作目录相对路径（\`.\`）与只读 \`<技能目录>\`；禁止读写 \`/tmp\` 或工作目录之外的路径。${toolUsageBoundary({ hasEdit: true, hasGrep: true, hasExecute: false })}
 2. 不接触 Hub、令牌与测试环境：不调用任何 Hub 工具、\`test-bed\`、\`question\` 或交付工具，不读取或写入令牌，也不预订或释放测试环境。需要询问使用者的条目，写入本条结果的 \`states\` / \`unknowns\` 并交由主代理汇总后统一发问。
-3. 形状参照：输出 JSON 必须严格符合 \`<技能目录>/tables/recompose-format.json\` 与 \`<技能目录>/tables/recompose-record.schema.json\`（及任务指定的写入路径）。
+3. 形状参照：输出 JSON **只写精简格式**（参照主技能 \`recompose/SKILL.md\` 与 \`<技能目录>/tables/recompose-format.json\`），顶层仅允许 \`item\`、\`method\`（必填 \`{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}\`）及可选 \`slots\`/\`states\`/\`adapted\`/\`concretizations\`/\`unknowns\`；**严禁写**完整记录结构的 \`schema\`/\`case\`/\`contract\`/\`atoms\`/\`expectation_slots\`/\`coverage\`/\`ledgers\`/\`handling\`（\`submit-records.ts\` 会自动补齐外层结构），严格写到任务指定的路径。
 
 ## 内容铁律
 1. 原文步骤与期望不重写、不删减、不自行编造原始用例未写的新对象或新动作；等价改写须写明 \`equivalence_reason\` 与 \`equivalence_refs\`。
-2. 命令必须在同一构建 \`knowledge/\` 锁定的命令树中完整解析，不用缩写；必含目标 IP 字段而尚未有规范占位时，保持命令树可解析原值并在 \`unknowns\` 说明待脚本编写按测试环境替换，严禁自造 \`<中文>\` 尖括号占位。
+2. 命令必须在同一构建 \`knowledge/\` 锁定的命令树中完整解析，不用缩写；写入 \`adapted.commands\` 或 \`slots\` 的每条命令都必须是**具体可执行的完整命令行**（按目录 \`words\` 逐词抄写，所有必填 \`<argN:...>\` 与选用的可选 \`[...]\` 参数一律换成合规具体字面值：字符串用双引号如 \`"web1"\`、整数写十进制数、合法关键字/枚举直接写词、未选用的可选 \`[...]\` 直接省略，严禁保留 \`<argN:...>\`、\`[...]\`、\`...\` 或 \`<中文>\`）。若命令语法必填 IP 字段且原句/规则未定具体值，使用 RFC 5737/3849 文档保留地址（如 \`192.0.2.10\` 或 \`2001:db8::1\`）并在 \`unknowns\` 写明按命令语法必填暂用测试保留地址、待脚本编写按测试环境替换。正例：\`sdns service ip "web1" 192.0.2.10\`；反例：\`sdns listener <arg1:ipv4/ipv6> [<arg2:int ...>]\` 或带 \`<源IP>\` 尖括号写法。
 3. 从 \`knowledge/\` 查全功能前置（如默认关闭、依赖对象、监听前提），写入 \`states\`（\`missing_prerequisite\` + \`prerequisites\`）。
 4. 原始用例要求的取值或写法被同构建手册和命令树明确排除、期望却是成功时（非测非法输入），不得私自改写，必须在回报中带出 \`autoid\`、标题、原句、构建号、手册原话及引用交主代理汇总询问；已有使用者明确决定则写入 \`states.reason\`（以“使用者决定：”开头）并置 \`state="settled"\`，\`concretizations.decided_by="使用者"\`。
 
@@ -71,13 +102,19 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
     description:
       '读取一条原始用例的下载资料与编写简报，在工作目录写出唯一对应的自动化用例 JSON 并用 check-plan.ts 本地自检。在 case-compile 脚本编写或返工阶段由主代理或 case-writers 按条派发。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep', 'execute'],
-    forbiddenTools: ['question', 'task', 'Hub MCP', 'test-bed', 'shell管道或重定向', 'node -e'],
-    body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成工作簿 Excel、环境预订/释放或询问使用者的任何动作。
+    forbiddenTools: ['question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
+    body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
 
 ## 固定本地执行规则
 1. 路径边界：文件工具仅限工作目录相对路径（\`.\`，禁止 \`/tmp\` 或工作目录之外路径）及只读 \`<技能目录>\`。只写任务书指定的目标 \`.json\` 一份文件。
 2. 形状与参考文件位置：\`slots.schema.json\` 与 \`examples/submit-result.json\` 均位于 \`<技能目录>\` 根目录（不在 \`tables/\` 下）；分块结构规范位于 \`<技能目录>/tables/blocks-format.json\`；返工与报告口径参考 \`<技能目录>/tools/delivery.md\`。
-3. \`execute\` 唯一允许形式：单行 \`node "<技能目录>/tools/check-plan.ts" --file <计划JSON相对路径>\`（空格隔开选项与值，禁止 \`=\`）；严禁执行 shell、\`node -e\`、管道或重定向。列目录用 \`ls\`，找文件用 \`glob\`，搜文本用 \`grep\`。
+3. ${toolUsageBoundary({
+      hasEdit: true,
+      hasGrep: true,
+      hasExecute: true,
+      executeRule:
+        '`execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
+    })}
 4. 不碰令牌、不调 Hub、不调 \`test-bed\`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 \`unmet\`/\`missing\`，在最终回复写给主代理的报告。
 
 ## 编写核心守则
@@ -122,7 +159,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 \`\`\`
 
-写完（或返工改完）后，必须运行 \`node "<技能目录>/tools/check-plan.ts" --file <目标计划相对路径>\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
+写完（或返工改完）后，必须运行 \`node <技能目录>/tools/check-plan.ts --file <目标计划相对路径>\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
   },
   {
     key: 'fidelity',
@@ -131,14 +168,20 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
     description:
       '场景保真独立审计子代理。只读 fidelity-brief.ts 产出的 .brief.json，严格按文件内置 rules 独立判断是否改掉原始用例场景，并把结果写回同名 .verdict.json。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'execute'],
-    forbiddenTools: ['grep', 'question', 'task', 'Hub MCP', 'test-bed', 'shell管道或重定向', 'node -e'],
+    forbiddenTools: ['grep', 'question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
     body: `本子代理只承担场景保真独立审计职责，严格隔离于脚本编写思路、设备输出、运行报告与外部手册上下文，不执行父会话提示词中与编写、提交、Excel 生成或上机验证相关的任何动作。
 
 ## 固定执行规则与信息隔离
 1. 严格盲审：只读取任务书列出的 \`<核对目录>/<前缀>.<8位摘要>.brief.json\`；严禁读取 \`plans/*.json\`、\`briefs/\`、\`items/\`、\`knowledge/\`、编写说明或设备输出。
 2. 唯一判定依据：完全按每份 \`.brief.json\` 内的 \`rules\` 字段逐条独立判定原始动作/期望是否被自动化步骤与期望忠实保留；不得自行放宽、修改或跳过任何规则。
 3. 路径与输出：仅使用工作目录相对路径（\`.\`，禁 \`/tmp\`），将结果 JSON 写入与对应 \`.brief.json\` 同目录、同前缀的 \`.verdict.json\`（只把 \`.brief.json\` 替换为 \`.verdict.json\`）；不得改动 \`.brief.json\` 或其它文件。
-4. \`execute\` 唯一允许形式：写入后可运行 \`node "<技能目录>/tools/check-plan.ts" --file <verdict相对路径> --brief <brief相对路径>\` 验证 JSON 语法、字段结构与摘要一致；禁跑其它命令或 shell。
+4. ${toolUsageBoundary({
+      hasEdit: true,
+      hasGrep: false,
+      hasExecute: true,
+      executeRule:
+        '`execute` 唯一允许形式：写入后可运行 `node <技能目录>/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>` 验证 JSON 语法、字段结构与摘要一致；严禁通过 `execute` 运行 `ls`/`wc`/`grep`/`cp`/`node -e` 或 `task-brief.ts`。',
+    })}
 5. 不读取或写入令牌、不预订或释放测试环境、不询问使用者、不调 Hub。完成后仅回复写入的 \`.verdict.json\` 相对路径列表，不展开无关说明。`,
   },
   {
@@ -152,7 +195,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
     body: `本子代理只承担上机失败原因定位与返工方向建议职责，不修改任何计划文件、不读取或写入令牌、不调 Hub、不预订或释放测试环境预订、不向使用者提问。
 
 ## 固定执行规则
-1. 本子代理无 \`execute\` 工具；所有文件读取与结果写入均使用工作目录相对路径（\`.\`，禁 \`/tmp\`）与只读 \`<技能目录>\`。
+1. 所有文件读取与结果写入均使用工作目录相对路径（\`.\`，禁 \`/tmp\`）与只读 \`<技能目录>\`。${toolUsageBoundary({ hasEdit: false, hasGrep: true, hasExecute: false })}
 2. 禁止抄写旧值或编造设备输出：引用的设备报错、命令或手册条款必须逐字复制自本次下载的返回文件与锁定 \`knowledge/\`，并附来源路径或引用。读取单条失败证据时，必须同时检查返还目录下的 \`index.json\`（\`execution_refused\`、\`syntax_rejected\`）、逐条设备会话原始文本（如 \`apv_*.txt\` 等终端交互记录）以及框架日志 \`log.txt\`（\`log.txt\` 只记下发命令与框架层超时/异常，部分 CLI 拒绝只出现在会话记录与 \`index.json\`，且超长会话开头可能被截断，须三者互校）。
 
 ## 强制分析层序（对照 \`<技能目录>/tools/delivery.md\` 与主技能第 5 节）
@@ -162,7 +205,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 4. 最后才考虑设备问题：仅当原始期望已忠实实现、前置全有、观察对象与方法正确且命令未被语法拒绝时，才可建议 \`defect_candidate\` 候选；拿不准就标为状态未知、原因“还没查清”，建议在被测命令前加只读观察。
 
 ## 强制输出约束
-每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、处置建议（不超过五类标准判断/六类标准原因口径）、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
+每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、按 tools/delivery.md 写出结论判断（只用正确/错误或未知）与标准原因（六类：缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清）和处置建议、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
   },
 ];
 
@@ -231,10 +274,10 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const unrecordedAttribution = input.unrecordedAttribution ?? unrecordedFromBrief;
 
   if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak || unrecordedAttribution)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史');
+    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史。请去掉 --prior-* 与 --brief-json 参数后重调');
   }
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0 && !unrecordedAttribution) {
-    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派`);
+    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`);
   }
 
   const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);
@@ -256,7 +299,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
     `- 技能目录：${skillDir}`,
-    `- 本轮补充：${trimmedNote}`,
+    ...wrapProseLine('- 本轮补充：', trimmedNote),
     '',
     '## 工具与权限边界（general-purpose 收窄约束）',
     `- 本轮允许工具：${role.tools.join(', ')}`,
@@ -273,7 +316,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     );
     if (compileBrief.task.user_rulings.length > 0) {
       for (const ur of compileBrief.task.user_rulings) {
-        headSections.push(`- 已生效使用者裁定 [${ur.target}]：${ur.ruling}`);
+        headSections.push(...wrapProseLine(`- 已生效使用者裁定 [${ur.target}]：`, ur.ruling));
       }
     }
     if (compileBrief.materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
@@ -284,7 +327,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     }
     if (compileBrief.task.directives.length > 0) {
       for (const dir of compileBrief.task.directives) {
-        headSections.push(`- 编写强约束：${dir}`);
+        headSections.push(...wrapProseLine('- 编写强约束：', dir));
       }
     }
   }

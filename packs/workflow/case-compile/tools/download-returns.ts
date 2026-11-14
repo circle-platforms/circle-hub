@@ -3,13 +3,15 @@ import { mkdir, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, type ExecutionRefusal, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
-import { bearerFrom, hubOrigin, HubReplyError, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
   getOnce,
   getRetrying,
   isConnectionRefused,
   READ_RETRY_BUDGET_MS,
   READ_TIMEOUT_MS,
+  readTokenFromStdin,
+  requireBearerToken,
   RetryExhaustedError,
   TransientHubReplyError,
   type RetryControl,
@@ -39,7 +41,7 @@ export const WAIT_MAX_SECONDS = 86_400, POLL_MS = 20_000, UNDISPATCHED_MS = 300_
 export interface Timing { now: () => number; pause: (ms: number) => Promise<void> }
 const REAL_TIME: Timing = { now: () => Date.now(), pause: (ms) => new Promise((done) => setTimeout(done, ms)) };
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, timing: Timing = REAL_TIME, retry?: Omit<RetryControl, 'timing'>): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, timing: Timing = REAL_TIME, retry?: Omit<RetryControl, 'timing'>): Promise<number> {
   try {
     const args = options(argv);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次上机验证的编号');
@@ -47,7 +49,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (args.wait !== undefined && !(/^[1-9][0-9]{0,4}$/.test(args.wait) && wait <= WAIT_MAX_SECONDS)) throw new Error(`--wait 写最多等多少秒（1 到 ${WAIT_MAX_SECONDS} 的整数）`);
     const taken = await readdir(args.out).catch(() => [] as string[]);
     if (taken.length) throw new Error(`--out 目录 ${args.out} 里已有文件（${taken.slice(0, 3).join('、')}），不覆盖；另选一个新目录`);
-    const origin = hubOrigin(args.hub), bearer = await bearerFrom(readToken);
+    const origin = hubOrigin(args.hub), bearer = await requireBearerToken(readToken);
     const readRetry: RetryControl = { ...retry, timing };
     const jobsUrl = `${origin}/run-export/${args.run}/jobs`;
     const started = timing.now(), deadline = started + wait * 1000;

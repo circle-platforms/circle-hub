@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "kind": "workflow",
   "title": "recompose",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -13,7 +13,7 @@
   "embeds": [
     {
       "pack": "mindmap-format",
-      "version": "1.0.25",
+      "version": "1.0.26",
       "module": "case-structure"
     },
     {
@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "99c3db99d6c6c56d09ec10cb365eb45ff929e5f9dc61bc609410d76868073f3a",
-      "size": 7594
+      "sha256": "564bee1dc4b10c4637736c12d8ebee68670b37c8b8abe45835d7d0d991b69edf",
+      "size": 9615
     },
     {
       "path": "checks.json",
@@ -75,23 +75,23 @@
     },
     {
       "path": "functions/hub-retry.ts",
-      "sha256": "233ab3538beab7fc18c511c0c8b15e69d6e48b29f453626908954d3b87c76623",
-      "size": 23320
+      "sha256": "37575fa3562dfd94dbb2ff2cc124f70175366840592b54f88cd20810cc136349",
+      "size": 29322
     },
     {
       "path": "functions/project.ts",
-      "sha256": "70a6a81e06ade74876e9a66a3c87e80e47380bf271cb8049947400e21e2ac0ae",
-      "size": 1494
+      "sha256": "e8505643e6333acd0fdef27c5e8f47ee20dd900e4fc3f027c6971c4397e23e5c",
+      "size": 4783
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "34b37025997ac98e5a539c11775adebdeb389f222f83c1d0a8ee949497e4416f",
-      "size": 23319
+      "sha256": "86ba918b7d2d0f9acec378e43f7430fc5bfa09b220a435e828b622933fdf3ac4",
+      "size": 37183
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "bcf86695e3ca73cec1f1053c0cde8ba68dff9fca858e2875d904bbe72b3d05ca",
-      "size": 4509
+      "sha256": "770581a7f3fe599bcdccb08a5c32ede2171894c4bdd4665ec17f276abeaf24a3",
+      "size": 4528
     },
     {
       "path": "functions/schema.ts",
@@ -110,13 +110,13 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "603cd776c690adee3d88cadf53afb5915a309d9f35de80e2fa2ddda399399724",
-      "size": 9914
+      "sha256": "038fe15d557ec2ab1274f2e346395cdcde9ceecccf2d52f0a35590246df2099b",
+      "size": 11782
     },
     {
       "path": "requirements.json",
-      "sha256": "51dc29071554842c8ab5ff399958c16b61675c2e151b5863954cc479751b392a",
-      "size": 1736
+      "sha256": "fb903be4370a5cbff727073eba12c66b920858da17aeeb0808ad9b0cc930b2ad",
+      "size": 1859
     },
     {
       "path": "samples/negative/full_set.json",
@@ -165,8 +165,8 @@
     },
     {
       "path": "tables/recompose-codes.json",
-      "sha256": "1ded22f14242a2d601c47986594db6a3506af818b51d6787591938989e9cb407",
-      "size": 1434
+      "sha256": "a2161cc837f84e258a472fe78b27e847b2e5a5ca4861c356265de691ab55903b",
+      "size": 1714
     },
     {
       "path": "tables/recompose-format.json",
@@ -179,19 +179,24 @@
       "size": 18407
     },
     {
+      "path": "tools/check-record.ts",
+      "sha256": "781b7ae28f16da46f469d105ce4c5e55f56bc491ac27877f3a55213f22c162aa",
+      "size": 9516
+    },
+    {
       "path": "tools/download-run.ts",
-      "sha256": "6c17bcbb7fdeeed7c6c7e9cb63cff41322f88b97b5485af2902d1235ba828937",
-      "size": 2606
+      "sha256": "06184e77f55f53385de4542e6a5cda204794d562ea7fd63f8701ec8d2acd42fe",
+      "size": 2630
     },
     {
       "path": "tools/submit-records.ts",
-      "sha256": "85fae9238ac5e1fdd4be29815835fc2f06ad2daf4b28204f1ea74a2e6cad75b1",
-      "size": 7460
+      "sha256": "e22f544717acebc49fba216644bde084c11bb2c68e76d75d4edd3b96514d4131",
+      "size": 10904
     },
     {
       "path": "workflow.json",
-      "sha256": "de2fcabe9dc4c18d1168f8fff6339db1930828996799c6a5dd35eb089ebcf35f",
-      "size": 2429
+      "sha256": "9effa4d037ed2e0963956db1b57dc7fe7e0d0fea552954097742f1c59f23212d",
+      "size": 3214
     }
   ]
 }
