@@ -114,3 +114,24 @@ test('recent holders includes active, released and expired last rows, and takeov
   assert.deepEqual(await service.holderSnapshot(keys), before);
   assert.deepEqual(await service.actionLog(prefix), actions);
 });
+
+test('recent and active views agree at fixed past and future component clocks including exact expiry', async t => {
+  const f = await fixture(t);
+  for (const [label, initial] of [['past', '2000-01-01T00:00:00.000Z'], ['future', '2100-01-01T00:00:00.000Z']] as const) {
+    let now = new Date(initial);
+    const service = new LeaseService(f.db, { records: f.kit.store, now: async () => now });
+    const prefix = `synthetic/fixed-${label}/`, key = prefix + 'seat';
+    assert.ok((await service.acquire({ keys: [key], holder: f.holder, prefix, ttlSeconds: 60, maxTtlSeconds: 300 })).ok);
+    const before = await service.holderSnapshot([key]);
+    assert.deepEqual((await service.view(prefix, true)).entries.map(row => row.key), [key]);
+    const recent = await service.recentHolders(prefix);
+    assert.equal(recent.length, 1); assert.equal(recent[0].active, true, label + ' clock must agree with view');
+    assert.equal(recent[0].since, initial); assert.equal(recent[0].until, new Date(now.getTime() + 60000).toISOString());
+    now = new Date(now.getTime() + 60000);
+    assert.deepEqual((await service.view(prefix, true)).entries, []);
+    const expired = await f.db.transaction(tx => service.recentHolders(prefix, tx));
+    assert.equal(expired[0].active, false, label + ' exact expiry must agree with view');
+    assert.equal(expired[0].released, false);
+    assert.deepEqual(await service.holderSnapshot([key]), before);
+  }
+});

@@ -101,7 +101,7 @@ interface Row {
 /** A lease service over one database; state lives in the table only, so a new object sees the same state. */
 export class LeaseService {
   readonly #db: Database;
-  readonly #now: (tx?: PgTransaction) => Promise<Date>;
+  readonly #now: (tx?: Transaction) => Promise<Date>;
   readonly #records: RecordStore;
   readonly #catalog: LeaseOwnershipCatalog | undefined;
 
@@ -109,7 +109,7 @@ export class LeaseService {
     this.#db = db;
     this.#catalog = options.catalog;
     this.#records = options.records ?? createRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
-    this.#now = options.now ?? (async (tx?: PgTransaction) => (await db.query<{ now: Date }>('SELECT clock_timestamp()::timestamptz AS now',[],tx)).rows[0]!.now);
+    this.#now = options.now ?? (async (tx?: Transaction) => (await db.query<{ now: Date }>('SELECT clock_timestamp()::timestamptz AS now',[],tx)).rows[0]!.now);
   }
 
   /** Acquires every key under one lease (all or nothing) for the holder; refusal carries the earliest free moment. */
@@ -257,15 +257,15 @@ export class LeaseService {
     });
   }
 
-  /** All matching last rows, with no limit or action-history scan; released is not proof of a physical stop. */
+  /** All matching last rows at one component-clock sample; no limit/history scan or proof of a physical stop. */
   async recentHolders(prefix: string, tx?: Transaction): Promise<RecentHolder[]> {
     const result = await this.#db.query<Row & { released: boolean; active: boolean }>(
-      `WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS at)
+      `WITH observed AS (SELECT $2::timestamptz AS at)
        SELECT key, user_id, run_id, acquired_at, expires_at,
          released_at IS NOT NULL AS released,
          released_at IS NULL AND (expires_at IS NULL OR expires_at > observed.at) AS active
        FROM leases CROSS JOIN observed WHERE starts_with(key,$1) ORDER BY key`,
-      [prefix], tx,
+      [prefix, await this.#now(tx)], tx,
     );
     return result.rows.map(row => ({ key: row.key, user: row.user_id, run: row.run_id,
       since: row.acquired_at.toISOString(), until: row.expires_at?.toISOString() ?? null,
