@@ -132,11 +132,11 @@ export class RecordTestEnvironments implements TestEnvironments {
   }
   async canUse(by: Principal, id: string, outer?: Transaction): Promise<boolean> {
     return this.store.withTransaction(async tx => {
+      const permission = await this.reader(by, tx);
+      if (!permission.user || permission.user.disabled || permission.user.deleted_at) return false;
       const environment = (await this.catalog(tx)).find(value => value.id === id);
       if (!environment?.enabled || environment.target === null) return false;
       await this.validateExecutors(environment, tx);
-      const permission = await this.reader(by, tx);
-      if (!permission.user || permission.user.disabled || permission.user.deleted_at) return false;
       return [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, id)));
     }, outer);
   }
