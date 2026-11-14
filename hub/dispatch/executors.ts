@@ -74,7 +74,7 @@ export class ExecutorRegistry {
         await this.admin(by);
         const current = await this.readSource(id);
         if (!current)
-            throw new Error('执行器对你不可用');
+            throw new Error('执行器对当前账户不可用');
         refuseBuildBaseline(input);
         const source = this.validate({ ...input as object, id });
         const rebind = current.source.target !== source.target || current.source.endpoint !== source.endpoint || current.source.ca !== source.ca || canonicalize([...current.source.resources].sort()) !== canonicalize([...source.resources].sort());
@@ -112,7 +112,7 @@ export class ExecutorRegistry {
         return result;
     }
     async disable(by: Principal, id: string) { await this.admin(by); const current = await this.readSource(id); if (!current)
-        throw new Error('执行器对你不可用'); return this.configure(by, { ...current.source, enabled: false }, undefined, { digest: current.digest, source: current.source, target: current.source.target, rebind: false }); }
+        throw new Error('执行器对当前账户不可用'); return this.configure(by, { ...current.source, enabled: false }, undefined, { digest: current.digest, source: current.source, target: current.source.target, rebind: false }); }
     async readSource(id: string): Promise<{
         id: string;
         digest: string;

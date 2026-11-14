@@ -124,7 +124,7 @@ export class MemberEnvironments {
         holdings.set([lease.run, lease.since, lease.until].join('\0'), {
           booking_run: lease.run, since: lease.since, until: lease.until,
           target: null, assigned: false, can_use: false,
-          assignment_reason: '当前没有分配，不能续期或开始新的上机验证；预订仍由你持有',
+          assignment_reason: '当前没有分配，不能续期或开始新的上机验证；预订仍由当前账户持有',
           target_missing: '预订没有可核验的执行器绑定，目标归属未知',
         });
       }
