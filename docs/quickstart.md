@@ -46,7 +46,7 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
 ```bash
 ./bin/circle-hub team create 研发一组
 ./bin/circle-hub team list
-# 记下输出的团队编号（形如 tm_…，例如 tm_01m79xa8mng4nj1534xgvc7cv2）
+# 记下输出的团队编号（形如 tm_…）
 
 ./bin/circle-hub user create alice
 ./bin/circle-hub team add <团队ID> alice

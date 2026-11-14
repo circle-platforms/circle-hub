@@ -88,7 +88,7 @@ export const CALL_ERROR_CATEGORY_BY_CODE = {
   SOURCE_NOT_PERMITTED: 'permission_denied',
   IDEMPOTENCY_MISMATCH: 'invalid_parameters',
   IDENTITY_UNMAPPED: 'permission_denied',
-  RUN_SUPERSEDED: null,
+  RUN_SUPERSEDED: 'not_found',
   RUN_ABANDONED: null,
   CREDENTIAL_IN_UPLOAD: 'invalid_parameters',
   LEASE_UNAVAILABLE: null,

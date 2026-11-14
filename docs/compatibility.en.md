@@ -52,6 +52,10 @@ Also retired and removed on 2026-11-13: `/console/packs` (including `/console/pa
 
 ## History
 
+- 2026-11-14: As directed by the integrator, RUN_SUPERSEDED now uses the not_found invocation-error category instead of remaining unclassified. Its protocol code, fact and remedy, tool inputs and storage version are unchanged.
+
+- 2026-11-14: Regenerating the core RUN_SUPERSEDED repair instruction updates format-skill protocol snapshots. The integrator authorized patch candidates mindmap-format 1.0.25, workbook-format 1.0.23, xml-format 1.0.23 and html-format 1.0.22. Owner generators refresh manifest sizes and hashes without algorithm or API changes. The package owner must align case-compile and recompose embedded mindmap-format declarations before the combined contracts check can pass.
+
 - 2026-11-14: The integrator withdrew the M2/C2 migration and separate upgrade preview/apply entry for tonight. This build retains the version 1 baseline and keeps new environment-assignment enforcement off, with second-batch workflow and booking rules. Earlier migration-2/reader-level-2 entries describe an undeployed candidate, not tonight's behavior. Deployment definition @2, run-export references, disclosure changes and agents/ pack paths remain included.
 
 - 2026-11-14: Model 82 registers five invocation-error categories and generates a shared protocol-code classification and formatter for server and dispatch, with labels from labelOf. Ambiguous or undecided codes remain unclassified and SOURCE_UNAVAILABLE retains its unknown form. Six tool input shapes are unchanged.
