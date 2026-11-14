@@ -1,3 +1,4 @@
+import { requireEnvironmentAssignmentActivation, verifyEnvironmentUpgradeOpenSchema } from './environment-assignment-upgrade.ts';
 import {preserveTeamAttributions} from './team-attributions.ts';
 import {PgMemberDeletions} from './member-deletions.ts';
 import {PgPersonalSync} from './personal-sync.ts';
@@ -53,13 +54,14 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   for (const directory of [config.dataDir, objectsDir, config.logDir]) await mkdir(directory, { recursive: true, mode: 0o700 });
   const db = new Database(createPool(config.database, options.maxConnections ?? 10));
   try {
-    if (options.migrate === false) await verifyMigrations(db);
+    if (options.migrate === false) await verifyEnvironmentUpgradeOpenSchema(db);
     else await migrate(db);
   } catch (error) {
     await db.end().catch(() => {});
     throw error;
   }
   const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
+  try { await requireEnvironmentAssignmentActivation(db, store); } catch (error) { await db.end().catch(() => {}); throw error; }
   const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now,personalPayloads:store.personalPayloads });
   store.personalPayloads.beforePurge=(owner,by,tx)=>preserveTeamAttributions(store,objects,owner,by,tx,now);
   const authorizations = new RecordAuthorizations(db, store, now, objects);
