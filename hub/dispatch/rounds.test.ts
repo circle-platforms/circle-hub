@@ -172,6 +172,8 @@ test('an uncertified result ownership premise makes every round no_verdict', { t
 test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
   const c = await setup(); t.after(() => c.close());
   install(c, policy(3, 'all'));
+  await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,result:{...c.executor.definition.result,request_id:'/request'}});
+  await c.freezeExecutor();
   const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
   let output = ''; child.stdout!.on('data', chunk => { output += chunk; });
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
