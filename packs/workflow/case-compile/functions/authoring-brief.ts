@@ -465,7 +465,20 @@ export interface CompileBriefV1 {
       session_files: Record<string, string | null>;
     } | null;
     prior_attribution: {
-      round: number;
+      round: number | null;
+      round_recorded?: boolean;
+      source_file: string;
+      confidence: 'hypothesis';
+      note: string;
+      layer?: string;
+      disposition?: string;
+      judged: string;
+      fix_direction: string;
+      evidence_quotes: string[];
+    } | null;
+    unrecorded_attribution?: {
+      round: null;
+      round_recorded: false;
       source_file: string;
       confidence: 'hypothesis';
       note: string;
@@ -502,6 +515,7 @@ export interface BuildCompileBriefInput {
   targetPlanPath?: string;
   planExists?: boolean;
   priorRounds?: readonly PriorRoundRecord[];
+  unrecordedAttribution?: PriorAttributionItem | null;
   createdAt?: string;
 }
 
@@ -689,12 +703,15 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
 
   const latestDevice = [...priorRounds].reverse().find((r) => r.deviceEvidence)?.deviceEvidence ?? null;
   const latestAttribution: PriorAttributionItem | null = [...priorRounds].reverse().find((r) => r.attribution)?.attribution ?? null;
+  const unrecordedAttr: PriorAttributionItem | null = input.unrecordedAttribution ?? null;
 
+  // InfoTest provenance (`compile_engine/briefs.py:2792-2833,2681-2690,2982-2985`, `compile_engine/remedies.py:39-42`):
+  // emit last-attempt warning in Chinese (no bare English "FINAL attempt") and require form change when streak/gate repeats.
   const directives: string[] = [];
   if (streak.finalAttempt) {
-    directives.push(`FINAL attempt（第 ${round}/${attemptLimit} 轮）：本轮为上限内最后一次重交机会，务必核对全部前置与期望实现。`);
+    directives.push(`最后一次机会（第 ${round}/${attemptLimit} 轮）：已达本案重试上限，务必核对全部前置与期望实现。`);
   }
-  if (streak.varyFormRequired) {
+  if (streak.varyFormRequired || repeatedGateCodes.length > 0) {
     directives.push('连续多轮命中同类问题或真机拒收，本轮须核查手册命令形态与前置条件，禁止仅微调字词重复同一失败命令。');
   }
   if (repeatedGateCodes.length > 0) {
@@ -787,7 +804,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       entries: [],
     },
     round_history: {
-      status: round <= 1 && priorRounds.length === 0 ? 'first_round_no_history' : 'has_prior_rounds',
+      status: round <= 1 && priorRounds.length === 0 && !unrecordedAttr ? 'first_round_no_history' : 'has_prior_rounds',
       gate_refusals: allGateRefusals,
       repeated_gate_codes: repeatedGateCodes,
       device_evidence: latestDevice
@@ -817,6 +834,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       prior_attribution: latestAttribution
         ? {
             round: latestAttribution.round,
+            round_recorded: latestAttribution.roundRecorded ?? latestAttribution.round !== null,
             source_file: latestAttribution.sourceFile,
             confidence: 'hypothesis',
             note: '以下归因仅是失败分析子代理或交接记录提出的未确认假设；编写前须自行核对上述原始设备输出再采纳或推翻。',
@@ -827,6 +845,22 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
             evidence_quotes: latestAttribution.evidenceQuotes,
           }
         : null,
+      ...(unrecordedAttr
+        ? {
+            unrecorded_attribution: {
+              round: null as null,
+              round_recorded: false as const,
+              source_file: unrecordedAttr.sourceFile,
+              confidence: 'hypothesis' as const,
+              note: '该分析来自未记录轮次的交付备注/归因文件，归作未确认假设，不代表第 1 轮结论。',
+              ...(unrecordedAttr.layer ? { layer: unrecordedAttr.layer } : {}),
+              ...(unrecordedAttr.disposition ? { disposition: unrecordedAttr.disposition } : {}),
+              judged: unrecordedAttr.judged,
+              fix_direction: unrecordedAttr.remedy || unrecordedAttr.fixDirection || '',
+              evidence_quotes: unrecordedAttr.evidenceQuotes,
+            },
+          }
+        : {}),
       rounds: priorRounds,
       streak: {
         ...streak,
@@ -961,6 +995,11 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
       problems.push('round_history.prior_attribution.confidence 必须严格为 hypothesis');
     }
   }
+  if (roundHistory.unrecorded_attribution !== undefined && roundHistory.unrecorded_attribution !== null && isRecord(roundHistory.unrecorded_attribution)) {
+    if (roundHistory.unrecorded_attribution.confidence !== 'hypothesis') {
+      problems.push('round_history.unrecorded_attribution.confidence 必须严格为 hypothesis');
+    }
+  }
 
   if (round > 1 && (task.mode === 'rework_device' || task.mode === 'rework_gate')) {
     if (roundHistory.status !== 'has_prior_rounds') {
@@ -968,8 +1007,9 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
     }
     const gateCount = Array.isArray(roundHistory.gate_refusals) ? roundHistory.gate_refusals.length : 0;
     const roundsCount = Array.isArray(roundHistory.rounds) ? roundHistory.rounds.length : 0;
-    if (gateCount === 0 && roundHistory.device_evidence === null && roundsCount === 0) {
-      problems.push('第 2 轮及以上返工简报至少应包含上一轮门禁拒绝、设备证据或历轮计划记录之一');
+    const hasUnrecorded = isRecord(roundHistory.unrecorded_attribution);
+    if (gateCount === 0 && roundHistory.device_evidence === null && roundsCount === 0 && !hasUnrecorded) {
+      problems.push('第 2 轮及以上返工简报至少应包含上一轮门禁拒绝、设备证据、历轮计划或未记录轮次归因之一');
     }
     const streak = isRecord(roundHistory.streak) ? roundHistory.streak : null;
     const consecutive = streak && typeof streak.consecutiveSameError === 'number' ? streak.consecutiveSameError : 0;
@@ -989,7 +1029,7 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
     `# 编写简报 ${identity.index}（第 ${identity.round}/${identity.attempt_limit} 轮，模式 ${task.mode}）：${identity.title}`,
     '',
     `- 原始条目：${identity.item_id}（autoid: ${identity.autoid}）；锁定知识根：${identity.knowledge_root}；简报摘要：${brief.brief_sha256.slice(0, 12)}`,
-    `- 目标计划文件：${task.target_plan_path}；剩余重交机会：${identity.remaining_attempts}${task.final_attempt ? '（FINAL attempt：最后一次机会）' : ''}`,
+    `- 目标计划文件：${task.target_plan_path}；剩余重交机会：${identity.remaining_attempts}${task.final_attempt ? '（最后一次机会）' : ''}`,
     '',
   ];
 
@@ -1021,13 +1061,27 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
     out.push('');
   }
 
-  if (roundHistory.status === 'has_prior_rounds' && roundHistory.rounds.length > 0) {
+  if (roundHistory.status === 'has_prior_rounds' && (roundHistory.rounds.length > 0 || roundHistory.unrecorded_attribution)) {
+    const ua = roundHistory.unrecorded_attribution
+      ? {
+          round: null,
+          roundRecorded: false,
+          sourceFile: roundHistory.unrecorded_attribution.source_file,
+          confidence: 'hypothesis' as const,
+          judged: roundHistory.unrecorded_attribution.judged,
+          remedy: roundHistory.unrecorded_attribution.fix_direction,
+          ...(roundHistory.unrecorded_attribution.layer ? { layer: roundHistory.unrecorded_attribution.layer } : {}),
+          ...(roundHistory.unrecorded_attribution.disposition ? { disposition: roundHistory.unrecorded_attribution.disposition } : {}),
+          evidenceQuotes: roundHistory.unrecorded_attribution.evidence_quotes,
+        }
+      : undefined;
     out.push(
       renderPriorRoundsMarkdown({
         caseRef: identity.autoid || identity.item_id,
         currentRound: identity.round,
         rounds: roundHistory.rounds,
         streak: roundHistory.streak,
+        ...(ua ? { unrecordedAttribution: ua } : {}),
       }),
       '',
     );

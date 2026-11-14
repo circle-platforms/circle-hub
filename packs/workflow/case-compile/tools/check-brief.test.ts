@@ -196,7 +196,9 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     );
     const retDir = join(workDir, 'returns-r1');
     await mkdir(join(retDir, 'a'.repeat(12), 'cases', '990000000000000301'), { recursive: true });
-    await writeFile(join(retDir, 'a'.repeat(12), 'cases', '990000000000000301', 'dut0.txt'), 'seat#show status\nseat#\n');
+    // Build a genuine 12,000-char retained session tail where early `widget on` was cut off before retention limit.
+    const fillerTail = (Array.from({ length: 600 }, (_, i) => `seat#noise line ${String(i).padStart(3, '0')} ok`).join('\n') + '\nseat#\n').slice(-12_000);
+    await writeFile(join(retDir, 'a'.repeat(12), 'cases', '990000000000000301', 'dut0.txt'), fillerTail);
     await writeFile(
       join(retDir, 'index.json'),
       JSON.stringify({
@@ -218,11 +220,36 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
       }),
     );
 
+    // Mismatched short un-truncated returns directory refuses brief generation rather than faking 12k truncation
+    const mismatchRet = join(workDir, 'returns-mismatch');
+    await mkdir(join(mismatchRet, 'b'.repeat(12), 'cases', '990000000000000301'), { recursive: true });
+    await writeFile(join(mismatchRet, 'b'.repeat(12), 'cases', '990000000000000301', 'dut0.txt'), 'seat#show status\nseat#\n');
+    await writeFile(
+      join(mismatchRet, 'index.json'),
+      JSON.stringify({
+        schema: 'device-returns@1',
+        run: 'run_01cccccccccccccccccccccccc',
+        jobs: [{ job: 'b'.repeat(64), verification_run: 'run_01cccccccccccccccccccccccc', rows: [{ item: '990000000000000301', verdict: 'fail', sessions: { 'dut0.txt': join('b'.repeat(12), 'cases', '990000000000000301', 'dut0.txt') } }] }],
+      }),
+    );
+    await assert.rejects(
+      writeStructuredBriefs({
+        runDir: 'run1',
+        cwd: workDir,
+        round: 2,
+        mode: 'rework_device',
+        priorPlans: 'plans-r1',
+        returns: 'returns-mismatch',
+      }),
+      /不属于同一次运行/,
+    );
+
     const r2 = await writeStructuredBriefs({
       runDir: 'run1',
       cwd: workDir,
       round: 2,
       mode: 'rework_device',
+      caseFilter: '00',
       priorPlans: 'plans-r1',
       returns: 'returns-r1',
     });
@@ -231,6 +258,20 @@ test('writeStructuredBriefs generates compile-brief@1 round-1 & round-2 JSON + M
     assert.equal(r2Check.ok, true, JSON.stringify(r2Check));
     const md2 = await readFile(r2.md_files[0], 'utf8');
     assert.ok(md2.includes('这一步的设备输出不在保留的末尾 12,000 个字符内'));
+    assert.ok(md2.includes('取不到证据的步骤不要当作正确，也不要当作无关。'));
+
+    const r3 = await writeStructuredBriefs({
+      runDir: 'run1',
+      cwd: workDir,
+      round: 3,
+      mode: 'rework_device',
+      caseFilter: '00',
+      priorPlans: 'plans-r1',
+      returns: 'returns-r1',
+    });
+    const md3 = await readFile(r3.md_files[0], 'utf8');
+    assert.ok(md3.includes('最后一次机会'));
+    assert.ok(!md3.includes('FINAL attempt'));
 
     // Re-running round 1 never overwrites existing round-1 files
     const r1Again = await writeStructuredBriefs({ runDir: 'run1', cwd: workDir, round: 1, mode: 'initial' });

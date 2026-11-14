@@ -2,7 +2,9 @@
 // Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
 import type { CompileBriefV1 } from './authoring-brief.ts';
 import {
+  MAX_TASK_BRIEF_CHARS,
   renderPriorRoundsMarkdown,
+  type PriorAttributionItem,
   type PriorRoundRecord,
   type StreakAnalysis,
 } from './rework-history.ts';
@@ -31,6 +33,8 @@ export interface TaskBriefInput {
   compileBrief?: CompileBriefV1;
   priorRounds?: readonly PriorRoundRecord[];
   streak?: StreakAnalysis;
+  unrecordedAttribution?: PriorAttributionItem | null;
+  maxChars?: number;
 }
 
 const SKILL_DIR_PLACEHOLDER = '<技能目录>';
@@ -200,11 +204,29 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const round = input.round ?? compileBrief?.identity.round ?? 1;
   const priorRounds = input.priorRounds ?? compileBrief?.round_history.rounds ?? [];
   const streak = input.streak ?? compileBrief?.round_history.streak;
+  const unrecordedFromBrief: PriorAttributionItem | null = compileBrief?.round_history.unrecorded_attribution
+    ? {
+        round: null,
+        roundRecorded: false,
+        sourceFile: compileBrief.round_history.unrecorded_attribution.source_file,
+        confidence: 'hypothesis',
+        judged: compileBrief.round_history.unrecorded_attribution.judged,
+        remedy: compileBrief.round_history.unrecorded_attribution.fix_direction,
+        ...(compileBrief.round_history.unrecorded_attribution.layer
+          ? { layer: compileBrief.round_history.unrecorded_attribution.layer }
+          : {}),
+        ...(compileBrief.round_history.unrecorded_attribution.disposition
+          ? { disposition: compileBrief.round_history.unrecorded_attribution.disposition }
+          : {}),
+        evidenceQuotes: compileBrief.round_history.unrecorded_attribution.evidence_quotes,
+      }
+    : null;
+  const unrecordedAttribution = input.unrecordedAttribution ?? unrecordedFromBrief;
 
-  if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak)) {
+  if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak || unrecordedAttribution)) {
     throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出或归因历史');
   }
-  if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0) {
+  if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0 && !unrecordedAttribution) {
     throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或门禁/归因历史，禁止无历史重派`);
   }
 
@@ -212,7 +234,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
 
-  const sections: string[] = [
+  const headSections: string[] = [
     CIRCLE_GENERAL_PURPOSE_NOTICE,
     '',
     `请以只读隔离的子代理身份执行本阶段单项任务，使用通用子代理（\`subagent_type="general-purpose"\`）承载角色 \`${role.agentName}\`（${role.stageLabel}）。`,
@@ -233,7 +255,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   ];
 
   if (compileBrief) {
-    sections.push(
+    headSections.push(
       '',
       '## 本轮结构化简报摘要与前置披露（来自 compile-brief@1）',
       `- 前置检查状态（${compileBrief.materials.prerequisites.status}）：${compileBrief.materials.prerequisites.scan_reason}`,
@@ -241,30 +263,23 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     );
     if (compileBrief.task.user_rulings.length > 0) {
       for (const ur of compileBrief.task.user_rulings) {
-        sections.push(`- 已生效使用者裁定 [${ur.target}]：${ur.ruling}`);
+        headSections.push(`- 已生效使用者裁定 [${ur.target}]：${ur.ruling}`);
       }
     }
     if (compileBrief.materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
       const bf = compileBrief.materials.bed_facts;
-      sections.push(
+      headSections.push(
         `- 测试环境 ${bf.bed_name ?? ''}：监听候选=[${bf.listeners.map((l) => l.address).join(', ')}]，盲区禁用=[${bf.blind.map((b) => b.address).join(', ')}]，后端=[${bf.backends.map((b) => b.address).join(', ')}]`,
       );
     }
+    if (compileBrief.task.directives.length > 0) {
+      for (const dir of compileBrief.task.directives) {
+        headSections.push(`- 编写强约束：${dir}`);
+      }
+    }
   }
 
-  if (priorRounds.length > 0 && streak && role.key !== 'fidelity') {
-    sections.push(
-      '',
-      renderPriorRoundsMarkdown({
-        caseRef,
-        currentRound: round,
-        rounds: priorRounds,
-        streak,
-      }),
-    );
-  }
-
-  sections.push(
+  const tailSections: string[] = [
     '',
     '## 本轮测试范围（使用者原话，由主会话记录）',
     '（以下为主会话逐字抄录的使用者范围原文；执行中必须严格遵守，不得自行缩小、改写或删减原始期望；若原文与手册冲突或存在未决项，按角色规则写入目标字段或交主代理汇总，不得擅自决定或向使用者发问。）',
@@ -273,7 +288,34 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '## 角色固定规则（与包内 agents 声明同源）',
     resolvedBody,
     '',
-  );
+  ];
 
-  return sections.join('\n');
+  const maxTotal = input.maxChars ?? MAX_TASK_BRIEF_CHARS;
+  const fixedTextLength = headSections.join('\n').length + tailSections.join('\n').length;
+  const sections: string[] = [...headSections];
+
+  if ((priorRounds.length > 0 || unrecordedAttribution) && streak && role.key !== 'fidelity') {
+    const historyBudget = maxTotal > 0 ? Math.max(2000, maxTotal - fixedTextLength - 32) : undefined;
+    sections.push(
+      '',
+      renderPriorRoundsMarkdown({
+        caseRef,
+        currentRound: round,
+        rounds: priorRounds,
+        streak,
+        ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
+        ...(historyBudget !== undefined ? { maxChars: historyBudget } : {}),
+      }),
+    );
+  }
+
+  sections.push(...tailSections);
+  const fullText = sections.join('\n');
+  if (maxTotal > 0 && fullText.length > maxTotal) {
+    // Only reachable if caller scope + static role text alone exceed `maxTotal`.
+    const overflow = fullText.length - maxTotal;
+    const notice = `\n\n（说明：任务说明总长度触发 ${maxTotal} 字符上限，末尾静态补充截断 ${overflow + 64} 字符）\n`;
+    return `${fullText.slice(0, Math.max(0, maxTotal - notice.length))}${notice}`;
+  }
+  return fullText;
 }

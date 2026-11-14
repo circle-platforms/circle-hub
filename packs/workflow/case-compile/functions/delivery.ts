@@ -21,8 +21,8 @@ export interface Dispatch { run: string; job: string; plan_run: string; sha256: 
 export interface DefectCandidate { repro: string; expected: string; actual: string }
 // The model proposes the conflict; quotation checks do not decide who is right.
 export interface AuthorConflict { author: string; manual: string; reference: string }
-export interface CaseNote { judged: string; remedy: string; evidence?: string; defect_candidate?: DefectCandidate; author_conflict?: AuthorConflict }
-export interface Notes { batch?: string; cases: Record<string, CaseNote> }
+export interface CaseNote { judged: string; remedy: string; round?: number; evidence?: string; defect_candidate?: DefectCandidate; author_conflict?: AuthorConflict }
+export interface Notes { round?: number; batch?: string; cases: Record<string, CaseNote> }
 /** What the document holds for a case: its title and original lines (steps with their expectations), when known. */
 export interface Original { title: string; lines: Array<{ text: string; expected: string[] }> }
 
@@ -227,7 +227,11 @@ export function executionRefusals(session: string, markers: readonly string[]): 
 
 /** The model's notes: one judged paragraph and one fix-or-trade-off paragraph for exactly the cases not delivered. */
 export function readNotes(value: unknown, undelivered: string[]): Notes {
-  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件请按原始用例分别写结论、下一步和设备输出，格式见交付工具说明');
+  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch' && key !== 'round')) throw new Error('说明文件请按原始用例分别写结论、下一步和设备输出，格式见交付工具说明');
+  const parseRound = (v: unknown, where: string): number => {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new Error(`${where} 的轮次（round）须是大于等于 1 的整数`);
+    return v;
+  };
   const text = (v: unknown, where: string): string => {
     if (typeof v !== 'string' || !v.trim() || v.length > NOTE_MAX || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(v)) throw new Error(`${where} 要是 1 到 ${NOTE_MAX} 字的文字（可换行，不含其他控制字符）`);
     return v.trim();
@@ -238,19 +242,20 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
   const cases: Record<string, CaseNote> = {};
   for (const autoid of undelivered) {
     const note = value.cases[autoid];
-    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明请只写结论、下一步、设备输出，以及判断设备问题或原始用例问题所需的原文`);
+    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'round', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明请只写结论、下一步、可选轮次 round、设备输出，以及判断设备问题或原始用例问题所需的原文`);
     const candidate = note.defect_candidate, conflict = note.author_conflict;
     if (candidate !== undefined && (!isRecord(candidate) || Object.keys(candidate).sort().join() !== 'actual,expected,repro')) throw new Error(`用例 ${autoid} 判断设备的问题时，请只写复现步骤、原始用例期望原句和设备输出三项`);
     if (conflict !== undefined && (!isRecord(conflict) || Object.keys(conflict).sort().join() !== 'author,manual,reference')) throw new Error(`用例 ${autoid} 判断原始用例的问题时，请只写原始用例原句、手册原话和对应的手册三项`);
     if (candidate !== undefined && conflict !== undefined) throw new Error(`用例 ${autoid} 不能同时判断为设备的问题和原始用例的问题；手册排除这个取值时请核对原始用例，手册支持这个取值时请核对设备输出`);
     cases[autoid] = {
       judged: text(note.judged, `用例 ${autoid} 的结论`), remedy: text(note.remedy, `用例 ${autoid} 的下一步`),
+      ...(note.round === undefined ? {} : { round: parseRound(note.round, `用例 ${autoid}`) }),
       ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的设备输出`) }),
       ...(isRecord(candidate) ? { defect_candidate: { repro: text(candidate.repro, `用例 ${autoid} 的复现步骤`), expected: text(candidate.expected, `用例 ${autoid} 的期望原句`), actual: text(candidate.actual, `用例 ${autoid} 的设备输出`) } } : {}),
       ...(isRecord(conflict) ? { author_conflict: { author: text(conflict.author, `用例 ${autoid} 的原始用例原句`), manual: text(conflict.manual, `用例 ${autoid} 的手册原话`), reference: text(conflict.reference, `用例 ${autoid} 对应的手册`) } } : {}),
     };
   }
-  return { ...(value.batch === undefined ? {} : { batch: text(value.batch, '补充说明') }), cases };
+  return { ...(value.round === undefined ? {} : { round: parseRound(value.round, '说明文件') }), ...(value.batch === undefined ? {} : { batch: text(value.batch, '补充说明') }), cases };
 }
 
 /**

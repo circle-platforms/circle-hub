@@ -1,5 +1,5 @@
 // 只读生成可直接原文传给 Circle 内置 general-purpose 子代理（task 工具）的任务说明：
-//   node <技能目录>/tools/task-brief.ts --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
+//   node <技能目录>/tools/task-brief.ts --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
 import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -9,13 +9,19 @@ import {
   validateCompileBrief,
   type CompileBriefV1,
 } from '../functions/authoring-brief.ts';
-import { buildCaseIdSet } from '../functions/rework-history.ts';
+import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import {
+  buildSingleCaseStructuredBrief,
+  loadRunStructuredContext,
+  type RunStructuredContext,
+} from './authoring-brief.ts';
 import { loadCasePriorRounds } from './rework-inputs.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import {
   resolveCwdRoots,
+  resolveExistingDirInsideCwd,
   resolveExistingFileInsideCwd,
   resolveInsideCwd,
   type ResolvedCwd,
@@ -29,6 +35,7 @@ const OPTIONS: Record<string, boolean> = {
   scope: false,
   note: false,
   round: false,
+  run: false,
   'brief-json': false,
   item: false,
   'prior-plans': false,
@@ -37,7 +44,7 @@ const OPTIONS: Record<string, boolean> = {
   'prior-notes': false,
 };
 const USAGE =
-  'node <技能目录>/tools/task-brief.ts --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--brief-json <结构简报JSON>] [--item <条目JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
+  'node <技能目录>/tools/task-brief.ts --role <用例重组|写计划|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
 const DEFAULT_PACK_ROOT = realpathSync(resolve(fileURLToPath(new URL('..', import.meta.url))));
@@ -50,6 +57,7 @@ export interface BuildTaskBriefOptions {
   scopePath?: string;
   note?: string;
   round?: number | string;
+  runDir?: string;
   briefJsonPath?: string;
   itemPath?: string;
   priorPlans?: string;
@@ -73,6 +81,130 @@ function parseRoundNumber(raw: number | string | undefined): number {
     throw new Error(`参数无效：--round 必须是正整数（收到 ${raw}）`);
   }
   return Number(trimmed);
+}
+
+function hasMeaningfulScopeText(lines: readonly string[]): boolean {
+  return lines.some((line) => {
+    const t = line.trim();
+    return t.length > 0 && !/^#{1,6}(?:\s|$)/.test(t);
+  });
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function detectCaseHeadingMarkers(headingText: string): string[] {
+  const markers: string[] = [];
+  const autoidMatches = headingText.match(/(?:^|[^\d])(\d{10,})(?=[^\d]|$)/g) ?? [];
+  for (const m of autoidMatches) {
+    const digits = /\d{10,}/.exec(m);
+    if (digits) markers.push(digits[0]);
+  }
+  const docMatches = headingText.match(/\bdoc-\d+:c-\d+\b/g) ?? [];
+  markers.push(...docMatches);
+  const itemMatches = headingText.match(/\bitem_[A-Za-z0-9_-]+\b/g) ?? [];
+  markers.push(...itemMatches);
+  const casePrefix = /\bcase[:_-]([A-Za-z0-9_-]+)\b/i.exec(headingText);
+  if (casePrefix) markers.push(casePrefix[1]);
+  const explicitZh = /^(?:用例|条目)\s+([A-Za-z0-9_-]{2,})\b/.exec(headingText.trim());
+  if (explicitZh) markers.push(explicitZh[1]);
+  const bareIdx = /^(\d{1,3})(?=$|[\s（(\[：:、-])/.exec(headingText.trim());
+  if (bareIdx) markers.push(bareIdx[1]);
+  return [...new Set(markers)];
+}
+
+/**
+ * Extracts global instructions plus sections matching THIS case (`caseIds`) from `scope.md`.
+ * Supports optional per-case Markdown headings (`## <autoid>` / `## <item_id>`) while keeping
+ * un-scoped global headings/paragraphs in full and excluding other cases' sections.
+ */
+export function extractCaseScopeText(
+  scopeText: string,
+  caseRef: string,
+  caseIds: ReadonlySet<string>,
+  options: { allowAll?: boolean; scopeRelative?: string } = {},
+): string {
+  const normalized = scopeText.replace(/\r\n/g, '\n');
+  if (options.allowAll) return normalized;
+
+  const lines = normalized.split('\n');
+  interface ScopeSection {
+    headingDepth: number;
+    caseTokens: string[];
+    lines: string[];
+  }
+  const sections: ScopeSection[] = [];
+  let current: ScopeSection = { headingDepth: 0, caseTokens: [], lines: [] };
+  let sawCaseSection = false;
+
+  const isGlobalHeading = (text: string): boolean => /^(?:全局|通用|整体|测试范围|使用者原话)/.test(text.trim());
+
+  const matchesCaseSet = (tokens: readonly string[], headingText: string): boolean => {
+    for (const tok of tokens) {
+      if (caseIds.has(tok)) return true;
+    }
+    for (const id of caseIds) {
+      if (id.length >= 2 && new RegExp(`(?:^|[\\s（(\\[：:、/])${escapeRegExp(id)}(?:$|[\\s）)\\]：:、/])`).test(headingText)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (const line of lines) {
+    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (headingMatch) {
+      const depth = headingMatch[1].length;
+      const headingText = headingMatch[2].trim();
+      const detected = isGlobalHeading(headingText) ? [] : detectCaseHeadingMarkers(headingText);
+      const explicitMatch = detected.length > 0 || matchesCaseSet([], headingText);
+      const isCaseHeader = !isGlobalHeading(headingText) && (detected.length > 0 || matchesCaseSet(detected, headingText));
+
+      if (current.caseTokens.length > 0 && depth > current.headingDepth && !isCaseHeader) {
+        // Subheading inside an active case-specific section belongs to that same case.
+        current.lines.push(line);
+        continue;
+      }
+
+      if (current.lines.length > 0) sections.push(current);
+      if (isCaseHeader || explicitMatch) {
+        sawCaseSection = true;
+        const matchedTokens = detected.length > 0
+          ? detected
+          : [...caseIds].filter((id) => headingText.includes(id));
+        current = { headingDepth: depth, caseTokens: matchedTokens, lines: [line] };
+      } else {
+        current = { headingDepth: depth, caseTokens: [], lines: [line] };
+      }
+      continue;
+    }
+    current.lines.push(line);
+  }
+  if (current.lines.length > 0) sections.push(current);
+
+  if (!sawCaseSection) {
+    return normalized;
+  }
+
+  const kept: string[] = [];
+  let keptCaseSections = 0;
+  for (const sec of sections) {
+    if (sec.caseTokens.length === 0) {
+      kept.push(...sec.lines);
+    } else if (sec.caseTokens.some((tok) => caseIds.has(tok))) {
+      keptCaseSections++;
+      kept.push(...sec.lines);
+    }
+  }
+
+  if (!hasMeaningfulScopeText(kept)) {
+    const label = options.scopeRelative ?? DEFAULT_SCOPE;
+    throw new Error(
+      `参数无效：范围文件 ${label} 按用例分节后，未找到当前用例 ${caseRef} 所属章节或全局正文（命中单用例分节 ${keptCaseSections} 个）`,
+    );
+  }
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 function readVerifiedScopeText(scopeBytes: Buffer, scopeRelative: string): string {
@@ -168,8 +300,64 @@ async function loadValidatedCompileBrief(
   return brief;
 }
 
+function inferItemIndex(
+  briefRelative: string,
+  itemPathArg: string | undefined,
+  siblingItem: unknown,
+): string {
+  const fromBrief = /^(\d+)(?:\.round-\d+)?\.(?:md|json)$/.exec(basename(briefRelative));
+  if (fromBrief) return fromBrief[1];
+  if (itemPathArg) {
+    const fromItem = /^(\d+)\.json$/.exec(basename(itemPathArg));
+    if (fromItem) return fromItem[1];
+  }
+  if (isRecord(siblingItem) && typeof siblingItem.index === 'string' && siblingItem.index.trim()) {
+    return siblingItem.index.trim();
+  }
+  return '01';
+}
+
+async function resolveOptionalRunContext(
+  cwd: ResolvedCwd,
+  options: BuildTaskBriefOptions,
+  briefRelative: string,
+): Promise<RunStructuredContext | null> {
+  if (options.runDir !== undefined) {
+    const resolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+    const ctx = await loadRunStructuredContext(resolved.canonical);
+    if (!ctx) {
+      throw new Error(`不存在：--run 目录 ${resolved.relative} 中缺少 knowledge/nodes.jsonl，无法加载结构化简报上下文`);
+    }
+    return ctx;
+  }
+
+  const candidateDirs: string[] = [];
+  const briefParent = dirname(briefRelative);
+  if (basename(briefParent) === 'briefs') {
+    candidateDirs.push(dirname(briefParent));
+  }
+  if (options.itemPath !== undefined) {
+    const itemRel = resolveInsideCwd(cwd, options.itemPath, '--item').relative;
+    const itemParent = dirname(itemRel);
+    if (basename(itemParent) === 'items') {
+      candidateDirs.push(dirname(itemParent));
+    }
+  }
+  for (const relDir of candidateDirs) {
+    try {
+      const resolved = resolveExistingDirInsideCwd(cwd, relDir, '--run');
+      const ctx = await loadRunStructuredContext(resolved.canonical);
+      if (ctx) return ctx;
+    } catch {
+      // Optional opportunistic inference: ignore standalone non-run parent dirs.
+    }
+  }
+  return null;
+}
+
 /**
- * Validates the subagent role, workspace-contained paths, verbatim `scope.md`,
+ * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
+ * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
  * and any round 2+ single-case prior history, then renders a complete `general-purpose` prompt.
  */
 export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<string> {
@@ -192,8 +380,8 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
     || options.priorReturns !== undefined
     || options.priorAnswers !== undefined
     || options.priorNotes !== undefined;
-  if (role.key === 'fidelity' && (options.briefJsonPath !== undefined || hasExplicitPriorArgs)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json 或 --prior-* 历史参数');
+  if (role.key === 'fidelity' && (options.briefJsonPath !== undefined || options.runDir !== undefined || hasExplicitPriorArgs)) {
+    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入 --brief-json、--run 或 --prior-* 历史参数');
   }
 
   let round = parseRoundNumber(options.round);
@@ -208,9 +396,15 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
     '请主会话先在当前工作目录创建 scope.md 并逐字写入使用者的范围原话后重试',
   );
   const scopeBytes = await readFile(scopeResolved.canonical);
-  const scopeText = readVerifiedScopeText(scopeBytes, scopeResolved.relative);
+  const rawScopeText = readVerifiedScopeText(scopeBytes, scopeResolved.relative);
 
   const { item: siblingItem, caseIds } = await maybeReadSiblingItem(cwd, briefPath, options.itemPath, caseRef);
+
+  // Load run structured context first for plan/attribute roles so `executionFailureMarkers` feed history analysis
+  // and single-case `compile-brief@1` can be built directly in memory inside this single `task-brief.ts` entrypoint.
+  const runCtx = role.key === 'plan' || role.key === 'attribute'
+    ? await resolveOptionalRunContext(cwd, options, briefPath)
+    : null;
 
   // Detect if `--brief` itself is a `.json` `compile-brief@1` file when `--brief-json` is not separately set.
   let compileBrief: CompileBriefV1 | undefined;
@@ -226,8 +420,6 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
         if (options.round === undefined) round = compileBrief.identity.round;
       }
     } catch (error) {
-      // When `--brief` happens to be an arbitrary `.json` input (e.g. items/00.json), only fail if `--brief-json` was explicit
-      // or the file declared `compile-brief@1`.
       if (options.briefJsonPath !== undefined) throw error;
       if (error instanceof Error && (error.message.includes('compile-brief@1') || error.message.includes('brief_sha256') || error.message.includes('与 --case 不一致'))) {
         throw error;
@@ -237,10 +429,23 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
 
   let priorRounds = compileBrief?.round_history.rounds;
   let streak = compileBrief?.round_history.streak;
+  let unrecordedAttribution: PriorAttributionItem | null = compileBrief?.round_history.unrecorded_attribution
+    ? {
+        round: null,
+        roundRecorded: false,
+        sourceFile: compileBrief.round_history.unrecorded_attribution.source_file,
+        confidence: 'hypothesis' as const,
+        judged: compileBrief.round_history.unrecorded_attribution.judged,
+        remedy: compileBrief.round_history.unrecorded_attribution.fix_direction,
+        evidenceQuotes: compileBrief.round_history.unrecorded_attribution.evidence_quotes,
+      }
+    : null;
+
   if (hasExplicitPriorArgs) {
     if (options.round === undefined) {
       throw new Error('参数无效：传入 --prior-plans/--prior-returns/--prior-answers/--prior-notes 时必须同时指定 --round <2|3|...>');
     }
+    const markers = compileBrief?.materials.bed_facts.execution_failure_markers ?? runCtx?.failureMarkers;
     const loaded = await loadCasePriorRounds({
       cwd,
       round,
@@ -249,17 +454,47 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
       priorReturnsArg: options.priorReturns,
       priorAnswersArg: options.priorAnswers,
       priorNotesArg: options.priorNotes,
-      markers: compileBrief?.materials.bed_facts.execution_failure_markers,
+      markers,
     });
     priorRounds = loaded.rounds;
     streak = loaded.streak;
+    unrecordedAttribution = loaded.unrecordedAttribution;
   }
 
-  if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && (!priorRounds || priorRounds.length === 0)) {
+  if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && (!priorRounds || priorRounds.length === 0) && !unrecordedAttribution) {
     throw new Error(
       `参数无效：第 ${round} 轮 ${role.stageLabel} 必须提供上一轮计划、设备返还或门禁/归因历史（--brief-json 或 --prior-plans/--prior-returns/--prior-answers/--prior-notes），禁止无历史重派`,
     );
   }
+
+  if (!compileBrief && runCtx && siblingItem !== undefined && (role.key === 'plan' || role.key === 'attribute')) {
+    const inferredMode = options.priorAnswers && !options.priorReturns
+      ? 'rework_gate'
+      : round > 1
+        ? 'rework_device'
+        : 'initial';
+    const built = buildSingleCaseStructuredBrief({
+      ctx: runCtx,
+      item: siblingItem,
+      index: inferItemIndex(briefPath, options.itemPath, siblingItem),
+      round,
+      mode: inferredMode,
+      targetPlanPath: outPath,
+      ...(priorRounds ? { priorRounds } : {}),
+      ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
+    });
+    if (built) {
+      compileBrief = built;
+      if (compileBrief.identity.item_id) caseIds.add(compileBrief.identity.item_id);
+      if (compileBrief.identity.autoid) caseIds.add(compileBrief.identity.autoid);
+    }
+  }
+
+  const allowAllScope = role.key === 'recompose' && /^(?:all|全部|整份|整批)$/i.test(caseRef);
+  const scopeText = extractCaseScopeText(rawScopeText, caseRef, caseIds, {
+    allowAll: allowAllScope,
+    scopeRelative: scopeResolved.relative,
+  });
 
   return renderTaskBrief({
     role,
@@ -272,6 +507,7 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
     round,
     ...(compileBrief ? { compileBrief } : {}),
     ...(priorRounds && streak ? { priorRounds, streak } : {}),
+    ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
   });
 }
 
@@ -286,6 +522,7 @@ export async function main(argv: string[]): Promise<number> {
       ...(args.scope !== undefined ? { scopePath: args.scope } : {}),
       ...(args.note !== undefined ? { note: args.note } : {}),
       ...(args.round !== undefined ? { round: args.round } : {}),
+      ...(args.run !== undefined ? { runDir: args.run } : {}),
       ...(args['brief-json'] !== undefined ? { briefJsonPath: args['brief-json'] } : {}),
       ...(args.item !== undefined ? { itemPath: args.item } : {}),
       ...(args['prior-plans'] !== undefined ? { priorPlans: args['prior-plans'] } : {}),

@@ -10,7 +10,9 @@ import {
   renderAgentDefinition,
   SUBAGENT_ROLES,
 } from '../functions/subagent-roles.ts';
+import { CONTRACT_DOC } from '../functions/test-support.ts';
 import { stage } from '../pack-files.ts';
+import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { buildTaskBrief, main } from './task-brief.ts';
 
 test('single-source roles drive both bundled agents/*.md and rendered task briefs', async () => {
@@ -301,11 +303,12 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
       const base = join(workDir, dirName);
       const caseDir = join(base, 'd'.repeat(12), 'cases', CASE);
       await mkdir(caseDir, { recursive: true });
-      const lines = [
-        ...(omitStep1 ? ['seat#noise filler\n'.repeat(100)] : ['seat#widget init-beta\nok\n']),
-        'seat#show widget v1\nError: object missing\nseat#\n',
-      ];
-      await writeFile(join(caseDir, 'dut0.txt'), lines.join(''), 'utf8');
+      const tailCmd = 'seat#show widget v1\nError: object missing\nseat#\n';
+      const rawSession = omitStep1
+        ? Array.from({ length: 750 }, (_, i) => `seat#noise filler ${String(i).padStart(3, '0')}`).join('\n') + '\n' + tailCmd
+        : 'seat#widget init-beta\nok\n' + tailCmd;
+      const body = rawSession.length > 12_000 ? rawSession.slice(-12_000) : rawSession;
+      await writeFile(join(caseDir, 'dut0.txt'), body, 'utf8');
       await writeFile(join(caseDir, 'log.txt'), `dispatched show widget v1\nError: object missing\n`, 'utf8');
       await writeFile(
         join(base, 'index.json'),
@@ -397,8 +400,12 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
     );
     assert.equal(r3Cli.status, 0, r3Cli.stderr);
     assert.ok(r3Cli.stdout.includes('当前轮次：第 3 轮'));
+    assert.ok(r3Cli.stdout.includes('最后一次机会'));
+    assert.ok(!r3Cli.stdout.includes('FINAL attempt'));
     assert.ok(r3Cli.stdout.includes('连续 2 轮命中同类错误'));
     assert.ok(r3Cli.stdout.includes('widget init-alpha') && r3Cli.stdout.includes('widget init-beta'));
+    assert.ok(r3Cli.stdout.includes('最近一次失败分析（轮次未记录）'));
+    assert.ok(!r3Cli.stdout.includes('上一轮（第 2 轮）失败分析'));
     assert.ok(r3Cli.stdout.includes('confidence: "hypothesis"'));
     assert.ok(r3Cli.stdout.includes('先建对象再查询'));
     assert.ok(!r3Cli.stdout.includes('另一个用例的归因'));
@@ -417,7 +424,7 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
       /禁止无历史重派/,
     );
 
-    // Blind fidelity role rejects history flags
+    // Blind fidelity role rejects history flags & --run
     await assert.rejects(
       buildTaskBrief({
         role: '保真核对',
@@ -430,6 +437,250 @@ test('task-brief round 2+ embeds single-case prior plan, device output or 12,000
         packRoot: packDir,
       }),
       /严格盲审/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorded notes, D8 unified task-brief with failureMarkers, D9 scope partition', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-dryrun-'));
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    const workDir = join(root, 'work');
+    const CASE_A = '990000000000000401';
+    const CASE_B = '990000000000000402';
+    const ROOT = 'c'.repeat(64);
+    const REF_K = `tree:${ROOT}/commands/widget@${'d'.repeat(64)}`;
+    const REF_Q = `src:${'e'.repeat(64)}/kityminder@1/n/1`;
+
+    await mkdir(join(workDir, 'run', 'items'), { recursive: true });
+    await mkdir(join(workDir, 'run', 'briefs'), { recursive: true });
+    await mkdir(join(workDir, 'run', 'knowledge'), { recursive: true });
+    await mkdir(join(workDir, 'run', 'sources'), { recursive: true });
+
+    // D9: scope.md with global text + CASE_A section (with subheading) + CASE_B section
+    await writeFile(
+      join(workDir, 'scope.md'),
+      [
+        '# 使用者原话，由主会话记录',
+        '',
+        '## 全局说明',
+        '所有用例均须从同构建手册查清语法。',
+        '',
+        `## ${CASE_A}（只测 A）`,
+        '### A 专属细节',
+        'A 要求校验 RSA 状态。',
+        '',
+        `## ${CASE_B}（只测 B）`,
+        'B 专属秘密：切勿在 A 中泄漏 B 的 ECDSA。',
+      ].join('\n'),
+      'utf8',
+    );
+
+    // Unified single-case run setup (ONLY case 00 exists cleanly; sibling 01 has NO prior plan at all)
+    const itemA = {
+      id: 'doc-4:c-1',
+      fields: {
+        autoid: CASE_A,
+        title: '用例A',
+        recomposition: {
+          record: {
+            schema: 'recompose-record@1',
+            case: { id: 'doc-4:c-1', title: '用例A' },
+            atoms: [{ atom_id: 'a1', kind: 'expect', text: '返回正确结果', quote_ref: REF_Q }],
+            commands: [],
+            states: [],
+            references: { cited: [] },
+          },
+        },
+      },
+    };
+    const itemB = {
+      id: 'doc-4:c-2',
+      fields: { autoid: CASE_B, title: '用例B' },
+    };
+    await writeFile(join(workDir, 'run', 'items', '00.json'), JSON.stringify(itemA));
+    await writeFile(join(workDir, 'run', 'items', '01.json'), JSON.stringify(itemB));
+    await writeFile(join(workDir, 'run', 'briefs', '00.md'), '# 静态编写简报 00\n');
+    await writeFile(join(workDir, 'run', 'knowledge', 'nodes.jsonl'), JSON.stringify({
+      schema: 'run-knowledge@1',
+      root: ROOT,
+      composition: null,
+      nodes: 1,
+      entries: 1,
+    }) + '\n' + JSON.stringify({
+      path: '/commands/widget',
+      children: [],
+      entries: [{ reference: REF_K, statement: 'widget <mode:string>', data: { parameter: { name: 'mode', commands: ['widget'] } } }],
+    }) + '\n');
+    await writeFile(join(workDir, 'run', 'knowledge', 'commands.txt'), '');
+    await writeFile(join(workDir, 'run', 'knowledge', 'manual.txt'), '');
+    await writeFile(join(workDir, 'run', 'run.json'), JSON.stringify({
+      run: 'run_01cccccccccccccccccccccccc',
+      product: 'synth-apv',
+      version: '1.0.0',
+      build: '1.0.0-b1',
+      groups: [{ kind: 'case-compile', profile: { bed: 'bed-a' } }],
+    }));
+    // Contract declares custom failure marker `CUSTOM_MARKER_FAIL` -> forwarded by task-brief.ts without authoring-brief --round!
+    const contractWithMarker = structuredClone(CONTRACT_DOC) as Record<string, unknown>;
+    contractWithMarker.exec_failure_markers = {
+      source: 'runner-exec-markers.py',
+      sha256: 'e'.repeat(64),
+      lines: ['CUSTOM_MARKER_FAIL'],
+    };
+    await writeFile(join(workDir, 'run', 'sources', 'contract.json'), JSON.stringify(signTypedRuntime(contractWithMarker)));
+    await writeFile(join(workDir, 'run', 'sources.json'), JSON.stringify([
+      { slot: 'contract', file: 'sources/contract.json' },
+    ]));
+
+    // D3: reject whole-batch submission.json and wrong-shape answer/notes files
+    await writeFile(join(workDir, 'submission.json'), JSON.stringify({ items: [{ item: CASE_A }] }));
+    await writeFile(
+      join(workDir, 'ans-multiline.txt'),
+      [
+        `受理报告：用例 ${CASE_A} INVALID_PARAM /slots/plan/0/data/steps/0`,
+        '供模型引用',
+        JSON.stringify({
+          call_result: 'partial',
+          original_cases: [
+            { id: 'doc-4:c-1', autoid: CASE_A, raw: 'P'.repeat(600_000) },
+            { id: 'doc-4:c-2', autoid: CASE_B, raw: 'P'.repeat(600_000) },
+          ],
+          errors: [
+            { item: CASE_B, code: 'B_ERR', message: '不应泄露的B错误', fix: 'none' },
+            { item: CASE_A, code: 'INVALID_PARAM', pointer: '/slots/plan/0/data/steps/0', message: '参数非法', fix: '修正参数' },
+          ],
+        }),
+      ].join('\n'),
+    );
+    await writeFile(
+      join(workDir, 'notes-unrecorded.json'),
+      JSON.stringify({ cases: { [CASE_A]: { judged: '仅有未记录轮次归因', remedy: '按参数说明重改' } } }),
+    );
+
+    await assert.rejects(
+      buildTaskBrief({
+        role: '写计划',
+        caseRef: CASE_A,
+        briefPath: 'run/briefs/00.md',
+        outPath: 'plans/00.json',
+        round: 2,
+        priorPlans: 'submission.json',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /submission\.json/,
+    );
+    await assert.rejects(
+      buildTaskBrief({
+        role: '写计划',
+        caseRef: CASE_A,
+        briefPath: 'run/briefs/00.md',
+        outPath: 'plans/00.json',
+        round: 2,
+        priorAnswers: 'submission.json',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /submission\.json/,
+    );
+
+    // D6: --round 2 with ONLY unrecorded notes works without fabricating `第 1 轮`
+    const r2OnlyNote = await buildTaskBrief({
+      role: '写计划',
+      caseRef: CASE_A,
+      briefPath: 'run/briefs/00.md',
+      outPath: 'plans/00.json',
+      round: 2,
+      priorNotes: 'notes-unrecorded.json',
+      cwd: workDir,
+      packRoot: packDir,
+    });
+    assert.ok(r2OnlyNote.includes('最近一次失败分析（轮次未记录）'));
+    assert.ok(!r2OnlyNote.includes('### 上一轮（第 1 轮）'));
+    // D9: scope isolated strictly to CASE_A + global
+    assert.ok(r2OnlyNote.includes('所有用例均须从同构建手册查清语法'));
+    assert.ok(r2OnlyNote.includes('A 要求校验 RSA 状态'));
+    assert.ok(!r2OnlyNote.includes('B 专属秘密'));
+    // D8: single-case in-memory compile-brief@1 automatically injected even without authoring-brief --round!
+    assert.ok(r2OnlyNote.includes('本轮结构化简报摘要与前置披露（来自 compile-brief@1）'));
+
+    // D1 & D8: round 3 via unified task-brief.ts with multi-line 1.2MB answer & contract failure marker across r1+r2
+    const mkPlanFile = (rel: string, arg: string) => writeFile(join(workDir, rel), JSON.stringify({
+      item: CASE_A,
+      handling: 'handled',
+      slots: { plan: [{ text: 'p', quotes: [], data: { bucket: 'bed-a', blocks: [], replacements: [], steps: [{ object: 'dut0', method: 'exec', args: [`widget ${arg}`], keywords: {} }], expects: [] } }] },
+    }));
+    await mkPlanFile('p1.json', 'a');
+    await mkPlanFile('p2.json', 'b');
+    const mkCustomMarkerRet = async (dir: string, runId: string, cmd: string) => {
+      await mkdir(join(workDir, dir, 'cases', CASE_A), { recursive: true });
+      await writeFile(join(workDir, dir, 'cases', CASE_A, 'dut0.txt'), `apv#${cmd}\nok\napv#\n`);
+      await writeFile(join(workDir, dir, 'cases', CASE_A, 'log.txt'), `${cmd} done\nCUSTOM_MARKER_FAIL id: 901\n`);
+      await writeFile(join(workDir, dir, 'index.json'), JSON.stringify({
+        schema: 'device-returns@1',
+        run: runId,
+        jobs: [{
+          job: 'a'.repeat(64),
+          verification_run: runId,
+          rows: [{
+            item: CASE_A,
+            verdict: 'fail',
+            log: join('cases', CASE_A, 'log.txt'),
+            sessions: { 'dut0.txt': join('cases', CASE_A, 'dut0.txt') },
+          }],
+        }],
+      }));
+    };
+    await mkCustomMarkerRet('r1', 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', 'widget a');
+    await mkCustomMarkerRet('r2', 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', 'widget b');
+
+    const r3Unified = await buildTaskBrief({
+      role: '写计划',
+      caseRef: CASE_A,
+      briefPath: 'run/briefs/00.md',
+      outPath: 'plans-r3/00.json',
+      round: 3,
+      runDir: 'run',
+      itemPath: 'run/items/00.json',
+      priorPlans: 'p1.json,p2.json',
+      priorReturns: 'r1,r2',
+      priorAnswers: 'ans-multiline.txt,-',
+      cwd: workDir,
+      packRoot: packDir,
+    });
+    assert.ok(r3Unified.length < 80_000, `D1: multi-line 1.2MB answer must not bloat brief (got ${r3Unified.length})`);
+    assert.ok(r3Unified.includes('INVALID_PARAM'));
+    assert.ok(!r3Unified.includes('B_ERR') && !r3Unified.includes('PPPPPP'));
+    assert.ok(r3Unified.includes('连续 2 轮命中同类错误'), 'D8: contract failure_markers loaded via task-brief.ts drove streak detection');
+    assert.ok(r3Unified.includes('最后一次机会') && !r3Unified.includes('FINAL attempt'));
+
+    // D9: recompose with `--case all` keeps all sections
+    const recAll = await buildTaskBrief({
+      role: '用例重组',
+      caseRef: 'all',
+      briefPath: 'run/items/00.json',
+      outPath: 'rec.json',
+      cwd: workDir,
+      packRoot: packDir,
+    });
+    assert.ok(recAll.includes('A 要求校验 RSA 状态') && recAll.includes('B 专属秘密'));
+
+    // D9: reject scope file containing only other cases' sections and zero global content
+    await writeFile(join(workDir, 'scope-other-only.md'), `# 使用者原话\n\n## ${CASE_B}（仅B）\n只写B的内容\n`, 'utf8');
+    await assert.rejects(
+      buildTaskBrief({
+        role: '写计划',
+        caseRef: CASE_A,
+        briefPath: 'run/briefs/00.md',
+        outPath: 'plans/00.json',
+        scopePath: 'scope-other-only.md',
+        cwd: workDir,
+        packRoot: packDir,
+      }),
+      /未找到当前用例/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

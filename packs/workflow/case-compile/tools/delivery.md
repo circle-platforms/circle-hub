@@ -42,7 +42,7 @@ node <技能目录>/tools/download-returns.ts --hub %HUB_URL% --run <脚本合�
 机器输入文件如下，字段和内部引用不给使用者展示。
 
 ```json
-{"cases":{"<autoid>":{"judged":"结论、状态、判断；错误或未知时写原因","remedy":"接下来谁做什么","evidence":"最后一次设备输出原句"}},"batch":"这批原始用例需要说明的事"}
+{"round":1,"cases":{"<autoid>":{"round":1,"judged":"结论、状态、判断；错误或未知时写原因","remedy":"接下来谁做什么","evidence":"最后一次设备输出原句"}},"batch":"这批原始用例需要说明的事"}
 ```
 
 ```text

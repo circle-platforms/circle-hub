@@ -16,12 +16,14 @@ import {
   renderCompileBriefMd,
   type BriefKnowledge,
   type BriefNode,
+  type BriefPolicy,
   type CompileBriefMode,
+  type CompileBriefV1,
 } from '../functions/authoring-brief.ts';
 import { bedFacts, triggerTypesOf, type BedFacts } from '../functions/bed.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
-import { buildCaseIdSet } from '../functions/rework-history.ts';
+import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
@@ -113,6 +115,23 @@ export interface WriteStructuredBriefsOptions {
   answers?: string;
   attributions?: string;
   briefOut?: string;
+  caseFilter?: string;
+}
+
+export interface RunStructuredContext {
+  directory: string;
+  knowledge: BriefKnowledge;
+  policy: BriefPolicy | null;
+  runMeta: {
+    run: string;
+    product: string;
+    version: string;
+    build: string;
+    exclusions: string[];
+  };
+  bedFactsData: BedFacts | null;
+  triggerTypes: string[];
+  failureMarkers: string[];
 }
 
 export interface StructuredBriefReport {
@@ -180,26 +199,12 @@ async function loadOptionalBoundSources(
 }
 
 /**
- * Generates versioned structured `compile-brief@1` JSON and round-scoped Markdown (`briefs/<index>.round-<n>.json` & `.md`),
- * leaving earlier round briefs untouched and injecting `bedFacts`, `prerequisites`, `prior_device_history`, and `round_history`.
+ * Loads shared run metadata, frozen knowledge, bed facts, and failure markers once for a downloaded run directory.
+ * Reusable by `task-brief.ts` for single-case in-memory `compile-brief@1` generation without touching sibling items.
  */
-export async function writeStructuredBriefs(options: WriteStructuredBriefsOptions): Promise<StructuredBriefReport> {
-  const cwd = resolveCwdRoots(options.cwd);
-  const runResolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
-  const directory = runResolved.canonical;
+export async function loadRunStructuredContext(directory: string): Promise<RunStructuredContext | null> {
   const knowledge = await readKnowledge(directory);
-  if (!knowledge) {
-    throw new Error('不存在：运行目录中没有 knowledge/nodes.jsonl，无法生成结构化编写简报');
-  }
-
-  const round = options.round ?? 1;
-  if (!Number.isInteger(round) || round < 1) {
-    throw new Error(`参数无效：--round 必须为正整数（收到 ${round}）`);
-  }
-  const mode: CompileBriefMode = options.mode ?? (round > 1 ? 'rework_device' : 'initial');
-  if (!VALID_MODES.has(mode)) {
-    throw new Error(`参数无效：--mode 必须是 initial|rework_gate|rework_device|fidelity_fix`);
-  }
+  if (!knowledge) return null;
 
   const runRaw = parsed('run.json', await readFile(join(directory, 'run.json'), 'utf8'));
   const runRec = isRecord(runRaw) ? runRaw : {};
@@ -219,6 +224,70 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
     exclusions,
   };
 
+  return {
+    directory,
+    knowledge,
+    policy,
+    runMeta,
+    bedFactsData,
+    triggerTypes,
+    failureMarkers,
+  };
+}
+
+/** Builds an in-memory `compile-brief@1` for ONE case item using an already loaded `RunStructuredContext`. */
+export function buildSingleCaseStructuredBrief(params: {
+  ctx: RunStructuredContext;
+  item: unknown;
+  index: string;
+  round: number;
+  mode?: CompileBriefMode;
+  targetPlanPath?: string;
+  planExists?: boolean;
+  priorRounds?: readonly PriorRoundRecord[];
+  unrecordedAttribution?: PriorAttributionItem | null;
+}): CompileBriefV1 | null {
+  const mode: CompileBriefMode = params.mode ?? (params.round > 1 ? 'rework_device' : 'initial');
+  return buildCompileBrief({
+    item: params.item,
+    index: params.index,
+    knowledge: params.ctx.knowledge,
+    policy: params.ctx.policy,
+    runMeta: params.ctx.runMeta,
+    bedFacts: params.ctx.bedFactsData,
+    triggerTypes: params.ctx.triggerTypes,
+    executionFailureMarkers: params.ctx.failureMarkers,
+    round: params.round,
+    mode,
+    ...(params.targetPlanPath !== undefined ? { targetPlanPath: params.targetPlanPath } : {}),
+    ...(params.planExists !== undefined ? { planExists: params.planExists } : {}),
+    ...(params.priorRounds ? { priorRounds: params.priorRounds } : {}),
+    ...(params.unrecordedAttribution ? { unrecordedAttribution: params.unrecordedAttribution } : {}),
+  });
+}
+
+/**
+ * Generates versioned structured `compile-brief@1` JSON and round-scoped Markdown (`briefs/<index>.round-<n>.json` & `.md`),
+ * leaving earlier round briefs untouched and injecting `bedFacts`, `prerequisites`, `prior_device_history`, and `round_history`.
+ */
+export async function writeStructuredBriefs(options: WriteStructuredBriefsOptions): Promise<StructuredBriefReport> {
+  const cwd = resolveCwdRoots(options.cwd);
+  const runResolved = resolveExistingDirInsideCwd(cwd, options.runDir, '--run');
+  const directory = runResolved.canonical;
+  const ctx = await loadRunStructuredContext(directory);
+  if (!ctx) {
+    throw new Error('不存在：运行目录中没有 knowledge/nodes.jsonl，无法生成结构化编写简报');
+  }
+
+  const round = options.round ?? 1;
+  if (!Number.isInteger(round) || round < 1) {
+    throw new Error(`参数无效：--round 必须为正整数（收到 ${round}）`);
+  }
+  const mode: CompileBriefMode = options.mode ?? (round > 1 ? 'rework_device' : 'initial');
+  if (!VALID_MODES.has(mode)) {
+    throw new Error(`参数无效：--mode 必须是 initial|rework_gate|rework_device|fidelity_fix`);
+  }
+
   const outRel = options.briefOut ? resolveInsideCwd(cwd, options.briefOut, '--brief-out').relative : join(runResolved.relative, 'briefs');
   const outDir = resolveInsideCwd(cwd, outRel, '--brief-out').canonical;
   await mkdir(outDir, { recursive: true, mode: 0o700 });
@@ -234,11 +303,17 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
     without_record: 0,
   };
 
+  const caseFilter = options.caseFilter?.trim();
   for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
     const index = name.slice(0, -'.json'.length);
     const item = parsed(`items/${name}`, await readFile(join(directory, 'items', name), 'utf8'));
     const caseIds = buildCaseIdSet('', item);
-    let priorRounds = [] as Awaited<ReturnType<typeof loadCasePriorRounds>>['rounds'];
+    if (caseFilter && index !== caseFilter && !caseIds.has(caseFilter)) {
+      continue;
+    }
+
+    let priorRounds: PriorRoundRecord[] = [];
+    let unrecordedAttribution: PriorAttributionItem | null = null;
     const hasPriorInput =
       options.priorPlans !== undefined
       || options.returns !== undefined
@@ -254,23 +329,20 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
         priorReturnsArg: options.returns,
         priorAnswersArg: options.answers,
         priorNotesArg: options.attributions,
-        markers: failureMarkers,
+        markers: ctx.failureMarkers,
       });
       priorRounds = loaded.rounds;
+      unrecordedAttribution = loaded.unrecordedAttribution;
     }
 
-    const compiled = buildCompileBrief({
+    const compiled = buildSingleCaseStructuredBrief({
+      ctx,
       item,
       index,
-      knowledge,
-      policy,
-      runMeta,
-      bedFacts: bedFactsData,
-      triggerTypes,
-      executionFailureMarkers: failureMarkers,
       round,
       mode,
       priorRounds,
+      unrecordedAttribution,
     });
     if (!compiled) {
       report.without_record++;
@@ -298,6 +370,7 @@ const CLI_OPTIONS: Record<string, boolean> = {
   dir: false,
   round: false,
   mode: false,
+  case: false,
   'prior-plans': false,
   returns: false,
   answers: false,
@@ -305,7 +378,7 @@ const CLI_OPTIONS: Record<string, boolean> = {
   'brief-out': false,
 };
 const CLI_USAGE =
-  'node <技能目录>/tools/authoring-brief.ts --run <运行目录> [--round <n>] [--mode <initial|rework_gate|rework_device|fidelity_fix>] [--prior-plans <...>] [--returns <...>] [--answers <...>] [--attributions <...>] [--brief-out <输出目录>]';
+  'node <技能目录>/tools/authoring-brief.ts --run <运行目录> [--round <n>] [--case <序号或autoid>] [--mode <initial|rework_gate|rework_device|fidelity_fix>] [--prior-plans <...>] [--returns <...>] [--answers <...>] [--attributions <...>] [--brief-out <输出目录>]';
 
 export async function main(argv: string[]): Promise<number> {
   try {
@@ -318,6 +391,7 @@ export async function main(argv: string[]): Promise<number> {
     const isStructured =
       args.round !== undefined
       || args.mode !== undefined
+      || args.case !== undefined
       || args['prior-plans'] !== undefined
       || args.returns !== undefined
       || args.answers !== undefined
@@ -339,6 +413,7 @@ export async function main(argv: string[]): Promise<number> {
       runDir: targetDir,
       round,
       ...(mode ? { mode } : {}),
+      ...(args.case !== undefined ? { caseFilter: args.case } : {}),
       ...(args['prior-plans'] !== undefined ? { priorPlans: args['prior-plans'] } : {}),
       ...(args.returns !== undefined ? { returns: args.returns } : {}),
       ...(args.answers !== undefined ? { answers: args.answers } : {}),

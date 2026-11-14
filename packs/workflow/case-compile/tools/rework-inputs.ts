@@ -72,14 +72,15 @@ async function resolveCasePlanFromTarget(
     for (const name of names) {
       const fileResolved = resolveExistingFileInsideCwd(cwd, join(dir.relative, name), flagLabel);
       const parsed = parsedPlanFile(fileResolved.relative, await readFile(fileResolved.canonical));
-      if (isRecord(parsed) && typeof parsed.item === 'string' && caseIds.has(parsed.item)) {
+      if (!isRecord(parsed) || Array.isArray(parsed.items)) continue;
+      if (typeof parsed.item === 'string' && caseIds.has(parsed.item)) {
         return {
           path: fileResolved.relative,
           snapshot: parsePriorPlanSnapshot(parsed, caseIds, fileResolved.relative),
         };
       }
     }
-    throw new Error(`不存在：在上一轮计划目录 ${dir.relative} 中未找到用例 ${[...caseIds][0]} 的计划文件`);
+    throw new Error(`不存在：在上一轮计划目录 ${dir.relative} 中未找到用例 ${[...caseIds][0]} 的单条计划文件`);
   }
   const fileResolved = resolveExistingFileInsideCwd(cwd, targetArg, flagLabel);
   const parsed = parsedPlanFile(fileResolved.relative, await readFile(fileResolved.canonical));
@@ -127,7 +128,7 @@ async function loadDeviceEvidenceFromDir(
     throw new Error('参数无效：index.json 解析后超出返还目录');
   }
   const returnsIndex = parsedPlanFile(indexResolved.relative, await readFile(indexResolved.canonical));
-  if (!isRecord(returnsIndex) || !Array.isArray(returnsIndex.jobs)) {
+  if (!isRecord(returnsIndex) || returnsIndex.schema !== 'device-returns@1' || !Array.isArray(returnsIndex.jobs)) {
     throw new Error(`参数无效：${indexResolved.relative} 不是合法的 device-returns@1 索引文件`);
   }
 
@@ -137,14 +138,21 @@ async function loadDeviceEvidenceFromDir(
   for (let i = jobs.length - 1; i >= 0; i--) {
     const job = jobs[i];
     if (!Array.isArray(job.rows)) continue;
-    const hit = job.rows.find((r) => isRecord(r) && typeof r.item === 'string' && caseIds.has(r.item));
+    const hit = job.rows.find(
+      (r) =>
+        isRecord(r)
+        && ((typeof r.item === 'string' && caseIds.has(r.item))
+          || (typeof r.autoid === 'string' && caseIds.has(r.autoid))),
+    );
     if (isRecord(hit)) {
       matchedRow = hit;
       break;
     }
   }
   if (!matchedRow) {
-    return null;
+    throw new Error(
+      `参数无效：返还目录 ${returnsDir.relative} 的 index.json 中不含当前用例 ${[...caseIds][0]}（请检查 --prior-returns 是否传错运行或目录）`,
+    );
   }
 
   let logText: string | null = null;
@@ -199,6 +207,74 @@ async function loadDeviceEvidenceFromDir(
   });
 }
 
+function assertAnswerPayloadShape(text: string, label: string): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const isWrongRecord = (obj: Record<string, unknown>): boolean =>
+    Array.isArray(obj.items)
+    || obj.schema === 'device-returns@1'
+    || isRecord(obj.cases)
+    || (
+      !('errors' in obj)
+      && !('result' in obj)
+      && !('acceptance' in obj)
+      && !('call_result' in obj)
+      && !('original_cases' in obj)
+    );
+
+  if (label.endsWith('.json') || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      if (label.endsWith('.json')) {
+        throw new Error(`参数无效：--prior-answers 文件 ${label} 不是合法 JSON`);
+      }
+      parsed = null;
+    }
+    if (parsed !== null) {
+      if (!isRecord(parsed) || isWrongRecord(parsed)) {
+        throw new Error(
+          `参数无效：--prior-answers 文件 ${label} 不是合法的 submit_result/answer 响应（禁止传入 submission.json、index.json 或 notes.json）`,
+        );
+      }
+      return;
+    }
+  }
+
+  for (const rawLine of trimmed.replace(/\r/g, '').split('\n')) {
+    const line = rawLine.trim();
+    if (!line.startsWith('{') || !line.endsWith('}')) continue;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (isRecord(parsed) && isWrongRecord(parsed)) {
+        throw new Error(
+          `参数无效：--prior-answers 文件 ${label} 内嵌的 JSON 不是合法的 submit_result/answer 响应`,
+        );
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('参数无效：')) throw e;
+    }
+  }
+}
+
+function assertAttributionPayloadShape(raw: unknown, label: string): void {
+  if (!isRecord(raw) || (Array.isArray(raw.items) && !isRecord(raw.cases)) || raw.schema === 'device-returns@1') {
+    throw new Error(`参数无效：--prior-notes 文件 ${label} 不是合法的 notes.json 或归因记录`);
+  }
+  const hasNotesCases = isRecord(raw.cases);
+  const hasAttrFields =
+    typeof raw.judged === 'string'
+    || typeof raw.conclusion === 'string'
+    || typeof raw.summary === 'string'
+    || typeof raw.remedy === 'string'
+    || typeof raw.fix_direction === 'string'
+    || typeof raw.next_step === 'string';
+  if (!hasNotesCases && !hasAttrFields) {
+    throw new Error(`参数无效：--prior-notes 文件 ${label} 缺少 cases 或归因字段（judged/remedy）`);
+  }
+}
+
 async function loadGateRefusalsFromTarget(
   cwd: ResolvedCwd,
   answerArg: string,
@@ -217,12 +293,14 @@ async function loadGateRefusalsFromTarget(
     for (const name of names) {
       const resolved = resolveExistingFileInsideCwd(cwd, join(dir.relative, name), '--prior-answers');
       const txt = await readFile(resolved.canonical, 'utf8');
+      assertAnswerPayloadShape(txt, resolved.relative);
       collected.push(...parseGateRefusalsFromAnswer(txt, caseIds, round));
     }
     return collected;
   }
   const resolved = resolveExistingFileInsideCwd(cwd, answerArg, '--prior-answers');
   const txt = await readFile(resolved.canonical, 'utf8');
+  assertAnswerPayloadShape(txt, resolved.relative);
   return parseGateRefusalsFromAnswer(txt, caseIds, round);
 }
 
@@ -230,7 +308,6 @@ async function loadAttributionFromTarget(
   cwd: ResolvedCwd,
   noteArg: string,
   caseIds: ReadonlySet<string>,
-  round: number,
 ): Promise<PriorAttributionItem | null> {
   const checked = resolveInsideCwd(cwd, noteArg, '--prior-notes');
   const dirTry = await lstat(checked.lexical).catch(() => null);
@@ -243,14 +320,16 @@ async function loadAttributionFromTarget(
     for (const name of names) {
       const resolved = resolveExistingFileInsideCwd(cwd, join(dir.relative, name), '--prior-notes');
       const raw = parsedPlanFile(resolved.relative, await readFile(resolved.canonical));
-      const matched = parsePriorAttribution(raw, caseIds, round, relative(cwd.canonical, resolved.canonical));
+      assertAttributionPayloadShape(raw, resolved.relative);
+      const matched = parsePriorAttribution(raw, caseIds, null, relative(cwd.canonical, resolved.canonical));
       if (matched) return matched;
     }
     return null;
   }
   const resolved = resolveExistingFileInsideCwd(cwd, noteArg, '--prior-notes');
   const raw = parsedPlanFile(resolved.relative, await readFile(resolved.canonical));
-  return parsePriorAttribution(raw, caseIds, round, resolved.relative);
+  assertAttributionPayloadShape(raw, resolved.relative);
+  return parsePriorAttribution(raw, caseIds, null, resolved.relative);
 }
 
 export async function loadCasePriorRounds(params: {
@@ -262,7 +341,11 @@ export async function loadCasePriorRounds(params: {
   priorAnswersArg?: string;
   priorNotesArg?: string;
   markers?: readonly string[];
-}): Promise<{ rounds: PriorRoundRecord[]; streak: StreakAnalysis }> {
+}): Promise<{
+  rounds: PriorRoundRecord[];
+  streak: StreakAnalysis;
+  unrecordedAttribution: PriorAttributionItem | null;
+}> {
   const { cwd, round, caseIds, priorPlansArg, priorReturnsArg, priorAnswersArg, priorNotesArg, markers } = params;
   const rawLists = [
     parseCommaRoundList(priorPlansArg, null, '--prior-plans'),
@@ -281,6 +364,7 @@ export async function loadCasePriorRounds(params: {
     return {
       rounds: [],
       streak: analyzeRoundHistory({ currentRound: round, rounds: [] }),
+      unrecordedAttribution: null,
     };
   }
 
@@ -289,7 +373,23 @@ export async function loadCasePriorRounds(params: {
   const answers = parseCommaRoundList(priorAnswersArg, priorCount, '--prior-answers');
   const notes = parseCommaRoundList(priorNotesArg, priorCount, '--prior-notes');
 
-  const rounds: PriorRoundRecord[] = [];
+  const roundMap = new Map<number, PriorRoundRecord>();
+  const ensureRound = (r: number): PriorRoundRecord => {
+    let rec = roundMap.get(r);
+    if (!rec) {
+      rec = {
+        round: r,
+        deviceEvidence: null,
+        gateRefusals: [],
+        attribution: null,
+        errorSignatures: [],
+      };
+      roundMap.set(r, rec);
+    }
+    return rec;
+  };
+  let unrecordedAttribution: PriorAttributionItem | null = null;
+
   for (let i = 0; i < priorCount; i++) {
     const r = i + 1;
     const planArg = plans[i] ?? null;
@@ -309,26 +409,38 @@ export async function loadCasePriorRounds(params: {
       ? await loadGateRefusalsFromTarget(cwd, answerArg, caseIds, r)
       : [];
     const attribution = noteArg
-      ? await loadAttributionFromTarget(cwd, noteArg, caseIds, r)
+      ? await loadAttributionFromTarget(cwd, noteArg, caseIds)
       : null;
 
-    const sigs: string[] = [];
-    for (const g of gateRefusals) sigs.push(`gate:${g.code}`);
-    if (deviceEvidence) sigs.push(...deviceEvidence.errorSignatures);
-    if (sigs.length === 0 && attribution?.judged) {
-      sigs.push(`note:${attribution.layer ? attribution.layer + ':' : ''}${attribution.judged.slice(0, 64)}`);
+    if (planArg || returnsArg || answerArg) {
+      const rec = ensureRound(r);
+      if (loadedPlan) {
+        rec.planSource = loadedPlan.path;
+        rec.plan = loadedPlan.snapshot;
+      }
+      if (deviceEvidence) rec.deviceEvidence = deviceEvidence;
+      if (gateRefusals.length > 0) rec.gateRefusals.push(...gateRefusals);
+      for (const g of gateRefusals) rec.errorSignatures.push(`gate:${g.code}`);
+      if (deviceEvidence) rec.errorSignatures.push(...deviceEvidence.errorSignatures);
     }
 
-    rounds.push({
-      round: r,
-      ...(loadedPlan ? { planSource: loadedPlan.path, plan: loadedPlan.snapshot } : {}),
-      deviceEvidence,
-      gateRefusals,
-      attribution,
-      errorSignatures: sigs,
-    });
+    if (attribution) {
+      if (attribution.roundRecorded !== false && attribution.round !== null) {
+        const targetRec = ensureRound(attribution.round);
+        targetRec.attribution = attribution;
+        if (targetRec.errorSignatures.length === 0 && attribution.judged) {
+          targetRec.errorSignatures.push(
+            `note:${attribution.layer ? attribution.layer + ':' : ''}${attribution.judged.slice(0, 64)}`,
+          );
+        }
+      } else {
+        // Notes JSON omitted `round`: keep strictly un-numbered so we never invent a `第 1 轮` claim.
+        unrecordedAttribution = attribution;
+      }
+    }
   }
 
+  const rounds = [...roundMap.values()].sort((a, b) => a.round - b.round);
   const streak = analyzeRoundHistory({ currentRound: round, rounds });
-  return { rounds, streak };
+  return { rounds, streak, unrecordedAttribution };
 }
