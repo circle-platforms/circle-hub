@@ -14,7 +14,7 @@ function permissionSpy() {
 
 for(const flag of [undefined,false] as const)test(`verified pending with legacy flag ${String(flag)} preserves established dispatch without consulting assignment permissions`,async t=>{
   const c=await setup();t.after(()=>c.close());
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),false,'the new policy really would deny this existing user');
   const spy=permissionSpy();
   const service=new DispatchService({...c.service.options,enforceEnvironmentAssignments:flag,environmentAccess:spy.port});
@@ -52,7 +52,7 @@ for(const mode of ['lineage','expiry'] as const)test(`stage-off preserves existi
 test('strong assignment-policy fixtures explicitly enable the new guard and retain denial assertions',async t=>{
   const c=await setup();t.after(()=>c.close());
   assert.equal(c.service.options.enforceEnvironmentAssignments,true);
-  await c.kit.authorizations.unassignResource(c.admin,c.executor.id,c.environmentTeam.id);
+  await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
   assert.equal(state.error_code,'SOURCE_NOT_PERMITTED');assert.equal(state.outcome,'not_dispatched');
   assert.equal(c.calls.length,0);

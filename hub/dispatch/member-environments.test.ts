@@ -1,3 +1,4 @@
+import {registerEnvironment} from './testing/environments.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Database, createPool, type Principal, type Transaction } from '../records/api.ts';
@@ -16,7 +17,7 @@ import { Refusal } from '../runs/engine/errors.ts';
 async function world(t: import('node:test').TestContext, leaseNow?: () => Date) {
   const records = await openTestRecords(); t.after(()=>records.close());
   const db = new Database(createPool(records.database)); t.after(()=>db.end());
-  const leases = new LeaseService(db, leaseNow ? {now:async()=>leaseNow()} : {});
+  const leases = new LeaseService(db, {...(leaseNow ? {now:async()=>leaseNow()} : {}),catalog:records.testEnvironments});
   const admin = (await records.principals.bootstrapAdmin('合成管理员')).user;
   const alice = await records.principals.createUser(admin,'合成甲');
   const bob = await records.principals.createUser(admin,'合成乙');
@@ -25,9 +26,26 @@ async function world(t: import('node:test').TestContext, leaseNow?: () => Date) 
   const registry = new ExecutorRegistry(records);
   const first = await registry.add(admin,{...definition('http://127.0.0.1:1/mcp'),target:'synthetic-visible',resources:['synthetic/zone/allowed']});
   const second = await registry.add(admin,{...definition('http://127.0.0.1:1/mcp'),target:'synthetic-hidden',resources:['synthetic/zone/hidden','synthetic/zone/allowed']});
-  const permission = (actor: Principal,id:string,tx?:Transaction)=>canUseEnvironment(records,actor,id,tx);
-  const environments = new MemberEnvironments(records,registry,leases,permission);
-  return {records,db,leases,admin,alice,bob,team,registry,first,second,permission,environments};
+  let firstEnvironment=await registerEnvironment(records,admin,{name:first.source.target,target:first.source.target,executors:[first.id],resources:first.source.resources,owner:admin.id});
+  let secondEnvironment=await registerEnvironment(records,admin,{name:second.source.target,target:second.source.target,executors:[second.id],resources:second.source.resources,owner:admin.id});
+  await records.testEnvironments.inherit(admin,{collect:async()=>({workflows:[],executors:[],sourceRecords:[]})});
+  const update=async(by:Principal,id:string,input:typeof first.source)=>{
+    const value=await registry.update(by,id,input);
+    const environment=id===first.id?firstEnvironment:secondEnvironment;
+    const {schema,id:envId,...content}=environment;
+    const updated=await records.testEnvironments.update(by,envId,{...content,name:content.name!,target:content.target!,resources:value.source.resources.map(key=>({key,owner:admin.id,registered_at:new Date().toISOString()}))});
+    if(id===first.id)firstEnvironment=updated;else secondEnvironment=updated;
+    return value;
+  };
+  const disable=async(by:Principal,id:string)=>{
+    await registry.disable(by,id);
+    const environment=id===first.id?firstEnvironment:secondEnvironment;
+    const {schema,id:envId,...content}=environment;
+    const updated=await records.testEnvironments.update(by,envId,{...content,name:content.name!,target:content.target!,enabled:false});
+    if(id===first.id)firstEnvironment=updated;else secondEnvironment=updated;
+  };
+  const environments = new MemberEnvironments(records,registry,leases);
+  return {records,db,leases,admin,alice,bob,team,registry,first,second,environments,update,disable,get firstEnvironment(){return firstEnvironment;},get secondEnvironment(){return secondEnvironment;}};
 }
 
 test('only assigned environments are visible and booking uses exact keys from enabled authorized providers', {timeout:60000}, async t => {
@@ -35,23 +53,23 @@ test('only assigned environments are visible and booking uses exact keys from en
   assert.deepEqual(await w.environments.list(w.alice),[]);
   assert.deepEqual(await w.environments.list(w.admin),[]);
   assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed']))?.code,'SOURCE_NOT_PERMITTED');
-  await w.records.authorizations.assignResource(w.admin,w.first.id,w.team.id);
+  await w.records.authorizations.assignResource(w.admin,w.firstEnvironment.id,w.team.id);
   assert.deepEqual((await w.environments.list(w.alice)).map(row=>row.name),['synthetic-visible']);
   assert.deepEqual(await w.environments.list(w.bob),[]);
-  assert.equal(await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed']),null);
+  assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed']))?.code,'SOURCE_NOT_PERMITTED','unassigned overlapping target is still an ambiguity before access filtering');
   assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed','synthetic/zone/hidden']))?.code,'SOURCE_NOT_PERMITTED');
   assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed/child']))?.code,'SOURCE_NOT_PERMITTED');
   assert.equal((await w.environments.authorizeKeys(w.alice,['unregistered/non-environment']))?.code,'SOURCE_NOT_PERMITTED');
   assert.equal(await w.environments.canUse(w.alice,w.second.id),false,'overlapping keys do not authorize another provider');
-  await w.records.authorizations.assignResource(w.admin,w.second.id,w.bob.id);
+  await w.records.authorizations.assignResource(w.admin,w.secondEnvironment.id,w.bob.id);
   assert.deepEqual((await w.environments.list(w.bob)).map(row=>row.name),['synthetic-hidden']);
   await withRequestPermissions(w.records.artifacts,w.alice,async()=>{
-    await w.records.authorizations.unassignResource(w.admin,w.first.id,w.team.id);
+    await w.records.authorizations.unassignResource(w.admin,w.firstEnvironment.id,w.team.id);
     assert.equal(await w.environments.canUse(w.alice,w.first.id),false,'dispatch cannot borrow an older request snapshot');
     assert.deepEqual(await w.environments.list(w.alice),[]);
   });
-  await w.records.authorizations.assignResource(w.admin,w.first.id,w.alice.id);
-  await w.registry.disable(w.admin,w.first.id);
+  await w.records.authorizations.assignResource(w.admin,w.firstEnvironment.id,w.alice.id);
+  await w.disable(w.admin,w.first.id);
   assert.equal(await w.environments.canUse(w.alice,w.first.id),false);
   assert.equal((await w.environments.authorizeKeys(w.alice,['synthetic/zone/allowed']))?.code,'SOURCE_NOT_PERMITTED','unauthorized overlap cannot bypass disabled provider');
   const disabled = await w.environments.list(w.alice);
@@ -60,20 +78,21 @@ test('only assigned environments are visible and booking uses exact keys from en
 
 test('member occupancy shows names and times only within assigned keys and never calls missing reads free', {timeout:60000}, async t => {
   const w = await world(t);
-  await w.records.authorizations.assignResource(w.admin,w.first.id,w.alice.id);
+  await w.records.authorizations.assignResource(w.admin,w.firstEnvironment.id,w.alice.id);
   const run = 'run_0'+'a'.repeat(25), otherRun = 'run_0'+'b'.repeat(25);
   assert.equal((await w.leases.acquire({keys:['synthetic/zone/allowed'],prefix:'synthetic/',holder:{user:w.bob.id,run},ttlSeconds:300,maxTtlSeconds:600})).ok,true);
   assert.equal((await w.leases.acquire({keys:['synthetic/zone/hidden'],prefix:'synthetic/',holder:{user:w.admin.id,run:otherRun},ttlSeconds:300,maxTtlSeconds:600})).ok,true);
   const visible = await w.environments.list(w.alice);
   assert.equal(visible.length,1);assert.equal(visible[0].occupancy?.[0].name,'其他成员');
   assert.equal((await w.environments.list({...w.alice,role:'admin'}))[0].occupancy?.[0].name,'其他成员','claimed admin role cannot expose a holder');
-  assert.equal((await w.leases.register({prefix:'synthetic/zone/',declaredPrefix:'synthetic/',owner:w.alice.id,by:w.alice.id,reason:'合成登记'})).ok,true);
-  assert.equal((await w.environments.list(w.alice))[0].occupancy?.[0].name,w.bob.name,'the current registered prefix owner can see the name');
+  const {schema,id,...content}=w.firstEnvironment;
+  await w.records.testEnvironments.update(w.admin,id,{...content,name:content.name!,target:content.target!,resources:content.resources.map(row=>({...row,owner:w.alice.id}))});
+  assert.equal((await w.environments.list(w.alice))[0].occupancy?.[0].name,w.bob.name,'the current catalog resource owner can see the name');
   assert.equal(visible[0].occupancy?.[0].mine,false);assert.ok(visible[0].occupancy?.[0].since);
   assert.ok(visible[0].occupancy?.[0].until);
   const text = JSON.stringify(visible);
-  for (const hidden of [w.first.id,w.second.id,w.admin.id,w.alice.id,w.bob.id,w.team.id,run,otherRun,'synthetic/zone/allowed','synthetic/zone/hidden','synthetic-hidden']) assert.equal(text.includes(hidden),false,hidden);
-  const failed = new MemberEnvironments(w.records,w.registry,{view:async()=>{throw new Error('synthetic unavailable');},registrations:async()=>[]} as unknown as Pick<LeaseService,'view'|'registrations'>,w.permission);
+  for (const hidden of [w.first.id,w.firstEnvironment.id,w.second.id,w.secondEnvironment.id,w.admin.id,w.alice.id,w.bob.id,w.team.id,run,otherRun,'synthetic/zone/allowed','synthetic/zone/hidden','synthetic-hidden']) assert.equal(text.includes(hidden),false,hidden);
+  const failed = new MemberEnvironments(w.records,w.registry,{view:async()=>{throw new Error('synthetic unavailable');},registrations:async()=>[]} as unknown as Pick<LeaseService,'view'|'registrations'>);
   const unknown = await failed.list(w.alice);
   assert.equal(unknown[0].occupancy,null);assert.ok(unknown[0].missing.some(text=>text.includes('未能读取')));
   await w.leases.release({keys:['synthetic/zone/allowed'],holder:{user:w.bob.id,run}});
@@ -83,15 +102,15 @@ test('member occupancy shows names and times only within assigned keys and never
 
 test('revocation keeps only the callers existing occupancy visible, denies extension and permits release', {timeout:60000}, async t => {
   const w = await world(t);
-  const first = await w.registry.update(w.admin,w.first.id,{...w.first.source,resources:['synthetic/zone/allowed','synthetic/zone/other']});
-  await w.registry.update(w.admin,w.second.id,{...w.second.source,resources:['synthetic/zone/hidden']});
-  await w.records.authorizations.assignResource(w.admin,w.first.id,w.team.id);
+  const first = await w.update(w.admin,w.first.id,{...w.first.source,resources:['synthetic/zone/allowed','synthetic/zone/other']});
+  await w.update(w.admin,w.second.id,{...w.second.source,resources:['synthetic/zone/hidden']});
+  await w.records.authorizations.assignResource(w.admin,w.firstEnvironment.id,w.team.id);
   const ownRun = 'run_0'+'c'.repeat(25), otherRun = 'run_0'+'d'.repeat(25);
   assert.equal((await w.leases.acquire({keys:['synthetic/zone/allowed'],prefix:'synthetic/',holder:{user:w.alice.id,run:ownRun},ttlSeconds:300,maxTtlSeconds:600})).ok,true);
   assert.equal((await w.leases.acquire({keys:['synthetic/zone/other','synthetic/zone/hidden'],prefix:'synthetic/',holder:{user:w.bob.id,run:otherRun},ttlSeconds:300,maxTtlSeconds:600})).ok,true);
   const leaseBytes = async () => JSON.stringify((await w.db.query('SELECT to_jsonb(l) AS row FROM leases l ORDER BY key')).rows);
   const before = await leaseBytes();
-  await w.records.authorizations.unassignResource(w.admin,w.first.id,w.team.id);
+  await w.records.authorizations.unassignResource(w.admin,w.firstEnvironment.id,w.team.id);
   assert.deepEqual(await w.environments.list(w.alice),[],'no unassigned named catalog entry is inferred, even without overlap');
   const held = await w.environments.unattributedHoldings(w.alice);
   assert.ok(held);assert.equal(held.length,1,'the callers still-held booking remains visible without a target');
@@ -110,7 +129,7 @@ test('revocation keeps only the callers existing occupancy visible, denies exten
   const workflow = {pack:{id:'synthetic-workflow'},workflow:{leases:{prefix:'synthetic/',max_ttl_seconds:600}}} as LoadedWorkflow;
   await assert.rejects(grantLeases(ctx,w.alice,workflow,[{op:'extend',keys:['synthetic/zone/allowed'],ttl_seconds:60}],ownRun,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='SOURCE_NOT_PERMITTED');
   assert.equal(await leaseBytes(),before,'revocation, viewing and denied extension change no lease byte');
-  await w.registry.disable(w.admin,w.first.id);
+  await w.disable(w.admin,w.first.id);
   assert.deepEqual(await w.environments.list(w.alice),[]);
   const disabled = await w.environments.unattributedHoldings(w.alice);
   assert.ok(disabled);assert.equal(disabled[0].assigned,false);assert.equal(disabled[0].can_use,false);
@@ -124,15 +143,15 @@ test('revocation keeps only the callers existing occupancy visible, denies exten
 test('expired own holds do not expose an unassigned environment and disabled remains a separate fact', {timeout:60000}, async t => {
   let at = new Date('2026-11-14T00:00:00.000Z');
   const w = await world(t,()=>at);
-  await w.registry.update(w.admin,w.second.id,{...w.second.source,resources:['synthetic/zone/hidden']});
-  await w.records.authorizations.assignResource(w.admin,w.first.id,w.alice.id);
-  await w.registry.disable(w.admin,w.first.id);
+  await w.update(w.admin,w.second.id,{...w.second.source,resources:['synthetic/zone/hidden']});
+  await w.records.authorizations.assignResource(w.admin,w.firstEnvironment.id,w.alice.id);
+  await w.disable(w.admin,w.first.id);
   const assigned = (await w.environments.list(w.alice))[0];
   assert.equal(assigned.assigned,true);assert.equal(assigned.can_use,false);assert.equal(assigned.enabled,false);
   assert.equal(assigned.missing.some(reason=>reason.includes('没有分配')),false);
   assert.equal((await w.leases.acquire({keys:['synthetic/zone/allowed'],prefix:'synthetic/',holder:{user:w.alice.id,run:'run_0'+'e'.repeat(25)},ttlSeconds:30,maxTtlSeconds:60})).ok,true);
   assert.deepEqual(await w.environments.unattributedHoldings(w.alice),[],'disabled but assigned is not a missing assignment');
-  await w.records.authorizations.unassignResource(w.admin,w.first.id,w.alice.id);
+  await w.records.authorizations.unassignResource(w.admin,w.firstEnvironment.id,w.alice.id);
   assert.equal((await w.environments.unattributedHoldings(w.alice))?.length,1);
   const before = (await w.db.query('SELECT to_jsonb(l) AS row FROM leases l ORDER BY key')).rows;
   at = new Date(at.getTime()+31_000);
@@ -144,23 +163,23 @@ test('expired own holds do not expose an unassigned environment and disabled rem
 test('overlapping, nested and fully matching resource declarations cannot name an unattributed own booking', {timeout:60000}, async t=>{
   const w = await world(t);
   const key = 'synthetic/zone/allowed', child = key+'/child';
-  await w.registry.update(w.admin,w.second.id,{...w.second.source,resources:[key,child]});
+  await w.update(w.admin,w.second.id,{...w.second.source,resources:[key,child]});
   const third = await w.registry.add(w.admin,{...definition('http://127.0.0.1:1/mcp'),target:'synthetic-never-assigned-parent',resources:['synthetic/zone']});
-  await w.records.authorizations.assignResource(w.admin,w.first.id,w.alice.id);
+  await w.records.authorizations.assignResource(w.admin,w.firstEnvironment.id,w.alice.id);
   const run = 'run_0'+'f'.repeat(25);
   assert.equal((await w.leases.acquire({keys:[key,child],prefix:'synthetic/',holder:{user:w.alice.id,run},ttlSeconds:300,maxTtlSeconds:600})).ok,true);
   assert.deepEqual((await w.environments.list(w.alice)).map(row=>row.name),[w.first.source.target]);
   const partial = await w.environments.unattributedHoldings(w.alice);
   assert.equal(partial?.length,1,'nested keys do not inherit the assigned parent key');
-  await w.records.authorizations.unassignResource(w.admin,w.first.id,w.alice.id);
+  await w.records.authorizations.unassignResource(w.admin,w.firstEnvironment.id,w.alice.id);
   assert.deepEqual(await w.environments.list(w.alice),[]);
   const held = await w.environments.unattributedHoldings(w.alice);
   assert.ok(held);assert.equal(held.length,1);assert.equal(held[0].booking_run,run);assert.equal(held[0].target,null);
   const text = JSON.stringify(held);
-  for (const hidden of [w.first.source.target,w.second.source.target,third.source.target,w.first.id,w.second.id,third.id,w.alice.id,w.bob.id,w.team.id,key,child,'synthetic/zone']) assert.equal(text.includes(hidden),false,hidden);
+  for (const hidden of [w.first.source.target,w.second.source.target,third.source.target,w.firstEnvironment.id,w.second.id,third.id,w.alice.id,w.bob.id,w.team.id,key,child,'synthetic/zone']) assert.equal(text.includes(hidden),false,hidden);
   assert.equal(await w.environments.canUse(w.alice,w.first.id),false);
   assert.equal(await w.environments.canUse(w.alice,w.second.id),false);
   assert.deepEqual(await w.environments.unattributedHoldings(w.bob),[]);
-  const failed = new MemberEnvironments(w.records,w.registry,{view:async()=>{throw new Error('synthetic unavailable');},registrations:async()=>[]} as unknown as Pick<LeaseService,'view'|'registrations'>,w.permission);
+  const failed = new MemberEnvironments(w.records,w.registry,{view:async()=>{throw new Error('synthetic unavailable');},registrations:async()=>[]} as unknown as Pick<LeaseService,'view'|'registrations'>);
   assert.equal(await failed.unattributedHoldings(w.alice),null,'unread holdings are unknown, never an empty success');
 });

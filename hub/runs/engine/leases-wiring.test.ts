@@ -1,3 +1,4 @@
+import {registerEnvironment} from '../../dispatch/testing/environments.ts';
 // The lease wiring of start_run (core step C3): a workflow that declares leases has its projection's lease_requests
 // validated (keys under the declared prefix, TTL under the cap, requests only from a workflow that declared leases),
 // acquired before the run record is stored, and written into RunRecord.leases; a failed store releases the lease at
@@ -156,8 +157,9 @@ before(async () => {
       'meadow/endless/k', 'meadow/endless/untouched',
     ],
   });
-  for (const actor of [h.alice, h.bob]) await h.kit.authorizations.assignResource(h.admin, environment.id, actor.id);
-  environments = new MemberEnvironments(h.kit, registry, leases, (actor, id) => canUseEnvironment(h.kit, actor, id));
+  const catalog=await registerEnvironment(h.kit,h.admin,{name:environment.source.target,target:environment.source.target,executors:[environment.id],resources:environment.source.resources,owner:h.admin.id});
+  for (const actor of [h.alice, h.bob]) await h.kit.authorizations.assignResource(h.admin, catalog.id, actor.id);
+  environments = new MemberEnvironments(h.kit, registry, leases);
   map = await h.upload(h.alice, toyMap(standardDocument()));
   packRoot = await mkdtemp(join(tmpdir(), 'circle-hub-leases-engine-'));
   const specs: Array<[string, PackSpec]> = [
@@ -418,7 +420,7 @@ it('freezes the owner, holder, third user and admin views without leaking names 
   const third = { ...thirdUser };
   const key = ["meadow","/visib","ility/","k"].join('');
   const holderRun = 'run_0123456789abcdefghjkmnpqrs';
-  assert.ok((await leases.register({ prefix: 'meadow/visibility/', declaredPrefix: 'meadow/', owner: h.alice.id, by: h.alice.id, reason: '合成登记' })).ok);
+  await registerEnvironment(h.kit,h.admin,{name:'合成占用可见性',target:'synthetic-visibility',prefixes:['meadow/visibility/'],owner:h.alice.id});
   assert.ok((await leases.acquire({ keys: [key], holder: { user: h.bob.id, run: holderRun }, prefix: 'meadow/' })).ok);
   const acquiredSince = (await leases.view('meadow/visibility/')).entries[0]!.since;
   const spec = leasesPack('toy-visibility', { declare: { prefix: 'meadow/' }, askContext: true, projection: plainProjection });
@@ -445,7 +447,7 @@ it('freezes the owner, holder, third user and admin views without leaking names 
 
 it('only owners and administrators force release, and pending jobs or mixed ownership reject before mutation', async () => {
   const key='meadow/force/owned/k'; const adminKey='meadow/force/owned/admin'; const pending='meadow/force/pending/k';
-  for(const prefix of ['meadow/force/owned/','meadow/force/pending/']) assert.ok((await leases.register({prefix,declaredPrefix:'meadow/',owner:h.alice.id,by:h.alice.id,reason:'合成登记'})).ok);
+  for(const [index,prefix] of ['meadow/force/owned/','meadow/force/pending/'].entries()) await registerEnvironment(h.kit,h.admin,{name:'合成强释'+index,target:'synthetic-force-'+index,prefixes:[prefix],owner:h.alice.id});
   for(const k of [key,adminKey,pending,'meadow/force/other/k']) assert.ok((await leases.acquire({keys:[k],prefix:'meadow/',holder:{user:h.bob.id,run:'run_0123456789abcdefghjkmnpqrs'}})).ok);
   const add=async(id:string,keys:string[],reason='合成强制释放')=>{
     await h.workflows.add(await writePack(packRoot,leasesPack(id,{declare:{prefix:'meadow/'},askContext:true,projection:opProjection(JSON.stringify([{op:'force_release',keys,reason}]))})));

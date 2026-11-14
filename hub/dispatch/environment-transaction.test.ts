@@ -35,21 +35,22 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
     return execute.call(this, text, values, tx);
   };
   t.after(() => { Database.prototype.query = originalQuery; });
+  const canonical = new MemberEnvironments(records, new ExecutorRegistry(records), c.leases);
   const permission = async (actor: Parameters<typeof canUseEnvironment>[1], executor: string, tx?: Transaction) => {
     if (tx) {
       transactionChecks++;
       assert.equal(tx, scope.getStore(), 'fresh permission query must receive the held outer transaction');
       if (revoke && !revoked) {
         // The independent fixture connection commits after the intent transaction began, before its fresh read.
-        await c.kit.authorizations.unassignResource(c.admin, c.executor.id, c.environmentTeam.id);
+        await c.kit.authorizations.unassignResource(c.admin, c.environment.id, c.environmentTeam.id);
         revoked = true;
         const old = requestPermissions(c.owner.id);
-        assert.ok(old?.enabled(old.latest('resource_assign', c.environmentTeam.id, c.executor.id)), 'an older request snapshot still carries the grant');
+        assert.ok(old?.enabled(old.latest('resource_assign', c.environmentTeam.id, c.environment.id)), 'an older request snapshot still carries the grant');
       }
     }
-    return canUseEnvironment(records, actor, executor, mode==='broken-port'?undefined:tx);
+    return canonical.permission(actor,executor,mode==='broken-port'?undefined:tx);
   };
-  const environmentAccess = new MemberEnvironments(records, new ExecutorRegistry(records), c.leases, permission);
+  const environmentAccess = {inheritance:async(tx?:Transaction)=>{assert.equal(tx,scope.getStore());return {completed:true};},canUse:canonical.canUse.bind(canonical),permission};
   const service = new DispatchService({ ...c.service.options, records, environmentAccess });
   const result = await withRequestPermissions(records.artifacts, c.owner, () => service.dispatch(c.admin, c.run, c.executor.id));
   if(mode==='broken-port'){
