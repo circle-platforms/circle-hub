@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { uiLabelOf, type EnvironmentState } from '../../contracts/generated/vocabulary.ts';
-import type { EnvironmentCalls, EnvironmentFacts } from '../dispatch/api.ts';
+import type { EnvironmentCalls, EnvironmentFacts, EnvironmentReadiness } from '../dispatch/api.ts';
 import type { DispatchView, ExecutorView, JobView } from './api.ts';
 import { testConsoleCredentials, createTestServer, type TestServer, type TestUser } from './testing.ts';
 
@@ -33,17 +33,45 @@ environments[0].calls_24h = calls;
 environments[1].calls_24h = { ...calls, executor: id(2), calls: 0, median_ms: null, slowest_ms: null, last_at: null };
 environments[2].calls_24h = { ...calls, executor: id(3), partial: true };
 const jobsByRun = new Map<string, JobView[]>();
+const readinessByTarget = new Map<string, EnvironmentReadiness>();
+const readinessCalls: Array<[string, string]> = [];
+const instant = '2026-11-14T00:00:00.000Z';
+function blockedReadiness(target: string, executor?: string): EnvironmentReadiness {
+  return {
+    target,
+    observed_at: instant,
+    executors: [{
+      ordinal: 1,
+      ...(executor === undefined ? {} : { executor }),
+      checks: [
+        { condition: 'manifest', label: '清单原件可读且摘要一致', satisfied: false, observed_at: instant, references: [], missing_fact: '受权读取的原件字节与登记摘要不一致', next_action: '请管理员核对该项声明与可读依据后重读' },
+        { condition: 'baseline.0', label: '基线登记（第 1 项）', satisfied: false, observed_at: instant, references: [], missing_fact: '该声明探针没有基线登记', next_action: '请管理员按声明探针登记基线后重读；本报告不进行现场比较' },
+        { condition: 'evidence.0.0', label: '认证证据原件（第 1 组，第 1 项）', satisfied: null, observed_at: instant, references: [], missing_fact: '原件未取得；不存在、无权或读取策略未放行均不能当作已核对', next_action: '请管理员核对该项声明与可读依据后重读' },
+      ],
+      occupancy: [],
+      baseline_registrations: [],
+    }],
+    limitations: ['仅本地只读观察，未连接网关或设备，未读取秘密值，不是预订或上机许可'],
+  };
+}
 const view: DispatchView = {
   executors: async (by) => {
     if (by.role !== 'admin') throw new Error('只有启用中的管理员能操作执行器和作业');
     return environments;
   },
   jobs: async (_by, run) => jobsByRun.get(run) ?? [],
+  readiness: async (by, target) => {
+    readinessCalls.push([by.id, target]);
+    const found = readinessByTarget.get(target);
+    if (found) return found;
+    throw new Error('private://secret-host/password');
+  },
 };
 
 before(async () => {
   server = await createTestServer();
   server.deps.dispatch = view;
+  readinessByTarget.set('合成运行环境甲', blockedReadiness('合成运行环境甲', id(1)));
 });
 after(async () => {
   await server?.close();
@@ -150,11 +178,45 @@ describe('runtime environments', () => {
     assert.match(rowOf(page, '合成运行环境庚'), /占用该运行环境的作业暂不可读/);
     const memberPage = await send('/console/connections?tab=environments', { headers: { cookie: await signIn((await member()).token) } });
     assert.equal(memberPage.status, 200);
-    assert.doesNotMatch(memberPage.body, /合成运行环境甲|gateway 2\.4\.1/);
-    assert.match(memberPage.body, /业务系统和运行环境的配置仅管理员可见|运行环境仅管理员可见/);
+    assert.doesNotMatch(memberPage.body, /gateway 2\.4\.1|192\.0\.2\.10/);
+    assert.match(memberPage.body, /只读就绪报告|尚无已分配的运行环境|只读报告未知/);
     const retired = await send('/console/api/environments', { headers: { cookie: await signIn(server.admin.token) } });
     assert.equal(retired.status, 404);
     assert.equal(JSON.parse(retired.body).code, 'SOURCE_UNAVAILABLE');
+  });
+
+  test('readiness reports show blocked manifest baseline and evidence checks without inventing links or secrets', async () => {
+    readinessCalls.length = 0;
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    assert.match(page, /data-environment-readiness/);
+    assert.match(page, /data-condition="manifest"/);
+    assert.match(page, /清单原件可读且摘要一致/);
+    assert.match(page, /受权读取的原件字节与登记摘要不一致/);
+    assert.match(page, /data-condition="baseline\.0"/);
+    assert.match(page, /该声明探针没有基线登记/);
+    assert.match(page, /data-condition="evidence\.0\.0"/);
+    assert.match(page, /原件未取得/);
+    assert.match(page, /exe_0{25}1/);
+    assert.ok(readinessCalls.some((call) => call[1] === '合成运行环境甲'));
+    assert.doesNotMatch(page, /href="[^"]*src:/);
+    assert.doesNotMatch(page, /private:\/\/|password=|secret-host/i);
+  });
+
+  test('unwired readiness stays unknown on the environments tab', async () => {
+    const previous = view.readiness;
+    delete view.readiness;
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    assert.match(page, /只读报告未知/);
+    assert.match(page, /报告尚未接线/);
+    view.readiness = previous;
+  });
+
+  test('failed readiness reads stay unknown and never echo private exception text', async () => {
+    readinessByTarget.clear();
+    const page = (await send('/console/connections?tab=environments', { headers: { cookie: await signIn(server.admin.token) } })).body;
+    assert.match(page, /只读报告未知/);
+    assert.doesNotMatch(page, /private:\/\/secret-host\/password|secret-host|password/);
+    readinessByTarget.set('合成运行环境甲', blockedReadiness('合成运行环境甲', id(1)));
   });
 
   test('a task names the environment of its dispatch step and the state it is in', async () => {

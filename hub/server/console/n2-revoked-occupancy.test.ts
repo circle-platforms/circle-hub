@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import type { EnvironmentFacts } from '../../dispatch/api.ts';
+import type { ExecutorView } from '../api.ts';
+import { commands } from './commands.ts';
+import {
+  NO_ASSIGNMENT_LABEL,
+  environmentIsOccupied,
+  environmentLacksAssignment,
+  noAssignmentMark,
+} from './connections.ts';
+
+const state = (facts: Partial<EnvironmentFacts> = {}): EnvironmentFacts => ({
+  executor: 'x',
+  enabled: true,
+  registration: { digest: 'd'.repeat(64), decided_at: '2026-11-01T00:00:00.000Z' },
+  known: { occupancy: true, latest: true, version: true },
+  holding: [],
+  bed_hold: null,
+  latest: null,
+  reported_version: null,
+  missing: [],
+  ...facts,
+});
+
+test('occupied without assignment is marked 已无分配; assigned occupancy is not', () => {
+  const occupied: ExecutorView = {
+    id: 'exe_' + '1'.repeat(26),
+    target: '合成实验室',
+    endpoint: 'https://192.0.2.10/mcp',
+    enabled: true,
+    resources: [],
+    state: state({
+      holding: [{ job: 'a'.repeat(64), run: null, frozen: false, outcome: 'issued', phase: 'intent' }],
+    }),
+  };
+  assert.equal(environmentIsOccupied(occupied), true);
+  assert.equal(environmentLacksAssignment({ assigned: false, can_use: false }), true);
+  assert.match(String(noAssignmentMark({ assigned: false, can_use: false })), new RegExp(NO_ASSIGNMENT_LABEL));
+  assert.equal(environmentLacksAssignment({ assigned: true, can_use: true }), false);
+  assert.equal(String(noAssignmentMark({ assigned: true, can_use: true })), '');
+  assert.equal(environmentIsOccupied({ ...occupied, state: state({ holding: [] }) }), false);
+});
+
+test('lease-release confirmation dialog follows bed-hold commandModal pattern', () => {
+  const dialog = commands.leaseRelease(
+    { id: 'exe_' + '2'.repeat(26), target: '合成实验室' },
+    '当前占用：作业 aaaaaaaaaaaa。',
+  );
+  assert.match(dialog.id, /lease-release/);
+  assert.match(dialog.title, /强制释放预订/);
+  assert.match(dialog.text, /当前占用/);
+  assert.match(dialog.text, /原持有者/);
+  assert.match(dialog.command, /circle-hub lease release/);
+  assert.match(dialog.command, /--reason=/);
+  assert.doesNotMatch(dialog.text, /未知/);
+});

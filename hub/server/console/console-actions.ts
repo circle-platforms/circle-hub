@@ -6,6 +6,8 @@ import { ACTIONS, isPackStep, runAction, type Form } from './manage.ts';
 // Side effect: team and reset ACTIONS register into manage.ACTIONS before HTML /console/admin/do runs.
 import './team-actions.ts';
 import './reset-actions.ts';
+import { UPLOAD_REFERENCE_ACTIONS, type RegisteredActionName } from './command-form.ts';
+import { mediaTypeFor } from '../upload.ts';
 import { systemForgetPage, systemTrialPage } from './operations.ts';
 import { publication } from './pack-display.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
@@ -34,8 +36,10 @@ export async function action(request: IncomingMessage, response: ServerResponse,
   }
   let form: Form;
   let upload: Buffer | undefined;
-  // The check of 发布任务包 takes the uploaded zip; every other action, the 发布 of a stage included, is a plain form.
-  if (name === 'pack-stage') {
+  let uploadName = 'upload.bin';
+  const needsUpload = name === 'pack-stage' || UPLOAD_REFERENCE_ACTIONS.has(name as RegisteredActionName);
+  // The check of 发布任务包 and environment registration take an uploaded file; other actions are plain forms.
+  if (needsUpload) {
     const boundary = boundaryOf(request.headers['content-type']);
     if (boundary === null) {
       request.resume();
@@ -56,8 +60,14 @@ export async function action(request: IncomingMessage, response: ServerResponse,
       forbidden(response, error.message);
       return null;
     }
-    form = fields((field) => parsed.fields.get(field));
-    upload = parsed.files.find((file) => file.field === 'archive')?.bytes;
+    form = fields((field) => {
+      const all = [...parsed.fields.entries()].filter(([key]) => key === field).map(([, value]) => value);
+      if (all.length > 1) return all.join('\n');
+      return parsed.fields.get(field);
+    });
+    const file = parsed.files.find((row) => row.field === 'archive');
+    upload = file?.bytes;
+    uploadName = file?.filename || uploadName;
   } else {
     const parsed = await formOf(request, ACTION_FORM_LIMIT);
     if (parsed === 'aborted') {
@@ -68,7 +78,11 @@ export async function action(request: IncomingMessage, response: ServerResponse,
       forbidden(response, parsed === 'too_large' ? '表单太大' : '管理请求的格式不对');
       return null;
     }
-    form = fields((field) => parsed.get(field));
+    form = fields((field) => {
+      const all = parsed.getAll(field);
+      if (all.length > 1) return all.join('\n');
+      return parsed.get(field);
+    });
   }
   if (form.get('csrf') !== session.csrf) {
     forbidden(response, '表单已过期或不是本控制台发出的，请刷新页面后重试');
@@ -76,6 +90,28 @@ export async function action(request: IncomingMessage, response: ServerResponse,
   }
   if (name === 'system-test') return systemTrialPage(ctx, form, await runTrial(ctx, form));
   if (name === 'system-test-forget') return systemForgetPage(ctx, form, await runForgetTrial(ctx, form));
+  if (UPLOAD_REFERENCE_ACTIONS.has(name as RegisteredActionName)) {
+    if (upload === undefined || upload.length === 0) {
+      return { status: 400, body: page(ctx.chrome(ACTIONS[name]?.title ?? '管理操作', { active: 'connections' }), errorLine('请选择要上传的文件')) };
+    }
+    try {
+      const stored = await options.deps.records.artifacts.ingest({
+        bytes: upload,
+        mediaType: mediaTypeFor(upload, undefined, uploadName),
+        name: uploadName,
+        origin: { upload: { session: session.id ?? null, message: null } },
+        author: { user: ctx.principal.id },
+        provenanceType: 'declared',
+        visibility: { readers: [ctx.principal.id], admins: true, packs: [], shareable: false },
+      });
+      const reference = `src:${stored.body.sha256}`;
+      const base = form;
+      form = { get: (key) => key === 'reference' ? reference : base.get(key) };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '上传原件登记失败';
+      return { status: 400, body: page(ctx.chrome(ACTIONS[name]?.title ?? '管理操作', { active: 'connections' }), errorLine(message)) };
+    }
+  }
   const result = await runAction(ctx, { bridge: options.bridge, jobs: options.jobs, staging: options.staging, log: options.log }, name, form, session.token, upload);
   if (name === 'password-reset' && result.status === 200) {
     const principals = options.deps.records.principals;

@@ -246,6 +246,22 @@ describe('case-compile 2.0 against the real engine', { skip }, () => {
     const requirements=Object.values(verified.result!.partitions).flat().flatMap(item=>item.requirements);assert.ok(requirements.every(row=>row.status==='satisfied'),JSON.stringify(requirements));
     const proof=requirements.find(row=>row.requirement==='workbook_verified')!;assert.ok(proof.claims.some(claim=>claim.warrant.producer==='function'&&claim.statement.verdict==='support'));assert.ok(requirements.find(row=>row.requirement==='expected_grounded')!.claims.some(claim=>claim.warrant.producer==='model'&&claim.qualifier.marks.includes('conditional_on_judgment')));
   });
+  it('points workbook start_run refusals at /parameters/plan_run rather than /inputs/subject', async () => {
+    const args = start(); delete (args.inputs as Partial<typeof args.inputs>).case_index;
+    const first = await hub.service.startRunDetailed(hub.alice, args, call()); const planRun = first.answer.run!;
+    const sent = submission(planRun.run); const answer = await hub.service.submitResult(hub.alice, sent, call()); assert.equal(answer.acceptance, 'accepted');
+    const recipe = satisfiedRecipe({ run: first.answer, result: answer, submission: sent, contract: Buffer.from(JSON.stringify(CONTRACT_DOC)), profile: Buffer.from(JSON.stringify(PROFILE_DOC)), inventory: Buffer.from(JSON.stringify(MANIFEST_DOC)) });
+    const bytes = generateWorkbook(recipe);
+    const artifact = await hub.kit.artifacts.ingest({ bytes, mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', origin: { read: { object: 'fixture:workbook:missing-plan-run' } }, author: { user: null }, provenanceType: 'observed', visibility: { readers: [hub.alice.id], admins: true, packs: [], shareable: false }, name: 'missing-plan-run.xlsx' });
+    const missingPlanRun = await hub.service.startRunDetailed(hub.alice, { ...args, predecessor: planRun.run, inputs: { ...args.inputs, workbook: { reference: `src:${artifact.body.sha256}` } } }, call());
+    assert.equal(missingPlanRun.answer.call_result, 'error');
+    const err = missingPlanRun.answer.errors[0];
+    assert.equal(err?.code, 'case-compile.workbook_context');
+    assert.equal(err?.path, '/parameters/plan_run');
+    assert.match(err?.fix ?? '', /parameters\.plan_run/);
+    assert.match(err?.fix ?? '', /predecessor/);
+    assert.match(err?.fix ?? '', /inputs\.plan_result/);
+  });
   it('keeps the pack unavailable to an unassigned user', async () => { const result = await hub.service.startRunDetailed(hub.bob, start(), call()); assert.equal(result.answer.call_result, 'error'); });
 });
 it('closure 02 prerequisite pointers survive both requirements and repaired submissions resume catalog and quote checks',{skip},async()=>{

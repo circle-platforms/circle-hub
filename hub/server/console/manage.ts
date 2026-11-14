@@ -28,11 +28,12 @@ import { code, html, link, liveModule, page, pre, section, table, type Html, typ
 import { circleEntry, originOf } from './context.ts';
 import { callout, card, chip, stepper, when } from './ui.ts';
 import type { PageContext, PageResult } from './context.ts';
-import { errorLine, postForm } from './components.ts';
+import { errorLine, postForm, selectControl } from './components.ts';
 import { UploadError, unpackZip } from './upload.ts';
 import { packHome, publication, publishingKind } from './pack-display.ts';
-import { buildRegisteredAction, type RegisteredActionName } from './command-form.ts';
+import { buildRegisteredAction, registeredActionForm, type RegisteredActionName } from './command-form.ts';
 import { UsageError } from '../errors.ts';
+import { field } from './presentation.ts';
 
 /** A form's fields, trimmed; absent fields are the empty string. */
 export type Form = { get(name: string): string };
@@ -176,10 +177,39 @@ export const ACTIONS: Record<string, Action> = {
   'pack-revoke': { title: '撤销发布权', back: PACKS, build: (form) => fromRegistration('pack-revoke', form) },
   'pack-assign': { title: '分配工作流', back: PACKS, build: (form) => fromRegistration('pack-assign', form) },
   'pack-unassign': { title: '取消分配', back: PACKS, build: (form) => fromRegistration('pack-unassign', form) },
-  'pack-retire': { title: '退役工作流版本', back: PACKS, build: (form) => ({ argv: ['pack', 'retire', word(form, 'ref', '包号@版本')] }) },
-  'pack-activate': { title: '启用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'activate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
-  'pack-deactivate': { title: '停用产品知识来源', back: PACKS, build: (form) => ({ argv: ['pack', 'deactivate', word(form, 'pack', uiLabelOf('pack_kind', 'product'))] }) },
+  'pack-install': { title: '安装通用技能', back: '/console/skills', build: (form) => fromRegistration('pack-install', form) },
+  'pack-uninstall': { title: '卸载通用技能', back: '/console/skills', build: (form) => fromRegistration('pack-uninstall', form) },
+  'pack-retire': { title: '退役包版本', back: PACKS, build: (form) => fromRegistration('pack-retire', form) },
+  'pack-activate': { title: '启用产品知识来源', back: PACKS, build: (form) => fromRegistration('pack-activate', form) },
+  'pack-deactivate': { title: '停用产品知识来源', back: PACKS, build: (form) => fromRegistration('pack-deactivate', form) },
   'executor-disable': { title: '停用执行器', back: RESOURCES, build: (form) => fromRegistration('executor-disable', form) },
+  'executor-add': { title: '登记测试环境执行器', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-add', form) },
+  'executor-update': { title: '更新测试环境执行器', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-update', form) },
+  'executor-assign': {
+    title: '分配测试环境',
+    back: `${RESOURCES}?tab=environments`,
+    active: 'connections',
+    // Boss 03:45 #3: one POST may assign several executors under the same target (executors= newline list, or single executor=).
+    build: (form) => {
+      const listed = form.get('executors').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const single = form.get('executor').trim();
+      const ids = listed.length > 0 ? listed : single === '' ? [] : [single];
+      if (ids.length === 0) throw new FormError('请选择测试环境执行器');
+      const team = form.get('team').trim();
+      const user = form.get('user').trim();
+      if ((team === '') === (user === '')) throw new FormError('请选择团队或账户之一');
+      return ids.map((executor) => fromRegistration('executor-assign', {
+        get: (name) => name === 'executor' ? executor : name === 'team' ? team : name === 'user' ? user : form.get(name),
+      }));
+    },
+  },
+  'executor-unassign': { title: '撤回测试环境分配', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('executor-unassign', form) },
+  'doc-put': { title: '登记环境清单文档', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('doc-put', form) },
+  'lease-register': { title: '登记租约前缀归属', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('lease-register', form) },
+  'lease-unregister': { title: '注销租约前缀登记', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('lease-unregister', form) },
+  'lease-release': { title: '强制释放租约键', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('lease-release', form) },
+  'bed-baseline-record': { title: '登记干净基线', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('bed-baseline-record', form) },
+  'bed-hold-clear': { title: '结清运行环境占用', back: `${RESOURCES}?tab=environments`, active: 'connections', build: (form) => fromRegistration('bed-hold-clear', form) },
   'resource-add': {
     title: '添加资源',
     back: RESOURCES,
@@ -355,11 +385,77 @@ function onceNotice(argv: readonly string[]): string | null {
   return argv[0] === 'user' && argv[1] === 'invite' ? INVITATION_ONCE : null;
 }
 
+/** Internal identity prefixes that must not appear in management result pages (hub-terms §2). */
+const INTERNAL_ID = /(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}/g;
+const INTERNAL_ID_ONLY = /^(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}$/;
+
+/** Drop internal ids from CLI output shown on the result page; keep surrounding Chinese text. */
+export function scrubInternalIds(text: string): string {
+  return text
+    .replace(/（(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}）/g, '')
+    .replace(/（(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}，/g, '（')
+    .replace(/(?:usr_|tm_|exe_|res_)[0-9a-hjkmnp-tv-z]{26}：/g, '')
+    .replace(INTERNAL_ID, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ +\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+}
+
+/** Resolve an internal id to the name the form selected, or look it up from records/dispatch. */
+async function displayNameFor(ctx: PageContext, id: string, form?: Form): Promise<string> {
+  if (form) {
+    for (const [field, labelField] of [['team', 'team_label'], ['user', 'user_label'], ['resource', 'resource_label'], ['executor', 'executor_label']] as const) {
+      if (form.get(field) === id) {
+        const label = form.get(labelField);
+        if (label !== '') return label;
+      }
+    }
+  }
+  if (id.startsWith('usr_')) {
+    const name = await ctx.userName(id);
+    return name !== '' && name !== id ? name : '账户';
+  }
+  if (id.startsWith('tm_')) {
+    const team = await ctx.deps.records.teams.get(ctx.principal, id);
+    return team?.name ?? '团队';
+  }
+  if (id.startsWith('res_')) {
+    const rows = await ctx.deps.resources.list(ctx.principal);
+    return rows.find((row) => row.id === id)?.name ?? '资源';
+  }
+  if (id.startsWith('exe_')) {
+    const rows = await ctx.deps.dispatch?.executors(ctx.principal) ?? [];
+    return rows.find((row) => row.id === id)?.target ?? '测试环境';
+  }
+  return id;
+}
+
+/** Command echo for the result page: same argv, but internal ids replaced by display names. */
+export async function displayCommandLine(ctx: PageContext, argv: readonly string[], form?: Form): Promise<string> {
+  const parts: string[] = [];
+  for (const word of argv) {
+    const flag = /^--([^=]+)=(.*)$/.exec(word);
+    if (flag !== null && INTERNAL_ID_ONLY.test(flag[2])) {
+      parts.push(`--${flag[1]}=${await displayNameFor(ctx, flag[2], form)}`);
+      continue;
+    }
+    if (INTERNAL_ID_ONLY.test(word)) {
+      parts.push(await displayNameFor(ctx, word, form));
+      continue;
+    }
+    parts.push(word);
+  }
+  return ['circle-hub', ...parts].join(' ');
+}
+
 function runLines(run: CommandRun, notice: string | null): Html {
+  const stdout = scrubInternalIds(run.stdout.join('\n'));
+  const stderr = scrubInternalIds(run.stderr.join('\n'));
   return html`<p class="${run.code === 0 ? 'ok' : 'error'}">${uiLabelOf('action_result', run.code === 0 ? 'completed' : 'error')}（退出码 ${run.code}）</p>
 ${notice !== null && run.code === 0 ? html`<p class="notice">${notice}</p>` : ''}
-${run.stdout.length > 0 ? pre(run.stdout.join('\n')) : ''}
-${run.stderr.length > 0 ? html`<pre class="error"><code>${run.stderr.join('\n')}</code></pre>` : ''}`;
+${stdout.length > 0 ? pre(stdout) : ''}
+${stderr.length > 0 ? html`<pre class="error"><code>${stderr}</code></pre>` : ''}`;
 }
 
 /** The chrome of a management result: the place of the navigation the action belongs to. */
@@ -368,13 +464,13 @@ function actionChrome(ctx: PageContext, action: Action) {
 }
 
 /** Each command of an action with its output; the commands after one that did not finish were not run. */
-export function resultPage(ctx: PageContext, action: Action, runs: CommandRun | readonly { argv: readonly string[]; run: CommandRun }[], form?: Form): PageResult {
+export async function resultPage(ctx: PageContext, action: Action, runs: CommandRun | readonly { argv: readonly string[]; run: CommandRun }[], form?: Form): Promise<PageResult> {
   const steps = 'code' in runs ? [{ argv: [] as readonly string[], run: runs }] : runs;
   const last = steps[steps.length - 1].run;
   const several = !('code' in runs);
-  const body = steps.map((step, index) => several
-    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${['circle-hub', ...step.argv].join(' ')}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
-    : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null)));
+  const body = html`${await Promise.all(steps.map(async (step, index) => several
+    ? card({ title: `第 ${index + 1} 步`, meta: html`<code>${await displayCommandLine(ctx, step.argv, form)}</code>` }, runLines(step.run, action.once === true ? onceNotice(step.argv) : null))
+    : card(null, runLines(step.run, action.once === true ? action.onceNotice ?? TOKEN_ONCE : null))))}`;
   const trust = ctx.secure ? '把颁发机构证书加入 trust_cert_files。' : '';
   const connected = html`<p>${link('/console/team','查看团队')}</p>`;
   const afterMember = last.code !== 0 || action !== ACTIONS['member-add'] || form === undefined
@@ -577,22 +673,60 @@ export function stageResultPage(ctx: PageContext, result: StageResult): PageResu
   };
 }
 
+/** Next management forms after a successful publish (N2: one path to make the pack usable). */
+export async function publishFollowUp(ctx: PageContext, stage: StagedPack | undefined): Promise<Html> {
+  if (stage === undefined) return html``;
+  const csrf = ctx.csrf ?? '';
+  const ref = `${stage.pack}@${stage.version}`;
+  const kind = stage.kind ?? publishingKind(ctx);
+  if (kind === 'skill') {
+    return card({ title: '安装这个版本', hint: '通用技能发布后须安装精确版本后才可用；沿现有全员规则，不按团队隔离。' },
+      registeredActionForm('pack-install', csrf, '立即安装', { values: { pack: ref }, primary: true }));
+  }
+  if (kind === 'product') {
+    return card({ title: '启用产品知识来源', hint: '启用后可在「导入公共知识」按产品来源导入。' }, html`${
+      registeredActionForm('pack-activate', csrf, '启用', { values: { pack: stage.pack }, primary: true })
+    }<p class="ch-meta">${link('/console/operations/knowledge', '去导入公共知识')}</p>`);
+  }
+  if (kind === 'system') {
+    return card({ title: '接入业务系统', hint: '用刚发布的业务系统接入创建连接。' },
+      html`<p><a class="ch-btn ch-btn--primary" href="/console/operations/system?system_pack=${encodeURIComponent(stage.pack)}">立即接入</a></p>`);
+  }
+  if (kind === 'workflow') {
+    const teamsApi = (ctx.deps.records as { teams?: { list(by: PageContext['principal']): Promise<Array<{ id: string; name: string; deleted_at: string | null }>> } }).teams;
+    const teams = teamsApi === undefined ? [] : (await teamsApi.list(ctx.principal)).filter((row) => row.id !== 'team' && row.deleted_at === null);
+    const teamField = teams.length === 0
+      ? html`<p class="ch-meta">尚无团队；请先在团队页新建，再分配这个工作流。</p>`
+      : html`${field('团队', selectControl('team', teams.map((row) => ({ value: row.id, label: row.name })), undefined, { required: true }))}<input type="hidden" name="pack" value="${stage.pack}">`;
+    return card({ title: '分配给团队', hint: '工作流须分配给团队后，成员才能使用；下拉显示团队名。' },
+      teams.length === 0 ? teamField : postForm({
+        action: '/console/admin/do/pack-assign-team',
+        csrf,
+        fields: teamField,
+        submit: '分配',
+        primary: true,
+      }));
+  }
+  return html``;
+}
+
 /** The publication's page: the command's output, the steps complete when it published. */
-export function publishResultPage(ctx: PageContext, result: PublishStageResult): PageResult {
+export async function publishResultPage(ctx: PageContext, result: PublishStageResult): Promise<PageResult> {
   const action = publishAction(ctx, result.stage?.kind);
   if (result.refused !== null) return refusedPage(ctx, result.refused);
   const run = result.run!;
   const status = run.code === 0 ? 200 : run.code === 2 ? 400 : 409;
+  const follow = run.code === 0 ? await publishFollowUp(ctx, result.stage ?? undefined) : html``;
   return {
     status,
-    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, run.code === 0 ? 4 : 2)}<div class="ch-section">${card({ title: '发布', meta: code('circle-hub pack publish <文件夹> --stage') }, runLines(run, null))}</div><p>${run.code === 0 ? html`${link(packHome(result.stage?.kind??publishingKind(ctx)).path,`查看${uiLabelOf('pack_kind',result.stage?.kind??publishingKind(ctx))}`)} · ` : ''}${link(action.back, '返回')}</p>`),
+    body: page(actionChrome(ctx, action), html`${stepper(PACK_STEP_NAMES, run.code === 0 ? 4 : 2)}<div class="ch-section">${card({ title: '发布', meta: code('circle-hub pack publish <文件夹> --stage') }, runLines(run, null))}${follow}</div><p>${run.code === 0 ? html`${link(packHome(result.stage?.kind??publishingKind(ctx)).path,`查看${uiLabelOf('pack_kind',result.stage?.kind??publishingKind(ctx))}`)} · ` : ''}${link(action.back, '返回')}</p>`),
   };
 }
 
 /** One of the steps of 发布任务包, run and shown as a page. */
 export async function runPackStep(ctx: PageContext, deps: ManageDeps, name: PackStep, form: Form, token: string, upload?: Buffer): Promise<PageResult> {
   if (name === 'pack-stage') return stageResultPage(ctx, await stagePack(ctx, deps, token, upload));
-  if (name === 'pack-publish') return publishResultPage(ctx, await publishStage(ctx, deps, token, form.get('stage')));
+  if (name === 'pack-publish') return publishResultPage(ctx, await publishStage(ctx, deps, token, form.get('stage'))); // async page with follow-up forms
   const discarded = await discardStage(ctx, deps, form.get('stage'));
   if (discarded === null) return refusedPage(ctx, { status: 404, message: NEUTRAL });
   const action = publishAction(ctx, discarded.kind);
@@ -625,7 +759,7 @@ export async function runAction(ctx: PageContext, deps: ManageDeps, name: string
     return { status: 202, body: page(actionChrome(ctx, action), html`${card(null, html`<p>已在后台开始，${link(`/console/admin/jobs/${job.id}`, '查看进展')}。Hub 重启时，进行中的任务需重新发起，已写入的内容不受影响。</p>`)}<p>${link(action.back, '返回')}</p>`) };
   }
   const runs = await runBuiltSteps(bridge, built, token, deps.log, ctx.principal.name);
-  return resultPage(ctx, action, built.length === 1 ? runs[0].run : runs, form);
+  return await resultPage(ctx, action, built.length === 1 ? runs[0].run : runs, form);
 }
 
 // ---------------------------------------------------------------- setup

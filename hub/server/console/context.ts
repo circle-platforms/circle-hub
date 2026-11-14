@@ -57,11 +57,17 @@ export function neutralPage(ctx: PageContext): PageResult {
 }
 
 /**
- * The Circle settings entry for this Hub: without headers for the MCP standard authorization (the client opens the
- * authorization page in a browser), or with the token kept as a Circle secret for a client without it.
+ * The Circle settings entry for this Hub. Name and placeholders match Circle's `/hub` instructions so %HUB_URL% and
+ * %HUB_TOKEN% expand (findings / N7). Without headers the client opens the MCP standard authorization page; with a
+ * token the value stays a Circle secret for clients that do not use that flow.
  */
 export function circleEntry(origin: string, token = true): string {
-  const entry = { name: 'circle-hub', url: `${origin}/mcp`, transport: 'streamable_http' };
+  const entry = {
+    name: 'Hub',
+    url: `${origin}/mcp`,
+    transport: 'streamable_http',
+    placeholders: { url: 'HUB_URL', token: 'HUB_TOKEN' },
+  };
   return JSON.stringify({ mcp_servers: [token ? { ...entry, headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } } : entry] }, null, 2);
 }
 

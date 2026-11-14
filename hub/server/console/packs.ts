@@ -18,8 +18,10 @@ import { compareVersions } from '../../runs/api.ts';
 import { commands } from './commands.ts';
 import { code, html, href, link, liveModule, page, pageLayout, table, type Html } from './html.ts';
 import { neutralPage, type PageContext, type PageResult } from './context.ts';
-import { box, button, type CommandDialog, type Tone } from './ui.ts';
-import { segments, submitButton } from './components.ts';
+import { box, button, card, type CommandDialog, type Tone } from './ui.ts';
+import { registeredActionForm } from './command-form.ts';
+import { field } from './presentation.ts';
+import { selectControl, postForm, segments, submitButton } from './components.ts';
 import { connectionsPath, knowledgePath, knowledgeProductsPath, operationsPackPath } from './routes.ts';
 
 export function stateOf(pack: PackListing): { text: string; tone: Tone | 'plain' } {
@@ -49,7 +51,14 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
 async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   if(pack.space&&pack.space!=='team')return (await currentAudience(ctx,pack.space,'/',false,pack.id)).text;
   if(pack.kind!=='workflow')return uiLabelOf('audience_scope','team');
-  if(!ctx.admin)return uiLabelOf('knowledge_search_scope','team');
+  // Members: say which of their teams makes the pack visible — never label team grants as 公共空间 (findings).
+  if(!ctx.admin){
+    const teams=await ctx.deps.records.teams.memberships(ctx.principal);
+    return teams.length?teams.map((team)=>`团队 ${team.name}`).join('、'):uiLabelOf('audience_scope','team_unassigned');
+  }
+  // Administrators: prefer team names over expanding to member names so team grants stay visible as teams.
+  const of=await ctx.deps.records.authorizations.teamsOf(ctx.principal,'pack',pack.id);
+  if(of.teams.length)return of.teams.map((team)=>`团队 ${team.name}`).join('、');
   const users=(await memoReadPort(ctx.deps.records.principals,['get','list']).list()).filter(user=>!user.disabled);
   const assigned=new Set(pack.assigned_to??await ctx.deps.records.authorizations.usersOf(pack.id));
   const eligible=users.filter(user=>assigned.has(user.id));
@@ -158,19 +167,43 @@ ${table(['发布时间', '版本', '内容哈希'], versions.map((v) => [timesta
   }
   // What the page opens with: the state, whose it is, who may use it, and the actions on exactly that.
   const personalControls=await personalPackControls(ctx,pack);
-  const access: Html[] = [];
+  const csrf = ctx.csrf ?? '';
+  const accessForms: Html[] = [];
   if (ctx.admin&&!pack.space) {
-    if (pack.kind === 'workflow' && !pack.withdrawn) { const d = commands.packAssign(pack.id); dialogs.push(d); access.push(html`<a href="#${d.id}">调整使用范围…</a>`); }
-    if (pack.kind === 'product' && !pack.withdrawn) { const d = commands.packActivate(pack.id, pack.active); dialogs.push(d); access.push(html`<a href="#${d.id}">${pack.active ? '停用产品知识来源…' : '启用产品知识来源…'}</a>`); }
-    const d = commands.packMaintainer(pack.id); dialogs.push(d); access.push(html`<a href="#${d.id}">调整维护人…</a>`);
+    if (pack.kind === 'workflow' && !pack.withdrawn) {
+      const teamsApi = (ctx.deps.records as { teams?: { list(by: typeof ctx.principal): Promise<Array<{ id: string; name: string; deleted_at: string | null }>> } }).teams;
+      const teams = teamsApi === undefined ? [] : (await teamsApi.list(ctx.principal)).filter((row) => row.id !== 'team' && row.deleted_at === null);
+      accessForms.push(card({ title: '分配给团队' }, teams.length === 0
+        ? html`<p class="ch-meta">尚无团队。</p>`
+        : postForm({
+          action: '/console/admin/do/pack-assign-team',
+          csrf,
+          fields: html`<input type="hidden" name="pack" value="${pack.id}">${field('团队', selectControl('team', teams.map((row) => ({ value: row.id, label: row.name })), undefined, { required: true }))}`,
+          submit: '分配',
+          primary: true,
+        })));
+    }
+    if (pack.kind === 'skill' && !pack.withdrawn) {
+      accessForms.push(card({ title: '安装这个版本' }, registeredActionForm('pack-install', csrf, '安装', { values: { pack: `${pack.id}@${pack.version}` }, primary: true })));
+      accessForms.push(card({ title: '卸载通用技能' }, registeredActionForm('pack-uninstall', csrf, '卸载', { values: { pack: pack.id } })));
+    }
+    if (pack.kind === 'product' && !pack.withdrawn) {
+      accessForms.push(card({ title: pack.active ? '停用产品知识来源' : '启用产品知识来源' },
+        registeredActionForm(pack.active ? 'pack-deactivate' : 'pack-activate', csrf, pack.active ? '停用' : '启用', { values: { pack: pack.id }, primary: !pack.active })));
+    }
+    const d = commands.packMaintainer(pack.id); dialogs.push(d); accessForms.push(html`<p class="ch-meta"><a href="#${d.id}">调整维护人…</a></p>`);
   }
-  const retire = ctx.admin&&!pack.space&&!pack.withdrawn ? commands.packRetire(`${pack.id}@${pack.version}`) : null;
-  if (retire) dialogs.push(retire);
+  const retireForm = ctx.admin&&!pack.space&&!pack.withdrawn
+    ? registeredActionForm('pack-retire', csrf, '退役这个版本', { values: { pack: `${pack.id}@${pack.version}` } })
+    : null;
   const current = shownVersion(versions);
   const head = html`<section class="ch-section" data-pack-head><p class="ch-meta" data-pack-facts>${chip(state.text, state.tone)} ${uiLabelOf('knowledge_search_scope', scopeOf(ctx, pack))} · 所有者 ${await ctx.userName(pack.owner)} · 发布于 ${timestamp(pack.published_at)}</p>
 ${pack === current ? '' : html`<p class="notice" data-pack-earlier>这里显示的是较早的版本。${link(path, '查看当前版本', place)}</p>`}
-<div class="ch-toolbar">${personalControls.body.text ? personalControls.body : html`<p>使用范围：${await usageAudience(ctx, pack)}</p>`}${access.length === 0 ? '' : html`<div class="ch-actions">${access}</div>`}</div></section>`;
-  const actions = html`${personalControls.actions}${retire ? commandLink(retire, '退役…', 'ch-btn ch-btn--danger') : ''}${ctx.admin&&!pack.space?button(operationsPackPath(),'发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
+<div class="ch-toolbar">${personalControls.body.text ? personalControls.body : html`<p>使用范围：${await usageAudience(ctx, pack)}</p>`}</div>
+${accessForms.length === 0 ? '' : html`<div class="ch-stack" data-pack-admin>${accessForms}</div>`}
+${retireForm === null ? '' : card({ title: '退役版本', hint: '退役后该版本不再用于新任务；已有任务照旧可读、可完成。' }, retireForm)}
+</section>`;
+  const actions = html`${personalControls.actions}${ctx.admin&&!pack.space?button(operationsPackPath(),'发布新版本…',{primary:true,params:{kind:pack.kind}}):''}`;
   const body = html`<div class="ch-stack" data-pack-page>${head}${tabs}<div data-pack-tab="${tab}">${content}</div>${dialogs.map(commandModal)}</div>`;
   // Where the kind is listed: a section of the knowledge page, a tab of the connections page, or a place of its own.
   const home = pack.kind === 'product' ? {active:'knowledge' as const,title:'知识库',path:knowledgePath(),list:knowledgeProductsPath()}

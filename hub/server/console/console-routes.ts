@@ -15,6 +15,7 @@ import { settingsPage } from './settings.ts';
 import { sourceArchivePage } from './source-archive.ts';
 import { spacePage, spaceDiffPage, spaceSourcePage, shareHistoryPage, batchSharePage } from './spaces.ts';
 import { teamPage, teamsPage, teamDetailPage } from './team.ts';
+import { memberCapabilitiesPage } from './member-capabilities.ts';
 import type { ConsoleSession } from './session.ts';
 import { type ConsoleOptions, bridgeRun } from './console-http.ts';
 
@@ -24,6 +25,7 @@ type Route = (ctx: PageContext, rest: string[], options: ConsoleOptions, session
 // and bare /console/admin as the team page) are gone; POST /console/admin/do/<action> stays in index.ts.
 export const ROUTES: Record<string, Route> = {
   overview: (ctx, rest) => (rest.length === 0 ? overviewPage(ctx) : Promise.resolve(neutralPage(ctx))),
+  me: (ctx, rest) => (rest.length === 0 ? memberCapabilitiesPage(ctx) : Promise.resolve(neutralPage(ctx))),
   results: (ctx, rest) => (rest.length === 0 ? resultsPage(ctx) : rest.length === 1 ? resultPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   runs: (ctx, rest) => (rest.length === 0 ? runsPage(ctx) : rest.length === 1 ? runPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   knowledge: (ctx, rest) => {

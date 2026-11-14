@@ -43,7 +43,11 @@ test('administrator team operations delegate to the records team service', async
   const f = fixture(true);
   for (const args of [['create', team.name], ['add', id, member.name], ['remove', id, member.id], ['delete', id]]) assert.equal(await teamCommand(f.session, args), 0);
   assert.deepEqual(f.writes, ['create', 'add', 'remove', 'delete']);
-  assert.equal(f.out.at(-1), `已删除团队 ${team.name}（${team.id}）；撤回工作流分配 2 条、资源分配 3 条`);
+  assert.equal(f.out.at(-1), `已删除团队 ${team.name}；撤回工作流分配 2 条、资源分配 3 条`);
+  assert.equal(f.out[0], `已创建团队 ${team.name}`);
+  assert.match(f.out[1], /已将 合成成员 加入团队 合成团队/);
+  assert.match(f.out[2], /已将 合成成员 移出团队 合成团队/);
+  assert.doesNotMatch(f.out.join('\n'), /tm_|usr_/);
   assert.equal(f.restrictedReads(), 0);
 });
 

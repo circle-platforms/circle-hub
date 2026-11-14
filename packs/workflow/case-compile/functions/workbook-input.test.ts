@@ -8,5 +8,5 @@ test('missing workbook is a transitional missing-input result with the automatic
 });
 test('a fabricated JSON workbook cannot bypass core xlsx binding', () => {
   const input = { inputs: [{ slot: 'subject', parser: 'kityminder@1', model: MINDMAP_MODEL }, { slot: 'contract', model: CONTRACT_DOC }, { slot: 'profile', model: PROFILE_DOC }, { slot: 'inventory', model: MANIFEST_DOC }] as unknown[], parameters: { autoid: AUTOID } }; input.inputs.push({ slot: 'workbook', parser: 'json@1', sha256: 'a'.repeat(64), model: {} });
-  const result = projectItems(input) as { error: { code: string } }; assert.equal(result.error.code, 'case-compile.workbook_input');
+  const result = projectItems(input) as { error: { code: string; pointer?: string; fix: string } }; assert.equal(result.error.code, 'case-compile.workbook_input'); assert.equal(result.error.pointer, '/inputs/workbook'); assert.match(result.error.fix, /inputs\.workbook/);
 });

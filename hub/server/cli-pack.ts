@@ -173,7 +173,10 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
         const by = await session.admin(), hub = await session.hub();
         if (sub === 'assign') await decided(() => hub.registry.assignTeam(by, team, pack, { note: values.note }));
         else await decided(() => hub.registry.unassignTeam(by, team, pack, values.note));
-        session.out(sub === 'assign' ? `已把 ${pack} 分配给团队 ${team}` : `已撤回团队 ${team} 的 ${pack} 分配`);
+        const teamRow = await hub.records.teams.get(by, team);
+        const teamName = teamRow?.name ?? '团队';
+        const packTitle = (await hub.registry.latestVersion(pack))?.title ?? pack;
+        session.out(sub === 'assign' ? `已把 ${packTitle} 分配给团队 ${teamName}` : `已撤回团队 ${teamName} 的 ${packTitle} 分配`);
         return 0;
       }
       if (positionals.length !== 2) throw new UsageError('个人分配须给出账户和工作流；团队分配使用 --team=<团队ID>');
@@ -184,7 +187,8 @@ export async function packCommand(session: Session, args: readonly string[]): Pr
       if (sub === 'assign') await decided(() => hub.registry.assign(admin, user.id, packId, { note: values.note }));
       else await decided(() => hub.registry.unassign(admin, user.id, packId, values.note));
       const name=user.deleted_at?uiLabelOf('account_display_name','deleted_member'):user.name;
-      session.out(sub === 'assign' ? `已把 ${packId} 分配给 ${name}（${user.id}）` : `${name}（${user.id}）不再能用 ${packId}`);
+      const packTitle = (await hub.registry.latestVersion(packId))?.title ?? packId;
+      session.out(sub === 'assign' ? `已把 ${packTitle} 分配给 ${name}` : `${name} 不再能用 ${packTitle}`);
       return 0;
     }
     case 'retire': {

@@ -225,3 +225,7 @@ PostgreSQL、独立浏览器目录和模拟钥匙串，不读取个人配置。�
 
 The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_HISTORY_LIMIT` (10) submissions and reaches older ones with `?older=<cursor>` (the cursor is the service's opaque token; one longer than 512 characters is ignored). Under the submissions table it says how many it lists, that the first row is the submission behind the current result when one is pinned, and that the withdrawn-grounds notice follows the results shown; it links to older submissions and back to the newest. The other task views keep the whole read.
 
+## 已无分配与强制释放预订（Boss 04:30）
+
+占用仍在、分配已收回时，连接→运行环境行与 Inspector 标「已无分配」（不是「未知」），并提供与 bed-hold 相同的 `commands` + `commandModal` 释放确认（`lease release`）。优先读执行器上的 `assigned` / `can_use`；没有时对选中行用 `teamsOf` + `history` 推断是否还有有效 `resource_assign`。缺口：`ExecutorView.state` 仍是派发占用（holding），没有租约键清单，对话框里的「租约键」须管理员自填；MemberEnvironments 的预订占用投影合入后才能在管理页列出具体键。
+
