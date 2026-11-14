@@ -1,6 +1,6 @@
 // Candidate owner-run upgrade: strict previous-schema preview, then DDL, grants and activation in one connection transaction.
 import { join } from 'node:path';
-import type { RecordsConfig, Principal, User, Transaction, RecordStore, ObjectStore, AuthorizationRecord } from './api.ts';
+import type { RecordsConfig, Principal, User, Transaction, RecordStore, ObjectStore, AuthorizationRecord, Page, StoredRecord } from './api.ts';
 import type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan } from './environment-upgrade-types.ts';
 import { PermissionRoleSchema } from '../../contracts/generated/vocabulary.ts';
 import { canonicalBytes } from './canonical.ts';
@@ -103,7 +103,7 @@ async function sourceFacts(db: Database, store: RecordStore, members: readonly U
   const authorizations: AuthorizationRecord[] = [];
   let cursor: string | null = null;
   do {
-    const page = await store.list<AuthorizationRecord['body']>({ kind: 'authorization', limit: 500, newestFirst: false, cursor }, tx);
+    const page: Page<StoredRecord<AuthorizationRecord['body']>> = await store.list<AuthorizationRecord['body']>({ kind: 'authorization', limit: 500, newestFirst: false, cursor }, tx);
     authorizations.push(...page.items); cursor = page.next;
   } while (cursor !== null);
   const permissions = new Map(members.map(member => {

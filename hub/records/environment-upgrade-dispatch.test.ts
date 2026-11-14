@@ -85,7 +85,7 @@ test('a compilation already booked before upgrade renews and reaches the executo
 
   await c.kit.authorizations.unassignResource(c.admin, c.executor.id, c.owner.id);
   const afterDispatch = (await c.db.query('SELECT * FROM public.leases ORDER BY key')).rows;
-  const admission = { now: c.now, deps: { enforceEnvironmentAssignments: true, leases: c.leases, environmentAccess: c.environmentAccess } } as EngineContext;
+  const admission = { now: c.now, deps: { enforceEnvironmentAssignments: true, leases: c.leases, environmentAccess: c.environmentAccess } } as unknown as EngineContext;
   await assert.rejects(grantLeases(admission, c.owner, workflow, [{ keys, ttl_seconds: 60 }], newId('run'), undefined), refuseNoAssignment);
   assert.deepEqual((await c.db.query('SELECT * FROM public.leases ORDER BY key')).rows, afterDispatch, 'the rejected new booking does not mutate the held lease');
   assert.equal((await applyEnvironmentAssignmentUpgrade(config, c.admin, sources, preview)).alreadyCompleted, true);
