@@ -1,6 +1,7 @@
 // A read projection of the single environment catalog, not another registration store.
 import type { Transaction } from '../records/api.ts';
 
+/** Includes target-less legacy prefix responsibility; no field here implies an environment-use grant. */
 export interface LeaseOwnership {
   readonly prefixes: readonly { prefix: string; owner: string }[];
   readonly resources: readonly { key: string; owner: string }[];
