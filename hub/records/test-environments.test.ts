@@ -4,14 +4,14 @@ import { openTestRecords } from '../testing/records.ts';
 import { Database, createPool } from './db.ts';
 import { canonicalBytes } from './canonical.ts';
 import { ExecutorSource } from '../../contracts/src/resources.ts';
-import { TestEnvironment, TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY } from '../../contracts/api.ts';
+import { TestEnvironment, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY } from '../../contracts/api.ts';
 import { LeaseService } from '../leases/api.ts';
 import { definition } from '../dispatch/testing/definition.ts';
 import { newId } from './ids.ts';
-import type { TestEnvironmentInheritanceSources, TestEnvironmentInput } from './api.ts';
+import { openRecords, withEnvironmentPermissionLock, type RecordsKit, type TestEnvironmentInheritanceSources, type TestEnvironmentInput } from './api.ts';
 
-async function fixture() {
-  const kit = await openTestRecords({ initKey: false });
+async function fixture(initKey = false) {
+  const kit = await openTestRecords({ initKey });
   const db = new Database(createPool(kit.database, 2));
   const admin = (await kit.principals.bootstrapAdmin('synthetic-admin')).user;
   const member = await kit.principals.createUser(admin, 'synthetic-member');
@@ -19,8 +19,8 @@ async function fixture() {
   const at = new Date().toISOString();
   const evidence = await kit.store.put({ kind: 'action', schema: 'action@1', provenance: 'declared', body: { action: 'validate', run: null, item: null, inputs: [], component: 'synthetic-inheritance@1', lease: null, started_at: at, ended_at: at, result: 'completed', error_code: null, acceptance: null, codes: [], detail: {} } });
   const executors: ExecutorSource[] = [];
-  async function executor(target = 'synthetic-bed', resources = ['synthetic/device/a']) {
-    const source = ExecutorSource.parse({ ...definition('http://127.0.0.1:9/mcp'), id: newId('exe'), target, resources });
+  async function executor(target = 'synthetic-bed', resources = ['synthetic/device/a'], credential?: string) {
+    const source = ExecutorSource.parse({ ...definition('http://127.0.0.1:9/mcp'), id: newId('exe'), target, resources, ...(credential === undefined ? {} : { credential }) });
     const object = await kit.objects.put(canonicalBytes(source), 'application/json');
     await kit.authorizations.configureResource(admin, 'executor.' + source.id, object.sha256);
     executors.push(source); return source;
@@ -295,5 +295,78 @@ test('assigned disabled environments remain visible with unchanged holdings whil
     assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, held);
     await f.kit.principals.setDisabled(f.admin, f.member.id, true);
     assert.deepEqual(await f.kit.testEnvironments.list(f.member), []);
+  } finally { await f.close(); }
+});
+
+test('a configured ordinary target variable inherits and validates on a pool of one without secrets, and later changes never move rights or old state', { timeout: 120000 }, async t => {
+  const f = await fixture(true);
+  let single: RecordsKit | undefined;
+  try {
+    const variable = await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 'synthetic-bed', 'owner-approved target', { notSecret: true });
+    const executor = await f.executor('${var:SYNTHETIC_TARGET}', ['synthetic/device/a'], '${secret:SYNTHETIC_KEY}');
+    await f.kit.authorizations.grant(f.admin, { permission: 'assign', subject: f.member.id, object: 'synthetic-workflow' });
+    await f.db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3)', ['synthetic/device/', f.member.id, f.at]);
+    const booked = await new LeaseService(f.db, { records: f.kit.store }).acquire({ keys: ['synthetic/device/a'], prefix: 'synthetic/', ttlSeconds: 900, maxTtlSeconds: 3600, holder: { user: f.member.id, run: newId('run') } });
+    assert.ok(booked.ok);
+    const leaseBytes = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
+    let secretReads = 0;
+    single = await openRecords({ database: f.kit.database, dataDir: f.kit.dataDir, logDir: f.kit.config.logDir, limits: f.kit.config.limits }, { migrate: false, maxConnections: 1, keyProvider: { getKey: async () => { secretReads++; throw new Error('target resolution must not read keys'); } } });
+    const kit = single;
+    const forbidden = async () => { secretReads++; throw new Error('target resolution must not read secrets or vault metadata'); };
+    t.mock.method(kit.vault, 'readSecret', forbidden);
+    t.mock.method(kit.vault, 'secretHistory', forbidden);
+    t.mock.method(kit.vault, 'recentSecrets', forbidden);
+    t.mock.method(kit.variables, 'readSecrets', forbidden);
+    t.mock.method(kit.variables, 'recentSecrets', forbidden);
+    assert.equal((await kit.testEnvironments.inherit(f.admin, f.sources)).assignments, 1);
+    const environment = (await kit.testEnvironments.list(f.admin))[0];
+    assert.equal(environment.target, 'synthetic-bed');
+    assert.equal(environment.name, 'synthetic-bed');
+    const marker = await kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_INHERITANCE_KEY);
+    assert.ok(marker?.body.bound);
+    const completion = TestEnvironmentInheritanceCompletion.parse(JSON.parse(Buffer.from((await kit.objects.get(marker.body.bound))!).toString()));
+    assert.ok(completion.source_records.includes(variable.value.decision.digest));
+    await withEnvironmentPermissionLock(kit.store, async tx => {
+      const snapshot = await kit.variables.snapshot(tx);
+      assert.equal(await kit.variables.valueAt('SYNTHETIC_TARGET', snapshot.get('SYNTHETIC_TARGET')!, tx), 'synthetic-bed');
+      assert.deepEqual((await kit.variables.resolveVariables({ target: executor.target }, executor.id!, snapshot, tx)).value, { target: 'synthetic-bed' });
+      assert.equal(await kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx), true);
+      assert.equal(await kit.testEnvironments.canUseExecutor(f.admin, environment.id, executor.id!, tx), false, 'management role is not a use grant');
+    });
+    const originalEnvironment = await kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id);
+    const grant = await kit.authorizations.latest('resource_assign', f.member.id, environment.id);
+    const originalExecutor = await kit.authorizations.latest('resource_config', '*', 'executor.' + executor.id);
+    assert.ok(grant && originalEnvironment && originalExecutor?.body.bound);
+    assert.equal(ExecutorSource.parse(JSON.parse(Buffer.from((await kit.objects.get(originalExecutor.body.bound))!).toString())).target, '${var:SYNTHETIC_TARGET}');
+    await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 'different-target', 'owner-approved target change', { notSecret: true });
+    await assert.rejects(withEnvironmentPermissionLock(kit.store, tx => kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx)), /目标或资源声明不一致/);
+    await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 42, 'owner-approved invalid-value fixture', { notSecret: true });
+    await assert.rejects(withEnvironmentPermissionLock(kit.store, tx => kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx)), /当前值不是字符串/);
+    assert.equal((await kit.testEnvironments.inheritance()).completed, true);
+    assert.equal((await kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_INHERITANCE_KEY))?.digest, marker.digest);
+    assert.equal((await kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id))?.digest, originalEnvironment.digest);
+    assert.equal((await kit.authorizations.latest('resource_assign', f.member.id, environment.id))?.digest, grant.digest);
+    assert.equal((await kit.authorizations.latest('resource_config', '*', 'executor.' + executor.id))?.digest, originalExecutor.digest);
+    assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, leaseBytes);
+    assert.equal(secretReads, 0);
+    assert.ok(kit.poolStats);
+    assert.equal(kit.poolStats().limit, 1);
+    assert.equal(kit.poolStats().waiting, 0);
+  } finally { await single?.close(); await f.close(); }
+});
+
+test('executor admission never resolves shared keys by choosing only the environment assigned to the caller', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    const firstExecutor = await f.executor('first-target');
+    const secondExecutor = await f.executor('second-target');
+    const first = await f.kit.testEnvironments.register(f.admin, { ...f.input('第一环境', 'first-target'), executors: [firstExecutor.id!] });
+    await f.kit.testEnvironments.register(f.admin, { ...f.input('第二环境', 'second-target'), executors: [secondExecutor.id!] });
+    await f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: first.id });
+    await f.kit.testEnvironments.inherit(f.admin, f.sources);
+    await withEnvironmentPermissionLock(f.kit.store, async tx => {
+      assert.equal(await f.kit.testEnvironments.canUse(f.member, first.id, tx), true);
+      assert.equal(await f.kit.testEnvironments.canUseExecutor(f.member, first.id, firstExecutor.id!, tx), false);
+    });
   } finally { await f.close(); }
 });
