@@ -8,7 +8,8 @@ import { TestEnvironment, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT
 import { LeaseService } from '../leases/api.ts';
 import { definition } from '../dispatch/testing/definition.ts';
 import { newId } from './ids.ts';
-import { openRecords, withEnvironmentPermissionLock, type RecordsKit, type TestEnvironmentInheritanceSources, type TestEnvironmentInput } from './api.ts';
+import { openRecords, withEnvironmentPermissionLock, EnvironmentWriteError, type RecordsKit, type AuthorizationRecord, type TestEnvironmentInheritanceSources, type TestEnvironmentInput } from './api.ts';
+import { environmentProgramWrite } from './environment-program-write.ts';
 
 async function fixture(initKey = false) {
   const kit = await openTestRecords({ initKey });
@@ -31,7 +32,25 @@ async function fixture(initKey = false) {
     return { workflows: [{ id: 'synthetic-workflow', prefix: 'synthetic/', installedMethod: false, sourceRecords: [evidence.digest] }], executors, sourceRecords: references };
   } };
   const input = (name = '合成测试环境', target = 'synthetic-bed'): TestEnvironmentInput => ({ name, target, prefixes: [{ prefix: 'synthetic/device/', owner: member.id, registered_at: at }], resources: [], executors: [], enabled: true, missing_facts: [] });
-  return { kit, db, admin, member, other, at, executor, executors, sources, input, close: async () => { await db.end(); await kit.close(); } };
+  const state = async () => ({
+    records: (await db.query('SELECT digest FROM records ORDER BY seq')).rows,
+    objects: (await db.query('SELECT sha256,size,media_type FROM objects ORDER BY sha256')).rows,
+    leases: (await db.query('SELECT * FROM leases ORDER BY key')).rows,
+  });
+  // Test-only historical state: canonical append, not an ordinary configuration API or a production exemption.
+  async function historicalConfiguration(object: string, value: unknown) {
+    await kit.store.withTransaction(tx => environmentProgramWrite(tx, async () => {
+      const previous = (await kit.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key: 'authz.key', value: `resource_config|*|${object}`, newestFirst: true, limit: 1 }, tx)).items[0];
+      const stored = await kit.objects.put(canonicalBytes(value), 'application/json', tx);
+      const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object, revoked: false, bound: stored.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting inconsistent state', supersedes: previous?.digest ?? null };
+      await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [
+        { key: 'authz.key', value: `resource_config|*|${object}` }, { key: 'authz.subject', value: 'resource_config|*' },
+        { key: 'authz.object', value: 'resource_config|' + object }, { key: 'authz.permission', value: 'resource_config' },
+        { key: 'authz.subject-any', value: '*' }, { key: 'authz.object-any', value: object }, { key: 'authz.decider', value: admin.id },
+      ] }, tx);
+    }));
+  }
+  return { kit, db, admin, member, other, at, executor, executors, sources, input, state, historicalConfiguration, close: async () => { await db.end(); await kit.close(); } };
 }
 
 test('ordinary catalog enforces unique names and targets, preserves ownership and never reuses a deleted identity', { timeout: 120000 }, async () => {
@@ -62,11 +81,12 @@ test('catalog registration rejects foreign executor targets and current executor
   const f = await fixture();
   try {
     const executor = await f.executor();
-    await assert.rejects(f.kit.testEnvironments.register(f.admin, { ...f.input('错误目标', 'different-target'), executors: [executor.id!] }), /目标或资源/);
+    await assert.rejects(f.kit.testEnvironments.register(f.admin, { ...f.input('错误目标', 'different-target'), executors: [executor.id!] }), error => error instanceof EnvironmentWriteError && error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.detail.expected_target === 'different-target' && error.detail.proposed_target === 'synthetic-bed');
     const environment = await f.kit.testEnvironments.register(f.admin, { ...f.input(), executors: [executor.id!] });
     assert.equal((await f.kit.testEnvironments.resolve(['synthetic/device/a'])).environments[0].id, environment.id);
     const changed = await f.kit.objects.put(canonicalBytes({ ...executor, target: 'different-target' }), 'application/json');
-    await f.kit.authorizations.configureResource(f.admin, 'executor.' + executor.id, changed.sha256);
+    await assert.rejects(f.kit.authorizations.configureResource(f.admin, 'executor.' + executor.id, changed.sha256), EnvironmentWriteError);
+    await f.historicalConfiguration('executor.' + executor.id, { ...executor, target: 'different-target' });
     await assert.rejects(f.kit.testEnvironments.resolve(['synthetic/device/a']), /目标或资源/);
     assert.deepEqual(await f.kit.testEnvironments.resolve(['unrelated/key']), { environments: [], unregistered: [] });
   } finally { await f.close(); }
@@ -114,7 +134,7 @@ test('one conversion keeps account, team and whole-Hub subjects, real owner fact
     assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
     assert.equal((await f.kit.testEnvironments.inherit(f.admin, f.sources)).assignments, 0);
     assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
-    const later = await f.kit.testEnvironments.register(f.admin, f.input('切点后的环境', 'later-target'));
+    const later = await f.kit.testEnvironments.register(f.admin, { ...f.input('切点后的环境', 'later-target'), prefixes: [{ ...f.input().prefixes[0], prefix: 'post-cutover/' }] });
     assert.equal(await f.kit.testEnvironments.canUse(f.member, later.id), false);
     assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, before);
   } finally { await f.close(); }
@@ -245,7 +265,7 @@ test('only the bounded definition restore reproduces disabled nondeleted respons
     // Existing deleted source state in a synthetic fixture is never admitted, even by the restore capability.
     await f.kit.principals.setDisabled(f.admin, f.other.id, true);
     await f.db.query('UPDATE users SET deleted_at=$1 WHERE id=$2', [new Date().toISOString(), f.other.id]);
-    await assert.rejects(f.kit.testEnvironments.registerFromDefinition(f.admin, { ...f.input('删除账户不能恢复', 'other-target'), prefixes: [{ ...f.input().prefixes[0], owner: f.other.id }] }), /责任账户/);
+    await assert.rejects(f.kit.testEnvironments.registerFromDefinition(f.admin, { ...f.input('删除账户不能恢复', 'other-target'), prefixes: [{ ...f.input().prefixes[0], prefix: 'deleted-owner/', owner: f.other.id }] }), /责任账户/);
     await assert.rejects(f.kit.testEnvironments.assignFromDefinition(f.admin, { environment: environment.id, subject: f.other.id }), /分配对象不存在或未启用/);
   } finally { await f.close(); }
 });
@@ -338,9 +358,15 @@ test('a configured ordinary target variable inherits and validates on a pool of 
     const originalExecutor = await kit.authorizations.latest('resource_config', '*', 'executor.' + executor.id);
     assert.ok(grant && originalEnvironment && originalExecutor?.body.bound);
     assert.equal(ExecutorSource.parse(JSON.parse(Buffer.from((await kit.objects.get(originalExecutor.body.bound))!).toString())).target, '${var:SYNTHETIC_TARGET}');
-    await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 'different-target', 'owner-approved target change', { notSecret: true });
+    const beforeRetarget = await f.state();
+    await assert.rejects(f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 'different-target', 'owner-approved target change', { notSecret: true }), EnvironmentWriteError);
+    assert.deepEqual(await f.state(), beforeRetarget);
+    await f.historicalConfiguration('var:SYNTHETIC_TARGET', { schema: 'variable@1', name: 'SYNTHETIC_TARGET', value: 'different-target' });
     await assert.rejects(withEnvironmentPermissionLock(kit.store, tx => kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx)), /目标或资源声明不一致/);
-    await f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 42, 'owner-approved invalid-value fixture', { notSecret: true });
+    const beforeInvalidType = await f.state();
+    await assert.rejects(f.kit.variables.setVariable(f.admin, 'SYNTHETIC_TARGET', 42, 'owner-approved invalid-value fixture', { notSecret: true }), EnvironmentWriteError);
+    assert.deepEqual(await f.state(), beforeInvalidType);
+    await f.historicalConfiguration('var:SYNTHETIC_TARGET', { schema: 'variable@1', name: 'SYNTHETIC_TARGET', value: 42 });
     await assert.rejects(withEnvironmentPermissionLock(kit.store, tx => kit.testEnvironments.canUseExecutor(f.member, environment.id, executor.id!, tx)), /当前值不是字符串/);
     assert.equal((await kit.testEnvironments.inheritance()).completed, true);
     assert.equal((await kit.authorizations.latest('resource_config', '*', TEST_ENVIRONMENT_INHERITANCE_KEY))?.digest, marker.digest);
@@ -361,7 +387,10 @@ test('executor admission never resolves shared keys by choosing only the environ
     const firstExecutor = await f.executor('first-target');
     const secondExecutor = await f.executor('second-target');
     const first = await f.kit.testEnvironments.register(f.admin, { ...f.input('第一环境', 'first-target'), executors: [firstExecutor.id!] });
-    await f.kit.testEnvironments.register(f.admin, { ...f.input('第二环境', 'second-target'), executors: [secondExecutor.id!] });
+    const secondInput = { ...f.input('第二环境', 'second-target'), executors: [secondExecutor.id!] };
+    await assert.rejects(f.kit.testEnvironments.register(f.admin, secondInput), EnvironmentWriteError);
+    const historicalSecond = TestEnvironment.parse({ ...secondInput, schema: 'test-environment@1', id: newId('env') });
+    await f.historicalConfiguration(TEST_ENVIRONMENT_CONFIG_PREFIX + historicalSecond.id, historicalSecond);
     await f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: first.id });
     await f.kit.testEnvironments.inherit(f.admin, f.sources);
     await withEnvironmentPermissionLock(f.kit.store, async tx => {
