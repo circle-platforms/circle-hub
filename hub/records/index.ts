@@ -1,3 +1,4 @@
+import { RecordTestEnvironments } from './test-environments.ts';
 import {preserveTeamAttributions} from './team-attributions.ts';
 import {PgMemberDeletions} from './member-deletions.ts';
 import {PgPersonalSync} from './personal-sync.ts';
@@ -72,6 +73,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs'),{shared:true});
   let closed: Promise<void> | undefined;
   return {
+    testEnvironments: new RecordTestEnvironments(db, store, objects, authorizations),
     teams,
     memberDeletions,
     personalSync:new PgPersonalSync(db,store,store.personalPayloads,config.limits,now),
