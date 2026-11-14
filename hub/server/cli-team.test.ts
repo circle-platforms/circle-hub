@@ -41,6 +41,10 @@ test('ordinary members see only their own team names and never request member or
 
 test('administrator team operations delegate to the records team service', async () => {
   const f = fixture(true);
+  assert.equal(await teamCommand(f.session, ['list']), 0);
+  assert.deepEqual(f.out, [team.name]);
+  assert.doesNotMatch(f.out.join('\n'), /tm_/);
+  f.out.length = 0;
   for (const args of [['create', team.name], ['add', id, member.name], ['remove', id, member.id], ['delete', id]]) assert.equal(await teamCommand(f.session, args), 0);
   assert.deepEqual(f.writes, ['create', 'add', 'remove', 'delete']);
   assert.equal(f.out.at(-1), `已删除团队 ${team.name}；撤回工作流分配 2 条、资源分配 3 条`);

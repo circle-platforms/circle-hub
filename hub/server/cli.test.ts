@@ -324,7 +324,7 @@ describe('users, tokens and logs', () => {
     assert.equal(unnamed.code, 2, unnamed.text);
     assert.match(unnamed.text, /已经有管理员：建用户要给出名字/);
     assert.equal((await run(['user', 'create', '甲', '乙'], env, operator)).code, 2);
-    assert.match((await run(['user', 'list'], env)).text, new RegExp(`\\t${DEFAULT_ADMIN_NAME}\\t管理员`));
+    assert.match((await run(['user', 'list'], env)).text, new RegExp(`^${DEFAULT_ADMIN_NAME}\\t管理员`, 'm'));
   });
 
   test('user rename renames an account as the operator token\'s admin (the first admin to the default name included) and refuses what it cannot rename', async () => {

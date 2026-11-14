@@ -20,7 +20,7 @@ export async function teamCommand(session: TeamCommandSession, args: readonly st
       parse(rest, {}, 0);
       const by = await session.member(), records = await session.records();
       const teams = await decided(() => records.teams.list(by));
-      for (const team of teams) session.out(isAdmin(by) ? `${team.id}\t${team.name}` : team.name);
+      for (const team of teams) session.out(team.name);
       return 0;
     },
     show: async () => {
