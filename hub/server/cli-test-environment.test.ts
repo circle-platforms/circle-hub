@@ -11,13 +11,15 @@ function fixture() {
   const environment: TestEnvironment = { schema: 'test-environment@1', id: newId('env'), name: '合成环境', target: '合成目标', enabled: true,
     prefixes: [{prefix:'synthetic/',owner:admin.id,registered_at:'2026-11-14T00:00:00.000Z'}], resources: [], executors: [], missing_facts: [] };
   const messages: string[] = [], writes: unknown[][] = [];
+  const entries:Array<TestEnvironment & {isBookingPrefix?:boolean}>= [environment];
   let completion: boolean | null = true, conversions = 0;
   const records = {
     testEnvironments: {
       inheritance: async () => ({completed:completion,record:null,missingFacts:[]}),
       inherit: async (by: Principal) => { assert.equal(by.id,admin.id); conversions++; completion=true; return {completed:true,record:'a'.repeat(64),assignments:0}; },
-      list: async () => [environment],
+      list: async () => entries,
       register: async (_by: Principal, input: unknown) => { writes.push(['register', input]); return {...environment,...input as object}; },
+      reassignOwner: async (_by: Principal,id:string,input:unknown)=>{writes.push(['owner',id,input]);return environment;},
       remove: async (_by: Principal, id: string) => { writes.push(['remove', id]); },
       update: async (_by: Principal, id: string, input: unknown) => { writes.push(['update',id,input]); return {...environment,...input as object}; },
     },
@@ -28,7 +30,7 @@ function fixture() {
       unassignResource: async (_by: Principal, id: string, subject: string) => { writes.push(['unassign', id, subject]); },
     },
   } as unknown as RecordsKit;
-  return { admin, team, account, environment, messages, writes, setCompletion: (value: boolean | null) => { completion=value; }, conversions: () => conversions, session: { admin: async () => admin, records: async () => records, out: (text: string) => messages.push(text) } };
+  return { admin, team, account, environment, messages, writes, addRegistration:(row:TestEnvironment & {isBookingPrefix?:boolean})=>entries.push(row), setCompletion: (value: boolean | null) => { completion=value; }, conversions: () => conversions, session: { admin: async () => admin, records: async () => records, out: (text: string) => messages.push(text) } };
 }
 
 test('ordinary registration is one invocation without a file, host login or internal identifier', async () => {
@@ -103,4 +105,26 @@ test('an authenticated ordinary management action continues only verified pendin
   const read = fixture(); read.setCompletion(false);
   await testEnvironmentCommand(read.session,['list']);
   assert.equal(read.conversions(),0);
+});
+
+
+test('explicit responsibility reassignment uses names and never issues a use assignment', async()=>{
+  const f=fixture();
+  await testEnvironmentCommand(f.session,['owner',f.environment.name!,'--prefix','synthetic/','--user',f.account.name]);
+  assert.deepEqual(f.writes,[['owner',f.environment.id,{prefix:'synthetic/',owner:f.account.id}]]);
+  assert.doesNotMatch(f.messages.join(''),/(?:env|usr)_[0-9a-z]{26}/);
+});
+
+test('a booking-only prefix can change its responsible account without becoming a test environment',async()=>{
+  const f=fixture(),id=newId('env');
+  f.addRegistration({...f.environment,id,name:null,target:null,prefixes:[{prefix:'ordinary/',owner:f.admin.id,registered_at:'2026-11-14T00:00:00.000Z'}],isBookingPrefix:true});
+  await testEnvironmentCommand(f.session,['prefix-owner','ordinary/','--user',f.account.name]);
+  assert.deepEqual(f.writes,[['owner',id,{prefix:'ordinary/',owner:f.account.id}]]);
+});
+
+test('ordinary registration automatically preserves the exact owner facts of an adopted prefix',async()=>{
+  const f=fixture(),original={prefix:'ordinary/',owner:f.account.id,registered_at:'2026-11-13T00:00:00.000Z'};
+  f.addRegistration({...f.environment,id:newId('env'),name:null,target:null,prefixes:[original],isBookingPrefix:true});
+  await testEnvironmentCommand(f.session,['register','新环境','--target','新目标','--prefix','ordinary/']);
+  assert.deepEqual((f.writes[0][1] as TestEnvironment).prefixes,[original]);
 });

@@ -6,7 +6,7 @@ import { decided, parse } from './cli-arguments.ts';
 import { CliError, UsageError } from './errors.ts';
 import { environmentPermissionSources } from './env-permission-sources.ts';
 
-export const TEST_ENVIRONMENT_USAGE = 'list | register <名字> --target <目标> [--prefix <前缀>…] [--resource <键>…] [--executor <执行器名字>…] | update <名字> [--name <新名字>] [--prefix <前缀>…] [--resource <键>…] [--executor <执行器名字>…] [--enable|--disable] | remove <名字> | assign|unassign <名字> (--team <团队名字> | --user <账户名字> | --all) [--expires-at <到期时间>] [--note <说明>]';
+export const TEST_ENVIRONMENT_USAGE = 'list | register <名字> --target <目标> [--prefix <前缀>…] [--resource <键>…] [--executor <执行器名字>…] [--owner <责任账户名字>] | update <名字> [--name <新名字>] [--prefix <前缀>…] [--resource <键>…] [--executor <执行器名字>…] [--enable|--disable] | owner <名字> (--prefix <前缀>|--resource <键>) --user <责任账户名字> | prefix-owner <前缀> --user <责任账户名字> | remove <名字> | assign|unassign <名字> (--team <团队名字> | --user <账户名字> | --all) [--expires-at <到期时间>] [--note <说明>]';
 export interface TestEnvironmentCommandSession {
   admin(): Promise<Principal>;
   records(): Promise<RecordsKit>;
@@ -29,7 +29,7 @@ export async function testEnvironmentCommand(session: TestEnvironmentCommandSess
     return 0;
   }
   if (action === 'register' || action === 'update') {
-    const { positionals, values } = parse(rest, { target: { type: 'string' }, prefix: { type: 'string', multiple: true }, resource: { type: 'string', multiple: true }, executor: { type: 'string', multiple: true }, name: { type: 'string' }, enable: { type: 'boolean' }, disable: { type: 'boolean' }, 'clear-prefixes': { type: 'boolean' }, 'clear-resources': { type: 'boolean' }, 'clear-executors': { type: 'boolean' } }, 1);
+    const { positionals, values } = parse(rest, { target: { type: 'string' }, owner: { type: 'string' }, prefix: { type: 'string', multiple: true }, resource: { type: 'string', multiple: true }, executor: { type: 'string', multiple: true }, name: { type: 'string' }, enable: { type: 'boolean' }, disable: { type: 'boolean' }, 'clear-prefixes': { type: 'boolean' }, 'clear-resources': { type: 'boolean' }, 'clear-executors': { type: 'boolean' } }, 1);
     if (action === 'register' && !values.target) throw new UsageError('登记测试环境须写 --target <目标>');
     if (action === 'register' && (values.name !== undefined || values.enable || values.disable || values['clear-prefixes'] || values['clear-resources'] || values['clear-executors'])) throw new UsageError('登记只写明确名字和目标；编辑选项用于 update');
     if (values.enable && values.disable) throw new UsageError('启用和停用不能同时指定');
@@ -38,6 +38,8 @@ export async function testEnvironmentCommand(session: TestEnvironmentCommandSess
     const existing = action === 'update' ? (await records.testEnvironments.list(by)).find(row => row.name === positionals[0]) : null;
     if (action === 'update' && !existing) throw new CliError('测试环境不存在', '请核对测试环境名字');
     if (existing && values.target !== undefined && values.target !== existing.target) throw new UsageError('不能把已有分配转给另一目标；请另行登记新的测试环境');
+    const responsible = values.owner === undefined ? by : await records.principals.findByName(values.owner);
+    if (!responsible) throw new CliError('责任账户不存在', '请核对账户名字');
     const names = values.executor?.length ? await new ExecutorNames(records).list(by) : [];
     const executors = (values.executor ?? []).map(name => {
       const found = names.find(row => row.name === name);
@@ -45,14 +47,36 @@ export async function testEnvironmentCommand(session: TestEnvironmentCommandSess
       return found.executor;
     });
     const at = new Date().toISOString();
-    const input = TestEnvironmentInput.parse({ name: values.name ?? existing?.name ?? positionals[0], target: values.target ?? existing?.target, enabled: values.disable ? false : values.enable ? true : existing?.enabled ?? true,
-      prefixes: values.prefix ? values.prefix.map(prefix => existing?.prefixes.find(row => row.prefix === prefix) ?? { prefix, owner: by.id, registered_at: at }) : values['clear-prefixes'] ? [] : existing?.prefixes ?? [],
-      resources: values.resource ? values.resource.map(key => existing?.resources.find(row => row.key === key) ?? { key, owner: by.id, registered_at: at }) : values['clear-resources'] ? [] : existing?.resources ?? [],
+    let input = TestEnvironmentInput.parse({ name: values.name ?? existing?.name ?? positionals[0], target: values.target ?? existing?.target, enabled: values.disable ? false : values.enable ? true : existing?.enabled ?? true,
+      prefixes: values.prefix ? values.prefix.map(prefix => existing?.prefixes.find(row => row.prefix === prefix) ?? { prefix, owner: responsible.id, registered_at: at }) : values['clear-prefixes'] ? [] : existing?.prefixes ?? [],
+      resources: values.resource ? values.resource.map(key => existing?.resources.find(row => row.key === key) ?? { key, owner: responsible.id, registered_at: at }) : values['clear-resources'] ? [] : existing?.resources ?? [],
       executors: values.executor ? executors : values['clear-executors'] ? [] : existing?.executors ?? [], missing_facts: [] });
     await continueApprovedInheritance(records, by);
+    if (!existing && values.owner === undefined) {
+      const carriers=(await records.testEnvironments.list(by)).filter(row=>row.target===null);
+      const original=(kind:'prefix'|'key',value:string)=>{
+        const rows:Array<{owner:string|null;registered_at:string|null}>=[];
+        for(const carrier of carriers)rows.push(...(kind==='prefix'?carrier.prefixes.filter(row=>row.prefix===value):carrier.resources.filter(row=>row.key===value)));
+        if(rows.length>1)throw new CliError('原登记的责任归属不唯一','请在测试环境页面核对原登记');
+        return rows[0];
+      };
+      input=TestEnvironmentInput.parse({...input,prefixes:input.prefixes.map(row=>({...row,...original('prefix',row.prefix)})),resources:input.resources.map(row=>({...row,...original('key',row.key)}))});
+    }
     const registered = await decided(() => existing ? records.testEnvironments.update(by, existing.id, input) : records.testEnvironments.register(by, input));
     session.out(`${existing ? '已更新' : '已登记'}测试环境「${registered.name}」`);
     return 0;
+  }
+  if (action === 'owner' || action === 'prefix-owner') {
+    const {positionals,values}=parse(rest,{prefix:{type:'string'},resource:{type:'string'},user:{type:'string'}},1);
+    if(!values.user || action==='owner' && (values.prefix!==undefined)===(values.resource!==undefined) || action==='prefix-owner' && (values.prefix!==undefined || values.resource!==undefined))throw new UsageError('改派须选择一项原登记前缀或资源键，并写 --user <责任账户名字>');
+    const by=await session.admin(),records=await session.records();
+    const account=await records.principals.findByName(values.user);if(!account)throw new CliError('责任账户不存在','请核对账户名字');
+    await continueApprovedInheritance(records,by);
+    const matches=(await records.testEnvironments.list(by)).filter(row=>action==='owner'?row.target!==null&&row.name===positionals[0]:row.isBookingPrefix&&row.prefixes.some(prefix=>prefix.prefix===positionals[0]));
+    if(matches.length!==1)throw new CliError('登记不存在或不唯一','请在测试环境页面核对登记');
+    const change=action==='prefix-owner'?{prefix:positionals[0],owner:account.id}:values.prefix!==undefined?{prefix:values.prefix,owner:account.id}:{key:values.resource!,owner:account.id};
+    await decided(()=>records.testEnvironments.reassignOwner(by,matches[0].id,change));
+    session.out(`已将「${positionals[0]}」的这项登记责任改派给「${account.name}」，使用分配和现有预订未改变`);return 0;
   }
   if (action === 'remove' || action === 'assign' || action === 'unassign') {
     const { positionals, values } = parse(rest, { team: { type: 'string' }, user: { type: 'string' }, all: { type: 'boolean' }, 'expires-at': { type: 'string' }, note: { type: 'string' } }, 1);
