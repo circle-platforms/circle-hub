@@ -49,9 +49,9 @@ function output(s: JobCommandSession, state: JobStatus): void {
     if (attempt.reason) s.out(`${scope}说明：${attempt.reason}`);
     if (attempt.missing_fact) s.out(`${scope}缺事实：${attempt.missing_fact}`);
   } else if (facts.operation === 'precheck') {
-    s.out(`只读预检：${facts.readonly_verified === true ? '已取得全部条件通过的核对' : facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
+    s.out(`${labelOf('dispatch_operation', 'precheck')}：${facts.readonly_verified === true ? '已取得全部条件通过的核对' : facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
   } else if (facts.operation === 'conformance') {
-    s.out(`一致性核对：${facts.conformance_verified === true ? '已取得全部条件通过的核对' : facts.conformance_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
+    s.out(`${labelOf('dispatch_operation', 'conformance')}：${facts.conformance_verified === true ? '已取得全部条件通过的核对' : facts.conformance_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
   } else {
     s.out('尚无可核对的按范围派发结局；不据此认定作业未执行。');
   }

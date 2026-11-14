@@ -31,7 +31,7 @@ export type Circle = ConnectedClient;
 export function environmentJobText(job: ScopedDispatchFacts): string {
   const attempt = job.dispatch_attempt;
   if (attempt) return `${dispatchScopeLabel(attempt.scope)}：${attempt.outcome === undefined ? '结局尚未取得' : uiLabelOf('effect_outcome', attempt.outcome)}`;
-  if (job.job_facts.operation === 'precheck') return `只读预检：${job.job_facts.readonly_verified === true ? '已取得全部条件通过的核对' : job.job_facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`;
+  if (job.job_facts.operation === 'precheck') return `${uiLabelOf('dispatch_operation', 'precheck')}：${job.job_facts.readonly_verified === true ? '已取得全部条件通过的核对' : job.job_facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`;
   return '尚无按范围可核对的派发结局';
 }
 

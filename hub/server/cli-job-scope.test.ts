@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { JobStatus } from '../dispatch/api.ts';
 import { jobCommand, type JobCommandSession } from './cli-job.ts';
 
@@ -50,7 +51,7 @@ test('CLI does not return success for an observed round whose effect outcome is 
 test('CLI names a readonly conformance observation without fabricating a physical dispatch', async () => {
   const { code, text } = await show({ job, events: 2, job_facts: { scope, operation: 'conformance', conformance_verified: true, frozen: false } });
   assert.equal(code, 0);
-  assert.match(text, /一致性核对：已取得全部条件通过的核对/);
+  assert.ok(text.includes(labelOf('dispatch_operation', 'conformance') + '：已取得全部条件通过的核对'));
   assert.doesNotMatch(text, /第1轮|尚无可核对的按范围派发结局/);
 });
 
