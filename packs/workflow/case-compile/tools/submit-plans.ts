@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { fidelityBrief, fidelityProblems, type FidelityCode, type FidelityProblem } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { argumentsOf, bearerFrom, get, hubOrigin, itemFiles, RUN_ID, submitResult, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { isRecord } from '../functions/text.ts';
+import { argumentsOf, bearerFrom, hubOrigin, itemFiles, RUN_ID, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
+import { formatCallError, isRecord } from '../functions/text.ts';
 
 export const planItems = itemFiles;
 
@@ -70,8 +71,8 @@ export function localFidelityBlocks(
   return blocks;
 }
 
-async function runItems(origin: string, bearer: string, run: string): Promise<Map<string, HeldRunItem>> {
-  const value: unknown = JSON.parse(new TextDecoder('utf-8').decode(await get(`${origin}/run-export/${run}/run`, bearer)));
+async function runItems(origin: string, bearer: string, run: string, retry?: RetryControl): Promise<Map<string, HeldRunItem>> {
+  const value: unknown = JSON.parse(new TextDecoder('utf-8').decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)));
   if (!isRecord(value) || value.schema !== 'run-export@1' || !isRecord(value.run) || value.run.run !== run || !Array.isArray(value.run.items)) throw new Error('Hub 返回的原始用例不完整或与本次脚本编写不符');
   return new Map(value.run.items.filter(isRecord).map((item) => {
     const fields = isRecord(item.fields) ? item.fields : {};
@@ -81,7 +82,7 @@ async function runItems(origin: string, bearer: string, run: string): Promise<Ma
   }));
 }
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'model', 'plans']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次脚本编写的编号');
@@ -90,7 +91,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (expanded.length) process.stdout.write(`自动化用例的具体取值已写回文件：\n${expanded.join('\n')}\n`);
     const files = await planItems(args.plans);
     const bearer = await bearerFrom(readToken);
-    const held = await runItems(origin, bearer, args.run);
+    const held = await runItems(origin, bearer, args.run, retry);
     const items = files.filter((item) => held.has(String(item.item))), left = files.filter((item) => !held.has(String(item.item)));
     if (!items.length) throw new Error(`--plans 目录里没有本次脚本编写的自动化用例，本次共有 ${held.size} 条原始用例；请使用下载的原始用例继续编写`);
     const fidelityBlocks = localFidelityBlocks(items, held);
@@ -98,7 +99,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       const detail = fidelityBlocks.map((b) => `- ${b.label}（${b.item}）：${b.problem.message}`).join('\n');
       throw new Error(
         `以下 ${fidelityBlocks.length} 份自动化用例尚未完成场景保真审计，未发往 Hub（不占修复次数；Hub 的核对结论仍为准）：\n`
-        + `${detail}\n`
+        + `${detail}。\n`
         + '请依次执行下面 3 步后再重跑 submit-plans.ts：\n'
         + '1) node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>\n'
         + '2) 用新开的子代理逐份读取 to_audit 中的 .brief.json，按文件内 rules 写出同名 .verdict.json\n'
@@ -106,7 +107,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       );
     }
     if (left.length) process.stdout.write(`另有 ${left.length} 份自动化用例不属于本次脚本编写，未做脚本合并\n`);
-    const { text, failed } = await submitResult(origin, bearer, { run: args.run, model: args.model, items });
+    const { text, failed } = await submitResultRetrying(origin, bearer, { run: args.run, model: args.model, items }, retry);
     const path = join(args.plans, `answer-${Date.now()}.txt`);
     await writeNew(path, Buffer.from(text));
     const clipped = text.length > SHOWN_CHARS;
@@ -114,6 +115,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const skipped = items.filter((item) => item.handling === 'skipped').map((item) => held.get(String(item.item))!.label);
     if (skipped.length) process.stdout.write(SKIPPED_NOTE(skipped));
     return failed ? 1 : 0;
-  } catch (error) { process.stderr.write(`脚本合并未完成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

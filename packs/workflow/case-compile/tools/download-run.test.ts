@@ -188,3 +188,54 @@ test('a knowledge batch whose bytes do not match the digest, or that is another 
     await assert.rejects(readdir(join(dir, name)), name + ': nothing was written');
   }
 });
+
+test('writes references.json and prints run_reference when run-export@1 includes it', async (t) => {
+  const ref = `rec:${'c'.repeat(64)}`;
+  const h = await hub({ runAnswer: (run) => ({ schema: 'run-export@1', run_reference: ref, run }) }); t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
+  const first = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).run_reference, ref);
+  assert.equal(JSON.parse(first.stdout).written, 17);
+  assert.deepEqual(JSON.parse(await readFile(join(out, 'references.json'), 'utf8')), { schema: 'run-references@1', run: RUN, run_reference: ref });
+  const other = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'recompose');
+  const second = await outputOf(() => recomposeMain(['--hub', h.url, '--run', RUN, '--out', other], async () => TOKEN));
+  assert.equal(second.code, 0, second.stderr);
+  assert.equal(JSON.parse(second.stdout).run_reference, ref);
+  assert.deepEqual(JSON.parse(await readFile(join(other, 'references.json'), 'utf8')), { schema: 'run-references@1', run: RUN, run_reference: ref });
+});
+
+test('download-run and recompose download-run retry 503 Retry-After and ECONNREFUSED and report wait/attempts on 60s exhaustion', async (t) => {
+  const h = await hub({}); t.after(h.close);
+  for (const [label, entry] of [['compile', main], ['recompose', recomposeMain]] as const) {
+    let calls = 0;
+    let nowMs = 0;
+    const pauses: number[] = [];
+    const fetchStub: typeof fetch = async (input, init) => {
+      calls++;
+      if (calls === 1) return new Response('Hub 正在重启', { status: 503, headers: { 'retry-after': '5' } });
+      if (calls === 2) throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) });
+      return globalThis.fetch(input, init);
+    };
+    const out = join(await mkdtemp(join(tmpdir(), `cc-dl-retry-${label}-`)), 'out');
+    const ok = await outputOf(() => entry(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN, ...(entry === main ? [undefined] : []), {
+      timing: { now: () => nowMs, pause: async (ms) => { pauses.push(ms); nowMs += ms; } },
+      fetch: fetchStub,
+    }));
+    assert.equal(ok.code, 0, `${label}: ${ok.stderr}`);
+    assert.deepEqual(pauses, [5_000, 2_000], label);
+    assert.equal(JSON.parse(ok.stdout).run, RUN, label);
+
+    let failNow = 0;
+    const failPauses: number[] = [];
+    const failDir = join(await mkdtemp(join(tmpdir(), `cc-dl-fail-${label}-`)), 'out');
+    const fail = await outputOf(() => entry(['--hub', h.url, '--run', RUN, '--out', failDir], async () => TOKEN, ...(entry === main ? [undefined] : []), {
+      timing: { now: () => failNow, pause: async (ms) => { failPauses.push(ms); failNow += ms; } },
+      fetch: async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }); },
+    }));
+    assert.equal(fail.code, 1, label);
+    assert.deepEqual(failPauses, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000], label);
+    assert.match(fail.stderr, /^暂时不可用：Hub 不可达（ECONNREFUSED），已等待 60 秒并尝试 10 次仍未恢复。请.*。$/m, label);
+    await assert.rejects(readdir(failDir), `${label}: nothing written after retry exhaustion`);
+  }
+});

@@ -10,7 +10,8 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { authoringBrief, canonicalPath, commandPath, inverseOf, nodeBlock, pairedSibling, parameterRows, planEnvelope, policyOf, referencedPaths } from '../functions/authoring-brief.ts';
 import { knowledgeFiles } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { main, readKnowledge, writeBriefs } from './authoring-brief.ts';
+import * as authoringBriefTool from './authoring-brief.ts';
+import { readKnowledge, writeBriefs } from './authoring-brief.ts';
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa', ROOT = 'a'.repeat(64), OTHER_ROOT = 'b'.repeat(64);
 const digest = (seed: number) => seed.toString(16).padStart(2, '0').repeat(32);
@@ -230,10 +231,8 @@ test('the tool writes one brief per item that carries a record, beside items/ an
   await writeFile(join(directory, 'briefs', '00.md'), '写手自己的批注');
   assert.deepEqual(await writeBriefs(directory), { briefs: 0, kept: 1, without_record: 1 });
   assert.equal(await readFile(join(directory, 'briefs', '00.md'), 'utf8'), '写手自己的批注', 'left as it is');
-  const out: string[] = [], write = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array) => { out.push(String(chunk)); return true; }) as typeof process.stdout.write;
-  try { assert.equal(await main(['--run', directory]), 0); } finally { process.stdout.write = write; }
-  assert.deepEqual(JSON.parse(out.join('')), { directory: join(directory, 'briefs'), briefs: 0, kept: 1, without_record: 1 });
+  // Standalone CLI entrypoint (`main`) was removed so all brief invocations flow solely through `task-brief.ts`.
+  assert.equal('main' in authoringBriefTool, false);
 });
 
 test('a run that brought no knowledge root gets no briefs and no briefs directory', async () => {

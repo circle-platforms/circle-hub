@@ -100,6 +100,12 @@ test('the notes carry the claim as exactly three plain texts, never beside a def
   assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: { ...CONFLICT, manual: '' } }), /用例 c1 的手册原话 要是 1 到 4000 字的文字/);
   assert.throws(() => read({ judged: 'j', remedy: 'r', author_conflict: CONFLICT, defect_candidate: { repro: 'r', expected: 'e', actual: 'a' } }), /用例 c1 不能同时判断为设备的问题和原始用例的问题/);
   assert.throws(() => read({ judged: 'j', remedy: 'r', other: 1 }), /判断设备问题或原始用例问题所需的原文/);
+  const withRound = read({ judged: 'j', remedy: 'r', round: 2 });
+  assert.equal(withRound.cases.c1.round, 2);
+  const withoutRound = read({ judged: 'j', remedy: 'r' });
+  assert.equal(withoutRound.cases.c1.round, undefined);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', round: 0 }), /轮次（round）须是大于等于 1 的整数/);
+  assert.throws(() => read({ judged: 'j', remedy: 'r', round: 1.5 }), /轮次（round）须是大于等于 1 的整数/);
 });
 
 test('the report names the closing and what was and was not checked, in plain words', () => {

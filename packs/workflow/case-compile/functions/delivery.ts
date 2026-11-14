@@ -21,8 +21,8 @@ export interface Dispatch { run: string; job: string; plan_run: string; sha256: 
 export interface DefectCandidate { repro: string; expected: string; actual: string }
 // The model proposes the conflict; quotation checks do not decide who is right.
 export interface AuthorConflict { author: string; manual: string; reference: string }
-export interface CaseNote { judged: string; remedy: string; evidence?: string; defect_candidate?: DefectCandidate; author_conflict?: AuthorConflict }
-export interface Notes { batch?: string; cases: Record<string, CaseNote> }
+export interface CaseNote { judged: string; remedy: string; round?: number; evidence?: string; defect_candidate?: DefectCandidate; author_conflict?: AuthorConflict }
+export interface Notes { round?: number; batch?: string; cases: Record<string, CaseNote> }
 /** What the document holds for a case: its title and original lines (steps with their expectations), when known. */
 export interface Original { title: string; lines: Array<{ text: string; expected: string[] }> }
 
@@ -141,7 +141,7 @@ export const auditKey = (run: string, item: string): string => `${run}\u0000${it
 /** A command the device refused to parse, as one of its sessions shows it (see syntaxRejections). */
 export interface SyntaxRejection { command: string; token?: string; prompt?: string }
 const isCaretLine = (line: string): boolean => { const s = line.trim(); return s === '^' || (s.length <= 3 && s.includes('^')); };
-const LEADING_PROMPT = /^([A-Za-z][A-Za-z0-9_.-]{0,20}(?:\([A-Za-z0-9_\- ]+\))?[#>])/;
+export const LEADING_PROMPT = /^([A-Za-z][A-Za-z0-9_.-]{0,20}(?:\([A-Za-z0-9_\- ]+\))?[#>])/;
 const PROMPT_LOOKBACK = 8;
 /** The word of `line` the caret column points at, or the next word after it (the reference engine's locate_caret_token). */
 function wordAt(line: string, column: number): string | null {
@@ -184,15 +184,17 @@ export function syntaxRejections(session: string): SyntaxRejection[] {
 /** A command the device answered with a declared execution-failure line: the prompt it was typed at, the command as the session echoes it, and the device's reply up to that line. */
 export interface ExecutionRefusal { command: string; prompt: string; reply: string[]; echo_cut?: true }
 const REPLY_LINES = 6, REPLY_CHARS = 400;
+const CLI_ERROR_LINE = /^(?:Error:\s*\S|Failed to\s+\S|%\s*(?:Invalid|Error|Unknown|Unrecognized)\b)/i;
 /**
  * The commands a session shows the device refusing to execute. A line that begins with a prompt is a command typed at it and
  * the lines down to the next such line are the device's reply; a reply that carries one of the execution-failure lines the
- * runner contract declares is the device's own verdict on that command, and the lines before it are its reason. Read by
- * position in the terminal transcript and by the declared lines alone (the reference keeps one authority for a device's CLI
- * errors, device_errors.py, and hands the lines of the last run that carry one to the next writer with the directive that the
- * fault is in the case's own command sequence, compile_engine/briefs.py execution_failures). What the refusal means is not
- * decided here. A long command is echoed with the terminal's own redrawing, so the command is the echo up to its first
- * control character and `echo_cut` says it is only the beginning; the run log holds the whole line.
+ * runner contract declares, or a generic CLI refusal/failure reply when the contract's markers are loaded, is the device's
+ * own verdict on that command, and the lines before/at it are its reason. Read by position in the terminal transcript (the
+ * reference keeps one authority for a device's CLI errors, device_errors.py, and hands the lines of the last run that carry
+ * one to the next writer with the directive that the fault is in the case's own command sequence, compile_engine/briefs.py
+ * execution_failures). What the refusal means is not decided here. A long command is echoed with the terminal's own
+ * redrawing, so the command is the echo up to its first control character and `echo_cut` says it is only the beginning; the
+ * run log holds the whole line.
  */
 export function executionRefusals(session: string, markers: readonly string[]): ExecutionRefusal[] {
   if (!markers.length) return [];
@@ -204,15 +206,19 @@ export function executionRefusals(session: string, markers: readonly string[]): 
     const command = (control < 0 ? echoed : echoed.slice(0, control)).trim();
     if (!command) continue;
     const reply: string[] = [];
-    let refused = false;
+    let markerHit = false, cliErrorAt = -1;
     for (let j = i + 1; j < lines.length && !LEADING_PROMPT.test(lines[j]); j++) {
       const line = lines[j].trim();
       if (!line) continue;
       reply.push(line.length > REPLY_CHARS ? line.slice(0, REPLY_CHARS) + '…' : line);
-      if (markers.some((marker) => line.includes(marker))) { refused = true; break; }
+      if (markers.some((marker) => line.includes(marker))) { markerHit = true; break; }
+      if (CLI_ERROR_LINE.test(line)) cliErrorAt = reply.length - 1;
     }
-    if (!refused) continue;
-    const refusal: ExecutionRefusal = { command, prompt: typed[1], reply: reply.slice(-REPLY_LINES), ...(control < 0 ? {} : { echo_cut: true as const }) };
+    if (!markerHit && cliErrorAt < 0) continue;
+    const trimmedReply = markerHit
+      ? reply.slice(-REPLY_LINES)
+      : reply.slice(0, reply.length <= REPLY_LINES ? reply.length : Math.min(reply.length, cliErrorAt + 2)).slice(-REPLY_LINES);
+    const refusal: ExecutionRefusal = { command, prompt: typed[1], reply: trimmedReply, ...(control < 0 ? {} : { echo_cut: true as const }) };
     const key = JSON.stringify([refusal.command, refusal.prompt, refusal.reply]);
     if (!seen.has(key)) { seen.add(key); found.push(refusal); }
   }
@@ -221,7 +227,11 @@ export function executionRefusals(session: string, markers: readonly string[]): 
 
 /** The model's notes: one judged paragraph and one fix-or-trade-off paragraph for exactly the cases not delivered. */
 export function readNotes(value: unknown, undelivered: string[]): Notes {
-  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch')) throw new Error('说明文件请按原始用例分别写结论、下一步和设备输出，格式见交付工具说明');
+  if (!isRecord(value) || !isRecord(value.cases) || Object.keys(value).some((key) => key !== 'cases' && key !== 'batch' && key !== 'round')) throw new Error('说明文件请按原始用例分别写结论、下一步和设备输出，格式见交付工具说明');
+  const parseRound = (v: unknown, where: string): number => {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new Error(`${where} 的轮次（round）须是大于等于 1 的整数`);
+    return v;
+  };
   const text = (v: unknown, where: string): string => {
     if (typeof v !== 'string' || !v.trim() || v.length > NOTE_MAX || /[\u0000-\u0009\u000b-\u001f\u007f]/.test(v)) throw new Error(`${where} 要是 1 到 ${NOTE_MAX} 字的文字（可换行，不含其他控制字符）`);
     return v.trim();
@@ -232,19 +242,20 @@ export function readNotes(value: unknown, undelivered: string[]): Notes {
   const cases: Record<string, CaseNote> = {};
   for (const autoid of undelivered) {
     const note = value.cases[autoid];
-    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明请只写结论、下一步、设备输出，以及判断设备问题或原始用例问题所需的原文`);
+    if (!isRecord(note) || Object.keys(note).some((k) => !['judged', 'remedy', 'round', 'evidence', 'defect_candidate', 'author_conflict'].includes(k))) throw new Error(`用例 ${autoid} 的说明请只写结论、下一步、可选轮次 round、设备输出，以及判断设备问题或原始用例问题所需的原文`);
     const candidate = note.defect_candidate, conflict = note.author_conflict;
     if (candidate !== undefined && (!isRecord(candidate) || Object.keys(candidate).sort().join() !== 'actual,expected,repro')) throw new Error(`用例 ${autoid} 判断设备的问题时，请只写复现步骤、原始用例期望原句和设备输出三项`);
     if (conflict !== undefined && (!isRecord(conflict) || Object.keys(conflict).sort().join() !== 'author,manual,reference')) throw new Error(`用例 ${autoid} 判断原始用例的问题时，请只写原始用例原句、手册原话和对应的手册三项`);
     if (candidate !== undefined && conflict !== undefined) throw new Error(`用例 ${autoid} 不能同时判断为设备的问题和原始用例的问题；手册排除这个取值时请核对原始用例，手册支持这个取值时请核对设备输出`);
     cases[autoid] = {
       judged: text(note.judged, `用例 ${autoid} 的结论`), remedy: text(note.remedy, `用例 ${autoid} 的下一步`),
+      ...(note.round === undefined ? {} : { round: parseRound(note.round, `用例 ${autoid}`) }),
       ...(note.evidence === undefined ? {} : { evidence: text(note.evidence, `用例 ${autoid} 的设备输出`) }),
       ...(isRecord(candidate) ? { defect_candidate: { repro: text(candidate.repro, `用例 ${autoid} 的复现步骤`), expected: text(candidate.expected, `用例 ${autoid} 的期望原句`), actual: text(candidate.actual, `用例 ${autoid} 的设备输出`) } } : {}),
       ...(isRecord(conflict) ? { author_conflict: { author: text(conflict.author, `用例 ${autoid} 的原始用例原句`), manual: text(conflict.manual, `用例 ${autoid} 的手册原话`), reference: text(conflict.reference, `用例 ${autoid} 对应的手册`) } } : {}),
     };
   }
-  return { ...(value.batch === undefined ? {} : { batch: text(value.batch, '补充说明') }), cases };
+  return { ...(value.round === undefined ? {} : { round: parseRound(value.round, '说明文件') }), ...(value.batch === undefined ? {} : { batch: text(value.batch, '补充说明') }), cases };
 }
 
 /**

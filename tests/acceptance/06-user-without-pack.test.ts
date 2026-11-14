@@ -37,8 +37,8 @@ describe('scenario 6: user without pack', () => {
     assert.equal(unassignedAnswer.isError, true);
     assert.equal(unassignedAnswer.out.call_result, 'error');
     assert.equal(unassignedAnswer.out.errors[0]?.code, 'SOURCE_NOT_PERMITTED');
-    assert.ok(unassignedAnswer.text.includes('任务包 case-review 存在，没有分配给你'), unassignedAnswer.text);
-    assert.ok(unassignedAnswer.text.includes('请管理员把它分配给你'), 'the fix names who can assign it');
+    assert.ok(unassignedAnswer.text.includes('当前账户未获授权使用工作流「case-review」'), unassignedAnswer.text);
+    assert.ok(unassignedAnswer.text.includes('请联系管理员为该账户或所在团队分配此工作流'), 'the fix names who can assign it');
     assert.equal(unassignedAnswer.out.run, undefined);
 
     // 2. Calling start_run for a completely non-existent pack
@@ -51,7 +51,10 @@ describe('scenario 6: user without pack', () => {
     assert.equal(nonExistentAnswer.isError, true);
     assert.equal(nonExistentAnswer.out.call_result, 'error');
     assert.equal(nonExistentAnswer.out.errors[0]?.code, 'SOURCE_ABSENT');
-    assert.ok(nonExistentAnswer.text.includes('Hub 里没有任务包 totally-fictitious-pack-999'), nonExistentAnswer.text);
+    assert.equal(
+      nonExistentAnswer.text,
+      '不存在：Hub 里没有名为「totally-fictitious-pack-999」的工作流或技能。请核对名称。',
+    );
 
     // Apart from the error itself, both answers have the same empty shape: nothing of the pack is shown.
     const shape = (out: Record<string, unknown>) => ({ ...out, trace: 'fixed', errors: undefined });

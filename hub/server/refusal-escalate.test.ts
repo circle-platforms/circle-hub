@@ -17,6 +17,7 @@ import {
   checkedPackDeclaredExample,
   countsTowardEscalation,
   escalateProtocolErrors,
+  escalationIdentityOf,
   escalationTier,
   factOfCallError,
   formatCategoryCallError,
@@ -37,14 +38,119 @@ const TOOL_INPUTS = {
 
 const FORBIDDEN_CALL_ERROR = /状态已确认|状态未知|判断错误|决定者程序|原因缺资料|原因还没查清|任务包|没有分配给你|替代路径|按工具的输入模式改正这个参数后再调用/;
 
-test('SOURCE_UNAVAILABLE, internal and cancel codes do not escalate', () => {
+test('SOURCE_UNAVAILABLE, internal and cancel codes do not escalate; SOURCE_RETRYABLE is a category', () => {
   assert.equal(countsTowardEscalation('SOURCE_UNAVAILABLE'), false);
+  assert.equal(countsTowardEscalation('SOURCE_RETRYABLE'), true);
   assert.equal(countsTowardEscalation('INTERNAL_ERROR'), false);
   assert.equal(countsTowardEscalation('CANCELLED'), false);
   assert.equal(countsTowardEscalation('REQUEST_CANCELLED'), false);
   assert.equal(countsTowardEscalation(null), false);
+  assert.equal(countsTowardEscalation('EFFECT_UNKNOWN_DISPOSED'), false);
   assert.equal(countsTowardEscalation('SUBMISSION_SCHEMA_VIOLATION'), true);
   assert.equal(countsTowardEscalation('SOURCE_NOT_PERMITTED'), true);
+});
+
+test('escalationIdentityOf: 参数无效 needs path; others need object or request digest (Boss 18:09)', () => {
+  assert.equal(escalationIdentityOf('SUBMISSION_SCHEMA_VIOLATION', {}), null);
+  assert.deepEqual(escalationIdentityOf('SUBMISSION_SCHEMA_VIOLATION', { path: '/pack' }), { path: '/pack' });
+  assert.equal(escalationIdentityOf('SOURCE_RETRYABLE', {}), null);
+  assert.deepEqual(escalationIdentityOf('SOURCE_RETRYABLE', { objectKey: 'plm:bug:31057' }), {
+    objectKey: 'plm:bug:31057',
+  });
+  assert.deepEqual(escalationIdentityOf('SOURCE_ABSENT', { requestDigest: 'sha256:ab' }), {
+    requestDigest: 'sha256:ab',
+  });
+});
+
+test('without identity facts, occurrence is null and escalate appends nothing (Boss 18:09 tonight)', async () => {
+  let called = 0;
+  const callLog = {
+    countRecentErrors: async () => {
+      called += 1;
+      return 9;
+    },
+  };
+  const published = PUBLISHED.get('start_run')!;
+  // 参数无效 but no path → no count.
+  assert.equal(
+    await occurrenceOf({
+      callLog,
+      userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+      tool: 'start_run',
+      errorCode: 'SUBMISSION_SCHEMA_VIOLATION',
+    }),
+    null,
+  );
+  // SOURCE_RETRYABLE is a category but no object/digest → no count (acceptance 36).
+  const retryable = {
+    code: 'SOURCE_RETRYABLE',
+    message: '连不上来源',
+    fix: '稍后用同样参数重新开始；仍失败请管理员核对资源地址与网络',
+  };
+  const out = await escalateProtocolErrors({
+    callLog,
+    userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+    tool: 'start_run',
+    errors: [retryable],
+    input: StartRunInput,
+    inputSchema: published.inputSchema,
+  });
+  assert.equal(out[0].fix, retryable.fix);
+  assert.doesNotMatch(out[0].fix!, /这是一小时内第/);
+  assert.equal(called, 0);
+});
+
+test('with synthetic identity facts, 2nd/3rd escalate; /items omits useless whole-tool example (Boss 18:09)', async () => {
+  const priors = new Map<string, number>();
+  const callLog = {
+    countRecentErrors: async (query: { path?: string; objectKey?: string; requestDigest?: string; errorCode: string }) => {
+      const key = `${query.errorCode}|${query.path ?? ''}|${query.objectKey ?? ''}|${query.requestDigest ?? ''}`;
+      return priors.get(key) ?? 0;
+    },
+  };
+  const published = PUBLISHED.get('submit_result')!;
+  const base = {
+    code: 'SUBMISSION_SCHEMA_VIOLATION',
+    message: '/items/0/slots/findings/0/commands/0 要的是对象',
+    fix: '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
+    path: '/items/0/slots/findings/0/commands/0',
+  };
+  const key = `${base.code}|${base.path}||`;
+
+  priors.set(key, 0);
+  const first = await escalateProtocolErrors({
+    callLog,
+    userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+    tool: 'submit_result',
+    errors: [base],
+    input: SubmitResultInput,
+    inputSchema: published.inputSchema,
+  });
+  assert.equal(first[0].fix, base.fix);
+
+  priors.set(key, 1);
+  const second = await escalateProtocolErrors({
+    callLog,
+    userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+    tool: 'submit_result',
+    errors: [base],
+    input: SubmitResultInput,
+    inputSchema: published.inputSchema,
+  });
+  assert.equal(second[0].fix, `${base.fix}。这是一小时内第 2 次同样的错误。`);
+  assert.doesNotMatch(second[0].fix!, /完整的正确写法/);
+
+  priors.set(key, 2);
+  const third = await escalateProtocolErrors({
+    callLog,
+    userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+    tool: 'submit_result',
+    errors: [base],
+    input: SubmitResultInput,
+    inputSchema: published.inputSchema,
+  });
+  assert.equal(third[0].fix, `${base.fix}。这是一小时内第 3 次同样的错误。`);
+  assert.doesNotMatch(third[0].fix!, /完整的正确写法|照原样重试不会成功/);
 });
 
 test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替代路径)', () => {
@@ -55,7 +161,7 @@ test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替�
   const first = buildEscalation({ occurrence: 1, exampleJson: '{"pack":"<工作流编号>","inputs":{}}' });
   assert.equal(first.fixSuffix, null);
   assert.equal(first.exampleJson, null);
-  const second = buildEscalation({ occurrence: 2, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效', hasPath: true });
+  const second = buildEscalation({ occurrence: 2, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效' });
   assert.equal(second.tier, 2);
   assert.match(second.countLabel, /这是一小时内第 2 次同样的错误/);
   assert.ok(second.fixSuffix?.includes(second.countLabel));
@@ -64,9 +170,7 @@ test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替�
   assert.equal(second.categoryClose, null);
   assert.doesNotMatch(second.fixSuffix!, FORBIDDEN_CALL_ERROR);
   assert.doesNotMatch(second.fixSuffix!, /"x"/);
-  const noPath = buildEscalation({ occurrence: 2, exampleJson: null, category: '参数无效', hasPath: false });
-  assert.equal(noPath.countLabel, '这是一小时内这个工具第 2 次参数无效');
-  const third = buildEscalation({ occurrence: 3, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效', hasPath: true });
+  const third = buildEscalation({ occurrence: 3, exampleJson: '{"pack":"<工作流编号>","inputs":{}}', category: '参数无效' });
   assert.equal(third.tier, 3);
   assert.match(third.countLabel, /这是一小时内第 3 次同样的错误/);
   assert.ok(third.categoryClose?.includes('照原样重试不会成功'));
@@ -92,7 +196,7 @@ test('1st / 2nd / 3rd composed prose uses D2 first sentence then escalation', ()
   );
   assert.doesNotMatch(first, FORBIDDEN_CALL_ERROR);
 
-  const secondParts = buildEscalation({ occurrence: 2, exampleJson: example, category, hasPath: true });
+  const secondParts = buildEscalation({ occurrence: 2, exampleJson: example, category });
   const secondFix = withEscalatedFix({ code: 'SUBMISSION_SCHEMA_VIOLATION', message, fix: baseFix }, secondParts).fix!;
   const second = formatCategoryCallError({ category, message, fix: secondFix });
   assert.match(second, /^参数无效：/);
@@ -101,7 +205,7 @@ test('1st / 2nd / 3rd composed prose uses D2 first sentence then escalation', ()
   assert.ok(second.includes(example));
   assert.doesNotMatch(second, FORBIDDEN_CALL_ERROR);
 
-  const thirdParts = buildEscalation({ occurrence: 3, exampleJson: example, category, hasPath: true });
+  const thirdParts = buildEscalation({ occurrence: 3, exampleJson: example, category });
   const thirdFix = withEscalatedFix({ code: 'SUBMISSION_SCHEMA_VIOLATION', message, fix: baseFix }, thirdParts).fix!;
   const third = formatCategoryCallError({ category, message, fix: thirdFix });
   assert.match(third, /这是一小时内第 3 次同样的错误/);
@@ -151,7 +255,7 @@ test('pack-scoped codes accept only pack-declared examples that pass the tool in
   assert.equal(checkedPackDeclaredExample(undefined, StartRunInput), null);
 });
 
-test('occurrence is prior call_logs count + 1 and never uses process memory', async () => {
+test('occurrence with path is prior + 1; without identity stays null', async () => {
   const seen: unknown[] = [];
   const callLog = {
     countRecentErrors: async (query: unknown) => {
@@ -187,9 +291,18 @@ test('occurrence is prior call_logs count + 1 and never uses process memory', as
     }),
     null,
   );
+  assert.equal(
+    await occurrenceOf({
+      callLog,
+      userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+      tool: 'start_run',
+      errorCode: 'SOURCE_RETRYABLE',
+    }),
+    null,
+  );
 });
 
-test('escalateProtocolErrors syncs fix for the 1st / 2nd / 3rd category-form shapes', async () => {
+test('escalateProtocolErrors with path facts syncs 1st / 2nd / 3rd shapes', async () => {
   let prior = 0;
   const callLog = { countRecentErrors: async () => prior };
   const published = PUBLISHED.get('start_run')!;
@@ -261,7 +374,6 @@ test('fixByRole keeps an admin fix that already carries the D5 escalation suffix
   const mapped = fixByRole('SOURCE_NOT_PERMITTED', 'admin')!;
   const parts = buildEscalation({ occurrence: 2, exampleJson: null, category: '无权限' });
   const escalated = `${mapped}。${parts.fixSuffix}。`;
-  // Callers that already escalated should pass the escalated string through text.ts without fixByRole dropping it.
   assert.ok(/这是一小时内第 2 次同样的错误/.test(escalated));
   assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'admin'), mapped);
 });

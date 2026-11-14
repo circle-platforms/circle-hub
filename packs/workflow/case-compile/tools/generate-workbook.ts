@@ -5,7 +5,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import REQUIREMENTS from '../requirements.json' with { type: 'json' };
-import { isRecord } from '../functions/text.ts';
+import { formatCallError, isRecord } from '../functions/text.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { parseManifest } from '../functions/manifest.ts';
@@ -88,6 +88,6 @@ export async function main(argv: string[]): Promise<number> {
     const bytes = generateWorkbookSet(recipes); await writeNew(args.out, bytes);
     const moved = volumeOrder(recipes).moved, titles = new Map(recipes.map((recipe) => [recipe.fields.autoid, recipe.fields.title] as const));
     process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length, ...(moved.length ? { moved_tail: moved, moved_text: movedText(moved, titles) } : {}) }) + '\n'); return 0;
-  } catch (error) { process.stderr.write(`自动化用例 Excel 未生成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

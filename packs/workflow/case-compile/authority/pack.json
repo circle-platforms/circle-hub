@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "recompose-authority",
-  "version": "1.1.7",
+  "version": "1.1.9",
   "kind": "workflow",
   "title": "recompose-authority",
   "description": "独立重组工作阶段，非平台默认能力",
@@ -38,8 +38,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "9ed14e716be0e4e17f37520ba67b1d79e23ef37938cbc28b3e9e5955ae2c03e1",
-      "size": 4473
+      "sha256": "bcf86695e3ca73cec1f1053c0cde8ba68dff9fca858e2875d904bbe72b3d05ca",
+      "size": 4509
     },
     {
       "path": "functions/schema.ts",
@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "3653a8283e766edf0503f2fbf94b682168bcafafe7f13484fa7ace6a0ee86a22",
-      "size": 3487
+      "sha256": "603cd776c690adee3d88cadf53afb5915a309d9f35de80e2fa2ddda399399724",
+      "size": 9914
     },
     {
       "path": "requirements.json",

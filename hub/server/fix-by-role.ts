@@ -3,12 +3,13 @@
  * administrators get registry-backed commands / console paths — never an imperative「请管理员…」to self.
  */
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
+import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { COMMAND_METADATA } from './command-registry.ts';
 import { COMMAND_PARAMETERS, commandParameterHelp, type CommandParameterId } from './command-parameters.ts';
 import { connectionsPath, knowledgePath, recordsPath, settingsPath, teamPath } from './console/routes.ts';
 import { packListHead, packListHeadForMember } from './pack-words.ts';
 
-export type CallerRole = 'admin' | 'user';
+export type CallerRole = PermissionRole;
 
 /** Fill runtime caller account name into admin next steps; keep `<理由>` and other admin-written placeholders. */
 export function fillCallerAccountName(text: string, callerName: string | undefined): string {

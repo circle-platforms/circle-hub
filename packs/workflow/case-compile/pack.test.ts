@@ -9,11 +9,25 @@ import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
 import { parseRuntimeContract } from './functions/runtime-contract.ts';
 import { parseProfile } from './functions/profile.ts';
 import { parseManifest } from './functions/manifest.ts';
+import { renderAgentDefinition, renderTaskBrief, SUBAGENT_ROLES } from './functions/subagent-roles.ts';
 const read = (path: string) => readFileSync(join(PACK_DIR, path), 'utf8');
 const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
-  const manifest = await computeManifest(); assert.ok(PackManifest.safeParse(manifest).success); assert.equal(manifest.version, '3.19.1'); assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`); assert.deepEqual(json('pack.json'), manifest);
-  const files = await packFiles(); assert.ok(files.includes('functions/runtime-contract.ts')); assert.ok(files.includes('tables/runtime-profile-format.json'));
+  const manifest = await computeManifest();
+  assert.equal(PackManifest.safeParse(manifest).success, true);
+  assert.equal(manifest.version, '3.20.2');
+  assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
+  assert.deepEqual(json('pack.json'), manifest);
+  const files = await packFiles();
+  assert.ok(files.includes('functions/runtime-contract.ts'));
+  assert.ok(files.includes('functions/subagent-roles.ts'));
+  assert.ok(files.includes('tables/runtime-profile-format.json'));
+  assert.ok(files.includes('tools/task-brief.ts'));
+  assert.ok(files.includes('tools/install-agents.ts'));
+  assert.ok(files.includes('tools/workspace-path.ts'));
+  for (const agent of ['compile-recomposer.md', 'compile-writer.md', 'compile-fidelity.md', 'compile-attributor.md']) {
+    assert.ok(files.includes(`agents/${agent}`), agent);
+  }
   assert.ok(!files.some((path) => path.endsWith('.test.ts') || path === 'functions/test-support.ts' || path.startsWith('testing/')));
   assert.ok(!files.includes('functions/contract.ts') && !files.includes('functions/plan.ts'));
 });
@@ -69,19 +83,33 @@ test('the client skill says when the user is asked and that a subagent never ask
   for (const phrase of ['只在答案会改变做法、资料里又查不到时问使用者', '设备的问题还是原始用例的问题，需要使用者决定', '能查清的自己查并在报告说明', '子代理不问使用者：定不了的写进给主代理的报告']) assert.ok(skill.includes(phrase), phrase);
 });
 test('the client skill and the closing procedure carry the reference rules on parameter values, authored negatives and refused commands', () => {
-  const skill = read('SKILL.md'), closing = read('tools/delivery.md');
+  const skill = read('SKILL.md'), writer = read('agents/compile-writer.md'), closing = read('tools/delivery.md');
+  const writerRole = SUBAGENT_ROLES.find((role) => role.key === 'plan')!;
+  const renderedBrief = renderTaskBrief({
+    role: writerRole,
+    caseRef: 'case-1',
+    briefPath: 'briefs/1.md',
+    outPath: 'plans/1.json',
+    skillDir: '<技能目录>',
+    scopeText: '全部用例',
+  });
+  for (const phrase of [
+    '原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写',
+    '重组时使用者已决定的照做，不再问',
+  ]) assert.ok(skill.includes(phrase), phrase);
   for (const phrase of [
     '手册对各参数的说明',
     '参数取值：写进命令的每个值都要在手册对该参数的说明之内',
-    '原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写',
-    '重组时使用者已决定的照做，不再问',
     '只有设备执行时才产生的值，要在同一条自动化用例里先取出再用',
     '不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西',
     '不把这句话当设备输出去找，也不删掉这项检查；检查设备输出里没有对应记录',
     '设备上的配置和观察都用执行器规则为该设备声明的方法',
     '要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限',
-  ]) assert.ok(skill.includes(phrase), phrase);
-  assert.ok(!skill.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
+  ]) {
+    assert.ok(writer.includes(phrase), phrase);
+    assert.ok(renderedBrief.includes(phrase), phrase);
+  }
+  assert.ok(!skill.includes('纯描述判断') && !writer.includes('纯描述判断'), 'the runner has no judgement by description: a sentence in text is searched for word by word');
   for (const phrase of [
     '设备输出包含执行器规则声明的执行失败原话时',
     '问题在这条自动化用例自己的命令顺序',
@@ -116,13 +144,50 @@ test('the recompose skill raises an author step the manual excludes to the user 
   ]) assert.ok(recompose.includes(phrase), phrase);
 });
 
-test('the client skill makes the model adapt the bed, seed what assertions read and clean up in reverse', () => {
-  const skill = read('SKILL.md');
-  for (const phrase of ['按测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '要查询的记录先在步骤前部创建', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要清理']) assert.ok(skill.includes(phrase), phrase);
+test('the client skill dispatches general-purpose subagents via task-brief and scope.md while role specs keep writer rules', () => {
+  const skill = read('SKILL.md'), writer = read('agents/compile-writer.md');
+  assert.ok(skill.includes('scope.md'));
+  assert.ok(skill.includes('task-brief.ts'));
+  assert.ok(skill.includes('general-purpose'));
+  assert.ok(skill.includes('装进当前主目录的 `skills` 目录'));
+  assert.ok(skill.includes('前台方式并列多个 `task`'));
+  assert.ok(skill.includes('严禁用 `background`'));
+  assert.ok(skill.includes('每批最多 6 个'));
+  assert.ok(skill.includes('单独重派'));
+  assert.ok(!skill.includes('install-agents.ts'));
+  assert.ok(!skill.includes('.circle/agents'));
+  for (const phrase of ['按测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '要查询的记录先在步骤前部创建', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要清理']) assert.ok(writer.includes(phrase), phrase);
   const plan = json('requirements.json').requirements.find((r: any) => r.key === 'plan');
   for (const phrase of ['先在前部创建', '逆序对应的逆操作', '恢复原地址']) assert.ok(plan.description.includes(phrase), phrase);
   const grounded = json('requirements.json').requirements.find((r: any) => r.key === 'expected_grounded');
   for (const phrase of ['可机械核对的输出', '先建好被查记录', '仍以 quote 逐字保留作依据']) assert.ok(grounded.description.includes(phrase), phrase);
+});
+test('bundled subagent definitions match single-source role specs and exclude model/question/task', () => {
+  const expected: Record<string, string[]> = {
+    'compile-recomposer': ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep'],
+    'compile-writer': ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep', 'execute'],
+    'compile-fidelity': ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'execute'],
+    'compile-attributor': ['read_file', 'write_file', 'ls', 'glob', 'grep'],
+  };
+  assert.deepEqual(SUBAGENT_ROLES.map((r) => r.agentName).sort(), Object.keys(expected).sort());
+  for (const role of SUBAGENT_ROLES) {
+    const raw = read(`agents/${role.agentName}.md`);
+    assert.equal(raw, renderAgentDefinition(role), role.agentName);
+    const match = /^---\n([\s\S]*?)\n---\n([\s\S]+)$/.exec(raw);
+    assert.ok(match, role.agentName);
+    const meta = new Map<string, string>();
+    for (const line of match[1].split('\n')) {
+      const idx = line.indexOf(':');
+      assert.ok(idx > 0, `${role.agentName}: ${line}`);
+      meta.set(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
+    }
+    assert.deepEqual([...meta.keys()].sort(), ['description', 'name', 'tools'], role.agentName);
+    assert.equal(meta.get('name'), role.agentName);
+    assert.ok((meta.get('description') ?? '').length > 0, role.agentName);
+    assert.deepEqual(meta.get('tools')?.split(',').map((v) => v.trim()), expected[role.agentName], role.agentName);
+    assert.ok(!role.tools.includes('question') && !role.tools.includes('task'), role.agentName);
+    assert.ok(match[2].includes('本子代理只承担'), role.agentName);
+  }
 });
 test('the preserved undeclared example still seeds the queried record, asserts mechanically and cleans up in reverse', () => {
   const data = JSON.parse(json('testing/undeclared-example.json').submission).items[0].slots.plan[0].data;
@@ -173,4 +238,12 @@ test('repository manifest paths directly name ordinary files with their declared
     const bytes=readFileSync(path);assert.equal(bytes.byteLength,file.size,file.path);
     assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,file.path);
   }
+});
+test('SKILL.md and delivery.md require opening a new plan run via start_run before editing plans', () => {
+  const skill = read('SKILL.md');
+  const delivery = read('tools/delivery.md');
+  assert.ok(skill.includes('start_run {"pack":"case-compile"'));
+  assert.ok(skill.includes('禁止往已被核对锁定的旧脚本编写运行重交'));
+  assert.ok(skill.includes('禁止直接往脚本合并运行提交改过的计划'));
+  assert.ok(delivery.includes('start_run` 新开一次脚本编写运行'));
 });

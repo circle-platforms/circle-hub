@@ -239,11 +239,28 @@ export class PgCallLog implements CallLog {
     return row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId ? { ...row.body.client, at: row.body.at } : null;
   }
 
-  async countRecentErrors(query: { userId: string; tool: string; errorCode: string; since: string }): Promise<number> {
+  async countRecentErrors(query: {
+    userId: string;
+    tool: string;
+    errorCode: string;
+    since: string;
+    path?: string;
+    objectKey?: string;
+    requestDigest?: string;
+  }): Promise<number> {
     if (typeof query.userId !== 'string' || !USER_ID.test(query.userId)) throw new TypeError('userId is not an account id');
     if (typeof query.tool !== 'string' || !TOOL.test(query.tool)) throw new TypeError('tool must be a tool name or protocol method');
     if (typeof query.errorCode !== 'string' || !ERROR_CODE.test(query.errorCode)) throw new TypeError('errorCode is not a code');
     const since = normalizeTime(query.since, 'since');
+    // Boss 18:09: without stored path / object / request digest, a coarse count would claim false sameness.
+    // Codex records those facts on append and filters here; until then identity queries count as zero priors.
+    if (
+      (typeof query.path === 'string' && query.path.length > 0) ||
+      (typeof query.objectKey === 'string' && query.objectKey.length > 0) ||
+      (typeof query.requestDigest === 'string' && query.requestDigest.length > 0)
+    ) {
+      return 0;
+    }
     const rows = (
       await this.#db.query(
         `SELECT COUNT(*)::bigint AS n FROM call_logs

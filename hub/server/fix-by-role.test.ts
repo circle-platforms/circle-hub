@@ -96,8 +96,8 @@ test('every admin-ask protocol code has an admin fix without imperative 请管�
 test('toolText and structured-style fix stay role-split for SOURCE_NOT_PERMITTED', () => {
   const errors = [{
     code: 'SOURCE_NOT_PERMITTED' as const,
-    message: '任务包 recompose 存在，没有分配给你',
-    fix: '请管理员把它分配给你；用 list_task_packs 看你能用的任务包',
+    message: '当前账户未获授权使用工作流「recompose」',
+    fix: '请联系管理员为该账户或所在团队分配此工作流',
     path: '/pack',
   }];
   const answer = StartRunOutput.parse({ call_result: 'error', errors, trace: TRACE });
