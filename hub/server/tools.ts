@@ -37,6 +37,7 @@ import { modelReferencesText, fallbackText, pageCursorProblem, toolText, type Te
 import { callStatus } from './call-status.ts';
 import { cachedReadReply } from './read-replies.ts';
 import { recoverRead } from './recover-read.ts';
+import { escalateProtocolErrors } from './refusal-escalate.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -853,6 +854,28 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
         return fix === undefined ? error : { ...error, fix };
       }),
     };
+  }
+  // D5: after role fix, escalate repeated refusals into errors[].fix (structured + 下一步 stay aligned). Count is before call_logs append.
+  if (value.call_result === 'error' && Array.isArray(value.errors) && value.errors.length > 0) {
+    const published = PUBLISHED.get(name);
+    if (published !== undefined) {
+      try {
+        value = {
+          ...value,
+          errors: await escalateProtocolErrors({
+            callLog: deps.records?.callLog,
+            userId: call.principal.id,
+            tool: name,
+            errors: value.errors,
+            input: definition.input,
+            inputSchema: published.inputSchema,
+            ...(deps.now ? { now: deps.now() } : {}),
+          }),
+        };
+      } catch (error) {
+        call.context.adminNote(`refusal escalation skipped: ${describeError(error)}`);
+      }
+    }
   }
   const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items, caller: { role } };
   let text: string;

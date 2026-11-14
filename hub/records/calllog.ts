@@ -239,6 +239,21 @@ export class PgCallLog implements CallLog {
     return row?.schema === CLIENT_DECLARATION_SCHEMA && row.body.user === userId ? { ...row.body.client, at: row.body.at } : null;
   }
 
+  async countRecentErrors(query: { userId: string; tool: string; errorCode: string; since: string }): Promise<number> {
+    if (typeof query.userId !== 'string' || !USER_ID.test(query.userId)) throw new TypeError('userId is not an account id');
+    if (typeof query.tool !== 'string' || !TOOL.test(query.tool)) throw new TypeError('tool must be a tool name or protocol method');
+    if (typeof query.errorCode !== 'string' || !ERROR_CODE.test(query.errorCode)) throw new TypeError('errorCode is not a code');
+    const since = normalizeTime(query.since, 'since');
+    const rows = (
+      await this.#db.query(
+        `SELECT COUNT(*)::bigint AS n FROM call_logs
+          WHERE user_id = $1 AND tool = $2 AND error_code = $3 AND call_result = 'error' AND at >= $4`,
+        [query.userId, query.tool, query.errorCode, since],
+      )
+    ).rows;
+    return Number(rows[0]?.n ?? 0);
+  }
+
   async query(principal: Principal, query: CallLogQuery = {}): Promise<Page<CallLogLine>> {
     // The stored account decides, not the Principal a session kept: a demoted admin sees only their own calls.
     const viewer = await this.#viewer(principal);

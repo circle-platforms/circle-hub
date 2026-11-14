@@ -183,6 +183,58 @@ test('the real reason is kept outside the record: no digest a user sees covers t
   assert.equal(rest.next, null);
 });
 
+test('countRecentErrors counts same account+tool+error_code since a time, excluding other rows', async (t) => {
+  const kit = await openTestRecords({ postgres });
+  t.after(() => kit.close());
+  const { alice, bob } = await people(kit);
+  const base = {
+    sessionId: null,
+    arguments: {},
+    durationMs: 1,
+    tool: 'start_run',
+    runId: null,
+    callResult: 'error' as const,
+    errorCode: 'SUBMISSION_SCHEMA_VIOLATION',
+  };
+  await kit.callLog.append({ ...base, at: '2026-11-14T01:00:00.000Z', traceId: trace(50), userId: alice.id });
+  await kit.callLog.append({ ...base, at: '2026-11-14T02:30:00.000Z', traceId: trace(51), userId: alice.id });
+  await kit.callLog.append({ ...base, at: '2026-11-14T02:45:00.000Z', traceId: trace(52), userId: alice.id, errorCode: 'SOURCE_ABSENT' });
+  await kit.callLog.append({ ...base, at: '2026-11-14T02:50:00.000Z', traceId: trace(53), userId: bob.id });
+  await kit.callLog.append({
+    ...base,
+    at: '2026-11-14T02:55:00.000Z',
+    traceId: trace(54),
+    userId: alice.id,
+    tool: 'submit_result',
+  });
+  await kit.callLog.append({
+    ...base,
+    at: '2026-11-14T02:56:00.000Z',
+    traceId: trace(55),
+    userId: alice.id,
+    callResult: 'ok',
+    errorCode: null,
+  });
+  assert.equal(
+    await kit.callLog.countRecentErrors!({
+      userId: alice.id,
+      tool: 'start_run',
+      errorCode: 'SUBMISSION_SCHEMA_VIOLATION',
+      since: '2026-11-14T02:00:00.000Z',
+    }),
+    1,
+  );
+  assert.equal(
+    await kit.callLog.countRecentErrors!({
+      userId: alice.id,
+      tool: 'start_run',
+      errorCode: 'SUBMISSION_SCHEMA_VIOLATION',
+      since: '2026-11-14T00:00:00.000Z',
+    }),
+    2,
+  );
+});
+
 test('the stored account decides what a query shows, not the Principal the caller kept', async (t) => {
   const kit = await openTestRecords({ postgres });
   t.after(() => kit.close());
