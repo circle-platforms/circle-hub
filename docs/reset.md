@@ -150,7 +150,7 @@ Circle Hub 用**重置和重建**处理不兼容版本更新、配置混乱或�
 
 - **F1. 执行器登记与普通变量**
   - **缺失后果**：变量未设值导致发布检查整批不能通过（`circle-hub executor list` 会显示缺失变量）；跨库重新 `apply` 会为执行器分配新的 `exe_…` 内部编号（同时重置 F6 占用与 F11 序号起点）。
-  - **恢复方法**：通过 `apply` 自动恢复，或运行 `circle-hub executor add <定义文件>` / `executor update <执行器> <定义文件>`、以及 `circle-hub var set <变量名> (--file <文件> | --text) --not-secret --reason <理由>`。若普通变量里存放了清单摘要（如 `manifest_sha256` 等），须核对其值与新库目标文档摘要一致（见 F3）。
+  - **恢复方法**：通过 `apply` 自动恢复，或运行 `circle-hub executor add <定义文件> --name=<管理员明确指定的执行器名字>` / `executor update <执行器> <定义文件>`、以及 `circle-hub var set <变量名> (--file <文件> | --text) --not-secret --reason <理由>`。若普通变量里存放了清单摘要（如 `manifest_sha256` 等），须核对其值与新库目标文档摘要一致（见 F3）。
 - **F2. 执行器与业务系统凭据（`vault/`）**
   - **缺失后果**：所有对执行器或业务系统的发送在发出前直接拦下，状态记为 `未发请求`（提示对应密钥没有可用设置）。`export` 与 `apply` 从不写入或导出任何密钥明文。
   - **恢复方法**：同机 `reset` 会保留 `<数据目录>/vault/`，重建后按大写密钥名自动接回；跨机迁移新库或需补录/轮换时，在写入任何依赖连通性的基线之前运行 `circle-hub secret set --name <密钥名> --reason <理由>`（从标准输入传入密钥值）。

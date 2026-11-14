@@ -15,7 +15,7 @@ function session(c: Awaited<ReturnType<typeof setup>>) {
 test('executor registration never reads stdin and accepts named credential references and prints no endpoint or secret', async t => {
   const c = await setup(); t.after(() => c.close()); const s = session(c);
   const file = join(c.kit.dataDir, 'executor.json'); await writeFile(file, JSON.stringify({...definition(c.endpoint.endpoint),credential:'${secret:DEMO_AUTH}'}));
-  assert.equal(await executorCommand(s, ['add', file]), 0);
+  assert.equal(await executorCommand(s, ['add', file, '--name=synthetic-cli-runner']), 0);
   assert.equal(await executorCommand(s, ['list']), 0);
   assert.match(s.lines.join('\n'),/写声明未写/);
   assert.ok(!s.lines.join('\n').includes(c.endpoint.endpoint)); assert.ok(!s.lines.join('\n').includes('synthetic-second-key'));
