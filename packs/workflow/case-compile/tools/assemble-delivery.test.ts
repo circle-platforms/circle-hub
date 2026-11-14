@@ -64,7 +64,7 @@ const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/$
 const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
-async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served') {
+async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served', recomposeRecord: Record<string, unknown> = recomposed) {
   const all: Record<string, unknown[]> = { [WHOLE]: [job('a', WHOLE, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])], [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], finalWorkbook, finalVerdicts)], ...extraJobs };
   const runsInOrder = order ?? Object.keys(all);
   const jobs = Object.fromEntries(runsInOrder.map((run) => [run, all[run]]));
@@ -105,7 +105,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
     const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url); if (next) { response.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
     const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: records[whole[1]] ?? p.record, result: p.result, submission: p.submission })); return; }
     if (whole && records[whole[1]]) { response.statusCode = 409; response.end('这个运行还没有已受理的提交\n'); return; }
-    if (url === `/run-export/${RECOMPOSE}/run`) { response.end(JSON.stringify({ schema: 'run-export@1', run: recomposed })); return; }
+    if (url === `/run-export/${RECOMPOSE}/run`) { response.end(JSON.stringify({ schema: 'run-export@1', run: recomposeRecord })); return; }
     const batch = /^\/run-export\/(run_\w+)\/knowledge$/.exec(url);
     if (batch) {
       if (knowledge === 'absent' || !records[batch[1]]) { response.statusCode = 404; response.end('没有\n'); return; }
@@ -744,4 +744,49 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   assert.equal(refusedStray.code, 1);
   assert.match(refusedStray.stderr, new RegExp(`^参数无效：上机验证 ${WHOLE} 包含未纳入本次 parameters\\.scope 的原始用例 ${CASES[1]}`));
   await assert.rejects(readdir(outStray));
+});
+
+test('assemble-delivery retains out_of_scope disclosure when both --recompose and parameters.scope were scoped (red-then-green)', async (t) => {
+  const scope = {
+    words: '从重组起仅编 101 和 102',
+    cases: [CASES[0], CASES[1]],
+    out_of_scope: [
+      { autoid: CASES[2], title: '合成标题 3' },
+      { autoid: CASES[3], title: '合成标题 4' },
+    ],
+  };
+  const scopedRecomp = {
+    run: RECOMPOSE,
+    items: recomposed.items.slice(0, 2),
+    groups: [{ kind: 'recompose-scope@1', scope }],
+  };
+  const scopedPlan1 = withScope(planRun(PLAN1, [CASES[0], CASES[1]], []), scope);
+  const scopedPlan2 = withScope(planRun(PLAN2, [CASES[0]], []), scope);
+  const h = await hub(
+    ['pass'],
+    scopedPlan2.workbook,
+    {
+      [WHOLE]: [job('a', WHOLE, PLAN1, [CASES[0], CASES[1]], scopedPlan1.workbook, ['pass', 'fail'])],
+      [FINAL]: [job('b', FINAL, PLAN2, [CASES[0]], scopedPlan2.workbook, ['pass'])],
+    },
+    { [PLAN1]: scopedPlan1, [PLAN2]: scopedPlan2 },
+    [WHOLE, FINAL],
+    false,
+    [],
+    'none',
+    'served',
+    scopedRecomp,
+  );
+  t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-scope-recomp-out-')), 'out');
+  const done = await run(h, await notes({ [CASES[1]]: NOTES[CASES[1]] }), out, `${WHOLE},${FINAL}`);
+  assert.equal(done.code, 0, done.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.in_scope_total, 2);
+  assert.equal(summary.out_of_scope_total, 2);
+  assert.deepEqual(summary.out_of_scope, scope.out_of_scope);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  assert.match(report, /未纳入本次范围的原始用例（2 条/);
+  assert.match(report, new RegExp(`${CASES[2]} 合成意图 3|${CASES[2]} 合成标题 3`));
+  assert.match(report, new RegExp(`${CASES[3]} 合成意图 4|${CASES[3]} 合成标题 4`));
 });

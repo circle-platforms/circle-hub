@@ -308,3 +308,131 @@ test('parameters.scope projects only in-scope cases, freezes out_of_scope metada
   assert.equal(narrowed.error?.code, 'case-compile.workbook_context');
 });
 
+import projectRecompose from '../recompose/functions/project.ts';
+import sealRecompose from '../recompose/functions/seal.ts';
+
+test('recompose parameters.scope filters items & seal batch while retaining full mindmap out_of_scope, and case-compile refuses exceeding bound recomposition_run (red-then-green)', () => {
+  const THIRD = '990000000000000033';
+  const SHA = 'a'.repeat(64);
+  const threeModel = parsed([
+    caseOne,
+    { id: 'case-b', autoid: SECOND, title: '合成用例二', step: 'widget health interval pool-b 61', expect: '生效二' },
+    { id: 'case-c', autoid: THIRD, title: '合成用例三', step: 'widget health interval pool-c 62', expect: '生效三' },
+  ]);
+
+  const recomposeInput = (scope?: unknown) => ({
+    inputs: [{ slot: 'subject', sha256: SHA, parser: 'kityminder@1', model: threeModel }],
+    parameters: scope === undefined ? {} : { scope },
+    context: { run: 'run_recompose_scoped' },
+  });
+
+  // 1. Invalid recompose scope shapes and missing autoids refuse.
+  for (const bad of [
+    {},
+    { words: '   ', cases: [AUTOID] },
+    { words: '仅第一条', cases: [] },
+    { words: '仅第一条', cases: [AUTOID, AUTOID] },
+    { words: '仅第一条', cases: ['990000000000000099'] },
+    { words: '仅第一条', cases: [AUTOID], extra: 1 },
+  ]) {
+    const out = projectRecompose(recomposeInput(bad)) as { error?: { code: string; fix: string } };
+    assert.equal(out.error?.code, 'SUBMISSION_SCHEMA_VIOLATION', JSON.stringify(bad));
+    assert.ok(out.error?.fix);
+  }
+
+  // 2. Valid scoped recompose projects only in-scope items in mindmap order, records scope + out_of_scope, and seals on those items alone.
+  const recomposeOut = projectRecompose(recomposeInput({ words: '本次仅编第一、三条', cases: [THIRD, AUTOID] })) as unknown as {
+    items: Array<{ id: string; fields: { case_id: string; source_ref: string; node: string } }>;
+    groups: Array<{ kind: string; items: string[]; scope?: { words: string; cases: string[]; out_of_scope: Array<{ autoid: string; title: string }> } }>;
+  };
+  assert.deepEqual(recomposeOut.items.map((i) => i.fields.case_id), [AUTOID, THIRD]);
+  assert.deepEqual(recomposeOut.groups[0].items, recomposeOut.items.map((i) => i.id));
+  assert.equal(recomposeOut.groups[0].scope?.words, '本次仅编第一、三条');
+  assert.deepEqual(recomposeOut.groups[0].scope?.cases, [THIRD, AUTOID]);
+  assert.deepEqual(recomposeOut.groups[0].scope?.out_of_scope.map((c) => c.autoid), [SECOND]);
+
+  const sealOk = sealRecompose({
+    subject: {
+      items: recomposeOut.items.map((i) => ({
+        id: i.id,
+        fields: i.fields,
+        slots: { record: [{ data: { case: { source_ref: i.fields.source_ref, node: i.fields.node } } }] },
+      })),
+    },
+  });
+  assert.equal(sealOk[0].verdict, 'support');
+  assert.equal((sealOk[0].data as { total: number; supplied: number }).total, 2);
+
+  // 3. case-compile must fail closed at start_run if requested selection exceeds bound recomposition_run items.
+  const recompRunBound = {
+    slot: 'recomposition_run',
+    external: null,
+    meta: { kind: 'run', record: 'f'.repeat(64) },
+    model: {
+      kind: 'run',
+      body: {
+        run: 'run_recompose_scoped',
+        pack: 'recompose@1.2.6',
+        product: 'orbit',
+        root: 'r'.repeat(64),
+        product_pack_digest: 'p'.repeat(64),
+        items: recomposeOut.items,
+        groups: recomposeOut.groups,
+      },
+    },
+  };
+  const recompResultBound = {
+    slot: 'recomposition_result',
+    external: null,
+    meta: { kind: 'validation_result', record: 'e'.repeat(64) },
+    model: {
+      kind: 'validation_result',
+      body: {
+        schema: 'validation@1',
+        run: 'run_recompose_scoped',
+        acceptance: 'accepted',
+        locks: { pack: 'recompose@1.2.6', pack_digest: 'd'.repeat(64) },
+        partitions: {},
+      },
+    },
+  };
+  const compileWithRecomp = (parameters: Record<string, unknown>) => ({
+    inputs: [
+      { slot: 'subject', sha256: SHA, parser: 'kityminder@1', model: threeModel },
+      { slot: 'contract', model: runtimeDocument() },
+      { slot: 'profile', model: profileDocument() },
+      { slot: 'inventory', model: MANIFEST_DOC },
+      recompRunBound,
+      recompResultBound,
+    ],
+    parameters,
+    context: { leases: { now: '2026-10-23T02:00:00.000Z', entries: [] }, product: 'orbit', root: 'r'.repeat(64), product_pack_digest: 'p'.repeat(64) },
+  });
+
+  // Unscoped whole-doc compile exceeds scoped [AUTOID, THIRD] -> refused.
+  const wholeTooWide = projectItems(compileWithRecomp({ pipeline: 'recomposed' })) as { error?: { code: string; message: string; fix: string; pointer?: string } };
+  assert.equal(wholeTooWide.error?.code, 'case-compile.invalid_parameter', JSON.stringify(wholeTooWide));
+  assert.match(wholeTooWide.error?.message ?? '', /超出.*冻结范围|不在.*冻结条目/);
+  assert.match(wholeTooWide.error?.fix ?? '', /扩大范围.*recompose|重开.*recompose/);
+
+  // Wider scope [AUTOID, SECOND, THIRD] -> refused at /parameters/scope/cases.
+  const scopeTooWide = projectItems(compileWithRecomp({ pipeline: 'recomposed', scope: { words: '临时加第二条', cases: [AUTOID, SECOND, THIRD] } })) as { error?: { code: string; pointer?: string; message: string; fix: string } };
+  assert.equal(scopeTooWide.error?.code, 'case-compile.invalid_parameter', JSON.stringify(scopeTooWide));
+  assert.equal(scopeTooWide.error?.pointer, '/parameters/scope/cases');
+  assert.match(scopeTooWide.error?.message ?? '', new RegExp(SECOND));
+
+  // Out-of-scope single autoid SECOND -> refused at /parameters/autoid.
+  const autoidOutside = projectItems(compileWithRecomp({ autoid: SECOND, pipeline: 'recomposed' })) as { error?: { code: string; pointer?: string } };
+  assert.equal(autoidOutside.error?.code, 'case-compile.invalid_parameter', JSON.stringify(autoidOutside));
+  assert.equal(autoidOutside.error?.pointer, '/parameters/autoid');
+
+  // Matching scope [AUTOID, THIRD] and narrowing subset scope [AUTOID] -> both allowed.
+  const exactOk = projectItems(compileWithRecomp({ pipeline: 'recomposed', scope: { words: '本次仅编第一、三条', cases: [AUTOID, THIRD] } })) as { error?: unknown; items: Array<{ fields: { autoid: string } }> };
+  assert.equal(exactOk.error, undefined, JSON.stringify(exactOk.error));
+  assert.deepEqual(exactOk.items.map((i) => i.fields.autoid), [AUTOID, THIRD]);
+
+  const narrowOk = projectItems(compileWithRecomp({ pipeline: 'recomposed', scope: { words: '再收窄到第一条', cases: [AUTOID] } })) as { error?: unknown; items: Array<{ fields: { autoid: string } }> };
+  assert.equal(narrowOk.error, undefined, JSON.stringify(narrowOk.error));
+  assert.deepEqual(narrowOk.items.map((i) => i.fields.autoid), [AUTOID]);
+});
+

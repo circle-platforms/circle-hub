@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "7c8d3a8ca0240e9b6c6a858d2f2f6cbe4f3d3b42437afacd0c1e48620eca8f6c",
-      "size": 17093
+      "sha256": "4ec00fb83c1850d26107334d2a80b8ea57580b5d9578654be971be7e541cf035",
+      "size": 17518
     },
     {
       "path": "agents/compile-attributor.md",
@@ -328,8 +328,8 @@
     },
     {
       "path": "functions/project.ts",
-      "sha256": "80466005e3add77fdd81607e5a6d7a6cc276583adf85c082561d2dd95c7d0e0f",
-      "size": 30670
+      "sha256": "8ca90dd24a87541484c03ee2d895b4ea2d3e991e4d30111a203e2dab252bbef8",
+      "size": 33828
     },
     {
       "path": "functions/quote-width.ts",
@@ -783,8 +783,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "ea9ffc3b27798358c51a32ae7c7b980aba712234c12d7ef6c60555029f4275ba",
-      "size": 41909
+      "sha256": "b4af40fde587f5baf78dc416f2d3f3a886a344af638ab7f13e315076e558ab00",
+      "size": 42706
     },
     {
       "path": "tools/authoring-brief.ts",

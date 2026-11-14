@@ -7,7 +7,7 @@ description: 把原始用例写成自动化用例，交给 Hub 核对，生成�
 
 原始用例先做用例重组，再做脚本编写、脚本合并、上机验证和失败分析。模型写自动化用例，Hub 核对并重算，不生成内容、不调用模型。
 
-接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减）；若单条用例范围不同，可用 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只向子代理传入全局原文与本案分节；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，**统一且只用** `task-brief.ts` 把完整任务说明写入 `--task-file <任务文件路径>`，再把标准输出那段极短派发提示原样传给 `task`（`subagent_type="general-purpose"`）的 `description` 参数，不把完整任务说明重打进对话、不删改或手写简报：
+接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减；若一开始只点做部分用例，从首次 `recompose` 起即传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 用同一原话且首次开运行时定死）；若单条用例范围不同，可用 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只向子代理传入全局原文与本案分节；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，**统一且只用** `task-brief.ts` 把完整任务说明写入 `--task-file <任务文件路径>`，再把标准输出那段极短派发提示原样传给 `task`（`subagent_type="general-purpose"`）的 `description` 参数，不把完整任务说明重打进对话、不删改或手写简报：
 
 ```sh
 node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标路径> --task-file <任务文件路径> [--scope scope.md] [--note '<补充>'] [--round <轮次> --run <运行目录> --item <条目JSON> --prior-plans <路径...> --prior-returns <目录...> --prior-answers <路径...> --prior-notes <路径...>|--brief-json <结构简报JSON>]
@@ -19,7 +19,7 @@ node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保�
 
 ## 1. 用例重组
 
-先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理整份原始用例（单条或分批经 `tools/task-brief.ts --role '用例重组' --task-file <文件>` 写入任务文件后以 `subagent_type="general-purpose"` 派发；提交 Hub 前先跑 `recompose` 技能的 `tools/check-record.ts` 离线自检），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
+先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理原始用例（使用者一开始只点做部分用例时，从第一次 `recompose` 起传相同 `parameters.scope`，完整脑图仍下载作上下文；单条或分批经 `tools/task-brief.ts --role '用例重组' --task-file <文件>` 写入任务文件后以 `subagent_type="general-purpose"` 派发；提交 Hub 前先跑 `recompose` 技能的 `tools/check-record.ts` 离线自检），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
 
 原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写。主代理把整份原始用例的这类问题攒齐问一次，带 ID、标题、原句和构建号及手册原话。重组时使用者已决定的照做，不再问。尚未决定的先排除，并按 `tools/delivery.md` 写原因和下一步。
 
@@ -42,7 +42,7 @@ inputs: subject/contract/inventory/profile；后三项用发布的 doc:doc
 profile: device_count 只读预检及可选 fold_newlines
 整份原始用例: 不填 parameters.autoid；单条: 原样复制 autoid 字符串
 排除: parameters.exclude=[autoid,...]，脚本编写和脚本合并用同一列表
-按范围: parameters.scope={"words":"<范围原话>","cases":["<autoid>",...]}（不与 exclude/autoid 同用）；脚本编写、脚本合并与返工重开须传同一 scope；中途换范围必须重新 start_run
+按范围: parameters.scope={"words":"<范围原话>","cases":["<autoid>",...]}（不与 exclude/autoid 同用；words 与 scope.md 同原话）；recompose 与 case-compile（编写/合并/返工）首次开运行时定死同一范围，case-compile 须为绑定重组条目的子集，中途换或扩范围须重新 start_run
 跳过用例重组: parameters.pipeline=legacy
 沿用已核对正确的重组（同脑图同构建）:
   inputs.recomposition_run={"reference":"<run_reference>"}（取下载重组目录 references.json 或导出顶层 run_reference）

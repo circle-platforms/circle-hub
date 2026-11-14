@@ -276,6 +276,17 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${args.recompose}/run`, bearer, retry)));
       if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 返回的重组后的用例不完整或与本次用例重组不符');
       for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组后的用例缺少原始用例 ID 或原句'); population.push(read.autoid); originals[read.autoid] = read.original; }
+      if (activeScope) {
+        const rGroups = Array.isArray(exported.run.groups) ? exported.run.groups : [];
+        const rScope = rGroups.find((g): g is Record<string, unknown> => isRecord(g) && g.kind === 'recompose-scope@1' && isRecord(g.scope))?.scope as Record<string, unknown> | undefined;
+        const rOut = rScope && Array.isArray(rScope.out_of_scope) ? rScope.out_of_scope : [];
+        for (const entry of rOut) {
+          if (!isRecord(entry) || typeof entry.autoid !== 'string' || !entry.autoid) continue;
+          const titleText = typeof entry.title === 'string' ? entry.title : '';
+          if (!originals[entry.autoid] && titleText) originals[entry.autoid] = { title: titleText, lines: [] };
+          if (!population.includes(entry.autoid)) population.push(entry.autoid);
+        }
+      }
     }
     const excluded = [...new Set([...plans.values()].flatMap((p) => excludedOf(p.run)))];
     for (const d of dispatches) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
@@ -292,7 +303,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           if (!isRecord(entry) || typeof entry.autoid !== 'string' || !entry.autoid) continue;
           const titleText = typeof entry.title === 'string' ? entry.title : '';
           if (!originals[entry.autoid] && titleText) originals[entry.autoid] = { title: titleText, lines: [] };
-          if (!args.recompose && !population.includes(entry.autoid)) population.push(entry.autoid);
+          if (!population.includes(entry.autoid)) population.push(entry.autoid);
         }
       }
     }

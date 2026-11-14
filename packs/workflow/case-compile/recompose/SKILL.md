@@ -1,6 +1,6 @@
 ---
 name: recompose
-description: 把原始用例整理成重组后的用例，保留原意、原句、改写后的步骤、具体取值和缺的资料。脚本编写前处理整份原始用例，需要敏捷平台上的文档号。
+description: 把原始用例整理成重组后的用例，保留原意、原句、改写后的步骤、具体取值和缺的资料。脚本编写前按全量或给定范围处理原始用例，需要敏捷平台上的文档号。
 ---
 
 # 用例重组
@@ -13,14 +13,14 @@ description: 把原始用例整理成重组后的用例，保留原意、原句�
 
 ## 读原始用例
 
-一次处理并封批整份原始用例（就算后续只做其中几条，也必须重组整批全部带 `autoid`、未声明不自动化的原始用例；分片不能独立封整批，后续在脚本编写阶段用 `parameters.exclude` 排除时也不免除本阶段的整批结案，缺任何一条都会按实际冻结全集在 `full_set` 阻塞封批），与后面的脚本编写使用同一构建的手册和命令树。先整份下载，再读每条原始用例及手册和命令树，在本地读和搜，不逐条、逐页取 Hub。
+按范围或全量一次处理并封批原始用例：若使用者一开始就只点做部分用例，从第一次运行（`recompose`）起即传与后续 `case-compile` 相同的 `parameters.scope`（`scope.md` 与 `parameters.scope.words` 用同一原话，完整脑图仍作为上下文整份下载，Hub 仅对 `scope.cases` 内用例投影条目并按冻结全集在 `full_set` 封批；后续 `case-compile` 范围须为其冻结条目的子集，范围在首次 `start_run` 时定死，中途换范围或扩大须重新 `start_run` 重开 `recompose`）；未传 `scope` 时，处理整份全部带 `autoid`、未声明不自动化的原始用例（分片不能独立封整批，仅后续脚本编写用 `parameters.exclude` 排除时不免除整批结案，缺任何一条都会阻塞封批）。与后面的脚本编写使用同一构建的手册和命令树；先整份下载，再读每条原始用例及手册和命令树，在本地读和搜，不逐条、逐页取 Hub。
 
 ```text
 start_run: pack=recompose；inputs.subject=<同一份脑图>
 product/build/version: start_run 顶层，与后续 case-compile 相同
-选择: 带 autoid、未声明不自动化的原始用例
+parameters.scope: {"words":"<范围原话>","cases":["<autoid>",...]}（可选；与 scope.md/case-compile 同原话，完整脑图仍下载作上下文；不传则选整份带 autoid、未声明不自动化的原始用例）
 本地原始用例: items/<序号>.json 中 fields.atoms
-本地来源: sources.json、sources/<摘要>；手册和命令树: knowledge/
+本地来源: sources.json、sources/<摘要>（含完整脑图）；手册和命令树: knowledge/
 引用照抄下载文件中的“引用”行，不自行拼接
 ```
 
@@ -89,7 +89,7 @@ node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <用例重组�
 EOF
 ```
 
-提交前先跑 `check-record.ts`（`ok=true`）离线检出编码/语法错误、完整 schema 字段误用、缺 `item`/`method` 或同 `item` 重复；再由 `submit-records.ts` 从标准输入取令牌，补齐能按规则确定的内容，把整份重组后的用例一次交给 Hub。每条原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。
+提交前先跑 `check-record.ts`（`ok=true`）离线检出编码/语法错误、完整 schema 字段误用、缺 `item`/`method` 或同 `item` 重复；再由 `submit-records.ts` 从标准输入取令牌，补齐能按规则确定的内容，把本次范围内的重组后的用例一次交给 Hub（未设 `scope` 时即为整份）。每条已投影的原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。
 
 ```text
 脚本编写与脚本合并: inputs.recomposition_run={"reference":"<run_reference>"}（取下载目录 references.json 或导出顶层的 run_reference）
