@@ -9,7 +9,7 @@ import { setupJournal } from './testing/journal.ts';
 import { acceptedDispatch, MAX_NOTE_TEXT, MAX_NOTES, runnerNote } from './accepted.ts';
 import { definition } from './testing/definition.ts';
 import { readRunJobs } from './read-runs.ts';
-import type { ActionBody } from '../records/api.ts';
+import { newId, type ActionBody, type Principal } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
 
 type C = Awaited<ReturnType<typeof setup>>;
@@ -439,4 +439,69 @@ test('unreadable lease coverage stays unknown instead of asserting no booking',a
   assert.equal(note.booking?.coverage_complete,null);assert.equal(note.booking?.missing_resources,null);
   assert.doesNotMatch(JSON.stringify(note),/private lease|没有.*预订|没有.*分配|usr_|exe_/);
   assert.equal(c.calls.length,0);
+});
+
+
+async function secondDisclosureRun(c: C, actor: Principal, distinctBytes: boolean) {
+  const detail = structuredClone(c.detail);
+  const run = newId('run'); detail.run.run = run; detail.run.runner = actor.id;
+  detail.latest!.result.run = run;
+  for (const source of detail.run.sources) {
+    const original = await c.kit.artifacts.source(c.admin,source.reference.slice(4),{consumer:'function'});
+    assert.ok(original?.bytes);
+    const artifact = await c.kit.artifacts.ingest({bytes: distinctBytes && source.slot==='synthetic-artifact' ? Buffer.from('synthetic second member bytes') : original.bytes,
+      mediaType:'application/octet-stream',origin:{upload:{session:'synthetic-second'}},author:{user:actor.id},provenanceType:'declared',visibility:{readers:[actor.id],admins:true,packs:[],shareable:false}});
+    source.reference = `src:${artifact.body.sha256}`;
+    if (distinctBytes && source.slot==='synthetic-artifact') {
+      const row = detail.latest!.result.partitions.delivered[0].requirements[0].claims[0];
+      (row.statement.data as Record<string,unknown>).sha256 = artifact.body.sha256;
+      c.effectDocument.effects[0].parameters.values.sha256 = [artifact.body.sha256];
+    }
+  }
+  const plan = distinctBytes ? newId('run') : undefined;
+  if (plan) {
+    detail.run.predecessor = plan;
+    (detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as Record<string,unknown>).plan_run = plan;
+  }
+  const get = c.runs.getRun.bind(c.runs);
+  c.runs.getRun = async (by,id)=> id===run ? detail : plan && id===plan ? {...detail,run:{...detail.run,run:plan,predecessor:undefined}} : get(by,id);
+  return run;
+}
+
+test('a settled byte reuse preserves the member cause without exposing the prior job digest', async t=>{
+  const c = await setup();t.after(()=>c.close());
+  const first = await c.service.dispatchAccepted(c.run);
+  assert.equal(first.started,true);
+  const repeat = await secondDisclosureRun(c,c.owner,false);
+  const [note] = await acceptedDispatch(c.kit,c.service,repeat,true,undefined,c.owner);
+  assert.match(note.text,/^已被占用：.*同一份字节只派发一次/);
+  assert.doesNotMatch(note.text,/条件尚未满足|circle-hub|[0-9a-f]{64}|usr_|exe_/);
+  assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
+  const [admin] = await acceptedDispatch(c.kit,c.service,repeat,true,undefined,c.admin);
+  assert.match(admin.text,new RegExp(first.status!.job));
+  assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
+});
+
+test('a second member hitting an occupied physical environment receives the actual occupied cause', async t=>{
+  let entered!:()=>void,release!:()=>void;
+  const atSubmit = new Promise<void>(resolve=>{entered=resolve;});
+  const continueSubmit = new Promise<void>(resolve=>{release=resolve;});
+  const c = await setup({onSubmit:async()=>{entered();await continueSubmit;}});t.after(()=>c.close());
+  const running = c.service.dispatchAccepted(c.run);
+  try {
+    await atSubmit;
+    const second = await c.kit.principals.createUser(c.admin,'合成第二成员');
+    await c.kit.teams!.add(c.admin,c.environmentTeam.id,second.id);
+    const run = await secondDisclosureRun(c,second,true);
+    await c.leases.forceRelease({keys:c.executor.definition.resources,by:c.admin.id,reason:'合成：原作业仍在执行，第二成员另持当前租约'});
+    assert.equal((await c.leases.acquire({keys:c.executor.definition.resources,prefix:'synthetic/',ttlSeconds:3600,maxTtlSeconds:3600,holder:{user:second.id,run}})).ok,true);
+    const explanation = await c.service.explainRelease(c.admin,run,c.executor.id);
+    assert.equal(explanation.satisfied,true,JSON.stringify(explanation));
+    const [note] = await acceptedDispatch(c.kit,c.service,run,true,undefined,second);
+    if (note.job) { const diagnostic=await c.service.status(c.admin,note.job); assert.fail(JSON.stringify({reason:diagnostic.reason,code:diagnostic.error_code,missing:diagnostic.missing_fact})); }
+    assert.match(note.text,/^已被占用：.*环境.*占用/);
+    assert.match(note.next_action!,/等占用结束后原样重交/);
+    assert.doesNotMatch(JSON.stringify(note),/条件尚未满足|circle-hub|[0-9a-f]{64}|usr_|exe_/);
+    assert.equal(c.calls.filter(call=>call==='send_blob').length,1,'the second member never submits into the occupied target');
+  } finally {release();await running;}
 });

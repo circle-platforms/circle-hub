@@ -432,7 +432,7 @@ export class DispatchService {
    * The Hub's own dispatch of an accepted run for its runner (decision 105). Refusal wording (C14) lists only conditions
    * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
    */
-  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
+  async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; member_missing_facts?:Array<{fact:string;next_action:string}>; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
@@ -486,7 +486,15 @@ export class DispatchService {
       return { started: true, executor: chosen.id, status };
     } catch (error) {
       log('error', `${chosen.id}: ${described(error)}`);
-      return { started: false, executor: chosen.id, ...(!(error instanceof TargetOccupiedError)&&!(error instanceof AlreadyDispatchedError)?{outcome:'unknown' as const}:{}), reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
+      const memberFailure = error instanceof TargetOccupiedError
+        ? {error_code:'LEASE_UNAVAILABLE' as const,member_missing_facts:[{fact:'自动化测试环境正被作业占用，这次上机验证没有发出',next_action:'等占用结束后原样重交'}]}
+        : error instanceof AlreadyDispatchedError
+          ? {error_code:'IDEMPOTENCY_MISMATCH' as const,member_missing_facts:[{
+            fact:error.ended?'这份产物已经派发过，作业已结束；同一份字节只派发一次':'这份产物已经派发，原作业还没结束或结果未知；同一份字节只派发一次',
+            next_action:error.ended?'读取原作业的结果；要再做一次，按任务包规程做一份新的产物，上传后重新开始上机验证':'等原作业结束或管理员对账后读取结果，不要用同一份字节再开运行',
+          }]}
+          : {};
+      return { started: false, executor: chosen.id, ...memberFailure, ...(!(error instanceof TargetOccupiedError)&&!(error instanceof AlreadyDispatchedError)?{outcome:'unknown' as const}:{}), reason: error instanceof TargetOccupiedError ? '自动化测试环境正被作业占用，这次上机验证没有发出；等占用结束后原样重交'
         : error instanceof AlreadyDispatchedError
           ? error.ended ? `这份产物已经由作业 ${error.job} 派发过，作业已结束；同一份字节只派发一次。结果读那个作业；要再做一次，按任务包的规程做一份新的产物，上传后重新开始上机验证` : `这份产物已经由作业 ${error.job} 派发，那个作业还没结束或结果未知；等它结束（或管理员对账）后读它的结果，不要用同一份字节再开运行`
           : '本次派发状态尚未确认；请管理员只读核对作业记录，不要重新发送' };
