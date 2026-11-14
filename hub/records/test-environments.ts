@@ -1,6 +1,7 @@
 import { withDefinitionOwners, withDefinitionAssignment, restoresDisabledOwner } from './definition-restoration.ts';
 import { prepareTestEnvironmentOwnerChange, type TestEnvironmentOwnerChange } from './test-environment-owner.ts';
 import { visibleTestEnvironments } from './test-environment-visibility.ts';
+import { resolveTestEnvironmentExecutorTarget, type TestEnvironmentVariableReader } from './test-environment-executor-target.ts';
 import { prepareBookingPrefixRegistration, isBookingPrefixRegistration } from './booking-prefix-registration.ts';
 import { adoptUnregisteredPrefixes } from './test-environment-adoption.ts';
 import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
@@ -12,7 +13,6 @@ import {
 } from '../../contracts/api.ts';
 import { ExecutorSource } from '../../contracts/src/resources.ts';
 import { UserId, PackId } from '../../contracts/src/common.ts';
-import { referencesIn } from '../../contracts/src/variables.ts';
 import type { Authorizations, AuthorizationRecord, ObjectStore, Page, Principal, RecordStore, Transaction, User } from './api.ts';
 import type { TestEnvironmentInheritanceSources } from './environment-inheritance-types.ts';
 import { Database, iso } from './db.ts';
@@ -50,6 +50,7 @@ export interface TestEnvironments {
   remove(by: Principal, id: string, tx?: Transaction): Promise<void>;
   resolve(keys: readonly string[], tx?: Transaction): Promise<TestEnvironmentResolution>;
   canUse(by: Principal, id: string, tx?: Transaction): Promise<boolean>;
+  canUseExecutor(by: Principal, environmentId: string, executorId: string, tx?: Transaction): Promise<boolean>;
   ownership(tx?: Transaction): Promise<TestEnvironmentOwnership>;
   inheritance(tx?: Transaction): Promise<TestEnvironmentInheritanceState>;
   inherit(by: Principal, sources: TestEnvironmentInheritanceSources): Promise<{ completed: boolean; record: string; assignments: number }>;
@@ -64,8 +65,9 @@ export class RecordTestEnvironments implements TestEnvironments {
   private readonly store: RecordStore;
   private readonly objects: ObjectStore;
   private readonly authorizations: Authorizations;
-  constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations) {
-    this.db = db; this.store = store; this.objects = objects; this.authorizations = authorizations;
+  private readonly variables: TestEnvironmentVariableReader;
+  constructor(db: Database, store: RecordStore, objects: ObjectStore, authorizations: Authorizations, variables: TestEnvironmentVariableReader) {
+    this.db = db; this.store = store; this.objects = objects; this.authorizations = authorizations; this.variables = variables;
   }
 
   private async at(tx: Transaction): Promise<string> { return iso((await this.db.query('SELECT clock_timestamp() AS at', [], tx)).rows[0].at); }
@@ -99,15 +101,26 @@ export class RecordTestEnvironments implements TestEnvironments {
     }
     return result;
   }
-  private async validateExecutors(environment: TestEnvironment, tx: Transaction): Promise<void> {
+  private async validateExecutors(environment: TestEnvironment, tx: Transaction): Promise<Map<string, ExecutorSource>> {
     if (environment.target === null) throw new IntegrityError('测试环境的目标归属尚未核对');
     const latest = this.latest(await this.allAuthorizations(tx)), at = await this.at(tx);
+    const inspected = new Map<string, ExecutorSource>();
     for (const id of environment.executors) {
       const row = latest.get(`resource_config|*|executor.${id}`);
       if (!enabledAt(row, at)) throw new IntegrityError('关联执行器的当前登记不可核对');
       const source = ExecutorSource.parse(await this.content(row!.body.bound, tx));
-      if (source.id !== id || referencesIn(source.target).length || source.target !== environment.target || source.resources.some(value => !covers(environment, value))) throw new IntegrityError('测试环境与关联执行器的目标或资源声明不一致');
+      const resolved = await resolveTestEnvironmentExecutorTarget(source, this.variables, tx);
+      if (source.id !== id || resolved.target !== environment.target || source.resources.some(value => !covers(environment, value))) throw new IntegrityError('测试环境与关联执行器的目标或资源声明不一致');
+      inspected.set(id, source);
     }
+    return inspected;
+  }
+  private matching(keys: readonly string[], values: readonly TestEnvironment[]): TestEnvironmentResolution {
+    const matches = values.filter(environment => keys.every(value => covers(environment, value)));
+    const environments = matches.filter(value => value.target !== null);
+    const unregistered = matches.filter(isBookingPrefixRegistration);
+    if (matches.some(value => value.target === null && !isBookingPrefixRegistration(value))) throw new IntegrityError('所需键的目标或责任归属尚未核对；不能当成普通预订前缀');
+    return { environments, unregistered };
   }
   private async reader(by: Principal, tx: Transaction) { return captureRequestPermissions(this.db, by, new Date(await this.at(tx)), tx); }
   async list(by: Principal, outer?: Transaction): Promise<TestEnvironmentEntry[]> {
@@ -121,10 +134,7 @@ export class RecordTestEnvironments implements TestEnvironments {
   async resolve(keys: readonly string[], outer?: Transaction): Promise<TestEnvironmentResolution> {
     if (!keys.length) return { environments: [], unregistered: [] };
     return this.store.withTransaction(async tx => {
-      const matches = (await this.catalog(tx)).filter(environment => keys.every(value => covers(environment, value)));
-      const environments = matches.filter(value => value.target !== null);
-      const unregistered = matches.filter(isBookingPrefixRegistration);
-      if (matches.some(value => value.target === null && !isBookingPrefixRegistration(value))) throw new IntegrityError('所需键的目标或责任归属尚未核对；不能当成普通预订前缀');
+      const { environments, unregistered } = this.matching(keys, await this.catalog(tx));
       for (const environment of environments) await this.validateExecutors(environment, tx);
       return { environments, unregistered };
     }, outer);
@@ -137,6 +147,26 @@ export class RecordTestEnvironments implements TestEnvironments {
       if (!environment?.enabled || environment.target === null) return false;
       await this.validateExecutors(environment, tx);
       return [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, id)));
+    }, outer);
+  }
+  /** Final admission callers hold withEnvironmentPermissionLock and persist their intent in this same transaction. */
+  async canUseExecutor(by: Principal, environmentId: string, executorId: string, outer?: Transaction): Promise<boolean> {
+    return this.store.withTransaction(async tx => {
+      const permission = await this.reader(by, tx);
+      if (!permission.user || permission.user.disabled || permission.user.deleted_at) return false;
+      const values = await this.catalog(tx), environment = values.find(value => value.id === environmentId);
+      if (!environment?.enabled || environment.target === null || !environment.executors.includes(executorId)) return false;
+      const checked = new Map<string, Map<string, ExecutorSource>>();
+      const sources = await this.validateExecutors(environment, tx);
+      checked.set(environment.id, sources);
+      const executor = sources.get(executorId);
+      if (!executor?.enabled || !executor.resources.length) return false;
+      for (const key of executor.resources) {
+        const matches = this.matching([key], values).environments;
+        for (const candidate of matches) if (!checked.has(candidate.id)) checked.set(candidate.id, await this.validateExecutors(candidate, tx));
+        if (matches.length !== 1 || matches[0].id !== environmentId) return false;
+      }
+      return [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, environmentId)));
     }, outer);
   }
   private async leaseLock(tx: Transaction) { await this.db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx); }
@@ -293,26 +323,29 @@ export class RecordTestEnvironments implements TestEnvironments {
       const legacy = (await this.db.query('SELECT prefix,owner,registered_at FROM lease_registrations ORDER BY prefix', [], tx)).rows.map(row => ({ prefix: String(row.prefix), owner: String(row.owner), registered_at: iso(row.registered_at) }));
       const environments = await this.catalog(tx), added: TestEnvironment[] = [];
       const groups = new Map<string, ExecutorSource[]>();
-      const unresolved: ExecutorSource[][] = [];
       for (const value of source.executors) {
         const executor = ExecutorSource.parse(value);
         if (!executor.id) throw new IntegrityError('执行器缺少真实登记身份');
-        const target = referencesIn(executor.target).length ? null : executor.target;
-        if (target === null) { unresolved.push([executor]); continue; }
+        const resolved = await resolveTestEnvironmentExecutorTarget(executor, this.variables, tx);
+        const target = resolved.target;
+        for (const use of resolved.uses) {
+          const decision = await this.store.get<AuthorizationRecord['body']>(use.decision, tx);
+          if (!decision || decision.kind !== 'authorization' || decision.body.permission !== 'resource_config' || decision.body.subject !== '*' || decision.body.object !== 'var:' + use.name || decision.body.revoked) throw new IntegrityError('执行器目标的普通变量决定无法核对');
+          references.add(decision.digest);
+        }
         const group = groups.get(target) ?? [];
         group.push(executor);
         groups.set(target, group);
       }
-      for (const group of [...groups.values(), ...unresolved]) {
-        const target = referencesIn(group[0].target).length ? null : group[0].target;
-        const existing = target === null ? undefined : environments.find(value => value.target === target);
+      for (const [target, group] of groups) {
+        const existing = environments.find(value => value.target === target);
         if (existing) continue;
         const keys = [...new Set(group.flatMap(value => value.resources))];
         const resources = keys.map(key => {
           const owners = legacy.filter(row => key.startsWith(row.prefix));
           return { key, owner: owners.length === 1 ? owners[0].owner : null, registered_at: owners.length === 1 ? owners[0].registered_at : null };
         });
-        added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: target, target, prefixes: [], resources, executors: target === null ? [] : group.map(value => value.id), enabled: group.some(value => value.enabled), missing_facts: [...(target === null ? ['原登记尚未提供测试环境名字', '执行器目标包含未解析引用'] : []), ...(resources.some(row => row.owner === null) ? ['部分资源没有已核对的登记责任人'] : []), ...(!resources.length ? ['原执行器尚未声明资源键'] : [])] }));
+        added.push(TestEnvironment.parse({ schema: 'test-environment@1', id: newId('env'), name: target, target, prefixes: [], resources, executors: group.map(value => value.id), enabled: group.some(value => value.enabled), missing_facts: [...(resources.some(row => row.owner === null) ? ['部分资源没有已核对的登记责任人'] : []), ...(!resources.length ? ['原执行器尚未声明资源键'] : [])] }));
       }
       for (const registration of legacy) {
         const matches = [...environments, ...added].filter(value => value.target !== null && value.resources.some(row => row.key.startsWith(registration.prefix)));
