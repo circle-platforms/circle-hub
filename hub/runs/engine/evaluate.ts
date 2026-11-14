@@ -763,6 +763,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     }
     return {...raw,...(check.catalog?{catalog:view?.entries()??[],catalog_complete:view?.complete??false,...(selectionMissing.has(selectionKey(check,it.id))?{catalog_missing:selectionMissing.get(selectionKey(check,it.id))}:{})}:{})};
   };
+  const checkedRequirements = new Set<string>();
   const runtimeAdmission: RuntimeAdmission[] = [];
   const admittedChecks = new Map<string,RuntimeAdmission>();
   for (const [index,declared] of (submission?.checks ?? []).entries()) {
@@ -778,6 +779,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       const texts=evidenceOf(item.id).texts;
       await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
       const outcome=await callCheck(checks.get(`@runtime.${index}`)!,subject,texts,item.id);
+      checkedRequirements.add(requirement.key);
       const ref=parseReference(item.location);
       const artifact=ref.scheme==='src' ? await ctx.deps.records.artifacts.readable(principalOf(resolveCtx.reader),ref.sha256) : null;
       const proof=artifact===null ? null : {reference:item.location,record:artifact.digest,provenance:artifact.provenance,origin:artifact.body.origin,author:artifact.body.author,outside_author:'read' in artifact.body.origin || 'upload' in artifact.body.origin && artifact.body.author.user!==null && artifact.body.author.user!==(run.runner??run.configurer)};
@@ -861,8 +863,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     return {outcomes,retryAttempts};
   }
 
-  // These maps were populated by this invocation, including unknown and empty outcomes.
-  const checkedRequirements = new Set<string>();
+  // Include ordinary checks as well as the sample admission calls witnessed above.
   let checkedScopeComplete = true;
   for (const check of new Set([...runOutcomes.keys(), ...itemOutcomes.keys()])) {
     for (const requirement of requirementsOf.get(check) ?? []) checkedRequirements.add(requirement.key);
