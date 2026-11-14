@@ -88,6 +88,8 @@ test('adapted catalog and syntax errors emit repairable recompose.command_syntax
     ['quoted Chinese placeholder', 'widget pool add "<域名>"', 'template_placeholder', '"<域名>"'],
     ['unreplaced multi-placeholder', 'widget pool add <arg1:string> [extra]', 'template_placeholder', '<arg1:string>'],
     ['invalid argument for matched command', 'widget health interval pool1 not-an-int', 'signature_mismatch', 'not-an-int'],
+    ['missing trailing required argument', 'widget health interval pool1', 'signature_mismatch', 'int'],
+    ['excess argument after complete signature', 'widget health interval pool1 5 extra', 'signature_mismatch', 'extra'],
     ['unknown command head in complete catalog', 'nonexistent subcmd 1', 'unknown_command_head', 'nonexistent'],
   ] as const) {
     const f = fixture();
@@ -102,6 +104,17 @@ test('adapted catalog and syntax errors emit repairable recompose.command_syntax
     assert.equal(hit.data?.determination, 'error');
     assert.equal(hit.data?.reason_kind, expectedKind);
     assert.ok(hit.statement.includes(line) && hit.statement.includes(f.record.ledgers.adapted[0].atom) && hit.statement.includes(expectedPiece), hit.statement);
+    assert.ok(hit.statement.includes('第 1 条命令'), hit.statement);
+    if (expectedKind === 'signature_mismatch') {
+      if (expectedPiece === 'extra') {
+        assert.ok(hit.statement.includes('不接受多余参数'), JSON.stringify(hit));
+      } else {
+        assert.ok(hit.statement.includes('要求 int') && Array.isArray(hit.data?.expected_types) && hit.data.expected_types.some((t: string) => t.startsWith('int')), JSON.stringify(hit));
+      }
+    }
+    if (expectedKind === 'template_placeholder') {
+      assert.ok(!hit.statement.includes('；请改写为'), hit.statement);
+    }
   }
 
   const unchecked = fixture();

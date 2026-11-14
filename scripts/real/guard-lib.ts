@@ -1230,38 +1230,42 @@ function scriptCandidates(tools: DiscoveredTool[], word: string): DiscoveredTool
   return [];
 }
 
-async function executeDecision(env: GuardEnvironment, input: Record<string, unknown>, raw: string): Promise<HookDecision> {
-  if (env.work === null) return notTrusted(env);
-  const args = input.tool_input as Record<string, unknown>;
-  if (
-    Object.keys(args).some((key) => !ALLOWED_EXECUTE_KEYS.has(key)) ||
-    (args.background !== undefined && typeof args.background !== 'boolean') ||
-    (args.timeout !== undefined && (typeof args.timeout !== 'number' || !Number.isFinite(args.timeout))) ||
-    (args.description !== undefined && typeof args.description !== 'string')
-  ) {
-    return refuse(env, '不允许：execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。', '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。');
-  }
-  if (typeof args.command !== 'string') {
-    return refuse(env, '不允许：execute 缺少 command 文字；请补齐字符串命令后重试。', '这次可以这样做：提供完整的单行 node 脚本命令后重试。');
-  }
-  if (!env.skillsRootValid) {
-    return refuse(
-      env,
-      `不允许：skills 目录根 ${env.skillsRaw} 已改变（是软链接）或缺失。`,
-      '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。',
-    );
-  }
+type ExecuteValidation =
+  | { ok: true; physicalScript?: string }
+  | { ok: false; what: string; how: string };
 
-  const command = args.command;
+function installedToolsAdvice(
+  env: GuardEnvironment,
+  tools: DiscoveredTool[],
+  opts: { preferred?: DiscoveredTool[]; prefix?: string } = {},
+): string {
+  const list = opts.preferred?.length ? opts.preferred : tools;
+  if (!list.length) {
+    return `这次可以这样做：当前没有已装并声明的可执行脚本（仅放行 skills 目录内已声明工具），规则全文见 ${env.allowedFile}（用 read_file 读）。`;
+  }
+  const shown = list.slice(0, 8).map((tool) => tool.id);
+  const more = list.length > 8 ? ` 等共 ${list.length} 个` : '';
+  return `这次可以这样做：${opts.prefix ?? '已装的可执行脚本有 '}${shown.join('、')}${more}；完整路径与写法见规则全文（${env.allowedFile}）。`;
+}
+
+function validateExecuteCommand(
+  env: GuardEnvironment,
+  tools: DiscoveredTool[],
+  command: string,
+  allowSuggestion: boolean,
+): ExecuteValidation {
+  const d = env.declaration;
   const parsed = parseCommand(command);
-  const general = "写法：node '<技能目录>/tools/<脚本>.ts' --选项 值（一行；含空格或中文的值用英文单引号包住，令牌用 <<'EOF' here-doc）。脚本清单和每个脚本的标准写法见规则全文。";
 
   if (!parsed.words.length) {
     const why = parsed.problem ?? '命令是空的';
-    return refuse(env, `不允许：这个目录只放行技能目录里的脚本；${why}。`, shellHint(env, parsed.words, command) ?? general);
+    return {
+      ok: false,
+      what: `不允许：这个目录只放行技能目录里的脚本；${why}。`,
+      how: shellHint(env, parsed.words, command) ?? installedToolsAdvice(env, tools),
+    };
   }
 
-  const d = env.declaration;
   const [first, second] = parsed.words;
   const simple = asList(d.commands).find((entry) => entry.name === first);
   if (simple) {
@@ -1273,38 +1277,58 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
         ? `${first} 只接受一个 1 到 ${max} 的整数`
         : null) ??
       (parsed.heredoc ? '这条命令不读标准输入' : null);
-    return bad
-      ? refuse(env, `不允许：${bad}。`, `这次可以这样写：${first} ${Math.min(Number(value) || 30, max)}。${simple.note ?? ''}`)
-      : allowed(env);
+    if (!bad) return { ok: true };
+    const safeValue = Math.max(1, Math.min(/^[1-9][0-9]{0,3}$/.test(value ?? '') ? Number(value) : 30, max));
+    const candidate = `${first} ${safeValue}`;
+    const how =
+      allowSuggestion && validateExecuteCommand(env, tools, candidate, false).ok
+        ? `这次可以这样写：${candidate}`
+        : `这次可以这样做：请写 ${first} 加 1 到 ${max} 的整数后重试。`;
+    return {
+      ok: false,
+      what: `不允许：${bad}${simple.note ? `（${simple.note}）` : ''}。`,
+      how,
+    };
   }
 
   if (!asList(d.interpreters).includes(first)) {
     const prefix = parsed.problem ? `这个目录只放行技能目录里的脚本（${parsed.problem}）；` : '这个目录只放行技能目录里的脚本；';
-    return refuse(
-      env,
-      `不允许：${prefix}execute 只运行“node 加已装脚本”${asList(d.commands).length ? `（或 ${asList(d.commands).map((c) => c.name).join('、')}）` : ''}，看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}。`,
-      shellHint(env, parsed.words, command) ?? general,
-    );
+    return {
+      ok: false,
+      what: `不允许：${prefix}execute 只运行“node 加已装脚本”${asList(d.commands).length ? `（或 ${asList(d.commands).map((c) => c.name).join('、')}）` : ''}，看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}。`,
+      how: shellHint(env, parsed.words, command) ?? installedToolsAdvice(env, tools),
+    };
   }
 
   if (second === undefined || second.startsWith('-')) {
-    return refuse(
-      env,
-      `不允许：这个目录只放行技能目录里的脚本；node 后面要直接写已装脚本的绝对路径，看到的是 ${JSON.stringify(second ?? '（空）')}。`,
-      /^(-e|-p|--eval|--print|--input-type.*)$/.test(second ?? '')
+    return {
+      ok: false,
+      what: `不允许：这个目录只放行技能目录里的脚本；node 后面要直接写已装脚本的绝对路径，看到的是 ${JSON.stringify(second ?? '（空）')}。`,
+      how: /^(-e|-p|--eval|--print|--input-type.*)$/.test(second ?? '')
         ? '这次可以这样做：不能用 node 运行自己写的代码；读文件用 read_file，找内容用 grep，要写文件用 write_file。'
-        : general,
-    );
+        : installedToolsAdvice(env, tools),
+    };
   }
 
-  const tools = discoverTools(env);
   const problems: string[] = parsed.problem ? [parsed.problem] : [];
 
   // Strict lexical & canonical containment for script path (rejects relative paths, '..', '%', non-.ts, symlinks, and APFS case mismatches).
   if (!path.isAbsolute(second) || second.split(/[\\/]/).includes('..') || second.includes('%') || !second.endsWith('.ts')) {
     const hits = scriptCandidates(tools, second);
-    const how = hits.length ? `这次可以这样写：${hits.slice(0, 2).map((hit) => writeCommand(env, hit)).join('\n或：')}` : general;
-    return refuse(env, `不允许：这个目录只放行技能目录里的脚本；脚本路径 ${JSON.stringify(clip(second, 90))} 必须是已装技能脚本的真实绝对路径（不写相对路径、.. 或非 .ts）。`, how);
+    let how = installedToolsAdvice(env, tools, hits.length ? { preferred: hits, prefix: '可能是这些已装脚本：' } : undefined);
+    if (allowSuggestion && hits.length === 1) {
+      const rebuilt =
+        ['node', quote(hits[0].file), ...parsed.words.slice(2).map(quote)].join(' ') +
+        (parsed.heredoc?.closed ? ` <<'EOF'\n${parsed.heredoc.body.join('\n')}\nEOF` : '');
+      const check = validateExecuteCommand(env, tools, rebuilt, true);
+      if (check.ok) how = `这次可以这样写：${rebuilt}`;
+      else if (check.how.startsWith('这次可以这样写：')) how = check.how;
+    }
+    return {
+      ok: false,
+      what: `不允许：这个目录只放行技能目录里的脚本；脚本路径 ${JSON.stringify(clip(second, 90))} 必须是已装技能脚本的真实绝对路径（不写相对路径、.. 或非 .ts）。`,
+      how,
+    };
   }
 
   const lexicalScript = path.resolve(second);
@@ -1312,11 +1336,11 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
   try {
     physicalScript = fs.realpathSync.native(lexicalScript);
   } catch {
-    return refuse(
-      env,
-      `不允许：缺少已安装技能脚本的实际路径 ${JSON.stringify(clip(second, 90))}。`,
-      '这次可以这样做：请集成者安装并运行 local-tools verify --digest 或 pack-files.ts --verify-install 后按真实路径重试。',
-    );
+    return {
+      ok: false,
+      what: `不允许：缺少已安装技能脚本的实际路径 ${JSON.stringify(clip(second, 90))}。`,
+      how: '这次可以这样做：请集成者安装并运行 local-tools verify --digest 或 pack-files.ts --verify-install 后按真实路径重试。',
+    };
   }
 
   const exactUnderRoot = (canonRoot: string): boolean => {
@@ -1340,12 +1364,21 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
   const inLocalTools = Boolean(d.allowLocalTools) && env.work !== null && exactUnderRoot(path.join(env.work, 'local-tools'));
 
   if (!inSkills && !inLocalTools) {
-    return refuse(env, `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 指向已装技能目录之外或经过了软链接/别名。`, general);
+    return {
+      ok: false,
+      what: `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 指向已装技能目录之外或经过了软链接/别名。`,
+      how: installedToolsAdvice(env, tools),
+    };
   }
 
   const tool = tools.find((candidate) => candidate.file === physicalScript);
   if (!tool) {
-    return refuse(env, `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 不是已声明的可执行工具（或仅是内部辅助库）。`, general);
+    const sameDir = tools.filter((candidate) => path.dirname(candidate.file) === path.dirname(physicalScript));
+    return {
+      ok: false,
+      what: `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 不是已声明的可执行工具（或仅是内部辅助库）。`,
+      how: installedToolsAdvice(env, tools, { preferred: sameDir.length ? sameDir : tools }),
+    };
   }
 
   const values: Record<string, string | string[]> = {};
@@ -1462,15 +1495,70 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
   if (tokenBad) problems.push(tokenBad);
 
   if (!problems.length) {
-    return runDelegatedSkillHooks(env, physicalScript, input, raw);
+    return { ok: true, physicalScript };
   }
 
   const fixed: Record<string, string | string[]> = {};
   for (const option of tool.options) if (option.name in values) fixed[option.name] = values[option.name];
-  const fallbackSub = subcommand ?? tool.forms.find((f) => f.positional)?.positional ?? undefined;
-  const how = `这次可以这样写：${writeCommand(env, tool, { subcommand: fallbackSub, values: fixed, booleans })}`;
+  const fallbackSub = subcommand && tool.subcommands?.includes(subcommand) ? subcommand : undefined;
+  const fallbackForm = fallbackSub ? tool.forms.find((candidate) => candidate.positional === fallbackSub) : null;
+  const fallbackRequired = fallbackForm
+    ? fallbackForm.pairs
+        .map((pair) => {
+          const base = tool.options.find((option) => option.name === pair.name);
+          return base ? { ...base, required: !pair.optional } : null;
+        })
+        .filter((o): o is NonNullable<typeof o> => o !== null && o.required)
+    : tool.options.filter((o) => o.required);
+  const allRequiredProvided =
+    (!tool.subcommands || fallbackSub !== undefined) &&
+    fallbackRequired.every((req) => req.name in fixed || booleans.has(req.name));
+
+  let how = `这次可以这样做：请按规则全文（${env.allowedFile}）中 ${tool.id}${tool.subcommands ? `（可用子命令：${tool.subcommands.join('、')}）` : ''} 的完整写法补齐必填参数并修正值后重试。`;
+  if (allowSuggestion && allRequiredProvided) {
+    const candidate = writeCommand(env, tool, { subcommand: fallbackSub, values: fixed, booleans });
+    if (validateExecuteCommand(env, tools, candidate, false).ok) {
+      how = `这次可以这样写：${candidate}`;
+    }
+  }
   const prefix = parsed.problem && problems.includes(parsed.problem) ? '这个目录只放行技能目录里的脚本；' : '';
-  return refuse(env, `不允许：${prefix}${problems.slice(0, 2).join('；')}${problems.length > 2 ? `（另有 ${problems.length - 2} 处）` : ''}。`, how);
+  return {
+    ok: false,
+    what: `不允许：${prefix}${problems.slice(0, 2).join('；')}${problems.length > 2 ? `（另有 ${problems.length - 2} 处）` : ''}。`,
+    how,
+  };
+}
+
+async function executeDecision(env: GuardEnvironment, input: Record<string, unknown>, raw: string): Promise<HookDecision> {
+  if (env.work === null) return notTrusted(env);
+  const args = input.tool_input as Record<string, unknown>;
+  if (
+    Object.keys(args).some((key) => !ALLOWED_EXECUTE_KEYS.has(key)) ||
+    (args.background !== undefined && typeof args.background !== 'boolean') ||
+    (args.timeout !== undefined && (typeof args.timeout !== 'number' || !Number.isFinite(args.timeout))) ||
+    (args.description !== undefined && typeof args.description !== 'string')
+  ) {
+    return refuse(env, '不允许：execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。', '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。');
+  }
+  if (typeof args.command !== 'string') {
+    return refuse(env, '不允许：execute 缺少 command 文字；请补齐字符串命令后重试。', '这次可以这样做：提供完整的单行 node 脚本命令后重试。');
+  }
+  if (!env.skillsRootValid) {
+    return refuse(
+      env,
+      `不允许：skills 目录根 ${env.skillsRaw} 已改变（是软链接）或缺失。`,
+      '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。',
+    );
+  }
+
+  const tools = discoverTools(env);
+  const verdict = validateExecuteCommand(env, tools, args.command, true);
+  if (!verdict.ok) {
+    return refuse(env, verdict.what, verdict.how);
+  }
+  return verdict.physicalScript
+    ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw)
+    : allowed(env);
 }
 
 function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): HookDecision {

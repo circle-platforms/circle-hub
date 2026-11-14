@@ -262,7 +262,7 @@ async function stageWrite(
   const relArg = join(dirRelative, fileName);
   const target = resolveInsideCwd(cwd, relArg, '输出目标');
   if (stagedPaths.has(target.canonical)) {
-    throw new Error(`参数无效：输出文件 ${target.relative} 存在重复命名冲突`);
+    throw new Error(`已被占用：两个条目要写同一个输出文件 ${target.relative}。请核对来源条目后重试`);
   }
   stagedPaths.add(target.canonical);
   const existing = await lstat(target.lexical).catch((error: NodeJS.ErrnoException) => {
@@ -270,7 +270,7 @@ async function stageWrite(
     throw error;
   });
   if (existing !== null) {
-    throw new Error(`参数无效：输出文件 ${target.relative} 已存在，不覆盖。请另选新目录或清理后再结转`);
+    throw new Error(`已被占用：输出文件 ${target.relative} 已存在，不覆盖。请另选新目录或清理后再结转`);
   }
   return {
     canonical: target.canonical,
@@ -374,7 +374,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
         throw new Error(`参数无效：${srcFile.relative} 不是合法的单条自动化用例 JSON`);
       }
       if (seenSourceItems.has(parsed.item)) {
-        throw new Error(`参数无效：--source-plans 中条目 ${parsed.item} 存在多份计划文件`);
+        throw new Error(`参数无效：--source-plans 中条目 ${parsed.item} 存在多份自动化用例文件。请只保留一份后重试`);
       }
       seenSourceItems.add(parsed.item);
 
@@ -492,7 +492,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
       await writeExclusive(write.canonical, write.bytes);
       const st = await lstat(write.canonical);
       if (st.isSymbolicLink() || !st.isFile()) {
-        throw new Error(`环境或磁盘失败：写入后 ${write.relative} 不是普通文件`);
+        throw new Error(`暂时不可用：写入后重读发现 ${write.relative} 不是普通文件。请检查目标磁盘与目录状态后重试`);
       }
       const diskBytes = await readBack(write.canonical);
       if (
@@ -500,7 +500,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
         Buffer.compare(Buffer.from(diskBytes), write.bytes) !== 0 ||
         sha256Hex(diskBytes) !== write.sha256
       ) {
-        throw new Error(`环境或磁盘失败：写入后重读 ${write.relative} 的字节或 SHA-256 与预期不符`);
+        throw new Error(`暂时不可用：写入后重读 ${write.relative} 的字节或 SHA-256 与预期不符。请检查目标磁盘与目录状态后重试`);
       }
     }
 

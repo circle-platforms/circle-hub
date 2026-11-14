@@ -8,7 +8,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 ## 固定本地执行规则
 1. 路径边界：文件工具仅限工作目录相对路径（`.`，禁止 `/tmp` 或工作目录之外路径）及只读 `<技能目录>`。只写任务书指定的目标 `.json` 一份文件。
 2. 形状与参考文件位置：`slots.schema.json` 与 `examples/submit-result.json` 均位于 `<技能目录>` 根目录（不在 `tables/` 下）；分块结构规范位于 `<技能目录>/tables/blocks-format.json`；返工与报告口径参考 `<技能目录>/tools/delivery.md`。
-3. 工具调用参数精确格式（严格按声明参数名，禁猜字段）：`read_file({ "file_path": "<路径>" })`；`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建文件或整份重写小 JSON 时必须直接调 `write_file`，严禁对未读或不存在文件调 `edit_file`）；`edit_file({ "file_path": "<路径>", "old_string": "<原片段>", "new_string": "<新片段>" })`（仅限修改**已先调 `read_file` 读过**的既有文件局部）；`ls({ "path": "<目录>" })`（禁传 `pattern`）；`glob({ "pattern": "<通配>", "path": "<目录>" })`；`grep({ "pattern": "<正则>", "path": "<目录或文件>" })`。`execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。
+3. 工具调用参数精确格式（严格按声明参数名，禁猜字段）：`read_file({ "file_path": "<路径>" })`；`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建文件或整份重写小 JSON 时必须直接调 `write_file`，严禁对未读或不存在文件调 `edit_file`）；`edit_file({ "file_path": "<路径>", "old_string": "<原片段>", "new_string": "<新片段>" })`（仅限修改**已先调 `read_file` 读过**的既有文件局部）；`ls({ "path": "<目录>" })`（禁传 `pattern`）；`glob({ "pattern": "<通配>", "path": "<目录>" })`；`grep({ "pattern": "<字面文字>", "path": "<目录或文件>" })`（按字面匹配，非正则）。`execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。
 4. 不碰令牌、不调 Hub、不调 `test-bed`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 `unmet`/`missing`，在最终回复写给主代理的报告。
 
 ## 编写核心守则

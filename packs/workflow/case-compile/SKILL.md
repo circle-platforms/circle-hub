@@ -19,7 +19,7 @@ node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保�
 
 ## 1. 用例重组
 
-先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理原始用例（使用者一开始只点做部分用例时，从第一次 `recompose` 起传相同 `parameters.scope`，完整脑图仍下载作上下文；单条或分批经 `tools/task-brief.ts --role '用例重组' --task-file <文件>` 写入任务文件后以 `subagent_type="general-purpose"` 派发；提交 Hub 前先跑 `recompose` 技能的 `tools/check-record.ts` 离线自检），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
+先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理原始用例（使用者一开始只点做部分用例时，从第一次 `recompose` 起传相同 `parameters.scope`，完整脑图仍下载作上下文；单条或分批经 `tools/task-brief.ts --role '用例重组' --task-file <文件>` 写入任务文件后按同法派发；提交 Hub 前先跑 `recompose` 技能的 `tools/check-record.ts` 离线自检），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
 
 原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写。主代理把整份原始用例的这类问题攒齐问一次，带 ID、标题、原句和构建号及手册原话。重组时使用者已决定的照做，不再问。尚未决定的先排除，并按 `tools/delivery.md` 写原因和下一步。
 
@@ -53,11 +53,11 @@ profile: device_count 只读预检及可选 fold_newlines
 本地读取: items/<序号>.json、sources.json、sources/<摘要>、knowledge/、briefs/<序号>.md
 ```
 
-各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`（无在途派发）、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接把改好的计划重交当前 `plan_run`（复用未改文件与未改 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开 `plan_run`（上机返工 `predecessor` 填原 `test-bed` 预订号并用 `carry-plans.ts` 结转未改计划，详见 `tools/delivery.md`），并重生成上传与新开合并；始终禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
+各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`（无在途上机验证任务）、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接把改好的计划重交当前 `plan_run`（复用未改文件与未改 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开 `plan_run`（上机返工 `predecessor` 填原 `test-bed` 预订号并用 `carry-plans.ts` 结转未改自动化用例，详见 `tools/delivery.md`），并重生成上传与新开合并；始终禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
 ```text
 start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
 ```
-第 2 轮及以上返工派发 `脚本编写` 或 `失败分析` 前，统一经 `task-brief.ts --round <n> --task-file <文件>` 传入同案 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（按第 `1..n-1` 轮顺序用英文逗号分隔，缺失轮次用 `-` 占位；只需传单轮或上一轮时可直接传单个路径）；`task-brief.ts` 会写入任务文件（超 1800 字符逐字行不折行并提示行号，仅说明性 prose 折行），并在传入运行目录或 `--run`/`--brief briefs/<序号>.md` 时在内存中自动拼入同案 `compile-brief@1`（含执行器失败标志、测试环境与前置）与精简机械规则拒收 `{code, path, message, fix}`、区分“末尾 12,000 字符截断 / 输出无法唯一定位 / 未找到命令”的报错步设备逐字摘录、未确认的失败分析结论（`confidence: "hypothesis"`；`notes.json` 缺 `round` 时标为轮次未记录且不冒充第 1 轮），并对总篇幅按固定顺序截断披露；禁止手写摘要、传整批 `submission.json` 或跨用例拼接；`保真核对` 继续严格盲审，只传 `.brief.json`。
+第 2 轮及以上返工派发 `脚本编写` 或 `失败分析` 前，统一经 `task-brief.ts --round <n> --task-file <文件>` 传入同案 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（多轮按 `1..n-1` 英文逗号分隔、缺轮写 `-`，单轮直接传路径）；`task-brief.ts` 会写入任务文件（超 1800 字符逐字长行不折行并提示行号），并在传入运行目录或 `--run`/`--brief briefs/<序号>.md` 时在内存中自动拼入同案 `compile-brief@1`（含执行器失败标志、测试环境与前置）与精简机械规则拒收 `{code, path, message, fix}`、区分“末尾 12,000 字符截断 / 输出无法唯一定位 / 未找到命令”的报错步设备逐字摘录、未确认的失败分析结论（`confidence: "hypothesis"`；`notes.json` 缺 `round` 时标为轮次未记录且不冒充第 1 轮），并对总篇幅按固定顺序截断披露；禁止手写摘要、传整批 `submission.json` 或跨用例拼接；`保真核对` 继续严格盲审，只传 `.brief.json`。
 
 ## 3. 脚本合并
 
@@ -66,7 +66,7 @@ start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predec
 ```sh
 node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
 node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
-# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role 保真核对 --task-file <文件>，将短输出传给前台并行 task（subagent_type="general-purpose"，不用 background，每批最多 6 个，失败单独重派）写同名 .verdict.json
+# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role '保真核对' --task-file <文件>（或用 --batch 核对目录），将短输出按同法前台并行 task（每批最多 6 个）写同名 .verdict.json
 node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
 # 确认工具输出为正确（ready=true）后再提交；命令行与 <<'EOF' 在同一行，切勿前换行
 node <技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <脚本编写编号> --model <模型> --plans <自动化用例目录> <<'EOF'
@@ -78,7 +78,7 @@ EOF
 node <技能目录>/tools/generate-workbook.ts --run <新目录>/run.json --result <新目录>/result.json --submission <新目录>/submission.json --contract <新目录>/contract.json --profile <新目录>/profile.json --inventory <新目录>/inventory.json --out <新目录>/case.xlsx
 ```
 
-submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。上机返工改用例后，用 `carry-plans.ts` 结转未改计划并回第 2 节 `start_run`（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run` 核对，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
+submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。上机返工改用例后，用 `carry-plans.ts` 结转未改自动化用例并回第 2 节 `start_run`（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run` 核对，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
 
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项的结论须为正确（`satisfied`）
@@ -106,6 +106,6 @@ tools/delivery.md 下载命令带 `--wait 3600` 时**必须用 `background` 启�
 
 ## 5. 失败分析
 
-每条原始用例最多编写并上机 3 轮；第 3 轮仍未写对即停止上机验证、直接收尾写结论并组交付目录，严禁第 4 轮。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条设备会话文本与 `log.txt`（框架日志只记下发命令和超时，设备 CLI 报错同时记入会话文本与 `index.json`；必要时用 `tools/task-brief.ts --role '失败分析' --case <autoid> --brief returns/index.json --out <失败分析输出> --task-file <任务文件> --round <n> --item items/<序号>.json --prior-plans ... --prior-returns ... [--prior-answers ...]` 写盘并派发 `general-purpose` 子代理只读失败分析，并在 `notes.json` 按 `tools/delivery.md` 记录 `"round"` 字段，不改计划），再给错误的原始用例写原因和下一步。先看设备构建与手册和命令树是不是同一版，再查配置是否真正生效、手册要求的前置是否都写了；多个原始用例同一症状时找共同前置，也解释为什么其他原始用例正确。确认改动并开始返工时：未进 `merge_run` 且仍可修复、范围未变直接重交当前 `plan_run`；已进 `merge_run`/修复耗尽/范围变化时先用 `carry-plans.ts` 结转未改计划并按第 2 节 `start_run` 重走第 2～3 节全流程。
+每条原始用例最多编写并上机 3 轮；第 3 轮仍未写对即停止上机验证、直接收尾写结论并组交付目录，严禁第 4 轮。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条设备会话文本与 `log.txt`（框架日志只记下发命令和超时，设备 CLI 报错同时记入会话文本与 `index.json`；必要时用 `tools/task-brief.ts --role '失败分析' --case <autoid> --brief returns/index.json --out <失败分析输出> --task-file <任务文件> --round <n> --item items/<序号>.json --prior-plans ... --prior-returns ... [--prior-answers ...]` 写盘并派发 `general-purpose` 子代理只读失败分析，并在 `notes.json` 按 `tools/delivery.md` 记录 `"round"` 字段，不改计划），再给错误的原始用例写原因和下一步。先看设备构建与手册和命令树是不是同一版，再查配置是否真正生效、手册要求的前置是否都写了；多个原始用例同一症状时找共同前置，也解释为什么其他原始用例正确。确认改动并开始返工时：未进 `merge_run` 且 `rounds_left>0`、`scope`/`exclude`/`inputs` 未变直接重交当前 `plan_run`；`rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时先用 `carry-plans.ts` 结转未改自动化用例并按第 2 节 `start_run` 重走第 2～3 节。
 
 排除这些后才判断设备的问题。原始用例的期望已忠实实现、手册前置全有、观察方法和对象正确，才能提出设备的问题；说不清就写状态未知、原因还没查清，在被测命令前加只读观察，下一次上机验证区分。设备输出只帮助理解错误，不抄进期望；其中点名的命令或配置，先在相同构建的手册和命令树中读到再改。时序、等待的推测是未确认的模型判断，预测不符就换解释。

@@ -307,6 +307,14 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
     assert.ok(content.includes('edit_file(') && content.includes('read_file'), `${name} must require read_file before edit_file`);
   }
   assert.ok(attributor.includes('无 `edit_file`') || attributor.includes('没有 edit_file'), 'attributor must note lack of edit_file');
+  assert.ok(!attributor.includes('调 `edit_file`'), 'attributor must not instruct calling edit_file');
+  for (const [name, content] of [
+    ['compile-recomposer', recomposer],
+    ['compile-writer', writer],
+    ['compile-attributor', attributor],
+  ] as const) {
+    assert.ok(content.includes('<字面文字>') && !content.includes('<正则>'), `${name} must describe grep pattern as literal text`);
+  }
 
   // Execute rules tailored per role: ban on recomposer & attributor, exact CLI on writer & fidelity
   assert.ok(recomposer.includes('严禁调用 execute'), 'recomposer must ban execute even if exposed');

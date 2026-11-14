@@ -772,7 +772,7 @@ function optionalTaskField(entry: Record<string, unknown>, key: string): string 
   const val = entry[key];
   if (val === undefined) return undefined;
   if (typeof val !== 'string' || !val.trim()) {
-    throw new Error(`参数无效：批量任务项字段 ${key} 必须是非空字符串`);
+    throw new Error(`参数无效：批量任务项字段 ${key} 必须是非空字符串。请修改批量清单后重试`);
   }
   return val;
 }
@@ -789,12 +789,12 @@ async function resolveBatchItems(
   const batchTarget = resolveInsideCwd(cwd, args.batch!, '--batch');
   const st = await lstat(batchTarget.lexical).catch((err: NodeJS.ErrnoException) => {
     if (err.code === 'ENOENT') {
-      throw new Error(`不存在：找不到 --batch 路径 ${args.batch}`);
+      throw new Error(`不存在：找不到 --batch 路径 ${args.batch}。请核对路径并确认文件或目录已生成后重试`);
     }
     throw err;
   });
   if (st.isSymbolicLink()) {
-    throw new Error(`参数无效：--batch 路径 ${args.batch} 不能是符号链接`);
+    throw new Error(`参数无效：--batch 路径 ${args.batch} 不能是符号链接。请改用工作目录内的真实路径后重试`);
   }
 
   const baseDefaults = {
@@ -821,14 +821,14 @@ async function resolveBatchItems(
     const outDir = args['out-dir'] ? resolveInsideCwd(cwd, args['out-dir'], '--out-dir') : batchDir;
     const files = (await readdir(batchDir.canonical)).filter((n) => n.endsWith('.brief.json')).sort();
     if (!files.length) {
-      throw new Error(`不存在：--batch 目录 ${batchDir.relative} 下没有 .brief.json 文件`);
+      throw new Error(`不存在：--batch 目录 ${batchDir.relative} 下没有 .brief.json 文件。请先运行 fidelity-brief.ts 生成核对目录后再试`);
     }
     const jobs: WriteTaskBriefOptions[] = [];
     for (const fileName of files) {
       const briefFile = resolveExistingFileInsideCwd(cwd, join(batchDir.relative, fileName), '--batch');
       const parsed = parsedPlanFile(fileName, await readFile(briefFile.canonical));
       if (!isRecord(parsed)) {
-        throw new Error(`参数无效：${briefFile.relative} 不是合法的 JSON 对象`);
+        throw new Error(`参数无效：${briefFile.relative} 不是合法的 JSON 对象。请检查并重新生成该 .brief.json 后重试`);
       }
       const stem = fileName.slice(0, -'.brief.json'.length);
       const caseStem = stem.replace(/\.[0-9a-f]{8}$/, '');
@@ -851,7 +851,7 @@ async function resolveBatchItems(
   }
 
   if (!st.isFile()) {
-    throw new Error(`参数无效：--batch ${args.batch} 必须是普通 JSON 文件或保真核对目录`);
+    throw new Error(`参数无效：--batch ${args.batch} 必须是普通 JSON 文件或保真核对目录。请核对 --batch 路径后重试`);
   }
   const batchFile = resolveExistingFileInsideCwd(cwd, args.batch!, '--batch');
   const parsed = parsedPlanFile(basename(batchFile.canonical), await readFile(batchFile.canonical));
@@ -863,14 +863,14 @@ async function resolveBatchItems(
     rawTasks = parsed.tasks;
     if (isRecord(parsed.defaults)) fileDefaults = parsed.defaults;
   } else {
-    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 必须是任务数组或含 tasks 数组的对象`);
+    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 必须是任务数组或含 tasks 数组的对象。请修改清单格式后重试`);
   }
   if (!rawTasks.length) {
-    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 为空`);
+    throw new Error(`参数无效：--batch 清单 ${batchFile.relative} 为空。请至少填入一项任务后重试`);
   }
   return rawTasks.map((entry, idx) => {
     if (!isRecord(entry)) {
-      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须是对象`);
+      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须是对象。请修改批量清单后重试`);
     }
     const merged: Record<string, unknown> = { ...fileDefaults, ...entry };
     const caseRef = optionalTaskField(merged, 'case');
@@ -878,7 +878,7 @@ async function resolveBatchItems(
     const outPath = optionalTaskField(merged, 'out');
     const taskFilePath = optionalTaskField(merged, 'task_file');
     if (!caseRef || !briefPath || !outPath || !taskFilePath) {
-      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须包含 case、brief、out、task_file 字段`);
+      throw new Error(`参数无效：--batch 第 ${idx + 1} 项必须包含 case、brief、out、task_file 字段。请补齐必填字段后重试`);
     }
     const roundRaw = merged.round;
     const round =
@@ -917,7 +917,7 @@ const HELP_TEXT = [
   '',
   '批量模式：',
   '  --batch <清单.json>                         一次为数组/tasks 清单中的多条用例生成任务文件，stdout 输出 task-brief-batch@1 JSON',
-  '  --role 保真核对 --batch <核对目录> --task-dir <目录>   一次为核对目录内全部 .brief.json 生成盲审任务文件（可用 --out-dir 指定判决输出目录）',
+  '  --role 保真核对 --batch <核对目录> --task-dir <目录>   一次为核对目录内全部 .brief.json 生成盲审任务文件（可用 --out-dir 指定 .verdict.json 输出目录）',
   '',
   '注意事项：',
   '  1. 所有路径参数须在当前工作目录下，且不能为符号链接；--task-file 须为工作目录下不冲突的 .md 路径。',

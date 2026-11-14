@@ -206,8 +206,15 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     assert.match(badBuild.stderr, /build|构建/);
     await assert.rejects(readdir(join(w.root, 'plans_bad_build')));
 
-    // Restore valid target run.json, test mismatched root and mismatched source digest
+    // Restore valid target run.json, test mismatched product, root, and mismatched source digest
     run2BadBuild.build = 'Rel_ORBIT_1';
+    run2BadBuild.product = 'other-product';
+    await writeFile(join(w.targetDir, 'run.json'), JSON.stringify(run2BadBuild));
+    const badProd = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_bad_product']);
+    assert.equal(badProd.code, 1);
+    assert.match(badProd.stderr, /product|产品/);
+
+    run2BadBuild.product = 'orbit';
     run2BadBuild.root = '9'.repeat(64);
     await writeFile(join(w.targetDir, 'run.json'), JSON.stringify(run2BadBuild));
     assert.equal((await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_bad_root'])).code, 1);
@@ -232,7 +239,7 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     // 3. Destination collision fails closed without overwriting
     const collision = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_scoped']);
     assert.equal(collision.code, 1);
-    assert.match(collision.stderr, /已存在|覆盖/);
+    assert.match(collision.stderr, /^已被占用：.*已存在/);
 
     // 4. Symlink in source-plans & path escape rejected
     await symlink(join(w.sourcePlans, '00.json'), join(w.sourcePlans, 'link.json'));
@@ -251,7 +258,7 @@ test('carry-plans fails closed on mismatched build/root/sources, changed item sp
     };
     const shaFail = await runCli(['--source', 'run1', '--target', 'run2', '--source-plans', 'plans1', '--plans', 'plans_sha_fail'], tamperedIo);
     assert.equal(shaFail.code, 1);
-    assert.match(shaFail.stderr, /SHA-256|字节/);
+    assert.match(shaFail.stderr, /^暂时不可用：.*SHA-256/);
   } finally {
     process.chdir(prevCwd);
     await rm(w.root, { recursive: true, force: true });

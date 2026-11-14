@@ -317,3 +317,78 @@ test('ops sibling ^work-ops trust, execute key hygiene, skills/ symlink, globWit
     hSkills.close();
   }
 });
+
+test('every command-form second line across all execute refusals passes replay, while non-computable cases list installed tools instead of fake templates', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile, { homeName: 'Application Support/circle home' });
+    try {
+      const tb = `'${h.skillPath('case-compile', 'tools/task-brief.ts')}'`;
+      const ad = `'${h.skillPath('case-compile', 'tools/assemble-delivery.ts')}'`;
+      const cr = `'${h.skillPath('recompose', 'tools/check-record.ts')}'`;
+      const fr = `'${h.skillPath('case-compile', 'tools/fetch-run.ts')}'`;
+      const op = `'${h.skillPath('operation-capture', 'operation.ts')}'`;
+      const undeclared = `'${h.skillPath('case-compile', 'tools/authoring-brief.ts')}'`;
+      const outside = `'${join(h.dir, 'outside.ts')}'`;
+      writeFileSync(join(h.dir, 'outside.ts'), 'export {};\n');
+
+      const verifyRefusalSecondLine = (label: string, res: { decision?: string; reason?: string }, expectCommandForm: boolean) => {
+        assert.equal(res.decision, 'deny', `${label}: expected deny, got ${JSON.stringify(res)}`);
+        const lines = String(res.reason ?? '').split('\n');
+        assert.ok(lines.length >= 3, `${label}: expected >= 3 lines, got:\n${res.reason}`);
+        assert.match(lines[lines.length - 1], /^规则全文：.*ALLOWED\.md（用 read_file 读）$/, `${label}: line 3`);
+        const how = lines.slice(1, -1).join('\n');
+        assert.doesNotMatch(how, /<技能目录>|<脚本>/, `${label}: second line must not emit fake angle-bracket template:\n${how}`);
+        assert.doesNotMatch(how, /^写法：\s*node\b/, `${label}: second line must not start with template 写法：node:\n${how}`);
+        if (expectCommandForm) {
+          assert.ok(how.startsWith('这次可以这样写：'), `${label}: expected runnable command on line 2, got:\n${how}`);
+          const cmd = how.slice('这次可以这样写：'.length);
+          h.assertAllowed(h.exec(cmd), `${label} replay failed for command:\n${cmd}`);
+        } else if (how.startsWith('这次可以这样写：')) {
+          const cmd = how.slice('这次可以这样写：'.length);
+          h.assertAllowed(h.exec(cmd), `${label} unexpected command-form line 2 must still pass replay:\n${cmd}`);
+        }
+      };
+
+      // Undeclared internal helper: must list actual installed declared scripts instead of a copyable template.
+      const undeclaredRes = h.exec(`node ${undeclared}`);
+      verifyRefusalSecondLine('undeclared helper', undeclaredRes, false);
+      const undeclaredHow = String(undeclaredRes.reason ?? '').split('\n').slice(1, -1).join('\n');
+      assert.match(undeclaredHow, /已装.*脚本|assemble-delivery\.ts|task-brief\.ts/, `undeclared helper should list installed scripts:\n${undeclaredHow}`);
+
+      // Outside skills / missing file / non-interpreter / node -e / ambiguous or incomplete relative path.
+      verifyRefusalSecondLine('outside script', h.exec(`node ${outside}`), false);
+      verifyRefusalSecondLine('missing script', h.exec(`node '${h.skillPath('case-compile', 'tools/no-such.ts')}'`), false);
+      verifyRefusalSecondLine('node -e', h.exec("node -e 'console.log(1)'"), false);
+      verifyRefusalSecondLine('unknown interpreter', h.exec('python3 x.py'), false);
+      verifyRefusalSecondLine('ambiguous relative download-run', h.exec(`node tools/download-run.ts --hub ${HUB_URL} --run ${RUN_ID} --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), false);
+      verifyRefusalSecondLine('unique relative missing required opt', h.exec('node tools/task-brief.ts'), false);
+      verifyRefusalSecondLine('missing required --runs', h.exec(`node ${ad} --hub ${HUB_URL} --notes notes.json --out dist <<'EOF'\n%HUB_TOKEN%\nEOF`), false);
+      verifyRefusalSecondLine('invalid --run id', h.exec(`node ${fr} --hub ${HUB_URL} --run bad_id --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), false);
+      verifyRefusalSecondLine('bad subcommand', h.exec(`node ${op} bogus --session s1`), false);
+
+      // Unique relative script whose remaining arguments are already complete & valid -> computable passing command!
+      verifyRefusalSecondLine('unique relative complete check-record', h.exec('node recompose/tools/check-record.ts --file records --run recompose-run'), true);
+
+      // Fixable syntax / quoting / --hub / heredoc mistakes -> second line is a concrete command that passes replay!
+      verifyRefusalSecondLine('double quotes', h.exec(`node "${h.skillPath('case-compile', 'tools/task-brief.ts')}" --role "脚本编写" --case c1 --brief b.md --out p.json --task-file t.md`), true);
+      verifyRefusalSecondLine('bare Chinese', h.exec(`node ${tb} --role 脚本编写 --case c1 --brief b.md --out p.json --task-file t.md`), true);
+      verifyRefusalSecondLine('backslash space', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --note foo\\ bar`), true);
+      verifyRefusalSecondLine('adjacent quotes', h.exec(`node ${tb} --role '脚本''编写' --case c1 --brief b.md --out p.json --task-file t.md`), true);
+      verifyRefusalSecondLine('equals option', h.exec(`node ${tb} --role '脚本编写' --case=c1 --brief b.md --out p.json --task-file t.md`), true);
+      verifyRefusalSecondLine('optional invalid prior-plans', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --prior-plans ../outside.json`), true);
+      verifyRefusalSecondLine('wrong hub url', h.exec(`node ${fr} --hub ${ALT_HUB_URL} --run ${RUN_ID} --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), true);
+      verifyRefusalSecondLine('missing heredoc', h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID} --notes n.json --out dist`), true);
+      verifyRefusalSecondLine('unexpected heredoc', h.exec(`node ${cr} --file records <<'EOF'\n%HUB_TOKEN%\nEOF`), true);
+
+      if (profile === 'ops') {
+        verifyRefusalSecondLine('sleep 0', h.exec('sleep 0'), true);
+        verifyRefusalSecondLine('sleep 601', h.exec('sleep 601'), true);
+        verifyRefusalSecondLine('sleep extra heredoc', h.exec("sleep 10 <<'EOF'\n%HUB_TOKEN%\nEOF"), true);
+      } else {
+        verifyRefusalSecondLine('sleep disallowed on skills', h.exec('sleep 10'), false);
+      }
+    } finally {
+      h.close();
+    }
+  }
+});

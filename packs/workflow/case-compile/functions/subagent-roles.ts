@@ -48,21 +48,21 @@ function toolUsageBoundary(opts: {
 }): string {
   const schemaParts = [
     '`read_file({ "file_path": "<路径>" })`',
-    '`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建文件或整份重写小 JSON 时必须直接调 `write_file`，严禁对未读或不存在文件调 `edit_file`）',
+    opts.hasEdit
+      ? '`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建文件或整份重写小 JSON 时必须直接调 `write_file`，严禁对未读或不存在文件调 `edit_file`）'
+      : '`write_file({ "file_path": "<路径>", "content": "<完整文本>" })`（新建、写入或更新结果一律调 `write_file`；本子代理无 `edit_file`）',
   ];
   if (opts.hasEdit) {
     schemaParts.push('`edit_file({ "file_path": "<路径>", "old_string": "<原片段>", "new_string": "<新片段>" })`（仅限修改**已先调 `read_file` 读过**的既有文件局部）');
-  } else {
-    schemaParts.push('本子代理无 `edit_file`，写入或更新结果一律用 `write_file`');
   }
   schemaParts.push('`ls({ "path": "<目录>" })`（禁传 `pattern`）');
   schemaParts.push('`glob({ "pattern": "<通配>", "path": "<目录>" })`');
   if (opts.hasGrep) {
-    schemaParts.push('`grep({ "pattern": "<正则>", "path": "<目录或文件>" })`');
+    schemaParts.push('`grep({ "pattern": "<字面文字>", "path": "<目录或文件>" })`（按字面匹配，非正则）');
   }
   const execText = opts.hasExecute
     ? opts.executeRule!
-    : '本子代理无 `execute` 工具（即便环境暴露了也**严禁调用 execute**），禁止运行 shell、`ls`/`grep`/`node -e` 或任何脚本。';
+    : '本子代理无 `execute` 工具（即便环境暴露了也**严禁调用 execute**），禁止经 shell 运行 `ls`/`grep`/`node -e` 等命令或任何脚本。';
   return `工具调用参数精确格式（严格按声明参数名，禁猜字段）：${schemaParts.join('；')}。${execText}`;
 }
 
