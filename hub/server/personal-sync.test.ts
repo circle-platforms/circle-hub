@@ -6,6 +6,7 @@ import {createTestHub} from './testing-real.ts';
 import {openConsole,requestHttp} from '../../tests/acceptance/support/console.ts';
 import {encodePersonalSyncObject} from '../../contracts/src/sync-canonical.ts';
 import {sha256Hex} from '../records/api.ts';
+import {startPostgres} from '../testing/postgres.ts';
 const options={repositoryPacks:false,stubs:false,mindmapSkill:false,workbookSkill:false,xmlSkill:false,htmlSkill:false};
 const hidden=(text:string,name:string)=>new RegExp('name="'+name+'" value="([^"]+)"').exec(text)?.[1]??'';
 const http=async(hub:Awaited<ReturnType<typeof createTestHub>>,token:string|undefined,path:string,body?:unknown,headers:Record<string,string>={})=>{
@@ -121,8 +122,14 @@ test('strict wire limits, query validation and refusal audits expose no request 
 });
 
 test('audit start failures prevent writes and finish failures leave recoverable operation receipts',async t=>{
- const hub=await createTestHub(options);t.after(()=>hub.close());const owner=await hub.createUser('合成审计故障'),api=hub.records.personalSync!,client_id=randomUUID();
- const {Database,createPool}=await import('../records/db.ts'),db=new Database(createPool(hub.records.database));t.after(()=>db.end());
+ const postgres=await startPostgres();
+ const hub=await createTestHub({...options,postgres}).catch(async error=>{await postgres.stop();throw error;});
+ // Only the fault injector owns DDL; HTTP and business records retain the real runtime connection.
+ const {Database,createPool}=await import('../records/db.ts'),db=new Database(createPool({...postgres.config,database:hub.records.database.database}));
+ t.after(async()=>{try{await db.end();}finally{try{await hub.close();}finally{await postgres.stop();}}});
+ const owner=await hub.createUser('合成审计故障'),api=hub.records.personalSync!,client_id=randomUUID();
+ assert.notEqual(hub.records.database.user,postgres.config.user);
+ assert.equal((await db.query<{allowed:boolean}>("SELECT has_schema_privilege($1,'public','CREATE') AS allowed",[hub.records.database.user])).rows[0].allowed,false);
  await db.query("CREATE FUNCTION synthetic_sync_audit_failure() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.schema='personal-sync-http-audit@1' AND NEW.body::jsonb->>'phase'='started' THEN RAISE EXCEPTION 'synthetic secret detail';END IF;RETURN NEW;END$$");await db.query('CREATE TRIGGER synthetic_sync_audit_failure BEFORE INSERT ON records FOR EACH ROW EXECUTE FUNCTION synthetic_sync_audit_failure()');
  const refused=await http(hub,owner.token,'/clients',{client_id,name:'synthetic audit device'});assert.equal(refused.status,503);assert.doesNotMatch(refused.body,/synthetic secret detail/);
  await db.query('DROP TRIGGER synthetic_sync_audit_failure ON records');const state=await api.state(owner.principal);await assert.rejects(api.openSession(owner.principal,{client_id,epoch:state.epoch,known_state:null,base_snapshot:null}),{code:'SOURCE_UNAVAILABLE'});
