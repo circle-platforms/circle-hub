@@ -43,12 +43,12 @@ test('job result and the second attempt failure remain separate without inventin
 
 test('readonly operations have no synthetic round and absent observations stay absent', () => {
   for (const operation of ['precheck', 'conformance'] as const) {
-    const value = { job_facts: { scope: { job }, operation, phase: 'complete' } };
-    const parsed = ScopedDispatchFactsSchema.parse(value);
-    assert.deepEqual(parsed, value);
+    const raw = { job_facts: { scope: { job }, operation, phase: 'complete' } };
+    const parsed = ScopedDispatchFactsSchema.parse(raw);
     assert.equal(parsed.dispatch_attempt, undefined);
     assert.equal(parsed.job_facts.worker_settled, undefined);
     assert.equal(parsed.job_facts.frozen, undefined);
+    assert.deepEqual(parsed, raw);
   }
   assert.equal(DispatchAttemptFactsSchema.safeParse({ scope: { job, round: 2 }, operation: 'precheck' }).success, false, 'operation belongs to the job group');
 });
