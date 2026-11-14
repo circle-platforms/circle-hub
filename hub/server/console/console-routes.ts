@@ -9,6 +9,7 @@ import { neutralPage, type PageContext, type PageResult } from './context.ts';
 import { knowledgePage, productPage, productSourcesPage, rootPage, runPage, runsPage, treePage, diffPage } from './pages.ts';
 import { recordsPage } from './records.ts';
 import { resultPage, resultsPage } from './results.ts';
+import { roundDevicePage, roundPage } from './round-view.ts';
 import { searchPage } from './search.ts';
 import { needsRebuildPage } from './reset.ts';
 import { settingsPage } from './settings.ts';
@@ -27,6 +28,7 @@ export const ROUTES: Record<string, Route> = {
   overview: (ctx, rest) => (rest.length === 0 ? overviewPage(ctx) : Promise.resolve(neutralPage(ctx))),
   me: (ctx, rest) => (rest.length === 0 ? memberCapabilitiesPage(ctx) : Promise.resolve(neutralPage(ctx))),
   results: (ctx, rest) => (rest.length === 0 ? resultsPage(ctx) : rest.length === 1 ? resultPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
+  rounds: (ctx, rest) => (rest.length === 0 ? roundPage(ctx) : rest.length === 1 && rest[0] === 'device' ? roundDevicePage(ctx) : Promise.resolve(neutralPage(ctx))),
   runs: (ctx, rest) => (rest.length === 0 ? runsPage(ctx) : rest.length === 1 ? runPage(ctx, rest[0]) : Promise.resolve(neutralPage(ctx))),
   knowledge: (ctx, rest) => {
     if (rest.length === 0) return knowledgePage(ctx);

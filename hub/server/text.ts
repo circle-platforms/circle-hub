@@ -653,11 +653,12 @@ function itemSummary(item: ItemProjection): string {
 const SLOT_JUDGMENT_PLACEHOLDER = '模型的重组判断';
 
 /**
- * Reader label for one original case. Prefer fields.title when the pack wrote it
- * (recompose project.ts → intent text; patch text-next-pack-part for agy/cc-next).
- * Until that lands: case_id present but title absent →「标题未知」(do not echo case_id/label twice).
+ * Reader label for one original case (shared by tool text and the console round page).
+ * Prefer fields.title when the pack wrote it (recompose project.ts → intent text;
+ * patch text-next-pack-part for agy/cc-next). Until that lands: case_id present but
+ * title absent →「标题未知」(do not echo case_id/label twice).
  */
-function caseName(item: ItemProjection | undefined, label: string): string {
+export function caseName(item: ItemProjection | undefined, label: string): string {
   if (item && isRecord(item.fields.review_counts)) return label;
   const id = item?.fields.autoid ?? item?.fields.case_id;
   const titled = item?.fields.title;
@@ -690,7 +691,8 @@ function awaitingExcel(item: ItemResult): boolean {
   return /自动化用例 Excel|工作簿/.test(texts);
 }
 
-function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
+/** One original-case conclusion sentence for models and the console (Boss 22:25: single wording source). */
+export function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
   const pending = item.requirements.some(requirement => requirement.status === 'pending' || requirement.unsatisfied_reason === 'independence_unknown');
   const wrong = item.requirements.filter(requirement => requirement.status === 'unsatisfied' && requirement.unsatisfied_reason === 'outcome_mismatch');
   const claims = item.requirements.flatMap(requirement => requirement.claims);
