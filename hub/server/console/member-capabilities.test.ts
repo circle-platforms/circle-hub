@@ -15,8 +15,10 @@ function sample(partial: Partial<MemberCapabilities> = {}): MemberCapabilities {
     workflows: [{ name: '用例复核', ref: 'case-review@1.0.0' }],
     skills: [{ name: '通用解析', ref: 'parse-skill@1.0.0' }],
     connections: [{ name: '合成连接', systemPack: 'hub-test-system', environment: '合成实验室' }],
+    unassigned_workflows_count: 0,
+    unattributed_holdings: [],
     environments: [],
-    environmentAccess: { ready: false, missing: '测试环境使用权限尚未接线', nextAction: '请管理员完成测试环境分配与使用权限接线后重新查询' },
+    environmentAccess: { enforced: true, ready: false, missing: '测试环境使用权限尚未接线', nextAction: '请管理员完成测试环境分配与使用权限接线后重新查询' },
     denials: [],
     ...partial,
   };
@@ -78,10 +80,10 @@ test('assigned member sees team-a content without internal ids', async () => {
 
 test('occupancy without until shows unlimited duration', () => {
   const html = renderMemberCapabilities(sample({
-    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
     environments: [{
-      name: '合成实验室',
-      occupancy: { since: '2026-11-09T02:00:00.000Z', until: null, mine: false, holder: '合成成员乙' },
+      name: '合成实验室', enabled: true, assigned: true, can_use: true, missing: [],
+      occupancy: [{ since: '2026-11-09T02:00:00.000Z', until: null, mine: false, name: '合成成员乙' }],
     }],
   })).text;
   assert.match(html, /不限时长/);
@@ -100,7 +102,7 @@ test('occupied without assignment shows 已无分配; assigned occupancy does no
     missing: ['占着但已无分配'],
   }] as unknown as MemberCapabilities['environments'];
   const revoked = renderMemberCapabilities(sample({
-    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
     environments: revokedEnvs,
   })).text;
   assert.match(revoked, /已无分配/);
@@ -115,7 +117,7 @@ test('occupied without assignment shows 已无分配; assigned occupancy does no
     occupancy: { since: '2026-11-09T02:00:00.000Z', until: '2026-11-09T03:00:00.000Z', mine: true },
   }] as unknown as MemberCapabilities['environments'];
   const assigned = renderMemberCapabilities(sample({
-    environmentAccess: { ready: true, missing: null, nextAction: null },
+    environmentAccess: { enforced: true, ready: true, missing: null, nextAction: null },
     environments: assignedEnvs,
   })).text;
   assert.match(assigned, /本人占用/);
@@ -161,7 +163,7 @@ test('member cannot open another account projection', async () => {
 test('ready=false does not claim proven no environment access', () => {
   const html = renderMemberCapabilities(sample({
     environments: [],
-    environmentAccess: { ready: false, missing: '权限端口未就绪', nextAction: '请管理员接线后重试' },
+    environmentAccess: { enforced: true, ready: false, missing: '权限端口未就绪', nextAction: '请管理员接线后重试' },
   })).text;
   assert.match(html, /未知/);
   assert.match(html, /权限端口未就绪/);

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { EnvironmentFacts } from '../../dispatch/api.ts';
 import type { ExecutorView } from '../api.ts';
 import { commands } from './commands.ts';
+import { html } from './html.ts';
 import {
   NO_ASSIGNMENT_LABEL,
   environmentIsOccupied,
@@ -49,9 +50,9 @@ test('lease-release confirmation dialog follows bed-hold commandModal pattern', 
   );
   assert.match(dialog.id, /lease-release/);
   assert.match(dialog.title, /强制释放预订/);
-  assert.match(dialog.text, /当前占用/);
-  assert.match(dialog.text, /原持有者/);
+  assert.match(html`${dialog.text}`.text, /当前占用/);
+  assert.match(html`${dialog.text}`.text, /原持有者/);
   assert.match(dialog.command, /circle-hub lease release/);
   assert.match(dialog.command, /--reason=/);
-  assert.doesNotMatch(dialog.text, /未知/);
+  assert.doesNotMatch(html`${dialog.text}`.text, /未知/);
 });
