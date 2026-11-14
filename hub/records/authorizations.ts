@@ -1,3 +1,5 @@
+import { restoresDisabledAssignment } from './definition-restoration.ts';
+import { parseStrictJson } from './strict-json.ts';
 import { assertEnvironmentProgramWrite } from './environment-program-write.ts';
 import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { readTeamDefinitions } from './team-definitions.ts';
@@ -365,7 +367,8 @@ export class RecordAuthorizations implements Authorizations {
       const users=[...new Set([by.id,...(UserId.safeParse(subject).success?[subject]:[])])].sort();
       const accounts=(await this.#db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE',[users],tx)).rows;
       const target=accounts.find(row=>row.id===subject);
-      if ((permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||!revoked&&target.disabled)) throw new ConflictError('分配对象不存在或未启用');
+      const restoringDisabledSubject = permission === 'resource_assign' && TestEnvironmentId.safeParse(object).success && restoresDisabledAssignment(tx, subject, object);
+      if ((permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||!revoked&&target.disabled&&!restoringDisabledSubject)) throw new ConflictError('分配对象不存在或未启用');
       const team=TeamId.safeParse(subject).success?subject:TeamId.safeParse(object).success?object:null;
       if(team!==null){
         await this.#store.lock('teams.id:'+team,tx);
