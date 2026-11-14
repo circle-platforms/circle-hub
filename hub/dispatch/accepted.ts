@@ -103,7 +103,7 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     const diagnostics = statusDiagnostics({ job: status.job, status, ended: null, boundary_refused: false }, administrative);
     return answer([{ job: status.job, ...diagnostics, text: clip(`上机验证核对尚未完成；${diagnostics.next_action}`) }]);
   }
-  if(settled.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'&&settled.outcome!=='unknown')return answer([{...permissionUnavailableNote(administrative),...(administrative&&settled.executor?{executor:settled.executor}:{})}]);
+  if(settled.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE')return answer([{...permissionUnavailableNote(administrative),...(administrative&&settled.executor?{executor:settled.executor}:{})}]);
   const missing = !administrative ? settled.member_missing_facts ?? (settled.checks ? releaseMissingFacts(settled.checks) : []) : [];
   const facts = missing.length ? missing : [{fact:settled.error_code==='SOURCE_NOT_PERMITTED'?'运行发起账户没有可采用的测试环境使用授权；请核对有效分配及账户状态':settled.error_code==='SOURCE_UNAVAILABLE'?'本次环境权限尚未核对，缺少可读取的核对事实；请恢复权限检查接线或读取能力':administrative ? clip(settled.reason ?? '上机验证前核对没有通过') : '上机前的放行条件尚未满足，未取得可采用的派发结果',next_action:'核对本次预订和核验结果；需要管理员处理的，联系管理员核对'}];
   const category=invocationCategory(settled);
