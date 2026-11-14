@@ -1,6 +1,6 @@
 // A request-scoped view of an authenticated reader's permissions, captured in one database statement.
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { TeamId } from '../../contracts/api.ts';
+import { TeamId, TestEnvironmentId } from '../../contracts/api.ts';
 import { PackId } from '../../contracts/src/common.ts';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { step } from './trace-usage.ts';
@@ -47,7 +47,7 @@ export class RequestPermissions {
   }
   canUseResource(resource: string): boolean {
     if (!this.user || this.user.disabled || this.user.deleted_at) return false;
-    return [this.user.id,...this.teams(),'*'].some(subject => subject !== this.user!.id && this.enabled(this.latest('resource_assign',subject,resource)));
+    return [this.user.id,...this.teams(),'*'].some(subject => (subject !== this.user!.id || TestEnvironmentId.safeParse(resource).success) && this.enabled(this.latest('resource_assign',subject,resource)));
   }
   shared(object: string, expectedPack?: string): boolean {
     if (!this.user || this.user.disabled) return false;
