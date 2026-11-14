@@ -367,51 +367,6 @@
                   "op": {
                     "type": "string",
                     "enum": [
-                      "register"
-                    ]
-                  },
-                  "prefix": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "op",
-                  "prefix"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
-                      "unregister"
-                    ]
-                  },
-                  "prefix": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "op",
-                  "prefix",
-                  "reason"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "op": {
-                    "type": "string",
-                    "enum": [
                       "force_release"
                     ]
                   },
