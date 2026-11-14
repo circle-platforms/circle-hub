@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { join } from 'node:path';
 import { createPackRegistry, createWorkflowStore } from '../runs/api.ts';
-import { workflowPack, writePack } from '../runs/packs/testing/builder.ts';
+import { workflowPack, writePack, temporaryDirectory } from '../runs/packs/testing/builder.ts';
 import { setupOwned } from '../dispatch/testing/owned.ts';
 import { grantLeases } from '../runs/engine/start.ts';
 import type { EngineContext } from '../runs/engine/deps.ts';
@@ -18,9 +18,15 @@ function refuseNoAssignment(error: unknown): boolean {
 
 test('a compilation already booked before upgrade renews and reaches the executor after preservation; later revocation rejects the next booking', { timeout: 180000 }, async t => {
   const c = await setupOwned();
-  t.after(async () => { await c.service.close(); await c.close(); });
+  let packDirectory: Awaited<ReturnType<typeof temporaryDirectory>> | undefined;
+  t.after(async () => {
+    try { await c.service.close(); }
+    finally { try { await packDirectory?.remove(); } finally { await c.close(); } }
+  });
+  packDirectory = await temporaryDirectory('circle-hub-upgrade-booking-');
   // Place the synthetic old instance at its actual current clock before taking its pre-upgrade booking.
   c.clock.ms = Date.now();
+  c.detail.run.started_at = c.now().toISOString();
   const bookingRun = c.detail.run.predecessor;
   assert.ok(bookingRun);
   const definition = (await c.registry.readSource(c.executor.id))!.source;
@@ -28,11 +34,11 @@ test('a compilation already booked before upgrade renews and reaches the executo
   const booked = await c.leases.acquire({ keys, prefix: 'synthetic/', ttlSeconds: 900, maxTtlSeconds: 3600, holder: { user: c.owner.id, run: bookingRun } });
   assert.ok(booked.ok, JSON.stringify(booked));
 
-  const registry = createPackRegistry({ records: c.kit, extractDir: join(c.kit.dataDir, 'upgrade-booking-packs'), sandbox: { requireOsIsolation: false } });
+  const registry = createPackRegistry({ records: c.kit, extractDir: join(packDirectory.path, 'extracted'), sandbox: { requireOsIsolation: false } });
   await c.kit.authorizations.grantPublishRight(c.admin, c.admin.id);
   const spec = workflowPack({ id: 'synthetic-existing-booking-method', product: { catalogs: [] } });
   spec.files['workflow.json'] = { ...spec.files['workflow.json'] as Record<string, unknown>, context: ['leases'], leases: { prefix: 'synthetic/', max_ttl_seconds: 3600 } };
-  const written = await writePack(join(c.kit.dataDir, 'upgrade-booking-source'), spec);
+  const written = await writePack(join(packDirectory.path, 'source'), spec);
   const published = await registry.publish(c.admin, written.dir);
   assert.ok(published.ok, JSON.stringify(published));
   await registry.assign(c.admin, c.owner.id, spec.id);
