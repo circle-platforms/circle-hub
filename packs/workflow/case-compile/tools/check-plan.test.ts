@@ -176,6 +176,15 @@ test('skipped plans pass while broken UTF-8, invalid JSON, bad placeholders, and
     assert.equal(syntaxPhRes.code, 1);
     assert.match(syntaxPhRes.stderr, /^参数无效：/);
 
+    const badHandling = join(dir, 'bad-handling.json');
+    await writeFile(badHandling, JSON.stringify({ item: 'doc:bad-h', handling: 'unknown_mode' }));
+    const handlingRes = await runCli(['--file', badHandling]);
+    assert.equal(handlingRes.code, 1);
+    const handlingOut = JSON.parse(handlingRes.stdout);
+    assert.equal(handlingOut.ok, false);
+    assert.ok(handlingOut.problems.some((p: { pointer: string; message: string }) => p.pointer === '/handling' && p.message.includes('handled 或 skipped')));
+    assert.match(handlingRes.stderr, /^参数无效：/);
+
     const badSlots = join(dir, 'bad-slots.json');
     const broken = flatPlan('doc:bad');
     (broken.slots.plan[0]!.data as Record<string, unknown>).extra_key = 123;

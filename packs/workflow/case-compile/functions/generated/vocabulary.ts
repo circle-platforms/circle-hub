@@ -11,7 +11,15 @@ export const DYNAMIC_TERMINAL = ['pass', 'fail', 'no_verdict', 'not_run', 'incom
 export type DynamicTerminal = (typeof DYNAMIC_TERMINAL)[number];
 export const DYNAMIC_TERMINAL_LABEL = { 'pass': '通过', 'fail': '失败', 'no_verdict': '无判定', 'not_run': '未运行', 'incomplete': '未完成' } as const satisfies Record<DynamicTerminal, string>;
 export function isDynamicTerminal(value: unknown): value is DynamicTerminal { return typeof value === 'string' && (DYNAMIC_TERMINAL as readonly string[]).includes(value); }
-export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; dynamic_terminal: DynamicTerminal; }
+export const ACCEPTANCE = ['accepted', 'not_accepted'] as const;
+export type Acceptance = (typeof ACCEPTANCE)[number];
+export const ACCEPTANCE_LABEL = { 'accepted': '已受理', 'not_accepted': '未受理' } as const satisfies Record<Acceptance, string>;
+export function isAcceptance(value: unknown): value is Acceptance { return typeof value === 'string' && (ACCEPTANCE as readonly string[]).includes(value); }
+export const ITEM_HANDLING = ['handled', 'skipped'] as const;
+export type ItemHandling = (typeof ITEM_HANDLING)[number];
+export const ITEM_HANDLING_LABEL = { 'handled': '已处理', 'skipped': '跳过' } as const satisfies Record<ItemHandling, string>;
+export function isItemHandling(value: unknown): value is ItemHandling { return typeof value === 'string' && (ITEM_HANDLING as readonly string[]).includes(value); }
+export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; dynamic_terminal: DynamicTerminal; acceptance: Acceptance; item_handling: ItemHandling; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL, dynamic_terminal: DYNAMIC_TERMINAL_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL, dynamic_terminal: DYNAMIC_TERMINAL_LABEL, acceptance: ACCEPTANCE_LABEL, item_handling: ITEM_HANDLING_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }

@@ -26,7 +26,7 @@ test('install-agents installs verified agents, skips matching ones, and updates 
 
     const first = await installAgents({ packRoot: packDir, cwd: workDir });
     assert.equal(first.pack, 'case-compile');
-    assert.equal(first.version, '3.20.1');
+    assert.equal(first.version, '3.20.2');
     assert.equal(first.target, '.circle/agents');
     assert.deepEqual(first.installed, AGENT_FILES);
     assert.deepEqual(first.updated, []);

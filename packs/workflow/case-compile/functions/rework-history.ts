@@ -2,6 +2,7 @@
 // truncation disclosure), gate refusal extraction, and consecutive same-error streak analysis.
 // Strictly isolates a single original case and never generates model conclusions or similarity matches.
 import { failureLine, LEADING_PROMPT, type RowAudit } from './delivery.ts';
+import { isAcceptance, type Acceptance } from './generated/vocabulary.ts';
 import { isRecord } from './text.ts';
 
 /** Gateway tail truncation limit in bytes/chars on retained session transcripts (compile-excel-server). */
@@ -162,10 +163,11 @@ export interface DeviceReturnEvidence {
   errorSignatures: string[];
 }
 
-export type HubAnswerAcceptance = 'accepted' | 'not_accepted' | 'unknown';
-
 export interface HubAnswerNotices {
-  acceptance: HubAnswerAcceptance;
+  /** True only when an explicit contract `acceptance` value or failure envelope was parsed from the Hub answer. */
+  acceptanceParsed: boolean;
+  /** Contract `Acceptance` value when `acceptanceParsed` is true; null when not parsed. */
+  acceptance: Acceptance | null;
   refusals: GateRefusalItem[];
   acceptedNotices: GateRefusalItem[];
 }
@@ -1714,21 +1716,22 @@ export function sanitizeHubAnswerField(raw: string, stripMissingFactText?: strin
   return out;
 }
 
-function resolveAnswerAcceptance(parsed: Record<string, unknown>): HubAnswerAcceptance {
-  const top = typeof parsed.acceptance === 'string' ? parsed.acceptance.trim().toLowerCase() : '';
-  const nested = isRecord(parsed.result) && typeof parsed.result.acceptance === 'string'
-    ? parsed.result.acceptance.trim().toLowerCase()
-    : '';
+function parseAcceptanceField(raw: unknown): Acceptance | null {
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.trim().toLowerCase();
+  if (isAcceptance(normalized)) return normalized;
+  if (normalized === 'rejected') return 'not_accepted';
+  return null;
+}
+
+function resolveAnswerAcceptance(parsed: Record<string, unknown>): Acceptance | null {
+  const top = parseAcceptanceField(parsed.acceptance);
+  if (top !== null) return top;
+  const nested = isRecord(parsed.result) ? parseAcceptanceField(parsed.result.acceptance) : null;
+  if (nested !== null) return nested;
   const callRes = typeof parsed.call_result === 'string' ? parsed.call_result.trim().toLowerCase() : '';
-  if (top === 'accepted' || nested === 'accepted') return 'accepted';
-  if (
-    top === 'not_accepted' || top === 'rejected'
-    || nested === 'not_accepted' || nested === 'rejected'
-    || callRes === 'error' || callRes === 'rejected'
-  ) {
-    return 'not_accepted';
-  }
-  return 'unknown';
+  if (callRes === 'error' || callRes === 'rejected') return 'not_accepted';
+  return null;
 }
 
 function extractCompactGateErrorsFromObject(
@@ -1928,7 +1931,7 @@ export function parseHubAnswerNotices(
   round: number,
 ): HubAnswerNotices {
   const trimmed = answerText.trim();
-  if (!trimmed) return { acceptance: 'unknown', refusals: [], acceptedNotices: [] };
+  if (!trimmed) return { acceptanceParsed: false, acceptance: null, refusals: [], acceptedNotices: [] };
 
   const refusals: GateRefusalItem[] = [];
   const acceptedNotices: GateRefusalItem[] = [];
@@ -1937,7 +1940,7 @@ export function parseHubAnswerNotices(
     if (!dup) target.push(item);
   };
 
-  let overallAcceptance: HubAnswerAcceptance = 'unknown';
+  let overallAcceptance: Acceptance | null = null;
   const recordObject = (parsed: Record<string, unknown>): void => {
     const acc = resolveAnswerAcceptance(parsed);
     if (acc === 'not_accepted') overallAcceptance = 'not_accepted';
@@ -1952,7 +1955,12 @@ export function parseHubAnswerNotices(
     if (isRecord(parsed)) {
       parsedStructuredJson = true;
       recordObject(parsed);
-      return { acceptance: overallAcceptance, refusals, acceptedNotices };
+      return {
+        acceptanceParsed: overallAcceptance !== null,
+        acceptance: overallAcceptance,
+        refusals,
+        acceptedNotices,
+      };
     }
   } catch {
     // Multi-line `submit_result` text: inspect embedded single-line JSON payloads (e.g. after `供模型引用`).
@@ -1978,7 +1986,12 @@ export function parseHubAnswerNotices(
     }
   }
   if (parsedStructuredJson) {
-    return { acceptance: overallAcceptance, refusals, acceptedNotices };
+    return {
+      acceptanceParsed: overallAcceptance !== null,
+      acceptance: overallAcceptance,
+      refusals,
+      acceptedNotices,
+    };
   }
 
   // Legacy plain-text Hub answer format (no structured JSON payload present): never emit raw JSON lines.
@@ -2006,7 +2019,7 @@ export function parseHubAnswerNotices(
       fix: truncateAnswerField(cleanFix, 300),
     });
   }
-  return { acceptance: 'unknown', refusals, acceptedNotices };
+  return { acceptanceParsed: false, acceptance: null, refusals, acceptedNotices };
 }
 
 /**
