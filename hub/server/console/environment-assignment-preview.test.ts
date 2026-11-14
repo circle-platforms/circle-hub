@@ -8,7 +8,11 @@ import { renderMemberCapabilities } from './member-capabilities.ts';
 import { readinessCheckBlock } from './environment-readiness.ts';
 import { connectionsPage } from './connections.ts';
 
-const notice = '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断';
+const noticeHeading = '测试环境的分配还没有启用，现在谁能预订仍按工作流的分配和预订规则判断';
+const notice = noticeHeading + '。下面列出的测试环境分配只是预览，不代表现在的许可。';
+function assertPreviewNotice(body: string): void {
+  assert.equal(body.match(/data-environment-assignment-preview>([^<]*)</)?.[1], notice);
+}
 function capabilities(enforced: boolean): MemberCapabilities {
   return {
     member: { name: '合成成员', enabled: true }, teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [],
@@ -20,7 +24,7 @@ function capabilities(enforced: boolean): MemberCapabilities {
 
 test('member allocation preview does not turn assigned false into a current use refusal', () => {
   const body = renderMemberCapabilities(capabilities(false)).text;
-  assert.ok(body.includes(notice)); assert.match(body, /本人占用/);
+  assertPreviewNotice(body); assert.match(body, /本人占用/);
   assert.doesNotMatch(body, /已无分配|当前不能做的事/);
   const active = renderMemberCapabilities(capabilities(true)).text;
   assert.match(active, /已无分配/); assert.match(active, /当前不能做的事/);
@@ -29,7 +33,7 @@ test('member allocation preview does not turn assigned false into a current use 
 test('readonly assignment check is a preview while real evidence failures remain errors', () => {
   const check = { condition: 'assignment', label: '当前账户使用分配', satisfied: false, observed_at: '2026-11-14T00:00:00.000Z', references: [], missing_fact: '当前账户没有该执行器的使用分配', next_action: '请管理员分配' };
   const preview = readinessCheckBlock(check, false).text;
-  assert.ok(preview.includes(notice)); assert.match(preview, /配置预览/);
+  assert.ok(preview.includes(noticeHeading)); assert.match(preview, /配置预览/);
   assert.doesNotMatch(preview, /错误|当前账户没有该执行器/);
   assert.match(readinessCheckBlock({ ...check, condition: 'manifest', label: '清单摘要核对' }).text, /错误/);
 });
@@ -42,7 +46,7 @@ test('connections page labels the staged policy without querying grants to infer
     chrome: (title, extra = {}) => ({ title, ...extra, user: { name: principal.name, role: '成员', admin: false }, csrf: 'synthetic-csrf' }),
   };
   const result = await connectionsPage(context);
-  assert.equal(result.status, 200); assert.ok(result.body.text.includes(notice));
+  assert.equal(result.status, 200); assertPreviewNotice(result.body.text);
   assert.match(result.body.text, /只读报告未知/); assert.doesNotMatch(result.body.text, /已无分配/);
 });
 
@@ -83,7 +87,7 @@ for (const enforced of [true, false, undefined]) {
       assert.match(result.body.text, /分配校验已启用/); assert.match(result.body.text, /合成分配事实未满足/);
       assert.doesNotMatch(result.body.text, /还没有启用|启用状态尚未取得/);
     } else if (enforced === false) {
-      assert.ok(result.body.text.includes(notice)); assert.match(result.body.text, /配置预览/);
+      assertPreviewNotice(result.body.text); assert.match(result.body.text, /配置预览/);
       assert.doesNotMatch(result.body.text, /合成分配事实未满足|启用状态尚未取得/);
     } else {
       assert.match(result.body.text, /启用状态尚未取得/);
