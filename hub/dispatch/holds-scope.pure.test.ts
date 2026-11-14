@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {holdsPhysicalTarget,type Event} from './journal.ts';
+import {holdsPhysicalTarget,isConservativelyFrozen,type Event} from './journal.ts';
 import {sha256Hex,type ActionBody} from '../records/api.ts';
 
 // Synthetic predicate inputs only; these fixtures are not persisted or presented as PG observations.
@@ -29,4 +29,42 @@ test('accepted history does not hold forever when every request has trustworthy 
   const first=event({phase:'intent',round:1,request_id:'synthetic-first'});
   const second=event({phase:'intent',round:2,request_id:'synthetic-second'});
   assert.equal(holdsPhysicalTarget([reservation(),first,event({phase:'receipt',acceptance:'accepted'}),event({phase:'round',round:1,terminal:'pass',outcome:'effective'}),second,event({phase:'complete',done:true,outcome:'not_dispatched',not_sent:true,submit_invoked:true},[`rec:${second.digest}`])]),false);
+});
+
+
+test('unresolved effects freeze until a real control decision exists',()=>{
+  assert.equal(isConservativelyFrozen([reservation()],true),true);
+});
+test('confirmed risk consent unfreezes control while the physical effect remains unknown',()=>{
+  const unknown=event({phase:'unknown',uncertain:true,outcome:'unknown'});
+  const consent=event({phase:'dispose',disposition:'mark_failed',risk_confirmed:true,unfreeze:true,done:true,effect_mark:'disposed',answers:[`rec:${unknown.digest}`]});
+  const history=[reservation(),unknown,consent];
+  assert.equal(isConservativelyFrozen(history,true),false);
+  assert.equal(holdsPhysicalTarget(history),false);
+});
+test('unconfirmed risk does not unfreeze an unanswered request',()=>{
+  const unknown=event({phase:'unknown',uncertain:true,outcome:'unknown'});
+  assert.equal(isConservativelyFrozen([reservation(),unknown,event({phase:'dispose',disposition:'mark_failed',risk_confirmed:false,unfreeze:false,done:false,effect_mark:'disposed'})],true),true);
+});
+test('risk consent for a different question cannot clear the current request',()=>{
+  const unknown=event({phase:'unknown',uncertain:true,outcome:'unknown'});
+  assert.equal(isConservativelyFrozen([reservation(),unknown,event({phase:'dispose',disposition:'mark_failed',risk_confirmed:true,unfreeze:true,done:true,effect_mark:'disposed',answers:[`rec:${'b'.repeat(64)}`]})],true),true);
+});
+test('old risk consent never clears a later unresolved use or unknown observation',()=>{
+  const consent=event({phase:'dispose',disposition:'mark_failed',risk_confirmed:true,unfreeze:true,done:true,effect_mark:'disposed',answers:[]});
+  const history=[reservation(),consent,event({phase:'intent',round:2}),event({phase:'unknown',outcome:'unknown'})];
+  assert.equal(isConservativelyFrozen(history,true),true);
+  assert.equal(holdsPhysicalTarget(history),true);
+});
+test('reconcile label alone cannot establish an unresolved physical outcome',()=>{
+  const unknown=event({phase:'unknown',uncertain:true,outcome:'unknown'});
+  const repaired=event({phase:'dispose',disposition:'reconcile',identity_matched:true,digest_matched:true,unfreeze:true,effect_mark:'disposed',answers:[`rec:${unknown.digest}`]});
+  assert.equal(isConservativelyFrozen([reservation(),unknown,repaired],true),true);
+  assert.equal(isConservativelyFrozen([reservation(),unknown,repaired],false),false);
+});
+
+
+test('an unscoped terminal with unknown effects remains conservatively frozen',()=>{
+  assert.equal(isConservativelyFrozen([reservation(),event({phase:'complete',done:true,outcome:'unknown'})],false),true);
+  assert.equal(isConservativelyFrozen([reservation(),event({phase:'complete',done:true})],false),true);
 });
