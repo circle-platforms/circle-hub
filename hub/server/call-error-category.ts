@@ -1,3 +1,4 @@
+import { registrationIncompletePresentation } from './env-bootstrap-capture.ts';
 /**
  * D3 fact/next for call errors (Boss 13:05 / 14:12). Category words come from
  * error-reasons.callErrorCategoryOf. Next steps are table-driven by code × role × object kind.
@@ -355,6 +356,8 @@ export function renderCallError(
   fix: string | undefined,
   callerName?: string,
 ): string | null {
+  const incomplete = registrationIncompletePresentation(error, role);
+  if (incomplete) return `${incomplete.category}：${incomplete.fact}。${incomplete.next}。`;
   const category = callErrorCategoryOf(error.code);
   if (category === null) return null;
   const fact = callErrorFact(error.code, error.message);

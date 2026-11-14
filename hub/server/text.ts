@@ -1,3 +1,4 @@
+import { registrationIncompletePresentation } from './env-bootstrap-capture.ts';
 
 // Reader-facing text; the original tool data stays in structuredContent.
 // Reader-facing text; the original tool data stays in structuredContent.
@@ -253,6 +254,8 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error) => {
+    const incomplete = registrationIncompletePresentation(error, role);
+    if (incomplete) return callErrorLine(incomplete.category, incomplete.fact, incomplete.next, error.rounds_left);
     // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
     const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
     const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
@@ -769,6 +772,13 @@ function splitCallErrorProse(message: string): { category: string; fact: string;
  * (3) does not let the booking rewrite cover an existing occupied/absent/expired category sentence.
  */
 function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
+  if (note.error_code === 'SOURCE_NOT_PERMITTED' && 'call_error_reason' in note && note.call_error_reason === 'environment_registration_incomplete') {
+    const incomplete = registrationIncompletePresentation({
+      code: note.error_code, call_error_reason: note.call_error_reason,
+      object_kind: 'test_environment', message: '',
+    }, role, role === 'admin' ? note.executor : undefined);
+    if (incomplete) return callErrorLine(incomplete.category, incomplete.fact, incomplete.next);
+  }
   const message = note.text;
   const callError = CALL_ERROR_HEAD.test(message.trim());
 
@@ -847,6 +857,11 @@ function submitText(v: SubmitOut, context: TextContext): string {
   const account = callerName(context);
   for (const error of v.errors) {
     if (error.item !== undefined && represented.has(error.item)) continue;
+    const incomplete = registrationIncompletePresentation(error, role);
+    if (incomplete) {
+      lines.push(callErrorLine(incomplete.category, incomplete.fact, incomplete.next, error.rounds_left));
+      continue;
+    }
     const original = context.items?.find(item => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
