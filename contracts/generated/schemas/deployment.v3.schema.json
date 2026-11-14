@@ -2734,6 +2734,29 @@
         ]
       }
     },
+    "bookingPrefixes": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9:._/-]{0,199}$"
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "prefix",
+          "owner"
+        ],
+        "additionalProperties": false
+      }
+    },
     "workflowAssignments": {
       "default": [],
       "type": "array",
@@ -2953,6 +2976,7 @@
     "executors",
     "testEnvironments",
     "environmentAssignments",
+    "bookingPrefixes",
     "workflowAssignments",
     "resourceAssignments",
     "knowledgeSources",

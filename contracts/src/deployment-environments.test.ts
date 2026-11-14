@@ -84,6 +84,7 @@ test('generated deployment schema publishes version three without a second lease
   assert.equal(existsSync(new URL('../generated/schemas/deployment.v2.schema.json', import.meta.url)), false);
   assert.equal(schema.properties.schema.const, 'deployment@3');
   assert.equal('leaseRegistrations' in schema.properties, false);
+  assert.deepEqual(Object.keys(schema.properties.bookingPrefixes.items.properties), ['prefix', 'owner']);
   const fields = schema.properties.testEnvironments.items.properties;
   assert.deepEqual(Object.keys(fields.prefixes.items.properties), ['prefix', 'owner']);
   assert.deepEqual(Object.keys(fields.resources.items.properties), ['key', 'owner']);
