@@ -143,7 +143,14 @@ test('toolText role-split for LEASE_UNAVAILABLE', () => {
 });
 
 test('proseByRole covers the five hardcoded text.ts ask-admin lines', () => {
-  for (const kind of ['unassigned_packs', 'context_unread', 'contribution_unreadable', 'content_unread', 'missing_result_record', 'fallback'] as const) {
+  const memberList = proseByRole('user', 'unassigned_packs', { usable: 0, unassigned: 5 });
+  assert.equal(memberList, '当前账户可用的工作流和技能共 0 个。另有 5 个未分配给当前账户，名称不列出。');
+  const adminList = proseByRole('admin', 'unassigned_packs', { usable: 0, unassigned: 5 });
+  assert.match(adminList, /该成员可用的工作流和技能共 0 个。另有 5 个未分配给该成员，名称不列出。/);
+  assert.match(adminList, /circle-hub pack assign /);
+  assert.doesNotMatch(adminList, /请管理员/);
+  assertCommandsRegistered(adminList);
+  for (const kind of ['context_unread', 'contribution_unreadable', 'content_unread', 'missing_result_record', 'fallback'] as const) {
     const member = proseByRole('user', kind, { usable: 0, unassigned: 5 });
     const admin = proseByRole('admin', kind, { usable: 0, unassigned: 5 });
     assert.match(member, /请管理员|或请管理员/);

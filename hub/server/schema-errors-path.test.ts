@@ -29,10 +29,10 @@ function assertSchemaError(tool: Tool, error: ProtocolError) {
   assert.notEqual(error.fix, LEGACY_ARGUMENT_FIX);
   assert.match(error.message, /^参数无效：/);
   assert.match(error.fix!, /^请/);
-  assert.match(error.fix!, /规则全文：tools\/list →/);
+  assert.match(error.fix!, /规则见 /);
+  assert.doesNotMatch(error.fix!, /规则全文|；规则/);
   assert.doesNotMatch(`${error.message}\n${error.fix}`, /你|undefined/i);
-  const next = error.fix!.replace(/；规则全文：.+$/, '');
-  assert.match(`${error.message}。${next}。`, /^参数无效：.+\。请.+\。$/);
+  assert.match(`${error.message}。${error.fix}。`, /^参数无效：.+\。请.+\。规则见 .+\。$/);
 }
 
 test('missing required pack: category sentence without undefined', () => {
@@ -43,11 +43,11 @@ test('missing required pack: category sentence without undefined', () => {
   assert.equal(pack.message, '参数无效：/pack 是必填的字符串，这次没有给出');
   assert.equal(
     pack.fix,
-    '请在 /pack 写 list_task_packs 返回的编号；规则全文：tools/list → start_run.inputSchema 的 pack',
+    '请在 /pack 写 list_task_packs 返回的编号。规则见 start_run 输入格式的 pack',
   );
   assert.equal(
-    `${pack.message}。${pack.fix!.replace(/；规则全文：.+$/, '')}。`,
-    '参数无效：/pack 是必填的字符串，这次没有给出。请在 /pack 写 list_task_packs 返回的编号。',
+    `${pack.message}。${pack.fix}。`,
+    '参数无效：/pack 是必填的字符串，这次没有给出。请在 /pack 写 list_task_packs 返回的编号。规则见 start_run 输入格式的 pack。',
   );
 });
 
@@ -62,7 +62,7 @@ test('enum kind=plugin lists allowed values', () => {
   );
   assert.equal(
     errors[0].fix,
-    '请在 /kind 写 "workflow"（或去掉 kind 以列出全部）；规则全文：tools/list → list_task_packs.inputSchema 的 kind.enum',
+    '请在 /kind 写 "workflow"（或去掉 kind 以列出全部）。规则见 list_task_packs 输入格式的 kind',
   );
 });
 
@@ -74,7 +74,7 @@ test('unknown key names the key and legal fields', () => {
   assert.equal(errors[0].message, '参数无效：不认识的参数 knd');
   assert.equal(
     errors[0].fix,
-    '请去掉 /knd；合法字段见 inputSchema（kind、pack_id、offset）；规则全文：tools/list → list_task_packs.inputSchema',
+    '请去掉 /knd；合法字段见 inputSchema（kind、pack_id、offset）。规则见 list_task_packs 输入格式',
   );
 });
 

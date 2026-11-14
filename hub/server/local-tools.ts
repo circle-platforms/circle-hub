@@ -8,11 +8,14 @@ import { canonicalBytes, sha256Hex, type CallLogInput, type Principal } from '..
 import { parsePackRef } from '../runs/packs/versions.ts';
 import type { ServerDeps } from './api.ts';
 import { setCommonHeaders } from './http.ts';
+import { unassignedPackRefusal } from './pack-words.ts';
 import { newTraceId } from './trace.ts';
 const PREFIX = '/local-tools/';
 const ABSENT = Buffer.from('没有这个本地工具版本或文件\n');
-/** D05 R[3]: the version exists and is not assigned to the reader; the fix names who can assign it. */
-const UNASSIGNED = Buffer.from('这个版本存在，没有分配给你；请管理员把这个任务包分配给你\n');
+/** Same unassigned fact as MCP (Boss afternoon): one function renders the line. */
+function unassignedBytes(packId: string): Buffer {
+  return Buffer.from(`${unassignedPackRefusal(packId, 'workflow')}\n`);
+}
 const UNAUTHENTICATED = Buffer.from('需要有效的 Bearer 令牌\n');
 /** One verified open per user and version. Later requests in this window re-check assignment without extracting again. */
 const DISTRIBUTION_REUSE_MS = 60_000;
@@ -65,7 +68,10 @@ async function absence(deps: ServerDeps, principal: Principal, ref: string): Pro
   if (ask === undefined) return { note: '版本不存在、未分配或已退役', status: 404, bytes: ABSENT };
   const why = await ask(principal, ref);
   if (why === null) return { note: '版本已发布并分配，但不能作为本地工具下发', status: 404, bytes: ABSENT };
-  if (why === 'unassigned') return { note: ABSENCE_NOTE[why], status: 403, bytes: UNASSIGNED };
+  if (why === 'unassigned') {
+    const id = ref.includes('@') ? ref.slice(0, ref.indexOf('@')) : ref;
+    return { note: ABSENCE_NOTE[why], status: 403, bytes: unassignedBytes(id) };
+  }
   // An account disabled after it authenticated: the same neutral answer as an unusable token.
   if (why === 'disabled') return { note: ABSENCE_NOTE[why], status: 401, bytes: UNAUTHENTICATED };
   return { note: ABSENCE_NOTE[why], status: 404, bytes: ABSENT };

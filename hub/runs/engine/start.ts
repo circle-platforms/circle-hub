@@ -466,17 +466,30 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
  * the caller, or a pack that is not a workflow pack. A disabled account stays the neutral answer (the identity class).
  */
 async function packMissing(ctx: EngineContext, user: Principal, pack: string, found: LoadedWorkflow | null, space?: string): Promise<Refusal> {
-  const LIST = '用 list_task_packs 看你能用的任务包';
-  if (found !== null) return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${found.pack.kind === 'skill' ? '技能包' : '产品或系统包'}，不是任务包`, { path: '/pack', fix: LIST })]);
+  const LIST = '当前账户可用的工作流和技能用 list_task_packs 查看';
+  const id = pack.includes('@') ? pack.slice(0, pack.indexOf('@')) : pack;
+  if (found !== null) {
+    const kindWord = found.pack.kind === 'skill' ? '技能' : found.pack.kind === 'product' ? '产品知识来源' : found.pack.kind === 'system' ? '业务系统接入' : '工作流或技能';
+    return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${kindWord}，不是可启动的工作流`, { path: '/pack', fix: LIST })]);
+  }
   const absence = await ctx.deps.workflows.absence?.(user, pack, space) ?? null;
   const note = absence === null ? `pack ${pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack` : `pack ${pack} is ${absence} for ${user.id}${space ? ` in space ${space}` : ''}`;
   // Another account's personal workflow is answered neutrally whether it is missing, ungranted or withdrawn (D05 R[3], T01 R[1]).
   if (space !== undefined && space !== 'team' && space !== user.id) return unavailable('/pack', note);
-  if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${LIST}` })], note);
-  if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
-  if (absence === 'unassigned') return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `任务包 ${pack} 存在，没有分配给你`, { path: '/pack', fix: `请管理员把它分配给你；${LIST}` })], note);
+  if (absence === 'unknown') {
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能`, { path: '/pack', fix: `请核对名称；${LIST}` })], note);
+  }
+  if (absence === 'withdrawn') {
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
+  }
+  if (absence === 'unassigned') {
+    // Kind is typically workflow (skills use uninstalled); wording uses 工作流 when kind is not looked up here.
+    return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `当前账户未获授权使用工作流「${id}」`, { path: '/pack', fix: `请联系管理员为该账户或所在团队分配此工作流；${LIST}` })], note);
+  }
   // A skill pack is installed for the whole Hub, never assigned to one user (decision 113).
-  if (absence === 'uninstalled') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有安装技能包 ${pack}`, { path: '/pack', fix: `请管理员安装它；${LIST}` })], note);
+  if (absence === 'uninstalled') {
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有安装技能「${id}」`, { path: '/pack', fix: `请联系管理员安装此技能；${LIST}` })], note);
+  }
   return unavailable('/pack', note);
 }
 

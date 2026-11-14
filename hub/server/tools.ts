@@ -23,7 +23,7 @@ import {
   UploadFileInput,
   type ToolDefinition,
 } from '../../contracts/src/tools.ts';
-import type { CallContext } from '../ports.ts';
+import type { CallContext, WorkflowStore } from '../ports.ts';
 import { findSubschema, renderExpected } from '../runs/engine/api.ts';
 import { localToolsOf } from '../runs/packs/ports.ts';
 import { IntegrityError, RecordsError, recordExistence, isSha256, withReadScope, withRequestPermissions, type Principal } from '../records/api.ts';
@@ -39,6 +39,7 @@ import { callStatus } from './call-status.ts';
 import { cachedReadReply } from './read-replies.ts';
 import { recoverRead } from './recover-read.ts';
 import { escalateProtocolErrors } from './refusal-escalate.ts';
+import { absentPackFact, absentPackNext, unassignedPackFact, unassignedPackNext } from './pack-words.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
@@ -133,7 +134,7 @@ export function unavailable(): ProtocolError {
 
 /** The fixes for a knowledge root a caller cannot read, the same in get_nodes and resolve_reference. */
 export const ROOT_ABSENT_FIX = '核对知识根；知识根来自运行或 get_nodes';
-export const ROOT_FORBIDDEN_FIX = '请管理员给你分配一个绑定这条产品线的任务包；或改读你的运行锁定的根';
+export const ROOT_FORBIDDEN_FIX = '请联系管理员为该账户分配一个绑定这条产品线的工作流或技能；或改读当前账户运行锁定的根';
 
 /** Not found or no permission (D05 R[3], decision 112): `what` as the caller wrote it, e.g. "运行 run_…". */
 export function missingObject(exists: boolean, what: string, fix?: string): ProtocolError {
@@ -234,14 +235,16 @@ function isOptionalProperty(root: Record<string, unknown>, path: string): boolea
   return !required.includes(leaf);
 }
 
-function ruleRef(tool: ToolName, path: string, suffix = ''): string {
+/** Independent rule sentence (Boss afternoon): 「规则见 <工具名> 输入格式的 <字段>。」 */
+function ruleRef(tool: ToolName, path: string, _suffix = ''): string {
   const leaf = leafOf(path);
-  if (!leaf) return `规则全文：tools/list → ${tool}.inputSchema${suffix}`;
-  return `规则全文：tools/list → ${tool}.inputSchema 的 ${leaf}${suffix}`;
+  if (!leaf) return `规则见 ${tool} 输入格式`;
+  return `规则见 ${tool} 输入格式的 ${leaf}`;
 }
 
+/** Next-step writing + independent rule sentence (no semicolon after a period). */
 function thisCallFix(writing: string, rule: string): string {
-  return `请${writing}；${rule}`;
+  return `请${writing}。${rule}`;
 }
 
 function formatReceivedValue(value: unknown): string {
@@ -583,37 +586,41 @@ function checkReadCancellation(call: ToolCall): void {
   if (call.context.signal?.aborted) throw new McpError(ErrorCode.ConnectionClosed, '请求已取消');
 }
 
-/** Exact pack_id with zero hits: category sentence form (13:05); path stays /pack_id. */
-export function packIdAbsenceError(packId: string, absence: NonNullable<Awaited<ReturnType<NonNullable<WorkflowStore['absence']>>>>): ProtocolError {
+/** Exact pack_id with zero hits: fact+fix only (category added by text renderer); path stays /pack_id. */
+export function packIdAbsenceError(
+  packId: string,
+  absence: NonNullable<Awaited<ReturnType<NonNullable<WorkflowStore['absence']>>>>,
+  kind?: import('../../contracts/generated/vocabulary.ts').PackKind | null,
+): ProtocolError {
   if (absence === 'unassigned') {
     return {
       code: 'SOURCE_NOT_PERMITTED',
-      message: `无权限：当前账户未获授权使用工作流「${packId}」`,
-      fix: '请联系管理员为该账户或所在团队分配此工作流',
+      message: unassignedPackFact(packId, kind ?? 'workflow'),
+      fix: unassignedPackNext(kind ?? 'workflow'),
       path: '/pack_id',
     };
   }
   if (absence === 'withdrawn') {
     return {
       code: 'SOURCE_ABSENT',
-      message: `不存在：Hub 里没有工作流「${packId}」的可用版本（已退役）`,
-      fix: '请核对名称',
+      message: `Hub 里没有名为「${packId}」的工作流或技能的可用版本（已退役）`,
+      fix: absentPackNext(),
       path: '/pack_id',
     };
   }
   if (absence === 'uninstalled') {
     return {
       code: 'SOURCE_ABSENT',
-      message: `不存在：Hub 里没有安装技能「${packId}」`,
+      message: `Hub 里没有安装技能「${packId}」`,
       fix: '请联系管理员安装此技能',
       path: '/pack_id',
     };
   }
-  // unknown | disabled — determined absence
+  // unknown | disabled — determined absence; kind unknown → 工作流或技能
   return {
     code: 'SOURCE_ABSENT',
-    message: `不存在：Hub 里没有工作流「${packId}」`,
-    fix: '请核对名称',
+    message: absentPackFact(packId),
+    fix: absentPackNext(),
     path: '/pack_id',
   };
 }
@@ -1166,7 +1173,7 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
   const role: CallerRole = call.principal.role === 'admin' ? 'admin' : 'user';
-  // D3: structured fix and reader text stay in sync for administrators.
+  // D3: structured fix and reader text stay in sync for administrators (before D5 appends).
   if (role === 'admin' && Array.isArray(value.errors) && value.errors.length > 0) {
     value = {
       ...value,
@@ -1175,6 +1182,28 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
         return fix === undefined ? error : { ...error, fix };
       }),
     };
+  }
+  // D5: escalate repeated refusals into structured fix (and thus reader text).
+  if (value.call_result === 'error' && Array.isArray(value.errors) && value.errors.length > 0) {
+    const published = PUBLISHED.get(name);
+    if (published !== undefined) {
+      try {
+        value = {
+          ...value,
+          errors: await escalateProtocolErrors({
+            callLog: deps.records.callLog,
+            userId: call.principal.id,
+            tool: name,
+            errors: value.errors,
+            input: definition.input,
+            inputSchema: published.inputSchema,
+            runId: call.state.runId,
+          }),
+        };
+      } catch (error) {
+        call.context.adminNote(`refusal escalation skipped: ${describeError(error)}`);
+      }
+    }
   }
   const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items, caller: { role } };
   let text: string;

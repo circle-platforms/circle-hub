@@ -1,10 +1,13 @@
-// D5: escalate repeated refusals (same account + tool + error code within one hour).
-// Counts come from call_logs (not process memory). Examples must pass the tool input schema;
-// pack codes take only pack-declared examples. Boss 13:05: escalate next-step uses the call-error
-// category sentence form `<类别词>：<事实>。<下一步>。` (no 状态/判断/原因/决定者).
+// D5: escalate repeated refusals (Boss afternoon 1114).
+// Count: same caller + tool + error code (参数无效 also field path); with a run → same run; without → last hour.
+// Tier 1 = D1/D2 sentence unchanged; tier 2 adds count + schema-checked JSON; tier 3+ adds category closing line.
+// No「替代路径」; no「按工具的输入模式改正这个参数后再调用」.
 import type { z } from 'zod';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import type { CallLog } from '../records/api.ts';
+import { callErrorCategoryOf, isPackScopedCode, type CallErrorCategory } from './error-reasons.ts';
+
+export { isPackScopedCode } from './error-reasons.ts';
 
 export const ESCALATION_WINDOW_MS = 60 * 60 * 1000;
 
@@ -19,48 +22,25 @@ const SKIP_CODES = new Set([
   'REQUEST_CANCELED',
 ]);
 
-/** Closed category words for call refusals (owner 2026-11-14 / Boss 13:05). */
-export type CallErrorCategory =
-  | '参数无效'
-  | '无权限'
-  | '不存在'
-  | '已被占用'
-  | '暂时不可用';
-
-const CATEGORY_BY_CODE: Record<string, CallErrorCategory> = {
-  SUBMISSION_SCHEMA_VIOLATION: '参数无效',
-  REFERENCE_UNRESOLVED: '参数无效',
-  REFERENCE_AMBIGUOUS: '参数无效',
-  QUOTE_MISMATCH: '参数无效',
-  SOURCE_NOT_PERMITTED: '无权限',
-  SOURCE_ABSENT: '不存在',
-  LEASE_UNAVAILABLE: '已被占用',
-  LEASE_EXPIRED: '已被占用',
-  SOURCE_RETRYABLE: '暂时不可用',
-  SOURCE_INTEGRITY_UNPROVEN: '暂时不可用',
-  SOURCE_READ_FAILED: '暂时不可用',
-};
-
 export type EscalationTier = 1 | 2 | 3;
 
 export interface EscalationParts {
   /** This call's occurrence: prior matching call_logs + 1. */
   occurrence: number;
   tier: EscalationTier;
-  /** Structural count marker for the 下一步 clause. */
+  /** 「这是一小时内第 N 次同样的错误」 */
   countLabel: string;
   /** JSON text of a schema-checked example, or null when none is available. */
   exampleJson: string | null;
-  /** Structural alternative-path marker for tier 3+. */
-  alternative: string | null;
-  /** Suffix merged into structuredContent.errors[].fix (the 下一步 clause). */
+  /** Category closing line for tier 3+ (no「替代路径」). */
+  categoryClose: string | null;
+  /** Suffix sentences appended after the base next step (independent sentences). */
   fixSuffix: string | null;
 }
 
 export function countsTowardEscalation(code: string | null | undefined): boolean {
   if (typeof code !== 'string' || code.length === 0) return false;
   if (SKIP_CODES.has(code)) return false;
-  // Transport / cancel lines often leave error_code null; anything that looks cancelled still skips.
   if (/cancel/i.test(code) || /internal/i.test(code)) return false;
   return true;
 }
@@ -72,23 +52,35 @@ export function escalationTier(occurrence: number): EscalationTier {
 }
 
 export function countLabelOf(occurrence: number): string {
-  return `最近一小时内第 ${occurrence} 次`;
-}
-
-/** Pack-scoped codes look like `<pack-id>.<local>` (not bare PROTOCOL_CODES). */
-export function isPackScopedCode(code: string): boolean {
-  return /^[a-z][a-z0-9-]{0,40}\.[A-Za-z0-9_.:-]+$/.test(code);
+  return `这是一小时内第 ${occurrence} 次同样的错误`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Chinese angle-bracket placeholder; never the letter "x". */
+function stringPlaceholder(schema: Record<string, unknown>): string {
+  if (schema.contentEncoding === 'base64' || (typeof schema.pattern === 'string' && schema.pattern.includes('A-Za-z0-9+/'))) {
+    return 'YQ==';
+  }
+  if (typeof schema.pattern === 'string') {
+    if (schema.pattern.includes('run_')) return 'run_01h2x3y4z5a6b7c8d9e0f1g2h3';
+    if (/\[0-9a-f\]\{64\}/.test(schema.pattern)) return 'a'.repeat(64);
+  }
+  const desc = typeof schema.description === 'string' ? schema.description : '';
+  if (/pack|工作流|任务包/i.test(desc) || schema.title === 'pack') return '<工作流编号>';
+  if (/kind/i.test(desc)) return 'workflow';
+  if (/reference|引用/i.test(desc)) return '<引用>';
+  if (/cursor|游标/i.test(desc)) return '<游标>';
+  return '<取值>';
+}
+
 /**
  * Build one candidate value from a JSON Schema fragment: prefer `examples` / `const` / `enum` / `default`,
- * then required properties. Never a handwritten tool→example table.
+ * then required properties. Never a handwritten tool→example table. Never the letter "x" as a copyable stub.
  */
-export function candidateFromInputSchema(schema: unknown): unknown {
+export function candidateFromInputSchema(schema: unknown, visibleValues?: ReadonlyMap<string, unknown>): unknown {
   if (!isRecord(schema)) return undefined;
   if (Array.isArray(schema.examples) && schema.examples.length > 0) return schema.examples[0];
   if (Object.hasOwn(schema, 'const')) return schema.const;
@@ -96,13 +88,13 @@ export function candidateFromInputSchema(schema: unknown): unknown {
   if (Object.hasOwn(schema, 'default')) return schema.default;
   if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) {
     for (const branch of schema.oneOf) {
-      const value = candidateFromInputSchema(branch);
+      const value = candidateFromInputSchema(branch, visibleValues);
       if (value !== undefined) return value;
     }
   }
   if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
     for (const branch of schema.anyOf) {
-      const value = candidateFromInputSchema(branch);
+      const value = candidateFromInputSchema(branch, visibleValues);
       if (value !== undefined) return value;
     }
   }
@@ -112,7 +104,12 @@ export function candidateFromInputSchema(schema: unknown): unknown {
     const required = Array.isArray(schema.required) ? schema.required.filter((key): key is string => typeof key === 'string') : [];
     const out: Record<string, unknown> = {};
     for (const key of required) {
-      const value = candidateFromInputSchema(properties[key]);
+      const visible = visibleValues?.get(key);
+      if (visible !== undefined) {
+        out[key] = visible;
+        continue;
+      }
+      const value = candidateFromInputSchema(properties[key], visibleValues);
       if (value !== undefined) out[key] = value;
     }
     return out;
@@ -123,41 +120,28 @@ export function candidateFromInputSchema(schema: unknown): unknown {
     return typeof schema.minimum === 'number' ? schema.minimum : 0;
   }
   if (types.includes('string') || types.length === 0) {
-    if (schema.contentEncoding === 'base64' || (typeof schema.pattern === 'string' && schema.pattern.includes('A-Za-z0-9+/'))) {
-      return 'YQ==';
-    }
-    if (typeof schema.pattern === 'string') {
-      if (schema.pattern.includes('run_')) return 'run_01h2x3y4z5a6b7c8d9e0f1g2h3';
-      if (/\[0-9a-f\]\{64\}/.test(schema.pattern)) return 'a'.repeat(64);
-      if (schema.pattern.startsWith('^[a-z]')) return 'a';
-    }
-    const min = typeof schema.minLength === 'number' ? schema.minLength : 1;
-    return 'x'.repeat(Math.max(1, min));
+    return stringPlaceholder(schema);
   }
   return undefined;
 }
 
-/**
- * When the empty/required-only candidate fails a refine (upload_file modes, resolve_reference run|root),
- * try each top-level property alone or combined with an optional companion from the same schema.
- */
-function refineCandidates(schema: unknown, base: unknown): unknown[] {
+function refineCandidates(schema: unknown, base: unknown, visibleValues?: ReadonlyMap<string, unknown>): unknown[] {
   if (!isRecord(schema) || !isRecord(schema.properties)) return [];
   const properties = schema.properties;
   const out: unknown[] = [];
   for (const [key, prop] of Object.entries(properties)) {
-    const value = candidateFromInputSchema(prop);
+    const visible = visibleValues?.get(key);
+    const value = visible !== undefined ? visible : candidateFromInputSchema(prop, visibleValues);
     if (value === undefined) continue;
     out.push({ ...(isRecord(base) ? base : {}), [key]: value });
   }
-  // resolve_reference: text + root/run
   if (isRecord(base) && typeof base.text === 'string') {
     if (properties.root !== undefined) {
-      const root = candidateFromInputSchema(properties.root);
+      const root = candidateFromInputSchema(properties.root, visibleValues);
       if (root !== undefined) out.push({ ...base, root });
     }
     if (properties.run !== undefined) {
-      const run = candidateFromInputSchema(properties.run);
+      const run = candidateFromInputSchema(properties.run, visibleValues);
       if (run !== undefined) out.push({ ...base, run });
     }
   }
@@ -172,14 +156,16 @@ export function examplePassesInput(
 }
 
 /**
- * A schema-checked example for a core tool parameter refusal: generated from inputSchema (or its examples),
- * accepted only when `input.safeParse` succeeds.
+ * A schema-checked example for a core tool parameter refusal.
+ * `visibleValues` supplies caller-visible real values (e.g. first workflow id from list_task_packs).
  */
 export function checkedExampleFromInputSchema(
   inputSchema: Record<string, unknown>,
   input: z.ZodType,
+  visibleValues?: ReadonlyMap<string, unknown>,
 ): string | null {
-  const tried: unknown[] = [candidateFromInputSchema(inputSchema), ...refineCandidates(inputSchema, candidateFromInputSchema(inputSchema))];
+  const base = candidateFromInputSchema(inputSchema, visibleValues);
+  const tried: unknown[] = [base, ...refineCandidates(inputSchema, base, visibleValues)];
   for (const candidate of tried) {
     if (candidate === undefined) continue;
     if (examplePassesInput(candidate, input)) return JSON.stringify(candidate);
@@ -187,47 +173,63 @@ export function checkedExampleFromInputSchema(
   return null;
 }
 
-/**
- * Pack-scoped codes: only a pack-declared example body is allowed (Boss 12:45). Still must pass the tool input.
- */
 export function checkedPackDeclaredExample(declared: unknown, input: z.ZodType): string | null {
   if (declared === undefined || declared === null) return null;
   return examplePassesInput(declared, input) ? JSON.stringify(declared) : null;
 }
 
-function alternativePath(hasExample: boolean): string {
-  // Structural markers only (Boss 12:55); 工作流/技能 not 任务包; 当前账户 not 你; no 状态串.
-  if (hasExample) {
-    return '替代路径：换写法（按完整正确示例改参数再调用）；找谁（权限或分配请联系管理员）；收尾（同一写法再试无益，改不了就停下）';
+/** Closing sentence by call-error category (tier 3+). */
+export function categoryCloseOf(category: CallErrorCategory | null, retryAfterSeconds?: number): string | null {
+  if (category === null) return null;
+  switch (category) {
+    case '参数无效':
+      return '照原样重试不会成功。请照上面的完整写法改；改后仍被拒绝，就停止重试，把这条错误原样报告给使用者';
+    case '无权限':
+      return '这不是写法问题，重试没有用。请停止重试，告诉使用者联系管理员分配；当前账户可用的工作流和技能用 list_task_packs 查看';
+    case '不存在':
+      return '请先用列表工具核对名称；列表里没有，就停止重试并报告使用者';
+    case '已被占用':
+      return '请等待持有者释放，或改订空闲的测试环境；不要重复预订同一个';
+    case '暂时不可用': {
+      const n = typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0 ? retryAfterSeconds : 60;
+      return `请等待 ${n} 秒后原样重试一次；仍不可用，就停止重试并报告使用者`;
+    }
   }
-  return '替代路径：换写法（先用 list_task_packs 或 get_nodes 核对允许的写法再调用）；找谁（权限或分配请联系管理员）；收尾（同一写法再试无益，改不了就停下）';
 }
 
 export function buildEscalation(options: {
   occurrence: number;
   exampleJson: string | null;
+  category?: CallErrorCategory | null;
+  retryAfterSeconds?: number;
 }): EscalationParts {
   const occurrence = Math.max(1, Math.floor(options.occurrence));
   const tier = escalationTier(occurrence);
   const countLabel = countLabelOf(occurrence);
   const exampleJson = options.exampleJson;
   if (tier === 1) {
-    return { occurrence, tier, countLabel, exampleJson: null, alternative: null, fixSuffix: null };
+    return { occurrence, tier, countLabel, exampleJson: null, categoryClose: null, fixSuffix: null };
   }
-  if (tier === 2) {
-    const parts = [countLabel];
-    if (exampleJson !== null) parts.push(`完整正确示例：${exampleJson}`);
-    return { occurrence, tier, countLabel, exampleJson, alternative: null, fixSuffix: parts.join('；') };
+  const sentences: string[] = [countLabel];
+  if (exampleJson !== null) sentences.push(`完整的正确写法：${exampleJson}`);
+  let categoryClose: string | null = null;
+  if (tier >= 3) {
+    categoryClose = categoryCloseOf(options.category ?? null, options.retryAfterSeconds);
+    if (categoryClose !== null) sentences.push(categoryClose);
   }
-  const alternative = alternativePath(exampleJson !== null);
-  const parts = [countLabel, alternative];
-  if (exampleJson !== null) parts.splice(1, 0, `完整正确示例：${exampleJson}`);
-  return { occurrence, tier, countLabel, exampleJson, alternative, fixSuffix: parts.join('；') };
+  return {
+    occurrence,
+    tier,
+    countLabel,
+    exampleJson,
+    categoryClose,
+    fixSuffix: sentences.join('。'),
+  };
 }
 
-/** Category word for a known call-refusal code; null when unmapped (D1 owns the full table). */
+/** Category word for a known call-refusal code; null when unmapped. */
 export function categoryOfCallError(code: string): CallErrorCategory | null {
-  return CATEGORY_BY_CODE[code] ?? null;
+  return callErrorCategoryOf(code);
 }
 
 function asSentence(text: string): string {
@@ -236,9 +238,6 @@ function asSentence(text: string): string {
   return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
 }
 
-/**
- * Fact body without a leading category word (message may already be `参数无效：…` from schemaErrors).
- */
 export function factOfCallError(message: string, category: CallErrorCategory): string {
   const trimmed = message.trim();
   const prefix = `${category}：`;
@@ -250,10 +249,6 @@ export function factOfCallError(message: string, category: CallErrorCategory): s
   return trimmed;
 }
 
-/**
- * Full call-error prose in the owner form `<类别词>：<事实>。<下一步>。`
- * Escalation markers live only in the 下一步 clause (fix).
- */
 export function formatCategoryCallError(options: {
   category: CallErrorCategory;
   message: string;
@@ -268,43 +263,55 @@ export function formatCategoryCallError(options: {
   return `${options.category}：${fact}${next}`;
 }
 
-/** True when a fix string already carries a D5 escalation count marker. */
 export function fixHasEscalation(fix: string | null | undefined): boolean {
-  return typeof fix === 'string' && /最近一小时内第 \d+ 次/.test(fix);
+  return typeof fix === 'string' && /这是一小时内第 \d+ 次同样的错误/.test(fix);
 }
 
-/** Merge escalation into an error's fix so structuredContent and 下一步 text stay aligned (Boss 12:10 / 13:05). */
 export function withEscalatedFix(error: ProtocolError, parts: EscalationParts): ProtocolError {
   if (parts.fixSuffix === null) return error;
   const base = typeof error.fix === 'string' && error.fix.length > 0 ? error.fix : '由使用者核对输入资料';
-  // Avoid doubling the count marker when tools and text both append.
   if (fixHasEscalation(base)) return error;
-  return { ...error, fix: `${base}；${parts.fixSuffix}` };
+  // Independent sentences: base already ends with 。 or we add one, then escalation sentences.
+  const head = /[。！？]$/.test(base.trim()) ? base.trim() : `${base.trim()}。`;
+  return { ...error, fix: `${head}${parts.fixSuffix}。` };
 }
 
-/**
- * Prior matching refusals in the window, then +1 for the current call (not yet in call_logs).
- * Returns null when the code does not escalate or the count port is missing.
- */
 export async function occurrenceOf(options: {
   callLog: Pick<CallLog, 'countRecentErrors'> | null | undefined;
   userId: string | null | undefined;
   tool: string;
   errorCode: string;
+  /** When set, count only within this run (Boss afternoon). */
+  runId?: string | null;
+  /** For 参数无效, also match this field path when the count port supports it. */
+  path?: string | null;
   now?: Date;
 }): Promise<number | null> {
   if (!countsTowardEscalation(options.errorCode)) return null;
   if (typeof options.userId !== 'string' || options.userId.length === 0) return null;
-  const countRecent = options.callLog?.countRecentErrors;
-  if (countRecent === undefined) return null;
+  const callLog = options.callLog;
+  if (callLog?.countRecentErrors === undefined) return null;
   const now = options.now ?? new Date();
   const since = new Date(now.getTime() - ESCALATION_WINDOW_MS).toISOString();
-  const prior = await countRecent({
+  const query: {
+    userId: string;
+    tool: string;
+    errorCode: string;
+    since: string;
+    runId?: string;
+    path?: string;
+  } = {
     userId: options.userId,
     tool: options.tool,
     errorCode: options.errorCode,
     since,
-  });
+  };
+  if (typeof options.runId === 'string' && options.runId.length > 0) query.runId = options.runId;
+  if (typeof options.path === 'string' && options.path.length > 0 && callErrorCategoryOf(options.errorCode) === '参数无效') {
+    query.path = options.path;
+  }
+  // Call through the object so PgCallLog keeps its private #db (do not extract the method).
+  const prior = await callLog.countRecentErrors(query);
   return prior + 1;
 }
 
@@ -313,19 +320,17 @@ export async function escalateProtocolErrors(options: {
   userId: string | null | undefined;
   tool: string;
   errors: ProtocolError[];
-  /** Tool Zod input; used to verify generated or pack-declared examples. */
   input: z.ZodType;
-  /** Published JSON Schema for the tool (generation source for parameter refusals). */
   inputSchema: Record<string, unknown>;
-  /**
-   * Pack-declared example for a pack-scoped code (from the pack's examples/).
-   * Required for pack codes; ignored for protocol codes.
-   */
   packDeclaredExample?: unknown;
+  /** Caller-visible values for object fields in the example JSON. */
+  visibleValues?: ReadonlyMap<string, unknown>;
+  runId?: string | null;
   now?: Date;
+  retryAfterSeconds?: number;
 }): Promise<ProtocolError[]> {
   if (options.errors.length === 0) return options.errors;
-  const schemaExample = checkedExampleFromInputSchema(options.inputSchema, options.input);
+  const schemaExample = checkedExampleFromInputSchema(options.inputSchema, options.input, options.visibleValues);
   const out: ProtocolError[] = [];
   for (const error of options.errors) {
     const occurrence = await occurrenceOf({
@@ -333,6 +338,8 @@ export async function escalateProtocolErrors(options: {
       userId: options.userId,
       tool: options.tool,
       errorCode: error.code,
+      runId: options.runId,
+      path: error.path,
       now: options.now,
     });
     if (occurrence === null) {
@@ -342,7 +349,17 @@ export async function escalateProtocolErrors(options: {
     const exampleJson = isPackScopedCode(error.code)
       ? checkedPackDeclaredExample(options.packDeclaredExample, options.input)
       : schemaExample;
-    out.push(withEscalatedFix(error, buildEscalation({ occurrence, exampleJson })));
+    out.push(
+      withEscalatedFix(
+        error,
+        buildEscalation({
+          occurrence,
+          exampleJson,
+          category: callErrorCategoryOf(error.code),
+          retryAfterSeconds: options.retryAfterSeconds,
+        }),
+      ),
+    );
   }
   return out;
 }

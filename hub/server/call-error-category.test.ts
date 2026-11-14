@@ -12,6 +12,7 @@ import {
 } from './call-error-category.ts';
 import { circleHubNamesIn, fixByRole } from './fix-by-role.ts';
 import { toolText } from './text.ts';
+import { callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 
 const TRACE = 'a'.repeat(32);
 
@@ -35,7 +36,24 @@ test('D3 maps the first three codes onto the closed category set', () => {
   }
 });
 
-test('pack denial fact uses 工作流 and 当前账户', () => {
+test('Boss afternoon reassignments land in CATEGORY_BY_CODE', () => {
+  assert.equal(callErrorCategoryOf('SHARE_DUPLICATE'), '已被占用');
+  assert.equal(callErrorCategoryOf('SYNC_PURGE_CONFIRMATION_REQUIRED'), '参数无效');
+  assert.equal(callErrorCategoryOf('SOURCE_PENDING_REVIEW'), '暂时不可用');
+  assert.equal(callErrorCategoryOf('MEMORY_CURSOR_STALE'), '参数无效');
+  assert.equal(callErrorCategoryOf('EFFECT_CONTENT_UNVERIFIED'), '不存在');
+  assert.equal(callErrorCategoryOf('EFFECT_RELEASE_UNMET'), '不存在');
+  assert.equal(callErrorCategoryOf('TEAM_PARSER_REQUIRED'), '不存在');
+  assert.equal(callErrorCategoryOf('SYNC_MODE_LOCAL'), '不存在');
+  assert.equal(callErrorCategoryOf('LEASE_EXPIRED'), '不存在');
+});
+
+test('pack-scoped codes default to 参数无效, not conclusion', () => {
+  assert.deepEqual(errorPresentationOf('case-compile.workbook_context'), { kind: 'category', category: '参数无效' });
+  assert.equal(callErrorCategoryOf('case-compile.workbook_context'), '参数无效');
+});
+
+test('pack denial fact uses 工作流 and 当前账户; no replaceAll 任务包', () => {
   assert.equal(
     callErrorFact('SOURCE_NOT_PERMITTED', '任务包 recompose 存在，没有分配给你'),
     '当前账户未获授权使用工作流「recompose」',
@@ -43,6 +61,10 @@ test('pack denial fact uses 工作流 and 当前账户', () => {
   assert.equal(
     callErrorFact('SOURCE_NOT_PERMITTED', '运行 run_abc 存在，你没有读取权限'),
     '当前账户未获授权读取运行 run_abc',
+  );
+  assert.equal(
+    callErrorFact('SOURCE_NOT_PERMITTED', '当前账户未获授权使用技能「toy-skill」'),
+    '当前账户未获授权使用技能「toy-skill」',
   );
 });
 
@@ -55,7 +77,7 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
   )!;
   assert.equal(
     member,
-    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。',
+    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
   assert.doesNotMatch(member, /状态|判断|原因|决定者|任务包|没有分配给你/);
 
@@ -70,6 +92,25 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
   assert.match(admin, /circle-hub pack assign /);
   assertCommandsRegistered(admin);
   assertCommandsRegistered(adminFix);
+});
+
+test('knowledge-tree-root denial keeps 绑定产品线 semantics', () => {
+  const member = callErrorNext(
+    'SOURCE_NOT_PERMITTED',
+    'user',
+    '请管理员给你分配绑定这条产品线的任务包后重交',
+    '知识树根 abc 存在，当前账户没有读取权限',
+  );
+  assert.match(member, /绑定这条产品线/);
+  assert.doesNotMatch(member, /分配此工作流$/);
+  const admin = callErrorNext(
+    'SOURCE_NOT_PERMITTED',
+    'admin',
+    '请管理员给你分配绑定这条产品线的任务包后重交',
+    '知识树根 abc 存在，当前账户没有读取权限',
+  );
+  assert.match(admin, /绑定这条产品线/);
+  assert.match(admin, /circle-hub pack assign /);
 });
 
 test('LEASE_UNAVAILABLE category form splits member and admin next steps', () => {
@@ -121,7 +162,7 @@ test('SOURCE_INTEGRITY_UNPROVEN admin next step cites restore and records from t
   );
 });
 
-test('toolText renders category form for the three codes and keeps SOURCE_UNAVAILABLE on the unknown form', () => {
+test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE with 当前账户', () => {
   const denied = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
     errors: [{
@@ -134,7 +175,7 @@ test('toolText renders category form for the three codes and keeps SOURCE_UNAVAI
   }), { caller: { role: 'user' } });
   assert.equal(
     denied,
-    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流。',
+    '无权限：当前账户未获授权使用工作流「recompose」。请联系管理员为该账户或所在团队分配此工作流；当前账户可用的工作流和技能用 list_task_packs 查看。',
   );
 
   const adminFix = fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请管理员把它分配给你')!;
@@ -178,6 +219,7 @@ test('toolText renders category form for the three codes and keeps SOURCE_UNAVAI
     errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: PROTOCOL_CODES.SOURCE_UNAVAILABLE.fix }],
     trace: TRACE,
   }));
-  assert.match(unknown, /状态未知；原因缺资料/);
-  assert.match(unknown, /决定者程序/);
+  assert.match(unknown, /^资料尚未取得。/);
+  assert.match(unknown, /当前账户读不到这份资料；状态未知；原因缺资料；下一步由使用者联系管理员核对；决定者程序/);
+  assert.doesNotMatch(unknown, /对你不可用|判断错误|参数无效|无权限/);
 });

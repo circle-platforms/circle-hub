@@ -6,6 +6,7 @@ import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import { COMMAND_METADATA } from './command-registry.ts';
 import { COMMAND_PARAMETERS, commandParameterHelp, type CommandParameterId } from './command-parameters.ts';
 import { connectionsPath, knowledgePath, recordsPath, settingsPath, teamPath } from './console/routes.ts';
+import { packListHead, packListHeadForMember } from './pack-words.ts';
 
 export type CallerRole = 'admin' | 'user';
 
@@ -155,7 +156,7 @@ export function proseByRole(
   if (role !== 'admin') {
     switch (kind) {
       case 'unassigned_packs':
-        return `你能用的 ${detail!.usable} 个；Hub 上另有 ${detail!.unassigned} 个没有分配给你（名字不列出），需要哪个请管理员分配。`;
+        return packListHead(detail!.usable!, detail!.unassigned);
       case 'context_unread':
         return '测试环境的资料尚未读出；状态未知；原因缺资料；下一步由使用者请管理员核对读取权限。';
       case 'contribution_unreadable':
@@ -169,8 +170,10 @@ export function proseByRole(
     }
   }
   switch (kind) {
-    case 'unassigned_packs':
-      return `该成员能用的 ${detail!.usable} 个；Hub 上另有 ${detail!.unassigned} 个没有分配给该成员（名字不列出）。需要哪个时用 ${circleHubFromParameters('pack.assign')} 分配，或在控制台 ${teamPath()} 操作。`;
+    case 'unassigned_packs': {
+      const head = packListHeadForMember(detail!.usable!, detail!.unassigned!);
+      return `${head}需要哪个时用 ${circleHubFromParameters('pack.assign')} 分配，或在控制台 ${teamPath()} 操作。`;
+    }
     case 'context_unread':
       return `测试环境的资料尚未读出；状态未知；原因缺资料；下一步由你在控制台 ${connectionsPath()} 核对读取权限。`;
     case 'contribution_unreadable':

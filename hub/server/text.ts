@@ -17,6 +17,7 @@ import { MODEL_LABELS, NOT_APPLICABLE, coverageText, terminalLabel, terminalSymb
 import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
+import { packListHead } from './pack-words.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -187,27 +188,54 @@ function asSentence(text: string): string {
   return /[。！？]$/.test(trimmed) ? trimmed : `${trimmed}。`;
 }
 
-/** Codes D3 rewrites into owner wording (工作流 / 当前账户 / role-specific next). Others keep message+fix. */
-const D3_FACT_REWRITE = new Set(['SOURCE_NOT_PERMITTED', 'LEASE_UNAVAILABLE', 'SOURCE_INTEGRITY_UNPROVEN']);
+/** Codes whose fact/next always go through D3 helpers (table-driven next; no keyword rewrite). */
+const D3_FACT_REWRITE = new Set([
+  'SOURCE_NOT_PERMITTED',
+  'LEASE_UNAVAILABLE',
+  'LEASE_EXPIRED',
+  'SOURCE_INTEGRITY_UNPROVEN',
+  'SOURCE_ABSENT',
+  'SHARE_DUPLICATE',
+  'MEMORY_CURSOR_STALE',
+  'EFFECT_CONTENT_UNVERIFIED',
+  'EFFECT_RELEASE_UNMET',
+  'TEAM_PARSER_REQUIRED',
+  'SYNC_MODE_LOCAL',
+  'SOURCE_PENDING_REVIEW',
+  'SYNC_PURGE_CONFIRMATION_REQUIRED',
+]);
 
-/** Call-refusal line: category word, this call's fact, next step (no 状态/判断/原因/决定者). */
+/**
+ * Call-refusal line: category word, fact, next step; then optional independent appendages in fixed order:
+ * 规则见… → 这是一小时内第 N 次… → 还可以重交 N 次。
+ */
 function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
-  const fact = asSentence(message);
-  const next = asSentence(fix && fix.trim().length > 0 ? fix : '由使用者核对输入资料');
-  const rounds = roundsLeft === undefined ? '' : asSentence(`最多重交 ${roundsLeft} 次`);
+  const fact = asSentence(message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, ''));
+  const nextRaw = fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料';
+  // fix may already contain independent sentences (规则见 / 这是一小时内第 N 次 / 完整的正确写法).
+  const next = asSentence(nextRaw);
+  const rounds = roundsLeft === undefined ? '' : asSentence(`还可以重交 ${roundsLeft} 次`);
   return `${category}：${fact}${next}${rounds}`;
 }
 
-/** Unavailable / unmapped-conclusion lines keep the 状态串 (SOURCE_UNAVAILABLE unchanged per Boss 13:05). */
+/** SOURCE_UNAVAILABLE keeps the unknown string; subject is「当前账户」(Boss afternoon). */
 function conclusionErrorLine(error: ProtocolError, message: string, fix: string | undefined): string {
   const presentation = errorPresentationOf(error.code);
-  const status = presentation.kind === 'unavailable' || unknownError(error)
-    ? ['状态未知', '原因缺资料']
-    : ['状态已确认', '判断错误'];
+  if (presentation.kind === 'unavailable') {
+    return [
+      '当前账户读不到这份资料',
+      '状态未知',
+      '原因缺资料',
+      '下一步由使用者联系管理员核对',
+      error.rounds_left === undefined ? null : `还可以重交 ${error.rounds_left} 次`,
+      '决定者程序',
+    ].filter((part) => part !== null).join('；');
+  }
+  const status = unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误'];
   return [
     message, ...status,
     fix ? `下一步${fix}` : '下一步由使用者核对输入资料',
-    error.rounds_left === undefined ? null : `最多重交 ${error.rounds_left} 次`, '决定者程序',
+    error.rounds_left === undefined ? null : `还可以重交 ${error.rounds_left} 次`, '决定者程序',
   ].filter((part) => part !== null).join('；');
 }
 
@@ -217,13 +245,23 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error) => {
-    const fix = fixByRole(error.code, role, error.fix);
+    // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
+    const escalated = typeof error.fix === 'string' && /这是一小时内第 \d+ 次同样的错误/.test(error.fix);
+    const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix);
+    const presentation = errorPresentationOf(error.code);
+    if (presentation.kind === 'unavailable') {
+      return conclusionErrorLine(error, error.message, fix);
+    }
     const category = callErrorCategoryOf(error.code);
     if (category !== null) {
-      const fact = D3_FACT_REWRITE.has(error.code) ? callErrorFact(error.code, error.message) : error.message;
-      const next = D3_FACT_REWRITE.has(error.code)
-        ? callErrorNext(error.code, role, fix)
-        : (fix ?? '由使用者核对输入资料');
+      const fact = D3_FACT_REWRITE.has(error.code)
+        ? callErrorFact(error.code, error.message)
+        : error.message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '');
+      const next = escalated
+        ? fix
+        : D3_FACT_REWRITE.has(error.code)
+          ? callErrorNext(error.code, role, fix, error.message)
+          : (fix ?? '由使用者核对输入资料');
       return callErrorLine(category, fact, next, error.rounds_left);
     }
     return conclusionErrorLine(error, error.message, fix);
@@ -297,7 +335,7 @@ function listText(v: ListOut, context: TextContext): string {
   const role = callerRole(context);
   const head = typeof unassigned === 'number' && unassigned > 0
     ? proseByRole(role, 'unassigned_packs', { usable: index.length, unassigned })
-    : `你能用的工作流和技能共 ${index.length} 个。`;
+    : packListHead(index.length);
   const lines = [head, ...index.map(pack => pack.title)];
   for (const observation of v.context?.observations ?? []) {
     lines.push(`测试环境 ${observation.label}，${observation.build === null ? '构建未知' : `构建 ${observation.build}`}；读取时间 ${localMinute(observation.observed_at)}`);
@@ -679,13 +717,20 @@ function submitText(v: SubmitOut, context: TextContext): string {
     const original = context.items?.find(item => item.id === error.item);
     const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
     const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
-    const fix = missingRecord ? proseByRole(role, 'missing_result_record') : fixByRole(error.code, role, error.fix);
+    const escalated = typeof error.fix === 'string' && /这是一小时内第 \d+ 次同样的错误/.test(error.fix);
+    const fix = missingRecord
+      ? proseByRole(role, 'missing_result_record')
+      : escalated
+        ? error.fix
+        : fixByRole(error.code, role, error.fix);
     const fact = original === undefined ? message : `${caseName(original, original.label)}，${message}`;
     const category = callErrorCategoryOf(error.code);
     if (category !== null) {
-      const next = !missingRecord && D3_FACT_REWRITE.has(error.code)
-        ? callErrorNext(error.code, role, fix)
-        : fix;
+      const next = escalated
+        ? fix
+        : !missingRecord && D3_FACT_REWRITE.has(error.code)
+          ? callErrorNext(error.code, role, fix, error.message)
+          : fix;
       const factText = !missingRecord && D3_FACT_REWRITE.has(error.code) && original === undefined
         ? callErrorFact(error.code, error.message)
         : fact;

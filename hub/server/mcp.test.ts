@@ -295,12 +295,12 @@ describe('list_task_packs', () => {
     assert.equal(ids.length, 2);
     const exact = await client.call('list_task_packs', { pack_id: 'review' });
     assert.deepEqual((exact.structuredContent.packs as { id: string }[]).map((pack) => pack.id), ['review']);
-    assert.match(exact.content[0].text ?? '', /^你能用的工作流和技能共 1 个。\n合成评审\n合成评审，合成评审（合成）/);
+    assert.match(exact.content[0].text ?? '', /^当前账户可用的工作流和技能共 1 个。\n合成评审\n合成评审，合成评审（合成）/);
     const prefix = await client.call('list_task_packs', { pack_id: 'revie' });
     assert.equal(prefix.isError, true);
     assert.equal(firstError(prefix).code, 'SOURCE_ABSENT');
     assert.equal(firstError(prefix).path, '/pack_id');
-    assert.match(prefix.content[0].text ?? '', /不存在：Hub 里没有工作流「revie」/);
+    assert.match(prefix.content[0].text ?? '', /不存在：Hub 里没有名为「revie」的工作流或技能/);
     const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
     // Assigned workflow filtered by kind: absence is null → keep empty ok list.
     assert.equal(incompatibleKind.isError, false);
@@ -325,7 +325,7 @@ describe('list_task_packs', () => {
     assert.equal(absent.isError, true);
     assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     assert.equal(firstError(absent).path, '/pack_id');
-    assert.match(absent.content[0].text ?? '', /不存在：Hub 里没有工作流「not-a-pack」/);
+    assert.match(absent.content[0].text ?? '', /不存在：Hub 里没有名为「not-a-pack」的工作流或技能/);
     assert.notDeepEqual(comparable(unavailable), comparable(absent));
     await limited.close();
   });
@@ -336,7 +336,7 @@ describe('list_task_packs', () => {
     const all = await client.call('list_task_packs', {});
     assert.equal(all.isError, false);
     assert.deepEqual((all.structuredContent.packs as { id: string }[]).map((p) => p.id).sort(), ['local-review', 'review']);
-    assert.match(all.content[0].text ?? '', /^你能用的工作流和技能共 2 个。/);
+    assert.match(all.content[0].text ?? '', /^当前账户可用的工作流和技能共 2 个。/);
     const products = await client.call('list_task_packs', { kind: 'product' });
     assert.deepEqual(products.structuredContent.packs, []);
     const bad = await client.call('list_task_packs', { kind: 'plugin' });
