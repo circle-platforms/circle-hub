@@ -76,11 +76,11 @@ test('an environment is free, then held during a dispatch, then free with its la
   assert.ok(before.registration.decided_at);
 
   const done = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(done.outcome, 'effective');
+  assert.equal(done.dispatch_attempt!.outcome, 'effective');
   // During the submit the job held the environment, and nothing was frozen.
   const held = during as EnvironmentFacts | null;
   assert.ok(held);
-  assert.deepEqual(held.holding?.map((job) => [job.job, job.frozen]), [[done.job, false]]);
+  assert.deepEqual(held.holding?.map((job) => [job.job, job.job_facts.awaiting_disposition]), [[done.job, false]]);
   assert.equal(held.holding?.[0]?.run, c.run);
 
   const after = await c.service.environment(c.admin, c.executor.id);
@@ -88,8 +88,8 @@ test('an environment is free, then held during a dispatch, then free with its la
   assert.deepEqual(after.holding, [], 'an effective dispatch holds nothing');
   assert.equal(after.latest?.job, done.job);
   assert.equal(after.latest?.run, c.run);
-  assert.equal(after.latest?.outcome, 'effective');
-  assert.equal(after.latest?.frozen, false);
+  assert.equal(after.latest?.dispatch_attempt?.outcome, 'effective');
+  assert.equal(after.latest?.job_facts.awaiting_disposition, false);
   assert.equal(after.reported_version, 'synthetic-gateway 2.4.1');
   const [calls] = await readEnvironmentCalls(c.kit.store, [c.executor.id], c.now());
   assert.equal(calls.calls, c.endpoint.calls.length, 'each actual request counted once, including initialize and leases');
@@ -104,12 +104,12 @@ test('an unconfirmed result freezes the environment; an open bed hold is shown u
   const c = await setup({ mode: 'disconnect' });
   t.after(() => c.close());
   const lost = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(lost.outcome, 'unknown');
-  assert.equal(lost.frozen, true);
+  assert.equal(lost.dispatch_attempt!.outcome, 'unknown');
+  assert.equal(lost.job_facts.frozen, true);
   const frozen = await c.service.environment(c.admin, c.executor.id);
   assert.ok(frozen);
-  assert.deepEqual(frozen.holding?.map((job) => [job.job, job.frozen, job.outcome]), [[lost.job, true, 'unknown']]);
-  assert.equal(frozen.latest?.frozen, true);
+  assert.deepEqual(frozen.holding?.map((job) => [job.job, job.job_facts.awaiting_disposition, job.dispatch_attempt?.outcome]), [[lost.job, true, 'unknown']]);
+  assert.equal(frozen.latest?.job_facts.awaiting_disposition, true);
 
   // A bed left unrestored by the job, as the bed gate records it, until an administrator clears it.
   const binding = await c.service.journal.binding(lost.job);

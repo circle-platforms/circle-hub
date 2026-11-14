@@ -24,7 +24,7 @@ test('an unbounded current holder passes the full synthetic dispatch lifecycle',
   const holder = {user:c.owner.id,run:c.run};
   assert.ok((await c.leases.release({keys,holder})).ok);
   assert.ok((await c.leases.acquire({keys,holder,prefix:'synthetic/'})).ok);
-  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'effective');
+  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).dispatch_attempt!.outcome,'effective');
 });
 
 test('owner release increments the fence and rejects the former lineage before a synthetic executor submission', async t => {
@@ -36,7 +36,8 @@ test('owner release increments the fence and rejects the former lineage before a
   assert.ok((await c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成主人收回'})).ok);
   const after=await c.leases.holderSnapshot(keys);
   assert.ok(after.every((row,i)=>row.fencing>before[i]!.fencing&&row.released));
-  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,0);
 });
 
@@ -81,7 +82,7 @@ test('a committed reservation wins the release race and the owner guard leaves i
   const refused=assert.rejects(forcing,/unfinished synthetic job/);
   releaseReservation();await refused;
   assert.deepEqual(await c.leases.holderSnapshot(keys),before);
-  finishTarget();assert.equal((await dispatching).outcome,'effective');
+  finishTarget();assert.equal((await dispatching).dispatch_attempt!.outcome,'effective');
 });
 
 test('verified legacy record notes are not mistaken for missing job integrity',async t=>{

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import type { JobStatus } from '../dispatch/api.ts';
 import { jobCommand, type JobCommandSession } from './cli-job.ts';
 
@@ -40,4 +41,23 @@ test('CLI preserves missing scope as unknown and returns a non-success status', 
 test('CLI gives failed release diagnostics the same scope as their dispatch attempt', async () => {
   const { text } = await show({ job, events: 3, job_facts: { scope, operation: 'dispatch' }, dispatch_attempt: { scope: { operation: 'dispatch', job, round: 2 }, outcome: 'not_dispatched', not_sent: true, failed_checks: [{ step: 'manifest', missing_fact: '本轮清单未匹配', next_action: '核对本轮清单' }] } });
   assert.match(text, /第2轮正式派发未满足核对：步骤 "manifest"；缺事实：本轮清单未匹配；下一步：核对本轮清单/);
+});
+
+test('CLI does not return success for an observed round whose effect outcome is still absent', async () => {
+  const { code } = await show({ job, events: 1, job_facts: { scope, operation: 'dispatch', frozen: false }, dispatch_attempt: { scope: { operation: 'dispatch', job, round: 1 } } });
+  assert.equal(code, 1);
+});
+
+test('CLI names a readonly conformance observation without fabricating a physical dispatch', async () => {
+  const { code, text } = await show({ job, events: 2, job_facts: { scope, operation: 'conformance', conformance_verified: true, frozen: false } });
+  assert.equal(code, 0);
+  assert.ok(text.includes(labelOf('dispatch_operation', 'conformance') + '：已取得全部条件通过的核对'));
+  assert.doesNotMatch(text, /第1轮|尚无可核对的按范围派发结局/);
+});
+
+test('CLI does not return success for a readonly check whose verified conclusion is absent or false', async () => {
+  for (const operation of ['precheck', 'conformance'] as const) {
+    const { code } = await show({ job, events: 2, job_facts: { scope, operation, readonly_verified: false, conformance_verified: false, frozen: false } });
+    assert.equal(code, 1);
+  }
 });

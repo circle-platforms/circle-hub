@@ -21,7 +21,7 @@ test('a new executor and records database use copied named vault material withou
   await fresh.registry.update(fresh.admin, fresh.executor.id, { ...fresh.executor.source, credential: '${secret:' + name + '}' });
   await fresh.freezeExecutor();
   const state = await fresh.service.dispatch(fresh.admin, fresh.run, fresh.executor.id);
-  assert.equal(state.outcome, 'effective');
+  assert.equal(state.dispatch_attempt!.outcome, 'effective');
   assert.equal(fresh.submitted.length, 1);
   assert.ok(fresh.endpoint.calls.every(call => call.headers.authorization === 'Bearer ' + value), 'all calls use the copied current version');
   const events = await fresh.service.journal.events(state.job);
@@ -38,7 +38,7 @@ test('a referenced name missing from the vault prevents all executor calls', asy
   t.after(() => c.close());
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.source, credential: '${secret:DEMO_MISSING}' });
   const status = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(status.outcome, 'not_dispatched');
+  assert.equal(status.dispatch_attempt, undefined);assert.equal(status.job_facts.operation, 'precheck');
   assert.equal(c.endpoint.calls.length, 0);
-  assert.match(status.missing_fact ?? status.reason ?? '', /DEMO_MISSING/);
+  assert.match(status.job_facts.missing_fact ?? status.job_facts.reason ?? '', /DEMO_MISSING/);
 });

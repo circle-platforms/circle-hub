@@ -29,27 +29,27 @@ async function report(c:Awaited<ReturnType<typeof fixture>>,reference:string){co
 test('an ended gateway with a late report is polled until the second complete case_results, with one submit',async t=>{
  const c=await fixture(false,2);t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
  assert.equal(c.reportReads,2);assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
- const value=await report(c,state.result!);assert.equal(value.rows[0].dynamic_terminal,'pass');assert.equal(state.report_pending,undefined);
+ const value=await report(c,state.job_facts.result!);assert.equal(value.rows[0].dynamic_terminal,'pass');assert.equal(state.job_facts.report_pending,undefined);
  const events=await c.service.journal.events(state.job);assert.equal(events.filter(event=>event.body.detail.phase==='intent').length,1);assert.ok(events.some(event=>event.body.detail.phase==='report_wait'));
 });
 test('a bounded report wait can resume read-only after lease release and append a usable result',async t=>{
  const c=await fixture();t.after(()=>c.close());
- const pending=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.reportReads,REPORT_READ_ATTEMPTS);assert.equal(pending.report_pending,true);assert.equal((await report(c,pending.result!)).rows[0].dynamic_terminal,'no_verdict');
- const previous=await c.service.journal.events(pending.job),old=Buffer.from((await c.kit.objects.get(pending.result!.slice(4)))!);const before=c.calls.length;c.setReady();
- const refreshed=await c.service.resume(c.admin,pending.job),value=await report(c,refreshed.result!);
- assert.equal(value.rows[0].dynamic_terminal,'pass');assert.equal(value.lease_interrupted,false);assert.equal(value.lease_drift,false);assert.notEqual(refreshed.result,pending.result);assert.ok(refreshed.events>pending.events);
+ const pending=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(c.reportReads,REPORT_READ_ATTEMPTS);assert.equal(pending.job_facts.report_pending,true);assert.equal((await report(c,pending.job_facts.result!)).rows[0].dynamic_terminal,'no_verdict');
+ const previous=await c.service.journal.events(pending.job),old=Buffer.from((await c.kit.objects.get(pending.job_facts.result!.slice(4)))!);const before=c.calls.length;c.setReady();
+ const refreshed=await c.service.resume(c.admin,pending.job),value=await report(c,refreshed.job_facts.result!);
+ assert.equal(value.rows[0].dynamic_terminal,'pass');assert.equal(value.lease_interrupted,false);assert.equal(value.lease_drift,false);assert.notEqual(refreshed.job_facts.result,pending.job_facts.result);assert.ok(refreshed.events>pending.events);
  assert.ok(c.calls.slice(before).includes('inspect_blob'));assert.ok(c.calls.slice(before).includes('read_blob'));assert.ok(c.calls.slice(before).every(call=>call==='inspect_blob'||call==='read_blob'));
- assert.equal(c.calls.filter(call=>call==='send_blob').length,1);assert.deepEqual(Buffer.from((await c.kit.objects.get(pending.result!.slice(4)))!),old);
+ assert.equal(c.calls.filter(call=>call==='send_blob').length,1);assert.deepEqual(Buffer.from((await c.kit.objects.get(pending.job_facts.result!.slice(4)))!),old);
  const after=await c.service.journal.events(pending.job);assert.deepEqual(after.slice(0,previous.length).map(event=>event.digest),previous.map(event=>event.digest));
 });
 test('legacy done=true no_verdict snapshots are refreshed from their saved declared raw report fields',async t=>{
  const c=await fixture();t.after(()=>c.close());(c.effectDocument.effects[0] as {repetition?:number}).repetition=2;
- const pending=await c.service.dispatch(c.admin,c.run,c.executor.id),binding=await c.service.journal.binding(pending.job);const value=await report(c,pending.result!);delete value.report_pending;
- const source=await c.kit.artifacts.ingest({bytes:canonicalBytes(value),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[pending.result!]}},author:{user:null},provenanceType:'projected',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
+ const pending=await c.service.dispatch(c.admin,c.run,c.executor.id),binding=await c.service.journal.binding(pending.job);const value=await report(c,pending.job_facts.result!);delete value.report_pending;
+ const source=await c.kit.artifacts.ingest({bytes:canonicalBytes(value),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[pending.job_facts.result!]}},author:{user:null},provenanceType:'projected',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
  await c.service.journal.append(binding,'result','read_back','completed',{reference:'src:'+source.body.sha256,no_verdict:1,items:1});
  await c.service.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'effective',missing_fact:'合成旧报告尚未生成'});
  const legacy=await c.service.status(c.admin,pending.job);c.setReady();const before=c.calls.length;
- const refreshed=await c.service.resume(c.admin,pending.job);assert.equal((await report(c,refreshed.result!)).rows[0].dynamic_terminal,'pass');assert.notEqual(refreshed.result,legacy.result);assert.ok(refreshed.events>legacy.events);assert.deepEqual(refreshed.rounds?.map(round=>[round.round,round.terminal]),[[1,'pass']]);
+ const refreshed=await c.service.resume(c.admin,pending.job);assert.equal((await report(c,refreshed.job_facts.result!)).rows[0].dynamic_terminal,'pass');assert.notEqual(refreshed.job_facts.result,legacy.job_facts.result);assert.ok(refreshed.events>legacy.events);assert.deepEqual(refreshed.job_facts.rounds?.map(round=>[round.round,round.terminal]),[[1,'pass']]);
  assert.ok(c.calls.slice(before).every(call=>call==='inspect_blob'||call==='read_blob'));assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
 });
 test('late report refresh preserves a real execution-window integrity gap instead of repairing it retroactively',async t=>{
@@ -57,24 +57,24 @@ test('late report refresh preserves a real execution-window integrity gap instea
  const holder=c.service.options.leases.holderSnapshot.bind(c.service.options.leases);let broken=false;
  c.service.options.leases.holderSnapshot=async keys=>{const rows=await holder(keys);return broken?rows.map(row=>({...row,released:true})):rows;};
  const original=c.service.journal.append.bind(c.service.journal);c.service.journal.append=async(...args)=>{if(args[1]==='terminal')broken=true;return original(...args);};
- const pending=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal((await report(c,pending.result!)).lease_drift,true);broken=false;c.setReady();
- const refreshed=await c.service.resume(c.admin,pending.job),value=await report(c,refreshed.result!);assert.equal(value.rows[0].dynamic_terminal,'no_verdict');assert.ok(value.rows[0].missing_facts.includes('continuity'));assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
+ const pending=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal((await report(c,pending.job_facts.result!)).lease_drift,true);broken=false;c.setReady();
+ const refreshed=await c.service.resume(c.admin,pending.job),value=await report(c,refreshed.job_facts.result!);assert.equal(value.rows[0].dynamic_terminal,'no_verdict');assert.ok(value.rows[0].missing_facts.includes('continuity'));assert.equal(c.calls.filter(call=>call==='send_blob').length,1);
 });
 
 test('pre-fix complete=true report-only unknown archives resume even when the old raw value is nonempty',async t=>{
  const c=await fixture(false,undefined,true);t.after(()=>c.close());
- const first=await c.service.dispatch(c.admin,c.run,c.executor.id),binding=await c.service.journal.binding(first.job),current=await report(c,first.result!);
+ const first=await c.service.dispatch(c.admin,c.run,c.executor.id),binding=await c.service.journal.binding(first.job),current=await report(c,first.job_facts.result!);
  assert.equal(current.rows[0].dynamic_terminal,'no_verdict');assert.equal(current.rows[0].reason,'integrity_unproven');assert.deepEqual(current.rows[0].missing_facts,['report']);assert.equal(c.reportReads,1);
  // Exact pre-8cb0de91 projection shape, not a report_pending=true fixture: complete=true and a present
  // unreported outcome are what made the old result unusable despite all other integrity facts being present.
  const legacy={job:first.job,sha256:binding.input!.sha256,rows:current.rows,ownership:current.ownership,side_effects:current.side_effects,executor_declarations:current.executor_declarations,lease_drift:false,lease_interrupted:false,qualifier_marks:current.qualifier_marks,limits:current.limits};
- const source=await c.kit.artifacts.ingest({bytes:canonicalBytes(legacy),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[first.result!]}},author:{user:null},provenanceType:'projected',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
+ const source=await c.kit.artifacts.ingest({bytes:canonicalBytes(legacy),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[first.job_facts.result!]}},author:{user:null},provenanceType:'projected',visibility:{readers:[c.owner.id],admins:true,packs:[],shareable:false}});
  await c.service.journal.append(binding,'result','read_back','completed',{reference:'src:'+source.body.sha256,items:1,no_verdict:1});
  await c.service.journal.append(binding,'complete','read_back','completed',{done:true,outcome:'effective',missing_fact:'动态完整性事实尚不齐全；见 missing_facts 和下一步'});
  const archived=await c.service.status(c.admin,first.job),history=await c.service.journal.events(first.job),before=c.calls.length;c.setReady();
  const next=await c.service.resume(c.admin,first.job);
  assert.ok(c.calls.length>before,'resume must reach the gateway instead of the completed-cache branch');
  assert.ok(c.calls.slice(before).includes('inspect_blob'));assert.ok(c.calls.slice(before).includes('read_blob'));assert.ok(c.calls.slice(before).every(call=>call==='inspect_blob'||call==='read_blob'));
- assert.equal(c.calls.filter(call=>call==='send_blob').length,1);assert.equal((await report(c,next.result!)).rows[0].dynamic_terminal,'pass');assert.notEqual(next.result,archived.result);assert.ok(next.events>archived.events);
+ assert.equal(c.calls.filter(call=>call==='send_blob').length,1);assert.equal((await report(c,next.job_facts.result!)).rows[0].dynamic_terminal,'pass');assert.notEqual(next.job_facts.result,archived.job_facts.result);assert.ok(next.events>archived.events);
  assert.deepEqual((await c.service.journal.events(first.job)).slice(0,history.length).map(event=>event.digest),history.map(event=>event.digest));
 });

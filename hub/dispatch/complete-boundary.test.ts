@@ -12,7 +12,7 @@ test('a partial four-clause boundary can never authorize an intent or the first 
  const c=await setup();t.after(()=>c.close());const restore=shortcut();let state;
  try{state=await c.service.dispatch(c.admin,c.run,c.executor.id);}finally{restore();}
  assert.equal(c.calls.filter(name=>name==='send_blob').length,0);
- const events=await c.service.journal.events(state.job);assert.equal(events.some(event=>event.body.detail.phase==='intent'),false);assert.equal(state.outcome,'not_dispatched');assert.match(state.missing_fact!,/九款/);
+ const events=await c.service.journal.events(state.job);assert.equal(events.some(event=>event.body.detail.phase==='intent'),false);assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);assert.match(state.dispatch_attempt!.missing_fact!,/九款/);
 });
 test('a partial four-clause boundary cannot authorize retransmission or erase the first delivery',async t=>{
  let restore=()=>{};const c=await setupJournal({lost:'once',onSubmit:async()=>{restore=shortcut();}});t.after(()=>c.close());
@@ -20,6 +20,6 @@ test('a partial four-clause boundary cannot authorize retransmission or erase th
  await c.registry.update(c.admin,c.executor.id,{...base,premises:{...base.premises,retry_safety:proof},calls:{...base.calls,submit:{...base.calls.submit,write:{interaction:'submit_then_read',effect_class:'job',retry_safety:'same_key_safe',signing:'service_on_behalf',reversible:false,target_key:{$value:'target'},audience:null,evidence:{call:base.calls.result.tool,pointer:base.result.sha256},refusal:{stage:base.receipt.stage!,reached_device:base.receipt.reached_device!},writes_hub_records:true}}}});
  await c.freezeExecutor();let state;
  try{state=await c.service.dispatch(c.admin,c.run,c.executor.id);}finally{restore();}
- assert.equal(c.calls.filter(name=>name==='send_blob').length,1);assert.equal(state.outcome,'effective');
+ assert.equal(c.calls.filter(name=>name==='send_blob').length,1);assert.equal(state.dispatch_attempt!.outcome,'effective');
  const events=await c.service.journal.events(state.job);assert.equal(events.filter(event=>event.body.detail.phase==='intent').length,1);assert.equal(events.some(event=>event.body.detail.phase==='resend'),false);assert.ok(events.some(event=>event.body.detail.phase==='retry_refused'&&String(event.body.detail.missing_fact).includes('九款')));assert.ok(c.calls.includes('lookup_blob'));
 });

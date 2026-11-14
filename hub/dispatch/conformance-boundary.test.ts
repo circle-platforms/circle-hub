@@ -7,7 +7,7 @@ test('conformance cannot submit administrator bytes or allocate an effect intent
  assert.equal(c.calls.filter(name=>name==='send_blob').length,0);
  const events=await c.service.journal.events(state.job);
  assert.equal(events.some(event=>['intent','probe_intent','probe_attempt'].includes(String(event.body.detail.phase))),false);
- assert.equal(state.outcome,'not_dispatched');assert.equal(state.frozen,false);
- assert.match(state.missing_fact!,/受限审计/);assert.match(state.next_action!,/登记/);
- assert.ok(state.result);
+ assert.equal(state.dispatch_attempt, undefined);assert.equal(state.job_facts.operation, 'conformance');assert.equal(state.job_facts.frozen,false);assert.equal(state.job_facts.conformance_verified,false);
+ assert.match(state.job_facts.missing_fact!,/受限审计/);assert.match(state.job_facts.next_action!,/登记/);
+ assert.ok(state.job_facts.result);
 });

@@ -20,7 +20,7 @@ for(const ownership of ['staging_directory','none','missing','unexpected','stale
     await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,manifest_sha256:manifest.body.sha256,allowed_tools:[...c.executor.definition.allowed_tools,'inspect_seat'],probes,premises:{result_ownership:{version:'1',evidence:[`src:${proof.body.sha256}`]}},result:{...c.executor.definition.result,ownership:{pointer:'/ownership',value:'staging_directory',reason:'/ownership_reason'},request_id:'/request',log:'/log',log_stale:'/stale',closing_marker:'SYNTHETIC_END'}});
     await c.freezeExecutor();
     const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-    const source=await c.kit.artifacts.source(c.owner,state.result!.slice(4));assert.ok(source?.bytes);
+    const source=await c.kit.artifacts.source(c.owner,state.job_facts.result!.slice(4));assert.ok(source?.bytes);
     const report=JSON.parse(new TextDecoder().decode(source.bytes));
     assert.equal(report.rows[0].reported_terminal,'pass');
     assert.equal(report.rows[0].dynamic_terminal,(ownership==='staging_directory'||ownership==='stale-constant')?'pass':'no_verdict');

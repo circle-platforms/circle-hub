@@ -28,7 +28,8 @@ test('copied legacy v1 ciphertext and authenticated metadata execute under a new
     await fresh.registry.update(fresh.admin, fresh.executor.id, { ...fresh.executor.source, credential: '${secret:' + name + '}' });
     await fresh.freezeExecutor();
     const state = await fresh.service.dispatch(fresh.admin, fresh.run, fresh.executor.id);
-    assert.equal(state.outcome, 'effective');
+    assert.deepEqual(state.dispatch_attempt?.scope, { operation: 'dispatch', job: state.job, round: 1 });
+    assert.equal(state.dispatch_attempt?.outcome, 'effective');
     assert.equal(fresh.submitted.length, 1);
     assert.ok(fresh.endpoint.calls.every(call => call.headers.authorization === 'Bearer ' + value));
     const events = await fresh.service.journal.events(state.job);

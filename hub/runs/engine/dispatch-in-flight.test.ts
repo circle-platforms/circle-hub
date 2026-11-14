@@ -63,8 +63,13 @@ test('an accepted run tries to dispatch only once the release requirements its i
   assert.equal((await service.getRun(h.alice, run.run))!.latest!.record, latest);
   flight=null;failDispatch=true;
   const uncertain=await service.submitResult(h.alice,submission(run,'synthetic'),h.call('another-session'));
-  assert.equal(uncertain.acceptance,'accepted');assert.equal(uncertain.dispatch?.[0]?.outcome,'unknown');
-  assert.equal(uncertain.dispatch?.[0]?.not_sent,undefined);assert.match(uncertain.dispatch![0].next_action!,/不要重新发送/);
+  assert.equal(uncertain.acceptance,'accepted');
+  const note=uncertain.dispatch![0];
+  assert.deepEqual(note.run_facts?.scope,{run:run.run});
+  assert.equal(note.job_facts,undefined);assert.equal(note.dispatch_attempt,undefined);
+  assert.equal(note.run_facts?.worker_settled,undefined);
+  assert.match(note.run_facts!.next_action!,/不要重新发送/);
+  for(const field of ['outcome','not_sent','missing_facts','next_action','job'])assert.equal(Object.hasOwn(note,field),false,field);
   assert.doesNotMatch(JSON.stringify(uncertain.dispatch),/private-target|没有派发|已记下/);
   assert.ok(callers.length>=4,'normal, in-flight and reuse paths retain the real caller');
 });

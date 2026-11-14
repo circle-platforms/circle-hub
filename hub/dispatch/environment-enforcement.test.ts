@@ -19,7 +19,7 @@ for(const flag of [undefined,false] as const)test(`verified pending with legacy 
   const spy=permissionSpy();
   const service=new DispatchService({...c.service.options,enforceEnvironmentAssignments:flag,environmentAccess:spy.port});
   const state=await service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+  assert.equal(state.dispatch_attempt!.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
   await assert.rejects(service.dispatch(c.admin,c.run,c.executor.id),/已有派发意图|已派发成功/);
   assert.equal(c.calls.filter(name=>name==='send_blob').length,1,'turning off the new policy does not turn off durable deduplication');
   assert.equal(spy.calls,0);
@@ -36,7 +36,7 @@ test('stage-off never bypasses the frozen workflow and verified-input release ch
   const c=await setup({mode:'wrong-package'});t.after(()=>c.close());const spy=permissionSpy();
   const service=new DispatchService({...c.service.options,enforceEnvironmentAssignments:false,environmentAccess:spy.port});
   const state=await service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'not_dispatched');assert.equal(state.error_code,'EFFECT_RELEASE_UNMET');
+  assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.admission_error?.code,'EFFECT_RELEASE_UNMET');
   assert.equal(c.calls.length,0);assert.equal(spy.calls,0);
 });
 
@@ -45,7 +45,7 @@ for(const mode of ['lineage','expiry'] as const)test(`stage-off preserves existi
   if(mode==='expiry')c.clock.ms+=2000;
   const service=new DispatchService({...c.service.options,enforceEnvironmentAssignments:false,environmentAccess:spy.port});
   const state=await service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.error_code,'LEASE_UNAVAILABLE');assert.equal(state.outcome,'not_dispatched');
+  assert.equal(state.dispatch_attempt!.error_code,'LEASE_UNAVAILABLE');assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
   assert.equal(c.calls.length,0);assert.equal(spy.calls,0);
 });
 
@@ -54,6 +54,6 @@ test('strong assignment-policy fixtures explicitly enable the new guard and reta
   assert.equal(c.service.options.enforceEnvironmentAssignments,true);
   await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.error_code,'SOURCE_NOT_PERMITTED');assert.equal(state.outcome,'not_dispatched');
+  assert.equal(state.job_facts.admission_error?.code,'SOURCE_NOT_PERMITTED');assert.equal(state.dispatch_attempt,undefined);
   assert.equal(c.calls.length,0);
 });
