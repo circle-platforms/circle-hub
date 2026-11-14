@@ -309,6 +309,7 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error)) };
   const summaries = await deps.workflows.summaries(call.principal);
+  checkReadCancellation(call);
   const capabilities = await deps.memberCapabilities(call.principal, undefined, summaries);
   const available = [...capabilities.workflows, ...capabilities.skills];
   const packs = [];
