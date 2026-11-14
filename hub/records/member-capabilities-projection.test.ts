@@ -1,7 +1,7 @@
 // Projection-only synthetic ports; no PostgreSQL, environment files, vault or network.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { memberCapabilities, type MemberCapabilitySources, type MemberCapabilities } from './permissions.ts';
+import { memberCapabilities, type MemberCapabilitySources, type MemberCapabilities, type MemberEnvironmentCapability } from './permissions.ts';
 import type { RecordsKit, User } from './api.ts';
 import { RequestPermissions } from './request-permissions.ts';
 
@@ -27,12 +27,14 @@ test('member projection preserves independent unattributed own bookings without 
     target_missing: '预订没有可核验的执行器绑定，目标归属未知',
   }));
   Object.assign(holdings[0], { executor: 'exe_hidden', key: 'synthetic/private', target_name: '不应出现的目标' });
+  let enforcement: boolean | undefined;
+  const environments: MemberEnvironmentCapability[] = [];
   const sources: MemberCapabilitySources = {
     publicWorkflowIds: async () => [], canUsePack: async () => false,
     packs: async () => [], connections: async () => [], personalPackUse: async () => false,
     environments: async actor => {
       assert.equal(actor.id, alice.id, 'administrator preview calls the provider as the target');
-      return { ready: true, items: [], missing: null, nextAction: null };
+      return { ready: true, ...(enforcement === undefined ? {} : { enforceEnvironmentAssignments: enforcement }), items: environments, missing: null, nextAction: null };
     },
     unattributedHoldings: async actor => {
       assert.equal(actor.id, alice.id, 'unattributed bookings also query the target, never the admin previewer');
@@ -41,6 +43,7 @@ test('member projection preserves independent unattributed own bookings without 
   };
   const view = await memberCapabilities(records, sources, admin, alice.id);
   assert.deepEqual(captures, [alice.id]);
+  assert.equal(view.environmentAccess.enforced, false, 'omitted flag does not enable the assignment guard');
   assert.deepEqual(view.environments, []);
   assert.equal(view.unattributed_holdings?.length, 2);
   assert.ok(view.unattributed_holdings?.every(row => row.target === null && !row.assigned && !row.can_use));
@@ -54,4 +57,13 @@ test('member projection preserves independent unattributed own bookings without 
   assert.equal((await memberCapabilities(records, sources, admin, alice.id)).unattributed_holdings, null, 'unknown is not an empty booking set');
   holdings = [];
   assert.deepEqual((await memberCapabilities(records, sources, admin, alice.id)).unattributed_holdings, [], 'no own holdings is a distinct known empty set');
+  environments.push({ name: '合成已停用预览', enabled: false, assigned: true, can_use: false, occupancy: [], missing: ['运行环境已停用'] });
+  for (const flag of [false, true, undefined]) {
+    enforcement = flag;
+    const preview = await memberCapabilities(records, sources, admin, alice.id);
+    assert.equal(preview.environmentAccess.enforced, flag === true, 'only explicit true represents enforcement');
+    assert.deepEqual(preview.environments, environments, 'guard metadata cannot rewrite assignment or use permission');
+    assert.equal(preview.environments[0].assigned, true);
+    assert.equal(preview.environments[0].can_use, false);
+  }
 });
