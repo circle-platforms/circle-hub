@@ -10,7 +10,9 @@ import { dirname, join } from 'node:path';
 import { ProductDeclaration } from '../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, PackHandle, PacksPort, ProductHandle } from '../ports.ts';
 import type { Limits, Principal, RecordsKit, User } from '../records/api.ts';
-import {createTestParserRegistry as createDefaultRegistry} from '../testing/parsers.ts';
+import { createPackRegistry, temporaryDirectory } from '../runs/api.ts';
+import { createTestParserRegistry as createDefaultRegistry } from '../testing/parsers.ts';
+import { installMindmapFixture } from '../testing/skills.ts';
 import { osIsolationAvailable } from '../rules/api.ts';
 import { startPostgres, type TemporaryPostgres } from '../testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../testing/records.ts';
@@ -546,7 +548,7 @@ export async function sandboxIsolation(): Promise<boolean> {
 
 export async function makeWorld(
   postgres: TemporaryPostgres,
-  options: { pack?: PackSpec; jev?: JevClient | null; now?: () => Date; knowledge?: Partial<KnowledgeOptions>; records?: { limits?: Partial<Limits> } } = {},
+  options: { pack?: PackSpec; jev?: JevClient | null; now?: () => Date; knowledge?: Partial<KnowledgeOptions>; records?: { limits?: Partial<Limits> }; mindmapSkill?: boolean } = {},
 ): Promise<World> {
   const kit = await openTestRecords({ postgres, ...(options.now ? { now: options.now } : {}), ...(options.records?.limits ? { limits: options.records.limits } : {}) });
   const { user: admin } = await kit.principals.bootstrapAdmin('admin');
@@ -558,9 +560,16 @@ export async function makeWorld(
   packs.add(product);
   packs.readers.set(user.id, new Set([product.product.id]));
   const external = new FakeExternal(kit);
+  let parsers = createDefaultRegistry();
+  let skillsTemp: Awaited<ReturnType<typeof temporaryDirectory>> | undefined;
+  if (options.mindmapSkill) {
+    skillsTemp = await temporaryDirectory('hub-knowledge-skills-');
+    const skillRegistry = createPackRegistry({ records: kit, extractDir: skillsTemp.path, now: options.now, sandbox: { requireOsIsolation: false } });
+    parsers = await installMindmapFixture(skillRegistry, kit, admin);
+  }
   const knowledge = createKnowledge({...TEST_KNOWLEDGE_READ_PORTS,
     records: kit,
-    parsers: createDefaultRegistry(),
+    parsers,
     packs,
     external,
     jev: options.jev ?? null,
@@ -581,6 +590,7 @@ export async function makeWorld(
     dir,
     close: async () => {
       await kit.close();
+      await skillsTemp?.remove();
       rmSync(dir, { recursive: true, force: true });
     },
   };

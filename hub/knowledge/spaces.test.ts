@@ -194,3 +194,18 @@ test('an administrator declares their own ordinary upload through team import wi
  const foreign=await upload(w.user,'合成其他成员上传');await assert.rejects(spaces.write(w.admin,{kind:'observation',statement:'不得代为署名',grounds:[{reference:'src:'+foreign.body.sha256,quotation:'其他成员'}]},null,'team'),{code:'SPACE_ENTRY_INVALID'});
  const personal=await spaces.importFile(w.admin,Buffer.from('合成个人空间原文'),'text/plain','synthetic-private.txt');await assert.rejects(spaces.write(w.admin,{kind:'observation',statement:'个人原文仍须共享',grounds:[{reference:'src:'+personal.body.sha256,quotation:'个人空间'}]},null,'team'),{code:'SPACE_ENTRY_INVALID'});
 });
+
+test('personal and team space writes verify kityminder@1 mindmap grounds without a run or refs.legacy-parser', async t => {
+ const w = await makeWorld(postgres, { mindmapSkill: true });
+ t.after(w.close);
+ const spaces = w.knowledge.spaces!;
+ assert.equal((await w.kit.store.find({ kind: 'action', key: 'refs.legacy-parser', value: 'kityminder@1', limit: 10 })).items.length, 0);
+ const mindmap = Buffer.from(JSON.stringify({ root: { data: { id: 'root', text: '合成脑图' }, children: [{ data: { id: 'n1', text: '开启配置检查，不要跳过。' }, children: [] }] } }));
+ const teamSource = await w.kit.artifacts.ingest({ bytes: mindmap, mediaType: 'application/json', origin: { read: { object: 'synthetic:mindmap:team' } }, author: { user: null, declared: null }, provenanceType: 'observed', visibility: { readers: [], admins: true, packs: [], shareable: false }, readTier: 'model_readable' });
+ const reference = `src:${teamSource.body.sha256}/kityminder@1/n/n1`;
+ const personalSaved = await spaces.write(w.admin, { ...note('合成个人脑图写入', '/mindmap'), grounds: [{ reference, quotation: '开启配置检查，不要跳过。' }] });
+ assert.equal(personalSaved.status, 'verified');
+ const teamSaved = await spaces.write(w.admin, { ...note('合成团队脑图写入', '/mindmap'), grounds: [{ reference, quotation: '开启配置检查，不要跳过。' }] }, null, 'team');
+ assert.equal(teamSaved.status, 'verified');
+ assert.equal((await w.knowledge.getNodes({ root: teamSaved.root, paths: ['/mindmap'], depth: 0 }, w.outsider))?.nodes[0].entries[0].statement, '合成团队脑图写入');
+});

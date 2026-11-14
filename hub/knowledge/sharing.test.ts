@@ -161,3 +161,16 @@ test('sharing previews are read-only, ordered, and confirmation rechecks current
  const original=w.kit.artifacts.source.bind(w.kit.artifacts);w.kit.artifacts.source=async()=>{throw new Error('synthetic storage outage');};
  try{const incomplete=await spaces.precheckShare(w.user,{root:personal.root,path:'/notes',entry:personal.entry});assert.equal(incomplete.checks[0].state,'incomplete');assert.ok(incomplete.checks.slice(1).every(c=>c.state==='unchecked'));}finally{w.kit.artifacts.source=original;}
 });
+
+test('mindmap kityminder@1 grounds share into team space without a run or refs.legacy-parser',async t=>{
+ const w=await makeWorld(postgres,{mindmapSkill:true});t.after(w.close);const spaces=w.knowledge.spaces!;
+ assert.equal((await w.kit.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:10})).items.length,0);
+ const mindmap=Buffer.from(JSON.stringify({root:{data:{id:'root',text:'合成脑图'},children:[{data:{id:'n1',text:'开启配置检查，不要跳过。'},children:[]}]}}));
+ const source=await w.kit.artifacts.ingest({bytes:mindmap,mediaType:'application/json',origin:{read:{object:'synthetic:mindmap:share'}},author:{user:w.user.id,declared:null},provenanceType:'observed',visibility:{readers:[w.user.id,w.outsider.id],admins:true,packs:[],shareable:false},readTier:'model_readable'});
+ const entry=await spaces.write(w.user,{...note('合成脑图团队分享条目'),grounds:[{reference:`src:${source.body.sha256}/kityminder@1/n/n1`,quotation:'开启配置检查，不要跳过。'}]});
+ assert.equal(entry.status,'verified');
+ const receipt=await spaces.share(w.user,{root:entry.root,path:'/notes',entry:entry.entry});
+ assert.equal(receipt.status,'merged',JSON.stringify(receipt));assert.ok(receipt.team_root);
+ const team=await spaces.entry(w.outsider,receipt.team_root,'/notes',entry.entry);
+ assert.equal(team?.row.status,'verified');assert.equal(team?.body.grounds[0].quotation,'开启配置检查，不要跳过。');
+});

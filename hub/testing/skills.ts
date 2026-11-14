@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {RecordsKit,Principal} from '../records/api.ts';
 import {temporaryDirectory,writePack,type PackRegistry} from '../runs/api.ts';
-import {createSkillParserRegistry,bindLegacyParser} from '../refs/api.ts';
+import {createSkillParserRegistry} from '../refs/api.ts';
 
 /** The version a repository skill pack's pack.json states, so tests follow the current release instead of pinning one. */
 export async function repositorySkillVersion(id:string):Promise<string>{
@@ -22,7 +22,6 @@ export async function installMindmapFixture(registry:PackRegistry,records:Record
   await records.authorizations.grantPublishRight(admin,admin.id,'显式合成技能安装夹具');
   const outcome=await registry.publish(admin,staged.dir);if(!outcome.ok)throw new Error('synthetic skill publication refused: '+JSON.stringify(outcome.problems));
   await registry.install(admin,manifest.id+'@'+manifest.version);
-  if(!(await records.store.find({kind:'action',key:'refs.legacy-parser',value:'kityminder@1',limit:1})).items.length)await bindLegacyParser({registry,records},admin,'kityminder@1',manifest.id+'@'+manifest.version);
   const parsers=createSkillParserRegistry({registry,records,sandbox:{requireOsIsolation:false}});await parsers.refresh!();return parsers;
  }finally{await temp.remove();}
 }
@@ -52,7 +51,6 @@ export async function installWorkbookFixture(registry:PackRegistry,records:Recor
   await records.authorizations.grantPublishRight(admin,admin.id,'显式合成技能安装夹具');
   const outcome=await registry.publish(admin,staged.dir);if(!outcome.ok)throw new Error('synthetic skill publication refused: '+JSON.stringify(outcome.problems));
   await registry.install(admin,manifest.id+'@'+manifest.version);
-  if(!(await records.store.find({kind:'action',key:'refs.legacy-parser',value:'xlsx@1',limit:1})).items.length)await bindLegacyParser({registry,records},admin,'xlsx@1',manifest.id+'@'+manifest.version);
   const parsers=createSkillParserRegistry({registry,records,sandbox:{requireOsIsolation:false}});await parsers.refresh!();return parsers;
  }finally{await temp.remove();}
 }
@@ -67,7 +65,6 @@ export async function installXmlFixture(registry:PackRegistry,records:RecordsKit
   await records.authorizations.grantPublishRight(admin,admin.id,'显式合成技能安装夹具');
   const outcome=await registry.publish(admin,staged.dir);if(!outcome.ok)throw new Error('synthetic skill publication refused: '+JSON.stringify(outcome.problems));
   await registry.install(admin,manifest.id+'@'+manifest.version);
-  if(!(await records.store.find({kind:'action',key:'refs.legacy-parser',value:'xml@1',limit:1})).items.length)await bindLegacyParser({registry,records},admin,'xml@1',manifest.id+'@'+manifest.version);
   const parsers=createSkillParserRegistry({registry,records,sandbox:{requireOsIsolation:false}});await parsers.refresh!();return parsers;
  }finally{await temp.remove();}
 }
@@ -82,7 +79,6 @@ export async function installHtmlFixture(registry:PackRegistry,records:RecordsKi
   await records.authorizations.grantPublishRight(admin,admin.id,'显式合成技能安装夹具');
   const outcome=await registry.publish(admin,staged.dir);if(!outcome.ok)throw new Error('synthetic skill publication refused: '+JSON.stringify(outcome.problems));
   await registry.install(admin,manifest.id+'@'+manifest.version);
-  if(!(await records.store.find({kind:'action',key:'refs.legacy-parser',value:'html@1',limit:1})).items.length)await bindLegacyParser({registry,records},admin,'html@1',manifest.id+'@'+manifest.version);
   const parsers=createSkillParserRegistry({registry,records,sandbox:{requireOsIsolation:false}});await parsers.refresh!();return parsers;
  }finally{await temp.remove();}
 }
