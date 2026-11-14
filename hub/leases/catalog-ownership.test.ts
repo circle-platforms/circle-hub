@@ -89,3 +89,28 @@ test('outer acquire refusal leaves no partial reservation and outer extend rolls
   assert.deepEqual(await service.holderSnapshot(['synthetic/capped']), capped);
   assert.deepEqual(await service.actionLog('synthetic/'), actions);
 });
+
+test('recent holders includes active, released and expired last rows, and takeover replaces only the last holder', async t => {
+  const f = await fixture(t), service = new LeaseService(f.db, { records: f.kit.store });
+  const prefix = 'synthetic/recent/', keys = ['active', 'released', 'expired', 'replaced'].map(name => prefix + name);
+  assert.ok((await service.acquire({ keys, holder: f.holder, prefix })).ok);
+  assert.ok((await service.release({ keys: [prefix + 'released', prefix + 'replaced'], holder: f.holder })).ok);
+  const replacement = { user: f.other, run: newId('run') };
+  assert.ok((await service.acquire({ keys: [prefix + 'replaced'], holder: replacement, prefix })).ok);
+  await f.db.query("UPDATE leases SET acquired_at=clock_timestamp()-interval '2 minutes',expires_at=clock_timestamp()-interval '1 minute' WHERE key=$1", [prefix + 'expired']);
+  const before = await service.holderSnapshot(keys);
+  const actions = await service.actionLog(prefix);
+  const recent = await f.db.transaction(tx => service.recentHolders(prefix, tx));
+  assert.equal(recent.length, 4);
+  assert.deepEqual(recent.map(row => row.key), [...keys].sort());
+  assert.deepEqual(recent.filter(row => row.active).map(row => row.key), [prefix + 'active', prefix + 'replaced']);
+  assert.deepEqual(recent.filter(row => row.released).map(row => row.key), [prefix + 'released']);
+  const expired = recent.find(row => row.key === prefix + 'expired')!;
+  assert.equal(expired.active, false); assert.equal(expired.released, false); assert.ok(expired.until);
+  const replaced = recent.filter(row => row.key === prefix + 'replaced');
+  assert.equal(replaced.length, 1); assert.equal(replaced[0].user, replacement.user); assert.equal(replaced[0].run, replacement.run);
+  assert.ok(recent.every(row => Number.isFinite(Date.parse(row.since))));
+  assert.deepEqual(await service.recentHolders('synthetic/absent/'), []);
+  assert.deepEqual(await service.holderSnapshot(keys), before);
+  assert.deepEqual(await service.actionLog(prefix), actions);
+});
