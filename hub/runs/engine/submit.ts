@@ -1,3 +1,4 @@
+import { stepNameForScope, type WorkflowStepScope } from './workflow-step.ts';
 import type { DispatchNote } from '../../dispatch/api.ts';
 import {groundsAudience} from './grounds.ts';
 
@@ -327,7 +328,11 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
     result: saved.result.digest,
     extra: { ...(saved.result.body.acceptance==='accepted' && outcome.runtimeAdmission?.length ? {admission:outcome.runtimeAdmission} : {}), reevaluation:refresh,...(incrementalGrowth?{first_material_growth:true}:{}),retry_attempts: saved.retryAttempts,...(outcome.parentObservedSuccess?{parent_observed_success:true}:{}), ...(sessionMissing ? {refusal:'session_missing'} : {}) },
   });
-  return withDispatch(ctx, run, answerOf(saved.result.body), call.traceId, user);
+  // Early refusals, partial/unproven scopes and cached results have no current producer scope.
+  const stepName = saved.result.body.errors.some(error => error.requirement === undefined)
+    ? undefined : stepNameForScope(workflow, outcome.checkedScope);
+  const answer = answerOf(saved.result.body);
+  return withDispatch(ctx, run, stepName === undefined ? answer : { ...answer, step_name: stepName }, call.traceId, user);
 }
 
 /** Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row carries the jobs the Hub dispatched
@@ -368,6 +373,7 @@ interface Basis {
 }
 
 interface Validated {
+  checkedScope?: WorkflowStepScope;
   criterionChanges?:import('./exact.ts').AcceptedCriterionChange[];
   runtimeAdmission?:RuntimeAdmission[];
   result: ValidationResult;
@@ -651,7 +657,7 @@ async function validate(base: Basis, submission: EffectiveSubmission, before: Pr
   if (rejection.length === 0) {
     const evaluation = await evaluate(ctx, input);
     evaluation.result.errors.push(...(exact.criterionRefusals??[]));
-    return { criterionChanges:exact.criterionChanges, runtimeAdmission:evaluation.runtimeAdmission, result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],parentObservedSuccess:evaluation.parentObservedSuccess, ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
+    return { checkedScope:evaluation.checkedScope, criterionChanges:exact.criterionChanges, runtimeAdmission:evaluation.runtimeAdmission, result: evaluation.result, problems: new Set([...evaluation.problems, ...evaluation.uncovered]), retryAttempts: [...exactAttempts, ...evaluation.retryAttempts],parentObservedSuccess:evaluation.parentObservedSuccess, ...(prepared === undefined ? {} : {prepared,refusals,model:submission.model}) };
   }
   // W08 R[1]: the checks still run on the items whose own values resolved; their refutations are the fix notes.
   const failed = new Set<string>([...exact.failedItems, ...structure.flatMap((e) => (e.item !== undefined ? [e.item] : []))]);
