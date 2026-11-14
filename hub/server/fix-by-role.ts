@@ -10,6 +10,12 @@ import { packListHead, packListHeadForMember } from './pack-words.ts';
 
 export type CallerRole = 'admin' | 'user';
 
+/** Fill runtime caller account name into admin next steps; keep `<理由>` and other admin-written placeholders. */
+export function fillCallerAccountName(text: string, callerName: string | undefined): string {
+  if (callerName === undefined || callerName.length === 0) return text;
+  return text.replaceAll('<当前账户的名字>', callerName);
+}
+
 const ASK_ADMIN = /请管理员|由管理员|联系管理员|请对象的主人或管理员|或请主人、管理员|并由管理员|或由管理员|请内容的主人分享，或请管理员|仍失败时由资源管理员|由资源管理员|或 Hub 管理员|或系统包负责人|或联系管理员/;
 
 /** Top-level `circle-hub <name>` must appear in COMMAND_METADATA. */
@@ -126,17 +132,18 @@ function rewriteAskAdmin(fix: string): string {
  * Fix string for this caller. Member (default): contract / provided fix. Admin: registry-backed next steps;
  * never imperative「请管理员…」pointing at self.
  */
-export function fixByRole(code: string, role: CallerRole, memberFix?: string): string | undefined {
+export function fixByRole(code: string, role: CallerRole, memberFix?: string, callerName?: string): string | undefined {
   const member = memberDefault(code, memberFix);
   if (role !== 'admin') return member;
   const mapped = adminForCode(code);
   if (mapped !== undefined) {
-    assertRegisteredNames(mapped);
-    return mapped;
+    const filled = fillCallerAccountName(mapped, callerName);
+    assertRegisteredNames(filled);
+    return filled;
   }
   if (member === undefined) return undefined;
   if (!ASK_ADMIN.test(member)) return member;
-  const rewritten = rewriteAskAdmin(member);
+  const rewritten = fillCallerAccountName(rewriteAskAdmin(member), callerName);
   assertRegisteredNames(rewritten);
   return rewritten;
 }

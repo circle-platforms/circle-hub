@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
-import { StartRunOutput, GetNodesOutput } from '../../contracts/src/tools.ts';
+import { StartRunOutput, GetNodesOutput, SubmitResultOutput } from '../../contracts/src/tools.ts';
 import { COMMAND_METADATA } from './command-registry.ts';
 import {
   CALL_ERROR_CATEGORIES,
@@ -46,6 +46,8 @@ test('Boss afternoon reassignments land in CATEGORY_BY_CODE', () => {
   assert.equal(callErrorCategoryOf('TEAM_PARSER_REQUIRED'), '不存在');
   assert.equal(callErrorCategoryOf('SYNC_MODE_LOCAL'), '不存在');
   assert.equal(callErrorCategoryOf('LEASE_EXPIRED'), '不存在');
+  assert.equal(callErrorCategoryOf('EFFECT_UNKNOWN_DISPOSED'), null);
+  assert.deepEqual(errorPresentationOf('EFFECT_UNKNOWN_DISPOSED'), { kind: 'conclusion' });
 });
 
 test('pack-scoped codes default to 参数无效, not conclusion', () => {
@@ -94,6 +96,18 @@ test('SOURCE_NOT_PERMITTED member and admin next steps differ; admin commands ar
   assert.doesNotMatch(admin, /请管理员|状态|判断|决定者|任务包|分享读取权限|换一个|用法见该命令登记/);
   assertCommandsRegistered(admin);
   assertCommandsRegistered(adminFix);
+
+  const named = renderCallError(
+    { code: 'SOURCE_NOT_PERMITTED', message: '任务包 recompose 存在，没有分配给你', fix: adminFix },
+    'admin',
+    adminFix,
+    '合成成员',
+  )!;
+  assert.equal(
+    named,
+    '无权限：当前账户未获授权使用工作流「recompose」。请执行 circle-hub pack assign 合成成员 recompose 为该账户分配，或在控制台「团队」页为所在团队分配。',
+  );
+  assert.doesNotMatch(named, /<当前账户的名字>/);
 });
 
 test('knowledge-tree-root denial keeps 绑定产品线 semantics', () => {
@@ -211,6 +225,22 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
   assert.doesNotMatch(adminDenied, /状态|判断|决定者|请管理员|分享读取权限|用法见该命令登记/);
   assertCommandsRegistered(adminDenied);
 
+  const adminNamed = toolText('start_run', StartRunOutput.parse({
+    call_result: 'error',
+    errors: [{
+      code: 'SOURCE_NOT_PERMITTED',
+      message: '任务包 recompose 存在，没有分配给你',
+      fix: fixByRole('SOURCE_NOT_PERMITTED', 'admin', '请管理员把它分配给你', '合成成员')!,
+      path: '/pack',
+    }],
+    trace: TRACE,
+  }), { caller: { role: 'admin', name: '合成成员' } });
+  assert.equal(
+    adminNamed,
+    '无权限：当前账户未获授权使用工作流「recompose」。请执行 circle-hub pack assign 合成成员 recompose 为该账户分配，或在控制台「团队」页为所在团队分配。',
+  );
+  assert.doesNotMatch(adminNamed, /<当前账户的名字>/);
+
   const leaseAdmin = fixByRole('LEASE_UNAVAILABLE', 'admin')!;
   const leaseText = toolText('start_run', StartRunOutput.parse({
     call_result: 'error',
@@ -244,4 +274,69 @@ test('toolText renders category form for the three codes and SOURCE_UNAVAILABLE 
   assert.match(unknown, /^资料尚未取得。/);
   assert.match(unknown, /当前账户读不到这份资料；状态未知；原因缺资料；下一步由使用者联系管理员核对；决定者程序/);
   assert.doesNotMatch(unknown, /对你不可用|判断错误|参数无效|无权限/);
+});
+
+test('Boss 14:32 RUN_SUPERSEDED passes throw-site fact and table next', () => {
+  const fact = '这次运行已有后续的运行 run_synth_successor，不再接受提交';
+  assert.equal(callErrorFact('RUN_SUPERSEDED', fact), fact);
+  assert.equal(
+    renderCallError({ code: 'RUN_SUPERSEDED', message: fact }, 'user', PROTOCOL_CODES.RUN_SUPERSEDED.fix),
+    '不存在：这次运行已有后续的运行 run_synth_successor，不再接受提交。要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续。',
+  );
+  // Current engine message (Codex still to rewrite): still pass through, never invent a numberless fact.
+  const legacy = '运行 run_old 已被新修订 run_new 取代';
+  assert.equal(callErrorFact('RUN_SUPERSEDED', legacy), legacy);
+  assert.match(
+    renderCallError({ code: 'RUN_SUPERSEDED', message: legacy }, 'user', undefined)!,
+    /^不存在：运行 run_old 已被新修订 run_new 取代。要修改已交的内容/,
+  );
+});
+
+test('Boss 14:32 RUN_ABANDONED target sentence', () => {
+  assert.equal(
+    renderCallError({ code: 'RUN_ABANDONED', message: PROTOCOL_CODES.RUN_ABANDONED.when }, 'user', PROTOCOL_CODES.RUN_ABANDONED.fix),
+    '不存在：这次运行已放弃，不再接受提交。请用 start_run 以这次运行为前驱（predecessor）开始新的运行。',
+  );
+});
+
+test('Boss 14:32 EFFECT_UNKNOWN_DISPOSED is a核对结论, not a call-error category', () => {
+  assert.equal(callErrorCategoryOf('EFFECT_UNKNOWN_DISPOSED'), null);
+  assert.equal(renderCallError({ code: 'EFFECT_UNKNOWN_DISPOSED', message: PROTOCOL_CODES.EFFECT_UNKNOWN_DISPOSED.when }, 'user', PROTOCOL_CODES.EFFECT_UNKNOWN_DISPOSED.fix), null);
+  const text = toolText('submit_result', SubmitResultOutput.parse({
+    call_result: 'error',
+    acceptance: 'not_accepted',
+    errors: [{
+      code: 'EFFECT_UNKNOWN_DISPOSED',
+      message: PROTOCOL_CODES.EFFECT_UNKNOWN_DISPOSED.when,
+      fix: PROTOCOL_CODES.EFFECT_UNKNOWN_DISPOSED.fix,
+    }],
+    trace: TRACE,
+  }));
+  assert.match(text, /效果原结局仍未证明，运行者已具名选择标记失败处置/);
+  assert.match(text, /状态已确认；判断错误/);
+  assert.match(text, /决定者程序/);
+  assert.doesNotMatch(text, /^不存在：|^参数无效：|^无权限：|^已被占用：|^暂时不可用：/m);
+});
+
+test('Boss 14:32 admin next steps fill the caller account name; <理由> stays', () => {
+  const knowledge = callErrorNext(
+    'SOURCE_NOT_PERMITTED',
+    'admin',
+    '分享读取权限',
+    '条目 foo 存在，你没有读取权限',
+    '合成成员',
+  );
+  assert.equal(
+    knowledge,
+    '请执行 circle-hub share run <运行编号> --users 合成成员 分享读取权限，或改用当前账户能读的引用',
+  );
+  const lease = callErrorNext(
+    'LEASE_UNAVAILABLE',
+    'admin',
+    PROTOCOL_CODES.LEASE_UNAVAILABLE.fix,
+    '键 bed/合成环境/client0 上有未到期的占用',
+    '合成成员',
+  );
+  assert.match(lease, /--reason <理由>/);
+  assert.doesNotMatch(lease, /<当前账户的名字>/);
 });

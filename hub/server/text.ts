@@ -45,12 +45,17 @@ export interface TextContext {
   unavailable?: readonly { external: string; role: SourceRole }[];
   /** start_run: what the pack's expected-sources function reported, its failure included (further evidence gaps). */
   gaps?: readonly { code: string; message: string }[];
-  /** Caller role for D3 next-step wording; omit or non-admin → member projection. */
-  caller?: { role: CallerRole };
+  /** Caller role and account name for D3 next-step wording; omit or non-admin → member projection. */
+  caller?: { role: CallerRole; name?: string };
 }
 
 function callerRole(context: TextContext): CallerRole {
   return context.caller?.role === 'admin' ? 'admin' : 'user';
+}
+
+function callerName(context: TextContext): string | undefined {
+  const name = context.caller?.name;
+  return typeof name === 'string' && name.length > 0 ? name : undefined;
 }
 /** The longest a field is shown inside a line; a longer one keeps its start and is marked (Clip). */
 const CLIP = { name: 300, code: 200, label: 300, summary: 300, problemLabel: 80, problemMessage: 200, field: 1500, message: 1000, fix: 500, path: 1000, data: 4000, line: 3000 } as const;
@@ -205,7 +210,6 @@ const D3_FACT_REWRITE = new Set([
   'SYNC_PURGE_CONFIRMATION_REQUIRED',
   'RUN_SUPERSEDED',
   'RUN_ABANDONED',
-  'EFFECT_UNKNOWN_DISPOSED',
 ]);
 
 /**
@@ -244,13 +248,14 @@ function conclusionErrorLine(error: ProtocolError, message: string, fix: string 
 
 function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextContext = {}): string {
   const role = callerRole(context);
+  const account = callerName(context);
   const allUnknown = v.errors.length > 0 && v.errors.every(unknownError);
   // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
   const lead = allUnknown ? '资料尚未取得。' : null;
   const lines = v.errors.map((error) => {
     // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
     const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
-    const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix);
+    const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
     const presentation = errorPresentationOf(error.code);
     if (presentation.kind === 'unavailable') {
       return conclusionErrorLine(error, error.message, fix);
@@ -263,7 +268,7 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
       const next = escalated
         ? fix
         : D3_FACT_REWRITE.has(error.code)
-          ? callErrorNext(error.code, role, fix, error.message)
+          ? callErrorNext(error.code, role, fix, error.message, account)
           : (fix ?? '由使用者核对输入资料');
       return callErrorLine(category, fact, next, error.rounds_left);
     }
@@ -722,6 +727,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
   }
   for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note));
   const role = callerRole(context);
+  const account = callerName(context);
   for (const error of v.errors) {
     if (error.item !== undefined && represented.has(error.item)) continue;
     const original = context.items?.find(item => item.id === error.item);
@@ -732,14 +738,14 @@ function submitText(v: SubmitOut, context: TextContext): string {
       ? proseByRole(role, 'missing_result_record')
       : escalated
         ? error.fix
-        : fixByRole(error.code, role, error.fix);
+        : fixByRole(error.code, role, error.fix, account);
     const fact = original === undefined ? message : `${caseName(original, original.label)}，${message}`;
     const category = callErrorCategoryOf(error.code);
     if (category !== null) {
       const next = escalated
         ? fix
         : !missingRecord && D3_FACT_REWRITE.has(error.code)
-          ? callErrorNext(error.code, role, fix, error.message)
+          ? callErrorNext(error.code, role, fix, error.message, account)
           : fix;
       const factText = !missingRecord && D3_FACT_REWRITE.has(error.code) && original === undefined
         ? callErrorFact(error.code, error.message)

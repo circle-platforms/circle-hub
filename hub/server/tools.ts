@@ -1173,12 +1173,13 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
   call.state.acceptance = value.acceptance ?? null;
   call.state.errorCode = value.call_result === 'error' ? (value.errors[0]?.code ?? null) : null;
   const role: CallerRole = call.principal.role === 'admin' ? 'admin' : 'user';
+  const accountName = call.principal.name;
   // D3: structured fix and reader text stay in sync for administrators (before D5 appends).
   if (role === 'admin' && Array.isArray(value.errors) && value.errors.length > 0) {
     value = {
       ...value,
       errors: value.errors.map((error) => {
-        const fix = fixByRole(error.code, 'admin', error.fix);
+        const fix = fixByRole(error.code, 'admin', error.fix, accountName);
         return fix === undefined ? error : { ...error, fix };
       }),
     };
@@ -1205,7 +1206,7 @@ async function callToolWithPermissions(deps: ServerDeps, call: ToolCall, name: s
       }
     }
   }
-  const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items, caller: { role } };
+  const context: TextContext = { ...reply.text, paging: PAGING, items: feedRun?.run.items, caller: { role, name: accountName } };
   let text: string;
   try {
     text = toolText(name, value, context);

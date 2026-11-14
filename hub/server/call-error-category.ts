@@ -6,7 +6,9 @@
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import { SYNC_MODE_UI } from '../../contracts/generated/vocabulary.ts';
 import { callErrorCategoryOf, type CallErrorCategory } from './error-reasons.ts';
-import { circleHubFromMetadata, circleHubFromParameters } from './fix-by-role.ts';
+import { circleHubFromMetadata, circleHubFromParameters, fillCallerAccountName } from './fix-by-role.ts';
+
+export { fillCallerAccountName } from './fix-by-role.ts';
 import { connectionsPath, knowledgePath, settingsPath, teamPath } from './console/routes.ts';
 import { unassignedPackFact, unassignedPackNext } from './pack-words.ts';
 
@@ -147,14 +149,9 @@ export function callErrorFact(code: string, message: string): string {
   if (code === 'SYNC_MODE_LOCAL') {
     return `Hub 上没有这个来源的内容，它的同步方式是「${SYNC_MODE_UI.local}」`;
   }
-  if (code === 'RUN_SUPERSEDED') {
-    return '这次运行已被新的运行取代，不再接受提交';
-  }
+  // RUN_SUPERSEDED: fact comes from the throw site (must name the successor run); do not hard-code without the id (Boss 14:32).
   if (code === 'RUN_ABANDONED') {
     return '这次运行已放弃，不再接受提交';
-  }
-  if (code === 'EFFECT_UNKNOWN_DISPOSED') {
-    return '这次效果的结局还没有证明，运行者已将其标记为失败处置';
   }
   if (code === 'SOURCE_PENDING_REVIEW' && !/评审/.test(fact)) {
     return '该观察仍在评审中、尚未生效';
@@ -250,16 +247,12 @@ const NEXT_BY_CODE: Record<string, NextRow> = {
     admin: () => '请使用已有的条目，或修改陈述后重新核对依据',
   },
   RUN_SUPERSEDED: {
-    member: '请对新的运行提交',
-    admin: () => '请对新的运行提交',
+    member: '要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续',
+    admin: () => '要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续',
   },
   RUN_ABANDONED: {
-    member: '请开始新的运行',
-    admin: () => '请开始新的运行',
-  },
-  EFFECT_UNKNOWN_DISPOSED: {
-    member: '请按处置记录归入已拒收；原效果结局与冻结或解除许可仍按原记录，不把这次处置当作已证明未执行',
-    admin: () => '请按处置记录归入已拒收；原效果结局与冻结或解除许可仍按原记录，不把这次处置当作已证明未执行',
+    member: '请用 start_run 以这次运行为前驱（predecessor）开始新的运行',
+    admin: () => '请用 start_run 以这次运行为前驱（predecessor）开始新的运行',
   },
   SYNC_PURGE_CONFIRMATION_REQUIRED: {
     member: '请在 10 分钟内于 Hub 控制台的同步方式中确认这次清除，再用同一请求重试',
@@ -332,32 +325,44 @@ export function callErrorNext(
   role: 'admin' | 'user',
   fix: string | undefined,
   message = '',
+  callerName?: string,
 ): string {
+  let next: string;
   if (code === 'SOURCE_NOT_PERMITTED') {
     const kind = notPermittedKindOf(message, fix);
     const row =
       kind === 'root' ? KNOWLEDGE_ROOT_NEXT : kind === 'knowledge' ? KNOWLEDGE_NEXT : kind === 'system' ? SYSTEM_NEXT : PACK_NEXT;
-    return role === 'admin' ? row.admin(message) : row.member;
+    next = role === 'admin' ? row.admin(message) : row.member;
+  } else {
+    const row = NEXT_BY_CODE[code];
+    if (row !== undefined) {
+      next = role === 'admin' ? row.admin(message) : row.member;
+    } else {
+      const raw = fix === undefined ? '' : stripSentenceEnd(fix);
+      if (role === 'admin') {
+        next = raw.length > 0 ? raw : '核对后重试';
+      } else if (raw.length === 0) {
+        next = '请联系管理员处理';
+      } else if (!/^请/.test(raw)) {
+        next = `请${raw}`;
+      } else {
+        next = raw;
+      }
+    }
   }
-  const row = NEXT_BY_CODE[code];
-  if (row !== undefined) {
-    return role === 'admin' ? row.admin(message) : row.member;
-  }
-  const raw = fix === undefined ? '' : stripSentenceEnd(fix);
-  if (role === 'admin') {
-    if (raw.length > 0) return raw;
-    return '核对后重试';
-  }
-  if (raw.length === 0) return '请联系管理员处理';
-  if (!/^请/.test(raw)) return `请${raw}`;
-  return raw;
+  return role === 'admin' ? fillCallerAccountName(next, callerName) : next;
 }
 
 /** Full reader line when the code is a mapped call refusal; otherwise null. */
-export function renderCallError(error: ProtocolError, role: 'admin' | 'user', fix: string | undefined): string | null {
+export function renderCallError(
+  error: ProtocolError,
+  role: 'admin' | 'user',
+  fix: string | undefined,
+  callerName?: string,
+): string | null {
   const category = callErrorCategoryOf(error.code);
   if (category === null) return null;
   const fact = callErrorFact(error.code, error.message);
-  const next = callErrorNext(error.code, role, fix, error.message);
+  const next = callErrorNext(error.code, role, fix, error.message, callerName);
   return `${category}：${fact}。${next}。`;
 }

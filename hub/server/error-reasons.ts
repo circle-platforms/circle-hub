@@ -78,7 +78,7 @@ const CATEGORY_BY_CODE = {
   TEAM_PARSER_REQUIRED: '不存在',
   SYNC_MODE_LOCAL: '不存在',
   LEASE_EXPIRED: '不存在',
-  EFFECT_UNKNOWN_DISPOSED: '不存在',
+  // EFFECT_UNKNOWN_DISPOSED is a核对结论 (item judgment), not a call refusal (Boss 14:32).
   // 已被占用
   LEASE_UNAVAILABLE: '已被占用',
   FENCING_STALE: '已被占用',
