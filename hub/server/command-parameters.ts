@@ -126,6 +126,11 @@ const executorAssign = (action: 'assign' | 'unassign') => define(['executor', ac
   { rules: [{ oneOf: [{ required: ['team'], not: { required: ['user'] } }, { required: ['user'], not: { required: ['team'] } }] }] });
 const leaseSource = { file: 'hub/server/cli-admin.ts', symbol: 'leaseCommand' };
 const bedSource = { file: 'hub/server/cli-job.ts', symbol: 'bedCommand' };
+const environmentSource = { file: 'hub/server/cli-test-environment.ts', symbol: 'testEnvironmentCommand' };
+const environmentName = () => positional('environment', '测试环境', '普通登记的测试环境名字，不是执行器编号', true, stringSchema, true);
+const environmentAssignment = (action: 'assign' | 'unassign') => define(['bed', action], action === 'assign' ? '分配测试环境' : '撤回测试环境分配', environmentSource,
+  [environmentName()], { team: text('团队', '团队名字，与账户和全体互斥', { dynamicChoices: true }), user: text('账户', '账户名字，与团队和全体互斥', { dynamicChoices: true }), all: flag('全体成员', '分配给全体启用账户'), ...(action === 'assign' ? { 'expires-at': text('到期时间', '可选的UTC到期时间；不填为不设到期时间') } : {}), note },
+  { rules: [{ oneOf: [{ required: ['team'], not: { anyOf: [{ required: ['user'] }, { required: ['all'], properties: { all: { const: true } } }] } }, { required: ['user'], not: { anyOf: [{ required: ['team'] }, { required: ['all'], properties: { all: { const: true } } }] } }, { required: ['all'], properties: { all: { const: true } }, not: { anyOf: [{ required: ['team'] }, { required: ['user'] }] } }] }] });
 const maintenanceReason = text('理由', '必填；由原命令与服务核验并写入动作记录', { required: true });
 const leasePrefix = () => positional('prefix', '租约前缀', '已发布工作流声明下的登记前缀，原命令核对归属', true, stringSchema, true);
 const bedExecutor = () => positional('executor', '执行器', '已登记的测试环境执行器编号', true, stringSchema, true);
@@ -176,6 +181,9 @@ export const COMMAND_PARAMETERS = {
   'lease.register': define(['lease', 'register'], '登记租约前缀归属', leaseSource, [leasePrefix()], { owner: text('登记所有者', '启用的账户名或编号；由原命令核对', { required: true, dynamicChoices: true }), reason: maintenanceReason, as }),
   'lease.unregister': define(['lease', 'unregister'], '注销租约前缀登记', leaseSource, [leasePrefix()], { reason: maintenanceReason, as }),
   'lease.release': define(['lease', 'release'], '强制释放租约键', leaseSource, [positional('key', '租约键', '原命令在释放前及事务守卫内核对未终态作业；本地释放不证明远端停止', true, stringSchema, true)], { reason: maintenanceReason, as }),
+  'bed.register': define(['bed', 'register'], '登记测试环境', environmentSource, [positional('name', '测试环境名字', '管理员给测试环境的明确名字')], { target: text('目标', '同一目标的多个执行器归同一个测试环境', { required: true }), prefix: repeated('预订前缀', '属于该测试环境的预订键前缀，以 / 结尾'), resource: repeated('资源键', '属于该测试环境的精确资源键'), executor: repeated('执行器', '关联的已登记执行器明确名字') }, { rules: [{ anyOf: [{ required: ['prefix'] }, { required: ['resource'] }] }] }),
+  'bed.assign': environmentAssignment('assign'), 'bed.unassign': environmentAssignment('unassign'),
+  'bed.remove': define(['bed', 'remove'], '注销测试环境', environmentSource, [environmentName()], {}),
   'bed.baseline.record': define(['bed', 'baseline', 'record'], '登记干净基线', bedSource, [bedExecutor()], { probe: text('探针', '执行器声明的探针编号，由原服务核验', { required: true, dynamicChoices: true }), reason: text('说明', '可选的登记说明') }),
   'bed.hold.clear': define(['bed', 'hold', 'clear'], '结清运行环境占用', bedSource, [bedExecutor()], { reason: maintenanceReason }),
   'knowledge.sync': define(['knowledge', 'sync'], '同步知识来源', { file: 'hub/knowledge/cli.ts', symbol: 'parseKnowledgeSyncArgs' }, [], { product, line, 'dry-run': flag('只检查', '不保存同步产物'), recheck: flag('重新检查', '重新核对已知来源'), 'include-unreleased': flag('包含未发布构建', '同步未标为已发布的构建'), 'max-age': text('来源缓存秒数', '原解析允许 0 或至多 10 位十进制非负整数秒；0 强制重新读取', { schema: { type: 'string', pattern: '^(0|[1-9][0-9]{0,9})$' } }) }),

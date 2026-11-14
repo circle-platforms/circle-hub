@@ -101,7 +101,7 @@ export class Session {
     this.#leases ??= (async () => {
       const records = await this.records();
       this.#leaseDatabase = new Database(createPool(this.config().database, 2));
-      return new LeaseService(this.#leaseDatabase, { records: records.store });
+      return new LeaseService(this.#leaseDatabase, { records: records.store, catalog: records.testEnvironments });
     })();
     return this.#leases;
   }

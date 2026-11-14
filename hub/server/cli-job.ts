@@ -1,3 +1,4 @@
+import { testEnvironmentCommand, TEST_ENVIRONMENT_USAGE } from './cli-test-environment.ts';
 import { ExecutorStableName } from '../../contracts/api.ts';
 import { secretUseLabels } from './secret-use-labels.ts';
 // Administrator CLI only. Remote content is retained as sources; terminal output carries no remote body or resource names.
@@ -229,11 +230,11 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
   } finally { await dispatch.close(); }
 }
 
-export const BED_USAGE = 'baseline record <执行器> --probe <id> [--reason <说明>] | baseline list [<执行器>] | baseline show <执行器> --probe <id> | hold clear <执行器> --reason <理由>';
+export const BED_USAGE = TEST_ENVIRONMENT_USAGE + ' | baseline record <执行器> --probe <id> [--reason <说明>] | baseline list [<执行器>] | baseline show <执行器> --probe <id> | hold clear <执行器> --reason <理由>';
 
 export async function bedCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [group, sub, ...rest] = args;
-  if (group !== 'baseline' && group !== 'hold') throw new UsageError(`bed 的子命令：${BED_USAGE}`);
+  if (group !== 'baseline' && group !== 'hold') return testEnvironmentCommand(s, args);
   let parsed;
   try {
     parsed = parseArgs({

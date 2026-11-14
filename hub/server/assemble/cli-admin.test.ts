@@ -1947,7 +1947,7 @@ test('administrator listings mask deleted owners, assignees, lease principals an
  await kit.principals.setRole(actor,member.id,'admin');
  await expectOk(admin,['pack','grant-publish',member.id]);await expectOk(admin,['pack','publish',packs.review],{[OPERATOR_TOKEN_VARIABLE]:token});await expectOk(admin,['pack','assign',member.id,REVIEW_PACK]);
  const {newId}=await import('../../records/api.ts'),{randomUUID}=await import('node:crypto'),db=new Database(createPool(loadServerConfig(admin.deployment.env).database,2));t.after(()=>db.end());
- const leases=new LeaseService(db,{records:kit.store});assert.ok((await leases.register({prefix:'synthetic/deleted/',declaredPrefix:'synthetic/',owner:member.id,by:actor.id,reason:'合成删除身份回归',admin:true})).ok);assert.ok((await leases.acquire({keys:['synthetic/deleted/held'],prefix:'synthetic/',holder:{user:member.id,run:newId('run')}})).ok);
+ const leases=new LeaseService(db,{records:kit.store,catalog:kit.testEnvironments});await kit.testEnvironments.register(actor,{name:'合成删除环境',target:'synthetic-deleted-target',prefixes:[{prefix:'synthetic/deleted/',owner:member.id,registered_at:new Date().toISOString()}],resources:[],executors:[],enabled:true,missing_facts:[]});assert.ok((await leases.acquire({keys:['synthetic/deleted/held'],prefix:'synthetic/',holder:{user:member.id,run:newId('run')}})).ok);
  await kit.authorizations.share(actor,newId('run'),[member.id],'合成分享身份回归');
  const api=kit.memberDeletions!,preview=await api.preview(actor,member.id),intent=await api.prepare(actor,{...preview,operation_id:randomUUID()});await api.finish(actor,member.id,intent.operation_id);
  const expected=uiLabelOf('account_display_name','deleted_member')+'（'+member.id+'）';
