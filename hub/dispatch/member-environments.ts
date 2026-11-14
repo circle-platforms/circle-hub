@@ -1,7 +1,8 @@
+import {ExecutorSource} from '../../contracts/src/resources.ts';
 // Member-visible environment assignments and booking admission; source identities stay inside the Hub.
 import {type TestEnvironment} from '../../contracts/api.ts';
 import type { ProtocolError } from '../../contracts/src/common.ts';
-import { isAdmin, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
+import { sha256Hex, isAdmin, type Principal, type RecordsKit, type Transaction } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
 import type { ExecutorRegistry } from './executors.ts';
 
@@ -27,11 +28,11 @@ export interface UnattributedHolding {
 }
 
 export class MemberEnvironments {
-  readonly records: Pick<RecordsKit, 'testEnvironments' | 'artifacts' | 'principals'>;
+  readonly records: Pick<RecordsKit, 'testEnvironments' | 'artifacts' | 'objects' | 'principals'>;
   readonly registry: Pick<ExecutorRegistry, 'readSource'>;
   readonly leases: Pick<LeaseService, 'view' | 'registrations'>;
   constructor(
-    records: Pick<RecordsKit, 'testEnvironments' | 'artifacts' | 'principals'>,
+    records: Pick<RecordsKit, 'testEnvironments' | 'artifacts' | 'objects' | 'principals'>,
     registry: Pick<ExecutorRegistry, 'readSource'>,
     leases: Pick<LeaseService, 'view' | 'registrations'>,
   ) {
@@ -56,8 +57,21 @@ export class MemberEnvironments {
     return [...environments.values()];
   }
 
-  /** The records authority resolves ordinary variables and validates the explicit environment binding in this transaction. */
-  readonly permission:EnvironmentPermission = (actor,executor,tx)=>this.records.testEnvironments.canUseExecutor(actor,executor,tx);
+  /** Resolve all resource candidates before the records authority checks the ordinary-variable target in this transaction. */
+  readonly permission:EnvironmentPermission = async(actor,executor,tx)=>{
+    const snapshot=await this.records.artifacts.capturePermissionSnapshot?.(actor,tx);
+    const config=snapshot?.latest('resource_config','*','executor.'+executor);
+    if(!snapshot?.user || snapshot.user.disabled || snapshot.user.deleted_at || !config || !snapshot.enabled(config) || !config.body.bound)return false;
+    const bytes=await this.records.objects.get(config.body.bound,tx);
+    if(!bytes || sha256Hex(bytes)!==config.body.bound)throw new Error('测试环境关联执行器的登记原件不可核对');
+    const source=ExecutorSource.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
+    if(source.id!==executor || !source.enabled)return false;
+    const environments=await this.environments(source.resources,tx);
+    if(!environments || environments.length!==1)return false;
+    const environment=environments[0];
+    if(!environment.enabled || !environment.executors.includes(executor))return false;
+    return this.records.testEnvironments.canUseExecutor(actor,environment.id,executor,tx);
+  };
 
   async canUse(actor:Principal,executor:string):Promise<boolean> { return this.permission(actor,executor); }
 
