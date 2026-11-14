@@ -81,7 +81,7 @@ test('same-connection API grants, M2 and completion commit together, and restart
   const preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources);
   assert.equal(preview.canApply, true);
   assert.equal(preview.minimumReaderLevel, 2);
-  assert.match(preview.downgradeNotice, /不能直接降回 4a/);
+  assert.match(preview.downgradeNotice, /完成后最低安全级别为 2，不能直接降回未实施这套权限规则的旧版本/);
   const result = await applyEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources, preview);
   assert.equal(result.grants, 1);
   const grant = await f.auth.latest('resource_assign', f.user.id, f.executor);
@@ -328,12 +328,14 @@ test('activation is publicly readable only after completion and runtime grants s
   const preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources);
   await assert.rejects(applyEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources, preview, { runtimeRole: 'missing_synthetic_runtime' }));
   await f.unchanged();
-  const role = 'synthetic_atomic_runtime';
-  await f.db.query('CREATE ROLE ' + role);
+  const role = 'synthetic_atomic_runtime', password = randomBytes(24).toString('hex');
+  await f.db.query('CREATE ROLE ' + role + " LOGIN NOSUPERUSER PASSWORD '" + password + "'");
   await f.db.query('REVOKE TEMPORARY ON DATABASE "' + f.config.database.database + '" FROM PUBLIC');
   await f.db.query('GRANT USAGE ON SCHEMA public TO ' + role);
   const receipt = await applyEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources, preview, { runtimeRole: role });
-  assert.deepEqual(await readEnvironmentAssignmentActivation(f.config), { ...receipt, alreadyCompleted: true });
+  await assert.rejects(readEnvironmentAssignmentActivation(f.config), /运行角色只读约束/);
+  const runtimeConfig = { ...f.config, database: { ...f.config.database, user: role, password } };
+  assert.deepEqual(await readEnvironmentAssignmentActivation(runtimeConfig), { ...receipt, alreadyCompleted: true });
   const rights = (await f.db.query("SELECT has_table_privilege($1,'public.environment_assignment_completion','SELECT') AS read, has_table_privilege($1,'public.environment_assignment_completion','INSERT') AS write", [role])).rows[0];
   assert.equal(rights.read, true);
   assert.equal(rights.write, false);
