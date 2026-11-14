@@ -28,6 +28,7 @@ import { ValidationResult } from './validation.ts';
 export * from '../generated/vocabulary.ts';
 export * from '../generated/protocol.ts';
 export * from './common.ts';
+export { TestEnvironmentId, TestEnvironmentPrefix, TestEnvironmentResource, TestEnvironmentInput, TestEnvironment, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY, TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION } from './resources.ts';
 export * from './reference.ts';
 export * from './claim.ts';
 export * from './validation.ts';
