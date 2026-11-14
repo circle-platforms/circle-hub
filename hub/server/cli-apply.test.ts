@@ -4,17 +4,20 @@ import { mkdtemp, mkdir, writeFile, rm, readFile, stat, chmod, symlink, readdir 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { exportProtectedConfiguration, applyProtectedConfiguration, createResetConfigurationPorts, type ProtectedConfigurationDomain, applyCommand, applyDeployment, deploymentOrder, differentFields, exactMatch, exportCommand, exportDeployment, parseDeployment } from './cli-apply.ts';
+import { exportProtectedConfiguration, applyProtectedConfiguration, createResetConfigurationPorts, type ProtectedConfigurationDomain, applyCommand, applyDeployment, deploymentOrder, differentFields, exactName, exportCommand, exportDeployment, parseDeployment } from './cli-apply.ts';
 import { terminalSafe } from './assemble/terminal.ts';
-import { ExecutorRegistry } from '../dispatch/api.ts';
+import { ExecutorNames, ExecutorRegistry } from '../dispatch/api.ts';
 import { canonicalBytes, sha256Hex, type Principal } from '../records/api.ts';
 import type { Session } from './cli-session.ts';
-import type { DeploymentDefinition } from '../../contracts/src/deployment.ts';
+import { ExecutorSource } from '../../contracts/src/resources.ts';
+import type { ExecutorNameBinding, DeploymentDefinition } from '../../contracts/src/deployment.ts';
 
 const uid = 'usr_00000000000000000000000001', tid = 'tm_00000000000000000000000001', rid = 'res_00000000000000000000000001';
 const admin = { id: uid, name: '合成管理员', role: 'admin' as const, disabled: false, deleted_at: null };
 function fake(t: TestContext) {
   const calls: string[] = [], output: string[] = [];
+  const executorNames:ExecutorNameBinding[]=[];
+  t.mock.method(ExecutorNames.prototype,'inspect',async()=>({active:executorNames,reserved:executorNames}));
   const accounts = [admin], teams: Array<{ id: string; name: string }> = [], memberships = new Map<string, string[]>();
   const assignments = new Set<string>(), objects = new Map<string, Uint8Array>();
   const resources: Array<{ id: string; name: string; enabled: boolean }> = [];
@@ -37,7 +40,7 @@ function fake(t: TestContext) {
     authorizations: {
       resourceConfig: async (id: string) => configs.get(id) ?? null,
       history: async () => ({ items: [], next: null }),
-      teamsOf: async () => ({ teams: [], all: false }),
+      teamsOf: async (_by:unknown,kind:string,object:string) => ({teams:teams.filter(team=>assignments.has(`${kind==='pack'?'assign':'resource_assign'}:${team.id}:${object}`)),all:assignments.has(`resource_assign:*:${object}`)}),
       isActive: async (permission: string, subject: string, object: string) => assignments.has(`${permission}:${subject}:${object}`),
       assignResource: async (_by: unknown, resource: string, subject: string) => { calls.push('resource-assign'); assignments.add(`resource_assign:${subject}:${resource}`); },
       canPublish: async () => publishRight,
@@ -86,20 +89,21 @@ function fake(t: TestContext) {
   t.mock.method(ExecutorRegistry.prototype, 'sources', async () => []);
   const session = { ctx: { io: { cwd: tmpdir(), stdout: (line: string) => output.push(line) } }, admin: async () => admin, leases: async () => ({ registrations: async () => [] }), records: async () => records, hub: async () => hub,
     out: (line: string) => output.push(terminalSafe(line)), err: (line: string) => output.push(line) } as unknown as Session;
-  return { session, calls, output, accounts, teams, publications, resources, objects, configs, installed };
+  return { session, calls, output, accounts, teams, publications, resources, objects, configs, installed,executorNames };
 }
 
 test('strict deployment rejects secret material and misspelled fields without echoing values', () => {
-  for (const input of [ { schema: 'deployment@1', password: 'never-echo' }, { schema: 'deployment@1', accounts: [{ name: '合成账户', role: 'user', token: 'never-echo' }] },
-    { schema: 'deployment@1', resources: [{ definition: { credentials: { auth: 'raw secret value' } } }] } ]) {
+  for (const input of [ { schema: 'deployment@2', password: 'never-echo' }, { schema: 'deployment@2', accounts: [{ name: '合成账户', role: 'user', token: 'never-echo' }] },
+    { schema: 'deployment@2', resources: [{ definition: { credentials: { auth: 'raw secret value' } } }] } ]) {
     assert.throws(() => parseDeployment(input), error => error instanceof Error && !error.message.includes('never-echo') && !error.message.includes('raw secret value'));
   }
 });
 
 test('exact lookup rejects ambiguity and never uses prefixes or synonyms', () => {
   const rows = [{ id: 'one', name: '合成账户' }, { id: 'two', name: 'one' }];
-  assert.throws(() => exactMatch(rows, 'one', row => row.name));
-  assert.equal(exactMatch(rows, '合成', row => row.name), undefined);
+  assert.equal(exactName(rows,'one',row=>row.name)?.id,'two','a name never also selects an id');
+  assert.throws(()=>exactName([{id:'one',name:'same'},{id:'two',name:'same'}],'same',row=>row.name));
+  assert.equal(exactName(rows,'合成',row=>row.name),undefined);
 });
 
 test('topological publication rejects cycles and duplicates and preserves exact versions', () => {
@@ -113,8 +117,8 @@ test('topological publication rejects cycles and duplicates and preserves exact 
 test('apply calls account/team/resource/assignment/source APIs once and then skips', async t => {
   const f = fake(t);
   f.publications.set('product-demo', { id: 'product-demo', latest: '1.0.0', kind: 'product', active: false });
-  const input = { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }], teams: [{ name: '合成团队', members: ['合成成员'] }],
-    resources: [{ definition: { name: '合成资源', system_pack: 'system-demo@1.0.0', environment: 'test', origins: { main: 'https://192.0.2.1' }, credentials: { auth: 'DEMO_SECRET' } } }],
+  const input = { schema: 'deployment@2', accounts: [{ name: '合成成员', role: 'user' }], teams: [{ name: '合成团队', members: ['合成成员'] }],
+    resources: [{ definition: { name: '合成资源', system_pack: 'system-demo@1.0.0', environment: 'test', origins: { main: 'https://192.0.2.1' }, credentials: { auth: '${secret:DEMO_SECRET}' } } }],
     workflowAssignments: [{ pack: 'workflow-demo', team: '合成团队' }, { pack: 'workflow-demo', user: '合成成员' }], resourceAssignments: [{ resource: '合成资源', team: '合成团队' }], knowledgeSources: ['product-demo'] };
   const first = await applyDeployment(f.session, input);
   assert.equal(first.differences.length, 0);
@@ -124,13 +128,13 @@ test('apply calls account/team/resource/assignment/source APIs once and then ski
   assert.equal(second.created, 0); assert.deepEqual(second.differences, []); assert.equal(f.calls.length, count);
   assert.ok(!f.calls.includes('publish-right'));
   const exported = await exportDeployment(f.session);
-  assert.equal(exported.resources[0].definition.credentials.auth, 'DEMO_SECRET');
+  assert.equal(exported.resources[0].definition.credentials.auth, '${secret:DEMO_SECRET}');
   assert.equal(JSON.stringify(exported).includes('password'), false);
 });
 
 test('existing differences report exact field paths without modifying or echoing values', async t => {
   const f = fake(t);
-  const report = await applyDeployment(f.session, { schema: 'deployment@1', accounts: [{ name: admin.name, role: 'user' }] });
+  const report = await applyDeployment(f.session, { schema: 'deployment@2', accounts: [{ name: admin.name, role: 'user' }] });
   assert.deepEqual(report.differences, [{ section: 'accounts', index: 0, fields: ['/role'] }]);
   assert.deepEqual(f.calls, []);
   assert.deepEqual(differentFields({ nested: { secret: 'old' } }, { nested: { secret: 'new' } }), ['/nested/secret']);
@@ -138,7 +142,7 @@ test('existing differences report exact field paths without modifying or echoing
 
 test('missing exact pack dependency fails before creating accounts', async t => {
   const f = fake(t);
-  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }], packs: [{ ref: 'aa@1.0.0' }] }));
+  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@2', accounts: [{ name: '合成成员', role: 'user' }], packs: [{ ref: 'aa@1.0.0' }] }));
   assert.deepEqual(f.calls, []);
 });
 
@@ -146,12 +150,12 @@ test('CLI reads scratch JSON and returns nonzero on difference; export excludes 
   const f = fake(t), root = await mkdtemp(join(tmpdir(), 'circle-hub-apply-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const file = join(root, 'deployment.json');
-  await writeFile(file, JSON.stringify({ schema: 'deployment@1', accounts: [{ name: admin.name, role: 'user' }] }));
+  await writeFile(file, JSON.stringify({ schema: 'deployment@2', accounts: [{ name: admin.name, role: 'user' }] }));
   assert.equal(await applyCommand(f.session, [file]), 1);
   assert.match(f.output.join('\n'), /\/role/);
   f.output.length = 0;
   assert.equal(await exportCommand(f.session, []), 0);
-  assert.deepEqual(JSON.parse(f.output[0]).accounts[0], { id: uid, name: admin.name, role: 'admin', disabled: false });
+  assert.deepEqual(JSON.parse(f.output[0]).accounts[0], { name: admin.name, role: 'admin', disabled: false });
   await assert.rejects(applyCommand(f.session, []));
   await assert.rejects(exportCommand(f.session, ['unexpected']));
 });
@@ -168,7 +172,7 @@ test('scratch pack directories publish dependencies first, install skills and gr
   };
   await make('skill-demo', 'skill', ['skill.json', 'SKILL.md']);
   await make('workflow-demo', 'workflow', ['workflow.json', 'requirements.json', 'checks.json', 'slots.schema.json', 'SKILL.md'], [{ pack: 'skill-demo', version: '1.0.0' }]);
-  const input = { schema: 'deployment@1', packs: [{ ref: 'workflow-demo@1.0.0', directory: 'workflow-demo' }, { ref: 'skill-demo@1.0.0', directory: 'skill-demo' }] };
+  const input = { schema: 'deployment@2', packs: [{ ref: 'workflow-demo@1.0.0', directory: 'workflow-demo' }, { ref: 'skill-demo@1.0.0', directory: 'skill-demo' }] };
   await applyDeployment(f.session, input, root);
   assert.deepEqual(f.calls, ['publish-right', 'publish:skill-demo', 'install:skill-demo@1.0.0', 'publish:workflow-demo']);
   const count = f.calls.length;
@@ -204,22 +208,23 @@ function syntheticExecutor() {
 }
 
 test('executor source API receives only named references and repeated apply does not add or resolve values', async t => {
-  const f = fake(t), sources: Array<{ id: string; digest: string; source: DeploymentDefinition['executors'][number] }> = [];
+  const f = fake(t), sources: Array<{ id: string; digest: string; source: ExecutorSource }> = [];
   t.mock.method(ExecutorRegistry.prototype, 'sources', async () => sources);
-  t.mock.method(ExecutorRegistry.prototype, 'add', async (_by: Principal, input: unknown) => {
+  t.mock.method(ExecutorRegistry.prototype, 'add', async (_by: Principal, input: unknown, name?:string) => {
+    assert.equal(name,'synthetic-executor');
     f.calls.push('executor');
-    const source = { ...parseDeployment({ schema: 'deployment@1', executors: [input] }).executors[0], id: 'exe_00000000000000000000000001' };
+    const source = { ...parseDeployment({ schema: 'deployment@2', executors: [{name:'synthetic-executor',definition:input}] }).executors[0].definition, id: 'exe_00000000000000000000000001' };
     const entry = { id: source.id, digest: sha256Hex(canonicalBytes(source)), source };
-    sources.push(entry);
+    sources.push(entry);f.executorNames.push({schema:'executor-name@1',executor:source.id,name:name!});
     return { ...entry, definition: source, variables: [], resolved_digest: entry.digest } as Awaited<ReturnType<ExecutorRegistry['add']>>;
   });
-  const input = { schema: 'deployment@1', executors: [syntheticExecutor()] };
+  const input = { schema: 'deployment@2', executors: [{name:'synthetic-executor',definition:syntheticExecutor()}] };
   await applyDeployment(f.session, input);
   await applyDeployment(f.session, input);
   assert.deepEqual(f.calls, ['executor']);
   const exported = await exportDeployment(f.session);
-  assert.equal(exported.executors[0].credential, '${secret:DEMO_SECRET}');
-  const changed = await applyDeployment(f.session, { ...input, executors: [{ ...syntheticExecutor(), endpoint: 'http://127.0.0.1:2/mcp' }] });
+  assert.equal(exported.executors[0].definition.credential, '${secret:DEMO_SECRET}');
+  const changed = await applyDeployment(f.session, { ...input, executors: [{name:'synthetic-executor',definition:{ ...syntheticExecutor(), endpoint: 'http://127.0.0.1:2/mcp' }}] });
   assert.deepEqual(changed.differences, [{ section: 'executors', index: 0, fields: ['/endpoint'] }]);
   assert.deepEqual(f.calls, ['executor']);
 });
@@ -233,7 +238,7 @@ test('a refused publication stops its dependents and does not report success', a
   await writeFile(join(directory, 'pack.json'), JSON.stringify({ schema: 'pack@1', id: 'skill-demo', version: '1.0.0', kind: 'skill', title: '合成包', description: '合成包', files }));
   const hub = await f.session.hub();
   t.mock.method(hub.registry, 'publish', async () => ({ ok: false as const, problems: [], report: null }));
-  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@1', packs: [{ ref: 'skill-demo@1.0.0', directory }], teams: [{ name: '合成团队' }] }));
+  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@2', packs: [{ ref: 'skill-demo@1.0.0', directory }], teams: [{ name: '合成团队' }] }));
   assert.deepEqual(f.calls, ['team', 'publish-right']);
   assert.equal(f.output.some(line => line.includes('已发布')), false);
 });
@@ -278,7 +283,7 @@ test('protected snapshot writes private files and restores original IDs and auth
   assert.deepEqual(f.restored(), f.state);
   assert.equal(f.restored()!.users[0].id, uid);
   assert.equal(f.restored()!.tokens[0].sha256, 'b'.repeat(64));
-  const publicState = parseDeployment({ schema: 'deployment@1', accounts: [{ id: uid, name: '合成管理员', role: 'admin' }] });
+  const publicState = parseDeployment({ schema: 'deployment@2', accounts: [{ name: '合成管理员', role: 'admin' }] });
   assert.equal(JSON.stringify(publicState).includes('password_hash'), false);
   assert.equal(JSON.stringify(publicState).includes('sha256'), false);
   assert.deepEqual((await readdir(join(root, 'private-config-snapshots'))), [receipt.file.split('/')[1]]);
@@ -384,12 +389,12 @@ test('[PG] real product variables, named document bytes and booking registration
     const bytes = Buffer.from(JSON.stringify({ topology: `synthetic-${index}`, empty: '' }) + '\r\n');
     return { name: `synthetic-document-${index}`, bytesBase64: bytes.toString('base64'), size: bytes.byteLength, sha256: sha256Hex(bytes), mediaType: 'application/json', fileName: `synthetic-${index}.json` };
   });
-  const definition = { schema: 'deployment@1', variables, documents, leaseRegistrations: [{ prefix: 'synthetic-environments/one/', owner: by.id }], knowledgeSources: [product.id] };
+  const definition = { schema: 'deployment@2', variables, documents, leaseRegistrations: [{ prefix: 'synthetic-environments/one/', owner: by.name }], knowledgeSources: [product.id] };
   const applied = await applyDeployment(session, definition);
   assert.deepEqual(applied.differences, []);
   assert.equal((await kit.variables.list(by)).length, 17);
   assert.equal((await docs.list()).length, 12);
-  assert.deepEqual(await leases.registrations(''), definition.leaseRegistrations);
+  assert.deepEqual(await leases.registrations(''), [{ prefix: 'synthetic-environments/one/', owner: by.id }]);
   const exported = await exportDeployment(session);
   assert.deepEqual(exported.variables, [...variables].sort((a, b) => a.name.localeCompare(b.name)));
   assert.deepEqual(exported.documents.map(document => document.sha256).sort(), documents.map(document => document.sha256).sort());
@@ -399,13 +404,13 @@ test('[PG] real product variables, named document bytes and booking registration
   assert.equal(repeated.created, 0); assert.deepEqual(repeated.differences, []);
   assert.equal((await kit.variables.list(by)).every(variable => variable.version === 1), true);
   const failedDocument = { ...documents[0], bytesBase64: Buffer.from('synthetic-changed').toString('base64') };
-  await assert.rejects(applyDeployment(session, { schema: 'deployment@1', documents: [failedDocument] }), /字节、长度或摘要/);
+  await assert.rejects(applyDeployment(session, { schema: 'deployment@2', documents: [failedDocument] }), /字节、长度或摘要/);
   assert.equal((await docs.show(documents[0].name))?.sha256, documents[0].sha256);
-  assert.equal((await applyDeployment(session, { schema: 'deployment@1', knowledgeSync: [] })).created, 1);
+  assert.equal((await applyDeployment(session, { schema: 'deployment@2', knowledgeSync: [] })).created, 1);
   const emptyIntent = await kit.authorizations.resourceConfig('deployment-sync');
   assert.ok(emptyIntent?.body.bound);
   assert.deepEqual((await exportDeployment(session)).knowledgeSync, []);
-  assert.equal((await applyDeployment(session, { schema: 'deployment@1', knowledgeSync: [] })).created, 0);
+  assert.equal((await applyDeployment(session, { schema: 'deployment@2', knowledgeSync: [] })).created, 0);
   assert.equal((await kit.authorizations.resourceConfig('deployment-sync'))?.digest, emptyIntent!.digest);
 
 });
@@ -413,30 +418,30 @@ test('[PG] real product variables, named document bytes and booking registration
 test('document base64 accepts the 2 MiB boundary and rejects malformed or noncanonical input before writing', () => {
   const bytes = Buffer.alloc(2 * 1024 * 1024, 0x78);
   const document = { name: 'synthetic-boundary', size: bytes.byteLength, sha256: sha256Hex(bytes), bytesBase64: bytes.toString('base64'), mediaType: 'application/octet-stream', fileName: 'synthetic.bin' };
-  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@1', documents: [document] }));
+  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@2', documents: [document] }));
   const small = Buffer.from('f');
   const valid = { ...document, size: small.length, sha256: sha256Hex(small), bytesBase64: 'Zg==' };
-  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@1', documents: [valid] }));
-  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...document, size: 0, sha256: sha256Hex(Buffer.alloc(0)), bytesBase64: '' }] }));
+  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@2', documents: [valid] }));
+  assert.doesNotThrow(() => parseDeployment({ schema: 'deployment@2', documents: [{ ...document, size: 0, sha256: sha256Hex(Buffer.alloc(0)), bytesBase64: '' }] }));
   for (const bytesBase64 of ['Zg=', 'Zg==\n', 'Zg$=', 'Zh==']) {
-    assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...valid, bytesBase64 }] }));
+    assert.throws(() => parseDeployment({ schema: 'deployment@2', documents: [{ ...valid, bytesBase64 }] }));
   }
-  assert.throws(() => parseDeployment({ schema: 'deployment@1', documents: [{ ...document, size: bytes.byteLength + 1 }] }));
+  assert.throws(() => parseDeployment({ schema: 'deployment@2', documents: [{ ...document, size: bytes.byteLength + 1 }] }));
 });
 
 test('sync targets distinguish omitted and explicit empty intents and retain exact product and line spellings', async () => {
   const { DeploymentSyncIntent } = await import('../../contracts/src/deployment.ts');
-  assert.equal(parseDeployment({ schema: 'deployment@1' }).knowledgeSync, undefined);
-  assert.deepEqual(parseDeployment({ schema: 'deployment@1', knowledgeSync: [] }).knowledgeSync, []);
+  assert.equal(parseDeployment({ schema: 'deployment@2' }).knowledgeSync, undefined);
+  assert.deepEqual(parseDeployment({ schema: 'deployment@2', knowledgeSync: [] }).knowledgeSync, []);
   const targets = [{ product: 'synthetic-product', line: 'Version-A' }, { product: 'synthetic-product', line: 'version-a' }, { product: 'synthetic-product', line: '版本-甲' }, { product: 'synthetic-product', line: null }];
-  assert.deepEqual(parseDeployment({ schema: 'deployment@1', knowledgeSync: targets }).knowledgeSync, targets);
+  assert.deepEqual(parseDeployment({ schema: 'deployment@2', knowledgeSync: targets }).knowledgeSync, targets);
   assert.deepEqual(DeploymentSyncIntent.parse({ schema: 'deployment-sync-intent@1', targets }).targets, targets);
   for (const invalid of [
     [{ product: 'synthetic-product' }],
     [{ product: 'synthetic-product', line: '' }],
     [{ product: 'synthetic-product', line: 'same' }, { product: 'synthetic-product', line: 'same' }],
     [{ product: 'Synthetic-Product', line: 'one' }],
-  ]) assert.throws(() => parseDeployment({ schema: 'deployment@1', knowledgeSync: invalid }));
+  ]) assert.throws(() => parseDeployment({ schema: 'deployment@2', knowledgeSync: invalid }));
 });
 
 test('fresh database definition apply rejects before mutations when no administrator session exists', async t => {
@@ -450,7 +455,7 @@ test('fresh database definition apply rejects before mutations when no administr
     records: async () => records,
     config: () => ({ dataDir: join(tmpdir(), 'circle-hub-synthetic-config') }),
   } as unknown as import('./api.ts').CliContext, { tokens: () => memoryOperatorTokens(null) });
-  await assert.rejects(applyDeployment(actual, { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }] }), /管理员令牌/);
+  await assert.rejects(applyDeployment(actual, { schema: 'deployment@2', accounts: [{ name: '合成新管理员', role: 'admin' }] }), /管理员令牌/);
   assert.deepEqual(f.calls, []);
 });
 
@@ -476,7 +481,7 @@ test('[PG] a fresh database requires standard init-admin before definition apply
     try { await session.close(); await removeTree(join(kit.dataDir, 'packs')); }
     finally { await kit.close(); }
   });
-  const definition = { schema: 'deployment@1', accounts: [{ name: '合成成员', role: 'user' }] };
+  const definition = { schema: 'deployment@2', accounts: [{ name: '合成成员', role: 'user' }] };
   await assert.rejects(applyDeployment(session, definition), error => {
     const failure = error as Error & { hint?: string };
     assert.match(failure.message, /数据库里还没有管理员/);
@@ -528,7 +533,7 @@ test('[PG] actual CLI children perform fresh init-admin stdin then apply and exp
   };
   const documentBytes = Buffer.from('{"topology":"synthetic-fresh"}\r\n');
   const definition = {
-    schema: 'deployment@1',
+    schema: 'deployment@2',
     accounts: [{ name: '合成脚本管理员', role: 'admin' }, { name: '合成脚本成员', role: 'user' }],
     teams: [{ name: '合成脚本团队', members: ['合成脚本成员'] }],
     variables: [{ schema: 'variable@1', name: 'SYNTHETIC_SCRIPT_COUNT', value: 17 }],
@@ -565,7 +570,7 @@ test('[PG] actual CLI children perform fresh init-admin stdin then apply and exp
   const names = new Map(actual.accounts.map(account => [account.id, account.name]));
   const normalized = {
     ...actual,
-    accounts: actual.accounts.map(({ id: _id, ...account }) => account).sort((a, b) => a.name.localeCompare(b.name)),
+    accounts: actual.accounts.map(account=>account).sort((a, b) => a.name.localeCompare(b.name)),
     teams: actual.teams.map(({ id: _id, ...team }) => ({ ...team, members: team.members.map(id => names.get(id) ?? id).sort() })).sort((a, b) => a.name.localeCompare(b.name)),
   };
   const expected = parseDeployment(definition);
@@ -639,7 +644,7 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
   const [empty] = await withSession(postgres.connector, postgres.target.database, session => session.query('SELECT count(*)::int AS n FROM users'));
   assert.equal(empty!.n, 0);
   const prematureFile = join(parent, 'synthetic-premature-definition.json');
-  await writeFile(prematureFile, JSON.stringify({ schema: 'deployment@1' }), { mode: 0o600, flag: 'wx' });
+  await writeFile(prematureFile, JSON.stringify({ schema: 'deployment@2' }), { mode: 0o600, flag: 'wx' });
   const premature = await child(['apply', prematureFile]);
   assert.equal(premature.code, 1);
   assert.match(premature.stderr, /数据库里还没有管理员/);
@@ -654,12 +659,12 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
   assert.deepEqual(afterSetup.map(file => [file.area, file.path]), originals.map(file => [file.area, file.path]));
   assert.deepEqual(afterSetup.filter(file => file.area === 'vault'), originals.filter(file => file.area === 'vault'));
   assert.ok(originals.some(before => before.area === 'keys' && afterSetup.some(after => after.area === before.area && after.path === before.path && after.sha256 !== before.sha256)));
-  const definition = { schema: 'deployment@1', accounts: [{ name: '合成新管理员', role: 'admin' }], knowledgeSync: [] };
+  const definition = { schema: 'deployment@2', accounts: [{ name: '合成新管理员', role: 'admin' }], knowledgeSync: [] };
   const file = join(parent, 'synthetic-after-reset-definition.json'); await writeFile(file, JSON.stringify(definition), { mode: 0o600, flag: 'wx' });
   const applied = await child(['apply', file]); assert.equal(applied.code, 0, 'Same-root apply failed after standard first setup');
   const exported = await child(['export']); assert.equal(exported.code, 0);
   const actual = parseDeployment(JSON.parse(exported.stdout));
-  assert.deepEqual({ ...actual, accounts: actual.accounts.map(({ id: _id, ...account }) => account) }, parseDeployment(definition));
+  assert.deepEqual({ ...actual, accounts: actual.accounts.map(account=>account) }, parseDeployment(definition));
   const { fileOperatorTokens, deploymentKeyService } = await import('./assemble/operator-token.ts');
   const token = await fileOperatorTokens(layout.root, await deploymentKeyService(env)).read();
   assert.ok(token);
@@ -672,7 +677,7 @@ test('[PG] same-root all reset preserves old operator bytes and the standard CLI
 test('empty-database apply directs initial setup before reading a stale or absent operator token', async t => {
   const f = fake(t); f.accounts.length = 0;
   t.mock.method(f.session, 'admin', async () => { throw new Error('must not read stale operator token'); });
-  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@1' }), error => {
+  await assert.rejects(applyDeployment(f.session, { schema: 'deployment@2' }), error => {
     const failure = error as Error & { hint?: string };
     assert.match(failure.message, /数据库里还没有管理员/);
     assert.match(failure.hint!, /circle-hub init-admin/);
@@ -683,41 +688,45 @@ test('empty-database apply directs initial setup before reading a stale or absen
   assert.deepEqual(f.calls, []);
 });
 
-test('export retains every executor at the same target and explicit identities reapply without new executors',async t=>{
+test('portable export retains all named executors at the same target and reapplies exact names',async t=>{
   const f=fake(t),one={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-shared'},two={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'2',target:'synthetic-shared'};
-  const sources=[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source}));
-  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>sources);
-  t.mock.method(ExecutorRegistry.prototype,'add',async()=>{f.calls.push('executor');throw new Error('must not add');});
+  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source})));
+  f.executorNames.push({schema:'executor-name@1',executor:one.id,name:'synthetic-first'},{schema:'executor-name@1',executor:two.id,name:'synthetic-second'});
   const exported=await exportDeployment(f.session);
-  assert.deepEqual(exported.executors,parseDeployment({schema:'deployment@1',executors:[one,two]}).executors);
+  assert.equal(exported.executors.length,2);assert.deepEqual(exported.executors.map(row=>row.name),['synthetic-first','synthetic-second']);
+  assert.ok(exported.executors.every(row=>!('id'in row.definition)));
   for(let n=0;n<2;n++)assert.equal((await applyDeployment(f.session,{...exported,missingConfiguration:[]})).created,0);
   assert.deepEqual(f.calls,[]);
 });
 
-test('an explicit executor identity never also matches another executor target',async t=>{
-  const f=fake(t),one={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-first'},two={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'2',target:'exe_'+ '0'.repeat(25)+'1'};
+test('an explicit executor name never also selects another executor target',async t=>{
+  const f=fake(t),one=ExecutorSource.parse({...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-first'}),two=ExecutorSource.parse({...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'2',target:'synthetic-name'});
   t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source})));
-  const report=await applyDeployment(f.session,{schema:'deployment@1',executors:[one]});
+  f.executorNames.push({schema:'executor-name@1',executor:one.id,name:'synthetic-name'},{schema:'executor-name@1',executor:two.id,name:'synthetic-other'});
+  const {id,...definition}=one;
+  const report=await applyDeployment(f.session,{schema:'deployment@2',executors:[{name:'synthetic-name',definition}]});
   assert.equal(report.created,0);assert.deepEqual(report.differences,[]);assert.deepEqual(f.calls,[]);
 });
 
-test('ambiguous executor targets refuse before an otherwise new account or any other write',async t=>{
-  const f=fake(t),one={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-shared'},two={...one,id:'exe_'+ '0'.repeat(25)+'2'};
-  t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[one,two].map(source=>({id:source.id,digest:sha256Hex(canonicalBytes(source)),source})));
-  await assert.rejects(applyDeployment(f.session,{schema:'deployment@1',accounts:[{name:'synthetic-new-account',role:'user'}],executors:[{...syntheticExecutor(),target:'synthetic-shared'}]}),/synthetic-shared.*多个/);
-  assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
-});
-
-test('two unqualified new executors at one target cannot silently merge after an earlier account write',async t=>{
-  const f=fake(t),executor={...syntheticExecutor(),target:'synthetic-new-target'};
-  await assert.rejects(applyDeployment(f.session,{schema:'deployment@1',accounts:[{name:'synthetic-new-account',role:'user'}],executors:[executor,executor]}),/synthetic-new-target.*多个/);
-  assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
-});
-
-test('an explicit id and unqualified target cannot declare the same executor twice before account writes',async t=>{
-  const f=fake(t),source={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1',target:'synthetic-shared'};
+test('an unnamed executor blocks export with an explicit administrator naming command, not silent omission',async t=>{
+  const f=fake(t),source={...syntheticExecutor(),id:'exe_'+ '0'.repeat(25)+'1'};
   t.mock.method(ExecutorRegistry.prototype,'sources',async()=>[{id:source.id,digest:sha256Hex(canonicalBytes(source)),source}]);
-  const {id:_id,...withoutId}=source;
-  await assert.rejects(applyDeployment(f.session,{schema:'deployment@1',accounts:[{name:'synthetic-new-account',role:'user'}],executors:[source,withoutId]}),/同一个.*执行器/);
-  assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
+  await assert.rejects(exportDeployment(f.session),error=>error instanceof Error&&error.message.includes(`circle-hub executor name ${source.id} <明确名字>`));
+  f.executorNames.push({schema:'executor-name@1',executor:source.id,name:'synthetic-named'});
+  assert.equal((await exportDeployment(f.session)).executors.length,1);
+});
+
+test('missing or duplicate names refuse before an otherwise new account or any other write',async t=>{
+  const f=fake(t),definition=syntheticExecutor();
+  for(const executors of [[{definition}],[{name:'same',definition},{name:'same',definition}]]){
+    await assert.rejects(applyDeployment(f.session,{schema:'deployment@2',accounts:[{name:'synthetic-new-account',role:'user'}],executors}),/executors/);
+    assert.deepEqual(f.calls,[]);assert.equal(f.accounts.length,1);
+  }
+});
+
+test('public executor internal ids and retired deployment files are refused without conversion or writes',async t=>{
+  const f=fake(t);
+  for(const input of [{schema:'deployment@1'},{schema:'deployment@2',executors:[{name:'synthetic-named',definition:{...syntheticExecutor(),id:'exe_'+ '0'.repeat(26)}}]},{schema:'deployment@2',accounts:[{id:uid,name:'synthetic-account',role:'user'}]}]){
+    await assert.rejects(applyDeployment(f.session,input));assert.deepEqual(f.calls,[]);
+  }
 });
