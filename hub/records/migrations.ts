@@ -1,7 +1,5 @@
 // New-database baseline; subsequent schema changes append checksummed migrations.
-import type { Database, PgTransaction, Row } from './db.ts';
-import type { Transaction } from './api.ts';
-import { EnvironmentUpgradeRequiredError } from './environment-upgrade-errors.ts';
+import type { Database, PgTransaction } from './db.ts';
 import { sha256Hex } from './digest.ts';
 import { MigrationError } from './errors.ts';
 
@@ -1856,46 +1854,12 @@ CREATE INDEX team_members_user ON team_members(user_id, team_id);
 
 `;
 
-const ENVIRONMENT_ASSIGNMENT_MIGRATION = String.raw`
-CREATE TABLE public.hub_migration_compatibility (
- migration_version integer PRIMARY KEY REFERENCES public.schema_migrations(version),
- format_version integer NOT NULL CHECK(format_version=1), migration_name text NOT NULL,
- migration_sha256 text NOT NULL CHECK(migration_sha256 ~ '^[a-f0-9]{64}$'),
- minimum_reader_level integer NOT NULL CHECK(minimum_reader_level>=2)
-);
-CREATE TABLE public.environment_assignment_cutover (
- singleton boolean PRIMARY KEY CHECK(singleton), fresh_database boolean NOT NULL,
- migration_version integer NOT NULL REFERENCES public.hub_migration_compatibility(migration_version)
-);
-CREATE TABLE public.environment_assignment_snapshot (
- singleton boolean PRIMARY KEY REFERENCES public.environment_assignment_cutover(singleton),
- snapshot_sha256 text UNIQUE NOT NULL CHECK(snapshot_sha256 ~ '^[a-f0-9]{64}$'),
- snapshot jsonb NOT NULL,
- responsible_user text NOT NULL REFERENCES public.users(id), captured_at timestamptz NOT NULL
-);
-CREATE TABLE public.environment_assignment_completion (
- singleton boolean PRIMARY KEY REFERENCES public.environment_assignment_cutover(singleton),
- snapshot_sha256 text NOT NULL REFERENCES public.environment_assignment_snapshot(snapshot_sha256),
- authorization_records jsonb NOT NULL, responsible_user text NOT NULL REFERENCES public.users(id),
- completed_at timestamptz NOT NULL
-);
-CREATE TRIGGER hub_migration_compatibility_immutable BEFORE UPDATE OR DELETE ON public.hub_migration_compatibility FOR EACH ROW EXECUTE FUNCTION public.hub_append_only();
-CREATE TRIGGER environment_assignment_cutover_immutable BEFORE UPDATE OR DELETE ON public.environment_assignment_cutover FOR EACH ROW EXECUTE FUNCTION public.hub_append_only();
-CREATE TRIGGER environment_assignment_snapshot_immutable BEFORE UPDATE OR DELETE ON public.environment_assignment_snapshot FOR EACH ROW EXECUTE FUNCTION public.hub_append_only();
-CREATE TRIGGER environment_assignment_completion_immutable BEFORE UPDATE OR DELETE ON public.environment_assignment_completion FOR EACH ROW EXECUTE FUNCTION public.hub_append_only();
-`;
-
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   { version: 1, name: 'baseline', sql: BASELINE },
-  { version: 2, name: 'environment_assignment_cutover', sql: ENVIRONMENT_ASSIGNMENT_MIGRATION },
 ]);
 
 /** Tables and what the runtime role may do with them; nothing else (DELETE only on what is not history, no TRUNCATE, no DDL, not the owner). */
 export const RUNTIME_GRANTS: Readonly<Record<string, string>> = Object.freeze({
-  hub_migration_compatibility: "SELECT",
-  environment_assignment_cutover: "SELECT",
-  environment_assignment_snapshot: "SELECT",
-  environment_assignment_completion: "SELECT",
   trace_spans: "SELECT, INSERT, DELETE",
   resource_samples: "SELECT, INSERT, DELETE",
   process_events: "SELECT, INSERT, DELETE",
@@ -1998,14 +1962,13 @@ export async function grantRuntime(db: Database, role: string, tx?: PgTransactio
 }
 
 /** For a process that does not migrate (the runtime role): refuses to start unless exactly this program's migrations are applied. */
-export async function verifyMigrations(db: Database, migrations: readonly Migration[] = MIGRATIONS, tx?: Transaction): Promise<void> {
+export async function verifyMigrations(db: Database, migrations: readonly Migration[] = MIGRATIONS): Promise<void> {
   checkList(migrations);
-  const connection = { query: <R extends Row = Row>(sql: string, args: readonly unknown[] = []) => db.query<R>(sql, args, tx) };
-  const privilege=(await connection.query<{runtime:boolean;temporary:boolean}>("SELECT pg_catalog.pg_get_userbyid(c.relowner)<>current_user AS runtime,pg_catalog.has_database_privilege(current_user,pg_catalog.current_database(),'TEMPORARY') AS temporary FROM pg_catalog.pg_class c WHERE c.oid=pg_catalog.to_regclass('public.records')")).rows[0];
+  const privilege=(await db.query<{runtime:boolean;temporary:boolean}>("SELECT pg_catalog.pg_get_userbyid(c.relowner)<>current_user AS runtime,pg_catalog.has_database_privilege(current_user,pg_catalog.current_database(),'TEMPORARY') AS temporary FROM pg_catalog.pg_class c WHERE c.oid=pg_catalog.to_regclass('public.records')")).rows[0];
   if(privilege?.runtime&&privilege.temporary)throw new MigrationError('运行角色有创建临时对象的权限；请先收回该权限，拒绝启动');
-  const exists = (await connection.query<{ t: string | null }>("SELECT to_regclass('schema_migrations')::text AS t")).rows[0];
+  const exists = (await db.query<{ t: string | null }>("SELECT to_regclass('schema_migrations')::text AS t")).rows[0];
   const applied =
-    exists?.t === null || exists === undefined ? [] : (await connection.query<{ version: number; name: string; sha256: string }>('SELECT version, name, sha256 FROM schema_migrations ORDER BY version')).rows;
+    exists?.t === null || exists === undefined ? [] : (await db.query<{ version: number; name: string; sha256: string }>('SELECT version, name, sha256 FROM schema_migrations ORDER BY version')).rows;
   const unknown = applied.filter((row) => !migrations.some((migration) => migration.version === row.version));
   if (unknown.length > 0) {
     throw new MigrationError(`数据库里有本程序不认识的迁移（版本 ${unknown.map((row) => row.version).join('、')}），可能来自更新的 Hub；拒绝启动`, {
@@ -2025,24 +1988,11 @@ export async function verifyMigrations(db: Database, migrations: readonly Migrat
   }
 }
 
-export async function lockRecordMigrations(db: Database, tx: Transaction): Promise<void> {
-  await db.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK], tx);
-}
-
 /** Applies pending migrations in one transaction under an advisory lock. Returns the versions applied by this call. */
 export async function migrate(db: Database, migrations: readonly Migration[] = MIGRATIONS): Promise<number[]> {
-  return migrateInternal(db, migrations);
-}
-
-/** Called only after the entire cutover preview has been revalidated on this same transaction. */
-export async function migrateEnvironmentAssignments(db: Database, tx: Transaction): Promise<number[]> {
-  return migrateInternal(db, MIGRATIONS, tx, true);
-}
-
-async function migrateInternal(db: Database, migrations: readonly Migration[], outer?: Transaction, prepared = false): Promise<number[]> {
   checkList(migrations);
   return db.transaction(async (tx) => {
-    await lockRecordMigrations(db, tx);
+    await db.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK], tx);
     // Only the journal bootstrap is conditional; everything else is versioned and checksummed.
     await db.query(
       `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2076,15 +2026,10 @@ async function migrateInternal(db: Database, migrations: readonly Migration[], o
           detail: { version: migration.version },
         });
       }
-      if (migration.version === 2 && migration.name === 'environment_assignment_cutover' && highest > 0 && !prepared) throw new EnvironmentUpgradeRequiredError();
       await db.query(migration.sql, [], tx);
       await db.query('INSERT INTO schema_migrations (version, name, sha256) VALUES ($1, $2, $3)', [migration.version, migration.name, checksum], tx);
-      if (migration.version === 2 && migration.name === 'environment_assignment_cutover') {
-        await db.query('INSERT INTO public.hub_migration_compatibility(migration_version,format_version,migration_name,migration_sha256,minimum_reader_level) VALUES($1,1,$2,$3,2)', [migration.version,migration.name,checksum], tx);
-        await db.query('INSERT INTO public.environment_assignment_cutover(singleton,fresh_database,migration_version) VALUES(true,$1,2)', [highest === 0], tx);
-      }
       done.push(migration.version);
     }
     return done;
-  }, outer);
+  });
 }
