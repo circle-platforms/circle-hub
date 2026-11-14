@@ -67,3 +67,30 @@ test('unknown send evidence takes precedence over an older booking diagnosis',()
   assert.match(note.next_action,/不要重交/);
   assert.doesNotMatch(note.next_action,/先预订|开始新的运行/);
 });
+
+test('member text omits internal phases and job digests while administrators retain diagnostics',()=>{
+  const source=job({phase:'boundary_refused',error_code:'LEASE_UNAVAILABLE',reason:'private resource key',member_missing_facts:[{fact:'测试环境 合成环境 缺少 2 项资源的预订',next_action:'先预订整个测试环境后重新核验'}]});
+  source.boundary_refused=true;
+  const member=runnerNote(source,'usr_private');
+  assert.match(member.text,/^已被占用：/);assert.match(member.text,/合成环境.*2 项/);
+  assert.equal(member.text.includes(jobId),false);assert.doesNotMatch(member.text,/boundary_refused|private resource key|circle-hub/);
+  const administrator=runnerNote(source,'usr_private',false,true);
+  assert.ok(administrator.text.includes(jobId));assert.match(administrator.text,/boundary_refused|private resource key/);
+});
+
+test('historical read-only condition facts retain the item name without disclosing admin expected values',()=>{
+  const source=job({not_sent:true,failed_conditions:[{pointer:'/seats',operator:'at_least'}],missing_fact:'private expected values',next_action:'circle-hub job inspect private'});
+  const member=runnerNote(source,'usr_private');
+  assert.match(member.text,/核对项目 \/seats.*至少数量/);assert.match(member.text,/请管理员/);
+  assert.doesNotMatch(member.text,/private expected values|circle-hub|private/);
+  const retried=runnerNote(source,'usr_private',true);
+  assert.match(retried.text,/请管理员/);assert.match(retried.text,/这次重交 Hub 已再试/);
+  assert.ok(retried.text.includes('/seats'));
+});
+
+test('SOURCE_UNAVAILABLE is not forced into a five-category diagnosis by an older failed condition',()=>{
+  const source=job({error_code:'SOURCE_UNAVAILABLE',not_sent:true,failed_conditions:[{pointer:'/seats',operator:'at_least'}]});
+  const note=runnerNote(source,'usr_private');
+  assert.doesNotMatch(note.text,/^(暂时不可用|已被占用|无权限|参数无效|不存在)：/);
+  assert.equal(note.error_code,'SOURCE_UNAVAILABLE');
+});

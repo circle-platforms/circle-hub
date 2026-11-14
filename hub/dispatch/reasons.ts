@@ -47,8 +47,14 @@ export async function reportMissingFacts(records: Pick<RecordsKit, 'objects'>, j
 
 export function releaseMissingFacts(checks: NonNullable<JobStatus['admin_release']>): DispatchMissingFact[] {
   return checks.filter(check=>check.satisfied!==true).map(check=>check.condition==='proof.executor_identity'
-    ? {fact:'本次核验的目标或清单摘要与当前执行器声明不一致',next_action:'联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验'}
-    : {fact:check.satisfied===null?'本次放行核对缺少前置事实':'本次放行核对仍有未满足的条件',next_action:'核对本次预订和核验结果；联系管理员查看具体放行条件后重新核验'}).slice(0,16);
+    ? {fact:`核对项目“${check.label}”：本次核验的目标或清单摘要与当前执行器声明不一致`,next_action:'联系管理员核对当前环境的清单绑定，再使用一致的清单重新核验'}
+    : {fact:check.satisfied===null?`核对项目“${check.label}”缺少前置事实，尚未核对`:`核对项目“${check.label}”尚未满足`,next_action:'核对本次预订和核验结果；联系管理员查看具体放行条件后重新核验'}).slice(0,16);
+}
+
+/** A declared JSON field and operator name are public; expected values and raw response bytes are not. */
+export function readConditionFact(condition: {pointer:string;operator:string}): DispatchMissingFact {
+  const operation = condition.operator==='at_least'?'至少数量':condition.operator==='equals'?'相等':condition.operator==='sha256'?'摘要一致':'声明';
+  return {fact:`环境只读核对项目 ${condition.pointer} 的${operation}条件未满足`,next_action:'请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验'};
 }
 
 export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
@@ -67,8 +73,12 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
   } else {
     for (const fact of status.member_missing_facts ?? []) missing_facts.push({ fact: clip(fact.fact), next_action: clip(fact.next_action) });
     if (status.admin_release) missing_facts.push(...releaseMissingFacts(status.admin_release));
-    for (const check of status.failed_checks ?? []) missing_facts.push({ fact: check.check === 'version' ? '设备报告的版本尚未与本次核验要求匹配' : check.check === 'interfaces' ? '设备接口集合尚未与本次绑定清单匹配' : '本次环境核对仍有未满足的条件', next_action: next });
-    if (!missing_facts.length && (status.missing_fact || status.reason || status.failed_conditions?.length)) missing_facts.push({ fact: uncertain ? '原作业是否执行或执行到哪一步尚未确认' : status.report_pending ? '原作业的完整报告尚未取得' : status.outcome === 'not_dispatched' ? '本次上机前条件尚未满足' : '本次结果仍有缺失事实，尚不能据此确认逐条结论', next_action: next });
+    for (const condition of status.failed_conditions ?? []) missing_facts.push(readConditionFact(condition));
+    for (const check of status.failed_checks ?? []) {
+      if (!check.seat && !check.check && missing_facts.length) continue;
+      missing_facts.push({ fact: check.seat||check.check ? `核对项目 ${[check.seat,check.check].filter(Boolean).join(' ')}：`+(check.check === 'version' ? '设备报告的版本尚未与本次核验要求匹配' : check.check === 'interfaces' ? '设备接口集合尚未与本次绑定清单匹配' : '本次环境核对仍有未满足的条件') : '环境只读核对缺少可供成员读取的项目说明', next_action: '请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验' });
+    }
+    if (!missing_facts.length && (status.missing_fact || status.reason || status.failed_conditions?.length)) missing_facts.push({ fact: uncertain ? '原作业是否执行或执行到哪一步尚未确认' : status.report_pending ? '原作业的完整报告尚未取得' : status.outcome === 'not_dispatched' ? '本次上机验证未发出，但缺少可供成员读取的具体原因' : '本次结果仍有缺失事实，尚不能据此确认逐条结论', next_action: next });
   }
-  return { outcome: status.outcome, ...(status.submission_verified!==undefined?{submission_verified:status.submission_verified}:{}),...(status.booking?{booking:status.booking}:{}), ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: missing_facts.slice(0, 16), next_action: next };
+  return { outcome: status.outcome, ...(status.submission_verified!==undefined?{submission_verified:status.submission_verified}:{}),...(status.booking?{booking:status.booking}:{}), ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: [...new Map<string, DispatchMissingFact>(missing_facts.map(fact=>[fact.fact+'\0'+fact.next_action,fact])).values()].slice(0, 16), next_action: next };
 }

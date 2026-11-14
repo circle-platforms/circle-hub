@@ -8,6 +8,7 @@ import { reportOutcome } from './report-outcome.ts';
 import { REPORT_READ_ATTEMPTS, REPORT_READ_WINDOW_MS, reportPending, reportReadDelay, trustedStatus } from './report-read.ts';
 import { releaseDigest, releaseField, releaseFailure, type ReleaseCheck } from './release-diagnostics.ts';
 import { formatReleaseRefusal } from './refusal-text.ts';
+import { readConditionFact } from './reasons.ts';
 import type { AdminLogEntry } from '../runs/api.ts';
 import { RETRY_RULES } from './retry-policy.ts';
 import { prepareEffectGate, EffectBoundaryError } from './effect-gate.ts';
@@ -234,7 +235,7 @@ export class DispatchService {
     try{
       const {missing}=await this.coverage(proof.input.ancestors,proof.input.user,d.resources,d.submit_timeout_ms+d.max_run_ms);
       const fields=[releaseField('lease.resources.uncovered',0,missing.length,missing.length===0)];
-      return missing.length===0?{condition,label,satisfied:true,fields}:{condition,label,satisfied:false,fields,missing_fact:`测试环境 ${d.target} 的本运行预订未覆盖 ${new Set(missing).size} 项所需资源（共 ${new Set(d.resources).size} 项）`,next_action:'先预订整个测试环境，再从脚本编写开始新的运行，并重新核验脚本合并；不要只预订部分设备'};
+      return missing.length===0?{condition,label,satisfied:true,fields}:{condition,label,satisfied:false,fields,missing_fact:`缺少覆盖派发窗口的同血缘有效租约：${[...new Set(missing)].join('、')}`,next_action:'先预订整个自动化测试环境（全部资源键），再从脚本编写开始新的运行，并重新核验脚本合并；不要只预订部分设备'};
     }catch(error){return {condition,label,satisfied:null,fields:[releaseField('exception',undefined,error instanceof Error?{name:error.name}:error,null)],missing_fact:'读不到租约持有记录，无法判断租约是否覆盖',next_action:'管理员恢复租约表的可读性后重跑 job explain-release'};}
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
@@ -540,7 +541,7 @@ export class DispatchService {
         missing_resources:known?new Set(error.missing).size:null,
         declared_device_count:d.probes?new Set(d.probes.seats.map(seat=>seat.manifest.device)).size:null};
       return this.boundaryRefused(by,{...provisional,input},deny(5,known?'LEASE_UNAVAILABLE':'SOURCE_UNAVAILABLE',
-        known?'本运行没有覆盖整个测试环境的有效预订；先预订整个环境，再从脚本编写重新开始':'本运行的环境预订覆盖尚未核对；先恢复租约记录读取再核对覆盖范围'),{submission_verified:true,booking});
+        known?`缺少覆盖派发窗口的同血缘有效租约：${[...new Set(error.missing)].join('、')}`:'本运行的环境预订覆盖尚未核对；先恢复租约记录读取再核对覆盖范围'),{submission_verified:true,booking});
     }
     const binding: JobBinding = { ...provisional, input, user: input.user, resources: d.resources, fences: initial, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()) };
     if(d.calls.submit.write)binding.target_key=digestOfValue(bind(d.calls.submit.write.target_key,this.context(binding)));
@@ -743,7 +744,7 @@ export class DispatchService {
     // The event records submit_invoked false, so a refusal without a conclusion may say that nothing went out (decision 116).
     const said=refusalText(failure,false);
     const bookingNext='先预订整个测试环境，再从脚本编写开始新的运行，并重新核验脚本合并';
-    const memberFacts=facts.booking?[{fact:facts.booking.coverage_complete===false?`本运行没有覆盖测试环境 ${facts.booking.target} 的完整预订`:`测试环境 ${facts.booking.target} 的本运行预订覆盖尚未核对`,
+    const memberFacts=facts.booking?[{fact:facts.booking.coverage_complete===false?`本运行没有覆盖测试环境 ${facts.booking.target} 的完整预订，缺少 ${facts.booking.missing_resources} 项所需资源（共 ${facts.booking.required_resources} 项）`:`测试环境 ${facts.booking.target} 的本运行预订覆盖尚未核对`,
       next_action:facts.booking.coverage_complete===false?bookingNext:'联系管理员恢复预订记录读取后重新核对覆盖范围；当前不能派发'}]:undefined;
 
     await this.journal.append(binding,'boundary_refused','dispatch','error',{done:true,outcome:'not_dispatched',submit_invoked:false,boundary_clause:failure.clause,effect_row:failure.row??null,requirements:failure.requirements??[],public_reason:said,missing_fact:said,...facts,...(memberFacts?{member_missing_facts:memberFacts}:failure.code==='SOURCE_NOT_PERMITTED'?{member_missing_facts:[{fact:failure.message,next_action:'联系管理员核对本测试环境的有效分配及账户状态后重新核验'}]}:failure.code==='SOURCE_UNAVAILABLE'?{member_missing_facts:[{fact:'本次测试环境的使用权限尚未核对，缺少可读取的核对事实',next_action:'联系管理员恢复环境权限检查接线或读取能力后重新核验；当前不能派发'}]}:{}),next_action:facts.booking?(facts.booking.coverage_complete===false?bookingNext:'恢复预订记录的读取能力后重新核对覆盖范围；当前不能派发'):failure.fix,...(adminReleaseSha?{admin_release_sha256:adminReleaseSha}:{}),...(adminReleaseMissing?{admin_release_missing:true}:{})},[],undefined,undefined,failure.code);
@@ -1191,7 +1192,8 @@ export class DispatchService {
       return {pointer:c.pointer,operator,expected_sha256:expected===undefined?null:digestOfValue(expected),matched};
     });
     const matched=checks.length>0 && checks.every(c=>c.matched===true || 'judged' in c);
-    await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{member_missing_facts:[{fact:'主环境只读核对的声明条件未满足',next_action:'联系管理员核对本次环境的声明条件，恢复一致后重新核验'}],missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
+    const memberFacts = checks.filter(check=>check.matched===false).map(readConditionFact);
+    await this.journal.append(binding,phase,'validate','completed',{matched:checks.length?matched:null,conditions:checks,...(!matched?{member_missing_facts:memberFacts.length?memberFacts:[{fact:'环境只读核对缺少可采用的声明条件',next_action:'请管理员补齐该环境的只读核对声明后重新核验'}],missing_fact:'条件没有满足或缺少期望绑定；见未匹配的指针和运算符',next_action:'核对受限原件和声明条件后重跑预检，未提交'}:{})},[response.source]);
     return matched;
   }
   private conditions(conditions: ExecutorDefinition['conditions'], value: unknown, context: Record<string, unknown>): boolean {
