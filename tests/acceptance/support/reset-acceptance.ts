@@ -820,7 +820,7 @@ export async function seedRichHub(
       credential: '${secret:SYNTH_EXEC_TOKEN}',
     };
     await writeFile(execDefPath, JSON.stringify(execDef, null, 2), 'utf8');
-    await runCli(dataDir, ['executor', 'add', execDefPath], { expectOk: true });
+    await runCli(dataDir, ['executor', 'add', execDefPath, '--name=synthetic-reset-runner'], { expectOk: true });
     await runCli(dataDir, ['secret', 'set', '--name', 'SYNTH_EXEC_TOKEN', '--reason', 'synthetic executor token'], {
       stdin: `${canaries.execSecret}\n`,
       expectOk: true,
