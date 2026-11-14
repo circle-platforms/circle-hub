@@ -19,6 +19,11 @@ function fixture(values:TestEnvironment[], configured=true, granted=true) {
   const records={artifacts:{capturePermissionSnapshot:async(_by:unknown,supplied?:Transaction)=>{if(supplied)assert.equal(supplied,tx);return snapshots;}},objects:{get:async(sha:string,supplied?:Transaction)=>{if(supplied)assert.equal(supplied,tx);return [...sources.values()].find(source=>source.sha===sha)?.bytes??null;}},principals:{get:async()=>actor},testEnvironments:{
     inheritance:async(supplied?:Transaction)=>{assert.equal(supplied,tx);events.push('inheritance');return {completed:true,record:null,missingFacts:[]};},
     resolve:async(keys:readonly string[],supplied?:Transaction)=>{if(supplied)assert.equal(supplied,tx);events.push('resolve:'+keys.join(','));const matches=values.filter(value=>keys.every(key=>value.resources.some(row=>row.key===key)));return {environments:matches.filter(value=>value.target!==null),unregistered:matches.filter(value=>value.target===null)};},
+    canUseExecutor:async(_by:unknown,executor:string,supplied?:Transaction)=>{
+      if(supplied)assert.equal(supplied,tx);
+      events.push('executor-permission:'+executor);
+      return configured&&granted&&values.length===1&&values[0].enabled&&values[0].executors.includes(executor);
+    },
     canUse:async(_by:unknown,id:string,supplied?:Transaction)=>{if(supplied)assert.equal(supplied,tx);events.push('permission:'+id);return true;},list:async()=>values,
   }} as unknown as RecordsKit;
   const instance=new MemberEnvironments(records,{readSource:async()=>{throw new Error('no unscoped executor read');}},{view:async()=>({entries:[]}),registrations:async()=>[]} as ConstructorParameters<typeof MemberEnvironments>[2]);
@@ -38,13 +43,13 @@ test('two executors explicitly bound to one target share one environment permiss
   const env=environment('a',[first,second]);const {instance,events,tx}=fixture([env]);
   assert.equal(await instance.permission(actor,first,tx),true);
   assert.equal(await instance.permission(actor,second,tx),true);
-  assert.equal(events.filter(event=>event==='permission:'+env.id).length,2);
+  assert.deepEqual(events,['executor-permission:'+first,'executor-permission:'+second]);
 });
 
-test('matching resource keys alone never bind an unlisted executor',async()=>{
+test('a canonical executor-binding refusal cannot be overridden by matching resource keys',async()=>{
   const {instance,events,tx}=fixture([environment('a')]);
   assert.equal(await instance.permission(actor,second,tx),false);
-  assert.equal(events.some(event=>event.startsWith('permission:')),false);
+  assert.deepEqual(events,['executor-permission:'+second]);
 });
 
 test('all keys are resolved before the first permission read',async()=>{
@@ -62,10 +67,10 @@ test('inheritance delegates the exact caller transaction without a startup cache
 });
 
 
-test('missing executor configuration is refused before dereferencing or reading source bytes',async()=>{
+test('a missing-configuration verdict from the canonical authority remains refused',async()=>{
   const {instance,events,tx}=fixture([environment('a')],false);
   assert.equal(await instance.permission(actor,first,tx),false);
-  assert.deepEqual(events,[]);
+  assert.deepEqual(events,['executor-permission:'+first]);
 });
 
 
@@ -134,4 +139,24 @@ test('unreadable catalog cannot exclude an existing holding as a confirmed ordin
   instance.leases.view=async()=>({entries:[ownHolding]});
   records.testEnvironments.resolve=async()=>{throw new Error('synthetic unreadable catalog');};
   assert.equal(await instance.unattributedHoldings(actor),null);
+});
+
+
+test('executor permission delegates ordinary-variable target resolution to records on every same-TX check',async()=>{
+  const {instance,records,tx}=fixture([environment('a')]);
+  let allowed=true;
+  const calls:Array<{actor:unknown;executor:string;tx:Transaction|undefined}>=[];
+  records.testEnvironments.canUseExecutor=async(by,executor,supplied)=>{
+    calls.push({actor:by,executor,tx:supplied});
+    return allowed;
+  };
+  Object.defineProperty(records,'objects',{get(){throw new Error('consumer must not read or resolve raw executor bytes');}});
+  records.artifacts.capturePermissionSnapshot=async()=>{throw new Error('the canonical authority owns the fresh principal and grants');};
+  assert.equal(await instance.permission(actor,first,tx),true,'a canonical resolved-target permit is not rejected by a raw variable string');
+  allowed=false;
+  assert.equal(await instance.permission(actor,first,tx),false,'a retargeted variable refusal is fresh and does not reuse an earlier grant');
+  assert.deepEqual(calls,[{actor,executor:first,tx},{actor,executor:first,tx}]);
+  const unavailable=new Error('synthetic canonical resolver unavailable');
+  records.testEnvironments.canUseExecutor=async()=>{throw unavailable;};
+  await assert.rejects(instance.permission(actor,first,tx),error=>error===unavailable);
 });
