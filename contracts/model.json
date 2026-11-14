@@ -4857,7 +4857,7 @@
         "when": "此前存下的观察：业务系统里有这个对象，它的应答当时按凭据扫描扣留（D05 R[3]）；新的读取不再产生（决定 161）。附系统、对象和读取时刻，不给内容，也不说命中的是什么",
         "fix": "按原对象重新读取，得到可读的新记录；或到来源系统看原文",
         "source": "所有者 2026-11-05，决定 152",
-        "callErrorCategory": "not_found"
+        "callErrorCategory": "temporarily_unavailable"
       },
       {
         "code": "EFFECT_NOT_ALLOWED",
@@ -5002,7 +5002,7 @@
         "code": "SHARE_DUPLICATE",
         "when": "团队空间已包含相同内容",
         "fix": "使用已有团队条目，或修改陈述后重新核对依据",
-        "callErrorCategory": null
+        "callErrorCategory": "occupied"
       },
       {
         "code": "SHARE_CREDENTIALS",
@@ -5086,7 +5086,7 @@
         "code": "MEMORY_CURSOR_STALE",
         "when": "记忆集合或权限已变化",
         "fix": "从第一页重新读取",
-        "callErrorCategory": "temporarily_unavailable"
+        "callErrorCategory": "invalid_parameters"
       },
       {
         "code": "SYNC_VERSION_CONFLICT",
@@ -5146,7 +5146,7 @@
         "code": "SYNC_PURGE_CONFIRMATION_REQUIRED",
         "when": "清除 Hub 上的私人空间需要本人在控制台确认",
         "fix": "10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试",
-        "callErrorCategory": "permission_denied"
+        "callErrorCategory": "invalid_parameters"
       },
       {
         "code": "GROUNDS_PURGED",
