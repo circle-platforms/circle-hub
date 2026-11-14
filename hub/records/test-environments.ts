@@ -133,7 +133,12 @@ export class RecordTestEnvironments implements TestEnvironments {
     const executorName = await this.executorLabel(id, rows, tx), environmentName = environment.name ?? '名字尚未登记的测试环境';
     const retained = previous?.executors.includes(id) === true && previous.target === environment.target;
     if (source.id !== id) {
-      if (retained) return;
+      if (retained && previous) {
+        const unchangedOrNarrowed = namespaceIsRetained({ ...environment, name: previous.name }, previous);
+        const newlyUncovered = source.resources.filter(value => covers(previous, value) && !covers(environment, value));
+        if (unchangedOrNarrowed && newlyUncovered.length === 0) return;
+        throw new EnvironmentWriteError(`测试环境“${environmentName}”关联的执行器“${executorName}”已有身份矛盾；本次不能新增前缀或资源键，也不能使原已覆盖的资源键变成未覆盖`, { environment: environment.id, expected_executor: id, actual_executor: source.id, previous_prefixes: previous.prefixes.map(row => row.prefix), proposed_prefixes: environment.prefixes.map(row => row.prefix), previous_resources: previous.resources.map(row => row.key), proposed_resources: environment.resources.map(row => row.key), newly_uncovered: newlyUncovered });
+      }
       throw new EnvironmentWriteError(`执行器“${executorName}”的候选身份与所选登记不一致`, { environment: environment.id, expected_executor: id, actual_executor: source.id });
     }
     let resolved: Awaited<ReturnType<typeof resolveTestEnvironmentExecutorTarget>> | null = null;
@@ -268,7 +273,8 @@ export class RecordTestEnvironments implements TestEnvironments {
     return environmentProgramWrite(tx, () => this.authorizations.configureResourceInTransaction(by, TEST_ENVIRONMENT_CONFIG_PREFIX + environment.id, stored.sha256, note ?? (environment.target !== null ? '测试环境登记' : isBookingPrefixRegistration(environment) ? '预订前缀责任登记（不是测试环境）' : '保留尚未归属目标的登记事实'), tx));
   }
   private unique(environment: TestEnvironment, values: readonly TestEnvironment[]) {
-    if (values.some(value => value.id !== environment.id && (environment.name !== null && value.name === environment.name || environment.target !== null && value.target === environment.target))) throw new EnvironmentWriteError('测试环境的名字或目标已经登记');
+    const conflict = values.find(value => value.id !== environment.id && (environment.name !== null && value.name === environment.name || environment.target !== null && value.target === environment.target));
+    if (conflict) throw new EnvironmentWriteError(`测试环境“${environment.name ?? '尚未命名'}”的名字或目标已与测试环境“${conflict.name ?? '尚未命名'}”的登记重复；本次目标“${environment.target}”，已有目标“${conflict.target}”`, { environment: environment.id, other_environment: conflict.id, proposed_name: environment.name, existing_name: conflict.name, proposed_target: environment.target, existing_target: conflict.target });
   }
   async registerFromDefinition(by: Principal, input: TestEnvironmentInput, outer?: Transaction): Promise<TestEnvironment> {
     return withEnvironmentPermissionLock(this.store, async tx => {
