@@ -12,7 +12,7 @@ import { RecordAuthorizations } from './authorizations.ts';
 import { PgTeams } from './teams.ts';
 import { PgCallLog, argumentDigest, newSpanId } from './calllog.ts';
 import { Database, createPool } from './db.ts';
-import { MIGRATIONS, RUNTIME_GRANTS, grantRuntime, migrate, verifyMigrations } from './migrations.ts';
+import { MIGRATIONS, RUNTIME_GRANTS, grantRuntime, migrate } from './migrations.ts';
 import { FileObjectStore } from './objects.ts';
 import { PgPointers } from './pointers.ts';
 import { PgPrincipals } from './principals.ts';
@@ -22,6 +22,8 @@ import { RecordVariables } from './variables.ts';
 import { MaskingRules } from './masking.ts';
 import {PgMemoryIndex} from './memory-index.ts';
 import { PgSpaceSearchIndex } from './space-index.ts';
+import { inspectRecordsSchema } from './schema-compatibility.ts';
+import { MigrationError } from './errors.ts';
 
 export * from './api.ts';
 export { argumentDigest, newSpanId, MIGRATIONS, RUNTIME_GRANTS };
@@ -45,7 +47,8 @@ export async function migrateRecords(config: Pick<RecordsConfig, 'database'>, op
 /**
  * Opens the records kit: creates the data directories (0700), connects to PostgreSQL, applies pending migrations (refusing to
  * start on an unknown or altered applied migration) and wires every store. With `migrate: false` (a runtime role that may
- * not change the schema) it only verifies that exactly this program's migrations are applied. Call close() to release the pool.
+ * not change the schema) it verifies known receipts and declared unknown migrations at this code's capability level.
+ * Preservation completion is checked separately before wiring the kit. Call close() to release the pool.
  */
 export async function openRecords(config: RecordsConfig, options: OpenRecordsOptions = {}): Promise<RecordsKit> {
   if (!isAbsolute(config.dataDir) || !isAbsolute(config.logDir)) throw new TypeError('dataDir and logDir must be absolute paths');
@@ -54,8 +57,16 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   for (const directory of [config.dataDir, objectsDir, config.logDir]) await mkdir(directory, { recursive: true, mode: 0o700 });
   const db = new Database(createPool(config.database, options.maxConnections ?? 10));
   try {
-    if (options.migrate === false) await verifyEnvironmentUpgradeOpenSchema(db);
-    else await migrate(db);
+    if (options.migrate === false) {
+      const schema = await inspectRecordsSchema(db);
+      if (schema.compatible !== true) {
+        // Preserve the exact previous-schema upgrade path and its independent completion gate.
+        if (schema.status === 'incompatible' && schema.applied?.length === 1) await verifyEnvironmentUpgradeOpenSchema(db);
+        throw new MigrationError(schema.problems.join('；'));
+      }
+      const privilege = (await db.query<{ runtime: boolean; temporary: boolean }>("SELECT pg_catalog.pg_get_userbyid(c.relowner)<>current_user AS runtime,pg_catalog.has_database_privilege(current_user,pg_catalog.current_database(),'TEMPORARY') AS temporary FROM pg_catalog.pg_class c WHERE c.oid=pg_catalog.to_regclass('public.records')")).rows[0];
+      if (privilege?.runtime && privilege.temporary) throw new MigrationError('运行角色有创建临时对象的权限；请先收回该权限，拒绝启动');
+    } else await migrate(db);
   } catch (error) {
     await db.end().catch(() => {});
     throw error;
