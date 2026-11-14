@@ -156,7 +156,7 @@ export class DispatchService {
   async close(): Promise<void> { await (this.#closing ??= this.options.close?.() ?? Promise.resolve()); }
   async status(by: Principal, job: string): Promise<JobStatus> {
     await this.registry.admin(by); const events = await this.journal.events(job);
-    if (!events.length) throw new Error('作业对你不可用');
+    if (!events.length) throw new Error('作业对当前账户不可用');
     const modelPremises=(events.find(event=>event.body.detail.phase==='reservation')?.body.detail.binding as JobBinding|undefined)?.input?.judgments;
     const probeIntent=eventOf(events,'probe_intent');
     const missingReceipt = !events.some(e => e.body.detail.done === true && (probeIntent && e.body.detail.effect_accounted===true || retrySafeOutcome(e.body.detail.outcome) || e.body.detail.outcome==='not_dispatched' && e.body.detail.submit_invoked===false)) && !!(eventOf(events, 'intent') ?? probeIntent) && !receiptOf(events) && !events.some(e => e.body.detail.unfreeze === true);
@@ -208,7 +208,7 @@ export class DispatchService {
   /** Read-only clause-3 diagnosis: no connector session, policy replay, reservation or journal write. */
   async explainRelease(by:Principal,run:string,executor:string){
     await this.registry.admin(by);const registered=await this.registry.get(executor);
-    if(!registered)throw new Error('执行器对你不可用；先用 executor list 核对编号');
+    if(!registered)throw new Error('执行器对当前账户不可用；先用 executor list 核对编号');
     const d=registered.definition;
     const no_verdict=missingOwnershipCertification(d);
     try{
@@ -240,7 +240,7 @@ export class DispatchService {
   }
   async list(by:Principal,executor:string):Promise<JobStatus[]> {
     await this.registry.admin(by);const current=await this.registry.get(executor);
-    if(!current)throw new Error('执行器对你不可用；先用 executor list 核对编号');
+    if(!current)throw new Error('执行器对当前账户不可用；先用 executor list 核对编号');
     const jobs=await this.journal.blockers(executor,current.definition.target,new URL(current.definition.endpoint).origin,current.definition.resources);
     return Promise.all(jobs.map(job=>this.status(by,job)));
   }
@@ -348,7 +348,7 @@ export class DispatchService {
     await this.assertNoSecrets(d);
     await this.options.records.objects.put(canonicalBytes(d),'application/json');
     const booked = booking ? await this.options.runs.getRun(by, booking) : null;
-    if (booking && !booked) throw new Error('预订运行对你不可用');
+    if (booking && !booked) throw new Error('预订运行对当前账户不可用');
     const binding: JobBinding = { job: newJob(), initiated_by: by.id, executor, executor_digest: registered.resolved_digest, executor_source_digest:registered.digest,variables:registered.variables, scope:{target:d.target,origin:new URL(d.endpoint).origin}, target_key: digestOfValue([...d.resources].sort()), input: null,
       user: booked?.run.runner ?? by.id, resources: [], context: { ...environmentOf(d.precheck_context), ...(booked?.run.build ? { build: booked.run.build } : {}), ...(booked && lockedBuildBase(booked.run) ? {build_base:lockedBuildBase(booked.run)} : {}), ...(booked?.run.product ? {product:booked.run.product} : {}), ...(booked?.run.root ? {root:booked.run.root} : {}), target: d.target, ...(d.resources.length ? { seats: d.resources.length } : {}), ...(d.manifest_sha256 ? { manifest_sha256: d.manifest_sha256 } : {}) } };
     await this.assertNoSecrets(binding);
