@@ -6,7 +6,7 @@ import {technical,technicalCode,facts,actionLink,evidence,tooltip} from './prese
 // reads business systems; a write route is never opened here. Enabling, disabling and re-authenticating a system or an
 // environment are commands for the administrator's Circle (proposal decision 6 of 2026-10-31); connecting a business
 // system is one of the console's four operations.
-import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState, type DynamicTerminal, type Verdict } from '../../../contracts/generated/vocabulary.ts';
+import { ENVIRONMENT_STATE, axisUiLabel, isEnvironment, uiLabelOf, type EnvironmentState } from '../../../contracts/generated/vocabulary.ts';
 import type { TokenInfo } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import type { ResourceListing } from '../../ports.ts';
@@ -84,7 +84,6 @@ export function noAssignmentMark(flags: AssignmentFlags): Html {
  */
 export type EnvironmentLastCheck = {
   at: string;
-  outcome: Extract<DynamicTerminal, 'pass' | 'fail'> | Extract<Verdict, 'unknown'>;
   items: Array<{ name: string; ok: boolean | null; detail?: string; next_action?: string }>;
 };
 
@@ -94,18 +93,18 @@ export function environmentLastCheck(view: ExecutorView): EnvironmentLastCheck |
   return state.last_check ?? null;
 }
 
-const CHECK_OUTCOME: Readonly<Record<EnvironmentLastCheck['outcome'], { text: string; tone: Tone }>> = {
-  pass: { text: '已确认', tone: 'pass' },
-  fail: { text: '错误', tone: 'fail' },
-  unknown: { text: '未知', tone: 'unknown' },
-};
+function checkPresentation(check: EnvironmentLastCheck): { text: string; tone: Tone } {
+  if (check.items.some(item => item.ok === false)) return { text: '错误', tone: 'fail' };
+  if (check.items.some(item => item.ok === null)) return { text: '未知', tone: 'unknown' };
+  return { text: '已确认', tone: 'pass' };
+}
 
 /** Cell for the environments table: time + three-word status; missing projection stays honest. */
 export function environmentCheckCell(view: ExecutorView): Html {
   const check = environmentLastCheck(view);
   if (check === undefined) return html`<span class="ch-meta">尚无核对</span>`;
   if (check === null) return html`<span class="t-unknown">未知</span>`;
-  const { text, tone } = CHECK_OUTCOME[check.outcome];
+  const { text, tone } = checkPresentation(check);
   const failed = check.items.filter((item) => item.ok === false).length;
   const note = failed > 0 ? `${failed} 项未通过` : check.items.some((item) => item.ok === null) ? '含未知项' : '各项已通过';
   return html`${when(check.at)}<div class="ch-meta">${chip(text, tone)} · ${note}</div>`;
@@ -116,7 +115,7 @@ export function environmentCheckFacts(view: ExecutorView): Array<[string, unknow
   const check = environmentLastCheck(view);
   if (check === undefined) return [['最近核对', '尚无核对']];
   if (check === null) return [['最近核对', html`<span class="t-unknown">未知</span>`]];
-  const { text, tone } = CHECK_OUTCOME[check.outcome];
+  const { text, tone } = checkPresentation(check);
   const rows: Array<[string, unknown]> = [
     ['最近核对', html`${when(check.at)} ${chip(text, tone)}`],
   ];
@@ -345,7 +344,7 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  }else inspector=html``;
  // Decision 151: with nothing selected there is no pane. The figures it repeated stand in the row at the top of the page.
  const selected=!!(chosen||circle||environment);
- const clients=liveModule('circles',['member.connected'],html`<p class="ch-meta" data-tab-facts>${tooltip(`24 小时内使用过 ${count(recent)} 个`,'每行对应有效凭据；名称优先取最近报告，其次登记名称或令牌标签。最近凭据使用不是在线状态，未记录不表示离线。')}</p>${box(null,table(CLIENT_COLUMNS,circles.map(item=>clientRow(item,link('/console/connections',clientLabel(item),{circle:item.token.id}))),noClients(ctx.admin),undefined,{selected:circles.findIndex(item=>item.token.id===circleId),hrefs:circles.map(item=>href('/console/connections',{circle:item.token.id}))}),{flush:true})}${ctx.admin?'':html`<p class="ch-meta">业务系统的配置仅管理员可见；已分配运行环境的只读就绪报告在「运行环境」页签；任务中的读取显示在各任务的执行过程中。</p>`}`);
+ const clients=liveModule('circles',['member.connected'],html`<p class="ch-meta" data-tab-facts>${tooltip(`24 小时内使用过 ${count(recent)} 个`,'每行对应有效凭据；名称优先取最近报告，其次登记名称或令牌标签。最近凭据使用不是在线状态，未记录不表示离线。')}</p>${box(null,table(CLIENT_COLUMNS,circles.map(item=>clientRow(item,link('/console/connections',clientLabel(item),{circle:item.token.id}))),noClients(ctx.admin),undefined,{selected:circles.findIndex(item=>item.token.id===circleId),hrefs:circles.map(item=>href('/console/connections',{circle:item.token.id}))}),{flush:true})}${ctx.admin?'':html`<p class="ch-meta">业务系统的配置仅管理员可见。测试环境与占用见 ${link("/console/me","我能做的事")}；只读就绪报告在「运行环境」页签，任务中的读取显示在各任务的执行过程中。</p>`}`);
  const content=tab==='clients'?clients
   :tab==='systems'?liveModule('systems',['system.added','system.status'],html`${systemFacts}${box(null,systems,{flush:true})}`)
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})

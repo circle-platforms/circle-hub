@@ -54,7 +54,7 @@ async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   // Members: say which of their teams makes the pack visible — never label team grants as 公共空间 (findings).
   if(!ctx.admin){
     const teams=await ctx.deps.records.teams.memberships(ctx.principal);
-    return teams.length?teams.map((team)=>`团队 ${team.name}`).join('、'):uiLabelOf('audience_scope','team_unassigned');
+    return teams.length?teams.map((team)=>`团队 ${team.name}`).join('、'):`已分配给当前账户（${ctx.principal.name}）`;
   }
   // Administrators: prefer team names over expanding to member names so team grants stay visible as teams.
   const of=await ctx.deps.records.authorizations.teamsOf(ctx.principal,'pack',pack.id);

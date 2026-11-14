@@ -58,7 +58,7 @@ test('received skills stay in their own group and team scopes disclose assignmen
  const audience=(body:string)=>[...body.matchAll(/<span data-pack-audience>([^<]*)<\/span>/g)].map(match=>match[1]);
  // Members see the names of their own teams (never 公共空间 for a team grant), or 尚未指定成员 without one; they are not told who is assigned. Admins see assignment names.
  assert.deepEqual(audience(body),['团队 合成团队甲']);
- memberships=[];assert.deepEqual(audience(await render()),['尚未指定成员']);
+ memberships=[];assert.deepEqual(audience(await render()),['已分配给当前账户（合成作者）']);
  ctx.admin=true;ctx.principal={...ctx.principal,role:'admin'};
  assert.deepEqual(audience(await render()),['合成作者']);
  assignments=[];assert.deepEqual(audience(await render()),['尚未指定成员']);

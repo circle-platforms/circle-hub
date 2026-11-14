@@ -45,7 +45,6 @@ test('projected last_check shows time, confirmation word, and item rows', () => 
   const at = '2026-11-14T00:00:00.000Z';
   const v = view({
     at,
-    outcome: 'fail',
     items: [
       { name: '基线', ok: false, detail: '尚未登记所需基线', next_action: '请管理员登记基线' },
       { name: '网关版本', ok: true },
@@ -60,4 +59,12 @@ test('projected last_check shows time, confirmation word, and item rows', () => 
   assert.equal(facts[1]![0], '基线');
   assert.match(String(facts[1]![1]), /错误/);
   assert.match(String(facts[1]![1]), /请管理员登记基线/);
+});
+
+
+test('recent checks derive presentation from each item rather than an aggregate outcome', () => {
+  const at = '2026-11-14T00:00:00.000Z';
+  assert.match(String(environmentCheckCell(view({ at, items: [{ name: '清单', ok: true }] }))), /已确认/);
+  assert.match(String(environmentCheckCell(view({ at, items: [{ name: '清单', ok: true }, { name: '证据', ok: null }] }))), /未知/);
+  assert.match(String(environmentCheckCell(view({ at, items: [{ name: '清单', ok: false }, { name: '证据', ok: null }] }))), /错误/);
 });
