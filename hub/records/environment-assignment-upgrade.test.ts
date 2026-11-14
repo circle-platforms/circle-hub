@@ -24,7 +24,7 @@ import { canUseEnvironment } from './environment-permissions.ts';
 import { MemberEnvironments } from '../dispatch/api.ts';
 import { FileObjectStore } from './objects.ts';
 import { newId } from './ids.ts';
-import { previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, requireEnvironmentAssignmentActivation, verifyEnvironmentUpgradeOpenSchema, type EnvironmentUpgradeSources } from './environment-assignment-upgrade.ts';
+import { authenticateEnvironmentUpgradeActor, readEnvironmentAssignmentActivation, previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, requireEnvironmentAssignmentActivation, verifyEnvironmentUpgradeOpenSchema, type EnvironmentUpgradeSources } from './environment-assignment-upgrade.ts';
 import { planEnvironmentAssignmentUpgrade } from '../server/environment-assignment-upgrade.ts';
 
 let postgres: TemporaryPostgres;
@@ -302,4 +302,39 @@ test('actual collector refuses a missing source object instead of returning an e
   await f.auth.configureResource(f.admin, 'executor.' + f.executor, 'c'.repeat(64), '合成缺失源反例');
   await assert.rejects(previewEnvironmentAssignmentUpgrade(f.config, f.admin, environmentAssignmentUpgradeSources()), /原件缺失/);
   await f.unchanged();
+});
+
+
+test('upgrade authentication uses the actual Bearer owner without last-used writes and refuses invalid roles or receipts', { timeout: 120000 }, async t => {
+  const f = await fixture(t);
+  const token = await f.principals.issueToken(f.admin, f.admin.id);
+  const memberToken = await f.principals.issueToken(f.admin, f.user.id);
+  const before = (await f.db.query('SELECT * FROM tokens ORDER BY id')).rows;
+  assert.deepEqual(await authenticateEnvironmentUpgradeActor(f.config, `Bearer ${token.token}`), { id: f.admin.id, name: f.admin.name, role: f.admin.role });
+  for (const value of [undefined, null, 'Bearer invalid', `Bearer ${memberToken.token}`]) await assert.rejects(authenticateEnvironmentUpgradeActor(f.config, value));
+  assert.deepEqual((await f.db.query('SELECT * FROM tokens ORDER BY id')).rows, before);
+  assert.equal((await f.principals.authenticate(`Bearer ${token.token}`))?.id, f.admin.id);
+  assert.ok((await f.db.query('SELECT last_used_at FROM tokens WHERE id=$1', [token.id])).rows[0].last_used_at, 'normal authentication retains usage telemetry');
+  await f.principals.revokeToken(f.admin, token.id);
+  await assert.rejects(authenticateEnvironmentUpgradeActor(f.config, `Bearer ${token.token}`));
+  const other = await f.principals.issueToken(f.admin, f.admin.id);
+  await f.db.query("UPDATE schema_migrations SET sha256=repeat('0',64) WHERE version=1");
+  await assert.rejects(authenticateEnvironmentUpgradeActor(f.config, `Bearer ${other.token}`));
+});
+
+test('activation is publicly readable only after completion and runtime grants share the cutover transaction', { timeout: 120000 }, async t => {
+  const f = await fixture(t);
+  await assert.rejects(readEnvironmentAssignmentActivation(f.config));
+  const preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources);
+  await assert.rejects(applyEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources, preview, { runtimeRole: 'missing_synthetic_runtime' }));
+  await f.unchanged();
+  const role = 'synthetic_atomic_runtime';
+  await f.db.query('CREATE ROLE ' + role);
+  await f.db.query('REVOKE TEMPORARY ON DATABASE "' + f.config.database.database + '" FROM PUBLIC');
+  await f.db.query('GRANT USAGE ON SCHEMA public TO ' + role);
+  const receipt = await applyEnvironmentAssignmentUpgrade(f.config, f.admin, f.sources, preview, { runtimeRole: role });
+  assert.deepEqual(await readEnvironmentAssignmentActivation(f.config), { ...receipt, alreadyCompleted: true });
+  const rights = (await f.db.query("SELECT has_table_privilege($1,'public.environment_assignment_completion','SELECT') AS read, has_table_privilege($1,'public.environment_assignment_completion','INSERT') AS write", [role])).rows[0];
+  assert.equal(rights.read, true);
+  assert.equal(rights.write, false);
 });

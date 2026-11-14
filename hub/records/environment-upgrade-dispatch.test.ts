@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { join } from 'node:path';
 import { createPackRegistry, createWorkflowStore } from '../runs/api.ts';
 import { workflowPack, writePack, temporaryDirectory } from '../runs/packs/testing/builder.ts';
+import { DispatchService } from '../dispatch/service.ts';
 import { setupOwned } from '../dispatch/testing/owned.ts';
 import { grantLeases } from '../runs/engine/start.ts';
 import type { EngineContext } from '../runs/engine/deps.ts';
@@ -18,6 +19,8 @@ function refuseNoAssignment(error: unknown): boolean {
 
 test('a compilation already booked before upgrade renews and reaches the executor after preservation; later revocation rejects the next booking', { timeout: 180000 }, async t => {
   const c = await setupOwned();
+  await c.service.close();
+  c.service = new DispatchService(Object.assign({}, c.service.options, { enforceEnvironmentAssignments: true }));
   let packDirectory: Awaited<ReturnType<typeof temporaryDirectory>> | undefined;
   t.after(async () => {
     try { await c.service.close(); }
@@ -82,7 +85,7 @@ test('a compilation already booked before upgrade renews and reaches the executo
 
   await c.kit.authorizations.unassignResource(c.admin, c.executor.id, c.owner.id);
   const afterDispatch = (await c.db.query('SELECT * FROM public.leases ORDER BY key')).rows;
-  const admission = { now: c.now, deps: { leases: c.leases, environmentAccess: c.environmentAccess } } as EngineContext;
+  const admission = { now: c.now, deps: { enforceEnvironmentAssignments: true, leases: c.leases, environmentAccess: c.environmentAccess } } as EngineContext;
   await assert.rejects(grantLeases(admission, c.owner, workflow, [{ keys, ttl_seconds: 60 }], newId('run'), undefined), refuseNoAssignment);
   assert.deepEqual((await c.db.query('SELECT * FROM public.leases ORDER BY key')).rows, afterDispatch, 'the rejected new booking does not mutate the held lease');
   assert.equal((await applyEnvironmentAssignmentUpgrade(config, c.admin, sources, preview)).alreadyCompleted, true);
