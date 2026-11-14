@@ -15,7 +15,7 @@ import type { CallLogLine } from '../../records/api.ts';
 import {runStatistics} from '../../runs/api.ts';
 import { code, html, link, type Html } from './html.ts';
 import { TASK_DOT, TASK_FILL, confirmationChip, pendingCount, primaryResult, taskChip, taskResultOf } from './status.ts';
-import { card, kpi, chip, dot, duration, when, fullTime, clock, type DotState } from './ui.ts';
+import { card, kpi, chip, dot, duration, when, fullTime, clock, localMinute, type DotState } from './ui.ts';
 import type { PageContext } from './context.ts';
 import { environmentState } from './connections.ts';
 
@@ -25,6 +25,8 @@ export interface TaskRow {
   statistics: RunStatistics | null;
   result: TaskResult | null;
   pending: number;
+  /** Latest tool-call instant for the run, else started_at; used when the chip is 未知 / awaiting. */
+  lastActivityAt?: string;
 }
 
 /** The detail of each run, to derive its result; a run that cannot be read is listed without one. */
@@ -71,9 +73,13 @@ export function taskTitle(run: Pick<RunRecordView, 'pack'|'pack_space'>, titles:
   return titles.get(`${run.pack_space??'team'}/${run.pack}`) ?? ((!run.pack_space||run.pack_space==='team')?titles.get(run.pack):undefined) ?? '工作流名称暂不可读';
 }
 
-export function resultCell(row: Pick<TaskRow, 'result' | 'pending'>): Html {
+export function resultCell(row: Pick<TaskRow, 'result' | 'pending' | 'lastActivityAt'>): Html {
   // N7: visible status is only 未确认 / 已确认 / 未知; task_result stays in the chip title.
-  return html`${confirmationChip(row.result, row.pending)}${row.result === 'delivered_pending' && row.pending > 0 ? html` ${chip(`${row.pending} 项未决`, 'unknown')}` : ''}`;
+  // Awaiting: keep the chip; say there is no submission yet and when the run last moved (Boss 20:32).
+  const awaiting = row.result === 'awaiting' && row.lastActivityAt
+    ? html` <span class="ch-meta">还没有提交结果（最近一次活动 ${localMinute(row.lastActivityAt)}）</span>`
+    : '';
+  return html`${confirmationChip(row.result, row.pending)}${row.result === 'delivered_pending' && row.pending > 0 ? html` ${chip(`${row.pending} 项未决`, 'unknown')}` : ''}${awaiting}`;
 }
 
 // ---------------------------------------------------------------- the head of one task

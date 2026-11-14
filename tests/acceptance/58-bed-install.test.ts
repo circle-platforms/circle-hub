@@ -125,7 +125,7 @@ describe('scenario 58: installing a build on a whole booked bed from the publish
     assert.deepEqual(run.items, CASES, 'one upgrade case of the profile per load balancer of the bed, in inventory order');
     assert.equal(run.result.acceptance, 'accepted', JSON.stringify(run.result.errors));
     assert.ok(run.result.result!.partitions.delivered.every((item) => item.requirements.every((requirement) => requirement.status === 'satisfied')), JSON.stringify(run.result.result));
-    const note = run.result.dispatch?.[0]; assert.match(note?.text ?? '', /已按任务包的效果行开始上机验证/, JSON.stringify(run.result.dispatch));
+    const note = run.result.dispatch?.[0]; assert.match(note?.text ?? '', /已按工作流的规定自动开始上机验证/, JSON.stringify(run.result.dispatch));
     const state = await settled(run.run, note);
     assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
     assert.equal(sent.length, 1); assert.deepEqual(JSON.parse(sent[0].toString()), REQUEST, 'the gateway receives exactly the checked request bytes');

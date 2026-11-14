@@ -18,6 +18,7 @@ import { callErrorFact, callErrorNext } from './call-error-category.ts';
 import { SOURCE_UNKNOWN_CODES, callErrorCategoryOf, errorPresentationOf } from './error-reasons.ts';
 import { fixByRole, proseByRole, type CallerRole } from './fix-by-role.ts';
 import { ENVIRONMENT_ASSIGNMENT_PREVIEW, packListHead } from './pack-words.ts';
+import { toolLocalMinute } from '../tool-time.ts';
 
 type ListOut = z.infer<typeof ListTaskPacksOutput>;
 type UploadOut = z.infer<typeof UploadFileOutput>;
@@ -215,18 +216,61 @@ const D3_FACT_REWRITE = new Set([
 /**
  * Call-refusal line: category word, fact, next step; then optional independent appendages in fixed order:
  * 规则见… → 这是一小时内第 N 次… → 还可以重交 N 次。
+ * When the fact already ends with the next-step sentence, do not print it twice (Boss 06:48 / round-29).
  */
 function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
-  const fact = asSentence(message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, ''));
+  const factBody = message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '').trim();
+  const fact = asSentence(factBody);
   const nextRaw = fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料';
-  // fix may already contain independent sentences (规则见 / 这是一小时内第 N 次 / 完整的正确写法).
-  const next = asSentence(nextRaw);
+  const nextSentence = asSentence(nextRaw);
+  const factHasNext = nextRaw.length > 0 && (factBody.includes(nextRaw) || fact.includes(nextSentence));
+  const next = factHasNext ? '' : nextSentence;
   const rounds = roundsLeft === undefined ? '' : asSentence(`还可以重交 ${roundsLeft} 次`);
   return `${category}：${fact}${next}${rounds}`;
 }
 
+/** Strip pack-owned「等待…补事实并重产」so Hub does not amplify the wrong next actor (Boss 00:33 / 06:48). */
+function factWithoutOwnerWait(message: string): string {
+  return message.replace(/；等待[^；\n]*在重新提交之前补事实并重产/g, '').trim();
+}
+
+/** Gap is on the submitted record declaration (recompose), not a missing uploaded run-input file. */
+function isSubmissionRecordGap(error: Pick<ProtocolError, 'requirement' | 'path'>): boolean {
+  if (error.requirement === 'record') return true;
+  return typeof error.path === 'string' && /(?:^|\/)(?:slots\/)?record(?:\/|$)/.test(error.path);
+}
+
+/** Keep upload_file wording only when the gap is a real run-input file (Boss 06:48). */
+function nextStepForSubmitGap(error: ProtocolError, fix: string | undefined): string {
+  if (isSubmissionRecordGap(error)) return '由模型改正重组记录后重交';
+  if (typeof fix === 'string' && /upload_file/.test(fix) && !isSubmissionRecordGap(error)) {
+    return fix.trim();
+  }
+  if (typeof fix === 'string' && fix.trim().length > 0) {
+    // Drop recovery's runner/upload_file clause when Hub already chose the model next step above.
+    const cleaned = fix.replace(/；?缺失事实：.*$/u, '').replace(/运行者用 upload_file[^；]*/u, '').trim();
+    if (cleaned.length > 0 && !/产品包作者|upload_file|运行者用/.test(cleaned)) return cleaned;
+  }
+  return '由模型改正重组记录后重交';
+}
+
+/**
+ * Pack-marked program-determined error (not missing input). Field name reserved until agy lands:
+ * claim.statement.data.determination === 'error' (Boss 06:48 b).
+ */
+function packMarkedDeterminedError(claim: Claim): boolean {
+  const data = claim.statement.data;
+  return isRecord(data) && data.determination === 'error';
+}
+
+function requirementDeterminedError(requirement: RequirementResult): boolean {
+  if (requirement.unsatisfied_reason === 'outcome_mismatch') return true;
+  return requirement.claims.some((claim) => claim.statement.verdict === 'refute' || packMarkedDeterminedError(claim));
+}
+
 /** SOURCE_UNAVAILABLE keeps the unknown string; subject is「当前账户」(Boss afternoon). */
-function conclusionErrorLine(error: ProtocolError, message: string, fix: string | undefined): string {
+function conclusionErrorLine(error: ProtocolError, message: string, fix: string | undefined, options: { rounds?: boolean } = {}): string {
+  const withRounds = options.rounds !== false;
   const presentation = errorPresentationOf(error.code);
   if (presentation.kind === 'unavailable') {
     return [
@@ -234,16 +278,127 @@ function conclusionErrorLine(error: ProtocolError, message: string, fix: string 
       '状态未知',
       '原因缺资料',
       '下一步由使用者联系管理员核对',
-      error.rounds_left === undefined ? null : `还可以重交 ${error.rounds_left} 次`,
+      withRounds && error.rounds_left !== undefined ? `还可以重交 ${error.rounds_left} 次` : null,
       '决定者程序',
     ].filter((part) => part !== null).join('；');
   }
   const status = unknownError(error) ? ['状态未知', '原因缺资料'] : ['状态已确认', '判断错误'];
+  const next = isSubmissionRecordGap(error)
+    ? nextStepForSubmitGap(error, fix)
+    : (fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料');
   return [
-    message, ...status,
-    fix ? `下一步${fix}` : '下一步由使用者核对输入资料',
-    error.rounds_left === undefined ? null : `还可以重交 ${error.rounds_left} 次`, '决定者程序',
+    factWithoutOwnerWait(message), ...status,
+    `下一步${next.replace(/^下一步/, '')}`,
+    withRounds && error.rounds_left !== undefined ? `还可以重交 ${error.rounds_left} 次` : null,
+    '决定者程序',
   ].filter((part) => part !== null).join('；');
+}
+
+/**
+ * Group item-level submit errors: one block per original case; identical fact lines merge with（×N）only when
+ * verbatim equal (transitional; Boss 06:48 a). Shared「还可以重交」「决定者程序」once per case.
+ */
+function submitErrorBlocks(
+  errors: readonly ProtocolError[],
+  context: TextContext,
+  represented: ReadonlySet<string>,
+): string[] {
+  const role = callerRole(context);
+  const account = callerName(context);
+  type Row = { error: ProtocolError; fact: string; category: string | null; fix: string | undefined; escalated: boolean };
+  const groups = new Map<string, { label: string; rows: Row[]; rounds?: number }>();
+
+  for (const error of errors) {
+    if (error.item !== undefined && represented.has(error.item)) continue;
+    const original = context.items?.find((item) => item.id === error.item);
+    const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
+    const message = missingRecord ? '核对结果的读取资料尚未取回' : factWithoutOwnerWait(error.message);
+    const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
+    const fix = missingRecord
+      ? proseByRole(role, 'missing_result_record')
+      : escalated
+        ? error.fix
+        : fixByRole(error.code, role, error.fix, account);
+    const category = callErrorCategoryOf(error.code);
+    const factCore = !missingRecord && category !== null && D3_FACT_REWRITE.has(error.code) && original === undefined
+      ? callErrorFact(error.code, error.message)
+      : message;
+    const labelled = original === undefined ? factCore : `${caseName(original, original.label)}，${factCore}`;
+    const key = error.item ?? `\0${error.path ?? ''}\0${error.code}\0${error.message}`;
+    const group = groups.get(key) ?? {
+      label: original ? caseName(original, original.label) : '',
+      rows: [],
+      rounds: undefined,
+    };
+    const resolvedFix = missingRecord
+      ? fix
+      : category !== null
+        ? (escalated
+          ? fix
+          : D3_FACT_REWRITE.has(error.code)
+            ? callErrorNext(error.code, role, fix, error.message, account, error.path)
+            : (isSubmissionRecordGap(error) ? nextStepForSubmitGap(error, fix) : fix))
+        : (isSubmissionRecordGap(error) ? nextStepForSubmitGap(error, fix) : (fix ?? '由使用者核对输入资料'));
+    group.rows.push({
+      error,
+      fact: labelled,
+      category,
+      fix: resolvedFix,
+      escalated,
+    });
+    if (error.rounds_left !== undefined) {
+      group.rounds = group.rounds === undefined ? error.rounds_left : Math.min(group.rounds, error.rounds_left);
+    }
+    groups.set(key, group);
+  }
+
+  const lines: string[] = [];
+  for (const group of groups.values()) {
+    const byFact = new Map<string, { row: Row; count: number }>();
+    for (const row of group.rows) {
+      const factKey = row.fact; // verbatim only (Boss 06:48 a)
+      const seen = byFact.get(factKey);
+      if (seen) seen.count += 1;
+      else byFact.set(factKey, { row, count: 1 });
+    }
+    const unique = [...byFact.values()];
+    const roundsLeft = group.rounds;
+    if (group.label && (unique.every(({ row }) => row.category === null) || unique.length > 1 || (unique[0]?.count ?? 0) > 1)) {
+      lines.push(`${group.label}：`);
+      for (const { row, count } of unique) {
+        const mark = count > 1 ? `（×${count}）` : '';
+        if (row.category !== null) {
+          const factOnly = row.fact.startsWith(group.label) ? row.fact.slice(group.label.length).replace(/^，/, '') : row.fact;
+          lines.push(`- ${row.category}：${factOnly}${mark}`);
+        } else {
+          const factOnly = row.fact.startsWith(group.label) ? row.fact.slice(group.label.length).replace(/^，/, '') : row.fact;
+          lines.push(`- ${factOnly}${mark}`);
+        }
+      }
+      const next = unique[0]?.row.category !== null
+        ? (unique[0].row.fix && unique[0].row.fix.trim().length > 0 ? unique[0].row.fix.trim() : '由使用者核对输入资料')
+        : (unique[0]?.row.fix ?? '由模型改正重组记录后重交');
+      lines.push(asSentence(next.startsWith('下一步') ? next : `下一步${next}`));
+      if (roundsLeft !== undefined) lines.push(asSentence(`还可以重交 ${roundsLeft} 次`));
+      // Call-error-only blocks stay without「决定者程序」; any conclusion-style row keeps it once per case.
+      if (unique.some(({ row }) => row.category === null)) lines.push('决定者程序。');
+      continue;
+    }
+
+    // Single error, no case header: keep the historical one-line shapes.
+    for (const { row, count } of unique) {
+      const mark = count > 1 ? `（×${count}）` : '';
+      if (row.category !== null) {
+        const next = row.escalated
+          ? row.fix
+          : (row.fix ?? '由使用者核对输入资料');
+        lines.push(callErrorLine(row.category, `${row.fact}${mark}`, next, roundsLeft));
+      } else {
+        lines.push(conclusionErrorLine(row.error, `${row.fact}${mark}`, row.fix, { rounds: true }));
+      }
+    }
+  }
+  return lines;
 }
 
 function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextContext = {}): string {
@@ -330,8 +485,9 @@ export function startRunExample(pack: PackSummary): string {
   return JSON.stringify(StartRunInput.safeParse(call).success ? call : { pack: pack.pack, inputs: {} });
 }
 
+/** Tool-facing clock: month-day, minute, Hub zone (Boss 20:53). Console keeps browser-local formatting. */
 function localMinute(value: string): string {
-  return new Date(value).toLocaleString('sv-SE', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).slice(0, 16);
+  return toolLocalMinute(value);
 }
 
 function listText(v: ListOut, context: TextContext): string {
@@ -493,11 +649,45 @@ function itemSummary(item: ItemProjection): string {
   return item.summary || '等待核对';
 }
 
+/** Slot placeholder written by submit-records; not a conclusion of its own when a check already spoke. */
+const SLOT_JUDGMENT_PLACEHOLDER = '模型的重组判断';
+
+/**
+ * Reader label for one original case. Prefer fields.title when the pack wrote it
+ * (recompose project.ts → intent text; patch text-next-pack-part for agy/cc-next).
+ * Until that lands: case_id present but title absent →「标题未知」(do not echo case_id/label twice).
+ */
 function caseName(item: ItemProjection | undefined, label: string): string {
   if (item && isRecord(item.fields.review_counts)) return label;
   const id = item?.fields.autoid ?? item?.fields.case_id;
-  const title = item?.fields.case_id !== undefined && item.fields.title === undefined ? '标题未知' : label;
+  const titled = item?.fields.title;
+  const title = typeof titled === 'string' && titled.length > 0
+    ? titled
+    : item?.fields.case_id !== undefined && item.fields.title === undefined
+      ? '标题未知'
+      : label;
   return `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${title}`;
+}
+
+/** Unique claim statements in order; drop the slot placeholder when a real check statement is present. */
+function conclusionStatements(texts: readonly string[]): string[] {
+  const unique: string[] = [];
+  for (const text of texts) {
+    if (!text || unique.includes(text)) continue;
+    unique.push(text);
+  }
+  const withoutPlaceholder = unique.filter((text) => text !== SLOT_JUDGMENT_PLACEHOLDER);
+  return withoutPlaceholder.length > 0 ? withoutPlaceholder : unique;
+}
+
+function awaitingExcel(item: ItemResult): boolean {
+  if (item.requirements.some((requirement) => requirement.requirement === 'workbook_verified' && requirement.status !== 'satisfied')) return true;
+  const texts = item.requirements.flatMap((requirement) => [
+    messageOf(requirement) ?? '',
+    ...requirement.claims.map((claim) => claim.statement.text),
+    ...requirement.claims.map((claim) => (typeof claim.statement.data?.missing === 'string' ? claim.statement.data.missing : '')),
+  ]).join('\n');
+  return /自动化用例 Excel|工作簿/.test(texts);
 }
 
 function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
@@ -506,19 +696,57 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const claims = item.requirements.flatMap(requirement => requirement.claims);
   const model = claims.some(claim => claim.qualifier.nature === 'judgment' || claim.warrant.producer === 'model');
   const partial = claims.some(claim => claim.qualifier.coverage?.complete === false || claim.qualifier.marks.includes('partial'));
-  const unknown = partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
-  const status = unknown ? '未知' : model ? '未确认' : '已确认';
-  const judgment = wrong.length ? '错误' : unknown ? null : '正确';
-  const statement = wrong.length ? wrong.map(requirement => messageOf(requirement)).filter(Boolean).join('；') || '核对发现错误' : unknown ? '还没有确认结论' : claims.map(claim => claim.statement.text).join('；') || '已按要求核对';
-  const parts = [`${caseName(original, item.label)}，${statement}`, `状态${status}`];
+  const packDetermined = item.requirements.some(requirement => requirement.claims.some(packMarkedDeterminedError));
+  const determined = wrong.length > 0 || packDetermined || item.requirements.some(requirementDeterminedError);
+  const unknown = !determined && (partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete')));
+  const status = determined ? '已确认' : unknown ? '未知' : model ? '未确认' : '已确认';
+  const judgment = determined ? '错误' : unknown ? null : '正确';
+  const excel = unknown && !determined && awaitingExcel(item);
+  const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete') || requirement.claims.some(packMarkedDeterminedError));
+  const layers = problems.flatMap(requirement => requirement.layers.filter(layer => layer.terminal !== 'pass' && layer.terminal !== 'judgment'));
+  const recordGap = problems.some((requirement) => requirement.requirement === 'record');
+  // Prefer concrete missing/refute facts for record (and similar) gaps; Excel/in-flight keep their fixed statements.
+  const gapFacts = excel ? [] : [...new Set(problems.flatMap((requirement) => {
+    const fromLayers = requirement.layers.flatMap((layer) => typeof layer.missing === 'string' ? [factWithoutOwnerWait(layer.missing)] : []);
+    const fromClaims = requirement.claims
+      .filter((claim) => claim.statement.verdict === 'unknown' || claim.statement.verdict === 'refute' || packMarkedDeterminedError(claim))
+      .map((claim) => factWithoutOwnerWait(claim.statement.text));
+    return [...fromLayers, ...fromClaims];
+  }).filter((text) => text.length > 0))];
+  // In progress: waiting on the next step / device output — keep 状态未知, do not force a reason word (Boss 20:53).
+  // Concrete layer reasons (not_covered, missing_input, check_error, …) stay on the reason-word path.
+  const concreteGap = layers.some((layer) => (layer.reason !== undefined && layer.reason !== 'awaiting_step') || layer.attribution !== undefined);
+  const inFlight = unknown && !determined && !excel && !partial && !concreteGap
+    && (pending || item.requirements.length === 0 || layers.some((layer) => layer.reason === 'awaiting_step' || layer.terminal === 'incomplete' || isUnknownTerminal(layer)));
+  const statement = determined
+    ? conclusionStatements([
+      ...wrong.map((requirement) => messageOf(requirement)).filter((text): text is string => Boolean(text)),
+      ...gapFacts,
+    ]).join('；') || '核对发现错误'
+    : inFlight
+      ? '上机验证还在进行，还没有设备输出'
+      : excel
+        ? '还没有确认结论'
+        : unknown
+          ? (gapFacts.length > 0 ? gapFacts.join('；') : '还没有确认结论')
+          : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
+  const parts = [`${caseName(original, item.label)}：${statement}`, `状态${status}`];
   if (judgment !== null) parts.push(`判断${judgment}`);
-  if (unknown || judgment === '错误') {
-    const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
-    const layers = problems.flatMap(requirement => requirement.layers.filter(layer => layer.terminal !== 'pass' && layer.terminal !== 'judgment'));
+  if (excel) {
+    parts.push('下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查');
+  } else if (inFlight) {
+    parts.push('下一步由模型在上机验证结束后读取设备输出');
+  } else if (determined) {
+    parts.push(`原因${[...new Set(layers.map(userReason))].join('、') || '编写模型的问题'}`);
+    parts.push(recordGap ? '下一步由模型改正重组记录后重交' : '下一步由模型改正');
+  } else if (unknown) {
     parts.push(`原因${partial ? '缺资料' : [...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
-    parts.push(`下一步${partial ? '使用者补齐资料后重新交给 Hub 检查' : [...new Set(layers.map(userNextStep))].join('；') || '使用者核对资料后重新交给 Hub 检查'}`);
+    parts.push(recordGap
+      ? '下一步由模型改正重组记录后重交'
+      : `下一步${partial ? '使用者补齐资料后重新交给 Hub 检查' : [...new Set(layers.map(userNextStep))].join('；') || '使用者核对资料后重新交给 Hub 检查'}`);
   }
-  const quotes = claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []);
+  // Evidence must not restate quote texts already shown as「引文 … 与所引片段逐字一致」.
+  const quotes = [...new Set(claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []))].filter((text) => !statement.includes(text));
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);
   if (item.replaced_criteria?.length) parts.push(...item.replaced_criteria.map(change => `原始用例的要求由${change.old}改为${change.new}`));
   parts.push(`决定者${[...new Set(claims.map(claim => USER_DECIDER[claim.warrant.producer]))].join('、') || '程序'}`);
@@ -546,6 +774,11 @@ function startText(v: StartOut, context: TextContext): string {
   }
   for (const observation of run.device_observations ?? []) {
     const data = observation.statement.data;
+    // Booking fact for devices that take no commands: one plain line, no verification conclusion chain (Boss 20:53).
+    if (data?.kind === 'no_command_devices' && typeof observation.statement.text === 'string') {
+      lines.push(observation.statement.text);
+      continue;
+    }
     if (typeof data?.label === 'string') {
       const text = `测试环境 ${data.label}，${typeof data.build === 'string' ? `构建 ${data.build}` : '构建未知'}${observation.qualifier.collected_at ? `，读取时间 ${localMinute(observation.qualifier.collected_at)}` : ''}`;
       lines.push(claimLine({ ...observation, statement: { ...observation.statement, text } }));
@@ -800,6 +1033,16 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
     return callErrorLine(parts.category, parts.fact, next);
   }
 
+  // In-progress dispatch notes already say what is waiting and who acts next — no reason-word chain (Boss 20:53).
+  if (
+    message.includes('下一步由模型稍后把这次脚本合并原样再交一次，读取进展')
+    || /已按工作流的规定自动开始上机验证/.test(message)
+    || message.includes('正在做上机验证前的核对')
+    || (message.includes('上机验证还在进行') && !message.includes('上机验证结果未知'))
+  ) {
+    return message;
+  }
+
   // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.
   if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
     return `${message}；状态未知；原因还没查清；决定者程序`;
@@ -844,34 +1087,7 @@ function submitText(v: SubmitOut, context: TextContext): string {
     }
   }
   for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note, role));
-  const account = callerName(context);
-  for (const error of v.errors) {
-    if (error.item !== undefined && represented.has(error.item)) continue;
-    const original = context.items?.find(item => item.id === error.item);
-    const missingRecord = error.code === 'SOURCE_RETRYABLE' && error.path === '/result';
-    const message = missingRecord ? '核对结果的读取资料尚未取回' : error.message;
-    const escalated = typeof error.fix === 'string' && /这是一小时内(?:这个工具)?第 \d+ 次(?:同样的错误|参数无效)/.test(error.fix);
-    const fix = missingRecord
-      ? proseByRole(role, 'missing_result_record')
-      : escalated
-        ? error.fix
-        : fixByRole(error.code, role, error.fix, account);
-    const fact = original === undefined ? message : `${caseName(original, original.label)}，${message}`;
-    const category = callErrorCategoryOf(error.code);
-    if (category !== null) {
-      const next = escalated
-        ? fix
-        : !missingRecord && D3_FACT_REWRITE.has(error.code)
-          ? callErrorNext(error.code, role, fix, error.message, account, error.path)
-          : fix;
-      const factText = !missingRecord && D3_FACT_REWRITE.has(error.code) && original === undefined
-        ? callErrorFact(error.code, error.message)
-        : fact;
-      lines.push(callErrorLine(category, factText, next, error.rounds_left));
-      continue;
-    }
-    lines.push(conclusionErrorLine(error, fact, fix));
-  }
+  lines.push(...submitErrorBlocks(v.errors, context, represented));
   return lines.join('\n');
 }
 
