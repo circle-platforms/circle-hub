@@ -29,7 +29,7 @@ export function registrationIncompletePresentation(error: ProtocolError, actualR
 /** Reads existing journal facts only; a saved artifact is not proof of a completed observation. */
 export function bootstrapCapturePresentation(
   details: readonly Readonly<Record<string, unknown>>[],
-  executor: string,
+  _executor: string,
   resultReference?: string,
 ) {
   if (!details.some(detail => detail.bootstrap_capture === true)) return null;
@@ -44,7 +44,8 @@ export function bootstrapCapturePresentation(
     report === undefined ? '采集报告引用尚未取得' : `只读观察索引 ${report}（不是主机文件路径或设备执行结果）`,
   ];
   if (complete?.registration_ready === false) lines.push('登记尚未完成');
-  const presentation = registrationIncompletePresentation({ code: 'SOURCE_NOT_PERMITTED', call_error_reason: 'environment_registration_incomplete', object_kind: 'test_environment', message: '' }, 'admin', executor)!;
-  lines.push(`下一步：${presentation.next}`);
+  // Successful collection is a stage transition, not another incomplete-registration refusal.
+  if (collected) lines.push(`下一步：核实只读观察，将资源清单填入定义；定义更新入口：circle-hub ${commandParameterHelp('executor.update')}`);
+  // On failure the CLI retains the source-selected reason and recovery action unchanged.
   return { lines, exitCode: collected ? 0 : 1 };
 }
