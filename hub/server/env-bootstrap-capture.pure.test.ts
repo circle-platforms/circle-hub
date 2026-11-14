@@ -65,3 +65,36 @@ test('accepted dispatch note uses the same formal cause first and never rewrites
   assert.match(admin, /circle-hub 'job' 'precheck'/);
   assert.match(admin, /executor update/);
 });
+
+import { bootstrapCapturePresentation } from './env-bootstrap-capture.ts';
+const reference = `src:${'a'.repeat(64)}`;
+
+test('capture completion comes from both actual journal records and their matching report, never verification or effect outcome', () => {
+  const details = [
+    { phase: 'reservation', bootstrap_capture: true, read_only: true },
+    { phase: 'result', bootstrap_capture: true, capture_completed: true, reference },
+    { phase: 'complete', bootstrap_capture: true, capture_completed: true, readonly_verified: false, registration_ready: false, outcome: 'not_dispatched' },
+  ];
+  const result = bootstrapCapturePresentation(details, 'synthetic-executor', reference)!;
+  assert.equal(result.exitCode, 0);
+  assert.match(result.lines.join('\n'), /只读采集已完成/);
+  assert.match(result.lines.join('\n'), /登记尚未完成/);
+  assert.ok(result.lines.some(line => line.includes(reference)));
+  assert.doesNotMatch(result.lines.join('\n'), /设备输出已取回|验证已通过/);
+  assert.equal(bootstrapCapturePresentation(details, 'synthetic-executor', `src:${'b'.repeat(64)}`)!.exitCode, 1);
+});
+
+test('partial observations and initial credential failure do not claim completed capture or invent a report', () => {
+  const reserved = { phase: 'reservation', bootstrap_capture: true, read_only: true };
+  const noReport = bootstrapCapturePresentation([reserved], 'synthetic-executor')!;
+  assert.equal(noReport.exitCode, 1);
+  assert.match(noReport.lines.join('\n'), /报告引用尚未取得/);
+  assert.doesNotMatch(noReport.lines.join('\n'), /src:/);
+  const partial = bootstrapCapturePresentation([reserved,
+    { phase: 'result', bootstrap_capture: true, capture_completed: false, reference },
+    { phase: 'complete', bootstrap_capture: true, capture_completed: false, readonly_verified: true, outcome: 'effective' },
+  ], 'synthetic-executor', reference)!;
+  assert.equal(partial.exitCode, 1);
+  assert.match(partial.lines.join('\n'), /没有完整的只读采集观察/);
+  assert.equal(bootstrapCapturePresentation([{ phase: 'complete', readonly_verified: true }], 'synthetic-executor'), null);
+});
