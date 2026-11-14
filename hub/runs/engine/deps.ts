@@ -38,6 +38,8 @@ export interface RunsEngineDeps {
   /** The records kit parts the engine uses; with `config`, start_run knows the record size limit before it stores anything. */
   records: Pick<RecordsKit, 'store' | 'objects' | 'artifacts'> & {
     variables: Pick<RecordsKit['variables'], 'snapshot'>;
+    /** The same canonical catalog can positively identify ordinary booking-only prefixes even if the ENV marker is unknown. */
+    testEnvironments?: Pick<RecordsKit['testEnvironments'],'resolve'>;
     config?: Pick<RecordsKit['config'], 'limits'>;
     principals: Pick<Principals, 'get'> & Partial<Pick<Principals, 'list'|'lockActive'>>;
     /** Purge facts of run-held personal copies (owner ruling 3, issue 141); absent in kits without personal payloads. */

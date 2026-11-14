@@ -1,3 +1,5 @@
+import {TestEnvironment} from '../../../contracts/api.ts';
+import type {TestEnvironmentResolution,Transaction} from '../../records/api.ts';
 import {EffectBoundaryError} from '../../dispatch/api.ts';
 import {toolText} from '../../server/text.ts';
 import {MemberEnvironments} from '../../dispatch/member-environments.ts';
@@ -126,7 +128,8 @@ test('confirmed non-environment booking has identical output before and after in
   assert.deepEqual(after,before,'all returned lease fields remain identical with the controlled same lease outcome');
   assert.deepEqual(events,['write','authorize','authorize','write']);
 
-  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['outside/key'],ttl_seconds:30}],run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='LEASE_PREFIX');
+  const otherWorkflow={...workflow,workflow:{...workflow.workflow,leases:{prefix:'outside/',max_ttl_seconds:600}}};
+  await assert.rejects(grantLeases(ctx,actor,otherWorkflow,requests,run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='LEASE_PREFIX');
   assert.deepEqual(events,['write','authorize','authorize','write','authorize'],'skipping only environment authorization cannot write outside the workflow prefix');
 
   catalog.records.testEnvironments.resolve=async()=>{throw new Error('synthetic catalog unavailable');};
@@ -207,4 +210,59 @@ test('later device permission refusal preserves earlier observation references i
   const text=toolText('start_run',{call_result:'error',errors},{caller:{role:'user'}});
   assert.ok(text.includes('后续请求没有执行'));
   for(const wrong of ['这次没有执行','原因缺资料','状态未知'])assert.equal(text.includes(wrong),false);
+});
+
+
+const ordinaryPrefix=TestEnvironment.parse({schema:'test-environment@1',id:'env_0'+'c'.repeat(25),name:null,target:null,prefixes:[{prefix:'meadow/',owner:actor.id,registered_at:'2026-11-14T00:00:00.000Z'}],resources:[],executors:[],enabled:true,missing_facts:[]});
+const knownEnvironment=TestEnvironment.parse({schema:'test-environment@1',id:'env_0'+'d'.repeat(25),name:'合成已知环境',target:'synthetic-target',prefixes:[],resources:[{key:'meadow/env',owner:actor.id,registered_at:'2026-11-14T00:00:00.000Z'}],executors:['exe_0'+'e'.repeat(25)],enabled:true,missing_facts:[]});
+
+test('formal booking-only keys preserve every returned field despite an unreadable environment completion marker',async()=>{
+  let completed:boolean|null=false;
+  const {ctx,events,tx}=fixture(true,async()=>{throw new Error('ordinary booking must not consult ENV assignments');},()=>completed);
+  const resolutions:Array<{keys:readonly string[];tx:Transaction|undefined}>=[];
+  Object.assign(ctx.deps.records,{testEnvironments:{resolve:async(keys:readonly string[],supplied?:Transaction)=>{
+    resolutions.push({keys:[...keys],tx:supplied});
+    return {environments:[],unregistered:[ordinaryPrefix]};
+  }}});
+  const requests:LeaseRequest[]=[{keys:['meadow/allowed'],ttl_seconds:30}];
+  const before=await grantLeases(ctx,actor,workflow,requests,run,undefined);
+  assert.deepEqual(resolutions,[],'verified pending false still follows the original lease rules');
+  completed=null;
+  const after=await grantLeases(ctx,actor,workflow,requests,run,undefined);
+  assert.deepEqual(after,before);
+  assert.deepEqual(events,['write','write'],'no ENV grant or partial compensation is introduced');
+  assert.deepEqual(resolutions,[{keys:['meadow/allowed'],tx:undefined},{keys:['meadow/allowed'],tx}]);
+  const otherWorkflow={...workflow,workflow:{...workflow.workflow,leases:{prefix:'outside/',max_ttl_seconds:600}}};
+  await assert.rejects(grantLeases(ctx,actor,otherWorkflow,requests,run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='LEASE_PREFIX');
+});
+
+test('completed true also bypasses only the ENV check for a positively resolved ordinary prefix',async()=>{
+  const {ctx,events}=fixture(true,async()=>{throw new Error('not an environment assignment');});
+  Object.assign(ctx.deps.records,{testEnvironments:{resolve:async()=>({environments:[],unregistered:[ordinaryPrefix]})}});
+  await grantLeases(ctx,actor,workflow,[{keys:['meadow/allowed'],ttl_seconds:30}],run,undefined);
+  assert.deepEqual(events,['write']);
+});
+
+for(const kind of ['mixed','known','overlap','partly ordinary','empty','unreadable'] as const)test('an unknown marker does not permit '+kind+' catalog facts',async()=>{
+  const {ctx,events}=fixture(true,async()=>null,()=>null);
+  Object.assign(ctx.deps.records,{testEnvironments:{resolve:async(keys:readonly string[]):Promise<TestEnvironmentResolution>=>{
+    if(kind==='unreadable')throw new Error('synthetic catalog unavailable');
+    if(kind==='empty')return {environments:[],unregistered:[]};
+    if(kind==='known')return {environments:[knownEnvironment],unregistered:[]};
+    if(kind==='overlap')return {environments:[knownEnvironment],unregistered:[ordinaryPrefix]};
+    if(kind==='partly ordinary')return keys[0]==='meadow/allowed'?{environments:[],unregistered:[ordinaryPrefix]}:{environments:[],unregistered:[]};
+    return keys[0]==='meadow/env'?{environments:[knownEnvironment],unregistered:[]}:{environments:[],unregistered:[ordinaryPrefix]};
+  }}});
+  const keys=kind==='mixed'?['meadow/allowed','meadow/env']:kind==='partly ordinary'?['meadow/allowed','meadow/other']:kind==='known'||kind==='overlap'?['meadow/env']:['meadow/allowed'];
+  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys,ttl_seconds:30}],run,undefined),unavailable);
+  assert.deepEqual(events,[],'no lease write, ENV grant attempt or cleanup on refusal');
+});
+
+
+test('a completed marker with mixed keys still authorizes the entire request rather than bypassing its known environment',async()=>{
+  const keys=['meadow/allowed','meadow/env'];
+  const {ctx,events}=fixture(true,async(by,actual)=>{assert.equal(by,actor);assert.deepEqual(actual,keys);return denied;});
+  Object.assign(ctx.deps.records,{testEnvironments:{resolve:async(actual:readonly string[])=>actual[0]==='meadow/env'?{environments:[knownEnvironment],unregistered:[]}:{environments:[],unregistered:[ordinaryPrefix]}}});
+  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys,ttl_seconds:30}],run,undefined),refused);
+  assert.deepEqual(events,['authorize']);
 });

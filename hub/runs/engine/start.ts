@@ -185,18 +185,29 @@ async function lineageOf(ctx: EngineContext, runId: string, predecessor: string 
 }
 
 async function checkEnvironmentKeys(ctx:EngineContext,user:Principal,environmentKeys:readonly string[],tx?:Transaction):Promise<void> {
-    if(!environmentKeys.length)return;
-    let completed:boolean|null;
-    try { completed = ctx.deps.environmentAccess ? (await ctx.deps.environmentAccess.inheritance(tx)).completed : null; }
-    catch { completed = null; }
-    if (completed === null || completed !== true && completed !== false) throw new Refusal([protocolError('ENVIRONMENT_PERMISSION_UNAVAILABLE', PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when, {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]);
-    if (completed) {
-      let denied:ProtocolError|null;
-      try { denied = await ctx.deps.environmentAccess!.authorizeKeys(user, environmentKeys, tx); }
-      catch { throw new Refusal([protocolError('ENVIRONMENT_PERMISSION_UNAVAILABLE', PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when, {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]); }
-      if (denied) throw new Refusal([denied]);
-    }
+  if(!environmentKeys.length)return;
+  const unavailable=():never=>{throw new Refusal([protocolError('ENVIRONMENT_PERMISSION_UNAVAILABLE',PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE.when,{fix:user.role==='admin'?'请联系维护人员恢复测试环境权限核对。':'请联系管理员。'})]);};
+  let completed:boolean|null;
+  try{completed=ctx.deps.environmentAccess?(await ctx.deps.environmentAccess.inheritance(tx)).completed:null;}
+  catch{completed=null;}
+  if(completed===false)return;
+  const catalog=ctx.deps.records.testEnvironments;
+  if(catalog){
+    let ordinary=true;
+    try{
+      for(const key of new Set(environmentKeys)){
+        const result=await catalog.resolve([key],tx);
+        if(result.environments.length!==0||result.unregistered.length===0){ordinary=false;break;}
+      }
+    }catch{unavailable();}
+    if(ordinary)return;
   }
+  if(completed!==true)unavailable();
+  let denied:ProtocolError|null;
+  try{denied=await ctx.deps.environmentAccess!.authorizeKeys(user,environmentKeys,tx);}
+  catch{unavailable();}
+  if(denied)throw new Refusal([denied]);
+}
 
 function rethrowBoundaryRefusal(error:unknown):void {
   if(error instanceof EffectBoundaryError)throw new Refusal([protocolError(error.failure.code,error.failure.message,{fix:error.failure.fix,...(error.failure.grounds?{grounds:error.failure.grounds}:{})})]);
