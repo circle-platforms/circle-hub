@@ -54,7 +54,6 @@ packs/product/famx/testing/fixtures/release-note.md	10.6.1.41	合成产品版本
 packs/skill/adoc-format/functions/migration.test.ts	1.2.3.4	合成产品版本号	合成软件版本号或版本线规则测试夹具
 packs/skill/adoc-format/functions/migration.test.ts	10.5.0.0	合成产品版本号	合成软件版本号或版本线规则测试夹具
 packs/workflow/bed-install/functions/install.test.ts	9.2.1.8	合成产品版本号	合成软件版本号或版本线规则测试夹具
-packs/workflow/case-compile/functions/checks.ts	172.16.35.70	待随合并清理	已在 wp/agy/cc-3192 (case-compile 3.19.2) 改掉；合批时删除本行
 packs/workflow/case-compile/functions/closure2.test.ts	224.0.0.0	私网定义表、掩码与测试字面量	组播或掩码形非法主机地址负面测试样例
 packs/workflow/case-compile/functions/closure2.test.ts	3.255.255.255	私网定义表、掩码与测试字面量	组播或掩码形非法主机地址负面测试样例
 packs/workflow/case-compile/functions/closure2.test.ts	63.255.255.255	私网定义表、掩码与测试字面量	组播或掩码形非法主机地址负面测试样例
