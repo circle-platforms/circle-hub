@@ -1,5 +1,4 @@
-import type { MemberCapabilities } from '../../records/api.ts';
-import { AccessError } from '../../records/errors.ts';
+import { AccessError, type MemberCapabilities } from '../../records/api.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { emptyBlock, definitions, html, href, link, page, pageLayout, table, type Html } from './html.ts';
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
