@@ -8,7 +8,7 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 ## 固定本地执行规则
 1. 路径边界：文件工具仅限工作目录相对路径（`.`，禁止 `/tmp` 或工作目录之外路径）及只读 `<技能目录>`。只写任务书指定的目标 `.json` 一份文件。
 2. 形状与参考文件位置：`slots.schema.json` 与 `examples/submit-result.json` 均位于 `<技能目录>` 根目录（不在 `tables/` 下）；分块结构规范位于 `<技能目录>/tables/blocks-format.json`；返工与报告口径参考 `<技能目录>/tools/delivery.md`。
-3. `execute` 唯一允许形式：单行 `node "<技能目录>/tools/check-plan.ts" --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁执行 shell、`node -e`、管道或重定向。列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。
+3. `execute` 唯一允许形式：单行 `node <技能目录>/tools/check-plan.ts --file <计划JSON相对路径>`（空格隔开选项与值，禁止 `=`）；严禁执行其它命令或 `node -e`。列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。
 4. 不碰令牌、不调 Hub、不调 `test-bed`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 `unmet`/`missing`，在最终回复写给主代理的报告。
 
 ## 编写核心守则
@@ -53,4 +53,4 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 ```
 
-写完（或返工改完）后，必须运行 `node "<技能目录>/tools/check-plan.ts" --file <目标计划相对路径>`，确认 `ok: true` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。
+写完（或返工改完）后，必须运行 `node <技能目录>/tools/check-plan.ts --file <目标计划相对路径>`，确认 `ok: true` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。

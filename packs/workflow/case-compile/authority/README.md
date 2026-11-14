@@ -1,6 +1,6 @@
 # authority 1.1.10
 
-本地修正 1.1.10（2026-11-14）：同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 adjudicate `1.1.10`）；能力与核对规则相对 1.1.9 不变。本次不发布。
+本地修正 1.1.10（2026-11-14）：同步 `testing/gen-recompose.ts` 生成的共享 `functions/text.ts` 与 `functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 adjudicate `1.1.10`）；能力与核对规则相对 1.1.9 不变。本次不发布。
 
 # authority 1.1.9
 

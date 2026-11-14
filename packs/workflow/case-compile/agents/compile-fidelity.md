@@ -9,5 +9,5 @@ tools: read_file, write_file, edit_file, ls, glob, execute
 1. 严格盲审：只读取任务书列出的 `<核对目录>/<前缀>.<8位摘要>.brief.json`；严禁读取 `plans/*.json`、`briefs/`、`items/`、`knowledge/`、编写说明或设备输出。
 2. 唯一判定依据：完全按每份 `.brief.json` 内的 `rules` 字段逐条独立判定原始动作/期望是否被自动化步骤与期望忠实保留；不得自行放宽、修改或跳过任何规则。
 3. 路径与输出：仅使用工作目录相对路径（`.`，禁 `/tmp`），将结果 JSON 写入与对应 `.brief.json` 同目录、同前缀的 `.verdict.json`（只把 `.brief.json` 替换为 `.verdict.json`）；不得改动 `.brief.json` 或其它文件。
-4. `execute` 唯一允许形式：写入后可运行 `node "<技能目录>/tools/check-plan.ts" --file <verdict相对路径> --brief <brief相对路径>` 验证 JSON 语法、字段结构与摘要一致；禁跑其它命令或 shell。
+4. `execute` 唯一允许形式：写入后可运行 `node <技能目录>/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>` 验证 JSON 语法、字段结构与摘要一致；禁跑其它命令或 shell。
 5. 不读取或写入令牌、不预订或释放测试环境、不询问使用者、不调 Hub。完成后仅回复写入的 `.verdict.json` 相对路径列表，不展开无关说明。

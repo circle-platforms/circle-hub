@@ -400,6 +400,7 @@ export function closeFailed(cases: CaseOutcome[], notes: Notes, rounds: Record<s
  */
 export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFact>, notes?: Notes, ground?: ConflictGround): { cases: CaseOutcome[]; problems: string[] } {
   const problems: string[] = [];
+  const unresolved: string[] = [];
   const closed = cases.map((outcome) => {
     if (outcome.status !== 'unrun') return outcome;
     const fact = facts[outcome.autoid];
@@ -410,9 +411,21 @@ export function closeUnrun(cases: CaseOutcome[], facts: Record<string, MissingFa
       if (wrong.length) { problems.push(...wrong); return outcome; }
       return { ...outcome, closing: 'author_conflict' as const, conflict };
     }
-    problems.push(`用例 ${outcome.autoid} 尚未上机验证，Hub 也未确认缺资料或重交次数用完。说明里的判断尚未确认：测试环境缺资料或前置条件的说明尚未确认，请按原始用例继续脚本编写和脚本合并，再把自动化用例 Excel 一起做上机验证；根据设备输出做失败分析，最多重交 ${MAX_ROUNDS} 次。只有 Hub 确认缺资料或最多重交的次数用完，或模型提出原始用例与手册冲突且原句已核对，才能在上机验证前结束脚本编写；原始用例是否修改由使用者决定`);
+    unresolved.push(outcome.autoid);
     return outcome;
   });
+  if (unresolved.length > 0) {
+    const maxList = 10;
+    const shown = unresolved.slice(0, maxList).join('、');
+    const suffix = unresolved.length > maxList
+      ? ` 等共 ${unresolved.length} 条用例`
+      : unresolved.length > 1
+        ? `（共 ${unresolved.length} 条）`
+        : '';
+    problems.push(
+      `不存在：用例 ${shown}${suffix}尚未上机验证，也未查到 Hub 确认缺资料、重交次数用完或原句核对后的原始用例与手册不一致说明。请先按原始用例继续脚本编写与脚本合并，在最多 ${MAX_ROUNDS} 次重交内完成上机验证或补齐确认依据后再组交付`,
+    );
+  }
   return { cases: closed, problems };
 }
 const MISSING_SHOWN = 240;

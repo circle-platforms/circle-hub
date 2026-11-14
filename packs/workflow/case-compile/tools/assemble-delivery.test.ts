@@ -430,7 +430,8 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);
     assert.equal(refused.code, 1, gap);
-    assert.match(refused.stderr, new RegExp(`用例 ${CASES[3]} 尚未上机验证，Hub 也未确认缺资料或重交次数用完。说明里的判断尚未确认：测试环境缺资料或前置条件的说明尚未确认，请按原始用例继续脚本编写和脚本合并，再把自动化用例 Excel 一起做上机验证`), gap);
+    assert.match(refused.stderr, new RegExp(`^不存在：用例 ${CASES[3]}尚未上机验证`), gap);
+    assert.ok(!refused.stderr.startsWith('已被占用：'), `${gap}: unrun refusal must never use 已被占用: ${refused.stderr}`);
     await assert.rejects(readdir(refusedOut), `${gap}: nothing was written`);
   }
 });

@@ -47,7 +47,7 @@ const LITE_SHAPE_HINT =
   '{"item":"<下载文件中的 id>","method":{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<原句或手册引用>"],"basis":"为什么这样验证"}}（可选字段仅 slots/states/adapted/concretizations/unknowns），严禁写完整 schema 字段或 "handling"';
 
 /** Enforces the single lite record format on both model files and direct `recordFor` callers. */
-function assertValidRecomposeShape(value: unknown, contextLabel: string, requireItem: boolean): Row {
+export function assertValidRecomposeShape(value: unknown, contextLabel: string, requireItem: boolean): Row {
   if (!isRecord(value)) {
     throw new Error(`${contextLabel} 必须使用精简格式 JSON 对象（实际不是对象）。请按单一精简格式重写为 ${LITE_SHAPE_HINT}`);
   }
@@ -61,10 +61,12 @@ function assertValidRecomposeShape(value: unknown, contextLabel: string, require
       `${contextLabel} 必须使用精简格式（${kindNote}不允许顶层字段 ${extraKeys.join('、')}）。请按单一精简格式改写为 ${LITE_SHAPE_HINT}`,
     );
   }
-  if (value.slots !== undefined && !Array.isArray(value.slots)) {
-    throw new Error(
-      `${contextLabel} 必须使用精简格式（顶层 "slots" 应为数组，禁止写 {record|plan} 包装对象）。请改写为 ${LITE_SHAPE_HINT}`,
-    );
+  for (const listKey of ['slots', 'states', 'adapted', 'concretizations', 'unknowns', 'candidates'] as const) {
+    if (value[listKey] !== undefined && !Array.isArray(value[listKey])) {
+      throw new Error(
+        `${contextLabel} 必须使用精简格式（顶层 "${listKey}" 应为数组，禁止写包装对象）。请改写为 ${LITE_SHAPE_HINT}`,
+      );
+    }
   }
   if (requireItem && (typeof value.item !== 'string' || !value.item)) {
     throw new Error(`${contextLabel} 缺少非空字符串字段 "item"。请按单一精简格式写为 ${LITE_SHAPE_HINT}`);

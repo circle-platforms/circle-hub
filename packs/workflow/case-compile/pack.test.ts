@@ -270,4 +270,8 @@ test('H1/H4/Effort-AB: SKILL.md, recompose/SKILL.md, delivery.md and compile-rec
   assert.match(skill, /0\.md.*00\.md|ls.*核对/);
   assert.match(skill, /"action":\s*"release"/);
   assert.match(skill, /"booking":/);
+  assert.ok(skill.includes('--task-file') && skill.includes('短派发提示') && !skill.includes('标准输出全文'), 'SKILL.md uses --task-file short dispatch notice');
+  assert.ok(skill.includes('--wait 3600') && delivery.includes('--wait 3600') && !skill.includes('--wait 600'), 'SKILL.md and delivery.md unify --wait 3600 with background');
+  assert.ok(!skill.includes('管道或重定向') && !skill.includes('管道重定向'), 'SKILL.md drops unenforceable pipe/redirection ban');
+  assert.ok(recomposeSkill.includes('check-record.ts'), 'recompose/SKILL.md runs check-record.ts before submit-records.ts');
 });

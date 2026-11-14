@@ -1,7 +1,7 @@
-// 只读生成可直接原文传给 Circle 内置 general-purpose 子代理（task 工具）的任务说明：
-//   node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
+// 只读装配单条或指定范围子代理任务说明写入 `--task-file`（不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
+//   node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
 import { realpathSync } from 'node:fs';
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -11,7 +11,7 @@ import {
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
-import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
+import { CIRCLE_GENERAL_PURPOSE_NOTICE, renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import {
   buildSingleCaseStructuredBrief,
@@ -33,6 +33,7 @@ const OPTIONS: Record<string, boolean> = {
   case: true,
   brief: true,
   out: true,
+  'task-file': true,
   scope: false,
   note: false,
   round: false,
@@ -45,9 +46,12 @@ const OPTIONS: Record<string, boolean> = {
   'prior-notes': false,
 };
 const USAGE =
-  'node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
+  'node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> --task-file <任务文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]';
 const DEFAULT_SCOPE = 'scope.md';
 const MAX_SCOPE_BYTES = 16_384;
+/** Threshold above which a raw verbatim line is disclosed at the top of `--task-file` without wrapping. */
+export const VERBATIM_LINE_DISCLOSURE_THRESHOLD = 1_800;
+const MAX_DISCLOSED_LONG_LINES = 50;
 const DEFAULT_PACK_ROOT = realpathSync(resolve(fileURLToPath(new URL('..', import.meta.url))));
 
 export interface BuildTaskBriefOptions {
@@ -67,6 +71,24 @@ export interface BuildTaskBriefOptions {
   priorNotes?: string;
   cwd?: string;
   packRoot?: string;
+}
+
+export interface WriteTaskBriefOptions extends BuildTaskBriefOptions {
+  taskFilePath: string;
+}
+
+export interface LongBriefLine {
+  line: number;
+  length: number;
+}
+
+export interface WriteTaskBriefResult {
+  taskFile: string;
+  lineCount: number;
+  byteCount: number;
+  longLines: LongBriefLine[];
+  brief: string;
+  dispatchPrompt: string;
 }
 
 function parseRoundNumber(raw: number | string | undefined): number {
@@ -401,9 +423,18 @@ async function resolveOptionalRunContext(
 /**
  * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
  * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
- * and any round 2+ single-case prior history, then renders a complete `general-purpose` prompt.
+ * and any round 2+ single-case prior history, returning rendered Markdown plus resolved metadata.
  */
-export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<string> {
+async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
+  brief: string;
+  cwd: ResolvedCwd;
+  role: ResolvedRoleSpec;
+  caseRef: string;
+  round: number;
+  briefPath: string;
+  outPath: string;
+  scopeRelative: string;
+}> {
   const role = resolveSubagentRole(options.role);
   if (!role) {
     throw new Error(
@@ -541,7 +572,7 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
     scopeRelative: scopeResolved.relative,
   });
 
-  return renderTaskBrief({
+  const brief = renderTaskBrief({
     role,
     caseRef,
     briefPath,
@@ -554,6 +585,164 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
     ...(priorRounds && streak ? { priorRounds, streak } : {}),
     ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
   });
+  return {
+    brief,
+    cwd,
+    role,
+    caseRef,
+    round,
+    briefPath,
+    outPath,
+    scopeRelative: scopeResolved.relative,
+  };
+}
+
+/**
+ * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
+ * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
+ * and any round 2+ single-case prior history, then renders a complete `general-purpose` prompt.
+ */
+export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<string> {
+  return (await buildTaskBriefWithMeta(options)).brief;
+}
+
+async function assertValidTaskFilePath(
+  cwd: ResolvedCwd,
+  taskFileArg: string,
+  protectedPaths: readonly (string | undefined)[],
+): Promise<{ relative: string; canonical: string }> {
+  const resolved = resolveInsideCwd(cwd, taskFileArg, '--task-file', '如 briefs/0.task.md');
+  if (resolved.relative === '.') {
+    throw new Error('参数无效：--task-file 必须指向工作目录下的具体 .md 文件（如 briefs/0.task.md）。请修改参数后重试');
+  }
+  // Refuse symlinks along the lexical path inside cwd before checking canonical collision.
+  let probePath = resolved.lexical;
+  while (probePath !== cwd.canonical && probePath !== cwd.lexical) {
+    const st = await lstat(probePath).catch(() => null);
+    if (st?.isSymbolicLink()) {
+      throw new Error(`参数无效：--task-file 路径包含符号链接 ${probePath.slice(probePath.lastIndexOf('/') + 1)}`);
+    }
+    if (probePath === resolved.lexical && st?.isDirectory()) {
+      throw new Error(`参数无效：--task-file 指向了已存在的目录 ${resolved.relative}，必须写具体 .md 文件路径`);
+    }
+    const parent = dirname(probePath);
+    if (parent === probePath) break;
+    probePath = parent;
+  }
+  const rel = resolved.relative;
+  if (!rel.endsWith('.md')) {
+    throw new Error(`参数无效：--task-file 必须是 .md 文件路径（当前收到 ${rel}，如 briefs/0.task.md）`);
+  }
+  const normalizedProtected = new Set(
+    protectedPaths
+      .filter((p): p is string => typeof p === 'string' && p.length > 0)
+      .map((p) => resolveInsideCwd(cwd, p, '--task-file').relative),
+  );
+  if (normalizedProtected.has(rel)) {
+    throw new Error(`参数无效：--task-file 路径 ${rel} 不能与输入、范围或目标输出文件相同`);
+  }
+  return resolved;
+}
+
+/**
+ * Preserves every line > 1,800 chars byte-for-byte without wrapping, prepending a header with exact
+ * shifted 1-based line numbers so readers know when Circle `read_file` will clip a verbatim line at 2,000 chars.
+ */
+export function formatTaskBriefFileContent(rawBrief: string): {
+  content: string;
+  lineCount: number;
+  longLines: LongBriefLine[];
+} {
+  const bodyWithNewline = rawBrief.endsWith('\n') ? rawBrief : `${rawBrief}\n`;
+  const rawLines = bodyWithNewline.slice(0, -1).split('\n');
+  const longIndices: number[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    if (rawLines[i]!.length > VERBATIM_LINE_DISCLOSURE_THRESHOLD) longIndices.push(i);
+  }
+  if (longIndices.length === 0) {
+    return { content: bodyWithNewline, lineCount: rawLines.length, longLines: [] };
+  }
+  const shown = longIndices.slice(0, MAX_DISCLOSED_LONG_LINES);
+  const omitted = longIndices.length - shown.length;
+  const headerCount = 1 + shown.length + (omitted > 0 ? 1 : 0) + 1;
+  const headerLines: string[] = [
+    `> 注意：本任务文件包含 ${longIndices.length} 行超过 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符的逐字原始内容（未折行，逐字节保留）。\`read_file\` 单行只展示前 2000 字符；如须完整查看被截断的逐字行，请在允许范围内按下列 1 起始行号读取或核对原始来源文件：`,
+  ];
+  const longLines: LongBriefLine[] = [];
+  for (const idx of shown) {
+    const lineNo = headerCount + idx + 1;
+    const len = rawLines[idx]!.length;
+    longLines.push({ line: lineNo, length: len });
+    headerLines.push(`- 第 ${lineNo} 行（${len} 字符）`);
+  }
+  if (omitted > 0) {
+    const maxOmitted = Math.max(...longIndices.slice(shown.length).map((idx) => rawLines[idx]!.length));
+    headerLines.push(`- 其余 ${omitted} 行同样超过 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符（最长 ${maxOmitted} 字符）`);
+  }
+  headerLines.push('');
+  return {
+    content: `${headerLines.join('\n')}\n${bodyWithNewline}`,
+    lineCount: headerCount + rawLines.length,
+    longLines,
+  };
+}
+
+/** Fixed short dispatch notice emitted to stdout (`~250-350` chars, zero case content). */
+export function renderTaskDispatchPrompt(params: {
+  roleAgentName: string;
+  roleStageLabel: string;
+  caseRef: string;
+  round: number;
+  taskFile: string;
+  outPath: string;
+  lineCount: number;
+  longLineCount: number;
+}): string {
+  const longHint = params.longLineCount > 0
+    ? `；含 ${params.longLineCount} 行超 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符逐字行，见文件开头行号提示`
+    : '';
+  return [
+    CIRCLE_GENERAL_PURPOSE_NOTICE,
+    '',
+    `请以 \`subagent_type="general-purpose"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
+    `- 任务文件：${params.taskFile}（共 ${params.lineCount} 行${longHint}）`,
+    `- 目标输出：${params.outPath}`,
+    `先用 \`read_file\` 分段完整读完 \`${params.taskFile}\` 再动手（只写 \`${params.outPath}\`，完成后简要回复路径）。`,
+  ].join('\n');
+}
+
+/** Writes the full brief to `--task-file` inside cwd and returns a short dispatch prompt for stdout. */
+export async function writeTaskBrief(options: WriteTaskBriefOptions): Promise<WriteTaskBriefResult> {
+  const meta = await buildTaskBriefWithMeta(options);
+  const taskResolved = await assertValidTaskFilePath(meta.cwd, options.taskFilePath, [
+    meta.briefPath,
+    meta.outPath,
+    meta.scopeRelative,
+    options.briefJsonPath,
+    options.itemPath,
+  ]);
+  const formatted = formatTaskBriefFileContent(meta.brief);
+  await mkdir(dirname(taskResolved.canonical), { recursive: true });
+  const bytes = Buffer.from(formatted.content, 'utf8');
+  await writeFile(taskResolved.canonical, bytes);
+  const dispatchPrompt = renderTaskDispatchPrompt({
+    roleAgentName: meta.role.agentName,
+    roleStageLabel: meta.role.stageLabel,
+    caseRef: meta.caseRef,
+    round: meta.round,
+    taskFile: taskResolved.relative,
+    outPath: meta.outPath,
+    lineCount: formatted.lineCount,
+    longLineCount: formatted.longLines.length,
+  });
+  return {
+    taskFile: taskResolved.relative,
+    lineCount: formatted.lineCount,
+    byteCount: bytes.byteLength,
+    longLines: formatted.longLines,
+    brief: formatted.content,
+    dispatchPrompt,
+  };
 }
 
 const HELP_TEXT = [
@@ -566,9 +755,10 @@ const HELP_TEXT = [
   '  失败分析（attribute）   生成单条上机失败分析子代理任务简报',
   '',
   '注意事项：',
-  '  1. 所有路径参数须在当前工作目录下，且不能为符号链接。',
+  '  1. 所有路径参数须在当前工作目录下，且不能为符号链接；--task-file 须为工作目录下不冲突的 .md 路径。',
   '  2. --brief 与 --scope 等输入文件必须已落盘；调用前先用 ls 核对实际文件名（总数 <10 条时通常为 0.md 而非 00.md）。',
-  '  3. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
+  '  3. 完整任务说明写入 --task-file（超 1800 字符逐字行不折行并在文件开头提示行号）；stdout 只输出极短派发提示。',
+  '  4. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
 ].join('\n');
 
 export async function main(argv: string[]): Promise<number> {
@@ -578,11 +768,12 @@ export async function main(argv: string[]): Promise<number> {
       return 0;
     }
     const args = parseCliOptions(argv, OPTIONS, USAGE);
-    const brief = await buildTaskBrief({
+    const written = await writeTaskBrief({
       role: args.role!,
       caseRef: args.case!,
       briefPath: args.brief!,
       outPath: args.out!,
+      taskFilePath: args['task-file']!,
       ...(args.scope !== undefined ? { scopePath: args.scope } : {}),
       ...(args.note !== undefined ? { note: args.note } : {}),
       ...(args.round !== undefined ? { round: args.round } : {}),
@@ -594,7 +785,7 @@ export async function main(argv: string[]): Promise<number> {
       ...(args['prior-answers'] !== undefined ? { priorAnswers: args['prior-answers'] } : {}),
       ...(args['prior-notes'] !== undefined ? { priorNotes: args['prior-notes'] } : {}),
     });
-    process.stdout.write(brief);
+    process.stdout.write(`${written.dispatchPrompt}\n`);
     return 0;
   } catch (error) {
     process.stderr.write(formatCallError(error) + '\n');

@@ -48,8 +48,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "603cd776c690adee3d88cadf53afb5915a309d9f35de80e2fa2ddda399399724",
-      "size": 9914
+      "sha256": "038fe15d557ec2ab1274f2e346395cdcde9ceecccf2d52f0a35590246df2099b",
+      "size": 11782
     },
     {
       "path": "requirements.json",

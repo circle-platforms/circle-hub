@@ -85,10 +85,15 @@ test('a case never sent to the bed closes on the claim too, after the Hub’s ow
   const stale = closeUnrun([unrun], {}, { cases: { c3: note({ author_conflict: { ...CONFLICT, manual: '手册没写过这一句' } }) } }, GROUND);
   assert.equal(stale.cases[0].closing, undefined);
   assert.match(stale.problems[0], /^用例 c3 判断原始用例的问题时，手册引文不是所选手册的原话；逐字复制/);
-  // No claim: the older refusal, whose first words are unchanged, now also names the new exit.
+  // No claim: aggregated single refusal with category '不存在' (never '已被占用') and capped case list.
   const none = closeUnrun([unrun], {}, { cases: { c3: note() } }, GROUND);
-  assert.match(none.problems[0], /^用例 c3 尚未上机验证，Hub 也未确认缺资料或重交次数用完。说明里的判断尚未确认.*原始用例是否修改由使用者决定$/);
+  assert.match(none.problems[0], /^不存在：用例 c3尚未上机验证，也未查到 Hub 确认缺资料、重交次数用完或原句核对后的原始用例与手册不一致说明。请先按原始用例继续脚本编写与脚本合并，在最多 3 次重交内完成上机验证或补齐确认依据后再组交付$/);
   assert.equal(closeUnrun([unrun], {}).problems.length, 1, 'the callers that pass no notes keep working');
+  const manyUnrun = Array.from({ length: 13 }, (_, i) => failed(`c${i + 1}`, 'unrun'));
+  const aggregated = closeUnrun(manyUnrun, {});
+  assert.equal(aggregated.problems.length, 1, 'unrun cases aggregate into one single refusal rather than repeating per case');
+  assert.ok(aggregated.problems[0].length < 250, `expected compact aggregated message, got ${aggregated.problems[0].length} chars`);
+  assert.ok(aggregated.problems[0].includes('等共 13 条用例'));
 });
 
 test('the notes carry the claim as exactly three plain texts, never beside a defect candidate', () => {
