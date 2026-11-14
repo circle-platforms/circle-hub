@@ -37,3 +37,22 @@ test('a confirmed empty catalog is an empty registration view rather than permis
   const service = new LeaseService(db, { catalog: { ownership: async () => ({ prefixes: [], resources: [] }) } });
   assert.deepEqual(await service.registrations(''), []);
 });
+
+test('target-less legacy prefix responsibility survives the unified catalog projection without becoming an environment permission', async t => {
+  const db = unusedDatabase(); t.after(() => db.end());
+  const canonical = {
+    target: null, executors: [],
+    prefixes: [{ prefix: 'ordinary/legacy/', owner: 'synthetic-original-owner', registered_at: '2026-10-22T08:00:00.000Z' }],
+    resources: [],
+  };
+  const before = JSON.stringify(canonical);
+  const service = new LeaseService(db, { catalog: { ownership: async () => ({
+    prefixes: canonical.prefixes.map(({ prefix, owner }) => ({ prefix, owner })), resources: [],
+  }) } });
+  assert.deepEqual(await service.registrations('ordinary/'), [{ prefix: 'ordinary/legacy/', owner: 'synthetic-original-owner' }]);
+  const { ownsLeaseKeys } = await import('./ownership.ts');
+  const projection = { prefixes: canonical.prefixes, resources: [] };
+  assert.equal(ownsLeaseKeys(projection, 'synthetic-original-owner', ['ordinary/legacy/seat']), true);
+  assert.equal(ownsLeaseKeys(projection, 'synthetic-other-owner', ['ordinary/legacy/seat']), false);
+  assert.equal(JSON.stringify(canonical), before);
+});
