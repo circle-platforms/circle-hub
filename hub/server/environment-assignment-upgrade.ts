@@ -28,7 +28,7 @@ export function planEnvironmentAssignmentUpgrade(snapshot: EnvironmentUpgradeSna
     }
     const workflows = snapshot.workflows.filter(row => (row.kind === 'workflow' || row.kind === 'skill' && row.installedMethod === true) && (row.space === undefined || row.space === 'team') && row.available && time(row.publishedAt) <= at
       && member.packs.includes(row.id) && row.declaration.leases !== undefined && row.declaration.context?.includes('leases'));
-    const legacyExecutors = executors.filter(executor => executor.keys.length > 0 && executor.keys.every(key => workflows.some(row => key.startsWith(row.declaration.leases!.prefix))));
+    const coveredExecutors = executors.filter(executor => executor.keys.length > 0 && executor.keys.every(key => workflows.some(row => key.startsWith(row.declaration.leases!.prefix))));
     const heldByExecutor = new Map<string, typeof holdings>();
     for (const holding of holdings) {
       if (!existingKeys.has(holding.key)) {
@@ -37,7 +37,7 @@ export function planEnvironmentAssignmentUpgrade(snapshot: EnvironmentUpgradeSna
       }
       const bound = [...new Set((snapshot.holdingBindings ?? []).filter(binding => binding.user === member.id && binding.run === holding.run
         && executors.some(executor => executor.id === binding.executor && executor.keys.includes(holding.key))).map(binding => binding.executor))];
-      if (bound.length !== 1 && legacyExecutors.some(executor => executor.keys.includes(holding.key))) continue;
+      if (bound.length !== 1 && coveredExecutors.some(executor => executor.keys.includes(holding.key))) continue;
       if (bound.length !== 1) {
         plan.missing.push({ user: member.id, key: holding.key, fact: '有效预订缺少唯一可核验的执行器归属，不能按资源键或旧分配推断' });
         continue;
