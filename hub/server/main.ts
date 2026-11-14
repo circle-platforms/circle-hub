@@ -5,7 +5,7 @@ import type { RebuildPageRenderer, RebuildResetBridge } from './rebuild-http.ts'
 import { renderRebuildPage } from './console/reset.ts';
 import { diagnoseRecordsSchema } from '../records/api.ts';
 // `circle-hub serve`: configuration from CIRCLE_HUB_* only (a retired CIRCLE_SERVER_* name refuses to start, and so does an
-// operator token in the environment: a server needs no admin token), the platform's cluster started when the database is the
+// operator token in the environment: only the approved startup inheritance may use the stored operator delegation), the platform's cluster started when the database is the
 // data root's own socket (never initialised, never stopped on exit), records opened as the runtime role without migrating,
 // the assembly, then the app (on loopback unless the configuration declares allowed hosts, and over the built-in HTTPS
 // with the certificate of <data root>/tls when it is configured) until SIGTERM or SIGINT.
@@ -24,7 +24,8 @@ import { TraceReader, startTelemetry, type Telemetry } from '../telemetry/api.ts
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
 import { createApp } from './app.ts';
 import { createCommandBridge } from './command-bridge.ts';
-import { OPERATOR_TOKEN_VARIABLE } from './assemble/operator-token.ts';
+import { OPERATOR_TOKEN_VARIABLE, type OperatorTokenStore } from './assemble/operator-token.ts';
+import { environmentStartupAuthority, prepareEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartupPort } from './env-startup.ts';
 import { terminalSafe } from './assemble/terminal.ts';
 import { isAssemblyMissing, UsageError } from './errors.ts';
 import { describeError } from './notes.ts';
@@ -37,6 +38,10 @@ export interface ServeOptions {
   keyProvider?: (env: NodeJS.ProcessEnv) => KeyProvider;
   /** Role that owns the tables for --migrate-only; default the operating-system account, the cluster's own role under hub/platform. */
   ownerRole?: string;
+  /** Fixed inheritance only: the deployment's stored operator token, never an environment token. */
+  operatorTokens?: (config: HubConfig, service: string) => OperatorTokenStore;
+  /** Public records conversion port; tests use scripted completion facts with real principals. */
+  environmentPermissions?: (records: RecordsKit) => EnvironmentPermissionStartupPort;
   /** The assembly module; default hub/server/assemble.ts. */
   assembly?: () => Promise<AssemblyModule>;
   /** Resolves when the server should stop; default SIGTERM or SIGINT. */
@@ -57,7 +62,7 @@ export { SERVE_USAGE } from './cli-command-usage.ts';
 export const ACCEPTED_PLATFORM_VARIABLES: readonly string[] = PLATFORM_ONLY_VARIABLES;
 
 /**
- * Why `serve` refuses the operator token rather than dropping it: a server never acts as an admin, so a token in its
+ * Why `serve` refuses an environment operator token: only fixed startup inheritance may use stored delegation; a token in its
  * environment can only be a shell's export leaking into a long-lived process (and, through it, into whatever it starts).
  * Refusing makes the operator remove it from the shell; dropping it silently would leave it there for every later command.
  */
@@ -192,6 +197,11 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     }
     return reportFailure(io, error);
   }
+  const environmentStartup = await prepareEnvironmentPermissionStartup(
+    (options.environmentPermissions ?? recordsEnvironmentPermissionStartup)(records),
+    environmentStartupAuthority(config, io.env, records.principals, options.operatorTokens),
+  );
+  if (environmentStartup.missing !== null) io.stderr(terminalSafe(`${environmentStartup.missing}${environmentStartup.nextAction ?? ''}`));
   // The operator's log while serving (launchd's stderr file): one line each, made safe for a terminal, since a line may
   // quote what a caller sent (a tool name, an error about an argument).
   const operatorLog = (line: string): void => io.stderr(terminalSafe(line));
@@ -226,7 +236,7 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
       tls = { cert: material.cert, key: material.key };
     }
     const assembly = await (options.assembly ?? (() => import('./assemble.ts') as Promise<AssemblyModule>))();
-    const deps = await assembly.assemble(config, records);
+    const deps = await assembly.assemble(config, records, environmentStartup);
     closeAssembly = deps.close?.bind(deps);
     maintenance=deps.maintenance;
     // The console's management actions run the CLI's commands with this process's own configuration (decision 122).
