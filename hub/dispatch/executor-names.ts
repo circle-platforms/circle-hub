@@ -32,13 +32,13 @@ export class ExecutorNames {
     return {reserved:[...identities].map(([executor,name]) => ({schema:'executor-name@1',executor,name})),active:heads.flatMap(row=>{const binding=byDigest.get(row.digest);return !row.body.revoked&&binding?[binding]:[];})};
   }
 
-  async inspect(by: Principal): Promise<{reserved:ExecutorNameBinding[];active:ExecutorNameBinding[]}> {
-    const actor = await this.records.principals.get(by.id);
+  async inspect(by: Principal, tx?: Transaction): Promise<{reserved:ExecutorNameBinding[];active:ExecutorNameBinding[]}> {
+    const actor = await this.records.principals.get(by.id, tx);
     if (!actor || actor.disabled || !isAdmin(actor)) throw new Error('只有启用的管理员可以读取执行器名字登记');
-    return this.bindings();
+    return this.bindings(tx);
   }
 
-  async list(by:Principal):Promise<ExecutorNameBinding[]>{return (await this.inspect(by)).active;}
+  async list(by:Principal,tx?:Transaction):Promise<ExecutorNameBinding[]>{return (await this.inspect(by,tx)).active;}
 
   async assign(by: Principal, executor: string, name: string): Promise<{binding:ExecutorNameBinding;created:boolean}> {
     const identity = idOf('exe').parse(executor), explicitName = ExecutorStableName.parse(name);

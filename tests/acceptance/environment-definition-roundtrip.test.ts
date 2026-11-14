@@ -5,7 +5,8 @@ import { createTestHub, type TestHub } from '../../hub/server/testing-real.ts';
 import { startPostgres } from '../../hub/testing/postgres.ts';
 import { applyDeployment, exportDeployment } from '../../hub/server/cli-apply.ts';
 import { environmentPermissionSources } from '../../hub/server/env-permission-sources.ts';
-import { ExecutorRegistry } from '../../hub/dispatch/api.ts';
+import { openRecords } from '../../hub/records/api.ts';
+import { ExecutorNames, ExecutorRegistry } from '../../hub/dispatch/api.ts';
 import { definition as syntheticExecutor } from '../../hub/dispatch/testing/definition.ts';
 import type { Session } from '../../hub/server/cli-session.ts';
 
@@ -67,6 +68,16 @@ test('an unmodified deployment v3 export restores environment identities by name
     const restoredDormant=await target.records.principals.findByName('合成停用受众');assert.ok(restoredDormant?.disabled);
     assert.equal(await target.records.testEnvironments.canUse(restoredDormant,restoredFirst.id),false);
     assert.equal((await target.records.testEnvironments.inheritance()).completed,true);
+    const single=await openRecords({...target.records.config,database:target.records.database},{migrate:false,maxConnections:1,keyProvider:target.records.keyProvider});
+    try {await single.store.withTransaction(async tx=>{
+      assert.equal((await single.principals.get(restoredMember.id,tx))?.name,'合成成员');
+      assert.ok((await single.principals.list(tx)).some(user=>user.id===restoredMember.id));
+      assert.equal((await single.principals.some([restoredMember.id],tx)).length,1);
+      const teams=await single.teams.list(target!.admin.principal,tx);assert.equal(teams.length,1);
+      assert.ok((await single.teams.members(target!.admin.principal,teams[0].id,tx)).some(member=>member.user.id===restoredMember.id));
+      assert.equal((await new ExecutorNames(single).list(target!.admin.principal,tx)).length,2);
+    });}finally{await single.close();}
+
   } finally {
     try {await target?.close();} finally {try {await source?.close();} finally {await postgres.stop();}}
   }

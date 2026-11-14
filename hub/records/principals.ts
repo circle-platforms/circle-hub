@@ -273,10 +273,10 @@ export class PgPrincipals implements Principals {
     return {id: actor.id, name: actor.name, role: actor.role};
   }
 
-  async get(userId: string): Promise<User | null> {
+  async get(userId: string, tx?: Transaction): Promise<User | null> {
     if (typeof userId !== 'string' || !USER_ID.test(userId)) return null;
-    const snapshot = requestPermissions(userId); if (snapshot) return snapshot.user;
-    const row = (await this.#db.query('SELECT * FROM users WHERE id = $1', [userId])).rows[0];
+    const snapshot = tx === undefined ? requestPermissions(userId) : null; if (snapshot) return snapshot.user;
+    const row = (await this.#db.query('SELECT * FROM users WHERE id = $1', [userId], tx)).rows[0];
     return row === undefined ? null : userOf(row);
   }
 
@@ -286,14 +286,14 @@ export class PgPrincipals implements Principals {
     return row === undefined ? null : userOf(row);
   }
 
-  async list(): Promise<User[]> {
-    return (await this.#db.query('SELECT * FROM users ORDER BY created_at, id')).rows.map(userOf);
+  async list(tx?: Transaction): Promise<User[]> {
+    return (await this.#db.query('SELECT * FROM users ORDER BY created_at, id', [], tx)).rows.map(userOf);
   }
 
-  async some(ids: readonly string[]): Promise<User[]> {
+  async some(ids: readonly string[], tx?: Transaction): Promise<User[]> {
     const wanted = ids.filter((id) => typeof id === 'string' && USER_ID.test(id));
     if (wanted.length === 0) return [];
-    return (await this.#db.query('SELECT * FROM users WHERE id = ANY($1::text[])', [wanted])).rows.map(userOf);
+    return (await this.#db.query('SELECT * FROM users WHERE id = ANY($1::text[])', [wanted], tx)).rows.map(userOf);
   }
 
   async history(userId: string): Promise<UserChange[]> {
