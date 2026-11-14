@@ -198,11 +198,22 @@ export class PgPrincipals implements Principals {
     });
   }
 
+  /** Ends every open console session for the account (password change and disable; decision 46 / freeze). */
+  async #revokeConsoleSessions(tx: PgTransaction, by: string, userId: string, at: string): Promise<void> {
+    const revoked = await this.#db.query(
+      'UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',
+      [by, at, userId],
+      tx,
+    );
+    for (const token of revoked.rows.map((row) => String(row.id)).sort()) {
+      await appendTokenIssuance(this.#store, { action: REVOKE, token, user: userId, by, at }, tx);
+    }
+  }
+
   async #replacePassword(tx: PgTransaction, by: Principal, userId: string, hash: string, mustChange: boolean): Promise<void> {
     const at=this.#now().toISOString();
     const row=(await this.#db.query('UPDATE users SET password_hash=$2, password_must_change=$3, password_revision=password_revision+1, updated_at=$4 WHERE id=$1 RETURNING *',[userId,hash,mustChange,at],tx)).rows[0];
-    const revoked=await this.#db.query('UPDATE tokens SET revoked_at=$2, revoked_by=$1 WHERE user_id=$3 AND console_session AND revoked_at IS NULL RETURNING id',[by.id,at,userId],tx);
-    for (const token of revoked.rows.map(row=>String(row.id)).sort()) await appendTokenIssuance(this.#store,{action:REVOKE,token,user:userId,by:by.id,at},tx);
+    await this.#revokeConsoleSessions(tx, by.id, userId, at);
     await this.#db.query('INSERT INTO user_history (user_id,name,role,disabled,changed_by,changed_at,password_changed) VALUES ($1,$2,$3,$4,$5,$6,true)',[userId,row.name,row.role,row.disabled,by.id,at],tx);
   }
 
@@ -226,7 +237,10 @@ export class PgPrincipals implements Principals {
       const current = await this.#locked(tx, userId);
       if (current.disabled === disabled) return current;
       if (disabled && isAdmin(current)) await this.#keepAnAdmin(tx, current.id);
-      return this.#update(tx, current, { role: current.role, disabled }, by.id);
+      const updated = await this.#update(tx, current, { role: current.role, disabled }, by.id);
+      // Decision 46: cookie is the console-session token; disable must revoke it so re-enable does not revive the session (52-member-freeze).
+      if (disabled) await this.#revokeConsoleSessions(tx, by.id, userId, this.#now().toISOString());
+      return updated;
     }).finally(retireReadScope);
   }
 
