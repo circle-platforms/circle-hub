@@ -72,6 +72,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
   });
   const testEnvironments = new RecordTestEnvironments(db, store, objects, authorizations, variables);
   authorizations.setVariableWriteValidator((by, change, tx) => testEnvironments.assertVariableWrite(by, change, tx));
+  authorizations.setExecutorWriteValidator((by, id, source, tx) => source === null ? testEnvironments.assertExecutorRemoval(by, id, tx) : testEnvironments.assertExecutorWrite(by, id, source, tx));
   const memberDeletions=new PgMemberDeletions(db,store,store.personalPayloads,now);
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs','personal'));
   memberDeletions.registerCacheRoot(join(config.dataDir,'packs'),{shared:true});

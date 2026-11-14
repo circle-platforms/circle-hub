@@ -1,5 +1,6 @@
 import { restoresDisabledAssignment } from './definition-restoration.ts';
 import { VariableRecord, OrdinaryVariableName } from '../../contracts/src/variables.ts';
+import { ExecutorSource } from '../../contracts/src/resources.ts';
 import { EnvironmentWriteError, type OrdinaryVariableWrite } from './environment-write-consistency.ts';
 import { parseStrictJson } from './strict-json.ts';
 import { assertEnvironmentProgramWrite } from './environment-program-write.ts';
@@ -101,9 +102,13 @@ export class RecordAuthorizations implements Authorizations {
   readonly #now: () => Date;
   readonly #objects: ObjectStore;
   #variableWriteValidator: ((by: Principal, change: OrdinaryVariableWrite, tx: Transaction) => Promise<void>) | undefined;
+  #executorWriteValidator: ((by: Principal, id: string, source: ExecutorSource | null, tx: Transaction) => Promise<void>) | undefined;
 
   setVariableWriteValidator(validate: (by: Principal, change: OrdinaryVariableWrite, tx: Transaction) => Promise<void>): void {
     this.#variableWriteValidator = validate;
+  }
+  setExecutorWriteValidator(validate: (by: Principal, id: string, source: ExecutorSource | null, tx: Transaction) => Promise<void>): void {
+    this.#executorWriteValidator = validate;
   }
 
   constructor(db: Database, store: RecordStore, now: () => Date, objects: ObjectStore) {
@@ -414,6 +419,17 @@ export class RecordAuthorizations implements Authorizations {
         }
       } else if (!isAdmin(decider)) {
         throw new AccessError('只有管理员可以分配包、授予发布权、配置资源和分享');
+      }
+      if (permission === RESOURCE_CONFIG && subject === WHOLE_HUB && object.startsWith('executor.') && this.#executorWriteValidator) {
+        const id = object.slice('executor.'.length);
+        if (revoked) await this.#executorWriteValidator(by, id, null, tx);
+        else {
+          const bytes = bound === null ? null : await this.#objects.get(bound, tx);
+          if (!bytes || sha256Hex(bytes) !== bound) throw new IntegrityError('执行器候选原件缺失或摘要不符');
+          const candidate = ExecutorSource.safeParse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
+          if (!candidate.success) throw new EnvironmentWriteError('执行器候选原件不符合源定义结构');
+          await this.#executorWriteValidator(by, id, candidate.data, tx);
+        }
       }
       if (permission === RESOURCE_CONFIG && subject === WHOLE_HUB && object.startsWith('var:') && this.#variableWriteValidator) {
         const name = object.slice('var:'.length);
