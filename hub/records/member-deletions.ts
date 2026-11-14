@@ -1,3 +1,4 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import {retireReadScope} from './read-scope.ts';
 import {retirePersonalCaches} from './personal-caches.ts';
 import {isAbsolute} from 'node:path';
@@ -71,8 +72,10 @@ export class PgMemberDeletions {
   const purge_manifest=sha256Hex(canonicalize({records:records.map(r=>r.record),payloads,objects,caches})),epoch=scope?String(scope.epoch):INITIAL_PERSONAL_EPOCH;
   return {member,epoch,purge_manifest,counts,scope_counts,state:sha256Hex(canonicalize({member,epoch,purge_manifest,counts,holders,role:user.role,disabled:user.disabled,updated_at:iso(user.updated_at)}))};
  }
- async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#withHandover(by,await this.#preview(member,tx),tx);});}
+ async preview(by:Principal,member:string){await this.#admin(by);return this.store.withTransaction(async tx=>{
+   await lockEnvironmentPermission(this.store, tx);await this.store.lock('knowledge-space:'+member,tx);await this.#admin(by,tx);return this.#withHandover(by,await this.#preview(member,tx),tx);});}
  async status(by:Principal,member:string){return this.store.withTransaction(async tx=>{
+   await lockEnvironmentPermission(this.store, tx);
   await this.#admin(by,tx);const intent=await this.intent(member,tx);if(!intent)return null;
   const row=await this.store.getByKey<Receipt>('member_deletion',intent.operation_id,tx);
   return {intent,result:row?{record:row.digest,...MemberDeletionBody.parse(row.body)}:null};
@@ -81,6 +84,7 @@ export class PgMemberDeletions {
   // Parse the operation and immutable manifest before touching an identity.
   MemberDeletionBody.parse({operation_id:input.operation_id,member:input.member,epoch:input.epoch,purge_manifest:input.purge_manifest,counts:input.counts,by:by.id,at:this.now().toISOString()});
   return this.store.withTransaction(async tx=>{
+   await lockEnvironmentPermission(this.store, tx);
    await this.store.lock('knowledge-space:'+input.member,tx);
    await lockAdministratorSet(this.db,tx);
    const intent=await this.intent(input.member,tx);
@@ -114,6 +118,7 @@ export class PgMemberDeletions {
   if(by.id!==member||intent.by!==by.id)await this.#admin(by);
   try{await retirePersonalCaches(this.db,member,this.cacheRoots,this.sharedCacheRoots);}catch(cause){throw new RecordsError('私人内容的存储清理未完成，请修复存储后重试同一删除操作',{cause});}
   return this.store.withTransaction(async tx=>{
+   await lockEnvironmentPermission(this.store, tx);
    await this.store.lock('knowledge-space:'+member,tx);
    if(by.id!==member||intent.by!==by.id)await this.#admin(by,tx);
    const existing=await this.store.getByKey<Receipt>('member_deletion',operation_id,tx);if(existing)return {record:existing.digest,...MemberDeletionBody.parse(existing.body)};

@@ -1,3 +1,4 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { readTeamDefinitions } from './team-definitions.ts';
 import { isAdmin } from './permissions.ts';
 import {scopedRecordStore} from './read-scope.ts';
@@ -358,6 +359,7 @@ export class RecordAuthorizations implements Authorizations {
     if (permission === PUBLISH && published === null) throw new TypeError('the object of a publish record is pack-id@x.y.z');
     if (permission === PUBLISH && !revoked && bound === null) throw new TypeError('a publication binds the SHA-256 of the exact pack content (B04 R[1])');
     return this.#store.withTransaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
       const users=[...new Set([by.id,...(UserId.safeParse(subject).success?[subject]:[])])].sort();
       const accounts=(await this.#db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE',[users],tx)).rows;
       const target=accounts.find(row=>row.id===subject);
