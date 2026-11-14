@@ -50,9 +50,9 @@ export class MemberEnvironments {
     if(!keys.length)return null;
     const environments=new Map<string,TestEnvironment>();
     for(const key of new Set(keys)) {
-      const matches=await this.records.testEnvironments.resolve([key],tx);
-      if(matches.length!==1 || matches[0].target===null)return null;
-      environments.set(matches[0].id,matches[0]);
+      const matches=(await this.records.testEnvironments.resolve([key],tx)).filter(environment=>environment.target!==null);
+      if(matches.length>1)return null;
+      if(matches.length===1)environments.set(matches[0].id,matches[0]);
     }
     return [...environments.values()];
   }

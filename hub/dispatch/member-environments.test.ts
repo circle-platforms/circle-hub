@@ -183,3 +183,33 @@ test('overlapping, nested and fully matching resource declarations cannot name a
   const failed = new MemberEnvironments(w.records,w.registry,{view:async()=>{throw new Error('synthetic unavailable');},registrations:async()=>[]} as unknown as Pick<LeaseService,'view'|'registrations'>);
   assert.equal(await failed.unattributedHoldings(w.alice),null,'unread holdings are unknown, never an empty success');
 });
+
+test('ordinary owner prefix preserves the same holders booking result across inheritance', {timeout:60000}, async t=>{
+  const records=await openTestRecords();t.after(()=>records.close());
+  const db=new Database(createPool(records.database));t.after(()=>db.end());
+  const admin=(await records.principals.bootstrapAdmin('合成管理员')).user;
+  const member=await records.principals.createUser(admin,'合成普通前缀使用者');
+  const now=new Date('2026-11-14T00:00:00.000Z');
+  const prefix='ordinary/owner/',key=prefix+'key',run='run_0'+'g'.repeat(25);
+  // Seed the real pre-upgrade table only; the production converter owns its one-time consumption.
+  await db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3)',[prefix,member.id,now]);
+  const leases=new LeaseService(db,{now:async()=>now,catalog:records.testEnvironments});
+  const environments=new MemberEnvironments(records,new ExecutorRegistry(records),leases);
+  const ctx={now:()=>now,deps:{leases,environmentAccess:environments}} as unknown as EngineContext;
+  const workflow={pack:{id:'synthetic-ordinary-workflow'},workflow:{leases:{prefix:'ordinary/',max_ttl_seconds:600}}} as LoadedWorkflow;
+  const requests=[{op:'extend' as const,keys:[key],ttl_seconds:60}];
+  assert.equal((await leases.acquire({keys:[key],prefix:'ordinary/',holder:{user:member.id,run},ttlSeconds:60,maxTtlSeconds:600})).ok,true);
+  const before=await grantLeases(ctx,member,workflow,requests,run,undefined);
+  const stored=async()=>JSON.stringify((await db.query('SELECT to_jsonb(l) AS row FROM leases l ORDER BY key')).rows);
+  const beforeConversion=await stored();
+  await records.testEnvironments.inherit(admin,{collect:async()=>({workflows:[],executors:[],sourceRecords:[]})});
+  assert.equal(await stored(),beforeConversion,'inheritance itself changes no old lease byte');
+  assert.equal((await environments.inheritance()).completed,true);
+  const after=await grantLeases(ctx,member,workflow,requests,run,undefined);
+  assert.deepEqual(after,before,'the same holders entire public lease result is unchanged across conversion');
+  assert.deepEqual(await environments.list(member),[],'an ordinary owner prefix is not displayed as a test environment');
+  assert.equal(await environments.authorizeKeys(member,[key]),null);
+  const owner=await leases.registrations(prefix);
+  assert.equal(owner.find(row=>row.prefix===prefix)?.owner,member.id);
+  assert.equal((await records.authorizations.history({permission:'resource_assign',limit:100})).items.length,0,'ordinary prefix conversion creates no environment use assignment');
+});
