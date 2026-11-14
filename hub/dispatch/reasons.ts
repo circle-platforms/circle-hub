@@ -65,7 +65,8 @@ function diagnosticFacts(source: JobStatus['job_facts'] | NonNullable<JobStatus[
     if (!missing.length && (source.missing_fact || source.reason || source.failed_conditions?.length)) missing.push({ fact: `${label}仍缺少可供成员读取的具体核对事实`, next_action: next });
   }
   if (source.booking?.coverage_complete === false && source.error_code === 'LEASE_UNAVAILABLE' && source.booking.declared_device_count !== null) {
-    missing.push({ fact: `${label}所需测试环境「${source.booking.target}」的清单声明 ${source.booking.declared_device_count} 台设备；缺少 ${source.booking.missing_resources} 项所需资源的预订（共 ${source.booking.required_resources} 项）`, next_action: admin ? source.next_action ?? next : source.member_missing_facts?.[0]?.next_action ?? next });
+    const count = source.booking.missing_resources === null ? `所缺资源数量尚未核对（所需共 ${source.booking.required_resources} 项）` : `缺少 ${source.booking.missing_resources} 项所需资源的预订（共 ${source.booking.required_resources} 项）`;
+    missing.push({ fact: `${label}所需测试环境「${source.booking.target}」的清单声明 ${source.booking.declared_device_count} 台设备；${count}`,  next_action: admin ? source.next_action ?? next : source.member_missing_facts?.[0]?.next_action ?? next });
   }
   return [...new Map(missing.map(fact => [fact.fact + '\0' + fact.next_action, fact])).values()].slice(0, 16);
 }

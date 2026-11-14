@@ -147,7 +147,7 @@ function attemptLabel(attempt: DispatchAttemptFacts): string {
 
 function attemptNext(attempt: DispatchAttemptFacts, job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): string {
   const scope = attemptLabel(attempt);
-  if (attempt.outcome === 'unknown') return `${scope}结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；之后原样重交读进展，需要时联系管理员只读核对`;
+  if (attempt.outcome === 'unknown') return `${scope}的上机验证结果未知：不要重交，也不要另开运行重发，目标可能已经执行过一次；之后原样重交读进展，需要时联系管理员只读核对`;
   if (attempt.report_pending) return `${scope}目标报告还没取全；原样重交原提交补读报告，不要重新发送作业`;
   if (attempt.not_sent === true) return retriable(job) ? `${scope}没有发出用例数据；原因消除后原样重交，Hub 会再试一次` : `${scope}没有发出用例数据；按本作业的放行说明处理，不自行重新发送`;
   if (attempt.outcome === 'target_rejected') return `${scope}目标没有接收，也没有执行；` + (retriable(job) ? '按该次拒绝原因修正后原样重交，Hub 会再试一次' : '读取该次拒绝记录，不自行重发整个作业');

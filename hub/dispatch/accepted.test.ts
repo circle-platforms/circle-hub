@@ -152,7 +152,7 @@ test('the accepted answer reports the reserved job, then a repeat reads its prog
   const [job] = await settled(c);
   const progress = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(progress.length, 1); assert.equal(progress[0].job, job.job);
-  assert.match(progress[0].text, /上机验证已结束/); assert.doesNotMatch(progress[0].text, /阶段 complete|boundary_refused/);
+  assert.match(progress[0].text, /上机验证作业已结束/); assert.doesNotMatch(progress[0].text, /阶段 complete|boundary_refused/);
   assert.match(progress[0].text, /设备返回 src:[a-f0-9]{64}/);
   assert.equal(c.calls.filter((call) => call === 'send_blob').length, 1);
 });
@@ -190,7 +190,7 @@ test('a repeat reads the attempt still running instead of starting another, and 
   assert.equal(started, 1, 'a repeat does not start a second attempt');
   release({ started: false, executor: c.executor.id, reason: '合成：这份产物已经由作业 x 派发过，作业已结束；同一份字节只派发一次' });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^上机验证没有发出：上机前的放行条件尚未满足/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 5))[0].text, /^本次运行的准入核对未通过/);
   assert.equal(started, 1);
 });
 
@@ -200,7 +200,7 @@ test('a refusal the runner can remove is answered once, and the repeat after it 
   c.service.dispatchAccepted = async () => { started++; await new Promise((resolve) => setTimeout(resolve, 30)); return { started: false, reason: '合成：自动化测试环境正被作业占用' }; };
   assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^本次运行正在做上机验证前核对/);
   await new Promise((resolve) => setTimeout(resolve, 80));
-  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^上机验证没有发出：上机前的放行条件尚未满足/);
+  assert.match((await acceptedDispatch(c.kit, c.service, c.run, true, 1))[0].text, /^本次运行的准入核对未通过/);
   assert.equal(started, 1);
   await acceptedDispatch(c.kit, c.service, c.run, true, 1);
   assert.equal(started, 2, 'the repeat after the answer tries again');
@@ -255,7 +255,7 @@ test('not sent (the target cannot be reached): the reason names no address, and 
   assert.equal(job.status.dispatch_attempt?.reason, '目标没有给出完整应答：连不上、超时或应答超限');
   const again = await acceptedDispatch(c.kit, c.service, c.run, true);
   assert.equal(again.length, 2, JSON.stringify(again));
-  assert.match(again[0].text, /未发出；目标没有给出完整应答：连不上、超时或应答超限/);
+  assert.match(again[0].text, /第 1 轮派发.*未发出.*目标没有给出完整应答：连不上、超时或应答超限/);
   assert.ok(again[1].job && again[1].job !== job.job);
   for (const note of [...first, ...again]) assert.doesNotMatch(note.text, /127\.0\.0\.1|localhost|ECONN|circle-hub/);
   await ended(c, 2);
@@ -361,11 +361,11 @@ test('the responsibility administrator cannot lend environment use to an unassig
   const c=await setup();t.after(()=>c.close());
   await c.kit.authorizations.unassignResource(c.admin,c.environment.id,c.environmentTeam.id);
   const denied=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(denied.dispatch_attempt?.outcome,'not_dispatched');assert.equal(denied.dispatch_attempt?.error_code,'SOURCE_NOT_PERMITTED');
+  assert.equal(denied.dispatch_attempt,undefined);assert.equal(denied.job_facts.admission_error?.code,'SOURCE_NOT_PERMITTED');
   assert.equal(c.calls.length,0,'authorization fails before a gateway session is opened');
   assert.equal(c.calls.includes('send_blob'),false);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.dispatch_attempt?.error_code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
+  assert.equal(note.dispatch_attempt,undefined);assert.equal(note.job_facts?.admission_error?.code,'SOURCE_NOT_PERMITTED');assert.doesNotMatch(JSON.stringify(note),/usr_|exe_|circle-hub/);
 });
 
 test('revoking environment use after precheck is rechecked in the intent transaction',async t=>{
@@ -405,10 +405,10 @@ test('a missing environment provider is unavailable evidence, never a claim of n
   assert.equal(await c.environmentAccess.canUse(c.owner,c.executor.id),true,'this actor really has an assignment');
   c.service.options.environmentAccess=undefined;
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.dispatch_attempt?.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(result.dispatch_attempt?.outcome,'not_dispatched');
+  assert.equal(result.dispatch_attempt,undefined);assert.equal(result.job_facts.admission_error?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');
   assert.equal(c.calls.length,0);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.dispatch_attempt?.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.dispatch_attempt?.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
+  assert.equal(note.dispatch_attempt,undefined);assert.equal(note.job_facts?.admission_error?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
   assert.doesNotMatch(JSON.stringify(note),/没有.*分配|usr_|exe_|circle-hub/);
 });
 
@@ -421,9 +421,9 @@ test('an unreadable environment permission port is unavailable, not a negative p
     permission:c.environmentAccess.permission,
   };
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.dispatch_attempt?.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.length,0);
+  assert.equal(result.dispatch_attempt,undefined);assert.equal(result.job_facts.admission_error?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.length,0);
   const [note]=await acceptedDispatch(c.kit,c.service,c.run,false,undefined,c.owner);
-  assert.equal(note.dispatch_attempt?.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.dispatch_attempt?.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
+  assert.equal(note.dispatch_attempt,undefined);assert.equal(note.job_facts?.admission_error?.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.ok(note.job_facts?.missing_facts?.some(fact=>fact.fact==='测试环境的权限核对现在不能进行，这次没有执行'));
   assert.doesNotMatch(JSON.stringify(note),/private connection|没有.*分配|usr_|exe_|circle-hub/);
 });
 
@@ -578,7 +578,7 @@ test('a genuinely absent or expired own booking is not_found and never invents a
     const [note]=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
     assert.match(note.text,/^不存在：/);assert.doesNotMatch(note.text,/已被占用|由其他运行持有/);
     assert.match(note.text,/缺少/);assert.ok(note.dispatch_attempt?.missing_facts?.some(fact=>/预订/.test(fact.fact)));
-    assert.equal(note.job_facts?.admission_error?.code,'LEASE_UNAVAILABLE');
+    assert.equal(note.dispatch_attempt?.error_code,'LEASE_UNAVAILABLE');
     if(mode==='expired')assert.match(note.text,/过期/);
     assert.equal(c.calls.length,0,'missing prerequisites never reach the target');
   }
