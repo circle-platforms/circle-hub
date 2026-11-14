@@ -17,7 +17,7 @@ import { executorCommand, jobCommand, EXECUTOR_USAGE, JOB_USAGE, bedCommand, BED
 import { traceCommand, TRACE_USAGE } from './cli-trace.ts';
 import { lstat, readFile, writeFile } from 'node:fs/promises';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { isLeaseOp, labelOf } from '../../contracts/generated/vocabulary.ts';
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { HubConfigError, HubEnvironmentError } from '../config/index.ts';
 import { productionShareKey, isSha256, type IssuedToken, type Page, type Principal, type RecordsKit, type SourceArtifactBody, type StoredRecord, type User } from '../records/api.ts';
 import { parsePackRef } from '../runs/api.ts';
@@ -253,32 +253,6 @@ export async function leaseCommand(session: Session, args: readonly string[]): P
       session.out([row.key,name(owner?.owner),name(row.user),row.run,row.since,row.until??'无到期时刻'].join('\t'));
     }
     for(const reg of registrations)if(!view.entries.some(row=>row.key.startsWith(reg.prefix)))session.out([reg.prefix,name(reg.owner),'空闲','—','—','—'].join('\t'));
-    return 0;
-  }
-  if(isLeaseOp(sub)&&(sub==='register'||sub==='unregister')){
-    const {positionals,values}=parse(rest,{owner:{type:'string'},reason:{type:'string'},as:{type:'string'}},1);
-    const prefix=positionals[0]??'';
-    if(!values.reason?.trim())throw new UsageError('登记或注销须写 --reason <理由>');
-    if(sub==='register'&&!values.owner)throw new UsageError('登记须写 --owner <用户>');
-    const viewer=await session.viewer(values.as);
-    if(!isAdmin(viewer))throw new CliError('只有管理员能管理登记');
-    const leases=await session.leases();
-    if(sub==='unregister'){
-      const outcome=await leases.unregister({prefix,by:viewer.id,admin:true,reason:values.reason});
-      if(!outcome.ok)throw new CliError(outcome.message,'先强制释放，或等它释放；再核对登记');
-    }else{
-      const owner=await session.user(values.owner!);
-      if(owner.disabled)throw new CliError('不能登记给已停用的用户','先核对用户状态');
-      const hub=await session.hub();const prefixes:string[]=[];
-      for(const pack of await hub.registry.listPacks())if(pack.kind==='workflow')for(const version of pack.versions){
-        const loaded=await hub.workflows.byDigest(version.digest);if(loaded?.workflow.leases)prefixes.push(loaded.workflow.leases.prefix);
-      }
-      const declared=prefixes.filter(root=>prefix.startsWith(root)&&prefix!==root).sort((a,b)=>b.length-a.length)[0];
-      if(!declared)throw new CliError('没有工作流声明这个租约前缀','先发布声明对应租约前缀的工作流，再登记其下的键前缀');
-      const outcome=await leases.register({prefix,declaredPrefix:declared,owner:owner.id,by:viewer.id,admin:true,reason:values.reason});
-      if(!outcome.ok)throw new CliError(outcome.message,'核对登记前缀，不要使已有登记互相包含');
-    }
-    session.out(sub==='register'?'已登记 '+prefix:'已注销 '+prefix);
     return 0;
   }
   if (sub === 'release') {

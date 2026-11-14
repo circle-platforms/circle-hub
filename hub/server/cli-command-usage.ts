@@ -3,7 +3,7 @@ import { NAMED_SECRET_USAGE } from './variables.ts';
 
 export const SECRET_USAGE = NAMED_SECRET_USAGE;
 export const ORIGINAL_USAGE = 'original list [--external <外部标识的前缀>] [--suffix <外部标识的后缀>] [--limit <条数>] | export <sha256> --out <文件>';
-export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由> | register <前缀> --owner <用户> --reason <理由> | unregister <前缀> --reason <理由>';
+export const LEASE_USAGE = 'lease list [--prefix <键前缀>] | release <键> --reason <理由>';
 export const SHARE_USAGE = 'share run <运行> (--users <用户,…> | --pack-users) [--reason <理由>] | production <工作流> [--reason <理由>] | list [--object <对象>]';
 export const UNSHARE_USAGE = 'unshare run <运行> (--user <用户> | --pack-users) | production <工作流>';
 export const DOC_USAGE = 'doc put <名字> <文件> | list | show <名字>';
