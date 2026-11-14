@@ -13,6 +13,16 @@ test('first reason registry covers the model axis and exactly one classification
   assert.deepEqual(validateCallErrorReasonRegistry(input.formatProposals.callErrorReasons, reasons(input)), []);
   assert.equal(input.vocabulary.find((axis: { axis: string }) => axis.axis === 'call_error_reason').owner, 'D05');
   const values = rules(input);
+  const labels = input.vocabulary.find((axis: { axis: string }) => axis.axis === 'call_error_reason').values;
+  assert.deepEqual(labels.map((value: { label: string }) => value.label), [
+    '账户已停用', '账户无效', '测试环境已停用', '缺少测试环境分配', '缺少测试环境登记', '测试环境归属不唯一',
+    '测试环境权限暂不可核对', '资源已有他人预订', '已有本人预订', '缺少本运行预订', '预订已到期', '预订已释放', '预订记录暂不可读取',
+  ]);
+  for (const row of input.formatProposals.callErrorReasons) {
+    assert.equal(typeof row.when, 'string');
+    assert.equal(typeof row.meaning, 'string');
+    assert.equal('source_condition' in row, false);
+  }
   for (const name of ['actor_disabled', 'environment_disabled', 'environment_unassigned']) assert.deepEqual(values[name].classification, { category: 'permission_denied' });
   assert.notDeepEqual(values.actor_disabled.next_by_role, values.environment_unassigned.next_by_role);
   assert.notDeepEqual(values.environment_disabled.next_by_role, values.environment_unassigned.next_by_role);
@@ -54,5 +64,27 @@ test('conclusion and unknown are explicit non-category states, never a sixth cal
   for (const classification of [{ conclusion: true }, { unknown: true }]) {
     const row = { reason: 'synthetic_non_call', codes: ['SYNTHETIC'], classification, next_by_role: { user: null, admin: null } };
     assert.deepEqual(validateCallErrorReasonRegistry([row], [row.reason]), []);
+  }
+});
+
+test('unreadable lease observations remain unknown and cannot become missing leases', () => {
+  const registry = rules();
+  const found = resolveCallErrorReasonRule(registry, 'SOURCE_UNAVAILABLE', 'lease_reader_unavailable', 'user');
+  assert.deepEqual(found?.classification, { unknown: true });
+  assert.equal(found?.nextAction, registry.lease_reader_unavailable.next_by_role.user);
+  assert.equal(resolveCallErrorReasonRule(registry, 'LEASE_UNAVAILABLE', 'lease_reader_unavailable', 'user'), null);
+  assert.equal(resolveCallErrorReasonRule(registry, 'SOURCE_UNAVAILABLE', 'lease_missing_for_lineage', 'user'), null);
+});
+
+test('known binding, target and resource mismatch candidates cannot be emitted before a unique category decision', () => {
+  const input = model(), registry = rules(input);
+  assert.deepEqual(input.formatProposals.callErrorReasonCandidates.map((row: { reason: string }) => row.reason), [
+    'environment_binding_mismatch', 'environment_target_mismatch', 'environment_resource_mismatch',
+  ]);
+  for (const candidate of input.formatProposals.callErrorReasonCandidates) {
+    assert.equal(reasons(input).includes(candidate.reason), false);
+    assert.deepEqual(candidate.category_candidates, ['invalid_parameters', 'temporarily_unavailable']);
+    assert.equal(resolveCallErrorReasonRule(registry, candidate.codes[0], candidate.reason, 'user'), null);
+    assert.equal(Object.hasOwn(candidate, 'classification'), false, 'pending category is not an unknown-fact classification');
   }
 });
