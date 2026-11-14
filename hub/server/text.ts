@@ -498,6 +498,11 @@ function itemSummary(item: ItemProjection): string {
 /** Slot placeholder written by submit-records; not a conclusion of its own when a check already spoke. */
 const SLOT_JUDGMENT_PLACEHOLDER = '模型的重组判断';
 
+/**
+ * Reader label for one original case. Prefer fields.title when the pack wrote it
+ * (recompose project.ts → intent text; patch text-next-pack-part for agy/cc-next).
+ * Until that lands: case_id present but title absent →「标题未知」(do not echo case_id/label twice).
+ */
 function caseName(item: ItemProjection | undefined, label: string): string {
   if (item && isRecord(item.fields.review_counts)) return label;
   const id = item?.fields.autoid ?? item?.fields.case_id;
