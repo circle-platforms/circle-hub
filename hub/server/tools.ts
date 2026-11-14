@@ -581,6 +581,41 @@ function checkReadCancellation(call: ToolCall): void {
   if (call.context.signal?.aborted) throw new McpError(ErrorCode.ConnectionClosed, '请求已取消');
 }
 
+/** Exact pack_id with zero hits: category sentence form (13:05); path stays /pack_id. */
+export function packIdAbsenceError(packId: string, absence: NonNullable<Awaited<ReturnType<NonNullable<WorkflowStore['absence']>>>>): ProtocolError {
+  if (absence === 'unassigned') {
+    return {
+      code: 'SOURCE_NOT_PERMITTED',
+      message: `无权限：当前账户未获授权使用工作流「${packId}」`,
+      fix: '请联系管理员为该账户或所在团队分配此工作流',
+      path: '/pack_id',
+    };
+  }
+  if (absence === 'withdrawn') {
+    return {
+      code: 'SOURCE_ABSENT',
+      message: `不存在：Hub 里没有工作流「${packId}」的可用版本（已退役）`,
+      fix: '请核对名称',
+      path: '/pack_id',
+    };
+  }
+  if (absence === 'uninstalled') {
+    return {
+      code: 'SOURCE_ABSENT',
+      message: `不存在：Hub 里没有安装技能「${packId}」`,
+      fix: '请联系管理员安装此技能',
+      path: '/pack_id',
+    };
+  }
+  // unknown | disabled — determined absence
+  return {
+    code: 'SOURCE_ABSENT',
+    message: `不存在：Hub 里没有工作流「${packId}」`,
+    fix: '请核对名称',
+    path: '/pack_id',
+  };
+}
+
 const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const parsed = ListTaskPacksInput.safeParse(args);
@@ -599,6 +634,14 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
+  // Exact pack_id and nothing visible: distinguish absent vs unassigned (disclosure-audit D3 / brief D4).
+  if (packId !== undefined && filtered.length === 0) {
+    const absence = await deps.workflows.absence?.(call.principal, packId) ?? null;
+    if (absence !== null) {
+      call.context.adminNote(`list_task_packs: pack_id ${packId} is ${absence} for ${call.principal.id}`.slice(0, 1000));
+      return { answer: errorAnswer('list_task_packs', [packIdAbsenceError(packId, absence)]) };
+    }
+  }
   // Every choice is in the answer whatever the offset (A05 R[1]); only the details are paged (decision 113).
   const index = filtered.map((pack) => ({ pack: pack.pack, title: pack.title, kind: pack.kind }));
   let context: Awaited<ReturnType<NonNullable<ServerDeps['runs']['packContext']>>> = null;

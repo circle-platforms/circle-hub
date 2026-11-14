@@ -187,6 +187,16 @@ export class FakeWorkflows implements WorkflowStore {
     if (scripted !== undefined) return scripted.value as PackSummary[];
     return (await this.usable(user)).map((pack) => pack.summary!).filter((summary) => summary !== null);
   }
+
+  /** Same reasons as the real WorkflowStore.absence (D05 R[3]); used by list_task_packs exact pack_id. */
+  async absence(user: Principal, ref: string): Promise<'unknown' | 'unassigned' | 'uninstalled' | 'withdrawn' | 'disabled' | null> {
+    const pack = this.find(ref);
+    if (pack === undefined) return 'unknown';
+    if (pack.kind === 'skill') return 'uninstalled';
+    if (!(await isActive(this.#records, user))) return 'unknown';
+    if (!(await this.#records.authorizations.canUse(user.id, pack.id))) return 'unassigned';
+    return null;
+  }
 }
 
 function loaded(pack: FakePack): LoadedWorkflow {
