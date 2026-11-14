@@ -7,7 +7,7 @@ import { sendJson } from '../http.ts';
 import { LIVE_EVENTS, wantedEvents } from './live.ts';
 import { NEUTRAL } from './context.ts';
 import type { ConsoleSession } from './session.ts';
-import { type ConsoleOptions, pageContext } from './console-http.ts';
+import { type ConsoleOptions, pageContext, principalOfConsoleSession } from './console-http.ts';
 
 /**
  * Console JSON under /console/api: only the live event stream remains. Other paths (including the
@@ -19,9 +19,9 @@ export async function api(request: IncomingMessage, response: ServerResponse, ur
     request.resume();
     return sendJson(response, 405, { code: null, message: '控制台接口只接受 GET', fix: '实时更新用 GET /console/api/stream；管理操作在控制台页面提交' }, { ...headers, allow: 'GET, HEAD' });
   }
-  const principal: Principal | null = session === null ? null : await options.deps.records.principals.authenticate(`Bearer ${session.token}`);
+  const principal: Principal | null = session === null ? null : await principalOfConsoleSession(options.deps.records.principals, session.token);
   if (principal === null) {
-    if (session !== null) options.sessions.close(session.id);
+    if (session !== null) options.sessions.close(session.token);
     return sendJson(response, 401, { code: null, message: '登录已过期或已退出', fix: '重新登录控制台后再读取' }, headers);
   }
   if (rest.length === 1 && rest[0] === 'stream') {

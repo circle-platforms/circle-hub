@@ -19,6 +19,8 @@ const principals = {
   },
   passwordState: async () => ({ configured: true, mustChange: false, revision: 1 }),
   authenticate: async (value: string | null) => (consoleTokens.has(String(value).replace(/^Bearer /, '')) ? admin : null),
+  authenticateConsoleSession: async (value: string | null) => (consoleTokens.has(String(value).replace(/^Bearer /, '')) ? admin : null),
+  revokeTokenValue: async (token: string) => { if (!consoleTokens.has(token)) return false; consoleTokens.delete(token); return true; },
 };
 const csrf = (reply: Reply) => /name="csrf" value="([^"]+)"/.exec(reply.body)?.[1] ?? '';
 const namedCookie = (reply: Reply, name: string) => reply.cookies.find(value => value.startsWith(`${name}=`)) ?? '';

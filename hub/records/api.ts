@@ -196,6 +196,8 @@ export interface Principals {
   clientsMany?(clientIds:readonly string[]):Promise<Map<string,OAuthClient>>;
   /** Live access Bearer only, excluding console sessions; metadata comes from the server's token binding. */
   authenticateAccessToken?(authorization:string|null|undefined):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>;
+  /** Console cookie Bearer only; access tokens are refused. */
+  authenticateConsoleSession?(authorization:string|null|undefined):Promise<Principal|null>;
   /** Internal authentication also supports the console's bounded password-session credential. */
   authenticate(authorization: string | null | undefined): Promise<Principal | null>;
   /** Like authenticate, with the server token that authenticated (console sessions included). */

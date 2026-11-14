@@ -377,11 +377,12 @@ export class LiveEvents {
       }
       if (now - stream.beat < this.#options.heartbeatMs) continue;
       stream.beat = now;
-      const principal = await this.#deps.records.principals.authenticate(`Bearer ${stream.token}`);
+      const principals = this.#deps.records.principals;
+      const principal = await (principals.authenticateConsoleSession?.(`Bearer ${stream.token}`) ?? principals.authenticate(`Bearer ${stream.token}`));
       if (stream.ended) continue;
       if (principal === null) {
         // As a page does: a token that stopped working ends the session.
-        this.#deps.sessions.close(stream.session);
+        this.#deps.sessions.close(stream.token);
         this.#end(stream);
         continue;
       }

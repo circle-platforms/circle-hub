@@ -457,18 +457,22 @@ export class PgPrincipals implements Principals {
     return new Map((await this.#db.query('SELECT * FROM oauth_clients WHERE id=ANY($1::text[])',[ids])).rows.map(row=>{const client=clientOf(row);return [client.id,client];}));
   }
 
-  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,false))?.principal??null;}
-  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,true);}
-  identify(authorization:string|null|undefined){return this.#authenticate(authorization,false);}
-  async #authenticate(authorization:string|null|undefined,accessOnly:boolean):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
+  async authenticate(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'any'))?.principal??null;}
+  /** Live access Bearer only, excluding console sessions. */
+  authenticateAccessToken(authorization:string|null|undefined){return this.#authenticate(authorization,'access');}
+  /** Console cookie Bearer only; access tokens are refused. */
+  async authenticateConsoleSession(authorization:string|null|undefined):Promise<Principal|null>{return (await this.#authenticate(authorization,'console'))?.principal??null;}
+  identify(authorization:string|null|undefined){return this.#authenticate(authorization,'any');}
+  async #authenticate(authorization:string|null|undefined,kind:'any'|'access'|'console'):Promise<{principal:Principal;token_id:string;client_id:string|null}|null>{
     if (typeof authorization !== 'string' || authorization.length > 200) return null;
     const match = BEARER.exec(authorization);
     if (match === null) return null;
     const row = (
       await this.#db.query(
         `SELECT t.id AS token_id, t.client_id, u.id, u.name, u.role FROM tokens t JOIN users u ON u.id = t.user_id
-          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2) AND (NOT $3 OR NOT t.console_session)`,
-        [sha256Hex(match[1]),this.#now().toISOString(),accessOnly],
+          WHERE t.sha256 = $1 AND t.revoked_at IS NULL AND NOT u.disabled AND (t.expires_at IS NULL OR t.expires_at > $2)
+            AND ($3 = 'any' OR ($3 = 'access' AND NOT t.console_session) OR ($3 = 'console' AND t.console_session))`,
+        [sha256Hex(match[1]),this.#now().toISOString(),kind],
       )
     ).rows[0];
     if (row === undefined || !isPermissionRole(row.role)) return null;

@@ -23,6 +23,7 @@ import type { ClientDeclaration } from '../../contracts/src/spaces.ts';
 import { callTool, internalError, listTools, supportsReadCancellation, type CallState, type ToolCall } from './tools.ts';
 import { beginObservedCall } from './inflight-calls.ts';
 import { retainReadReply } from './read-replies.ts';
+import { authenticateAccessOnly, CONSOLE_SESSION_REFUSED } from './access-auth.ts';
 import { identifyRequest } from './request-entry.ts';
 import { bearerToken } from './token-echo.ts';
 
@@ -218,11 +219,13 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
   const { deps } = options;
   const authorization = request.headers.authorization;
   const credential = typeof authorization === 'string' ? authorization : null;
-  const identity = deps.records.principals.identify ? await step('authenticate', () => deps.records.principals.identify!(credential), { type: 'guardrail' }) : null;
-  const principal = identity?.principal ?? (deps.records.principals.identify ? null : await step('authenticate', () => deps.records.principals.authenticate(credential), { type: 'guardrail' }));
-  const tokenId = identity?.token_id ?? null;
-  if (principal === null) {
+  const access = await step('authenticate', () => authenticateAccessOnly(deps.records.principals, credential), { type: 'guardrail' });
+  if (!access.ok) {
     request.resume();
+    if (access.reason === 'console_session') {
+      sendRpcError(response, 403, -32001, CONSOLE_SESSION_REFUSED, { connection: 'close' });
+      return;
+    }
     // RFC 6750 3.1: a request without credentials gets no error code; one with a token that does not work gets invalid_token.
     const challenge = ['Bearer realm="circle-hub"'];
     if (options.resourceMetadata !== undefined) challenge.push(`resource_metadata="${options.resourceMetadata(request)}"`);
@@ -230,6 +233,8 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': challenge.join(', '), connection: 'close' });
     return;
   }
+  const principal = access.principal;
+  const tokenId = access.token_id;
   const headerTrace = traceIdFrom(request.headers.traceparent);
   const traceId = headerTrace ?? currentTrace()?.traceId ?? newTraceId();
   const sessionId = sessionIdOf(request.headers['circle-session-id']);
