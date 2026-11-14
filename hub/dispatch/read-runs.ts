@@ -74,11 +74,14 @@ export async function readRunJobs(records:Pick<RecordsKit,'store'>,dispatch:Pick
   }
   const out:RunJob[]=[];
   for(const [job,input] of jobs){
-    const {admin_release:_privateRelease,admin_release_missing:_privateMissing,...status}=await dispatch.status(by,job);
+    const current = await dispatch.status(by, job);
+    if (current.job !== job || current.job_facts.scope.job !== job || current.dispatch_attempt && current.dispatch_attempt.scope.job !== job) throw new IntegrityError('派发事实的范围与预订作业不一致');
+    const {admin_release:_privateRelease,admin_release_missing:_privateMissing,...job_facts}=current.job_facts;
+    const status: JobStatus = {...current, job_facts};
     const history=await records.store.findMany<ActionBody>({kind:'action',key:'dispatch.job',values:[job]});
     const prefix=history.slice(0,status.events);
-    const choice=[...prefix].reverse().find(e=>e.body.detail.phase==='dispose'&&e.body.detail.disposition===status.disposition);
-    if(choice&&status.disposition){if(!status.decided_by&&UserId.safeParse(choice.body.detail.acting_by).success)status.decided_by=String(choice.body.detail.acting_by);if(!status.decided_at&&IsoTime.safeParse(choice.body.ended_at).success)status.decided_at=choice.body.ended_at;}
+    const choice=[...prefix].reverse().find(e=>e.body.detail.phase==='dispose'&&e.body.detail.disposition===status.job_facts.disposition);
+    if(choice&&status.job_facts.disposition){if(!status.job_facts.decided_by&&UserId.safeParse(choice.body.detail.acting_by).success)status.job_facts.decided_by=String(choice.body.detail.acting_by);if(!status.job_facts.decided_at&&IsoTime.safeParse(choice.body.ended_at).success)status.job_facts.decided_at=choice.body.ended_at;}
     let management_exit:UnknownExit|undefined;
     if(choice&&Array.isArray(choice.body.detail.answers))for(const value of choice.body.detail.answers){
       if(typeof value!=='string')continue;
