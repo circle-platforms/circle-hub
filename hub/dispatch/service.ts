@@ -53,6 +53,8 @@ export interface DispatchOptions {
   redactor?:Redactor;
   knowledge?: BuildKnowledge;
   records: RecordsKit; leases: Pick<LeaseService, 'holderSnapshot' | 'withMutationLock'>; runs: VerificationPort;
+  /** Explicit staged policy switch. Only true enables the new environment-assignment guard. */
+  enforceEnvironmentAssignments?: boolean;
   environmentAccess?: { canUse(actor: Principal, executor: string): Promise<boolean>; permission(actor: Principal, executor: string, tx: Transaction): Promise<boolean> };
   workflows: Pick<WorkflowStore, 'byDigest'>; close?: () => Promise<void>; now?: () => Date; sleep?: (ms: number) => Promise<void>;
   /** Test seam: called before a later round is opened. Production leaves it unset. */
@@ -701,6 +703,7 @@ export class DispatchService {
   }
   /** The scheduler administrator authorizes orchestration, never the runner's environment use. */
   private async environmentUseFailure(userId:string,executor:string,tx?:Transaction):Promise<BoundaryFailure|null> {
+    if(this.options.enforceEnvironmentAssignments!==true)return null;
     if(!this.options.environmentAccess)return deny(1,'SOURCE_UNAVAILABLE','环境使用权限检查未装配，尚不能核对；请管理员恢复检查接线');
     try {
       if (tx) {
