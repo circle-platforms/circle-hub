@@ -22,6 +22,20 @@
 // frozen item: its id, its expected sentences with their references, the bed of the run's profile, the recomposition receipt,
 // the case id and the expectation slots. What a writer writes is left empty, and empty is refused, so an unfilled envelope
 // cannot pass as a plan.
+import { createHash } from 'node:crypto';
+import type { BedFacts } from './bed.ts';
+import { canonicalJson } from './canonical-json.ts';
+import {
+  analyzeRoundHistory,
+  consecutiveRepeatedGateCodes,
+  INLINE_TAIL_CHARS,
+  MAX_ANOMALY_LINES,
+  MAX_ROUNDS,
+  renderPriorRoundsMarkdown,
+  type PriorAttributionItem,
+  type PriorRoundRecord,
+  type StreakAnalysis,
+} from './rework-history.ts';
 import { isRecord } from './text.ts';
 
 /** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
@@ -182,20 +196,41 @@ export interface AuthoringBrief { text: string; commands: string[]; others: stri
  * paths of the commands the record names, `others` the other nodes it references, `missing` the referenced paths the locked
  * root does not hold.
  */
+function collectKnowledgeSets(
+  recomposition: Record<string, unknown>,
+  record: Record<string, unknown>,
+  knowledge: BriefKnowledge,
+): { commands: string[]; others: string[]; missing: string[] } {
+  const named = new Set<string>(referencedPaths(recomposition, knowledge.root));
+  const ledgers = isRecord(record.ledgers) ? record.ledgers : {};
+  const lines: string[] = [];
+  for (const row of Array.isArray(ledgers.adapted) ? ledgers.adapted : []) {
+    if (isRecord(row) && Array.isArray(row.commands)) {
+      for (const line of row.commands) if (typeof line === 'string') lines.push(line);
+    }
+  }
+  for (const atom of Array.isArray(record.atoms) ? record.atoms : []) {
+    if (isRecord(atom)) {
+      const txt = typeof atom.text === 'string' ? atom.text : typeof atom.content === 'string' ? atom.content : null;
+      if (txt) lines.push(...txt.split(/\r?\n/));
+    }
+  }
+  for (const line of lines) {
+    const path = commandPath(knowledge, line);
+    if (path) named.add(path);
+  }
+  const commands = [...named].filter((path) => within(path, COMMANDS) && knowledge.nodes.get(path)?.entries.length).sort();
+  const others = [...named].filter((path) => knowledge.nodes.has(path) && !commands.includes(path)).sort();
+  const missing = [...named].filter((path) => !knowledge.nodes.has(path)).sort();
+  return { commands, others, missing };
+}
+
 export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null, bed: string | null = null): AuthoringBrief | null {
   const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
   const recomposition = fields && isRecord(fields.recomposition) ? fields.recomposition : null;
   const record = recomposition && isRecord(recomposition.record) ? recomposition.record : null;
   if (!isRecord(item) || !fields || !record) return null;
-  const named = new Set<string>(referencedPaths(recomposition, knowledge.root));
-  const ledgers = isRecord(record.ledgers) ? record.ledgers : {};
-  const lines: string[] = [];
-  for (const row of Array.isArray(ledgers.adapted) ? ledgers.adapted : []) if (isRecord(row) && Array.isArray(row.commands)) for (const line of row.commands) if (typeof line === 'string') lines.push(line);
-  for (const atom of Array.isArray(record.atoms) ? record.atoms : []) if (isRecord(atom) && typeof atom.text === 'string') lines.push(...atom.text.split(/\r?\n/));
-  for (const line of lines) { const path = commandPath(knowledge, line); if (path) named.add(path); }
-  const commands = [...named].filter((path) => within(path, COMMANDS) && knowledge.nodes.get(path)?.entries.length).sort();
-  const others = [...named].filter((path) => knowledge.nodes.has(path) && !commands.includes(path)).sort();
-  const missing = [...named].filter((path) => !knowledge.nodes.has(path)).sort();
+  const { commands, others, missing } = collectKnowledgeSets(recomposition!, record, knowledge);
   const shown = new Set<string>();
   const block = (node: BriefNode): string[] => { const path = canonicalPath(node.path); if (shown.has(path)) return [`（${node.path} 的条目已在上文）`]; shown.add(path); return nodeBlock(node); };
   const out: string[] = [
@@ -265,10 +300,821 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const envelope = planEnvelope(item, bed);
   if (envelope) out.push('', '## 这条用例的计划文件外壳',
     '',
-    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由你写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。写完只是草稿，交 Hub 前由主会话走完保真核对（按 SKILL.md 第 3 节依次跑 fidelity-brief → 新开子代理核对 → fidelity-apply 写入 data.fidelity）。`,
+    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由编写模型填写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。写完只是草稿，交 Hub 前由主会话走完保真核对（按 SKILL.md 第 3 节依次跑 fidelity-brief → 新开子代理核对 → fidelity-apply 写入 data.fidelity）。`,
     '',
     '原始用例要求不存在、无残留或删除后查不到时，顺序步骤在对应查询的 expects 写 op:"not_found"，text 使用原始期望的具体原文，或本条配置后按已声明逆操作撤销的名字，after 指向对应查询；不写描述句，不另立判定标准或发起复核。分块写法的常量仍用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获，执行器须声明寄存器的字面否定方法，不抄旧设备输出。quote 保留原始期望。要求删除成功时，删除后再查询，指向这次查询的设备输出；这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run。',
     '',
     '```json', JSON.stringify(envelope, null, 2), '```');
   return { text: out.join('\n') + '\n', commands, others, missing };
 }
+
+export const COMPILE_BRIEF_SCHEMA = 'compile-brief@1';
+export const COMPILE_BRIEF_MAX_BYTES = 512 * 1024;
+export const PRIOR_DEVICE_HISTORY_DISCLAIMER =
+  '以下为同一原始用例（同 autoid）此前已上机验证过的历史记录，仅作命令选型与设备交互参考，绝不作为当前构建功能正确或签发期望的依据。';
+export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
+  'Hub 当前尚未提供按 autoid 查询历次上机验证与 apv_cmds 的只读接口。';
+export const PREREQ_SCAN_REASON =
+  '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+
+export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';
+
+export interface CompileBriefAtom {
+  atom_id: string;
+  kind: string;
+  text: string;
+  quote_ref: string;
+}
+
+export interface CompileBriefV1 {
+  schema: typeof COMPILE_BRIEF_SCHEMA;
+  brief_sha256: string;
+  identity: {
+    autoid: string;
+    item_id: string;
+    index: string;
+    title: string;
+    product: string;
+    version: string;
+    build: string;
+    run: string;
+    knowledge_root: string;
+    round: number;
+    attempt_limit: number;
+    remaining_attempts: number;
+    created_at: string;
+  };
+  task: {
+    mode: CompileBriefMode;
+    target_plan_path: string;
+    plan_exists: boolean;
+    final_attempt: boolean;
+    vary_form_required: boolean;
+    directives: string[];
+    user_rulings: Array<{ source: string; target: string; ruling: string }>;
+    exclusions: string[];
+  };
+  materials: {
+    original_case: {
+      items_file: string;
+      atoms: CompileBriefAtom[];
+      recomposition: {
+        receipt: string;
+        case_id: string;
+        equivalence_notes: string[];
+        unresolved_unknowns: string[];
+        expectation_slots: Array<{ slot: string; quote_ref: string; text: string }>;
+      };
+    };
+    commands_and_manual: {
+      policy_present: boolean;
+      declared_policy: BriefPolicy | null;
+      named_commands: Array<{
+        path: string;
+        words: string;
+        node_block: string[];
+        parameters: BriefParameter[];
+        inverse: {
+          kind: 'paired_sibling' | 'prefix_rule' | 'read_only' | 'none_declared';
+          detail: string;
+          node_block: string[];
+        };
+        read_only_forms: Array<{ prefix: string; node_block: string[] }>;
+        sibling_syntaxes: {
+          parent_path: string;
+          where: string;
+          total: number;
+          shown: string[];
+          truncated: number;
+        };
+      }>;
+      referenced_other_nodes: Array<{
+        path: string;
+        where: string;
+        included: boolean;
+        node_block: string[];
+      }>;
+      missing_paths: string[];
+      local_corpus: {
+        commands_file: string;
+        manual_file: string;
+        search_note: string;
+      };
+    };
+    prerequisites: {
+      status: 'extracted' | 'partial_recompose_only' | 'none_declared_or_found_in_recompose';
+      from_recompose_states: Array<{ atom: string; reason: string; prerequisites: string[] }>;
+      from_product_catalog: string[];
+      ancestor_command_hints: string[];
+      manual_scan_required: boolean;
+      scan_reason: string;
+    };
+    bed_facts: {
+      bed_name: string | null;
+      facts_status: 'extracted_from_frozen_manifest' | 'manifest_unavailable';
+      segments: BedFacts['segments'];
+      listeners: BedFacts['listeners'];
+      blind: BedFacts['blind'];
+      backends: BedFacts['backends'];
+      unknowns: BedFacts['unknowns'];
+      trigger_types: string[];
+      forbidden_combinations: string[];
+      execution_failure_markers: string[];
+      plan_envelope: Record<string, unknown> | null;
+    };
+  };
+  prior_device_history: {
+    status: 'unavailable_from_hub' | 'none_found' | 'available';
+    unavailable_reason?: string;
+    disclaimer: string;
+    match_key: 'autoid';
+    max_entries: 6;
+    entries: Array<{
+      verification_run: string;
+      plan_run: string;
+      build: string;
+      ended_at: string;
+      verdict: string;
+      apv_cmds: string[];
+      attribution?: { layer: string; summary: string };
+    }>;
+  };
+  round_history: {
+    status: 'first_round_no_history' | 'has_prior_rounds';
+    gate_refusals: PriorRoundRecord['gateRefusals'];
+    accepted_notices?: PriorRoundRecord['acceptedNotices'];
+    repeated_gate_codes: string[];
+    device_evidence: {
+      verification_run: string;
+      job: string;
+      verdict: string;
+      runner_verdict?: string;
+      pass_review_audit: { where: string; line: string } | null;
+      syntax_rejected: Array<{ session?: string; prompt?: string; command: string; token?: string }>;
+      execution_refused: Array<{ session?: string; prompt: string; command: string; reply: string[]; echo_cut?: true }>;
+      step_excerpts: Array<{
+        step_index?: number;
+        source: string;
+        command: string;
+        found: boolean;
+        session?: string;
+        missing_notice?: string;
+        excerpt?: string;
+      }>;
+      inline_tail: string;
+      anomaly_lines: string[];
+      log_file: string | null;
+      session_files: Record<string, string | null>;
+    } | null;
+    prior_attribution: {
+      round: number | null;
+      round_recorded?: boolean;
+      source_file: string;
+      confidence: 'hypothesis';
+      note: string;
+      layer?: string;
+      disposition?: string;
+      judged: string;
+      fix_direction: string;
+      evidence_quotes: string[];
+    } | null;
+    unrecorded_attribution?: {
+      round: null;
+      round_recorded: false;
+      source_file: string;
+      confidence: 'hypothesis';
+      note: string;
+      layer?: string;
+      disposition?: string;
+      judged: string;
+      fix_direction: string;
+      evidence_quotes: string[];
+    } | null;
+    rounds: PriorRoundRecord[];
+    streak: StreakAnalysis;
+  };
+}
+
+export interface BuildCompileBriefInput {
+  item: unknown;
+  index: string;
+  knowledge: BriefKnowledge;
+  policy: BriefPolicy | null;
+  runMeta?: {
+    run?: string;
+    product?: string;
+    version?: string;
+    build?: string;
+    exclusions?: string[];
+  };
+  bedFacts?: BedFacts | null;
+  triggerTypes?: readonly string[];
+  forbiddenCombinations?: readonly string[];
+  executionFailureMarkers?: readonly string[];
+  round?: number;
+  attemptLimit?: number;
+  mode?: CompileBriefMode;
+  targetPlanPath?: string;
+  planExists?: boolean;
+  priorRounds?: readonly PriorRoundRecord[];
+  unrecordedAttribution?: PriorAttributionItem | null;
+  createdAt?: string;
+}
+
+const KNOWN_TOP_KEYS = new Set([
+  'schema',
+  'brief_sha256',
+  'identity',
+  'task',
+  'materials',
+  'prior_device_history',
+  'round_history',
+]);
+
+/** Extracts verbatim original atoms from an item JSON in the exact order Hub froze them. */
+export function extractOriginalAtoms(item: unknown): CompileBriefAtom[] {
+  if (!isRecord(item) || !isRecord(item.fields)) return [];
+  const fields = item.fields;
+  const rec = isRecord(fields.recomposition) && isRecord(fields.recomposition.record) ? fields.recomposition.record : null;
+  if (rec && Array.isArray(rec.atoms)) {
+    return rec.atoms.filter(isRecord).map((atom, i) => ({
+      atom_id: typeof atom.id === 'string' ? atom.id : typeof atom.atom_id === 'string' ? atom.atom_id : `atom_${i + 1}`,
+      kind: typeof atom.kind === 'string' ? atom.kind : 'action',
+      text: typeof atom.text === 'string' ? atom.text : typeof atom.content === 'string' ? atom.content : '',
+      quote_ref: typeof atom.reference === 'string' ? atom.reference : typeof atom.quote_ref === 'string' ? atom.quote_ref : '',
+    }));
+  }
+  return [];
+}
+
+/** Computes SHA-256 over the canonical JSON serialization of a brief excluding `brief_sha256`. */
+export function computeCompileBriefSha256(brief: Omit<CompileBriefV1, 'brief_sha256'> & { brief_sha256?: string }): string {
+  const { brief_sha256: _ignored, ...rest } = brief;
+  return createHash('sha256').update(canonicalJson(rest), 'utf8').digest('hex');
+}
+
+/** Builds a structured `compile-brief@1` JSON document with verbatim atoms, bed facts, and bounded round history. */
+export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1 | null {
+  const fields = isRecord(input.item) && isRecord(input.item.fields) ? input.item.fields : null;
+  const recomposition = fields && isRecord(fields.recomposition) ? fields.recomposition : null;
+  const record = recomposition && isRecord(recomposition.record) ? recomposition.record : null;
+  if (!isRecord(input.item) || !fields || !record) return null;
+
+  const round = input.round ?? 1;
+  const attemptLimit = input.attemptLimit ?? MAX_ROUNDS;
+  const mode: CompileBriefMode = input.mode ?? (round > 1 ? 'rework_device' : 'initial');
+  const priorRounds = [...(input.priorRounds ?? [])].sort((a, b) => a.round - b.round);
+  const unrecordedAttr: PriorAttributionItem | null = input.unrecordedAttribution ?? null;
+  const streak = analyzeRoundHistory({
+    currentRound: round,
+    attemptLimit,
+    rounds: priorRounds,
+    unrecordedAttribution: unrecordedAttr,
+  });
+
+  const { commands, others, missing } = collectKnowledgeSets(recomposition!, record, input.knowledge);
+  const policy = input.policy;
+
+  const namedCommands = commands.map((path) => {
+    const node = input.knowledge.nodes.get(path)!;
+    const cmdWords = words(path);
+    const parameters = [...(input.knowledge.parameters?.get(cmdWords) ?? [])];
+    let inverse: CompileBriefV1['materials']['commands_and_manual']['named_commands'][number]['inverse'] = {
+      kind: 'none_declared',
+      detail: '产品没有为这条命令声明唯一的逆操作规则。',
+      node_block: [],
+    };
+    const readOnlyForms: Array<{ prefix: string; node_block: string[] }> = [];
+
+    if (policy) {
+      if (policy.read_only.some((prefix) => within(path, canonicalPath(prefix)))) {
+        inverse = { kind: 'read_only', detail: '这条命令在产品声明的只读前缀下。', node_block: [] };
+      } else {
+        const paired = pairedSibling(policy, input.knowledge, path);
+        const invRule = paired ? null : inverseOf(policy, path);
+        if (paired) {
+          inverse = {
+            kind: 'paired_sibling',
+            detail: `产品声明的互逆取值 ${paired.pair.join('/')}：同级的另一条命令`,
+            node_block: nodeBlock(paired.node),
+          };
+        } else if (invRule) {
+          const carried =
+            invRule.rule.leading_parameters === undefined
+              ? ''
+              : `，逆操作带这条命令的前 ${invRule.rule.leading_parameters} 个参数`;
+          const target = input.knowledge.nodes.get(invRule.path);
+          inverse = {
+            kind: 'prefix_rule',
+            detail: `产品规则 ${invRule.rule.source_prefix} → ${invRule.rule.inverse_prefix}${carried}`,
+            node_block: target?.entries.length ? nodeBlock(target) : [],
+          };
+        }
+        for (const prefix of policy.read_only) {
+          const form = readOnlyForm(input.knowledge, canonicalPath(prefix), path);
+          if (form) readOnlyForms.push({ prefix, node_block: nodeBlock(form) });
+        }
+      }
+    }
+
+    const parent = input.knowledge.nodes.get(path.slice(0, path.lastIndexOf('/')));
+    const siblings = (parent?.children ?? [])
+      .filter((child) => canonicalPath(child.path) !== path)
+      .map((child) => input.knowledge.nodes.get(canonicalPath(child.path)))
+      .filter((sibling): sibling is BriefNode => sibling !== undefined);
+    const parentAt = parent ? input.knowledge.lines.get(canonicalPath(parent.path)) : undefined;
+    const shownSiblings = siblings.slice(0, SIBLINGS).map((sibling) => {
+      const syntax = syntaxLine(sibling);
+      return syntax ?? `${words(canonicalPath(sibling.path))} …（下面有 ${sibling.children.length} 个子节点）`;
+    });
+
+    return {
+      path,
+      words: cmdWords,
+      node_block: nodeBlock(node),
+      parameters,
+      inverse,
+      read_only_forms: readOnlyForms,
+      sibling_syntaxes: {
+        parent_path: parent?.path ?? '',
+        where: parentAt ? `knowledge/${parentAt.file} 第 ${parentAt.line} 行起` : 'knowledge/ 里按路径找',
+        total: siblings.length,
+        shown: shownSiblings,
+        truncated: Math.max(0, siblings.length - SIBLINGS),
+      },
+    };
+  });
+
+  let quotedCount = 0;
+  const referencedOtherNodes = others.map((path) => {
+    const node = input.knowledge.nodes.get(path)!;
+    const at = input.knowledge.lines.get(path);
+    const blockLines = nodeBlock(node);
+    const where = at ? `knowledge/${at.file} 第 ${at.line} 行起，共 ${at.count} 行` : 'knowledge/ 里按路径找';
+    const included = quotedCount < QUOTED_BLOCKS && Buffer.byteLength(blockLines.join('\n')) <= QUOTED_BYTES;
+    if (included) quotedCount++;
+    return {
+      path,
+      where,
+      included,
+      node_block: included ? blockLines : [],
+    };
+  });
+
+  const ledgers = isRecord(record.ledgers) ? record.ledgers : {};
+  const equivalenceNotes: string[] = [];
+  for (const row of Array.isArray(ledgers.adapted) ? ledgers.adapted : []) {
+    if (isRecord(row) && typeof row.equivalence_reason === 'string' && row.equivalence_reason.trim()) {
+      equivalenceNotes.push(row.equivalence_reason.trim());
+    }
+  }
+  const unresolvedUnknowns = Array.isArray(record.unknowns)
+    ? record.unknowns
+        .map((u) => (typeof u === 'string' ? u : isRecord(u) && typeof u.reason === 'string' ? u.reason : JSON.stringify(u)))
+        .filter((s) => s.length > 0)
+    : [];
+
+  const expectationSlots = (Array.isArray(record.expectation_slots) ? record.expectation_slots : [])
+    .filter(isRecord)
+    .filter((slot) => typeof slot.slot === 'string')
+    .map((slot) => ({
+      slot: String(slot.slot),
+      quote_ref: typeof slot.reference === 'string' ? slot.reference : '',
+      text: typeof slot.text === 'string' ? slot.text : '',
+    }));
+
+  // Extract prerequisites & user rulings declared on recomposition states (no ungrounded fabrication).
+  const statesSource =
+    isRecord(record.adjudication) && Array.isArray(record.adjudication.states)
+      ? record.adjudication.states
+      : Array.isArray(record.states)
+        ? record.states
+        : [];
+  const fromRecomposeStates: Array<{ atom: string; reason: string; prerequisites: string[] }> = [];
+  const userRulings: Array<{ source: string; target: string; ruling: string }> = [];
+  for (const st of statesSource.filter(isRecord)) {
+    const atom = typeof st.atom === 'string' ? st.atom : '';
+    const reason = typeof st.reason === 'string' ? st.reason : '';
+    const prereqs = Array.isArray(st.prerequisites) ? st.prerequisites.filter((p): p is string => typeof p === 'string' && p.length > 0) : [];
+    if (st.state === 'missing_prerequisite' || prereqs.length > 0) {
+      fromRecomposeStates.push({ atom, reason, prerequisites: prereqs });
+    }
+    if (st.state === 'settled' && reason.startsWith('使用者决定：')) {
+      userRulings.push({ source: 'recompose_state', target: atom, ruling: reason });
+    }
+  }
+
+  const allGateRefusals = priorRounds.flatMap((r) => r.gateRefusals);
+  const allAcceptedNotices = priorRounds.flatMap((r) => r.acceptedNotices ?? []);
+  const repeatedGateCodes = consecutiveRepeatedGateCodes(priorRounds);
+
+  const latestDevice = [...priorRounds].reverse().find((r) => r.deviceEvidence)?.deviceEvidence ?? null;
+  const latestAttribution: PriorAttributionItem | null = [...priorRounds].reverse().find((r) => r.attribution)?.attribution ?? null;
+
+  // InfoTest provenance:
+  // - `compile_engine/briefs.py:2982-2985`: final-attempt warning rendered in Chinese (no bare English "FINAL attempt").
+  // - `compile_engine/remedies.py:39-42`: `vary_form` triggers only when `disposition === 'frozen'`.
+  // - `compile_engine/briefs.py:2681-2690` & `compile_engine/rejection_history.py:3-40`: `structural_rejection_disclosure` triggers only on two consecutive unaccepted gate refusals with the same code.
+  // - `compile_engine/briefs.py:2792-2820`: recompile device failures report diagnostics without auto-setting `vary_form_required`.
+  const directives: string[] = [];
+  if (streak.finalAttempt) {
+    directives.push(`最后一次机会（第 ${round}/${attemptLimit} 轮）：已达本案重试上限，务必核对全部前置与期望实现。`);
+  }
+  if (streak.varyFormRequired || repeatedGateCodes.length > 0) {
+    directives.push('失败分析已冻结或机械规则连续同码未受理，本轮须核查手册命令形态与前置条件，禁止仅微调字词重复同一失败写法。');
+  }
+  if (repeatedGateCodes.length > 0) {
+    directives.push(`机械规则错码 ${repeatedGateCodes.join('、')} 连续多轮未受理，须对照路径与字段要求逐项消除。`);
+  }
+
+  const caseId = record && isRecord(record.case) && typeof record.case.id === 'string' ? record.case.id : '';
+  const autoid = typeof fields.autoid === 'string' ? fields.autoid : String(input.item.id ?? '');
+  const bedName = input.bedFacts?.bed ?? null;
+
+  const bodyWithoutSha: Omit<CompileBriefV1, 'brief_sha256'> = {
+    schema: COMPILE_BRIEF_SCHEMA,
+    identity: {
+      autoid,
+      item_id: String(input.item.id ?? ''),
+      index: input.index,
+      title: typeof fields.title === 'string' ? fields.title : '',
+      product: input.runMeta?.product ?? '',
+      version: input.runMeta?.version ?? '',
+      build: input.runMeta?.build ?? '',
+      run: input.runMeta?.run ?? '',
+      knowledge_root: input.knowledge.root,
+      round,
+      attempt_limit: attemptLimit,
+      remaining_attempts: streak.remainingAttempts,
+      created_at: input.createdAt ?? new Date().toISOString(),
+    },
+    task: {
+      mode,
+      target_plan_path: input.targetPlanPath ?? `plans/${input.index}.json`,
+      plan_exists: input.planExists ?? priorRounds.some((r) => Boolean(r.plan)),
+      final_attempt: streak.finalAttempt,
+      vary_form_required: streak.varyFormRequired,
+      directives,
+      user_rulings: userRulings,
+      exclusions: [...(input.runMeta?.exclusions ?? [])],
+    },
+    materials: {
+      original_case: {
+        items_file: `items/${input.index}.json`,
+        atoms: extractOriginalAtoms(input.item),
+        recomposition: {
+          receipt: typeof recomposition!.receipt === 'string' ? recomposition!.receipt : '',
+          case_id: caseId,
+          equivalence_notes: equivalenceNotes,
+          unresolved_unknowns: unresolvedUnknowns,
+          expectation_slots: expectationSlots,
+        },
+      },
+      commands_and_manual: {
+        policy_present: policy !== null,
+        declared_policy: policy,
+        named_commands: namedCommands,
+        referenced_other_nodes: referencedOtherNodes,
+        missing_paths: missing.map((p) => decodeURI(p)),
+        local_corpus: {
+          commands_file: 'knowledge/commands.txt',
+          manual_file: 'knowledge/manual.txt',
+          search_note: '简报只收录重组直接点到的节点；未收录章节须用 grep 检索上述本地文件。',
+        },
+      },
+      prerequisites: {
+        status: fromRecomposeStates.length > 0 ? 'partial_recompose_only' : 'none_declared_or_found_in_recompose',
+        from_recompose_states: fromRecomposeStates,
+        from_product_catalog: [],
+        ancestor_command_hints: [],
+        manual_scan_required: true,
+        scan_reason: PREREQ_SCAN_REASON,
+      },
+      bed_facts: {
+        bed_name: bedName,
+        facts_status: input.bedFacts ? 'extracted_from_frozen_manifest' : 'manifest_unavailable',
+        segments: input.bedFacts?.segments ?? [],
+        listeners: input.bedFacts?.listeners ?? [],
+        blind: input.bedFacts?.blind ?? [],
+        backends: input.bedFacts?.backends ?? [],
+        unknowns: input.bedFacts?.unknowns ?? [],
+        trigger_types: [...(input.triggerTypes ?? [])],
+        forbidden_combinations: [...(input.forbiddenCombinations ?? [])],
+        execution_failure_markers: [...(input.executionFailureMarkers ?? [])],
+        plan_envelope: planEnvelope(input.item, bedName),
+      },
+    },
+    prior_device_history: {
+      status: 'unavailable_from_hub',
+      unavailable_reason: PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON,
+      disclaimer: PRIOR_DEVICE_HISTORY_DISCLAIMER,
+      match_key: 'autoid',
+      max_entries: 6,
+      entries: [],
+    },
+    round_history: {
+      status: round <= 1 && priorRounds.length === 0 && !unrecordedAttr ? 'first_round_no_history' : 'has_prior_rounds',
+      gate_refusals: allGateRefusals,
+      ...(allAcceptedNotices.length > 0 ? { accepted_notices: allAcceptedNotices } : {}),
+      repeated_gate_codes: repeatedGateCodes,
+      device_evidence: latestDevice
+        ? {
+            verification_run: latestDevice.verificationRun,
+            job: latestDevice.job,
+            verdict: latestDevice.verdict,
+            ...(latestDevice.runnerVerdict ? { runner_verdict: latestDevice.runnerVerdict } : {}),
+            pass_review_audit: latestDevice.passReview,
+            syntax_rejected: latestDevice.syntaxRejected,
+            execution_refused: latestDevice.executionRefused,
+            step_excerpts: latestDevice.stepExcerpts.map((s) => ({
+              ...(s.stepIndex !== undefined ? { step_index: s.stepIndex } : {}),
+              source: s.source,
+              command: s.commandText,
+              found: s.found,
+              ...(s.sessionName ? { session: s.sessionName } : {}),
+              ...(s.missingNotice ? { missing_notice: s.missingNotice } : {}),
+              ...(s.excerpt ? { excerpt: s.excerpt } : {}),
+            })),
+            inline_tail: latestDevice.inlineTail,
+            anomaly_lines: latestDevice.anomalyLines,
+            log_file: latestDevice.logFile,
+            session_files: latestDevice.sessionFiles,
+          }
+        : null,
+      prior_attribution: latestAttribution
+        ? {
+            round: latestAttribution.round,
+            round_recorded: latestAttribution.roundRecorded ?? latestAttribution.round !== null,
+            source_file: latestAttribution.sourceFile,
+            confidence: 'hypothesis',
+            note: '以下失败分析仅是失败分析子代理或交接记录提出的未确认假设；编写前须自行核对上述原始设备输出再采纳或推翻。',
+            ...(latestAttribution.layer ? { layer: latestAttribution.layer } : {}),
+            ...(latestAttribution.disposition ? { disposition: latestAttribution.disposition } : {}),
+            judged: latestAttribution.judged,
+            fix_direction: latestAttribution.remedy || latestAttribution.fixDirection || '',
+            evidence_quotes: latestAttribution.evidenceQuotes,
+          }
+        : null,
+      ...(unrecordedAttr
+        ? {
+            unrecorded_attribution: {
+              round: null as null,
+              round_recorded: false as const,
+              source_file: unrecordedAttr.sourceFile,
+              confidence: 'hypothesis' as const,
+              note: '该分析来自未记录轮次的交付备注/失败分析文件，归作未确认假设，不代表第 1 轮结论。',
+              ...(unrecordedAttr.layer ? { layer: unrecordedAttr.layer } : {}),
+              ...(unrecordedAttr.disposition ? { disposition: unrecordedAttr.disposition } : {}),
+              judged: unrecordedAttr.judged,
+              fix_direction: unrecordedAttr.remedy || unrecordedAttr.fixDirection || '',
+              evidence_quotes: unrecordedAttr.evidenceQuotes,
+            },
+          }
+        : {}),
+      rounds: priorRounds,
+      streak,
+    },
+  };
+
+  return {
+    ...bodyWithoutSha,
+    brief_sha256: computeCompileBriefSha256(bodyWithoutSha),
+  };
+}
+
+/** Deterministic offline checks for `compile-brief@1` before handing a brief to a writer subagent. */
+export function validateCompileBrief(value: unknown, expectedItem?: unknown): { ok: boolean; problems: string[] } {
+  const problems: string[] = [];
+  if (!isRecord(value)) return { ok: false, problems: ['简报不是 JSON 对象'] };
+  for (const key of Object.keys(value)) {
+    if (!KNOWN_TOP_KEYS.has(key)) problems.push(`发现未声明的顶层字段：${key}`);
+  }
+  if (value.schema !== COMPILE_BRIEF_SCHEMA) problems.push(`schema 必须为 ${COMPILE_BRIEF_SCHEMA}`);
+
+  const serializedBytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+  if (serializedBytes > COMPILE_BRIEF_MAX_BYTES) {
+    problems.push(`简报体积 ${serializedBytes} 字节超过上限 ${COMPILE_BRIEF_MAX_BYTES} 字节`);
+  }
+
+  const identity = isRecord(value.identity) ? value.identity : null;
+  const task = isRecord(value.task) ? value.task : null;
+  const materials = isRecord(value.materials) ? value.materials : null;
+  const priorHistory = isRecord(value.prior_device_history) ? value.prior_device_history : null;
+  const roundHistory = isRecord(value.round_history) ? value.round_history : null;
+  if (!identity || !task || !materials || !priorHistory || !roundHistory) {
+    problems.push('缺少核心顶层区块（identity/task/materials/prior_device_history/round_history）');
+    return { ok: false, problems };
+  }
+
+  const round = typeof identity.round === 'number' ? identity.round : -1;
+  const limit = typeof identity.attempt_limit === 'number' ? identity.attempt_limit : -1;
+  const remaining = typeof identity.remaining_attempts === 'number' ? identity.remaining_attempts : -1;
+  if (!Number.isInteger(round) || round < 1) problems.push('identity.round 必须为正整数');
+  if (!Number.isInteger(limit) || limit < 1) problems.push('identity.attempt_limit 必须为正整数');
+  if (round >= 1 && limit >= 1 && remaining !== Math.max(0, limit - round)) {
+    problems.push('identity.remaining_attempts 必须等于 max(0, attempt_limit - round)');
+  }
+
+  if (typeof value.brief_sha256 === 'string') {
+    try {
+      const expectedSha = computeCompileBriefSha256(value as unknown as CompileBriefV1);
+      if (value.brief_sha256 !== expectedSha) problems.push('brief_sha256 与规范序列化摘要不一致（简报可能已陈旧或被手工修改）');
+    } catch {
+      problems.push('brief_sha256 计算失败：简报包含非法 JSON 值');
+    }
+  } else {
+    problems.push('缺少 brief_sha256');
+  }
+
+  const orig = isRecord(materials.original_case) ? materials.original_case : null;
+  const atoms = orig && Array.isArray(orig.atoms) ? orig.atoms : null;
+  if (!atoms) {
+    problems.push('materials.original_case.atoms 必须是数组');
+  } else if (expectedItem !== undefined) {
+    const expectedAtoms = extractOriginalAtoms(expectedItem);
+    if (atoms.length !== expectedAtoms.length) {
+      problems.push(`original_case.atoms 条数（${atoms.length}）与原始条目不一致（期望 ${expectedAtoms.length}）`);
+    } else {
+      for (let i = 0; i < expectedAtoms.length; i++) {
+        const a = isRecord(atoms[i]) ? atoms[i] : {};
+        if (a.text !== expectedAtoms[i].text || a.quote_ref !== expectedAtoms[i].quote_ref) {
+          problems.push(`original_case.atoms[${i}] 与原始条目原文或引用不一致`);
+          break;
+        }
+      }
+    }
+  }
+
+  const cmdManual = isRecord(materials.commands_and_manual) ? materials.commands_and_manual : null;
+  const rootHex = typeof identity.knowledge_root === 'string' && /^[0-9a-f]{64}$/.test(identity.knowledge_root) ? identity.knowledge_root : '';
+  if (cmdManual) {
+    const namedCmds = Array.isArray(cmdManual.named_commands) ? cmdManual.named_commands : [];
+    for (const nc of namedCmds) {
+      if (!isRecord(nc)) continue;
+      if (isRecord(nc.sibling_syntaxes) && Array.isArray(nc.sibling_syntaxes.shown) && nc.sibling_syntaxes.shown.length > SIBLINGS) {
+        problems.push(`sibling_syntaxes.shown 超过 ${SIBLINGS} 条上限`);
+      }
+      if (rootHex && Array.isArray(nc.node_block)) {
+        for (const line of nc.node_block) {
+          if (typeof line === 'string' && line.includes('引用 tree:') && !line.includes(`tree:${rootHex}/`)) {
+            problems.push(`命令节点引用未锚定当前 knowledge_root ${rootHex}`);
+          }
+        }
+      }
+    }
+    const otherNodes = Array.isArray(cmdManual.referenced_other_nodes) ? cmdManual.referenced_other_nodes : [];
+    const includedOthers = otherNodes.filter((n) => isRecord(n) && n.included === true);
+    if (includedOthers.length > QUOTED_BLOCKS) problems.push(`referenced_other_nodes included 条数超过 ${QUOTED_BLOCKS}`);
+    for (const n of includedOthers) {
+      if (isRecord(n) && Array.isArray(n.node_block) && Buffer.byteLength(n.node_block.join('\n')) > QUOTED_BYTES) {
+        problems.push(`referenced_other_nodes 单块字节数超过 ${QUOTED_BYTES}`);
+      }
+    }
+  }
+
+  const prereqs = isRecord(materials.prerequisites) ? materials.prerequisites : null;
+  if (!prereqs) {
+    problems.push('缺少 materials.prerequisites');
+  } else {
+    const hasRecomp = Array.isArray(prereqs.from_recompose_states) && prereqs.from_recompose_states.length > 0;
+    const hasCatalog = Array.isArray(prereqs.from_product_catalog) && prereqs.from_product_catalog.length > 0;
+    if (!hasRecomp && !hasCatalog && (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true)) {
+      problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
+    }
+  }
+
+  const entries = Array.isArray(priorHistory.entries) ? priorHistory.entries : null;
+  if (!entries || entries.length > 6) problems.push('prior_device_history.entries 必须是不超过 6 条的数组');
+  if (priorHistory.match_key !== 'autoid') problems.push('prior_device_history.match_key 必须严格为 autoid');
+  if (priorHistory.disclaimer !== PRIOR_DEVICE_HISTORY_DISCLAIMER) problems.push('prior_device_history.disclaimer 必须携带标准非权威声明');
+  if (entries && entries.length === 0 && priorHistory.status !== 'unavailable_from_hub' && priorHistory.status !== 'none_found') {
+    problems.push('prior_device_history.entries 为空时 status 不得为 available');
+  }
+
+  if (roundHistory.device_evidence !== null && isRecord(roundHistory.device_evidence)) {
+    const tail = typeof roundHistory.device_evidence.inline_tail === 'string' ? roundHistory.device_evidence.inline_tail : '';
+    const anomalies = Array.isArray(roundHistory.device_evidence.anomaly_lines) ? roundHistory.device_evidence.anomaly_lines : [];
+    if (tail.length > INLINE_TAIL_CHARS) problems.push(`device_evidence.inline_tail 超过 ${INLINE_TAIL_CHARS} 字符上限`);
+    if (anomalies.length > MAX_ANOMALY_LINES) problems.push(`device_evidence.anomaly_lines 超过 ${MAX_ANOMALY_LINES} 条上限`);
+  }
+  if (roundHistory.prior_attribution !== null && isRecord(roundHistory.prior_attribution)) {
+    if (roundHistory.prior_attribution.confidence !== 'hypothesis') {
+      problems.push('round_history.prior_attribution.confidence 必须严格为 hypothesis');
+    }
+  }
+  if (roundHistory.unrecorded_attribution !== undefined && roundHistory.unrecorded_attribution !== null && isRecord(roundHistory.unrecorded_attribution)) {
+    if (roundHistory.unrecorded_attribution.confidence !== 'hypothesis') {
+      problems.push('round_history.unrecorded_attribution.confidence 必须严格为 hypothesis');
+    }
+  }
+
+  if (round > 1 && (task.mode === 'rework_device' || task.mode === 'rework_gate')) {
+    if (roundHistory.status !== 'has_prior_rounds') {
+      problems.push('第 2 轮及以上返工时 round_history.status 不能为 first_round_no_history');
+    }
+    const gateCount = Array.isArray(roundHistory.gate_refusals) ? roundHistory.gate_refusals.length : 0;
+    const roundsCount = Array.isArray(roundHistory.rounds) ? roundHistory.rounds.length : 0;
+    const hasUnrecorded = isRecord(roundHistory.unrecorded_attribution);
+    if (gateCount === 0 && roundHistory.device_evidence === null && roundsCount === 0 && !hasUnrecorded) {
+      problems.push('第 2 轮及以上返工简报至少应包含上一轮机械规则未受理、设备证据、历轮计划或未记录轮次失败分析之一');
+    }
+    const streak = isRecord(roundHistory.streak) ? roundHistory.streak : null;
+    const repeatedCodes = Array.isArray(roundHistory.repeated_gate_codes) ? roundHistory.repeated_gate_codes.length : 0;
+    const roundsList = Array.isArray(roundHistory.rounds) ? roundHistory.rounds : [];
+    const hasFrozen =
+      roundsList.some((r) => isRecord(r) && isRecord(r.attribution) && r.attribution.disposition === 'frozen') ||
+      (isRecord(roundHistory.unrecorded_attribution) && roundHistory.unrecorded_attribution.disposition === 'frozen');
+    if ((repeatedCodes > 0 || hasFrozen || streak?.varyFormRequired === true) && task.vary_form_required !== true) {
+      problems.push('机械规则连续同码未受理或失败分析已冻结时 task.vary_form_required 必须为 true');
+    }
+  }
+
+  return { ok: problems.length === 0, problems };
+}
+
+/** Renders a `compile-brief@1` object into deterministic Markdown (static materials + per-round history). */
+export function renderCompileBriefMd(brief: CompileBriefV1): string {
+  const { identity, task, materials, prior_device_history: priorHistory, round_history: roundHistory } = brief;
+  const out: string[] = [
+    `# 编写简报 ${identity.index}（第 ${identity.round}/${identity.attempt_limit} 轮，模式 ${task.mode}）：${identity.title}`,
+    '',
+    `- 原始条目：${identity.item_id}（autoid: ${identity.autoid}）；锁定知识根：${identity.knowledge_root}；简报摘要：${brief.brief_sha256.slice(0, 12)}`,
+    `- 目标计划文件：${task.target_plan_path}；剩余重交机会：${identity.remaining_attempts}${task.final_attempt ? '（最后一次机会）' : ''}`,
+    '',
+  ];
+
+  if (task.directives.length > 0) {
+    out.push('## 本轮程序提示（确定性事实与约束）');
+    for (const d of task.directives) out.push(`- ${d}`);
+    out.push('');
+  }
+
+  out.push('## 前置条件与历史可用性（诚实披露）');
+  out.push(`- 前置检查状态（${materials.prerequisites.status}）：${materials.prerequisites.scan_reason}`);
+  for (const pre of materials.prerequisites.from_recompose_states) {
+    out.push(`  · 重组状态 ${pre.atom}：${pre.reason}${pre.prerequisites.length ? `（${pre.prerequisites.join('、')}）` : ''}`);
+  }
+  out.push(
+    `- 同用例历史上机记录（prior_device_history.status=${priorHistory.status}）：${priorHistory.unavailable_reason ?? priorHistory.disclaimer}`,
+  );
+  out.push('');
+
+  if (materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
+    const bf = materials.bed_facts;
+    out.push(`## 测试环境事实（${bf.bed_name ?? '未知'}）`);
+    out.push(`- 网段数：${bf.segments.length}；监听候选（listeners）：${bf.listeners.map((l) => `${l.device}@${l.address}`).join('、') || '无'}`);
+    out.push(`- 盲区地址（blind，禁用作监听/触发目标）：${bf.blind.map((b) => `${b.device}@${b.address}`).join('、') || '无'}`);
+    out.push(`- 后端服务/服务器（backends）：${bf.backends.map((b) => `${b.device}@${b.address}${b.service ? `(${b.service})` : ''}`).join('、') || '无'}`);
+    if (bf.execution_failure_markers.length > 0) {
+      out.push(`- 声明的执行失败标志原话：${bf.execution_failure_markers.join(' | ')}`);
+    }
+    out.push('');
+  }
+
+  if (roundHistory.status === 'has_prior_rounds' && (roundHistory.rounds.length > 0 || roundHistory.unrecorded_attribution)) {
+    const ua = roundHistory.unrecorded_attribution
+      ? {
+          round: null,
+          roundRecorded: false,
+          sourceFile: roundHistory.unrecorded_attribution.source_file,
+          confidence: 'hypothesis' as const,
+          judged: roundHistory.unrecorded_attribution.judged,
+          remedy: roundHistory.unrecorded_attribution.fix_direction,
+          ...(roundHistory.unrecorded_attribution.layer ? { layer: roundHistory.unrecorded_attribution.layer } : {}),
+          ...(roundHistory.unrecorded_attribution.disposition ? { disposition: roundHistory.unrecorded_attribution.disposition } : {}),
+          evidenceQuotes: roundHistory.unrecorded_attribution.evidence_quotes,
+        }
+      : undefined;
+    out.push(
+      renderPriorRoundsMarkdown({
+        caseRef: identity.autoid || identity.item_id,
+        currentRound: identity.round,
+        rounds: roundHistory.rounds,
+        streak: roundHistory.streak,
+        ...(ua ? { unrecordedAttribution: ua } : {}),
+      }),
+      '',
+    );
+  }
+
+  out.push(`## 重组记录原始动作与期望（共 ${materials.original_case.atoms.length} 条，原样保留）`);
+  for (const atom of materials.original_case.atoms) {
+    out.push(`- [${atom.atom_id} | ${atom.kind}] ${atom.text}${atom.quote_ref ? ` (${atom.quote_ref})` : ''}`);
+  }
+
+  out.push('', `## 重组记录点到的命令（${materials.commands_and_manual.named_commands.length} 条）`);
+  for (const cmd of materials.commands_and_manual.named_commands) {
+    out.push('', `### ${cmd.words}`, ...cmd.node_block);
+    if (cmd.parameters.length > 0) {
+      out.push(`手册对这条命令各参数的说明（${cmd.parameters.length} 行，原文）：`);
+      for (const row of cmd.parameters) out.push(`· ${row.statement}`, `  引用 ${row.reference}`);
+    }
+    out.push(`逆操作（${cmd.inverse.kind}：${cmd.inverse.detail}）：`, ...cmd.inverse.node_block);
+  }
+
+  if (materials.bed_facts.plan_envelope) {
+    out.push('', '## 这条用例的计划文件外壳', '', '```json', JSON.stringify(materials.bed_facts.plan_envelope, null, 2), '```');
+  }
+  return out.join('\n') + '\n';
+}
+

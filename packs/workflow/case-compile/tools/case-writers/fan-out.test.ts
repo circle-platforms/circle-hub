@@ -73,8 +73,8 @@ test('only picks cases by index number, notes go to the writer of their index, a
   assert.deepEqual(some.problems, []);
   assert.deepEqual(some.planned.map((value) => [value.index, value.note]), [['01', null], ['06', '设备拒绝了第二条命令']]);
   assert.deepEqual(some.skipped, [], 'cases that were not asked for are not listed');
-  assert.deepEqual(planFanOut({ ...base, only: ['9'], notes: new Map() }).problems, ['本次脚本编写没有第 9 份原始用例']);
-  assert.deepEqual(planFanOut({ ...base, only: ['0'], notes: new Map([['1', '这条没有要写']]) }).problems, ['第 1 份原始用例不在本次脚本编写中，请删除它的补充说明']);
+  assert.deepEqual(planFanOut({ ...base, only: ['9'], notes: new Map() }).problems, ['不存在：本次脚本编写没有第 9 份原始用例。请核对 items 目录中的文件编号后重填 only。']);
+  assert.deepEqual(planFanOut({ ...base, only: ['0'], notes: new Map([['1', '这条没有要写']]) }).problems, ['参数无效：第 1 份原始用例不在本次脚本编写中。请删除它的补充说明后重试。']);
   const twice = planFanOut({ ...base, cases: [{ index: '00', item: item('same'), brief: 'a' }, { index: '01', item: item('same'), brief: 'b' }], only: null, notes: new Map() });
   assert.equal(twice.problems.length, 1);
   assert.ok(twice.problems[0]!.includes('每条原始用例只能有一份自动化用例'));

@@ -40,7 +40,7 @@ test('an item whose resubmitted plan differs from its frozen plan is refused', (
   const inputs = twoCases(); const bytes = generateWorkbookSet(inputs);
   const changed = structuredClone(inputs[1].slots); changed.steps[0] = { ...changed.steps[0], args: ['widget health interval 61'] };
   const result = check(itemInput(inputs, bytes, 1, changed));
-  assert.ok(result.some((row) => row.verdict === 'refute' && row.statement.includes('自动化用例与已核对正确的版本不一致')), JSON.stringify(result));
+  assert.ok(result.some((row) => row.verdict === 'refute' && row.statement.includes(inputs[1].plan_run) && row.statement.includes('已受理版本不一致') && row.statement.includes('start_run 新开一次脚本编写运行')), JSON.stringify(result));
 });
 
 test('a workbook read against one case, against another order, or one case missing from the frozen set is refused', () => {

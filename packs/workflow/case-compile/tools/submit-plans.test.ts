@@ -34,13 +34,13 @@ async function hub(answer: unknown, status = 200) {
   const { port } = server.address() as { port: number };
   return { seen, url: `http://127.0.0.1:${port}/mcp`, close: () => new Promise((done) => server.close(done)) };
 }
-async function run(url: string, directory: string, token = TOKEN) {
+async function run(url: string, directory: string, token = TOKEN, retry?: Parameters<typeof main>[2]) {
   const out: string[] = [], err: string[] = [];
   const stdout = process.stdout.write, stderr = process.stderr.write;
   process.stdout.write = ((text: string) => { out.push(text); return true; }) as typeof process.stdout.write;
   process.stderr.write = ((text: string) => { err.push(text); return true; }) as typeof process.stderr.write;
   try {
-    const code = await main(['--hub', url, '--run', RUN, '--model', 'synthetic-model', '--plans', directory], async () => token);
+    const code = await main(['--hub', url, '--run', RUN, '--model', 'synthetic-model', '--plans', directory], async () => token, retry);
     return { code, out: out.join(''), err: err.join('') };
   } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
 }
@@ -81,7 +81,7 @@ test('a case handed in as skipped is answered with the closing rule after the Hu
 });
 
 test('nothing is sent when a file is not an item, two files name one item, or there are no files', async () => {
-  for (const [files, message] of [[{ '01.json': { plan: [] } }, /不是一个条目/], [{ '01.json': item('doc:a'), '02.json': item('doc:a') }, /同一个条目/], [{}, /没有 \.json 文件/], [{ '01.json': 'not json' }, /脚本合并未完成/]] as const) {
+  for (const [files, message] of [[{ '01.json': { plan: [] } }, /不是一个条目/], [{ '01.json': item('doc:a'), '02.json': item('doc:a') }, /同一个条目/], [{}, /没有 \.json 文件/], [{ '01.json': 'not json' }, /参数无效：/]] as const) {
     const stub = await hub(said('受理'));
     const result = await run(stub.url, await plans(files));
     await stub.close();
@@ -263,5 +263,105 @@ test('local fidelity precheck blocks missing, stale, or malformed data.fidelity 
   } finally {
     RUN_ITEMS = ['doc:a', 'doc:b'];
     RUN_RECOMPOSITION = undefined;
+  }
+});
+
+test('submit_plans retries ONLY on 503 saying 这次调用没有执行, and never retries ambiguous 503, disconnect, timeout, or refused', async (t) => {
+  const dir = await plans({ '01.json': item('doc:a'), '02.json': item('doc:b') });
+
+  // 1. Recover when Hub explicitly replies 503 + 这次调用没有执行 (first with Retry-After, second without).
+  let recoverPosts = 0;
+  const serverRecover = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id, i) => ({ id, fields: { autoid: `99000000000000010${i + 1}`, title: `合成 ${i + 1}` } })) } }));
+      return;
+    }
+    request.resume();
+    request.on('end', () => {
+      recoverPosts++;
+      if (recoverPosts === 1) { response.writeHead(503, { 'retry-after': '5' }); response.end('Hub 正在重启，这次调用没有执行，请稍后重试'); return; }
+      if (recoverPosts === 2) { response.writeHead(503); response.end('仍在重载，这次调用没有执行'); return; }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(said('受理')));
+    });
+  });
+  await new Promise<void>((done) => serverRecover.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise<void>((done) => serverRecover.close(() => done())));
+  const recoverUrl = `http://127.0.0.1:${(serverRecover.address() as { port: number }).port}/mcp`;
+  let now1 = 0; const pauses1: number[] = [];
+  const ok = await run(recoverUrl, dir, TOKEN, { timing: { now: () => now1, pause: async (ms) => { pauses1.push(ms); now1 += ms; } } });
+  assert.equal(ok.code, 0, ok.err);
+  assert.equal(recoverPosts, 3);
+  assert.deepEqual(pauses1, [5_000, 2_000]);
+
+  // 2. Exhausting 60s on explicit non-execution 503 reports wait duration and attempts.
+  let exhaustPosts = 0;
+  const serverExhaust = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id, i) => ({ id, fields: { autoid: `99000000000000010${i + 1}`, title: `合成 ${i + 1}` } })) } }));
+      return;
+    }
+    request.resume();
+    request.on('end', () => { exhaustPosts++; response.writeHead(503); response.end('排水中，这次调用没有执行'); });
+  });
+  await new Promise<void>((done) => serverExhaust.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise<void>((done) => serverExhaust.close(() => done())));
+  const exhaustUrl = `http://127.0.0.1:${(serverExhaust.address() as { port: number }).port}/mcp`;
+  let now2 = 0; const pauses2: number[] = [];
+  const exhausted = await run(exhaustUrl, dir, TOKEN, { timing: { now: () => now2, pause: async (ms) => { pauses2.push(ms); now2 += ms; } } });
+  assert.equal(exhausted.code, 1);
+  assert.equal(exhaustPosts, 10);
+  assert.deepEqual(pauses2, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000]);
+  assert.match(exhausted.err, /^暂时不可用：Hub 答复 503：.*这次调用没有执行.*已等待 60 秒并尝试 10 次.*。请.*。$/m);
+
+  // 3. Ambiguous 503, mid-flight socket reset, truncated JSON, TimeoutError, and ECONNREFUSED NEVER retry.
+  for (const mode of ['ambiguous-503', 'reset', 'truncated'] as const) {
+    let posts = 0;
+    const server = createServer((request, response) => {
+      if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ schema: 'run-export@1', run: { run: RUN, items: RUN_ITEMS.map((id, i) => ({ id, fields: { autoid: `99000000000000010${i + 1}`, title: `合成 ${i + 1}` } })) } }));
+        return;
+      }
+      posts++;
+      if (mode === 'reset') { request.socket.destroy(); return; }
+      request.resume();
+      request.on('end', () => {
+        if (mode === 'ambiguous-503') { response.writeHead(503, { 'retry-after': '5' }); response.end('服务繁忙，请稍后再试'); return; }
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end('{"jsonrpc":"2.0"');
+      });
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    t.after(() => new Promise<void>((done) => server.close(() => done())));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/mcp`;
+    let now = 0; const pauses: number[] = [];
+    const failed = await run(url, dir, TOKEN, { timing: { now: () => now, pause: async (ms) => { pauses.push(ms); now += ms; } } });
+    assert.equal(failed.code, 1, mode);
+    assert.equal(posts, 1, mode);
+    assert.deepEqual(pauses, [], mode);
+    assert.match(failed.err, /^暂时不可用：.*没有自动重发。请先查回原调用.*。$/m, mode);
+  }
+
+  for (const err of [
+    new DOMException('signal timed out', 'TimeoutError'),
+    new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }),
+  ]) {
+    let postCalls = 0;
+    const pauses: number[] = [];
+    const h = await hub(said('受理')); t.after(h.close);
+    const failed = await run(h.url, dir, TOKEN, {
+      timing: { now: () => 0, pause: async (ms) => { pauses.push(ms); } },
+      fetch: async (input, init) => {
+        if (new URL(String(input)).pathname === '/mcp') { postCalls++; throw err; }
+        return globalThis.fetch(input, init);
+      },
+    });
+    assert.equal(failed.code, 1);
+    assert.equal(postCalls, 1);
+    assert.deepEqual(pauses, []);
+    assert.match(failed.err, /^暂时不可用：.*没有自动重发。请先查回原调用.*。$/m);
   }
 });

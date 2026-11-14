@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { recordFor, submissionFor } from './submit-records.ts';
+import { main, recordFor, submissionFor } from './submit-records.ts';
 
 const atom = (id: string, kind: string, text: string, after: string[] = []) => ({ id, kind, text, content: text, reference: `src:${'a'.repeat(64)}/kityminder@1/n/${id}`, selector: `n/${id}`, node_id: id, start: 0, end: text.length, labels: [], explicit_labels: [], number_label: null, after });
 const item = (id = 'n/case') => ({ id, fields: { case_id: 'ORBIT-1', source_ref: 'src:' + 'a'.repeat(64), node: 'n/case', atoms: [atom('a1', 'action', '合成动作一'), atom('a2', 'action', '合成动作二'), atom('a3', 'expectation', '合成期望', ['a2'])] } });
@@ -59,4 +63,85 @@ test("a user's ruling stays in the fields the file already has: the atom's state
   // A case left for the author: an underdetermined atom and a gap with a named audience; the record stays complete.
   const waiting = recordFor(item(), { method, states: [{ atom: 'a2', state: 'underdetermined', reason: '用户裁定：保留作者原样，这条先不编，待作者裁定' }], unknowns: [{ missing: '作者步骤与手册冲突', next_action: '作者或用户裁定', audience: '作者或用户', due: '交付之前' }] }, 'scripted');
   assert.deepEqual([waiting.sources.states[1].state, waiting.status, waiting.unknowns.length], ['underdetermined', 'complete', 1]);
+});
+
+test('submit-records main retries GET /run and explicit non-execution 503 on submit, never ambiguous disconnect or 503', async (t) => {
+  const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
+  const TOKEN = 'synthetic-token-1234';
+  const makeDir = async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rc-submit-'));
+    await writeFile(join(dir, '01.json'), JSON.stringify({ item: 'n/case', method }));
+    return dir;
+  };
+  const runPayload = { schema: 'run-export@1', run: { run: RUN, items: [item('n/case')] } };
+
+  let gets = 0, posts = 0;
+  const serverRecover = createServer((request, response) => {
+    if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end('unauth'); return; }
+    if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) {
+      gets++;
+      if (gets === 1) { response.writeHead(503, { 'retry-after': '4' }); response.end('busy'); return; }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(runPayload));
+      return;
+    }
+    request.resume();
+    request.on('end', () => {
+      posts++;
+      if (posts === 1) { response.writeHead(503); response.end('Hub 重启中，这次调用没有执行'); return; }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '受理' }] } }));
+    });
+  });
+  await new Promise<void>((done) => serverRecover.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise<void>((done) => serverRecover.close(() => done())));
+  const recoverUrl = `http://127.0.0.1:${(serverRecover.address() as { port: number }).port}/mcp`;
+
+  let now1 = 0; const pauses1: number[] = [];
+  const out1: string[] = [], err1: string[] = [];
+  const stdout = process.stdout.write.bind(process.stdout), stderr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((c: string | Uint8Array) => { out1.push(String(c)); return true; }) as typeof process.stdout.write;
+  process.stderr.write = ((c: string | Uint8Array) => { err1.push(String(c)); return true; }) as typeof process.stderr.write;
+  let code1 = -1;
+  try {
+    code1 = await main(['--hub', recoverUrl, '--run', RUN, '--model', 'scripted', '--records', await makeDir()], async () => TOKEN, {
+      timing: { now: () => now1, pause: async (ms) => { pauses1.push(ms); now1 += ms; } },
+    });
+  } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
+  assert.equal(code1, 0, err1.join(''));
+  assert.equal(gets, 2);
+  assert.equal(posts, 2);
+  assert.deepEqual(pauses1, [4_000, 2_000]);
+  assert.match(out1.join(''), /1 条重组后的用例已交给 Hub 核对/);
+
+  for (const mode of ['ambiguous-503', 'reset'] as const) {
+    let failPosts = 0;
+    const serverFail = createServer((request, response) => {
+      if (request.method === 'GET' && request.url === `/run-export/${RUN}/run`) {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify(runPayload));
+        return;
+      }
+      failPosts++;
+      if (mode === 'reset') { request.socket.destroy(); return; }
+      request.resume();
+      request.on('end', () => { response.writeHead(503); response.end('连接排队，情况未知'); });
+    });
+    await new Promise<void>((done) => serverFail.listen(0, '127.0.0.1', done));
+    t.after(() => new Promise<void>((done) => serverFail.close(() => done())));
+    const failUrl = `http://127.0.0.1:${(serverFail.address() as { port: number }).port}/mcp`;
+    let now2 = 0; const pauses2: number[] = [];
+    const err2: string[] = [];
+    process.stderr.write = ((c: string | Uint8Array) => { err2.push(String(c)); return true; }) as typeof process.stderr.write;
+    let code2 = -1;
+    try {
+      code2 = await main(['--hub', failUrl, '--run', RUN, '--model', 'scripted', '--records', await makeDir()], async () => TOKEN, {
+        timing: { now: () => now2, pause: async (ms) => { pauses2.push(ms); now2 += ms; } },
+      });
+    } finally { process.stderr.write = stderr; }
+    assert.equal(code2, 1, mode);
+    assert.equal(failPosts, 1, mode);
+    assert.deepEqual(pauses2, [], mode);
+    assert.match(err2.join(''), /^暂时不可用：.*没有自动重发。请先查回原调用.*。$/m, mode);
+  }
 });

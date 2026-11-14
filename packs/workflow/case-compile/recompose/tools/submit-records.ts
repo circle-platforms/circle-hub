@@ -8,7 +8,9 @@
 import { realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { argumentsOf, bearerFrom, get, hubOrigin, itemFiles, RUN_ID, submitResult, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { argumentsOf, bearerFrom, hubOrigin, itemFiles, RUN_ID, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
+import { formatCallError } from '../functions/text.ts';
 
 const SHOWN_CHARS = 12_000;
 type Row = { [key: string]: any };
@@ -84,20 +86,20 @@ export function submissionFor(run: Row, files: Row[], model: string): Row {
   };
 }
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'model', 'records']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
     const files = await itemFiles(args.records, (value) => value.handling === undefined ? { ...value, handling: 'handled' } : value);
     const bearer = await bearerFrom(readToken);
-    const exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await get(`${origin}/run-export/${args.run}/run`, bearer)));
+    const exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await getRetrying(`${origin}/run-export/${args.run}/run`, bearer, retry)));
     if (exported?.schema !== 'run-export@1' || exported.run?.run !== args.run) throw new Error('Hub 返回的原始用例不完整');
-    const { text, failed } = await submitResult(origin, bearer, submissionFor(exported.run, files, args.model));
+    const { text, failed } = await submitResultRetrying(origin, bearer, submissionFor(exported.run, files, args.model), retry);
     const path = join(args.records, `answer-${Date.now()}.txt`);
     await writeNew(path, Buffer.from(text));
     process.stdout.write(`${files.length} 条重组后的用例已交给 Hub 核对\n${text.slice(0, SHOWN_CHARS)}\n${text.length > SHOWN_CHARS ? `Hub 答复共 ${text.length} 字符，全文在 ${path}，请分段读完\n` : `全文在 ${path}\n`}`);
     return failed ? 1 : 0;
-  } catch (error) { process.stderr.write(`用例重组未完成：${error instanceof Error ? error.message : '输入无效'}\n`); return 1; }
+  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

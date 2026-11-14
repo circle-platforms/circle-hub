@@ -120,7 +120,7 @@ async function notes(cases: Record<string, unknown>) { const dir = await mkdtemp
 // CASES[1] failed once and closes as a defect candidate quoting its author's expectation and the device verbatim.
 const CANDIDATE = { repro: '合成复现：照第 1 步配置后读第 3 步输出', expected: '合成期望', actual: '第 3 步断言没有命中' };
 const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑', evidence: '第 3 步断言没有命中', defect_candidate: CANDIDATE }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
-const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批'], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z')));
+const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3]) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批'], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), retry));
 
 test('the pass volume is the dispatched final workbook, the unsuccessful volume holds the failed plan, and every case is accounted for', async (t) => {
   const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -525,4 +525,36 @@ test('an author conflict whose quotes do not stand, or whose root the Hub cannot
   const unread = await hub(undefined, undefined, {}, {}, undefined, false, [], 'recorded', 'absent'); t.after(unread.close);
   const plain = await run(unread, await notes(NOTES), join(dir, 'plain'));
   assert.equal(plain.code, 0, plain.stderr);
+});
+
+test('assemble-delivery retries 503 Retry-After and ECONNREFUSED on reads and stops after 60s without writing', async (t) => {
+  const h = await hub(); t.after(h.close);
+  let calls = 0;
+  let now1 = 0;
+  const pauses1: number[] = [];
+  const out1 = join(await mkdtemp(join(tmpdir(), 'cc-delivery-retry-')), 'out');
+  const recovered = await run(h, await notes(NOTES), out1, `${WHOLE},${FINAL}`, {
+    timing: { now: () => now1, pause: async (ms) => { pauses1.push(ms); now1 += ms; } },
+    fetch: async (input, init) => {
+      calls++;
+      if (calls === 1) return new Response('正在重启', { status: 503, headers: { 'retry-after': '5' } });
+      if (calls === 2) throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) });
+      return globalThis.fetch(input, init);
+    },
+  });
+  assert.equal(recovered.code, 0, recovered.stderr);
+  assert.deepEqual(pauses1, [5_000, 2_000]);
+  assert.deepEqual(JSON.parse(recovered.stdout).totals, { cases: 4, delivered: 2, failed: 1, unsettled: 0, unrun: 1 });
+
+  let now2 = 0;
+  const pauses2: number[] = [];
+  const out2 = join(await mkdtemp(join(tmpdir(), 'cc-delivery-fail-')), 'out');
+  const failed = await run(h, await notes(NOTES), out2, `${WHOLE},${FINAL}`, {
+    timing: { now: () => now2, pause: async (ms) => { pauses2.push(ms); now2 += ms; } },
+    fetch: async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }); },
+  });
+  assert.equal(failed.code, 1);
+  assert.deepEqual(pauses2, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000]);
+  assert.match(failed.stderr, /^暂时不可用：Hub 不可达（ECONNREFUSED），已等待 60 秒并尝试 10 次仍未恢复。请.*。$/m);
+  await assert.rejects(readdir(out2), 'nothing written when retry budget exhausted');
 });

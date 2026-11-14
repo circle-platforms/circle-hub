@@ -178,7 +178,7 @@ export default function check(input: unknown): Outcome[] {
   if (s.plan_set !== undefined && s.plan_set !== null) {
     const frozen = Array.isArray(s.plan_set) ? s.plan_set : null;
     const mine = frozen?.filter((entry) => isRecord(entry) && entry.item === item) ?? [];
-    if (!frozen || !frozen.length || mine.length !== 1 || !isRecord(mine[0]) || canonicalJson(mine[0].plan ?? null) !== canonicalJson(s.data ?? null)) return fail('自动化用例与已核对正确的版本不一致；请原样再交一次，或重新核对自动化用例并生成自动化用例 Excel', '/data');
+    if (!frozen || !frozen.length || mine.length !== 1 || !isRecord(mine[0]) || canonicalJson(mine[0].plan ?? null) !== canonicalJson(s.data ?? null)) return fail(`自动化用例与本次脚本合并核对的脚本编写运行 ${generation.plan_run} 中已受理版本不一致；若你修改或返工了自动化用例，禁止往已锁定的 ${generation.plan_run} 或当前脚本合并运行重交，必须先用 start_run 新开一次脚本编写运行（predecessor 填 test-bed 预订号）提交并核对、重新生成自动化用例 Excel 再新开脚本合并运行；只有内容完全未改时才按 ${generation.plan_run} 原样再交一次`, '/data');
     recipes = [];
     for (const entry of frozen) {
       const case_fields = isRecord(entry) ? generationFields(entry.fields) : null; const plan = isRecord(entry) ? readSlots(entry.plan) : null;
