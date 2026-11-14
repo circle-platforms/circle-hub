@@ -55,6 +55,17 @@ export interface HolderSnapshot {
   expires_at: string | null;
 }
 
+/** Every matching key's last stored reservation row, for trusted administrator projections only. */
+export interface RecentHolder {
+  key: string;
+  user: string;
+  run: string;
+  since: string;
+  until: string | null;
+  released: boolean;
+  active: boolean;
+}
+
 export interface ServiceOptions {
   /** Required by production wiring; the single environment catalog supplies current cleanup responsibilities. */
   catalog?: LeaseOwnershipCatalog;
@@ -244,6 +255,21 @@ export class LeaseService {
       if (!Number.isSafeInteger(fencing) || fencing < 1) throw new Error('租约围栏不能安全表示，请管理员核对');
       return { key: row.key, lease: row.lease_id, fencing, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at?.toISOString() ?? null };
     });
+  }
+
+  /** All matching last rows, with no limit or action-history scan; released is not proof of a physical stop. */
+  async recentHolders(prefix: string, tx?: Transaction): Promise<RecentHolder[]> {
+    const result = await this.#db.query<Row & { released: boolean; active: boolean }>(
+      `WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS at)
+       SELECT key, user_id, run_id, acquired_at, expires_at,
+         released_at IS NOT NULL AS released,
+         released_at IS NULL AND (expires_at IS NULL OR expires_at > observed.at) AS active
+       FROM leases CROSS JOIN observed WHERE starts_with(key,$1) ORDER BY key`,
+      [prefix], tx,
+    );
+    return result.rows.map(row => ({ key: row.key, user: row.user_id, run: row.run_id,
+      since: row.acquired_at.toISOString(), until: row.expires_at?.toISOString() ?? null,
+      released: row.released, active: row.active }));
   }
 
   /** Active row facts; holder identities are trusted-only and filtered at the run boundary. */
