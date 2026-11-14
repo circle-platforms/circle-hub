@@ -300,10 +300,14 @@ describe('scenario 21: model violations handling and error routing', () => {
     const cmdErr = cmdAnswer.out.errors.find((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION');
     assert.ok(cmdErr, `expected SUBMISSION_SCHEMA_VIOLATION, got: ${JSON.stringify(cmdAnswer.out.errors)}`);
     assert.equal(cmdErr.path, '/items/0/slots/findings/0/commands/0');
-    assert.equal(
-      cmdErr.fix,
-      '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
+    // Prior SUBMISSION_SCHEMA_VIOLATION in this same test (deep nesting) and any earlier
+    // same-code refusals in the file share the hour window; whole-tool example is omitted
+    // for /items paths (Boss 17:58 F3) — count sentence only.
+    assert.match(
+      cmdErr.fix ?? '',
+      /^\/items\/0\/slots\/findings\/0\/commands\/0 要的是对象 \{"command": "<string>", "present"\?: <boolean>\}，收到的是字符串(?:。这是一小时内第 \d+ 次同样的错误。)?$/,
     );
+    assert.doesNotMatch(cmdErr.fix ?? '', /完整的正确写法/);
 
     // Case C: reference cycle in grounds is refused with REFERENCE_UNRESOLVED and a fix naming the cyclic reference
     const originalTreeReader = bed.hub.deps.knowledge.treeReader.bind(bed.hub.deps.knowledge);

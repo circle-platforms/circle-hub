@@ -5,15 +5,25 @@
 import type { z } from 'zod';
 import type { ProtocolError } from '../../contracts/src/common.ts';
 import type { CallLog } from '../records/api.ts';
-import { callErrorCategoryOf, isPackScopedCode, type CallErrorCategory } from './error-reasons.ts';
+import {
+  callErrorCategoryOf,
+  errorPresentationOf,
+  isPackScopedCode,
+  type CallErrorCategory,
+} from './error-reasons.ts';
 
 export { isPackScopedCode } from './error-reasons.ts';
 
 export const ESCALATION_WINDOW_MS = 60 * 60 * 1000;
 
-/** Codes that never escalate (Boss 12:45): neutral unavailable, Hub-internal failures, cancellation. */
+/**
+ * Codes that never escalate (Boss 12:45 / 17:58):
+ * - SOURCE_UNAVAILABLE / SOURCE_RETRYABLE: read failed, no judgment — keep the original next-step string
+ * - Hub-internal failures and cancellation
+ */
 const SKIP_CODES = new Set([
   'SOURCE_UNAVAILABLE',
+  'SOURCE_RETRYABLE',
   'INTERNAL_ERROR',
   'INTERNAL',
   'CANCELLED',
@@ -21,6 +31,18 @@ const SKIP_CODES = new Set([
   'REQUEST_CANCELLED',
   'REQUEST_CANCELED',
 ]);
+
+/** Whole-tool submit_result examples are useless for nested field-path refusals (Boss 17:58 F3). */
+const USELESS_WHOLE_TOOL_EXAMPLE_PATH = /^\/items(\/|$)/;
+const EXAMPLE_JSON_MAX_CHARS = 800;
+
+/** True when a schema example would not help correct this field-path refusal. */
+export function exampleUsefulForPath(path: string | null | undefined, exampleJson: string | null): boolean {
+  if (exampleJson === null) return false;
+  if (exampleJson.length > EXAMPLE_JSON_MAX_CHARS) return false;
+  if (typeof path === 'string' && USELESS_WHOLE_TOOL_EXAMPLE_PATH.test(path)) return false;
+  return true;
+}
 
 export type EscalationTier = 1 | 2 | 3;
 
@@ -42,6 +64,10 @@ export function countsTowardEscalation(code: string | null | undefined): boolean
   if (typeof code !== 'string' || code.length === 0) return false;
   if (SKIP_CODES.has(code)) return false;
   if (/cancel/i.test(code) || /internal/i.test(code)) return false;
+  // Only the five call-error categories escalate; unavailable / conclusion / unmapped do not.
+  const presentation = errorPresentationOf(code);
+  if (presentation.kind === 'unavailable') return false;
+  if (callErrorCategoryOf(code) === null) return false;
   return true;
 }
 
@@ -249,7 +275,8 @@ export function buildEscalation(options: {
   const sentences: string[] = [countLabel];
   if (exampleJson !== null) sentences.push(`完整的正确写法：${exampleJson}`);
   let categoryClose: string | null = null;
-  if (tier >= 3) {
+  // Without an example, the 参数无效 close ("请照上面的完整写法改") must not be appended (Boss 17:58 F3).
+  if (tier >= 3 && !(options.category === '参数无效' && exampleJson === null)) {
     categoryClose = categoryCloseOf(options.category ?? null, options.retryAfterSeconds);
     if (categoryClose !== null) sentences.push(categoryClose);
   }
@@ -382,10 +409,16 @@ export async function escalateProtocolErrors(options: {
       out.push(error);
       continue;
     }
-    const exampleJson = isPackScopedCode(error.code)
+    const category = callErrorCategoryOf(error.code);
+    // Belt-and-suspenders: never escalate when the code has no call-error category.
+    if (category === null || errorPresentationOf(error.code).kind === 'unavailable') {
+      out.push(error);
+      continue;
+    }
+    const rawExample = isPackScopedCode(error.code)
       ? checkedPackDeclaredExample(options.packDeclaredExample, options.input)
       : schemaExample;
-    const category = callErrorCategoryOf(error.code);
+    const exampleJson = exampleUsefulForPath(error.path, rawExample) ? rawExample : null;
     out.push(
       withEscalatedFix(
         error,

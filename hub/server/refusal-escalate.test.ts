@@ -37,14 +37,84 @@ const TOOL_INPUTS = {
 
 const FORBIDDEN_CALL_ERROR = /状态已确认|状态未知|判断错误|决定者程序|原因缺资料|原因还没查清|任务包|没有分配给你|替代路径|按工具的输入模式改正这个参数后再调用/;
 
-test('SOURCE_UNAVAILABLE, internal and cancel codes do not escalate', () => {
+test('SOURCE_UNAVAILABLE, SOURCE_RETRYABLE, internal and cancel codes do not escalate', () => {
   assert.equal(countsTowardEscalation('SOURCE_UNAVAILABLE'), false);
+  assert.equal(countsTowardEscalation('SOURCE_RETRYABLE'), false);
   assert.equal(countsTowardEscalation('INTERNAL_ERROR'), false);
   assert.equal(countsTowardEscalation('CANCELLED'), false);
   assert.equal(countsTowardEscalation('REQUEST_CANCELLED'), false);
   assert.equal(countsTowardEscalation(null), false);
+  // Conclusion / unmapped codes have no call-error category → do not escalate.
+  assert.equal(countsTowardEscalation('EFFECT_UNKNOWN_DISPOSED'), false);
   assert.equal(countsTowardEscalation('SUBMISSION_SCHEMA_VIOLATION'), true);
   assert.equal(countsTowardEscalation('SOURCE_NOT_PERMITTED'), true);
+});
+
+test('SOURCE_RETRYABLE keeps the original fix on repeated escalate (Boss 17:58 F4/F5)', async () => {
+  let prior = 0;
+  const callLog = { countRecentErrors: async () => prior };
+  const published = PUBLISHED.get('start_run')!;
+  const base = {
+    code: 'SOURCE_RETRYABLE',
+    message: '连不上来源',
+    fix: '稍后用同样参数重新开始；仍失败请管理员核对资源地址与网络',
+  };
+  for (const n of [0, 1, 2]) {
+    prior = n;
+    const out = await escalateProtocolErrors({
+      callLog,
+      userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+      tool: 'start_run',
+      errors: [base],
+      input: StartRunInput,
+      inputSchema: published.inputSchema,
+    });
+    assert.equal(out[0].fix, base.fix);
+    assert.doesNotMatch(out[0].fix!, /这是一小时内第/);
+    assert.doesNotMatch(out[0].fix!, /完整的正确写法/);
+  }
+});
+
+test('nested /items path omits whole-tool example; count sentence only (Boss 17:58 F3)', async () => {
+  let prior = 0;
+  const callLog = { countRecentErrors: async () => prior };
+  const published = PUBLISHED.get('submit_result')!;
+  const base = {
+    code: 'SUBMISSION_SCHEMA_VIOLATION',
+    message: '/items/0/slots/findings/0/commands/0 要的是对象',
+    fix: '/items/0/slots/findings/0/commands/0 要的是对象 {"command": "<string>", "present"?: <boolean>}，收到的是字符串',
+    path: '/items/0/slots/findings/0/commands/0',
+  };
+  prior = 1;
+  const second = await escalateProtocolErrors({
+    callLog,
+    userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+    tool: 'submit_result',
+    errors: [base],
+    input: SubmitResultInput,
+    inputSchema: published.inputSchema,
+  });
+  assert.equal(
+    second[0].fix,
+    `${base.fix}。这是一小时内第 2 次同样的错误。`,
+  );
+  assert.doesNotMatch(second[0].fix!, /完整的正确写法/);
+
+  prior = 2;
+  const third = await escalateProtocolErrors({
+    callLog,
+    userId: 'usr_01jacd5z8q3w7v9h2k4m6n8p0a',
+    tool: 'submit_result',
+    errors: [base],
+    input: SubmitResultInput,
+    inputSchema: published.inputSchema,
+  });
+  // No example → no「请照上面的完整写法改」close; count sentence only.
+  assert.equal(
+    third[0].fix,
+    `${base.fix}。这是一小时内第 3 次同样的错误。`,
+  );
+  assert.doesNotMatch(third[0].fix!, /完整的正确写法|照原样重试不会成功/);
 });
 
 test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替代路径)', () => {
