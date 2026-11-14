@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "executor-name@1"
+    },
+    "executor": {
+      "type": "string",
+      "pattern": "^exe_[0-7][0-9a-hjkmnp-tv-z]{25}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "schema",
+    "executor",
+    "name"
+  ],
+  "additionalProperties": false
+}

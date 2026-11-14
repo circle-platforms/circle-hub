@@ -52,6 +52,8 @@ Also retired and removed on 2026-11-13: `/console/packs` (including `/console/pa
 
 ## History
 
+- 2026-11-14: Preservation migration 2 requires reader level 2. Upgrade preview and apply use the actual operator-token administrator; migration compatibility and preservation completion are independently verified before environment-assignment enforcement. Older strict readers reject the new migration and cannot preserve its authorization semantics on downgrade. Public deployment definitions use deployment@2 only, with administrator-authored executor names for shared targets and no deployment@1 conversion; protected restoration remains separate. upload_file descriptions distinguish declared workbooks from client_captured operation-record feeding; input values are unchanged.
+
 - 2026-11-14: Model 81 adds agents/ to allowed pack paths for packaged subagent definitions. Existing packs need no extra files. Manifest size and digest verification, directory restrictions and link rejection remain unchanged. This does not add subagent execution to the Hub.
 
 - 2026-11-14: run-export@1 adds run_reference and accepted_result_reference from stored record identities. Reusable results follow the same accepted-submission selection as start_run and remain paired with their exact body. Export authorization is unchanged; run IDs do not automatically populate all inputs.
