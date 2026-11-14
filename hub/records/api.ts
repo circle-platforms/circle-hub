@@ -969,6 +969,15 @@ export interface CallLogQuery extends PageQuery {
   to?: string;
 }
 
+/** Read-only count of recent error lines for refusal escalation (D5): same account, tool and code since `since`. */
+export interface CallLogErrorCountQuery {
+  userId: string;
+  tool: string;
+  errorCode: string;
+  /** Inclusive lower bound on `at` (ISO-8601). */
+  since: string;
+}
+
 export interface CallLog {
   /**
    * Records one call (database first, then the JSONL line). When the file write fails the call is still recorded and a
@@ -980,6 +989,11 @@ export interface CallLog {
    * on every query (a disabled account sees nothing, a demoted admin only their own calls). Newest first by default.
    */
   query(principal: Principal, query?: CallLogQuery): Promise<Page<CallLogLine>>;
+  /**
+   * How many `call_result='error'` lines this account already has for the tool and error code at or after `since`.
+   * Used before the current call is appended (occurrence = count + 1). Optional on fakes.
+   */
+  countRecentErrors?(query: CallLogErrorCountQuery): Promise<number>;
   /** The initialize declaration of this account, token and Hub-issued Mcp-Session-Id; null when the session declared none. */
   declaredClient?(userId:string,mcpSession:string|null,tokenId:string|null):Promise<{name:string;version:string|null}|null>;
   /** The newest initialize declaration made with this account and token, for showing a connection; it binds no write. */

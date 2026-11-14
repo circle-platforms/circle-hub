@@ -38,6 +38,7 @@ import { modelReferencesText, fallbackText, pageCursorProblem, toolText, type Te
 import { callStatus } from './call-status.ts';
 import { cachedReadReply } from './read-replies.ts';
 import { recoverRead } from './recover-read.ts';
+import { escalateProtocolErrors } from './refusal-escalate.ts';
 import { base64Size, decodeBase64Strict, isMediaType, mediaTypeFor, mediaTypeIsAuthoritative, structureOfAsync as structureOf } from './upload.ts';
 
 export { describeError, describeInternalError } from './notes.ts';
