@@ -90,7 +90,9 @@ test('attachments preserve exact bytes, remain non-executable and refuse revoked
   for(const tier of ['retain_only','function_bytes_only']as const){const held=await hub.records.artifacts.ingest({bytes:Buffer.from('合成限制档位 '+tier),mediaType:'text/plain',origin:{upload:{session:'synthetic-held-'+tier}},author:{user:member.user.id},provenanceType:'declared',readTier:tier,visibility:{readers:[member.user.id],admins:true,packs:[],shareable:false}});assert.equal((await web.get(download(held.body.sha256,held.digest))).status,404);}
   const source=spaces.source.bind(spaces);spaces.source=async(...args)=>{const result=await source(...args);return result?.bytes?{...result,bytes:Buffer.from('synthetic-invalid-reader-bytes')}:result;};const inconsistent=await web.get(download(file.body.sha256,file.digest));assert.equal(inconsistent.status,500);assert.ok(!inconsistent.body.includes('synthetic-invalid-reader-bytes'));spaces.source=source;
   // Simulate offline corruption as the temporary database owner, never as the runtime role.
-  const db=new pg.Client({...hub.records.database,ssl:false});await db.connect();try{
+  const owner={...hub.records.postgres.config,database:hub.records.database.database};
+  assert.notEqual(owner.user,hub.records.database.user,'offline corruption must use the owner while the Hub keeps its runtime role');
+  const db=new pg.Client({...owner,ssl:false});await db.connect();try{
    await db.query('ALTER TABLE personal_payloads DISABLE TRIGGER USER');await db.query('ALTER TABLE personal_payloads DROP CONSTRAINT personal_payloads_check');
    await db.query('UPDATE personal_payloads SET data=$1 WHERE owner=$2 AND sha256=$3',[Buffer.from('synthetic-corruption'),member.user.id,file.body.sha256]);
    const corrupt=await web.get(download(file.body.sha256,file.digest));assert.equal(corrupt.status,500);assert.ok(!corrupt.body.includes('synthetic-corruption'));
