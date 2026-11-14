@@ -234,10 +234,11 @@ test('default and explicit review preserve every pre-profile file byte', async (
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('profile arguments default to review and accept only the two named profiles', () => {
+test('profile arguments default to review and accept review, skills and ops', () => {
   const args = ['--env-file', 'synthetic.env', '--home', 'home', '--provider', 'qwen'];
   assert.equal(parseArgs(args).profile, 'review');
   assert.equal(parseArgs([...args, '--profile', 'skills', '--jev-model', 'synthetic-jev']).jevModel, 'synthetic-jev');
+  assert.equal(parseArgs([...args, '--profile', 'ops']).profile, 'ops');
   assert.throws(() => parseArgs([...args, '--profile', 'unknown']), /profile/);
 });
 test('skills settings add only named variables and a private empty skills directory', () => {
@@ -280,10 +281,12 @@ function skillsFixture() {
   const raw = (stdin: string) => { const child = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8', timeout: 5000 }); assert.equal(child.status, 0, child.stderr); return JSON.parse(child.stdout) as { decision: string; reason: string }; };
   return { dir, home, root, script, workdir: written.workdir, hook, input, decide: (value: unknown) => raw(JSON.stringify(value)), raw, close: () => rmSync(dir, { recursive: true, force: true }) };
 }
-test('skills guard allows six Hub tools todos and skill but denies write tools and malformed input', () => {
+test('skills guard allows six Hub tools todos and installed skill but denies write tools and malformed input', () => {
   const f = skillsFixture();
   try {
-    for (const tool of [...HUB_TOOLS.map(t => `${SERVER_NAME}_${t}`), 'write_todos', 'skill']) assert.equal(f.decide(f.input(tool, {})).decision, 'allow', tool);
+    for (const tool of [...HUB_TOOLS.map(t => `${SERVER_NAME}_${t}`), 'write_todos']) assert.equal(f.decide(f.input(tool, {})).decision, 'allow', tool);
+    assert.equal(f.decide(f.input('skill', { name: 'x' })).decision, 'allow', 'installed skill');
+    for (const badSkill of [{}, { name: 'missing' }]) assert.equal(f.decide(f.input('skill', badSkill)).decision, 'deny', JSON.stringify(badSkill));
     for (const tool of ['write_file', 'edit_file', 'bash', 'hub_other']) assert.equal(f.decide(f.input(tool, {})).decision, 'deny', tool);
     for (const input of [null, [], {}, { tool_name: 'skill' }, f.input('execute', { command: 1 }), { ...f.input('skill', {}), tool_input: [] }]) assert.equal(f.decide(input).decision, 'deny');
     assert.equal(f.raw('not json').decision, 'deny');
@@ -304,11 +307,11 @@ test('readonly file tools require every path inside the configured workspace', a
 test('execute permits only a Node TypeScript script below skills and the declared argument grammar', () => {
   const f = skillsFixture();
   try {
-    for (const command of [`node ${f.script} --a b`, `node '${f.script}' --a 'a value' --b=two`, `node ${f.script} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'END'\n%HUB_TOKEN%\nEND\n`]) assert.equal(f.decide(f.input('execute', { command, background: true, timeout: 10 })).decision, 'allow', command);
+    for (const command of [`node ${f.script} --a b`, `node '${f.script}' --a 'a value' --b two`, `node ${f.script} --send <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'END'\n%HUB_TOKEN%\nEND\n`]) assert.equal(f.decide(f.input('execute', { command, background: true, timeout: 10 })).decision, 'allow', command);
     for (const suffix of ['; echo bad', '&& echo bad', '| cat', '`echo bad`', '$(echo bad)', '> out', '2>out', '\necho bad']) {
       const result = f.decide(f.input('execute', { command: `node ${f.script} ${suffix}` })); assert.equal(result.decision, 'deny', suffix); assert.match(result.reason, /这个目录只放行技能目录里的脚本/);
     }
-    for (const command of [`node -e 'x'`, `node --input-type=module ${f.script}`, `node ${f.script} <<EOF\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'EOF'\nnot-a-placeholder\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN% extra\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN%\nEOF\necho bad`, `node ${join(f.home, 'outside.ts')}`, `node ${f.root}/tools/../tools/t.ts`, `node tools/t.ts`, `node ${f.script}.mjs`, `node ${f.script} "double quoted"`, `node ${f.script} 'unclosed`, `node ${f.script} 'one'two`]) assert.equal(f.decide(f.input('execute', { command })).decision, 'deny', command);
+    for (const command of [`node -e 'x'`, `node --input-type=module ${f.script}`, `node '${f.script}' --a 'a value' --b=two`, `node ${f.script} <<EOF\n%HUB_TOKEN%\nEOF`, `node ${f.script} <<'EOF'\nnot-a-placeholder\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN% extra\nEOF`, `node ${f.script} <<'EOF'\n%HUB_TOKEN%\nEOF\necho bad`, `node ${join(f.home, 'outside.ts')}`, `node ${f.root}/tools/../tools/t.ts`, `node tools/t.ts`, `node ${f.script}.mjs`, `node ${f.script} "double quoted"`, `node ${f.script} 'unclosed`, `node ${f.script} 'one'two`]) assert.equal(f.decide(f.input('execute', { command })).decision, 'deny', command);
   } finally { f.close(); }
 });
 test('canonical script containment rejects symlinks to scripts outside skills', async () => {
@@ -436,11 +439,11 @@ test('refusal sites disclose their own missing fact and recovery action',async()
   const {renameSync,symlinkSync}=await import('node:fs');const f=skillsFixture();
   try{
     const outside=join(f.dir,'outside.txt');writeFileSync(outside,'synthetic');const refused=f.decide(f.input('read_file',{path:outside},[outside]));
-    assert.equal(refused.decision,'deny');assert.ok(refused.reason.includes(outside));assert.match(refused.reason,/工作目录.*改用/);
-    assert.match(f.decide(f.input('ls',{},[])).reason,/ls.*路径.*重试/);
+    assert.equal(refused.decision,'deny');assert.ok(refused.reason.includes(outside));assert.equal(refused.reason.split('\n').length,3);assert.match(refused.reason,/工作目录[\s\S]*改用/);assert.match(refused.reason,/ALLOWED\.md/);
+    assert.match(f.decide(f.input('ls',{},[])).reason,/ls.*路径[\s\S]*重试/);
     writeFileSync(join(f.root,'hooks.json'),'not JSON');const malformed=f.decide(f.input());assert.match(malformed.reason,/技能.*x.*hooks\.json.*JSON.*安装.*verify/);
     rmSync(join(f.root,'hooks.json'));renameSync(join(f.home,'skills'),join(f.home,'saved-skills'));mkdirSync(join(f.dir,'other-skills'));symlinkSync(join(f.dir,'other-skills'),join(f.home,'skills'));
-    assert.match(f.decide(f.input()).reason,/skills.*根.*恢复/);
+    assert.match(f.decide(f.input()).reason,/skills.*根[\s\S]*恢复/);
   }finally{f.close();}
 });
 test('delegated decisions identify the skill and hook even when the hook omits its reason',()=>{
@@ -465,7 +468,7 @@ test('glob permits only nonempty relative literal and star segments with no expa
     for (const pattern of ['*.json', '**/*', 'src/**/*.ts', 'src-1/_file.*', '.config/*.json', '*.*', 'name..literal/*']) assert.equal(f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir])).decision, 'allow', pattern);
     for (const pattern of ['', '/', '//src/*', '/src/*', 'src//*.ts', 'src/', '..', 'src/../*', './*', '[ab]/*', '{src,test}/**/*.ts', '**/*.{ts,js}', '@(src|test)/*', '!(src)/*', 'src/?.ts', 'src\\*.ts', 'src/**x/*', 'src/文件*', 'src/*.ts\n']) {
       const reply = f.decide(f.input('glob', { pattern, path: f.workdir }, [f.workdir]));
-      assert.equal(reply.decision, 'deny', pattern); assert.match(reply.reason, /glob.*文法.*重试/);
+      assert.equal(reply.decision, 'deny', pattern); assert.match(reply.reason, /glob.*文法[\s\S]*重试/);
     }
   } finally { f.close(); }
 });
@@ -627,96 +630,149 @@ function expandCommandVariants(source: string, template: string, values: Record<
   return concretes;
 }
 
-test('the case-compile and recompose skill commands, filled in as Circle hands them to hooks, pass the skills home guard', () => {
+test('the case-compile, recompose and jev skill commands, filled in as Circle hands them to hooks, pass both skills and ops unified home guards', () => {
   const dir = scratch();
   try {
-    const home = join(dir, 'home'), hubUrl = 'https://hub.example.invalid/mcp';
-    const written = writeHome({ home, profile: 'skills', hubUrl }, endpointFrom(entries, 'qwen'), 'synthetic-token');
-    const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
-    const decide = (command: string) => {
-      const child = spawnSync(process.execPath, [hook], { input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }), encoding: 'utf8', timeout: 5000 });
-      assert.equal(child.status, 0, child.stderr);
-      return JSON.parse(child.stdout) as { decision: string; reason: string };
-    };
-
-    const packs = [
-      {
-        name: 'case-compile',
-        dir: fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)),
-        expectedScripts: ['assemble-delivery.ts', 'check-plan.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'submit-plans.ts', 'task-brief.ts'],
-      },
-      {
-        name: 'recompose',
-        dir: fileURLToPath(new URL('../../packs/workflow/case-compile/recompose/', import.meta.url)),
-        expectedScripts: ['check-record.ts', 'download-run.ts', 'submit-records.ts'],
-      },
-    ];
-
-    for (const pack of packs) {
-      const skill = join(home, 'skills', pack.name);
-      const manifest = JSON.parse(readFileSync(join(pack.dir, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> };
-      const staged = manifest.files.filter((file) => file.path === 'SKILL.md' || file.path.startsWith('tools/'));
-      for (const { path } of staged) {
-        mkdirSync(dirname(join(skill, path)), { recursive: true });
-        writeFileSync(join(skill, path), readFileSync(join(pack.dir, path)));
-      }
-      const docs = staged.map((f) => f.path).filter((path) => path === 'SKILL.md' || (path.startsWith('tools/') && path.endsWith('.md')));
-      const parsed = docs.flatMap((docPath) => extractSkillCommands(`${pack.name}/${docPath}`, readFileSync(join(pack.dir, docPath), 'utf8')));
-      assert.ok(parsed.length >= pack.expectedScripts.length, `${pack.name}: extracted commands from ${docs.join(', ')}`);
-
-      const values: Record<string, string> = {
-        技能目录: skill,
-        脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
-        用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
-        脚本合并编号: 'run_01cccccccccccccccccccccccc',
-        合并或上机编号: 'run_01cccccccccccccccccccccccc',
-        脚本编写目录: 'case-compile-run',
-        运行目录: 'case-compile-run',
-        核对目录: 'fidelity',
-        核对文件: 'fidelity/0.brief.json',
-        自动化用例目录: 'plans',
-        重组后的用例目录: 'records',
-        下载运行目录: 'recompose-run',
-        新目录: 'run-out',
-        导出文件: 'export.json',
-        规整文件: 'normalized.json',
-        '说明.json': 'notes.json',
-        'scope.md': 'scope.md',
-        用例或范围: 'case-01',
-        简报或输入路径: 'briefs/0.md',
-        目标路径: 'plans/0.json',
-        任务文件路径: 'tasks/0.md',
-        补充: '合成补充说明',
-        轮次: '2',
-        条目JSON: 'items/0.json',
-        '路径...': 'plans/r1/0.json',
-        '目录...': 'returns/r1',
-        结构简报JSON: 'briefs/0.json',
-        计划或判断JSON: 'plans/0.json',
-        模型: 'synthetic-model',
+    const hubUrl = 'https://hub.example.invalid/mcp';
+    for (const [label, profile, home] of [
+      ['skills', 'skills', join(dir, 'home-skills')],
+      ['ops-with-spaces', 'ops', join(dir, 'Application Support', 'home-ops')],
+    ] as const) {
+      const written = writeHome({ home, profile, hubUrl }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+      const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
+      const decide = (command: string) => {
+        const child = spawnSync(process.execPath, [hook], {
+          input: JSON.stringify({ event: 'before_tool', cwd: written.workdir, tool_name: 'execute', tool_input: { command }, paths: [] }),
+          encoding: 'utf8',
+          timeout: 5000,
+        });
+        assert.equal(child.status, 0, `${label}: ${child.stderr}`);
+        return JSON.parse(child.stdout) as { decision?: string; reason?: string };
       };
-      const seenScripts = new Set<string>();
-      for (const usage of parsed) {
-        for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
-          const command = concrete.replaceAll('%HUB_URL%', hubUrl);
-          const scriptPath = /^node (\S+)/.exec(command)?.[1] ?? '';
-          assert.ok(existsSync(scriptPath), `${usage.source}: installed script exists: ${command}`);
-          seenScripts.add(scriptPath.split('/').pop()!);
-          const supplied = usage.hasHeredoc ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
-          const decision = decide(supplied);
-          assert.equal(decision.decision, 'allow', `${usage.source}: ${supplied}\n${decision.reason}`);
+      const expectAllowed = (decision: { decision?: string; reason?: string }, msg: string) => {
+        if (profile === 'ops') assert.deepEqual(decision, {}, msg);
+        else assert.equal(decision.decision, 'allow', msg);
+      };
+
+      const packs = [
+        {
+          name: 'case-compile',
+          dir: fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)),
+          expectedScripts: ['assemble-delivery.ts', 'check-plan.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'submit-plans.ts', 'task-brief.ts'],
+        },
+        {
+          name: 'recompose',
+          dir: fileURLToPath(new URL('../../packs/workflow/case-compile/recompose/', import.meta.url)),
+          expectedScripts: ['check-record.ts', 'download-run.ts', 'submit-records.ts'],
+        },
+      ];
+
+      for (const pack of packs) {
+        const skill = join(home, 'skills', pack.name);
+        const manifest = JSON.parse(readFileSync(join(pack.dir, 'pack.json'), 'utf8')) as { files: Array<{ path: string }> };
+        const staged = manifest.files.filter((file) => file.path === 'SKILL.md' || file.path.startsWith('tools/'));
+        for (const { path: rel } of staged) {
+          mkdirSync(dirname(join(skill, rel)), { recursive: true });
+          writeFileSync(join(skill, rel), readFileSync(join(pack.dir, rel)));
+        }
+        const docs = staged.map((f) => f.path).filter((p) => p === 'SKILL.md' || (p.startsWith('tools/') && p.endsWith('.md')));
+        const parsed = docs.flatMap((docPath) => extractSkillCommands(`${pack.name}/${docPath}`, readFileSync(join(pack.dir, docPath), 'utf8')));
+        assert.ok(parsed.length >= pack.expectedScripts.length, `${pack.name}: extracted commands from ${docs.join(', ')}`);
+
+        const quotedSkill = skill.includes(' ') ? `'${skill}` : skill;
+        const values: Record<string, string> = {
+          技能目录: quotedSkill,
+          脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
+          用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
+          脚本合并编号: 'run_01cccccccccccccccccccccccc',
+          合并或上机编号: 'run_01cccccccccccccccccccccccc',
+          脚本编写目录: 'case-compile-run',
+          运行目录: 'case-compile-run',
+          核对目录: 'fidelity',
+          核对文件: 'fidelity/0.brief.json',
+          自动化用例目录: 'plans',
+          重组后的用例目录: 'records',
+          下载运行目录: 'recompose-run',
+          新目录: 'run-out',
+          导出文件: 'export.json',
+          规整文件: 'normalized.json',
+          '说明.json': 'notes.json',
+          'scope.md': 'scope.md',
+          用例或范围: 'case-01',
+          简报或输入路径: 'briefs/0.md',
+          目标路径: 'plans/0.json',
+          目标文件路径: 'plans/0.json',
+          任务文件路径: 'tasks/0.md',
+          补充: '合成补充说明',
+          补充说明: '合成补充说明',
+          轮次: '2',
+          条目JSON: 'items/0.json',
+          '路径...': 'plans/r1/0.json',
+          '目录...': 'returns/r1',
+          范围文件: 'scope.md',
+          结构简报JSON: 'briefs/0.json',
+          计划或判断JSON: 'plans/0.json',
+          模型: 'synthetic-model',
+        };
+        const seenScripts = new Set<string>();
+        for (const usage of parsed) {
+          for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
+            let command = concrete.replaceAll('%HUB_URL%', hubUrl);
+            if (skill.includes(' ')) {
+              // When the installed home path contains spaces (e.g. Application Support), the unified quoting rule single-quotes the full script path.
+              command = command.replace(/^node '([^']+\.ts)/, "node '$1'");
+            }
+            const scriptMatch = /^node (?:'([^']+)'|(\S+))/.exec(command);
+            const scriptPath = scriptMatch?.[1] ?? scriptMatch?.[2] ?? '';
+            assert.ok(existsSync(scriptPath), `${label} ${usage.source}: installed script exists: ${command}`);
+            seenScripts.add(scriptPath.split('/').pop()!);
+            const supplied = usage.hasHeredoc ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
+            const decision = decide(supplied);
+            expectAllowed(decision, `${label} ${usage.source}: ${supplied}\n${decision.reason ?? ''}`);
+          }
+        }
+        for (const script of pack.expectedScripts) {
+          assert.ok(seenScripts.has(script), `${pack.name}: missing parsed usage for tools/${script}`);
         }
       }
-      for (const script of pack.expectedScripts) {
-        assert.ok(seenScripts.has(script), `${pack.name}: missing parsed usage for tools/${script}`);
-      }
-    }
 
-    const ccSkill = join(home, 'skills', 'case-compile');
-    // The 3.9.5 spelling, a here-string after a relative script, is what this home refused.
-    assert.equal(decide(`node tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
-    assert.equal(decide(`node ${ccSkill}/tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
-    // Unquoted non-ASCII role argument is refused by skillsGuard, which is why SKILL.md quotes --role and --note.
-    assert.equal(decide(`node ${ccSkill}/tools/task-brief.ts --role 脚本编写 --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`).decision, 'deny');
+      // Regenerate ALLOWED.md via installed hooks/guard-gen.mjs (ops) or verify pre-installed ALLOWED.md follows the single-quote rule.
+      const jevDir = fileURLToPath(new URL('../../packs/workflow/knowledge-contribution/tools/jev/', import.meta.url));
+      const jevSkill = join(home, 'skills', 'jev');
+      mkdirSync(join(jevSkill, 'lib'), { recursive: true });
+      for (const rel of ['SKILL.md', 'hooks.json', 'jev.ts', 'lib/api.ts', 'lib/validate.ts', 'lib/placement.ts']) {
+        const src = join(jevDir, rel);
+        if (existsSync(src)) writeFileSync(join(jevSkill, rel), readFileSync(src));
+      }
+      const genScript = written.files.find((f) => f.endsWith('-gen.mjs'))!;
+      const regen = spawnSync(process.execPath, [join(home, genScript)], { cwd: written.workdir, encoding: 'utf8', timeout: 5000 });
+      assert.equal(regen.status, 0, `${label} gen: ${regen.stderr}`);
+      const allowedMd = readFileSync(join(home, 'hooks', 'ALLOWED.md'), 'utf8');
+      assert.doesNotMatch(allowedMd, /node "/, `${label} ALLOWED.md must not teach double-quoted commands`);
+      assert.match(allowedMd, /英文单引号/, `${label} ALLOWED.md must document the single-quote rule`);
+      assert.ok(allowedMd.includes('case-compile/tools/task-brief.ts'), `${label} ALLOWED.md includes task-brief.ts`);
+      assert.ok(!allowedMd.includes('authoring-brief.ts') && !allowedMd.includes('rework-inputs.ts') && !allowedMd.includes('workspace-path.ts'), `${label} ALLOWED.md excludes non-CLI helper modules`);
+      assert.ok(allowedMd.includes('jev/jev.ts submit'), `${label} ALLOWED.md includes jev subcommands`);
+
+      const jevCmd = (body: string) => `node ${jevSkill.includes(' ') ? `'${jevSkill}/jev.ts'` : `${jevSkill}/jev.ts`} ${body}`;
+      expectAllowed(decide(jevCmd(`ask --hub ${hubUrl} --model synthetic-jev --input ask.json --out jev-results <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`)), `${label} jev ask`);
+      expectAllowed(decide(jevCmd(`calibrate --hub ${hubUrl} --model synthetic-jev --root r0 --under /cmd --limit 50 --dry-run --out jev-results <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`)), `${label} jev calibrate --dry-run`);
+      expectAllowed(decide(jevCmd(`place --hub ${hubUrl} --model synthetic-jev --root r0 --under /cmd --from sub --limit 10 --out jev-results <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`)), `${label} jev place --from`);
+      expectAllowed(decide(jevCmd(`lock --hub ${hubUrl} --product prod --build '2026.1' --out jev-results <<'EOF'\n%HUB_TOKEN%\nEOF`)), `${label} jev lock 1-line`);
+      expectAllowed(decide(jevCmd(`submit --hub ${hubUrl} --proposals jev-results/proposals.json --product prod --build '2026.1' --skip 'i1=合成原因 one' --skip 'i2=合成原因 two' --out jev-results <<'EOF'\n%HUB_TOKEN%\nEOF`)), `${label} jev submit --skip`);
+      const askSend = decide(jevCmd(`ask --hub ${hubUrl} --model synthetic-jev --input ask.json --send case --send src --out jev-results <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`));
+      assert.equal(askSend.decision, 'ask', `${label} jev ask --send delegates to jev/hooks.json`);
+
+      const ccSkill = join(home, 'skills', 'case-compile');
+      const quotedFetch = ccSkill.includes(' ') ? `'${ccSkill}/tools/fetch-run.ts'` : `${ccSkill}/tools/fetch-run.ts`;
+      const quotedTaskBrief = ccSkill.includes(' ') ? `'${ccSkill}/tools/task-brief.ts'` : `${ccSkill}/tools/task-brief.ts`;
+      // Relative script path + here-string refused.
+      assert.equal(decide(`node tools/fetch-run.ts --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
+      assert.equal(decide(`node ${quotedFetch} --hub ${hubUrl} --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out case-compile-run <<< '%HUB_TOKEN%'`).decision, 'deny');
+      // Unquoted non-ASCII role argument refused on both skills and ops.
+      assert.equal(decide(`node ${quotedTaskBrief} --role 脚本编写 --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`).decision, 'deny');
+      // Internal helper module under tools/ cannot be executed directly.
+      assert.equal(decide(`node ${ccSkill.includes(' ') ? `'${ccSkill}/tools/authoring-brief.ts'` : `${ccSkill}/tools/authoring-brief.ts`}`).decision, 'deny');
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
