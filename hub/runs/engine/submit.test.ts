@@ -389,10 +389,13 @@ test('a run superseded by a newer revision answers RUN_SUPERSEDED; the submissio
   const run = await draft();
   const revision = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', version: '3.2', inputs: { map: { reference: map } }, predecessor: run.run }, h.call());
   assert.equal(revision.call_result, 'ok');
+  assert.ok(revision.run);
   const args = submission(run);
   const answer = await h.service.submitResult(h.alice, args, h.call());
   valid(answer);
   assert.deepEqual(answer.errors.map((e) => e.code), ['RUN_SUPERSEDED']);
+  assert.equal(answer.errors[0].message, `这次运行已有后续的运行 ${revision.run.run}，不再接受提交`);
+  assert.equal(answer.errors[0].fix, '要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续');
   assert.equal(answer.result, undefined);
   const stored = await h.kit.store.find({ key: INDEX.submissionRun, value: run.run, kind: 'submission' });
   assert.deepEqual(stored.items[0].body, args);

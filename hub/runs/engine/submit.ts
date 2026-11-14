@@ -257,7 +257,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   // names this run is a branch of theirs; a run of another pack, such as the verification, continues it).
   if (successors.length > 0) {
     await action({ acceptance: 'not_accepted', codes: ['RUN_SUPERSEDED'], repair: [], result: null, extra: { superseded_by: successors.map((s) => s.body.run) } });
-    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('RUN_SUPERSEDED', `运行 ${run.run} 已被新修订 ${successors[successors.length - 1].body.run} 取代`, { path: '/run' })] };
+    return { call_result: 'error', acceptance: 'not_accepted', errors: [protocolError('RUN_SUPERSEDED', `这次运行已有后续的运行 ${successors[successors.length - 1].body.run}，不再接受提交`, { path: '/run' })] };
   }
   if(management!==null){
     const refusal=protocolError('RUN_ABANDONED',PROTOCOL_CODES.RUN_ABANDONED.when,{path:'/run'});
