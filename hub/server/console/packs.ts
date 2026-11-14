@@ -51,7 +51,14 @@ async function assignedNames(ctx: PageContext, pack: PackListing): Promise<strin
 async function usageAudience(ctx:PageContext,pack:PackListing):Promise<string>{
   if(pack.space&&pack.space!=='team')return (await currentAudience(ctx,pack.space,'/',false,pack.id)).text;
   if(pack.kind!=='workflow')return uiLabelOf('audience_scope','team');
-  if(!ctx.admin)return uiLabelOf('knowledge_search_scope','team');
+  // Members: say which of their teams makes the pack visible — never label team grants as 公共空间 (findings).
+  if(!ctx.admin){
+    const teams=await ctx.deps.records.teams.memberships(ctx.principal);
+    return teams.length?teams.map((team)=>`团队 ${team.name}`).join('、'):uiLabelOf('audience_scope','team_unassigned');
+  }
+  // Administrators: prefer team names over expanding to member names so team grants stay visible as teams.
+  const of=await ctx.deps.records.authorizations.teamsOf(ctx.principal,'pack',pack.id);
+  if(of.teams.length)return of.teams.map((team)=>`团队 ${team.name}`).join('、');
   const users=(await memoReadPort(ctx.deps.records.principals,['get','list']).list()).filter(user=>!user.disabled);
   const assigned=new Set(pack.assigned_to??await ctx.deps.records.authorizations.usersOf(pack.id));
   const eligible=users.filter(user=>assigned.has(user.id));

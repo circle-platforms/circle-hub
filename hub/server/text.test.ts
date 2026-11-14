@@ -566,6 +566,13 @@ function packOf(i: number): PackSummary {
 }
 
 describe('list_task_packs, upload_file and resolve_reference texts', () => {
+  test('member list names usable count and unassigned remainder without listing names (Boss 03:45 #4)', () => {
+    const base = ListTaskPacksOutput.parse({ call_result: 'ok', errors: [], packs: [], index: [], trace: TRACE });
+    const text = toolText('list_task_packs', { ...base, member_capabilities: { unassigned_workflows_count: 5 } } as typeof base);
+    assert.match(text, /^你能用的 0 个；Hub 上另有 5 个没有分配给你（名字不列出），需要哪个请管理员分配。/);
+    assert.doesNotMatch(text, /toy-pack|没有这个包/);
+  });
+
   test('a long task-pack list and an oversized pack are given whole, every detail of every pack (decision 158)', () => {
 const packs=Array.from({length:300},(_,i)=>packOf(i));const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs,trace:TRACE});const text=toolText('list_task_packs',answer);for(const pack of packs)assert.ok(text.includes(pack.title+'，'+pack.description));assert.doesNotMatch(text,/toy-pack-|start_run|sha256/);const oversized={...packOf(1),inputs:Array.from({length:300},(_,i)=>({...packOf(1).inputs[0],slot:'input_'+i,description:'说明'+i}))};const large=toolText('list_task_packs',ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[oversized],trace:TRACE}));assert.equal(linesOf(large).filter(line=>/^说明\d+，/.test(line)).length,300);
 });

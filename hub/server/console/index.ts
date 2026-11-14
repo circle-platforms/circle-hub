@@ -101,7 +101,8 @@ export async function handleConsole(request: IncomingMessage, response: ServerRe
     const back = isAction || isKnowledgeAction || segments.length === 0 ? null : safeNext(`${url.pathname}${url.search}`);
     return redirect(response, back === null || back === HOME ? '/console/login' : `/console/login?next=${encodeURIComponent(back)}`, cookies);
   }
-  if (segments.length === 0) return redirect(response, HOME);
+  // Members land on 我能做的事; administrators keep the overview.
+  if (segments.length === 0) return redirect(response, principal.role === 'admin' ? HOME : '/console/me');
   const ctx = pageContext(options, request, url, principal, session!, secure);
   return handleAuthenticatedConsole(request, response, url, options, ctx, session!, principal, segments, isAction, isKnowledgeAction);
 }
