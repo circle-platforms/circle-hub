@@ -276,18 +276,18 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  if(ctx.admin&&ctx.deps.dispatch){try{executors=await ctx.deps.dispatch.executors(ctx.principal);}catch{executorsFailed=true;}}
  // Assigned targets for members come from the capability port; administrators group registered executors by target.
  let memberTargets:string[]=[];
- let environmentAssignmentsEnforced=false;
+ let environmentAssignmentsEnforced:boolean|undefined;
  {
   try{
    const capabilities=await ctx.deps.memberCapabilities(ctx.principal);
-   environmentAssignmentsEnforced=capabilities.environmentAccess.enforced === true;
+   environmentAssignmentsEnforced=capabilities.environmentAccess.enforced;
    if(!ctx.admin)memberTargets=[...new Set(capabilities.environments.map(item=>item.name))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
   }catch{memberTargets=[];}
  }
  const readinessTargets=ctx.admin
   ?[...new Set((executors??[]).map(executor=>executor.target))].sort((a,b)=>a.localeCompare(b,'zh-CN'))
   :memberTargets;
- const readinessCards=await loadReadinessReports(ctx.deps.dispatch?.readiness,ctx.principal,readinessTargets);
+ const readinessCards=await loadReadinessReports(ctx.deps.dispatch?.readiness,ctx.principal,readinessTargets,environmentAssignmentsEnforced);
  const systemId=ctx.url.searchParams.get('system'),circleId=ctx.url.searchParams.get('circle'),environmentId=ctx.url.searchParams.get('environment');
  const chosen=resources.find(resource=>resource.id===systemId),circle=circles.find(circle=>circle.token.id===circleId),environment=executors?.find(executor=>executor.id===environmentId);
  if([systemId,circleId,environmentId].filter(Boolean).length>1||systemId&&!chosen||circleId&&!circle||environmentId&&!environment)return neutralPage(ctx);
@@ -349,6 +349,6 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   :tab==='systems'?liveModule('systems',['system.added','system.status'],html`${systemFacts}${box(null,systems,{flush:true})}`)
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})
   :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${readinessSection}${box(null,environmentTable,{flush:true})}${ctx.admin?await environmentAdminForms(ctx,executors):''}`);
- const body=html`<div class="ch-stack" data-connections>${environmentAssignmentsEnforced?'':html`<p class="ch-meta" data-environment-assignment-preview>新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。</p>`}${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
+ const body=html`<div class="ch-stack" data-connections>${environmentAssignmentsEnforced===true?'':environmentAssignmentsEnforced===false?html`<p class="ch-meta" data-environment-assignment-preview>新测试环境分配尚未启用，当前仍按原工作流和预订规则。分配字段仅供预览，不代表当前执行许可。</p>`:html`<p class="ch-meta" data-environment-assignment-preview>测试环境分配校验的启用状态尚未取得；不据此作执行许可。</p>`}${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
  return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境就绪为本地只读观察；占用与冻结取派发记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
 }
