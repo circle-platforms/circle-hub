@@ -52,6 +52,8 @@ Also retired and removed on 2026-11-13: `/console/packs` (including `/console/pa
 
 ## History
 
+- 2026-11-14: Model 81 adds agents/ to allowed pack paths for packaged subagent definitions. Existing packs need no extra files. Manifest size and digest verification, directory restrictions and link rejection remain unchanged. This does not add subagent execution to the Hub.
+
 - 2026-11-14: run-export@1 adds run_reference and accepted_result_reference from stored record identities. Reusable results follow the same accepted-submission selection as start_run and remain paired with their exact body. Export authorization is unchanged; run IDs do not automatically populate all inputs.
 
 - 2026-11-14: Deployment definition @1 permits multiple executors for one target and exports every executor. Explicit IDs match IDs only. Ambiguous unnamed targets or declarations resolving to the same executor are rejected before configuration writes. No format conversion or database migration is added.
