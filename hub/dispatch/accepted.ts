@@ -11,7 +11,7 @@ import type { DispatchNoteFacts, DispatchRunFacts, DispatchAttemptFacts } from '
 import type { Principal, RecordsKit } from '../records/api.ts';
 import type { DispatchService, JobStatus } from './service.ts';
 import { readRunJobs, type RunJob } from './read-runs.ts';
-import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, type DispatchDiagnostics } from './reasons.ts';
+import { reportMissingFacts, releaseMissingFacts, statusDiagnostics, attemptScopeLabel, type DispatchDiagnostics } from './reasons.ts';
 export type { DispatchMissingFact, DispatchDiagnostics } from './reasons.ts';
 
 export interface DispatchNote extends DispatchNoteFacts { run?: string; job?: string; executor?: string; text: string }
@@ -142,7 +142,7 @@ function retriable(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): 
 }
 
 function attemptLabel(attempt: DispatchAttemptFacts): string {
-  return attempt.scope.operation === 'dispatch' ? `第 ${attempt.scope.round} 轮派发` : '本次一致性核对';
+  return attemptScopeLabel(attempt.scope);
 }
 
 function attemptNext(attempt: DispatchAttemptFacts, job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>): string {
@@ -169,7 +169,7 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   const facts = job.status.job_facts;
   const diagnostics = statusDiagnostics(job, administrative), projected = diagnostics.job_facts, attempt = diagnostics.dispatch_attempt;
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '状态仍待核对' : '进行中';
-  const jobLabel = projected.operation === 'precheck' ? '本次只读预检作业' : projected.operation === 'conformance' ? '本次一致性核对作业' : projected.operation === 'dispatch' ? '本次上机验证作业' : '本作业';
+  const jobLabel = projected.operation === 'precheck' ? '本次只读预检作业' : projected.operation === 'conformance' ? `本次${labelOf('dispatch_operation', 'conformance')}作业` : projected.operation === 'dispatch' ? '本次上机验证作业' : '本作业';
   const parts = [administrative ? `作业 ${job.job}：${state}${projected.phase ? `（阶段 ${projected.phase}）` : ''}` : `${jobLabel}${state}`];
   if (projected.operation === 'precheck') parts.push(projected.readonly_verified === true ? '本作业的只读预检条件已核对通过' : '本作业的只读预检条件尚无全部通过的观察');
   if (projected.frozen === true) parts.push('本作业保持重发保护，需按作业记录继续核对');

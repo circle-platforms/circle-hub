@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
@@ -176,7 +177,7 @@ test('conformance scope names the operation without inventing a round and readon
   source.status.job_facts.operation = 'conformance';
   source.status.dispatch_attempt = { scope: { operation: 'conformance', job: jobId, request_id: 'private-request' }, outcome: 'proven_not_executed' };
   const conform = runnerNote(source, 'usr_private');
-  assert.match(conform.text, /本次一致性核对/); assert.doesNotMatch(conform.text, /第.*轮/);
+  assert.ok(conform.text.includes('本次'+labelOf('dispatch_operation','conformance'))); assert.doesNotMatch(conform.text, /第.*轮/);
   assert.equal(Object.hasOwn(conform.dispatch_attempt!.scope, 'round'), false);
   assert.equal(JSON.stringify(conform).includes('private-request'), false);
   source.status.job_facts.operation = 'precheck'; source.status.job_facts.readonly_verified = false;

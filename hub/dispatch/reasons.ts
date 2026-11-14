@@ -1,3 +1,4 @@
+import { labelOf } from '../../contracts/generated/vocabulary.ts';
 import { sha256Hex, type RecordsKit } from '../records/api.ts';
 import type { DispatchAttemptFacts, DispatchJobFacts, ScopedDispatchFacts } from '../../contracts/api.ts';
 import type { JobStatus } from './service.ts';
@@ -66,6 +67,10 @@ function diagnosticFacts(source: JobStatus['job_facts'] | NonNullable<JobStatus[
   return [...new Map(missing.map(fact => [fact.fact + '\0' + fact.next_action, fact])).values()].slice(0, 16);
 }
 
+export function attemptScopeLabel(scope: DispatchAttemptFacts['scope']): string {
+  return scope.operation === 'dispatch' ? `第 ${scope.round} 轮派发` : `本次${labelOf('dispatch_operation', scope.operation)}`;
+}
+
 export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {
   const facts = job.status.job_facts, attempt = job.status.dispatch_attempt;
   if (job.status.job !== job.job || facts.scope.job !== job.job || attempt && attempt.scope.job !== job.job) throw new Error('派发事实范围与作业身份不一致');
@@ -98,7 +103,7 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     missing_facts: jobMissing, next_action: next,
   };
   if (!attempt) return { job_facts };
-  const label = attempt.scope.operation === 'dispatch' ? `第 ${attempt.scope.round} 轮派发` : '本次一致性核对';
+  const label = attemptScopeLabel(attempt.scope);
   const attemptNext = attempt.outcome === 'unknown' ? admin ? `circle-hub job resume ${job.job}` : `${label}结果未知，不要重交或另开运行重发，原样读取进展；需要时联系管理员只读核对`
     : admin ? attempt.next_action ?? `circle-hub job status ${job.job}` : `读取${label}的结果与缺失事实，不要把该次结局推广为整个作业`;
   const scope: DispatchAttemptFacts['scope'] = admin ? attempt.scope : attempt.scope.operation === 'dispatch'
