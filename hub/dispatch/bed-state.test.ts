@@ -89,11 +89,11 @@ test('residue that is not in the frozen baseline blocks dispatch and names the p
   t.after(() => c.close());
   await bind(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
-  assert.match(state.missing_fact ?? '', /床面残留不属于基线/);
-  assert.match(state.missing_fact ?? '', /来源探针 addresses/);
-  assert.match(state.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /床面残留不属于基线/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /来源探针 addresses/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
   const pre = (await snaps(c, state.job)).find(detail => detail.when === 'pre');
   assert.deepEqual(pre?.differences, [{ item: 'addresses', kind: 'extra', identity: '192.0.2.9/24' }]);
 });
@@ -104,8 +104,8 @@ test('a restored bed drops the shared-bed limit and leaves the reported pass in 
   t.after(() => c.close());
   await bind(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective');
-  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  assert.equal(state.dispatch_attempt!.outcome, 'effective');
+  const bytes = await c.kit.objects.get(String(state.job_facts.result).slice(4));
   const report = JSON.parse(new TextDecoder().decode(bytes!)) as { rows: Array<{ reported_terminal: string; dynamic_terminal: string; limits: string[] }>; bed_state: { recovery: string; limits: string[]; differences: unknown[] } };
   assert.equal(report.rows[0].reported_terminal, 'pass');
   assert.equal(report.rows[0].dynamic_terminal, 'no_verdict');
@@ -122,24 +122,24 @@ test('an unrestored bed keeps the reported pass, attaches the diff, and blocks t
   t.after(() => c.close());
   await bind(c);
   const first = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(first.outcome, 'effective');
-  const bytes = await c.kit.objects.get(String(first.result).slice(4));
+  assert.equal(first.dispatch_attempt!.outcome, 'effective');
+  const bytes = await c.kit.objects.get(String(first.job_facts.result).slice(4));
   const report = JSON.parse(new TextDecoder().decode(bytes!)) as { rows: Array<{ reported_terminal: string; limits: string[] }>; bed_state: { recovery: string; limits: string[]; differences: unknown[]; next_action: string } };
   assert.equal(report.rows[0].reported_terminal, 'pass');
   assert.equal(report.bed_state.recovery, 'unrestored');
   assert.deepEqual(report.bed_state.differences, [{ item: 'addresses', kind: 'extra', identity: '192.0.2.9/24' }]);
   assert.deepEqual(report.bed_state.limits, ['未排除共享床影响', '床面未恢复']);
-  assert.match(report.bed_state.next_action, /synthetic-clear-addresses/);
+  assert.match(report.bed_state.dispatch_attempt!.next_action, /synthetic-clear-addresses/);
   assert.ok(report.rows[0].limits.includes('床面未恢复'));
   await rotate(c, 'synthetic verified bytes again');
   const blocked = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(blocked.outcome, 'not_dispatched');
-  assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
-  assert.match(blocked.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
+  assert.equal(blocked.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(blocked.dispatch_attempt!.not_sent,true);
+  assert.match(blocked.dispatch_attempt!.missing_fact ?? '', /该床尚未恢复/);
+  assert.match(blocked.dispatch_attempt!.next_action ?? '', /由合成管理员按 synthetic-clear-addresses 处理后重开/);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   await rotate(c, 'synthetic verified bytes restored');
   const cleared = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(cleared.outcome, 'effective', JSON.stringify(cleared));
+  assert.equal(cleared.dispatch_attempt!.outcome, 'effective', JSON.stringify(cleared));
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 2);
 });
 
@@ -149,12 +149,12 @@ test('a missing probe is unknown, names the reread, and does not submit', async 
   t.after(() => c.close());
   await bind(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
-  assert.match(state.missing_fact ?? '', /床面探针缺失：addresses/);
-  assert.match(state.next_action ?? '', /只读探针 addresses 没有按声明解析出结构/);
-  assert.match(state.next_action ?? '', /重读 show_bed 后再开/);
-  assert.doesNotMatch(state.missing_fact ?? '', /不属于基线/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /床面探针缺失：addresses/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /只读探针 addresses 没有按声明解析出结构/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /重读 show_bed 后再开/);
+  assert.doesNotMatch(state.dispatch_attempt!.missing_fact ?? '', /不属于基线/);
   const pre = (await snaps(c, state.job)).find(detail => detail.when === 'pre');
   assert.ok(Array.isArray(pre?.sources) && (pre.sources as string[]).some(source => source.startsWith('src:')));
 });
@@ -187,7 +187,7 @@ test('an empty header is not residue and does not block dispatch', async t => {
   t.after(() => c.close());
   await bindSurface(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.equal(state.dispatch_attempt!.outcome, 'effective', JSON.stringify(state));
   assert.equal((await cleanupRows(c, state.job)).length, 0);
   assert.equal(c.calls.includes('synthetic-clear-row'), false);
 });
@@ -198,12 +198,12 @@ test('auto-cleanable residue is a dispatch action and is not executed in the hub
   t.after(() => c.close());
   await bindSurface(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
   assert.equal(c.calls.includes('synthetic-clear-row'), false);
-  assert.match(state.missing_fact ?? '', /可自动清理/);
-  assert.match(state.next_action ?? '', /synthetic-clear-row/);
-  assert.match(state.next_action ?? '', /Hub 不执行这些命令/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /可自动清理/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /synthetic-clear-row/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /Hub 不执行这些命令/);
   const requested = await cleanupRows(c, state.job);
   assert.equal(requested.length, 1);
   assert.equal(requested[0]?.executed, false);
@@ -217,12 +217,12 @@ test('residue that needs interactive confirmation blocks dispatch and names the 
   t.after(() => c.close());
   await bindSurface(c);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
   assert.equal(c.calls.includes('synthetic-confirm-clear'), false);
-  assert.match(state.missing_fact ?? '', /不可自动清理/);
-  assert.match(state.next_action ?? '', /合成管理员/);
-  assert.match(state.next_action ?? '', /重新派发之前/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /不可自动清理/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /合成管理员/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /重新派发之前/);
   assert.equal((await cleanupRows(c, state.job)).length, 0);
 });
 
@@ -389,7 +389,7 @@ test('snapshot_only config channel skips baseline residue check and verifies pre
   await bindSnapshotOnly(c);
 
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective');
+  assert.equal(state.dispatch_attempt!.outcome, 'effective');
 });
 
 test('captureText strips declared lead and trail lines verbatim, preserving content', () => {
@@ -461,11 +461,11 @@ test('raw capture probe without registered baseline blocks dispatch with unregis
   await bindRawProbe(c);
 
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.match(state.missing_fact ?? '', /未登记基线，无法判残留/);
-  assert.match(state.missing_fact ?? '', /raw_probe/);
-  assert.match(state.next_action ?? '', /circle-hub bed baseline record/);
-  assert.match(state.next_action ?? '', /raw_probe/);
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /未登记基线，无法判残留/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /raw_probe/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /circle-hub bed baseline record/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /raw_probe/);
 });
 
 test('raw capture probe with baseline mismatch blocks dispatch, lists diff lines, and provides exits', async t => {
@@ -511,13 +511,13 @@ test('raw capture probe with baseline mismatch blocks dispatch, lists diff lines
   await c.service.setBaseline(c.admin, c.executor.id, 'raw_probe', 'port1 192.0.2.1/24', '干净基线');
 
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.match(state.missing_fact ?? '', /床面存在残留，与登记基线不一致/);
-  assert.match(state.missing_fact ?? '', /raw_probe/);
-  assert.match(state.missing_fact ?? '', /第 1 行改变/);
-  assert.match(state.next_action ?? '', /synthetic-cleanup-probe/);
-  assert.match(state.next_action ?? '', /circle-hub bed baseline record/);
-  assert.match(state.next_action ?? '', /--reason <理由>/);
+  assert.equal(state.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(state.dispatch_attempt!.not_sent,true);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /床面存在残留，与登记基线不一致/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /raw_probe/);
+  assert.match(state.dispatch_attempt!.missing_fact ?? '', /第 1 行改变/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /synthetic-cleanup-probe/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /circle-hub bed baseline record/);
+  assert.match(state.dispatch_attempt!.next_action ?? '', /--reason <理由>/);
 });
 
 test('post-run match restores bed and post-run mismatch leaves bed unrestored with line diffs', async t => {
@@ -564,8 +564,8 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     await c.service.setBaseline(c.admin, c.executor.id, 'raw_probe', 'port1 192.0.2.1/24');
 
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(state.outcome, 'effective');
-    const bytes = await c.kit.objects.get(String(state.result).slice(4));
+    assert.equal(state.dispatch_attempt!.outcome, 'effective');
+    const bytes = await c.kit.objects.get(String(state.job_facts.result).slice(4));
     const report = JSON.parse(new TextDecoder().decode(bytes!)) as {
       bed_state: { recovery: string; differences: unknown[]; limits: string[] };
     };
@@ -596,8 +596,8 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     await c.service.setBaseline(c.admin, c.executor.id, 'raw_probe', 'port1 192.0.2.1/24');
 
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(state.outcome, 'effective');
-    const bytes = await c.kit.objects.get(String(state.result).slice(4));
+    assert.equal(state.dispatch_attempt!.outcome, 'effective');
+    const bytes = await c.kit.objects.get(String(state.job_facts.result).slice(4));
     const report = JSON.parse(new TextDecoder().decode(bytes!)) as {
       bed_state: { recovery: string; differences: Array<{ item: string; diff_lines?: string[] }>; limits: string[] };
     };
@@ -611,14 +611,14 @@ test('post-run match restores bed and post-run mismatch leaves bed unrestored wi
     await rotate(c, 'synthetic verified bytes for next dispatch');
     queue.push(dirtyEcho);
     const nextState = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(nextState.outcome, 'not_dispatched');
-    assert.match(nextState.missing_fact ?? '', /该床尚未恢复/);
+    assert.equal(nextState.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(nextState.dispatch_attempt!.not_sent,true);
+    assert.match(nextState.dispatch_attempt!.missing_fact ?? '', /该床尚未恢复/);
 
     // After cleanup (pre snapshot returns to clean), hold clears and dispatch succeeds
     await rotate(c, 'synthetic verified bytes cleared');
     queue.push(cleanEcho, cleanEcho);
     const clearedState = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(clearedState.outcome, 'effective');
+    assert.equal(clearedState.dispatch_attempt!.outcome, 'effective');
   }
 });
 
@@ -650,8 +650,8 @@ test('post bed probes run while the remote lease is still renewed and before it 
   t.after(() => c.close());
   await bind(c, probes);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective');
-  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  assert.equal(state.dispatch_attempt!.outcome, 'effective');
+  const bytes = await c.kit.objects.get(String(state.job_facts.result).slice(4));
   const report = JSON.parse(new TextDecoder().decode(bytes!)) as { bed_state: { recovery: string } };
   assert.equal(report.bed_state.recovery, 'restored');
   assert.equal(c.calls.filter(name => name === 'show_bed').length, 8);
@@ -693,7 +693,7 @@ async function leaveOpenHold(c: Awaited<ReturnType<typeof setup>>, queue: Array<
   await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
   await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
   const held = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(held.outcome, 'effective');
+  assert.equal(held.dispatch_attempt!.outcome, 'effective');
   const open = (await bedHolds(c)).filter(detail => detail.job === held.job && detail.state === 'open');
   assert.equal(open.length, 1);
   return held;
@@ -713,7 +713,7 @@ test('an open hold compares the probe intersection and names a changed set inste
     await rotate(c, 'synthetic verified bytes after probe change');
     queue.push(clean(textA), clean(textB), clean(textD), clean(textA), clean(textB), clean(textD));
     const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(next.outcome, 'effective', JSON.stringify(next));
+    assert.equal(next.dispatch_attempt!.outcome, 'effective', JSON.stringify(next));
     const rows = await bedHolds(c);
     assert.equal(JSON.stringify(rows.find(detail => detail.job === held.job && detail.state === 'open')), openBefore);
     const cleared = rows.find(detail => detail.job === next.job && detail.state === 'clear');
@@ -733,11 +733,11 @@ test('an open hold compares the probe intersection and names a changed set inste
     await rotate(c, 'synthetic verified bytes with a dirty overlap');
     queue.push(echo(dirtyA), echo(textB), echo(textD));
     const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(next.outcome, 'not_dispatched');
-    assert.match(next.missing_fact ?? '', /该床尚未恢复/);
-    assert.match(next.missing_fact ?? '', /来源探针 A/);
-    assert.match(next.missing_fact ?? '', /第 1 行改变/);
-    assert.match(next.missing_fact ?? '', /占用时的探针 C 现在不在执行器定义里，没有比较/);
+    assert.equal(next.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(next.dispatch_attempt!.not_sent,true);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /该床尚未恢复/);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /来源探针 A/);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /第 1 行改变/);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /占用时的探针 C 现在不在执行器定义里，没有比较/);
     assert.equal((await bedHolds(c)).some(detail => detail.state === 'clear'), false);
   }
 
@@ -751,11 +751,11 @@ test('an open hold compares the probe intersection and names a changed set inste
     await rotate(c, 'synthetic verified bytes without a new baseline');
     queue.push(echo(textA), echo(textB), echo(textD));
     const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(next.outcome, 'not_dispatched');
-    assert.match(next.missing_fact ?? '', /无法比较床面占用：探针 D/);
-    assert.match(next.next_action ?? '', new RegExp(`bed baseline record ${c.executor.id} --probe D`));
-    assert.doesNotMatch(next.missing_fact ?? '', /探针缺失/);
-    assert.doesNotMatch(next.next_action ?? '', /bed hold clear/);
+    assert.equal(next.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(next.dispatch_attempt!.not_sent,true);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /无法比较床面占用：探针 D/);
+    assert.match(next.dispatch_attempt!.next_action ?? '', new RegExp(`bed baseline record ${c.executor.id} --probe D`));
+    assert.doesNotMatch(next.dispatch_attempt!.missing_fact ?? '', /探针缺失/);
+    assert.doesNotMatch(next.dispatch_attempt!.next_action ?? '', /bed hold clear/);
   }
 
   // Empty intersection keeps the hold and names both probe sets plus the clear command.
@@ -769,13 +769,13 @@ test('an open hold compares the probe intersection and names a changed set inste
     await rotate(c, 'synthetic verified bytes with a disjoint probe set');
     queue.push(echo(textD));
     const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(next.outcome, 'not_dispatched');
-    assert.match(next.missing_fact ?? '', new RegExp(`上一次派发（${held.job.slice(0, 12)}）留下的床面占用未结清`));
-    assert.match(next.missing_fact ?? '', /占用时 A、B、C；现在 D/);
-    assert.match(next.missing_fact ?? '', /占用时的探针 A、B、C 现在不在执行器定义里，没有比较/);
-    assert.match(next.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
-    assert.doesNotMatch(next.missing_fact ?? '', /探针缺失/);
-    assert.doesNotMatch(next.next_action ?? '', /重读/);
+    assert.equal(next.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(next.dispatch_attempt!.not_sent,true);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', new RegExp(`上一次派发（${held.job.slice(0, 12)}）留下的床面占用未结清`));
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /占用时 A、B、C；现在 D/);
+    assert.match(next.dispatch_attempt!.missing_fact ?? '', /占用时的探针 A、B、C 现在不在执行器定义里，没有比较/);
+    assert.match(next.dispatch_attempt!.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
+    assert.doesNotMatch(next.dispatch_attempt!.missing_fact ?? '', /探针缺失/);
+    assert.doesNotMatch(next.dispatch_attempt!.next_action ?? '', /重读/);
     assert.equal((await bedHolds(c)).some(detail => detail.state === 'clear'), false);
   }
 });
@@ -790,18 +790,18 @@ test('an open hold whose probe is now empty stays unrestored until an administra
   const empty = { output: 'show interfaces\nDEVICE#' };
   queue.push(empty, echo(textB), echo(textC));
   const blocked = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(blocked.outcome, 'not_dispatched');
-  assert.match(blocked.missing_fact ?? '', /该床尚未恢复/);
-  assert.match(blocked.missing_fact ?? '', /来源探针 A/);
-  assert.match(blocked.missing_fact ?? '', /第 1 行改变/);
-  assert.match(blocked.next_action ?? '', /按 synthetic-cleanup-A 处理后重开/);
-  assert.match(blocked.next_action ?? '', /确认当前状态是干净的（例如设备已重启过、占用时的配置已不存在）才用/);
-  assert.match(blocked.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
+  assert.equal(blocked.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(blocked.dispatch_attempt!.not_sent,true);
+  assert.match(blocked.dispatch_attempt!.missing_fact ?? '', /该床尚未恢复/);
+  assert.match(blocked.dispatch_attempt!.missing_fact ?? '', /来源探针 A/);
+  assert.match(blocked.dispatch_attempt!.missing_fact ?? '', /第 1 行改变/);
+  assert.match(blocked.dispatch_attempt!.next_action ?? '', /按 synthetic-cleanup-A 处理后重开/);
+  assert.match(blocked.dispatch_attempt!.next_action ?? '', /确认当前状态是干净的（例如设备已重启过、占用时的配置已不存在）才用/);
+  assert.match(blocked.dispatch_attempt!.next_action ?? '', new RegExp(`circle-hub bed hold clear ${c.executor.id} --reason <理由>`));
   await c.service.clearBedHold(c.admin, c.executor.id, '设备已重启，占用时的配置已不存在');
   await rotate(c, 'synthetic verified bytes after the stale hold was cleared');
   queue.push(empty, echo(textB), echo(textC), empty, echo(textB), echo(textC));
   const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(next.outcome, 'effective', JSON.stringify(next));
+  assert.equal(next.dispatch_attempt!.outcome, 'effective', JSON.stringify(next));
 });
 
 test('a resume during the last post probe does not open a second session or an open hold', async t => {
@@ -818,7 +818,7 @@ test('a resume during the last post probe does not open a second session or an o
       late = c.service.resume(c.admin, job);
       await new Promise(resolve => setTimeout(resolve, 400));
       const status = await late;
-      assert.equal(status.outcome, 'issued');
+      assert.equal(status.dispatch_attempt!.outcome, 'issued');
       assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, before);
     }
     return next;
@@ -829,12 +829,12 @@ test('a resume during the last post probe does not open a second session or an o
   await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
   await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id, id => { job = id; });
-  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.equal(state.dispatch_attempt!.outcome, 'effective', JSON.stringify(state));
   assert.ok(late);
   assert.equal(c.endpoint.calls.filter(call => call.method === 'initialize').length, 1);
   assert.equal(c.calls.filter(name => name === 'close_slot').length, 1);
   assert.equal((await bedHolds(c)).some(detail => detail.state === 'open'), false);
-  const bytes = await c.kit.objects.get(String(state.result).slice(4));
+  const bytes = await c.kit.objects.get(String(state.job_facts.result).slice(4));
   const report = JSON.parse(new TextDecoder().decode(bytes!)) as { bed_state: { recovery: string; differences: unknown[] } };
   assert.equal(report.bed_state.recovery, 'restored');
   assert.deepEqual(report.bed_state.differences, []);
@@ -849,7 +849,7 @@ test('a late finish after a restored complete does not read again or open a hold
   await c.service.setBaseline(c.admin, c.executor.id, 'B', textB);
   await c.service.setBaseline(c.admin, c.executor.id, 'C', textC);
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'effective');
+  assert.equal(state.dispatch_attempt!.outcome, 'effective');
   const before = await bedHolds(c);
   const registered = (await c.registry.get(c.executor.id))!.definition;
   const binding = await c.service.journal.binding(state.job);
@@ -884,5 +884,5 @@ test('an administrator clear appends a record and the next gate lets the same be
   await rotate(c, 'synthetic verified bytes after the hold was cleared');
   queue.push(echo(textA), echo(textB), echo(textC), echo(textA), echo(textB), echo(textC));
   const next = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(next.outcome, 'effective', JSON.stringify(next));
+  assert.equal(next.dispatch_attempt!.outcome, 'effective', JSON.stringify(next));
 });

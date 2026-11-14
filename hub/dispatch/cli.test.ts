@@ -41,9 +41,9 @@ test('mark-failed does not unfreeze without the explicit risk flag and always re
   const job = await c.service.dispatch(c.admin, c.run, c.executor.id);
   await assert.rejects(jobCommand(s, ['dispose', job.job, '--mark-failed', '--accept-possible-duplicate-effects']));
   assert.equal(await jobCommand(s, ['dispose', job.job, '--mark-failed', '--reason', '合成原因']), 1);
-  assert.equal((await c.service.status(c.admin, job.job)).frozen, true);
+  assert.equal((await c.service.status(c.admin, job.job)).job_facts.frozen, true);
   await jobCommand(s, ['dispose', job.job, '--mark-failed', '--reason', '合成原因', '--accept-possible-duplicate-effects']);
-  assert.equal((await c.service.status(c.admin, job.job)).frozen, false);
+  assert.equal((await c.service.status(c.admin, job.job)).job_facts.frozen, false);
 });
 
 test('invalid or misplaced flags never echo argument values and commands close owned resources on failure', async t => {

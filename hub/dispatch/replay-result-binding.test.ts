@@ -10,6 +10,6 @@ test('dispatch replays policy against its selected accepted validation record', 
   const calls:Array<Parameters<EffectCheckReplay>[0]>=[];
   c.service.options.recheckChecks=async input=>{calls.push(input);return original(input);};
   const status=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(status.outcome,'effective');assert.ok(calls.length>0);
+  assert.equal(status.dispatch_attempt!.outcome,'effective');assert.ok(calls.length>0);
   for(const call of calls){assert.equal(call.submission,'b'.repeat(64));assert.equal(call.result,expected);}
 });
