@@ -37,13 +37,13 @@ async function fixture() {
     const old = await kit.authorizations.latest('resource_config', '*', 'var:' + name);
     const object = await kit.objects.put(canonicalBytes({ schema: 'variable@1', name, value }), 'application/json');
     const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object: 'var:' + name, revoked: false, bound: object.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting value, not a new interactive write', supersedes: old?.digest ?? null };
-    await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: 'resource_config|*|var:' + name }, { key: 'authz.subject', value: 'resource_config|*' }, { key: 'authz.object', value: 'resource_config|var:' + name }] });
+    await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: 'resource_config|*|var:' + name }, { key: 'authz.subject', value: 'resource_config|*' }, { key: 'authz.object', value: 'resource_config|var:' + name }, { key: 'authz.permission', value: 'resource_config' }, { key: 'authz.subject-any', value: '*' }, { key: 'authz.object-any', value: 'var:' + name }, { key: 'authz.decider', value: admin.id }] });
   }
   async function legacyExecutor(id: string, source: ExecutorSource) {
     const prior = await kit.authorizations.latest('resource_config', '*', 'executor.' + id);
     const object = await kit.objects.put(canonicalBytes(source), 'application/json');
     const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object: 'executor.' + id, revoked: false, bound: object.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting identity mismatch, not ordinary configure', supersedes: prior?.digest ?? null };
-    await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: 'resource_config|*|executor.' + id }] });
+    await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: 'resource_config|*|executor.' + id }, { key: 'authz.subject', value: 'resource_config|*' }, { key: 'authz.object', value: 'resource_config|executor.' + id }, { key: 'authz.permission', value: 'resource_config' }, { key: 'authz.subject-any', value: '*' }, { key: 'authz.object-any', value: 'executor.' + id }, { key: 'authz.decider', value: admin.id }] });
   }
   return { kit, db, admin, member, input, executor, state, legacyEnvironment, legacyVariable, legacyExecutor, close: async () => { await db.end(); await kit.close(); } };
 }

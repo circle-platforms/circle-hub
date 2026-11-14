@@ -38,7 +38,11 @@ async function fixture(initKey = false) {
       const previous = (await kit.store.find<AuthorizationRecord['body']>({ kind: 'authorization', key: 'authz.key', value: `resource_config|*|${object}`, newestFirst: true, limit: 1 }, tx)).items[0];
       const stored = await kit.objects.put(canonicalBytes(value), 'application/json', tx);
       const body: AuthorizationRecord['body'] = { permission: 'resource_config', subject: '*', object, revoked: false, bound: stored.sha256, decided_by: admin.id, decided_at: new Date().toISOString(), expires_at: null, note: 'synthetic preexisting inconsistent state', supersedes: previous?.digest ?? null };
-      await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [{ key: 'authz.key', value: `resource_config|*|${object}` }] }, tx);
+      await kit.store.put({ kind: 'authorization', schema: 'authorization@1', provenance: 'declared', body, index: [
+        { key: 'authz.key', value: `resource_config|*|${object}` }, { key: 'authz.subject', value: 'resource_config|*' },
+        { key: 'authz.object', value: 'resource_config|' + object }, { key: 'authz.permission', value: 'resource_config' },
+        { key: 'authz.subject-any', value: '*' }, { key: 'authz.object-any', value: object }, { key: 'authz.decider', value: admin.id },
+      ] }, tx);
     }));
   }
   return { kit, db, admin, member, other, at, executor, executors, sources, input, historicalConfiguration, close: async () => { await db.end(); await kit.close(); } };
