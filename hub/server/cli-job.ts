@@ -1,9 +1,10 @@
+import { ExecutorStableName } from '../../contracts/api.ts';
 import { secretUseLabels } from './secret-use-labels.ts';
 // Administrator CLI only. Remote content is retained as sources; terminal output carries no remote body or resource names.
 import { parseArgs } from 'node:util';
 import { readFile, writeFile, mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
-import { ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
+import { ExecutorNames, ExecutorRegistry, ExecutorSource, registrationMissing, observationHashes, type DispatchService, type JobStatus } from '../dispatch/api.ts';
 import type { BuildKnowledge } from '../dispatch/api.ts';
 import {VariableInputError,referencesIn} from '../../contracts/src/variables.ts';
 import { isSha256, sha256Hex, VariableError, type Principal, type RecordsKit } from '../records/api.ts';
@@ -12,7 +13,7 @@ import { ResourceAssignmentSubject, UserId } from '../../contracts/src/common.ts
 import { CliError, UsageError } from './errors.ts';
 import { decided } from './cli-arguments.ts';
 import type { DispatchView } from './api.ts';
-export const EXECUTOR_USAGE = 'add (<定义文件> | --reference=src:<摘要>) | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
+export const EXECUTOR_USAGE = 'add --name=<名字> (<定义文件> | --reference=src:<摘要>) | name <现有执行器编号> <明确名字> | update <执行器> (<定义文件> | --reference=src:<摘要>) | assign|unassign <执行器> (--team=<团队> | --user=<账户>) | list | disable <执行器>（定义里的 credential 引用命名密钥；换值用 secret set --name）';
 export const JOB_USAGE = 'list --executor <执行器> | conformance --executor <执行器> [--save <目录>] | precheck --executor <执行器> [--booking <运行>] [--save <目录>] | dispatch --run <核验运行> --executor <执行器> | explain-release --run <核验运行> --executor <执行器> | status|resume <作业摘要> | dispose <作业摘要> --reconcile <编号> | --keep-unknown | --mark-failed --reason <原因> [--accept-possible-duplicate-effects] [--numeric-id（对账编号显式为整数）]';
 export interface JobCommandSession {
   ctx: { io: { cwd: string } };
@@ -72,18 +73,25 @@ async function executorLine(s:JobCommandSession,registry:ExecutorRegistry,by:imp
 export async function executorCommand(s: JobCommandSession, args: readonly string[]): Promise<number> {
   const [sub, ...rest] = args;
   let parsed;
-  try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' }, reference: { type: 'string' }, team: { type: 'string' }, user: { type: 'string' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
+  try { parsed = parseArgs({ args: [...rest], options: { secret: { type: 'boolean' }, reference: { type: 'string' }, name: { type: 'string' }, team: { type: 'string' }, user: { type: 'string' } }, allowPositionals: true, strict: true }); } catch { throw new UsageError('命令参数写法无效；密钥只从标准输入读取'); }
   if(parsed.values.secret)throw new UsageError('--secret 已退役：用 circle-hub secret set --name <名字> 换钥匙，引用它的执行器下次开会话用新版本');
   const assignment = sub === 'assign' || sub === 'unassign';
   if (assignment) {
     if (parsed.positionals.length !== 1 || parsed.values.reference !== undefined || (parsed.values.team !== undefined) === (parsed.values.user !== undefined)) throw new UsageError('执行器分配须且只能指定 --team=<团队> 或 --user=<账户>');
   } else if (parsed.values.team !== undefined || parsed.values.user !== undefined) throw new UsageError('团队和账户参数只用于 assign/unassign');
+  if (sub==='add' && !ExecutorStableName.safeParse(parsed.values.name).success) throw new UsageError('新执行器须用 --name 明确指定名字；名字不能使用内部编号');
+  if (sub!=='add' && parsed.values.name!==undefined) throw new UsageError('--name 只用于登记新执行器；给现有执行器命名用 executor name <编号> <名字>');
+  if (sub==='name' && (parsed.positionals.length!==2 || !ExecutorStableName.safeParse(parsed.positionals[1]).success)) throw new UsageError('给现有执行器命名：executor name <现有编号> <明确名字>');
   const reference = parsed.values.reference;
   const fileCount = sub === 'add' ? 1 : sub === 'update' ? 2 : null;
   if (reference !== undefined && (fileCount === null || parsed.positionals.length !== fileCount - 1) || fileCount !== null && reference === undefined && parsed.positionals.length !== fileCount) throw new UsageError('定义文件和 --reference 必须且只能提供一种；引用只用于 add/update');
   if (reference !== undefined && (!reference.startsWith('src:') || !isSha256(reference.slice(4)))) throw new UsageError('上传引用须为 src:<完整摘要>');
   const by = await s.admin();
   const hub = await s.hub(sub === 'add' || sub === 'update'); const registry = new ExecutorRegistry(hub.records);
+  if(sub==='name'){
+    const result=await new ExecutorNames(hub.records).assign(by,parsed.positionals[0],parsed.positionals[1]);
+    s.out(`执行器名字 ${result.binding.name} ${result.created?'已登记':'已存在'}；源定义和历史未改变`);return 0;
+  }
   if (assignment) {
     const current = await registry.readSource(parsed.positionals[0]);
     if (!current) throw new CliError('执行器不可用');
@@ -110,7 +118,7 @@ export async function executorCommand(s: JobCommandSession, args: readonly strin
   }
   if (sub === 'add') {
     const input = await readDefinition(s, hub.records, by, parsed.positionals[0], reference);
-    const e = await registry.add(by, input); await executorLine(s,registry,by,e); return 0;
+    const e = await registry.add(by, input, parsed.values.name); s.out(`执行器名字 ${parsed.values.name} 已登记`); await executorLine(s,registry,by,e); return 0;
   }
   if (sub === 'update') {
     const [id, file] = parsed.positionals; const definition = await readDefinition(s, hub.records, by, file, reference);

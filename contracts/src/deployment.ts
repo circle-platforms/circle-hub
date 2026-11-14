@@ -1,7 +1,7 @@
 // Deployment input reuses the domain schemas; registration is owned by contracts.
 import { z } from 'zod';
 import { PermissionRoleSchema } from '../generated/vocabulary.ts';
-import { PackId, UserId, TeamId, IsoTime, Sha256 } from './common.ts';
+import { PackId, UserId, TeamId, IsoTime, Sha256, idOf } from './common.ts';
 import { ExecutorSource, ResourceId, ResourceRecord, ExactPackRef } from './resources.ts';
 import { SecretReference, VariableName, VariableRecord } from './variables.ts';
 
@@ -29,6 +29,13 @@ export const DeploymentDocument = z.strictObject({
   fileName: z.string().min(1).max(300),
 });
 export const DeploymentLeaseRegistration = LeaseRegistrationDetail.pick({ prefix: true, owner: true }).extend({ prefix: LeaseRegistrationDetail.shape.prefix.regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/) });
+
+export const ExecutorStableName = z.string().min(1).max(200)
+  .refine(value => value === value.trim() && !/\p{Cc}/u.test(value), '名字不能含首尾空白或控制字符')
+  .refine(value => ![UserId, TeamId, ResourceId, idOf('exe')].some(schema => schema.safeParse(value).success), '名字不能使用内部编号');
+export const EXECUTOR_NAME_PREFIX = 'executor-name.';
+export const ExecutorNameBinding = z.strictObject({ schema: z.literal('executor-name@1'), executor: idOf('exe'), name: ExecutorStableName });
+export type ExecutorNameBinding = z.infer<typeof ExecutorNameBinding>;
 
 const name = z.string().min(1).max(200);
 export const DeploymentResource = z.strictObject({
@@ -101,6 +108,7 @@ export type ProtectedConfigurationReceipt = z.infer<typeof ProtectedConfiguratio
 
 export const schemas: Record<string, z.ZodType> = {
   'deployment@1': DeploymentDefinition,
+  'executor-name@1': ExecutorNameBinding,
   [DEPLOYMENT_SYNC_INTENT_SCHEMA]: DeploymentSyncIntent,
   'protected-deployment@1': ProtectedConfigurationEnvelope,
 };

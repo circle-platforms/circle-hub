@@ -23,14 +23,14 @@ function registered(input: unknown): RegisteredExecutor {
 
 test('executor add and update read authorized upload references and keep local file input', async t => {
   const f = fixture(), seen: unknown[] = [];
-  t.mock.method(ExecutorRegistry.prototype, 'add', async (by: Principal, input: unknown) => { assert.equal(by, admin); seen.push(input); return registered(input); });
+  t.mock.method(ExecutorRegistry.prototype, 'add', async (by: Principal, input: unknown, name?:string) => { assert.equal(by, admin);assert.equal(name,'synthetic-runner'); seen.push(input); return registered(input); });
   t.mock.method(ExecutorRegistry.prototype, 'update', async (by: Principal, id: string, input: unknown) => { assert.equal(by, admin); assert.equal(id, 'synthetic-executor'); seen.push(input); return registered(input); });
-  assert.equal(await executorCommand(f.session, ['add', '--reference=' + reference]), 0);
+  assert.equal(await executorCommand(f.session, ['add', '--name=synthetic-runner', '--reference=' + reference]), 0);
   assert.equal(await executorCommand(f.session, ['update', 'synthetic-executor', '--reference=' + reference]), 0);
   assert.deepEqual(f.reads, [[admin, hash, { consumer: 'function' }], [admin, hash, { consumer: 'function' }]]);
   const directory = await mkdtemp(join(tmpdir(), 'hub-executor-input-')); t.after(() => rm(directory, { recursive: true, force: true }));
   const file = join(directory, 'definition.json'); await writeFile(file, JSON.stringify(definition('http://127.0.0.1/mcp')));
-  assert.equal(await executorCommand(f.session, ['add', file]), 0);
+  assert.equal(await executorCommand(f.session, ['add', '--name=synthetic-runner', file]), 0);
   assert.equal(seen.length, 3);
   assert.doesNotMatch(f.lines.join('\n'), /127\.0\.0\.1|password/);
 });
@@ -38,14 +38,14 @@ test('executor add and update read authorized upload references and keep local f
 test('executor upload input rejects mixed sources, fragments, withheld bytes and stale administrator access', async t => {
   let writes = 0; t.mock.method(ExecutorRegistry.prototype, 'add', async () => { writes++; throw new Error('must not write'); });
   const f = fixture();
-  for (const args of [['add', 'file.json', '--reference=' + reference], ['add'], ['list', '--reference=' + reference], ['add', '--reference=' + reference + '/text@1/l/1'], ['add', '--reference=rec:' + hash]]) await assert.rejects(executorCommand(f.session, args), UsageError);
+  for (const args of [['add', '--name=synthetic-runner', 'file.json', '--reference=' + reference], ['add'], ['list', '--reference=' + reference], ['add', '--name=synthetic-runner', '--reference=' + reference + '/text@1/l/1'], ['add', '--name=synthetic-runner', '--reference=rec:' + hash]]) await assert.rejects(executorCommand(f.session, args), UsageError);
   assert.equal(f.reads.length, 0);
   for (const value of [null, { bytes: null }]) {
     const denied = fixture(); denied.records.artifacts.source = async () => value as ArtifactSource | null;
-    await assert.rejects(executorCommand(denied.session, ['add', '--reference=' + reference]));
+    await assert.rejects(executorCommand(denied.session, ['add', '--name=synthetic-runner', '--reference=' + reference]));
   }
   const revoked = fixture(); revoked.session.admin = async () => { throw new Error('管理员已停用'); };
-  await assert.rejects(executorCommand(revoked.session, ['add', '--reference=' + reference]), /管理员已停用/);
+  await assert.rejects(executorCommand(revoked.session, ['add', '--name=synthetic-runner', '--reference=' + reference]), /管理员已停用/);
   assert.equal(revoked.reads.length, 0); assert.equal(writes, 0);
 });
 
@@ -53,6 +53,6 @@ test('executor CLI exposes schema field paths without endpoint, CA or credential
   const secret = 'SyntheticCredentialNeverEcho42';
   for (const [input, field] of [[definition('http://192.0.2.1/mcp?secret=' + secret), '/endpoint'], [{ ...definition('https://192.0.2.1/mcp'), ca: secret }, '/ca']] as const) {
     const f = fixture(Buffer.from(JSON.stringify(input)));
-    await assert.rejects(executorCommand(f.session, ['add', '--reference=' + reference]), error => error instanceof UsageError && error.message.includes(field) && !error.message.includes(secret) && !error.message.includes('192.0.2.1'));
+    await assert.rejects(executorCommand(f.session, ['add', '--name=synthetic-runner', '--reference=' + reference]), error => error instanceof UsageError && error.message.includes(field) && !error.message.includes(secret) && !error.message.includes('192.0.2.1'));
   }
 });
