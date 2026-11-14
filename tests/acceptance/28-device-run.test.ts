@@ -220,6 +220,7 @@ before(async () => {
       seats:MANIFEST_DOC.beds[0].devices.map((device,index)=>({seat:device.name,index,manifest:{device:`/beds/0/devices/${index}`,addresses:'/interfaces',address:''},version:{command:'inspect version',pattern:'^version: (?<value>.+)$'},interfaces:{command:'inspect interfaces',pattern:'^address: (?<value>.+)$'}}))},
     result:{...raw.result,request_id:'/request'},proof:{...raw.proof,package:'case-compile',slot:'workbook',warrant_id:`case-compile.workbook_verified@${CASE_COMPILE_PACK.version}`} });
   executor = (await addSyntheticExecutor(bed.hub.records,dispatch().registry,bed.hub.admin.principal,configured,'synthetic-dispatch-key')).id;
+  await bed.hub.records.authorizations.assignResource(bed.hub.admin.principal,executor,bed.reviewer.principal.id);
 });
 after(async () => { await client?.close(); await endpoint?.close(); await opened?.close(); await postgres?.stop(); if (staged) await rm(staged, { recursive: true, force: true }); });
 
