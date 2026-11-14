@@ -1,3 +1,5 @@
+import {ExecutorSource} from '../../contracts/src/resources.ts';
+import {canonicalBytes,sha256Hex} from '../records/api.ts';
 import {interruptedDeviceUse} from './device-use-progress.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
@@ -14,8 +16,10 @@ const by={id:'usr_0'+'a'.repeat(25),role:'user' as const,name:'合成成员'};
 const run='run_0'+'b'.repeat(25);
 const help={line_pattern:'^[A-Za-z0-9 ]{1,500}$',call:{tool:'ask_position',arguments:{line:{$value:'line'},seat:{$value:'seat_index'},ticket:{$value:'lease_id'}}},text:'/help',caret_only:'/caret',entered:'/entered',cleared:'/cleared'};
 function fixture(denyAt:number,retry=false) {
-  const d=ExecutorDefinition.parse({...definition('http://127.0.0.1:1/mcp'),allowed_tools:[...definition('x').allowed_tools,'inspect_seat','ask_position'],probes:{...probes,help}});
-  const registered={id:'exe_0'+'c'.repeat(25),digest:'d'.repeat(64),resolved_digest:'e'.repeat(64),variables:[],definition:d} as RegisteredExecutor;
+  const id='exe_0'+'c'.repeat(25);
+  const d=ExecutorDefinition.parse({id,...definition('http://127.0.0.1:1/mcp'),allowed_tools:[...definition('x').allowed_tools,'inspect_seat','ask_position'],probes:{...probes,help}});
+  const source=ExecutorSource.parse(d);
+  const registered:RegisteredExecutor={id,digest:sha256Hex(canonicalBytes(source)),resolved_digest:sha256Hex(canonicalBytes(d)),variables:[],definition:d,source};
   let admissions=0,requests=0,connections=0,releases=0;
   const observations:DeviceObservation[]=[];
   const journal:unknown[]=[];
@@ -102,7 +106,10 @@ test('the first help admission also preserves the exact initial fact',async()=>{
 
 test('observations from an earlier provider survive a later provider admission failure',async()=>{
   const f=fixture(0);
-  const second={...f.registered,id:'exe_0'+'g'.repeat(25),definition:{...f.registered.definition,manifest_sha256:'b'.repeat(64)}};
+  const secondId='exe_0'+'g'.repeat(25);
+  const secondDefinition=ExecutorDefinition.parse({...f.registered.definition,id:secondId,manifest_sha256:'b'.repeat(64)});
+  const secondSource=ExecutorSource.parse(secondDefinition);
+  const second:RegisteredExecutor={id:secondId,definition:secondDefinition,source:secondSource,variables:[],digest:sha256Hex(canonicalBytes(secondSource)),resolved_digest:sha256Hex(canonicalBytes(secondDefinition))};
   let providers=0;
   Object.assign(f.ctx,{
     registry:{probed:async()=>[f.registered,second]},
