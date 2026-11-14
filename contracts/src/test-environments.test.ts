@@ -36,7 +36,7 @@ test('one registration retains multiple executor links and exact prefix and reso
 });
 
 test('unresolved legacy registration remains in the same shape without a guessed target or executor', () => {
-  const unresolved = { ...registered(), name: null, target: null, executors: [], resources: [], missing_facts: ['旧前缀没有可核验的目标归属'] };
+  const unresolved = { ...registered(), name: null, target: null, executors: [], resources: [], prefixes: [{ ...input().prefixes[0], registered_at: null }], missing_facts: ['旧前缀的登记时刻尚未核对'] };
   assert.deepEqual(TestEnvironment.parse(unresolved), unresolved);
   assert.equal(TestEnvironmentInput.safeParse({ ...input(), target: null, executors: [], missing_facts: unresolved.missing_facts }).success, false);
   assert.equal(TestEnvironmentInput.safeParse({ ...input(), name: null, missing_facts: ['旧登记没有名称'] }).success, false);
