@@ -238,7 +238,7 @@ export async function userCommand(args: readonly string[], ctx: CliContext, opti
     const users = (await kit.principals.list()).map(user=>user.deleted_at?{...user,name:uiLabelOf('account_display_name','deleted_member')}:user);
     if (values.json) { io.stdout(jsonSafe(JSON.stringify(users))); return 0; }
     if (users.length === 0) io.stdout('还没有用户');
-    for (const user of users) out(io, [user.id, user.name, roleText(user.role), labelOf('account_status', user.deleted_at?'deleted':user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
+    for (const user of users) out(io, [user.name, roleText(user.role), labelOf('account_status', user.deleted_at?'deleted':user.disabled ? 'disabled' : 'enabled'), user.created_at].join('\t'));
     return 0;
   },
     'delete': async () => {

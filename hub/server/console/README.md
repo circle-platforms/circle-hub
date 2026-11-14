@@ -227,5 +227,5 @@ The task page (`/console/runs/<id>`) asks the runs service for the newest `RUN_H
 
 ## 已无分配与强制释放预订（Boss 04:30）
 
-占用仍在、分配已收回时，连接→运行环境行与 Inspector 标「已无分配」（不是「未知」），并提供与 bed-hold 相同的 `commands` + `commandModal` 释放确认（`lease release`）。优先读执行器上的 `assigned` / `can_use`；没有时对选中行用 `teamsOf` + `history` 推断是否还有有效 `resource_assign`。缺口：`ExecutorView.state` 仍是派发占用（holding），没有租约键清单，对话框里的「租约键」须管理员自填；MemberEnvironments 的预订占用投影合入后才能在管理页列出具体键。
+占用仍在、分配已收回时，连接→运行环境行与 Inspector 标「已无分配」（不是「未知」），并提供与 bed-hold 相同的 `commands` + `commandModal` 释放确认（`lease release`）。优先读执行器上的 `assigned` / `can_use`；没有时对选中行用 `teamsOf` + `history` 推断是否还有有效 `resource_assign`。持有键：`heldLeaseKeysForEnvironment` 用 `deps.leases.view` 与执行器 `resources` 精确匹配列出；有键时对话框单选预填命令，无端口或读失败时才保留手填占位。
 

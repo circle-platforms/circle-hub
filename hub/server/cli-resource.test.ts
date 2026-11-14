@@ -39,7 +39,8 @@ test('resource add uses the created resource identity for explicit whole-Hub or 
     assert.equal(await resourceCommand(f.session, [...args, flag]), 0);
     assert.deepEqual(f.calls.map(call => call[0]), ['add', 'assign']);
     assert.deepEqual(f.calls[1], ['assign', admin, record.id, subject]);
-    assert.match(f.out[0], /已添加资源 synthetic-resource/);
+    assert.match(f.out[0], /已添加资源 合成资源/);
+    assert.doesNotMatch(f.out.join('\n'), /synthetic-resource|res_/);
     assert.match(f.out[1], subject === WHOLE_HUB ? /已分配给全体成员/ : /已分配给团队 合成团队/);
   }
 });
@@ -48,6 +49,8 @@ test('resource add without an audience stays unassigned and discloses that nobod
   const f = fixture();
   assert.equal(await resourceCommand(f.session, args), 0);
   assert.deepEqual(f.calls.map(call => call[0]), ['add']);
+  assert.match(f.out[0], /已添加资源 合成资源/);
+  assert.doesNotMatch(f.out.join('\n'), /synthetic-resource|res_/);
   assert.match(f.out[1], /还没有分配，暂时谁都不能使用/);
 });
 
@@ -67,15 +70,16 @@ test('resource add reports the committed creation when assignment fails without 
     const f = fixture({ assignmentError });
     await assert.rejects(resourceCommand(f.session, [...args, '--team=' + team]), error => {
       assert.ok(error instanceof CliError);
-      assert.match(error.message, /资源 synthetic-resource 已添加，但分配未确认/);
+      assert.match(error.message, /资源 合成资源 已添加，但分配未确认/);
       assert.match(error.message, /勿重复添加资源/);
-      assert.doesNotMatch(error.message, /SYNTHETIC_PRIVATE_ERROR/);
+      assert.doesNotMatch(error.message, /SYNTHETIC_PRIVATE_ERROR|synthetic-resource|res_/);
       assert.equal(error.hint, assignmentError instanceof CliError ? '请核对团队' : null);
       return true;
     });
     assert.deepEqual(f.calls.map(call => call[0]), ['add', 'assign']);
     assert.equal(f.out.length, 1);
-    assert.match(f.out[0], /已添加资源/);
+    assert.match(f.out[0], /已添加资源 合成资源/);
+    assert.doesNotMatch(f.out[0], /synthetic-resource|res_/);
   }
   const f = fixture({ addError: new CliError('接入失败') });
   await assert.rejects(resourceCommand(f.session, [...args, '--all']), /接入失败/);

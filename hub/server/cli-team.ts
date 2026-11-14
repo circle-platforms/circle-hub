@@ -29,9 +29,9 @@ export async function teamCommand(session: TeamCommandSession, args: readonly st
       const team = await decided(() => records.teams.get(by, id));
       if (team === null) throw new CliError('团队不可用');
       if (!isAdmin(by)) { session.out(team.name); return 0; }
-      session.out(`${team.id}\t${team.name}`);
+      session.out(team.name);
       const members = await decided(() => records.teams.members(by, id));
-      for (const member of members) session.out(`成员\t${member.user.id}\t${member.user.name}`);
+      for (const member of members) session.out(`成员\t${member.user.name}`);
       const assignments = await decided(() => records.teams.assignments(by, id));
       for (const assignment of assignments.packs) session.out(`工作流\t${assignment.body.object}`);
       for (const assignment of assignments.resources) session.out(`资源\t${assignment.body.object}`);
