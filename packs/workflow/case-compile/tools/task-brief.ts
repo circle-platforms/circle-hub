@@ -1,7 +1,7 @@
 // 只读生成可直接原文传给 Circle 内置 general-purpose 子代理（task 工具）的任务说明：
 //   node <技能目录>/tools/task-brief.ts --role <用例重组|脚本编写|保真核对|失败分析> --case <用例或范围> --brief <简报或输入路径> --out <目标文件路径> [--scope <范围文件>] [--note <补充说明>] [--round <轮次>] [--run <运行目录>] [--item <条目JSON>] [--brief-json <结构简报JSON>] [--prior-plans <路径...>] [--prior-returns <目录...>] [--prior-answers <路径...>] [--prior-notes <路径...>]
 import { realpathSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -10,6 +10,7 @@ import {
   type CompileBriefV1,
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
+import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
 import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import {
@@ -88,30 +89,6 @@ function hasMeaningfulScopeText(lines: readonly string[]): boolean {
     const t = line.trim();
     return t.length > 0 && !/^#{1,6}(?:\s|$)/.test(t);
   });
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function detectCaseHeadingMarkers(headingText: string): string[] {
-  const markers: string[] = [];
-  const autoidMatches = headingText.match(/(?:^|[^\d])(\d{10,})(?=[^\d]|$)/g) ?? [];
-  for (const m of autoidMatches) {
-    const digits = /\d{10,}/.exec(m);
-    if (digits) markers.push(digits[0]);
-  }
-  const docMatches = headingText.match(/\bdoc-\d+:c-\d+\b/g) ?? [];
-  markers.push(...docMatches);
-  const itemMatches = headingText.match(/\bitem_[A-Za-z0-9_-]+\b/g) ?? [];
-  markers.push(...itemMatches);
-  const casePrefix = /\bcase[:_-]([A-Za-z0-9_-]+)\b/i.exec(headingText);
-  if (casePrefix) markers.push(casePrefix[1]);
-  const explicitZh = /^(?:用例|条目)\s+([A-Za-z0-9_-]{2,})\b/.exec(headingText.trim());
-  if (explicitZh) markers.push(explicitZh[1]);
-  const bareIdx = /^(\d{1,3})(?=$|[\s（(\[：:、-])/.exec(headingText.trim());
-  if (bareIdx) markers.push(bareIdx[1]);
-  return [...new Set(markers)];
 }
 
 /**
@@ -236,6 +213,72 @@ function resolveRelativeTarget(cwdRoot: ReturnType<typeof resolveCwdRoots>, valu
     throw new Error(`参数无效：${flag} 必须指向工作目录下的具体文件或子路径（${hint}）。请修改参数后重试`);
   }
   return resolved.relative;
+}
+
+type ResolvedRoleSpec = NonNullable<ReturnType<typeof resolveSubagentRole>>;
+
+async function assertExistingBriefPath(
+  cwd: ReturnType<typeof resolveCwdRoots>,
+  briefRelative: string,
+  roleKey: ResolvedRoleSpec['key'],
+): Promise<void> {
+  const resolved = resolveInsideCwd(cwd, briefRelative, '--brief');
+  let stat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    stat = await lstat(resolved.canonical);
+  } catch {
+    const parentRel = dirname(resolved.relative);
+    const parentCanonical = dirname(resolved.canonical);
+    let entries: string[] | null = null;
+    try {
+      entries = (await readdir(parentCanonical)).filter((name) => !name.startsWith('.')).sort();
+    } catch {
+      entries = null;
+    }
+    const kindLabel = roleKey === 'attribute' ? '路径' : '文件';
+    if (entries !== null) {
+      const listing = entries.length
+        ? entries.slice(0, 10).join('、') + (entries.length > 10 ? ` 等 ${entries.length} 项` : '')
+        : '目录为空';
+      throw new Error(
+        `找不到 --brief ${kindLabel} ${briefRelative}（目录 ${parentRel} 下实际有：${listing}）。请先等待前置下载或生成完成，并用 ls 核对真实文件名（如总数不足 10 条时为 0.md 而非 00.md）后再调用 task-brief`,
+      );
+    }
+    throw new Error(
+      `找不到 --brief ${kindLabel} ${briefRelative}（所在目录 ${parentRel} 尚未生成）。请先完成前置 download-run / fidelity-brief / download-returns 步骤并确认文件落盘后再派发`,
+    );
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`参数无效：--brief 路径 ${briefRelative} 不能是符号链接`);
+  }
+  if (stat.isDirectory()) {
+    if (roleKey !== 'attribute') {
+      throw new Error(`参数无效：--brief 路径 ${briefRelative} 是目录，必须指向具体文件（如 briefs/0.md）。请核对文件路径后重试`);
+    }
+    resolveExistingDirInsideCwd(cwd, briefRelative, '--brief');
+    return;
+  }
+  resolveExistingFileInsideCwd(cwd, briefRelative, '--brief');
+}
+
+async function assertValidOutPath(
+  cwd: ReturnType<typeof resolveCwdRoots>,
+  outRelative: string,
+  role: ResolvedRoleSpec,
+): Promise<void> {
+  const resolved = resolveInsideCwd(cwd, outRelative, '--out');
+  const existing = await lstat(resolved.canonical).catch(() => null);
+  if (existing?.isSymbolicLink()) {
+    throw new Error(`参数无效：--out 路径 ${outRelative} 不能是符号链接`);
+  }
+  if (existing?.isDirectory()) {
+    throw new Error(`参数无效：--out 指向了已存在的目录 ${outRelative}，必须写具体输出文件路径（如 plans/0.json）。请补充文件名后重试`);
+  }
+  if ((role.key === 'recompose' || role.key === 'plan' || role.key === 'fidelity') && !outRelative.endsWith('.json')) {
+    throw new Error(
+      `参数无效：${role.stageLabel} 的 --out 必须是 .json 文件路径（当前收到 ${outRelative}，如 plans/0.json），不要只写目录名`,
+    );
+  }
 }
 
 async function maybeReadSiblingItem(
@@ -397,6 +440,8 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
   );
   const scopeBytes = await readFile(scopeResolved.canonical);
   const rawScopeText = readVerifiedScopeText(scopeBytes, scopeResolved.relative);
+  await assertExistingBriefPath(cwd, briefPath, role.key);
+  await assertValidOutPath(cwd, outPath, role);
 
   const { item: siblingItem, caseIds } = await maybeReadSiblingItem(cwd, briefPath, options.itemPath, caseRef);
 
@@ -511,8 +556,27 @@ export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<st
   });
 }
 
+const HELP_TEXT = [
+  `用法：${USAGE}`,
+  '',
+  '可用角色（--role）：',
+  '  用例重组（recompose）   生成单条或整批原始用例重组子代理任务简报（--out 须为 .json 文件路径）',
+  '  脚本编写（plan）        生成单条自动化用例编写子代理任务简报（--out 须为 .json 文件路径）',
+  '  保真核对（fidelity）    生成盲审保真核对子代理任务简报（--out 须为 .json 文件路径；禁传 --brief-json/--run/--prior-*）',
+  '  失败分析（attribute）   生成单条上机失败分析子代理任务简报',
+  '',
+  '注意事项：',
+  '  1. 所有路径参数须在当前工作目录下，且不能为符号链接。',
+  '  2. --brief 与 --scope 等输入文件必须已落盘；调用前先用 ls 核对实际文件名（总数 <10 条时通常为 0.md 而非 00.md）。',
+  '  3. 第 2 轮及以后返工（脚本编写 / 失败分析）须配合 --round <n> 与 --brief-json 或 --prior-* 历史参数。',
+].join('\n');
+
 export async function main(argv: string[]): Promise<number> {
   try {
+    if (argv.includes('--help') || argv.includes('-h')) {
+      process.stdout.write(HELP_TEXT + '\n');
+      return 0;
+    }
     const args = parseCliOptions(argv, OPTIONS, USAGE);
     const brief = await buildTaskBrief({
       role: args.role!,

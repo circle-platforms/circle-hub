@@ -24,6 +24,10 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     await mkdir(workDir);
     const scopeVerbatim = '只做 101、102 两条核心转发用例；103 先不做。\n补充：保持主接口地址不变。';
     await writeFile(join(workDir, 'scope.md'), scopeVerbatim, 'utf8');
+    await mkdir(join(workDir, 'briefs'), { recursive: true });
+    await writeFile(join(workDir, 'briefs', '01.md'), '# 合成编写简报\n', 'utf8');
+    await mkdir(join(workDir, 'returns'), { recursive: true });
+    await writeFile(join(workDir, 'returns', 'index.json'), '{"jobs":[]}', 'utf8');
 
     const writerRole = SUBAGENT_ROLES.find((r) => r.key === 'plan')!;
     const writerBrief = await buildTaskBrief({
@@ -214,6 +218,8 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     await mkdir(workDir);
     const scope = '只重跑 batch2 新增的两条用例；不要修改已完成用例。';
     await writeFile(join(workDir, 'scope.md'), scope, 'utf8');
+    await mkdir(join(workDir, 'audit'), { recursive: true });
+    await writeFile(join(workDir, 'audit', 'case-201.abcdef12.brief.json'), '{"schema":"fidelity-brief@1"}', 'utf8');
 
     const run = spawnSync(
       process.execPath,
@@ -686,6 +692,60 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
         packRoot: packDir,
       }),
       /未找到当前用例/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('task-brief --help and -h return 0 with complete usage, and missing --brief lists actual sibling files before dispatch', async () => {
+  for (const flag of ['--help', '-h'] as const) {
+    const out: string[] = [], err: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout), stderr = process.stderr.write.bind(process.stderr);
+    process.stdout.write = ((chunk: string | Uint8Array) => { out.push(String(chunk)); return true; }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => { err.push(String(chunk)); return true; }) as typeof process.stderr.write;
+    let code = -1;
+    try { code = await main([flag]); } finally { process.stdout.write = stdout; process.stderr.write = stderr; }
+    assert.equal(code, 0, `${flag}: stderr=${err.join('')}`);
+    assert.equal(err.join(''), '');
+    const help = out.join('');
+    assert.match(help, /--role/);
+    assert.match(help, /--brief/);
+    assert.match(help, /--out/);
+    assert.match(help, /用例重组/);
+    assert.match(help, /脚本编写/);
+    assert.match(help, /保真核对/);
+    assert.match(help, /失败分析/);
+  }
+
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-exists-'));
+  try {
+    await writeFile(join(root, 'scope.md'), '全部合成用例\n', 'utf8');
+    await mkdir(join(root, 'plan_run', 'briefs'), { recursive: true });
+    await writeFile(join(root, 'plan_run', 'briefs', '0.md'), '# 0\n', 'utf8');
+    await writeFile(join(root, 'plan_run', 'briefs', '1.md'), '# 1\n', 'utf8');
+    await mkdir(join(root, 'plans'), { recursive: true });
+
+    await assert.rejects(
+      () => buildTaskBrief({
+        role: '脚本编写',
+        caseRef: '990000000000000101',
+        briefPath: 'plan_run/briefs/00.md',
+        outPath: 'plans/00.json',
+        cwd: root,
+      }),
+      (error: Error) => /找不到.*--brief/.test(error.message) && /0\.md/.test(error.message) && /1\.md/.test(error.message),
+    );
+
+    await assert.rejects(
+      () => buildTaskBrief({
+        role: '脚本编写',
+        caseRef: '990000000000000101',
+        briefPath: 'plan_run/briefs/0.md',
+        outPath: 'plans',
+        cwd: root,
+      }),
+      (error: Error) => /--out/.test(error.message) && (/目录/.test(error.message) || /\.json/.test(error.message)),
     );
   } finally {
     await rm(root, { recursive: true, force: true });

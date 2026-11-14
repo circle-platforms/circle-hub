@@ -57,7 +57,7 @@ test('format capability requires an administrator install and rejects user assig
   assert.equal((await doc.locate('i/0'))?.text,'合成用例');
   const source=sha256Hex(bytes),reference=`src:${source}/kityminder@1/n/case1`;
   const resolved=await resolveReference(reference,{parsers:frozen.parsers,reader:{user:bed.bob.id,role:'user'},sources:{read:()=>({bytes,mediaType:'application/json',size:bytes.length,readTier:'model_readable'})}});
-  assert.ok(resolved.resolved&&verifyQuote(resolved,'合成用例'));
+  assert.ok(resolved.resolved&&resolved.text==='合成用例'&&verifyQuote(resolved,'合成用例'));
   const denied=await resolveReference(reference,{parsers:frozen.parsers,reader:{user:bed.bob.id,role:'user'},sources:{read:()=>null}});
   assert.ok(!denied.resolved&&denied.message==='对你不可用');
 });
@@ -100,7 +100,7 @@ test('new run records freeze skills and keep working after uninstall while unloc
   const restarted=createSkillParserRegistry({...options(),registry:bed.second()});
   assert.equal((await restarted.forRun!(modern.run)).get('kityminder@1')?.skill_digest,firstDigest);
   const resolved=await resolveReference(reference,{parsers:restarted,reader:{user:bed.bob.id,role:'user' as const,run:modern.run},sources});
-  assert.ok(resolved.resolved&&verifyQuote(resolved,'合成用例'));
+  assert.ok(resolved.resolved&&resolved.text==='合成用例'&&verifyQuote(resolved,'合成用例'));
   const absentVersion=createSkillParserRegistry({...options(),registry:{...bed.second(),open:async()=>null}});
   const missingLocked=await resolveReference(reference,{parsers:absentVersion,reader:{user:bed.bob.id,role:'user' as const,run:modern.run},sources});
   assert.ok(!missingLocked.resolved);
@@ -159,7 +159,7 @@ test('concurrent references parse one document once per operation and release th
   await resolveReference(reference,{...context,documents:createDocumentCache(32)});assert.equal(calls,2);
 });
 
-test('standalone forReference resolves installed skill packs carrying migration_test without refs.legacy-parser and keeps distinct missing-parser guidance',async()=>{
+test('standalone forReference resolves installed skill packs without refs.legacy-parser and keeps distinct missing-parser guidance',async()=>{
   await bed.registry.uninstall(bed.admin,'mindmap-format');
   const registry=createSkillParserRegistry(options());
   const source=sha256Hex(bytes),reference=`src:${source}/kityminder@1/n/case1`;
@@ -179,7 +179,7 @@ test('standalone forReference resolves installed skill packs carrying migration_
   const fresh=createSkillParserRegistry(options());
   const resolved=await resolveReference(reference,{parsers:fresh,reader:{user:bed.bob.id,role:'user'},sources:{read}});
   assert.equal(resolved.resolved,true,JSON.stringify(resolved));
-  if(resolved.resolved)assert.equal(verifyQuote(resolved,'合成用例'),true);
+  if(resolved.resolved)assert.ok(resolved.text==='合成用例'&&verifyQuote(resolved,'合成用例'));
   const absent=await resolveReference(reference,{parsers:fresh,reader:{user:bed.bob.id,role:'user'},sources:{read:()=>null}});
   assert.equal(absent.resolved,false);
   if(!absent.resolved)assert.equal(absent.message,'对你不可用');
@@ -209,7 +209,7 @@ test('workbook-format sandbox transport preserves xlsx@1 vectors and enforces de
     reader:{user:bed.bob.id,role:'user'},
     sources:{read:()=>({bytes:fixture,mediaType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',size:fixture.length,readTier:'model_readable'})},
   });
-  assert.ok(resolved.resolved&&verifyQuote(resolved,'合成用例'));
+  assert.ok(resolved.resolved&&resolved.text==='合成用例'&&verifyQuote(resolved,'合成用例'));
   await assert.rejects(parseDocument(parser,fixture,{maxBytes:4}),/字节限额/);
 });
 

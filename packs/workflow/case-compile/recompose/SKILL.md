@@ -25,7 +25,9 @@ product/build/version: start_run 顶层，与后续 case-compile 相同
 ```
 
 ```sh
-node <技能目录>/tools/download-run.ts --hub %HUB_URL% --run <用例重组编号> --out <新目录>
+node <技能目录>/tools/download-run.ts --hub %HUB_URL% --run <用例重组编号> --out <新目录> <<'EOF'
+%HUB_TOKEN%
+EOF
 ```
 
 ## 写重组后的用例
@@ -36,7 +38,7 @@ node <技能目录>/tools/download-run.ts --hub %HUB_URL% --run <用例重组编
 
 读手册，把原始用例成立所缺的前置写全。例如功能默认关闭、依赖对象没建、查询前要有服务监听。不要假设测试环境已经具备，执行器在每条自动化用例结束后都会清理配置。
 
-每条原始用例写一个文件，机器形状如下。除前两项外可省略；没有提出问题的原句保持原样。具体字段的取值以 tables/recompose-format.json 为准。
+每条原始用例写一个文件，**只接受下面这一种精简机器形状**（`submit-records` 会自动封装为 `recompose-record@1`；严禁写完整 `schema`/`case`/`contract`/`atoms`/`coverage`/`ledgers` 或 `handling`，否则将被拒收）。除前两项外可省略；没有提出问题的原句保持原样。具体字段取值（如 `method.kind` 允许 `declared`、`recomposed`、`missing`）以 `tables/recompose-format.json` 为准。
 
 ```json
 {
@@ -79,7 +81,10 @@ unknowns: missing 写原始用例与手册不一致；next_action 写作者或�
 ## 交给脚本编写
 
 ```sh
-node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <用例重组编号> --model <模型> --records <重组后的用例目录>
+# 注意：命令行与 <<'EOF' 必须在同一行（空格隔开，切勿在 <<'EOF' 前换行）
+node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <用例重组编号> --model <模型> --records <重组后的用例目录> <<'EOF'
+%HUB_TOKEN%
+EOF
 ```
 
 令牌从标准输入给工具。工具补齐能按规则确定的内容，把整份重组后的用例一次交给 Hub。每条原始用例都要有文件；按答复指出的错误改后重交，全部核对正确才完成。

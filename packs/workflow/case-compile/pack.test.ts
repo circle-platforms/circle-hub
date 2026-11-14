@@ -247,3 +247,27 @@ test('SKILL.md and delivery.md require opening a new plan run via start_run befo
   assert.ok(skill.includes('禁止直接往脚本合并运行提交改过的计划'));
   assert.ok(delivery.includes('start_run` 新开一次脚本编写运行'));
 });
+
+test('H1/H4/Effort-AB: SKILL.md, recompose/SKILL.md, delivery.md and compile-recomposer enforce single lite shape, same-line heredoc, no direct terminal connection, 3-round stop and ls before dispatch', () => {
+  const skill = read('SKILL.md');
+  const recomposeSkill = read('recompose/SKILL.md');
+  const delivery = read('tools/delivery.md');
+  const recomposer = read('agents/compile-recomposer.md');
+
+  assert.ok(!recomposer.includes('recompose-record.schema.json'), 'compile-recomposer must not reference full recompose-record.schema.json');
+  assert.ok(recomposeSkill.includes("<<'EOF'"), 'recompose SKILL commands show same-line heredoc');
+  assert.ok(skill.includes("<<'EOF'"), 'case-compile SKILL commands show same-line heredoc');
+  assert.ok(delivery.includes("<<'EOF'"), 'delivery.md commands show same-line heredoc');
+  for (const line of [...skill.split('\n'), ...recomposeSkill.split('\n'), ...delivery.split('\n')]) {
+    if (/(?:download-run|submit-records|submit-plans|fetch-run|download-returns|assemble-delivery)\.ts\b/.test(line) && line.includes('%HUB_URL%')) {
+      assert.ok(line.includes("<<'EOF'"), `same-line <<'EOF' missing on: ${line}`);
+    }
+  }
+  assert.match(skill, /切勿在 <<'EOF' 前换行|同一行/);
+  assert.match(skill, /不要用终端工具直连|严禁.*终端工具.*直连/);
+  assert.match(delivery, /不要用终端工具直连|严禁.*终端工具.*直连/);
+  assert.match(skill, /第 3 轮.*严禁第 4 轮|最多.*3 轮.*严禁第 4 轮/);
+  assert.match(skill, /0\.md.*00\.md|ls.*核对/);
+  assert.match(skill, /"action":\s*"release"/);
+  assert.match(skill, /"booking":/);
+});

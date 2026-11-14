@@ -12,8 +12,8 @@ import { lstat, mkdir, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
-import { argumentsOf, bearerFrom, hubOrigin, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { getRetrying, type RetryControl } from '../functions/hub-retry.ts';
+import { argumentsOf, hubOrigin, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { getRetrying, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
 export interface RunInputs { run: Record<string, unknown>; result: Record<string, unknown>; submission: Record<string, unknown>; originals: Record<typeof SLOTS[number], Uint8Array>; run_reference?: string; accepted_result_reference?: string | null }
@@ -38,12 +38,12 @@ export async function fetchRunInputs(origin: string, bearer: string, run: string
   const accepted_result_reference = typeof exported.accepted_result_reference === 'string' && exported.accepted_result_reference ? exported.accepted_result_reference : exported.accepted_result_reference === null ? null : undefined;
   return { run: exported.run, result: exported.result, submission: exported.submission, originals, ...(run_reference !== undefined ? { run_reference } : {}), ...(accepted_result_reference !== undefined ? { accepted_result_reference } : {}) };
 }
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, retry?: RetryControl): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
-    const bearer = await bearerFrom(readToken);
+    const bearer = await requireBearerToken(readToken);
     // Every original is fetched and checked before anything is written, and a failed write removes what this call wrote, so
     // a failure never leaves part of the inputs behind.
     const fetched = await fetchRunInputs(origin, bearer, args.run, retry);

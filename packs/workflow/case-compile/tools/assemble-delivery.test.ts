@@ -120,7 +120,7 @@ async function notes(cases: Record<string, unknown>) { const dir = await mkdtemp
 // CASES[1] failed once and closes as a defect candidate quoting its author's expectation and the device verbatim.
 const CANDIDATE = { repro: '合成复现：照第 1 步配置后读第 3 步输出', expected: '合成期望', actual: '第 3 步断言没有命中' };
 const NOTES = { [CASES[1]]: { judged: '合成判断：计划写错', remedy: '合成修法：改计划后重跑', evidence: '第 3 步断言没有命中', defect_candidate: CANDIDATE }, [CASES[3]]: { judged: '合成判断：缺事实', remedy: '合成取舍：等补证' } };
-const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3]) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批'], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), retry));
+const run = (h: { url: string }, notesPath: string, out: string, runs = `${WHOLE},${FINAL}`, retry?: Parameters<typeof main>[3], extraArgs: string[] = []) => outputOf(() => main(['--hub', h.url, '--runs', runs, '--recompose', RECOMPOSE, '--notes', notesPath, '--out', out, '--name', '合成批', ...extraArgs], async () => TOKEN, () => new Date('2026-11-08T08:00:00Z'), retry));
 
 test('the pass volume is the dispatched final workbook, the unsuccessful volume holds the failed plan, and every case is accounted for', async (t) => {
   const h = await hub(); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
@@ -557,4 +557,70 @@ test('assemble-delivery retries 503 Retry-After and ECONNREFUSED on reads and st
   assert.deepEqual(pauses2, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000]);
   assert.match(failed.stderr, /^暂时不可用：Hub 不可达（ECONNREFUSED），已等待 60 秒并尝试 10 次仍未恢复。请.*。$/m);
   await assert.rejects(readdir(out2), 'nothing written when retry budget exhausted');
+});
+
+test('--scope delivers only the declared subset of cases while disclosing out-of-scope states and ignoring Q&A mentions', async (t) => {
+  const onlyFinal = { [FINAL]: [job('b', FINAL, PLAN2, [CASES[0], CASES[2]], plan2.workbook, ['pass', 'pass'])] };
+  const h = await hub(['pass', 'pass'], plan2.workbook, onlyFinal, { [PLAN2]: plan2 }, [FINAL], false, [], 'none');
+  t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-scope-'));
+  const trialScope = join(dir, 'scope-trial.md');
+  await writeFile(trialScope, [
+    '# 本次脚本编写范围',
+    '',
+    `只做 ${CASES[0]}(合成意图 1) 和 ${CASES[2]}(合成意图 3)。`,
+    '',
+    `（主代理就 ${CASES[1]} 的配置前置询问使用者，暂不纳入本批。）`,
+    `（主代理就 ${CASES[3]} 询问使用者后确认本轮不做。）`,
+  ].join('\n'));
+  const emptyNotes = await notes({});
+  const out1 = join(dir, 'out-trial');
+  const res1 = await run(h, emptyNotes, out1, FINAL, undefined, ['--scope', trialScope]);
+  assert.equal(res1.code, 0, res1.stderr);
+  const stdout1 = JSON.parse(res1.stdout);
+  assert.deepEqual(stdout1.totals, { cases: 2, delivered: 2, failed: 0, unsettled: 0, unrun: 0 });
+  assert.match(stdout1.reply, /范围：本次共 2 \/ 4 条原始用例，另有 2 条不在本次范围内/);
+  assert.deepEqual((await readdir(out1)).sort(), ['case.xlsx', 'delivery.json', 'delivery_report.md', 'unsuccessful_cases.md']);
+  const summary1 = JSON.parse(await readFile(join(out1, 'delivery.json'), 'utf8'));
+  assert.equal(summary1.scope.file, 'scope-trial.md');
+  assert.equal(summary1.scope.total_cases, 4);
+  assert.deepEqual(summary1.scope.in_scope, [CASES[0], CASES[2]]);
+  assert.deepEqual(summary1.scope.out_of_scope.map((c: { autoid: string; title: string; in_excluded: boolean; status: string }) => [c.autoid, c.title, c.in_excluded, c.status]), [
+    [CASES[1], '合成意图 2', true, 'out_of_scope'],
+    [CASES[3], '合成意图 4', true, 'out_of_scope'],
+  ]);
+  const report1 = await readFile(join(out1, 'delivery_report.md'), 'utf8');
+  assert.match(report1, /交付范围按 scope-trial\.md 统计：全批 4 条原始用例中，本次范围内 2 条，范围外 2 条/);
+  assert.match(report1, /## 范围外原始用例/);
+  assert.match(report1, new RegExp(`原始用例 ${CASES[1]} 合成意图 2：未纳入本次范围`));
+  assert.match(report1, new RegExp(`原始用例 ${CASES[3]} 合成意图 4：未纳入本次范围`));
+
+  const directiveScope = join(dir, 'scope-directive.md');
+  await writeFile(directiveScope, `范围：${CASES[0]}, ${CASES[2]}\n排除：${CASES[1]}、${CASES[3]}\n`);
+  const out2 = join(dir, 'out-directive');
+  const res2 = await run(h, emptyNotes, out2, FINAL, undefined, ['--scope', directiveScope]);
+  assert.equal(res2.code, 0, res2.stderr);
+  assert.deepEqual(JSON.parse(await readFile(join(out2, 'delivery.json'), 'utf8')).scope.in_scope, [CASES[0], CASES[2]]);
+});
+
+test('--scope refuses unknown case IDs or dispatches that ran out-of-scope cases, writing nothing', async (t) => {
+  const h = await hub(); t.after(h.close);
+  const dir = await mkdtemp(join(tmpdir(), 'cc-scope-bad-'));
+
+  const unknownScope = join(dir, 'unknown.md');
+  await writeFile(unknownScope, `范围：${CASES[0]}, 990000000000000999\n`);
+  const outUnknown = join(dir, 'out-unknown');
+  const refusedUnknown = await run(h, await notes(NOTES), outUnknown, `${WHOLE},${FINAL}`, undefined, ['--scope', unknownScope]);
+  assert.equal(refusedUnknown.code, 1);
+  assert.match(refusedUnknown.stderr, /990000000000000999/);
+  assert.match(refusedUnknown.stderr, /不在/);
+  await assert.rejects(readdir(outUnknown));
+
+  const narrowScope = join(dir, 'narrow.md');
+  await writeFile(narrowScope, `只做 ${CASES[0]} 和 ${CASES[2]}。\n`);
+  const outMixed = join(dir, 'out-mixed');
+  const refusedMixed = await run(h, await notes({}), outMixed, `${WHOLE},${FINAL}`, undefined, ['--scope', narrowScope]);
+  assert.equal(refusedMixed.code, 1);
+  assert.match(refusedMixed.stderr, new RegExp(`范围外的原始用例.*${CASES[1]}`));
+  await assert.rejects(readdir(outMixed));
 });

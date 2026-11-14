@@ -58,8 +58,8 @@
     },
     {
       "path": "skill.json",
-      "sha256": "6ddd13ea451cd11b3621f324d0f30a47fc76bbd555f5ca1cc6dd02376e1b2d84",
-      "size": 750
+      "sha256": "0cafe9cc90c8f5ac08f8c7a082d26b64e3e8af1b7bc4998b1aef5f64fb208888",
+      "size": 658
     },
     {
       "path": "tools/locate-quotes.ts",

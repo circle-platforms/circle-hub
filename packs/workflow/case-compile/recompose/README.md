@@ -1,6 +1,6 @@
 # recompose 1.2.6
 
-本地修正 1.2.6（2026-11-14）：将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.25` 对齐为 `1.0.26`（内嵌模块字节不变），并同步 `testing/gen-recompose.ts` 生成的共享 `functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 authority/adjudicate `1.1.10`）；能力与核对规则相对 1.2.5 不变；未发布或部署。
+本地修正 1.2.6（2026-11-14）：随合约协议生成拆分与格式技能包仅镜像自身声明子集，将内嵌 `mindmap-format` `case-structure` 版本由 `1.0.25` 对齐为 `1.0.26`，同步共享 `functions/hub-retry.ts`、`functions/recompose-evidence.ts`（接受 recompose `1.2.6` 与 authority/adjudicate `1.1.10`），修复 `download-run.ts` H1 读令牌误报与 `submit-records.ts` H3/H4，并更新 `recompose/SKILL.md` 同行 `<<'EOF'` 与单一简写形状。未发布或部署。
 
 # recompose 1.2.5
 

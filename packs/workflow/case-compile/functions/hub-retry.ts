@@ -1,5 +1,5 @@
 // Local tool retry wrappers for Hub HTTP calls without modifying the embedded run-tools skill module.
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   HubReplyError,
@@ -553,4 +553,136 @@ export async function submitResultRetrying(
     if (result === null || !text) throw new Error('Hub 的答复没有文字内容');
     return { text, failed: result.isError === true };
   }
+}
+
+/**
+ * Reads the bearer token from standard input; returns empty immediately on a TTY
+ * so interactive mistakes fail immediately with same-line heredoc guidance instead of hanging.
+ */
+export async function readTokenFromStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+/**
+ * Validates the bearer token from standard input, refusing unexpanded Circle secret placeholders
+ * and empty/malformed stdin caused by missing <<'EOF' or inserting a newline before <<'EOF'.
+ */
+export async function requireBearerToken(readToken: () => Promise<string> = readTokenFromStdin): Promise<string> {
+  const bearer = await readToken();
+  const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
+  if (placeholder) {
+    throw new Error(
+      `Circle 里没有存密钥 ${placeholder[1]}（标准输入收到的是原样的占位符），什么都没有发出；所有者用 /secrets ${placeholder[1]} 存入 Hub 令牌后重跑`,
+    );
+  }
+  if (!/^[\x21-\x7e]{8,4096}$/.test(bearer)) {
+    const detail = bearer.length
+      ? '标准输入收到的令牌包含空白、换行或长度不在 8..4096 可见 ASCII 范围内'
+      : "标准输入为空，常见原因是 node 命令行与 <<'EOF' 之间多打了换行或漏了 <<'EOF'";
+    throw new Error(
+      `标准输入里没有令牌（${detail}）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF`,
+    );
+  }
+  return bearer;
+}
+
+export interface SubmittedItemFilesOptions {
+  flag: string;
+  itemKind: string;
+  repairHint: string;
+  validateItem: (value: unknown, fileName: string) => { [key: string]: unknown };
+}
+
+/** Reads a single regular file up to 16 MiB for a CLI `--<flag>` path without "re-export raw bytes" advice. */
+export async function readSubmittedFileBytes(filePath: string, flag: string): Promise<Buffer> {
+  let bytes: Buffer;
+  try {
+    const stat = await lstat(filePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`--${flag} 指定的路径 ${filePath} 不是普通文件。请确认路径并重试`);
+    }
+    bytes = await readFile(filePath);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith(`--${flag} `)) throw error;
+    throw new Error(`读不到 --${flag} 文件 ${filePath}。请确认文件路径正确且可读后重试`);
+  }
+  if (bytes.length > MAX_BYTES) {
+    throw new Error(`--${flag} 文件 ${filePath} 超过 16 MiB 上限。请精简文件内容后重试`);
+  }
+  return bytes;
+}
+
+/** Parses UTF-8 JSON bytes for a model-authored submission file, naming `--<flag>` and `<fileName>`. */
+export function parseSubmittedJson(
+  flag: string,
+  fileName: string,
+  bytes: Uint8Array,
+  repairHint: string,
+): unknown {
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new Error(`--${flag} 目录下的 ${fileName} 不是有效的 UTF-8 JSON 文本。请检查编码并用 UTF-8 重写该文件后${repairHint}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '无法解析';
+    const at = /position (\d+)/.exec(message);
+    const position = at ? Number(at[1]) : null;
+    const around =
+      position === null
+        ? ''
+        : `；出错位置第 ${position} 个字符，附近原文：${JSON.stringify(text.slice(Math.max(0, position - 60), position + 20))}`;
+    throw new Error(
+      `--${flag} 目录下的 ${fileName} 不是合法的 UTF-8 JSON（${message}）${around}。常见原因是括号、引号或逗号格式错误，请修改该文件后${repairHint}`,
+    );
+  }
+}
+
+/**
+ * Reads and validates every `.json` submission file under `directory` in sorted filename order.
+ * Uses caller-declared `--<flag>` and item validator so `--records` errors never report `--plans`.
+ */
+export async function readSubmittedItemFiles(
+  directory: string,
+  options: SubmittedItemFilesOptions,
+): Promise<Array<{ [key: string]: unknown }>> {
+  let names: string[];
+  try {
+    names = (await readdir(directory)).filter((name) => name.endsWith('.json')).sort();
+  } catch {
+    throw new Error(`读不到 --${options.flag} 目录 ${directory}。请确认目录存在并有读取权限后重试`);
+  }
+  if (!names.length) {
+    throw new Error(`--${options.flag} 目录 ${directory} 里没有 .json 文件。请先写入${options.itemKind} JSON 文件再${options.repairHint}`);
+  }
+  const items: Array<{ [key: string]: unknown }> = [];
+  const seen = new Map<string, string>();
+  for (const name of names) {
+    const bytes = await readSubmittedFileBytes(join(directory, name), options.flag).catch((error) => {
+      throw new Error(
+        error instanceof Error && error.message.includes('超过 16 MiB 上限')
+          ? `--${options.flag} 目录下的 ${name} 超过 16 MiB 上限。请拆分或精简该文件后${options.repairHint}`
+          : `--${options.flag} 目录下的 ${name} 不是普通可读文件。请确认该文件可读后${options.repairHint}`,
+      );
+    });
+    const parsed = parseSubmittedJson(options.flag, name, bytes, options.repairHint);
+    const validated = options.validateItem(parsed, name);
+    const itemId = validated.item;
+    if (typeof itemId !== 'string' || !itemId) {
+      throw new Error(`--${options.flag} 目录下的 ${name} 缺少非空字符串字段 "item"。请补齐后${options.repairHint}`);
+    }
+    const earlier = seen.get(itemId);
+    if (earlier !== undefined) {
+      throw new Error(`${earlier} 和 ${name} 是同一个条目 ${itemId}；每个条目只留一个文件`);
+    }
+    seen.set(itemId, name);
+    items.push(validated);
+  }
+  return items;
 }

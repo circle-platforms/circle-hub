@@ -24,7 +24,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.3.2', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['test-bed', '1.3.3', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/project.ts') && files.includes('functions/check-bed.ts') && files.includes('samples/negative/acquire-mismatch.json') && files.includes('samples/negative/help-mismatch.json') && files.includes('samples/positive/help-support.json') && files.includes('examples/bed-topology.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'functions/test-support.ts' || f === 'README.md' || f === 'pack-files.ts'));
@@ -96,5 +96,16 @@ describe('the staged pack', { skip: (await osIsolationAvailable()) ? false : 'no
       report.checks.map((c) => [c.check, c.tier, c.positive, c.negative, c.marks]),
       [['bed', 'advisory', 9, 9, ['author_samples_only']]],
     );
+  });
+});
+
+describe('Effort-AB guidance in test-bed/SKILL.md', () => {
+  it('includes a copy-paste release template with booking and predecessor and forbids direct terminal connections', () => {
+    const skill = text('SKILL.md');
+    assert.match(skill, /"action":\s*"release"/);
+    assert.match(skill, /"booking":/);
+    assert.match(skill, /"predecessor":/);
+    assert.match(skill, /"inventory":\s*\{\s*"external":\s*"doc:doc:bed-topology"\s*\}/);
+    assert.match(skill, /严禁.*终端|不要用终端工具|telnet/i);
   });
 });

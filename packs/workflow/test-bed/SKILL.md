@@ -18,6 +18,16 @@
   预订成功后 Hub 会在预订到的设备上执行一次只读的版本探测，回答的“预订时在设备上看到的构建”逐台给出构建和时间；没看成的写明原因，派发前的版本探测还会再看一次。
 - `release`：booking 为原预订运行号，开始运行的 predecessor 写同一号。用例的作业有终态以后释放，
   下一个用例再占。不在自己的谱系内就重新核对，不释放别人的预订。
+  可直接照抄 `start_run` 请求（`predecessor` 与 `parameters.booking` 填同一预订运行号）：
+  ```json
+  {
+    "pack": "test-bed",
+    "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+    "predecessor": "<原预订运行号>",
+    "parameters": { "action": "release", "booking": "<同一预订运行号>" }
+  }
+  ```
+  设备只能通过 Hub 上机验证或 `test-bed` 动作交互；严禁用终端工具（如 terminal_connect、telnet、ssh）或本机脚本直连设备。
 - `force_release`：参数 bed、必填 reason，可选 devices。强制释放前先问用户，理由照原话写。
   不写 devices 时释放该自动化测试环境下所有当前占用键（包含地址），写了则只释放指定设备。
   有未终态作业时按回执等它结束，或请管理员用 `circle-hub job status` 核对、用 `job dispose` 处置；

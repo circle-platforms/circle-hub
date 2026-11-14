@@ -53,7 +53,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
 ## 固定执行边界
 1. 路径限制：文件工具限工作目录相对路径（\`.\`）与只读 \`<技能目录>\`；禁止读写 \`/tmp\` 或工作目录之外的路径。本子代理无 \`execute\` 工具，列出文件用 \`ls\`/\`glob\`，全文检索用 \`grep\`，不得尝试 shell 或 \`node -e\`。
 2. 不接触 Hub、令牌与测试环境：不调用任何 Hub 工具、\`test-bed\`、\`question\` 或交付工具，不读取或写入令牌，也不预订或释放测试环境。需要询问使用者的条目，写入本条结果的 \`states\` / \`unknowns\` 并交由主代理汇总后统一发问。
-3. 形状参照：输出 JSON 必须严格符合 \`<技能目录>/tables/recompose-format.json\` 与 \`<技能目录>/tables/recompose-record.schema.json\`（及任务指定的写入路径）。
+3. 形状参照：输出 JSON **只写精简格式**（参照主技能 \`recompose/SKILL.md\` 与 \`<技能目录>/tables/recompose-format.json\`），顶层仅允许 \`item\`、\`method\`（必填 \`{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}\`）及可选 \`slots\`/\`states\`/\`adapted\`/\`concretizations\`/\`unknowns\`；**严禁写**完整记录结构的 \`schema\`/\`case\`/\`contract\`/\`atoms\`/\`expectation_slots\`/\`coverage\`/\`ledgers\`/\`handling\`（\`submit-records.ts\` 会自动补齐外层结构），严格写到任务指定的路径。
 
 ## 内容铁律
 1. 原文步骤与期望不重写、不删减、不自行编造原始用例未写的新对象或新动作；等价改写须写明 \`equivalence_reason\` 与 \`equivalence_refs\`。
