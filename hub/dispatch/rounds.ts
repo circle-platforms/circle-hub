@@ -35,9 +35,10 @@ export function repeats(policy: RoundPolicy): boolean {
   return policy.count > 1 || policy.fresh_context || policy.baseline_first || policy.window_seconds !== undefined;
 }
 
-/** Legacy intents have no round and are round 1. */
-export function roundOf(detail: { round?: unknown }): number {
-  return typeof detail.round === 'number' && Number.isInteger(detail.round) && detail.round >= 1 ? detail.round : 1;
+/** Only a verified frozen single-round rule can resolve a missing historical round. */
+export function roundOf(detail: { round?: unknown }, verifiedSingleRound = false): number | undefined {
+  if (!Object.hasOwn(detail, 'round')) return verifiedSingleRound ? 1 : undefined;
+  return typeof detail.round === 'number' && Number.isInteger(detail.round) && detail.round >= 1 ? detail.round : undefined;
 }
 
 export function bytesKey(sha: string, round: number, attempt: number, multi: boolean, lineage:string): string {

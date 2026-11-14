@@ -33,7 +33,7 @@ test('a process killed during submission is recovered as unknown and never submi
   assert.ok(intent);
   await observationLockFree(c, intent.body.detail.job);
   const state = await c.service.resume(c.admin, intent.body.detail.job);
-  assert.equal(state.outcome, 'unknown'); assert.equal(state.frozen, true);
+  assert.equal(state.dispatch_attempt?.outcome, 'unknown'); assert.equal(state.job_facts.frozen, true);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
   await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
 });
@@ -42,7 +42,7 @@ test('timeout, disconnect, rejection, inconsistent receipt and unknown states fr
   for (const mode of ['timeout', 'disconnect', 'reject', 'receipt-sha', 'receipt-items', 'lost', 'unmapped']) {
     const c = await setup({ mode, timeout: 20 }); t.after(() => c.close());
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(state.outcome, 'unknown', mode); assert.equal(state.frozen, true, mode);
+    assert.equal(state.dispatch_attempt?.outcome, 'unknown', mode); assert.equal(state.job_facts.frozen, true, mode);
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 1, mode);
     await c.service.resume(c.admin, state.job);
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 1, mode);
@@ -69,7 +69,7 @@ test('an accepted job resumes status reads after restart without a new submissio
   // for the lock to be free rather than for an amount of time.
   await observationLockFree(c, job);
   const state = await c.service.resume(c.admin, job);
-  assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+  assert.equal(state.dispatch_attempt?.outcome, 'effective'); assert.equal(state.job_facts.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
 });
 
@@ -77,7 +77,7 @@ test('transient status and result read failures retry only reads and do not turn
   for (const mode of ['transient-status', 'transient-result']) {
     const c = await setup({ mode }); t.after(() => c.close());
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(state.outcome, 'effective', mode); assert.equal(state.frozen, false, mode);
+    assert.equal(state.dispatch_attempt?.outcome, 'effective', mode); assert.equal(state.job_facts.frozen, false, mode);
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 1);
   }
 });
@@ -91,7 +91,7 @@ test('a committed intent with a lost acknowledgement is locally proven not dispa
     return value;
   };
   const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false);
+  assert.equal(state.dispatch_attempt?.outcome, 'not_dispatched'); assert.equal(state.job_facts.frozen, false);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
 });
 
@@ -103,16 +103,16 @@ test('a process killed after journal admission resumes by request identity witho
   const intent=await c.kit.store.getByKey<any>('action',`dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`);assert.ok(intent);
   await observationLockFree(c,intent.body.detail.job);
   const state=await c.service.resume(c.admin,intent.body.detail.job);
-  assert.equal(state.outcome,'effective');assert.equal(state.frozen,false);
+  assert.equal(state.dispatch_attempt?.outcome,'effective');assert.equal(state.job_facts.frozen,false);
   assert.equal(c.calls.filter(n=>n==='send_blob').length,1);assert.ok(c.calls.includes('lookup_blob'));
 });
 
 test('a compatible observation policy repair lets an administrator reconcile the original job without retransmission',async t=>{
   const c=await setup({mode:'unmapped'});t.after(()=>c.close());
-  const original=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(original.frozen,true);
+  const original=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(original.job_facts.frozen,true);
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,status:{...c.executor.definition.status,map:{...c.executor.definition.status.map,unmapped:{action_result:'completed',effect_outcome:'effective'}}}});
   const result=await c.service.dispose(c.admin,original.job,{choice:'reconcile',remote_id:'synthetic-remote'});
-  assert.equal(result.outcome,'effective');assert.equal(result.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
+  assert.equal(result.dispatch_attempt?.outcome,'effective');assert.equal(result.job_facts.frozen,false);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
 });
 
 test('R15 terminal hangup during the one submission does not cancel it',{timeout:30000},async t=>{
