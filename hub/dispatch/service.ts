@@ -1,3 +1,4 @@
+import {checkLeaseUse,LeaseUseReadError,type LeaseUseCheck} from './lease-use-check.ts';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {withEnvironmentPermissionLock} from '../records/api.ts';
 import { isAdmin } from '../records/api.ts';
@@ -104,7 +105,8 @@ class LeaseCoverageError extends Error {
   missing: string[];
   occupied: boolean;
   expired: boolean;
-  constructor(missing: string[], occupied: boolean, expired: boolean) { super('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验'); this.missing = missing; this.occupied = occupied; this.expired = expired; }
+  readonly lease_check?:LeaseUseCheck;
+  constructor(missing: string[], occupied: boolean, expired: boolean, lease_check?:LeaseUseCheck) { super('血缘不持有全部物理资源，或租约到期早于最长运行时间；请重新预订后核验'); this.missing = missing; this.occupied = occupied; this.expired = expired; this.lease_check=lease_check; }
 }
 /** Another job holds the physical target. The message names the jobs and the administrator's commands (the CLI shows it);
  * the Hub's own dispatch tells the runner only that the target is occupied, since those jobs may be other users'. */
@@ -1026,18 +1028,20 @@ export class DispatchService {
     },tx),outer);
   }
   /** Which declared keys the lineage does not hold for the whole dispatch window; the one rule dispatch and explain-release share. */
-  private async coverage(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<{ rows: HolderSnapshot[]; missing: string[] }> {
-    const rows = await this.options.leases.holderSnapshot(keys);
-    const held = (key: string) => rows.some(r => r.key === key && !r.released && r.user === user && ancestors.includes(r.run) && (r.expires_at === null || Date.parse(r.expires_at) > this.now().getTime() + requiredMs));
-    const missing = keys.filter(key => !held(key));
-    return { rows, missing: missing.length ? missing : rows.length !== keys.length ? keys : [] };
+  private async coverage(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<{ rows: HolderSnapshot[]; missing: string[]; lease_check:LeaseUseCheck }> {
+    let rows:HolderSnapshot[];
+    try{rows=await this.options.leases.holderSnapshot(keys);}
+    catch(error){throw new LeaseUseReadError(error,checkLeaseUse({keys,rows:null,actor:user,lineage:ancestors,observedAt:this.now(),requiredMs}));}
+    const lease_check=checkLeaseUse({keys,rows,actor:user,lineage:ancestors,observedAt:this.now(),requiredMs});
+    if(lease_check.missing_keys===null)throw new LeaseUseReadError(new Error('租约覆盖事实未定'),lease_check);
+    return {rows,missing:lease_check.missing_keys,lease_check};
   }
   private async holders(ancestors: string[], user: string, keys: string[], requiredMs: number): Promise<HolderSnapshot[]> {
-    const { rows, missing } = await this.coverage(ancestors, user, keys, requiredMs);
+    const { rows, missing,lease_check } = await this.coverage(ancestors, user, keys, requiredMs);
     if (missing.length) {
       const occupied=rows.some(row=>missing.includes(row.key)&&!row.released&&(row.expires_at===null||Date.parse(row.expires_at)>this.now().getTime())&&(row.user!==user||!ancestors.includes(row.run)));
       const expired=rows.some(row=>missing.includes(row.key)&&!row.released&&row.user===user&&ancestors.includes(row.run)&&row.expires_at!==null&&Date.parse(row.expires_at)<=this.now().getTime());
-      throw new LeaseCoverageError(missing,occupied,expired);
+      throw new LeaseCoverageError(missing,occupied,expired,lease_check);
     }
     return rows;
   }
