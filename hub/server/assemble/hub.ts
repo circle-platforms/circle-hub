@@ -269,7 +269,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
       environments: async target => environments === null ? {
         ready: false, items: [], missing: '测试环境租约服务未接线',
         nextAction: '请管理员恢复测试环境租约服务后重新查询',
-      } : { ready: true, items: await environments.list(target), missing: null, nextAction: null },
+      } : { ready: true, enforceEnvironmentAssignments: false, items: await environments.list(target), missing: null, nextAction: null },
       unattributedHoldings: target => environments === null ? Promise.resolve(null) : environments.unattributedHoldings(target),
     }, by, userId),
     runs,

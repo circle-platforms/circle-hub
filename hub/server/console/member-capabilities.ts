@@ -1,5 +1,5 @@
 import type { MemberCapabilities } from '../../records/api.ts';
-import { AccessError } from '../../records/errors.ts';
+import { AccessError } from '../../records/api.ts';
 import { uiLabelOf } from '../../../contracts/generated/vocabulary.ts';
 import { emptyBlock, definitions, html, href, link, page, pageLayout, table, type Html } from './html.ts';
 import { circleEntry, originOf, neutralPage, type PageContext, type PageResult } from './context.ts';
@@ -127,6 +127,7 @@ export function renderMemberCapabilities(
     : html``;
   return html`<div class="ch-stack" data-member-capabilities>
 ${heading}
+${view.environmentAccess.enforced === true ? '' : html`<p class="ch-meta">测试环境分配目前仅为配置预览，新增权限守卫尚未启用；现有工作流权限和预订规则保持不变。</p>`}
 ${card({ title: '账户' }, definitions([['名字', view.member.name], ['状态', status]]))}
 ${card({ title: '团队' }, teamsBody)}
 ${card({ title: uiLabelOf('pack_kind', 'workflow') }, table(['名称', '引用', '归属'], packRows(view.workflows), '尚无可用的已分配工作流'))}
