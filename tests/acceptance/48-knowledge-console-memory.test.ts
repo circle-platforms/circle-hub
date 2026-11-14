@@ -114,8 +114,8 @@ test('workflow grants reuse the dialog, hide unavailable team publication and ex
   // /console/packs page paths are retired; personal workflows live under /console/workflows (routes.ts).
   const detail=await browser.get('/console/workflows/'+pack+'?space='+owner.user.id);assert.equal(detail.status,200,detail.body);assert.match(detail.body,/id="grant-pack"/);
   const listing=await browser.get('/console/workflows?scope=personal');assert.match(listing.body,new RegExp('href="/console/workflows/'+pack+'\\?space='+owner.user.id));
-  // A member who is in no team is shown 尚未指定成员 for a team workflow (150d988ce2), never 公共空间 or who else is assigned.
-  const team=await browser.get('/console/workflows?scope=team');assert.match(team.body,/<span data-pack-audience>尚未指定成员<\/span>/);assert.doesNotMatch(team.body,/<span data-pack-audience>(?:本人及|合成控制台作者)/);
+  // A member who is in no team sees 已分配给当前账户 for a personally granted team workflow, never 公共空间 or other assignees.
+  const team=await browser.get('/console/workflows?scope=team');assert.match(team.body,/<span data-pack-audience>已分配给当前账户（合成控制台作者）<\/span>/);assert.doesNotMatch(team.body,/<span data-pack-audience>(?:尚未指定成员|本人及)/);
   const adminTeam=await adminBrowser.get('/console/workflows?scope=team');assert.match(adminTeam.body,/<span data-pack-audience>合成控制台作者/);
   // No publish right: title sits on the wrapping span; the button itself is disabled (personal-packs.ts).
   assert.match(detail.body,/<span title="没有发布权"><button[^>]+disabled/);assert.doesNotMatch(detail.body,/name="(?:leases|dispatch|system|named_document)"|cmd-pack-assign/);

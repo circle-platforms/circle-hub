@@ -130,9 +130,9 @@ test('TEAM_ACTIONS build the argv shapes from interfaces §2', () => {
   assert.deepEqual(TEAM_ACTIONS['team-create'].build(form({ name: '合成组' })), { argv: ['team', 'create', '合成组'] });
   assert.deepEqual(TEAM_ACTIONS['team-delete'].build(form({ team: TEAM_A.id })), { argv: ['team', 'delete', TEAM_A.id] });
   assert.deepEqual(TEAM_ACTIONS['team-add'].build(form({ team: TEAM_A.id, user: MEMBER.id })), { argv: ['team', 'add', TEAM_A.id, MEMBER.id] });
-  assert.deepEqual(TEAM_ACTIONS['pack-assign-team'].build(form({ pack: 'wf.synthetic', team: TEAM_A.id })), {
-    argv: ['pack', 'assign', 'wf.synthetic', `--team=${TEAM_A.id}`],
-  });
+  assert.deepEqual(TEAM_ACTIONS['pack-assign-team'].build(form({ pack: 'wf.synthetic', team: TEAM_A.id })), [
+    { argv: ['pack', 'assign', 'wf.synthetic', `--team=${TEAM_A.id}`] },
+  ]);
   assert.deepEqual(TEAM_ACTIONS['resource-assign'].build(form({ resource: 'res_synthetic', audience: RESOURCE_AUDIENCE.all })), {
     argv: ['resource', 'assign', 'res_synthetic', '--all'],
   });

@@ -461,7 +461,9 @@ describe('pages', () => {
     const packs = await get('/console/workflows', session);
     assert.ok(packs.body.includes('href="/console/packs/local-review?scope=') || packs.body.includes('href="/console/workflows/local-review?scope='));
     assert.ok(!packs.body.includes('href="/console/packs/review?scope=') && !packs.body.includes('href="/console/workflows/review?scope='), 'an unassigned pack is not listed');
-    assert.ok(!packs.body.includes('分配给'));
+    // A member with no team sees assignment to the current account, never other assignees' names.
+    assert.match(packs.body, /已分配给当前账户/);
+    assert.doesNotMatch(packs.body, /分配给(?!当前账户)/);
     const admin = await signIn(server.admin.token);
     const all = await get('/console/workflows', admin);
     for (const id of ['review', 'local-review']) assert.ok(all.body.includes('href="/console/packs/'+id+'?scope=') || all.body.includes('href="/console/workflows/'+id+'?scope='), id);
@@ -494,7 +496,10 @@ describe('pages', () => {
     assert.ok(!admin.body.includes(user.token) && !admin.body.includes(server.admin.token), 'no token value is ever shown');
     for(const row of admin.body.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g)??[])assert.doesNotMatch(row,/<button|<form|ch-btn/);
     const selected=await get('/console/team/'+user.user.id,session);
-    assert.ok(selected.body.includes(`circle-hub user disable ${user.user.id}`), 'disabling a selected member is a command for the Circle');
+    // Member ops are registered console forms (not Circle command echo).
+    assert.match(selected.body, /action="\/console\/admin\/do\/user-disable"/);
+    assert.ok(selected.body.includes(`name="user" value="${user.user.id}"`), 'disable form targets the selected member');
+    assert.match(selected.body, /停用账户/);
     const connections = await get('/console/connections', session);
     assert.ok(connections.body.includes('http://192.0.2.10:8080'), 'resource addresses for admins');
     assert.ok(!(await get('/console/connections', userSession)).body.includes('http://192.0.2.10:8080'), 'not for a member');

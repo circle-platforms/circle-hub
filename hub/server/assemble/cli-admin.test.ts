@@ -280,7 +280,8 @@ describe('init-admin and the operator token', () => {
     assert.equal(principal?.role, 'admin');
     assert.equal(principal?.name, '根管理员');
     // The token file is the normal path; an exported CIRCLE_HUB_TOKEN would make serve refuse to start.
-    assert.match(admin.init?.text ?? '', /它的令牌 tok_[0-9a-z]{26} 已存进测试令牌存储，没有显示/);
+    assert.match(admin.init?.text ?? '', /它的令牌已存进测试令牌存储，没有显示/);
+    assert.doesNotMatch(admin.init?.text ?? '', /usr_|tok_/);
     assert.match(admin.init?.text ?? '', /之后改变状态的命令（user、token 和 pack、resource、secret、knowledge 里的这类命令）都从这个操作令牌文件读管理员令牌/);
     assert.doesNotMatch(admin.init?.text ?? '', /CIRCLE_HUB_TOKEN/);
     const again = await admin.run(['init-admin', '第二位']);
