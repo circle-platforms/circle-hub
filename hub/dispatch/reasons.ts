@@ -1,9 +1,10 @@
+import { DispatchOutcomeFactsSchema, type DispatchOutcomeFacts } from '../../contracts/api.ts';
 import { sha256Hex, type RecordsKit } from '../records/api.ts';
 import type { JobStatus } from './service.ts';
 import type { RunJob } from './read-runs.ts';
 
 export interface DispatchMissingFact { fact: string; next_action: string }
-export interface DispatchDiagnostics {
+export interface DispatchDiagnostics extends DispatchOutcomeFacts {
   outcome: JobStatus['outcome'];
   submission_verified?:boolean;
   booking?:JobStatus['booking'];
@@ -15,6 +16,20 @@ export interface DispatchDiagnostics {
   missing_facts: DispatchMissingFact[];
   next_action: string;
 }
+/** Project declared observations only; never infer physical effects from orchestration state. */
+export function dispatchOutcomeFacts(source: unknown): DispatchOutcomeFacts {
+  if (!source || typeof source !== 'object') return {};
+  const values = source as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, schema] of Object.entries(DispatchOutcomeFactsSchema.shape)) {
+    if (!Object.hasOwn(values, key) || values[key] === undefined) continue;
+    if (key === 'not_sent' && values[key] !== true) continue;
+    const parsed = schema.safeParse(values[key]);
+    if (parsed.success) result[key] = parsed.data;
+  }
+  return DispatchOutcomeFactsSchema.parse(result);
+}
+
 const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 const clip = (value: string): string => value.slice(0, 800);
 
@@ -80,5 +95,5 @@ export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' |
     }
     if (!missing_facts.length && (status.missing_fact || status.reason || status.failed_conditions?.length)) missing_facts.push({ fact: uncertain ? '原作业是否执行或执行到哪一步尚未确认' : status.report_pending ? '原作业的完整报告尚未取得' : status.outcome === 'not_dispatched' ? '本次上机验证未发出，但缺少可供成员读取的具体原因' : '本次结果仍有缺失事实，尚不能据此确认逐条结论', next_action: next });
   }
-  return { outcome: status.outcome, ...(status.submission_verified!==undefined?{submission_verified:status.submission_verified}:{}),...(status.booking?{booking:status.booking}:{}), ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent !== undefined ? { not_sent: status.not_sent } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: [...new Map<string, DispatchMissingFact>(missing_facts.map(fact=>[fact.fact+'\0'+fact.next_action,fact])).values()].slice(0, 16), next_action: next };
+  return { ...dispatchOutcomeFacts(status), outcome: status.outcome, ...(status.submission_verified!==undefined?{submission_verified:status.submission_verified}:{}),...(status.booking?{booking:status.booking}:{}), ...(status.error_code?{error_code:status.error_code}:{}), frozen: status.frozen, ...(status.not_sent === true ? { not_sent: true } : {}), ...(status.report_pending !== undefined ? { report_pending: status.report_pending } : {}), missing_facts: [...new Map<string, DispatchMissingFact>(missing_facts.map(fact=>[fact.fact+'\0'+fact.next_action,fact])).values()].slice(0, 16), next_action: next };
 }

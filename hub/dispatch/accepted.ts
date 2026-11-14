@@ -50,7 +50,7 @@ async function jobNote(service: DispatchService, job: RunJob, admin: string, ret
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
 /** One dispatch attempt of a run in this process. A repeat of the submission reads it (PROGRESS) instead of starting another,
  * so a refusal that comes after the answer, when the release checks take longer than the wait, reaches the next repeat. */
-interface Attempt { woken: Promise<void>; reserved?: { job: string; executor: string }; settled?: Settled; uncertain?: boolean }
+interface Attempt { worker_settled: boolean; woken: Promise<void>; reserved?: { job: string; executor: string }; settled?: Settled; uncertain?: boolean }
 const attempts = new WeakMap<DispatchService, Map<string, Attempt>>();
 function attemptsOf(service: DispatchService): Map<string, Attempt> {
   let open = attempts.get(service);
@@ -59,10 +59,10 @@ function attemptsOf(service: DispatchService): Map<string, Attempt> {
 }
 function begin(service: DispatchService, run: string): Attempt {
   let wake: () => void = () => {};
-  const attempt: Attempt = { woken: new Promise<void>((resolve) => { wake = resolve; }) };
+  const attempt: Attempt = { worker_settled: false, woken: new Promise<void>((resolve) => { wake = resolve; }) };
   // The job itself keeps running after this answer; its journal and the scheduled reconciliation carry it to its end.
   void service.dispatchAccepted(run, (job, executor) => { attempt.reserved = { job, executor }; wake(); })
-    .then((result) => { attempt.settled = result; wake(); }, (_error: unknown) => { attempt.uncertain = true; attempt.settled = { started: false }; wake(); });
+    .then((result) => { attempt.worker_settled = true; attempt.settled = result; wake(); }, (_error: unknown) => { attempt.worker_settled = true; attempt.uncertain = true; attempt.settled = { started: false }; wake(); });
   return attempt;
 }
 
@@ -88,9 +88,9 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
     await Promise.race([attempt.woken, new Promise<void>((resolve) => { timer = setTimeout(resolve, wait); })]);
     clearTimeout(timer);
   }
-  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行开始上机验证；${PROGRESS}，结束后同样的答复带结果引用`) }]); }
+  if (attempt.reserved) { open.delete(run); const { job, executor } = attempt.reserved; return answer([{ operation:'dispatch', reservation_recorded:true, worker_settled:attempt.worker_settled, job, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按任务包的效果行开始上机验证；${PROGRESS}，结束后同样的答复带结果引用`) }]); }
   const settled = attempt.settled;
-  if (!settled) return answer([{ text: `Hub 正在做上机验证前核对；${PROGRESS}` }]);
+  if (!settled) return answer([{ operation:'dispatch', worker_settled:attempt.worker_settled, text: `Hub 正在做上机验证前核对；${PROGRESS}` }]);
   if (attempt.uncertain || settled.outcome==='unknown') { const next=administrative?`circle-hub run show ${run} --json`:'不要重新发送或另开运行；联系管理员只读核对原作业';return answer([{outcome:'unknown',missing_facts:[{fact:'本次调用未取得可核对的派发记录',next_action:next}],next_action:next,text:clip(`上机验证状态尚未确认；不要重新发送或另开运行；下一步：${next}`)}]); }
   // A settled attempt is answered once; a repeat after that tries again, as before (a cause the runner fixes, as a booking).
   open.delete(run);
@@ -192,7 +192,7 @@ function invocationCategory(status: Pick<JobStatus,'error_code'|'call_error_cate
 export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): DispatchNote {
   const { status } = job;
   const diagnostics = statusDiagnostics(job, administrative);
-  if(status.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'&&job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen)return {job:job.job,...permissionUnavailableNote(administrative)};
+  if(status.error_code==='ENVIRONMENT_PERMISSION_UNAVAILABLE'&&job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen)return {job:job.job,...diagnostics,...permissionUnavailableNote(administrative)};
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '上机验证结果未知' : '进行中';
   const parts = [administrative ? `作业 ${job.job}：${state}（阶段 ${status.phase}）` : `上机验证${state}`, `${labelOf('effect_outcome', status.outcome)}`];
   if (status.outcome === 'target_rejected' && status.rejection_stage) parts.push(`目标在“${status.rejection_stage}”阶段拒绝`);
