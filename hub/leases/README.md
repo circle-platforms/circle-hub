@@ -46,16 +46,18 @@ Every active-row query, trusted snapshot, orphan cleanup and release treats null
 Extending such rows is refused before mutation; a lineage releases them explicitly. Capped workflows keep their TTL
 and cumulative extension rules. Migration 4 only removes the expiry NOT NULL constraint; applied migrations stay fixed.
 
-Ownership is independent of holding: `register` assigns a strictly nested slash-terminated prefix to its first user.
-Registrations may never contain each other. Administrators may reassign an exact existing prefix with a reason;
-ordinary users cannot reveal or overwrite its owner. `unregister` requires the owner or an administrator and refuses
-while any active row remains below it. A database advisory lock serializes overlap checks, registration changes and
-acquisition, including two connections registering overlapping prefixes. Migration 5 adds only the current ownership
-table and its runtime grant; each mutation appends its registration action atomically. `actionLog` includes owner,
-previous owner, actor, reason and prefix so the current table can be rebuilt. Public run views filter these trusted rows.
+Ownership is independent of holding. The single environment catalog now supplies responsibility through
+`ServiceOptions.catalog.ownership(tx?)`; it projects registered prefixes and exact resource keys with their owners.
+`registrations(prefix)` is only a read projection. Independent `register`/`unregister` methods and their write
+producer are retired by the owner's 2026-11-14 16:30/16:40 approval. The legacy table and old action records remain
+untouched. Only the records one-time converter may collect the old table; runtime never reads it or falls back to it.
+The producer must take the existing `leases.registrations` transaction lock before catalog changes. Owner cleanup
+uses that lock and the same transaction for the catalog read, then locks and releases the lease rows. Prefix or exact
+resource responsibility does not grant member use permission. Missing or unreadable catalog blocks owner cleanup;
+the holder can still release and an administrator's existing guarded cleanup path remains unchanged.
 
 Every current row view now includes the acquisition moment (`since`), holder run and nullable expiry. Trusted callers
-may request the user id. The engine separately decides identity visibility using the registration table: registered
+may request the user id. The engine separately decides identity visibility using the unified catalog ownership projection: registered
 owners and administrators see holder id/name; everyone sees the run, since, mine and unfinished job ids. Registration
 rows expose only prefix/mine except in administrator runs. Fences never enter either frozen view.
 
