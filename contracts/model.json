@@ -4783,7 +4783,7 @@
         "code": "RUN_SUPERSEDED",
         "when": "运行已被新修订取代（W06）",
         "fix": "要修改已交的内容，请开始新的运行再提交；不修改时，在后续的运行里继续",
-        "callErrorCategory": null
+        "callErrorCategory": "not_found"
       },
       {
         "code": "RUN_ABANDONED",
