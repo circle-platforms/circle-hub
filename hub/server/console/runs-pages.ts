@@ -71,6 +71,16 @@ export async function runsPage(ctx: PageContext): Promise<PageResult> {
   if (wanted !== undefined && !isTaskResult(wanted)) return { status: 400, body: page(ctx.chrome('请求有误', { active: 'tasks' }), errorLine('筛选的任务结果不对')) };
   const listing = await ctx.deps.runs.listRuns(ctx.principal, { pack, limit: TASKS_PER_PAGE, cursor: cursor ?? null, requests: false });
   const [tasks, titles] = await Promise.all([loadTasks(ctx, listing.items), packTitles(ctx)]);
+  // Last activity for awaiting rows: newest call-log line, else started_at (Boss 20:32; task_result unchanged).
+  await Promise.all(tasks.map(async (task) => {
+    if (task.result !== 'awaiting') { task.lastActivityAt = task.run.started_at; return; }
+    try {
+      const latest = await ctx.deps.records.callLog.query(ctx.principal, { runId: task.run.run, limit: 1, newestFirst: true });
+      task.lastActivityAt = latest.items[0]?.at ?? task.run.started_at;
+    } catch {
+      task.lastActivityAt = task.run.started_at;
+    }
+  }));
   const counts = new Map<TaskResult, number>();
   for (const task of tasks) if (task.result !== null) counts.set(task.result, (counts.get(task.result) ?? 0) + 1);
   const shown = wanted === undefined ? tasks : tasks.filter((task) => task.result === wanted);

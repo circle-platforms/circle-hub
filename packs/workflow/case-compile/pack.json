@@ -348,8 +348,8 @@
     },
     {
       "path": "functions/recompose-check.ts",
-      "sha256": "34b37025997ac98e5a539c11775adebdeb389f222f83c1d0a8ee949497e4416f",
-      "size": 23319
+      "sha256": "3229f64f00b4be0901978f3120d68c420d4a0c214c76726651c8ce2408c5a72c",
+      "size": 23478
     },
     {
       "path": "functions/recompose-evidence.ts",

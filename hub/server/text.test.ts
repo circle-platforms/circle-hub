@@ -467,6 +467,26 @@ const list=items(62),result=resultOf(list,{production:true});const answer=startA
 // ---------------------------------------------------------------- submit_result
 
 describe('submit_result text', () => {
+  test('recompose acceptance: title from fields, no repeated slot judgment or quote lines, no evidence restating quotes', () => {
+const list=[{...items(1)[0],fields:{case_id:'253651793153361064',title:'253 字符域名 DNS 解析正常'},label:'253651793153361064'}];
+const quoteA='引文 “253 字符域名 DNS 解析正常” 与所引片段逐字一致';
+const quoteB='引文 “解析正确返回地址” 与所引片段逐字一致';
+const check='重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写';
+const result=resultWith({delivered:[{item:list[0].id,label:list[0].label,location:list[0].location,requirements:[{requirement:'record',layers:[{layer:'static',terminal:'judgment'}],status:'satisfied',claims:[
+ claim(list[0].id,'record','模型的重组判断'),
+ claim(list[0].id,'record','模型的重组判断'),
+ {...fact(list[0].id,'record',check),warrant:{producer:'function',id:'recompose-check@1'}},
+ fact(list[0].id,'record',quoteA),
+ fact(list[0].id,'record',quoteB),
+ fact(list[0].id,'record',quoteA),
+]}]}]});
+const text=toolText('submit_result',submitAnswer(result),{items:list});
+assert.match(text,/原始用例 253651793153361064 253 字符域名 DNS 解析正常：重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写；引文 “253 字符域名 DNS 解析正常” 与所引片段逐字一致；引文 “解析正确返回地址” 与所引片段逐字一致；状态未确认；判断正确；决定者/);
+assert.equal(text.split('模型的重组判断').length-1,0);
+assert.equal(text.split(quoteA).length-1,1);
+assert.doesNotMatch(text,/证据|标题未知|四账|编写阶段/);
+});
+
   for (const n of SIZES) {
     test(`${n} items: the receipt and counts first, each requirement's state, the errors, then every problem, then the details`, () => {
 const list=items(n),result=resultOf(list,{claims:2});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD,items:list});withinBudget(text,'all conclusions');assert.equal(itemIdsOf(text).length,n);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态未确认；判断正确/);if(n>9)assert.match(text,/原始用例 CASE-9 合成用例 9.*状态未知/);assert.doesNotMatch(text,/回执：|分区：|本层不适用|追踪|doc7:n|rec:/);assert.equal(answer.result?.run,RUN);

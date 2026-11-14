@@ -493,11 +493,30 @@ function itemSummary(item: ItemProjection): string {
   return item.summary || '等待核对';
 }
 
+/** Slot placeholder written by submit-records; not a conclusion of its own when a check already spoke. */
+const SLOT_JUDGMENT_PLACEHOLDER = '模型的重组判断';
+
 function caseName(item: ItemProjection | undefined, label: string): string {
   if (item && isRecord(item.fields.review_counts)) return label;
   const id = item?.fields.autoid ?? item?.fields.case_id;
-  const title = item?.fields.case_id !== undefined && item.fields.title === undefined ? '标题未知' : label;
+  const titled = item?.fields.title;
+  const title = typeof titled === 'string' && titled.length > 0
+    ? titled
+    : item?.fields.case_id !== undefined && item.fields.title === undefined
+      ? '标题未知'
+      : label;
   return `原始用例 ${typeof id === 'string' || typeof id === 'number' ? `${id} ` : ''}${title}`;
+}
+
+/** Unique claim statements in order; drop the slot placeholder when a real check statement is present. */
+function conclusionStatements(texts: readonly string[]): string[] {
+  const unique: string[] = [];
+  for (const text of texts) {
+    if (!text || unique.includes(text)) continue;
+    unique.push(text);
+  }
+  const withoutPlaceholder = unique.filter((text) => text !== SLOT_JUDGMENT_PLACEHOLDER);
+  return withoutPlaceholder.length > 0 ? withoutPlaceholder : unique;
 }
 
 function itemConclusion(item: ItemResult, original: ItemProjection | undefined): string {
@@ -509,8 +528,12 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
   const unknown = partial || pending || item.requirements.length === 0 || claims.some(claim => claim.qualifier.nature === 'unknown' || claim.validity.status !== 'valid' || userVerdict(claim.statement.verdict) === null) || item.requirements.some(requirement => requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
   const status = unknown ? '未知' : model ? '未确认' : '已确认';
   const judgment = wrong.length ? '错误' : unknown ? null : '正确';
-  const statement = wrong.length ? wrong.map(requirement => messageOf(requirement)).filter(Boolean).join('；') || '核对发现错误' : unknown ? '还没有确认结论' : claims.map(claim => claim.statement.text).join('；') || '已按要求核对';
-  const parts = [`${caseName(original, item.label)}，${statement}`, `状态${status}`];
+  const statement = wrong.length
+    ? conclusionStatements(wrong.map(requirement => messageOf(requirement)).filter((text): text is string => Boolean(text))).join('；') || '核对发现错误'
+    : unknown
+      ? '还没有确认结论'
+      : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
+  const parts = [`${caseName(original, item.label)}：${statement}`, `状态${status}`];
   if (judgment !== null) parts.push(`判断${judgment}`);
   if (unknown || judgment === '错误') {
     const problems = item.requirements.filter(requirement => requirement.status !== 'satisfied' || requirement.layers.some(layer => isUnknownTerminal(layer) || layer.terminal === 'incomplete'));
@@ -518,7 +541,8 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
     parts.push(`原因${partial ? '缺资料' : [...new Set(layers.map(userReason))].join('、') || '还没查清'}`);
     parts.push(`下一步${partial ? '使用者补齐资料后重新交给 Hub 检查' : [...new Set(layers.map(userNextStep))].join('；') || '使用者核对资料后重新交给 Hub 检查'}`);
   }
-  const quotes = claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []);
+  // Evidence must not restate quote texts already shown as「引文 … 与所引片段逐字一致」.
+  const quotes = [...new Set(claims.flatMap(claim => claim.resolutions?.filter(value => !value.references.includes(value.text)).map(value => value.text) ?? []))].filter((text) => !statement.includes(text));
   if (quotes.length) parts.push(`证据${quotes.join('；')}`);
   if (item.replaced_criteria?.length) parts.push(...item.replaced_criteria.map(change => `原始用例的要求由${change.old}改为${change.new}`));
   parts.push(`决定者${[...new Set(claims.map(claim => USER_DECIDER[claim.warrant.producer]))].join('、') || '程序'}`);

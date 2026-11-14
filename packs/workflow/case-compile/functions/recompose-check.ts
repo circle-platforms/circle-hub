@@ -69,7 +69,7 @@ export function checkRecomposition(input: any): any[] {
     else if (!text(method.text) || !Array.isArray(method.sources) || !method.sources.length || !text(method.basis))
         unknown('缺方法来源和具名声明位置', '重组模型');
     if (!object(record.ledgers) || !['original', 'adapted', 'concretizations', 'rebindings'].every(k => Array.isArray(record.ledgers[k])))
-        bad('atom_dropped', '必须分开保留四本账');
+        bad('atom_dropped', '必须分开保留原文、改写、具体取值、重新绑定四类记录');
     const coverage = record.coverage ?? {}, mapped = object(coverage.mapped) ? coverage.mapped : {}, unmapped = Array.isArray(coverage.unmapped) ? coverage.unmapped : [], slots = Array.isArray(record.expectation_slots) ? record.expectation_slots : [];
     if (canonicalJson(key(coverage.author_atoms)) !== canonicalJson(key(ids)) || canonicalJson(key([...Object.keys(mapped), ...unmapped])) !== canonicalJson(key(ids)) || new Set([...Object.keys(mapped), ...unmapped]).size !== ids.length)
         bad('atom_dropped', '覆盖分母和分子必须逐项对应实际的用例原句，不能自报覆盖率');
@@ -283,6 +283,6 @@ export function checkRecomposition(input: any): any[] {
         return out;
     }
     if (record.status !== 'complete')
-        return [recomposeOut('refute', '实际覆盖、来源与四账均完整，状态应为 complete；重组者重新提交前修正状态', { data: { status: 'complete' } })];
-    return [recomposeOut('support', '重组结构、原文全集和四账已核对；来源状态与缺口是模型判断，交给编写阶段', { data: { schema: T.record, status: 'complete', coverage: { total: ids.length, mapped: ids.length, unmapped: [] }, reviews }, judgment_sources: ['/record/0'] })];
+        return [recomposeOut('refute', '实际覆盖、来源与原文、改写、具体取值、重新绑定四类记录均完整，状态应为 complete；重组者重新提交前修正状态', { data: { status: 'complete' } })];
+    return [recomposeOut('support', '重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写', { data: { schema: T.record, status: 'complete', coverage: { total: ids.length, mapped: ids.length, unmapped: [] }, reviews }, judgment_sources: ['/record/0'] })];
 }
