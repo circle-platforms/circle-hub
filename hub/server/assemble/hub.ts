@@ -1,4 +1,4 @@
-import { readEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartup } from '../env-startup.ts';
+import { readEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartup, type EnvironmentPermissionStartupPort } from '../env-startup.ts';
 import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
@@ -53,6 +53,8 @@ import { requireVaultKey } from './vault.ts';
 export interface AssemblyOptions {
   /** Verified startup inheritance observation; command assemblies reread the durable public records service. */
   environmentPermissionStartup?: EnvironmentPermissionStartup;
+  /** Read-only public completion port; tests inject observations without constructing records markers. */
+  environmentPermissions?: Pick<EnvironmentPermissionStartupPort, 'read'>;
   /**
    * Pack functions run under macOS sandbox-exec, which denies the network (default true). Only synthetic test environments
    * where it is missing may pass false (hub/rules).
@@ -139,7 +141,9 @@ export function sandboxRefusal(reason: string | undefined, platform: NodeJS.Plat
 }
 
 export async function assembleHub(config: HubConfig, records: RecordsKit, options: AssemblyOptions = {}): Promise<AssembledHub> {
-  const environmentStartup = options.environmentPermissionStartup ?? await readEnvironmentPermissionStartup(recordsEnvironmentPermissionStartup(records));
+  const environmentPort = options.environmentPermissions ?? recordsEnvironmentPermissionStartup(records);
+  const readEnvironmentStartup = () => readEnvironmentPermissionStartup(environmentPort);
+  const environmentStartup = options.environmentPermissionStartup ?? await readEnvironmentStartup();
   const enforceEnvironmentAssignments = environmentStartup.completed !== false;
   const notes = new CallNotes(options.log ?? stderrLog);
   const notices: string[] = [];
@@ -258,13 +262,15 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments, records, leases, runs, workflows, knowledge, ...(environments && environmentStartup.completed !== null ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
-    environmentPermissionStartup: () => ({ ...environmentStartup, enforced: enforceEnvironmentAssignments }),
+    environmentPermissionStartup: readEnvironmentStartup,
     startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
     close: () => dispatch?.close() ?? Promise.resolve(),
     records,
     memberCapabilities: async (by, userId, packSummaries) => {
+      const currentStartup = await readEnvironmentStartup();
+      const currentlyEnforced = currentStartup.completed !== false;
       const result = await memberCapabilities(records, {
       canUsePack: (target, pack) => registry.canUse(target.id, pack),
       publicWorkflowIds: async () => (await registry.listPacks()).filter(pack => pack.kind === 'workflow' && pack.latest !== null).map(pack => pack.id),
@@ -273,15 +279,15 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
       })),
       personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
-      environments: async target => environmentStartup.completed === null ? {
-        ready: false, enforceEnvironmentAssignments, items: [], missing: environmentStartup.missing, nextAction: environmentStartup.nextAction,
+      environments: async target => currentStartup.completed === null ? {
+        ready: false, enforceEnvironmentAssignments: currentlyEnforced, items: [], missing: currentStartup.missing, nextAction: currentStartup.nextAction,
       } : environments === null ? {
-        ready: false, enforceEnvironmentAssignments, items: [], missing: '测试环境租约服务未接线',
+        ready: false, enforceEnvironmentAssignments: currentlyEnforced, items: [], missing: '测试环境租约服务未接线',
         nextAction: '请管理员恢复测试环境租约服务后重新查询',
-      } : { ready: true, enforceEnvironmentAssignments, items: await environments.list(target), missing: null, nextAction: null },
+      } : { ready: true, enforceEnvironmentAssignments: currentlyEnforced, items: await environments.list(target), missing: null, nextAction: null },
       unattributedHoldings: target => environments === null ? Promise.resolve(null) : environments.unattributedHoldings(target),
       }, by, userId);
-      return { ...result, environmentAccess: { ...result.environmentAccess, enforced: enforceEnvironmentAssignments } };
+      return { ...result, environmentAccess: { ...result.environmentAccess, enforced: currentlyEnforced } };
     },
     runs,
     runsDetail: runs,

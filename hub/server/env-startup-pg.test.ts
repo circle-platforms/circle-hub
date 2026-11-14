@@ -12,7 +12,7 @@ let harness: CliHarness;
 before(async () => { harness = await openCliHarness(); });
 after(async () => { await harness?.close(); });
 
-async function scenario(input: { completed: boolean | null; token: 'admin' | 'member' | 'missing' | 'revoked' | 'disabled'; unreadable?: boolean; commitResponseLost?: boolean }) {
+async function scenario(input: { completed: boolean | null; token: 'admin' | 'member' | 'missing' | 'revoked' | 'disabled'; unreadable?: boolean; commitResponseLost?: boolean; afterAssembly?: boolean | null }) {
   const deployment = await harness.deployment();
   const config = loadServerConfig(deployment.env);
   const kit = await openRecords(config, { migrate: false, keyProvider: deployment.key });
@@ -48,9 +48,9 @@ async function scenario(input: { completed: boolean | null; token: 'admin' | 'me
     operatorTokens: () => ({ ...store, read: async () => { tokenReads++; return store.read(); } }),
     assembly: async () => ({ assemble: async (current, records, startup?: EnvironmentPermissionStartup) => {
       assert.ok(startup, 'main must observe conversion before ordinary business assembly');
-      const hub = await assembleHub(current, records, { requireOsIsolation: false, log: () => {}, environmentPermissionStartup: startup });
+      const hub = await assembleHub(current, records, { requireOsIsolation: false, log: () => {}, environmentPermissionStartup: startup, environmentPermissions: port });
       try {
-        observed = hub.deps.environmentPermissionStartup!();
+        observed = await hub.deps.environmentPermissionStartup!();
         assert.equal(hub.dispatch?.options.enforceEnvironmentAssignments, startup.completed !== false);
         const view = await hub.deps.memberCapabilities(member);
         assert.equal(view.environmentAccess.enforced, startup.completed !== false);
@@ -59,6 +59,15 @@ async function scenario(input: { completed: boolean | null; token: 'admin' | 'me
           assert.equal(hub.dispatch?.options.environmentAccess, undefined, 'unverified completion never permits use through an already-present grant');
         }
         assert.equal(hub.deps.rebuildNeeded, undefined, 'a conversion wait is not schema incompatibility');
+        if (input.afterAssembly !== undefined) {
+          completed = input.afterAssembly;
+          const current = await hub.deps.environmentPermissionStartup!();
+          assert.equal(current.completed, completed, 'ordinary management rereads completion after another process acts');
+          const refreshed = await hub.deps.memberCapabilities(member);
+          assert.equal(refreshed.environmentAccess.enforced, completed !== false);
+          if (completed === null) assert.equal(refreshed.environmentAccess.ready, false);
+          observed = current;
+        }
         return hub.deps;
       } catch (error) { await hub.deps.close?.(); throw error; }
     } }),
@@ -114,4 +123,15 @@ test('serve still rejects an environment token before reading stored delegation 
   }, { CIRCLE_HUB_TOKEN: 'synthetic-environment-token' });
   assert.equal(result.code, 1); assert.equal(calls, 0);
   assert.equal(result.text.includes('synthetic-environment-token'), false);
+});
+
+test('ordinary status and N1 refresh after another process completes without reading delegation or converting again', async () => {
+  const result = await scenario({ completed: false, token: 'missing', afterAssembly: true });
+  assert.equal(result.observed.completed, true); assert.equal(result.observed.enforced, true);
+  assert.equal(result.conversions, 0); assert.equal(result.tokenReads, 1);
+});
+test('a previously completed marker becoming unreadable is shown unavailable without legacy fallback', async () => {
+  const result = await scenario({ completed: true, token: 'admin', afterAssembly: null });
+  assert.equal(result.observed.completed, null); assert.equal(result.observed.enforced, true);
+  assert.equal(result.conversions, 0); assert.equal(result.tokenReads, 0);
 });
