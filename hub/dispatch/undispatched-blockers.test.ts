@@ -20,7 +20,7 @@ test('a clause-six refusal without an intent does not block a new verification r
  assert.equal((await c.service.status(c.admin,refused.job)).dispatch_attempt!.outcome,'not_dispatched');
 });
 const binding=(job:string)=>({job,executor:'synthetic_executor',resources:['synthetic/seat'],scope:{target:'synthetic_target',origin:'https://executor.invalid'}});
-const event=(job:string,detail:Record<string,unknown>,index=0)=>({digest:String(index).padStart(64,'0'),body:{detail:{job,...detail}}}) as unknown as Event;
+const event=(job:string,detail:Record<string,unknown>,index=0)=>({digest:String(index).padStart(64,'0'),body:{inputs:[],detail:{job,...detail}}}) as unknown as Event;
 const scenarios:Array<[string,Record<string,unknown>[],boolean]>=[
  ['boundary refusal',[{phase:'boundary_refused',done:true,outcome:'not_dispatched',submit_invoked:false}],false],
  ['any terminal proving no invocation',[{phase:'synthetic_terminal',done:true,outcome:'not_dispatched',submit_invoked:false}],false],
