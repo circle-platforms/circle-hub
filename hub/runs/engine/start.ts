@@ -231,10 +231,17 @@ export async function grantLeases(
   }
   const prefix = declared.prefix; const cap = declared.max_ttl_seconds;
   const environmentKeys = [...new Set(requests.filter(request => request.op === undefined || request.op === 'acquire' || request.op === 'extend').flatMap(requestKeys))];
-  if (ctx.deps.enforceEnvironmentAssignments === true && environmentKeys.length) {
-    if (!ctx.deps.environmentAccess) throw new Refusal([protocolError('SOURCE_NOT_PERMITTED', '运行环境权限核对端口未配置，不能预订或续期', { fix: '请管理员配置运行环境权限核对后重试' })]);
-    const denied = await ctx.deps.environmentAccess.authorizeKeys(user, environmentKeys);
-    if (denied) throw new Refusal([denied]);
+  if (environmentKeys.length) {
+    let completed:boolean|null;
+    try { completed = ctx.deps.environmentAccess ? (await ctx.deps.environmentAccess.inheritance()).completed : null; }
+    catch { completed = null; }
+    if (completed === null || completed !== true && completed !== false) throw new Refusal([protocolError('SOURCE_UNAVAILABLE', '测试环境的权限核对现在不能进行，这次没有执行。', {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]);
+    if (completed) {
+      let denied:ProtocolError|null;
+      try { denied = await ctx.deps.environmentAccess!.authorizeKeys(user, environmentKeys); }
+      catch { throw new Refusal([protocolError('SOURCE_UNAVAILABLE', '测试环境的权限核对现在不能进行，这次没有执行。', {fix:user.role === 'admin' ? '请联系维护人员恢复测试环境权限核对。' : '请联系管理员。'})]); }
+      if (denied) throw new Refusal([denied]);
+    }
   }
   const now = ctx.now(); const service=ctx.deps.leases;
   const lineage=await lineageOf(ctx,runId,predecessor);

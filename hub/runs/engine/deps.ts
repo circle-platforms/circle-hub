@@ -2,7 +2,7 @@ import type { DeviceHelpResult, DeviceHelpTarget, DeviceObservation } from '../.
 import type { ContributionLayer } from '../../knowledge/api.ts';
 // What the engine is built from: the records kit parts it writes and reads, the ports of the packages built beside it, the
 // parser registry, the sandbox options and the clock. createEngineContext adds the shared caches.
-import type { Principal, Principals, RecordsKit } from '../../records/api.ts';
+import type { Principal, Principals, RecordsKit, Transaction } from '../../records/api.ts';
 import type { ExternalReaderPort, KnowledgePort, PacksPort, WorkflowStore } from '../../ports.ts';
 import type { LeaseService } from '../../leases/service.ts';
 import { createDefaultRegistry, createDocumentCache, type DocumentCache, type ParserRegistry } from '../../refs/api.ts';
@@ -20,9 +20,9 @@ export interface AdminLogEntry {
 
 export interface RunsEngineDeps {
   effectRegistry?:import('../../ports.ts').EffectRegistryPort;
-  /** Explicit staged policy switch; defaults to false independently of stored migration state. */
+  /** Legacy caller metadata; admission reads the provider on every new use. */
   enforceEnvironmentAssignments?: boolean;
-  environmentAccess?: { authorizeKeys(actor: Principal, keys: readonly string[]): Promise<import('../../../contracts/api.ts').ProtocolError | null> };
+  environmentAccess?: { inheritance(tx?: Transaction): Promise<{completed:boolean|null}>; authorizeKeys(actor: Principal, keys: readonly string[]): Promise<import('../../../contracts/api.ts').ProtocolError | null> };
   dispatch?: { jobs(by: import('../../records/api.ts').Principal,run:string,reservations?:import('../../dispatch/api.ts').RunReservations):Promise<import('../../dispatch/api.ts').RunJob[]>;
     /** The reservations of all runs in one reading, for `jobs`; without it maintenance reads them again for every run. */
     reservations?():Promise<import('../../dispatch/api.ts').RunReservations>;

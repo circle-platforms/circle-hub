@@ -11,23 +11,24 @@ const run = 'run_0'+'a'.repeat(25);
 const denied: ProtocolError = {code:'SOURCE_NOT_PERMITTED',message:'没有分配相应运行环境',fix:'请管理员分配'};
 const workflow = {pack:{id:'synthetic-workflow'},workflow:{leases:{prefix:'meadow/',max_ttl_seconds:600}}} as LoadedWorkflow;
 
-function fixture(enforceEnvironmentAssignments: boolean | undefined, authorizeKeys?: (by: typeof actor, keys: readonly string[]) => Promise<ProtocolError|null>) {
+function fixture(enforceEnvironmentAssignments: boolean | undefined, authorizeKeys?: (by: typeof actor, keys: readonly string[]) => Promise<ProtocolError|null>, completion: () => boolean|null = () => true) {
   const events: string[] = [];
   const holder = {key:'meadow/allowed',user:actor.id,run,released:false,expires_at:'2026-11-14T06:00:00.000Z',lease:'lse_0'+'a'.repeat(25),fencing:1};
   const mutate = async () => { events.push('write'); return {ok:true,lease:holder.lease,keys:[holder.key],until:holder.expires_at}; };
   const ctx = {now:()=>new Date('2026-11-14T03:00:00.000Z'),deps:{
     ...(enforceEnvironmentAssignments !== undefined ? {enforceEnvironmentAssignments} : {}),
     leases:{holders:async()=>[holder],registrations:async()=>[],acquire:mutate,extend:mutate,release:mutate,register:mutate},
-    ...(authorizeKeys?{environmentAccess:{authorizeKeys:async(by:typeof actor,keys:readonly string[])=>{events.push('authorize');return authorizeKeys(by,keys);}}}:{}),
+    ...(authorizeKeys?{environmentAccess:{inheritance:async()=>({completed:completion()}),authorizeKeys:async(by:typeof actor,keys:readonly string[])=>{events.push('authorize');return authorizeKeys(by,keys);}}}:{}),
   }} as unknown as EngineContext;
   return {ctx,events};
 }
 
+const unavailable = (error: unknown): boolean => error instanceof Refusal && error.errors[0]?.code === 'SOURCE_UNAVAILABLE';
 const refused = (error: unknown): boolean => error instanceof Refusal && error.errors[0]?.code === 'SOURCE_NOT_PERMITTED' && /没有分配|未配置/.test(error.errors[0].message);
 
 test('booking without the environment permission provider is refused before every lease mutation', async () => {
   const {ctx,events} = fixture(true);
-  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['meadow/allowed'],ttl_seconds:30}],run,undefined),refused);
+  await assert.rejects(grantLeases(ctx,actor,workflow,[{keys:['meadow/allowed'],ttl_seconds:30}],run,undefined),unavailable);
   assert.deepEqual(events,[]);
 });
 
@@ -64,9 +65,9 @@ test('loss of use permission does not prevent the holder from releasing its own 
 });
 
 
-test('default-off and explicit-off skip the new guard while existing lease exclusion still refuses', async () => {
+test('verified pending state permits legacy use while existing lease exclusion still refuses', async () => {
   for (const enabled of [undefined, false]) {
-    const {ctx,events} = fixture(enabled,async()=>{throw new Error('preview must not enforce allocation');});
+    const {ctx,events} = fixture(enabled,async()=>{throw new Error('pending must not check allocation');},()=>false);
     ctx.deps.leases!.acquire = async()=>{
       events.push('lease-conflict');
       return {ok:false,code:'LEASE_UNAVAILABLE',message:'合成键已占用'};
@@ -85,4 +86,19 @@ test('obsolete prefix registration projections are rejected before any lease rea
     await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),error=>error instanceof Refusal&&error.errors[0]?.code==='SUBMISSION_SCHEMA_VIOLATION');
     assert.deepEqual(events,[]);
   }
+});
+
+
+test('the same provider observes pending then completed then unknown despite a static false flag', async () => {
+  let completed:boolean|null=false;
+  const {ctx,events}=fixture(false,async()=>denied,()=>completed);
+  const requests:LeaseRequest[]=[{keys:['meadow/allowed'],ttl_seconds:30}];
+  await grantLeases(ctx,actor,workflow,requests,run,undefined);
+  assert.deepEqual(events,['write']);
+  completed=true;
+  await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),refused);
+  assert.deepEqual(events,['write','authorize']);
+  completed=null;
+  await assert.rejects(grantLeases(ctx,actor,workflow,requests,run,undefined),unavailable);
+  assert.deepEqual(events,['write','authorize']);
 });
