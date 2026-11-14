@@ -101,6 +101,15 @@ export const commands = {
     text: '核实运行环境已恢复原状（例如设备已重启、作业留下的配置已清除）后再执行；执行后该运行环境恢复接受派发，原记录保留。', command: command('bed', 'hold', 'clear', executor.id, REASON),
   }),
   /**
+   * Catalog manage actions (POST /console/admin/do/…); argv is circle-hub bed register|assign|unassign.
+   * Same names as TEST_ENVIRONMENT_ACTIONS / manage.ACTIONS (Codex bed.* when command-parameters merge).
+   */
+  bedCatalog: {
+    register: 'bed-register' as const,
+    assign: 'bed-assign' as const,
+    unassign: 'bed-unassign' as const,
+  },
+  /**
    * Boss 15:02 — consequence on the reclaim-assignment confirmation (account or team).
    * Bookings stay with the holder; in-progress runs finish; new use is blocked once Codex wires the guards.
    */

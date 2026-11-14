@@ -3,9 +3,10 @@ import { readBody } from '../http.ts';
 import { errorLine } from './components.ts';
 import { html, page } from './html.ts';
 import { ACTIONS, isPackStep, runAction, type Form } from './manage.ts';
-// Side effect: team and reset ACTIONS register into manage.ACTIONS before HTML /console/admin/do runs.
+// Side effect: team, reset and test-environment ACTIONS register into manage.ACTIONS before HTML /console/admin/do runs.
 import './team-actions.ts';
 import './reset-actions.ts';
+import './test-environment-actions.ts';
 import { UPLOAD_REFERENCE_ACTIONS, type RegisteredActionName } from './command-form.ts';
 import { mediaTypeFor } from '../upload.ts';
 import { systemForgetPage, systemTrialPage } from './operations.ts';

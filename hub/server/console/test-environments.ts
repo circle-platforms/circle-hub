@@ -1,6 +1,7 @@
 // Admin「测试环境」catalog on 连接 → 测试环境 (Boss 17:20): one registration form by name,
 // list by name with assignment provenance. Reads a thin console port aligned with Codex's
 // TestEnvironment draft; production wiring is not here yet. Missing port → explicit empty state.
+// Manage ACTIONS: bed-register / bed-assign / bed-unassign (test-environment-actions.ts; Codex bed.*).
 import type { Principal } from '../../records/api.ts';
 import type { ExecutorView } from '../api.ts';
 import { commands } from './commands.ts';
@@ -10,8 +11,14 @@ import { html, table, type Html } from './html.ts';
 import { actionLink, dialog, field } from './presentation.ts';
 import { card } from './ui.ts';
 import { heldOccupancyForEnvironment, unassignOccupancyFields } from './connections.ts';
+import {
+  bookingPrefixesSection,
+  registrationDefaultsFromPrefix,
+  type BookingPrefixRow,
+  type BookingPrefixesPort,
+} from './test-environments-prefixes.ts';
 
-/** Placeholder admin actions the next agent registers in manage.ACTIONS (Codex bed.*). */
+/** Admin POST targets registered in manage.ACTIONS (argv → circle-hub bed register|assign|unassign). */
 export const TEST_ENVIRONMENT_ACTIONS = {
   register: 'bed-register',
   assign: 'bed-assign',
@@ -54,9 +61,19 @@ export type TestEnvironmentConsoleRow = {
 
 export type TestEnvironmentNameChoice = { name: string };
 
+/** Input for the fake/production register path (names only; no env_/exe_/usr_). */
+export type TestEnvironmentRegisterInput = {
+  name: string;
+  target: string;
+  prefixOrKey: string;
+  executor?: string;
+  owner: string;
+};
+
 /**
- * Thin read port for the console catalog. Assembly will eventually wrap records.testEnvironments;
- * until then tests supply a fake and production leaves it absent.
+ * Thin console port for the catalog. Assembly will wrap records.testEnvironments;
+ * until then tests supply a mutable fake and production leaves it absent.
+ * register / assign / unassign mutate the fake so list「分给了谁」can be asserted without PostgreSQL.
  */
 export type TestEnvironmentsConsolePort = {
   list(by: Principal): Promise<readonly TestEnvironmentConsoleRow[]>;
@@ -66,12 +83,123 @@ export type TestEnvironmentsConsolePort = {
   accountChoices(by: Principal): Promise<readonly TestEnvironmentNameChoice[]>;
   /** When false, the connections page keeps ENVIRONMENT_ASSIGNMENT_PREVIEW. Absent → unknown. */
   assignmentsEnforced?: boolean;
+  register?(by: Principal, input: TestEnvironmentRegisterInput): Promise<void>;
+  assign?(by: Principal, environment: string, subject: TestEnvironmentAssignmentSubject): Promise<void>;
+  unassign?(by: Principal, environment: string, subject: TestEnvironmentAssignmentSubject): Promise<void>;
 };
 
-export type ServerDepsWithTestEnvironments = { testEnvironments?: TestEnvironmentsConsolePort };
+export type ServerDepsWithTestEnvironments = {
+  testEnvironments?: TestEnvironmentsConsolePort;
+  bookingPrefixes?: BookingPrefixesPort;
+};
 
 export function testEnvironmentsPort(ctx: PageContext): TestEnvironmentsConsolePort | undefined {
   return (ctx.deps as ServerDepsWithTestEnvironments).testEnvironments;
+}
+
+export function bookingPrefixesPort(ctx: PageContext): BookingPrefixesPort | undefined {
+  return (ctx.deps as ServerDepsWithTestEnvironments).bookingPrefixes;
+}
+
+function subjectKey(subject: TestEnvironmentAssignmentSubject): string {
+  if (subject.kind === 'all') return 'all';
+  return `${subject.kind}:${subject.name}`;
+}
+
+function cloneRow(row: TestEnvironmentConsoleRow): TestEnvironmentConsoleRow {
+  return {
+    ...row,
+    prefixes: [...row.prefixes],
+    resources: [...row.resources],
+    executors: [...row.executors],
+    occupancyKeys: [...row.occupancyKeys],
+    assignments: row.assignments.map((assignment) => ({
+      ...assignment,
+      subject: { ...assignment.subject },
+      holderIds: [...assignment.holderIds],
+    })),
+  };
+}
+
+/**
+ * In-memory fake for pure tests: register / assign / unassign change list rows so「分给了谁」updates.
+ * Inherited rows are never written by assign (only direct grants); unassign removes matching direct rows.
+ */
+export function createMutableTestEnvironmentsPort(seed: {
+  rows?: readonly TestEnvironmentConsoleRow[];
+  executors?: readonly TestEnvironmentNameChoice[];
+  owners?: readonly TestEnvironmentNameChoice[];
+  teams?: readonly TestEnvironmentNameChoice[];
+  accounts?: readonly TestEnvironmentNameChoice[];
+  /** Account name → holder ids used when assigning an account (for unassign occupancy). */
+  accountHolders?: Readonly<Record<string, readonly string[]>>;
+  /** Team name → holder ids covered by that team grant. */
+  teamHolders?: Readonly<Record<string, readonly string[]>>;
+  assignmentsEnforced?: boolean;
+} = {}): TestEnvironmentsConsolePort {
+  const rows = (seed.rows ?? []).map(cloneRow);
+  const executors = [...(seed.executors ?? [])];
+  const owners = [...(seed.owners ?? [])];
+  const teams = [...(seed.teams ?? [])];
+  const accounts = [...(seed.accounts ?? [])];
+  const accountHolders = seed.accountHolders ?? {};
+  const teamHolders = seed.teamHolders ?? {};
+  const findRow = (name: string): TestEnvironmentConsoleRow => {
+    const row = rows.find((item) => item.name === name);
+    if (row === undefined) throw new Error(`不存在：测试环境「${name}」`);
+    return row;
+  };
+  return {
+    assignmentsEnforced: seed.assignmentsEnforced,
+    list: async () => rows.map(cloneRow),
+    executorChoices: async () => [...executors],
+    ownerChoices: async () => [...owners],
+    teamChoices: async () => [...teams],
+    accountChoices: async () => [...accounts],
+    register: async (_by, input) => {
+      if (rows.some((row) => row.name === input.name)) {
+        throw new Error(`已被占用：测试环境名字「${input.name}」已登记`);
+      }
+      const isPrefix = input.prefixOrKey.endsWith('/');
+      rows.push({
+        name: input.name,
+        target: input.target,
+        prefixes: isPrefix ? [input.prefixOrKey] : [],
+        resources: isPrefix ? [] : [input.prefixOrKey],
+        executors: input.executor ? [input.executor] : [],
+        owner: input.owner,
+        assignments: [],
+        occupancyKeys: [input.prefixOrKey],
+      });
+      if (input.executor && !executors.some((row) => row.name === input.executor)) {
+        executors.push({ name: input.executor });
+      }
+      if (input.owner && !owners.some((row) => row.name === input.owner)) {
+        owners.push({ name: input.owner });
+      }
+    },
+    assign: async (_by, environment, subject) => {
+      const row = findRow(environment);
+      if (row.assignments.some((item) => item.source === 'direct' && subjectKey(item.subject) === subjectKey(subject))) {
+        return;
+      }
+      const holderIds =
+        subject.kind === 'account' ? [...(accountHolders[subject.name] ?? [])] :
+        subject.kind === 'team' ? [...(teamHolders[subject.name] ?? [])] :
+        [];
+      row.assignments = [
+        ...row.assignments,
+        { subject: { ...subject }, source: 'direct', holderIds },
+      ];
+    },
+    unassign: async (_by, environment, subject) => {
+      const row = findRow(environment);
+      const key = subjectKey(subject);
+      row.assignments = row.assignments.filter(
+        (item) => !(item.source === 'direct' && subjectKey(item.subject) === key),
+      );
+    },
+  };
 }
 
 const EMPTY_CATALOG =
@@ -109,24 +237,45 @@ export function occupancyViewForEnvironment(row: TestEnvironmentConsoleRow): Exe
   };
 }
 
+export type RegisterFormDefaults = {
+  name?: string;
+  target?: string;
+  prefix_or_key?: string;
+  owner?: string;
+  executor?: string;
+};
+
 function registerForm(
   csrf: string,
   executors: readonly TestEnvironmentNameChoice[],
   owners: readonly TestEnvironmentNameChoice[],
+  defaults: RegisterFormDefaults = {},
 ): Html {
+  const ownerSelected = defaults.owner ?? '';
+  const executorSelected = defaults.executor ?? '';
   const executorSelect = executors.length === 0
     ? selectControl('executor', [{ value: '', label: '尚无执行器' }], undefined, { required: true, disabled: true })
-    : selectControl('executor', executors.map((row) => ({ value: row.name, label: row.name })), { value: '', label: '选择执行器' }, { required: true });
+    : selectControl(
+      'executor',
+      executors.map((row) => ({ value: row.name, label: row.name, selected: row.name === executorSelected })),
+      { value: '', label: '选择执行器', selected: executorSelected === '' },
+      { required: true },
+    );
   const ownerSelect = owners.length === 0
     ? selectControl('owner', [{ value: '', label: '尚无账户' }], undefined, { required: true, disabled: true })
-    : selectControl('owner', owners.map((row) => ({ value: row.name, label: row.name })), { value: '', label: '选择 owner' }, { required: true });
+    : selectControl(
+      'owner',
+      owners.map((row) => ({ value: row.name, label: row.name, selected: row.name === ownerSelected })),
+      { value: '', label: '选择 owner', selected: ownerSelected === '' },
+      { required: true },
+    );
   return postForm({
     action: `/console/admin/do/${TEST_ENVIRONMENT_ACTIONS.register}`,
     csrf,
     fields: html`
-      ${field('名字', html`<input name="name" required maxlength="200" autocomplete="off">`)}
-      ${field('目标', html`<input name="target" required maxlength="200" autocomplete="off">`)}
-      ${field('前缀或键', html`<input name="prefix_or_key" required maxlength="200" autocomplete="off">`, '写一条前缀（以 / 结尾）或一条精确键')}
+      ${field('名字', html`<input name="name" value="${defaults.name ?? ''}" required maxlength="200" autocomplete="off">`)}
+      ${field('目标', html`<input name="target" value="${defaults.target ?? ''}" required maxlength="200" autocomplete="off">`)}
+      ${field('前缀或键', html`<input name="prefix_or_key" value="${defaults.prefix_or_key ?? ''}" required maxlength="200" autocomplete="off">`, '写一条前缀（以 / 结尾）或一条精确键')}
       ${field('执行器', executorSelect, '按名字选择；不写内部编号')}
       ${field('owner', ownerSelect, '按账户名字选择')}
     `,
@@ -211,12 +360,14 @@ export async function testEnvironmentsPanel(ctx: PageContext): Promise<Html> {
       ${card({ title: '测试环境' }, html`<p class="ch-meta">${EMPTY_CATALOG}</p>`)}
     </div>`;
   }
-  const [rows, executors, owners, teams, accounts] = await Promise.all([
+  const prefixesPort = bookingPrefixesPort(ctx);
+  const [rows, executors, owners, teams, accounts, prefixRows] = await Promise.all([
     port.list(ctx.principal),
     port.executorChoices(ctx.principal),
     port.ownerChoices(ctx.principal),
     port.teamChoices(ctx.principal),
     port.accountChoices(ctx.principal),
+    prefixesPort ? prefixesPort.list() : Promise.resolve([] as readonly BookingPrefixRow[]),
   ]);
   const ordered = [...rows].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
   const confirmations: Html[] = [];
@@ -241,6 +392,25 @@ export async function testEnvironmentsPanel(ctx: PageContext): Promise<Html> {
       html`<div class="ch-stack" data-test-environment-actions>${assignActions}</div>`,
     ]);
   }
+  const csrf = ctx.csrf ?? '';
+  const selectedPrefix = ctx.url.searchParams.get('register_prefix');
+  const prefixesSection = prefixesPort === undefined
+    ? html``
+    : bookingPrefixesSection(prefixRows, {
+      pagePath: '/console/connections',
+      pageParams: { tab: 'environments' },
+      selectedPrefix,
+      formFieldsFor: (selected) => {
+        const defaults = registrationDefaultsFromPrefix(selected);
+        const ownerList = owners.some((item) => item.name === defaults.owner)
+          ? owners
+          : [...owners, { name: defaults.owner }];
+        return registerForm(csrf, executors, ownerList, {
+          prefix_or_key: defaults.prefix,
+          owner: defaults.owner,
+        });
+      },
+    });
   return html`<div class="ch-stack" data-test-environments="ready">
 ${card(
   { title: '测试环境', hint: `共 ${count(ordered.length)} 个；按名字显示，不露内部编号。登记、分配各一张表单。` },
@@ -252,8 +422,9 @@ ${card(
 )}
 ${card(
   { title: '登记测试环境', hint: '名字、目标、前缀或键、执行器、owner；不上主机、不传文件、不写内部编号。' },
-  registerForm(ctx.csrf ?? '', executors, owners),
+  registerForm(csrf, executors, owners),
 )}
+${prefixesSection}
 ${confirmations}
 </div>`;
 }

@@ -502,7 +502,10 @@ export async function resultPage(ctx: PageContext, action: Action, runs: Command
     : '';
   // Boss 15:20 #2: environment assignment result pages carry the same staged-policy notice as the connections page.
   let environmentPreview = html``;
-  if (last.code === 0 && (action === ACTIONS['executor-assign'] || action === ACTIONS['executor-unassign'])) {
+  if (last.code === 0 && (
+    action === ACTIONS['executor-assign'] || action === ACTIONS['executor-unassign'] ||
+    action === ACTIONS['bed-assign'] || action === ACTIONS['bed-unassign']
+  )) {
     let enforced = false;
     try {
       enforced = (await ctx.deps.memberCapabilities(ctx.principal)).environmentAccess.enforced === true;
