@@ -811,10 +811,18 @@ test('N3 & N4: accepted missing_input splits from gate refusals, strips internal
   });
 
   const parsedAccepted = parseHubAnswerNotices(acceptedRaw, ids, 1);
+  assert.equal(parsedAccepted.acceptanceParsed, true);
   assert.equal(parsedAccepted.acceptance, 'accepted');
   assert.equal(parsedAccepted.refusals.length, 0);
   assert.equal(parsedAccepted.acceptedNotices.length, 1);
   assert.equal(parseGateRefusalsFromAnswer(acceptedRaw, ids, 1).length, 0);
+
+  const parsedEmpty = parseHubAnswerNotices('', ids, 1);
+  assert.deepEqual(parsedEmpty, { acceptanceParsed: false, acceptance: null, refusals: [], acceptedNotices: [] });
+  const parsedPlainMissingAcc = parseHubAnswerNotices(`${CASE_ID} BAD_INPUT 缺少关键字段`, ids, 1);
+  assert.equal(parsedPlainMissingAcc.acceptanceParsed, false);
+  assert.equal(parsedPlainMissingAcc.acceptance, null);
+  assert.equal(parsedPlainMissingAcc.refusals.length, 1);
 
   const sanitizedFix = parsedAccepted.acceptedNotices[0].fix ?? '';
   assert.ok(!/rec:[0-9a-f]{16,64}/i.test(sanitizedFix));
@@ -924,6 +932,7 @@ test('N3 & N4: accepted missing_input splits from gate refusals, strips internal
 
   // Contrast: 2 consecutive unaccepted refusals (both flat wrapper and standard `errors: [...]` envelope)
   const parsedNotAcc = parseHubAnswerNotices(notAcceptedRaw, ids, 1);
+  assert.equal(parsedNotAcc.acceptanceParsed, true);
   assert.equal(parsedNotAcc.acceptance, 'not_accepted');
   assert.equal(parsedNotAcc.refusals.length, 1);
   assert.equal(parsedNotAcc.acceptedNotices.length, 0);
@@ -941,6 +950,7 @@ test('N3 & N4: accepted missing_input splits from gate refusals, strips internal
     ],
   });
   const parsedEnvelope = parseHubAnswerNotices(notAcceptedEnvelope, ids, 2);
+  assert.equal(parsedEnvelope.acceptanceParsed, true);
   assert.equal(parsedEnvelope.acceptance, 'not_accepted');
   assert.equal(parsedEnvelope.refusals.length, 1);
   assert.equal(parsedEnvelope.refusals[0].code, 'RUN_SUPERSEDED');

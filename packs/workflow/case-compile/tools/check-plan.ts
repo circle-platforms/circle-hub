@@ -12,6 +12,7 @@ import {
   type FidelityRow,
 } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
+import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
 import { readSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
 import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
@@ -63,14 +64,15 @@ function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {
     };
   }
   const item = typeof parsed.item === 'string' && parsed.item.trim() ? parsed.item.trim() : null;
-  const handling = typeof parsed.handling === 'string' ? parsed.handling : null;
+  const rawHandling = typeof parsed.handling === 'string' ? parsed.handling : null;
   if (!item) {
     problems.push({ pointer: '/item', message: '缺少非空的 item 字符串标识' });
   }
-  if (handling !== 'handled' && handling !== 'skipped') {
-    problems.push({ pointer: '/handling', message: 'handling 只能是 handled 或 skipped' });
-    return { ok: false, file, item, handling, kind: null, expansions: [], counts: null, problems };
+  if (!isItemHandling(rawHandling)) {
+    problems.push({ pointer: '/handling', message: `handling 只能是 ${ITEM_HANDLING.join(' 或 ')}` });
+    return { ok: false, file, item, handling: rawHandling, kind: null, expansions: [], counts: null, problems };
   }
+  const handling: ItemHandling = rawHandling;
   if (handling === 'skipped') {
     if (typeof parsed.reason !== 'string' || !parsed.reason.trim()) {
       problems.push({ pointer: '/reason', message: 'handling 为 skipped 时必须写明非空的 reason' });
