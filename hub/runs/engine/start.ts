@@ -203,9 +203,7 @@ async function checkEnvironmentKeys(ctx:EngineContext,user:Principal,environment
     if(ordinary)return;
   }
   if(completed!==true)unavailable();
-  let denied:ProtocolError|null;
-  try{denied=await ctx.deps.environmentAccess!.authorizeKeys(user,environmentKeys,tx);}
-  catch{unavailable();}
+  const denied=await ctx.deps.environmentAccess!.authorizeKeys(user,environmentKeys,tx).catch(unavailable);
   if(denied)throw new Refusal([denied]);
 }
 
