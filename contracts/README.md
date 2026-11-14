@@ -17,9 +17,12 @@ Two files are the only sources:
 | Generated file | Content |
 | --- | --- |
 | `vocabulary.ts` | per axis: `NAME` (codes), type `Name`, `NAME_LABEL`, `NameSchema` (zod enum), `isName`; `AXES`, `labelOf(axis, code)`, `axisLabel(axis)` |
-| `protocol.ts` | `PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `REFERENCE_FORMS`, `RECORD_KINDS`, `PACK_FILE_PATHS`, `DISPLAY_ORDER`, `MODEL_VERSION` |
+| `protocol-codes.ts` | machine tables only (no prose sentences): `PROTOCOL_CODE_NAMES`, `type ProtocolCode`, `isProtocolCode`, `CALL_ERROR_CATEGORY_BY_CODE`, `callErrorCategory`, `CORE_VIOLATION_CODE_NAMES`, `type CoreViolationCode`, `CORE_VIOLATION_CODE_INTERPRETERS`, `isCoreViolationCode`, `RECORD_KINDS`, `type RecordKind`, `PACK_FILE_PATHS`, `MODEL_VERSION` |
+| `protocol.ts` | human sentences & layout (`PROTOCOL_CODES`, `CORE_VIOLATION_CODES`, `REFERENCE_FORMS`, `DISPLAY_ORDER`, `formatCallError`), re-exporting all symbols and types from `./protocol-codes.ts` for backwards compatibility |
 | `tools.json` | the six MCP tools: name, title, description, input and output JSON Schema (2020-12), annotations from `annotationsFor` |
 | `schemas/<name>.v<major>.schema.json` | JSON Schema of every shape in `SCHEMA_REGISTRY` |
+
+Format skill packs mirror only their declared protocol-code subset (`SKILL_PROTOCOL_TARGETS` in `tools/gen-contracts.ts`) into `functions/generated/protocol.ts` as `PROTOCOL_CODES` (tuple of code names) and `ProtocolCode`, with no `when`/`fix` sentences and failing contract generation/checking if a pack throws or references an undeclared code.
 
 Read the model with `node tools/show-element.ts B01 w08` (ids are case-insensitive), `--list`, `--vocab [axis ...]`, `--pending`.
 

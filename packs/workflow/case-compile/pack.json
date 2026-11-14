@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.20.2",
+  "version": "3.20.3",
   "kind": "workflow",
   "dependencies": [
     {
@@ -14,7 +14,7 @@
   "embeds": [
     {
       "pack": "mindmap-format",
-      "version": "1.0.25",
+      "version": "1.0.26",
       "module": "case-structure"
     },
     {
@@ -353,8 +353,8 @@
     },
     {
       "path": "functions/recompose-evidence.ts",
-      "sha256": "bcf86695e3ca73cec1f1053c0cde8ba68dff9fca858e2875d904bbe72b3d05ca",
-      "size": 4509
+      "sha256": "770581a7f3fe599bcdccb08a5c32ede2171894c4bdd4665ec17f276abeaf24a3",
+      "size": 4528
     },
     {
       "path": "functions/recomposition.ts",
@@ -503,7 +503,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "0425f31e6b92a76dfbf6d5c6882b0d5edb63b0d58ccca02b3555478e7de63faa",
+      "sha256": "85e5911c59fbd6297a9115e71c31b4ef54b51bf30a3eb59b01ea60588a5a8685",
       "size": 202654
     },
     {
@@ -548,7 +548,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "56e29bafcfdec4dae37455d3fd5d5fc5935ca7b7015b69943fb97e6a95920679",
+      "sha256": "6c1375c3d4ba609cee1cc89600199c11f7cded44b81082d52c7238972ac98fb1",
       "size": 202658
     },
     {
@@ -633,7 +633,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "1861cc5e0ec658361b2f9adbb90c7a56ac3a26d8fc794fb2915880835d24d13d",
+      "sha256": "43233b56b6aafc64939b9ceb94321287c09256aea4d3da6fc2e1e34be0183907",
       "size": 202608
     },
     {
@@ -678,7 +678,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "49c4302a8bdb5d5bfae71731ca82d513804704b74526d1e2129950e50407d16e",
+      "sha256": "97e35be931775d7e49e1b66a1da00e36c93982245fbb39c306989ffacde6cd5c",
       "size": 202612
     },
     {
@@ -773,7 +773,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "6c54d06cdbcf8fcd395d9f99b09ccd0afdd6405d09f0b625e361d3c1d53e1d43",
+      "sha256": "14cc664e7e5c5d3b93e6f163a12a1a6dff09245e9b8b3cf1a570d9fe37880a62",
       "size": 406
     },
     {

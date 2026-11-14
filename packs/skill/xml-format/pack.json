@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "xml-format",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "kind": "skill",
   "title": "XML 格式",
   "description": "按原件结构读取通用有序 XML 元素树与命令树，不承担工作角色判断",
@@ -13,13 +13,13 @@
     },
     {
       "path": "functions/format.ts",
-      "sha256": "6301b0027baa598be00f3e103648aaa151407787ed6c932db0a6e70f723b780f",
-      "size": 9644
+      "sha256": "3b7dccb461e8c5543a27ddae7da95381ba9a3b4011af074ece77f5b10b2d3c64",
+      "size": 9558
     },
     {
       "path": "functions/generated/protocol.ts",
-      "sha256": "724c754057fc875c74c30989973402d58b3c4e194dc20389b9fce09a6e99610c",
-      "size": 13905
+      "sha256": "ae29107e817a335b6fea62b616d96f3ce49ff79341d1dd51dadd2467933ad809",
+      "size": 259
     },
     {
       "path": "functions/parse.ts",
@@ -28,8 +28,8 @@
     },
     {
       "path": "functions/selectors.ts",
-      "sha256": "4eb68ce5a3893c8fb3d32d146da71180960b9c8b515353132a9520893db05b32",
-      "size": 7836
+      "sha256": "2bad7714b6e7bb3a37fd1402717194b82c616739c7b45b354d2e73be60fab669",
+      "size": 7783
     },
     {
       "path": "functions/text-decoding.ts",
