@@ -24,6 +24,8 @@ export type { TextContext } from './text.ts';
 
 /** Everything the server needs; the assembly builds it from the real packages, tests from fakes (hub/server/testing.ts). */
 export interface ServerDeps {
+  testEnvironments?: import('./test-environments-console.ts').TestEnvironmentsConsolePort;
+  bookingPrefixes?: import('./test-environments-console.ts').BookingPrefixesConsolePort;
   rebuildNeeded?: RebuildNeeded | null;
   /** Current automatic environment-permission conversion state; never contains a credential. */
   environmentPermissionStartup?(): Promise<import('./env-startup.ts').EnvironmentPermissionStartup>;
@@ -251,3 +253,5 @@ export async function acknowledgeReset(...args: Parameters<typeof import('./rese
 export async function readResetStatus(...args: Parameters<typeof import('./reset/worker.ts').readResetStatus>) { return (await import('./reset/worker.ts')).readResetStatus(...args); }
 
 export { parseResetRequest } from './reset/types.ts';
+
+export type { TestEnvironmentsConsolePort, TestEnvironmentConsoleRow, TestEnvironmentNameChoice, EnvironmentAssignmentSubject as TestEnvironmentAssignmentSubject, EnvironmentAssignmentView as TestEnvironmentAssignmentRow, EnvironmentOwnershipView, BookingPrefixConsoleRow as BookingPrefixRow, BookingPrefixesConsolePort as BookingPrefixesPort } from './test-environments-console.ts';

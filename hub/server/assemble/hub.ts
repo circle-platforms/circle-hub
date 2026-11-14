@@ -1,3 +1,4 @@
+import { createEnvironmentManagementPorts } from '../test-environments-console.ts';
 import { readEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartup, type EnvironmentPermissionStartupPort } from '../env-startup.ts';
 import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
@@ -268,6 +269,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments, records, leases, runs, workflows, knowledge, ...(environmentAccess ? { environmentAccess } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    ...(leases ? createEnvironmentManagementPorts(records, leases, { ...(now ? { now } : {}) }) : {}),
     environmentPermissionStartup: readEnvironmentStartup,
     startupSecretIssues: () => startupSecretIssues,
     documents: docs,
