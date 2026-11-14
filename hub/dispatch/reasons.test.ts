@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { canonicalBytes, sha256Hex } from '../records/api.ts';
 import { reportMissingFacts, statusDiagnostics } from './reasons.ts';
 import { runnerNote } from './accepted.ts';
+import { DispatchAttemptFactsSchema, DispatchJobFactsSchema } from '../../contracts/api.ts';
 import type { RunJob } from './read-runs.ts';
 
 const jobId = 'a'.repeat(64), content = 'b'.repeat(64);
@@ -10,11 +11,12 @@ function job(extra: Record<string, unknown> = {}): RunJob {
   const { outcome = 'not_dispatched', not_sent, rejection_stage, request_id, device_return, ...job_facts } = extra;
   const hasAttempt = Object.hasOwn(extra, 'outcome') || not_sent === true && extra.error_code === undefined || request_id !== undefined || device_return !== undefined;
   const admission_error = extra.admission_error ?? (!hasAttempt && typeof extra.error_code === 'string' ? { code: extra.error_code, message: String(extra.reason ?? extra.missing_fact ?? 'synthetic admission failure'), fix: String(extra.next_action ?? 'synthetic action') } : undefined);
+  const publicJob=DispatchJobFactsSchema.parse({scope:{job:jobId},phase:extra.phase??'complete',frozen:extra.frozen??false,...(extra.result?{result:extra.result}:{}),...(admission_error?{admission_error}:{})});
   return { job: jobId, verification_run: 'synthetic-run', plan_run: 'synthetic-plan', verification_item: 'synthetic-item', items: ['synthetic-case'], sha256: content, boundary_refused: false, ended: 'done', status: {
     job: jobId, events: 3,
-    job_facts: { scope: { job: jobId }, phase: 'complete', frozen: false, ...job_facts, ...(admission_error ? { admission_error } : {}) },
-    ...(hasAttempt ? { dispatch_attempt: { scope: { operation: 'dispatch', job: jobId, round: 1, ...(request_id ? { request_id } : {}) }, outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}), ...(typeof extra.error_code === 'string' ? { error_code: extra.error_code } : {}) } } : {}),
-  } } as RunJob;
+    job_facts: { ...job_facts, ...publicJob },
+    ...(hasAttempt ? { dispatch_attempt: DispatchAttemptFactsSchema.parse({ scope: { operation: 'dispatch', job: jobId, round: 1, ...(request_id ? { request_id } : {}) }, outcome, ...(not_sent === true ? { not_sent: true } : {}), ...(rejection_stage ? { rejection_stage } : {}), ...(device_return ? { device_return } : {}), ...(typeof extra.error_code === 'string' ? { error_code: extra.error_code } : {}) }) } : {}),
+  } };
 }
 
 test('member diagnostics preserve three distinct producer-authored missing facts without administrative details', () => {
@@ -181,4 +183,42 @@ test('conformance scope names the operation without inventing a round and readon
   const readonly = runnerNote(source, 'usr_private');
   assert.equal(readonly.dispatch_attempt, undefined); assert.equal(readonly.job_facts?.readonly_verified, false);
   assert.match(readonly.text, /只读预检/); assert.doesNotMatch(readonly.text, /判断错误|未发出|第.*轮/);
+});
+
+test('job-wide control freeze never replaces the current attempt effect or prior report scope', () => {
+  const source = job({ outcome: 'issued', frozen: true, result: `src:${'c'.repeat(64)}` });
+  source.ended = 'unknown';
+  const note = runnerNote(source, 'usr_private');
+  assert.equal(note.job_facts?.frozen, true);
+  assert.equal(note.dispatch_attempt?.outcome, 'issued');
+  assert.equal(note.dispatch_attempt?.not_sent, undefined);
+  assert.match(note.text, /本作业的派发保护仍冻结/);
+  assert.match(note.text, /第 1 轮派发：/);
+  assert.doesNotMatch(note.text, /第 1 轮派发上机验证结果未知|整个作业没有执行|什么都没有发到目标/);
+  assert.equal(note.job_facts?.result, `src:${'c'.repeat(64)}`);
+  assert.equal(note.dispatch_attempt?.result, undefined);
+});
+
+test('a real begin-handler promise reports pending and settled only in run scope without borrowing the scheduler role', async () => {
+  const { acceptedDispatch } = await import('./accepted.ts');
+  const run = 'run_00000000000000000000000001';
+  const caller = { id: 'usr_00000000000000000000000001', name: '合成成员', role: 'user' as const };
+  const scheduler = { id: 'usr_00000000000000000000000002', name: '合成调度管理员', role: 'admin' as const };
+  let finish!: (value: Awaited<ReturnType<import('./service.ts').DispatchService['dispatchAccepted']>>) => void;
+  const handled = new Promise<Awaited<ReturnType<import('./service.ts').DispatchService['dispatchAccepted']>>>(resolve => { finish = resolve; });
+  let calls = 0;
+  const records = { store: { find: async () => ({ items: [], next: null }) }, principals: { list: async () => [scheduler], get: async (id: string) => id === caller.id ? caller : scheduler } } as unknown as Pick<import('../records/api.ts').RecordsKit, 'store' | 'principals'>;
+  const service = { options: { runs: { getRun: async () => ({}) } }, dispatchAccepted: () => { calls++; return handled; }, status: () => { throw new Error('no job exists to read'); } } as unknown as import('./service.ts').DispatchService;
+  const [pending] = await acceptedDispatch(records, service, run, true, 0, { ...caller, role: 'admin' });
+  assert.deepEqual(pending.run_facts, { scope: { run }, worker_settled: false });
+  assert.equal(pending.job_facts, undefined); assert.equal(pending.dispatch_attempt, undefined); assert.equal(pending.job, undefined);
+  assert.match(pending.text, /本次运行正在/);
+  finish({ started: false, error_code: 'SOURCE_NOT_PERMITTED', reason: 'private admin diagnostic with private keys', member_missing_facts: [{ fact: '本次运行的账户没有所需的使用授权', next_action: '请联系管理员核对分配' }] });
+  await Promise.resolve();
+  const [settled] = await acceptedDispatch(records, service, run, true, 0, caller);
+  assert.equal(calls, 1); assert.equal(settled.run_facts?.worker_settled, true);
+  assert.equal(settled.run_facts?.admission_error?.code, 'SOURCE_NOT_PERMITTED');
+  assert.equal(settled.job_facts, undefined); assert.equal(settled.dispatch_attempt, undefined);
+  assert.doesNotMatch(JSON.stringify(settled), /private admin|private keys|circle-hub|调度管理员/);
+  for (const field of ['outcome', 'error_code', 'worker_settled', 'not_sent', 'frozen', 'round']) assert.equal(Object.hasOwn(settled, field), false);
 });

@@ -24,7 +24,7 @@ const clip = (text: string) => text.length <= MAX_NOTE_TEXT ? text : `${text.sli
 function capped(notes: DispatchNote[], run: string): DispatchNote[] {
   if (notes.length <= MAX_NOTES) return notes.map(note=>({...note,run:note.run??run}));
   const kept = notes.slice(-(MAX_NOTES - 1));
-  return [{ run, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept.map(note=>({...note,run:note.run??run}))];
+  return [{ run, run_facts: { scope: { run } }, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept.map(note=>({...note,run:note.run??run}))];
 }
 // the reference compile skill reads a running task's status by its id and never resubmits it; here the progress read is the same submission.
 const PROGRESS = '稍后逐字原样重交上机验证时的那次提交读进展';
@@ -76,7 +76,7 @@ function workerFacts(run: string, attempt: Attempt): DispatchRunFacts {
 export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'principals'>, service: DispatchService, run: string, ready: boolean, wait = RESERVE_WAIT_MS, caller?: Principal): Promise<DispatchNote[]> {
   const administrative = await callerAdmin(records, service, run, caller);
   const admin = await activeAdmin(records);
-  if (!admin) return ready ? [{ run, run_facts: { scope: { run } }, text: '本次运行没有在职管理员负责作业未知结果的处置，尚未开始自动上机验证；请联系管理员开通账号' }] : [];
+  if (!admin) return ready ? [{ run, run_facts: { scope: { run } }, text: '本次运行的自动处理缺少在职管理员负责作业未知结果的处置；请联系管理员开通账号' }] : [];
   const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
   const retry = ready && jobs.length > 0 && jobs.every(retriable);
@@ -170,6 +170,7 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '状态仍待核对' : '进行中';
   const parts = [administrative ? `作业 ${job.job}：${state}${projected.phase ? `（阶段 ${projected.phase}）` : ''}` : `本上机验证作业${state}`];
   if (projected.operation === 'precheck') parts.push(projected.readonly_verified === true ? '本作业的只读预检条件已核对通过' : '本作业的只读预检条件尚无全部通过的观察');
+  if (projected.frozen === true) parts.push('本作业的派发保护仍冻结，需只读核对后处理');
   if (projected.result) parts.push(`作业结果引用 ${projected.result}；该引用不替代各轮结局`);
   if (projected.admission_error) parts.push(`本作业准入核对：${projected.admission_error.message}`);
   if (projected.missing_facts?.length) parts.push(`作业缺失事实：${projected.missing_facts.map(fact => fact.fact).join('；')}`);
