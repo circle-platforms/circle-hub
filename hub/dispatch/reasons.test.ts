@@ -69,10 +69,10 @@ test('unknown send evidence takes precedence over an older booking diagnosis',()
 });
 
 test('member text omits internal phases and job digests while administrators retain diagnostics',()=>{
-  const source=job({phase:'boundary_refused',error_code:'LEASE_UNAVAILABLE',reason:'private resource key',member_missing_facts:[{fact:'测试环境 合成环境 缺少 2 项资源的预订',next_action:'先预订整个测试环境后重新核验'}]});
+  const source=job({phase:'boundary_refused',error_code:'LEASE_UNAVAILABLE',booking:{target:'合成环境',coverage_complete:false,required_resources:2,missing_resources:2,declared_device_count:2},reason:'private resource key',member_missing_facts:[{fact:'测试环境 合成环境 缺少 2 项资源的预订',next_action:'先预订整个测试环境后重新核验'}]});
   source.boundary_refused=true;
   const member=runnerNote(source,'usr_private');
-  assert.match(member.text,/^已被占用：/);assert.match(member.text,/合成环境.*2 项/);
+  assert.match(member.text,/^不存在：/);assert.match(member.text,/合成环境.*2 项/);
   assert.equal(member.text.includes(jobId),false);assert.doesNotMatch(member.text,/boundary_refused|private resource key|circle-hub/);
   const administrator=runnerNote(source,'usr_private',false,true);
   assert.ok(administrator.text.includes(jobId));assert.match(administrator.text,/boundary_refused|private resource key/);
@@ -93,4 +93,21 @@ test('SOURCE_UNAVAILABLE is not forced into a five-category diagnosis by an olde
   const note=runnerNote(source,'usr_private');
   assert.doesNotMatch(note.text,/^(暂时不可用|已被占用|无权限|参数无效|不存在)：/);
   assert.equal(note.error_code,'SOURCE_UNAVAILABLE');
+  source.status.call_error_category='occupied';
+  assert.doesNotMatch(runnerNote(source,'usr_private').text,/^已被占用：/,'unknown source admission cannot be overridden by an unrelated category');
+});
+
+
+test('the shared classification does not infer occupancy from LEASE_UNAVAILABLE alone',()=>{
+  const source=job({error_code:'LEASE_UNAVAILABLE',member_missing_facts:[{fact:'没有可采用的租约事实',next_action:'请管理员只读核对'}]});
+  assert.doesNotMatch(runnerNote(source,'usr_private').text,/^已被占用：/);
+});
+
+test('missing prerequisites and expired bookings use not_found while confirmed other-holder conflicts use occupied',()=>{
+  const missing=job({error_code:'EFFECT_CONTENT_UNVERIFIED',member_missing_facts:[{fact:'这次运行缺少判断为正确的脚本合并结果',next_action:'先完成脚本合并'}]});
+  assert.match(runnerNote(missing,'usr_private').text,/^不存在：.*缺少.*脚本合并结果/);
+  const expired=job({error_code:'LEASE_EXPIRED',member_missing_facts:[{fact:'原预订已经过期，缺少当前有效预订',next_action:'重新预订后核验'}]});
+  assert.match(runnerNote(expired,'usr_private').text,/^不存在：.*过期/);
+  const occupied=job({error_code:'LEASE_UNAVAILABLE',call_error_category:'occupied',member_missing_facts:[{fact:'测试环境由另一运行持有',next_action:'等该运行释放后原样重试'}]});
+  assert.match(runnerNote(occupied,'usr_private').text,/^已被占用：.*另一运行持有/);
 });

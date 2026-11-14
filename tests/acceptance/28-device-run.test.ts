@@ -297,7 +297,7 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     const before = submissions; const v = await verify(await plan(partial));
     assert.equal(v.result?.acceptance, 'accepted', JSON.stringify(v.result?.errors));
     const note: DispatchNote | undefined = v.result?.dispatch?.[0]; assert.ok(note, JSON.stringify(v.result?.dispatch));
-    assert.match(note.text, /^已被占用：.*预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
+    assert.match(note.text, /^不存在：.*预订/); assert.doesNotMatch(note.text, /已派发|已按任务包/);
     // Members get the authorized environment and missing count; administrators retain exact resource keys.
     const held = new Set((await bed.hub.leases.view('bed/')).entries.map(e => e.key));
     const missing = MANIFEST_DOC.beds[0].devices.map(d => `bed/bed-a/${d.name}`).filter(key => !held.has(key));
@@ -313,8 +313,8 @@ describe('scenario 28: published documents to real Hub workbook dispatch and rel
     // Nothing was sent, so repeating the ready submission checks the boundary again (as the reference compile skill resubmits a refused workbook).
     // The answer that tries again says first what the refused job came to (issue 142), then what the new attempt came to.
     const [earlier, again] = (await client.call('submit_result', v.sent!)).out.dispatch ?? [];
-    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /^已被占用：.*未发出.*预订.*这次重交 Hub 已再试/);
-    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^已被占用：.*预订/);
+    assert.equal(earlier?.job, note.job, JSON.stringify(earlier)); assert.match(earlier.text, /^不存在：.*未发出.*预订.*这次重交 Hub 已再试/);
+    assert.ok(again?.job && again.job !== note.job, JSON.stringify(again)); assert.match(again.text, /^不存在：.*预订/);
     assert.equal(submissions, before);
     await release(partial);
   });

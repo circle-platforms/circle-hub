@@ -54,7 +54,7 @@ export function releaseMissingFacts(checks: NonNullable<JobStatus['admin_release
 /** A declared JSON field and operator name are public; expected values and raw response bytes are not. */
 export function readConditionFact(condition: {pointer:string;operator:string}): DispatchMissingFact {
   const operation = condition.operator==='at_least'?'至少数量':condition.operator==='equals'?'相等':condition.operator==='sha256'?'摘要一致':'声明';
-  return {fact:`环境只读核对项目 ${condition.pointer} 的${operation}条件未满足`,next_action:'请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验'};
+  return {fact:`缺少通过环境只读核对项目 ${condition.pointer}（${operation}）的有效前提`,next_action:'请管理员核对该项目的声明和受限原件，补齐这项条件后重新核验'};
 }
 
 export function statusDiagnostics(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: boolean): DispatchDiagnostics {

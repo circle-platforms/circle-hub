@@ -7,7 +7,7 @@ import type {ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {canonicalize} from '../records/api.ts';
 import type {VerifiedInput} from './proof.ts';
-export interface BoundaryFailure {admin_checks?:ReleaseCheck[];ok:false;clause:number;code:ProtocolCode;message:string;fix:string;row?:string;requirements?:string[];
+export interface BoundaryFailure {member_missing_facts?:Array<{fact:string;next_action:string}>;admin_checks?:ReleaseCheck[];ok:false;clause:number;code:ProtocolCode;message:string;fix:string;row?:string;requirements?:string[];
  /** A policy check reached no conclusion and nothing refuted (decision 116). The message leaves out whether a request went out: the caller that records the refusal says it (`refusalText`). */
  no_conclusion?:true}
 export interface BoundaryContext {

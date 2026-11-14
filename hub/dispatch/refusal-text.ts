@@ -151,7 +151,7 @@ export function formatReleaseRefusal(input: RefusalTextInput): string {
     const what = missing[0] ?? '放行条件还不能判定';
     const next = input.callerIsAdmin
       ? withExplain(input, '补齐缺失事实后再发起上机验证')
-      : '请管理员补齐缺失事实并查看放行条件逐条对照；你这边先不要再发起这次上机验证';
+      : '请管理员补齐缺失事实并查看放行条件逐条对照；当前账户先不要再发起这次上机验证';
     return `${what}；现在可以做：${next}；原因还没查清`;
   }
   const errorLines = errors.map((check) => {
