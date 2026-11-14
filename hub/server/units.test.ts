@@ -212,13 +212,18 @@ test('the counts line tells a declared skip from an item the submission did not 
 
 test('schema issues become protocol errors with JSON Pointers; an unknown key points at the key', () => {
   assert.equal(pointerOfPath(['a/b', 'c~d', 0]), '/a~1b/c~0d/0');
-  const unknown = ListTaskPacksInput.safeParse({ knd: 'x', 'a/b': 1 });
+  const unknownArgs = { knd: 'x', 'a/b': 1 };
+  const unknown = ListTaskPacksInput.safeParse(unknownArgs);
   assert.ok(!unknown.success);
-  assert.deepEqual(schemaErrors('list_task_packs', unknown.error).map((e) => e.path).sort(), ['/a~1b', '/knd']);
-  const nested = StartRunInput.safeParse({ pack: 'p', inputs: { s: { reference: 'nope' } } });
+  const unknownErrors = schemaErrors('list_task_packs', unknown.error, unknownArgs);
+  assert.deepEqual(unknownErrors.map((e) => e.path).sort(), ['/a~1b', '/knd']);
+  assert.ok(unknownErrors.every((e) => e.fix && e.fix !== '按工具的输入模式改正这个参数后再调用'));
+  const nestedArgs = { pack: 'p', inputs: { s: { reference: 'nope' } } };
+  const nested = StartRunInput.safeParse(nestedArgs);
   assert.ok(!nested.success);
-  const errors = schemaErrors('start_run', nested.error);
-  assert.ok(errors.every((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.fix && e.message.startsWith('参数不符合 start_run 的输入模式')));
+  const errors = schemaErrors('start_run', nested.error, nestedArgs);
+  assert.ok(errors.every((e) => e.code === 'SUBMISSION_SCHEMA_VIOLATION' && e.fix && e.message.startsWith('参数无效：')));
+  assert.ok(errors.every((e) => e.fix !== '按工具的输入模式改正这个参数后再调用' && !/undefined/i.test(`${e.message}${e.fix}`)));
   assert.ok(errors.some((e) => e.path?.startsWith('/inputs/s')));
 });
 

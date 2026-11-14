@@ -16,7 +16,7 @@ export { itemCell, attributionByReason, attributionByRole, isSandboxFailure } fr
 export type { CellLayer, ItemCell } from './terminals.ts';
 export { declaredFamily, effectiveSubmission, independenceGap, independenceOf, warrantIndependence } from './independence.ts';
 export type { AuthorOrigin, ProducerOrigin } from './independence.ts';
-export { slotSchemaOf } from './slots.ts';
+export { findSubschema, renderExpected, slotSchemaOf, specificFix } from './slots.ts';
 export { canSeeRun } from './readers.ts';
 
 export type { RequestBody, RequestView } from './requests.ts';
