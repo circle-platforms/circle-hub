@@ -1,5 +1,5 @@
 // Source validation and exact lookup for the model-owned registry. No message interpretation or identity inference.
-import { CALL_ERROR_CATEGORY, PERMISSION_ROLE, type CallErrorCategory, type PermissionRole } from '../generated/vocabulary.ts';
+import type { CallErrorCategory, PermissionRole } from '../generated/vocabulary.ts';
 
 export type CallErrorReasonClassification = { readonly category: CallErrorCategory } | { readonly conclusion: true } | { readonly unknown: true };
 export interface CallErrorReasonRule {
@@ -8,7 +8,9 @@ export interface CallErrorReasonRule {
   readonly next_by_role: Readonly<Record<PermissionRole, string | null>>;
 }
 
-export function validateCallErrorReasonRegistry(rows: unknown, reasons: readonly string[]): string[] {
+export function validateCallErrorReasonRegistry(
+  rows: unknown, reasons: readonly string[], categories: readonly string[], roles: readonly string[],
+): string[] {
   const problems: string[] = [];
   if (!Array.isArray(rows)) return ['callErrorReasons must be an array'];
   const seen = new Set<string>();
@@ -21,10 +23,10 @@ export function validateCallErrorReasonRegistry(rows: unknown, reasons: readonly
     if (!Array.isArray(row.codes) || !row.codes.length || row.codes.some(code => typeof code !== 'string' || !code.trim()) || new Set(row.codes).size !== row.codes.length) problems.push(`${path}.codes must be distinct exact machine codes`);
     const value = row.classification;
     if (!object(value) || Object.keys(value).length !== 1 || !(
-      typeof value.category === 'string' && (CALL_ERROR_CATEGORY as readonly string[]).includes(value.category) || value.conclusion === true || value.unknown === true
+      typeof value.category === 'string' && categories.includes(value.category) || value.conclusion === true || value.unknown === true
     )) problems.push(`${path}.classification must select one call category, conclusion or unknown`);
     const next = row.next_by_role;
-    if (!object(next) || Object.keys(next).length !== PERMISSION_ROLE.length || PERMISSION_ROLE.some(role => !Object.hasOwn(next, role) || !(
+    if (!object(next) || Object.keys(next).length !== roles.length || roles.some(role => !Object.hasOwn(next, role) || !(
       typeof next[role] === 'string' && (next[role] as string).trim().length > 0 || next[role] === null && object(value) && !('category' in value)
     ))) problems.push(`${path}.next_by_role must cover every actual permission role`);
   }

@@ -25,6 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
+import { validateCallErrorReasonRegistry } from '../contracts/src/call-error-reasons.ts';
 
 /** `ui`: the interface term of the console when it differs from the model's label (the console shows only it). */
 type Value = { code: string; label: string; ui?: string };
@@ -36,6 +37,7 @@ type Model = {
   formatProposals: {
     references: { scheme: string; form: string; example?: string; note?: string }[];
     protocolCodes: { code: string; when: string; fix: string; callErrorCategory: string | null }[];
+    callErrorReasons?: { reason: string; codes: string[]; classification: { category: string } | { conclusion: true } | { unknown: true }; next_by_role: Record<string, string | null> }[];
     recordKinds: string[];
     packFiles: { path: string; content: string; elements: string[] }[];
     displayOrder: string[];
@@ -304,6 +306,14 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
       protocol.push(String(c.code));
     });
     if (protocol.length === 0) p.push(`${M}: formatProposals.protocolCodes must be a non-empty array`);
+    const reasonAxis = list(model.vocabulary).find(a => isRecord(a) && a.axis === 'call_error_reason');
+    if (f.callErrorReasons !== undefined || reasonAxis !== undefined) {
+      const reasonCodes = isRecord(reasonAxis) ? list(reasonAxis.values).map(v => isRecord(v) ? String(v.code) : '') : [];
+      if (!isRecord(reasonAxis)) p.push(`${M}: call_error_reason axis is required for callErrorReasons`);
+      const roleAxis = list(model.vocabulary).find(a => isRecord(a) && a.axis === 'permission_role');
+      const roles = isRecord(roleAxis) ? list(roleAxis.values).map(v => isRecord(v) ? String(v.code) : '') : [];
+      p.push(...validateCallErrorReasonRegistry(f.callErrorReasons, reasonCodes, [...callErrorCategories].filter((v): v is string => typeof v === 'string'), roles).map(problem => `${M}: ${problem}`));
+    }
     for (const d of duplicates(protocol)) p.push(`${M}: protocol code ${d} appears twice`);
     const kinds = list(f.recordKinds).map(String);
     if (kinds.length === 0) p.push(`${M}: formatProposals.recordKinds must be a non-empty array`);
@@ -346,7 +356,7 @@ export function validateInputs(model: unknown, codes: unknown): string[] {
 }
 
 /** Names the generator itself declares in vocabulary.ts and protocol-codes.ts/protocol.ts; index.ts re-exports both with export *. */
-const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'PROTOCOL_CODE_NAMES', 'isProtocolCode', 'CORE_VIOLATION_CODES', 'CORE_VIOLATION_CODE_NAMES', 'CORE_VIOLATION_CODE_INTERPRETERS', 'isCoreViolationCode', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION', 'CALL_ERROR_CATEGORY_BY_CODE', 'callErrorCategory', 'formatCallError'];
+const FIXED_VALUES = ['AXES', 'LABELS', 'labelOf', 'axisLabel', 'UI_LABELS', 'uiLabelOf', 'axisUiLabel', 'z', 'PROTOCOL_CODES', 'PROTOCOL_CODE_NAMES', 'isProtocolCode', 'CORE_VIOLATION_CODES', 'CORE_VIOLATION_CODE_NAMES', 'CORE_VIOLATION_CODE_INTERPRETERS', 'isCoreViolationCode', 'REFERENCE_FORMS', 'RECORD_KINDS', 'PACK_FILE_PATHS', 'DISPLAY_ORDER', 'MODEL_VERSION', 'CALL_ERROR_CATEGORY_BY_CODE', 'callErrorCategory', 'formatCallError', 'CALL_ERROR_REASON_RULES', 'resolveCallErrorReason', 'formatCallErrorReason'];
 const FIXED_TYPES = ['AxisName', 'AxisValues', 'ProtocolCode', 'CoreViolationCode', 'RecordKind'];
 
 /** Names the vocabulary module declares; two axes must never render to the same name, nor to a fixed one. */
@@ -446,7 +456,10 @@ export function callErrorCategory(code: string, packageCode = false): CallErrorC
 
 function renderProtocol(model: Model, codes: Codes): string {
   const out: string[] = [HEADER];
-  out.push("import { labelOf, type CallErrorCategory } from './vocabulary.ts';");
+  out.push(model.formatProposals.callErrorReasons === undefined
+    ? "import { labelOf, type CallErrorCategory } from './vocabulary.ts';"
+    : "import { labelOf, type CallErrorCategory, type CallErrorReason, type PermissionRole } from './vocabulary.ts';");
+  if (model.formatProposals.callErrorReasons !== undefined) out.push("import { resolveCallErrorReasonRule, type CallErrorReasonRule } from '../src/call-error-reasons.ts';");
   out.push("import type { CoreViolationCode, ProtocolCode } from './protocol-codes.ts';\n");
   out.push(`export {
   PROTOCOL_CODE_NAMES,
@@ -472,6 +485,21 @@ export function formatCallError(category: CallErrorCategory, fact: string, nextA
   const sentence = (text: string): string => text.trim().replace(/[。.!！?？]+$/u, '') + '。';
   return labelOf('call_error_category', category) + '：' + sentence(fact) + sentence(nextAction);
 }\n`);
+  if (f.callErrorReasons !== undefined) {
+    const rules = Object.fromEntries(f.callErrorReasons.map(row => [row.reason, { codes: row.codes, classification: row.classification, next_by_role: row.next_by_role }]));
+    out.push(`export const CALL_ERROR_REASON_RULES = ${JSON.stringify(rules, null, 2)} as const satisfies Record<CallErrorReason, CallErrorReasonRule>;\n`);
+    out.push(`/** The caller supplies its verified role; an invalid tuple never becomes a guessed invocation category. */
+export function resolveCallErrorReason(code: string, reason: CallErrorReason, actualRole: PermissionRole): ReturnType<typeof resolveCallErrorReasonRule> {
+  return resolveCallErrorReasonRule(CALL_ERROR_REASON_RULES, code, reason, actualRole);
+}
+
+/** Source message is the fact; only the model-selected category and next action are added. */
+export function formatCallErrorReason(code: string, reason: CallErrorReason, actualRole: PermissionRole, sourceMessage: string): string | null {
+  const resolved = resolveCallErrorReason(code, reason, actualRole);
+  if (!resolved || !('category' in resolved.classification) || resolved.nextAction === null) return null;
+  return formatCallError(resolved.classification.category, sourceMessage, resolved.nextAction);
+}\n`);
+  }
   out.push('export const CORE_VIOLATION_CODES = {');
   for (const c of codes.codes) out.push(`  ${q(c.code)}: { interpreter: ${q(c.interpreter)}, when: ${q(c.when)}, fix: ${q(c.fix)} },`);
   out.push('} as const satisfies Record<CoreViolationCode, { readonly interpreter: string; readonly when: string; readonly fix: string }>;\n');

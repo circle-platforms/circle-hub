@@ -2,11 +2,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { PermissionRole } from '../generated/vocabulary.ts';
-import { resolveCallErrorReasonRule, validateCallErrorReasonRegistry, type CallErrorReasonRule } from './call-error-reasons.ts';
+import { resolveCallErrorReasonRule, validateCallErrorReasonRegistry as validateRegistry, type CallErrorReasonRule } from './call-error-reasons.ts';
 
 const model = () => JSON.parse(readFileSync(new URL('../model.json', import.meta.url), 'utf8'));
 const reasons = (input = model()): string[] => input.vocabulary.find((axis: { axis: string }) => axis.axis === 'call_error_reason').values.map((value: { code: string }) => value.code);
 const rules = (input = model()): Record<string, CallErrorReasonRule> => Object.fromEntries(input.formatProposals.callErrorReasons.map((row: CallErrorReasonRule & { reason: string }) => [row.reason, row]));
+const validateCallErrorReasonRegistry = (rows: unknown, reasonCodes: readonly string[]) => {
+  const input = model();
+  const codes = (name: string): string[] => input.vocabulary.find((axis: { axis: string }) => axis.axis === name).values.map((value: { code: string }) => value.code);
+  return validateRegistry(rows, reasonCodes, codes('call_error_category'), codes('permission_role'));
+};
 
 test('first reason registry covers the model axis and exactly one classification plus every actual role', () => {
   const input = model();

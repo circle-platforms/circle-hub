@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "actor_disabled",
+    "actor_not_active",
+    "environment_disabled",
+    "environment_unassigned",
+    "environment_not_registered",
+    "environment_registration_inconsistent",
+    "environment_permission_unavailable",
+    "lease_held_by_other_account",
+    "lease_already_held_by_current_account",
+    "lease_missing_for_lineage",
+    "lease_expired",
+    "lease_released",
+    "lease_reader_unavailable"
+  ]
+}
