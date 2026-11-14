@@ -28,7 +28,6 @@ export const DeploymentDocument = z.strictObject({
   mediaType: z.string().min(1).max(200),
   fileName: z.string().min(1).max(300),
 });
-export const DeploymentLeaseRegistration = LeaseRegistrationDetail.pick({ prefix: true, owner: true }).extend({ prefix: LeaseRegistrationDetail.shape.prefix.regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/) });
 
 export const ExecutorStableName = z.string().min(1).max(200)
   .refine(value => value === value.trim() && !/\p{Cc}/u.test(value), '名字不能含首尾空白或控制字符')
@@ -37,28 +36,30 @@ export const EXECUTOR_NAME_PREFIX = 'executor-name.';
 export const ExecutorNameBinding = z.strictObject({ schema: z.literal('executor-name@1'), executor: idOf('exe'), name: ExecutorStableName });
 export type ExecutorNameBinding = z.infer<typeof ExecutorNameBinding>;
 
-const name = z.string().min(1).max(200);
+const name = ExecutorStableName;
+export const DEPLOYMENT_SCHEMA = 'deployment@2';
+export const DeploymentLeaseRegistration = LeaseRegistrationDetail.pick({prefix:true}).extend({owner:name,prefix:LeaseRegistrationDetail.shape.prefix.regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/)});
+export const DeploymentExecutor = z.strictObject({name,definition:ExecutorSource.safeExtend({id:z.never().optional()})});
 export const DeploymentResource = z.strictObject({
-  id: ResourceId.optional(),
   definition: z.strictObject({
     system_pack: ExactPackRef,
-    name: ResourceRecord.shape.name,
+    name,
     environment: ResourceRecord.shape.environment,
     origins: ResourceRecord.shape.origins,
     allow_plaintext: ResourceRecord.shape.allow_plaintext.default([]),
-    credentials: z.record(z.string(), VariableName).default({}),
+    credentials: z.record(z.string(), SecretReference).default({}),
     settings: ResourceRecord.shape.settings.default({}),
     limits: ResourceRecord.shape.limits,
   }),
   enabled: z.boolean().default(true),
 });
 export const DeploymentDefinition = z.strictObject({
-  schema: z.literal('deployment@1'),
-  accounts: z.array(z.strictObject({ id: UserId.optional(), name, role: PermissionRoleSchema, disabled: z.boolean().default(false) })).default([]),
-  teams: z.array(z.strictObject({ id: TeamId.optional(), name, members: z.array(name).default([]) })).default([]),
+  schema: z.literal(DEPLOYMENT_SCHEMA),
+  accounts: z.array(z.strictObject({ name, role: PermissionRoleSchema, disabled: z.boolean().default(false) })).default([]),
+  teams: z.array(z.strictObject({ name, members: z.array(name).default([]) })).default([]),
   packs: z.array(z.strictObject({ ref: ExactPackRef, directory: name.optional(), install: z.boolean().default(false), dependsOn: z.array(ExactPackRef).default([]) })).default([]),
   resources: z.array(DeploymentResource).default([]),
-  executors: z.array(ExecutorSource).default([]),
+  executors: z.array(DeploymentExecutor).default([]),
   workflowAssignments: z.array(z.union([
     z.strictObject({ pack: PackId, user: name }),
     z.strictObject({ pack: PackId, team: name }),
@@ -82,10 +83,10 @@ export const DeploymentDefinition = z.strictObject({
   if (new Set(prefixes).size !== prefixes.length) ctx.addIssue({ code: 'custom', path: ['leaseRegistrations'], message: '预订登记前缀重复' });
   const resourceNames = value.resources.map(row => row.definition.name);
   if (new Set(resourceNames).size !== resourceNames.length) ctx.addIssue({ code: 'custom', path: ['resources'], message: '资源名字重复' });
-  const executorIds = value.executors.flatMap(row => row.id === undefined ? [] : [row.id]);
-  if (new Set(executorIds).size !== executorIds.length) ctx.addIssue({ code: 'custom', path: ['executors'], message: '执行器身份重复' });
+  const executorNames=value.executors.map(row=>row.name);
+  if(new Set(executorNames).size!==executorNames.length)ctx.addIssue({code:'custom',path:['executors'],message:'执行器名字重复'});
   for (const executor of value.executors) {
-    if (executor.credential !== undefined && !SecretReference.safeParse(executor.credential).success)
+    if (executor.definition.credential !== undefined && !SecretReference.safeParse(executor.definition.credential).success)
       ctx.addIssue({ code: 'custom', path: ['executors'], message: '凭据只能引用命名密钥' });
   }
 });
@@ -107,7 +108,7 @@ export const ProtectedConfigurationReceipt = z.strictObject({
 export type ProtectedConfigurationReceipt = z.infer<typeof ProtectedConfigurationReceipt>;
 
 export const schemas: Record<string, z.ZodType> = {
-  'deployment@1': DeploymentDefinition,
+  [DEPLOYMENT_SCHEMA]: DeploymentDefinition,
   'executor-name@1': ExecutorNameBinding,
   [DEPLOYMENT_SYNC_INTENT_SCHEMA]: DeploymentSyncIntent,
   'protected-deployment@1': ProtectedConfigurationEnvelope,

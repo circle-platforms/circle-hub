@@ -39,7 +39,7 @@ export * from './records.ts';
 export * from './variables.ts';
 export { RESET_DATA_SCOPE, RESET_ALL_LABEL, ResetDataScopeSchema, ResetScopesSchema } from './reset.ts';
 export type { ResetDataScope, ResetScopes } from './reset.ts';
-export { ExecutorStableName, ExecutorNameBinding, EXECUTOR_NAME_PREFIX, DeploymentResource, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt } from './deployment.ts';
+export { DEPLOYMENT_SCHEMA, DeploymentExecutor, ExecutorStableName, ExecutorNameBinding, EXECUTOR_NAME_PREFIX, DeploymentResource, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt } from './deployment.ts';
 export * from './annotations.ts';
 export * from './tools.ts';
 

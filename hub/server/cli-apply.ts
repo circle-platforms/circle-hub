@@ -3,12 +3,12 @@ import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve, relative } from 'node:path';
-import { DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt, type DeploymentDefinition as Definition } from '../../contracts/src/deployment.ts';
+import { DEPLOYMENT_SCHEMA, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt, type DeploymentDefinition as Definition } from '../../contracts/src/deployment.ts';
 import { PackManifest } from '../../contracts/src/pack.ts';
-import { ResourceRecord } from '../../contracts/src/resources.ts';
+import { ResourceRecord, type ExecutorSource } from '../../contracts/src/resources.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
 import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB, isAdmin, type RecordsConfig, type ConfigurationSnapshot } from '../records/api.ts';
-import { ExecutorRegistry } from '../dispatch/api.ts';
+import { ExecutorNames, ExecutorRegistry } from '../dispatch/api.ts';
 import { jsonSafe } from './assemble/terminal.ts';
 import { variableCommand } from './variables.ts';
 import { docIdOf } from './docs.ts';
@@ -66,31 +66,29 @@ export function deploymentOrder(packs: readonly DeploymentPack[]): DeploymentPac
   return result;
 }
 
-export function exactMatch<T extends { id: string }>(rows: readonly T[], value: string, name: (row: T) => string): T | undefined {
-  const matches = rows.filter(row => row.id === value || name(row) === value);
-  if (matches.length > 1) throw new CliError('名字或编号对应多个对象，须使用明确编号');
+
+
+interface DeploymentState extends Omit<Definition,'schema'|'accounts'|'teams'|'resources'|'executors'> {
+  accounts:Array<Definition['accounts'][number]&{id:string}>;
+  teams:Array<Definition['teams'][number]&{id:string}>;
+  resources:Array<Definition['resources'][number]&{id:string}>;
+  executors:Array<{id:string;source:ExecutorSource;digest:string}>;
+  executorNames:Awaited<ReturnType<ExecutorNames['list']>>;
+  executorReserved:Awaited<ReturnType<ExecutorNames['list']>>;
+}
+export function exactName<T>(rows:readonly T[],value:string,name:(row:T)=>string):T|undefined {
+  const matches=rows.filter(row=>name(row)===value);
+  if(matches.length>1)throw new CliError('同一个名字对应多个对象；请管理员明确整理重名');
   return matches[0];
 }
-
-
-/** Resolve all executor identities before any domain write; target names are not executor identities. */
-function executorMatches(desired: readonly Definition['executors'][number][], current: readonly Definition['executors'][number][]): Array<Definition['executors'][number] | undefined> {
-  const unqualified = new Set<string>();
-  const resolved = desired.map(executor => {
-    if (executor.id !== undefined) {
-      const matches = current.filter(row => row.id === executor.id);
-      if (matches.length !== 1) throw new CliError('执行器编号不存在或不唯一；请核对明确的执行器身份');
-      return matches[0];
-    }
-    if (unqualified.has(executor.target)) throw new CliError(`执行器目标 ${executor.target} 在本次定义里对应多个未声明身份的执行器；须逐个明确身份`);
-    unqualified.add(executor.target);
-    const matches = current.filter(row => row.target === executor.target);
-    if (matches.length > 1) throw new CliError(`执行器目标 ${executor.target} 对应多个现有执行器；须明确要配置的执行器身份`);
-    return matches[0];
+function executorMatches(desired:readonly Definition['executors'][number][],state:DeploymentState) {
+  return desired.map(executor=>{
+    const named=exactName(state.executorNames,executor.name,row=>row.name);
+    if(!named){if(state.executorReserved.some(row=>row.name===executor.name))throw new CliError(`执行器 ${executor.name} 的名字已保留，请管理员显式恢复原名字登记，不能创建另一个身份`);return undefined;}
+    const source=state.executors.find(row=>row.id===named.executor);
+    if(!source)throw new CliError(`执行器 ${executor.name} 的登记不完整；请先恢复登记，不能按目标猜测身份`);
+    return source;
   });
-  const identities = resolved.flatMap(executor => executor?.id === undefined ? [] : [executor.id]);
-  if (new Set(identities).size !== identities.length) throw new CliError('多个执行器声明指向同一个现有执行器；须逐个明确且不得重复');
-  return resolved;
 }
 
 async function loadPacks(session: Session, definition: Definition, base: string): Promise<DeploymentPack[]> {
@@ -127,18 +125,18 @@ function resourceDefinition(record: ResourceRecord): Definition['resources'][num
   const credentials: Record<string, string> = {};
   for (const [name, reference] of Object.entries(record.credentials)) {
     if (!SecretReference.safeParse(reference).success) throw new CliError('资源凭据不是命名引用，不能导出');
-    credentials[name] = reference.slice(9, -1);
+    credentials[name] = reference;
   }
   return { system_pack: record.system_pack, name: record.name, environment: record.environment, origins: record.origins,
     allow_plaintext: record.allow_plaintext, credentials, settings: record.settings, ...(record.limits ? { limits: record.limits } : {}) };
 }
 
 /** Reads definitions and authorization metadata, never credential APIs or resolved variable values. */
-export async function exportDeployment(session: Session): Promise<Definition> {
+async function readDeploymentState(session: Session): Promise<DeploymentState> {
   const by = await session.admin(), records = await session.records(), hub = await session.hub(false, true);
   const users = (await records.principals.list()).filter(user => !user.deleted_at);
   const teams = await records.teams.list(by);
-  const resources: Definition['resources'] = [];
+  const resources: DeploymentState['resources'] = [];
   const resourceAssignments: Definition['resourceAssignments'] = [];
   for (const listing of await hub.resources.list(by)) {
     let decision = await records.authorizations.resourceConfig(listing.id);
@@ -194,18 +192,40 @@ export async function exportDeployment(session: Session): Promise<Definition> {
   const leaseRegistrations = await (await session.leases()).registrations('');
   const { readDeploymentSyncIntent } = await import('./deployment-sync.ts');
   const syncIntent = await readDeploymentSyncIntent(session);
-  return parseDeployment({ schema: 'deployment@1',
+  const executors=[...await new ExecutorRegistry(records).sources(by)];
+  const catalogue=await new ExecutorNames(records).inspect(by);
+  const executorNames=[...catalogue.active],executorReserved=[...catalogue.reserved];
+  return {
     accounts: users.map(({ id, name, role, disabled }) => ({ id, name, role, disabled })),
     teams: await Promise.all(teams.map(async team => ({ id: team.id, name: team.name, members: (await records.teams.members(by, team.id)).map(member => member.user.id) }))),
     packs: packDefinitions,
-    resources, executors: (await new ExecutorRegistry(records).sources(by)).map(entry => entry.source),
+    resources, executors, executorNames, executorReserved,
     workflowAssignments, resourceAssignments, knowledgeSources: packs.filter(pack => pack.kind === 'product' && pack.active).map(pack => pack.id),
     variables, documents, leaseRegistrations, ...(syncIntent === null ? {} : { knowledgeSync: syncIntent.targets }),
     missingConfiguration: syncIntent === null ? ['尚未通过部署定义声明知识同步目标；请在 knowledgeSync 列出产品和版本线，明确无目标则填写 []'] : [],
-  });
+  };
 }
 
 export interface DeploymentSyncTask { id: string; product: string; line: string | null; progressCommand: string }
+
+export async function exportDeployment(session:Session):Promise<Definition> {
+  const state=await readDeploymentState(session);
+  const user=(id:string)=>{const row=state.accounts.find(row=>row.id===id);if(!row)throw new CliError('账户名字映射缺失，不能完整导出');return row.name;};
+  const team=(id:string)=>{const row=state.teams.find(row=>row.id===id);if(!row)throw new CliError('团队名字映射缺失，不能完整导出');return row.name;};
+  const resource=(id:string)=>{const row=state.resources.find(row=>row.id===id);if(!row)throw new CliError('资源名字映射缺失，不能完整导出');return row.definition.name;};
+  const missing=state.executors.filter(row=>!state.executorNames.some(named=>named.executor===row.id));
+  if(missing.length)throw new CliError('执行器尚未命名，未输出不完整定义；请管理员逐个明确命名：\n'+missing.map(row=>`circle-hub executor name ${row.id} <明确名字>`).join('\n'));
+  return parseDeployment({schema:DEPLOYMENT_SCHEMA,
+    accounts:state.accounts.map(({id,...row})=>row),teams:state.teams.map(({id,...row})=>({...row,members:row.members.map(user)})),
+    resources:state.resources.map(({id,...row})=>row),
+    executors:state.executors.map(row=>{const {id,...definition}=row.source;return {name:state.executorNames.find(named=>named.executor===row.id)!.name,definition};}),
+    packs:state.packs,workflowAssignments:state.workflowAssignments.map(row=>'user'in row?{...row,user:user(row.user)}:{...row,team:team(row.team)}),
+    resourceAssignments:state.resourceAssignments.map(row=>'team'in row?{...row,resource:resource(row.resource),team:team(row.team)}:{...row,resource:resource(row.resource)}),
+    knowledgeSources:state.knowledgeSources,...(state.knowledgeSync!==undefined?{knowledgeSync:state.knowledgeSync}:{}),variables:state.variables,documents:state.documents,
+    leaseRegistrations:state.leaseRegistrations.map(row=>({...row,owner:user(row.owner)})),missingConfiguration:state.missingConfiguration,
+  });
+}
+
 export interface DeploymentReport { created: number; skipped: number; missingConfiguration: string[]; syncTasks: DeploymentSyncTask[]; syncCurrent: Array<{product:string;line:string|null}>; differences: Array<{ section: string; index: number; fields: string[] }>; }
 
 export async function applyDeployment(session: Session, input: unknown, base = session.ctx.io.cwd): Promise<DeploymentReport> {
@@ -217,8 +237,8 @@ export async function applyDeployment(session: Session, input: unknown, base = s
   );
   const by = await session.admin(), hub = await session.hub(false, true);
   const packs = await loadPacks(session, definition, base);
-  const current = await exportDeployment(session);
-  const selectedExecutors = executorMatches(definition.executors, current.executors);
+  const current = await readDeploymentState(session);
+  const selectedExecutors = executorMatches(definition.executors, current);
   const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration, syncTasks: [], syncCurrent: [] };
   try {
     const compare = (section: string, index: number, before: unknown, after: unknown): boolean => {
@@ -227,20 +247,18 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       else report.skipped++;
       return fields.length === 0;
     };
-    const required = <T>(value: T | undefined, kind: string): T => { if (!value) throw new CliError(`${kind}不存在；只按精确名字或编号查找`); return value; };
+    const required = <T>(value: T | undefined, kind: string): T => { if (!value) throw new CliError(`${kind}不存在；只按精确名字查找`); return value; };
     for (const [index, account] of definition.accounts.entries()) {
-      const found = exactMatch(current.accounts as Array<typeof account & { id: string }>, account.id ?? account.name, row => row.name);
+      const found = exactName(current.accounts,account.name,row=>row.name);
       if (found) { compare('accounts', index, { name: found.name, role: found.role, disabled: found.disabled }, { name: account.name, role: account.role, disabled: account.disabled }); continue; }
-      if (account.id) throw new CliError('账户编号不存在；新账户应省略编号');
       const user = await records.principals.createUser(by, account.name, account.role); report.created++;
       if (account.disabled) { await records.principals.setDisabled(by, user.id, true); report.created++; }
       current.accounts.push({ id: user.id, name: user.name, role: user.role, disabled: account.disabled });
     }
-    const userId = (value: string) => required(exactMatch(current.accounts as Array<Definition['accounts'][number] & { id: string }>, value, row => row.name), '账户').id;
+    const userId = (value: string) => required(exactName(current.accounts,value,row=>row.name), '账户').id;
     for (const [index, team] of definition.teams.entries()) {
-      let found = exactMatch(current.teams as Array<typeof team & { id: string }>, team.id ?? team.name, row => row.name);
+      let found = exactName(current.teams,team.name,row=>row.name);
       if (!found) {
-        if (team.id) throw new CliError('团队编号不存在；新团队应省略编号');
         const created = await records.teams.create(by, team.name);
         found = { id: created.id, name: created.name, members: [] }; current.teams.push(found); report.created++;
       } else compare('teams', index, found.name, team.name);
@@ -305,21 +323,19 @@ export async function applyDeployment(session: Session, input: unknown, base = s
     }
     for (const [index, resource] of definition.resources.entries()) {
       const rows = current.resources.map(row => ({ ...row, id: row.id! }));
-      const found = exactMatch(rows, resource.id ?? resource.definition.name, row => row.definition.name);
+      const found = exactName(rows,resource.definition.name,row=>row.definition.name);
       if (found) { compare('resources', index, { definition: found.definition, enabled: found.enabled }, { definition: resource.definition, enabled: resource.enabled }); continue; }
-      if (resource.id) throw new CliError('资源编号不存在；新资源应省略编号');
-      const created = await hub.connectors.admin.addResource(by, resource.definition); report.created++;
+      const created = await hub.connectors.admin.addResource(by,{...resource.definition,credentials:Object.fromEntries(Object.entries(resource.definition.credentials).map(([key,reference])=>[key,reference.slice(9,-1)]))}); report.created++;
       if (!resource.enabled) { await hub.connectors.admin.disable(by, created.id); report.created++; }
       current.resources.push({ ...resource, id: created.id });
     }
     const executors = new ExecutorRegistry(records);
     for (const [index, executor] of definition.executors.entries()) {
       const found = selectedExecutors[index];
-      if (found) { const { id: _id, ...before } = found; const { id: _wanted, ...after } = executor; compare('executors', index, before, after); continue; }
-      if (executor.id) throw new CliError('执行器编号不存在；新执行器应省略编号');
-      const created = await executors.add(by, executor); current.executors.push(created.source); report.created++;
+      if (found) { const {id,...before}=found.source;compare('executors',index,before,executor.definition);continue; }
+      const created=await executors.add(by,executor.definition,executor.name);current.executors.push(created);current.executorNames.push({schema:'executor-name@1',executor:created.id,name:executor.name});report.created++;
     }
-    const teamId = (value: string) => required(exactMatch(current.teams.map(row => ({ ...row, id: row.id! })), value, row => row.name), '团队').id;
+    const teamId = (value: string) => required(exactName(current.teams,value,row=>row.name), '团队').id;
     for (const assignment of definition.workflowAssignments) {
       const subject = 'user' in assignment ? userId(assignment.user) : teamId(assignment.team);
       if (await records.authorizations.isActive('assign', subject, assignment.pack)) { report.skipped++; continue; }
@@ -328,7 +344,7 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       report.created++;
     }
     for (const assignment of definition.resourceAssignments) {
-      const resource = required(exactMatch(current.resources.map(row => ({ ...row, id: row.id! })), assignment.resource, row => row.definition.name), '资源');
+      const resource = required(exactName(current.resources,assignment.resource,row=>row.definition.name), '资源');
       const subject = 'team' in assignment ? teamId(assignment.team) : WHOLE_HUB;
       if (await records.authorizations.isActive('resource_assign', subject, resource.id)) { report.skipped++; continue; }
       await records.authorizations.assignResource(by, resource.id, subject); report.created++;
