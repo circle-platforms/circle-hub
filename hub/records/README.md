@@ -1309,3 +1309,11 @@ Frozen runs, remote work and stored results are not cancelled or rewritten by te
 
 Wiring the kit's `teams` member belongs to the index.ts owner. System actor identity remains undecided; no new account,
 configuration or administrator bypass is introduced. Separate per-team knowledge spaces are outside this implementation.
+
+## 2026-11-14 保权迁移与兼容声明
+
+按集成者当日批准的保权与 C2 方案，版本 1 基线原字节不变，追加版本 2。普通启动核对当前代码读取级别、迁移身份、兼容声明和运行角色的只读权限；保权完成另行核对切点快照与原授权记录。兼容声明可读不等于保权完成，缺事实时不启用新限制，也不自动补授或重建。
+
+升级预览通过实际操作令牌的启用管理员身份，在只读事务中采集来源；应用在拥有者的同一事务里重核原快照、迁移、授予运行角色权限、追加原授权和完成事实，失败全回滚。后续撤回不会被启动或完成回放补回。`readEnvironmentAssignmentActivation` 采用同一兼容判定后独立核完成；维护诊断以拥有者连接切到真实运行角色观察，数据库连接权尚未开放也不借拥有者权限冒充运行权限。
+
+切换顺序是先停止旧服务，再应用已核对的升级快照并启动实施同一限制的新版本。旧严格读取版本会拒绝新增迁移；回退目标须具备相同权限语义。升级前排空远端上机验证和跨重启恢复仍是后续事项。只读预览、切点原子性、续用原预订、撤回不补授、合法未知迁移及不可观察分支，使用临时 PostgreSQL 与合成来源验证；这些不是生产部署或真实设备结果。
