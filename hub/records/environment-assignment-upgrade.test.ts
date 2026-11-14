@@ -19,6 +19,9 @@ import { MIGRATIONS, migrate, migrationChecksum, verifyMigrations, migrateEnviro
 import { PgRecordStore } from './store.ts';
 import { PgPrincipals } from './principals.ts';
 import { RecordAuthorizations } from './authorizations.ts';
+import { RecordArtifacts } from './artifacts.ts';
+import { canUseEnvironment } from './environment-permissions.ts';
+import { MemberEnvironments } from '../dispatch/api.ts';
 import { FileObjectStore } from './objects.ts';
 import { newId } from './ids.ts';
 import { previewEnvironmentAssignmentUpgrade, applyEnvironmentAssignmentUpgrade, requireEnvironmentAssignmentActivation, verifyEnvironmentUpgradeOpenSchema, type EnvironmentUpgradeSources } from './environment-assignment-upgrade.ts';
@@ -208,7 +211,7 @@ async function publishActualWorkflow(f: Awaited<ReturnType<typeof fixture>>) {
     await auth.grantPublishRight(f.admin, f.admin.id);
     const registry = createPackRegistry({ records: { store, objects, principals, authorizations: auth }, extractDir: join(f.config.dataDir, 'pack-extract'), sandbox: { requireOsIsolation: false } });
     const description = workflowPack({ id: 'synthetic-upgrade-workflow', product: { catalogs: [] } });
-    description.files['workflow.json'] = { ...description.files['workflow.json'] as Record<string, unknown>, context: ['leases'], leases: { prefix: 'synthetic/' } };
+    description.files['workflow.json'] = { ...description.files['workflow.json'] as Record<string, unknown>, context: ['leases'], leases: { prefix: 'synthetic/', max_ttl_seconds: 3600 } };
     const written = await writePack(join(f.config.dataDir, 'source-pack'), description);
     const published = await registry.publish(f.admin, written.dir);
     assert.ok(published.ok, JSON.stringify(published));
@@ -249,7 +252,8 @@ test('actual legacy workflow entitlement preserves a preexisting unbound lease w
   await f.auth.grant(f.admin, { permission: 'assign', subject: f.user.id, object: workflow.id });
   await registerActualExecutor(f, f.executor, ['synthetic/device/a', 'synthetic/device/b']);
   const leases = new LeaseService(f.db, { records: f.store });
-  assert.ok((await leases.acquire({ keys: ['synthetic/device/a', 'synthetic/device/b'], holder: { user: f.user.id, run: newId('run') }, prefix: 'synthetic/' })).ok);
+  const holder = { user: f.user.id, run: newId('run') }, keys = ['synthetic/device/a', 'synthetic/device/b'];
+  assert.ok((await leases.acquire({ keys, holder, prefix: 'synthetic/', ttlSeconds: 600, maxTtlSeconds: 3600 })).ok);
   const before = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
   const sources = environmentAssignmentUpgradeSources(), preview = await previewEnvironmentAssignmentUpgrade(f.config, f.admin, sources);
   assert.equal(preview.canApply, true, preview.problems.join(';'));
@@ -257,6 +261,26 @@ test('actual legacy workflow entitlement preserves a preexisting unbound lease w
   assert.ok(preview.payload?.plan.grants[0].workflows.includes(workflow.info.digest));
   assert.equal((await applyEnvironmentAssignmentUpgrade(f.config, f.admin, sources, preview)).grants, 1);
   assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, before);
+  const artifacts = new RecordArtifacts(f.db, f.store, f.objects, f.auth, { maxBytes: DEFAULT_LIMITS.maxUploadBytes, now: () => new Date() });
+  const records = { artifacts, authorizations: f.auth, principals: f.principals };
+  const environments = new MemberEnvironments(records, { readSource: async id => {
+    const config = await f.auth.resourceConfig('executor.' + id);
+    if (!config?.body.bound) return null;
+    const bytes = await f.objects.get(config.body.bound);
+    if (!bytes) throw new Error('合成执行器源缺失');
+    return { id, digest: config.body.bound, source: ExecutorSource.parse(JSON.parse(Buffer.from(bytes).toString())) };
+  } }, leases, (by, id) => canUseEnvironment(records, by, id));
+  assert.equal(await environments.authorizeKeys(f.user, keys), null, 'the actual booking/renewal guard admits preserved rights');
+  assert.equal(await environments.canUse(f.user, f.executor), true, 'the actual dispatch access port admits the runner');
+  assert.equal(await environments.canUse(f.admin, f.executor), false, 'the scheduler administrator cannot lend use rights');
+  assert.ok((await leases.extend({ keys, holder, ttlSeconds: 1200, maxTtlSeconds: 3600 })).ok);
+  const renewed = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
+  await f.auth.unassignResource(f.admin, f.executor, f.user.id);
+  assert.equal((await environments.authorizeKeys(f.user, keys))?.code, 'SOURCE_NOT_PERMITTED');
+  assert.equal(await environments.canUse(f.user, f.executor), false);
+  assert.equal((await applyEnvironmentAssignmentUpgrade(f.config, f.admin, sources, preview)).alreadyCompleted, true);
+  assert.equal(await environments.canUse(f.user, f.executor), false, 'startup cannot restore an administrator revocation');
+  assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, renewed, 'revocation does not release or rewrite the old holding');
 });
 
 test('actual held keys alone do not grant an overlapping executor and preflight failure leaves baseline intact', { timeout: 120000 }, async t => {
