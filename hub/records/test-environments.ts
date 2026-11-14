@@ -1,5 +1,6 @@
 import { withDefinitionOwners, withDefinitionAssignment, restoresDisabledOwner } from './definition-restoration.ts';
 import { prepareTestEnvironmentOwnerChange, type TestEnvironmentOwnerChange } from './test-environment-owner.ts';
+import { visibleTestEnvironments } from './test-environment-visibility.ts';
 import { prepareBookingPrefixRegistration, isBookingPrefixRegistration } from './booking-prefix-registration.ts';
 import { adoptUnregisteredPrefixes } from './test-environment-adoption.ts';
 import { workflowBooksTestEnvironments } from './test-environment-inheritance-policy.ts';
@@ -113,9 +114,7 @@ export class RecordTestEnvironments implements TestEnvironments {
     return this.store.withTransaction(async tx => {
       const permission = await this.reader(by, tx);
       if (!permission.user || permission.user.disabled || permission.user.deleted_at) return [];
-      const values = (await this.catalog(tx)).map(value => ({ ...value, isTestEnvironment: value.target !== null, isBookingPrefix: isBookingPrefixRegistration(value) }));
-      if (isAdmin(permission.user)) return values;
-      return values.filter(value => value.isTestEnvironment && value.enabled && [by.id, ...permission.teams(), '*'].some(subject => permission.enabled(permission.latest('resource_assign', subject, value.id))));
+      return visibleTestEnvironments(by, await this.catalog(tx), permission);
     }, outer);
   }
   async get(by: Principal, id: string, tx?: Transaction) { return (await this.list(by, tx)).find(value => value.id === id) ?? null; }

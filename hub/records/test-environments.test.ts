@@ -275,3 +275,25 @@ test('explicit reassignment from a disabled owner appends responsibility without
     await assert.rejects(f.kit.testEnvironments.reassignOwner(f.admin, environment.id, { prefix: 'synthetic/device/', owner: f.member.id }), /当前启用/);
   } finally { await f.close(); }
 });
+
+test('assigned disabled environments remain visible with unchanged holdings while use and unassigned target disclosure stay denied', { timeout: 120000 }, async () => {
+  const f = await fixture();
+  try {
+    const environment = await f.kit.testEnvironments.register(f.admin, f.input());
+    const other = await f.kit.testEnvironments.register(f.admin, { ...f.input('未分配的另一环境', 'unassigned-target'), prefixes: [{ ...f.input().prefixes[0], prefix: 'unassigned/' }] });
+    const grant = await f.kit.authorizations.grant(f.admin, { permission: 'resource_assign', subject: f.member.id, object: environment.id });
+    const booked = await new LeaseService(f.db, { records: f.kit.store, catalog: f.kit.testEnvironments }).acquire({ keys: ['synthetic/device/a'], prefix: 'synthetic/', ttlSeconds: 900, maxTtlSeconds: 3600, holder: { user: f.member.id, run: newId('run') } });
+    assert.ok(booked.ok);
+    const held = (await f.db.query('SELECT * FROM leases ORDER BY key')).rows;
+    await f.kit.testEnvironments.update(f.admin, environment.id, { ...f.input(), enabled: false });
+    const visible = await f.kit.testEnvironments.list(f.member);
+    assert.deepEqual(visible.map(value => value.id), [environment.id]);
+    assert.equal(visible[0].enabled, false);
+    assert.equal((await f.kit.authorizations.latest('resource_assign', f.member.id, environment.id))?.digest, grant.digest);
+    assert.equal(await f.kit.testEnvironments.canUse(f.member, environment.id), false);
+    assert.equal(await f.kit.testEnvironments.get(f.member, other.id), null);
+    assert.deepEqual((await f.db.query('SELECT * FROM leases ORDER BY key')).rows, held);
+    await f.kit.principals.setDisabled(f.admin, f.member.id, true);
+    assert.deepEqual(await f.kit.testEnvironments.list(f.member), []);
+  } finally { await f.close(); }
+});
