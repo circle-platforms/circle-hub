@@ -300,7 +300,7 @@ describe('list_task_packs', () => {
     assert.equal(prefix.isError, true);
     assert.equal(firstError(prefix).code, 'SOURCE_ABSENT');
     assert.equal(firstError(prefix).path, '/pack_id');
-    assert.match(prefix.content[0].text ?? '', /Hub 里没有任务包 revie/);
+    assert.match(prefix.content[0].text ?? '', /不存在：Hub 里没有工作流「revie」/);
     const incompatibleKind = await client.call('list_task_packs', { kind: 'product', pack_id: 'review' });
     // Assigned workflow filtered by kind: absence is null → keep empty ok list.
     assert.equal(incompatibleKind.isError, false);
@@ -320,12 +320,12 @@ describe('list_task_packs', () => {
     assert.equal(unavailable.isError, true);
     assert.equal(firstError(unavailable).code, 'SOURCE_NOT_PERMITTED');
     assert.equal(firstError(unavailable).path, '/pack_id');
-    assert.match(unavailable.content[0].text ?? '', /任务包 local-review 存在，没有分配给你/);
-    assert.doesNotMatch(unavailable.content[0].text ?? '', /共 0 个/);
+    assert.match(unavailable.content[0].text ?? '', /无权限：当前账户未获授权使用工作流「local-review」/);
+    assert.doesNotMatch(unavailable.content[0].text ?? '', /共 0 个|任务包|没有分配给你/);
     assert.equal(absent.isError, true);
     assert.equal(firstError(absent).code, 'SOURCE_ABSENT');
     assert.equal(firstError(absent).path, '/pack_id');
-    assert.match(absent.content[0].text ?? '', /Hub 里没有任务包 not-a-pack/);
+    assert.match(absent.content[0].text ?? '', /不存在：Hub 里没有工作流「not-a-pack」/);
     assert.notDeepEqual(comparable(unavailable), comparable(absent));
     await limited.close();
   });
