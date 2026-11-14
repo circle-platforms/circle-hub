@@ -201,10 +201,12 @@ export class DispatchService {
     const zeroWrite = responses.length === 1 && !receipt && !records.some(event => event.body.detail.phase === 'resend')
       && responses[0].body.detail.complete === false && responses[0].body.detail.http_status === 0
       && responses[0].body.detail.request_bytes_written === 0 ? responses[0] : undefined;
+    const terminalNotSent = zeroWrite && complete?.body.detail.done === true
+      && complete.body.detail.outcome === 'not_dispatched' && records.indexOf(complete) > records.indexOf(zeroWrite);
     const dispatch_attempt: DispatchAttemptFacts = {
       scope: scope.data,
       ...(responses.length ? { submit_invoked: true } : {}),
-      ...(zeroWrite ? { outcome: 'not_dispatched', not_sent: true } : receipt ? { outcome: 'issued' } : {}),
+      ...(terminalNotSent ? { outcome: 'not_dispatched', not_sent: true } : receipt ? { outcome: 'issued' } : {}),
       ...(complete ? { phase: 'complete' } : receipt ? { phase: 'receipt' } : zeroWrite ? { phase: 'submit.response' } : {}),
       grounds: [intent, ...responses, ...(receipt ? [receipt] : []), ...(complete ? [complete] : [])].map(event => `rec:${event.digest}`),
     };

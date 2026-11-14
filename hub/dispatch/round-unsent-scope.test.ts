@@ -4,11 +4,10 @@ import http from 'node:http';
 import { syncBuiltinESMExports } from 'node:module';
 import { setup } from './testing/context.ts';
 
-test('characterize the old job-wide no-send summary after an accepted first round and a zero-write second submit', { timeout: 60000 }, async t => {
+async function repeatedFixture() {
   const c = await setup({ alter: (name, value) => name === 'read_blob'
     ? { ...value, ownership: 'staging_directory', ownership_reason: null, rows: [{ id: 'synthetic-case', outcome: 'good', log: 'SYNTHETIC_END' }] }
     : value });
-  t.after(() => c.close());
   // Use the same declared repeat policy and certified ownership as the normal multi-round fixture.
   (c.effectDocument.effects[0] as { repetition?: number }).repetition = 2;
   c.detail.run.requirements = [{
@@ -23,6 +22,12 @@ test('characterize the old job-wide no-send summary after an accepted first roun
     result: { ...c.executor.definition.result, ownership: { pointer: '/ownership', value: 'staging_directory', reason: '/ownership_reason' }, request_id: '/request', log: '/log', closing_marker: 'SYNTHETIC_END' },
   });
   await c.freezeExecutor();
+  return c;
+}
+
+test('characterize the old job-wide no-send summary after an accepted first round and a zero-write second submit', { timeout: 60000 }, async t => {
+  const c = await repeatedFixture();
+  t.after(() => c.close());
   let interrupted = false;
   const request = http.request;
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
@@ -161,4 +166,74 @@ test('a real single-round flow without the new intent metadata stays unscoped wh
   assert.ok(scoped.job_facts.grounds?.includes(`rec:${intent.digest}`));
   assert.equal((await c.service.scopedFacts(c.admin, state.job, 1)).dispatch_attempt, undefined);
   assert.deepEqual((await c.service.journal.events(state.job)).map(event => event.digest), events.map(event => event.digest));
+});
+
+
+test('a zero-write response is not a terminal no-send outcome before its real completion is persisted', { timeout: 60000 }, async t => {
+  const c = await repeatedFixture();
+  const reached = Promise.withResolvers<string>();
+  const release = Promise.withResolvers<void>();
+  const append = c.service.journal.append.bind(c.service.journal);
+  const request = http.request;
+  t.mock.method(c.service.journal, 'append', async (...args: Parameters<typeof append>) => {
+    const [binding, phase, , , detail = {}] = args;
+    if (phase === 'complete' && detail.done === true && detail.outcome === 'not_dispatched') {
+      reached.resolve(binding.job);
+      await release.promise;
+    }
+    return append(...args);
+  });
+  c.service.options.beforeRound = async round => {
+    assert.equal(round, 2);
+    const abortRequest = t.mock.method(http, 'request', (url: URL, options: http.RequestOptions, listener: (response: http.IncomingMessage) => void) => {
+      abortRequest.mock.restore();
+      syncBuiltinESMExports();
+      return request(url, { ...options, signal: AbortSignal.abort() }, listener);
+    });
+    syncBuiltinESMExports();
+  };
+  const running = c.service.dispatch(c.admin, c.run, c.executor.id);
+  t.after(async () => {
+    release.resolve();
+    await running.catch(() => {});
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    await c.close();
+  });
+  try {
+    const job = await Promise.race([reached.promise, running.then(() => { throw new Error('dispatch ended without reaching the real completion append'); })]);
+    const events = await c.service.journal.events(job);
+    assert.equal(events.some(event => event.body.detail.phase === 'complete'), false);
+    const intent = events.findLast(event => event.body.detail.phase === 'intent');
+    assert.ok(intent);
+    assert.equal(intent.body.detail.round, 2);
+    const zeroWrite = events.slice(events.indexOf(intent) + 1).find(event => event.body.detail.phase === 'submit.response');
+    assert.ok(zeroWrite);
+    assert.equal(zeroWrite.body.detail.request_bytes_written, 0);
+    assert.equal(zeroWrite.body.detail.complete, false);
+    assert.equal(zeroWrite.body.detail.http_status, 0);
+    const pending = await c.service.scopedFacts(c.admin, job);
+    assert.equal(pending.dispatch_attempt?.scope.round, 2);
+    assert.equal(pending.dispatch_attempt?.submit_invoked, true);
+    assert.ok(pending.dispatch_attempt?.grounds?.includes(`rec:${zeroWrite.digest}`));
+    assert.equal(pending.dispatch_attempt?.not_sent, undefined, 'zero bytes do not prove the scope has finished');
+    assert.equal(pending.dispatch_attempt?.outcome, undefined, 'do not expose a retryable terminal outcome while the worker is paused');
+    assert.deepEqual((await c.service.journal.events(job)).map(event => event.digest), events.map(event => event.digest));
+    release.resolve();
+    await running;
+    const terminal = await c.service.scopedFacts(c.admin, job);
+    assert.deepEqual(terminal.dispatch_attempt?.scope, pending.dispatch_attempt?.scope);
+    assert.equal(terminal.dispatch_attempt?.not_sent, true);
+    assert.equal(terminal.dispatch_attempt?.outcome, 'not_dispatched');
+    assert.equal(terminal.dispatch_attempt?.submit_invoked, true);
+    assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
+    const finalEvents = await c.service.journal.events(job);
+    const complete = finalEvents.findLast(event => event.body.detail.phase === 'complete');
+    assert.ok(complete?.body.inputs.includes(`rec:${intent.digest}`));
+    assert.ok(finalEvents.some(event => event.body.detail.phase === 'receipt' && event.body.detail.acceptance === 'accepted'));
+    assert.ok(finalEvents.some(event => event.body.detail.phase === 'round' && event.body.detail.round === 1 && event.body.detail.terminal === 'pass'));
+  } finally {
+    release.resolve();
+    await running;
+  }
 });
