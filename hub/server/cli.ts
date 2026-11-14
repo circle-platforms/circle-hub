@@ -752,7 +752,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
   }
   if (command === 'serve') return serve(rest, options);
   const ctx = contextFor(options, assembly);
-  const execute = async (): Promise<number> => {
+  return traced(options, command, async () => {
     try {
       const builtIn = BUILTIN_COMMANDS.find(entry => entry.name === command)?.handler;
       if (builtIn !== undefined) return await builtIn(rest, ctx, options);
@@ -771,9 +771,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2), over
     } finally {
       await ctx.close().catch(() => {});
     }
-  };
-  // A preview must not persist telemetry before or after its read-only database observation.
-  return command === 'upgrade' && rest[0] === 'preview' ? execute() : traced(options, command, execute);
+  });
 }
 
 /** A register function that adds to one invocation's command table with the same checks as registerCommand. */

@@ -1,4 +1,4 @@
-import { diagnoseRecordsSchemaForMaintenance, type RecordsSchemaCompatibility } from '../../records/api.ts';
+import { diagnoseRecordsSchema, type RecordsSchemaCompatibility } from '../../records/api.ts';
 import { settingsOf, postgresFor, type PlatformContext } from '../../platform/api.ts';
 import { RESET_DATA_SCOPE, parseResetRequest, type ResetInspection, type ResetPorts, type ResetProblem, type ResetRequest } from './types.ts';
 
@@ -18,7 +18,7 @@ export function resetInspection(diagnostic: RecordsSchemaCompatibility): ResetIn
 export async function inspectReset(context: PlatformContext): Promise<ResetInspection> {
   await settingsOf(context);
   const postgres = postgresFor(context);
-  return resetInspection(await diagnoseRecordsSchemaForMaintenance({ database: { host: postgres.target.socketDir, port: postgres.target.port, database: postgres.target.database, user: postgres.target.user } }, postgres.application.user));
+  return resetInspection(await diagnoseRecordsSchema({ database: { host: postgres.target.socketDir, port: postgres.target.port, database: postgres.target.database, user: postgres.target.user } }));
 }
 
 /** Quote one literal path for POSIX shells; command substitutions remain inert inside single quotes. */

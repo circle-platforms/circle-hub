@@ -1,4 +1,3 @@
-import { environmentUpgradeRequired, requireProductionUpgradeActivation } from './upgrade-production.ts';
 import { createRebuildApp } from './rebuild-app.ts';
 import { createPlatformRebuildBridge } from './rebuild-platform.ts';
 import { rebuildRequiredState } from './rebuild-state.ts';
@@ -19,7 +18,7 @@ import type { Environment } from '../../contracts/generated/vocabulary.ts';
 import { createHealth, healthReader } from '../health/api.ts';
 import { PLATFORM_ONLY_VARIABLES, RENEW_WITHIN_DAYS, daysLeft, ensureHubDatabase, hubKeyProvider, layoutAt, readServerTls, readSettingsFile, reportsDirectory } from '../platform/api.ts';
 import { Database, createPool } from '../records/db.ts';
-import { EnvironmentUpgradeRequiredError, ENVIRONMENT_UPGRADE_NOTICE, migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
+import { migrateRecords, openRecords, type KeyProvider, type RecordsKit } from '../records/index.ts';
 import { sandboxStats, stopAll, sweepOrphans } from '../rules/api.ts';
 import { TraceReader, startTelemetry, type Telemetry } from '../telemetry/api.ts';
 import type { AppOptions, AssemblyModule, CliIo, HubApp, ListenInfo } from './api.ts';
@@ -157,10 +156,9 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
     if (flags['migrate-only'] === true && flags.migrate === true) throw new UsageError('--migrate-only 和 --migrate 只能用一个');
     config = loadServerConfig(io.env);
     await prepareDatabase(config, options);
-    if (flags.migrate === true || flags['migrate-only'] === true) io.stderr(ENVIRONMENT_UPGRADE_NOTICE);
     if (flags['migrate-only'] === true) return await migrateOnly(config, options);
   } catch (error) {
-    return reportFailure(io, error instanceof EnvironmentUpgradeRequiredError ? environmentUpgradeRequired() : error);
+    return reportFailure(io, error);
   }
 
   let records: RecordsKit;
@@ -171,9 +169,6 @@ export async function serve(args: readonly string[], options: ServeOptions): Pro
       ...(options.now ? { now: options.now } : {}),
     });
   } catch (error) {
-    if (error instanceof EnvironmentUpgradeRequiredError) return reportFailure(io, environmentUpgradeRequired());
-    try { await requireProductionUpgradeActivation(config); }
-    catch (admissionError) { return reportFailure(io, admissionError); }
     const diagnosis = await diagnoseRecordsSchema(config);
     const needed = rebuildRequiredState(diagnosis);
     if (needed !== null) {
