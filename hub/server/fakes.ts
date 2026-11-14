@@ -851,11 +851,12 @@ export class FakeRuns implements RunsService {
       production:stored.production === null ? null : {record:stored.production.record,result:stored.production.result} };
   }
 
-  async exportRun(user: Principal, run: string): Promise<{ run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
+  async exportRun(user: Principal, run: string): Promise<{ run_reference: string; accepted_result_reference: string | null; run: RunRecordView; result: ValidationResult | null; submission: unknown | null } | null> {
     const stored = await this.#visible(user, run);
     if (stored === null || (stored.record.runner !== user.id && !(await isAdmin(this.#records, user)))) return null;
-    const result = stored.latest?.result.acceptance === 'accepted' ? stored.latest.result : null;
-    return { run: stored.record, result, submission: result ? this.#bodies.get(`${run}:${result.submission}`) ?? null : null };
+    // This fake also stores real records: export their digests, never a hash of a projected body.
+    const accepted = [...stored.results.entries()].reverse().find(([key, entry]) => key !== stored.recordDigest && entry.result.acceptance === 'accepted' && this.#bodies.has(`${run}:${entry.result.submission}`))?.[1] ?? null;
+    return { run_reference: `rec:${stored.recordDigest}`, accepted_result_reference: accepted ? `rec:${accepted.record}` : null, run: stored.record, result: accepted?.result ?? null, submission: accepted ? this.#bodies.get(`${run}:${accepted.result.submission}`) ?? null : null };
   }
 
   async listRuns(user: Principal, query: { pack?: string; limit?: number; cursor?: string | null } = {}): Promise<Page<RunRecordView>> {

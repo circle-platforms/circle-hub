@@ -14,13 +14,15 @@ import { createApp } from './app.ts';
 
 const RUN = 'run_' + '0'.repeat(26);
 const TOKEN = 'synthetic-export-token';
+// Explicit synthetic service DTO; this HTTP fixture does not construct a records store.
+const RUN_REFERENCE = `rec:${'a'.repeat(64)}`;
 
 async function download(t: TestContext, form: 'run' | 'source', grace: number) {
   const root = await mkdtemp(join(tmpdir(), 'circle-hub-upgrade-download-'));
   const original = Buffer.alloc(16 * 1024 * 1024, 0xa5), source = sha256Hex(original);
   const instructions = 'synthetic export '.repeat(512 * 1024);
   const run = { ...runRecord, run: RUN, instructions, instructions_digest: sha256Hex(instructions) };
-  const expected = form === 'run' ? Buffer.from(canonicalBytes({ schema: 'run-export@1', run })) : original;
+  const expected = form === 'run' ? Buffer.from(canonicalBytes({ schema: 'run-export@1', run_reference: RUN_REFERENCE, run })) : original;
   const path = `/run-export/${RUN}/${form === 'run' ? 'run' : 'sources/' + source}`;
   const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
   const enqueued = Promise.withResolvers<ServerResponse>();
@@ -38,7 +40,7 @@ async function download(t: TestContext, form: 'run' | 'source', grace: number) {
       artifacts: { sourceForRun: async (_by: unknown, sha: string, id: string) => sha === source && id === RUN ? { bytes: original } : null },
       callLog: { append: async () => {} },
     },
-    runs: { exportRun: async () => { entered.resolve(); await release.promise; return { run, result: null, submission: null }; } },
+    runs: { exportRun: async () => { entered.resolve(); await release.promise; return { run_reference: RUN_REFERENCE, accepted_result_reference: null, run, result: null, submission: null }; } },
   } as unknown as ServerDeps;
   const app = createApp(deps, { codeRoot: root, closeTimeoutMs: 0, closeGraceMs: grace, log: line => messages.push(line) });
   const { port } = await app.listen();
