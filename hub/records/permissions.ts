@@ -41,7 +41,7 @@ export interface MemberCapabilities {
     target: null; assigned: false; can_use: false;
     assignment_reason: string; target_missing: string;
   }> | null;
-  environmentAccess: { ready: boolean; missing: string | null; nextAction: string | null };
+  environmentAccess: { ready: boolean; enforced: boolean; missing: string | null; nextAction: string | null };
   denials: Array<{ reason: string; nextAction: string }>;
 }
 export interface MemberCapabilitySources {
@@ -53,7 +53,7 @@ export interface MemberCapabilitySources {
   connections(by: Principal): Promise<readonly { id: string; name: string; systemPack: string; environment: string; enabled: boolean }[]>;
   personalPackUse(by: Principal, owner: string, pack: string): Promise<boolean>;
   /** Only already-authorized environments and already-redacted holder names may cross this port. */
-  environments(by: Principal): Promise<{ ready: boolean; items: readonly MemberEnvironmentCapability[]; missing: string | null; nextAction: string | null }>;
+  environments(by: Principal): Promise<{ ready: boolean; enforceEnvironmentAssignments?: boolean; items: readonly MemberEnvironmentCapability[]; missing: string | null; nextAction: string | null }>;
   unattributedHoldings(by: Principal): Promise<MemberCapabilities['unattributed_holdings']>;
 }
 
@@ -72,7 +72,7 @@ export async function memberCapabilities(
     const result: MemberCapabilities = {
       member: { name: target.name, enabled: !target.disabled && !target.deleted_at },
       teams: [], workflows: [], unassigned_workflows_count: 0, skills: [], connections: [], environments: [], unattributed_holdings: null,
-      environmentAccess: { ready: false, missing: '尚未核对测试环境使用权限', nextAction: '请管理员核对测试环境使用权限接线' },
+      environmentAccess: { ready: false, enforced: false, missing: '尚未核对测试环境使用权限', nextAction: '请管理员核对测试环境使用权限接线' },
       denials: [],
     };
     if (!result.member.enabled) {
@@ -107,7 +107,7 @@ export async function memberCapabilities(
       result.connections.push({ name: connection.name, systemPack: connection.systemPack, environment: connection.environment });
     }
     const environment = await sources.environments(target);
-    result.environmentAccess = { ready: environment.ready, missing: environment.missing, nextAction: environment.nextAction };
+    result.environmentAccess = { ready: environment.ready, enforced: environment.enforceEnvironmentAssignments === true, missing: environment.missing, nextAction: environment.nextAction };
     if (environment.ready) result.environments = environment.items.map(item => ({
       name: item.name,
       enabled: item.enabled,
