@@ -50,6 +50,8 @@ function output(s: JobCommandSession, state: JobStatus): void {
     if (attempt.missing_fact) s.out(`${scope}缺事实：${attempt.missing_fact}`);
   } else if (facts.operation === 'precheck') {
     s.out(`只读预检：${facts.readonly_verified === true ? '已取得全部条件通过的核对' : facts.readonly_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
+  } else if (facts.operation === 'conformance') {
+    s.out(`一致性核对：${facts.conformance_verified === true ? '已取得全部条件通过的核对' : facts.conformance_verified === false ? '尚未取得全部条件通过的核对' : '核对结论尚未取得'}`);
   } else {
     s.out('尚无可核对的按范围派发结局；不据此认定作业未执行。');
   }
@@ -68,6 +70,7 @@ function output(s: JobCommandSession, state: JobStatus): void {
   if (facts.reason) s.out(`作业说明：${facts.reason}`);
   if (facts.missing_fact) s.out(`作业缺事实：${facts.missing_fact}`);
   if (facts.result) s.out(`作业报告引用 ${facts.result}`);
+  if (facts.device_return) s.out(`作业设备输出引用 ${facts.device_return}（不替代本轮结局）`);
   if (facts.next_action) s.out(`作业下一步：${facts.next_action}`);
 }
 export async function readUploadedCommandBytes(records: Pick<RecordsKit, 'artifacts'>, by: Principal, reference: string): Promise<Uint8Array> {
@@ -240,7 +243,14 @@ export async function jobCommand(s: JobCommandSession, args: readonly string[]):
     const state = await dispatch.dispatch(by, values.run, values.executor, job => s.out(`阶段已预留；作业摘要 ${job}`)); output(s, state); return state.dispatch_attempt?.outcome === 'effective' && state.job_facts.frozen !== true ? 0 : 1;
   }
   if ((sub === 'status' || sub === 'resume') && positionals.length === 1) {
-    const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state); return state.dispatch_attempt?.outcome === 'unknown' || state.job_facts.frozen === true || (state.dispatch_attempt === undefined && state.job_facts.operation === 'dispatch' && state.job_facts.admission_error === undefined) ? 1 : 0;
+    const state = sub === 'status' ? await dispatch.status(by, positionals[0]) : await dispatch.resume(by, positionals[0]); output(s, state);
+    const facts = state.job_facts, attempt = state.dispatch_attempt;
+    if (facts.frozen === true) return 1;
+    if (attempt) return attempt.outcome === undefined || attempt.outcome === 'unknown' ? 1 : 0;
+    if (facts.admission_error) return 0;
+    if (facts.operation === 'precheck') return facts.readonly_verified === true ? 0 : 1;
+    if (facts.operation === 'conformance') return facts.conformance_verified === true ? 0 : 1;
+    return 1;
   }
   if (sub === 'dispose' && positionals.length === 1) {
     if (Number(values.reconcile !== undefined) + Number(values['keep-unknown'] === true) + Number(values['mark-failed'] === true) !== 1) throw new UsageError('处置必须且只能选择一个选项');
