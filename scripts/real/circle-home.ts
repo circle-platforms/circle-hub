@@ -5,9 +5,14 @@
 // The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
 //        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>] [--profile review|skills|ops] [--jev-model <id>]
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+// Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
+//   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
+import { createHash } from 'node:crypto';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
+import { formatPreflightReport, resolveInstalledGuard, runPreflight } from './guard-preflight.ts';
 import { environment, renderAllowed, type GuardDeclaration } from './guard-lib.ts';
 
 export type Profile = 'review' | 'skills' | 'ops';
@@ -330,6 +335,130 @@ function writePrivate(path: string, content: string): void {
   chmodSync(path, 0o600);
 }
 
+function sha256Text(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+function guardedHookNames(profile: 'skills' | 'ops'): { hookName: string; declName: string; genName: string } {
+  return profile === 'ops'
+    ? { hookName: 'ops-allow.mjs', declName: 'ops-allow.declaration.json', genName: 'ops-allow-gen.mjs' }
+    : { hookName: 'skills-only.mjs', declName: 'guard.declaration.json', genName: 'guard-gen.mjs' };
+}
+
+/** Static guard file bodies (entry, library, declaration, gen). ALLOWED.md is rendered after these land on disk. */
+export function planGuardFiles(profile: 'skills' | 'ops'): Array<{ relative: string; content: string }> {
+  const { hookName, declName, genName } = guardedHookNames(profile);
+  const guardLibSource = readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8');
+  return [
+    { relative: `hooks/${hookName}`, content: renderGuardEntry(declName) },
+    { relative: 'hooks/guard-lib.ts', content: guardLibSource },
+    { relative: `hooks/${declName}`, content: `${JSON.stringify(profileDeclaration(profile), null, 2)}\n` },
+    { relative: `hooks/${genName}`, content: renderGuardGen(declName, genName) },
+  ];
+}
+
+/** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills/hooks.json untouched. */
+export function writeGuardFiles(homeRaw: string, workdirRaw: string, profile: 'skills' | 'ops'): string[] {
+  const home = resolve(homeRaw);
+  const workdir = resolve(workdirRaw);
+  mkdirSync(join(home, 'hooks'), { recursive: true, mode: 0o700 });
+  chmodSync(join(home, 'hooks'), 0o700);
+  const { declName, genName } = guardedHookNames(profile);
+  const written: string[] = [];
+  for (const file of planGuardFiles(profile)) {
+    writePrivate(join(home, file.relative), file.content);
+    written.push(file.relative);
+  }
+  const allowedText = renderAllowed(environment(home, workdir, declName), `node hooks/${genName}`);
+  writePrivate(join(home, 'hooks', 'ALLOWED.md'), allowedText);
+  written.push('hooks/ALLOWED.md');
+  return written;
+}
+
+/** Builds the exact guard file set that writeGuardFiles would install, without touching the real home. */
+export function materializeGuardFiles(home: string, workdir: string, profile: 'skills' | 'ops'): Array<{ relative: string; content: string }> {
+  const tmp = mkdtempSync(join(tmpdir(), 'circle-guard-refresh-'));
+  try {
+    writeFileSync(join(tmp, 'settings.json'), readFileSync(join(home, 'settings.json')));
+    mkdirSync(join(tmp, 'hooks'), { recursive: true, mode: 0o700 });
+    const skills = join(home, 'skills');
+    if (existsSync(skills)) symlinkSync(skills, join(tmp, 'skills'));
+    writeGuardFiles(tmp, workdir, profile);
+    const relative = [...planGuardFiles(profile).map((f) => f.relative), 'hooks/ALLOWED.md'];
+    return relative.map((name) => ({ relative: name, content: readFileSync(join(tmp, name), 'utf8') }));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+export interface RefreshGuardsResult {
+  home: string;
+  profile: 'skills' | 'ops';
+  workdir: string;
+  apply: boolean;
+  changes: Array<{ relative: string; status: 'add' | 'change' | 'same' }>;
+  backup?: string;
+  preflightOk?: boolean;
+  restored?: boolean;
+  lines: string[];
+}
+
+/** Dry-run (default) or apply a guards-only refresh for an existing skills/ops home. */
+export function refreshGuards(homeRaw: string, options: { apply?: boolean } = {}): RefreshGuardsResult {
+  const apply = options.apply === true;
+  const installed = resolveInstalledGuard(homeRaw);
+  const { home, workdir, profile } = installed;
+  const { hookName } = guardedHookNames(profile);
+  const planned = materializeGuardFiles(home, workdir, profile);
+
+  const changes = planned.map((file) => {
+    const path = join(home, file.relative);
+    if (!existsSync(path)) return { relative: file.relative, status: 'add' as const };
+    const current = readFileSync(path, 'utf8');
+    return { relative: file.relative, status: (sha256Text(current) === sha256Text(file.content) ? 'same' : 'change') as 'same' | 'change' };
+  });
+
+  const lines: string[] = [
+    `只更新守卫：${home}（${profile}）`,
+    `工作目录：${workdir}`,
+    `入口保持：hooks/${hookName}（不改 hooks.json / settings / credentials / secrets / skills）`,
+  ];
+  for (const change of changes) {
+    lines.push(`- ${change.status === 'same' ? '不变' : change.status === 'add' ? '新增' : '将改'} ${change.relative}`);
+  }
+
+  if (!apply) {
+    lines.push('演练结束：未改任何文件。真改请加 --apply（会先备份 hooks/，装完自动核对，不过则恢复）。');
+    return { home, profile, workdir, apply: false, changes, lines };
+  }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backup = join(home, `hooks.bak.${stamp}`);
+  cpSync(join(home, 'hooks'), backup, { recursive: true });
+  lines.push(`已备份 hooks/ → ${basename(backup)}`);
+
+  try {
+    writeGuardFiles(home, workdir, profile);
+    const report = runPreflight(home);
+    for (const line of formatPreflightReport(report)) lines.push(line);
+    if (!report.ok) {
+      rmSync(join(home, 'hooks'), { recursive: true, force: true });
+      cpSync(backup, join(home, 'hooks'), { recursive: true });
+      lines.push('核对未过：已从备份恢复 hooks/，主目录其余文件未动。');
+      return { home, profile, workdir, apply: true, changes, backup, preflightOk: false, restored: true, lines };
+    }
+    lines.push('核对通过：守卫已更新。');
+    return { home, profile, workdir, apply: true, changes, backup, preflightOk: true, restored: false, lines };
+  } catch (error) {
+    if (existsSync(backup)) {
+      rmSync(join(home, 'hooks'), { recursive: true, force: true });
+      cpSync(backup, join(home, 'hooks'), { recursive: true });
+    }
+    lines.push(`失败并已尝试恢复：${(error as Error).message}`);
+    return { home, profile, workdir, apply: true, changes, backup, preflightOk: false, restored: true, lines };
+  }
+}
+
 export interface Written {
   files: string[];
   workdir: string;
@@ -383,28 +512,9 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
     return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', `hooks/${hookName}`], workdir };
   }
 
-  const declName = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
-  const genName = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
-  const guardLibSource = readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8');
-  writePrivate(hook, renderGuardEntry(declName));
-  writePrivate(join(home, 'hooks', 'guard-lib.ts'), guardLibSource);
-  writePrivate(join(home, 'hooks', declName), `${JSON.stringify(profileDeclaration(profile), null, 2)}\n`);
-  writePrivate(join(home, 'hooks', genName), renderGuardGen(declName, genName));
-  const allowedText = renderAllowed(environment(home, workdir, declName), `node hooks/${genName}`);
-  writePrivate(join(home, 'hooks', 'ALLOWED.md'), allowedText);
-
+  const guardFiles = writeGuardFiles(home, workdir, profile);
   return {
-    files: [
-      'settings.json',
-      'credentials.json',
-      'secrets.json',
-      'hooks.json',
-      `hooks/${hookName}`,
-      'hooks/guard-lib.ts',
-      `hooks/${declName}`,
-      `hooks/${genName}`,
-      'hooks/ALLOWED.md',
-    ],
+    files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', ...guardFiles],
     workdir,
   };
 }
@@ -439,8 +549,34 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
   };
 }
 
+export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: boolean } {
+  let home: string | undefined;
+  let apply = false;
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i];
+    if (key === '--apply') {
+      apply = true;
+      continue;
+    }
+    const value = argv[i + 1];
+    if (!key?.startsWith('--') || value === undefined) throw new Error(`参数不对：${key ?? ''}`);
+    if (key === '--home') home = value;
+    else throw new Error(`参数不对：${key}`);
+    i += 1;
+  }
+  if (!home) throw new Error('缺少 --home');
+  return { home, apply };
+}
+
 export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string) => void): number {
   try {
+    if (argv[0] === 'refresh-guards') {
+      const options = parseRefreshGuardsArgs(argv.slice(1));
+      const result = refreshGuards(options.home, { apply: options.apply });
+      for (const line of result.lines) out(line);
+      if (result.apply && result.preflightOk === false) return 1;
+      return 0;
+    }
     const options = parseArgs(argv);
     const token = env.HUB_REAL_TOKEN;
     if (!token) throw new Error('环境变量 HUB_REAL_TOKEN 没有设置（中枢令牌只从环境变量读，不进命令行）');
