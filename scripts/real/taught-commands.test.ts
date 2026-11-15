@@ -23,3 +23,11 @@ test('an authored zero-argument CLI command remains a preflight case', async () 
   assert.ok(entry);
   assert.deepEqual(instantiateTaughtCommand(entry, { skillDir: '/synthetic space' }), ["node '/synthetic space/tools/install-agents.ts'"]);
 });
+test('the exact authored generic CLI grammar is an abstract template, including its quoted-value spelling', async () => {
+  const { extractTaughtCommands, instantiateTaughtCommand } = await import('./taught-commands.ts');
+  for (const grammar of ["node '<技能目录>/tools/<脚本>.ts' --选项 值", "node '<技能目录>/tools/<脚本>.ts' --选项 '值'", 'node <技能目录>/tools/<脚本>.ts --选项 值']) {
+    const [entry] = extractTaughtCommands(`语法：\`${grammar}\``, 'synthetic.md');
+    assert.equal(entry?.isMetaTemplate, true);
+    assert.deepEqual(instantiateTaughtCommand(entry!, { skillDir: '/synthetic' }), []);
+  }
+});
