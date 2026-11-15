@@ -24,15 +24,17 @@ PREFIX = 'zz-value-pick-'
 
 
 class InstallFailure(RuntimeError):
-    def __init__(self, stage, reason, rollback=None, details=None):
+    def __init__(self, stage, reason, rollback=None, details=None, message=None):
         super().__init__(reason)
         self.stage, self.reason, self.rollback = stage, reason, rollback
         self.details = details
+        self.message = message
 
     def report(self):
         return {'ok': False, 'stage': self.stage, 'reason': self.reason,
                 **({'rollback': self.rollback} if self.rollback is not None else {}),
-                **({'details': self.details} if self.details is not None else {})}
+                **({'details': self.details} if self.details is not None else {}),
+                **({'message': self.message} if self.message is not None else {})}
 
 
 class InstallationInterrupted(BaseException):
@@ -342,6 +344,20 @@ class Installer:
                 'next_action': '先停止本次安装；以 root 运行本安装器 rollback --unit <原服务单元> --release <原发布名> 继续原撤回。若标记身份校验失败，保留文件交管理员核对，不要手工删除标记或换发布名绕过',
             })
 
+    def require_gateway_python(self, launch):
+        self.stage = 'preflight_python'
+        try:
+            raw = self.call([launch['python'], '-I', '-c',
+                             'import json,sys; print(json.dumps(list(sys.version_info[:3])))'])
+            version = json.loads(raw)
+            if not isinstance(version, list) or len(version) != 3 or any(type(part) is not int or part < 0 for part in version):
+                raise ValueError('invalid_version_metadata')
+        except Exception:
+            raise InstallFailure(self.stage, 'gateway_python_version_unavailable', message='无法确认网关服务解释器版本；安装需要 Python 3.11 或以上，预检已停止，尚未复制、导出或激活') from None
+        if tuple(version[:2]) < (3, 11):
+            raise InstallFailure(self.stage, 'gateway_python_too_old', message='网关服务解释器低于 Python 3.11，无法运行安装所需的在线探测；请使用已批准的 Python 3.11 或以上服务解释器后重试。预检已停止，尚未复制、导出或激活')
+        self.stage = 'discover'
+
     def preflight(self, bundle, unit):
         self.unit(unit)
         bundle = Path(bundle)
@@ -367,6 +383,7 @@ class Installer:
             raise InstallFailure(self.stage, 'base_typed_missing_or_mismatch')
         self.stage = 'discover'
         launch = self.launch(unit)
+        self.require_gateway_python(launch)
         self.reject_rollback_progress(unit)
         if launch['component'] is not None:
             raise InstallFailure(self.stage, 'already_wrapped')
