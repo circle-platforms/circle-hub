@@ -1,3 +1,4 @@
+import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // 只读检查自动化用例 JSON、自动化用例目录或场景保真判断（.verdict.json）的语法、长度占位与结构，不用令牌，不写入磁盘：
 //   node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
@@ -271,7 +272,7 @@ function looksLikeVerdict(filePath: string, parsed: unknown): boolean {
 }
 
 function writeProblemStderr(
-  category: CallErrorCategory,
+  category: import('../functions/generated/vocabulary.ts').CallErrorCategory,
   summary: string,
   problems: readonly CheckProblem[],
   nextStep: string,
@@ -281,7 +282,7 @@ function writeProblemStderr(
     .map((p) => (p.pointer ? `${p.pointer}: ${p.message}` : p.message))
     .join('；');
   const suffix = problems.length > 5 ? `（另有 ${problems.length - 5} 处见 stdout）` : '';
-  process.stderr.write(formatCallError(`${summary}（${detail}${suffix}）。${nextStep}`, { category }) + '\n');
+  process.stderr.write(formatCallError(new CallFailure(category, `${summary}（${detail}${suffix}）`, nextStep, { path: problems[0]?.pointer })) + '\n');
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -291,11 +292,11 @@ export async function main(argv: string[]): Promise<number> {
 
     if (targetInfo.isDirectory()) {
       if (args.brief !== undefined) {
-        throw new Error('--brief 只能配合单个 .verdict.json 使用，不能和目录一起使用。请指定具体的判断文件后重试');
+        throw new CallFailure('invalid_parameters', '--brief 只能配合单个 .verdict.json 使用，不能和目录一起使用。请指定具体的判断文件后重试', "请使用 --file 指向计划或两字段判断文件；核对判断时同时提供 --brief");
       }
       const entries = (await readdir(args.file)).filter((name) => name.endsWith('.json')).sort();
       if (!entries.length) {
-        throw new Error(`不存在：目录 ${args.file} 里没有 .json 文件。请核对计划目录路径或先写出计划文件后重试`);
+        throw new CallFailure('not_found', `不存在：目录 ${args.file} 里没有 .json 文件。请核对计划目录路径或先写出计划文件后重试`, "请使用 --file 指向计划或两字段判断文件；核对判断时同时提供 --brief");
       }
       const results: PlanCheckResult[] = [];
       const seenItems = new Map<string, string>();
@@ -363,7 +364,7 @@ export async function main(argv: string[]): Promise<number> {
         const onlyDuplicate =
           allProblems.length > 0 && allProblems.every((p) => p.code === 'duplicate_item');
         writeProblemStderr(
-          onlyDuplicate ? '已被占用' : '参数无效',
+          onlyDuplicate ? 'occupied' : 'invalid_parameters',
           onlyDuplicate
             ? `目录 ${args.file} 中存在重复对应同一条原始用例的文件`
             : `目录 ${args.file} 中有 ${failedItems.length} 份文件未通过检查`,
@@ -376,7 +377,7 @@ export async function main(argv: string[]): Promise<number> {
     }
 
     if (!targetInfo.isFile()) {
-      throw new Error(`${args.file} 不是常规文件或目录。请指定计划 JSON、.verdict.json 或计划目录后重试`);
+      throw new CallFailure('invalid_parameters', `${args.file} 不是常规文件或目录。请指定计划 JSON、.verdict.json 或计划目录后重试`, "请使用 --file 指向计划或两字段判断文件；核对判断时同时提供 --brief");
     }
 
     const name = basename(args.file);
@@ -398,11 +399,11 @@ export async function main(argv: string[]): Promise<number> {
       if (args.brief !== undefined) {
         const briefInfo = await stat(args.brief);
         if (!briefInfo.isFile()) {
-          throw new Error(`--brief 指定的 ${args.brief} 不是常规文件。请传入 fidelity-brief.ts 生成的 .brief.json 文件`);
+          throw new CallFailure('invalid_parameters', `--brief 指定的 ${args.brief} 不是常规文件。请传入 fidelity-brief.ts 生成的 .brief.json 文件`, "请使用 --file 指向计划或两字段判断文件；核对判断时同时提供 --brief");
         }
         const briefObj = parsedPlanFile(basename(args.brief), await readFile(args.brief));
         if (!isBriefObject(briefObj)) {
-          throw new Error(`--brief 指定的 ${args.brief} 不是有效的场景保真核对简报。请使用 fidelity-brief.ts 生成的 .brief.json 文件`);
+          throw new CallFailure('invalid_parameters', `--brief 指定的 ${args.brief} 不是有效的场景保真核对简报。请使用 fidelity-brief.ts 生成的 .brief.json 文件`, "请使用 --file 指向计划或两字段判断文件；核对判断时同时提供 --brief");
         }
         const checked = fidelityJudgmentProblems(briefObj, parsed);
         const ok = checked.problems.length === 0;
@@ -419,7 +420,7 @@ export async function main(argv: string[]): Promise<number> {
         );
         if (!ok) {
           writeProblemStderr(
-            '参数无效',
+            'invalid_parameters',
             `${name} 对照 ${basename(args.brief)} 未通过检查`,
             checked.problems,
             '请按 stdout 中的 problems 修正判断文件或重跑 fidelity-brief.ts 后重检',
@@ -444,7 +445,7 @@ export async function main(argv: string[]): Promise<number> {
       );
       if (!ok) {
         writeProblemStderr(
-          '参数无效',
+          'invalid_parameters',
           `${name} 结构检查未通过`,
           checked.problems,
           '请按 stdout 中的 problems 字段修正 .verdict.json 后重检',
@@ -458,7 +459,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(JSON.stringify({ mode: 'plan', ...res }) + '\n');
     if (!res.ok) {
       writeProblemStderr(
-        '参数无效',
+        'invalid_parameters',
         `${name} 结构检查未通过`,
         res.problems,
         '请按 stdout 中的 problems 字段对照 slots.schema.json 修改后重检',
