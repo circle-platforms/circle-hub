@@ -202,6 +202,17 @@ export interface ArtifactsOptions {
   onCredentialScan?: (byteLength: number) => void;
 }
 
+// Only this module can authorize the constrained service-read transaction path.
+const OBSERVED_READ_TRANSACTION = Symbol('observed-read transaction');
+function requireObservedRead(input: IngestInput, tx: Transaction): void {
+  if (!tx || !Number.isSafeInteger(tx.transactionId)) throw new TypeError('observed read requires an existing store transaction');
+  if (!input.origin || !('read' in input.origin) || input.provenanceType !== 'observed' || input.author?.user !== null ||
+      input.visibility?.admins !== true || input.visibility.shareable !== false || input.readTier !== FUNCTION_BYTES_ONLY ||
+      input.personalOwner !== undefined || input.accountOwned !== undefined) {
+    throw new TypeError('observed read requires a service-owned, admin-visible, unshareable function read');
+  }
+}
+
 export class RecordArtifacts implements Artifacts {
   readonly #db: Database;
   readonly #personal:PgPersonalPayloads;
@@ -235,6 +246,13 @@ export class RecordArtifacts implements Artifacts {
     return this.#owned(input,false,tx).then(snapshot=>snapshot.personalOwner?this.#personalIngest(snapshot,true,tx):this.#ingest(snapshot,true,tx));
   }
 
+  async ingestObservedRead(input: IngestInput, tx: Transaction): Promise<SourceArtifact> {
+    requireObservedRead(input, tx);
+    const snapshot = await this.#owned(input, false, tx);
+    requireObservedRead(snapshot, tx);
+    return this.#ingest(snapshot, true, tx, undefined, OBSERVED_READ_TRANSACTION);
+  }
+
   async #owned(input:IngestInput,consume:boolean,tx?:Transaction):Promise<IngestInput>{
     if(!(input.bytes instanceof Uint8Array))throw new TypeError('bytes must be a Uint8Array');
     if(!isMediaType(input.mediaType))throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
@@ -260,11 +278,11 @@ export class RecordArtifacts implements Artifacts {
 
   ingestTransferred(input: IngestInput): Promise<SourceArtifact> { return this.#owned(input,true).then(snapshot=>snapshot.personalOwner?this.#personalIngest(snapshot,true):this.#ingest(snapshot,true)); }
 
-  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction,personalScope?:PersonalScope): Promise<SourceArtifact> {
+  async #ingest(input: IngestInput, consume: boolean,outer?:Transaction,personalScope?:PersonalScope,observedRead?:typeof OBSERVED_READ_TRANSACTION): Promise<SourceArtifact> {
     if (!(input.bytes instanceof Uint8Array)) throw new TypeError('bytes must be a Uint8Array');
     if (!isMediaType(input.mediaType)) throw new TypeError(`invalid media type ${JSON.stringify(input.mediaType)}`);
     const origin = validOrigin(input.origin);
-    if(outer&&!('upload' in origin)&&!(personalScope&&'read'in origin))throw new TypeError('transactional ingestion requires an upload');
+    if(outer&&!('upload' in origin)&&!(personalScope&&'read'in origin)&&observedRead!==OBSERVED_READ_TRANSACTION)throw new TypeError('transactional ingestion requires an upload');
     const author = validAuthor(input.author);
     if (!isProvenanceType(input.provenanceType)) throw new TypeError('unknown provenance type');
     const requestedTier = input.readTier ?? MODEL_READABLE;

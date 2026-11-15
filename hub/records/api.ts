@@ -601,6 +601,13 @@ export interface Artifacts {
    * object registration.
    */
   ingest(input: IngestInput,tx?:Transaction): Promise<SourceArtifact>;
+  /**
+   * Trusted service capture in the caller's existing transaction, so its source record and response action can commit
+   * together. Requires read origin, observed provenance, null user author, admin-visible/unshareable visibility and
+   * function_bytes_only; rejects personal ownership. Normal ingest validation, snapshotting, scan and dedupe apply.
+   * CAS bytes may precede commit; an uncommitted blob alone is not a committed source artifact.
+   */
+  ingestObservedRead(input: IngestInput, tx: Transaction): Promise<SourceArtifact>;
   /** Consumes whole transferable buffers by detaching every caller alias; other buffers are snapshotted. Do not reuse the input. */
   ingestTransferred(input: IngestInput): Promise<SourceArtifact>;
   /** In-memory check for Hub-generated parts (for example entries of a view). No bytes or finding text are persisted or returned. */
