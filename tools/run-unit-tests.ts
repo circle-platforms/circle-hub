@@ -30,6 +30,7 @@ export const UNIT_PATTERNS = [
   'packs/**/*.test.ts',
   'scripts/real/circle-guard.test.ts',
   'scripts/real/circle-home.test.ts',
+  // Synthetic only; probe cases report conditional skips without Python 3.11+ (CIRCLE_HUB_TEST_PYTHON or PATH).
   'scripts/real/bed-side/**/*.test.ts',
   'tools/console-smoke.test.ts',
   'tools/gen-contracts*.test.ts',
