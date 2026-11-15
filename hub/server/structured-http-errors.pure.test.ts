@@ -166,6 +166,8 @@ test('SDK pre-handler refusal and a thrown business dependency have distinct eff
   assert.equal(HttpCallErrorData.parse(error.data).code, 'CALL_INTERNAL_UNAVAILABLE');
   assert.equal(Object.hasOwn(error.data, 'call_not_executed'), false);
   assert.doesNotMatch(JSON.stringify(error), /PRIVATE business failure/);
+  assert.match(error.data.trace,/^[a-f0-9]{32}$/,'retain the existing machine-readable trace instead of moving it only into prose');
+  assert.ok(error.message.includes(error.data.trace));
 });
 
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
