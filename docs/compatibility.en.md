@@ -49,6 +49,8 @@ The following belonged to the retired task-and-approval server (up to 0.2.0) and
 
 ## History
 
+- 2026-11-15: Add local `replay-circle.ts capture|inspect|run|compare` and private `circle-replay-source@1` bundles. The initial adapter requires an explicitly supplied, digest-matched Circle 1.17.0 Harness and does not connect to real models, Hub or business systems. Optional test variable `CIRCLE_HUB_REPLAY_CIRCLE_APP` selects the installed app; integration tests explicitly skip when absent. Real materials stay outside Git.
+
 - 2026-10-13: this page was created. The rename has not started; the acceptance Circle commit is 8b2ceb6; foundation/circle is 1.0.4; circle's main line is 1.1.1.
 - Evening of 2026-10-13: 7420 upgraded in place to server-s2 8e212a6 (§5, migration 28); circle mainline 1.2.1; circle-hub and circle-packs relicensed under Apache-2.0 with signed-off commits; circle-packs acceptance pinned at 316760a (products/apv 1.2.0).
 

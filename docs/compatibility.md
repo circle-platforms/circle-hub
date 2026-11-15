@@ -49,6 +49,8 @@ Hub 服务端只支持并发布 macOS（开发与本机验证）和 Linux（生�
 
 ## 历史
 
+- 2026-11-15：新增本机 `replay-circle.ts capture|inspect|run|compare` 和私有 `circle-replay-source@1` 回放格式；首版仅适配明确指定且摘要匹配的 Circle 1.17.0 Harness，不连接真实模型、Hub 或业务系统。可选测试变量 `CIRCLE_HUB_REPLAY_CIRCLE_APP` 指定已安装应用，缺失时集成测试明确跳过；真实材料只保存在 Git 外。
+
 - 2026-10-13：建立本页。改名尚未开始；验收 Circle 提交 8b2ceb6；foundation/circle 1.0.4；circle 主线 1.1.1。
 - 2026-10-13 晚：7420 就地升级到 server-s2 8e212a6（§5，迁移 28）；circle 主线 1.2.1；circle-hub 与 circle-packs 改为 Apache-2.0，提交需签署；circle-packs 验收固定提交 316760a（products/apv 1.2.0）。
 
