@@ -590,7 +590,8 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(accepted.structuredContent.acceptance, 'accepted');
     SubmitResultOutput.parse(accepted.structuredContent);
     assert.deepEqual(accepted.structuredContent.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 });
-    assert.equal(accepted.content[0].text?.split('\n')[0], '脚本合并已核对。');
+    // No step_name until the workflow declares a unique checked step (Boss 07:00 / C56).
+    assert.equal(accepted.content[0].text?.split('\n')[0], '核对已完成。');
     const repeat = await client.call('submit_result', submission);
     assert.deepEqual((repeat.structuredContent.result as { submission: string }).submission, (accepted.structuredContent.result as { submission: string }).submission);
 
@@ -599,7 +600,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(refused.structuredContent.acceptance, 'not_accepted');
     assert.equal(firstError(refused).code, 'QUOTE_MISMATCH');
     assert.ok(refused.structuredContent.result, 'a submission refused against a run it may use carries its result');
-    assert.match(refused.content[0].text ?? '', /^脚本合并有错误。/);
+    assert.match(refused.content[0].text ?? '', /^核对有错误。/);
 
     const malformed = await client.call('submit_result', { ...submission, run: 'run_123' });
     assert.equal(malformed.isError, true);

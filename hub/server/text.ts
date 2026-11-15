@@ -1070,9 +1070,16 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }
 
+/** Lead sentence for submit_result: only the producer-supplied step_name, else the neutral form (Boss 07:00 / C56). */
+function submitLead(v: Pick<SubmitOut, 'acceptance' | 'step_name'>): string {
+  const name = typeof v.step_name === 'string' && v.step_name.trim().length > 0 ? v.step_name : null;
+  if (v.acceptance === 'accepted') return name ? `${name}已核对。` : '核对已完成。';
+  return name ? `${name}有错误。` : '核对有错误。';
+}
+
 function submitText(v: SubmitOut, context: TextContext): string {
   const role = callerRole(context);
-  const lines = [v.acceptance === 'accepted' ? '脚本合并已核对。' : '脚本合并有错误。'];
+  const lines = [submitLead(v)];
   const represented = new Set(v.acceptance === 'accepted' && v.result !== undefined ? itemsOf(v.result.partitions).map(({ item }) => item.item) : []);
   if (v.acceptance === 'accepted' && v.result !== undefined) {
     lines.push(...resultConclusions(v.result, context.items));

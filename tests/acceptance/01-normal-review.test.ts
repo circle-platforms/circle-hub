@@ -226,7 +226,7 @@ describe('scenario 1: a normal review', () => {
         assert.doesNotMatch(line, /；判断正确；|；判断错误；/);
       }
     }
-    assert.ok(receiptText.startsWith('脚本合并已核对。\n'), receiptText.slice(0, 200));
+    assert.ok(receiptText.startsWith('核对已完成。\n'), receiptText.slice(0, 200));
     assert.doesNotMatch(receiptText, /回执：|分区：|本层不适用|静态：|动态：|rec:|src:/);
   });
 

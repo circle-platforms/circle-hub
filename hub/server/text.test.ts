@@ -467,6 +467,22 @@ const list=items(62),result=resultOf(list,{production:true});const answer=startA
 // ---------------------------------------------------------------- submit_result
 
 describe('submit_result text', () => {
+  test('lead sentence uses step_name when present, else the neutral form (Boss 07:00 / C56)', () => {
+    const accepted = submitAnswer(resultOf(items(1)));
+    assert.equal(toolText('submit_result', accepted).split('\n')[0], '核对已完成。');
+    assert.equal(toolText('submit_result', SubmitResultOutput.parse({ ...accepted, step_name: '用例重组' })).split('\n')[0], '用例重组已核对。');
+    const refused = submitAnswer(ValidationResult.parse({
+      ...resultOf(items(1)),
+      acceptance: 'not_accepted',
+      errors: [{ code: 'QUOTE_MISMATCH', message: '原句对不上', fix: '使用者按原文逐字引用', path: '/items/0', rounds_left: 1 }],
+      partitions: { delivered: [], rejected: [], quarantined: [], incomplete: [] },
+      cross_item: [],
+    }));
+    assert.equal(toolText('submit_result', refused).split('\n')[0], '核对有错误。');
+    assert.equal(toolText('submit_result', SubmitResultOutput.parse({ ...refused, step_name: '脚本编写' })).split('\n')[0], '脚本编写有错误。');
+    assert.equal(SubmitResultOutput.safeParse({ ...accepted, step_name: '   ' }).success, false);
+  });
+
   test('recompose acceptance: title from fields, no repeated slot judgment or quote lines, no evidence restating quotes', () => {
 const list=[{...items(1)[0],fields:{case_id:'253651793153361064',title:'253 字符域名 DNS 解析正常'},label:'253651793153361064'}];
 const quoteA='引文 “253 字符域名 DNS 解析正常” 与所引片段逐字一致';
@@ -1026,7 +1042,7 @@ test('recompose refusal: one next actor, verbatim（×N）, determined-error bra
     cross_item: [],
   });
   const text = toolText('submit_result', submitAnswer(refused), { items: list });
-  assert.match(text, /^脚本合并有错误。$/m);
+  assert.match(text, /^核对有错误。$/m);
   assert.match(text, /^原始用例 253651793153361064 标题未知：$/m);
   assert.match(text, /^- 改写后的命令没有锁定目录的完整语法身份（×5）$/m);
   assert.equal(linesOf(text).filter((line) => line.includes('改写后的命令没有锁定目录的完整语法身份')).length, 1);
