@@ -139,7 +139,7 @@ test('the runner exports the jobs of its run, with verdicts only from the dispat
   const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, phase: 'complete', outcome: 'effective', frozen: false, events: 3, result, device_return: deviceReturn }, ended: 'done', boundary_refused: false });
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch: { jobs: async () => [job()], reconcile: async () => job().status } });
   const exported = await service.exportJobs!(h.alice, run.run);
-  assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows: [{ item, dynamic_terminal: 'fail', evidence: { log } }] }] });
+  assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows }] });
   assert.ok(!('record' in exported!.jobs[0]), 'the administrative proof stays out');
   for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
   assert.equal(await service.exportJobs!({ id: 'u_01aaaaaaaaaaaaaaaaaaaaaaaa', name: '合成路人', role: 'user' }, run.run), null);

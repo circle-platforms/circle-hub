@@ -281,7 +281,14 @@ export interface ExportedJob {
   /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
   result: string | null; device_return: string | null;
   /** Null until the result projection is the dispatch service's own and covers every item of the job exactly once. */
-  rows: Array<{ item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal; evidence?: { log?: string; sessions?: Record<string, string> } }> | null;
+  rows: Array<{
+    item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal;
+    qualifier?: { nature: import('../contracts/generated/vocabulary.ts').Nature; marks: import('../contracts/generated/vocabulary.ts').QualifierMark[] };
+    accepted_as_fact?: false; missing_facts?: string[]; missing_fact?: string; next_action?: string;
+    code?: string; judgment_premises?: import('../contracts/src/claim.ts').Claim[];
+    report_check?: { condition: string; pointer: string; declared_pointer: string; resolved: boolean; present: boolean; actual_sha256: string; result_definition_sha256: string; mapped_terminal?: import('../contracts/generated/vocabulary.ts').DynamicTerminal; missing_fact?: string; next_action?: string };
+    evidence?: { log?: string; sessions?: Record<string, string> };
+  }> | null;
 }
 
 export interface RunsService {
