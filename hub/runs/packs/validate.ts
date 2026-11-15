@@ -249,6 +249,12 @@ async function validateWorkflow(c: Collector, directory: PackDirectory, policy: 
   const { manifest } = directory;
   const workflow = c.parse('workflow.shape', 'workflow.json', WorkflowFile, 'workflow@1');
   const requirements = c.parse('requirements.shape', 'requirements.json', PublishableRequirementsFile, 'requirements@1');
+  if (workflow && requirements) {
+    const steps = new Set(workflow.steps?.map(step => step.id) ?? []);
+    requirements.requirements.forEach((requirement, index) => {
+      if (requirement.step !== undefined && !steps.has(requirement.step)) c.add(problem('workflow.step_reference', 'requirements.json', `要求项 ${requirement.key} 引用的步骤 ${requirement.step} 没有声明`, '在 workflow.json 的 steps 声明该 id，或移除该要求项的 step 引用', {field: `/requirements/${index}/step`}));
+    });
+  }
   const checks = c.parse('checks.shape', 'checks.json', ChecksFile, 'checks@1');
   const slots = c.parse('slots.shape', 'slots.schema.json', SlotsFile, 'slots@1');
   const knowledgePresent = c.files.has(KNOWLEDGE);

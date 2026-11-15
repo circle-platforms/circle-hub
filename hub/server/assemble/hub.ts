@@ -1,3 +1,5 @@
+import { createEnvironmentManagementPorts } from '../test-environments-console.ts';
+import { readEnvironmentPermissionStartup, recordsEnvironmentPermissionStartup, type EnvironmentPermissionStartup, type EnvironmentPermissionStartupPort } from '../env-startup.ts';
 import { primeStartupSecrets } from './secret-readiness.ts';
 import { acceptedDispatch, dispatchedRuns, readEnvironmentCalls, readRunJobs, runInFlight, runReservations } from '../../dispatch/api.ts';
 import { productVariableNameAvailable } from '../variables.ts';
@@ -21,7 +23,7 @@ import {
 } from '../../connectors/api.ts';
 import { createKnowledge, createKnowledgeReader, routeKnowledgeViews, type Knowledge } from '../../knowledge/api.ts';
 import type { ExternalReaderPort, PackCatalogPort, PacksPort, ResourceCatalogPort, WorkflowStore } from '../../ports.ts';
-import { canUseEnvironment, memberCapabilities, type Principal, type RecordsKit } from '../../records/api.ts';
+import { memberCapabilities, type Principal, type RecordsKit, type Transaction } from '../../records/api.ts';
 import { LeaseService } from '../../leases/service.ts';
 import { createPool, Database } from '../../records/db.ts';
 import { createSkillParserRegistry, type ParserRegistry } from '../../refs/api.ts';
@@ -50,6 +52,10 @@ import { terminalSafe } from './terminal.ts';
 import { requireVaultKey } from './vault.ts';
 
 export interface AssemblyOptions {
+  /** Verified startup inheritance observation; command assemblies reread the durable public records service. */
+  environmentPermissionStartup?: EnvironmentPermissionStartup;
+  /** Read-only public completion port; tests inject observations without constructing records markers. */
+  environmentPermissions?: Pick<EnvironmentPermissionStartupPort, 'read'>;
   /**
    * Pack functions run under macOS sandbox-exec, which denies the network (default true). Only synthetic test environments
    * where it is missing may pass false (hub/rules).
@@ -136,6 +142,10 @@ export function sandboxRefusal(reason: string | undefined, platform: NodeJS.Plat
 }
 
 export async function assembleHub(config: HubConfig, records: RecordsKit, options: AssemblyOptions = {}): Promise<AssembledHub> {
+  const environmentPort = options.environmentPermissions ?? recordsEnvironmentPermissionStartup(records);
+  const readEnvironmentStartup = () => readEnvironmentPermissionStartup(environmentPort);
+  const environmentStartup = options.environmentPermissionStartup ?? await readEnvironmentStartup();
+  const enforceEnvironmentAssignments = environmentStartup.completed !== false;
   const notes = new CallNotes(options.log ?? stderrLog);
   const notices: string[] = [];
   // 1. The vault master key: read (never created) and checked against the vault before anything else.
@@ -211,12 +221,18 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   // and the test hub alike give lease-declaring workflows a service (C3); a CLI command's assembly may pass null to
   // keep a read-only command from opening a pool it does not need.
   const leaseDatabase = options.leases === undefined ? new Database(createPool(config.database, 2)) : null;
-  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, ...(now === undefined ? {} : { now: async () => now() }) });
-  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases, (actor, id, tx) => canUseEnvironment(records, actor, id, tx)) : null;
+  const leases = options.leases === null ? undefined : options.leases ?? new LeaseService(leaseDatabase!, { records: records.store, catalog: records.testEnvironments, ...(now === undefined ? {} : { now: async () => now() }) });
+  const environments = leases ? new MemberEnvironments(records, new ExecutorRegistry(records), leases) : null;
+  const environmentAccess = environments ? {
+    inheritance: (tx?: Transaction) => environmentPort.read(tx),
+    authorizeKeys: (actor: Principal, keys: readonly string[], tx?: Transaction) => environments.authorizeKeys(actor, keys, tx),
+    canUse: (actor: Principal, executor: string) => environments.canUse(actor, executor),
+    permission: environments.permission,
+  } : undefined;
   let dispatch: DispatchService | null = null;
   const engineDeps:RunsEngineDeps = {
-    enforceEnvironmentAssignments: false,
-    ...(environments ? { environmentAccess: environments } : {}),
+    enforceEnvironmentAssignments,
+    ...(environmentAccess ? { environmentAccess } : {}),
     effectRegistry:{snapshot:variables=>freezeEffectRegistry(records,variables)},
     dispatch:{jobs:(by,run,reservations)=>dispatch?readRunJobs(records,dispatch,by,run,reservations?{reservations}:{}):Promise.resolve([]),reservations:()=>runReservations(records),runs:(jobs)=>dispatch?dispatchedRuns(records,jobs):Promise.resolve(new Map<string,string[]>()),reconcile:(by,job)=>{if(!dispatch)throw new Error('派发服务没有接线');return dispatch.resume(by,job);},accepted:(run,ready,caller)=>dispatch?acceptedDispatch(records,dispatch,run,ready,undefined,caller):Promise.resolve([]),inFlight:(run,caller)=>dispatch?runInFlight(records,dispatch,run,caller):Promise.resolve(null)},
     records,
@@ -250,15 +266,20 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
   };
   const engine=createRunsService(engineDeps);
   const runs = withCallNotes(engine, notes);
-  dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments: false, records, leases, runs, workflows, knowledge, ...(environments ? { environmentAccess: environments } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
+  dispatch = leases ? new DispatchService({ enforceEnvironmentAssignments, records, leases, runs, workflows, knowledge, ...(environmentAccess ? { environmentAccess } : {}), adminLog:notes.engine,recheckChecks:input=>recheckEffectChecks(engineDeps,input),redactor:connectors.redactor, ...(leaseDatabase ? { close: () => leaseDatabase.end() } : {}), ...(now ? { now } : {}) }) : null;
 
   const deps: ServerDeps = {
+    ...(leases ? createEnvironmentManagementPorts(records, leases, { ...(now ? { now } : {}) }) : {}),
+    environmentPermissionStartup: readEnvironmentStartup,
     startupSecretIssues: () => startupSecretIssues,
     documents: docs,
     config,
     close: () => dispatch?.close() ?? Promise.resolve(),
     records,
-    memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
+    memberCapabilities: async (by, userId, packSummaries) => {
+      const currentStartup = await readEnvironmentStartup();
+      const currentlyEnforced = currentStartup.completed !== false;
+      const result = await memberCapabilities(records, {
       canUsePack: (target, pack) => registry.canUse(target.id, pack),
       publicWorkflowIds: async () => (await registry.listPacks()).filter(pack => pack.kind === 'workflow' && pack.latest !== null).map(pack => pack.id),
       packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
@@ -266,12 +287,16 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
       })),
       personalPackUse: async (target, owner, pack) => await registry.personal?.mayUse(target, owner, pack) ?? false,
-      environments: async target => environments === null ? {
-        ready: false, items: [], missing: '测试环境租约服务未接线',
+      environments: async target => currentStartup.completed === null ? {
+        ready: false, enforceEnvironmentAssignments: currentlyEnforced, items: [], missing: currentStartup.missing, nextAction: currentStartup.nextAction,
+      } : environments === null ? {
+        ready: false, enforceEnvironmentAssignments: currentlyEnforced, items: [], missing: '测试环境租约服务未接线',
         nextAction: '请管理员恢复测试环境租约服务后重新查询',
-      } : { ready: true, enforceEnvironmentAssignments: false, items: await environments.list(target), missing: null, nextAction: null },
+      } : { ready: true, enforceEnvironmentAssignments: currentlyEnforced, items: await environments.list(target), missing: null, nextAction: null },
       unattributedHoldings: target => environments === null ? Promise.resolve(null) : environments.unattributedHoldings(target),
-    }, by, userId),
+      }, by, userId);
+      return { ...result, environmentAccess: { ...result.environmentAccess, enforced: currentlyEnforced } };
+    },
     runs,
     runsDetail: runs,
     registry,
@@ -291,7 +316,7 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
     systems: { trial: (by, input) => connectors.admin.trial(by, input), forgetTrialLogin: (by, input) => connectors.admin.forgetTrialLogin(by, input) },
     // The console's read-only view of dispatch: the registry and readRunJobs recheck the administrator themselves.
     dispatch: {
-      ...(dispatch && leases ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, (actor, id) => canUseEnvironment(records, actor, id), now) } : {}),
+      ...(dispatch && leases && environments ? { readiness: createEnvironmentReadiness(records, new ExecutorRegistry(records), dispatch, leases, environments.permission, now) } : {}),
       executors: async (by) => {
         const views: ExecutorView[] = [];
         for (const entry of await new ExecutorRegistry(records).sources(by)) {
@@ -321,8 +346,8 @@ export async function assembleHub(config: HubConfig, records: RecordsKit, option
  * it), and every notice written to the operator's log once at start-up. For `serve` only: a CLI command's dependencies come from createCommandAssembly.
  */
 export function createAssembly(options: AssemblyOptions = {}): AssembleFunction {
-  return async (config, records) => {
-    const hub = await assembleHub(config, records, { requireVaultKey: true, checkSandbox: true, ...options, sweepStages:true });
+  return async (config, records, startup?: EnvironmentPermissionStartup) => {
+    const hub = await assembleHub(config, records, { requireVaultKey: true, checkSandbox: true, ...options, ...(startup ? { environmentPermissionStartup: startup } : {}), sweepStages:true });
     for (const notice of hub.notices) hub.notes.log(`注意：${notice}`);
     return hub.deps;
   };

@@ -38,7 +38,7 @@ export interface MemberCapabilities {
   /** Own bookings without a verified executor binding; null means the holding read is unknown. */
   unattributed_holdings: Array<{
     booking_run: string; since: string; until: string | null;
-    target: null; assigned: false; can_use: false;
+    target: null; assigned: false | null; can_use: false;
     assignment_reason: string; target_missing: string;
   }> | null;
   environmentAccess: { ready: boolean; enforced: boolean; missing: string | null; nextAction: string | null };

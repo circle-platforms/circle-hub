@@ -62,6 +62,55 @@ export const RESERVED_CREDENTIAL = 'session';
 
 export const ResourceId = idOf('res');
 export type ResourceId = z.infer<typeof ResourceId>;
+/** A stable environment identity, independent of executor, name and target identities. */
+export const TestEnvironmentId = idOf('env');
+export type TestEnvironmentId = z.infer<typeof TestEnvironmentId>;
+export const TEST_ENVIRONMENT_CONFIG_PREFIX = 'environment.';
+export const TEST_ENVIRONMENT_INHERITANCE_KEY = 'environment-inheritance';
+export const TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION = 1;
+
+const TestEnvironmentKey = z.string().regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/);
+const TestEnvironmentName = z.string().min(1).max(200).refine(value => value.trim().length > 0, 'a name is not whitespace');
+/** Unknown responsibility stays explicit; known legacy owners and times are copied without substitution. */
+export const TestEnvironmentPrefix = z.strictObject({
+  prefix: TestEnvironmentKey.refine(value => value.endsWith('/'), 'a prefix ends with /'),
+  owner: UserId.nullable(), registered_at: IsoTime.nullable(),
+});
+export const TestEnvironmentResource = z.strictObject({
+  key: TestEnvironmentKey, owner: UserId.nullable(), registered_at: IsoTime.nullable(),
+});
+const TestEnvironmentContent = z.strictObject({
+  name: TestEnvironmentName.nullable(), target: TestEnvironmentName.nullable(),
+  prefixes: z.array(TestEnvironmentPrefix), resources: z.array(TestEnvironmentResource),
+  executors: z.array(idOf('exe')), enabled: z.boolean(), missing_facts: z.array(z.string().min(1)),
+}).superRefine((input, ctx) => {
+  for (const [field, values] of [
+    ['prefixes', input.prefixes.map(row => row.prefix)],
+    ['resources', input.resources.map(row => row.key)], ['executors', input.executors],
+  ] as const) if (new Set(values).size !== values.length) ctx.addIssue({ code: 'custom', path: [field], message: 'duplicate declarations are not allowed' });
+  if (input.target === null && input.executors.length) ctx.addIssue({ code: 'custom', path: ['executors'], message: 'unknown target cannot bind candidate executors' });
+  const knownBookingPrefixes = input.name === null && input.target === null && !input.resources.length && !input.executors.length &&
+    input.prefixes.length > 0 && input.prefixes.every(row => row.owner !== null && row.registered_at !== null);
+  const unknown = (!knownBookingPrefixes && (input.name === null || input.target === null)) || (!input.prefixes.length && !input.resources.length) ||
+    [...input.prefixes, ...input.resources].some(row => row.owner === null || row.registered_at === null);
+  if (unknown && !input.missing_facts.length) ctx.addIssue({ code: 'custom', path: ['missing_facts'], message: 'unknown registration facts must be stated explicitly' });
+});
+/** New ordinary registration requires an explicit name, target and key declaration; historical conversion may retain unknowns. */
+export const TestEnvironmentInput = TestEnvironmentContent.safeExtend({ name: TestEnvironmentName, target: TestEnvironmentName }).refine(input => input.prefixes.length + input.resources.length > 0,
+  'new registration requires an explicit name, target and prefixes or exact resources');
+export type TestEnvironmentInput = z.infer<typeof TestEnvironmentInput>;
+export const TestEnvironment = TestEnvironmentContent.safeExtend({ schema: z.literal('test-environment@1'), id: TestEnvironmentId });
+export type TestEnvironment = z.infer<typeof TestEnvironment>;
+/** Bound by an ordinary resource_config decision; record references are exact stored record digests, not recalculated content hashes. */
+export const TestEnvironmentInheritanceCompletion = z.strictObject({
+  schema: z.literal('test-environment-inheritance-completion@1'),
+  rule_version: z.literal(TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION), completed_at: IsoTime,
+  source_records: z.array(Sha256), grant_records: z.array(Sha256), environment_ids: z.array(TestEnvironmentId),
+}).superRefine((input, ctx) => {
+  for (const field of ['source_records', 'grant_records', 'environment_ids'] as const) if (new Set(input[field]).size !== input[field].length)
+    ctx.addIssue({ code: 'custom', path: [field], message: 'completion references are distinct' });
+});
+export type TestEnvironmentInheritanceCompletion = z.infer<typeof TestEnvironmentInheritanceCompletion>;
 export const RoleName = z.string().regex(/^[a-z][a-z0-9-]{0,40}$/, 'lowercase letters, digits and hyphens');
 export const RouteId = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, 'lowercase letters, digits, _ and -');
 export const ReadName = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/, 'lowercase letters, digits, _ and -');
@@ -1211,6 +1260,10 @@ export const EffectRecord=z.strictObject({
 export type EffectRecord=z.infer<typeof EffectRecord>;
 
 export const schemas: Record<string, z.ZodType> = {
+  'test-environment-id@1': TestEnvironmentId,
+  'test-environment-input@1': TestEnvironmentInput,
+  'test-environment@1': TestEnvironment,
+  'test-environment-inheritance-completion@1': TestEnvironmentInheritanceCompletion,
   'effect@1':EffectRecord,
   'write-declaration@1':WriteDeclaration,
   'executor@1':ExecutorSource,

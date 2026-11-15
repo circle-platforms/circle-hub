@@ -1,3 +1,10 @@
+import { restoresDisabledAssignment } from './definition-restoration.ts';
+import { VariableRecord, OrdinaryVariableName } from '../../contracts/src/variables.ts';
+import { ExecutorSource } from '../../contracts/src/resources.ts';
+import { EnvironmentWriteError, type OrdinaryVariableWrite } from './environment-write-consistency.ts';
+import { parseStrictJson } from './strict-json.ts';
+import { assertEnvironmentProgramWrite } from './environment-program-write.ts';
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { readTeamDefinitions } from './team-definitions.ts';
 import { isAdmin } from './permissions.ts';
 import {scopedRecordStore} from './read-scope.ts';
@@ -7,7 +14,7 @@ import {mayUsePersonalPack} from './personal-packs.ts';
 // (permission, subject, object) wins. Every decision names the record it follows (`supersedes`), so it is a distinct record
 // even when it repeats an earlier one in the same millisecond. A permission is not evidence, and a passed check is not a
 // permission (B04 R[0]).
-import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from '../../contracts/api.ts';
+import { TeamId, TeamAssignmentSubject, ResourceAssignmentSubject, TestEnvironmentId, TestEnvironment, TEST_ENVIRONMENT_CONFIG_PREFIX } from '../../contracts/api.ts';
 import { idOf, PackId, PackVersion, UserId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import { isPermissionKind, isShareAudience } from '../../contracts/generated/vocabulary.ts';
@@ -30,14 +37,14 @@ import type {
 import { RECORD_SCHEMAS, WHOLE_HUB } from './constants.ts';
 import { normalizeTime } from './db.ts';
 import type { Database } from './db.ts';
-import { digestOf, isSha256 } from './digest.ts';
+import { digestOf, isSha256, sha256Hex } from './digest.ts';
 import { verifiedRecord } from './store.ts';
 import { AccessError, ConflictError, IntegrityError } from './errors.ts';
 import { captureRequestPermissions, capturePermissionSnapshots, requestPermissions } from './request-permissions.ts';
 
 const EnvironmentId = idOf('exe');
 function resourceSubject(subject: string, resource: string): string {
-  return EnvironmentId.safeParse(resource).success ? ResourceAssignmentSubject.parse(subject) : TeamAssignmentSubject.parse(subject);
+  return (EnvironmentId.safeParse(resource).success || TestEnvironmentId.safeParse(resource).success) ? ResourceAssignmentSubject.parse(subject) : TeamAssignmentSubject.parse(subject);
 }
 
 const PUBLISH: PermissionKind = 'publish';
@@ -94,6 +101,15 @@ export class RecordAuthorizations implements Authorizations {
   get #store():RecordStore{return scopedRecordStore(this.#rawStore);}
   readonly #now: () => Date;
   readonly #objects: ObjectStore;
+  #variableWriteValidator: ((by: Principal, change: OrdinaryVariableWrite, tx: Transaction) => Promise<void>) | undefined;
+  #executorWriteValidator: ((by: Principal, id: string, source: ExecutorSource | null, tx: Transaction) => Promise<void>) | undefined;
+
+  setVariableWriteValidator(validate: (by: Principal, change: OrdinaryVariableWrite, tx: Transaction) => Promise<void>): void {
+    this.#variableWriteValidator = validate;
+  }
+  setExecutorWriteValidator(validate: (by: Principal, id: string, source: ExecutorSource | null, tx: Transaction) => Promise<void>): void {
+    this.#executorWriteValidator = validate;
+  }
 
   constructor(db: Database, store: RecordStore, now: () => Date, objects: ObjectStore) {
     this.#db = db;
@@ -358,10 +374,13 @@ export class RecordAuthorizations implements Authorizations {
     if (permission === PUBLISH && published === null) throw new TypeError('the object of a publish record is pack-id@x.y.z');
     if (permission === PUBLISH && !revoked && bound === null) throw new TypeError('a publication binds the SHA-256 of the exact pack content (B04 R[1])');
     return this.#store.withTransaction(async (tx) => {
+      await lockEnvironmentPermission(this.#store, tx);
+      assertEnvironmentProgramWrite(input, tx);
       const users=[...new Set([by.id,...(UserId.safeParse(subject).success?[subject]:[])])].sort();
       const accounts=(await this.#db.query('SELECT id,disabled,deleted_at FROM users WHERE id=ANY($1::text[]) ORDER BY id FOR SHARE',[users],tx)).rows;
       const target=accounts.find(row=>row.id===subject);
-      if ((permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||!revoked&&target.disabled)) throw new ConflictError('分配对象不存在或未启用');
+      const restoringDisabledSubject = permission === 'resource_assign' && TestEnvironmentId.safeParse(object).success && restoresDisabledAssignment(tx, subject, object);
+      if ((permission===ASSIGN||permission==='resource_assign')&&UserId.safeParse(subject).success&&(!target||target.deleted_at||!revoked&&target.disabled&&!restoringDisabledSubject)) throw new ConflictError('分配对象不存在或未启用');
       const team=TeamId.safeParse(subject).success?subject:TeamId.safeParse(object).success?object:null;
       if(team!==null){
         await this.#store.lock('teams.id:'+team,tx);
@@ -379,7 +398,17 @@ export class RecordAuthorizations implements Authorizations {
         const assignment=(subject===WHOLE_HUB||UserId.safeParse(subject).success||TeamId.safeParse(subject).success)&&PackId.safeParse(object).success;
         if(!registration&&!membership&&!assignment)throw new TypeError('invalid assignment tuple');
       }
-      if(permission==='resource_assign')resourceSubject(subject,object);
+      if(permission==='resource_assign') {
+        resourceSubject(subject,object);
+        if (!revoked && TestEnvironmentId.safeParse(object).success) {
+          const environment = await this.#latest(RESOURCE_CONFIG, WHOLE_HUB, TEST_ENVIRONMENT_CONFIG_PREFIX + object, tx);
+          if (!environment || !this.#active(environment)) throw new ConflictError('测试环境不存在或已删除');
+          const bytes = environment.body.bound === null ? null : await this.#objects.get(environment.body.bound, tx);
+          if (!bytes || sha256Hex(bytes) !== environment.body.bound) throw new IntegrityError('测试环境登记原件缺失或摘要不符');
+          const definition = TestEnvironment.parse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
+          if (definition.id !== object || definition.target === null) throw new ConflictError('只有有目标的测试环境可以分配使用权');
+        }
+      }
       const decider = await this.#decider(by, tx);
       if (published !== null) {
         if (revoked) {
@@ -390,6 +419,29 @@ export class RecordAuthorizations implements Authorizations {
         }
       } else if (!isAdmin(decider)) {
         throw new AccessError('只有管理员可以分配包、授予发布权、配置资源和分享');
+      }
+      if (permission === RESOURCE_CONFIG && subject === WHOLE_HUB && object.startsWith('executor.') && this.#executorWriteValidator) {
+        const id = object.slice('executor.'.length);
+        if (revoked) await this.#executorWriteValidator(by, id, null, tx);
+        else {
+          const bytes = bound === null ? null : await this.#objects.get(bound, tx);
+          if (!bytes || sha256Hex(bytes) !== bound) throw new IntegrityError('执行器候选原件缺失或摘要不符');
+          const candidate = ExecutorSource.safeParse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
+          if (!candidate.success) throw new EnvironmentWriteError('执行器候选原件不符合源定义结构');
+          await this.#executorWriteValidator(by, id, candidate.data, tx);
+        }
+      }
+      if (permission === RESOURCE_CONFIG && subject === WHOLE_HUB && object.startsWith('var:') && this.#variableWriteValidator) {
+        const name = object.slice('var:'.length);
+        if (!OrdinaryVariableName.safeParse(name).success) throw new EnvironmentWriteError('普通变量名字不符合已登记规则');
+        if (revoked) await this.#variableWriteValidator(by, { name, revoked: true }, tx);
+        else {
+          const bytes = bound === null ? null : await this.#objects.get(bound, tx);
+          if (!bytes || sha256Hex(bytes) !== bound) throw new IntegrityError('普通变量候选值原件缺失或摘要不符');
+          const candidate = VariableRecord.safeParse(parseStrictJson(Buffer.from(bytes).toString('utf8')));
+          if (!candidate.success || candidate.data.name !== name) throw new EnvironmentWriteError('普通变量候选原件与本次名字不一致');
+          await this.#variableWriteValidator(by, { name, value: candidate.data.value }, tx);
+        }
       }
       const key = `${permission}|${subject}|${object}`;
       await this.#db.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [DECISION_LOCK_SPACE, key], tx);

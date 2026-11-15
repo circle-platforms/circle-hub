@@ -1,3 +1,4 @@
+import type { HttpCallErrorData } from '../../contracts/api.ts';
 // The HTTP surface of the Hub: POST /mcp, the console under /console, the MCP standard authorization (the metadata under
 // /.well-known and the endpoints under /oauth, hub/server/oauth.ts) and GET /healthz, on a loopback address unless the
 // configuration declares the allowed hosts; the same routes also over the built-in HTTPS when it is configured (a second
@@ -20,7 +21,7 @@ import { LiveEvents } from './console/live.ts';
 import { JobStore } from './console/manage.ts';
 import { SESSION_COOKIE, SECURE_SESSION_COOKIE, SessionStore } from './console/session.ts';
 import { PackStaging } from './console/staging.ts';
-import { BodyBudget, allowedHosts, cookiesOf, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText } from './http.ts';
+import { BodyBudget, allowedHosts, cookiesOf, hostAllowed, originAllowed, ownOrigins, sendJson, sendRpcError, sendText, httpCallErrorData, sendHttpError } from './http.ts';
 import { createRebuildHandler } from './rebuild-http.ts';
 import { handleLocalTools, localToolsTarget } from './local-tools.ts';
 import {handlePersonalSync,personalSyncTarget,SyncAdmission} from './personal-sync.ts';
@@ -40,6 +41,14 @@ const REFUSED_ORIGIN = '拒绝：Origin 不在此服务允许的来源名单里'
 const BAD_TARGET = '请求目标不对：要么是以 / 开头的路径，要么是本服务器的 http 绝对地址';
 
 /** A parsed request target: the URL on this server, and the authority an absolute-form target named (null for a path). */
+/** Route an already source-selected error without constructing a listener or guessing effect facts. */
+export function sendMachineCallError(request: IncomingMessage, response: ServerResponse, target: RequestTarget | null, status: number, rpcCode: number, message: string, data: HttpCallErrorData, headers: Record<string, string> = {}): boolean {
+  if (target?.url.pathname === '/mcp') sendRpcError(response, status, rpcCode, message, headers, data);
+  else if (runExportTarget(request.url)) sendHttpError(response, status, message, data, headers);
+  else return false;
+  return true;
+}
+
 export interface RequestTarget {
   url: URL;
   authority: string | null;
@@ -181,20 +190,21 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
     if (!hostOk || !originAllowed(request, declared ? origins : undefined)) {
       request.resume();
       const message = hostOk ? refusedOrigin : refusedHost;
-      if (isMcp) sendRpcError(response, 403, -32000, message, { connection: 'close' });
+      if (sendMachineCallError(request, response, target, 403, -32000, message, httpCallErrorData('CALL_ORIGIN_REFUSED', true), {connection: 'close'})) return;
       else if(target&&personalSyncTarget(target.url.pathname))sendJson(response,403,{code:'SOURCE_UNAVAILABLE'},{connection:'close'});
       else sendText(response, 403, message, { connection: 'close' });
       return;
     }
     if (target === null) {
       request.resume();
+      if (sendMachineCallError(request, response, target, 400, -32600, BAD_TARGET, httpCallErrorData('CALL_REQUEST_INVALID', true), {connection: 'close'})) return;
       return sendText(response, 400, BAD_TARGET, { connection: 'close' });
     }
     if (stopping) {
       request.resume();
       const headers = { connection: 'close', 'retry-after': '5' };
       const message = 'Hub 正在重启，这次调用没有执行，稍后原样重试';
-      if (isMcp) return sendRpcError(response, 503, -32000, message, headers);
+      if (sendMachineCallError(request, response, target, 503, -32000, message, httpCallErrorData('CALL_BUSY', true), headers)) return;
       return sendText(response, 503, message, headers);
     }
     const url = target.url;
@@ -224,7 +234,8 @@ export function createApp(deps: ServerDeps, options: AppOptions = {}): HubApp {
       // The operator's log itself failed; the answer below still goes out.
     }
     try {
-      if (!response.headersSent) sendJson(response, 500, { error: 'Hub 内部错误' }, { connection: 'close' });
+      if (!response.headersSent && sendMachineCallError(request, response, parseTarget(request.url), 500, -32603, 'Hub 内部错误', httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'), {connection: 'close'})) return;
+      else if (!response.headersSent) sendJson(response, 500, { error: 'Hub 内部错误' }, { connection: 'close' });
       else response.destroy();
     } catch {
       response.destroy();

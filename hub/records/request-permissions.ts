@@ -1,6 +1,6 @@
 // A request-scoped view of an authenticated reader's permissions, captured in one database statement.
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { TeamId } from '../../contracts/api.ts';
+import { TeamId, TestEnvironmentId } from '../../contracts/api.ts';
 import { PackId } from '../../contracts/src/common.ts';
 import { isPermissionRole } from '../../contracts/generated/vocabulary.ts';
 import { step } from './trace-usage.ts';
@@ -31,11 +31,11 @@ export class RequestPermissions {
   }
   canUse(pack: string): boolean {
     if (!this.user || this.user.disabled || this.user.deleted_at || !PackId.safeParse(pack).success) return false;
-    return [this.user.id,...this.teams()].some(subject => this.enabled(this.latest('assign',subject,pack)));
+    return [this.user.id,...this.teams(),'*'].some(subject => this.enabled(this.latest('assign',subject,pack)));
   }
   packs(): string[] {
     if (!this.user || this.user.disabled || this.user.deleted_at) return [];
-    const subjects = new Set([this.user.id,...this.teams()]);
+    const subjects = new Set([this.user.id,...this.teams(),'*']);
     return [...new Set([...this.#grants.values()].filter(row => row.body.permission === 'assign' && subjects.has(row.body.subject) && PackId.safeParse(row.body.object).success && this.enabled(row)).map(row => row.body.object))].sort();
   }
   packSources(): Array<{pack:string;via:'user'|{team:string}}> {
@@ -47,7 +47,7 @@ export class RequestPermissions {
   }
   canUseResource(resource: string): boolean {
     if (!this.user || this.user.disabled || this.user.deleted_at) return false;
-    return [this.user.id,...this.teams(),'*'].some(subject => subject !== this.user!.id && this.enabled(this.latest('resource_assign',subject,resource)));
+    return [this.user.id,...this.teams(),'*'].some(subject => (subject !== this.user!.id || TestEnvironmentId.safeParse(resource).success) && this.enabled(this.latest('resource_assign',subject,resource)));
   }
   shared(object: string, expectedPack?: string): boolean {
     if (!this.user || this.user.disabled) return false;
@@ -105,6 +105,7 @@ export async function capturePermissionSnapshots(db: Database, userIds: readonly
     ORDER BY t.reader,(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object',i.record_seq DESC
   ), assigned AS (
     SELECT * FROM direct UNION ALL SELECT * FROM team_assignments
+    UNION ALL SELECT a.id AS reader,r.body FROM accounts a CROSS JOIN registrations r
   ), subjects AS (
     SELECT id AS reader,id AS value FROM accounts UNION SELECT reader,team FROM team_ids
     UNION SELECT id,'*' FROM accounts UNION SELECT reader,'pack_users:'||((body::jsonb)->>'object') FROM assigned

@@ -10,8 +10,9 @@ import { createRecordStore, type RecordStore, type ActionBody, type Page, type S
 import { DEFAULT_LIMITS } from '../config/index.ts';
 import { RECORD_SCHEMAS } from '../records/constants.ts';
 import type { Database, PgTransaction } from '../records/api.ts';
+import { ownsLeaseKeys, registrationsOf, type LeaseOwnership, type LeaseOwnershipCatalog } from './ownership.ts';
 import type { LeaseOp } from '../../contracts/generated/vocabulary.ts';
-import { LeaseRegistrationDetail, LeaseDetail } from '../../contracts/src/records.ts';
+import { LeaseDetail } from '../../contracts/src/records.ts';
 
 /** The holder of a lease: the user and the run (a lease is held by a run, D04 R[0]). */
 export interface Holder {
@@ -54,10 +55,20 @@ export interface HolderSnapshot {
   expires_at: string | null;
 }
 
-export type RegistrationOutcome = { ok: true; prefix: string; owner: string } |
-  { ok: false; code: 'LEASE_UNAVAILABLE'; message: string };
+/** Every matching key's last stored reservation row, for trusted administrator projections only. */
+export interface RecentHolder {
+  key: string;
+  user: string;
+  run: string;
+  since: string;
+  until: string | null;
+  released: boolean;
+  active: boolean;
+}
 
 export interface ServiceOptions {
+  /** Required by production wiring; the single environment catalog supplies current cleanup responsibilities. */
+  catalog?: LeaseOwnershipCatalog;
   /** The clock the service reads (never Date.now of the process); default: the database clock. */
   now?: () => Promise<Date>;
   /** The configured records store, sharing the lease transaction; defaults to the standard record limit. */
@@ -90,17 +101,19 @@ interface Row {
 /** A lease service over one database; state lives in the table only, so a new object sees the same state. */
 export class LeaseService {
   readonly #db: Database;
-  readonly #now: (tx?: PgTransaction) => Promise<Date>;
+  readonly #now: (tx?: Transaction) => Promise<Date>;
   readonly #records: RecordStore;
+  readonly #catalog: LeaseOwnershipCatalog | undefined;
 
   constructor(db: Database, options: ServiceOptions = {}) {
     this.#db = db;
+    this.#catalog = options.catalog;
     this.#records = options.records ?? createRecordStore(db, { maxRecordBytes: DEFAULT_LIMITS.maxRecordBytes, now: () => new Date() });
-    this.#now = options.now ?? (async (tx?: PgTransaction) => (await db.query<{ now: Date }>('SELECT clock_timestamp()::timestamptz AS now',[],tx)).rows[0]!.now);
+    this.#now = options.now ?? (async (tx?: Transaction) => (await db.query<{ now: Date }>('SELECT clock_timestamp()::timestamptz AS now',[],tx)).rows[0]!.now);
   }
 
   /** Acquires every key under one lease (all or nothing) for the holder; refusal carries the earliest free moment. */
-  async acquire(input: { keys: string[]; ttlSeconds?: number; holder: Holder; prefix: string; maxTtlSeconds?: number }): Promise<AcquireOutcome> {
+  async acquire(input: { keys: string[]; ttlSeconds?: number; holder: Holder; prefix: string; maxTtlSeconds?: number }, outer?: Transaction): Promise<AcquireOutcome> {
     // The holder's ids are real ids (the action record's LeaseDetail demands them).
     if (!isId('usr', input.holder.user) || !isId('run', input.holder.run)) {
       return { ok: false, code: 'LEASE_UNAVAILABLE', message: '持有者要写成真实的用户号和运行号' };
@@ -111,43 +124,54 @@ export class LeaseService {
     const keys = [...input.keys].sort();
     return this.#db
       .transaction(async (tx) => {
-        await this.#ownershipLock(tx);
-        const now = await this.#nowIn(tx);
-        const until = input.maxTtlSeconds === undefined ? null : new Date(now.getTime() + input.ttlSeconds! * 1000);
-        const lease = newId('lse');
-        const rows: Array<{ key: string; token: number }> = [];
-        for (const key of keys) {
-          const taken = await this.#db.query<{ token: bigint }>(
-            `UPDATE leases SET lease_id = $2, run_id = $3, user_id = $4, token = token + 1, acquired_at = $6, expires_at = $5, released_at = NULL
-             WHERE key = $1 AND (expires_at <= $6 OR released_at IS NOT NULL) RETURNING token`,
-            [key, lease, input.holder.run, input.holder.user, until, now],
-            tx,
-          );
-          if (taken.rows.length > 0) {
-            rows.push({ key, token: Number(taken.rows[0].token) });
-            continue;
+        // A refusal must roll back this acquire even when its caller owns the surrounding transaction.
+        if (outer) await this.#db.query('SAVEPOINT leases_acquire', [], tx);
+        try {
+          await this.#ownershipLock(tx);
+          const now = await this.#nowIn(tx);
+          const until = input.maxTtlSeconds === undefined ? null : new Date(now.getTime() + input.ttlSeconds! * 1000);
+          const lease = newId('lse');
+          const rows: Array<{ key: string; token: number }> = [];
+          for (const key of keys) {
+            const taken = await this.#db.query<{ token: bigint }>(
+              `UPDATE leases SET lease_id = $2, run_id = $3, user_id = $4, token = token + 1, acquired_at = $6, expires_at = $5, released_at = NULL
+               WHERE key = $1 AND (expires_at <= $6 OR released_at IS NOT NULL) RETURNING token`,
+              [key, lease, input.holder.run, input.holder.user, until, now],
+              tx,
+            );
+            if (taken.rows.length > 0) {
+              rows.push({ key, token: Number(taken.rows[0].token) });
+              continue;
+            }
+            // ON CONFLICT DO NOTHING keeps the transaction usable after a lost race (an errored-out transaction can
+            // run no further statement); the loser reads the row it collided with for the earliest-free moment.
+            const inserted = await this.#db.query<{ token: bigint }>(
+              `INSERT INTO leases (key, lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)
+               VALUES ($1, $2, $3, $4, 1, $6, $5, NULL)
+               ON CONFLICT (key) DO NOTHING RETURNING token`,
+              [key, lease, input.holder.run, input.holder.user, until, now],
+              tx,
+            );
+            if (inserted.rows.length === 0) {
+              const busy = await this.#earliestFree(key, tx);
+              const holder = await this.#takenBy(key, tx);
+              throw new RefusedLease({ ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${key} 上有未到期的占用`, ...(busy === null ? {} : { earliestFree: busy }), ...(holder === null ? {} : { holder }) });
+            }
+            rows.push({ key, token: Number(inserted.rows[0].token) });
           }
-          // ON CONFLICT DO NOTHING keeps the transaction usable after a lost race (an errored-out transaction can
-          // run no further statement); the loser reads the row it collided with for the earliest-free moment.
-          const inserted = await this.#db.query<{ token: bigint }>(
-            `INSERT INTO leases (key, lease_id, run_id, user_id, token, acquired_at, expires_at, released_at)
-             VALUES ($1, $2, $3, $4, 1, $6, $5, NULL)
-             ON CONFLICT (key) DO NOTHING RETURNING token`,
-            [key, lease, input.holder.run, input.holder.user, until, now],
-            tx,
-          );
-          if (inserted.rows.length === 0) {
-            const busy = await this.#earliestFree(key, tx);
-            const holder = await this.#takenBy(key, tx);
-            throw new RefusedLease({ ok: false, code: 'LEASE_UNAVAILABLE', message: `键 ${key} 上有未到期的占用`, ...(busy === null ? {} : { earliestFree: busy }), ...(holder === null ? {} : { holder }) });
+          const token = Math.max(...rows.map((r) => r.token));
+          await this.#appendAction(tx, 'acquire', lease, keys, input.holder, until?.toISOString() ?? null, token);
+          const granted: AcquireOutcome = { ok: true, lease, keys, until: until?.toISOString() ?? null, token };
+          if (outer) await this.#db.query('RELEASE SAVEPOINT leases_acquire', [], tx);
+          return granted;
+        } catch (error) {
+          if (outer && error instanceof RefusedLease) {
+            await this.#db.query('ROLLBACK TO SAVEPOINT leases_acquire', [], tx);
+            await this.#db.query('RELEASE SAVEPOINT leases_acquire', [], tx);
           }
-          rows.push({ key, token: Number(inserted.rows[0].token) });
+          throw error;
         }
-        const token = Math.max(...rows.map((r) => r.token));
-        await this.#appendAction(tx, 'acquire', lease, keys, input.holder, until?.toISOString() ?? null, token);
-        const granted: AcquireOutcome = { ok: true, lease, keys, until: until?.toISOString() ?? null, token };
-        return granted;
-      })
+      }, outer)
       .catch((error: unknown): AcquireOutcome => {
         if (error instanceof RefusedLease) return error.outcome as AcquireOutcome;
         throw error;
@@ -155,76 +179,29 @@ export class LeaseService {
   }
 
 
-  /** Ownership changes are serialized with acquisition so unregister cannot race a new holder. */
-  async register(input: { prefix: string; declaredPrefix: string; owner: string; by: string; reason: string; admin?: boolean }): Promise<RegistrationOutcome> {
-    const { prefix } = input;
-    if (!KEY.test(prefix) || !prefix.endsWith('/') || !input.declaredPrefix.endsWith('/') ||
-        !prefix.startsWith(input.declaredPrefix) || prefix === input.declaredPrefix) {
-      return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记的键前缀须以 / 结尾，严格位于声明前缀下，不能等于声明前缀' };
-    }
-    if (!isId('usr', input.owner) || !input.reason.trim() || (!input.admin && input.owner !== input.by)) {
-      return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记须写有效用户和理由，普通用户只能登记给自己' };
-    }
-    return this.#db.transaction(async tx => {
-      await this.#ownershipLock(tx);
-      const existing = await this.#db.query<{prefix:string;owner:string}>(
-        'SELECT prefix, owner FROM lease_registrations WHERE starts_with(prefix,$1) OR starts_with($1,prefix) ORDER BY prefix', [prefix], tx);
-      if (existing.rows.some(r => r.prefix !== prefix)) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '登记前缀不能和已有登记互相包含' };
-      const previous = existing.rows[0]?.owner ?? null;
-      if (previous && !input.admin) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀已经有主人' };
-      const now = await this.#nowIn(tx);
-      await this.#db.query('INSERT INTO lease_registrations(prefix,owner,registered_at) VALUES($1,$2,$3) ON CONFLICT(prefix) DO UPDATE SET owner=excluded.owner, registered_at=excluded.registered_at', [prefix,input.owner,now],tx);
-      await this.#registrationAction(tx, 'register', prefix, input.owner, previous, input.by, input.reason, now);
-      return { ok: true, prefix, owner: input.owner };
-    });
+  /** Trusted ownership projection from the single environment catalog; never consult the retired table. */
+  async registrations(prefix: string, tx?: Transaction): Promise<Array<{ prefix: string; owner: string }>> {
+    return registrationsOf(await this.#ownership(tx), prefix);
   }
 
-  async unregister(input: { prefix: string; by: string; reason: string; admin?: boolean }): Promise<RegistrationOutcome> {
-    if (!input.reason.trim()) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '注销须写理由' };
-    return this.#db.transaction(async tx => {
-      await this.#ownershipLock(tx);
-      const registered = await this.#db.query<{owner:string}>('SELECT owner FROM lease_registrations WHERE prefix=$1 FOR UPDATE',[input.prefix],tx);
-      const owner = registered.rows[0]?.owner;
-      if (!owner || (!input.admin && owner !== input.by)) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀不能由你注销' };
-      const now = await this.#nowIn(tx);
-      const held = await this.#db.query('SELECT 1 FROM leases WHERE starts_with(key,$1) AND released_at IS NULL AND (expires_at IS NULL OR expires_at>$2) LIMIT 1',[input.prefix,now],tx);
-      if (held.rows.length) return { ok: false, code: 'LEASE_UNAVAILABLE', message: '这个前缀还有未释放的租约，先强制释放，或等它释放' };
-      await this.#db.query('DELETE FROM lease_registrations WHERE prefix=$1',[input.prefix],tx);
-      await this.#registrationAction(tx, 'unregister', input.prefix, owner, owner, input.by, input.reason, now);
-      return { ok: true, prefix: input.prefix, owner };
-    });
-  }
-
-  /** Trusted ownership rows; the run boundary strips owners that its viewer cannot see. */
-  async registrations(prefix: string): Promise<Array<{ prefix: string; owner: string }>> {
-    return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations WHERE starts_with(prefix,$1) ORDER BY prefix',[prefix])).rows;
-  }
-
-  private async registrationsForTransaction(tx: PgTransaction): Promise<Array<{prefix:string;owner:string}>> {
-    return (await this.#db.query<{prefix:string;owner:string}>('SELECT prefix,owner FROM lease_registrations',[],tx)).rows;
+  // This read must not acquire the environment boundary after the lease mutation lock.
+  async #ownership(tx?: Transaction): Promise<LeaseOwnership> {
+    if (!this.#catalog) throw new Error('测试环境登记目录尚未接入，当前不能核对责任归属');
+    return this.#catalog.ownership(tx);
   }
 
   /** Serialize reservation insertion and guarded release; never hold this lock across network I/O. */
-  async withMutationLock<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
-    return this.#db.transaction(async tx=>{await this.#ownershipLock(tx);return fn(tx);});
+  async withMutationLock<T>(fn: (tx: Transaction) => Promise<T>, outer?: Transaction): Promise<T> {
+    return this.#db.transaction(async tx=>{await this.#ownershipLock(tx);return fn(tx);}, outer);
   }
 
   async #ownershipLock(tx: PgTransaction): Promise<void> {
     await this.#db.query("SELECT pg_advisory_xact_lock(hashtextextended('leases.registrations',0))", [], tx);
   }
 
-  async #registrationAction(tx: PgTransaction, op: Extract<LeaseOp, 'register' | 'unregister'>, prefix: string, owner: string, previous: string | null, by: string, reason: string, now: Date): Promise<void> {
-    const detail = LeaseRegistrationDetail.parse({ op, prefix, owner, previous_owner: previous, by, reason });
-    const time = now.toISOString();
-    const body: ActionBody = { action: 'lease', run: null, item: null, inputs: [prefix], component: 'leases@1',
-      lease: null, started_at: time, ended_at: time, result: 'completed', error_code: null, acceptance: null, codes: [], detail };
-    await this.#records.put<ActionBody>({kind:'action',schema:RECORD_SCHEMAS.action,provenance:'observed',created_at:time,body,
-      index:[{key:'action.kind',value:'lease'},{key:'lease.prefix',value:prefix}]},tx);
-  }
-
   /** Extends the lease of every key for its holder by ttlSeconds from the service's own clock, inside the cumulative cap. */
-  async extend(input: { keys: string[]; holder: Holder; ttlSeconds: number; maxTtlSeconds?: number }): Promise<ChangeOutcome> {
-    return this.#change(input.keys, input.holder, 'extend', input.ttlSeconds, input.maxTtlSeconds);
+  async extend(input: { keys: string[]; holder: Holder; ttlSeconds: number; maxTtlSeconds?: number }, outer?: Transaction): Promise<ChangeOutcome> {
+    return this.#change(input.keys, input.holder, 'extend', input.ttlSeconds, input.maxTtlSeconds, outer);
   }
 
   /** Releases the keys for their holder (D04 R[0]: delivery, cancel or expiry). */
@@ -238,8 +215,8 @@ export class LeaseService {
     return this.#db.transaction(async (tx) => {
       await this.#ownershipLock(tx);
       if (input.owner) {
-        const registered = await this.registrationsForTransaction(tx);
-        if (!input.keys.every(key=>registered.some(row=>row.owner===input.owner && key.startsWith(row.prefix)))) return {ok:false,code:'LEASE_UNAVAILABLE',message:'这些键不在你登记的前缀下'};
+        const ownership = await this.#ownership(tx);
+        if (!ownsLeaseKeys(ownership, input.owner, input.keys)) return {ok:false,code:'LEASE_UNAVAILABLE',message:'这些租约键不属于当前账户负责的测试环境，不能强制释放'};
       }
       // Rows are read FOR UPDATE so a concurrent extend of the same key waits, and every row is present.
       const rows = await this.#rowsLocked(input.keys, tx);
@@ -278,6 +255,21 @@ export class LeaseService {
       if (!Number.isSafeInteger(fencing) || fencing < 1) throw new Error('租约围栏不能安全表示，请管理员核对');
       return { key: row.key, lease: row.lease_id, fencing, user: row.user_id, run: row.run_id, released: row.released_at !== null, expires_at: row.expires_at?.toISOString() ?? null };
     });
+  }
+
+  /** All matching last rows at one component-clock sample; no limit/history scan or proof of a physical stop. */
+  async recentHolders(prefix: string, tx?: Transaction): Promise<RecentHolder[]> {
+    const result = await this.#db.query<Row & { released: boolean; active: boolean }>(
+      `WITH observed AS (SELECT $2::timestamptz AS at)
+       SELECT key, user_id, run_id, acquired_at, expires_at,
+         released_at IS NOT NULL AS released,
+         released_at IS NULL AND (expires_at IS NULL OR expires_at > observed.at) AS active
+       FROM leases CROSS JOIN observed WHERE starts_with(key,$1) ORDER BY key`,
+      [prefix, await this.#now(tx)], tx,
+    );
+    return result.rows.map(row => ({ key: row.key, user: row.user_id, run: row.run_id,
+      since: row.acquired_at.toISOString(), until: row.expires_at?.toISOString() ?? null,
+      released: row.released, active: row.active }));
   }
 
   /** Active row facts; holder identities are trusted-only and filtered at the run boundary. */
@@ -331,7 +323,7 @@ export class LeaseService {
 
   /** The shared body of extend and release: rows locked FOR UPDATE, every update must affect its row, and the
    * service's own clock decides (no caller-supplied moment: a caller could lie a lease young again). */
-  async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined): Promise<ChangeOutcome> {
+  async #change(keys: string[], holder: Holder, op: Extract<LeaseOp, 'extend' | 'release'>, ttlSeconds: number, maxTtlSeconds: number | undefined, outer?: Transaction): Promise<ChangeOutcome> {
     const ordered = [...keys].sort();
     return this.#db.transaction(async (tx) => {
       const now = await this.#nowIn(tx);
@@ -375,7 +367,7 @@ export class LeaseService {
       }
       await this.#appendAction(tx, op, lease, ordered, holder, until, token);
       return { ok: true, lease, until, token };
-    });
+    }, outer);
   }
 
   #validate(keys: string[], prefix: string, ttlSeconds: number | undefined, maxTtlSeconds: number | undefined): { ok: false; code: 'LEASE_PREFIX' | 'LEASE_TTL'; message: string } | null {

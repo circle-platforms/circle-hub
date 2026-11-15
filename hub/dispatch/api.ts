@@ -36,3 +36,7 @@ export { MemberEnvironments, type MemberEnvironment, type EnvironmentPermission 
 export { readEnvironmentReadiness, createEnvironmentReadiness, type EnvironmentReadinessSources, type EnvironmentReadiness, type EnvironmentReadinessExecutor, type EnvironmentReadinessCheck } from './environment-readiness.ts';
 
 export { ExecutorNames } from './executor-names.ts';
+
+export { EffectBoundaryError } from './boundary.ts';
+
+export { EnvironmentRegistrationIncompleteError } from './bootstrap-capture.ts';

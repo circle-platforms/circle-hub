@@ -717,3 +717,15 @@ its owners, while contracts tests cover required identity and unchanged metadata
 没有 lazy 或递归 schema；本实现不宣称支持将来的 lazy/递归输出，增加此类形状时须重新核验克隆。
 旧 C7 的 lazy getter 不会深克隆、递归后才登记副本的问题不在当前图上。生成使用当前 210 文件集，
 仅 `tools.json` 的输出对象 `additionalProperties` 改为开放。AJV 无法表达的 refinement 仍明确只由 Zod 拒绝。
+
+## Declared workflow steps (C60)
+
+Model89 records the owner-approved C56/C57 declaration: optional `workflow.json.steps: {id, name}[]`, optional `RequirementTemplate.step` reference, and optional `submit_result.step_name`. Step ids reuse the local Key grammar and must be unique; names are nonempty strings. Packs without these declarations remain valid. Steps are business display declarations, not an execution graph, tool calls or dispatch phases.
+
+The contracts validate field shapes and duplicate ids. Runs owns cross-file reference validation and the actual checked-requirement scope: only a nonempty scope wholly and explicitly mapped to one declared step id can supply its frozen name. Missing mappings, multiple ids (even if names match), or an unproven scope omit the field and use the approved neutral text. Schema acceptance is not proof that runtime selected the right phase. Effect-to-step association is outside this change. Hub renderers, package declarations and compatibility documentation are owned by their respective workers; no historical record is rewritten.
+
+## Structured HTTP errors and request facts (C66)
+
+Model90 (base89; C60/C66 authorization) registers `http-call-error-data@1` and `http-error-envelope@1`, exported as `HttpCallErrorData` and `HttpErrorEnvelope` schemas/types. The code closure is generated `PROTOCOL_CODE_NAMES`, category is the existing five-value axis or null, and reason is optional. `call_not_executed` is optional literal true: only an actual source-proven pre-handler rejection may supply it; status, message and internal failure cannot establish nonexecution. The schema validates shape, not that source proof. Internal failures leave effects unknown. Privacy-unknown exports retain SOURCE_UNAVAILABLE/null, confirmed withholding uses SOURCE_NOT_PERMITTED, and missing accepted results use RUN_EXPORT_NOT_READY.
+
+ProtocolError preserves existing `missing` from ErrorClaimFields and its original optional-string `request_id`. Optional audience/due/next_action/items use existing UserId/IsoTime/ItemId primitives without defaults. Their values must originate from actual request facts; contract acceptance does not prove delivery, authorization or a request was created. Transport handlers, runs producers and compatibility documentation are owned by other workers. No business behavior, pack or input schema is changed here.

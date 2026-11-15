@@ -1,3 +1,4 @@
+import {registerEnvironment} from '../../dispatch/testing/environments.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
@@ -16,7 +17,7 @@ async function copy(t:any,id:string,alter:(workflow:any,files:Record<string,stri
 }
 test('a view predecessor cannot lend a held lease even to its own author reviewing from a new run',async t=>{
  const pg=await startPostgres();t.after(()=>pg.stop());const h=await criterionHarness(pg,{leases:true});t.after(()=>h.close());const draft=await h.start();await h.submit(draft.run,[h.proposal]);const request=(await createRequestService(h.kit).all(draft.run)).find(row=>row.declaration)!;
- assert.ok((await h.leases!.register({prefix:'criterion/bed/',declaredPrefix:'criterion/',owner:h.alice.id,by:h.alice.id,reason:'合成登记'})).ok);
+ await registerEnvironment(h.kit,h.admin,{name:'合成criterion预订',target:'synthetic-criterion-bed',prefixes:['criterion/bed/'],owner:h.alice.id});
  assert.ok((await h.leases!.acquire({keys:['criterion/bed/dut'],prefix:'criterion/',holder:{user:h.alice.id,run:draft.run}})).ok);
  const dir=await copy(t,'criterion-lease-view',workflow=>{workflow.context=['leases'];workflow.leases={prefix:'criterion/'};});const flow=await h.workflows.add(dir);h.workflows.assign(h.alice.id,flow.pack.id);
  const answer=await h.service.startRun(h.alice,{pack:flow.pack.id,predecessor:draft.run,inputs:{declaration:{reference:'rec:'+request.source},evidence:[{reference:h.expected}]}},h.call());assert.equal(answer.call_result,'ok',JSON.stringify(answer));

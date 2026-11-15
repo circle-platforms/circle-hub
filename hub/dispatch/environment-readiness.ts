@@ -1,3 +1,5 @@
+import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
+import {EffectBoundaryError,deny} from './boundary.ts';
 // Local observations only. This report grants no use permission and is never an admission or dispatch gate.
 import { isAdmin, isSha256, sha256Hex, type Principal, type User, type RecordsKit } from '../records/api.ts';
 import type { LeaseService } from '../leases/api.ts';
@@ -100,7 +102,8 @@ export async function readEnvironmentReadiness(sources: EnvironmentReadinessSour
   for (const candidate of candidates) {
     if (candidate.definition.target !== target) continue;
     let assigned: boolean | null;
-    try { assigned = await sources.canUse(actor, candidate.id); } catch { assigned = null; }
+    try { assigned = await sources.canUse(actor, candidate.id); }
+    catch {const entry=PROTOCOL_CODES.ENVIRONMENT_PERMISSION_UNAVAILABLE;throw new EffectBoundaryError({...deny(1,'ENVIRONMENT_PERMISSION_UNAVAILABLE',entry.when),fix:administrator?'请联系维护人员恢复测试环境权限核对':entry.fix});}
     if (!administrator && assigned !== true) continue;
     const row: EnvironmentReadinessExecutor = { ordinal: report.executors.length + 1, ...(administrator ? { executor: candidate.id } : {}), checks: [], occupancy: null, baseline_registrations: [] };
     const check = (condition: string, label: string, satisfied: boolean | null, references: string[] = [], missing?: string, action = '核对该项声明与可读依据后重读') => {

@@ -9,6 +9,7 @@ import { environmentOf } from './precheck-context.ts';
 
 type BaselineContext = Pick<DispatchService, 'registry' | 'options' | 'now' | 'getBaseline'>;
 interface RecordBaselineContext extends BaselineContext {
+  admitNewUse(by:Principal,binding:JobBinding,operation:string):Promise<void>;
   assertNoSecrets(value: unknown): Promise<void>;
   secret(binding: JobBinding, d: ExecutorDefinition): Promise<string | null>;
   session(binding: JobBinding, d: ExecutorDefinition, secret: string): RpcClient;
@@ -49,6 +50,7 @@ export async function recordBaseline(this: RecordBaselineContext, by: Principal,
     let lease: RemoteLease | undefined;
     let stop = async () => {};
     try {
+      await this.admitNewUse(by,binding,'record_baseline');
       await client.connect();
       lease = await this.acquire(binding, d, client, this.context(binding));
       stop = this.heartbeat(binding, d, client, lease).stop;

@@ -1,13 +1,13 @@
 import {releaseFailure,type ReleaseCheck} from './release-diagnostics.ts';
 // One ordered, fail-closed P11 boundary. The callbacks reuse their owning packages rather than duplicate their logic.
-import type {AllowedEffect} from '../../contracts/src/pack.ts';
+import type {AllowedEffect,DeviceObservation,DeviceHelpResult} from '../../contracts/src/pack.ts';
 import type {WriteDeclaration} from '../../contracts/src/resources.ts';
 import type {EffectTrigger,Environment} from '../../contracts/generated/vocabulary.ts';
 import type {ProtocolCode} from '../../contracts/generated/protocol.ts';
 import {PROTOCOL_CODES} from '../../contracts/generated/protocol.ts';
 import {canonicalize} from '../records/api.ts';
 import type {VerifiedInput} from './proof.ts';
-export interface BoundaryFailure {member_missing_facts?:Array<{fact:string;next_action:string}>;admin_checks?:ReleaseCheck[];ok:false;clause:number;code:ProtocolCode;message:string;fix:string;row?:string;requirements?:string[];
+export interface BoundaryFailure {grounds?:string[];member_missing_facts?:Array<{fact:string;next_action:string}>;admin_checks?:ReleaseCheck[];ok:false;clause:number;code:ProtocolCode;message:string;fix:string;row?:string;requirements?:string[];
  /** A policy check reached no conclusion and nothing refuted (decision 116). The message leaves out whether a request went out: the caller that records the refusal says it (`refusalText`). */
  no_conclusion?:true}
 export interface BoundaryContext {
@@ -75,4 +75,14 @@ export async function checkEffectBoundary(ctx:BoundaryContext):Promise<{ok:true;
 }
 
 /** Only controlled public reasons cross into a durable boundary refusal. Unexpected exceptions stay private. */
-export class EffectBoundaryError extends Error {readonly failure:BoundaryFailure;constructor(failure:BoundaryFailure){super(failure.message);this.failure=failure;}}
+export interface DeviceUseProgress {
+  observations:DeviceObservation[];
+  help_results:DeviceHelpResult[];
+  attempts:number;
+  sessions:number;
+}
+export class EffectBoundaryError extends Error {
+  readonly failure:BoundaryFailure;
+  readonly progress?:DeviceUseProgress;
+  constructor(failure:BoundaryFailure,progress?:DeviceUseProgress){super(failure.message);this.failure=failure;this.progress=progress;}
+}

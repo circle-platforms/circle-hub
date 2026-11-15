@@ -1,3 +1,9 @@
+export type { TestEnvironments, TestEnvironment, TestEnvironmentInput, TestEnvironmentEntry, BookingPrefixEntry, TestEnvironmentOwnerChange, TestEnvironmentResolution, TestEnvironmentInheritanceState, TestEnvironmentOwnership } from './test-environments.ts';
+export type { TestEnvironmentVariableReader } from './test-environment-executor-target.ts';
+export type { OrdinaryVariableWrite, OrdinaryVariableOverrides } from './environment-write-consistency.ts';
+export { EnvironmentWriteError } from './environment-write-consistency.ts';
+export { withEnvironmentPermissionLock } from './environment-permission-lock.ts';
+export type { TestEnvironmentInheritanceContext, TestEnvironmentInheritanceInput, TestEnvironmentInheritanceSources } from './environment-inheritance-types.ts';
 export type { EnvironmentUpgradeSnapshot, EnvironmentUpgradePlan, EnvironmentUpgradeGrant } from './environment-upgrade-types.ts';
 export { exportConfigurationSnapshot, validateConfigurationSnapshot, restoreConfigurationSnapshot } from './configuration-snapshot.ts';
 export type { ConfigurationSnapshot, ConfigurationClosure, ConfigurationObject, ConfigurationPackage, ConfigurationAuthentication } from './configuration-snapshot-types.ts';
@@ -168,11 +174,11 @@ export interface Principals {
   rename(by: Principal, userId: string, name: string): Promise<User>;
   /** Recheck the actor and personal owners, holding shared user-row locks until this transaction ends. */
   lockActive(by: Principal, tx: Transaction, owners?: readonly string[]): Promise<Principal>;
-  get(userId: string): Promise<User | null>;
+  get(userId: string, tx?: Transaction): Promise<User | null>;
   findByName(name: string): Promise<User | null>;
-  list(): Promise<User[]>;
+  list(tx?: Transaction): Promise<User[]>;
   /** These accounts in one read, for a page that names a few of them; an id that is none is left out. */
-  some(ids: readonly string[]): Promise<User[]>;
+  some(ids: readonly string[], tx?: Transaction): Promise<User[]>;
   history(userId: string): Promise<UserChange[]>;
   /** Admins issue tokens for anyone; a user only for themselves. `client` is the registered client it goes to, if any. */
   issueToken(by: Principal, userId: string, label?: string, client?: string): Promise<IssuedToken>;
@@ -907,7 +913,7 @@ export interface CallLogInput {
   /** Tool name or protocol method. */
   tool: string;
   runId: string | null;
-  /** The call arguments. Only their digest and size are kept; the content is never stored. */
+  /** Full arguments are reduced to digest and size; the server may separately supply the redacted metadata preview below. */
   arguments: unknown;
   /**
    * B08 F[7]: at most 1024 bytes of the arguments after the server redacted them by the tool's input schema (every free-text,
@@ -1019,6 +1025,7 @@ export {type MemoryIndex,type MemoryHead} from './memory-index.ts';
 export type {PurgeRequester,PurgePending,PurgeRequestBody} from './personal-sync.ts';
 export type PersonalSyncStore=Pick<PgPersonalSync,'state'|'purgeRequests'|'confirmPurge'|'usageForSpace'|'stableItem'|'registerClient'|'openSession'|'inventory'|'missing'|'upload'|'download'|'operation'|'abort'|'collect'|'object'|'limits'|'resume'|'transact'|'fingerprint'|'head'|'stage'|'bindings'|'note'|'nativeBytes'|'credit'|'reserve'|'checkpoint'|'retained'|'assertCapacity'|'commit'|'result'|'sourceBytes'|'memoryProjection'|'modeCheck'|'changeMode'|'modeOperation'|'memberMetadata'|'sessionClient'>;
 export interface RecordsKit {
+  testEnvironments: import('./test-environments.ts').TestEnvironments;
   memberDeletions?: Pick<import('./member-deletions.ts').PgMemberDeletions,'preview'|'prepare'|'finish'|'status'|'registerCacheRoot'|'registerHandover'>;
   personalSync?:PersonalSyncStore;
   personalPayloads?:Pick<PgPersonalPayloads,'scope'|'account'|'withStagingSlot'|'stage'|'holdPack'|'get'|'put'|'object'|'inspect'|'cleared'|'purge'|'mode'|'purgedRunOriginals'>;

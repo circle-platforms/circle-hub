@@ -1,3 +1,4 @@
+import { lockEnvironmentPermission } from './environment-permission-lock.ts';
 import { verifiedRecord } from './store.ts';
 // Team tables are projections; verified authorization decisions and their bound definition bytes are authoritative.
 import { TeamId, UserId, PackId } from '../../contracts/api.ts';
@@ -16,9 +17,9 @@ export interface TeamMember { team: string; user: User; added_at: string; added_
 export interface TeamAssignments { packs: AuthorizationRecord[]; resources: AuthorizationRecord[] }
 export interface TeamDeletion extends Team { revoked_packs: number; revoked_resources: number }
 export interface Teams {
-  list(by: Principal): Promise<TeamRow[]>;
+  list(by: Principal, tx?: Transaction): Promise<TeamRow[]>;
   get(by: Principal, id: string): Promise<Team | null>;
-  members(by: Principal, id: string): Promise<TeamMember[]>;
+  members(by: Principal, id: string, tx?: Transaction): Promise<TeamMember[]>;
   assignments(by: Principal, id: string): Promise<TeamAssignments>;
   memberships(by: Principal, userId?: string): Promise<Team[]>;
   membershipsMany(by: Principal, userIds: readonly string[]): Promise<Map<string,Team[]>>;
@@ -63,8 +64,8 @@ export class PgTeams implements Teams {
     return !row.body.revoked && (row.body.expires_at === null || Date.parse(row.body.expires_at) > this.now().getTime());
   }
   #all(tx?: Transaction): Promise<Team[]> { return readTeamDefinitions(this.store,this.objects,this.now,tx); }
-  async #reader(by: Principal, adminOnly = false): Promise<User> {
-    const user = await this.principals.get(by.id);
+  async #reader(by: Principal, adminOnly = false, tx?: Transaction): Promise<User> {
+    const user = await this.principals.get(by.id, tx);
     if (!user || user.disabled || user.deleted_at || adminOnly && !isAdmin(user)) throw new AccessError('对象不存在或无权读取');
     return user;
   }
@@ -72,16 +73,16 @@ export class PgTeams implements Teams {
     const memberships = new Set((await this.#decisions({ subject: user }, tx)).filter(row => this.#active(row) && TeamId.safeParse(row.body.object).success).map(row => row.body.object));
     return (await this.#all(tx)).filter(team => memberships.has(team.id));
   }
-  async list(by: Principal): Promise<TeamRow[]> {
-    const user = await this.#reader(by);
-    const teams=isAdmin(user)?await this.#all():await this.#memberships(user.id);
+  async list(by: Principal, tx?: Transaction): Promise<TeamRow[]> {
+    const user = await this.#reader(by, false, tx);
+    const teams=isAdmin(user)?await this.#all(tx):await this.#memberships(user.id, tx);
     if(!teams.length)return [];
     const ids=teams.map(team=>team.id);
     const rows=(await this.db.query(`SELECT DISTINCT ON ((r.body::jsonb)->>'permission',(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object') r.seq,r.id,r.digest,r.kind,r.schema,r.provenance,r.created_at,r.body
       FROM record_index i JOIN records r ON r.digest=i.digest WHERE r.kind='authorization' AND i.key IN ('authz.object-any','authz.subject-any') AND i.value=ANY($1::text[])
-      ORDER BY (r.body::jsonb)->>'permission',(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object',r.seq DESC`,[ids])).rows.map(row=>verifiedRecord<AuthorizationRecord['body']>(row));
+      ORDER BY (r.body::jsonb)->>'permission',(r.body::jsonb)->>'subject',(r.body::jsonb)->>'object',r.seq DESC`,[ids], tx)).rows.map(row=>verifiedRecord<AuthorizationRecord['body']>(row));
     const members=[...new Set(rows.filter(row=>row.body.permission==='assign'&&ids.includes(row.body.object)&&UserId.safeParse(row.body.subject).success&&this.#active(row)).map(row=>row.body.subject))];
-    const enabled=new Set((await this.principals.some(members)).filter(user=>!user.disabled&&!user.deleted_at).map(user=>user.id));
+    const enabled=new Set((await this.principals.some(members, tx)).filter(user=>!user.disabled&&!user.deleted_at).map(user=>user.id));
     return teams.map(team=>{
       const related=rows.filter(row=>row.body.subject===team.id||row.body.object===team.id),active=related.filter(row=>this.#active(row));
       return {...team,member_count:active.filter(row=>row.body.permission==='assign'&&row.body.object===team.id&&enabled.has(row.body.subject)).length,
@@ -112,11 +113,11 @@ export class PgTeams implements Teams {
     for(const row of rows){const decision=verifiedRecord<AuthorizationRecord['body']>(row),team=teams.get(decision.body.object);if(team&&enabled.has(decision.body.subject)&&this.#active(decision))out.get(decision.body.subject)!.push(team);}
     for(const values of out.values())values.sort((a,b)=>a.id.localeCompare(b.id));return out;
   }
-  async members(by: Principal, id: string): Promise<TeamMember[]> {
-    await this.#reader(by, true);
-    if (!(await this.#all()).some(team => team.id === id)) throw new ConflictError('没有这个团队');
-    const rows = (await this.#decisions({ object: id })).filter(row => UserId.safeParse(row.body.subject).success && this.#active(row));
-    const users = new Map((await this.principals.some(rows.map(row => row.body.subject))).map(user => [user.id, user]));
+  async members(by: Principal, id: string, tx?: Transaction): Promise<TeamMember[]> {
+    await this.#reader(by, true, tx);
+    if (!(await this.#all(tx)).some(team => team.id === id)) throw new ConflictError('没有这个团队');
+    const rows = (await this.#decisions({ object: id }, tx)).filter(row => UserId.safeParse(row.body.subject).success && this.#active(row));
+    const users = new Map((await this.principals.some(rows.map(row => row.body.subject), tx)).map(user => [user.id, user]));
     return rows.flatMap(row => { const user = users.get(row.body.subject); return user && !user.deleted_at ? [{ team: id, user, added_at: row.body.decided_at, added_by: row.body.decided_by }] : []; });
   }
   async assignments(by: Principal, id: string): Promise<TeamAssignments> {
@@ -154,6 +155,7 @@ export class PgTeams implements Teams {
   async create(by: Principal, name: string): Promise<Team> {
     if (typeof name !== 'string' || !NAME.test(name)) throw new TypeError('团队名是1至100个字符，不能含控制字符或首尾空格');
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       await this.#writer(by, tx);
       await this.store.lock('teams.name:' + name, tx);
       if ((await this.#all(tx)).some(team => team.name === name)) throw new ConflictError('团队名已经存在');
@@ -165,6 +167,7 @@ export class PgTeams implements Teams {
   }
   async delete(by: Principal, id: string): Promise<TeamDeletion> {
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       await this.#writer(by, tx);
       const team = await this.#locked(id, tx);
       const related=new Map<string,AuthorizationRecord>();
@@ -194,6 +197,7 @@ export class PgTeams implements Teams {
   async add(by: Principal, id: string, userId: string): Promise<TeamMember> {
     UserId.parse(userId);
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       const user = (await this.#writer(by, tx, userId, true))!;
       await this.#locked(id, tx);
       const decision = await this.authorizations.grant(by, { permission: 'assign', subject: userId, object: id }, tx);
@@ -205,6 +209,7 @@ export class PgTeams implements Teams {
   async remove(by: Principal, id: string, userId: string): Promise<boolean> {
     UserId.parse(userId);
     return this.store.withTransaction(async tx => {
+      await lockEnvironmentPermission(this.store, tx);
       await this.#writer(by, tx, userId);
       await this.#locked(id, tx);
       const previous = (await this.#decisions({ subject: userId }, tx)).find(row => row.body.object === id);

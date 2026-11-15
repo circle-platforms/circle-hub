@@ -1,5 +1,13 @@
 # hub/server
 
+## Incomplete registration capture presentation (C51 candidate)
+
+The new presentation branch trusts only the exact generated code/reason/object tuple and the authenticated recipient role. It handles the two tool-error exits, accepted dispatch notes and the CLI refusal through one formatter; it never parses a message to infer incomplete registration. Concrete capture arguments and definition-update help come from command parameter registration. Other reason paths retain their existing behavior.
+
+The CLI reads the real bootstrap result and completion records plus their matching src report before returning collection success. It does not infer success from the effect outcome, verification or registration flags. Successful collection points to checking the observations and updating the definition; failed collection retains the source-selected recovery action. Reports are readable artifact references rather than files an administrator must fetch from the host. The ordinary administrator gate remains in place.
+
+This independent candidate is not deployed, and its two new sentences remain review candidates. ENV rollout additionally requires the package changes and version retirement ordered by C54; local synthetic checks do not establish an outcome on a real device.
+
 ## Sharing and personal publication (decision 134)
 
 The console has a share action on the owner's verified entry and `/console/knowledge/submissions` for the owner's merged
@@ -1002,8 +1010,9 @@ uses are tested by the engine (`hub/runs/engine/start-result.test.ts`).
 - **ensureHubDatabase** is called only when the database is the platform's own socket (`<data dir>/run`); a server
   configured with another database (tests, development) never touches a cluster.
 - **Call log**: protocol methods are logged too (B08: every MCP call), and transport refusals of authenticated callers;
-  a GET is not (it is the client's probe the specification answers 405, in every session); no `argsPreview` is produced
-  (brief: digest and size only; records' open question on B08 F[7]).
+  a GET is not (it is the client's probe the specification answers 405, in every session). `argsPreview` carries only
+  bounded schema-declared structure, explicit run presence and typed reference metadata; upload bytes, free text,
+  unknown field names, selectors and tree paths are never copied. References are caller-declared, not proof of readability.
 - **Batches** are refused (decision 5). A client that negotiated protocol 2025-03-26, which still had batching, must send
   one request per POST; the SDK clients do.
 - **Console form posts** must come from this server's own origin (stricter than "a loopback origin"): SameSite does not
@@ -1365,3 +1374,23 @@ reported as zero usage. Errors from a present capacity service still propagate r
 ## Reset orchestration ownership (2026-11-13)
 
 The owner's 18:40 decision moves reset orchestration into `hub/server/reset`. The server classifies current records, checks references, invokes migrations and protected export/apply, controls the dedicated worker and restores the original database after a failed operation. The CLI and console use these same operations. Platform provides only verified native backup, database archival and empty-database creation; no platform module reads Hub records or configuration shapes. Protocol schema identities use their declared contract constants, including `KNOWLEDGE_CONTRIBUTION_SCHEMA`. No dependency exception is added for reset.
+
+## Automatic test-environment assignment conversion
+
+The approved environment-permission branch uses existing `authorization@1` decisions and content-addressed configuration objects, with no database migration. One environment object owns its target, lease prefixes or exact keys, executor links and registration responsibility. Independent lease-prefix registration commands are removed.
+
+Ordinary startup may use the deployment's existing operator-token store for this one approved conversion only. It authenticates the actual enabled administrator, and the records transaction rechecks the administrator before writing. It does not select an administrator, use an operating-system role as an account, accept an environment token for serve, or retain a token in the runtime dependencies. Confirmed absence without a valid delegate remains pending while the service starts; unreadable completion never authorizes repeating conversion or reverting to old permissions.
+
+The startup display and new-use admission read the durable completion state afresh. A startup observation is neither a second permission source nor a permanent enforcement switch. Declared reservation capability, effective prior assignments, directory conversion, generated assignments and completion are sampled and committed in one coordinated transaction. Held leases do not establish permission or environment identity.
+
+This work is isolated from the nightly candidate. Synthetic unit and integration evidence is reported per component; existing physical jobs surviving restart remains a separate work item. The same-data rollback matrix and ordinary console form counts remain required before this feature is declared complete.
+
+## Structured transport errors (C66, provisional model 90)
+
+The HTTP boundary consumes the model-owned `HttpCallErrorData` and `HttpErrorEnvelope` contracts. JSON-RPC errors keep their numeric `error.code`; registered Hub codes, generated categories and optional source-selected reasons belong in `error.data`. `sendRpcError` keeps its existing fifth headers argument and accepts data as a sixth argument. Response helpers neither classify an HTTP status/message nor infer whether a call executed.
+
+Authentication, host/origin, method, media, body, JSON, batch and token-body refusal sources explicitly establish rejection before business entry. Stopping and body-budget refusals use `CALL_BUSY`, `call_not_executed: true` and `Retry-After`. The flag concerns this call only, never the physical effect of a job. SDK refusals are qualified only at known protocol/header/message gates or a method-not-found response with a handler-entry witness; an unexplained or business-entered error has no non-execution assertion.
+
+Run-export errors use the JSON envelope, including app-level raw-target host/origin, malformed-target and stopping checks. Nonexistent and unreadable resources share `SOURCE_UNAVAILABLE` with a null category and no effect assertion. Known withheld bytes use `SOURCE_NOT_PERMITTED`; an absent accepted-result prerequisite uses `RUN_EXPORT_NOT_READY`. Unexpected failures use `CALL_INTERNAL_UNAVAILABLE` without claiming non-execution. Successful representations, source bytes, digest headers and HEAD semantics are retained. Unrelated health, local-tools and ordinary endpoint behavior is unchanged.
+
+The dedicated pure tests use unconnected request/response streams and injected dependencies; they construct no listener, database or service. Their passes establish local formatting and source-branch behavior, not a live HTTP/PG integration or production/client outcome. Full types, generated verification and authorized service integration remain the integrator's responsibility.

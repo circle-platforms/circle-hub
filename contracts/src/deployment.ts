@@ -2,11 +2,10 @@
 import { z } from 'zod';
 import { PermissionRoleSchema } from '../generated/vocabulary.ts';
 import { PackId, UserId, TeamId, IsoTime, Sha256, idOf } from './common.ts';
-import { ExecutorSource, ResourceId, ResourceRecord, ExactPackRef } from './resources.ts';
+import { ExecutorSource, ResourceId, ResourceRecord, ExactPackRef, TestEnvironmentId, TestEnvironmentPrefix, TestEnvironmentResource } from './resources.ts';
 import { SecretReference, VariableName, VariableRecord } from './variables.ts';
 
 import { ProductId, BuildInfo } from './product.ts';
-import { LeaseRegistrationDetail } from './records.ts';
 
 export const DeploymentSyncTarget = z.strictObject({
   product: ProductId,
@@ -31,14 +30,34 @@ export const DeploymentDocument = z.strictObject({
 
 export const ExecutorStableName = z.string().min(1).max(200)
   .refine(value => value === value.trim() && !/\p{Cc}/u.test(value), '名字不能含首尾空白或控制字符')
-  .refine(value => ![UserId, TeamId, ResourceId, idOf('exe')].some(schema => schema.safeParse(value).success), '名字不能使用内部编号');
+  .refine(value => ![UserId, TeamId, ResourceId, TestEnvironmentId, idOf('exe')].some(schema => schema.safeParse(value).success), '名字不能使用内部编号');
 export const EXECUTOR_NAME_PREFIX = 'executor-name.';
 export const ExecutorNameBinding = z.strictObject({ schema: z.literal('executor-name@1'), executor: idOf('exe'), name: ExecutorStableName });
 export type ExecutorNameBinding = z.infer<typeof ExecutorNameBinding>;
 
 const name = ExecutorStableName;
-export const DEPLOYMENT_SCHEMA = 'deployment@2';
-export const DeploymentLeaseRegistration = LeaseRegistrationDetail.pick({prefix:true}).extend({owner:name,prefix:LeaseRegistrationDetail.shape.prefix.regex(/^[a-z0-9][a-z0-9:._/-]{0,199}$/)});
+export const DEPLOYMENT_SCHEMA = 'deployment@3';
+/** A confirmed owner-held booking namespace, not a test environment or an environment assignment. */
+export const BookingPrefix = z.strictObject({ prefix: TestEnvironmentPrefix.shape.prefix, owner: name });
+export type BookingPrefix = z.infer<typeof BookingPrefix>;
+/** Public exports require complete names and targets; unknown canonical registrations must be reported, never guessed or omitted. */
+export const DeploymentTestEnvironment = z.strictObject({
+  name, target: z.string().min(1).max(200),
+  prefixes: z.array(TestEnvironmentPrefix.pick({ prefix: true, owner: true }).safeExtend({ owner: name })).default([]),
+  resources: z.array(TestEnvironmentResource.pick({ key: true, owner: true }).safeExtend({ owner: name })).default([]),
+  executors: z.array(name).default([]), enabled: z.boolean().default(true),
+}).superRefine((value, ctx) => {
+  if (!value.prefixes.length && !value.resources.length) ctx.addIssue({ code: 'custom', path: ['prefixes'], message: '测试环境须声明前缀或精确资源键' });
+  for (const [field, values] of [['prefixes', value.prefixes.map(row => row.prefix)], ['resources', value.resources.map(row => row.key)], ['executors', value.executors]] as const)
+    if (new Set(values).size !== values.length) ctx.addIssue({ code: 'custom', path: [field], message: '测试环境登记项重复' });
+});
+export type DeploymentTestEnvironment = z.infer<typeof DeploymentTestEnvironment>;
+export const DeploymentEnvironmentAssignment = z.union([
+  z.strictObject({ environment: name, user: name, expiresAt: IsoTime.nullable().default(null) }),
+  z.strictObject({ environment: name, team: name, expiresAt: IsoTime.nullable().default(null) }),
+  z.strictObject({ environment: name, all: z.literal(true), expiresAt: IsoTime.nullable().default(null) }),
+]);
+export type DeploymentEnvironmentAssignment = z.infer<typeof DeploymentEnvironmentAssignment>;
 export const DeploymentExecutor = z.strictObject({name,definition:ExecutorSource.safeExtend({id:z.never().optional()})});
 export const DeploymentResource = z.strictObject({
   definition: z.strictObject({
@@ -60,6 +79,9 @@ export const DeploymentDefinition = z.strictObject({
   packs: z.array(z.strictObject({ ref: ExactPackRef, directory: name.optional(), install: z.boolean().default(false), dependsOn: z.array(ExactPackRef).default([]) })).default([]),
   resources: z.array(DeploymentResource).default([]),
   executors: z.array(DeploymentExecutor).default([]),
+  testEnvironments: z.array(DeploymentTestEnvironment).default([]),
+  environmentAssignments: z.array(DeploymentEnvironmentAssignment).default([]),
+  bookingPrefixes: z.array(BookingPrefix).default([]),
   workflowAssignments: z.array(z.union([
     z.strictObject({ pack: PackId, user: name }),
     z.strictObject({ pack: PackId, team: name }),
@@ -72,15 +94,18 @@ export const DeploymentDefinition = z.strictObject({
   knowledgeSync: DeploymentSyncTargets.optional(),
   variables: z.array(DeploymentVariable).default([]),
   documents: z.array(DeploymentDocument).default([]),
-  leaseRegistrations: z.array(DeploymentLeaseRegistration).default([]),
   missingConfiguration: z.array(z.string().min(1)).default([]),
 }).superRefine((value, ctx) => {
-  for (const key of ['accounts', 'teams', 'variables', 'documents'] as const) {
+  for (const key of ['accounts', 'teams', 'variables', 'documents', 'testEnvironments'] as const) {
     const names = value[key].map(row => row.name);
     if (new Set(names).size !== names.length) ctx.addIssue({ code: 'custom', path: [key], message: '名字重复' });
   }
-  const prefixes = value.leaseRegistrations.map(row => row.prefix);
-  if (new Set(prefixes).size !== prefixes.length) ctx.addIssue({ code: 'custom', path: ['leaseRegistrations'], message: '预订登记前缀重复' });
+  const targets = value.testEnvironments.map(row => row.target);
+  const bookingPrefixes = value.bookingPrefixes.map(row => row.prefix);
+  if (new Set(bookingPrefixes).size !== bookingPrefixes.length) ctx.addIssue({ code: 'custom', path: ['bookingPrefixes'], message: '预订前缀重复' });
+  if (new Set(targets).size !== targets.length) ctx.addIssue({ code: 'custom', path: ['testEnvironments'], message: '同一目标只能登记一个测试环境，多个执行器应关联到同一环境' });
+  const recipients = value.environmentAssignments.map(row => JSON.stringify([row.environment, 'user' in row ? ['user', row.user] : 'team' in row ? ['team', row.team] : ['all']]));
+  if (new Set(recipients).size !== recipients.length) ctx.addIssue({ code: 'custom', path: ['environmentAssignments'], message: '测试环境的受众分配重复' });
   const resourceNames = value.resources.map(row => row.definition.name);
   if (new Set(resourceNames).size !== resourceNames.length) ctx.addIssue({ code: 'custom', path: ['resources'], message: '资源名字重复' });
   const executorNames=value.executors.map(row=>row.name);

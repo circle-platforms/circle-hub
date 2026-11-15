@@ -120,6 +120,11 @@ export const AXES = {
   capacity_unit: { label: '容量单位', owner: 'R01', values: [{ code: 'kb', label: 'KB' }, { code: 'mb', label: 'MB' }, { code: 'gb', label: 'GB' }] },
   reset_scope: { label: '重置范围', owner: 'D04', values: [{ code: 'history', label: '运行历史' }, { code: 'knowledge', label: '知识' }, { code: 'packs', label: '包' }, { code: 'config', label: '配置' }, { code: 'all', label: '全部' }] },
   call_error_category: { label: '调用错误类别', owner: 'D05', values: [{ code: 'invalid_parameters', label: '参数无效' }, { code: 'permission_denied', label: '无权限' }, { code: 'not_found', label: '不存在' }, { code: 'occupied', label: '已被占用' }, { code: 'temporarily_unavailable', label: '暂时不可用' }] },
+  call_error_reason: { label: '调用错误原因', owner: 'D05', values: [{ code: 'actor_disabled', label: '账户已停用' }, { code: 'actor_not_active', label: '账户无效' }, { code: 'environment_disabled', label: '测试环境已停用' }, { code: 'environment_unassigned', label: '缺少测试环境分配' }, { code: 'environment_not_registered', label: '缺少测试环境登记' }, { code: 'environment_registration_inconsistent', label: '测试环境登记不一致' }, { code: 'environment_permission_unavailable', label: '测试环境权限暂不可核对' }, { code: 'lease_held_by_other_account', label: '资源已有他人预订' }, { code: 'lease_already_held_by_current_account', label: '已有本人预订' }, { code: 'lease_missing_for_lineage', label: '缺少本运行预订' }, { code: 'lease_expired', label: '预订已到期' }, { code: 'lease_released', label: '预订已释放' }, { code: 'lease_reader_unavailable', label: '预订记录暂不可读取' }, { code: 'pack_unassigned', label: '缺少工作流或技能分配' }, { code: 'knowledge_root_unassigned', label: '产品知识未获授权' }, { code: 'system_unassigned', label: '缺少业务系统分配' }, { code: 'content_read_not_permitted', label: '内容未获读取许可' }, { code: 'named_document_run_scope_denied', label: '命名文档读取范围受限' }, { code: 'run_submission_not_owned', label: '不能向他人运行提交' }, { code: 'environment_registration_incomplete', label: '测试环境登记未完成' }] },
+  call_error_object_kind: { label: '调用错误对象种类', owner: 'D05', values: [{ code: 'pack', label: '工作流或技能' }, { code: 'knowledge', label: '知识条目' }, { code: 'knowledge_root', label: '产品知识入口' }, { code: 'system', label: '业务系统' }, { code: 'source_artifact', label: '来源原件' }, { code: 'record', label: '记录' }, { code: 'named_document', label: '命名文档' }, { code: 'test_environment', label: '测试环境' }] },
+  dispatch_operation: { label: '派发操作', owner: 'D05', values: [{ code: 'precheck', label: '只读预检' }, { code: 'dispatch', label: '正式派发' }, { code: 'conformance', label: '一致性探测' }] },
+  lease_holder_relation: { label: '预订持有关系', owner: 'D04', values: [{ code: 'current_account', label: '当前账户' }, { code: 'other_account', label: '其他账户' }, { code: 'unknown', label: '关系未知' }] },
+  environment_registration_issue: { label: '测试环境登记不一致项', owner: 'D05', values: [{ code: 'executor_identity', label: '执行器身份' }, { code: 'target', label: '目标' }, { code: 'resources', label: '资源' }, { code: 'booking_scope', label: '预订范围' }] },
 } as const;
 
 export type AxisName = keyof typeof AXES;
@@ -1294,6 +1299,56 @@ export function isCallErrorCategory(value: unknown): value is CallErrorCategory 
   return (CALL_ERROR_CATEGORY as readonly unknown[]).includes(value);
 }
 
+/** 调用错误原因 (D05) */
+export const CALL_ERROR_REASON = ['actor_disabled', 'actor_not_active', 'environment_disabled', 'environment_unassigned', 'environment_not_registered', 'environment_registration_inconsistent', 'environment_permission_unavailable', 'lease_held_by_other_account', 'lease_already_held_by_current_account', 'lease_missing_for_lineage', 'lease_expired', 'lease_released', 'lease_reader_unavailable', 'pack_unassigned', 'knowledge_root_unassigned', 'system_unassigned', 'content_read_not_permitted', 'named_document_run_scope_denied', 'run_submission_not_owned', 'environment_registration_incomplete'] as const;
+export type CallErrorReason = (typeof CALL_ERROR_REASON)[number];
+export const CALL_ERROR_REASON_LABEL = { 'actor_disabled': '账户已停用', 'actor_not_active': '账户无效', 'environment_disabled': '测试环境已停用', 'environment_unassigned': '缺少测试环境分配', 'environment_not_registered': '缺少测试环境登记', 'environment_registration_inconsistent': '测试环境登记不一致', 'environment_permission_unavailable': '测试环境权限暂不可核对', 'lease_held_by_other_account': '资源已有他人预订', 'lease_already_held_by_current_account': '已有本人预订', 'lease_missing_for_lineage': '缺少本运行预订', 'lease_expired': '预订已到期', 'lease_released': '预订已释放', 'lease_reader_unavailable': '预订记录暂不可读取', 'pack_unassigned': '缺少工作流或技能分配', 'knowledge_root_unassigned': '产品知识未获授权', 'system_unassigned': '缺少业务系统分配', 'content_read_not_permitted': '内容未获读取许可', 'named_document_run_scope_denied': '命名文档读取范围受限', 'run_submission_not_owned': '不能向他人运行提交', 'environment_registration_incomplete': '测试环境登记未完成' } as const satisfies { readonly [K in CallErrorReason]: string };
+export const CALL_ERROR_REASON_UI = { 'actor_disabled': '账户已停用', 'actor_not_active': '账户无效', 'environment_disabled': '测试环境已停用', 'environment_unassigned': '缺少测试环境分配', 'environment_not_registered': '缺少测试环境登记', 'environment_registration_inconsistent': '测试环境登记不一致', 'environment_permission_unavailable': '测试环境权限暂不可核对', 'lease_held_by_other_account': '资源已有他人预订', 'lease_already_held_by_current_account': '已有本人预订', 'lease_missing_for_lineage': '缺少本运行预订', 'lease_expired': '预订已到期', 'lease_released': '预订已释放', 'lease_reader_unavailable': '预订记录暂不可读取', 'pack_unassigned': '缺少工作流或技能分配', 'knowledge_root_unassigned': '产品知识未获授权', 'system_unassigned': '缺少业务系统分配', 'content_read_not_permitted': '内容未获读取许可', 'named_document_run_scope_denied': '命名文档读取范围受限', 'run_submission_not_owned': '不能向他人运行提交', 'environment_registration_incomplete': '测试环境登记未完成' } as const satisfies { readonly [K in CallErrorReason]: string };
+export const CallErrorReasonSchema = z.enum(CALL_ERROR_REASON);
+export function isCallErrorReason(value: unknown): value is CallErrorReason {
+  return (CALL_ERROR_REASON as readonly unknown[]).includes(value);
+}
+
+/** 调用错误对象种类 (D05) */
+export const CALL_ERROR_OBJECT_KIND = ['pack', 'knowledge', 'knowledge_root', 'system', 'source_artifact', 'record', 'named_document', 'test_environment'] as const;
+export type CallErrorObjectKind = (typeof CALL_ERROR_OBJECT_KIND)[number];
+export const CALL_ERROR_OBJECT_KIND_LABEL = { 'pack': '工作流或技能', 'knowledge': '知识条目', 'knowledge_root': '产品知识入口', 'system': '业务系统', 'source_artifact': '来源原件', 'record': '记录', 'named_document': '命名文档', 'test_environment': '测试环境' } as const satisfies { readonly [K in CallErrorObjectKind]: string };
+export const CALL_ERROR_OBJECT_KIND_UI = { 'pack': '工作流或技能', 'knowledge': '知识条目', 'knowledge_root': '产品知识入口', 'system': '业务系统', 'source_artifact': '来源原件', 'record': '记录', 'named_document': '命名文档', 'test_environment': '测试环境' } as const satisfies { readonly [K in CallErrorObjectKind]: string };
+export const CallErrorObjectKindSchema = z.enum(CALL_ERROR_OBJECT_KIND);
+export function isCallErrorObjectKind(value: unknown): value is CallErrorObjectKind {
+  return (CALL_ERROR_OBJECT_KIND as readonly unknown[]).includes(value);
+}
+
+/** 派发操作 (D05) */
+export const DISPATCH_OPERATION = ['precheck', 'dispatch', 'conformance'] as const;
+export type DispatchOperation = (typeof DISPATCH_OPERATION)[number];
+export const DISPATCH_OPERATION_LABEL = { 'precheck': '只读预检', 'dispatch': '正式派发', 'conformance': '一致性探测' } as const satisfies { readonly [K in DispatchOperation]: string };
+export const DISPATCH_OPERATION_UI = { 'precheck': '只读预检', 'dispatch': '正式派发', 'conformance': '一致性探测' } as const satisfies { readonly [K in DispatchOperation]: string };
+export const DispatchOperationSchema = z.enum(DISPATCH_OPERATION);
+export function isDispatchOperation(value: unknown): value is DispatchOperation {
+  return (DISPATCH_OPERATION as readonly unknown[]).includes(value);
+}
+
+/** 预订持有关系 (D04) */
+export const LEASE_HOLDER_RELATION = ['current_account', 'other_account', 'unknown'] as const;
+export type LeaseHolderRelation = (typeof LEASE_HOLDER_RELATION)[number];
+export const LEASE_HOLDER_RELATION_LABEL = { 'current_account': '当前账户', 'other_account': '其他账户', 'unknown': '关系未知' } as const satisfies { readonly [K in LeaseHolderRelation]: string };
+export const LEASE_HOLDER_RELATION_UI = { 'current_account': '当前账户', 'other_account': '其他账户', 'unknown': '关系未知' } as const satisfies { readonly [K in LeaseHolderRelation]: string };
+export const LeaseHolderRelationSchema = z.enum(LEASE_HOLDER_RELATION);
+export function isLeaseHolderRelation(value: unknown): value is LeaseHolderRelation {
+  return (LEASE_HOLDER_RELATION as readonly unknown[]).includes(value);
+}
+
+/** 测试环境登记不一致项 (D05) */
+export const ENVIRONMENT_REGISTRATION_ISSUE = ['executor_identity', 'target', 'resources', 'booking_scope'] as const;
+export type EnvironmentRegistrationIssue = (typeof ENVIRONMENT_REGISTRATION_ISSUE)[number];
+export const ENVIRONMENT_REGISTRATION_ISSUE_LABEL = { 'executor_identity': '执行器身份', 'target': '目标', 'resources': '资源', 'booking_scope': '预订范围' } as const satisfies { readonly [K in EnvironmentRegistrationIssue]: string };
+export const ENVIRONMENT_REGISTRATION_ISSUE_UI = { 'executor_identity': '执行器身份', 'target': '目标', 'resources': '资源', 'booking_scope': '预订范围' } as const satisfies { readonly [K in EnvironmentRegistrationIssue]: string };
+export const EnvironmentRegistrationIssueSchema = z.enum(ENVIRONMENT_REGISTRATION_ISSUE);
+export function isEnvironmentRegistrationIssue(value: unknown): value is EnvironmentRegistrationIssue {
+  return (ENVIRONMENT_REGISTRATION_ISSUE as readonly unknown[]).includes(value);
+}
+
 export interface AxisValues {
   effect_trigger: EffectTrigger;
   write_interaction: WriteInteraction;
@@ -1412,6 +1467,11 @@ export interface AxisValues {
   capacity_unit: CapacityUnit;
   reset_scope: ResetScope;
   call_error_category: CallErrorCategory;
+  call_error_reason: CallErrorReason;
+  call_error_object_kind: CallErrorObjectKind;
+  dispatch_operation: DispatchOperation;
+  lease_holder_relation: LeaseHolderRelation;
+  environment_registration_issue: EnvironmentRegistrationIssue;
 }
 
 const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1532,6 +1592,11 @@ const LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
   capacity_unit: CAPACITY_UNIT_LABEL,
   reset_scope: RESET_SCOPE_LABEL,
   call_error_category: CALL_ERROR_CATEGORY_LABEL,
+  call_error_reason: CALL_ERROR_REASON_LABEL,
+  call_error_object_kind: CALL_ERROR_OBJECT_KIND_LABEL,
+  dispatch_operation: DISPATCH_OPERATION_LABEL,
+  lease_holder_relation: LEASE_HOLDER_RELATION_LABEL,
+  environment_registration_issue: ENVIRONMENT_REGISTRATION_ISSUE_LABEL,
 };
 
 const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } = {
@@ -1652,6 +1717,11 @@ const UI_LABELS: { [A in AxisName]: { readonly [K in AxisValues[A]]: string } } 
   capacity_unit: CAPACITY_UNIT_UI,
   reset_scope: RESET_SCOPE_UI,
   call_error_category: CALL_ERROR_CATEGORY_UI,
+  call_error_reason: CALL_ERROR_REASON_UI,
+  call_error_object_kind: CALL_ERROR_OBJECT_KIND_UI,
+  dispatch_operation: DISPATCH_OPERATION_UI,
+  lease_holder_relation: LEASE_HOLDER_RELATION_UI,
+  environment_registration_issue: ENVIRONMENT_REGISTRATION_ISSUE_UI,
 };
 
 /** Chinese display label of a vocabulary code. The only place labels come from. */

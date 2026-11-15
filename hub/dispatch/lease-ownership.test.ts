@@ -1,3 +1,4 @@
+import {setPrefixOwner} from './testing/environments.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
@@ -29,7 +30,7 @@ test('an unbounded current holder passes the full synthetic dispatch lifecycle',
 test('owner release increments the fence and rejects the former lineage before a synthetic executor submission', async t => {
   const c=await setup();t.after(()=>c.close());
   const owner=await c.kit.principals.createUser(c.admin,'合成登记主人');
-  assert.ok((await c.leases.register({prefix:'synthetic/device/',declaredPrefix:'synthetic/',owner:owner.id,by:owner.id,reason:'合成登记'})).ok);
+  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id,c.executor.definition.resources);
   const keys=c.executor.definition.resources;
   const before=await c.leases.holderSnapshot(keys);
   assert.ok((await c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成主人收回'})).ok);
@@ -43,7 +44,7 @@ test('a force release and a new reservation serialize through the same durable l
   const c=await setup();t.after(()=>c.close());
   const owner=await c.kit.principals.createUser(c.admin,'合成并发主人');
   const keys=c.executor.definition.resources;
-  assert.ok((await c.leases.register({prefix:'synthetic/device/',declaredPrefix:'synthetic/',owner:owner.id,by:owner.id,reason:'合成登记'})).ok);
+  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id,c.executor.definition.resources);
   let checked!:()=>void;const checkReached=new Promise<void>(resolve=>checked=resolve);
   let release!:()=>void;const pause=new Promise<void>(resolve=>release=resolve);t.after(()=>release());
   const forcing=c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成并发释放',guard:async()=>{
@@ -52,7 +53,7 @@ test('a force release and a new reservation serialize through the same durable l
   await Promise.race([checkReached,forcing.then(()=>{throw new Error('force release skipped its atomic job guard');})]);
   let arrived!:()=>void;const reserving=new Promise<void>(resolve=>arrived=resolve);
   const lock=c.leases.withMutationLock.bind(c.leases);
-  c.leases.withMutationLock=async fn=>{arrived();return lock(fn);};
+  c.leases.withMutationLock=async(fn,outer)=>{arrived();return lock(fn,outer);};
   let reserved=false;
   const dispatching=c.service.dispatch(c.admin,c.run,c.executor.id,()=>{reserved=true;});
   const rejected=assert.rejects(dispatching,/围栏|血缘/);
@@ -66,12 +67,12 @@ test('a committed reservation wins the release race and the owner guard leaves i
   let finishTarget!:()=>void;const targetWait=new Promise<void>(resolve=>finishTarget=resolve);t.after(()=>finishTarget());
   const c=await setup({onSubmit:async()=>targetWait});t.after(()=>c.close());
   const owner=await c.kit.principals.createUser(c.admin,'合成等待主人');const keys=c.executor.definition.resources;
-  assert.ok((await c.leases.register({prefix:'synthetic/device/',declaredPrefix:'synthetic/',owner:owner.id,by:owner.id,reason:'合成登记'})).ok);
+  await setPrefixOwner(c.kit,c.admin,c.environment,'synthetic/device/',owner.id,c.executor.definition.resources);
   const before=await c.leases.holderSnapshot(keys);
   let committed!:()=>void;const commitReached=new Promise<void>(resolve=>committed=resolve);
   let releaseReservation!:()=>void;const reservationWait=new Promise<void>(resolve=>releaseReservation=resolve);t.after(()=>releaseReservation());
   const lock=c.leases.withMutationLock.bind(c.leases);
-  c.leases.withMutationLock=fn=>lock(async tx=>{const value=await fn(tx);committed();await reservationWait;return value;});
+  c.leases.withMutationLock=(fn,outer)=>lock(async tx=>{const value=await fn(tx);committed();await reservationWait;return value;},outer);
   const dispatching=c.service.dispatch(c.admin,c.run,c.executor.id);
   await commitReached;
   const forcing=c.leases.forceRelease({keys,by:owner.id,owner:owner.id,reason:'合成并发释放',guard:async()=>{

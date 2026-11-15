@@ -1,3 +1,4 @@
+import {registerEnvironment} from './environments.ts';
 import {effectsDocument} from './effects.ts';
 import {boundaryPolicy} from '../policy.ts';
 import {addSyntheticExecutor} from './credentials.ts';
@@ -26,7 +27,7 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   const db = new Database(createPool(kit.database, 4));
   let endpoint: Awaited<ReturnType<typeof startEndpoint>> | undefined;
   try {
-  const leases = new LeaseService(db, { now: async () => now() });
+  const leases = new LeaseService(db, { now: async () => now(),catalog:kit.testEnvironments });
   const admin = (await kit.principals.bootstrapAdmin('合成管理员')).user;
   const owner = await kit.principals.createUser(admin, '合成运行者');
   const run = newId('run'); const plan = newId('run');
@@ -75,11 +76,14 @@ export async function setup(options: { mode?: string; alter?: (name: string, val
   await leases.acquire({ keys: d.resources, prefix: 'synthetic/', ttlSeconds: options.mode === 'expiry' ? 1 : 3600, maxTtlSeconds: 3600, holder: { user: owner.id, run: options.mode === 'lineage' ? newId('run') : run } });
   const environmentTeam=await kit.teams.create(admin,'合成环境使用团队');
   await kit.teams.add(admin,environmentTeam.id,owner.id);
-  await kit.authorizations.assignResource(admin,executor.id,environmentTeam.id);
-  const environmentAccess=new MemberEnvironments(kit,registry,leases,(actor,id,tx)=>canUseEnvironment(kit,actor,id,tx));
+  await kit.teams.add(admin,environmentTeam.id,admin.id);
+  const environment=await registerEnvironment(kit,admin,{name:'synthetic-bed',target:executor.source.target,executors:[executor.id],resources:d.resources,owner:admin.id,at:now().toISOString()});
+  await kit.authorizations.assignResource(admin,environment.id,environmentTeam.id);
+  await kit.testEnvironments.inherit(admin,{collect:async()=>({workflows:[],executors:[],sourceRecords:[]})});
+  const environmentAccess=new MemberEnvironments(kit,registry,leases);
   const service = new DispatchService({ enforceEnvironmentAssignments:true, environmentAccess, recheckChecks:async({checks})=>Object.fromEntries(checks.map(id=>[id,[{verdict:'support',statement:'合成政策通过',grounds:[],tier:'blocking',data:{parameters:Object.fromEntries(Object.entries(effectDocument.effects[0].parameters.values).map(([key,values])=>[key,values[0]]))}}]])),records: kit, leases, runs, workflows, now });
   const server=endpoint;let closing:Promise<void>|undefined;
-  return { environmentAccess,environmentTeam,effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
+  return { environment,environmentAccess,environmentTeam,effectDocument,freezeExecutor,kit, db, clock, now, admin, owner, run, detail, workflows, runs, executor, registry, leases, service, calls, submitted, endpoint:server, payload,
     get sawIntentAtSubmit() { return sawIntentAtSubmit; },
     close: () => (closing ??= (async () => { await server.close(); await db.end(); await kit.close(); })()) };
   } catch(error) { await endpoint?.close().catch(()=>{});await db.end().catch(()=>{});await kit.close();throw error; }

@@ -1,5 +1,5 @@
 {
-  "version": 82,
+  "version": 90,
   "elements": [
     {
       "id": "B01",
@@ -273,7 +273,9 @@
         "内核对应：发布记录归变更集（T02），其余四种许可归操作",
         "团队登记、成员关系与分配以 authorization@1 记录为权威：assign 的 subject=*、object=TeamId 表示团队登记或撤回，subject=UserId、object=TeamId 表示成员加入或移出，subject=TeamId、object=PackId 表示团队工作流分配；resource_assign 的 subject=TeamId 或 *、object=ResourceId 表示资源使用范围，不代替 resource_config。TeamId 采用 tm_ 加小写 ULID，首位为 0-7，其余 25 位为小写 Crockford 字符。teams 与 team_members 只是可从记录重建的投影，与决定记录在同一事务中更新；历史表不能代替授权记录。删除团队时，对该团队名下每一条工作流分配和资源分配逐条追加 revoked=true 的撤回记录，再撤回团队登记与成员关系；不能仅保留原分配并依赖团队已删除来判为不生效。既有决定记录不改写，团队删除与相关撤回在同一事务提交。今天不新增每团队知识空间与记忆。（来源：决定 150；所有者 2026-11-13 15:00 决定，见 decisions-1500.md；接口见 interfaces.md）",
         "密钥库独立于记录库：按名字读取密钥的值与已认证版本元数据，不查 secret 授权记录决定当前值或版本，不要求先有定义引用才能设置，不增加 adopt 或认领层。密钥的设置人或设置时间没有可信资料时保持未知，不以导入人或导入时间补造；旧多版本没有已认证的当前版本选择时，不按文件修改时间猜测。使用普通变量记录真实 decision 摘要，仍可引用实际 rec:；使用密钥只记录源定义位置、名字和密钥库认证的版本，不把密钥库摘要冒充 rec: 或 src:。（来源：所有者 2026-11-13 15:58 C12 决定，见 answers-codex.md；易用性设计原则见 decisions-1600.md）",
-        "测试环境按资源分配：resource_assign 的 object 为已登记执行器的 exe_ 身份，subject 为账户、团队或全体成员；ResourceAssignmentSubject 复用 TeamAssignmentSubject 并加入 UserId，其他团队主体语义不变。没有有效分配的账户看不到也不能预订或实际使用环境，管理员管理权不自动授予使用权。预订整份 acquire/extend 的键在任何租约写入前与当前执行器 resources 精确匹配并核对当前启用账户、有效团队和有效分配；未声明的键不按包名或自由文本前缀猜为非环境后放行。实际派发以 run.runner 的当前授权核对指定执行器，不借后台管理员身份；撤权不宣称已停止远端作业。成员读模型只给已分配目标及占用名字和时间，不露内部身份；占用未知不显示为空闲。普通业务系统资源保留原团队主体边界。（来源：Boss night-implementation.md 03:10 补充第1条，2026-11-14；n2-environment-plan.md）"
+        "测试环境按资源分配：resource_assign 的 object 为已登记执行器的 exe_ 身份，subject 为账户、团队或全体成员；ResourceAssignmentSubject 复用 TeamAssignmentSubject 并加入 UserId，其他团队主体语义不变。没有有效分配的账户看不到也不能预订或实际使用环境，管理员管理权不自动授予使用权。预订整份 acquire/extend 的键在任何租约写入前与当前执行器 resources 精确匹配并核对当前启用账户、有效团队和有效分配；未声明的键不按包名或自由文本前缀猜为非环境后放行。实际派发以 run.runner 的当前授权核对指定执行器，不借后台管理员身份；撤权不宣称已停止远端作业。成员读模型只给已分配目标及占用名字和时间，不露内部身份；占用未知不显示为空闲。普通业务系统资源保留原团队主体边界。（来源：Boss night-implementation.md 03:10 补充第1条，2026-11-14；n2-environment-plan.md）",
+        "测试环境以单一 resource_config 对象登记稳定环境身份、名字、目标、前缀或精确资源键及关联执行器；同目标的多个执行器归同一环境，删除再登记不复用原身份。每个前缀和资源键分别保留原 owner 责任事实，不以单一环境 owner 覆盖。环境使用权由普通 resource_assign 记录分给账户、团队或全体，并保留有效期；环境登记、名字及执行器关联都不是使用许可。公开定义仅支持 deployment@3，以名字引用测试环境、执行器和 owner，environmentAssignments 分别声明账户、团队或全体；未知目标或责任名字不能猜测或漏项，公开导出须明确报不完整。来源：Boss 2026-11-14 16:30、16:40、16:56。",
+        "有owner而无目标、无确切执行器资源事实的预订前缀不是测试环境；只在同一普通登记目录保留前缀及责任归属，不产生环境分配、不受新的测试环境守卫管。公开deployment@3以bookingPrefixes（prefix及owner名字）完整携带，和testEnvironments分开；公开定义不携带新实例内部登记时刻。旧工作流分配与owner规则保持；以后补目标登记为新的测试环境，默认不开放、不自动授予。来源：Boss 2026-11-14 17:06、17:10。"
       ],
       "tracedTo": [
         "E1-15",
@@ -339,6 +341,10 @@
       ],
       "changes75": [
         "删除密钥使用者登记及记录库取值依赖，密钥库自持认证值和版本元数据；普通变量保留真实决定记录引用，密钥使用改记名字与vault版本；来源：所有者 answers-codex.md 15:58 C12，2026-11-13。"
+      ],
+      "changes83": [
+        "公开定义升为 deployment@3，新增 testEnvironments 与 environmentAssignments、每前缀或键的 owner 名字及分配有效期；删除独立 leaseRegistrations，不读取或转换 deployment@2。来源：Boss 2026-11-14 16:56 批准。",
+        "同一未交批次补bookingPrefixes，保存已确认的非环境预订前缀和owner名字；同目录写回，不新表、不新环境分配。来源：Boss 2026-11-14 17:10。"
       ]
     },
     {
@@ -557,6 +563,9 @@
       ],
       "changes50": [
         "合并第 50 版：并入主线第 41 版请求作废与 request_status.superseded；见 B02 changes50。"
+      ],
+      "changes90": [
+        "来源：主C60/C66授权（2026-11-15）；临时模型90基89。 HTTP错误公开为HttpErrorEnvelope.error:{message,...HttpCallErrorData}，data的code取生成ProtocolCode、call_error_category取现有五类或null，原因可选取既有call_error_reason，call_not_executed仅literal true且只能由source实际确认pre-handler拒绝；缺席未知，HTTP状态/message/内部异常不证明未执行。复用现有枚举/引用，不造记录种类。ProtocolError保留request_id原可选string、missing原字段及约束，新增可选audience:UserId、due:IsoTime、next_action:string、items:ItemId[]，不补默认；请求字段必须来自真实请求记录。"
       ]
     },
     {
@@ -1400,7 +1409,8 @@
         "新鲜度",
         "重复策略（V07）",
         "错误处理表：码或原因 → 修复（最多 n 轮）/ 进已拒收 / 发请求 / 记未知；按原因写的行管未知与未完成（原因取词表 reason）；“进已拒收”只用于待判定产物上的阻断检查码；修复只用于待判定产物上的检查；评审主体上的反驳停在不通过，由作者在自己本地修改，Hub 不修改被评审的材料",
-        "参数：模板声明的实参与种类（源文件按输入槽传入并带来源角色；部署实例；请求原文先存为声明类源文件，再作为参数传入）"
+        "参数：模板声明的实参与种类（源文件按输入槽传入并带来源角色；部署实例；请求原文先存为声明类源文件，再作为参数传入）",
+        "可选step：显式引用本工作流steps[].id；不是要求项name或动态派发阶段。"
       ],
       "rules": [
         "来自已发布任务包的要求项模板，start_run 时绑定参数并冻结",
@@ -1455,6 +1465,9 @@
       ],
       "changes11": [
         "语义分类或期望质量要求项须接受 judgment 或 independent_judgment，不能继续声明只有事实生产者；机械引用核验与集合/算术聚合可单列要求项，聚合仍带判断前提。未分类、未判断、类型未声明与参数未核属于输入/证据状态，按已有 unchecked/incomplete、missing_input/not_covered 及 A06 出口表达，不增加 V03 层终态，也不能因此推支持或反驳。（来源：决定（集成者，10-24，关键词整改））"
+      ],
+      "changes89": [
+        "要求项的可选step引用与W03步骤声明同批登记，缺声明不拒旧包；引用值语法由Key校验，跨文件存在性由runs联合校验。来源：Boss C56/C57及主C60授权。"
       ]
     },
     {
@@ -1472,7 +1485,8 @@
         "产品绑定写产品的全部名称（别名集合）、各名称下的版本线与构建命名族；一个工作流绑定一条产品线，不为每个名称各绑一份",
         "工作流可以声明前驱的用法：必须有前驱的（例如要求独立判断的复核，前驱是被判工作的那次运行），start_run 没带前驱就拒绝，修正说明写明要以哪次运行为前驱；每个要求项都要求独立于前驱的，还可以声明前驱只读，发布时核对：看得到前驱的用户（含经分享，R02）也能拿它当前驱，新运行只读前驱的记录，不沿用它的租约、修复轮数和客户端键",
         "输入槽绑定只接受显式来源 id，或模型带逐字引文提出并经 Hub 核验的来源候选。不得以文件名/标题关键词、停词、同义词或 top-N 排序产出的检索结果作为输入或查全依据；产品、版本线、模块各层只按包声明的目录结构语法解析，不识别的层按 A06 补语法或由作者改目录名。",
-        "个人空间的工作流及通用技能只允许上传、个人或团队知识、Hub 生成的文件；不得声明命名文档、业务系统类型、租约或任何外部效果。个人发布与 start_run 均校验，动态期望来源与投影也不得触发这些能力；转入团队并经管理员分配后才可使用团队能力（来源：Claude 2026-11-02 第三阶段独立安全审查及修正要求）。"
+        "个人空间的工作流及通用技能只允许上传、个人或团队知识、Hub 生成的文件；不得声明命名文档、业务系统类型、租约或任何外部效果。个人发布与 start_run 均校验，动态期望来源与投影也不得触发这些能力；转入团队并经管理员分配后才可使用团队能力（来源：Claude 2026-11-02 第三阶段独立安全审查及修正要求）。",
+        "要求项可用step显式引用本工作流steps[].id，跨文件引用在发布联合校验。submit_result可选step_name仅在本次实际核对要求项集合非空且全部明确指向同一step id时取该冻结声明name；缺声明、未映射、多阶段或集合不可证明均不发step_name，使用中性句「核对已完成。」「核对有错误。」。不按包名、材料名、工具名、effect放行条件、dispatch.phase或错误清单猜；同名不同id仍是多阶段。效果阶段日后需显式关联，不在本批推导。"
       ],
       "tracedTo": [
         "E3-01",
@@ -1490,7 +1504,8 @@
       ],
       "fields": [
         "允许的效果表：每行写资源种类、动作、效果类（取自资源声明）、参数范围（取值集合或包内政策表）、放行条件（引用本运行的要求项与产物摘要）、触发方式（由运行者会话经效果写入发起 / 放行条件满足后由 Hub 按模板派发）、次数与时长预算、期限、是否可选",
-        "输入槽可显式声明 default_from_predecessor.pack：仅用于待判定产物且接受 application/json 的槽；槽未显式给值并带前驱时，按声明的工作流包 ID 核对前驱，以它最新的已受理提交的完整验证结果记录缺省绑定；未声明的槽不补绑，显式值不覆盖"
+        "输入槽可显式声明 default_from_predecessor.pack：仅用于待判定产物且接受 application/json 的槽；槽未显式给值并带前驱时，按声明的工作流包 ID 核对前驱，以它最新的已受理提交的完整验证结果记录缺省绑定；未声明的槽不补绑，显式值不覆盖",
+        "workflow.json可选steps:[{id,name}]：工作流内唯一id及非空使用者步骤名；不声明不拒旧包，不是工具调用、派发phase或执行图。"
       ],
       "changes": [
         "加允许的效果表（缺口 5）",
@@ -1510,6 +1525,9 @@
       ],
       "changes11": [
         "输入槽绑定只接受显式来源 id，或模型带逐字引文提出并经 Hub 核验的来源候选。不得以文件名/标题关键词、停词、同义词或 top-N 排序产出的检索结果作为输入或查全依据；产品、版本线、模块各层只按包声明的目录结构语法解析，不识别的层按 A06 补语法或由作者改目录名。（来源：决定（集成者，10-24，关键词整改））"
+      ],
+      "changes89": [
+        "C60实施C56/C57已批步骤声明，基模型88临时登记89。来源：Boss2026-11-15 06:58、07:00及主C60授权。shape来源contracts/src/pack.ts的WorkflowFile.steps与RequirementTemplate.step；公开结果来源contracts/src/tools.ts的SubmitResultOutput.step_name。仅合约；实际核对集合与唯一映射由runtime worker确认，包声明由agy维护；中性句已批准，具体步骤名非核心词表枚举。"
       ]
     },
     {
@@ -1749,6 +1767,9 @@
       ],
       "changes50": [
         "合并第 50 版：并入主线第 43 版结果摘要记录；见 B02 changes50。"
+      ],
+      "changes90": [
+        "来源：主C60/C66授权（2026-11-15）；临时模型90基89。 HTTP错误公开为HttpErrorEnvelope.error:{message,...HttpCallErrorData}，data的code取生成ProtocolCode、call_error_category取现有五类或null，原因可选取既有call_error_reason，call_not_executed仅literal true且只能由source实际确认pre-handler拒绝；缺席未知，HTTP状态/message/内部异常不证明未执行。复用现有枚举/引用，不造记录种类。ProtocolError保留request_id原可选string、missing原字段及约束，新增可选audience:UserId、due:IsoTime、next_action:string、items:ItemId[]，不补默认；请求字段必须来自真实请求记录。"
       ]
     },
     {
@@ -3336,7 +3357,7 @@
         "取消只停新派发，不中止进行中的写",
         "“本地执行档案”保留（待定项已按推荐定）：声明允许本地写的目标，同期观察一律加“未排除本地操作”，结论最多为判断（D02 R[5]）",
         "租约的每次变更在同一事务里经记录库追加一条动作记录（B05），正文写规范 JSON，size 记字节数。",
-        "预订类目标有主人，是登记它的用户：登记和注销各记一条租约动作记录；登记的前缀互不包含；所有人看得到占着它的运行和从几点起，没有到期时刻的不显示到期时间；主人和管理员另看得到持有人，能带理由强制释放；管理员能改登记和注销登记。",
+        "预订前缀及原 owner 责任归入同一登记目录，带目标的登记才是测试环境；前缀和精确资源键分别保留责任人与登记时刻；不再维护独立前缀目录或新增独立登记/注销租约动作。旧表与旧动作只作历史，不删除或重写。已持有的租约不因分配收回自动释放，原持有人仍可释放；owner 及管理员的强制释放按原确认与围栏规则。公开 deployment@3 不含 leaseRegistrations，@2 不作转换。来源：Boss 2026-11-14 16:30、16:40、16:56。",
         "重置范围只取词表 reset_scope：运行历史、知识、包、配置或全部；all 是四类全选，不是第五类数据，计数和清理范围只从其余四值派生。显式选择多个范围时只能使用四个真实范围，不重复、不把 all 混入列表；只清所选范围，不自动扩大。重置前校验备份并归档旧库，失败恢复原状态；keys 与 vault 保持不变。（来源：所有者 2026-11-13 17:15“重置和重建”；Boss 2026-11-13 18:50 正式批准 reset_scope 轴，见 answers-codex.md）"
       ],
       "tracedTo": [
@@ -3382,6 +3403,10 @@
       ],
       "changes79": [
         "登记 reset_scope 的五个取值与中文标签，all 仅全选而不参与真实数据类别计数；请求列表从生成轴排除 all 派生，删除本地枚举与标签表；来源：所有者 2026-11-13 17:15、Boss 2026-11-13 18:50，见 answers-codex.md。"
+      ],
+      "changes83": [
+        "独立预订前缀登记并入单一测试环境对象，按前缀保留多个 owner；公开定义仅 deployment@3，不保留 leaseRegistrations 的第二份目录。来源：Boss 2026-11-14 16:56。",
+        "已知owner和登记时刻的无目标纯前缀登记是已确认的非环境用途，允许无缺事实声明；不将“不是测试环境”伪作未知，其他未知仍明确列缺事实。来源：Boss 2026-11-14 17:06、17:10。"
       ]
     },
     {
@@ -3400,7 +3425,10 @@
         "分区清单里每项带主张的字段：生产者、性质与依据等级、限定、有效条件；枚举值用英文代码，界面显示中文标签",
         "错误原因、完成状态和片段绑定只读权威结构字段：错误码/severity、进程退出或资源观测、作业回执、显式 item/requirement/piece 引用；不以 stderr、日志、statement、reason、instructions 或终端画面的关键词/前缀推原因、对象或完成。结构证据不足只用已有 check_error/missing_input、unknown 与补证出口，不把 UI busy 消失当完成。",
         "错误与修正也是主张（B01）。错误写明它根据的引用、作出它的规则@版本（任务包的拒绝缺省写包@版本和函数）和限定：声明、观察还是投影，采集时刻，查过的范围与覆盖；候选清单写明共几个、列出几个、其余在哪里，截断不当全量（A05 R[1]）。修正是计划类主张：写明由谁、用哪项现有能力去做；没有谁能做的步骤不写，改写缺的事实（A06 F[0]）。原因没定时，错误列出已知的各个假设及与它们有关的观察，固定留“其他”，开放的假设不替读者区分（V08 R[2]）；只有版本化规则给出的预测被观察反驳，假设才记已排除（V08 R[0]）。选哪个原因、下一项观察做什么由读者判断，Hub 只核验。修正的执行者不是读者时（维护者、管理员、包作者），不写成读者要做或要选的事：写明交给了谁、读者在等哪个请求",
-        "调用错误只用 call_error_category 的五个类别，按 protocolCodes 每码显式 callErrorCategory 登记，不从消息文字推断。未知、核对结论码及未定码保留 null，不强加调用错误前缀；包码只在调用方明确标明 packageCode=true 且整次调用被拒时归参数无效。事实与下一步由调用者按真实结构及角色提供，统一由生成的 formatCallError 成句。缺少前提或预订过期归不存在，真有其他持有者才按结构事实归已被占用；多义 LEASE_UNAVAILABLE 不定类，调用方明确事实后选类。IDEMPOTENCY_MISMATCH 表示同键内容不同，归参数无效，不能借它推同字节已发或占用。（来源：Boss 2026-11-14 本机13:48、主会话13:53明确接口，覆盖 Cursor13:05表）"
+        "调用错误只用 call_error_category 的五个类别，按 protocolCodes 每码显式 callErrorCategory 登记，不从消息文字推断。未知、核对结论码及未定码保留 null，不强加调用错误前缀；包码只在调用方明确标明 packageCode=true 且整次调用被拒时归参数无效。事实与下一步由调用者按真实结构及角色提供，统一由生成的 formatCallError 成句。缺少前提或预订过期归不存在，真有其他持有者才按结构事实归已被占用；多义 LEASE_UNAVAILABLE 不定类，调用方明确事实后选类。IDEMPOTENCY_MISMATCH 表示同键内容不同，归参数无效，不能借它推同字节已发或占用。（来源：Boss 2026-11-14 本机13:48、主会话13:53明确接口，覆盖 Cursor13:05表）",
+        "新开始的测试环境使用在权限核对未接上或不可读取、且尚未执行时，报 ENVIRONMENT_PERMISSION_UNAVAILABLE，类别暂时不可用，事实为“测试环境的权限核对现在不能进行，这次没有执行”，缺省下一步“请联系管理员”；管理员下一步由调用者按角色给。预订与上机验证使用同一码同一事实。此码不得覆盖已发或可能已发的原轮执行未知，不改 SOURCE_UNAVAILABLE 原有读资料未知语义。来源：Boss 2026-11-14 16:30、主会话明确新增窄码授权。",
+        "ProtocolError可选公开call_error_reason取生成闭集；机器code及抛出处message保持，原因只由同一使用边界的结构事实选择，不从canUse=false推账户停用、环境停用或无分配。reason登记精确适用机器码、唯一五类或明确conclusion/unknown，以及实际角色的下一步；错误组合不信任，不硬归调用错误。渲染不解析成句、词头或关键词，只按reason和已核实实际角色查表，一处成句。首块为测试环境和预订，派发结局另列；部分已发或可能已发不能用未执行事实覆盖。来源：Boss2026-11-14 18:55批准R7；具体人用句子仍待逐句审，码表/句库拆分未批前禁止生成。",
+        "对象种类、显示名与原预订事实和call_error_reason并列；只按原因与实际接收者角色取下一步。仅下一步确有不同的六类授权拒绝登记独立原因，不从object_kind反推。system_unassigned限目录可读且明确拒绝，SOURCE_UNAVAILABLE或私有包隐藏不转缺分配；命名文档三个入口共享本人且声明输入的运行范围；向本人以外运行提交必须start_run开自己的运行，分享只可取得读取不能取得写入许可。来源：Boss2026-11-14 21:16、主structured-render-interface-2116精确定名。"
       ],
       "tracedTo": [
         "E3-69",
@@ -3475,6 +3503,26 @@
       ],
       "changes82": [
         "登记五值调用错误类别轴、每个协议码显式类别或null及生成的唯一成句函数；不修改六工具输入，不替未知或核对结论猜类。来源：Boss 2026-11-14本机13:48、Cursor13:05建议表及主会话13:53明确接口；未有直接Boss裁定的争议保留null，主审确认不采纳Cursor13:50二次表中的未授权改归。"
+      ],
+      "changes83": [
+        "新增 ENVIRONMENT_PERMISSION_UNAVAILABLE，仅用于尚未执行的新使用前权限核对不可进行；SOURCE_UNAVAILABLE仍不归五类，不改变既有读取语义。来源：Boss 2026-11-14 16:30允许新增专码、主会话本批精确定名。"
+      ],
+      "changes84": [
+        "R7第一块登记12个env/lease结构化原因及公开可选字段，新增call_error_reason轴；分类不添第六词，code/message不改。来源：Boss2026-11-14 18:55；成员/管理员下一步为待审提案，五行拆分提案待批后方可生成，不更新字节基线。",
+        "原因标签改为简短使用者词，内部谓词移入when/meaning；新增租约读取未取得事实的明确unknown原因并保原SOURCE_UNAVAILABLE。binding/target/resource已知错配只列候选，待唯一类别裁定后才登记入公开轴，不能套无分配/缺预订。成员/管理员整句仍待Cursor送Boss审。",
+        "Boss2026-11-14 20:41裁定：身份/目标/资源错配及归属歧义合一environment_registration_inconsistent，暂时不可用；environment_disabled同改暂时不可用。事实按动作/登记名/两侧名值由源给，内部编号只留引用。角色句草稿去内部术语，管理员自行处理或按追踪号查调用记录；命令登记表插值/解析检查与已审占用句复用仍待server接缝，不得先生成或更新基线。"
+      ],
+      "changes85": [
+        "登记8值call_error_object_kind、3值dispatch_operation、3值lease_holder_relation及6个仅SOURCE_NOT_PERMITTED的动作拒绝原因；Common的flat可选事实由源形状生成JSON，不反向加载shared模块。DispatchOutcomeFacts完整model-shape@1登记dispatch-outcome@1，复用effect_outcome八值和ReferenceUri；phase只string，无默认观察或同义bool。来源：Boss21:16、主精确接口及本人提交边界补充。人句与命令接口待审，六输入/描述原字节和四格式包字节保持。",
+        "Boss2026-11-14 21:33审句：actor_not_active两角色只用有效账户重新开始；登记不一致管理员下一步四事实共用精确bed update句；新增并列registration_comparison与4值issue轴，成员不含左右原始值，比较不成为原因第三维。其余已审26句不动，字节基线等源端真实原文验证后再审，不由schema实现猜权限。"
+      ],
+      "changes88": [
+        "C51基于ENV review da378fbde97f的模型85新增测试环境登记未完成原因，临时编号88避开独立C49模型87，最终编号由Boss整合；不携入C49布局。来源：Boss2026-11-15 01:12及主C51授权。复用SOURCE_NOT_PERMITTED和ProtocolError既有公开载体；分类not_found，只有实际已登记启用且目标确定而resources为空才选，非canUse=false推断。旧19原因及已审句不改，新两句候选，具体命令由server登记表构造。"
+      ],
+      "changes90": [
+        "来源：主C60/C66授权（2026-11-15）；临时模型90基89。 HTTP错误公开为HttpErrorEnvelope.error:{message,...HttpCallErrorData}，data的code取生成ProtocolCode、call_error_category取现有五类或null，原因可选取既有call_error_reason，call_not_executed仅literal true且只能由source实际确认pre-handler拒绝；缺席未知，HTTP状态/message/内部异常不证明未执行。复用现有枚举/引用，不造记录种类。ProtocolError保留request_id原可选string、missing原字段及约束，新增可选audience:UserId、due:IsoTime、next_action:string、items:ItemId[]，不补默认；请求字段必须来自真实请求记录。",
+        "登记8个精准transport/export码。CALL_AUTHENTICATION_REQUIRED/CALL_ORIGIN_REFUSED权限；METHOD/MEDIA_TYPE/REQUEST_INVALID参数；CALL_BUSY/CALL_INTERNAL_UNAVAILABLE暂不可用；RUN_EXPORT_NOT_READY不存在。来源隐私未知继续SOURCE_UNAVAILABLE且category=null，已证明withheld用SOURCE_NOT_PERMITTED；不硬套来源超时，INTERNAL效应未知不标未执行。",
+        "同批兼容事实：HttpCallErrorData新增可选trace:TraceId保留MCP internalError已有data.trace；SDK补齐code时必须保留该真实追踪值，不另造_meta或追踪别名，不补默认。来源：主C66兼容回归修复授权，模型90未发布同批追加，不升91。"
       ]
     },
     {
@@ -4554,12 +4602,116 @@
       {
         "field": "errors",
         "meaning": "协议错误码与修正说明",
-        "values": "每项 code、message、fix、path；条目级反驳另带 item、requirement、rounds_left；请求另带 request_id、options"
+        "values": "每项 code、message、fix、path；条目级反驳另带 item、requirement、rounds_left；请求另带 request_id、options",
+        "sourceSchema": "contracts/src/common.ts#ProtocolError",
+        "facts": {
+          "object_kind": {
+            "optional": true,
+            "vocabulary": "call_error_object_kind",
+            "meaning": "并列对象事实，不参与原因第三维，不缺省pack"
+          },
+          "object_display_name": {
+            "optional": true,
+            "meaning": "源给可披露名字，不是内部身份、摘要或引用"
+          },
+          "environment_display_name": {
+            "optional": true,
+            "meaning": "源给可披露测试环境登记名"
+          },
+          "holder_relation": {
+            "optional": true,
+            "vocabulary": "lease_holder_relation",
+            "meaning": "实际已观察关系，不由名字或role推断"
+          },
+          "holder_display_name": {
+            "optional": true,
+            "meaning": "仅源确认可见的持有者名字"
+          },
+          "acquired_at": {
+            "optional": true,
+            "primitive": "IsoTime"
+          },
+          "lease_key": {
+            "optional": true,
+            "meaning": "只在源核定实际管理员可见时给；成员不发。类型不能代替权限。原持有run记录引用在已有grounds，不增holder_run。"
+          },
+          "registration_comparison": {
+            "optional": true,
+            "sourceSchema": "contracts/src/common.ts#RegistrationComparison",
+            "properties": {
+              "issue": {
+                "vocabulary": "environment_registration_issue"
+              },
+              "left_display_name": {
+                "optional": true,
+                "type": "string"
+              },
+              "right_display_name": {
+                "optional": true,
+                "type": "string"
+              },
+              "left_values": {
+                "optional": true,
+                "type": "string[]"
+              },
+              "right_values": {
+                "optional": true,
+                "type": "string[]"
+              }
+            },
+            "meaning": "并列比较事实，不参与原因或下一步第三维。成员仅issue与环境登记名；两侧名字和值仅源确认实际管理员可见时给。类型不能证明权限。原始值不替代真实names；不用“源定义”成句，不解析message。"
+          },
+          "missing": {
+            "optional": true,
+            "type": "string",
+            "meaning": "已有ErrorClaimFields.missing保留，真实缺项，不补默认"
+          },
+          "audience": {
+            "optional": true,
+            "primitive": "UserId"
+          },
+          "due": {
+            "optional": true,
+            "primitive": "IsoTime"
+          },
+          "next_action": {
+            "optional": true,
+            "type": "string"
+          },
+          "items": {
+            "optional": true,
+            "type": "ItemId[]"
+          },
+          "request_id": {
+            "optional": true,
+            "type": "string",
+            "meaning": "保留原可选string，不收紧为新身份类型"
+          }
+        }
       },
       {
         "field": "trace",
         "meaning": "W3C 追踪 ID",
         "values": "32 位十六进制"
+      },
+      {
+        "field": "http_error",
+        "meaning": "HTTP入口结构化错误，不是业务效应结论",
+        "sourceSchema": "contracts/src/common.ts#HttpErrorEnvelope",
+        "dataSourceSchema": "contracts/src/common.ts#HttpCallErrorData",
+        "schemaIds": [
+          "http-call-error-data@1",
+          "http-error-envelope@1"
+        ],
+        "fields": {
+          "code": "生成ProtocolCode",
+          "call_error_category": "现有call_error_category或null，必有",
+          "call_error_reason": "既有原因，可选",
+          "call_not_executed": "仅true，可选；仅实际pre-handler拒绝，不按status/message推断",
+          "message": "抛出处事实字符串，置于error内",
+          "trace": "既有TraceId，可选，保留源已有真实追踪值，不补默认"
+        },
+        "source": "来源：主C60/C66授权（2026-11-15）；临时模型90基89。"
       }
     ],
     "claimFields": [
@@ -4582,7 +4734,7 @@
       },
       {
         "path": "requirements.json",
-        "content": "要求项模板：判定层、检查合同、错误处理表、参数、允许的效果表",
+        "content": "要求项模板：判定层、检查合同、错误处理表、参数、允许的效果表；要求项可选step显式引用workflow.steps的id",
         "elements": [
           "W02",
           "W03"
@@ -4693,7 +4845,7 @@
       },
       {
         "path": "workflow.json",
-        "content": "工作流包的声明：输入槽、参数、产品绑定、投影函数、期望来源函数",
+        "content": "工作流包的声明：输入槽、参数、产品绑定、投影函数、期望来源函数；可选steps目录（id/name，供使用者显示的业务步骤）",
         "elements": [
           "W01",
           "W03",
@@ -4759,6 +4911,12 @@
         "when": "别人个人空间里的内容（不区分有没有），或凭据与登录类读取失败：Hub 登录来源失败或过期、来源系统拒绝 Hub 的账号、应答回显 Hub 发出的凭据、被扣的应答说明不了对象存在、读取者不是有效账号、个人凭据来源；调用者面前同形（D05 R[3]）",
         "fix": "核对引用；需要时请内容的主人分享，或请管理员按管理员记录恢复读取后按原引用重读；原因只记在管理员记录里",
         "callErrorCategory": null
+      },
+      {
+        "code": "ENVIRONMENT_PERMISSION_UNAVAILABLE",
+        "when": "测试环境的权限核对现在不能进行，这次没有执行",
+        "fix": "请联系管理员",
+        "callErrorCategory": "temporarily_unavailable"
       },
       {
         "code": "SOURCE_NOT_PERMITTED",
@@ -5152,6 +5310,54 @@
         "code": "GROUNDS_PURGED",
         "when": "运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除",
         "fix": "由原文所有者重新上传后重新运行；原有回执和摘要保留",
+        "callErrorCategory": "not_found"
+      },
+      {
+        "code": "CALL_AUTHENTICATION_REQUIRED",
+        "when": "HTTP调用缺少有效身份认证，尚未进入业务处理器",
+        "fix": "请使用有效账户完成认证后重试",
+        "callErrorCategory": "permission_denied"
+      },
+      {
+        "code": "CALL_ORIGIN_REFUSED",
+        "when": "HTTP调用的来源被入口来源规则拒绝，尚未进入业务处理器",
+        "fix": "请使用管理员允许的调用来源",
+        "callErrorCategory": "permission_denied"
+      },
+      {
+        "code": "CALL_METHOD_UNSUPPORTED",
+        "when": "HTTP或RPC调用方法由抛出处明确判定不受支持；是否进入业务另由call_not_executed独立给出，不能由类别反推",
+        "fix": "请使用该入口支持的调用方法",
+        "callErrorCategory": "invalid_parameters"
+      },
+      {
+        "code": "CALL_MEDIA_TYPE_UNSUPPORTED",
+        "when": "HTTP调用的媒体类型不受该入口支持，尚未进入业务处理器",
+        "fix": "请使用该入口支持的内容类型",
+        "callErrorCategory": "invalid_parameters"
+      },
+      {
+        "code": "CALL_REQUEST_INVALID",
+        "when": "调用的请求格式或参数由抛出处明确判定无效；是否进入业务另由call_not_executed独立给出，不能由类别反推",
+        "fix": "请按该入口的请求格式改正后重试",
+        "callErrorCategory": "invalid_parameters"
+      },
+      {
+        "code": "CALL_BUSY",
+        "when": "入口因重启或请求体预算暂不受理；具体事实由抛出处message给出，不以此码推断执行状态",
+        "fix": "请稍后重试",
+        "callErrorCategory": "temporarily_unavailable"
+      },
+      {
+        "code": "CALL_INTERNAL_UNAVAILABLE",
+        "when": "内部调用异常而暂不可用；业务效应未知，不能标记call_not_executed",
+        "fix": "请联系管理员按调用记录核对处理结果",
+        "callErrorCategory": "temporarily_unavailable"
+      },
+      {
+        "code": "RUN_EXPORT_NOT_READY",
+        "when": "运行导出缺少已受理结果这一实际前提；不是来源读取超时或隐私未知",
+        "fix": "请先完成提交并取得已受理结果后再导出",
         "callErrorCategory": "not_found"
       }
     ],
@@ -8954,6 +9160,93 @@
               }
             ]
           }
+        },
+        {
+          "name": "DispatchOutcomeFacts",
+          "id": "dispatch-outcome@1",
+          "meaning": "Public optional observed dispatch facts. Operation, stage and effect outcome are independent; complete is a stage, not_dispatched is an effect value. Missing observation stays absent, never default false. References require source authorization; schema shape cannot prove visibility or physical effects. Old records without operation are not inferred from prose.",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "$ref": "vocabulary:effect_outcome"
+              },
+              "operation": {
+                "$ref": "vocabulary:dispatch_operation"
+              },
+              "phase": {
+                "type": "string",
+                "description": "Program stage only, never an effect outcome."
+              },
+              "not_sent": {
+                "type": "boolean",
+                "description": "Only an observed not-sent fact for this operation; never inferred from missing receipts."
+              },
+              "rejection_stage": {
+                "type": "string"
+              },
+              "frozen": {
+                "type": "boolean"
+              },
+              "report_pending": {
+                "type": "boolean"
+              },
+              "error_code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "const": null
+                  }
+                ]
+              },
+              "call_error_reason": {
+                "$ref": "vocabulary:call_error_reason"
+              },
+              "missing_facts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fact": {
+                      "type": "string"
+                    },
+                    "next_action": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fact",
+                    "next_action"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "next_action": {
+                "type": "string"
+              },
+              "result": {
+                "$ref": "contract:reference/ReferenceUri",
+                "description": "The job result once it is complete (src:), readable by the runner: one row per dispatched item"
+              },
+              "device_return": {
+                "$ref": "contract:reference/ReferenceUri"
+              },
+              "submit_invoked": {
+                "type": "boolean"
+              },
+              "reservation_recorded": {
+                "type": "boolean"
+              },
+              "worker_settled": {
+                "type": "boolean"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
         }
       ],
       "boundaryChecks": [
@@ -9045,7 +9338,315 @@
         "Every object read in a run is mandatory usage; freeze append offset with root",
         "Retract by an administrator, never rewrite or delete historical bytes"
       ]
-    }
+    },
+    "callErrorReasons": [
+      {
+        "reason": "actor_disabled",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系管理员启用该账户；启用后重新登录",
+          "admin": "请启用该账户后重试"
+        },
+        "when": "fresh账户明确disabled=true",
+        "meaning": "账户已停用"
+      },
+      {
+        "reason": "actor_not_active",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请由有效的账户重新开始运行",
+          "admin": "请由有效的账户重新开始运行"
+        },
+        "when": "fresh读取明确账户不存在或已删除，不包括读取失败",
+        "meaning": "账户无效"
+      },
+      {
+        "reason": "environment_disabled",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "temporarily_unavailable"
+        },
+        "next_by_role": {
+          "user": "请联系管理员启用该测试环境后原样重试",
+          "admin": "请启用该测试环境后原样重试"
+        },
+        "when": "登记唯一且明确enabled=false；不从canUse=false推断",
+        "meaning": "测试环境已停用"
+      },
+      {
+        "reason": "environment_unassigned",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系管理员为该账户或所属团队分配该测试环境",
+          "admin": "请为该账户或所属团队分配该测试环境后重试"
+        },
+        "when": "fresh有效账户+唯一启用环境+有效user/team/all授予集合确认为空",
+        "meaning": "缺少测试环境分配"
+      },
+      {
+        "reason": "environment_not_registered",
+        "codes": [
+          "SOURCE_NOT_PERMITTED",
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请联系管理员登记本次所需的测试环境",
+          "admin": "请登记本次所需的测试环境后重试"
+        },
+        "when": "应属测试环境的新使用缺登记；正式非环境bookingPrefix不可走此拒绝",
+        "meaning": "缺少测试环境登记"
+      },
+      {
+        "reason": "environment_registration_inconsistent",
+        "codes": [
+          "SOURCE_NOT_PERMITTED",
+          "LEASE_UNAVAILABLE",
+          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "temporarily_unavailable"
+        },
+        "next_by_role": {
+          "user": "请联系管理员；改正之前重试结果不会变",
+          "admin": "请在控制台「测试环境」页或用 circle-hub bed update 把上面不一致的这一项改正；改正后原样重试"
+        },
+        "when": "已观察到执行器登记身份/关联、实际目标或资源声明不一致，或资源匹配多个不同测试环境；本次被拒的预订/上机验证尚未执行。不是调用参数错误，也不是事实unknown；不覆盖之前已发或可能已发原轮",
+        "meaning": "测试环境登记不一致；四种事实只由抛出处区分并写两边名字/值，类别与下一步同一份"
+      },
+      {
+        "reason": "environment_permission_unavailable",
+        "codes": [
+          "ENVIRONMENT_PERMISSION_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "temporarily_unavailable"
+        },
+        "next_by_role": {
+          "user": "请联系管理员",
+          "admin": "原因记在调用记录里，追踪号见本条"
+        },
+        "when": "尚未执行的新使用前权限观察缺失/抛错/marker不可核对",
+        "meaning": "测试环境权限暂不可核对"
+      },
+      {
+        "reason": "lease_held_by_other_account",
+        "codes": [
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "occupied"
+        },
+        "next_by_role": {
+          "user": "请等待当前持有者释放或联系管理员处理占用，再重试",
+          "admin": "请核对持有者及正在进行的作业；需要时按强制释放确认流程处理后重试"
+        },
+        "when": "lease明确未释放未过期且holder.user!=fresh actor.id",
+        "meaning": "资源已有他人预订"
+      },
+      {
+        "reason": "lease_already_held_by_current_account",
+        "codes": [
+          "LEASE_UNAVAILABLE"
+        ],
+        "classification": {
+          "category": "invalid_parameters"
+        },
+        "next_by_role": {
+          "user": "请直接使用已有的预订；开始新运行时把取得该预订的那次运行写成前一次运行",
+          "admin": "请直接使用已有的预订；开始新运行时把取得该预订的那次运行写成前一次运行"
+        },
+        "when": "仅重复acquire被拒且有效lease属于当前账户；合法沿用/extend不得套用",
+        "meaning": "已有本人预订"
+      },
+      {
+        "reason": "lease_missing_for_lineage",
+        "codes": [
+          "LEASE_UNAVAILABLE",
+          "LEASE_NO_ROW"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请先预订这次运行所需的测试环境，再重试",
+          "admin": "请先预订这次运行所需的测试环境，再重试"
+        },
+        "when": "已核对当前血缘没有所需有效预订；不覆盖真实他人有效占用",
+        "meaning": "缺少本运行预订"
+      },
+      {
+        "reason": "lease_expired",
+        "codes": [
+          "LEASE_EXPIRED"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请重新预订所需的测试环境后重试",
+          "admin": "请重新预订所需的测试环境后重试"
+        },
+        "when": "已读到expires_at且实际过期，不凭字符串或holder存在判断",
+        "meaning": "预订已到期"
+      },
+      {
+        "reason": "lease_released",
+        "codes": [
+          "LEASE_EXPIRED",
+          "LEASE_NO_ROW"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请重新预订所需的测试环境后重试",
+          "admin": "请重新预订所需的测试环境后重试"
+        },
+        "when": "已知released_at或正式释放事实；记录读取失败不能归此",
+        "meaning": "预订已释放"
+      },
+      {
+        "reason": "lease_reader_unavailable",
+        "codes": [
+          "SOURCE_UNAVAILABLE"
+        ],
+        "classification": {
+          "unknown": true
+        },
+        "next_by_role": {
+          "user": "请联系管理员恢复预订记录读取后重试",
+          "admin": "原因记在调用记录里，追踪号见本条"
+        },
+        "when": "实际LeaseUseReadError，lease_check.rows_read=false、allowed=null、missing_keys=null；不包括成功读到零行或已确认到期/释放",
+        "meaning": "这次运行的预订有没有包含所需测试环境尚未核对；预订记录当前读不到，不是已确认没有预订。本次被拒动作未执行，不能否认之前已发或可能已发原轮"
+      },
+      {
+        "reason": "pack_unassigned",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系管理员分配所需工作流或技能后重试",
+          "admin": "请为该账户或所属团队分配所需工作流或技能后重试"
+        },
+        "when": "仅正式普通工作流/技能授权分支明确拒绝；不含私有包隐藏、未安装或未知来源读取",
+        "meaning": "缺少工作流或技能分配；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "knowledge_root_unassigned",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系管理员分配绑定该产品线的工作流后重读",
+          "admin": "请为该账户或所属团队分配绑定该产品线的工作流后重读"
+        },
+        "when": "绑定该产品线的工作流授权明确拒绝；不能靠共享知识根绕过工作流许可",
+        "meaning": "产品知识未获授权；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "system_unassigned",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系管理员为所属团队或全体成员分配该业务系统后重读",
+          "admin": "请为该账户所属团队或全体成员分配该业务系统后重读"
+        },
+        "when": "当前业务系统目录已可读取且使用分配明确拒绝；连接、凭据或读取UNKNOWN不得选此原因",
+        "meaning": "缺少业务系统分配；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "content_read_not_permitted",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请联系内容的主人或管理员分享读取权限，或改用可读引用",
+          "admin": "请按共享权限核对并分享该内容，或改用可读引用"
+        },
+        "when": "实际知识条目/原件/记录的共享读取许可明确拒绝；不包括提交他人运行、命名文档运行范围或隐藏私有包",
+        "meaning": "内容未获读取许可；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "named_document_run_scope_denied",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请通过自己的、声明了该命名文档输入的工作流运行读取；没有这样的工作流时请管理员分配",
+          "admin": "请通过自己的、声明了该命名文档输入的工作流运行读取；需要时先为该账户分配相应工作流"
+        },
+        "when": "三个命名文档读取入口共享本人运行且工作流声明命名文档输入的实际范围拒绝；不得替换为普通内容分享",
+        "meaning": "命名文档读取范围受限；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "run_submission_not_owned",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "permission_denied"
+        },
+        "next_by_role": {
+          "user": "请用 start_run 开始自己的运行，再提交",
+          "admin": "请用 start_run 开始自己的运行，再提交"
+        },
+        "when": "仅engine/submit本人运行提交检查确认拒绝；读取他人run可走内容分享许可，不得因此取得写入许可",
+        "meaning": "不能向他人运行提交；只按实际动作和授权事实选择，不从object_kind反推"
+      },
+      {
+        "reason": "environment_registration_incomplete",
+        "codes": [
+          "SOURCE_NOT_PERMITTED"
+        ],
+        "classification": {
+          "category": "not_found"
+        },
+        "next_by_role": {
+          "user": "请联系管理员完成该测试环境的登记",
+          "admin": "请先只读采集该测试环境的资源，再将采集到的资源填入定义"
+        },
+        "when": "实际执行器已登记、已启用，真实目标已确定，且资源声明resources为空；缺的是资源清单前提。不能从canUse=false推断，不能覆盖账户停用、环境停用、目标未知或读取失败；资源一旦声明即不适用。",
+        "meaning": "测试环境登记未完成；Boss2026-11-15 01:12授权只读采集边界。两角色下一步为C51候选句，具体只读采集命令由server统一登记表构造并验证可解析，不在合同手写CLI。"
+      }
+    ],
+    "callErrorReasonCandidates": []
   },
   "objectStandard": {
     "note": "四个对象就是 C01 的四个家（知识 B、政策 C、方法 E、资源 D）。五要素按已定的决定表第 11 行留作设计检查单和记录页布局，不作存储分区；下表是全模型按五格的对照。",
@@ -11924,6 +12525,193 @@
         {
           "code": "temporarily_unavailable",
           "label": "暂时不可用"
+        }
+      ]
+    },
+    {
+      "axis": "call_error_reason",
+      "label": "调用错误原因",
+      "owner": "D05",
+      "values": [
+        {
+          "code": "actor_disabled",
+          "label": "账户已停用"
+        },
+        {
+          "code": "actor_not_active",
+          "label": "账户无效"
+        },
+        {
+          "code": "environment_disabled",
+          "label": "测试环境已停用"
+        },
+        {
+          "code": "environment_unassigned",
+          "label": "缺少测试环境分配"
+        },
+        {
+          "code": "environment_not_registered",
+          "label": "缺少测试环境登记"
+        },
+        {
+          "code": "environment_registration_inconsistent",
+          "label": "测试环境登记不一致"
+        },
+        {
+          "code": "environment_permission_unavailable",
+          "label": "测试环境权限暂不可核对"
+        },
+        {
+          "code": "lease_held_by_other_account",
+          "label": "资源已有他人预订"
+        },
+        {
+          "code": "lease_already_held_by_current_account",
+          "label": "已有本人预订"
+        },
+        {
+          "code": "lease_missing_for_lineage",
+          "label": "缺少本运行预订"
+        },
+        {
+          "code": "lease_expired",
+          "label": "预订已到期"
+        },
+        {
+          "code": "lease_released",
+          "label": "预订已释放"
+        },
+        {
+          "code": "lease_reader_unavailable",
+          "label": "预订记录暂不可读取"
+        },
+        {
+          "code": "pack_unassigned",
+          "label": "缺少工作流或技能分配"
+        },
+        {
+          "code": "knowledge_root_unassigned",
+          "label": "产品知识未获授权"
+        },
+        {
+          "code": "system_unassigned",
+          "label": "缺少业务系统分配"
+        },
+        {
+          "code": "content_read_not_permitted",
+          "label": "内容未获读取许可"
+        },
+        {
+          "code": "named_document_run_scope_denied",
+          "label": "命名文档读取范围受限"
+        },
+        {
+          "code": "run_submission_not_owned",
+          "label": "不能向他人运行提交"
+        },
+        {
+          "code": "environment_registration_incomplete",
+          "label": "测试环境登记未完成"
+        }
+      ]
+    },
+    {
+      "axis": "call_error_object_kind",
+      "label": "调用错误对象种类",
+      "owner": "D05",
+      "values": [
+        {
+          "code": "pack",
+          "label": "工作流或技能"
+        },
+        {
+          "code": "knowledge",
+          "label": "知识条目"
+        },
+        {
+          "code": "knowledge_root",
+          "label": "产品知识入口"
+        },
+        {
+          "code": "system",
+          "label": "业务系统"
+        },
+        {
+          "code": "source_artifact",
+          "label": "来源原件"
+        },
+        {
+          "code": "record",
+          "label": "记录"
+        },
+        {
+          "code": "named_document",
+          "label": "命名文档"
+        },
+        {
+          "code": "test_environment",
+          "label": "测试环境"
+        }
+      ]
+    },
+    {
+      "axis": "dispatch_operation",
+      "label": "派发操作",
+      "owner": "D05",
+      "values": [
+        {
+          "code": "precheck",
+          "label": "只读预检"
+        },
+        {
+          "code": "dispatch",
+          "label": "正式派发"
+        },
+        {
+          "code": "conformance",
+          "label": "一致性探测"
+        }
+      ]
+    },
+    {
+      "axis": "lease_holder_relation",
+      "label": "预订持有关系",
+      "owner": "D04",
+      "values": [
+        {
+          "code": "current_account",
+          "label": "当前账户"
+        },
+        {
+          "code": "other_account",
+          "label": "其他账户"
+        },
+        {
+          "code": "unknown",
+          "label": "关系未知"
+        }
+      ]
+    },
+    {
+      "axis": "environment_registration_issue",
+      "label": "测试环境登记不一致项",
+      "owner": "D05",
+      "values": [
+        {
+          "code": "executor_identity",
+          "label": "执行器身份"
+        },
+        {
+          "code": "target",
+          "label": "目标"
+        },
+        {
+          "code": "resources",
+          "label": "资源"
+        },
+        {
+          "code": "booking_scope",
+          "label": "预订范围"
         }
       ]
     }

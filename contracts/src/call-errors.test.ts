@@ -47,3 +47,15 @@ test('one formatter uses generated labels and caller facts rather than interpret
   assert.equal(callErrorCategory('LEASE_UNAVAILABLE'), null);
   assert.equal(formatCallError('not_found', '当前账户没有测试环境预订', '请先预订整个测试环境'), '不存在：当前账户没有测试环境预订。请先预订整个测试环境。');
 });
+
+test('unavailable new environment permission checks use a dedicated call error without reclassifying source reads', () => {
+  const code = 'ENVIRONMENT_PERMISSION_UNAVAILABLE';
+  const category = callErrorCategory(code);
+  assert.equal(category, 'temporarily_unavailable');
+  assert.equal(PROTOCOL_CODES[code].when, '测试环境的权限核对现在不能进行，这次没有执行');
+  assert.equal(PROTOCOL_CODES[code].fix, '请联系管理员');
+  assert.equal(formatCallError(category!, PROTOCOL_CODES[code].when, PROTOCOL_CODES[code].fix), '暂时不可用：测试环境的权限核对现在不能进行，这次没有执行。请联系管理员。');
+  assert.equal(callErrorCategory('SOURCE_UNAVAILABLE'), null);
+  assert.equal(CALL_ERROR_CATEGORY_BY_CODE.SOURCE_UNAVAILABLE, null);
+  assert.equal(callErrorCategory('EFFECT_UNKNOWN_DISPOSED'), null, 'existing effect conclusion remains outside call-error classification');
+});

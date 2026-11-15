@@ -111,3 +111,20 @@ test('missing prerequisites and expired bookings use not_found while confirmed o
   const occupied=job({error_code:'LEASE_UNAVAILABLE',call_error_category:'occupied',member_missing_facts:[{fact:'测试环境由另一运行持有',next_action:'等该运行释放后原样重试'}]});
   assert.match(runnerNote(occupied,'usr_private').text,/^已被占用：.*另一运行持有/);
 });
+
+test('permission-provider unavailability uses the generated call sentence for each role and preserves sent unknowns', async()=>{
+  const {toolText}=await import('../server/text.ts');
+  for(const administrative of [false,true]) {
+    const note=runnerNote(job({error_code:'ENVIRONMENT_PERMISSION_UNAVAILABLE'}),'synthetic-admin',false,administrative);
+    assert.equal(note.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');
+    assert.equal(note.text,administrative?'暂时不可用：测试环境的权限核对现在不能进行，这次没有执行。请联系维护人员恢复测试环境权限核对。':'暂时不可用：测试环境的权限核对现在不能进行，这次没有执行。请联系管理员。');
+    const text=toolText('submit_result',{call_result:'ok',acceptance:'accepted',errors:[],dispatch:[note]},{caller:{role:administrative?'admin':'user'}});
+    assert.ok(text.includes('暂时不可用：测试环境的权限核对现在不能进行，这次没有执行。'));
+    for(const wrong of ['状态未知','原因缺资料','读不到这份资料'])assert.equal(text.includes(wrong),false);
+  }
+  const sent=job({error_code:'SOURCE_UNAVAILABLE',outcome:'unknown',frozen:true});
+  sent.ended='unknown';
+  const unknown=runnerNote(sent,'synthetic-admin');
+  assert.ok(unknown.text.includes('上机验证结果未知'));
+  assert.equal(unknown.text.includes('这次没有执行'),false);
+});

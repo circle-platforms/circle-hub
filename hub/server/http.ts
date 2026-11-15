@@ -1,3 +1,5 @@
+import type { HttpCallErrorData, HttpErrorEnvelope } from '../../contracts/api.ts';
+import { callErrorCategory, type ProtocolCode } from '../../contracts/generated/protocol.ts';
 // HTTP plumbing shared by the MCP endpoint, the console and /healthz: the Host and Origin checks against DNS rebinding,
 // bounded body reading and response helpers with the security headers. Nothing here knows about tools or pages.
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -74,8 +76,8 @@ export function sendJson(response: ServerResponse, status: number, body: unknown
 }
 
 /** A JSON-RPC error outside any request (refused before the body is read, or not parseable): id null. */
-export function sendRpcError(response: ServerResponse, status: number, code: number, message: string, headers: Record<string, string> = {}): void {
-  sendJson(response, status, { jsonrpc: '2.0', error: { code, message }, id: null }, headers);
+export function sendRpcError(response: ServerResponse, status: number, code: number, message: string, headers: Record<string, string> = {}, data?: HttpCallErrorData): void {
+  sendJson(response, status, { jsonrpc: '2.0', error: { code, message, ...(data === undefined ? {} : {data}) }, id: null }, headers);
 }
 
 export function sendText(response: ServerResponse, status: number, text: string, headers: Record<string, string> = {}): void {
@@ -192,4 +194,14 @@ export function cookiesOf(request: IncomingMessage): Map<string, string> {
     if (!out.has(name)) out.set(name, value);
   }
   return out;
+}
+
+/** The source selects a registered code and proves non-entry separately; neither is inferred from HTTP status or prose. */
+export function httpCallErrorData(code: ProtocolCode, callNotExecuted?: true): HttpCallErrorData {
+  return { code, call_error_category: callErrorCategory(code), ...(callNotExecuted === true ? {call_not_executed: true as const} : {}) };
+}
+
+export function sendHttpError(response: ServerResponse, status: number, message: string, data: HttpCallErrorData, headers: Record<string, string> = {}): void {
+  const body: HttpErrorEnvelope = { error: { message, ...data } };
+  sendJson(response, status, body, headers);
 }

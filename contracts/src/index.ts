@@ -18,7 +18,9 @@ import * as deploymentSchemas from './deployment.ts';
 import * as tokenSchemas from './tokens.ts';
 import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
-import { SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
+import { HttpCallErrorData, HttpErrorEnvelope, SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
+import { CallErrorReasonSchema } from '../generated/vocabulary.ts';
+import { DispatchOutcomeFactsSchema } from '../generated/shared-interfaces.ts';
 import { RecordEnvelope } from './records.ts';
 import { RunRecord, RunSummary, PackSummary } from './run.ts';
 import { ReceivedSubmission, Submission } from './submission.ts';
@@ -27,7 +29,10 @@ import { ValidationResult } from './validation.ts';
 
 export * from '../generated/vocabulary.ts';
 export * from '../generated/protocol.ts';
+export { DispatchOutcomeFactsSchema } from '../generated/shared-interfaces.ts';
+export type { DispatchOutcomeFacts } from '../generated/shared-interfaces.ts';
 export * from './common.ts';
+export { TestEnvironmentId, TestEnvironmentPrefix, TestEnvironmentResource, TestEnvironmentInput, TestEnvironment, TestEnvironmentInheritanceCompletion, TEST_ENVIRONMENT_CONFIG_PREFIX, TEST_ENVIRONMENT_INHERITANCE_KEY, TEST_ENVIRONMENT_INHERITANCE_RULE_VERSION } from './resources.ts';
 export * from './reference.ts';
 export * from './claim.ts';
 export * from './validation.ts';
@@ -39,7 +44,7 @@ export * from './records.ts';
 export * from './variables.ts';
 export { RESET_DATA_SCOPE, RESET_ALL_LABEL, ResetDataScopeSchema, ResetScopesSchema } from './reset.ts';
 export type { ResetDataScope, ResetScopes } from './reset.ts';
-export { DEPLOYMENT_SCHEMA, DeploymentExecutor, ExecutorStableName, ExecutorNameBinding, EXECUTOR_NAME_PREFIX, DeploymentResource, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt } from './deployment.ts';
+export { DEPLOYMENT_SCHEMA, BookingPrefix, DeploymentExecutor, ExecutorStableName, ExecutorNameBinding, EXECUTOR_NAME_PREFIX, DeploymentResource, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt } from './deployment.ts';
 export * from './annotations.ts';
 export * from './tools.ts';
 
@@ -60,6 +65,10 @@ function registry(parts: Record<string, Record<string, z.ZodType>>): Record<stri
 
 export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
+    'http-call-error-data@1': HttpCallErrorData,
+    'http-error-envelope@1': HttpErrorEnvelope,
+    'dispatch-outcome@1': DispatchOutcomeFactsSchema,
+    'call-error-reason@1': CallErrorReasonSchema,
     'team-id@1': TeamId,
     'team-assignment-subject@1': TeamAssignmentSubject,
     'resource-assignment-subject@1': ResourceAssignmentSubject,

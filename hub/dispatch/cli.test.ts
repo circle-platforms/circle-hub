@@ -3,6 +3,8 @@ import { mkdtemp, readFile, readdir, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { executorCommand, jobCommand, bedCommand } from '../server/cli-job.ts';
+import { TEST_ENVIRONMENT_USAGE } from '../server/cli-test-environment.ts';
+import { UsageError } from '../server/errors.ts';
 import { adminCommands } from '../server/cli-admin.ts';
 import { setup } from './testing/context.ts';
 import { definition } from './testing/definition.ts';
@@ -129,7 +131,11 @@ test('bed baseline CLI records baseline via probe, lists registered baselines an
   const s = session(c);
 
   // Invalid arguments
-  await assert.rejects(bedCommand(s, ['invalid']), /bed 的子命令/);
+  await assert.rejects(bedCommand(s, ['invalid']), (error: unknown) => {
+    assert.ok(error instanceof UsageError);
+    assert.equal(error.message, `bed 的测试环境管理命令：${TEST_ENVIRONMENT_USAGE}`);
+    return true;
+  });
   await assert.rejects(bedCommand(s, ['baseline', 'record', c.executor.id]), /用法/);
   await assert.rejects(bedCommand(s, ['baseline', 'show', c.executor.id]), /用法/);
 

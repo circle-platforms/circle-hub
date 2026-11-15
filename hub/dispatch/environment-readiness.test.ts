@@ -1,3 +1,4 @@
+import {EffectBoundaryError} from './boundary.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { sha256Hex, type User, type Principal, type RecordsKit } from '../records/api.ts';
@@ -109,13 +110,20 @@ test('baseline registration is metadata-only, absent is false and failed metadat
   assert.equal(verdict(unknown, 'baseline.0'), null); assert.doesNotMatch(JSON.stringify(unknown), /private-error/);
 });
 
-test('missing configuration and permission reads stay neutral without disclosing hidden source references', async () => {
+test('permission checks fail with a call error while missing configuration remains an independent unknown', async () => {
   const f = fixture(); f.sources.canUse = async () => { throw new Error('private-permission-error'); };
-  const hidden = await readEnvironmentReadiness(f.sources, member, 'synthetic-target');
-  assert.deepEqual(hidden.executors, []); assert.deepEqual(f.reads, []);
-  assert.doesNotMatch(JSON.stringify(hidden), /private-permission-error|synthetic-target|src:/);
-  f.sources.account = async () => ({ ...member, role: 'admin' } as User);
-  assert.equal(verdict(await readEnvironmentReadiness(f.sources, member, 'synthetic-target'), 'assignment'), null);
+  for(const role of ['user','admin'] as const) {
+    f.sources.account=async()=>({...member,role} as User);
+    await assert.rejects(readEnvironmentReadiness(f.sources,member,'synthetic-target'),error=>{
+      assert.ok(error instanceof EffectBoundaryError);
+      assert.equal(error.failure.code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');
+      assert.equal(error.failure.message,'测试环境的权限核对现在不能进行，这次没有执行');
+      assert.equal(error.failure.fix,role==='admin'?'请联系维护人员恢复测试环境权限核对':'请联系管理员');
+      assert.doesNotMatch(JSON.stringify(error.failure),/private-permission-error|synthetic-target|src:/);
+      return true;
+    });
+  }
+  assert.deepEqual(f.reads,[]);
   f.sources.executors = async () => { throw new Error('private-config'); };
   const unknown = await readEnvironmentReadiness(f.sources, member, 'synthetic-target');
   assert.equal(unknown.target, null); assert.deepEqual(unknown.executors, []); assert.ok(unknown.missing_fact);

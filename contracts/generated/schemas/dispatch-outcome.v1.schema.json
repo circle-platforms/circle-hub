@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "issued",
+        "effective",
+        "read_back_consistent",
+        "read_back_mismatch",
+        "target_rejected",
+        "not_dispatched",
+        "proven_not_executed",
+        "unknown"
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "precheck",
+        "dispatch",
+        "conformance"
+      ]
+    },
+    "phase": {
+      "type": "string",
+      "description": "Program stage only, never an effect outcome."
+    },
+    "not_sent": {
+      "type": "boolean",
+      "description": "Only an observed not-sent fact for this operation; never inferred from missing receipts."
+    },
+    "rejection_stage": {
+      "type": "string"
+    },
+    "frozen": {
+      "type": "boolean"
+    },
+    "report_pending": {
+      "type": "boolean"
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null",
+          "const": null
+        }
+      ]
+    },
+    "call_error_reason": {
+      "type": "string",
+      "enum": [
+        "actor_disabled",
+        "actor_not_active",
+        "environment_disabled",
+        "environment_unassigned",
+        "environment_not_registered",
+        "environment_registration_inconsistent",
+        "environment_permission_unavailable",
+        "lease_held_by_other_account",
+        "lease_already_held_by_current_account",
+        "lease_missing_for_lineage",
+        "lease_expired",
+        "lease_released",
+        "lease_reader_unavailable",
+        "pack_unassigned",
+        "knowledge_root_unassigned",
+        "system_unassigned",
+        "content_read_not_permitted",
+        "named_document_run_scope_denied",
+        "run_submission_not_owned",
+        "environment_registration_incomplete"
+      ]
+    },
+    "missing_facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fact": {
+            "type": "string"
+          },
+          "next_action": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fact",
+          "next_action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "next_action": {
+      "type": "string"
+    },
+    "result": {
+      "type": "string",
+      "maxLength": 8192,
+      "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$",
+      "description": "The job result once it is complete (src:), readable by the runner: one row per dispatched item"
+    },
+    "device_return": {
+      "type": "string",
+      "maxLength": 8192,
+      "pattern": "^(?:src:[0-9a-f]{64}(?:\\/[a-z][a-z0-9_.-]{0,63}@(?:0|[1-9][0-9]{0,8})\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/:\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*(?::(?:0|[1-9][0-9]{0,15})-(?:0|[1-9][0-9]{0,15}))?)?|tree:[0-9a-f]{64}\\/(?:(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+(?:\\/(?:[^%/@\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2})+)*)?(?:@[0-9a-f]{64})?|entry:[0-9a-f]{64}|rec:[0-9a-f]{64}(?:#(?:\\/(?:[^%~/#\\u0000-\\u0020\\u007F-\\u00A0\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u0890-\\u0891\\u08E2\\u1680\\u180E\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u2064\\u2066-\\u206F\\u3000\\uFEFF\\uFFF9-\\uFFFB]|%[0-9A-F]{2}|~[01])*)+)?)$"
+    },
+    "submit_invoked": {
+      "type": "boolean"
+    },
+    "reservation_recorded": {
+      "type": "boolean"
+    },
+    "worker_settled": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "title": "dispatch-outcome@1",
+  "description": "Public optional observed dispatch facts. Operation, stage and effect outcome are independent; complete is a stage, not_dispatched is an effect value. Missing observation stays absent, never default false. References require source authorization; schema shape cannot prove visibility or physical effects. Old records without operation are not inferred from prose."
+}

@@ -1,3 +1,4 @@
+import type { WorkflowStepScope } from './workflow-step.ts';
 import {CheckReadBudget} from './read-budget.ts';
 import {replacedCriteria,frozenCriteria} from './criterion-changes.ts';
 import {authorAccountsOf} from './lineage.ts';
@@ -114,6 +115,7 @@ export interface RuntimeAdmission {
 }
 
 export interface Evaluation {
+  checkedScope: WorkflowStepScope;
   runtimeAdmission: RuntimeAdmission[];
   result: ValidationResult;
   /** Item-level refutations routed by the error table and the items the submission did not cover (also in result.errors). */
@@ -761,6 +763,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     }
     return {...raw,...(check.catalog?{catalog:view?.entries()??[],catalog_complete:view?.complete??false,...(selectionMissing.has(selectionKey(check,it.id))?{catalog_missing:selectionMissing.get(selectionKey(check,it.id))}:{})}:{})};
   };
+  const checkedRequirements = new Set<string>();
   const runtimeAdmission: RuntimeAdmission[] = [];
   const admittedChecks = new Map<string,RuntimeAdmission>();
   for (const [index,declared] of (submission?.checks ?? []).entries()) {
@@ -776,6 +779,7 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
       const texts=evidenceOf(item.id).texts;
       await warmQuoted([subject,declared.table],MAX_CHECK_READ_BYTES,texts);
       const outcome=await callCheck(checks.get(`@runtime.${index}`)!,subject,texts,item.id);
+      checkedRequirements.add(requirement.key);
       const ref=parseReference(item.location);
       const artifact=ref.scheme==='src' ? await ctx.deps.records.artifacts.readable(principalOf(resolveCtx.reader),ref.sha256) : null;
       const proof=artifact===null ? null : {reference:item.location,record:artifact.digest,provenance:artifact.provenance,origin:artifact.body.origin,author:artifact.body.author,outside_author:'read' in artifact.body.origin || 'upload' in artifact.body.origin && artifact.body.author.user!==null && artifact.body.author.user!==(run.runner??run.configurer)};
@@ -859,6 +863,12 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     return {outcomes,retryAttempts};
   }
 
+  // Include ordinary checks as well as the sample admission calls witnessed above.
+  let checkedScopeComplete = true;
+  for (const check of new Set([...runOutcomes.keys(), ...itemOutcomes.keys()])) {
+    for (const requirement of requirementsOf.get(check) ?? []) checkedRequirements.add(requirement.key);
+  }
+  for (const {check} of unruledChecks) checkedRequirements.add(check.requirement);
   const outcomesFor = (template: RequirementTemplate, id: string): JudgedOutcome[] => [
     ...template.checks.flatMap((cid) => {
       const check = checks.get(cid);
@@ -930,6 +940,8 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     let handlingErrorRecorded=false;
     const waitingRepairs:Array<{requirement:string;pointer:string;exit:import('../../../contracts/src/validation.ts').UnknownExit}>=[];
     for (const t of itemTemplates) {
+      // The requirement boundary itself is checked even when its inputs or verdict are unknown.
+      checkedRequirements.add(t.key);
       const independence=t.independence_by_account?accountIndependenceOf(authorAccount(run)??'',accountAuthors):modelIndependence;
       const hasProducer = !isJudgment(t) || itemSlotKeys.has(t.key);
       const expectation = expectationFor(t, it.fields);
@@ -1165,6 +1177,8 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     for (const [j, entry] of (submission.cross_item ?? []).entries()) {
       const pointer = pointerOf('cross_item', j);
       const key = runRequirementOf(workflow.slots, entry.code);
+      if (key === null) checkedScopeComplete = false;
+      else checkedRequirements.add(key);
       const template = key === null ? undefined : templates.find((t) => t.key === key);
       const ce = input.exact?.cross.get(pointer) ?? { resolutions: [], roles: [] as SourceRole[], bound: [], grounds: [...entry.grounds] };
       const independence = template?.independent_of !== undefined ? template.independence_by_account?accountIndependenceOf(authorAccount(run)??'',accountAuthors):independenceOf(origin, input.author) : null;
@@ -1216,5 +1230,5 @@ async function runChecks(ctx: EngineContext, input: EvaluationInput & {replayChe
     trace: input.traceId,
   };
   attachParentRecovery(result,retryAttempts,ctx.now());
-  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess, runtimeAdmission };
+  return { result, errors, problems, uncovered, retryAttempts,parentObservedSuccess, runtimeAdmission, checkedScope: {requirements: checkedRequirements, complete: checkedScopeComplete} };
 }

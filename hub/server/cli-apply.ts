@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve, relative } from 'node:path';
 import { DEPLOYMENT_SCHEMA, DeploymentDefinition, ProtectedConfigurationEnvelope, ProtectedConfigurationReceipt, type DeploymentDefinition as Definition } from '../../contracts/src/deployment.ts';
 import { PackManifest } from '../../contracts/src/pack.ts';
-import { ResourceRecord, type ExecutorSource } from '../../contracts/src/resources.ts';
+import { ResourceRecord, TestEnvironmentId, type ExecutorSource } from '../../contracts/src/resources.ts';
 import { SecretReference } from '../../contracts/src/variables.ts';
 import { canonicalBytes, parseStrictJson, sha256Hex, WHOLE_HUB, isAdmin, type RecordsConfig, type ConfigurationSnapshot } from '../records/api.ts';
 import { ExecutorNames, ExecutorRegistry } from '../dispatch/api.ts';
@@ -20,6 +20,7 @@ export const APPLY_USAGE = 'apply <部署定义.json>（已有定义相同则跳
 export const EXPORT_USAGE = 'export（导出部署定义，不包含密钥值、令牌、密码或密钥库内容）';
 
 export function parseDeployment(input: unknown): Definition {
+  if (input !== null && typeof input === 'object' && 'schema' in input && input.schema === 'deployment@2') throw new UsageError('参数无效：这份定义文件的格式是 deployment@2，这个版本只接受 deployment@3。请在现有实例上用 circle-hub export 导出新的定义文件。');
   const parsed = DeploymentDefinition.safeParse(input);
   if (!parsed.success) throw new UsageError('部署定义不合格式：' + parsed.error.issues.map(issue => issue.path.join('/')).join('、'));
   for (const document of parsed.data.documents) {
@@ -68,11 +69,12 @@ export function deploymentOrder(packs: readonly DeploymentPack[]): DeploymentPac
 
 
 
-interface DeploymentState extends Omit<Definition,'schema'|'accounts'|'teams'|'resources'|'executors'> {
+interface DeploymentState extends Omit<Definition,'schema'|'accounts'|'teams'|'resources'|'executors'|'testEnvironments'> {
   accounts:Array<Definition['accounts'][number]&{id:string}>;
   teams:Array<Definition['teams'][number]&{id:string}>;
   resources:Array<Definition['resources'][number]&{id:string}>;
   executors:Array<{id:string;source:ExecutorSource;digest:string}>;
+  testEnvironments:Array<Definition['testEnvironments'][number]&{id:string}>;
   executorNames:Awaited<ReturnType<ExecutorNames['list']>>;
   executorReserved:Awaited<ReturnType<ExecutorNames['list']>>;
 }
@@ -189,19 +191,42 @@ async function readDeploymentState(session: Session): Promise<DeploymentState> {
     if (!bytes || bytes.byteLength !== document.size || sha256Hex(bytes) !== document.sha256) throw new CliError('命名文档原件缺失或完整性错误，不能导出');
     documents.push({ name: document.name, sha256: document.sha256, size: document.size, bytesBase64: Buffer.from(bytes).toString('base64'), mediaType: source.body.media_type, fileName: source.body.name ?? `${document.name}.bin` });
   }
-  const leaseRegistrations = await (await session.leases()).registrations('');
   const { readDeploymentSyncIntent } = await import('./deployment-sync.ts');
   const syncIntent = await readDeploymentSyncIntent(session);
   const executors=[...await new ExecutorRegistry(records).sources(by)];
   const catalogue=await new ExecutorNames(records).inspect(by);
   const executorNames=[...catalogue.active],executorReserved=[...catalogue.reserved];
+  const canonicalEnvironments = await records.testEnvironments.list(by);
+  const userName = (id:string) => { const user=users.find(user=>user.id===id); if(!user)throw new CliError('测试环境责任账户或分配账户的名字无法核对，未导出不完整定义');return user.name; };
+  const executorName = (id:string) => {const named=executorNames.find(named=>named.executor===id);if(!named)throw new CliError('测试环境关联的执行器尚未明确命名，未导出不完整定义');return named.name;};
+  if(canonicalEnvironments.some(row=>!row.isTestEnvironment&&!row.isBookingPrefix))throw new CliError('部分登记的目标或责任归属尚未核对，未导出不完整定义','请在测试环境页面核对登记后重新导出');
+  const bookingPrefixes:Definition['bookingPrefixes']=canonicalEnvironments.filter(row=>row.isBookingPrefix).flatMap(row=>row.prefixes.map(prefix=>{if(prefix.owner===null)throw new CliError('预订前缀责任账户缺失，未导出不完整定义');return {prefix:prefix.prefix,owner:userName(prefix.owner)};})).sort((a,b)=>a.prefix.localeCompare(b.prefix));
+  const testEnvironments = canonicalEnvironments.filter(row=>row.isTestEnvironment).map(environment=>{
+    if(environment.name===null || environment.target===null || [...environment.prefixes,...environment.resources].some(row=>row.owner===null))throw new CliError('测试环境的名字、目标或责任归属尚未核对，未导出不完整定义','请在测试环境页面补齐登记后重新导出');
+    return {id:environment.id,name:environment.name,target:environment.target,
+      prefixes:environment.prefixes.map(row=>({prefix:row.prefix,owner:userName(row.owner!)})),
+      resources:environment.resources.map(row=>({key:row.key,owner:userName(row.owner!)})),executors:environment.executors.map(executorName),enabled:environment.enabled};
+  });
+  const environmentAssignments:Definition['environmentAssignments']=[];
+  const decisions=new Map<string,import('../records/api.ts').AuthorizationRecord>();let assignmentCursor:string|null=null;
+  do {const page=await records.authorizations.history({permission:'resource_assign',limit:500,cursor:assignmentCursor,newestFirst:true});
+    for(const row of page.items){const key=row.body.subject+'|'+row.body.object;if(!decisions.has(key))decisions.set(key,row);}assignmentCursor=page.next;
+  }while(assignmentCursor!==null);
+  for(const row of decisions.values()){
+    if(!TestEnvironmentId.safeParse(row.body.object).success || row.body.revoked || row.body.expires_at!==null && Date.parse(row.body.expires_at)<=Date.now())continue;
+    const environment=testEnvironments.find(environment=>environment.id===row.body.object);if(!environment)continue;
+    const base={environment:environment.name,expiresAt:row.body.expires_at};
+    if(row.body.subject==='*')environmentAssignments.push({...base,all:true});
+    else {const team=teams.find(team=>team.id===row.body.subject);environmentAssignments.push(team?{...base,team:team.name}:{...base,user:userName(row.body.subject)});}
+  }
+  environmentAssignments.sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return {
     accounts: users.map(({ id, name, role, disabled }) => ({ id, name, role, disabled })),
     teams: await Promise.all(teams.map(async team => ({ id: team.id, name: team.name, members: (await records.teams.members(by, team.id)).map(member => member.user.id) }))),
     packs: packDefinitions,
-    resources, executors, executorNames, executorReserved,
+    resources, executors, executorNames, executorReserved, testEnvironments, environmentAssignments, bookingPrefixes,
     workflowAssignments, resourceAssignments, knowledgeSources: packs.filter(pack => pack.kind === 'product' && pack.active).map(pack => pack.id),
-    variables, documents, leaseRegistrations, ...(syncIntent === null ? {} : { knowledgeSync: syncIntent.targets }),
+    variables, documents, ...(syncIntent === null ? {} : { knowledgeSync: syncIntent.targets }),
     missingConfiguration: syncIntent === null ? ['尚未通过部署定义声明知识同步目标；请在 knowledgeSync 列出产品和版本线，明确无目标则填写 []'] : [],
   };
 }
@@ -222,7 +247,7 @@ export async function exportDeployment(session:Session):Promise<Definition> {
     packs:state.packs,workflowAssignments:state.workflowAssignments.map(row=>'user'in row?{...row,user:user(row.user)}:{...row,team:team(row.team)}),
     resourceAssignments:state.resourceAssignments.map(row=>'team'in row?{...row,resource:resource(row.resource),team:team(row.team)}:{...row,resource:resource(row.resource)}),
     knowledgeSources:state.knowledgeSources,...(state.knowledgeSync!==undefined?{knowledgeSync:state.knowledgeSync}:{}),variables:state.variables,documents:state.documents,
-    leaseRegistrations:state.leaseRegistrations.map(row=>({...row,owner:user(row.owner)})),missingConfiguration:state.missingConfiguration,
+    testEnvironments:state.testEnvironments.map(({id,...row})=>row),environmentAssignments:state.environmentAssignments,bookingPrefixes:state.bookingPrefixes,missingConfiguration:state.missingConfiguration,
   });
 }
 
@@ -237,6 +262,8 @@ export async function applyDeployment(session: Session, input: unknown, base = s
   );
   const by = await session.admin(), hub = await session.hub(false, true);
   const packs = await loadPacks(session, definition, base);
+  const inheritance=await records.testEnvironments.inheritance();
+  if(inheritance.completed===false){const {environmentPermissionSources}=await import('./env-permission-sources.ts');await records.testEnvironments.inherit(by,environmentPermissionSources());}
   const current = await readDeploymentState(session);
   const selectedExecutors = executorMatches(definition.executors, current);
   const report: DeploymentReport = { created: 0, skipped: 0, differences: [], missingConfiguration: definition.missingConfiguration, syncTasks: [], syncCurrent: [] };
@@ -349,14 +376,31 @@ export async function applyDeployment(session: Session, input: unknown, base = s
       if (await records.authorizations.isActive('resource_assign', subject, resource.id)) { report.skipped++; continue; }
       await records.authorizations.assignResource(by, resource.id, subject); report.created++;
     }
-    for (const [index, registration] of definition.leaseRegistrations.entries()) {
-      const owner = userId(registration.owner);
-      const found = current.leaseRegistrations.find(row => row.prefix === registration.prefix);
-      if (found) { compare('leaseRegistrations', index, found.owner, owner); continue; }
-      const { leaseCommand } = await import('./cli-admin.ts');
-      const code = await leaseCommand(session, ['register', registration.prefix, '--owner', owner, '--reason', '部署定义文件登记测试环境']);
-      if (code !== 0) throw new CliError('测试环境预订登记未完成');
-      current.leaseRegistrations.push({ ...registration, owner }); report.created++;
+    for(const [index,prefix] of definition.bookingPrefixes.entries()){
+      const found=current.bookingPrefixes.find(row=>row.prefix===prefix.prefix);
+      if(found){compare('bookingPrefixes',index,found,prefix);continue;}
+      await records.testEnvironments.registerBookingPrefixFromDefinition(by,{prefix:prefix.prefix,owner:userId(prefix.owner)});
+      current.bookingPrefixes.push(prefix);report.created++;
+    }
+    for(const [index,environment] of definition.testEnvironments.entries()){
+      const found=exactName(current.testEnvironments,environment.name,row=>row.name);
+      if(found){const {id,...before}=found;compare('testEnvironments',index,before,environment);continue;}
+      const at=new Date().toISOString();
+      const input={name:environment.name,target:environment.target,enabled:environment.enabled,missing_facts:[],
+        prefixes:environment.prefixes.map(row=>({prefix:row.prefix,owner:userId(row.owner),registered_at:at})),
+        resources:environment.resources.map(row=>({key:row.key,owner:userId(row.owner),registered_at:at})),
+        executors:environment.executors.map(name=>required(exactName(current.executorNames,name,row=>row.name),'执行器').executor)};
+      const registered=await records.testEnvironments.registerFromDefinition(by,input);
+      current.testEnvironments.push({...environment,id:registered.id});report.created++;
+    }
+    for(const [index,assignment] of definition.environmentAssignments.entries()){
+      const environment=required(exactName(current.testEnvironments,assignment.environment,row=>row.name),'测试环境');
+      const subject='team'in assignment?teamId(assignment.team):'user'in assignment?userId(assignment.user):WHOLE_HUB;
+      const previous=await records.authorizations.latest('resource_assign',subject,environment.id);
+      if(previous&&!previous.body.revoked&&(previous.body.expires_at===null||Date.parse(previous.body.expires_at)>Date.now())){
+        compare('environmentAssignments',index,previous.body.expires_at,assignment.expiresAt);continue;
+      }
+      await records.testEnvironments.assignFromDefinition(by,{environment:environment.id,subject,expiresAt:assignment.expiresAt});report.created++;
     }
     for (const pack of definition.knowledgeSources) {
       if (await hub.registry.isActive(pack)) report.skipped++;

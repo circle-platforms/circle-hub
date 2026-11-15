@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setup } from './testing/context.ts';
+import { EnvironmentRegistrationIncompleteError } from './api.ts';
+import type { ActionBody } from '../records/api.ts';
 
 test('standalone precheck acquires, reads and releases without an intent or submission', async t => {
   const c = await setup(); t.after(() => c.close());
@@ -28,7 +30,17 @@ test('bootstrap collection needs no invented manifest or resource keys, but disp
   assert.equal(draft.definition.manifest_sha256, null);
   const state = await c.service.precheck(c.admin, c.executor.id);
   assert.ok(c.calls.includes('inspect_slot')); assert.ok(c.calls.includes('close_slot'));
-  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), /先 precheck.*update/);
+  const callsBeforeDispatch = c.endpoint.calls.length;
+  await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id), (error: unknown) => {
+    assert.ok(error instanceof EnvironmentRegistrationIncompleteError);
+    assert.equal(error.protocol.code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(error.protocol.call_error_reason, 'environment_registration_incomplete');
+    assert.equal(error.protocol.object_kind, 'test_environment');
+    return true;
+  });
+  assert.equal(c.endpoint.calls.length, callsBeforeDispatch, 'incomplete registration refuses dispatch before any new RPC');
+  const actions = await c.kit.store.findMany<ActionBody>({ kind: 'action', key: 'dispatch.executor', values: [c.executor.id] });
+  assert.equal(actions.some(event => event.body.detail.phase === 'intent' || event.body.detail.phase === 'probe_intent'), false);
   assert.equal(c.calls.includes('send_blob'), false);
   await c.registry.disable(c.admin, c.executor.id);
   await assert.rejects(c.service.precheck(c.admin, c.executor.id));
