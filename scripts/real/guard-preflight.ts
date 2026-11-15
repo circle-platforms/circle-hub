@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { discoverTools, environment, quote, writeCommand, type DiscoveredTool, type GuardEnvironment } from './guard-lib.ts';
 
-export type Verdict = 'allow' | 'deny' | 'ask';
+export type Verdict = 'allow' | 'deny' | 'ask' | 'error';
 /** How a case counts toward the exit code: checked allow/deny vs declaration-only listing. */
 export type CaseKind = 'check' | 'declaration-limit';
 
@@ -99,16 +99,30 @@ export function invokeInstalledHook(
     encoding: 'utf8',
     timeout: 15_000,
   });
-  let parsed: { decision?: string; reason?: string } | null = null;
+  const raw = `${child.stdout ?? ''}${child.stderr ?? ''}`;
+  const fail = (reason: string): { verdict: Verdict; reason?: string; raw: string; status: number | null } => ({
+    verdict: 'error',
+    reason,
+    raw,
+    status: child.status,
+  });
+  // Hook crash / timeout / empty or non-JSON output is unknown, never treat as allow (G1).
+  if (child.error) return fail(`钩子错误：${child.error.message}`);
+  if (child.signal) return fail(`钩子被信号中断：${child.signal}`);
+  if (child.status !== 0 && child.status !== null) return fail(`钩子退出码 ${child.status}`);
+  const stdout = child.stdout ?? '';
+  if (stdout.trim() === '') return fail('钩子没有输出');
+  let parsed: { decision?: string; reason?: string };
   try {
-    parsed = JSON.parse(child.stdout || '{}') as { decision?: string; reason?: string };
+    parsed = JSON.parse(stdout) as { decision?: string; reason?: string };
   } catch {
-    parsed = null;
+    return fail('钩子输出不是 JSON');
   }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return fail('钩子输出不是 JSON 对象');
   return {
     verdict: classifyDecision(parsed),
-    reason: parsed?.reason,
-    raw: child.stdout || child.stderr || '',
+    reason: parsed.reason,
+    raw: stdout || child.stderr || '',
     status: child.status,
   };
 }
@@ -491,30 +505,31 @@ export function runPreflight(homeRaw: string): PreflightReport {
   for (const item of cases) {
     const invoked = invokeInstalledHook(guard, item.call);
     const got = invoked.verdict;
+    const ok = got === item.want;
+    const reason = ok ? undefined : (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160);
     if (item.kind === 'declaration-limit') {
-      // Listed for humans; never fails the exit code. Prefer recording the hook's deny reason.
+      // G2: only got=deny (matching want) is informational; any other got is a mismatch.
       results.push({
         name: item.name,
         kind: 'declaration-limit',
         want: item.want,
         got,
-        ok: true,
-        reason: (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160),
+        ok,
+        reason: ok ? (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160) : reason,
       });
       continue;
     }
-    const ok = got === item.want;
     results.push({
       name: item.name,
       kind: 'check',
       want: item.want,
       got,
       ok,
-      reason: ok ? undefined : (invoked.reason ?? invoked.raw).split('\n')[0]?.slice(0, 160),
+      reason,
     });
   }
-  const mismatches = results.filter((r) => r.kind === 'check' && !r.ok);
-  const declarationLimits = results.filter((r) => r.kind === 'declaration-limit');
+  const mismatches = results.filter((r) => !r.ok);
+  const declarationLimits = results.filter((r) => r.kind === 'declaration-limit' && r.ok);
   return {
     home: guard.home,
     workdir: guard.workdir,
@@ -533,10 +548,10 @@ export function formatPreflightReport(report: PreflightReport): string[] {
   const lines = [
     `核对主目录：${report.home}`,
     `配置：${report.profile}；钩子：${basename(report.entry)}；工作目录：${report.workdir}`,
-    `用例：放行 ${report.allowCount}、必拒 ${report.denyCount}；不符 ${report.mismatches.length}；声明限制 ${report.declarationLimits.length}`,
+    `用例：放行 ${report.allowCount}、必拒 ${report.denyCount}；不符 ${report.mismatches.length}；声明里未放行且已拒绝 ${report.declarationLimits.length}`,
   ];
   if (report.ok) {
-    lines.push(report.declarationLimits.length ? '结果：核对相符（另有声明限制，见下）' : '结果：全部相符');
+    lines.push(report.declarationLimits.length ? '结果：核对相符（另有声明里未放行且已拒绝的项，见下）' : '结果：全部相符');
   } else {
     lines.push('结果：有不符（装着的守卫与装着的技能或必拒用例不一致）');
     for (const miss of report.mismatches.slice(0, 40)) {
@@ -545,11 +560,11 @@ export function formatPreflightReport(report: PreflightReport): string[] {
     if (report.mismatches.length > 40) lines.push(`- …另有 ${report.mismatches.length - 40} 条不符`);
   }
   if (report.declarationLimits.length) {
-    lines.push('声明限制（技能教了、声明明确不放行；不计入退出码）：');
+    lines.push('声明里未放行且已拒绝（技能教了、声明明确不放行，钩子已拒绝；不计入退出码）：');
     for (const item of report.declarationLimits.slice(0, 40)) {
-      lines.push(`- 声明限制 got=${item.got} | ${item.name}${item.reason ? ` | ${item.reason}` : ''}`);
+      lines.push(`- 声明里未放行 got=${item.got} | ${item.name}${item.reason ? ` | ${item.reason}` : ''}`);
     }
-    if (report.declarationLimits.length > 40) lines.push(`- …另有 ${report.declarationLimits.length - 40} 条声明限制`);
+    if (report.declarationLimits.length > 40) lines.push(`- …另有 ${report.declarationLimits.length - 40} 条`);
   }
   return lines;
 }
