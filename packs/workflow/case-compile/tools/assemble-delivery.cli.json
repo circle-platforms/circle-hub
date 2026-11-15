@@ -18,7 +18,9 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<脚本合并编号>,<脚本合并编号>",
-      "type": "run"
+      "type": "run",
+      "separator": ",",
+      "trimValues": true
     },
     {
       "name": "recompose",
