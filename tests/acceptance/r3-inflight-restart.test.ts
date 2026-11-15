@@ -6,6 +6,7 @@ import {EventEmitter} from 'node:events';
 import {test,type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import type {ActionBody} from '../../hub/records/api.ts';
+import {labelOf} from '../../contracts/api.ts';
 import {setupJournal} from '../../hub/dispatch/testing/journal.ts';
 import {acceptedDispatch} from '../../hub/dispatch/accepted.ts';
 import {observationLockFree} from '../../hub/dispatch/testing/context.ts';
@@ -67,18 +68,38 @@ test('R3-1 SIGKILL after committed reservation without intent converges without 
   const worker=await recover(t,c,point.job);const status=await completed(c,point.job);assert.equal(status.outcome,'not_dispatched');assert.equal(sends(c),0);assert.equal(c.rows.size,0);await worker.close();
 });
 
-test('R3-2 admitted not_started converges and permits a fresh explicit gate without resubmitting the old request',{timeout:60000},async t=>{
-  const holder:{current?:ChildProcess}={};const c=await journal(t,{stopped:true,onSubmit:async()=>{holder.current!.kill('SIGKILL');}});
-  const job=await admittedAndKilled(t,c,holder);const syntheticLedger=c.rows;assert.equal(syntheticLedger.size,1);
-  const worker=await recover(t,c,job);assert.equal((await completed(c,job)).outcome,'proven_not_executed');assert.equal(sends(c),1);await worker.close();
-  let automatic=0;const dispatch=c.service.dispatchAccepted.bind(c.service);
-  c.service.dispatchAccepted=(...args)=>{automatic++;return dispatch(...args);};
-  const reads=c.calls.filter(name=>name==='open_slot').length;
-  const notes=await acceptedDispatch(c.kit,c.service,c.run,true,0,c.owner);
-  assert.equal(automatic,0,'rereading the original accepted submission must not schedule another dispatch');
-  assert.equal(sends(c),1);assert.equal(c.calls.filter(name=>name==='open_slot').length,reads);
-  assert.ok(notes.some(note=>note.next_action?.includes('新的核验')));
-  const fresh=await child(t,c,'dispatch','gate');await fresh.wait('checkpoint');await fresh.kill();assert.equal(sends(c),1,'new authorization gate is not an automatic retransmission');assert.equal(syntheticLedger.size,1);
+// Boss 2026-11-15 15:19: recovery never submits; certified nonexecution uses the normal ready/retriable rule on the next caller submission.
+test('R3-2 certified not_started recovery permits exactly one new ready attempt and later rereads only progress',{timeout:60000},async t=>{
+  const holder:{current?:ChildProcess}={};let firstSubmit=true;
+  const c=await journal(t,{onSubmit:async()=>{if(firstSubmit){firstSubmit=false;holder.current!.kill('SIGKILL');}}});
+  const close=c.close;c.close=async()=>{await c.service.close();await close();};
+  const job=await admittedAndKilled(t,c,holder),syntheticLedger=c.rows;
+  assert.equal(syntheticLedger.size,1);
+  const originalRequest=[...syntheticLedger.keys()][0];assert.ok(originalRequest);
+  const original=syntheticLedger.get(originalRequest)!;
+  original.state='not_started';original.touched=false;delete original.key;
+  const worker=await recover(t,c,job);
+  assert.equal((await completed(c,job)).outcome,'proven_not_executed');
+  assert.equal(sends(c),1,'automatic recovery itself submits neither the old request nor a new request');
+  await worker.close();
+  let starts=0;const dispatch=c.service.dispatchAccepted.bind(c.service);
+  c.service.dispatchAccepted=(...args)=>{starts++;return dispatch(...args);};
+  const acquired=c.calls.filter(name=>name==='open_slot').length;
+  const notes=await acceptedDispatch(c.kit,c.service,c.run,true,undefined,c.owner);
+  await eventual(async()=>sends(c),count=>count===2);
+  assert.equal(starts,1,'one ready caller resubmission schedules the existing unified retriable path once');
+  const requests=c.endpoint.calls.filter(call=>call.params.name==='send_blob').map(call=>(call.params.arguments as Record<string,unknown>).request);
+  assert.equal(requests.length,2);assert.equal(requests[0],originalRequest);assert.notEqual(requests[1],originalRequest);
+  assert.equal(syntheticLedger.size,2);assert.equal(syntheticLedger.get(String(requests[1]))?.state,'started','new attempt is not forced into the first request fixture outcome');
+  assert.ok(notes.some(note=>note.job===job&&note.outcome==='proven_not_executed'&&note.text.includes(labelOf('effect_outcome','proven_not_executed'))),'reply must preserve the previous job conclusion');
+  const newAttempt=notes.find(note=>note.job!==undefined&&note.job!==job);assert.ok(newAttempt?.job);
+  assert.ok(newAttempt.text.includes('已再次')&&newAttempt.text.includes('开始上机验证'),'reply must say the Hub started another attempt');
+  assert.equal((await completed(c,newAttempt.job)).outcome,'effective');
+  assert.equal(c.calls.filter(name=>name==='open_slot').length,acquired+1);
+  const reread=await acceptedDispatch(c.kit,c.service,c.run,true,0,c.owner);
+  assert.ok(reread.some(note=>note.job===newAttempt.job));assert.equal(starts,1);
+  assert.equal(sends(c),2,'subsequent caller resubmission reads progress instead of adding another submit');
+  assert.equal(c.calls.filter(name=>name==='open_slot').length,acquired+1);
 });
 
 test('R3-3 original started request with lost reply is recovered automatically, never manually resumed',{timeout:60000},async t=>{
