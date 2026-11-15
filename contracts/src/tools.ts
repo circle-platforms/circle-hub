@@ -324,7 +324,7 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
-  /** Producer-filled when the checked requirements resolve to exactly one workflow step (C56; answers-cursor.md 11-15 07:00). */
+  /** Producer-filled when the checked requirements resolve to exactly one workflow step (CHANGELOG Unreleased: submit_result lead / step_name). */
   step_name: z.string().min(1).refine(value => value.trim().length > 0, 'a name is not whitespace').optional().describe('The declared user-facing step name only when the nonempty set of requirements actually checked by this submission explicitly resolves to one workflow step; absent for missing declarations, multiple steps or an unproven checked scope'),
   record: referenceUriOf('rec').optional().describe('Immutable validation result record reference for machine readers'),
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
