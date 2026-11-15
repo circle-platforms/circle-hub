@@ -37,7 +37,8 @@ import {
   type PriorRoundRecord,
   type StreakAnalysis,
 } from './rework-history.ts';
-import { isRecord } from './text.ts';
+import { isRecord, wrapProseLine, CallFailure } from './text.ts';
+import { SCOPE_RULINGS_ORIGIN } from './scope.ts';
 
 /** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
 export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; parameter?: { commands: string[]; name: string } }> }
@@ -352,11 +353,36 @@ export const PRIOR_DEVICE_HISTORY_DISCLAIMER =
 export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
   'Hub 当前尚未提供按 autoid 查询历次上机验证与 apv_cmds 的只读接口。';
 export const PREREQ_SCAN_REASON =
-  '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+  '当前简报未从重组记录与产品目录提取到前置；这不证明没有其他前置。编写前仍须核对 knowledge/manual.txt 同构建功能章、配置示例与前置条件。';
+export const PREREQ_PARTIAL_RECOMPOSE_REASON = '已从用例重组记录（record.sources.states）提取如下已知前置；当前简报未提取产品目录前置，这不证明没有其他跨章节前置，仍须核对同构建手册正文、示例与前置条件。';
 /** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
 export const PREREQ_STATES_UNREADABLE_REASON =
   '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组返回的记录形状后再开编写。';
 export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
+
+/** Formats an entry from `recompose-record@1` `unknowns[]` without falling back to raw JSON when structured fields exist. */
+export function formatRecomposeUnknown(u: unknown): string {
+  if (typeof u === 'string') return u;
+  if (!isRecord(u)) return '';
+  const atom = typeof u.atom === 'string' && u.atom ? u.atom : '';
+  const missing = typeof u.missing === 'string' && u.missing ? u.missing : '';
+  const reason = typeof u.reason === 'string' && u.reason ? u.reason : '';
+  const nextAction = typeof u.next_action === 'string' && u.next_action ? u.next_action : '';
+  const audience = typeof u.audience === 'string' && u.audience ? u.audience : '';
+  const due = typeof u.due === 'string' && u.due ? u.due : '';
+  const body = [missing, reason].filter(Boolean).join('；说明：');
+  if (atom || body || nextAction || audience || due) {
+    const prefix = atom ? `[原子 ${atom}] ` : '';
+    const details: string[] = [];
+    if (nextAction) details.push(`下一步：${nextAction}`);
+    if (audience) details.push(`对象：${audience}`);
+    if (due) details.push(`截止：${due}`);
+    if (body && details.length > 0) return `${prefix}${body}（${details.join('；')}）`;
+    if (body) return `${prefix}${body}`;
+    return `${prefix}${details.join('；')}`;
+  }
+  return JSON.stringify(u);
+}
 
 export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';
 
@@ -392,7 +418,7 @@ export interface CompileBriefV1 {
     final_attempt: boolean;
     vary_form_required: boolean;
     directives: string[];
-    user_rulings: Array<{ source: string; target: string; ruling: string }>;
+    user_rulings: Array<{ source: string; target: string; ruling: string; from_scope?: true }>;
     exclusions: string[];
   };
   materials: {
@@ -573,6 +599,8 @@ export interface BuildCompileBriefInput {
   planExists?: boolean;
   priorRounds?: readonly PriorRoundRecord[];
   unrecordedAttribution?: PriorAttributionItem | null;
+  scopeRulings?: ReadonlyArray<{target: string; ruling: string}>;
+  scopeRulingsSource?: string;
   createdAt?: string;
 }
 
@@ -741,7 +769,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
   }
   const unresolvedUnknowns = Array.isArray(record.unknowns)
     ? record.unknowns
-        .map((u) => (typeof u === 'string' ? u : isRecord(u) && typeof u.reason === 'string' ? u.reason : JSON.stringify(u)))
+        .map(formatRecomposeUnknown)
         .filter((s) => s.length > 0)
     : [];
 
@@ -769,7 +797,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
     state: string;
     origin: typeof RECOMPOSE_STATES_ORIGIN;
   }> = [];
-  const userRulings: Array<{ source: string; target: string; ruling: string }> = [];
+  let userRulings: Array<{ source: string; target: string; ruling: string }> = [];
   for (const st of statesSource.filter(isRecord)) {
     const atom = typeof st.atom === 'string' ? st.atom : '';
     const reason = typeof st.reason === 'string' ? st.reason : '';
@@ -782,6 +810,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       userRulings.push({ source: RECOMPOSE_STATES_ORIGIN, target: atom, ruling: reason });
     }
   }
+  userRulings = mergeScopeRulings(userRulings, input.scopeRulings ?? [], new Set([input.item.id, fields.autoid, isRecord(record?.case) ? record.case.id : undefined]), input.scopeRulingsSource ?? SCOPE_RULINGS_ORIGIN);
   const prerequisitesBlock: CompileBriefV1['materials']['prerequisites'] = !statesReadable
     ? {
         status: 'recompose_states_unreadable',
@@ -797,7 +826,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
         from_product_catalog: [],
         ancestor_command_hints: [],
         manual_scan_required: true,
-        scan_reason: PREREQ_SCAN_REASON,
+        scan_reason: fromRecomposeStates.length ? PREREQ_PARTIAL_RECOMPOSE_REASON : PREREQ_SCAN_REASON,
       };
 
   const allGateRefusals = priorRounds.flatMap((r) => r.gateRefusals);
@@ -1087,6 +1116,8 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
         problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
       }
     }
+    if (hasRecomp && !hasCatalog && (prereqs.status !== 'partial_recompose_only' || prereqs.manual_scan_required !== true)) problems.push('仅重组前置要求 partial_recompose_only 且仍须核对手册');
+    if (hasCatalog && prereqs.status !== 'extracted') problems.push('已提取产品目录前置要求 extracted');
   }
 
   const entries = Array.isArray(priorHistory.entries) ? priorHistory.entries : null;
@@ -1138,6 +1169,183 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
   return { ok: problems.length === 0, problems };
 }
 
+function mergeScopeRulings(existing: CompileBriefV1['task']['user_rulings'], rulings: ReadonlyArray<{target:string;ruling:string}>, targets: ReadonlySet<unknown>, source: string): CompileBriefV1['task']['user_rulings'] {
+  const result = [...existing];
+  for (const row of rulings) {
+    if (!targets.has(row.target) || !row.ruling.startsWith('使用者决定：') || !row.ruling.slice('使用者决定：'.length).trim()) throw new CallFailure('invalid_parameters','scope.md 的裁定未绑定本条身份或明确记录标记','按本条完整标识和明确记录标记修正后重试');
+    if (!result.some(old => old.target === row.target && old.ruling === row.ruling)) result.push({source,...row,from_scope:true});
+  }
+  return result;
+}
+
+/** Derive current instructions without modifying the sealed brief file or recomposition record. */
+export function withScopeUserRulings(brief: CompileBriefV1, rulings: ReadonlyArray<{target:string;ruling:string}>, source = SCOPE_RULINGS_ORIGIN): CompileBriefV1 {
+  const result = structuredClone(brief);
+  const targets = new Set([brief.identity.item_id, brief.identity.autoid, brief.materials.original_case.recomposition.case_id]);
+  result.task.user_rulings = mergeScopeRulings(result.task.user_rulings.filter(row => row.from_scope !== true && row.source !== SCOPE_RULINGS_ORIGIN), rulings, targets, source);
+  result.brief_sha256 = computeCompileBriefSha256(result);
+  return result;
+}
+
+/** Renders prerequisite scan status plus every extracted item from `from_recompose_states`, catalog, and ancestor hints. */
+export function renderPrerequisiteLines(prereqs: CompileBriefV1['materials']['prerequisites']): string[] {
+  // Presence is established by structured entries, never by an older prose summary.
+  const explanation = prereqs.status === 'recompose_states_unreadable' ? PREREQ_STATES_UNREADABLE_REASON
+    : prereqs.from_product_catalog.length ? `已从产品目录提取 ${prereqs.from_product_catalog.length} 条前置；仍须核对同构建手册正文与示例。`
+    : prereqs.from_recompose_states.length ? PREREQ_PARTIAL_RECOMPOSE_REASON : PREREQ_SCAN_REASON;
+  const out: string[] = [...wrapProseLine(`- 前置检查状态（${prereqs.status}）：`, explanation)];
+  for (const pre of prereqs.from_recompose_states) {
+    const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
+    const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
+    const header = `  · 出处：用例重组记录（${origin}）${stateLabel}，原子 ${pre.atom}：`;
+    out.push(...wrapProseLine(header, pre.reason || '已声明运行前置'));
+    for (const line of pre.prerequisites) {
+      out.push(...wrapProseLine('    - ', line));
+    }
+  }
+  for (const item of prereqs.from_product_catalog) {
+    out.push(...wrapProseLine('  · 出处：产品目录：', item));
+  }
+  for (const hint of prereqs.ancestor_command_hints) {
+    out.push(...wrapProseLine('  · 出处：命令祖先提示：', hint));
+  }
+  return out;
+}
+
+/** Renders prior device verification history honestly across `unavailable_from_hub`, `none_found`, and `available`. */
+export function renderPriorDeviceHistoryLines(
+  priorHistory: CompileBriefV1['prior_device_history'],
+  opts: { prefixKey?: string } = {},
+): string[] {
+  const statusLabel = opts.prefixKey ? `${opts.prefixKey}=${priorHistory.status}` : priorHistory.status;
+  if (priorHistory.status === 'unavailable_from_hub') {
+    return wrapProseLine(
+      `- 同用例历史上机记录（${statusLabel}）：`,
+      priorHistory.unavailable_reason ?? PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON,
+    );
+  }
+  if (priorHistory.status === 'none_found') {
+    return wrapProseLine(
+      `- 同用例历史上机记录（${statusLabel}）：`,
+      `Hub 已按 ${priorHistory.match_key} 查询，未找到此前已上机验证记录（0 条）。`,
+    );
+  }
+  const out: string[] = [
+    ...wrapProseLine(
+      `- 同用例历史上机记录（${statusLabel}，共 ${priorHistory.entries.length} 条）：`,
+      priorHistory.disclaimer,
+    ),
+  ];
+  if (priorHistory.entries.length === 0) {
+    out.push('  · （状态为 available 但条目列表为空，未提供任何历史记录）');
+    return out;
+  }
+  for (const entry of priorHistory.entries) {
+    const cmds = entry.apv_cmds.length > 0 ? entry.apv_cmds.join(' ; ') : '无';
+    const attr = entry.attribution ? `；归因（${entry.attribution.layer}）：${entry.attribution.summary}` : '';
+    out.push(
+      ...wrapProseLine(
+        `  · [运行 ${entry.verification_run} | 计划 ${entry.plan_run} | 构建 ${entry.build} | 结束 ${entry.ended_at} | 结论 ${entry.verdict}] 命令：`,
+        `${cmds}${attr}`,
+      ),
+    );
+  }
+  return out;
+}
+
+/** Renders test-bed topology, device-scoped roles (`device@address`), unknowns, triggers, forbidden pairs, and failure markers. */
+export function renderBedFactsLines(
+  bf: CompileBriefV1['materials']['bed_facts'],
+  opts: { heading?: boolean } = {},
+): string[] {
+  const out: string[] = [];
+  if (bf.facts_status === 'manifest_unavailable') {
+    if (opts.heading) out.push('## 测试环境事实（manifest_unavailable）');
+    out.push(
+      ...wrapProseLine(
+        `- 测试环境事实（${bf.bed_name ?? '未指定'} / manifest_unavailable）：`,
+        '当前运行目录未提供冻结环境清单或 profile 未选定可用测试环境，无法列出网段、监听候选与盲区；编写前须核对实际测试环境配置，禁止猜测地址。',
+      ),
+    );
+  } else {
+    if (opts.heading) out.push(`## 测试环境事实（${bf.bed_name ?? '未知'}）`);
+    const segDesc =
+      bf.segments.length > 0
+        ? bf.segments
+            .map((s) => `${s.subnet}(${s.family})[${s.members.map((m) => `${m.device}(${m.type})@${m.address}`).join(', ')}]`)
+            .join('；')
+        : '无';
+    const prefix = opts.heading ? `- 网段数 ${bf.segments.length}：` : `- 测试环境 ${bf.bed_name ?? '未知'}（网段数 ${bf.segments.length}）：`;
+    out.push(...wrapProseLine(prefix, segDesc));
+    out.push(
+      ...wrapProseLine(
+        '  · 监听候选（listeners）：',
+        bf.listeners.map((l) => `${l.device}@${l.address}`).join('、') || '无',
+      ),
+    );
+    out.push(
+      ...wrapProseLine(
+        '  · 盲区禁用（blind，禁用作监听/触发目标）：',
+        bf.blind.map((b) => `${b.device}@${b.address}`).join('、') || '无',
+      ),
+    );
+    out.push(
+      ...wrapProseLine(
+        '  · 后端服务/服务器（backends）：',
+        bf.backends.map((b) => `${b.device}@${b.address}${b.service ? `(${b.service})` : ''}`).join('、') || '无',
+      ),
+    );
+    if (bf.unknowns.length > 0) {
+      out.push(
+        ...wrapProseLine(
+          '  · 未知接口设备（unknowns）：',
+          bf.unknowns.map((u) => `${u.device}（${u.reason}）`).join('；'),
+        ),
+      );
+    }
+  }
+  if (bf.trigger_types.length > 0) {
+    out.push(...wrapProseLine('  · 可用触发设备类型（trigger_types）：', bf.trigger_types.join('、')));
+  }
+  if (bf.forbidden_combinations.length > 0) {
+    out.push(...wrapProseLine('  · 禁止组合（forbidden_combinations）：', bf.forbidden_combinations.join('；')));
+  }
+  if (bf.execution_failure_markers.length > 0) {
+    out.push(...wrapProseLine('  · 声明的执行失败标志原话：', bf.execution_failure_markers.join(' | ')));
+  }
+  return out;
+}
+
+/** Renders recomposition unresolved unknowns, equivalence notes, run exclusions, and missing knowledge paths. */
+export function renderSupplementaryDisclosureLines(brief: CompileBriefV1): string[] {
+  const out: string[] = [];
+  const { unresolved_unknowns: unknowns, equivalence_notes: eqNotes } = brief.materials.original_case.recomposition;
+  if (unknowns.length > 0) {
+    out.push(`- 重组未决项（unresolved_unknowns，共 ${unknowns.length} 条）：`);
+    for (const u of unknowns) {
+      out.push(...wrapProseLine('  · ', u));
+    }
+  }
+  if (eqNotes.length > 0) {
+    out.push(`- 重组等价替换说明（equivalence_notes，共 ${eqNotes.length} 条）：`);
+    for (const note of eqNotes) {
+      out.push(...wrapProseLine('  · ', note));
+    }
+  }
+  if (brief.task.exclusions.length > 0) {
+    out.push(...wrapProseLine('- 运行参数排除项（exclusions）：', brief.task.exclusions.join('、')));
+  }
+  if (brief.materials.commands_and_manual.missing_paths.length > 0) {
+    out.push(
+      ...wrapProseLine(
+        '- 知识树未命中路径（须 grep 本地 knowledge/commands.txt 或 knowledge/manual.txt）：',
+        brief.materials.commands_and_manual.missing_paths.join('、'),
+      ),
+    );
+  }
+  return out;
+}
+
 /** Renders a `compile-brief@1` object into deterministic Markdown (static materials + per-round history). */
 export function renderCompileBriefMd(brief: CompileBriefV1): string {
   const { identity, task, materials, prior_device_history: priorHistory, round_history: roundHistory } = brief;
@@ -1155,30 +1363,10 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
     out.push('');
   }
 
-  out.push('## 前置条件与历史可用性（诚实披露）');
-  out.push(`- 前置检查状态（${materials.prerequisites.status}）：${materials.prerequisites.scan_reason}`);
-  for (const pre of materials.prerequisites.from_recompose_states) {
-    const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
-    const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
-    out.push(`  · 出处 ${origin}${stateLabel}，原子 ${pre.atom}：${pre.reason}`);
-    for (const line of pre.prerequisites) out.push(`    - ${line}`);
-  }
-  out.push(
-    `- 同用例历史上机记录（prior_device_history.status=${priorHistory.status}）：${priorHistory.unavailable_reason ?? priorHistory.disclaimer}`,
-  );
-  out.push('');
+  if (task.user_rulings.length) out.push('## 使用者决定与记录来源', ...task.user_rulings.map(row => `- [${row.target}]（${row.source}）：${row.ruling}`), '');
 
-  if (materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
-    const bf = materials.bed_facts;
-    out.push(`## 测试环境事实（${bf.bed_name ?? '未知'}）`);
-    out.push(`- 网段数：${bf.segments.length}；监听候选（listeners）：${bf.listeners.map((l) => `${l.device}@${l.address}`).join('、') || '无'}`);
-    out.push(`- 盲区地址（blind，禁用作监听/触发目标）：${bf.blind.map((b) => `${b.device}@${b.address}`).join('、') || '无'}`);
-    out.push(`- 后端服务/服务器（backends）：${bf.backends.map((b) => `${b.device}@${b.address}${b.service ? `(${b.service})` : ''}`).join('、') || '无'}`);
-    if (bf.execution_failure_markers.length > 0) {
-      out.push(`- 声明的执行失败标志原话：${bf.execution_failure_markers.join(' | ')}`);
-    }
-    out.push('');
-  }
+  out.push('## 前置条件与历史可用性（诚实披露）');
+  out.push(...renderPrerequisiteLines(materials.prerequisites), ...renderPriorDeviceHistoryLines(priorHistory), ...renderBedFactsLines(materials.bed_facts, {heading:true}), ...renderSupplementaryDisclosureLines(brief), '');
 
   if (roundHistory.status === 'has_prior_rounds' && (roundHistory.rounds.length > 0 || roundHistory.unrecorded_attribution)) {
     const ua = roundHistory.unrecorded_attribution

@@ -1,3 +1,4 @@
+import { withScopeUserRulings } from '../functions/authoring-brief.ts';
 import { formatClientCallError } from '../functions/client-cli.ts';
 import { readSourceManifest } from '../functions/source-materials.ts';
 import { CallFailure } from '../functions/text.ts';
@@ -14,7 +15,7 @@ import {
   type CompileBriefV1,
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
-import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
+import { detectCaseHeadingMarkers, escapeRegExp, extractScopeUserRulings } from '../functions/scope.ts';
 import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
 import {
@@ -549,13 +550,19 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     }
   }
 
+  if (compileBrief && role.key !== 'fidelity') compileBrief = withScopeUserRulings(compileBrief, extractScopeUserRulings(rawScopeText, new Set([compileBrief.identity.item_id, compileBrief.identity.autoid, compileBrief.materials.original_case.recomposition.case_id]), compileBrief.identity.autoid || compileBrief.identity.item_id), scopeResolved.relative);
+
   const allowAllScope = role.key === 'recompose' && /^(?:all|全部|整份|整批)$/i.test(caseRef);
   const scopeText = extractCaseScopeText(rawScopeText, caseRef, caseIds, {
     allowAll: allowAllScope,
     scopeRelative: scopeResolved.relative,
   });
 
+  const siblingFields = isRecord(siblingItem) && isRecord(siblingItem.fields) ? siblingItem.fields : {};
+  const caseTitle = [compileBrief?.identity.title, siblingFields.title, isRecord(siblingItem) ? siblingItem.label : undefined].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
   let brief = renderTaskBrief({
+    ...(caseTitle === undefined ? {} : {caseTitle}),
     role,
     caseRef,
     briefPath,

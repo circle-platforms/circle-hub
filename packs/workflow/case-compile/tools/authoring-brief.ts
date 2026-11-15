@@ -2,7 +2,7 @@
 // `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
 // It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   authoringBrief,
@@ -21,12 +21,14 @@ import { bedFacts, triggerTypesOf, type BedFacts } from '../functions/bed.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
+import { extractScopeUserRulings } from '../functions/scope.ts';
 import type { RunnerCleanup } from '../functions/runtime-contract.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { CallFailure, isRecord } from '../functions/text.ts';
 import { loadCasePriorRounds } from './rework-inputs.ts';
 import {
   isInsideRoot,
+  resolveExistingFileInsideCwd,
   resolveCwdRoots,
   resolveExistingDirInsideCwd,
   resolveInsideCwd,
@@ -249,8 +251,12 @@ export function buildSingleCaseStructuredBrief(params: {
   planExists?: boolean;
   priorRounds?: readonly PriorRoundRecord[];
   unrecordedAttribution?: PriorAttributionItem | null;
+  scopeText?: string;
 }): CompileBriefV1 | null {
   const mode: CompileBriefMode = params.mode ?? (params.round > 1 ? 'rework_device' : 'initial');
+  const ids = buildCaseIdSet('', params.item);
+  const itemFields = isRecord(params.item) && isRecord(params.item.fields) ? params.item.fields : {};
+  const target = typeof itemFields.autoid === 'string' ? itemFields.autoid : isRecord(params.item) ? String(params.item.id) : '';
   return buildCompileBrief({
     item: params.item,
     index: params.index,
@@ -260,6 +266,7 @@ export function buildSingleCaseStructuredBrief(params: {
     bedFacts: params.ctx.bedFactsData,
     triggerTypes: params.ctx.triggerTypes,
     executionFailureMarkers: params.ctx.failureMarkers,
+    ...(params.scopeText === undefined ? {} : {scopeRulings: extractScopeUserRulings(params.scopeText, ids, target)}),
     runnerCleanup: params.ctx.runnerCleanup,
     round: params.round,
     mode,
@@ -307,6 +314,15 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
     without_record: 0,
   };
 
+  let scopeText: string | undefined;
+  const scopeInfo = await lstat(join(cwd.canonical, 'scope.md')).catch((error: NodeJS.ErrnoException) => {if (error.code === 'ENOENT') return null; throw error;});
+  if (scopeInfo) {
+    const scope = resolveExistingFileInsideCwd(cwd, 'scope.md', '--scope');
+    const bytes = await readFile(scope.canonical);
+    if (bytes.length > 16_384 || bytes.includes(0)) throw new CallFailure('invalid_parameters','scope.md 超过16384字节或包含空字节','提供有效且在大小范围内的使用者范围原文后重试');
+    try {scopeText = new TextDecoder('utf-8',{fatal:true}).decode(bytes);} catch {throw new CallFailure('invalid_parameters','scope.md 不是完整UTF-8','恢复范围原件后重试');}
+  }
+
   const caseFilter = options.caseFilter?.trim();
   for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
     const index = name.slice(0, -'.json'.length);
@@ -340,6 +356,7 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
     }
 
     const compiled = buildSingleCaseStructuredBrief({
+      ...(scopeText === undefined ? {} : {scopeText}),
       ctx,
       item,
       index,

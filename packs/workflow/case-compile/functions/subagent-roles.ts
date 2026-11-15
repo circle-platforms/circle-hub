@@ -2,7 +2,7 @@ import { ATTRIBUTION, labelOf } from './generated/vocabulary.ts';
 import { CallFailure } from './text.ts';
 // Single-source declarations for case-compile subagent roles.
 // Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
-import type { CompileBriefV1 } from './authoring-brief.ts';
+import { renderPrerequisiteLines, renderPriorDeviceHistoryLines, renderBedFactsLines, renderSupplementaryDisclosureLines, type CompileBriefV1 } from './authoring-brief.ts';
 import {
   MAX_TASK_BRIEF_CHARS,
   renderPriorRoundsMarkdown,
@@ -28,6 +28,7 @@ export interface SubagentRoleSpec {
 export interface TaskBriefInput {
   role: SubagentRoleSpec;
   caseRef: string;
+  caseTitle?: string;
   briefPath: string;
   outPath: string;
   skillDir: string;
@@ -300,7 +301,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '',
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
-    `- 原始用例 / 对象：${caseRef}`,
+    `- 原始用例 / 对象：${caseRef}${input.caseTitle && input.caseTitle !== caseRef ? ' ' + input.caseTitle : ''}`,
     `- 当前轮次：第 ${round} 轮${modeSummary}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
@@ -317,20 +318,16 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     headSections.push(
       '',
       '## 本轮结构化简报摘要与前置披露（来自 compile-brief@1）',
-      `- 前置检查状态（${compileBrief.materials.prerequisites.status}）：${compileBrief.materials.prerequisites.scan_reason}`,
-      `- 同用例历史上机记录（${compileBrief.prior_device_history.status}）：${compileBrief.prior_device_history.unavailable_reason ?? compileBrief.prior_device_history.disclaimer}`,
+      ...renderPrerequisiteLines(compileBrief.materials.prerequisites),
+      ...renderPriorDeviceHistoryLines(compileBrief.prior_device_history),
+      ...renderSupplementaryDisclosureLines(compileBrief),
     );
     if (compileBrief.task.user_rulings.length > 0) {
       for (const ur of compileBrief.task.user_rulings) {
-        headSections.push(...wrapProseLine(`- 已生效使用者裁定 [${ur.target}]：`, ur.ruling));
+        headSections.push(...wrapProseLine(`- ${ur.from_scope ? '使用者决定（主会话记录）' : '已生效使用者裁定'} [${ur.target}]：`, `${ur.ruling}（记录来源：${ur.source}）`));
       }
     }
-    if (compileBrief.materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
-      const bf = compileBrief.materials.bed_facts;
-      headSections.push(
-        `- 测试环境 ${bf.bed_name ?? ''}：监听候选=[${bf.listeners.map((l) => l.address).join(', ')}]，盲区禁用=[${bf.blind.map((b) => b.address).join(', ')}]，后端=[${bf.backends.map((b) => b.address).join(', ')}]`,
-      );
-    }
+    headSections.push(...renderBedFactsLines(compileBrief.materials.bed_facts));
     if (compileBrief.task.directives.length > 0) {
       for (const dir of compileBrief.task.directives) {
         headSections.push(...wrapProseLine('- 编写强约束：', dir));
@@ -372,10 +369,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   sections.push(...tailSections);
   const fullText = sections.join('\n');
   if (maxTotal > 0 && fullText.length > maxTotal) {
-    // Only reachable if caller scope + static role text alone exceed `maxTotal`.
-    const overflow = fullText.length - maxTotal;
-    const notice = `\n\n（说明：任务说明总长度触发 ${maxTotal} 字符上限，末尾静态补充截断 ${overflow + 64} 字符）\n`;
-    return `${fullText.slice(0, Math.max(0, maxTotal - notice.length))}${notice}`;
+    return fullText + `\n（任务文件超过 ${maxTotal} 字符预算；范围、已提取前置和披露均完整保留，未截断。请分段读取。）\n`;
   }
   return fullText;
 }

@@ -1,3 +1,6 @@
+/** Exact source value declared by the earlier scope bridge; not a prose classifier. */
+export const SCOPE_RULINGS_ORIGIN = 'scope.md';
+
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -20,4 +23,33 @@ export function detectCaseHeadingMarkers(headingText: string): string[] {
   const bareIdx = /^(\d{1,3})(?=$|[\s（(\[：:、-])/.exec(headingText.trim());
   if (bareIdx) markers.push(bareIdx[1]);
   return [...new Set(markers)];
+}
+
+/** Exact scope.md declarations only; unknown headings never acquire global or per-case authority. */
+export function extractScopeUserRulings(scopeText: string, caseIds: ReadonlySet<string>, fallbackTarget: string): Array<{target: string; ruling: string}> {
+  const result: Array<{target: string; ruling: string}> = [];
+  const seen = new Set<string>();
+  let target: string | null = null;
+  let fence: string | null = null;
+  for (const line of scopeText.replace(/\r\n/g, '\n').split('\n')) {
+    const delimiter = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (delimiter) { if (fence === null) fence = delimiter; else if (delimiter[0] === fence[0] && delimiter.length >= fence.length) fence = null; continue; }
+    if (fence !== null) continue;
+    const heading = /^#{1,6} +(.+?)\s*$/.exec(line);
+    if (heading) {
+      const text = heading[1];
+      target = text === '全局' ? fallbackTarget : null;
+      const declared = text.startsWith('用例 ') ? text.slice(3) : text;
+      for (const id of caseIds) {
+        if (declared === id || declared.startsWith(id + ' ') || declared.startsWith(id + '（') && declared.endsWith('）')) { target = id; break; }
+      }
+      continue;
+    }
+    if (target === null) continue;
+    const marked = /^ {0,3}(?:[-*+] +)?(使用者决定：.+)$/.exec(line);
+    if (!marked) continue;
+    const ruling = marked[1], key = JSON.stringify([target, ruling]);
+    if (!seen.has(key)) { seen.add(key); result.push({target, ruling}); }
+  }
+  return result;
 }

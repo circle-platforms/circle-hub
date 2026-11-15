@@ -97,3 +97,5 @@ inputs.recomposition_result={"run":"<用例重组编号>"}（已有 accepted_res
 ```
 
 后续脚本合并、上机验证和失败分析按 case-compile 技能做。
+
+提交前的使用者决定逐字写入 sources.states 的 settled 条目与 reason。重组封批后不改已保存记录；在后续编写工作目录 scope.md 用明确的“## 全局”或“## 用例 <完整ID>”标题与“使用者决定：<原话>”逐行记录，由编写简报保留来源。未知标题不自动当全局，代码引用不作为决定。
