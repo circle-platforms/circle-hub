@@ -37,7 +37,7 @@ import {
   type PriorRoundRecord,
   type StreakAnalysis,
 } from './rework-history.ts';
-import { isRecord } from './text.ts';
+import { isRecord, wrapProseLine } from './text.ts';
 
 /** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
 export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; parameter?: { commands: string[]; name: string } }> }
@@ -353,11 +353,37 @@ export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
   'Hub 当前尚未提供按 autoid 查询历次上机验证与 apv_cmds 的只读接口。';
 export const PREREQ_SCAN_REASON =
   '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+export const PREREQ_PARTIAL_RECOMPOSE_REASON =
+  '已从用例重组记录（record.sources.states）提取如下已知前置，产品目录尚未单列跨章节前置（如默认开关、监听前提、全局依赖对象）；除下列已提取前置外，编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
 /** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
 export const PREREQ_STATES_UNREADABLE_REASON =
   '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组返回的记录形状后再开编写。';
 export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
 export const SCOPE_RULINGS_ORIGIN = 'scope.md' as const;
+
+/** Formats an entry from `recompose-record@1` `unknowns[]` without falling back to raw JSON when structured fields exist. */
+export function formatRecomposeUnknown(u: unknown): string {
+  if (typeof u === 'string') return u.trim();
+  if (!isRecord(u)) return '';
+  const atom = typeof u.atom === 'string' && u.atom.trim() ? u.atom.trim() : '';
+  const missing = typeof u.missing === 'string' && u.missing.trim() ? u.missing.trim() : '';
+  const reason = typeof u.reason === 'string' && u.reason.trim() ? u.reason.trim() : '';
+  const nextAction = typeof u.next_action === 'string' && u.next_action.trim() ? u.next_action.trim() : '';
+  const audience = typeof u.audience === 'string' && u.audience.trim() ? u.audience.trim() : '';
+  const due = typeof u.due === 'string' && u.due.trim() ? u.due.trim() : '';
+  const body = missing || reason;
+  if (atom || body || nextAction || audience || due) {
+    const prefix = atom ? `[原子 ${atom}] ` : '';
+    const details: string[] = [];
+    if (nextAction) details.push(`下一步：${nextAction}`);
+    if (audience) details.push(`对象：${audience}`);
+    if (due) details.push(`截止：${due}`);
+    if (body && details.length > 0) return `${prefix}${body}（${details.join('；')}）`;
+    if (body) return `${prefix}${body}`;
+    return `${prefix}${details.join('；')}`;
+  }
+  return JSON.stringify(u);
+}
 
 export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';
 
@@ -742,9 +768,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
     }
   }
   const unresolvedUnknowns = Array.isArray(record.unknowns)
-    ? record.unknowns
-        .map((u) => (typeof u === 'string' ? u : isRecord(u) && typeof u.reason === 'string' ? u.reason : JSON.stringify(u)))
-        .filter((s) => s.length > 0)
+    ? record.unknowns.map(formatRecomposeUnknown).filter((s) => s.length > 0)
     : [];
 
   const expectationSlots = (Array.isArray(record.expectation_slots) ? record.expectation_slots : [])
@@ -813,7 +837,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
         from_product_catalog: [],
         ancestor_command_hints: [],
         manual_scan_required: true,
-        scan_reason: PREREQ_SCAN_REASON,
+        scan_reason: fromRecomposeStates.length > 0 ? PREREQ_PARTIAL_RECOMPOSE_REASON : PREREQ_SCAN_REASON,
       };
 
   const allGateRefusals = priorRounds.flatMap((r) => r.gateRefusals);
@@ -1094,13 +1118,22 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
   } else {
     const hasRecomp = Array.isArray(prereqs.from_recompose_states) && prereqs.from_recompose_states.length > 0;
     const hasCatalog = Array.isArray(prereqs.from_product_catalog) && prereqs.from_product_catalog.length > 0;
+    const scanReason = typeof prereqs.scan_reason === 'string' ? prereqs.scan_reason.trim() : '';
     if (!hasRecomp && !hasCatalog) {
       if (prereqs.status === 'recompose_states_unreadable') {
-        if (prereqs.manual_scan_required !== true || typeof prereqs.scan_reason !== 'string' || !prereqs.scan_reason.includes('sources.states')) {
+        if (prereqs.manual_scan_required !== true || !scanReason.includes('sources.states')) {
           problems.push('读不到 sources.states 时 prerequisites.status 必须为 recompose_states_unreadable，且 scan_reason 须写明该路径');
         }
-      } else if (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true) {
+      } else if (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true || !scanReason) {
         problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
+      }
+    } else if (hasRecomp && !hasCatalog) {
+      if (prereqs.status !== 'partial_recompose_only' || prereqs.manual_scan_required !== true || !scanReason || scanReason.includes('均未声明')) {
+        problems.push('仅含重组前置时 prerequisites.status 必须为 partial_recompose_only，且 scan_reason 不得称「均未声明」');
+      }
+    } else if (hasCatalog) {
+      if (prereqs.status !== 'extracted' || !scanReason || scanReason.includes('均未声明')) {
+        problems.push('含产品目录前置时 prerequisites.status 必须为 extracted，且 scan_reason 不得称「均未声明」');
       }
     }
   }
@@ -1154,6 +1187,161 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
   return { ok: problems.length === 0, problems };
 }
 
+/** Renders prerequisite scan status plus every extracted item from `from_recompose_states`, catalog, and ancestor hints. */
+export function renderPrerequisiteLines(prereqs: CompileBriefV1['materials']['prerequisites']): string[] {
+  const out: string[] = [...wrapProseLine(`- 前置检查状态（${prereqs.status}）：`, prereqs.scan_reason)];
+  for (const pre of prereqs.from_recompose_states) {
+    const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
+    const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
+    const header = `  · 出处：用例重组记录（${origin}）${stateLabel}，原子 ${pre.atom}：`;
+    out.push(...wrapProseLine(header, pre.reason || '已声明运行前置'));
+    for (const line of pre.prerequisites) {
+      out.push(...wrapProseLine('    - ', line));
+    }
+  }
+  for (const item of prereqs.from_product_catalog) {
+    out.push(...wrapProseLine('  · 出处：产品目录：', item));
+  }
+  for (const hint of prereqs.ancestor_command_hints) {
+    out.push(...wrapProseLine('  · 出处：命令祖先提示：', hint));
+  }
+  return out;
+}
+
+/** Renders prior device verification history honestly across `unavailable_from_hub`, `none_found`, and `available`. */
+export function renderPriorDeviceHistoryLines(
+  priorHistory: CompileBriefV1['prior_device_history'],
+  opts: { prefixKey?: string } = {},
+): string[] {
+  const statusLabel = opts.prefixKey ? `${opts.prefixKey}=${priorHistory.status}` : priorHistory.status;
+  if (priorHistory.status === 'unavailable_from_hub') {
+    return wrapProseLine(
+      `- 同用例历史上机记录（${statusLabel}）：`,
+      priorHistory.unavailable_reason ?? PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON,
+    );
+  }
+  if (priorHistory.status === 'none_found') {
+    return wrapProseLine(
+      `- 同用例历史上机记录（${statusLabel}）：`,
+      `Hub 已按 ${priorHistory.match_key} 查询，未找到此前已上机验证记录（0 条）。`,
+    );
+  }
+  const out: string[] = [
+    ...wrapProseLine(
+      `- 同用例历史上机记录（${statusLabel}，共 ${priorHistory.entries.length} 条）：`,
+      priorHistory.disclaimer,
+    ),
+  ];
+  if (priorHistory.entries.length === 0) {
+    out.push('  · （状态为 available 但条目列表为空，未提供任何历史记录）');
+    return out;
+  }
+  for (const entry of priorHistory.entries) {
+    const cmds = entry.apv_cmds.length > 0 ? entry.apv_cmds.join(' ; ') : '无';
+    const attr = entry.attribution ? `；归因（${entry.attribution.layer}）：${entry.attribution.summary}` : '';
+    out.push(
+      ...wrapProseLine(
+        `  · [运行 ${entry.verification_run} | 计划 ${entry.plan_run} | 构建 ${entry.build} | 结束 ${entry.ended_at} | 结论 ${entry.verdict}] 命令：`,
+        `${cmds}${attr}`,
+      ),
+    );
+  }
+  return out;
+}
+
+/** Renders test-bed topology, device-scoped roles (`device@address`), unknowns, triggers, forbidden pairs, and failure markers. */
+export function renderBedFactsLines(
+  bf: CompileBriefV1['materials']['bed_facts'],
+  opts: { heading?: boolean } = {},
+): string[] {
+  const out: string[] = [];
+  if (bf.facts_status === 'manifest_unavailable') {
+    if (opts.heading) out.push('## 测试环境事实（manifest_unavailable）');
+    out.push(
+      ...wrapProseLine(
+        `- 测试环境事实（${bf.bed_name ?? '未指定'} / manifest_unavailable）：`,
+        '当前运行目录未提供冻结环境清单或 profile 未选定可用测试环境，无法列出网段、监听候选与盲区；编写前须核对实际测试环境配置，禁止猜测地址。',
+      ),
+    );
+  } else {
+    if (opts.heading) out.push(`## 测试环境事实（${bf.bed_name ?? '未知'}）`);
+    const segDesc =
+      bf.segments.length > 0
+        ? bf.segments
+            .map((s) => `${s.subnet}(${s.family})[${s.members.map((m) => `${m.device}(${m.type})@${m.address}`).join(', ')}]`)
+            .join('；')
+        : '无';
+    const prefix = opts.heading ? `- 网段数 ${bf.segments.length}：` : `- 测试环境 ${bf.bed_name ?? '未知'}（网段数 ${bf.segments.length}）：`;
+    out.push(...wrapProseLine(prefix, segDesc));
+    out.push(
+      ...wrapProseLine(
+        '  · 监听候选（listeners）：',
+        bf.listeners.map((l) => `${l.device}@${l.address}`).join('、') || '无',
+      ),
+    );
+    out.push(
+      ...wrapProseLine(
+        '  · 盲区禁用（blind，禁用作监听/触发目标）：',
+        bf.blind.map((b) => `${b.device}@${b.address}`).join('、') || '无',
+      ),
+    );
+    out.push(
+      ...wrapProseLine(
+        '  · 后端服务/服务器（backends）：',
+        bf.backends.map((b) => `${b.device}@${b.address}${b.service ? `(${b.service})` : ''}`).join('、') || '无',
+      ),
+    );
+    if (bf.unknowns.length > 0) {
+      out.push(
+        ...wrapProseLine(
+          '  · 未知接口设备（unknowns）：',
+          bf.unknowns.map((u) => `${u.device}（${u.reason}）`).join('；'),
+        ),
+      );
+    }
+  }
+  if (bf.trigger_types.length > 0) {
+    out.push(...wrapProseLine('  · 可用触发设备类型（trigger_types）：', bf.trigger_types.join('、')));
+  }
+  if (bf.forbidden_combinations.length > 0) {
+    out.push(...wrapProseLine('  · 禁止组合（forbidden_combinations）：', bf.forbidden_combinations.join('；')));
+  }
+  if (bf.execution_failure_markers.length > 0) {
+    out.push(...wrapProseLine('  · 声明的执行失败标志原话：', bf.execution_failure_markers.join(' | ')));
+  }
+  return out;
+}
+
+/** Renders recomposition unresolved unknowns, equivalence notes, run exclusions, and missing knowledge paths. */
+export function renderSupplementaryDisclosureLines(brief: CompileBriefV1): string[] {
+  const out: string[] = [];
+  const { unresolved_unknowns: unknowns, equivalence_notes: eqNotes } = brief.materials.original_case.recomposition;
+  if (unknowns.length > 0) {
+    out.push(`- 重组未决项（unresolved_unknowns，共 ${unknowns.length} 条）：`);
+    for (const u of unknowns) {
+      out.push(...wrapProseLine('  · ', u));
+    }
+  }
+  if (eqNotes.length > 0) {
+    out.push(`- 重组等价替换说明（equivalence_notes，共 ${eqNotes.length} 条）：`);
+    for (const note of eqNotes) {
+      out.push(...wrapProseLine('  · ', note));
+    }
+  }
+  if (brief.task.exclusions.length > 0) {
+    out.push(...wrapProseLine('- 运行参数排除项（exclusions）：', brief.task.exclusions.join('、')));
+  }
+  if (brief.materials.commands_and_manual.missing_paths.length > 0) {
+    out.push(
+      ...wrapProseLine(
+        '- 知识树未命中路径（须 grep 本地 knowledge/commands.txt 或 knowledge/manual.txt）：',
+        brief.materials.commands_and_manual.missing_paths.join('、'),
+      ),
+    );
+  }
+  return out;
+}
+
 /** Renders a `compile-brief@1` object into deterministic Markdown (static materials + per-round history). */
 export function renderCompileBriefMd(brief: CompileBriefV1): string {
   const { identity, task, materials, prior_device_history: priorHistory, round_history: roundHistory } = brief;
@@ -1167,40 +1355,23 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
 
   if (task.directives.length > 0) {
     out.push('## 本轮程序提示（确定性事实与约束）');
-    for (const d of task.directives) out.push(`- ${d}`);
+    for (const d of task.directives) out.push(...wrapProseLine('- ', d));
     out.push('');
   }
 
   if (task.user_rulings.length > 0) {
     out.push('## 已生效使用者裁定');
-    for (const ur of task.user_rulings) out.push(`- [${ur.target}]（${ur.source}）：${ur.ruling}`);
+    for (const ur of task.user_rulings) out.push(...wrapProseLine(`- [${ur.target}]（${ur.source}）：`, ur.ruling));
     out.push('');
   }
 
   out.push('## 前置条件与历史可用性（诚实披露）');
-  out.push(`- 前置检查状态（${materials.prerequisites.status}）：${materials.prerequisites.scan_reason}`);
-  for (const pre of materials.prerequisites.from_recompose_states) {
-    const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
-    const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
-    out.push(`  · 出处 ${origin}${stateLabel}，原子 ${pre.atom}：${pre.reason}`);
-    for (const line of pre.prerequisites) out.push(`    - ${line}`);
-  }
-  out.push(
-    `- 同用例历史上机记录（prior_device_history.status=${priorHistory.status}）：${priorHistory.unavailable_reason ?? priorHistory.disclaimer}`,
-  );
+  out.push(...renderPrerequisiteLines(materials.prerequisites));
+  out.push(...renderPriorDeviceHistoryLines(priorHistory, { prefixKey: 'prior_device_history.status' }));
+  out.push(...renderSupplementaryDisclosureLines(brief));
   out.push('');
 
-  if (materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
-    const bf = materials.bed_facts;
-    out.push(`## 测试环境事实（${bf.bed_name ?? '未知'}）`);
-    out.push(`- 网段数：${bf.segments.length}；监听候选（listeners）：${bf.listeners.map((l) => `${l.device}@${l.address}`).join('、') || '无'}`);
-    out.push(`- 盲区地址（blind，禁用作监听/触发目标）：${bf.blind.map((b) => `${b.device}@${b.address}`).join('、') || '无'}`);
-    out.push(`- 后端服务/服务器（backends）：${bf.backends.map((b) => `${b.device}@${b.address}${b.service ? `(${b.service})` : ''}`).join('、') || '无'}`);
-    if (bf.execution_failure_markers.length > 0) {
-      out.push(`- 声明的执行失败标志原话：${bf.execution_failure_markers.join(' | ')}`);
-    }
-    out.push('');
-  }
+  out.push(...renderBedFactsLines(materials.bed_facts, { heading: true }), '');
 
   if (roundHistory.status === 'has_prior_rounds' && (roundHistory.rounds.length > 0 || roundHistory.unrecorded_attribution)) {
     const ua = roundHistory.unrecorded_attribution

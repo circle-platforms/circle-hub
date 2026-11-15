@@ -1,6 +1,12 @@
 // Single-source declarations for case-compile subagent roles.
 // Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
-import type { CompileBriefV1 } from './authoring-brief.ts';
+import {
+  renderBedFactsLines,
+  renderPrerequisiteLines,
+  renderPriorDeviceHistoryLines,
+  renderSupplementaryDisclosureLines,
+  type CompileBriefV1,
+} from './authoring-brief.ts';
 import {
   MAX_TASK_BRIEF_CHARS,
   renderPriorRoundsMarkdown,
@@ -316,20 +322,16 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     headSections.push(
       '',
       '## 本轮结构化简报摘要与前置披露（来自 compile-brief@1）',
-      `- 前置检查状态（${compileBrief.materials.prerequisites.status}）：${compileBrief.materials.prerequisites.scan_reason}`,
-      `- 同用例历史上机记录（${compileBrief.prior_device_history.status}）：${compileBrief.prior_device_history.unavailable_reason ?? compileBrief.prior_device_history.disclaimer}`,
+      ...renderPrerequisiteLines(compileBrief.materials.prerequisites),
+      ...renderPriorDeviceHistoryLines(compileBrief.prior_device_history),
+      ...renderSupplementaryDisclosureLines(compileBrief),
     );
     if (compileBrief.task.user_rulings.length > 0) {
       for (const ur of compileBrief.task.user_rulings) {
-        headSections.push(...wrapProseLine(`- 已生效使用者裁定 [${ur.target}]：`, ur.ruling));
+        headSections.push(...wrapProseLine(`- 已生效使用者裁定 [${ur.target}]：`, `${ur.ruling}（来源：${ur.source}）`));
       }
     }
-    if (compileBrief.materials.bed_facts.facts_status === 'extracted_from_frozen_manifest') {
-      const bf = compileBrief.materials.bed_facts;
-      headSections.push(
-        `- 测试环境 ${bf.bed_name ?? ''}：监听候选=[${bf.listeners.map((l) => l.address).join(', ')}]，盲区禁用=[${bf.blind.map((b) => b.address).join(', ')}]，后端=[${bf.backends.map((b) => b.address).join(', ')}]`,
-      );
-    }
+    headSections.push(...renderBedFactsLines(compileBrief.materials.bed_facts, { heading: false }));
     if (compileBrief.task.directives.length > 0) {
       for (const dir of compileBrief.task.directives) {
         headSections.push(...wrapProseLine('- 编写强约束：', dir));

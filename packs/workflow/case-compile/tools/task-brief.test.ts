@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,9 +12,10 @@ import {
   resolveSubagentRole,
   SUBAGENT_ROLES,
 } from '../functions/subagent-roles.ts';
-import { CONTRACT_DOC } from '../functions/test-support.ts';
+import { CONTRACT_DOC, MANIFEST_DOC } from '../functions/test-support.ts';
 import { PROSE_WRAP_MAX_CHARS } from '../functions/text.ts';
 import { stage } from '../pack-files.ts';
+import { profileDocument } from '../testing/runtime.ts';
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import {
   buildTaskBrief,
@@ -1121,4 +1123,235 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   assert.ok(deliveryDoc.includes('轮次已用完时不开第 4 轮'));
   assert.ok(!writer.includes('130 条') && !recomposeSkill.includes('130 条'));
   assert.ok(recomposeSkill.includes('运行器清配置并在收尾末尾执行 `write memory` 存盘') || recomposeSkill.includes('运行器清配置并在收尾末尾执行 \\`write memory\\` 存盘'));
+});
+
+test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites, bed_facts device@address/segments/unknowns, unresolved_unknowns, and user_rulings from plan-run items shape', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-1502-'));
+  const sha = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');
+  try {
+    const packDir = realpathSync(await stage(join(root, 'skill')));
+    const workDir = join(root, 'work');
+    await mkdir(join(workDir, 'plan-run', 'items'), { recursive: true });
+    await mkdir(join(workDir, 'plan-run', 'briefs'), { recursive: true });
+    await mkdir(join(workDir, 'plan-run', 'knowledge'), { recursive: true });
+    await mkdir(join(workDir, 'plan-run', 'sources'), { recursive: true });
+
+    const CASE_SYNC = '990000000000001502';
+    const CASE_NONE = '990000000000001503';
+    const ROOT = 'a'.repeat(64);
+    const Q1 = `src:${'b'.repeat(64)}/kityminder@1/s/c1`;
+
+    // Synthetic item mirroring the real sync-case items/1.json shape:
+    // - multiple missing_prerequisite atoms with 1 + 4 prerequisite lines
+    // - settled atom with 使用者决定：...
+    // - adapted entry with equivalence_reason
+    // - unknowns with { atom, missing, next_action, audience, due }
+    const itemSync = {
+      id: 'synth-doc:sync-1',
+      fields: {
+        autoid: CASE_SYNC,
+        title: '合成双机同步用例',
+        expected_nodes: [{ reference: Q1, text: '对端查询同步配置已生效' }],
+        recomposition: {
+          receipt: `rec:${'c'.repeat(64)}`,
+          record: {
+            schema: 'recompose-record@1',
+            case: { id: 'synth-sync-case', title: '合成双机同步用例' },
+            atoms: [
+              { id: 'a1', kind: 'action', text: '主设备配置边界参数', quote_ref: Q1 },
+              { id: 'a2', kind: 'action', text: '双机主备同步前置', quote_ref: Q1 },
+              { id: 'a3', kind: 'precondition', text: '功能许可前置', quote_ref: Q1 },
+              { id: 'a4', kind: 'action', text: '执行配置同步命令', quote_ref: Q1 },
+            ],
+            expectation_slots: [{ slot: 'e1', atom: 'a4', reference: Q1, text: '对端查询同步配置已生效' }],
+            ledgers: {
+              adapted: [
+                {
+                  atom: 'a1',
+                  action: 'structural_completion',
+                  text: '主设备执行 widget param set',
+                  commands: ['widget param set boundary-253'],
+                  equivalence_reason: '合成等价理由：原文未点名命令，选用 widget param set 覆盖边界取值',
+                },
+              ],
+              original: [],
+              concretizations: [],
+            },
+            unknowns: [
+              {
+                atom: 'a4',
+                missing: '合成同步节点对端地址暂用保留地址 192.0.2.2',
+                next_action: '脚本编写时按冻结测试环境实际对端地址替换',
+                audience: '编写模型',
+                due: '脚本编写之前',
+              },
+            ],
+            sources: {
+              candidates: [],
+              governing: [],
+              states: [
+                {
+                  atom: 'a1',
+                  state: 'settled',
+                  reason: '合成无额外前置',
+                  prerequisites: null,
+                  adjudicated_by: null,
+                  exit: null,
+                },
+                {
+                  atom: 'a2',
+                  state: 'missing_prerequisite',
+                  reason: '合成原因甲：运行器不会自动建立主备双机环境，须确认 HA 两台设备就绪',
+                  prerequisites: ['合成前置 line-1：测试环境存在已配置 HA 的主备两台设备'],
+                  adjudicated_by: null,
+                  exit: { owner: '编写模型', next: '补 HA 前置' },
+                },
+                {
+                  atom: 'a3',
+                  state: 'settled',
+                  reason: '使用者决定：测试环境上对应功能许可已导入，不再作为缺口。',
+                  prerequisites: null,
+                  adjudicated_by: null,
+                  exit: null,
+                },
+                {
+                  atom: 'a4',
+                  state: 'missing_prerequisite',
+                  reason: '合成原因乙：执行同步前必须具备对端节点登记、关闭启动同步与相同校验码',
+                  prerequisites: [
+                    '合成前置 line-2：两端对称登记 peer 节点 peer-2',
+                    '合成前置 line-3：两端关闭 bootup sync off',
+                    '合成前置 line-4：两端校验码保持一致',
+                    '合成前置 line-5：若接口启用防火墙须放行 65519 端口',
+                  ],
+                  adjudicated_by: null,
+                  exit: { owner: '编写模型', next: '写入前四项前置步骤' },
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const itemNone = {
+      id: 'synth-doc:none-1',
+      fields: {
+        autoid: CASE_NONE,
+        title: '合成真无前置用例',
+        recomposition: {
+          receipt: `rec:${'d'.repeat(64)}`,
+          record: {
+            schema: 'recompose-record@1',
+            case: { id: 'synth-none-case', title: '合成真无前置用例' },
+            atoms: [{ id: 'a1', kind: 'action', text: '单独配置参数', quote_ref: Q1 }],
+            expectation_slots: [],
+            ledgers: { adapted: [], original: [], concretizations: [] },
+            unknowns: [],
+            sources: {
+              candidates: [],
+              governing: [],
+              states: [{ atom: 'a1', state: 'settled', reason: '无前置', prerequisites: null }],
+            },
+          },
+        },
+      },
+    };
+    await writeFile(join(workDir, 'plan-run', 'items', '01.json'), JSON.stringify(itemSync));
+    await writeFile(join(workDir, 'plan-run', 'items', '02.json'), JSON.stringify(itemNone));
+    await writeFile(join(workDir, 'plan-run', 'briefs', '01.md'), '# 合成编写简报 01\n');
+    await writeFile(join(workDir, 'plan-run', 'briefs', '02.md'), '# 合成编写简报 02\n');
+    await writeFile(
+      join(workDir, 'plan-run', 'knowledge', 'nodes.jsonl'),
+      `${JSON.stringify({ schema: 'run-knowledge@1', root: ROOT, composition: null, nodes: 1, entries: 0 })}\n${JSON.stringify({ path: '/', children: [], entries: [] })}\n`,
+    );
+
+    const manifestCopy = structuredClone(MANIFEST_DOC);
+    manifestCopy.beds[0]!.devices.push({ name: 'aux0', type: 'console', product: null, ipv4: [], ipv6: [] });
+    const contractCopy = structuredClone(CONTRACT_DOC) as typeof CONTRACT_DOC & { exec_failure_markers?: unknown };
+    contractCopy.exec_failure_markers = { source: 'synth.py', sha256: 'e'.repeat(64), lines: ['SYNTH_FAIL_M1'] };
+    const signedContract = signTypedRuntime(contractCopy) as unknown as Parameters<typeof profileDocument>[0];
+    const contractBytes = Buffer.from(JSON.stringify(signedContract));
+    const profileBytes = Buffer.from(JSON.stringify(profileDocument(signedContract)));
+    const invBytes = Buffer.from(JSON.stringify(manifestCopy));
+    for (const b of [contractBytes, profileBytes, invBytes]) {
+      await writeFile(join(workDir, 'plan-run', 'sources', sha(b)), b);
+    }
+    await writeFile(
+      join(workDir, 'plan-run', 'sources.json'),
+      JSON.stringify([
+        { slot: 'contract', file: `sources/${sha(contractBytes)}` },
+        { slot: 'profile', file: `sources/${sha(profileBytes)}` },
+        { slot: 'inventory', file: `sources/${sha(invBytes)}` },
+      ]),
+    );
+    await writeFile(
+      join(workDir, 'plan-run', 'run.json'),
+      JSON.stringify({
+        run: 'run_synth_1502',
+        product: 'synth',
+        version: '1.0.0',
+        build: '1.0.0-b1',
+        command_policy: { schema: 'command-policy@1', read_only: [], inverse_rules: [], inverse_alternatives: [] },
+        groups: [{ kind: 'case-compile', profile: { bed: 'bed-a' } }],
+      }),
+    );
+    await writeFile(
+      join(workDir, 'scope.md'),
+      ['# 使用者原话', '', '所有用例必须保留原始校验目标。', '', `## ${CASE_SYNC}`, '使用者决定：本条补充核对对端回显。', '', `## ${CASE_NONE}`, '常规编写。'].join('\n'),
+      'utf8',
+    );
+
+    const toolPath = join(packDir, 'tools', 'task-brief.ts');
+    const runSync = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '脚本编写', '--round', '1', '--brief', 'plan-run/briefs/01.md', '--out', 'plans/01.json', '--case', CASE_SYNC, '--task-file', 'briefs/task-01.md'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(runSync.status, 0, runSync.stderr);
+    const task01 = await readFile(join(workDir, 'briefs', 'task-01.md'), 'utf8');
+
+    // Prerequisites status + scan_reason must not claim "均未声明" when partial_recompose_only, and must print every atom + prerequisite verbatim.
+    assert.ok(task01.includes('前置检查状态（partial_recompose_only）：已从用例重组记录（record.sources.states）提取以下运行前置') || task01.includes('前置检查状态（partial_recompose_only）：已从用例重组记录（record.sources.states）提取如下已知前置'));
+    assert.ok(!task01.includes('均未声明'));
+    for (const expected of [
+      '出处：用例重组记录（record.sources.states），状态 missing_prerequisite，原子 a2',
+      '合成原因甲：运行器不会自动建立主备双机环境，须确认 HA 两台设备就绪',
+      '合成前置 line-1：测试环境存在已配置 HA 的主备两台设备',
+      '出处：用例重组记录（record.sources.states），状态 missing_prerequisite，原子 a4',
+      '合成原因乙：执行同步前必须具备对端节点登记、关闭启动同步与相同校验码',
+      '合成前置 line-2：两端对称登记 peer 节点 peer-2',
+      '合成前置 line-3：两端关闭 bootup sync off',
+      '合成前置 line-4：两端校验码保持一致',
+      '合成前置 line-5：若接口启用防火墙须放行 65519 端口',
+      // Unresolved unknowns formatted cleanly without raw JSON dump
+      '合成同步节点对端地址暂用保留地址 192.0.2.2（下一步：脚本编写时按冻结测试环境实际对端地址替换；对象：编写模型；截止：脚本编写之前）',
+      // Equivalence notes
+      '合成等价理由：原文未点名命令，选用 widget param set 覆盖边界取值',
+      // User rulings from both record.sources.states and scope.md
+      '- 已生效使用者裁定 [a3]：使用者决定：测试环境上对应功能许可已导入，不再作为缺口。（来源：record.sources.states）',
+      `- 已生效使用者裁定 [${CASE_SYNC}]：使用者决定：本条补充核对对端回显。（来源：scope.md）`,
+      // Bed facts with device@address, segments, unknowns device, and execution_failure_markers
+      'dut0(load-balancer)@192.0.2.10',
+      'dut0@192.0.2.10',
+      'dut1@192.0.2.130',
+      'server0@192.0.2.90(server0:80/tcp)',
+      'aux0（设备没有任何接口地址，可达性未知）',
+      'SYNTH_FAIL_M1',
+    ]) {
+      assert.ok(task01.includes(expected), `missing expected string in task-01.md: ${expected}`);
+    }
+    assert.ok(!task01.includes('"missing":'), 'unknowns must not be dumped as raw JSON');
+
+    // Truly empty prerequisites must still report none_declared_or_found_in_recompose + "均未声明".
+    const runNone = spawnSync(
+      process.execPath,
+      [toolPath, '--role', '脚本编写', '--round', '1', '--brief', 'plan-run/briefs/02.md', '--out', 'plans/02.json', '--case', CASE_NONE, '--task-file', 'briefs/task-02.md'],
+      { cwd: workDir, encoding: 'utf8' },
+    );
+    assert.equal(runNone.status, 0, runNone.stderr);
+    const task02 = await readFile(join(workDir, 'briefs', 'task-02.md'), 'utf8');
+    assert.ok(task02.includes('前置检查状态（none_declared_or_found_in_recompose）：重组记录与产品目录均未声明'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

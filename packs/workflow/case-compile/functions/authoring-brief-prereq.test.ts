@@ -2,9 +2,18 @@
 // not record.adjudication.states / record.states (wrong paths that silently yield none).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildCompileBrief, renderCompileBriefMd, SCOPE_RULINGS_ORIGIN } from './authoring-brief.ts';
+import {
+  buildCompileBrief,
+  formatRecomposeUnknown,
+  PREREQ_PARTIAL_RECOMPOSE_REASON,
+  PREREQ_SCAN_REASON,
+  renderCompileBriefMd,
+  SCOPE_RULINGS_ORIGIN,
+  validateCompileBrief,
+} from './authoring-brief.ts';
 import type { BriefKnowledge } from './authoring-brief.ts';
 import { extractScopeUserRulings } from './scope.ts';
+import { renderTaskBrief, resolveSubagentRole } from './subagent-roles.ts';
 
 const ROOT = 'a'.repeat(64);
 
@@ -298,4 +307,125 @@ test('extractScopeUserRulings + buildCompileBrief lift post-recompose scope.md r
   assert.ok(md.includes('## 已生效使用者裁定'));
   assert.ok(md.includes('使用者决定：全局禁止改动默认区域文件'));
   assert.doesNotMatch(JSON.stringify(brief!.task.user_rulings), /其他用例决定|旧 adjudication|普通范围说明/);
+});
+
+test('Boss 15:02: scan_reason matches prerequisites status, unknowns format readable fields, and all exits disclose none_found / available / manifest_unavailable honestly', () => {
+  const prereqs = ['合成前置甲：已就绪', '合成前置乙：对端校验启用'];
+  const itemPartial = itemWithSourceStates(prereqs);
+  (itemPartial.fields.recomposition.record.unknowns as unknown[]).push({
+    atom: 'a2',
+    missing: '合成缺失参数：对端节点真实地址',
+    next_action: '编写模型按环境清单补全',
+    audience: '编写模型',
+    due: '脚本编写之前',
+  });
+  const briefPartial = buildCompileBrief({
+    item: itemPartial,
+    index: '21',
+    knowledge: emptyKnowledge(),
+    policy: null,
+    round: 1,
+    mode: 'initial',
+    executionFailureMarkers: ['SYNTH_FAIL_MARKER'],
+    triggerTypes: ['client', 'server'],
+    forbiddenCombinations: ['forbidden_pair_a+b'],
+  })!;
+  assert.equal(briefPartial.materials.prerequisites.status, 'partial_recompose_only');
+  assert.equal(briefPartial.materials.prerequisites.scan_reason, PREREQ_PARTIAL_RECOMPOSE_REASON);
+  assert.ok(!briefPartial.materials.prerequisites.scan_reason.includes('均未声明'));
+  assert.equal(validateCompileBrief(briefPartial, itemPartial).ok, true);
+  assert.ok(briefPartial.materials.original_case.recomposition.unresolved_unknowns[0]?.includes('合成缺失参数：对端节点真实地址'));
+  assert.ok(briefPartial.materials.original_case.recomposition.unresolved_unknowns[0]?.includes('下一步：编写模型按环境清单补全'));
+  assert.ok(!briefPartial.materials.original_case.recomposition.unresolved_unknowns[0]?.startsWith('{'));
+  assert.equal(formatRecomposeUnknown({ missing: 'X', next_action: 'Y' }), 'X（下一步：Y）');
+
+  // Corrupted brief: partial_recompose_only with "均未声明" scan_reason or wrong status must fail validateCompileBrief.
+  const contradictory = structuredClone(briefPartial);
+  contradictory.materials.prerequisites.scan_reason = PREREQ_SCAN_REASON;
+  assert.equal(validateCompileBrief(contradictory).ok, false);
+  const wrongStatus = structuredClone(briefPartial);
+  wrongStatus.materials.prerequisites.status = 'none_declared_or_found_in_recompose';
+  assert.equal(validateCompileBrief(wrongStatus).ok, false);
+
+  // Truly empty states -> none_declared_or_found_in_recompose MUST say 均未声明.
+  const itemNone = {
+    id: 'synth-doc:case-none',
+    fields: {
+      autoid: '990000000000000407',
+      title: '合成用例：真无前置',
+      recomposition: {
+        receipt: `rec:${'3'.repeat(64)}`,
+        record: {
+          schema: 'recompose-record@1',
+          case: { id: 'synth-none', title: '合成用例：真无前置' },
+          atoms: [{ id: 'a1', kind: 'action', text: 'synth step', quote_ref: `src:${'c'.repeat(64)}/n/1` }],
+          expectation_slots: [],
+          ledgers: { adapted: [], original: [], concretizations: [] },
+          unknowns: [],
+          sources: { candidates: [], governing: [], states: [{ atom: 'a1', state: 'settled', reason: '无前置', prerequisites: null }] },
+        },
+      },
+    },
+  };
+  const briefNone = buildCompileBrief({ item: itemNone, index: '22', knowledge: emptyKnowledge(), policy: null, round: 1, mode: 'initial' })!;
+  assert.equal(briefNone.materials.prerequisites.status, 'none_declared_or_found_in_recompose');
+  assert.equal(briefNone.materials.prerequisites.scan_reason, PREREQ_SCAN_REASON);
+  assert.ok(briefNone.materials.prerequisites.scan_reason.includes('均未声明'));
+
+  const role = resolveSubagentRole('脚本编写')!;
+  const mdPartial = renderCompileBriefMd(briefPartial);
+  const taskPartial = renderTaskBrief({
+    role,
+    caseRef: briefPartial.identity.autoid,
+    briefPath: 'briefs/21.md',
+    outPath: 'plans/21.json',
+    skillDir: '/tmp/synth-skill',
+    scopeText: '合成范围\n',
+    round: 1,
+    compileBrief: briefPartial,
+  });
+  for (const doc of [mdPartial, taskPartial]) {
+    assert.ok(doc.includes('用例重组记录（record.sources.states）'));
+    for (const line of prereqs) assert.ok(doc.includes(line));
+    assert.ok(!doc.includes('均未声明'));
+    assert.ok(doc.includes('合成缺失参数：对端节点真实地址'));
+    assert.ok(doc.includes('manifest_unavailable'));
+    assert.ok(doc.includes('SYNTH_FAIL_MARKER'));
+    assert.ok(doc.includes('forbidden_pair_a+b'));
+  }
+
+  // prior_device_history: none_found must never print the historical disclaimer; available must print entries.
+  const briefNoneFound = structuredClone(briefPartial);
+  briefNoneFound.prior_device_history.status = 'none_found';
+  delete briefNoneFound.prior_device_history.unavailable_reason;
+  for (const doc of [
+    renderCompileBriefMd(briefNoneFound),
+    renderTaskBrief({ role, caseRef: briefNoneFound.identity.autoid, briefPath: 'briefs/21.md', outPath: 'plans/21.json', skillDir: '/tmp/synth-skill', scopeText: '合成范围\n', round: 1, compileBrief: briefNoneFound }),
+  ]) {
+    assert.ok(doc.includes('未找到此前已上机验证记录（0 条）'));
+    assert.ok(!doc.includes('以下为同一原始用例'));
+  }
+
+  const briefAvail = structuredClone(briefPartial);
+  briefAvail.prior_device_history.status = 'available';
+  delete briefAvail.prior_device_history.unavailable_reason;
+  briefAvail.prior_device_history.entries = [
+    {
+      verification_run: 'vrun-991',
+      plan_run: 'prun-881',
+      build: 'Rel_SYNTH_1_0',
+      ended_at: '2026-11-10T00:00:00.000Z',
+      verdict: 'pass',
+      apv_cmds: ['widget health interval 60', 'show widget health'],
+      attribution: { layer: 'product', summary: '合成归因摘要' },
+    },
+  ];
+  for (const doc of [
+    renderCompileBriefMd(briefAvail),
+    renderTaskBrief({ role, caseRef: briefAvail.identity.autoid, briefPath: 'briefs/21.md', outPath: 'plans/21.json', skillDir: '/tmp/synth-skill', scopeText: '合成范围\n', round: 1, compileBrief: briefAvail }),
+  ]) {
+    assert.ok(doc.includes('vrun-991'));
+    assert.ok(doc.includes('widget health interval 60 ; show widget health'));
+    assert.ok(doc.includes('合成归因摘要'));
+  }
 });

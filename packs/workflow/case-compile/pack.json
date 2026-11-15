@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "076af6f230e03420a7f5d2dba03b49e8249bd014d89c0460cb6d14a931da552d",
-      "size": 71826
+      "sha256": "7d0c236f08abe53f415352607fe8b2bcecb6a2e9636b67a94ffda99303c54b3a",
+      "size": 79848
     },
     {
       "path": "functions/bed.ts",
@@ -388,8 +388,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "d9227eeededa04db69a87f3079be409fabc7e41ae2216f855f99af52a9eff483",
-      "size": 35427
+      "sha256": "d7ca08c873eeacd2ab826a09752b06425751bc2ff097db2f6689877b715bc832",
+      "size": 35141
     },
     {
       "path": "functions/subject.ts",
