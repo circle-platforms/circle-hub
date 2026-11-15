@@ -30,6 +30,7 @@ export const UNIT_PATTERNS = [
   'packs/**/*.test.ts',
   'scripts/real/circle-guard.test.ts',
   'scripts/real/circle-home.test.ts',
+  'scripts/real/bed-side/**/*.test.ts',
   'tools/console-smoke.test.ts',
   'tools/gen-contracts*.test.ts',
   'tools/prepare-packs.test.ts',
