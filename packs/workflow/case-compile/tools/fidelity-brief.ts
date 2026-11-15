@@ -12,7 +12,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityBrief, type FidelityBrief } from '../functions/fidelity.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord } from '../functions/text.ts';
+import cli from './fidelity-brief.cli.json' with { type: 'json' };
 import { argumentsOf, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { expandPlanFiles, parsedPlanFile } from './submit-plans.ts';
 
@@ -46,6 +47,7 @@ const readText = async (path: string): Promise<string | null> => { try { return 
 
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     const args = argumentsOf(argv, ['run', 'plans', 'out']);
     const { cases, skipped } = await planCases(args.run, args.plans);
     await mkdir(args.out, { recursive: true, mode: 0o700 });

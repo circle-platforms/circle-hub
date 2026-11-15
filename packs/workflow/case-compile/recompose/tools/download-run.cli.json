@@ -1,0 +1,6 @@
+{
+  "schema": "tool-cli@1",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ]
+}

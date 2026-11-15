@@ -5,7 +5,8 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import REQUIREMENTS from '../requirements.json' with { type: 'json' };
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord } from '../functions/text.ts';
+import cli from './generate-workbook.cli.json' with { type: 'json' };
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { parseManifest } from '../functions/manifest.ts';
@@ -80,6 +81,7 @@ export function passReviewInputs(input: Parameters<typeof satisfiedRecipes>[0]):
 }
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     const args = argumentsOf(argv, ['run', 'result', 'submission', 'contract', 'profile', 'inventory', 'out']);
     const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(args.run,'run'), readBytes(args.result,'result'), readBytes(args.submission,'submission'), readBytes(args.contract,'contract'), readBytes(args.profile,'profile'), readBytes(args.inventory,'inventory')]);
     const recipes = satisfiedRecipes({ run: jsonBytes(run,'run'), result: jsonBytes(result,'result'), submission: jsonBytes(submission,'submission'), contract, profile, inventory });

@@ -9,6 +9,7 @@ import { startPostgres, type TemporaryPostgres } from '../../../hub/testing/post
 import { openTestRecords, type TestRecordsKit } from '../../../hub/testing/records.ts';
 import { installMindmapFixture, publishEmbeddedSkills } from '../../../hub/testing/skills.ts';
 import { stage } from './pack-files.ts';
+import { verifyCaseCompileStagedCli } from './testing/verify-tool-cli.ts';
 
 const skip = (await osIsolationAvailable()) ? false : 'no OS network isolation on this machine (sandbox-exec)';
 let postgres: TemporaryPostgres;
@@ -35,7 +36,9 @@ describe('publishing the case-compile pack', { skip }, () => {
     const registry = createPackRegistry({ records: kit, extractDir: join(temp.path, 'extracted') });
     await installMindmapFixture(registry, kit, admin);
     await publishEmbeddedSkills(registry, kit, admin);
-    const outcome = await registry.publish(owner, await stage(join(temp.path, 'staged')));
+    const staged = await stage(join(temp.path, 'staged'));
+    await verifyCaseCompileStagedCli(staged);
+    const outcome = await registry.publish(owner, staged);
     assert.equal(outcome.ok, true, JSON.stringify(outcome.ok ? '' : outcome.problems));
     if (!outcome.ok) return;
     assert.equal(outcome.created, true);

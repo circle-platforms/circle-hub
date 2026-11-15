@@ -5,7 +5,8 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateCompileBrief } from '../functions/authoring-brief.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import cli from './check-brief.cli.json' with { type: 'json' };
 import { parsedPlanFile } from './submit-plans.ts';
 import {
   resolveCwdRoots,
@@ -96,6 +97,7 @@ export async function checkBriefTarget(options: {
 
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     const args = parseCliOptions(argv, OPTIONS, USAGE);
     const report = await checkBriefTarget({
       file: args.file!,

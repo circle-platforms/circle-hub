@@ -13,7 +13,8 @@ import {
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { classifyScopeHeading } from '../functions/scope.ts';
 import { CIRCLE_GENERAL_PURPOSE_NOTICE, renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import cli from './task-brief.cli.json' with { type: 'json' };
 import {
   buildSingleCaseStructuredBrief,
   loadRunStructuredContext,
@@ -919,6 +920,7 @@ const HELP_TEXT = [
 
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     if (argv.includes('--help') || argv.includes('-h')) {
       process.stdout.write(HELP_TEXT + '\n');
       return 0;

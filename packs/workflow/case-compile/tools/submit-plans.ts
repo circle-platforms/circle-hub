@@ -9,6 +9,7 @@ import { isRecord } from '../functions/text.ts';
 import { readSubmittedItemFiles, readTokenFromStdin, requireBearerToken, getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
 import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { formatCallError } from '../functions/text.ts';
+import cli from './submit-plans.cli.json' with { type: 'json' };
 
 export async function planItems(directory: string): Promise<Array<{ [key: string]: unknown }>> {
   return readSubmittedItemFiles(directory, {
@@ -103,7 +104,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const expanded = await expandPlanFiles(args.plans);
     if (expanded.length) process.stdout.write(`自动化用例的具体取值已写回文件：\n${expanded.join('\n')}\n`);
     const files = await planItems(args.plans);
-    const bearer = await requireBearerToken(readToken);
+    const bearer = await requireBearerToken(readToken, cli);
     const held = await runItems(origin, bearer, args.run, retry);
     const items = files.filter((item) => held.has(String(item.item))), left = files.filter((item) => !held.has(String(item.item)));
     if (!items.length) throw new Error(`--plans 目录里没有本次脚本编写的自动化用例，本次共有 ${held.size} 条原始用例；请使用下载的原始用例继续编写`);

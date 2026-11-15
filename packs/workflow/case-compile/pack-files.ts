@@ -31,11 +31,11 @@ const NOT_PUBLISHED = (path: string): boolean => path.endsWith('.test.ts') || pa
 export type ManifestEntry = { path: string; sha256: string; size: number };
 export type Manifest = typeof IDENTITY & { files: ManifestEntry[] };
 
-async function walk(relative: string): Promise<string[]> {
+async function walk(relative: string, dir = PACK_DIR): Promise<string[]> {
   const out: string[] = [];
-  for (const entry of await readdir(join(PACK_DIR, relative), { withFileTypes: true })) {
+  for (const entry of await readdir(join(dir, relative), { withFileTypes: true })) {
     const path = `${relative}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...(await walk(path)));
+    if (entry.isDirectory()) out.push(...(await walk(path, dir)));
     else if (entry.isFile() && !NOT_PUBLISHED(path)) out.push(path);
   }
   return out;
@@ -60,8 +60,55 @@ export async function computeManifest(): Promise<Manifest> {
 
 export const manifestText = (manifest: Manifest): string => `${JSON.stringify(manifest, null, 2)}\n`;
 
+const INTERNAL_TOOL_HELPERS = new Set([
+  'tools/authoring-brief.ts',
+  'tools/rework-inputs.ts',
+  'tools/workspace-path.ts',
+  'tools/case-writers/extension.ts',
+]);
+
+/** Validates pure-data `<tool>.cli.json` stdin declarations against all published tools/ files. */
+export async function cliDeclarationProblems(dir = PACK_DIR): Promise<string[]> {
+  const paths = (await walk('tools', dir)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const pathSet = new Set(paths);
+  const problems: string[] = [];
+
+  for (const rel of paths) {
+    if (!rel.startsWith('tools/')) continue;
+    if (rel.endsWith('.ts')) {
+      if (INTERNAL_TOOL_HELPERS.has(rel)) {
+        const unexpectedCli = `${rel.slice(0, -3)}.cli.json`;
+        if (pathSet.has(unexpectedCli)) problems.push(`${unexpectedCli}: internal helper must not ship .cli.json`);
+        continue;
+      }
+      const cliRel = `${rel.slice(0, -3)}.cli.json`;
+      if (!pathSet.has(cliRel)) problems.push(`${rel}: missing pure-data declaration ${cliRel}`);
+    } else if (rel.endsWith('.cli.json')) {
+      const toolRel = `${rel.slice(0, -'.cli.json'.length)}.ts`;
+      if (!pathSet.has(toolRel)) problems.push(`${rel}: orphaned declaration without ${toolRel}`);
+      try {
+        const raw = JSON.parse(await readFile(join(dir, rel), 'utf8')) as unknown;
+        const ok =
+          typeof raw === 'object' &&
+          raw !== null &&
+          !Array.isArray(raw) &&
+          (raw as Record<string, unknown>).schema === 'tool-cli@1' &&
+          Object.keys(raw).every((k) => k === 'schema' || k === 'stdin') &&
+          Array.isArray((raw as Record<string, unknown>).stdin) &&
+          ((raw as Record<string, unknown>).stdin as unknown[]).every((v) => typeof v === 'string' && /^%[A-Z][A-Z0-9_]*%$/.test(v));
+        if (!ok) problems.push(`${rel}: invalid tool-cli@1 stdin declaration`);
+      } catch {
+        problems.push(`${rel}: unreadable UTF-8 JSON`);
+      }
+    }
+  }
+  return problems;
+}
+
 /** Copies the pack files and a fresh pack.json into `target` (created when missing); returns `target`. */
 export async function stage(target: string): Promise<string> {
+  const declProblems = await cliDeclarationProblems();
+  if (declProblems.length > 0) throw new Error(`tool CLI declarations invalid: ${declProblems.join('; ')}`);
   const manifest = await computeManifest();
   for (const path of await packFiles()) {
     const to = join(target, path);
@@ -76,11 +123,21 @@ async function main(): Promise<void> {
   const arg = process.argv[2];
   if (arg === '--write') {
     const { writeFile: write } = await import('node:fs/promises');
+    const declProblems = await cliDeclarationProblems();
+    if (declProblems.length > 0) {
+      console.error(`tool CLI declarations invalid: ${declProblems.join('; ')}`);
+      process.exit(1);
+    }
     await write(join(PACK_DIR, 'pack.json'), manifestText(await computeManifest()));
     console.log('pack.json rewritten');
     return;
   }
   if (arg === '--check') {
+    const declProblems = await cliDeclarationProblems();
+    if (declProblems.length > 0) {
+      console.error(`tool CLI declarations invalid: ${declProblems.join('; ')}`);
+      process.exit(1);
+    }
     const current = await readFile(join(PACK_DIR, 'pack.json'), 'utf8').catch(() => null);
     const expected = manifestText(await computeManifest());
     if (current !== expected) {

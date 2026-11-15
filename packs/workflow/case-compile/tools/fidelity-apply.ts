@@ -8,7 +8,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityProblems } from '../functions/fidelity.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord } from '../functions/text.ts';
+import cli from './fidelity-apply.cli.json' with { type: 'json' };
 import { argumentsOf } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { briefFile, planCases, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -22,6 +23,7 @@ function planData(value: Record<string, unknown>): Record<string, unknown> | nul
 
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     const args = argumentsOf(argv, ['run', 'plans', 'briefs']);
     const { cases, skipped } = await planCases(args.run, args.plans);
     const merged: Array<Record<string, unknown>> = [], attention: Array<{ file: string; state: string; message: string }> = [];

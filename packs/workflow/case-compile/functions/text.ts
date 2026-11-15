@@ -291,4 +291,27 @@ export function formatToolLocalMinute(value: string): string {
   return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}（${toolZoneOf(d)}）`;
 }
 
+export interface ToolCliDeclaration {
+  readonly schema: string;
+  readonly stdin: readonly string[];
+}
 
+/** Ensures a tool's adjacent `<tool>.cli.json` matches its runtime stdin contract. */
+export function assertToolCliStdin(
+  cli: ToolCliDeclaration,
+  expected: readonly string[],
+): readonly string[] {
+  if (
+    !isRecord(cli) ||
+    cli.schema !== 'tool-cli@1' ||
+    Object.keys(cli).some((key) => key !== 'schema' && key !== 'stdin') ||
+    !Array.isArray(cli.stdin) ||
+    cli.stdin.length !== expected.length ||
+    cli.stdin.some((item, index) => typeof item !== 'string' || item !== expected[index])
+  ) {
+    throw new Error(
+      `工具声明不一致：.cli.json 的 stdin 为 ${JSON.stringify(isRecord(cli) ? cli.stdin : null)}，与脚本实际读取的 ${expected.length ? expected.join('、') : '不读标准输入（0 行）'} 不符。请重新生成并核对发布清单后重试`,
+    );
+  }
+  return cli.stdin;
+}

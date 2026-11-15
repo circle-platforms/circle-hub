@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { argumentsOf, hubOrigin, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { getRetrying, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
+import cli from './fetch-run.cli.json' with { type: 'json' };
 
 const SLOTS = ['contract', 'profile', 'inventory'] as const;
 export interface RunInputs { run: Record<string, unknown>; result: Record<string, unknown>; submission: Record<string, unknown>; originals: Record<typeof SLOTS[number], Uint8Array>; run_reference?: string; accepted_result_reference?: string | null }
@@ -43,7 +44,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
-    const bearer = await requireBearerToken(readToken);
+    const bearer = await requireBearerToken(readToken, cli);
     // Every original is fetched and checked before anything is written, and a failed write removes what this call wrote, so
     // a failure never leaves part of the inputs behind.
     const fetched = await fetchRunInputs(origin, bearer, args.run, retry);

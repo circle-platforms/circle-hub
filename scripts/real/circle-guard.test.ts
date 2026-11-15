@@ -629,3 +629,79 @@ test('every CLI command taught in case-compile docs, agents, and task-brief pass
     }
   }
 });
+
+test('helper-rename regression: renaming readTokenFromStdin never changes guard decisions or ALLOWED.md', () => {
+  const h = createGuardHarness('ops');
+  try {
+    const allowedBefore = h.allowedText();
+    const fetchPath = h.skillPath('case-compile', 'tools/fetch-run.ts');
+    const retryPath = join(dirname_safe(fetchPath), '..', 'functions', 'hub-retry.ts');
+    const checkPlanPath = h.skillPath('case-compile', 'tools/check-plan.ts');
+
+    const ccSrc = join(REPO_ROOT, 'packs/workflow/case-compile');
+    cpSync(join(ccSrc, 'functions'), join(h.skillPath('case-compile'), 'functions'), { recursive: true });
+    writeFileSync(fetchPath, readFileSync(fetchPath, 'utf8').replaceAll('readTokenFromStdin', 'customSecretPipe'));
+    writeFileSync(retryPath, readFileSync(retryPath, 'utf8').replaceAll('readTokenFromStdin', 'customSecretPipe'));
+    // Add misleading helper name into a zero-stdin tool whose .cli.json declares [].
+    writeFileSync(
+      checkPlanPath,
+      `${readFileSync(checkPlanPath, 'utf8')}\n// synthetic distraction: readTokenFromStdin readKeys\n`,
+    );
+
+    const regen = spawnSync(process.execPath, [h.gen], {
+      cwd: h.workdir,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(regen.status, 0, regen.stderr);
+    assert.equal(h.allowedText(), allowedBefore);
+
+    const fCmd = `'${fetchPath}'`;
+    h.assertRefused3(h.exec(`node ${fCmd} --hub ${HUB_URL} --run ${RUN_ID} --out run-out`), /声明从标准输入读令牌/);
+    h.assertAllowed(h.exec(`node ${fCmd} --hub ${HUB_URL} --run ${RUN_ID} --out run-out <<'EOF'\n%HUB_TOKEN%\nEOF`));
+
+    const cpCmd = `'${checkPlanPath}'`;
+    h.assertAllowed(h.exec(`node ${cpCmd} --file plans/0.json`));
+    h.assertRefused3(h.exec(`node ${cpCmd} --file plans/0.json <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
+  } finally {
+    h.close();
+  }
+});
+
+test('epistemic refusal when a tool or command has no pure-data stdin declaration', () => {
+  const h = createGuardHarness('ops');
+  try {
+    // 1. Delete check-plan.cli.json -> undeclared tool called with <<'EOF' must refuse epistemically.
+    const cpPath = h.skillPath('case-compile', 'tools/check-plan.ts');
+    rmSync(join(h.skillPath('case-compile', 'tools'), 'check-plan.cli.json'));
+    const regen = spawnSync(process.execPath, [h.gen], {
+      cwd: h.workdir,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(regen.status, 0, regen.stderr);
+
+    const refusedTool = h.exec(`node '${cpPath}' --file plans/0.json <<'EOF'\n%HUB_TOKEN%\nEOF`);
+    h.assertRefused3(refusedTool, /here-doc（<<'EOF'）.*没有找到 .*check-plan\.ts 读标准输入的声明/);
+    assert.ok(!String(refusedTool.reason).includes('不读标准输入'), `must not assert 不读标准输入: ${refusedTool.reason}`);
+    assert.ok(!String(refusedTool.reason).includes('这次可以这样写：'), `must not blindly suggest stripping EOF: ${refusedTool.reason}`);
+    // Without heredoc, undeclared tool stays runnable instead of inventing a token requirement.
+    h.assertAllowed(h.exec(`node '${cpPath}' --file plans/0.json`));
+
+    // 2. Remove declaration.commands[0].stdin -> simple command called with <<'EOF' refuses epistemically.
+    const declPath = join(h.home, 'hooks', 'ops-allow.declaration.json');
+    const decl = JSON.parse(readFileSync(declPath, 'utf8')) as { commands: Array<Record<string, unknown>> };
+    delete decl.commands[0].stdin;
+    writeFileSync(declPath, JSON.stringify(decl, null, 2));
+    const refusedSleep = h.exec("sleep 10 <<'EOF'\n%HUB_TOKEN%\nEOF");
+    h.assertRefused3(refusedSleep, /here-doc（<<'EOF'）.*没有找到 sleep 读标准输入的声明/);
+    assert.ok(!String(refusedSleep.reason).includes('不读标准输入'), `must not assert 不读标准输入: ${refusedSleep.reason}`);
+    assert.ok(!String(refusedSleep.reason).includes('这次可以这样写：'), `must not suggest sleep 10 stripping EOF: ${refusedSleep.reason}`);
+  } finally {
+    h.close();
+  }
+});
+
+function dirname_safe(p: string): string {
+  return join(p, '..');
+}

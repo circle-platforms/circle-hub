@@ -210,6 +210,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
             name: 'sleep',
             args: ['int'],
             max: 600,
+            stdin: [],
             note: '短等待，最多 600 秒；等上机结果不要 sleep，用 download-returns.ts 加 --wait 作后台命令（execute 的 background: true）',
           },
         ]
@@ -229,6 +230,14 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       {
         path: 'operation-capture/operation.ts',
         subcommands: ['list', 'read', 'status', 'verify', 'flush', 'submit'],
+        subcommandStdin: {
+          list: [],
+          read: [],
+          status: [],
+          verify: [],
+          flush: [],
+          submit: [],
+        },
       },
     ],
     optionTypes: {

@@ -12,6 +12,7 @@ import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
+import cli from './assemble-delivery.cli.json' with { type: 'json' };
 
 const OPTIONS = { hub: true, runs: true, notes: true, out: true, recompose: false, name: false } as const;
 function options(argv: string[]): Record<string, string> {
@@ -192,7 +193,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
     await emptyOrAbsent(args.out);
     const origin = hubOrigin(args.hub);
-    const bearer = await requireBearerToken(readToken);
+    const bearer = await requireBearerToken(readToken, cli);
 
     const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/jobs`, bearer, retry))), run);
     const successorsOf = async (run: string) => parseSuccessors(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/successors`, bearer, retry))), run);

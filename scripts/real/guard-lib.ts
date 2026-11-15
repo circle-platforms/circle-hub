@@ -25,6 +25,7 @@ export interface GuardRule {
 export interface ScriptDeclaration {
   path: string;
   subcommands?: string[];
+  stdin?: string[];
   subcommandStdin?: Record<string, string[]>;
 }
 
@@ -59,7 +60,7 @@ export interface GuardDeclaration {
   denyPrefix?: Record<string, string>;
   equalsForm?: 'fix' | 'accept';
   interpreters?: string[];
-  commands?: Array<{ name: string; args?: string[]; max?: number; note?: string }>;
+  commands?: Array<{ name: string; args?: string[]; max?: number; stdin?: string[]; note?: string }>;
   scripts?: ScriptDeclaration[];
   optionTypes?: Record<string, 'hub' | 'run' | 'int' | 'text' | 'path'>;
   placeholderTypes?: Array<{ match: string; type: 'hub' | 'run' | 'int' | 'text' | 'path' }>;
@@ -111,9 +112,9 @@ export interface DiscoveredTool {
   skill: string | null;
   subcommands: string[] | null;
   subcommandStdin: Record<string, string[]> | null;
+  stdinLines: string[] | null;
   options: ToolOption[];
   restricted: boolean;
-  stdinMode: 'none' | 'single' | 'keys';
   forms: ToolForm[];
 }
 
@@ -481,7 +482,8 @@ export function parseCommand(command: string): ParsedCommand {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Local tool discovery: reads options, required flags, booleans, multiple flags, and stdin mode directly from each tool's source & docs.
+// Local tool discovery: reads options, required flags, booleans, and multiple flags from each tool's source & docs;
+// stdin declarations come strictly from pure-data sibling `<tool>.cli.json` or `declaration.scripts` (never via source regex).
 
 const PAIR = /(\[)?--([a-z][a-z0-9-]*)(?:\s+(?:'([^'\r\n]*)'|"([^"\r\n]*)"|(<[^>]*>[^\s\]]*|%[A-Za-z_]+%|[^\s\]<'">][^\s\]]*)))?(\])?/g;
 
@@ -518,7 +520,61 @@ function isInternalHelperModule(source: string): boolean {
   return /\bexport\b/.test(source) && !/(?:process\.argv|import\.meta\.main)/.test(source);
 }
 
-function describeTool(env: GuardEnvironment, base: { id: string; file: string; skill: string | null; docText: string; subcommands?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
+function parsePlaceholderList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || !/^%[A-Z][A-Z0-9_]*%$/.test(item)) return null;
+    out.push(item);
+  }
+  return out;
+}
+
+function parseSubcommandStdinMap(value: unknown): Record<string, string[]> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [sub, raw] of Object.entries(value)) {
+    const parsed = parsePlaceholderList(raw);
+    if (parsed === null) return null;
+    out[sub] = parsed;
+  }
+  return out;
+}
+
+function readToolCliDeclaration(cliPath: string | null): { stdinLines: string[] | null; subcommandStdin: Record<string, string[]> | null } {
+  if (!cliPath) return { stdinLines: null, subcommandStdin: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(cliPath, 'utf8'));
+  } catch {
+    return { stdinLines: null, subcommandStdin: null };
+  }
+  if (!isRecord(parsed) || parsed.schema !== 'tool-cli@1') {
+    return { stdinLines: null, subcommandStdin: null };
+  }
+  for (const key of Object.keys(parsed)) {
+    if (key !== 'schema' && key !== 'stdin' && key !== 'subcommands') {
+      return { stdinLines: null, subcommandStdin: null };
+    }
+  }
+  const stdinLines = parsed.stdin !== undefined ? parsePlaceholderList(parsed.stdin) : null;
+  const subcommandStdin = parsed.subcommands !== undefined ? parseSubcommandStdinMap(parsed.subcommands) : null;
+  return { stdinLines, subcommandStdin };
+}
+
+function describeTool(
+  env: GuardEnvironment,
+  base: {
+    id: string;
+    file: string;
+    cliFile: string | null;
+    skill: string | null;
+    docText: string;
+    subcommands?: string[];
+    stdin?: string[];
+    subcommandStdin?: Record<string, string[]>;
+  },
+): DiscoveredTool {
   const source = readText(base.file);
   const name = path.basename(base.file);
   const header = source.split('\n').slice(0, 40).filter((line) => line.startsWith('//')).map((line) => line.replace(/^\/\/\s?/, ''));
@@ -596,26 +652,31 @@ function describeTool(env: GuardEnvironment, base: { id: string; file: string; s
     return (x < 0 ? 99 : x) - (y < 0 ? 99 : y);
   });
 
-  const tokenReads = source.match(/\b(?:tokenFromStdin|readTokenFromStdin)\b/g) ?? [];
-  const keyReads = source.match(/\breadKeys\b/g) ?? [];
-  const stdinMode: 'none' | 'single' | 'keys' =
-    keyReads.length >= 2 || /await\s+readKeys\(/.test(source)
-      ? 'keys'
-      : tokenReads.length >= 2 || /=\s*(?:tokenFromStdin|readTokenFromStdin)\b/.test(source)
-        ? 'single'
-        : 'none';
+  const cliDecl = readToolCliDeclaration(base.cliFile);
+  const subcommandStdin = base.subcommandStdin ? parseSubcommandStdinMap(base.subcommandStdin) : cliDecl.subcommandStdin;
+  const stdinLines = cliDecl.stdinLines ?? (base.stdin !== undefined ? parsePlaceholderList(base.stdin) : null);
 
   return {
     id: base.id,
     file: base.file,
     skill: base.skill,
     subcommands: base.subcommands ?? null,
-    subcommandStdin: base.subcommandStdin ?? null,
+    subcommandStdin,
+    stdinLines,
     options,
     restricted: declared || usages.length > 0 || base.subcommands !== undefined,
-    stdinMode,
     forms: usages.map((usage) => ({ positional: usage.positional, pairs: usage.pairs })),
   };
+}
+
+function declaredStdinFor(tool: DiscoveredTool, subcommand: string | null): string[] | null {
+  if (subcommand !== null) {
+    if (tool.subcommandStdin && Object.prototype.hasOwnProperty.call(tool.subcommandStdin, subcommand)) {
+      return parsePlaceholderList(tool.subcommandStdin[subcommand]);
+    }
+    return null;
+  }
+  return tool.stdinLines;
 }
 
 /** Discovers executable local tools inside installed skills (plus declared scripts / optional workdir local-tools), rejecting symlinked files. */
@@ -672,7 +733,8 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
           if (!real) continue;
           const source = readText(real);
           if (isInternalHelperModule(source)) continue;
-          add(describeTool(env, { id: `${skill}/${rel}`, file: real, skill, docText }));
+          const cliFile = trySafeFile(`${full.slice(0, -3)}.cli.json`, env.skills, env.skillsRaw);
+          add(describeTool(env, { id: `${skill}/${rel}`, file: real, cliFile, skill, docText }));
         }
       };
 
@@ -695,13 +757,16 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         const lexical = path.join(env.skills, script.path);
         const real = trySafeFile(lexical, env.skills, env.skillsRaw);
         if (real) {
+          const cliFile = real.endsWith('.ts') ? trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.skills, env.skillsRaw) : null;
           add(
             describeTool(env, {
               id: script.path,
               file: real,
+              cliFile,
               skill,
               docText,
               subcommands: script.subcommands,
+              stdin: script.stdin,
               subcommandStdin: script.subcommandStdin,
             }),
           );
@@ -719,7 +784,8 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         if (!real) continue;
         const source = readText(real);
         if (isInternalHelperModule(source)) continue;
-        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, skill: null, docText: '' }));
+        const cliFile = trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.work, env.work);
+        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, cliFile, skill: null, docText: '' }));
       }
     }
   }
@@ -787,14 +853,7 @@ export function writeCommand(
     parts.push(!given && !option.required ? `[--${option.name} ${rawVal}]` : `--${option.name} ${rawVal}`);
   }
   let line = parts.join(' ');
-  const expectedLines =
-    subcommand && tool.subcommandStdin?.[subcommand]
-      ? tool.subcommandStdin[subcommand]
-      : tool.stdinMode === 'single'
-        ? [env.tokenPlaceholder]
-        : tool.stdinMode === 'keys'
-          ? env.allowedPlaceholders
-          : null;
+  const expectedLines = declaredStdinFor(tool, subcommand ?? null);
   if (expectedLines?.length) line += ` <<'EOF'\n${expectedLines.join('\n')}\nEOF`;
   return line;
 }
@@ -847,36 +906,75 @@ function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: stri
   }
 }
 
-function tokenProblem(env: GuardEnvironment, tool: DiscoveredTool, subcommand: string | null, heredoc: ParsedCommand['heredoc']): string | null {
-  const expectedLines =
-    subcommand && tool.subcommandStdin?.[subcommand]
-      ? tool.subcommandStdin[subcommand]
-      : tool.stdinMode === 'single'
-        ? [env.tokenPlaceholder]
-        : null;
-  const requiresStdin = expectedLines !== null || tool.stdinMode === 'keys';
+interface TokenProblem {
+  message: string;
+  canSuggestRewrite: boolean;
+}
+
+function tokenProblem(
+  env: GuardEnvironment,
+  tool: DiscoveredTool,
+  subcommand: string | null,
+  heredoc: ParsedCommand['heredoc'],
+): TokenProblem | null {
+  const target = subcommand ? `${tool.id} ${subcommand}` : tool.id;
+  const expectedLines = declaredStdinFor(tool, subcommand);
 
   if (!heredoc) {
-    return tool.restricted && requiresStdin ? '这个脚本从标准输入读令牌，命令后面少了令牌的 here-doc' : null;
+    if (expectedLines !== null && expectedLines.length > 0) {
+      return {
+        message: `这次命令末尾没有写 here-doc，但 ${target} 声明从标准输入读令牌（${expectedLines.length} 行：${expectedLines.join('、')}）`,
+        canSuggestRewrite: true,
+      };
+    }
+    return null;
   }
-  if (tool.restricted && !requiresStdin) {
-    return '这个脚本不读标准输入，命令后面不要写 here-doc';
+  if (expectedLines === null) {
+    return {
+      message: `这次命令末尾带了 here-doc（<<'${heredoc.delimiter}'），但没有找到 ${target} 读标准输入的声明`,
+      canSuggestRewrite: false,
+    };
+  }
+  if (expectedLines.length === 0) {
+    return {
+      message: `这次命令末尾带了 here-doc（<<'${heredoc.delimiter}'），但 ${target} 声明不读标准输入`,
+      canSuggestRewrite: true,
+    };
   }
   if (heredoc.delimiter === env.tokenPlaceholder || env.allowedPlaceholders.includes(heredoc.delimiter)) {
-    return `here-doc 的结束标记写成了 ${heredoc.delimiter}，令牌行被当成结束行，令牌是空的；结束标记写 EOF`;
+    return {
+      message: `这次命令把 here-doc 的结束标记写成了 ${heredoc.delimiter}，令牌行会被当成结束行，令牌是空的；结束标记写 EOF`,
+      canSuggestRewrite: true,
+    };
   }
-  if (!heredoc.closed) return `here-doc 没有结束行 ${heredoc.delimiter}`;
-  if (heredoc.after && heredoc.after.trim() !== '') return `here-doc 的结束行 ${heredoc.delimiter} 之后还有内容：${JSON.stringify(clip(heredoc.after, 30))}`;
-  if (!heredoc.body.length) return `here-doc 里缺少令牌占位符（例如 ${env.tokenPlaceholder}）`;
+  if (!heredoc.closed) {
+    return { message: `这次命令里的 here-doc 没有结束行 ${heredoc.delimiter}`, canSuggestRewrite: true };
+  }
+  if (heredoc.after && heredoc.after.trim() !== '') {
+    return {
+      message: `这次命令在 here-doc 结束行 ${heredoc.delimiter} 之后还有多余内容：${JSON.stringify(clip(heredoc.after, 30))}`,
+      canSuggestRewrite: true,
+    };
+  }
+  if (!heredoc.body.length) {
+    return {
+      message: `这次命令里的 here-doc 是空的，缺少声明的占位符（${expectedLines.join('、')}）`,
+      canSuggestRewrite: true,
+    };
+  }
   for (const row of heredoc.body) {
     if (!/^%[A-Z][A-Z0-9_]*%$/.test(row) || !env.allowedPlaceholders.includes(row)) {
-      return `here-doc 每一行只能写允许的客户端占位符（${env.allowedPlaceholders.join(' / ')}）`;
+      return {
+        message: `这次命令的 here-doc 写了 ${JSON.stringify(row)}，每行只能写允许的客户端占位符（${env.allowedPlaceholders.join(' / ')}）`,
+        canSuggestRewrite: true,
+      };
     }
   }
-  if (expectedLines) {
-    if (heredoc.body.length !== expectedLines.length || expectedLines.some((exp, idx) => heredoc.body[idx] !== exp)) {
-      return `here-doc 必须依次写 ${expectedLines.length} 行占位符：${expectedLines.join('、')}`;
-    }
+  if (heredoc.body.length !== expectedLines.length || expectedLines.some((exp, idx) => heredoc.body[idx] !== exp)) {
+    return {
+      message: `这次命令的 here-doc 写了 ${heredoc.body.length} 行（${heredoc.body.join('、')}），但 ${target} 声明依次读 ${expectedLines.length} 行（${expectedLines.join('、')}）`,
+      canSuggestRewrite: true,
+    };
   }
   return null;
 }
@@ -1271,19 +1369,31 @@ function validateExecuteCommand(
   if (simple) {
     const value = parsed.words[1];
     const max = simple.max ?? 600;
-    const bad =
-      parsed.problem ??
-      (parsed.words.length !== 2 || !/^[1-9][0-9]{0,3}$/.test(value ?? '') || Number(value) > max
-        ? `${first} 只接受一个 1 到 ${max} 的整数`
-        : null) ??
-      (parsed.heredoc ? '这条命令不读标准输入' : null);
+    const simpleStdin = simple.stdin !== undefined ? parsePlaceholderList(simple.stdin) : null;
+    const argBad =
+      parsed.words.length !== 2 || !/^[1-9][0-9]{0,3}$/.test(value ?? '') || Number(value) > max
+        ? `这次看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}，${first} 声明只接受一个 1 到 ${max} 的整数`
+        : null;
+    const heredocBad = parsed.heredoc
+      ? simpleStdin === null
+        ? { message: `这次命令末尾带了 here-doc（<<'${parsed.heredoc.delimiter}'），但没有找到 ${first} 读标准输入的声明`, canSuggestRewrite: false }
+        : simpleStdin.length === 0
+          ? { message: `这次命令末尾带了 here-doc（<<'${parsed.heredoc.delimiter}'），但 ${first} 声明不读标准输入`, canSuggestRewrite: true }
+          : null
+      : simpleStdin !== null && simpleStdin.length > 0
+        ? { message: `这次命令末尾没有写 here-doc，但 ${first} 声明从标准输入读（${simpleStdin.join('、')}）`, canSuggestRewrite: true }
+        : null;
+    const bad = parsed.problem ?? argBad ?? heredocBad?.message ?? null;
     if (!bad) return { ok: true };
     const safeValue = Math.max(1, Math.min(/^[1-9][0-9]{0,3}$/.test(value ?? '') ? Number(value) : 30, max));
     const candidate = `${first} ${safeValue}`;
+    const canSuggestRewrite = heredocBad ? heredocBad.canSuggestRewrite : true;
     const how =
-      allowSuggestion && validateExecuteCommand(env, tools, candidate, false).ok
+      allowSuggestion && canSuggestRewrite && validateExecuteCommand(env, tools, candidate, false).ok
         ? `这次可以这样写：${candidate}`
-        : `这次可以这样做：请写 ${first} 加 1 到 ${max} 的整数后重试。`;
+        : simpleStdin === null && parsed.heredoc
+          ? `这次可以这样做：没有找到 ${first} 读标准输入的声明；请先在 declaration 中补齐声明后重试。`
+          : `这次可以这样做：请写 ${first} 加 1 到 ${max} 的整数后重试。`;
     return {
       ok: false,
       what: `不允许：${bad}${simple.note ? `（${simple.note}）` : ''}。`,
@@ -1376,7 +1486,7 @@ function validateExecuteCommand(
     const sameDir = tools.filter((candidate) => path.dirname(candidate.file) === path.dirname(physicalScript));
     return {
       ok: false,
-      what: `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 不是已声明的可执行工具（或仅是内部辅助库）。`,
+      what: `不允许：这个目录只放行技能目录里的脚本；没有在已声明的可执行工具清单里找到 ${JSON.stringify(clip(second, 90))}（未声明或仅是内部辅助库）。`,
       how: installedToolsAdvice(env, tools, { preferred: sameDir.length ? sameDir : tools }),
     };
   }
@@ -1492,7 +1602,7 @@ function validateExecuteCommand(
   }
 
   const tokenBad = tokenProblem(env, tool, subcommand, parsed.heredoc);
-  if (tokenBad) problems.push(tokenBad);
+  if (tokenBad) problems.push(tokenBad.message);
 
   if (!problems.length) {
     return { ok: true, physicalScript };
@@ -1514,8 +1624,10 @@ function validateExecuteCommand(
     (!tool.subcommands || fallbackSub !== undefined) &&
     fallbackRequired.every((req) => req.name in fixed || booleans.has(req.name));
 
-  let how = `这次可以这样做：请按规则全文（${env.allowedFile}）中 ${tool.id}${tool.subcommands ? `（可用子命令：${tool.subcommands.join('、')}）` : ''} 的完整写法补齐必填参数并修正值后重试。`;
-  if (allowSuggestion && allRequiredProvided) {
+  let how = tokenBad && !tokenBad.canSuggestRewrite
+    ? `这次可以这样做：没有找到 ${tool.id}${subcommand ? ` ${subcommand}` : ''} 读标准输入的声明，不猜测是否需要标准输入；请先补齐标准输入声明后按规则全文（${env.allowedFile}）重试。`
+    : `这次可以这样做：请按规则全文（${env.allowedFile}）中 ${tool.id}${tool.subcommands ? `（可用子命令：${tool.subcommands.join('、')}）` : ''} 的完整写法补齐必填参数并修正值后重试。`;
+  if (allowSuggestion && allRequiredProvided && (!tokenBad || tokenBad.canSuggestRewrite)) {
     const candidate = writeCommand(env, tool, { subcommand: fallbackSub, values: fixed, booleans });
     if (validateExecuteCommand(env, tools, candidate, false).ok) {
       how = `这次可以这样写：${candidate}`;
@@ -1871,17 +1983,30 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   for (const tool of tools) {
     if (tool.subcommands) {
       for (const sub of tool.subcommands) {
-        lines.push(`| ${tool.id} ${sub} | \`${writeCommand(env, tool, { subcommand: sub, all: true, label: true }).replace(/\n/g, ' ⏎ ')}\` |`);
+        const subStdin = declaredStdinFor(tool, sub);
+        const subSuffix = subStdin === null ? '（未声明标准输入，带 here-doc 将被拒绝）' : '';
+        lines.push(`| ${tool.id} ${sub} | \`${writeCommand(env, tool, { subcommand: sub, all: true, label: true }).replace(/\n/g, ' ⏎ ')}\`${subSuffix} |`);
       }
     } else {
+      const notes: string[] = [];
+      if (!tool.restricted) notes.push('选项没有声明，按通用规则检查');
+      if (tool.stdinLines === null) notes.push('未声明标准输入，带 here-doc 将被拒绝');
+      const suffix = notes.length ? `（${notes.join('；')}）` : '';
       lines.push(
-        `| ${tool.id} | \`${writeCommand(env, tool, { all: true, label: true }).replace(/\n/g, ' ⏎ ')}\`${tool.restricted ? '' : '（选项没有声明，按通用规则检查）'} |`,
+        `| ${tool.id} | \`${writeCommand(env, tool, { all: true, label: true }).replace(/\n/g, ' ⏎ ')}\`${suffix} |`,
       );
     }
   }
   lines.push('', '其中 `⏎` 表示换行；需要标准输入令牌的脚本，命令后紧接上面三行；方括号里的选项可省略。', '');
   for (const command of asList(d.commands)) {
-    lines.push(`- \`${command.name} <秒数>\`（最多 ${command.max ?? 600}）：${command.note ?? ''}`);
+    const commandStdin = command.stdin !== undefined ? parsePlaceholderList(command.stdin) : null;
+    const stdinNote =
+      commandStdin === null
+        ? '；未声明标准输入'
+        : commandStdin.length > 0
+          ? `；标准输入 ${commandStdin.join('、')}`
+          : '；不读标准输入';
+    lines.push(`- \`${command.name} <秒数>\`（最多 ${command.max ?? 600}${stdinNote}）：${command.note ?? ''}`);
   }
   if (asList(d.rules).length) {
     lines.push('', '## 例外与拦截规则', '');
@@ -1908,9 +2033,15 @@ export function buildToolSchemas(env: GuardEnvironment): unknown[] {
         else if (option.type === 'text') properties[option.name] = { type: 'string' };
         else properties[option.name] = { type: 'string', description: '工作目录里的路径' };
       }
+      const stdinNote =
+        tool.stdinLines === null
+          ? '（未声明是否读标准输入）'
+          : tool.stdinLines.length > 0
+            ? `；标准输入 ${tool.stdinLines.join('、')}，令牌由客户端从保存的凭据给脚本，模型不写`
+            : '';
       return {
         name: `${tool.skill ?? 'local'}__${path.basename(tool.file, '.ts')}`,
-        description: `运行 ${tool.id}${tool.stdinMode !== 'none' ? '；令牌由客户端从保存的凭据给脚本，模型不写' : ''}`,
+        description: `运行 ${tool.id}${stdinNote}`,
         inputSchema: {
           type: 'object',
           properties,

@@ -3,7 +3,8 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord } from '../functions/text.ts';
+import cli from './normalize-mindmap.cli.json' with { type: 'json' };
 import { argumentsOf, readBytes, writeNew, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 export function normalizeMindmap(bytes: Uint8Array): { bytes: Uint8Array; before_sha256: string; after_sha256: string; transformations: string[] } {
   let text: string; try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw new Error('脑图不是完整 UTF-8，不作猜测修复'); }
@@ -23,7 +24,7 @@ export function normalizeMindmap(bytes: Uint8Array): { bytes: Uint8Array; before
   const output = Buffer.from(text, 'utf8'); return { bytes: output, before_sha256: sha256(bytes), after_sha256: sha256(output), transformations };
 }
 export async function main(argv: string[]): Promise<number> {
-  try { const args = argumentsOf(argv, ['in', 'out']); const out = normalizeMindmap(await readBytes(args.in,'in')); await writeNew(args.out, out.bytes); process.stdout.write(JSON.stringify({ before_sha256: out.before_sha256, after_sha256: out.after_sha256, transformations: out.transformations, note: '客户端规整，不改用例内容' }) + '\n'); return 0; }
+  try { assertToolCliStdin(cli, []); const args = argumentsOf(argv, ['in', 'out']); const out = normalizeMindmap(await readBytes(args.in,'in')); await writeNew(args.out, out.bytes); process.stdout.write(JSON.stringify({ before_sha256: out.before_sha256, after_sha256: out.after_sha256, transformations: out.transformations, note: '客户端规整，不改用例内容' }) + '\n'); return 0; }
   catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

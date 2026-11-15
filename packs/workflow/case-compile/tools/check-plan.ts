@@ -15,7 +15,8 @@ import { describeExpansions, expandValue } from '../functions/length-literals.ts
 import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
 import { readSlots } from '../functions/slots.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import cli from './check-plan.cli.json' with { type: 'json' };
 import { parsedPlanFile } from './submit-plans.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, brief: false };
@@ -287,6 +288,7 @@ function writeProblemStderr(
 
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     const args = parseOptions(argv);
     const targetInfo = await stat(args.file);
 

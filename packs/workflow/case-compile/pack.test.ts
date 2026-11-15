@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, lstatSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, readFileSync, readdirSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import ts from 'typescript';
 import {createHash} from 'node:crypto';
 import { PackManifest, WorkflowFile, RequirementsFile, SlotsFile } from '../../../contracts/src/pack.ts';
-import { computeManifest, packFiles, PACK_DIR } from './pack-files.ts';
+import { cliDeclarationProblems, computeManifest, packFiles, PACK_DIR, stage } from './pack-files.ts';
+import { buildCaseCompileInvocations, verifyCaseCompileStagedCli, verifyPackCliManifest, verifyPackToolCliBehavior } from './testing/verify-tool-cli.ts';
 import { parseRuntimeContract } from './functions/runtime-contract.ts';
 import { parseProfile } from './functions/profile.ts';
 import { parseManifest } from './functions/manifest.ts';
@@ -338,4 +341,108 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
     assert.ok(doc.includes('sdns listener <arg1:ipv4/ipv6>'), 'must include negative template placeholder example');
   }
   assert.ok(!recomposer.includes('recompose-record.schema.json'));
+});
+
+test('staged case-compile CLI tools match pure-data .cli.json declarations and docs', async () => {
+  assert.deepEqual(await cliDeclarationProblems(), []);
+  const dir = mkdtempSync(join(tmpdir(), 'cc-cli-decl-'));
+  try {
+    const staged = await stage(join(dir, 'staged'));
+    await verifyCaseCompileStagedCli(staged);
+
+    // pack-files cliDeclarationProblems catches missing, orphaned, helper-attached, and invalid .cli.json files.
+    const broken = join(dir, 'broken');
+    cpSync(staged, broken, { recursive: true });
+    rmSync(join(broken, 'tools', 'fetch-run.cli.json'));
+    writeFileSync(join(broken, 'tools', 'orphan.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: [] }));
+    writeFileSync(join(broken, 'tools', 'authoring-brief.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: [] }));
+    writeFileSync(join(broken, 'tools', 'task-brief.cli.json'), JSON.stringify({ schema: 'wrong@1', stdin: [] }));
+    const probs = await cliDeclarationProblems(broken);
+    assert.ok(probs.some((p) => p.includes('fetch-run.ts')), `missing decl not caught: ${probs.join('; ')}`);
+    assert.ok(probs.some((p) => p.includes('orphan.cli.json')), `orphaned decl not caught: ${probs.join('; ')}`);
+    assert.ok(probs.some((p) => p.includes('authoring-brief.cli.json')), `helper decl not caught: ${probs.join('; ')}`);
+    assert.ok(probs.some((p) => p.includes('task-brief.cli.json')), `invalid schema not caught: ${probs.join('; ')}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('declaration-vs-runtime mismatch and uncoupled tool scripts are caught in staged copies', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-cli-mismatch-'));
+  try {
+    const staged = await stage(join(dir, 'staged'));
+    const helpers = new Set([
+      'tools/authoring-brief.ts',
+      'tools/rework-inputs.ts',
+      'tools/workspace-path.ts',
+      'tools/case-writers/extension.ts',
+    ]);
+    const resignStaged = (root: string, extraFiles: string[] = []) => {
+      const m = JSON.parse(readFileSync(join(root, 'pack.json'), 'utf8')) as {
+        id: string;
+        files: Array<{ path: string; sha256: string; size: number }>;
+      };
+      for (const rel of extraFiles) {
+        if (!m.files.some((e) => e.path === rel)) m.files.push({ path: rel, sha256: '', size: 0 });
+      }
+      m.files = m.files.map((e) => {
+        const buf = readFileSync(join(root, e.path));
+        return { path: e.path, sha256: createHash('sha256').update(buf).digest('hex'), size: buf.byteLength };
+      });
+      writeFileSync(join(root, 'pack.json'), JSON.stringify(m, null, 2));
+    };
+
+    // 1. Mutate token tool fetch-run.cli.json -> []: caught by both tool self-check and verifyPackToolCliBehavior.
+    const badTokenDir = join(dir, 'bad-token');
+    cpSync(staged, badTokenDir, { recursive: true });
+    writeFileSync(join(badTokenDir, 'tools', 'fetch-run.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: [] }));
+    resignStaged(badTokenDir);
+    const inv1Direct = await buildCaseCompileInvocations(join(dir, 'work-1a'));
+    const directToken = spawnSync(
+      process.execPath,
+      [join(badTokenDir, 'tools', 'fetch-run.ts'), ...inv1Direct['tools/fetch-run.ts'].argv],
+      { cwd: badTokenDir, input: '', encoding: 'utf8', timeout: 10_000 },
+    );
+    assert.notEqual(directToken.status, 0);
+    assert.match(directToken.stderr, /\.cli\.json/);
+    const inv1 = await buildCaseCompileInvocations(join(dir, 'work-1b'));
+    assert.throws(() => verifyPackToolCliBehavior(badTokenDir, inv1, helpers), /tools\/fetch-run\.ts declares stdin=\[\], expected exit 0/);
+
+    // 2. Mutate zero-stdin tool check-plan.cli.json -> ['%HUB_TOKEN%']: caught by both self-check and behavior check.
+    const badZeroDir = join(dir, 'bad-zero');
+    cpSync(staged, badZeroDir, { recursive: true });
+    writeFileSync(join(badZeroDir, 'tools', 'check-plan.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: ['%HUB_TOKEN%'] }));
+    resignStaged(badZeroDir);
+    const inv2Direct = await buildCaseCompileInvocations(join(dir, 'work-2a'));
+    const directZero = spawnSync(
+      process.execPath,
+      [join(badZeroDir, 'tools', 'check-plan.ts'), ...inv2Direct['tools/check-plan.ts'].argv],
+      { cwd: badZeroDir, input: '', encoding: 'utf8', timeout: 10_000 },
+    );
+    assert.notEqual(directZero.status, 0);
+    assert.match(directZero.stderr, /\.cli\.json/);
+    const inv2 = await buildCaseCompileInvocations(join(dir, 'work-2b'));
+    assert.throws(() => verifyPackToolCliBehavior(badZeroDir, inv2, helpers), /tools\/check-plan\.ts declares stdin=\["%HUB_TOKEN%"\], expected missing-token refusal/);
+
+    // 3. Uncoupled rogue script ignoring assertToolCliStdin & stdin is STILL caught by empty-stdin behavior check.
+    const rogueDir = join(dir, 'rogue');
+    cpSync(staged, rogueDir, { recursive: true });
+    writeFileSync(join(rogueDir, 'tools', 'rogue.ts'), 'console.log("ok without reading stdin");\n');
+    writeFileSync(join(rogueDir, 'tools', 'rogue.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: ['%HUB_TOKEN%'] }));
+    resignStaged(rogueDir, ['tools/rogue.ts', 'tools/rogue.cli.json']);
+    const inv3 = await buildCaseCompileInvocations(join(dir, 'work-3'));
+    assert.throws(
+      () => verifyPackToolCliBehavior(rogueDir, { ...inv3, 'tools/rogue.ts': { argv: [] } }, helpers),
+      /tools\/rogue\.ts.*expected non-zero exit/,
+    );
+
+    // 4. Missing .cli.json for newly added CLI script is caught by verifyPackCliManifest.
+    const missingDeclDir = join(dir, 'missing-decl');
+    cpSync(staged, missingDeclDir, { recursive: true });
+    writeFileSync(join(missingDeclDir, 'tools', 'extra.ts'), 'console.log(process.argv.slice(2));\n');
+    resignStaged(missingDeclDir, ['tools/extra.ts']);
+    assert.throws(() => verifyPackCliManifest(missingDeclDir, helpers), /missing tools\/extra\.cli\.json/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { downloadRunRetrying, getRetrying, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 import { formatCallError, isRecord } from '../functions/text.ts';
+import cli from './download-run.cli.json' with { type: 'json' };
 
 async function saveRunReference(origin: string, bearer: string, run: string, out: string, retry?: RetryControl): Promise<string | undefined> {
   const exported: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)));
@@ -23,7 +24,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
-    const bearer = await requireBearerToken(readToken);
+    const bearer = await requireBearerToken(readToken, cli);
     const { files, ...report } = await downloadRunRetrying(origin, bearer, args.run, args.out, retry);
     const runReference = await saveRunReference(origin, bearer, args.run, args.out, retry);
     process.stdout.write(JSON.stringify({ ...report, ...(runReference ? { run_reference: runReference } : {}), written: Object.keys(files).length + (runReference ? 1 : 0) }) + '\n'); return 0;

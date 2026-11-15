@@ -5,7 +5,8 @@ import { lstat, readdir } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSubmittedJson, readSubmittedFileBytes } from '../functions/hub-retry.ts';
-import { formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord, parseCliOptions, type CallErrorCategory } from '../functions/text.ts';
+import cli from './check-record.cli.json' with { type: 'json' };
 import { assertValidRecomposeShape, recordFor, submissionFor } from './submit-records.ts';
 
 const OPTIONS: Record<string, boolean> = { file: true, run: false };
@@ -194,6 +195,7 @@ export async function checkRecordTarget(options: { file: string; run?: string })
 
 export async function main(argv: string[]): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     if (argv.includes('--help') || argv.includes('-h')) {
       process.stdout.write(HELP_TEXT + '\n');
       return 0;

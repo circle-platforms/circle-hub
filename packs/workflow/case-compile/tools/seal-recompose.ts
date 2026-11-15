@@ -1,7 +1,8 @@
 // Client-side lossless assembly only. This never confers Hub admission or chooses a semantic state.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { formatCallError } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError } from '../functions/text.ts';
+import cli from './seal-recompose.cli.json' with { type: 'json' };
 const object = (v: unknown): v is Record<string, any> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const body = (v: any, kind: string) => object(v) && v.kind === kind && object(v.body) ? v.body : v;
 export function assembleRecompose(runExport: unknown, parts: unknown[], model: string) {
@@ -37,6 +38,7 @@ export function assembleRecompose(runExport: unknown, parts: unknown[], model: s
 }
 if (import.meta.main) {
     try {
+        assertToolCliStdin(cli, []);
         const opts = new Map<string, string>();
         for (let i = 2; i < process.argv.length; i += 2) {
             const key = process.argv[i], value = process.argv[i + 1];

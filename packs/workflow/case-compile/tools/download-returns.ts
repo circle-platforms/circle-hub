@@ -19,6 +19,7 @@ import {
 import { formatCallError } from '../functions/text.ts';
 import { fetchRunInputs } from './fetch-run.ts';
 import { passReviewInputs } from './generate-workbook.ts';
+import cli from './download-returns.cli.json' with { type: 'json' };
 
 const SOURCE = /^src:([0-9a-f]{64})$/;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
@@ -49,7 +50,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     if (args.wait !== undefined && !(/^[1-9][0-9]{0,4}$/.test(args.wait) && wait <= WAIT_MAX_SECONDS)) throw new Error(`--wait 写最多等多少秒（1 到 ${WAIT_MAX_SECONDS} 的整数）`);
     const taken = await readdir(args.out).catch(() => [] as string[]);
     if (taken.length) throw new Error(`--out 目录 ${args.out} 里已有文件（${taken.slice(0, 3).join('、')}），不覆盖；另选一个新目录`);
-    const origin = hubOrigin(args.hub), bearer = await requireBearerToken(readToken);
+    const origin = hubOrigin(args.hub), bearer = await requireBearerToken(readToken, cli);
     const readRetry: RetryControl = { ...retry, timing };
     const jobsUrl = `${origin}/run-export/${args.run}/jobs`;
     const started = timing.now(), deadline = started + wait * 1000;

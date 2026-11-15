@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { stagePack } from '../../../case-review/packaging.ts';
+import { PACK_DIR } from '../api.ts';
+import { buildRecomposeInvocations, verifyPackToolCliBehavior, verifyRecomposeStagedCli } from '../../testing/verify-tool-cli.ts';
 import { main } from './check-record.ts';
 
 const atom = (id: string, kind: string, text: string, after: string[] = []) => ({
@@ -179,6 +184,54 @@ test('check-record rejects bad UTF-8, broken JSON, full schema misuse, missing i
     const rLink = await runCli(['--file', linkPath]);
     assert.equal(rLink.code, 1);
     assert.match(rLink.err, /^参数无效：.*符号链接/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('staged recompose CLI tools match pure-data .cli.json declarations and catch mismatches', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'rc-cli-verify-test-'));
+  try {
+    const staged = await stagePack(PACK_DIR, join(root, 'staged'));
+    await verifyRecomposeStagedCli(staged);
+
+    const invocations = await buildRecomposeInvocations(root);
+    const resign = (dir: string, extraFiles: string[] = []) => {
+      const m = JSON.parse(readFileSync(join(dir, 'pack.json'), 'utf8')) as {
+        id: string;
+        files: Array<{ path: string; sha256: string; size: number }>;
+      };
+      for (const rel of extraFiles) {
+        if (!m.files.some((e) => e.path === rel)) m.files.push({ path: rel, sha256: '', size: 0 });
+      }
+      m.files = m.files.map((e) => {
+        const buf = readFileSync(join(dir, e.path));
+        return { path: e.path, sha256: createHash('sha256').update(buf).digest('hex'), size: buf.byteLength };
+      });
+      writeFileSync(join(dir, 'pack.json'), JSON.stringify(m, null, 2));
+    };
+
+    const badToken = join(root, 'bad-token');
+    cpSync(staged, badToken, { recursive: true });
+    writeFileSync(join(badToken, 'tools', 'download-run.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: [] }));
+    resign(badToken);
+    assert.throws(() => verifyPackToolCliBehavior(badToken, invocations));
+
+    const badZero = join(root, 'bad-zero');
+    cpSync(staged, badZero, { recursive: true });
+    writeFileSync(join(badZero, 'tools', 'check-record.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: ['%HUB_TOKEN%'] }));
+    resign(badZero);
+    assert.throws(() => verifyPackToolCliBehavior(badZero, invocations));
+
+    const rogue = join(root, 'rogue');
+    cpSync(staged, rogue, { recursive: true });
+    writeFileSync(join(rogue, 'tools', 'rogue.ts'), 'console.log("ok");\n');
+    writeFileSync(join(rogue, 'tools', 'rogue.cli.json'), JSON.stringify({ schema: 'tool-cli@1', stdin: ['%HUB_TOKEN%'] }));
+    resign(rogue, ['tools/rogue.ts', 'tools/rogue.cli.json']);
+    assert.throws(
+      () => verifyPackToolCliBehavior(rogue, { ...invocations, 'tools/rogue.ts': { argv: [] } }),
+      /expected non-zero exit/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

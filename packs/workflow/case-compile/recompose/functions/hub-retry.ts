@@ -8,7 +8,7 @@ import {
   writeNew,
   type RunKnowledge,
 } from './generated/skills/run-tools/hub-client/index.ts';
-import { isRecord } from './text.ts';
+import { assertToolCliStdin, isRecord, type ToolCliDeclaration } from './text.ts';
 
 export const MAX_BYTES = 16 * 1024 * 1024;
 export const KNOWLEDGE_MAX_BYTES = 256 * 1024 * 1024;
@@ -570,7 +570,11 @@ export async function readTokenFromStdin(): Promise<string> {
  * Validates the bearer token from standard input, refusing unexpanded Circle secret placeholders
  * and empty/malformed stdin caused by missing <<'EOF' or inserting a newline before <<'EOF'.
  */
-export async function requireBearerToken(readToken: () => Promise<string> = readTokenFromStdin): Promise<string> {
+export async function requireBearerToken(
+  readToken: () => Promise<string> = readTokenFromStdin,
+  cli?: ToolCliDeclaration,
+): Promise<string> {
+  const tokenPlaceholder = cli ? assertToolCliStdin(cli, ['%HUB_TOKEN%'])[0] : '%HUB_TOKEN%';
   const bearer = await readToken();
   const placeholder = /^%([A-Z][A-Z0-9_]*)%$/.exec(bearer);
   if (placeholder) {
@@ -583,7 +587,7 @@ export async function requireBearerToken(readToken: () => Promise<string> = read
       ? '标准输入收到的令牌包含空白、换行或长度不在 8..4096 可见 ASCII 范围内'
       : "标准输入为空，常见原因是 node 命令行与 <<'EOF' 之间多打了换行或漏了 <<'EOF'";
     throw new Error(
-      `参数无效：标准输入里没有令牌（${detail}）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 %HUB_TOKEN%，再一行只写 EOF`,
+      `参数无效：标准输入里没有令牌（${detail}）。请把 node 命令行与 <<'EOF' 写在同一行（空格隔开，切勿在 <<'EOF' 前换行），下一行只写 ${tokenPlaceholder}，再一行只写 EOF`,
     );
   }
   return bearer;

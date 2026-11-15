@@ -189,11 +189,71 @@ export function clientSkillSources(files: ReadonlyMap<string, string>): Map<stri
   return new Map([...files].filter(([file]) => included.has(file)));
 }
 
+function hasCliEntrypointAst(file: string, text: string): boolean {
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  let hasExport = false;
+  let hasCliHook = false;
+  const visit = (node: ts.Node): void => {
+    if (hasCliHook) return;
+    if (
+      ts.isExportDeclaration(node) ||
+      ts.isExportAssignment(node) ||
+      (ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword))
+    ) {
+      hasExport = true;
+    }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ((ts.isIdentifier(node.expression) && node.expression.text === 'process' && node.name.text === 'argv') ||
+        (ts.isMetaProperty(node.expression) && node.name.text === 'main'))
+    ) {
+      hasCliHook = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return hasCliHook || !hasExport;
+}
+
+function validateCliJsonBytes(bytes: Buffer): string | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    return '工具声明 .cli.json 不是合法的 UTF-8 JSON';
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return '工具声明 .cli.json 顶层必须是对象';
+  }
+  const obj = raw as Record<string, unknown>;
+  if (obj.schema !== 'tool-cli@1') {
+    return '工具声明 .cli.json 的 schema 必须是 tool-cli@1';
+  }
+  for (const key of Object.keys(obj)) {
+    if (key !== 'schema' && key !== 'stdin' && key !== 'subcommands') {
+      return `工具声明 .cli.json 含未识别字段 ${key}`;
+    }
+  }
+  const validPlaceholders = (list: unknown): boolean =>
+    Array.isArray(list) && list.every((item) => typeof item === 'string' && /^%[A-Z][A-Z0-9_]*%$/.test(item));
+  if (!validPlaceholders(obj.stdin)) {
+    return '工具声明 .cli.json 的 stdin 必须是允许的占位符字符串数组（如 [] 或 ["%HUB_TOKEN%"]）';
+  }
+  if (obj.subcommands !== undefined) {
+    if (!obj.subcommands || typeof obj.subcommands !== 'object' || Array.isArray(obj.subcommands) || Object.values(obj.subcommands).some((v) => !validPlaceholders(v))) {
+      return '工具声明 .cli.json 的 subcommands 必须是子命令到占位符数组的映射';
+    }
+  }
+  return null;
+}
+
 /** Reads the exact published bytes, including helpers and inline skill hooks; never follows a source link. */
 export function scanSkillPack(directory: string, reviews: readonly CallReview[] = REVIEWED_SKILL_CALLS): ScriptAudit {
   const root = realpathSync(directory), manifest = JSON.parse(readFileSync(join(root, 'pack.json'), 'utf8')) as { id?: unknown; kind?: unknown; files?: Array<{ path: string; size: number; sha256: string }> };
   if (typeof manifest.id !== 'string' || typeof manifest.kind !== 'string' || !Array.isArray(manifest.files)) throw new Error('缺少可核对的包清单；请提供已发布目录和 pack.json 后重跑');
   const files = new Map<string, string>(), paths = new Set<string>();
+  const cliDecls = new Set<string>(), cliIssues: ScriptIssue[] = [];
   for (const entry of manifest.files) {
     if (typeof entry.path !== 'string' || isAbsolute(entry.path) || entry.path.includes('\\') || entry.path.split('/').some(part => !part || part === '.' || part === '..') || paths.has(entry.path)) throw new Error('包清单含重复或越界路径；请重新取得已发布包后重跑');
     paths.add(entry.path); const target = resolve(root, entry.path);
@@ -202,6 +262,11 @@ export function scanSkillPack(directory: string, reviews: readonly CallReview[] 
     const bytes = readFileSync(target); if (bytes.length !== entry.size || digest(bytes) !== entry.sha256) throw new Error('包文件与清单摘要或长度不符；请重新取得原件后重跑，不扫描改过的副本');
     const file = `packs/${manifest.kind}/${manifest.id}/${entry.path}`;
     if (/\.[cm]?[jt]sx?$/.test(entry.path)) files.set(file, new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (entry.path.startsWith('tools/') && entry.path.endsWith('.cli.json')) {
+      cliDecls.add(entry.path);
+      const problem = validateCliJsonBytes(bytes);
+      if (problem) cliIssues.push({ file, line: 1, operation: 'cli-declaration', reason: problem });
+    }
     if (entry.path.endsWith('hooks.json')) {
       const hooks = JSON.parse(bytes.toString()).hooks;
       for (const [event, entries] of Object.entries(hooks ?? {})) {
@@ -214,7 +279,29 @@ export function scanSkillPack(directory: string, reviews: readonly CallReview[] 
       }
     }
   }
-  return scanSkillScripts(clientSkillSources(files), reviews);
+  for (const declPath of cliDecls) {
+    const toolPath = declPath.slice(0, -'.cli.json'.length) + '.ts';
+    const fullTool = `packs/${manifest.kind}/${manifest.id}/${toolPath}`;
+    if (!paths.has(toolPath)) {
+      cliIssues.push({ file: `packs/${manifest.kind}/${manifest.id}/${declPath}`, line: 1, operation: 'cli-declaration', reason: `找不到对应的工具脚本 ${toolPath}` });
+    } else if (!hasCliEntrypointAst(fullTool, files.get(fullTool) ?? '')) {
+      cliIssues.push({ file: `packs/${manifest.kind}/${manifest.id}/${declPath}`, line: 1, operation: 'cli-declaration', reason: `${toolPath} 是内部辅助库而非 CLI 工具，不应附带 .cli.json` });
+    }
+  }
+  if (cliDecls.size > 0) {
+    for (const rel of paths) {
+      if (!rel.startsWith('tools/') || !rel.endsWith('.ts') || rel.endsWith('.test.ts')) continue;
+      const full = `packs/${manifest.kind}/${manifest.id}/${rel}`;
+      if (!hasCliEntrypointAst(full, files.get(full) ?? '')) continue;
+      const expectedDecl = rel.slice(0, -'.ts'.length) + '.cli.json';
+      if (!cliDecls.has(expectedDecl)) {
+        cliIssues.push({ file: full, line: 1, operation: 'cli-declaration', reason: `缺少工具标准输入声明文件 ${expectedDecl}` });
+      }
+    }
+  }
+  const audit = scanSkillScripts(clientSkillSources(files), reviews);
+  if (cliIssues.length > 0) return { ...audit, issues: [...audit.issues, ...cliIssues] };
+  return audit;
 }
 
 if (import.meta.main) {

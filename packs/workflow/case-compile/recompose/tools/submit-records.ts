@@ -12,6 +12,7 @@ import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated
 import { getRetrying, readSubmittedItemFiles, readTokenFromStdin, requireBearerToken, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import RECOMPOSE_FORMAT from '../tables/recompose-format.json' with { type: 'json' };
+import cli from './submit-records.cli.json' with { type: 'json' };
 
 const SHOWN_CHARS = 12_000;
 type Row = { [key: string]: any };
@@ -168,7 +169,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       repairHint: '再做用例重组',
       validateItem: (value, fileName) => assertValidRecomposeShape(value, `--records 目录下的 ${fileName}`, true),
     });
-    const bearer = await requireBearerToken(readToken);
+    const bearer = await requireBearerToken(readToken, cli);
     const exported = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await getRetrying(`${origin}/run-export/${args.run}/run`, bearer, retry)));
     if (exported?.schema !== 'run-export@1' || exported.run?.run !== args.run) throw new Error('Hub 返回的原始用例不完整');
     const { text, failed } = await submitResultRetrying(origin, bearer, submissionFor(exported.run, files, args.model), retry);

@@ -75,8 +75,8 @@
     },
     {
       "path": "functions/hub-retry.ts",
-      "sha256": "37575fa3562dfd94dbb2ff2cc124f70175366840592b54f88cd20810cc136349",
-      "size": 29322
+      "sha256": "d3c3d018ef1dd0b6930e2a28c3d2bdf3b9222c3c717edfb2360b305b89ca7666",
+      "size": 29502
     },
     {
       "path": "functions/project.ts",
@@ -110,8 +110,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "038fe15d557ec2ab1274f2e346395cdcde9ceecccf2d52f0a35590246df2099b",
-      "size": 11782
+      "sha256": "8d5321ccc1afde77eb4cbbf4fc13394d40b273a9558403d579d12a08756451a7",
+      "size": 12725
     },
     {
       "path": "requirements.json",
@@ -179,19 +179,34 @@
       "size": 18407
     },
     {
+      "path": "tools/check-record.cli.json",
+      "sha256": "15f6f6e71ca579e949e320395a7ffd4381be9c4437c643c08e0c6a54ba5039e1",
+      "size": 44
+    },
+    {
       "path": "tools/check-record.ts",
-      "sha256": "247ba8d9be7d62295bcf70e38d22c12e2026e4797a04ca9ed3270f22808fc6eb",
-      "size": 9528
+      "sha256": "661883d8784b327e1283a8cda2c4576eec6a0c47e063c26e6721d91687cbabd0",
+      "size": 9646
+    },
+    {
+      "path": "tools/download-run.cli.json",
+      "sha256": "6982ce21c82dc8c23d1fd478511e9d5e2e3d69b15ec92fbc9ff6fed328448815",
+      "size": 65
     },
     {
       "path": "tools/download-run.ts",
-      "sha256": "654ed9cc9fb7bea2c96f4f4cdd2d448ab63db034eb89bb3662cd319c5e00930f",
-      "size": 2636
+      "sha256": "11d0d3572366834edcacb6e2136e5669cdb35af537ea158e025d5d191681cd22",
+      "size": 2706
+    },
+    {
+      "path": "tools/submit-records.cli.json",
+      "sha256": "6982ce21c82dc8c23d1fd478511e9d5e2e3d69b15ec92fbc9ff6fed328448815",
+      "size": 65
     },
     {
       "path": "tools/submit-records.ts",
-      "sha256": "05e7c4f348aee9668bac960823f61e3ea573c037877afc89fcef5e1d13514f2f",
-      "size": 10912
+      "sha256": "4dca872006e31c679a3db202798a9d3489e366158cd3904f62bd6e4aefe77abf",
+      "size": 10984
     },
     {
       "path": "workflow.json",

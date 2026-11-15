@@ -9,7 +9,8 @@ import { canonicalJson } from '../functions/canonical-json.ts';
 import { fidelityBrief, fidelityProblems } from '../functions/fidelity.ts';
 import { RUN_ID } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { assertToolCliStdin, formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import cli from './carry-plans.cli.json' with { type: 'json' };
 import { briefFile, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import {
@@ -302,6 +303,7 @@ async function resolveDestDir(cwd: ResolvedCwd, arg: string, label: string): Pro
  */
 export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
   try {
+    assertToolCliStdin(cli, []);
     const args = parseCliOptions(argv, OPTIONS, USAGE);
     if ((args.briefs !== undefined) !== (args['source-briefs'] !== undefined)) {
       throw new Error('参数无效：传入 --briefs 与 --source-briefs 时必须成对提供');
