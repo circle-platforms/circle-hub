@@ -28,22 +28,22 @@ Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；
 2. 点开该卡片的 **插件详情**，在「Hub 的 IP 地址」栏填入管理员给的地址（如 `<Hub主机>:<端口>`），点击 **连接**。
 3. Circle 会自动向你的配置写入带 `placeholders` 的 Hub 条目，并在右侧打开 Hub 网页授权流程（见下面「网页授权确认」；此处 3 步为逻辑环节，按页面逐级菜单点击与网页 4 个动作细计共约 12 次界面操作）。
 
-#### 方式 B — Circle 终端版（需启用内置扩展并手动编辑 `settings.json`）
-
-全新主目录的 Circle `1.17.0` 终端版**目前尚无一条交互命令可自动写入 Hub 配置**（须等后续 Circle 客户端版本支持，且内置 Hub 扩展默认关闭），当前须按以下 5 步手工接入（连同网页 4 个确认动作共约 8–10 个动作）：
+#### 方式 B — Circle 终端版（使用 `/hub` 或编辑 `settings.json` 的 `mcpServers`）
 
 1. 在终端进入你的工作目录启动 Circle，首屏按提示选择信任该工作目录。
-2. 先启用内置 Hub 扩展（直接敲 `/hub` 会报错 `Unknown command`）：
-   - 执行 `/extensions enable hub`
-   - 再执行 `/hub` 查看连接说明。
-3. **将 Hub 条目写入 `settings.json` 的 `mcp_servers`**：
-   - 现在 Hub 控制台的 **`/console/settings#mine`** 与 **`/console/me`**（「连接新的客户端」卡片）以及管理员建号结果页均已直接提供**完整带 `"name": "Hub"` 与 `placeholders` 的片段**，可直接复制使用（确保运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正确展开；注意按实际协议填写 `http://` 或 `https://`，使用标准 OAuth 授权流程时**切勿手加 `headers`**，带 `headers` 会绕过 OAuth）：
+2. 新版 Circle 终端内置支持 `/hub` 连接命令，无需再执行 `/extensions enable hub`：
+   - 直接执行 `/hub <Hub地址>`（例如 `/hub http://<Hub主机>:<端口>` 或 `/hub http://<Hub主机>:<端口>/mcp`），或运行 `/hub` 查看连接说明。
+3. **或在 `settings.json` 的 `mcpServers` 对象中写入 `"Hub"` 条目**：
+   - 现在 Hub 控制台的 **`/console/settings#mine`** 与 **`/console/me`**（「连接新的客户端」卡片）以及管理员建号结果页均已直接提供**完整以 `"Hub"` 为键、`type: "http"` 与 `placeholders` 的 `mcpServers` 片段**，可直接复制写入 `settings.json`（确保运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正确展开；注意按实际协议填写 `http://` 或 `https://`，使用标准 OAuth 授权流程时**切勿手加 `headers`**，带 `headers` 会绕过 OAuth）：
      ```json
      {
-       "name": "Hub",
-       "url": "http://<Hub主机>:<端口>/mcp",
-       "transport": "streamable_http",
-       "placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }
+       "mcpServers": {
+         "Hub": {
+           "type": "http",
+           "url": "http://<Hub主机>:<端口>/mcp",
+           "placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }
+         }
+       }
      }
      ```
 4. 执行 `/reload`（或 `/mcp reload`，若配置仍未生效则退出重开一次 Circle 会话）让 Circle 读取配置，再执行 `/mcp` 触发登录与浏览器授权页。
@@ -76,14 +76,14 @@ Circle 本身没有任何 Hub 专属界面，仅按普通 MCP 服务器接入；
 
 ### 2. 在 Circle 里通过标准 MCP 工具看
 
-连上 Hub 后，直接让模型调用只读 MCP 工具核对当前可用工作流，**不要让模型用 `curl $HUB_URL` 探测（环境变量未对 shell 展开），也不要在仅仅问权限时去启动 `test-bed` 的写记录运行**：
+连上 Hub 后，直接让模型调用只读 MCP 工具核对当前可用工作流（在 Circle 中，当 `mcpServers` 的键为 `Hub` 时，Hub 的 6 个标准工具显示为 `mcp__Hub__list_task_packs`、`mcp__Hub__get_nodes`、`mcp__Hub__resolve_reference`、`mcp__Hub__upload_file`、`mcp__Hub__start_run`、`mcp__Hub__submit_result`；下文的 `list_task_packs` / `start_run` 等名称均指对应工具），**不要让模型用 `curl $HUB_URL` 探测（环境变量未对 shell 展开），也不要在仅仅问权限时去启动 `test-bed` 的写记录运行**：
 
-1. **列出有权使用的任务包与能力投影**：调用 **`list_task_packs`**（参数 `{}`）。
+1. **列出有权使用的任务包与能力投影**：调用 **`list_task_packs`**（在 Circle 中工具名为 `mcp__Hub__list_task_packs`，参数 `{}`）。
    - 返回结构除了你有权使用的工作流与通用技能列表（含 `pack: "<id>@<version>"`、`digest`、`inputs`、参数声明与 `local_tools` 安装命令）外，现已随附与 `/console/me` 同源的 **`member_capabilities`** 成员能力投影（含所属团队、工作流、技能、连接、测试环境预览列表与 `environmentAccess.enforced` 标志）；
    - 当 Hub 上还有其他尚未分配给你的工作流时，文本首句会明确告知 **`你能用的 X 个；Hub 上另有 Y 个没有分配给你（名字不列出），需要哪个请管理员分配。`**（哪怕当前可用为 `0` 个，也会明确说明 Hub 上另有未分配包，而不再沉默只回 `0 个`）；
-   - 用 **`start_run`** 直接点名未分配的工作流会明确返回 `SOURCE_NOT_PERMITTED`（首行直接说明「任务包 X 存在，没有分配给你」，不再误把「资料尚未取得」作为首句）。
-2. **读取工作流与技能规程**：调用 **`get_nodes`**（参数 `{"pack": "<包ID>"}`）读出 `SKILL.md`、输入槽位和检查规范。
-3. **审批模式与 `/mode auto`**：Circle 默认（`manual`）模式下，每次 `skill_install`、每次 `start_run`、执行技能本地工具（`download-run.ts`）以及普通 `ls`/`grep` shell 命令都会弹审批卡。建议在前几次安装技能、核对完 `digest` 与参数行为后，在对话里视需要切换到 **`/mode auto`** 避免频繁中断（涉及 `acquire` 预订或 `release` 释放前仍需自己确认目标）。
+   - 用 **`start_run`**（`mcp__Hub__start_run`）直接点名未分配的工作流会明确返回 `SOURCE_NOT_PERMITTED`（首行直接说明「任务包 X 存在，没有分配给你」，不再误把「资料尚未取得」作为首句）。
+2. **读取工作流与技能规程**：调用 **`get_nodes`**（`mcp__Hub__get_nodes`，参数 `{"pack": "<包ID>"}`）读出 `SKILL.md`、输入槽位和检查规范。
+3. **审批模式、`/mode` 与工具权限**：Circle 默认（`manual`）审批模式下，**服务端注解（`readOnlyHint` 等）不会自动跳过审批**——不仅是 `skill_install`、`mcp__Hub__start_run`、`mcp__Hub__upload_file`、执行技能本地工具（`download-run.ts`）和普通 `ls`/`grep` shell 命令，连只读 MCP 工具（如 `mcp__Hub__list_task_packs`、`mcp__Hub__get_nodes`）默认也会按权限规则触发审批卡。前几次运行建议在人工确认 `digest` 与参数行为后，使用 `/approve` / 权限规则放行常用只读或明确工具，或按需切换审批模式（如 `/mode auto`，涉及 `acquire` 预订或 `release` 释放前仍须自己确认目标）。
 
 ---
 

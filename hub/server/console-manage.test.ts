@@ -209,7 +209,7 @@ test('the first administrator is created with the setup code; the token shown on
   assert.equal(done.status, 200, done.body);
   assert.equal(done.body.split('A'.repeat(43)).length - 1, 1, 'the token is on the page once');
   assert.match(done.body, /访问令牌，只用于连接客户端，不能登录控制台；只显示这一次/);
-  assert.match(done.body, /mcp_servers/);
+  assert.match(done.body, /mcpServers/);
   assert.ok(!done.cookies.some((c) => c.startsWith('circle_hub_session=')), 'creating the administrator opens no session');
   assert.match(done.body, /<a [^>]*href="\/console\/login"[^>]*>前往登录<\/a>/);
   await assert.rejects(access(join(dataDir, 'config', 'setup-code.json')), 'the code is used up');
@@ -294,7 +294,7 @@ test('actions become exact argv as the signed-in administrator; flag values cann
   const member = await post('member-add', { name: 'carol', role: 'user', label: 'MacBook' });
   assert.equal(member.status, 200, member.body);
   assert.deepEqual(calls.slice(-2).map((call) => call.argv), [['user', 'create', 'carol', '--role=user'], ['user', 'invite', 'carol']]);
-  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcp_servers/.test(member.body) && /连接确认页/.test(member.body));
+  assert.ok(/邀请码只显示这一次/.test(member.body) && /mcpServers/.test(member.body) && /连接确认页/.test(member.body));
   assert.ok(!member.body.includes('CIRCLE_HUB_TOKEN'), 'the standard authorization needs no token in the Circle entry');
   const withToken = await post('member-add', { name: 'dave', role: 'user', label: 'MacBook', connect: 'token' });
   assert.equal(withToken.status, 200, withToken.body);
