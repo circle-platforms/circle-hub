@@ -1079,7 +1079,16 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
     assert.ok(text.includes('证伪上一轮假设') || text.includes('证伪上轮假设') || text.includes('假设已证伪'), `${label} missing falsification rule`);
     assert.ok(text.includes('缺资料'), `${label} missing 缺资料 narrow rule`);
   }
-  assert.ok(attributor.includes('严禁借“缺资料”或“只剩 1 次上机机会”拦住不试'));
+  assert.ok(attributor.includes('尚有轮次时，下一轮返工必须优先测试该假设，不得借“缺资料”或“剩一次机会”拦住不试'));
+  assert.ok(attributor.includes('轮次已用完时不建议再开轮'));
+  assert.ok(attributor.includes('尚有轮次时供下一轮先试；轮次用完时作为下一步交使用者决定'));
   assert.ok(attributor.includes('只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”'));
+  assert.ok(skill.includes('尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮'));
+  assert.ok(skill.includes('完整读 `index.json`') && skill.includes('停止上机验证'));
+  assert.ok(skill.includes('adapted` 不是步骤白名单'));
+  assert.ok(!skill.includes('仅缺工作簿') && !skill.includes('工作簿一致'));
   assert.ok(deliveryDoc.includes('即使“剩一次机会”也必须继续修改重测'));
+  assert.ok(deliveryDoc.includes('轮次已用完时不开第 4 轮'));
+  assert.ok(!writer.includes('130 条') && !recomposeSkill.includes('130 条'));
+  assert.ok(recomposeSkill.includes('运行器清配置并在收尾末尾执行 `write memory` 存盘') || recomposeSkill.includes('运行器清配置并在收尾末尾执行 \\`write memory\\` 存盘'));
 });
