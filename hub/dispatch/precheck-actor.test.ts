@@ -6,10 +6,13 @@ test('the generic precheck fixture explicitly grants its actual administrator ac
   const c = await setup(); t.after(() => c.close());
   assert.equal(await c.environmentAccess.canUse(c.admin, c.executor.id), true);
   const state = await c.service.precheck(c.admin, c.executor.id);
+  assert.equal(state.job_facts.operation, 'precheck');
+  assert.equal(state.job_facts.readonly_verified, true);
+  assert.equal(state.dispatch_attempt, undefined);
   const events = await c.service.journal.events(state.job);
   assert.ok(events.some(event => event.body.detail.readonly_verified === true));
   assert.equal(events.some(event => event.body.detail.phase === 'intent' || event.body.detail.phase === 'probe_intent'), false);
-  assert.equal(state.frozen, false);
+  assert.equal(state.job_facts.frozen, false);
   assert.ok(c.calls.includes('inspect_slot'));
   assert.equal(c.calls.includes('send_blob'), false);
 });
@@ -20,8 +23,8 @@ test('administrator role alone never bypasses the explicit precheck environment 
   assert.equal(await c.environmentAccess.canUse(c.admin, c.executor.id), false);
   assert.equal(await c.environmentAccess.canUse(c.owner, c.executor.id), true, 'the runner retains its own grant');
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(state.error_code, 'SOURCE_NOT_PERMITTED');
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.job_facts.admission_error?.code, 'SOURCE_NOT_PERMITTED');
+  assert.equal(state.dispatch_attempt, undefined);
   assert.deepEqual(c.calls, []);
   assert.equal(c.endpoint.calls.length, 0);
 });
