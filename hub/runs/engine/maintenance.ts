@@ -29,6 +29,9 @@ import { canFollow, clearRequestWork, noteChanges, noteDeadlines, noteRequests, 
  * every request.
  */
 export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false,memory?:MaintenanceMemory):Promise<void>{
+  if(stop())return;
+  await base.deps.dispatch?.recoverPending?.();
+  if(stop())return;
   const ctx=passContext(base);
   const reservations=passReservations(ctx);
   const started=ctx.now().getTime();
@@ -77,9 +80,9 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
 /** Everything maintenance does for one run. */
 async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
   const stopped=await abandonDecision(ctx,run.body.run);
-  if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run,reservations);return;}
+  if(stopped){await recoverManagement(ctx,run,stopped);await projectDispatch(ctx,run,reservations);return;}
   if(run.body.predecessor){const before=await runById(ctx.deps.records.store,run.body.predecessor);if(before)await answerSuccessorRequests(ctx,before.body,run);}
-  await reconcileDispatch(ctx,run,reservations);
+  await projectDispatch(ctx,run,reservations);
   await rootUpdateRequest(ctx,run);
   await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));
   await recoverRun(ctx,run);
@@ -296,28 +299,17 @@ async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<Reque
   }
 }
 
-async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
+async function projectDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
   if(!ctx.deps.dispatch)return;
   const run=stored.body;
   const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
   if(!admin)throw new Error('派发核对缺少具名管理员');
   const by={id:admin.id,name:admin.name,role:admin.role};
   const reading=await reservations();
-  let jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
+  const jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   if(!jobs.length)return;
   const actions=await actionsOf(ctx.deps.records.store,run.run);
-  for(const job of jobs){
-    const prior=[...actions].reverse().find(a=>a.body.detail.reconciled_job===job.job);
-    const finalized=job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon');
-    const uncertain=!finalized&&(job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch'||job.status.outcome==='issued');
-    if(!uncertain||prior?.body.detail.events_after===job.status.events)continue;
-    const at=ctx.now().toISOString();
-    let events=job.status.events;
-    try{events=(await ctx.deps.dispatch.reconcile(by,job.job)).events;}
-    catch(error){ctx.log({traceId:null,run:run.run,what:'dispatch reconciliation',detail:String(error)});}
-    await putAction(ctx.deps.records.store,{action:'read_back',run:run.run,inputs:[],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{reconciled_job:job.job,events_before:job.status.events,events_after:events}});
-  }
-  jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
+  // Recovery is scheduled once per pass before this reader/projection path; no chosen administrator drives a worker.
   for(const job of jobs){
     const requestSnapshot=dispatchSnapshot([job]);
     let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot);
