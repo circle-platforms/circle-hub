@@ -167,10 +167,13 @@ function syntheticOptionValues(env: GuardEnvironment, tool: DiscoveredTool): Rec
   const values: Record<string, string | string[]> = {};
   for (const option of tool.options) {
     if (option.kind === 'boolean') continue;
-    if (!option.required && option.type !== 'hub') continue;
+    if (!option.required && option.type !== 'hub' && option.type !== 'plumb') continue;
     switch (option.type) {
       case 'hub':
         values[option.name] = env.urlPlaceholder;
+        break;
+      case 'plumb':
+        values[option.name] = env.plumbUrlPlaceholder;
         break;
       case 'run':
         values[option.name] = 'run_syntheticplan';
@@ -222,7 +225,11 @@ function docAllowCommands(env: GuardEnvironment): Array<{ name: string; command:
       for (const taught of extractTaughtCommands(text, rel)) {
         for (const concrete of instantiateTaughtCommand(taught, { skillDir, skillName: skill })) {
           const command = finalizeNodeCommand(
-            concrete.replaceAll('%HUB_URL%', env.urlPlaceholder).replaceAll('%JEV_MODEL%', 'synthetic-model'),
+            concrete
+              .replaceAll('%HUB_URL%', env.urlPlaceholder)
+              .replaceAll('%PLUMB_URL%', env.plumbUrlPlaceholder)
+              .replaceAll('%JEV_MODEL%', 'synthetic-model')
+              .replaceAll('%PLUMB_MODEL%', 'synthetic-model'),
           );
           out.push({ name: `文档 ${rel}: ${taught.raw.slice(0, 80)}`, command });
         }

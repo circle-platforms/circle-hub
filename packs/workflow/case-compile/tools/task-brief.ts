@@ -16,6 +16,7 @@ import { CIRCLE_GENERAL_PURPOSE_NOTICE, renderTaskBrief, resolveSubagentRole } f
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import {
   buildSingleCaseStructuredBrief,
+  loadPlumbCandidates,
   loadRunStructuredContext,
   type RunStructuredContext,
 } from './authoring-brief.ts';
@@ -554,13 +555,17 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
       : round > 1
         ? 'rework_device'
         : 'initial';
+    const idx = inferItemIndex(briefPath, options.itemPath, siblingItem);
+    const siblingItemId = isRecord(siblingItem) && typeof siblingItem.id === 'string' ? siblingItem.id : undefined;
+    const plumbCandidates = await loadPlumbCandidates(runCtx.directory, idx, siblingItemId);
     const built = buildSingleCaseStructuredBrief({
       ctx: runCtx,
       item: siblingItem,
-      index: inferItemIndex(briefPath, options.itemPath, siblingItem),
+      index: idx,
       round,
       mode: inferredMode,
       targetPlanPath: outPath,
+      ...(plumbCandidates ? { plumbCandidates } : {}),
       ...(priorRounds ? { priorRounds } : {}),
       ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
     });

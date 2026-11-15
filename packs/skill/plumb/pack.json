@@ -1,0 +1,65 @@
+{
+  "schema": "pack@1",
+  "id": "plumb",
+  "version": "1.0.0",
+  "kind": "skill",
+  "title": "Plumb 判断客户端",
+  "description": "客户端侧 Plumb 推理网关与状态客户端，仅提供受 TLS 与主机锁定约束的只读/判别工具及内嵌客户端模块，不代 Hub 调用模型。",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "40d167b9ab0d36e7144f854a7ed6cfa588eb4a36bc713e04ae81ad26c145015e",
+      "size": 1929
+    },
+    {
+      "path": "examples/choice-node.json",
+      "sha256": "79779f9a1df9a8b83261f08262e5330f9f5edae7d6fc3aa855c755ec4977eabe",
+      "size": 506
+    },
+    {
+      "path": "examples/match-single-cmd.json",
+      "sha256": "b1836f3e568e202e4f92f2199c8a3f79c40fd3d3581a972b482af5cf447f94da",
+      "size": 293
+    },
+    {
+      "path": "examples/sequence-fidelity.json",
+      "sha256": "55f45d374e4678da3ea600561e250a64295804ba780c311cb5988bc10a12d368",
+      "size": 365
+    },
+    {
+      "path": "functions/modules/plumb-client/cache.ts",
+      "sha256": "5b698207d89a940d75edd783f455724adca3cc53914153a95fc531cdac1e8d57",
+      "size": 3287
+    },
+    {
+      "path": "functions/modules/plumb-client/client.ts",
+      "sha256": "f99732e023511a914badf1108736d288a8fb07c2f8ec5d78e16ff8d5912a3ad5",
+      "size": 42740
+    },
+    {
+      "path": "functions/modules/plumb-client/index.ts",
+      "sha256": "989f9d37765fa069c297732f098dcb3e2a6151311040ccfeaae72bf0d576b9bb",
+      "size": 178
+    },
+    {
+      "path": "functions/modules/plumb-client/redact.ts",
+      "sha256": "1883422b0a604274eb40ab610869df6b50e52184864e6d567130ff4e72119cf4",
+      "size": 4341
+    },
+    {
+      "path": "functions/modules/plumb-client/types.ts",
+      "sha256": "a8aaf9a8cd0fd4f493d66d39b98d4689bf381a2762f6de4d07d4e44045c79006",
+      "size": 6489
+    },
+    {
+      "path": "skill.json",
+      "sha256": "ccfa1f855aac91d47fc1afd27893b94fb78b0ec29310eeade779551bb41dadca",
+      "size": 295
+    },
+    {
+      "path": "tools/plumb.ts",
+      "sha256": "72a9b1d964a949ee13cc8a9c4593e19e56dcaf59c22cca3635fe79c4877d355d",
+      "size": 16313
+    }
+  ]
+}

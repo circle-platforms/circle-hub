@@ -26,6 +26,7 @@ export interface ScriptDeclaration {
   path: string;
   subcommands?: string[];
   subcommandStdin?: Record<string, string[]>;
+  stdin?: string[];
 }
 
 export interface GuardDeclaration {
@@ -38,6 +39,10 @@ export interface GuardDeclaration {
     urlVariable?: string;
     tokenPlaceholder?: string;
     allowedPlaceholders?: string[];
+  };
+  plumb?: {
+    urlVariable?: string;
+    urlPlaceholder?: string;
   };
   workFolders?: {
     settingsKey?: string;
@@ -61,8 +66,8 @@ export interface GuardDeclaration {
   interpreters?: string[];
   commands?: Array<{ name: string; args?: string[]; max?: number; note?: string }>;
   scripts?: ScriptDeclaration[];
-  optionTypes?: Record<string, 'hub' | 'run' | 'int' | 'text' | 'path'>;
-  placeholderTypes?: Array<{ match: string; type: 'hub' | 'run' | 'int' | 'text' | 'path' }>;
+  optionTypes?: Record<string, 'hub' | 'plumb' | 'run' | 'int' | 'text' | 'path'>;
+  placeholderTypes?: Array<{ match: string; type: 'hub' | 'plumb' | 'run' | 'int' | 'text' | 'path' }>;
   shellAlternatives?: Record<string, string>;
   rules?: GuardRule[];
 }
@@ -75,6 +80,8 @@ export interface GuardEnvironment {
   declarationError: string | null;
   hubs: string[];
   hub: string;
+  plumbs: string[];
+  plumb: string;
   cwd: string;
   work: string | null;
   skills: string;
@@ -82,6 +89,7 @@ export interface GuardEnvironment {
   skillsRootValid: boolean;
   allowedFile: string;
   urlPlaceholder: string;
+  plumbUrlPlaceholder: string;
   tokenPlaceholder: string;
   allowedPlaceholders: string[];
 }
@@ -97,7 +105,7 @@ export interface ToolOption {
   kind: 'string' | 'boolean';
   multiple: boolean;
   placeholder: string | null;
-  type: 'hub' | 'run' | 'int' | 'text' | 'path';
+  type: 'hub' | 'plumb' | 'run' | 'int' | 'text' | 'path';
 }
 
 export interface ToolForm {
@@ -111,6 +119,7 @@ export interface DiscoveredTool {
   skill: string | null;
   subcommands: string[] | null;
   subcommandStdin: Record<string, string[]> | null;
+  stdin?: string[] | null;
   options: ToolOption[];
   restricted: boolean;
   stdinMode: 'none' | 'single' | 'keys';
@@ -237,6 +246,13 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
   );
   if (typeof server?.url === 'string' && server.url !== '' && !hubs.includes(server.url)) hubs.push(server.url);
 
+  const plumbCfg = declaration.plumb ?? {};
+  const plumbUrlVar = plumbCfg.urlVariable ?? 'PLUMB_URL';
+  const plumbUrlPlaceholder = plumbCfg.urlPlaceholder ?? `%${plumbUrlVar}%`;
+  const plumbs: string[] = [];
+  const plumbVariable = vars[plumbUrlVar];
+  if (typeof plumbVariable === 'string' && plumbVariable !== '') plumbs.push(plumbVariable);
+
   const cwdReal = bestEffortReal(cwd);
   const foldersKey = declaration.workFolders?.settingsKey ?? 'trusted_folders';
   let work: string | null = null;
@@ -292,6 +308,8 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
     declarationError,
     hubs,
     hub: hubs[0] ?? '',
+    plumbs,
+    plumb: plumbs[0] ?? '',
     cwd: cwdReal,
     work,
     skills,
@@ -299,6 +317,7 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
     skillsRootValid,
     allowedFile: path.join(homeReal, 'hooks', 'ALLOWED.md'),
     urlPlaceholder: `%${urlVar}%`,
+    plumbUrlPlaceholder,
     tokenPlaceholder,
     allowedPlaceholders,
   };
@@ -504,7 +523,7 @@ function usageOf(line: string, base: string, subcommands?: string[]): { position
   return { positional, pairs };
 }
 
-function typeOfOption(env: GuardEnvironment, name: string, placeholder: string | null): 'hub' | 'run' | 'int' | 'text' | 'path' {
+function typeOfOption(env: GuardEnvironment, name: string, placeholder: string | null): 'hub' | 'plumb' | 'run' | 'int' | 'text' | 'path' {
   const declared = env.declaration.optionTypes?.[name];
   if (declared) return declared;
   for (const rule of asList(env.declaration.placeholderTypes)) {
@@ -518,7 +537,7 @@ function isInternalHelperModule(source: string): boolean {
   return /\bexport\b/.test(source) && !/(?:process\.argv|import\.meta\.main)/.test(source);
 }
 
-function describeTool(env: GuardEnvironment, base: { id: string; file: string; skill: string | null; docText: string; subcommands?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
+function describeTool(env: GuardEnvironment, base: { id: string; file: string; skill: string | null; docText: string; subcommands?: string[]; subcommandStdin?: Record<string, string[]>; stdin?: string[] }): DiscoveredTool {
   const source = readText(base.file);
   const name = path.basename(base.file);
   const header = source.split('\n').slice(0, 40).filter((line) => line.startsWith('//')).map((line) => line.replace(/^\/\/\s?/, ''));
@@ -548,6 +567,14 @@ function describeTool(env: GuardEnvironment, base: { id: string; file: string; s
   if (optTable) {
     for (const m of optTable[1].matchAll(/['"]?([a-z][a-z0-9-]*)['"]?\s*:\s*(true|false)/g)) {
       ensure(m[1], { required: m[2] === 'true' });
+    }
+  }
+
+  // 2b. const BOOLEAN_OPTIONS = ['key-stdin', 'no-cache', ...]
+  const boolTable = /(?:const|let)\s+BOOLEAN_OPTIONS(?:\s*:[^=]+)?\s*=\s*\[([\s\S]*?)\]/.exec(source);
+  if (boolTable) {
+    for (const m of boolTable[1].matchAll(/['"]([a-z][a-z0-9-]*)['"]/g)) {
+      ensure(m[1], { required: false, kind: 'boolean' });
     }
   }
 
@@ -599,11 +626,13 @@ function describeTool(env: GuardEnvironment, base: { id: string; file: string; s
   const tokenReads = source.match(/\b(?:tokenFromStdin|readTokenFromStdin)\b/g) ?? [];
   const keyReads = source.match(/\breadKeys\b/g) ?? [];
   const stdinMode: 'none' | 'single' | 'keys' =
-    keyReads.length >= 2 || /await\s+readKeys\(/.test(source)
-      ? 'keys'
-      : tokenReads.length >= 2 || /=\s*(?:tokenFromStdin|readTokenFromStdin)\b/.test(source)
-        ? 'single'
-        : 'none';
+    base.stdin?.length
+      ? 'single'
+      : keyReads.length >= 2 || /await\s+readKeys\(/.test(source)
+        ? 'keys'
+        : tokenReads.length >= 2 || /=\s*(?:tokenFromStdin|readTokenFromStdin)\b/.test(source)
+          ? 'single'
+          : 'none';
 
   return {
     id: base.id,
@@ -611,6 +640,7 @@ function describeTool(env: GuardEnvironment, base: { id: string; file: string; s
     skill: base.skill,
     subcommands: base.subcommands ?? null,
     subcommandStdin: base.subcommandStdin ?? null,
+    stdin: base.stdin ?? null,
     options,
     restricted: declared || usages.length > 0 || base.subcommands !== undefined,
     stdinMode,
@@ -676,20 +706,6 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         }
       };
 
-      const topEntries = listNames(dir, () => true);
-      for (const entry of topEntries) {
-        const full = path.join(dir, entry);
-        let stat: fs.Stats;
-        try {
-          stat = fs.lstatSync(full);
-        } catch {
-          continue;
-        }
-        if (stat.isSymbolicLink() || !stat.isDirectory() || entry === 'node_modules') continue;
-        if (entry === 'tools') walkToolsDir(full, 'tools');
-        else walkToolsDir(full, entry);
-      }
-
       for (const script of asList(env.declaration.scripts)) {
         if (!script.path.startsWith(`${skill}/`)) continue;
         const lexical = path.join(env.skills, script.path);
@@ -703,9 +719,24 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
               docText,
               subcommands: script.subcommands,
               subcommandStdin: script.subcommandStdin,
+              stdin: script.stdin,
             }),
           );
         }
+      }
+
+      const topEntries = listNames(dir, () => true);
+      for (const entry of topEntries) {
+        const full = path.join(dir, entry);
+        let stat: fs.Stats;
+        try {
+          stat = fs.lstatSync(full);
+        } catch {
+          continue;
+        }
+        if (stat.isSymbolicLink() || !stat.isDirectory() || entry === 'node_modules') continue;
+        if (entry === 'tools') walkToolsDir(full, 'tools');
+        else walkToolsDir(full, entry);
       }
     }
   }
@@ -767,7 +798,7 @@ export function writeCommand(
 
   for (const option of listed) {
     if (option.kind === 'boolean') {
-      if (booleans.has(option.name)) parts.push(`--${option.name}`);
+      if (booleans.has(option.name) || option.required) parts.push(`--${option.name}`);
       else if (all) parts.push(`[--${option.name}]`);
       continue;
     }
@@ -781,20 +812,24 @@ export function writeCommand(
       ? quote(values[option.name] as string)
       : option.type === 'hub'
         ? env.urlPlaceholder
-        : option.placeholder
-          ? quote(option.placeholder)
-          : quote('<值>');
+        : option.type === 'plumb'
+          ? env.plumbUrlPlaceholder
+          : option.placeholder
+            ? quote(option.placeholder)
+            : quote('<值>');
     parts.push(!given && !option.required ? `[--${option.name} ${rawVal}]` : `--${option.name} ${rawVal}`);
   }
   let line = parts.join(' ');
   const expectedLines =
     subcommand && tool.subcommandStdin?.[subcommand]
       ? tool.subcommandStdin[subcommand]
-      : tool.stdinMode === 'single'
-        ? [env.tokenPlaceholder]
-        : tool.stdinMode === 'keys'
-          ? env.allowedPlaceholders
-          : null;
+      : tool.stdin?.length
+        ? tool.stdin
+        : tool.stdinMode === 'single'
+          ? [env.tokenPlaceholder]
+          : tool.stdinMode === 'keys'
+            ? env.allowedPlaceholders
+            : null;
   if (expectedLines?.length) line += ` <<'EOF'\n${expectedLines.join('\n')}\nEOF`;
   return line;
 }
@@ -818,6 +853,9 @@ function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: stri
     case 'hub':
       if (value === env.urlPlaceholder || env.hubs.includes(value)) return null;
       return `--${option.name} 后面是 ${JSON.stringify(clip(value, 80))}，这个配置里 Hub 的地址是 ${env.hub || '（设置文件里没有）'}，要写 ${env.urlPlaceholder}`;
+    case 'plumb':
+      if (value === env.plumbUrlPlaceholder || env.plumbs.includes(value)) return null;
+      return `--${option.name} 后面是 ${JSON.stringify(clip(value, 80))}，这个配置里 Plumb 的地址是 ${env.plumb || '（设置文件里没有）'}，要写 ${env.plumbUrlPlaceholder}`;
     case 'run': {
       const parts = value.split(',');
       if (parts.length && parts.every((part) => /^run_[a-z0-9]+$/.test(part))) return null;
@@ -851,9 +889,11 @@ function tokenProblem(env: GuardEnvironment, tool: DiscoveredTool, subcommand: s
   const expectedLines =
     subcommand && tool.subcommandStdin?.[subcommand]
       ? tool.subcommandStdin[subcommand]
-      : tool.stdinMode === 'single'
-        ? [env.tokenPlaceholder]
-        : null;
+      : tool.stdin?.length
+        ? tool.stdin
+        : tool.stdinMode === 'single'
+          ? [env.tokenPlaceholder]
+          : null;
   const requiresStdin = expectedLines !== null || tool.stdinMode === 'keys';
 
   if (!heredoc) {
@@ -1475,9 +1515,10 @@ function validateExecuteCommand(
     const bad = checkOptionValue(env, option, value);
     if (bad) {
       problems.push(bad);
-      if (option.type !== 'hub') continue;
+      if (option.type !== 'hub' && option.type !== 'plumb') continue;
     }
-    const recorded = option.type === 'hub' ? env.urlPlaceholder : value;
+    const recorded =
+      option.type === 'hub' ? env.urlPlaceholder : option.type === 'plumb' ? env.plumbUrlPlaceholder : value;
     if (option.multiple) {
       const arr = Array.isArray(values[name]) ? (values[name] as string[]) : [];
       arr.push(recorded);
@@ -1847,6 +1888,7 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   lines.push(`一条命令一行，形式：\`node '<技能目录>/tools/<脚本>.ts' --选项 值 …\`。`, '');
   lines.push(`- 引号与路径写法（唯一规则）：只含英文数字与 \`_./:%=@,+-\` 的路径或值可不加引号；**只要含空格（如路径中的 \`Application Support\`）、中文或 \`<\`/\`>\` 等字符，统一用英文单引号 \`'…'\` 包住**。不用英文双引号 \`"\`，不写反斜杠转义（\`\\ \`）或续行（\`\\\`），不写紧连引号 \`'a'b\`。`);
   lines.push(`- \`--hub\` 的值写 \`${env.urlPlaceholder}\`（客户端会展开成这个配置的 Hub 地址），写成配置里的 Hub 地址本身也行，别的主机不行。`);
+  lines.push(`- \`--base-url\` 的值写 \`${env.plumbUrlPlaceholder}\`（客户端会展开成这个配置的 Plumb 地址），写成配置里的 Plumb 地址本身也行，别的主机不行。`);
   lines.push('- 选项写成 `--名字 值`，中间空格；不用 `--名字=值`（脚本和守卫都不认）。');
   lines.push('- 路径类的值必须在工作目录里。');
   lines.push(
@@ -1901,7 +1943,7 @@ export function buildToolSchemas(env: GuardEnvironment): unknown[] {
     .map((tool) => {
       const properties: Record<string, unknown> = {};
       for (const option of tool.options) {
-        if (option.type === 'hub') continue;
+        if (option.type === 'hub' || option.type === 'plumb') continue;
         if (option.kind === 'boolean') properties[option.name] = { type: 'boolean' };
         else if (option.type === 'run') properties[option.name] = { type: 'string', pattern: '^run_[a-z0-9]+(,run_[a-z0-9]+)*$' };
         else if (option.type === 'int') properties[option.name] = { type: 'integer', minimum: 1 };
@@ -1914,7 +1956,7 @@ export function buildToolSchemas(env: GuardEnvironment): unknown[] {
         inputSchema: {
           type: 'object',
           properties,
-          required: tool.options.filter((o) => o.required && o.type !== 'hub').map((o) => o.name),
+          required: tool.options.filter((o) => o.required && o.type !== 'hub' && o.type !== 'plumb').map((o) => o.name),
           additionalProperties: false,
         },
       };

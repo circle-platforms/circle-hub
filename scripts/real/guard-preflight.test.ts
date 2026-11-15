@@ -34,6 +34,12 @@ function installSkills(home: string): void {
     if (existsSync(src)) writeFileSync(join(ccDst, 'agents', name), readFileSync(src));
   }
 
+  const plumbSrc = join(REPO_ROOT, 'packs/skill/plumb');
+  const plumbDst = join(home, 'skills/plumb');
+  mkdirSync(join(plumbDst, 'tools'), { recursive: true });
+  writeFileSync(join(plumbDst, 'SKILL.md'), readFileSync(join(plumbSrc, 'SKILL.md')));
+  cpSync(join(plumbSrc, 'tools'), join(plumbDst, 'tools'), { recursive: true });
+
   const rcSrc = join(ccSrc, 'recompose');
   const rcDst = join(home, 'skills/recompose');
   mkdirSync(join(rcDst, 'tools'), { recursive: true });
@@ -49,7 +55,7 @@ function installSkills(home: string): void {
 
 function makeHome(dir: string, profile: 'skills' | 'ops', homeName: string): string {
   const home = join(dir, homeName);
-  writeHome({ home, profile, hubUrl: HUB_URL }, ENDPOINT, 'synthetic-hub-token');
+  writeHome({ home, profile, hubUrl: HUB_URL, plumbUrl: 'https://192.0.2.60:8443', plumbModel: 'plumb-27b-0.5.0' }, ENDPOINT, 'synthetic-hub-token');
   installSkills(home);
   return home;
 }
@@ -294,6 +300,21 @@ test('refresh-guards --apply refuses when a prior apply left hooks.apply-in-prog
     assert.ok(lines.some((line) => line.includes(priorBackup)));
     assert.match(readFileSync(libPath, 'utf8'), /partial-write/, 'live hooks untouched when refusing');
     assert.equal(existsSync(join(home, 'hooks.apply-in-progress')), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('preflight discovers plumb tools under tools/ and validates skills-profile plumb commands', () => {
+  const dir = scratch('plumb-skills');
+  try {
+    const home = makeHome(dir, 'skills', 'home');
+    const report = runPreflight(home);
+    assert.equal(report.ok, true, report.mismatches.map((m) => `${m.name} want=${m.want} got=${m.got} ${m.reason ?? ''}`).join('\n'));
+    assert.ok(report.results.some((r) => /plumb\/SKILL\.md.*tools\/plumb\.ts models/.test(r.name) && r.want === 'allow' && r.ok));
+    assert.ok(report.results.some((r) => /fidelity-plumb\.ts/.test(r.name) && r.want === 'allow' && r.ok));
+    assert.ok(report.results.some((r) => /cmd-select-plumb\.ts/.test(r.name) && r.want === 'allow' && r.ok));
+    assert.ok(report.results.some((r) => /cmd-verify-plumb\.ts/.test(r.name) && r.want === 'allow' && r.ok));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

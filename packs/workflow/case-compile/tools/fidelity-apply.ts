@@ -35,8 +35,14 @@ export async function main(argv: string[]): Promise<number> {
       try { bytes = await readFile(verdictPath); } catch { note('未知', '原因缺资料。尚未取得自动化用例的核对结果；下一步交给独立模型核对'); continue; }
       let verdict: unknown;
       try { verdict = parsedPlanFile(verdictName, bytes); } catch (error) { note('未知', error instanceof Error ? error.message : '不是合法的 JSON'); continue; }
-      if (!isRecord(verdict) || Object.keys(verdict).some((key) => key !== 'steps' && key !== 'disclosure')) { note('未知', '原因编写模型的问题。核对结果的内容不完整；下一步由独立模型按执行器规则重新写出核对结果'); continue; }
-      const fidelity = { brief_sha256: brief.brief_sha256, steps: verdict.steps, disclosure: verdict.disclosure };
+      if (!isRecord(verdict) || Object.keys(verdict).some((key) => key !== 'steps' && key !== 'disclosure' && key !== 'brief_sha256' && key !== 'model_disclosure')) { note('未知', '原因编写模型的问题。核对结果的内容不完整；下一步由独立模型按执行器规则重新写出核对结果'); continue; }
+      if (verdict.brief_sha256 !== undefined && verdict.brief_sha256 !== brief.brief_sha256) { note('未知', '原因缺资料。核对结果的简报摘要与当前计划不一致；下一步重新生成核对结果后再合并'); continue; }
+      const fidelity: Record<string, unknown> = {
+        brief_sha256: brief.brief_sha256,
+        steps: verdict.steps,
+        disclosure: verdict.disclosure,
+        ...(verdict.model_disclosure !== undefined ? { model_disclosure: verdict.model_disclosure } : {}),
+      };
       const judged = fidelityProblems(brief, fidelity);
       const malformed = judged.problems.filter((p) => p.code === 'fidelity_shape');
       if (malformed.length) { note('未知', `${malformed.map((p) => p.message).join('；')}；下一步由独立模型按执行器规则重新写出核对结果`); continue; }

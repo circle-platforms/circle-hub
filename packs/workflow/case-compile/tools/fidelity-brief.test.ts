@@ -166,3 +166,61 @@ test('fidelityBrief populates added_precondition exemptions from sources.states,
   assert.ok(briefUnsourced.mechanical.note.includes('mechanical.exemptions 为空'));
   assert.equal(JSON.stringify(briefUnsourced).includes('擅自添加但自称前置'), false);
 });
+
+test('Bug #17 & #18: handling=skipped is skipped by fidelity-brief, and matching brief_sha256 + model_disclosure merge cleanly in fidelity-apply', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-fidelity-bugs-'));
+  try {
+    const plans = join(dir, 'plans'), briefs = join(dir, 'briefs');
+    await mkdir(plans);
+    await writeFile(join(dir, 'run.json'), JSON.stringify({
+      run: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
+      items: [
+        { id: 'doc-1:c-1', fields: { recomposition: { record: RECORD } } },
+        { id: 'doc-1:c-skip', fields: { recomposition: { record: RECORD } } },
+      ],
+    }));
+    await writeFile(join(plans, '00.json'), JSON.stringify({ item: 'doc-1:c-1', handling: 'handled', slots: { plan: [{ data: goodData() }] } }));
+    await writeFile(join(plans, '01.json'), JSON.stringify({ item: 'doc-1:c-skip', handling: 'skipped', reason: '前置暂不具备' }));
+
+    const briefRes = await quiet(() => brief(['--run', join(dir, 'run.json'), '--plans', plans, '--out', briefs]));
+    assert.equal(briefRes.code, 0, briefRes.stderr);
+    const briefJson = JSON.parse(briefRes.stdout);
+    assert.equal(briefJson.briefs.length, 1);
+    assert.deepEqual(briefJson.skipped, [{ file: '01.json', reason: '条目已标为 skipped，尚未编写自动化用例' }]);
+
+    const sha = briefJson.briefs[0].brief_sha256;
+    await writeFile(briefJson.briefs[0].verdict, JSON.stringify({
+      brief_sha256: sha,
+      steps: [{
+        ...VERDICT.steps[0],
+        model_judgment: {
+          status: '未确认',
+          decided_by: '模型',
+          model_version: 'plumb-27b-0.5.0',
+          task: 'sequence',
+          choice: '保持',
+          confidence: 0.91,
+          gate: { action: 'pass' },
+        },
+      }],
+      disclosure: VERDICT.disclosure,
+      model_disclosure: {
+        status: '未确认',
+        decided_by: '模型',
+        model_version: 'plumb-27b-0.5.0',
+        review_required_steps: [],
+      },
+    }));
+    const applyRes = await quiet(() => apply(['--run', join(dir, 'run.json'), '--plans', plans, '--briefs', briefs]));
+    assert.equal(applyRes.code, 0, applyRes.stderr);
+    const applyJson = JSON.parse(applyRes.stdout);
+    assert.equal(applyJson.ready, true);
+    assert.deepEqual(applyJson.merged, [{ file: '00.json', preserved: 1, changed: 0, unrealized: 0 }]);
+
+    const mergedPlan = JSON.parse(await readFile(join(plans, '00.json'), 'utf8'));
+    assert.equal(mergedPlan.slots.plan[0].data.fidelity.model_disclosure.model_version, 'plumb-27b-0.5.0');
+    assert.equal(mergedPlan.slots.plan[0].data.fidelity.steps[0].model_judgment.choice, '保持');
+  } finally {
+    await import('node:fs/promises').then((m) => m.rm(dir, { recursive: true, force: true }));
+  }
+});

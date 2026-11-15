@@ -33,6 +33,7 @@ export async function planCases(runPath: string, plans: string): Promise<{ cases
     if (!isRecord(value) || typeof value.item !== 'string') { skipped.push({ file, reason: '不是用例自动化用例文件（没有 item）' }); continue; }
     const item = items.get(value.item);
     if (!item) { skipped.push({ file, reason: `不属于本次脚本编写的原始用例` }); continue; }
+    if (value.handling === 'skipped') { skipped.push({ file, reason: '条目已标为 skipped，尚未编写自动化用例' }); continue; }
     const data = planDataOf(value);
     const { fidelity: _judged, ...plan } = isRecord(data) ? data : {};
     const fields = isRecord(item.fields) ? item.fields : {};

@@ -409,6 +409,46 @@ test('buildCompileBrief and renderCompileBriefMd disclose contract.cleanup for r
     const md = renderCompileBriefMd(compiled);
     assert.match(md, /执行器自动清理（lib\/demo\/clear\.py@dddddddddddd）/);
     assert.match(md, /逆操作（runner_cleanup：/);
+
+    // Without plumb/cmd_candidates, sha is unchanged; with plumb_candidates, status=未确认 & decided_by=模型 are preserved and validated.
+    const baselineSha = compiled.brief_sha256;
+    await mkdir(join(workDir, 'plumb', 'cmd_candidates'), { recursive: true });
+    await writeFile(
+      join(workDir, 'plumb', 'cmd_candidates', '00.json'),
+      JSON.stringify({
+        schema: 'plumb-cmd-candidates@1',
+        status: '未确认',
+        decided_by: '模型',
+        model_version: 'plumb-27b-0.5.0',
+        item: 'item-save-1',
+        index: '00',
+        steps: [
+          {
+            step_index: 1,
+            step_text: '保存配置',
+            recalled_count: 1,
+            selected: { command: 'demo save', path: '/commands/demo/save', definition: 'demo save' },
+            none_selected: false,
+            review_required: false,
+            rejected: false,
+            candidates: [{ command: 'demo save', path: '/commands/demo/save', summary: 'demo save' }],
+          },
+        ],
+      }),
+    );
+    const { loadPlumbCandidates } = await import('./authoring-brief.ts');
+    const pc = await loadPlumbCandidates(workDir, '00', 'item-save-1');
+    assert.ok(pc);
+    const withPlumb = buildSingleCaseStructuredBrief({ ctx, item, index: '00', round: 1, plumbCandidates: pc })!;
+    assert.equal(validateCompileBrief(withPlumb, item).ok, true);
+    assert.equal(withPlumb.materials.commands_and_manual.plumb_candidates?.status, '未确认');
+    assert.equal(withPlumb.materials.commands_and_manual.plumb_candidates?.decided_by, '模型');
+    assert.notEqual(withPlumb.brief_sha256, baselineSha);
+    assert.match(renderCompileBriefMd(withPlumb), /Plumb 预筛命令候选（状态：未确认，决定者：模型/);
+
+    const badPlumb = structuredClone(withPlumb) as Record<string, any>;
+    badPlumb.materials.commands_and_manual.plumb_candidates.decided_by = '程序';
+    assert.equal(validateCompileBrief(badPlumb, item).ok, false);
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }

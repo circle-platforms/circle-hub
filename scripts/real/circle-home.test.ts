@@ -241,32 +241,60 @@ test('profile arguments default to review and accept review, skills and ops', ()
   assert.equal(parseArgs([...args, '--profile', 'ops']).profile, 'ops');
   assert.throws(() => parseArgs([...args, '--profile', 'unknown']), /profile/);
 });
-test('skills settings add only named variables and a private empty skills directory', () => {
+test('skills settings add only named variables, trust_cert_files, and a private empty skills directory', () => {
   const dir = scratch();
   try {
     for (const jevModel of [undefined, 'synthetic-jev']) {
       const home = join(dir, jevModel ? 'selected' : 'unset');
-      const written = writeHome({ home, hubUrl: 'https://hub.example.invalid/mcp', profile: 'skills', jevModel }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+      const written = writeHome(
+        {
+          home,
+          hubUrl: 'https://hub.example.invalid/mcp',
+          profile: 'skills',
+          jevModel,
+          ...(jevModel ? { plumbUrl: 'https://plumb.example.invalid', plumbModel: 'plumb-27b-0.5.0', plumbCaFile: '/certs/plumb-ca.pem' } : {}),
+        },
+        endpointFrom(entries, 'qwen'),
+        'synthetic-token',
+      );
       const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
-      assert.deepEqual(settings.variables, { HUB_URL: 'https://hub.example.invalid/mcp', ...(jevModel ? { JEV_MODEL: jevModel } : {}) });
+      assert.deepEqual(settings.variables, {
+        HUB_URL: 'https://hub.example.invalid/mcp',
+        ...(jevModel ? { JEV_MODEL: jevModel, PLUMB_URL: 'https://plumb.example.invalid', PLUMB_MODEL: 'plumb-27b-0.5.0' } : {}),
+      });
+      if (jevModel) assert.deepEqual(settings.trust_cert_files, ['/certs/plumb-ca.pem']);
+      else assert.equal(settings.trust_cert_files, undefined);
       assert.deepEqual(JSON.parse(readFileSync(join(home, 'secrets.json'), 'utf8')), { secrets: { HUB_TOKEN: 'synthetic-token' } });
       assert.equal(statSync(join(home, 'skills')).mode & 0o777, 0o700);
       for (const f of written.files) assert.equal(statSync(join(home, f)).mode & 0o777, 0o600);
     }
+    const parsed = parseArgs([
+      '--env-file', 'synthetic.env', '--home', 'h', '--provider', 'qwen', '--profile', 'ops',
+      '--plumb-url', 'https://plumb.example.invalid', '--plumb-model', 'plumb-27b-0.5.0', '--plumb-ca-file', 'ca.pem',
+    ]);
+    assert.deepEqual([parsed.plumbUrl, parsed.plumbModel, parsed.plumbCaFile], ['https://plumb.example.invalid', 'plumb-27b-0.5.0', 'ca.pem']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-test('skills screen lists owner followups without exposing the Jev model value or any key', () => {
+test('skills screen lists owner followups including Plumb without exposing model values or any key', () => {
   const dir = scratch();
   try {
     const envFile = join(dir, 'synthetic.env'); writeFileSync(envFile, ENV); const lines: string[] = [];
     const argv = ['--env-file', envFile, '--home', join(dir, 'home'), '--provider', 'qwen', '--profile', 'skills'];
     assert.equal(main(argv, { HUB_REAL_TOKEN: 'synthetic-token' }, line => lines.push(line)), 0);
-    const shown = lines.join('\n'); for (const hint of ['/secrets JEV_API_KEY', '/variables JEV_MODEL', 'local-tools verify --digest', 'pack-files.ts --verify-install']) assert.ok(shown.includes(hint));
+    const shown = lines.join('\n');
+    for (const hint of ['/secrets JEV_API_KEY', '/secrets PLUMB_API_KEY', '/variables JEV_MODEL', '/variables PLUMB_URL', '/variables PLUMB_MODEL', 'local-tools verify --digest', 'pack-files.ts --verify-install']) assert.ok(shown.includes(hint), hint);
     assert.ok(!/synthetic-token|qwen-secret|qwen\.example/.test(shown));
-    const selected = [...argv]; selected[selected.indexOf('--home') + 1] = join(dir, 'selected'); selected.push('--jev-model', 'synthetic-private-model'); lines.length = 0;
-    assert.equal(main(selected, { HUB_REAL_TOKEN: 'synthetic-token', JEV_API_KEY: 'synthetic-never-read-key' }, line => lines.push(line)), 0);
-    assert.ok(!lines.join('\n').includes('/variables JEV_MODEL'));
-    for (const value of ['synthetic-private-model', 'synthetic-never-read-key']) assert.ok(!lines.join('\n').includes(value));
+    const selected = [...argv]; selected[selected.indexOf('--home') + 1] = join(dir, 'selected');
+    selected.push('--jev-model', 'synthetic-private-model', '--plumb-url', 'https://plumb-private.invalid', '--plumb-model', 'plumb-private-model', '--plumb-ca-file', '/private/ca.pem');
+    lines.length = 0;
+    assert.equal(main(selected, { HUB_REAL_TOKEN: 'synthetic-token', JEV_API_KEY: 'synthetic-never-read-key', PLUMB_API_KEY: 'synthetic-plumb-secret' }, line => lines.push(line)), 0);
+    const selectedText = lines.join('\n');
+    assert.ok(!selectedText.includes('/variables JEV_MODEL'));
+    assert.ok(!selectedText.includes('/variables PLUMB_URL'));
+    assert.ok(!selectedText.includes('/variables PLUMB_MODEL'));
+    for (const value of ['synthetic-private-model', 'synthetic-never-read-key', 'plumb-private.invalid', 'plumb-private-model', '/private/ca.pem', 'synthetic-plumb-secret']) {
+      assert.ok(!selectedText.includes(value), `leaked ${value}`);
+    }
     assert.deepEqual(JSON.parse(readFileSync(join(dir, 'selected/secrets.json'), 'utf8')), { secrets: { HUB_TOKEN: 'synthetic-token' } });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -528,7 +556,7 @@ test('model calls cannot create links or rename directories through direct tools
   }finally{f.close();}
 });
 
-type ParsedSkillCommand = { source: string; template: string; hasHeredoc: boolean };
+type ParsedSkillCommand = { source: string; template: string; heredocBody: string | null };
 
 function splitAlternativesOutsideAngles(text: string): string[] {
   const parts: string[] = [];
@@ -544,7 +572,7 @@ function splitAlternativesOutsideAngles(text: string): string[] {
 
 function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand[] {
   const out: ParsedSkillCommand[] = [];
-  // Every ```sh block line must be blank, a # comment, or a strict node <技能目录>/tools/*.ts command (with optional 3-line <<'EOF'/%HUB_TOKEN%/EOF heredoc).
+  // Every ```sh block line must be blank, a # comment, or a strict node <技能目录>/tools/*.ts command (with optional 3-line <<'EOF'/%HUB_TOKEN%|%PLUMB_API_KEY%/EOF heredoc).
   for (const match of text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)) {
     const lines = match[1].split('\n');
     for (let i = 0; i < lines.length;) {
@@ -553,34 +581,58 @@ function extractSkillCommands(docPath: string, text: string): ParsedSkillCommand
       assert.ok(line.startsWith('node <技能目录>/tools/'), `${docPath}: unparseable command line in sh block: ${line}`);
       if (line.includes('<<')) {
         assert.match(line, / <<'EOF'$/, `${docPath}: malformed heredoc start on line: ${line}`);
-        assert.equal(lines[i + 1], '%HUB_TOKEN%', `${docPath}: missing %HUB_TOKEN% heredoc line after: ${line}`);
+        const token = lines[i + 1];
+        assert.ok(token === '%HUB_TOKEN%' || token === '%PLUMB_API_KEY%', `${docPath}: missing secret heredoc line after: ${line}`);
         assert.equal(lines[i + 2], 'EOF', `${docPath}: missing EOF closing line after: ${line}`);
-        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), hasHeredoc: true });
+        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), heredocBody: token });
         i += 3;
       } else {
-        assert.ok(!line.includes('%HUB_URL%') && !line.includes('%HUB_TOKEN%'), `${docPath}: Hub command missing <<'EOF': ${line}`);
-        out.push({ source: docPath, template: line, hasHeredoc: false });
+        assert.ok(
+          !line.includes('%HUB_URL%') && !line.includes('%HUB_TOKEN%') && !line.includes('%PLUMB_URL%') && !line.includes('%PLUMB_API_KEY%'),
+          `${docPath}: secret/url command missing <<'EOF': ${line}`,
+        );
+        out.push({ source: docPath, template: line, heredocBody: null });
+        i += 1;
+      }
+    }
+  }
+  // Also allow ```text blocks containing multi-line Plumb commands (e.g. plumb/SKILL.md).
+  for (const match of text.matchAll(/^```text\n([\s\S]*?)^```$/gm)) {
+    const lines = match[1].split('\n');
+    for (let i = 0; i < lines.length;) {
+      const line = lines[i];
+      if (!line.startsWith('node <技能目录>/tools/')) { i += 1; continue; }
+      if (line.endsWith(" <<'EOF'")) {
+        const token = lines[i + 1];
+        assert.ok(token === '%HUB_TOKEN%' || token === '%PLUMB_API_KEY%', `${docPath}: missing secret heredoc line after: ${line}`);
+        assert.equal(lines[i + 2], 'EOF', `${docPath}: missing EOF closing line after: ${line}`);
+        out.push({ source: docPath, template: line.slice(0, -" <<'EOF'".length), heredocBody: token });
+        i += 3;
+      } else {
+        out.push({ source: docPath, template: line, heredocBody: null });
         i += 1;
       }
     }
   }
   // Explicit "label: [node <技能目录>/]tools/..." command declarations in ```text summaries.
   const heredocNote = " <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）";
+  const plumbHeredocNote = " <<'EOF'（接两行 %PLUMB_API_KEY% 与 EOF，切勿在 <<'EOF' 前换行）";
   for (const line of text.split('\n')) {
     const labelled = /^[^:\n]+: ((?:node <技能目录>\/)?tools\/\S+\.ts(?: [^\n]*)?)$/.exec(line);
     if (!labelled) continue;
-    let cmd = labelled[1], hasHeredoc = false;
-    if (cmd.endsWith(heredocNote)) { cmd = cmd.slice(0, -heredocNote.length); hasHeredoc = true; }
+    let cmd = labelled[1], heredocBody: string | null = null;
+    if (cmd.endsWith(heredocNote)) { cmd = cmd.slice(0, -heredocNote.length); heredocBody = '%HUB_TOKEN%'; }
+    else if (cmd.endsWith(plumbHeredocNote)) { cmd = cmd.slice(0, -plumbHeredocNote.length); heredocBody = '%PLUMB_API_KEY%'; }
     assert.ok(!cmd.includes('<<') && !cmd.includes('（'), `${docPath}: unparseable labelled command: ${line}`);
     if (cmd.startsWith('tools/')) cmd = `node <技能目录>/${cmd}`;
-    out.push({ source: docPath, template: cmd, hasHeredoc });
+    out.push({ source: docPath, template: cmd, heredocBody });
   }
   // Inline backticked `node <技能目录>...` invocations (excluding the exact prose meta-syntax illustration).
   for (const match of text.matchAll(/`(node <技能目录>[^`]*)`/g)) {
     const cmd = match[1];
     if (cmd === 'node <技能目录>/tools/<脚本>.ts --选项 值') continue;
     assert.ok(!cmd.includes('<<') && !cmd.includes('\n'), `${docPath}: unparseable inline command: ${cmd}`);
-    out.push({ source: docPath, template: cmd, hasHeredoc: false });
+    out.push({ source: docPath, template: cmd, heredocBody: null });
   }
   return out;
 }
@@ -634,11 +686,12 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
   const dir = scratch();
   try {
     const hubUrl = 'https://hub.example.invalid/mcp';
+    const plumbUrl = 'https://plumb.example.invalid';
     for (const [label, profile, home] of [
       ['skills', 'skills', join(dir, 'home-skills')],
       ['ops-with-spaces', 'ops', join(dir, 'Application Support', 'home-ops')],
     ] as const) {
-      const written = writeHome({ home, profile, hubUrl }, endpointFrom(entries, 'qwen'), 'synthetic-token');
+      const written = writeHome({ home, profile, hubUrl, plumbUrl, plumbModel: 'plumb-27b-0.5.0' }, endpointFrom(entries, 'qwen'), 'synthetic-token');
       const hook = join(home, written.files.find((file) => file.startsWith('hooks/'))!);
       const decide = (command: string) => {
         const child = spawnSync(process.execPath, [hook], {
@@ -656,9 +709,14 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
 
       const packs = [
         {
+          name: 'plumb',
+          dir: fileURLToPath(new URL('../../packs/skill/plumb/', import.meta.url)),
+          expectedScripts: ['plumb.ts'],
+        },
+        {
           name: 'case-compile',
           dir: fileURLToPath(new URL('../../packs/workflow/case-compile/', import.meta.url)),
-          expectedScripts: ['assemble-delivery.ts', 'carry-plans.ts', 'check-plan.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'submit-plans.ts', 'task-brief.ts'],
+          expectedScripts: ['assemble-delivery.ts', 'carry-plans.ts', 'check-plan.ts', 'cmd-select-plumb.ts', 'cmd-verify-plumb.ts', 'download-returns.ts', 'download-run.ts', 'fetch-run.ts', 'fidelity-apply.ts', 'fidelity-brief.ts', 'fidelity-plumb.ts', 'generate-workbook.ts', 'normalize-mindmap.ts', 'submit-plans.ts', 'task-brief.ts'],
         },
         {
           name: 'recompose',
@@ -721,12 +779,14 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
           范围文件: 'scope.md',
           结构简报JSON: 'briefs/0.json',
           计划或判断JSON: 'plans/0.json',
+          CA证书: 'certs/plumb-ca.pem',
+          请求JSON: 'plumb-req.json',
           模型: 'synthetic-model',
         };
         const seenScripts = new Set<string>();
         for (const usage of parsed) {
           for (const concrete of expandCommandVariants(usage.source, usage.template, values)) {
-            let command = concrete.replaceAll('%HUB_URL%', hubUrl);
+            let command = concrete.replaceAll('%HUB_URL%', hubUrl).replaceAll('%PLUMB_URL%', plumbUrl);
             if (skill.includes(' ')) {
               // When the installed home path contains spaces (e.g. Application Support), the unified quoting rule single-quotes the full script path.
               command = command.replace(/^node '([^']+\.ts)/, "node '$1'");
@@ -735,7 +795,7 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
             const scriptPath = scriptMatch?.[1] ?? scriptMatch?.[2] ?? '';
             assert.ok(existsSync(scriptPath), `${label} ${usage.source}: installed script exists: ${command}`);
             seenScripts.add(scriptPath.split('/').pop()!);
-            const supplied = usage.hasHeredoc ? `${command} <<'EOF'\n%HUB_TOKEN%\nEOF` : command;
+            const supplied = usage.heredocBody !== null ? `${command} <<'EOF'\n${usage.heredocBody}\nEOF` : command;
             const decision = decide(supplied);
             expectAllowed(decision, `${label} ${usage.source}: ${supplied}\n${decision.reason ?? ''}`);
           }

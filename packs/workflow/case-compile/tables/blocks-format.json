@@ -14,7 +14,8 @@
         "kind",
         "call",
         "cleanup",
-        "input_register"
+        "input_register",
+        "author_step_refs"
       ]
     },
     {
@@ -30,7 +31,8 @@
         "id",
         "kind",
         "call",
-        "assertions"
+        "assertions",
+        "author_step_refs"
       ]
     },
     {
@@ -44,7 +46,8 @@
       "fields": [
         "id",
         "kind",
-        "call"
+        "call",
+        "author_step_refs"
       ]
     },
     {
@@ -60,7 +63,8 @@
         "id",
         "kind",
         "call",
-        "register"
+        "register",
+        "author_step_refs"
       ]
     },
     {
@@ -84,7 +88,8 @@
         "register",
         "table",
         "column",
-        "select"
+        "select",
+        "author_step_refs"
       ]
     },
     {
@@ -109,7 +114,8 @@
         "output",
         "quote",
         "expectation",
-        "criterion"
+        "criterion",
+        "author_step_refs"
       ]
     },
     {
@@ -134,7 +140,8 @@
         "output",
         "quote",
         "expectation",
-        "criterion"
+        "criterion",
+        "author_step_refs"
       ]
     },
     {
@@ -148,7 +155,8 @@
       "fields": [
         "id",
         "kind",
-        "call"
+        "call",
+        "author_step_refs"
       ]
     },
     {
@@ -166,7 +174,8 @@
         "output",
         "register",
         "cleanup",
-        "input_register"
+        "input_register",
+        "author_step_refs"
       ]
     },
     {
@@ -184,7 +193,8 @@
         "kind",
         "call",
         "register",
-        "for"
+        "for",
+        "author_step_refs"
       ]
     },
     {
@@ -416,6 +426,17 @@
     "input_register": {
       "type": "string",
       "minLength": 1
+    },
+    "author_step_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
     },
     "table": {
       "type": "object",

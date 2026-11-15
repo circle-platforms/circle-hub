@@ -78,6 +78,17 @@
               "input_register": {
                 "type": "string",
                 "minLength": 1
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -202,6 +213,17 @@
                 },
                 "minItems": 1,
                 "maxItems": 64
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -262,6 +284,17 @@
                   "args",
                   "keywords"
                 ]
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -325,6 +358,17 @@
               "register": {
                 "type": "string",
                 "minLength": 1
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -473,6 +517,17 @@
                     }
                   }
                 ]
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -538,6 +593,17 @@
               "criterion": {
                 "type": "string",
                 "minLength": 1
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -640,6 +706,17 @@
               "criterion": {
                 "type": "string",
                 "minLength": 1
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -704,6 +781,17 @@
                   "args",
                   "keywords"
                 ]
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -779,6 +867,17 @@
               "input_register": {
                 "type": "string",
                 "minLength": 1
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -846,6 +945,17 @@
               "for": {
                 "type": "string",
                 "minLength": 1
+              },
+              "author_step_refs": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "description": "本块对应的作者原步骤编号列表（可选，如 [\"1\"] 或 [\"1\", \"2\"]；供保真映射确定性定位步骤号，不改变命令语义）"
               }
             },
             "required": [
@@ -1385,6 +1495,84 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 4096
+              },
+              "model_judgment": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "const": "未确认"
+                  },
+                  "decided_by": {
+                    "type": "string",
+                    "const": "模型"
+                  },
+                  "model_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "task": {
+                    "type": "string",
+                    "enum": [
+                      "match",
+                      "choice",
+                      "sequence"
+                    ]
+                  },
+                  "choice": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "confidence": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "gate": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "pass",
+                          "review",
+                          "reject"
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 512
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  "request_sha256": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  }
+                },
+                "required": [
+                  "status",
+                  "decided_by",
+                  "model_version",
+                  "task",
+                  "choice",
+                  "confidence"
+                ]
               }
             },
             "required": [
@@ -1399,6 +1587,50 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 8192
+        },
+        "model_disclosure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "未确认"
+            },
+            "decided_by": {
+              "type": "string",
+              "const": "模型"
+            },
+            "model_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "request_sha256": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64
+            },
+            "prompt_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "review_required_steps": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 256,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          },
+          "required": [
+            "status",
+            "decided_by",
+            "model_version"
+          ]
         }
       },
       "required": [

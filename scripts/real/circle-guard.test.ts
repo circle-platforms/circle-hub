@@ -18,6 +18,8 @@ const ENDPOINT: Endpoint = {
 };
 const HUB_URL = 'https://127.0.0.1:7420/mcp';
 const ALT_HUB_URL = 'https://192.0.2.50:7420/mcp';
+const PLUMB_URL = 'https://192.0.2.60:8443';
+const ALT_PLUMB_URL = 'https://192.0.2.61:8443';
 const RUN_ID = 'run_01arz3ndektsv4rrffq69g5fav';
 const RUN_ID_2 = 'run_01000000000000000000000000';
 
@@ -34,6 +36,12 @@ function installRealSkillSubsets(home: string) {
   writeFileSync(join(rcDst, 'SKILL.md'), readFileSync(join(rcSrc, 'SKILL.md'), 'utf8'));
   cpSync(join(rcSrc, 'tools'), join(rcDst, 'tools'), { recursive: true });
 
+  const plumbSrc = join(REPO_ROOT, 'packs/skill/plumb');
+  const plumbDst = join(home, 'skills/plumb');
+  mkdirSync(join(plumbDst, 'tools'), { recursive: true });
+  writeFileSync(join(plumbDst, 'SKILL.md'), readFileSync(join(plumbSrc, 'SKILL.md'), 'utf8'));
+  cpSync(join(plumbSrc, 'tools'), join(plumbDst, 'tools'), { recursive: true });
+
   const kcTools = join(REPO_ROOT, 'packs/workflow/knowledge-contribution/tools');
   for (const name of ['jev', 'operation-capture']) {
     cpSync(join(kcTools, name), join(home, 'skills', name), { recursive: true });
@@ -43,7 +51,7 @@ function installRealSkillSubsets(home: string) {
 function createGuardHarness(profile: Exclude<Profile, 'review'>, opts: { homeName?: string; withSkills?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'circle-guard-test-'));
   const home = join(dir, opts.homeName ?? 'home');
-  const written = writeHome({ home, profile, hubUrl: HUB_URL }, ENDPOINT, 'synthetic-hub-token');
+  const written = writeHome({ home, profile, hubUrl: HUB_URL, plumbUrl: PLUMB_URL, plumbModel: 'plumb-27b-0.5.0' }, ENDPOINT, 'synthetic-hub-token');
   if (opts.withSkills !== false) installRealSkillSubsets(home);
   const hook = join(home, written.files.find((f) => f === 'hooks/ops-allow.mjs' || f === 'hooks/skills-only.mjs')!);
   const gen = join(home, written.files.find((f) => f.endsWith('-gen.mjs'))!);
@@ -387,6 +395,35 @@ test('every command-form second line across all execute refusals passes replay, 
       } else {
         verifyRefusalSecondLine('sleep disallowed on skills', h.exec('sleep 10'), false);
       }
+    } finally {
+      h.close();
+    }
+  }
+});
+
+test('plumb skill and case-compile plumb scripts enforce host-pinning, subcommands, and %PLUMB_API_KEY% stdin across ops and skills', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const plumbCli = h.skillPath('plumb', 'tools/plumb.ts');
+      const selectPlumb = h.skillPath('case-compile', 'tools/cmd-select-plumb.ts');
+      const verifyPlumb = h.skillPath('case-compile', 'tools/cmd-verify-plumb.ts');
+      const fidelityPlumb = h.skillPath('case-compile', 'tools/fidelity-plumb.ts');
+
+      h.assertAllowed(h.exec(`node ${plumbCli} models --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${plumbCli} wake --base-url ${PLUMB_URL} --wait --timeout-sec 720 --model plumb-27b-0.5.0 --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertRefused3(h.exec(`node ${plumbCli} request-key --name x --purpose y --base-url %PLUMB_URL% <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在放行的/);
+      h.assertRefused3(h.exec(`node ${plumbCli} models --base-url ${ALT_PLUMB_URL} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /Plumb 的地址/);
+      h.assertRefused3(h.exec(`node ${plumbCli} models --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
+
+      h.assertAllowed(h.exec(`node ${selectPlumb} --run run-dir --base-url %PLUMB_URL% --no-cache --strict-review --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${verifyPlumb} --plans plans --run run-dir --base-url ${PLUMB_URL} --context-mode node --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --ca-sha256 ${'a'.repeat(64)} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url ${ALT_PLUMB_URL} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /Plumb 的地址/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin`), /标准输入读令牌/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin --ca-file ../outside.pem <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在工作目录/);
     } finally {
       h.close();
     }

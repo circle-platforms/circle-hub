@@ -8,8 +8,11 @@ import {
   BRIEF_SCHEMA,
   FIDELITY_VERDICTS,
   fidelityProblems,
+  validateModelDisclosure,
+  validateModelJudgment,
   type FidelityBrief,
   type FidelityRow,
+  type ModelJudgment,
 } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
 import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
@@ -172,11 +175,11 @@ function checkStandaloneVerdict(verdict: unknown): { problems: CheckProblem[]; r
     return { problems: [{ code: 'fidelity_shape', pointer: '', message: '判断文件顶层必须是 JSON 对象' }], rows };
   }
   for (const key of Object.keys(verdict)) {
-    if (!['brief_sha256', 'steps', 'disclosure'].includes(key)) {
+    if (!['brief_sha256', 'steps', 'disclosure', 'model_disclosure'].includes(key)) {
       problems.push({
         code: 'fidelity_shape',
         pointer: `/${key}`,
-        message: '多余字段；.verdict.json 恰好写 brief_sha256、steps、disclosure 三项',
+        message: '多余字段；.verdict.json 只允许 brief_sha256、steps、disclosure 及可选 model_disclosure',
       });
     }
   }
@@ -186,20 +189,34 @@ function checkStandaloneVerdict(verdict: unknown): { problems: CheckProblem[]; r
   if (typeof verdict.disclosure !== 'string' || !verdict.disclosure.trim()) {
     problems.push({ code: 'fidelity_shape', pointer: '/disclosure', message: 'disclosure 必须是非空中文说明' });
   }
+  if (verdict.model_disclosure !== undefined) {
+    const md = validateModelDisclosure(verdict.model_disclosure, '/model_disclosure');
+    if (!md.ok) problems.push({ code: 'fidelity_shape', pointer: md.pointer, message: md.message });
+  }
   if (!Array.isArray(verdict.steps) || !verdict.steps.length) {
     problems.push({ code: 'fidelity_shape', pointer: '/steps', message: 'steps 必须是非空数组' });
     return { problems, rows };
   }
   const seen = new Set<string>();
+  const rowAllowed = new Set(['n', 'verdict', 'step_indices', 'rationale', 'model_judgment']);
   for (const [index, raw] of verdict.steps.entries()) {
     const at = `/steps/${index}`;
-    if (!isRecord(raw) || Object.keys(raw).sort().join() !== 'n,rationale,step_indices,verdict') {
+    if (!isRecord(raw) || Object.keys(raw).some((k) => !rowAllowed.has(k)) || !['n', 'verdict', 'step_indices', 'rationale'].every((req) => Object.hasOwn(raw, req))) {
       problems.push({
         code: 'fidelity_shape',
         pointer: at,
-        message: '每行恰好写 n、verdict、step_indices、rationale 四个字段',
+        message: '每行必须写 n、verdict、step_indices、rationale（可选 model_judgment）',
       });
       continue;
+    }
+    let modelJudgment: ModelJudgment | undefined;
+    if (raw.model_judgment !== undefined) {
+      const mj = validateModelJudgment(raw.model_judgment, `${at}/model_judgment`);
+      if (!mj.ok) {
+        problems.push({ code: 'fidelity_shape', pointer: mj.pointer, message: mj.message });
+      } else {
+        modelJudgment = mj.value;
+      }
     }
     if (typeof raw.n !== 'string' || !raw.n.trim()) {
       problems.push({ code: 'fidelity_shape', pointer: `${at}/n`, message: 'n 必须是非空作者步骤号' });
@@ -245,6 +262,7 @@ function checkStandaloneVerdict(verdict: unknown): { problems: CheckProblem[]; r
         verdict: raw.verdict as FidelityRow['verdict'],
         step_indices: raw.step_indices as number[],
         rationale: raw.rationale.trim(),
+        ...(modelJudgment ? { model_judgment: modelJudgment } : {}),
       });
     }
   }

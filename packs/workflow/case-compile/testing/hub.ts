@@ -6,7 +6,9 @@ import {COMMAND_IDENTITIES} from '../functions/test-support.ts';
 // case document (agile:mindmap) and the two named documents (doc:doc), a fake knowledge port answering the command
 // catalog of the locked build, and the staged pack published into a temporary registry.
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { KnownBuild } from '../../../../contracts/src/product.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, KnowledgePort, NodesPage, RootDiff, RootInfo } from '../../../../hub/ports.ts';
 import type { Artifacts, Principal } from '../../../../hub/records/api.ts';
@@ -162,6 +164,30 @@ export const call = (session = 'sess-case-compile') => ({
   sessionId: session,
 });
 
+export async function publishPlumbSkill(registry: PackRegistry, records: Pick<TestRecordsKit, 'authorizations'>, admin: Principal): Promise<void> {
+  const temp = await temporaryDirectory('hub-plumb-skill-');
+  try {
+    await records.authorizations.grantPublishRight(admin, admin.id, '显式合成技能发布夹具');
+    const root = fileURLToPath(new URL('../../../skill/plumb/', import.meta.url));
+    const manifest = JSON.parse(await readFile(join(root, 'pack.json'), 'utf8')) as {
+      id: string;
+      version: string;
+      kind: 'skill';
+      title: string;
+      description: string;
+      files: Array<{ path: string }>;
+      [key: string]: unknown;
+    };
+    const files: Record<string, Uint8Array> = {};
+    for (const row of manifest.files) files[row.path] = await readFile(join(root, row.path));
+    const staged = await writePack(join(temp.path, 'plumb'), { ...manifest, files });
+    const outcome = await registry.publish(admin, staged.dir);
+    if (!outcome.ok) throw new Error(`synthetic plumb skill publication refused: ${JSON.stringify(outcome.problems)}`);
+  } finally {
+    await temp.remove();
+  }
+}
+
 export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
   let clock = Date.parse('2026-10-23T08:00:00.000Z');
   const now = (): Date => new Date(clock++);
@@ -176,6 +202,7 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const parsers=await installMindmapFixture(registry,kit,admin);
     await installWorkbookFixture(registry,kit,admin);
     await publishEmbeddedSkills(registry,kit,admin);
+    await publishPlumbSkill(registry,kit,admin);
     const staged = await stage(join(temp.path, 'case-compile'));
     const published = await registry.publish(alice, staged);
     if (!published.ok) throw new Error(`case-compile was not published: ${JSON.stringify(published.problems, null, 1)}`);

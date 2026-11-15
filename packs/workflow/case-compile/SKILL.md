@@ -25,7 +25,7 @@ node <技能目录>/tools/task-brief.ts --role '<用例重组|脚本编写|保�
 
 ## 2. 脚本编写
 
-先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的 `items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数约束、配置恢复方法、同级命令写法与待填自动化用例。派发子代理前先 `ls` 核对真实文件名（总数 `<10` 条时为 `0.md`、`0.json` 而非 `00.md`），确认 `download-run` / `fidelity-brief` / 计划或返回文件均已落盘且输出目录就绪后再调 `task-brief.ts` 与 `task`；严禁未写完 `plans/*.json` 就跑 `fidelity-brief.ts` 或派发下游子代理。
+先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的 `items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数约束、配置恢复方法、同级命令写法与待填自动化用例。派发子代理前先 `ls` 核对真实文件名（总数 `<10` 条时为 `0.md`、`0.json` 而非 `00.md`），确认 `download-run` / 核对目录或返回文件落盘后再调 `task-brief.ts` 与 `task`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或派发下游。
 
 一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role '脚本编写' --task-file <文件>` 写盘并将短提示原样传参，**在同一条消息里以前台方式并列多个 `task` 调用（`subagent_type="general-purpose"`，严禁用 `background`；后台最多同时 4 个且第 5 个直接报错）**，不合并用例，**每批最多 6 个**，失败或超时的条目单独重派、不整批重来。单条编写、清理分工（存盘等自动清理禁入 `cleanup:true`）、`adapted` 不是步骤白名单（白名单外的前置须补 `sources.states` 来源或手册/示例前置，附 `precondition_source` 引文与配对逆清理，不改“前置不存在”测试）与语法由 `task-brief.ts` 注入；受限结构在 `<技能目录>/slots.schema.json`，示例 `<技能目录>/examples/submit-result.json`，分块 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
@@ -53,7 +53,9 @@ profile: device_count 只读预检及可选 fold_newlines
 本地读取: items/<序号>.json、sources.json、sources/<摘要>、knowledge/、briefs/<序号>.md
 ```
 
-各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`（无在途上机验证任务）、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接把改好的计划重交当前 `plan_run`（复用未改文件与未改 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开 `plan_run`（上机返工 `predecessor` 填原 `test-bed` 预订号并用 `carry-plans.ts` 结转未改自动化用例，详见 `tools/delivery.md`），并重生成上传与新开合并；始终禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
+（编写前可跑 `cmd-select-plumb.ts` 预筛命令供 `task-brief`。）
+
+各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`、无在途上机、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接重交当前 `plan_run`（复用未改计划与 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开（上机返工 `predecessor` 填原预订号并用 `carry-plans.ts` 结转，见 `tools/delivery.md`）并重生成上传与新开合并；禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
 ```text
 start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
 ```
@@ -61,14 +63,22 @@ start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predec
 
 ## 3. 脚本合并
 
-先把全部自动化用例写好，再按下面顺序走完场景保真审计并一次提交给 Hub（缺审、摘要过期或格式错会在本地退出，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后从第 1 步重算核对资料并重新审计；不要把 Hub 已接收当全部正确；仅缺自动化用例 Excel 时继续生成，其余检查须全对。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；检查步骤合规则、期望在原句、命令在树、地址在环境、场景保住及自动化用例 Excel 与自动化用例一致。
+写完后依次跑命令核验、Plumb 场景保真审计再一次提交给 Hub（缺审、过期或格式错在本地拦截，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确；仅缺自动化用例 Excel 时继续生成，其余检查须全对。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；核对步骤、期望原句、命令树、环境地址、场景保住及 Excel 一致。
 
 ```sh
 node <技能目录>/tools/check-plan.ts --file <计划或判断JSON> [--brief <核对文件>]
-node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
-# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role '保真核对' --task-file <文件>（或用 --batch 核对目录），将短输出按同法前台并行 task（每批最多 6 个）写同名 .verdict.json
+node <技能目录>/tools/cmd-select-plumb.ts --run <脚本编写目录> --base-url %PLUMB_URL% --key-stdin <<'EOF'
+%PLUMB_API_KEY%
+EOF
+node <技能目录>/tools/cmd-verify-plumb.ts --plans <自动化用例目录> --run <脚本编写目录> --base-url %PLUMB_URL% --key-stdin <<'EOF'
+%PLUMB_API_KEY%
+EOF
+node <技能目录>/tools/fidelity-plumb.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录> --base-url %PLUMB_URL% --key-stdin <<'EOF'
+%PLUMB_API_KEY%
+EOF
+# 无 Plumb 时改用 fidelity-brief.ts 生成简报并写 .verdict.json
 node <技能目录>/tools/fidelity-apply.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
-# 确认工具输出为正确（ready=true）后再提交；命令行与 <<'EOF' 在同一行，切勿前换行
+# 确认 ready=true 后再提交；命令行与 <<'EOF' 在同一行，切勿前换行
 node <技能目录>/tools/submit-plans.ts --hub %HUB_URL% --run <脚本编写编号> --model <模型> --plans <自动化用例目录> <<'EOF'
 %HUB_TOKEN%
 EOF
@@ -78,7 +88,7 @@ EOF
 node <技能目录>/tools/generate-workbook.ts --run <新目录>/run.json --result <新目录>/result.json --submission <新目录>/submission.json --contract <新目录>/contract.json --profile <新目录>/profile.json --inventory <新目录>/inventory.json --out <新目录>/case.xlsx
 ```
 
-submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。上机返工改用例后，用 `carry-plans.ts` 结转未改自动化用例并回第 2 节 `start_run`（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run` 核对，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
+submit-plans 与 fetch-run 从标准输入取 %HUB_TOKEN%，Plumb 脚本用 --key-stdin 传入 %PLUMB_API_KEY%，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具提示修正，不猜另一种写法。原始文件上传后，Hub 再核对。上机返工后用 `carry-plans.ts` 结转并回第 2 节（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run`，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
 
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项的结论须为正确（`satisfied`）

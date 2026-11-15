@@ -196,7 +196,8 @@ export function fidelityBrief(item: string, record: unknown, plan: unknown): Fid
     : planSteps.map((step, k) => {
       const asserts = expects.filter((e) => e.after === k + 1).map((e) => text(e.text));
       const keywords = isRecord(step.keywords) && Object.keys(step.keywords).length ? { keywords: step.keywords } : {};
-      return { index: k + 1, kind: text(step.method), host: text(step.object), cmds: Array.isArray(step.args) ? step.args : [], ...keywords, ...(step.cleanup === true ? { cleanup: true } : {}), ...(asserts.length ? { asserts } : {}) };
+      const refs = Array.isArray(step.author_step_refs) ? { author_step_refs: step.author_step_refs } : {};
+      return { index: k + 1, kind: text(step.method), host: text(step.object), cmds: Array.isArray(step.args) ? step.args : [], ...keywords, ...(step.cleanup === true ? { cleanup: true } : {}), ...refs, ...(asserts.length ? { asserts } : {}) };
     });
   const exemptions = preconditionExemptions(record, data, planSteps, planBlocks);
   const body = {
@@ -212,7 +213,104 @@ export function fidelityBrief(item: string, record: unknown, plan: unknown): Fid
 
 export type FidelityCode = 'fidelity_missing' | 'fidelity_stale' | 'fidelity_shape' | 'scenario_changed' | 'author_step_unrealized' | 'author_step_unbound';
 export interface FidelityProblem { code: FidelityCode; pointer: string; message: string }
-export interface FidelityRow { n: string; verdict: FidelityVerdict; step_indices: number[]; rationale: string }
+export interface ModelDisclosure {
+  status: '未确认';
+  decided_by: '模型';
+  model_version: string;
+  request_sha256?: string;
+  prompt_version?: string;
+  review_required_steps?: string[];
+}
+export interface ModelJudgment {
+  status: '未确认';
+  decided_by: '模型';
+  model_version: string;
+  task: 'match' | 'choice' | 'sequence';
+  choice: string;
+  confidence: number | null;
+  gate?: { action: 'pass' | 'review' | 'reject'; reason?: string };
+  request_sha256?: string;
+}
+export interface FidelityRow {
+  n: string;
+  verdict: FidelityVerdict;
+  step_indices: number[];
+  rationale: string;
+  model_judgment?: ModelJudgment;
+}
+
+const isSha64 = (v: unknown): v is string => typeof v === 'string' && v.trim().length === 64 && [...v].length === 64;
+const isShortStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim().length > 0 && [...v].length <= max;
+
+export function validateModelDisclosure(raw: unknown, at: string): { ok: true; value: ModelDisclosure } | { ok: false; pointer: string; message: string } {
+  const allowed = ['status', 'decided_by', 'model_version', 'request_sha256', 'prompt_version', 'review_required_steps'];
+  if (!isRecord(raw) || Object.keys(raw).some((k) => !allowed.includes(k))) {
+    return { ok: false, pointer: at, message: 'model_disclosure 仅允许 status、decided_by、model_version、request_sha256、prompt_version、review_required_steps' };
+  }
+  if (raw.status !== '未确认') return { ok: false, pointer: `${at}/status`, message: 'model_disclosure.status 必须为 未确认' };
+  if (raw.decided_by !== '模型') return { ok: false, pointer: `${at}/decided_by`, message: 'model_disclosure.decided_by 必须为 模型' };
+  if (!isShortStr(raw.model_version, 128)) return { ok: false, pointer: `${at}/model_version`, message: 'model_disclosure.model_version 必须是非空版本串（<=128 字）' };
+  if (raw.request_sha256 !== undefined && !isSha64(raw.request_sha256)) return { ok: false, pointer: `${at}/request_sha256`, message: 'model_disclosure.request_sha256 必须是 64 字符摘要' };
+  if (raw.prompt_version !== undefined && !isShortStr(raw.prompt_version, 128)) return { ok: false, pointer: `${at}/prompt_version`, message: 'model_disclosure.prompt_version 必须是非空字符串（<=128 字）' };
+  if (raw.review_required_steps !== undefined) {
+    if (!Array.isArray(raw.review_required_steps) || raw.review_required_steps.length > LIMITS.steps || raw.review_required_steps.some((s) => !isShortStr(s, 64))) {
+      return { ok: false, pointer: `${at}/review_required_steps`, message: 'model_disclosure.review_required_steps 必须是步骤号字符串数组' };
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      status: '未确认',
+      decided_by: '模型',
+      model_version: raw.model_version,
+      ...(raw.request_sha256 !== undefined ? { request_sha256: raw.request_sha256 } : {}),
+      ...(raw.prompt_version !== undefined ? { prompt_version: raw.prompt_version } : {}),
+      ...(raw.review_required_steps !== undefined ? { review_required_steps: [...(raw.review_required_steps as string[])] } : {}),
+    },
+  };
+}
+
+export function validateModelJudgment(raw: unknown, at: string): { ok: true; value: ModelJudgment } | { ok: false; pointer: string; message: string } {
+  const allowed = ['status', 'decided_by', 'model_version', 'task', 'choice', 'confidence', 'gate', 'request_sha256'];
+  if (!isRecord(raw) || Object.keys(raw).some((k) => !allowed.includes(k))) {
+    return { ok: false, pointer: at, message: 'model_judgment 字段超出约定集合' };
+  }
+  if (raw.status !== '未确认') return { ok: false, pointer: `${at}/status`, message: 'model_judgment.status 必须为 未确认' };
+  if (raw.decided_by !== '模型') return { ok: false, pointer: `${at}/decided_by`, message: 'model_judgment.decided_by 必须为 模型' };
+  if (!isShortStr(raw.model_version, 128)) return { ok: false, pointer: `${at}/model_version`, message: 'model_judgment.model_version 必须是非空版本串（<=128 字）' };
+  if (raw.task !== 'match' && raw.task !== 'choice' && raw.task !== 'sequence') return { ok: false, pointer: `${at}/task`, message: 'model_judgment.task 只能是 match、choice、sequence' };
+  if (!isShortStr(raw.choice, 128)) return { ok: false, pointer: `${at}/choice`, message: 'model_judgment.choice 必须是非空字符串' };
+  if (raw.confidence !== null && (typeof raw.confidence !== 'number' || !Number.isFinite(raw.confidence) || raw.confidence < 0 || raw.confidence > 1)) {
+    return { ok: false, pointer: `${at}/confidence`, message: 'model_judgment.confidence 必须是 0..1 有限小数或 null' };
+  }
+  let gate: ModelJudgment['gate'];
+  if (raw.gate !== undefined) {
+    if (!isRecord(raw.gate) || Object.keys(raw.gate).some((k) => k !== 'action' && k !== 'reason')) {
+      return { ok: false, pointer: `${at}/gate`, message: 'model_judgment.gate 只允许 action 和可选 reason' };
+    }
+    if (raw.gate.action !== 'pass' && raw.gate.action !== 'review' && raw.gate.action !== 'reject') {
+      return { ok: false, pointer: `${at}/gate/action`, message: 'model_judgment.gate.action 只能是 pass、review、reject' };
+    }
+    if (raw.gate.reason !== undefined && (typeof raw.gate.reason !== 'string' || [...raw.gate.reason].length > 512)) {
+      return { ok: false, pointer: `${at}/gate/reason`, message: 'model_judgment.gate.reason 长度不能超过 512' };
+    }
+    gate = { action: raw.gate.action, ...(typeof raw.gate.reason === 'string' ? { reason: raw.gate.reason } : {}) };
+  }
+  if (raw.request_sha256 !== undefined && !isSha64(raw.request_sha256)) return { ok: false, pointer: `${at}/request_sha256`, message: 'model_judgment.request_sha256 必须是 64 字符摘要' };
+  return {
+    ok: true,
+    value: {
+      status: '未确认',
+      decided_by: '模型',
+      model_version: raw.model_version,
+      task: raw.task,
+      choice: raw.choice,
+      confidence: raw.confidence as number | null,
+      ...(gate ? { gate } : {}),
+      ...(raw.request_sha256 !== undefined ? { request_sha256: raw.request_sha256 } : {}),
+    },
+  };
+}
 
 /**
  * Checks an audit verdict against the brief it must answer (parse_scenario_fidelity_result): the digest, the closed keys and
@@ -222,23 +320,36 @@ export interface FidelityRow { n: string; verdict: FidelityVerdict; step_indices
 export function fidelityProblems(brief: FidelityBrief, fidelity: unknown): { problems: FidelityProblem[]; rows: FidelityRow[] } {
   const at = '/data/fidelity';
   const shape = (pointer: string, message: string) => ({ problems: [{ code: 'fidelity_shape' as const, pointer, message }], rows: [] });
-  if (fidelity === undefined) return { problems: [{ code: 'fidelity_missing', pointer: at, message: '缺场景保真审计：照 <技能目录>/tools/fidelity.md，用 fidelity-brief 算出这份计划的简报，交给一个新开的子代理按简报里的规则逐条判断，再用 fidelity-apply 把结果并进计划后交卷' }], rows: [] };
-  if (!isRecord(fidelity) || Object.keys(fidelity).some((k) => !['brief_sha256', 'steps', 'disclosure'].includes(k))) return shape(at, 'data.fidelity 恰好写 brief_sha256、steps、disclosure 三项');
+  if (fidelity === undefined) return { problems: [{ code: 'fidelity_missing', pointer: at, message: '缺场景保真审计：照 <技能目录>/tools/fidelity.md，用 fidelity-brief 算出这份计划的简报，交给 Plumb 或独立核对流程按简报规则逐条判断，再用 fidelity-apply 把结果并进计划后交卷' }], rows: [] };
+  if (!isRecord(fidelity) || Object.keys(fidelity).some((k) => !['brief_sha256', 'steps', 'disclosure', 'model_disclosure'].includes(k))) return shape(at, 'data.fidelity 只允许 brief_sha256、steps、disclosure 及可选 model_disclosure');
   if (fidelity.brief_sha256 !== brief.brief_sha256) return { problems: [{ code: 'fidelity_stale', pointer: `${at}/brief_sha256`, message: `这份审计判断针对的不是这份计划的简报（应为 ${brief.brief_sha256.slice(0, 12)}…）：计划改过就重跑 fidelity-brief、重新审计、再用 fidelity-apply 并进计划` }], rows: [] };
   if (typeof fidelity.disclosure !== 'string' || !fidelity.disclosure.trim() || fidelity.disclosure.length > LIMITS.disclosure) return shape(`${at}/disclosure`, `disclosure 是给用户看的一段中文说明，1 到 ${LIMITS.disclosure} 字`);
+  if (fidelity.model_disclosure !== undefined) {
+    const md = validateModelDisclosure(fidelity.model_disclosure, `${at}/model_disclosure`);
+    if (!md.ok) return shape(md.pointer, md.message);
+  }
   if (!Array.isArray(fidelity.steps) || !fidelity.steps.length || fidelity.steps.length > LIMITS.steps) return shape(`${at}/steps`, `steps 是 1 到 ${LIMITS.steps} 行判断，每条作者步骤一行`);
   const expected = brief.author_steps.map((s) => s.n), indices = new Set(brief.blocks.map((b) => b.index));
   const rows: FidelityRow[] = [], seen = new Set<string>();
+  const rowKeys = new Set(['n', 'verdict', 'step_indices', 'rationale', 'model_judgment']);
   for (const [k, raw] of fidelity.steps.entries()) {
     const p = `${at}/steps/${k}`;
-    if (!isRecord(raw) || Object.keys(raw).sort().join() !== 'n,rationale,step_indices,verdict') return shape(p, '每行恰好写 n、verdict、step_indices、rationale');
+    if (!isRecord(raw) || Object.keys(raw).some((key) => !rowKeys.has(key)) || !['n', 'verdict', 'step_indices', 'rationale'].every((req) => Object.hasOwn(raw, req))) {
+      return shape(p, '每行必须写 n、verdict、step_indices、rationale（可选 model_judgment）');
+    }
+    let modelJudgment: ModelJudgment | undefined;
+    if (raw.model_judgment !== undefined) {
+      const mj = validateModelJudgment(raw.model_judgment, `${p}/model_judgment`);
+      if (!mj.ok) return shape(mj.pointer, mj.message);
+      modelJudgment = mj.value;
+    }
     if (typeof raw.n !== 'string' || !expected.includes(raw.n)) return shape(`${p}/n`, `n 抄简报 author_steps 里的作者步骤号（${expected.join('、')}）`);
     if (seen.has(raw.n)) return shape(`${p}/n`, `作者步骤 ${raw.n} 判了两次；每条只判一次`);
     if (!(FIDELITY_VERDICTS as readonly unknown[]).includes(raw.verdict)) return shape(`${p}/verdict`, `verdict 只能是 ${FIDELITY_VERDICTS.join('、')}`);
     if (!Array.isArray(raw.step_indices) || raw.step_indices.length > LIMITS.indices || raw.step_indices.some((i) => typeof i !== 'number' || !Number.isSafeInteger(i) || !indices.has(i))) return shape(`${p}/step_indices`, '只写简报 blocks 里的 index');
     if (typeof raw.rationale !== 'string' || !raw.rationale.trim() || raw.rationale.length > LIMITS.rationale) return shape(`${p}/rationale`, `rationale 写判断依据，只依据简报里的作者原文和计划步骤，1 到 ${LIMITS.rationale} 字`);
     seen.add(raw.n);
-    rows.push({ n: raw.n, verdict: raw.verdict as FidelityVerdict, step_indices: [...new Set(raw.step_indices as number[])].sort((a, b) => a - b), rationale: raw.rationale.trim() });
+    rows.push({ n: raw.n, verdict: raw.verdict as FidelityVerdict, step_indices: [...new Set(raw.step_indices as number[])].sort((a, b) => a - b), rationale: raw.rationale.trim(), ...(modelJudgment ? { model_judgment: modelJudgment } : {}) });
   }
   const undecided = expected.filter((n) => !seen.has(n));
   if (undecided.length) return shape(`${at}/steps`, `作者步骤 ${undecided.join('、')} 没有判断；每条作者步骤恰好一行`);

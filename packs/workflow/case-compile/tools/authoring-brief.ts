@@ -2,7 +2,7 @@
 // `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
 // It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   authoringBrief,
@@ -16,6 +16,8 @@ import {
   type BriefPolicy,
   type CompileBriefMode,
   type CompileBriefV1,
+  type PlumbBriefCandidates,
+  type PlumbBriefCandidateStep,
 } from '../functions/authoring-brief.ts';
 import { bedFacts, triggerTypesOf, type BedFacts } from '../functions/bed.ts';
 import { parseManifest } from '../functions/manifest.ts';
@@ -239,6 +241,72 @@ export async function loadRunStructuredContext(directory: string): Promise<RunSt
   };
 }
 
+/** Reads optional pre-selected Plumb command candidates under `<runDir>/plumb/cmd_candidates/<index>.json`, preserving model-unconfirmed status. */
+export async function loadPlumbCandidates(
+  directory: string,
+  index: string,
+  expectedItemId?: string,
+): Promise<PlumbBriefCandidates | undefined> {
+  const root = realpathSync(directory);
+  const stems = [...new Set([index, index.padStart(2, '0'), ...( /^\d+$/.test(index) ? [String(Number(index))] : [])])];
+  for (const stem of stems) {
+    const rel = join('plumb', 'cmd_candidates', `${stem}.json`);
+    const target = resolve(root, rel);
+    if (!isInsideRoot(target, root)) continue;
+    const st = await lstat(target).catch(() => null);
+    if (!st || st.isSymbolicLink() || !st.isFile()) continue;
+    try {
+      const raw = parsed(rel, await readFile(target, 'utf8'));
+      if (
+        !isRecord(raw)
+        || raw.schema !== 'plumb-cmd-candidates@1'
+        || raw.status !== '未确认'
+        || raw.decided_by !== '模型'
+        || !Array.isArray(raw.steps)
+      ) {
+        continue;
+      }
+      if (expectedItemId && typeof raw.item === 'string' && raw.item !== expectedItemId) continue;
+      const steps: PlumbBriefCandidateStep[] = raw.steps.filter(isRecord).map((s) => ({
+        step_index: typeof s.step_index === 'number' ? s.step_index : 0,
+        step_text: typeof s.step_text === 'string' ? s.step_text : '',
+        recalled_count: typeof s.recalled_count === 'number' ? s.recalled_count : 0,
+        selected: isRecord(s.selected) && typeof s.selected.command === 'string' && typeof s.selected.path === 'string'
+          ? {
+              command: s.selected.command,
+              path: s.selected.path,
+              definition: typeof s.selected.definition === 'string' ? s.selected.definition : '',
+            }
+          : null,
+        none_selected: s.none_selected === true,
+        review_required: s.review_required === true,
+        rejected: s.rejected === true,
+        ...(typeof s.note === 'string' && s.note ? { note: s.note } : {}),
+        candidates: Array.isArray(s.candidates)
+          ? s.candidates
+              .filter(isRecord)
+              .filter((c) => typeof c.command === 'string' && typeof c.path === 'string')
+              .map((c) => ({
+                command: String(c.command),
+                path: String(c.path),
+                summary: typeof c.summary === 'string' ? c.summary : '',
+              }))
+          : [],
+      }));
+      return {
+        status: '未确认',
+        decided_by: '模型',
+        model_version: typeof raw.model_version === 'string' ? raw.model_version : null,
+        source_file: rel,
+        steps,
+      };
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /** Builds an in-memory `compile-brief@1` for ONE case item using an already loaded `RunStructuredContext`. */
 export function buildSingleCaseStructuredBrief(params: {
   ctx: RunStructuredContext;
@@ -250,6 +318,7 @@ export function buildSingleCaseStructuredBrief(params: {
   planExists?: boolean;
   priorRounds?: readonly PriorRoundRecord[];
   unrecordedAttribution?: PriorAttributionItem | null;
+  plumbCandidates?: PlumbBriefCandidates;
 }): CompileBriefV1 | null {
   const mode: CompileBriefMode = params.mode ?? (params.round > 1 ? 'rework_device' : 'initial');
   return buildCompileBrief({
@@ -268,6 +337,7 @@ export function buildSingleCaseStructuredBrief(params: {
     ...(params.planExists !== undefined ? { planExists: params.planExists } : {}),
     ...(params.priorRounds ? { priorRounds: params.priorRounds } : {}),
     ...(params.unrecordedAttribution ? { unrecordedAttribution: params.unrecordedAttribution } : {}),
+    ...(params.plumbCandidates ? { plumbCandidates: params.plumbCandidates } : {}),
   });
 }
 
@@ -340,6 +410,8 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
       unrecordedAttribution = loaded.unrecordedAttribution;
     }
 
+    const itemId = isRecord(item) && typeof item.id === 'string' ? item.id : undefined;
+    const plumbCandidates = await loadPlumbCandidates(runResolved.canonical, index, itemId);
     const compiled = buildSingleCaseStructuredBrief({
       ctx,
       item,
@@ -348,6 +420,7 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
       mode,
       priorRounds,
       unrecordedAttribution,
+      ...(plumbCandidates ? { plumbCandidates } : {}),
     });
     if (!compiled) {
       report.without_record++;

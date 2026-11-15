@@ -5,6 +5,7 @@
 // The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
 //        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>] [--profile review|skills|ops] [--jev-model <id>]
+//        [--plumb-url <url>] [--plumb-model <id>] [--plumb-ca-file <file>]
 // Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
 //   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
 import { createHash } from 'node:crypto';
@@ -27,6 +28,9 @@ export interface Options {
   workdir?: string;
   profile?: Profile;
   jevModel?: string;
+  plumbUrl?: string;
+  plumbModel?: string;
+  plumbCaFile?: string;
   /** Written into settings.json as models.<model>.context_window: Circle compacts the conversation at 85% of the
    * window (its src/context_middleware.ts), and a scripted model cannot write the summary compaction asks for. Only
    * accept-circle.ts passes this. */
@@ -164,7 +168,11 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       server: SERVER_NAME,
       urlVariable: 'HUB_URL',
       tokenPlaceholder: `%${TOKEN_SECRET}%`,
-      allowedPlaceholders: [`%${TOKEN_SECRET}%`, '%JEV_API_KEY%'],
+      allowedPlaceholders: [`%${TOKEN_SECRET}%`, '%JEV_API_KEY%', '%PLUMB_API_KEY%'],
+    },
+    plumb: {
+      urlVariable: 'PLUMB_URL',
+      urlPlaceholder: '%PLUMB_URL%',
     },
     workFolders: {
       settingsKey: 'trusted_folders',
@@ -235,6 +243,29 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
         path: 'operation-capture/operation.ts',
         subcommands: ['list', 'read', 'status', 'verify', 'flush', 'submit'],
       },
+      {
+        path: 'plumb/tools/plumb.ts',
+        subcommands: ['models', 'status', 'wake', 'judge', 'ask'],
+        subcommandStdin: {
+          models: ['%PLUMB_API_KEY%'],
+          status: ['%PLUMB_API_KEY%'],
+          wake: ['%PLUMB_API_KEY%'],
+          judge: ['%PLUMB_API_KEY%'],
+          ask: ['%PLUMB_API_KEY%'],
+        },
+      },
+      {
+        path: 'case-compile/tools/cmd-select-plumb.ts',
+        stdin: ['%PLUMB_API_KEY%'],
+      },
+      {
+        path: 'case-compile/tools/cmd-verify-plumb.ts',
+        stdin: ['%PLUMB_API_KEY%'],
+      },
+      {
+        path: 'case-compile/tools/fidelity-plumb.ts',
+        stdin: ['%PLUMB_API_KEY%'],
+      },
     ],
     optionTypes: {
       hub: 'hub',
@@ -242,6 +273,8 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       round: 'int',
       limit: 'int',
       'timeout-ms': 'int',
+      'timeout-sec': 'int',
+      'poll-sec': 'int',
       model: 'text',
       role: 'text',
       case: 'text',
@@ -253,12 +286,35 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       under: 'text',
       send: 'text',
       skip: 'text',
-      'base-url': 'text',
+      'base-url': 'plumb',
+      'ca-file': 'path',
+      'ca-sha256': 'text',
+      'cache-dir': 'path',
+      'audit-out': 'path',
+      out: 'path',
+      'out-dir': 'path',
+      'result-out': 'path',
+      'state-file': 'path',
+      'node-file': 'path',
+      'candidates-file': 'path',
+      plans: 'path',
+      briefs: 'path',
+      file: 'path',
+      knowledge: 'path',
+      item: 'text',
+      'context-mode': 'text',
+      task: 'text',
+      command: 'text',
+      definition: 'text',
+      purpose: 'text',
+      contact: 'text',
+      'request-id': 'text',
       sha: 'text',
       session: 'text',
     },
     placeholderTypes: [
       { match: '^%HUB_URL%$|Hub', type: 'hub' },
+      { match: '^%PLUMB_URL%$|^Plumb$|Plumb\\s*(?:URL|地址|Address)', type: 'plumb' },
       { match: '秒数|seconds', type: 'int' },
       { match: '编号|run id|run-id', type: 'run' },
       { match: '.', type: 'path' },
@@ -547,8 +603,18 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
         ],
         ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
         ...(options.contextWindow === undefined ? {} : { models: { [endpoint.model]: { context_window: options.contextWindow } } }),
+        ...(options.plumbCaFile === undefined ? {} : { trust_cert_files: [options.plumbCaFile] }),
         update_check: false,
-        ...(isGuarded ? { variables: { HUB_URL: options.hubUrl, ...(options.jevModel === undefined ? {} : { JEV_MODEL: options.jevModel }) } } : {}),
+        ...(isGuarded
+          ? {
+              variables: {
+                HUB_URL: options.hubUrl,
+                ...(options.jevModel === undefined ? {} : { JEV_MODEL: options.jevModel }),
+                ...(options.plumbUrl === undefined ? {} : { PLUMB_URL: options.plumbUrl }),
+                ...(options.plumbModel === undefined ? {} : { PLUMB_MODEL: options.plumbModel }),
+              },
+            }
+          : {}),
       },
       null,
       2,
@@ -600,6 +666,9 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
     workdir: values.get('workdir'),
     profile,
     jevModel: values.get('jev-model'),
+    plumbUrl: values.get('plumb-url'),
+    plumbModel: values.get('plumb-model'),
+    plumbCaFile: values.get('plumb-ca-file'),
   };
 }
 
@@ -648,8 +717,14 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     if (guarded) {
       out('技能目录：已建立，权限 0700；变量 HUB_URL：已配置');
       out(`变量 JEV_MODEL：${options.jevModel === undefined ? '未配置' : `已配置，长度 ${options.jevModel.length}`}`);
+      out(`变量 PLUMB_URL：${options.plumbUrl === undefined ? '未配置' : `已配置，长度 ${options.plumbUrl.length}`}`);
+      out(`变量 PLUMB_MODEL：${options.plumbModel === undefined ? '未配置' : `已配置，长度 ${options.plumbModel.length}`}`);
+      out(`证书 trust_cert_files：${options.plumbCaFile === undefined ? '未配置' : `已配置，长度 ${options.plumbCaFile.length}`}`);
       out('所有者下一步：/secrets JEV_API_KEY（脚本不读取或保存该密钥）');
+      out('所有者下一步：/secrets PLUMB_API_KEY（脚本不读取或保存该密钥）');
       if (options.jevModel === undefined) out('所有者下一步：/variables JEV_MODEL');
+      if (options.plumbUrl === undefined) out('所有者下一步：/variables PLUMB_URL');
+      if (options.plumbModel === undefined) out('所有者下一步：/variables PLUMB_MODEL');
       const genScript = options.profile === 'ops' ? 'hooks/ops-allow-gen.mjs' : 'hooks/guard-gen.mjs';
       out(`技能装进 skills/ 后分别核对：local-tools verify --digest、pack-files.ts --verify-install、node ${genScript}`);
     }
