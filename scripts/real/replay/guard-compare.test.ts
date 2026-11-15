@@ -297,6 +297,12 @@ test('a candidate Circle 1.18 guard is given PreToolUse fields, the agent of a s
     // by the words of the reason, the same guard differs on the refusal
     const exact = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'candidate'), protocol: '1.18', out: join(f.dir, 'c118-exact'), survey: true });
     assert.deepEqual([exact.exit, exact.mismatched], [1, 1]);
+    assert.equal(r.legacyAnswers, undefined);
+    // a guard that still answers in the format before is counted: Circle reads it, and says once that its format is old
+    mkdirSync(join(f.dir, 'old-words'));
+    writeFileSync(join(f.dir, 'old-words', 'guard.mjs'), "let raw='';for await(const c of process.stdin)raw+=c;const i=JSON.parse(raw);process.stdout.write(i.tool_input.command==='NEVER_EXECUTE_ME'?JSON.stringify({decision:'block',reason:'old words'}):'{}');");
+    const oldWords = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'old-words'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'c118-old'), survey: true });
+    assert.deepEqual([oldWords.exit, oldWords.matched, oldWords.legacyAnswers], [0, 5, 1]);
     // the seen input is the one of Circle 1.18 for a call in a subagent
     const seen = JSON.parse(readFileSync(join(f.dir, 'c118', `guard-${calls.find((c: { tool: string; session: string }) => c.tool === 'read_file').index}`, 'input.json'), 'utf8'));
     assert.deepEqual([seen.session_id, seen.agent_id, seen.agent_type, seen.hook_event_name, seen.tool_use_id], ['s0', 's1', 'general-purpose', 'PreToolUse', 'c1']);

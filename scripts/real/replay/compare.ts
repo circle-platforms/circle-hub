@@ -170,6 +170,8 @@ export interface CallRecord {
   /** Same kind of decision, other words (a candidate compared by decision only). */
   reasonChanged?: boolean;
   rewritten?: boolean;
+  /** The answer used the fields of the format before `hookSpecificOutput`; Circle still counts it and says so once. */
+  legacy?: boolean;
   expectedReasonSha256: string;
   actualReasonSha256?: string;
   inputSha256: string;
@@ -197,6 +199,7 @@ export interface CompareReport {
   decisionOnly?: boolean;
   reasonChanged?: number;
   rewritten?: number;
+  legacyAnswers?: number;
   failedHooks?: number;
   candidate?: {
     protocol: string;
@@ -361,6 +364,8 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
           record.failed = run.failed;
           if (run.rewritten)
             record.rewritten = true;
+          if (run.legacy)
+            record.legacy = true;
           record.outsideReads = run.outsideReads.length;
           if (run.outsideReads.length)
             record.outsideReadsSha256 = sha(canonical(run.outsideReads));
@@ -439,6 +444,8 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
         report.reasonChanged = (report.reasonChanged ?? 0) + 1;
       if (record.rewritten)
         report.rewritten = (report.rewritten ?? 0) + 1;
+      if (record.legacy)
+        report.legacyAnswers = (report.legacyAnswers ?? 0) + 1;
       if (record.failed && report.mode === 'candidate')
         report.failedHooks = (report.failedHooks ?? 0) + 1;
       tally(report.roles, record.role, record.outcome);
