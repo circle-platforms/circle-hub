@@ -179,9 +179,12 @@ test('git archive of the commit includes the quickstart deployment definition th
   assert.match(names.stdout, /(^|\/)docs\/examples\/quickstart-deployment\.json$/m);
   const source = await readFile(SCRIPT, 'utf8');
   assert.match(source, /QUICKSTART_DEFINITION="\$\{DATA\}\/current\/docs\/examples\/quickstart-deployment\.json"/);
-  // First install only, and only when the release carries the file; next-step names the live admin for the fixed sample user.
-  assert.match(source, /HUB_INSTALL_ADMIN_CREATED\}" = 1 \] && as_hub test -f "\$\{QUICKSTART_DEFINITION\}"/);
-  assert.match(source, /本次管理员是 \$\{HUB_INSTALL_ADMIN_NAME\}/);
+  assert.match(source, /QUICKSTART_APPLY="\$\{DATA\}\/quickstart-first-apply\.json"/);
+  assert.match(source, /QUICKSTART_PACK_DIR="\$\{DATA\}\/current\/packs\/workflow\/test-bed"/);
+  // First install only: generate a ready-to-apply file (live admin + absolute pack dir), print that path.
+  assert.match(source, /HUB_INSTALL_ADMIN_CREATED\}" = 1 \] && as_hub test -f "\$\{QUICKSTART_DEFINITION\}" && as_hub test -d "\$\{QUICKSTART_PACK_DIR\}"/);
+  assert.match(source, /下一步：circle-hub apply \\"\$\{QUICKSTART_APPLY\}\\"/);
+  assert.doesNotMatch(source, /先改样例里的 user/);
   // macOS PATH tip precedes the apply tip so the printed command is usable.
   assert.ok(source.indexOf('把 ${WRAPPER_DIR} 加进 PATH') < source.indexOf('下一步：circle-hub apply'), 'PATH tip before apply tip');
 });
