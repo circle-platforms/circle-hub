@@ -6,10 +6,10 @@ import ipaddress
 import json
 import math
 from pathlib import Path
-import re
 import socket
 import ssl
 import time
+import tomllib
 
 
 class ProbeConfigError(ValueError):
@@ -17,52 +17,29 @@ class ProbeConfigError(ValueError):
 
 
 def _listen(config_path):
-    values, section, seen = {}, None, False
-    for raw in Path(config_path).read_text(encoding='utf-8').splitlines():
-        line = raw.strip()
-        if line.startswith('['):
-            section = line
-            if section == '[listen]':
-                if seen:
-                    raise ProbeConfigError()
-                seen = True
-            continue
-        if section != '[listen]':
-            continue
-        key = re.match(r'^(host|port|tls_cert|tls_key)\s*=', line)
-        if not key:
-            continue
-        name = key[1]
-        if name in values:
-            raise ProbeConfigError()
-        if name == 'port':
-            match = re.fullmatch(r'port\s*=\s*([0-9]+)\s*(?:#.*)?', line)
-            if not match:
-                raise ProbeConfigError()
-            values[name] = int(match[1])
-        else:
-            match = re.fullmatch(name + r'''\s*=\s*(["'])([^\\"'\r\n]*)\1\s*(?:#.*)?''', line)
-            if not match:
-                raise ProbeConfigError()
-            values[name] = match[2]
-    if not isinstance(values.get('host'), str) or not isinstance(values.get('port'), int) or not 1 <= values['port'] <= 65535:
+    # Same TOML/default/coercion rules as gateway.config.load; never import the gateway or open configured files.
+    raw = tomllib.loads(Path(config_path).read_text(encoding='utf-8'))
+    values = raw.get('listen') or {}
+    if not isinstance(values, dict):
+        raise ProbeConfigError()
+    host = str(values.get('host') or '127.0.0.1')
+    try:
+        port = int(values.get('port') or 8910)
+    except (ValueError, TypeError, OverflowError):
+        raise ProbeConfigError() from None
+    if not 1 <= port <= 65535:
         raise ProbeConfigError()
     if bool(values.get('tls_cert')) != bool(values.get('tls_key')):
         raise ProbeConfigError()
-    host = values['host']
-    if host == 'localhost':
-        host = '127.0.0.1'
-    elif host == '0.0.0.0':
-        host = '127.0.0.1'
-    elif host == '::':
-        host = '::1'
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # An explicit hostname is a listener address, not a URL, userinfo or host:port override.
+        if any(ord(char) <= 32 or ord(char) == 127 or char in '/\\@?#:' for char in host):
+            raise ProbeConfigError() from None
     else:
-        try:
-            address = ipaddress.ip_address(host)
-        except ValueError:
-            raise ProbeConfigError()
-        host = str(address)
-    return host, values['port'], bool(values.get('tls_cert'))
+        host = ('127.0.0.1' if address.version == 4 else '::1') if address.is_unspecified else str(address)
+    return host, port, bool(values.get('tls_cert'))
 
 
 def _result(outcome, ok=False):
