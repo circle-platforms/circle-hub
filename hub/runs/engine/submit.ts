@@ -95,14 +95,14 @@ async function resultForObserver(ctx: EngineContext, run: string, submission: st
 }
 
 /** Repair rounds each requirement used in the run's earlier submissions (one per distinct submission with a problem for it). */
-export async function roundsUsedOf(ctx: EngineContext, run: string): Promise<Map<string, number>> {
+export async function roundsUsedOf(ctx: EngineContext, run: string, currentSubmission?: string): Promise<Map<string, number>> {
   const seen = new Set<string>();
   const counts = new Map<string, number>();
   for (const action of await actionsOf(ctx.deps.records.store, run)) {
     if (action.body.action !== 'validate' || !isObject(action.body.detail)) continue;
     if (action.body.detail.hub_error === true || action.body.detail.refusal === 'session_missing' || action.body.detail.refusal === 'RUN_ABANDONED' || action.body.detail.refusal === 'dispatch_in_flight') continue;
     const { submission, repair } = action.body.detail;
-    if (typeof submission !== 'string' || seen.has(submission) || !Array.isArray(repair)) continue;
+    if (typeof submission !== 'string' || submission === currentSubmission || seen.has(submission) || !Array.isArray(repair)) continue;
     seen.add(submission);
     for (const key of repair) if (typeof key === 'string') counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -287,7 +287,7 @@ async function submitLocked(ctx: EngineContext, user: Principal, args: Record<st
   if(!await criterionReviewVisible(ctx,user,run))return {call_result:'error',acceptance:'not_accepted',errors:[missingError(true,'/inputs','这次判据复核的来源记录','请复核请求的发起人或管理员把来源分享给你')]};
   const priorMaterial=workflow.workflow.incremental_submissions===true&&existing===null?(await store.find({key:INDEX.submissionRun,value:run.run,kind:'submission',newestFirst:true,limit:2})).items.find(r=>r.digest!==record.digest)?.body??null:null;
   const incrementalGrowth=workflow.workflow.incremental_submissions===true&&existing===null&&parsed?.success===true&&firstDeclarationGrowth(priorMaterial,args);
-  const roundsUsed = await roundsUsedOf(ctx, run.run);
+  const roundsUsed = await roundsUsedOf(ctx, run.run, received.digest);
   const base: Basis = { ctx, user, call, run, workflow, digest: received.digest, submissionRecord:record.digest, roundsUsed };
   const early = earlyProblem(kept, received, args);
   let outcome: Validated;

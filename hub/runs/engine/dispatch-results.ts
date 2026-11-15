@@ -6,6 +6,7 @@ import { DYNAMIC_TERMINAL, DynamicTerminalSchema, NatureSchema, QualifierMarkSch
 import { Claim } from '../../../contracts/src/claim.ts';
 import type { RunRecord } from '../../../contracts/src/run.ts';
 import type { ValidationResult, LayerResult } from '../../../contracts/src/validation.ts';
+import type { Principal } from '../../records/api.ts';
 import type { RunJob } from '../../dispatch/api.ts';
 import { parseReference } from '../../refs/api.ts';
 import type { EngineContext } from './deps.ts';
@@ -22,11 +23,11 @@ export function appliesTo(job:RunJob,run:string,item:string):boolean{return job.
 type Admin={id:string;name:string;role:'admin'};
 async function activeAdmin(ctx:EngineContext):Promise<Admin|null>{const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);return admin?{id:admin.id,name:admin.name,role:'admin'}:null;}
 /** The job's result projection when it is the dispatch service's own, bound to this job and its workbook, one row per item; else null. */
-async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<z.infer<typeof Projection>|null>{
+async function readProjection(ctx:EngineContext,reader:Principal,job:RunJob):Promise<z.infer<typeof Projection>|null>{
   if(!job.status.result)return null;
   const ref=parseReference(job.status.result);
   if(ref.scheme!=='src')return null;
-  const source=await ctx.deps.records.artifacts.source(admin,ref.sha256,{consumer:'function'});
+  const source=await ctx.deps.records.artifacts.source(reader,ref.sha256,{consumer:'function'});
   if(!(source?.bytes&&'generated'in source.artifact.body.origin&&source.artifact.body.origin.generated.generator==='dispatch@1'&&source.artifact.body.author.user===null&&source.artifact.body.provenance_type==='projected'))return null;
   let json:unknown;try{json=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(source.bytes));}catch{json=null;}
   const parsed=Projection.safeParse(json);
@@ -37,14 +38,14 @@ async function readProjection(ctx:EngineContext,admin:Admin,job:RunJob):Promise<
  * engine applies, so a client tool reads the outcome by structure instead of re-reading the device return's prose. Nothing is
  * judged here; the administrative proof record of a job stays out.
  */
-export async function exportedJobs(ctx:EngineContext,run:string):Promise<ExportedJob[]>{
+/** Relay checked row fields without changing their nature or inferring missing fields. */
+export function exportedJobRow(row:z.infer<typeof Row>):NonNullable<ExportedJob['rows']>[number]{return structuredClone(row);}
+export async function exportedJobs(ctx:EngineContext,run:string,reader:Principal):Promise<ExportedJob[]>{
   if(!ctx.deps.dispatch)return [];
-  const admin=await activeAdmin(ctx);
-  if(!admin)return [];
   const out:ExportedJob[]=[];
-  for(const job of await ctx.deps.dispatch.jobs(admin,run)){
-    const report=await readProjection(ctx,admin,job);
-    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(row=>({item:row.item,dynamic_terminal:row.dynamic_terminal,...(row.evidence?{evidence:row.evidence}:{})})):null});
+  for(const job of await ctx.deps.dispatch.jobs(reader,run)){
+    const report=await readProjection(ctx,reader,job);
+    out.push({job:job.job,verification_run:job.verification_run,plan_run:job.plan_run,items:[...job.items],sha256:job.sha256,ended:job.ended,outcome:job.status.outcome,frozen:job.status.frozen,result:job.status.result??null,device_return:job.status.device_return??null,rows:report?report.rows.map(exportedJobRow):null});
   }
   return out;
 }
