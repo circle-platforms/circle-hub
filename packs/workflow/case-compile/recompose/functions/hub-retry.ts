@@ -1,12 +1,11 @@
 // Local tool retry wrappers for Hub HTTP calls without modifying the embedded run-tools skill module.
-import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   HubReplyError,
   knowledgeFiles,
   sha256,
-  writeNew,
   type RunKnowledge,
 } from './generated/skills/run-tools/hub-client/index.ts';
 import { isRecord, failCall, CallFailure, formatCallError } from './text.ts';
@@ -423,7 +422,7 @@ export async function downloadRunRetrying(
   try {
     for (const { name, bytes } of outputs) {
       const path = join(out, name);
-      await writeNew(path, bytes);
+      await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
       written.push(path);
       files[name] = sha256(bytes);
     }
