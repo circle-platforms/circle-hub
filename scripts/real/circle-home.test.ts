@@ -62,7 +62,16 @@ test('writeHome writes private files, keeps the token out of settings and refuse
     assert.equal(statSync(written.workdir).mode & 0o777, 0o700);
     const settings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
     assert.deepEqual(settings.auth, { protocol: 'anthropic', base_url: 'https://qwen.example/anthropic', model: 'qwen-test-model', api_key_ref: 'api_key' });
-    assert.deepEqual(settings.mcp_servers, [{ name: SERVER_NAME, url: 'http://127.0.0.1:7420/mcp', transport: 'streamable_http', headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` } }]);
+    assert.deepEqual(settings.mcpServers, {
+      [SERVER_NAME]: {
+        type: 'http',
+        url: 'http://127.0.0.1:7420/mcp',
+        placeholders: { url: 'HUB_URL', token: 'HUB_TOKEN' },
+        headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` },
+      },
+    });
+    assert.equal(settings.hooks?.PreToolUse?.[0]?.hooks?.[0]?.type, 'command');
+    assert.equal(settings.hooks?.PreToolUse?.[0]?.hooks?.[0]?.onFailure, 'block');
     assert.deepEqual(settings.credential_files, ['owner-env-notes']);
     assert.deepEqual(settings.trusted_folders, [written.workdir]);
     const text = readFileSync(join(home, 'settings.json'), 'utf8');
@@ -84,17 +93,22 @@ test('the hook allows exactly the six Hub tools and the todo list and denies eve
     const decide = (stdin: string) => {
       const r = spawnSync(process.execPath, [hook], { input: stdin, encoding: 'utf8' });
       assert.equal(r.status, 0, r.stderr);
-      return JSON.parse(r.stdout).decision;
+      const parsed = JSON.parse(r.stdout);
+      return parsed.hookSpecificOutput ? parsed.hookSpecificOutput.permissionDecision : parsed.decision;
     };
-    for (const t of HUB_TOOLS) assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: `${SERVER_NAME}_${t}` })), 'allow', t);
+    for (const t of HUB_TOOLS) {
+      assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: `mcp__${SERVER_NAME}__${t}` })), 'allow', t);
+      assert.equal(decide(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: `mcp__Hub__${t}` })), 'allow', `PreToolUse:${t}`);
+    }
     for (const t of INTERNAL_TOOLS_ALLOWED) assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: t })), 'allow', t);
-    for (const t of ['bash', 'webfetch', 'websearch', 'write_file', 'read_file', `${SERVER_NAME}_other`, `hubx_start_run`]) {
-      assert.equal(decide(JSON.stringify({ event: 'before_tool', tool_name: t })), 'deny', t);
+    for (const t of ['bash', 'webfetch', 'websearch', 'write_file', 'read_file', `mcp__${SERVER_NAME}__other`, 'mcp__hubx__start_run', 'hub_start_run']) {
+      assert.equal(decide(JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: t })), 'deny', t);
     }
     assert.equal(decide('not json'), 'deny');
     assert.equal(decide(''), 'deny');
-    const hooks = JSON.parse(readFileSync(join(dir, 'home', 'hooks.json'), 'utf8'));
-    assert.equal(hooks.hooks.before_tool.length, 1);
+    assert.equal(existsSync(join(dir, 'home', 'hooks.json')), false);
+    const writtenSettings = JSON.parse(readFileSync(join(dir, 'home', 'settings.json'), 'utf8'));
+    assert.equal(writtenSettings.hooks.PreToolUse.length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -215,11 +229,10 @@ test('writeHome names the environment file as a protected file only when there i
 
 // Frozen before adding profiles; normalize only the scratch home prefix, never JSON formatting.
 const REVIEW_BYTES = {
-  'settings.json': '23ad030ae047db362be96316b6a9539f15eb269e9e15eabcfb5f9af680d48c49',
+  'settings.json': '5109958f4222737c84f6ac0fe626971030f6aa858d2b11c5d1427fb1698ade43',
   'credentials.json': ["bae342","f65c62","474558","2bb94c","f7ff51","b0e3f6","e3ff60","8454ff","f61df2","17e294","7425"].join(''),
   'secrets.json': ["080e2c","babac7","df441b","fe6e72","0f4c06","7a3795","5a5077","9ce58d","981977","031c6a","79e5"].join(''),
-  'hooks.json': '70f9cde0f4fb7678c956fc84e390497e87426185f22302e08435abb40011b90d',
-  'hooks/hub-only.mjs': 'd6aba984c5d307c65457d90390638f57e2caff8512e519e1eb2c469353a7449c',
+  'hooks/hub-only.mjs': '1029618481271a93b493105a8a3b242586b5891481fd26f81b6a1890847a4c70',
 };
 test('default and explicit review preserve every pre-profile file byte', async () => {
   const { createHash } = await import('node:crypto'); const dir = scratch(); const home = join(dir, 'home');
@@ -312,13 +325,14 @@ function skillsFixture() {
 test('skills guard allows six Hub tools todos and installed skill but denies write tools and malformed input', () => {
   const f = skillsFixture();
   try {
-    for (const tool of [...HUB_TOOLS.map(t => `${SERVER_NAME}_${t}`), 'write_todos']) assert.equal(f.decide(f.input(tool, {})).decision, 'allow', tool);
+    for (const tool of [...HUB_TOOLS.map(t => `mcp__${SERVER_NAME}__${t}`), 'write_todos']) assert.equal(f.decide(f.input(tool, {})).decision, 'allow', tool);
     assert.equal(f.decide(f.input('skill', { name: 'x' })).decision, 'allow', 'installed skill');
     for (const badSkill of [{}, { name: 'missing' }]) assert.equal(f.decide(f.input('skill', badSkill)).decision, 'deny', JSON.stringify(badSkill));
-    for (const tool of ['write_file', 'edit_file', 'bash', 'hub_other']) assert.equal(f.decide(f.input(tool, {})).decision, 'deny', tool);
+    for (const tool of ['write_file', 'edit_file', 'bash', 'mcp__hub__other', 'hub_start_run']) assert.equal(f.decide(f.input(tool, {})).decision, 'deny', tool);
     for (const input of [null, [], {}, { tool_name: 'skill' }, f.input('execute', { command: 1 }), { ...f.input('skill', {}), tool_input: [] }]) assert.equal(f.decide(input).decision, 'deny');
     assert.equal(f.raw('not json').decision, 'deny');
-    const config = JSON.parse(readFileSync(join(f.home, 'hooks.json'), 'utf8')); assert.equal(config.hooks.before_tool.length, 1);
+    assert.equal(existsSync(join(f.home, 'hooks.json')), false);
+    const settingsConfig = JSON.parse(readFileSync(join(f.home, 'settings.json'), 'utf8')); assert.equal(settingsConfig.hooks.PreToolUse.length, 1);
   } finally { f.close(); }
 });
 test('readonly file tools require every path inside the configured workspace', async () => {
@@ -419,9 +433,9 @@ test('the installed skills hook command handles quoted home paths without shell 
   try {
     const home = join(dir, "home ' $(touch synthetic-marker)");
     const written = writeHome({ home, profile: 'skills', hubUrl: 'https://hub.example.invalid/mcp' }, endpointFrom(entries, 'qwen'), 'synthetic-token');
-    const hooks = JSON.parse(readFileSync(join(home, 'hooks.json'), 'utf8'));
-    const result = spawnSync(hooks.hooks.before_tool[0].command, { cwd: written.workdir, shell: true, input: JSON.stringify({ event: 'before_tool', tool_name: 'hub_start_run', tool_input: {}, paths: [], cwd: written.workdir }), encoding: 'utf8', timeout: 5000 });
-    assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).decision, 'allow');
+    const writtenSettings = JSON.parse(readFileSync(join(home, 'settings.json'), 'utf8'));
+    const result = spawnSync(writtenSettings.hooks.PreToolUse[0].hooks[0].command, { cwd: written.workdir, shell: true, input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'mcp__hub__start_run', tool_input: {}, paths: [], cwd: written.workdir }), encoding: 'utf8', timeout: 5000 });
+    assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'allow');
     assert.throws(() => statSync(join(written.workdir, 'synthetic-marker')), /ENOENT/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

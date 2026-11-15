@@ -359,7 +359,7 @@ export default function scenario(gold: LocationGold, detailsOut?: string): Scena
     name: 'case-location', area, countLines,
     prompt: `请对敏捷平台上的测试脑图 ${docs.map(d => d.document).join('、')} 做用例定位。`,
     sections: manualSections.length ? manualSections : undefined,
-    respond: turn => pagedRespond(turn, pagerState, () => [{ tool: 'hub_start_run', input: { pack: 'case-location', product: gold.product ?? 'famx', inputs: { documents: 'documents' in gold ? docs.map(d => ({ external: `agile:mindmap:${d.document}` })) : { external: `agile:mindmap:${docs[0].document}` } } } }], '定位完成。'),
+    respond: turn => pagedRespond(turn, pagerState, () => [{ tool: 'mcp__hub__start_run', input: { pack: 'case-location', product: gold.product ?? 'famx', inputs: { documents: 'documents' in gold ? docs.map(d => ({ external: `agile:mindmap:${d.document}` })) : { external: `agile:mindmap:${docs[0].document}` } } } }], '定位完成。'),
     check(turns) {
       countLines.length=0;
       const lines = reassembleResultLines(turns), text = lines.join('\n');

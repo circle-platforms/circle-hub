@@ -39,7 +39,7 @@ export interface Options {
 
 export const SERVER_NAME = 'hub';
 export const TOKEN_SECRET = 'HUB_TOKEN';
-/** The Hub's tool names as Circle shows them: <server name>_<tool>. */
+/** The Hub's tool names as Circle shows them: mcp__<server key>__<tool>. */
 export const HUB_TOOLS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
 /** Circle's own planning tool has no effect outside the conversation; every other built-in tool stays denied. */
 export const INTERNAL_TOOLS_ALLOWED = ['write_todos'] as const;
@@ -118,27 +118,73 @@ export function circleEndpoint(dir: string, options: { model?: string; warn?: (l
 }
 
 const HOOK = `// Lets only the Hub's tools (and Circle's own todo list) run in this Circle folder; every other tool call is denied.
-const allowed = new Set(${JSON.stringify([...HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`), ...INTERNAL_TOOLS_ALLOWED])});
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HUB_TOOLS = new Set(${JSON.stringify([...HUB_TOOLS])});
+const INTERNAL_TOOLS = new Set(${JSON.stringify([...INTERNAL_TOOLS_ALLOWED])});
+const DEFAULT_SERVER = ${JSON.stringify(SERVER_NAME)};
+const HOME = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function configuredHubServers() {
+  const servers = new Set([DEFAULT_SERVER.toLowerCase()]);
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(HOME, 'settings.json'), 'utf8'));
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.mcpServers && typeof raw.mcpServers === 'object' && !Array.isArray(raw.mcpServers)) {
+      for (const [key, entry] of Object.entries(raw.mcpServers)) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        if (key.toLowerCase() === DEFAULT_SERVER.toLowerCase() || entry.placeholders?.url === 'HUB_URL') {
+          servers.add(key.replace(/[^A-Za-z0-9_-]/g, '_').toLowerCase());
+        }
+      }
+    }
+  } catch {
+    // Keep the default server key when settings.json cannot be read.
+  }
+  return servers;
+}
+
+function isAllowedTool(tool, servers) {
+  if (INTERNAL_TOOLS.has(tool)) return true;
+  if (!tool.startsWith('mcp__')) return false;
+  const rest = tool.slice('mcp__'.length);
+  const sep = rest.indexOf('__');
+  if (sep <= 0) return false;
+  const server = rest.slice(0, sep).toLowerCase();
+  const name = rest.slice(sep + 2);
+  return servers.has(server) && HUB_TOOLS.has(name);
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;
 let tool = '';
+let preToolUse = false;
 try {
-  tool = String(JSON.parse(input).tool_name ?? '');
+  const parsed = JSON.parse(input);
+  tool = String(parsed?.tool_name ?? '');
+  preToolUse = parsed?.hook_event_name === 'PreToolUse';
 } catch {
   // Unreadable input is a deny below.
 }
-const decision = allowed.has(tool)
-  ? { decision: 'allow', reason: 'a Hub tool' }
-  : { decision: 'deny', reason: 'only the Hub tools may run in this folder' };
-process.stdout.write(JSON.stringify(decision));
+const ok = isAllowedTool(tool, configuredHubServers());
+const decision = ok ? 'allow' : 'deny';
+const reason = ok ? 'a Hub tool' : 'only the Hub tools may run in this folder';
+process.stdout.write(
+  JSON.stringify(
+    preToolUse
+      ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason } }
+      : { decision, reason },
+  ),
+);
 `;
 
-const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`);
+const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => `mcp__${SERVER_NAME}__${t}`);
 
 const BOOKING_STAYS_RULE = {
   id: 'booking-stays',
-  tool: 'hub_start_run',
+  tool: `mcp__${SERVER_NAME}__start_run`,
   match: [
     { path: 'pack', equalsBefore: '@', normalize: 'lower' as const, value: 'test-bed' },
     { path: 'parameters.action', normalize: 'lower' as const, in: ['release', 'force_release', 'unregister', 'register'] },
@@ -161,7 +207,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
   return {
     version: 1,
     about:
-      'Data for the Circle home before_tool guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
+      'Data for the Circle home PreToolUse guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
     allowReply: isOps ? 'silent' : 'explicit',
     allowLocalTools: isOps,
     hub: {
@@ -429,7 +475,7 @@ export function planGuardFiles(profile: 'skills' | 'ops'): Array<{ relative: str
   ];
 }
 
-/** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills/hooks.json untouched. */
+/** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills untouched. */
 export function writeGuardFiles(homeRaw: string, workdirRaw: string, profile: 'skills' | 'ops'): string[] {
   const home = resolve(homeRaw);
   const workdir = resolve(workdirRaw);
@@ -497,7 +543,7 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?:
   };
   emit(`只更新守卫：${home}（${profile}）`);
   emit(`工作目录：${workdir}`);
-  emit(`入口保持：hooks/${hookName}（不改 hooks.json / settings / credentials / secrets / skills）`);
+  emit(`入口保持：hooks/${hookName}（不改 settings / credentials / secrets / skills）`);
   for (const change of changes) {
     emit(`- ${change.status === 'same' ? '不变' : change.status === 'add' ? '新增' : '将改'} ${change.relative}`);
   }
@@ -598,9 +644,29 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
         auth: { protocol: endpoint.protocol, base_url: endpoint.baseUrl, model: endpoint.model, api_key_ref: 'api_key' },
         trusted_folders: [workdir],
         default_mode: 'auto',
-        mcp_servers: [
-          { name: SERVER_NAME, url: options.hubUrl, transport: 'streamable_http', headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` } },
-        ],
+        mcpServers: {
+          [SERVER_NAME]: {
+            type: 'http',
+            url: options.hubUrl,
+            headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` },
+            placeholders: { url: 'HUB_URL', token: TOKEN_SECRET },
+          },
+        },
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  name: profile === 'review' ? 'hub tools only' : `${profile} tools guard`,
+                  command: `node ${hookArgument}`,
+                  timeout: isGuarded ? 600 : 10,
+                  onFailure: 'block',
+                },
+              ],
+            },
+          ],
+        },
         ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
         ...(options.contextWindow === undefined ? {} : { models: { [endpoint.model]: { context_window: options.contextWindow } } }),
         ...(options.plumbCaFile === undefined ? {} : { trust_cert_files: [options.plumbCaFile] }),
@@ -622,19 +688,15 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   );
   writePrivate(join(home, 'credentials.json'), `${JSON.stringify({ api_key: endpoint.apiKey })}\n`);
   writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets: { [TOKEN_SECRET]: token } })}\n`);
-  writePrivate(
-    join(home, 'hooks.json'),
-    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: profile === 'review' ? 'hub tools only' : `${profile} tools guard`, command: `node ${hookArgument}`, timeout_ms: isGuarded ? 600000 : 10000 }] } }, null, 2)}\n`,
-  );
 
   if (!isGuarded) {
     writePrivate(hook, HOOK);
-    return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', `hooks/${hookName}`], workdir };
+    return { files: ['settings.json', 'credentials.json', 'secrets.json', `hooks/${hookName}`], workdir };
   }
 
   const guardFiles = writeGuardFiles(home, workdir, profile);
   return {
-    files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', ...guardFiles],
+    files: ['settings.json', 'credentials.json', 'secrets.json', ...guardFiles],
     workdir,
   };
 }

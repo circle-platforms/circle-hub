@@ -39,22 +39,79 @@ export interface InstalledGuard {
   entry: string;
   profile: 'skills' | 'ops';
   declarationName: string;
+  hookFormat: 'PreToolUse' | 'before_tool';
+  hubServer: string;
 }
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-/** Resolves the installed before_tool entry and trusted work folder of a skills/ops home. */
+function findHubServerKey(settings: Record<string, unknown>): string {
+  const mcpServers = settings.mcpServers;
+  if (mcpServers && typeof mcpServers === 'object' && !Array.isArray(mcpServers)) {
+    for (const [key, entry] of Object.entries(mcpServers as Record<string, unknown>)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const placeholders = (entry as { placeholders?: unknown }).placeholders;
+      const urlPlaceholder = placeholders && typeof placeholders === 'object' && !Array.isArray(placeholders)
+        ? (placeholders as { url?: unknown }).url
+        : undefined;
+      if (key.toLowerCase() === 'hub' || urlPlaceholder === 'HUB_URL') return key;
+    }
+  }
+  const configuredList = settings.mcp_servers;
+  if (Array.isArray(configuredList)) {
+    for (const entry of configuredList) {
+      if (entry && typeof entry === 'object' && !Array.isArray(entry) && typeof (entry as { name?: unknown }).name === 'string') {
+        const name = (entry as { name: string }).name;
+        if (name.toLowerCase() === 'hub') return name;
+      }
+    }
+  }
+  return 'hub';
+}
+
+/** Resolves the installed guard entry and trusted work folder of a skills/ops home. */
 export function resolveInstalledGuard(homeRaw: string): InstalledGuard {
   const home = resolve(homeRaw);
-  const hooksJsonPath = join(home, 'hooks.json');
-  if (!existsSync(hooksJsonPath)) throw new Error(`主目录没有 hooks.json：${home}`);
-  const hooksJson = readJson(hooksJsonPath) as { hooks?: { before_tool?: Array<{ command?: string }> } };
-  const command = hooksJson.hooks?.before_tool?.[0]?.command;
-  if (typeof command !== 'string' || command === '') throw new Error('hooks.json 里没有 before_tool 命令');
+  const settingsPath = join(home, 'settings.json');
+  if (!existsSync(settingsPath)) throw new Error(`主目录没有 settings.json：${home}`);
+  const settings = readJson(settingsPath) as Record<string, unknown>;
+  let command: string | undefined;
+  let hookFormat: 'PreToolUse' | 'before_tool' = 'PreToolUse';
+
+  const hooksCfg = settings.hooks;
+  const preToolUseGroups =
+    hooksCfg && typeof hooksCfg === 'object' && !Array.isArray(hooksCfg) && Array.isArray((hooksCfg as { PreToolUse?: unknown }).PreToolUse)
+      ? ((hooksCfg as { PreToolUse: unknown[] }).PreToolUse)
+      : [];
+  for (const group of preToolUseGroups) {
+    if (!group || typeof group !== 'object' || Array.isArray(group)) continue;
+    const handlers = Array.isArray((group as { hooks?: unknown }).hooks) ? (group as { hooks: unknown[] }).hooks : [];
+    for (const handler of handlers) {
+      if (!handler || typeof handler !== 'object' || Array.isArray(handler)) continue;
+      const rawCmd = (handler as { command?: unknown }).command;
+      if (typeof rawCmd !== 'string' || rawCmd.trim() === '') continue;
+      command = rawCmd.trim();
+      if (/\/(ops-allow|skills-only)\.mjs\b/.test(command)) break;
+    }
+    if (command && /\/(ops-allow|skills-only)\.mjs\b/.test(command)) break;
+  }
+
+  if (!command) {
+    const hooksJsonPath = join(home, 'hooks.json');
+    if (existsSync(hooksJsonPath)) {
+      const hooksJson = readJson(hooksJsonPath) as { hooks?: { before_tool?: Array<{ command?: string }> } };
+      command = hooksJson.hooks?.before_tool?.[0]?.command;
+      hookFormat = 'before_tool';
+    }
+  }
+
+  if (typeof command !== 'string' || command === '') {
+    throw new Error('settings.json 的 hooks.PreToolUse（和 hooks.json）里没有守卫命令');
+  }
   const match = /^node\s+(?:'([^']+)'|"([^"]+)"|(\S+))\s*$/.exec(command.trim());
-  if (!match) throw new Error('hooks.json 的 before_tool 命令不是 node <入口>');
+  if (!match) throw new Error('守卫命令不是 node <入口>');
   const entry = resolve(match[1] ?? match[2] ?? match[3]!);
   if (!existsSync(entry)) throw new Error(`钩子入口不存在：${basename(entry)}`);
   const entryName = basename(entry);
@@ -69,25 +126,38 @@ export function resolveInstalledGuard(homeRaw: string): InstalledGuard {
   } else {
     throw new Error(`不是 skills/ops 统一守卫入口（见到 ${entryName}）；核对只支持 skills-only.mjs / ops-allow.mjs`);
   }
-  const settings = readJson(join(home, 'settings.json')) as { trusted_folders?: unknown };
-  const folders = Array.isArray(settings.trusted_folders) ? settings.trusted_folders.filter((v): v is string => typeof v === 'string' && v !== '') : [];
+  const folders = Array.isArray(settings.trusted_folders)
+    ? settings.trusted_folders.filter((v): v is string => typeof v === 'string' && v !== '')
+    : [];
   if (!folders.length) throw new Error('settings.json 里没有 trusted_folders');
-  return { home, workdir: resolve(folders[0]!), entry, profile, declarationName };
+  return {
+    home,
+    workdir: resolve(folders[0]!),
+    entry,
+    profile,
+    declarationName,
+    hookFormat,
+    hubServer: findHubServerKey(settings),
+  };
 }
 
-export function classifyDecision(parsed: { decision?: string } | null | undefined): Verdict {
-  const word = parsed?.decision;
+export function classifyDecision(parsed: Record<string, unknown> | null | undefined): Verdict {
+  const specific =
+    parsed && typeof parsed.hookSpecificOutput === 'object' && parsed.hookSpecificOutput !== null && !Array.isArray(parsed.hookSpecificOutput)
+      ? (parsed.hookSpecificOutput as Record<string, unknown>)
+      : null;
+  const word = specific?.permissionDecision ?? parsed?.decision;
   if (word === 'deny' || word === 'ask') return word;
   return 'allow';
 }
 
-/** Invokes the installed hook entry with a before_tool payload; does not write home files. */
+/** Invokes the installed hook entry with a PreToolUse (or before_tool) payload; does not write home files. */
 export function invokeInstalledHook(
   guard: InstalledGuard,
   call: { tool_name: string; tool_input: Record<string, unknown>; paths?: string[] },
 ): { verdict: Verdict; reason?: string; raw: string; status: number | null } {
   const payload = JSON.stringify({
-    event: 'before_tool',
+    ...(guard.hookFormat === 'PreToolUse' ? { hook_event_name: 'PreToolUse' } : { event: 'before_tool' }),
     session_id: 'guard-preflight',
     cwd: guard.workdir,
     tool_name: call.tool_name,
@@ -113,16 +183,25 @@ export function invokeInstalledHook(
   if (child.status !== 0 && child.status !== null) return fail(`钩子退出码 ${child.status}`);
   const stdout = child.stdout ?? '';
   if (stdout.trim() === '') return fail('钩子没有输出');
-  let parsed: { decision?: string; reason?: string };
+  let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(stdout) as { decision?: string; reason?: string };
+    parsed = JSON.parse(stdout) as Record<string, unknown>;
   } catch {
     return fail('钩子输出不是 JSON');
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return fail('钩子输出不是 JSON 对象');
+  const specific =
+    typeof parsed.hookSpecificOutput === 'object' && parsed.hookSpecificOutput !== null && !Array.isArray(parsed.hookSpecificOutput)
+      ? (parsed.hookSpecificOutput as Record<string, unknown>)
+      : null;
+  const reason = typeof specific?.permissionDecisionReason === 'string'
+    ? specific.permissionDecisionReason
+    : typeof parsed.reason === 'string'
+      ? parsed.reason
+      : undefined;
   return {
     verdict: classifyDecision(parsed),
-    reason: parsed.reason,
+    reason,
     raw: stdout || child.stderr || '',
     status: child.status,
   };
@@ -304,7 +383,10 @@ export function fixedDenyCases(guard: InstalledGuard): HookCase[] {
     deny('必拒：读凭据文件', { tool_name: 'read_file', tool_input: { file_path: join(home, 'secrets.json') } }),
     deny('必拒：读守卫代码', { tool_name: 'read_file', tool_input: { file_path: join(home, 'hooks', 'guard-lib.ts') } }),
     deny('必拒：往工作目录外写', { tool_name: 'write_file', tool_input: { file_path: join(home, 'settings.json'), content: '{}' } }),
-    deny('必拒：释放预订', { tool_name: 'hub_start_run', tool_input: { pack: 'test-bed@1.0.0', parameters: { action: 'release' } } }),
+    deny('必拒：释放预订', {
+      tool_name: `mcp__${guard.hubServer.replace(/[^A-Za-z0-9_-]/g, '_')}__start_run`,
+      tool_input: { pack: 'test-bed@1.0.0', parameters: { action: 'release' } },
+    }),
   ];
 }
 

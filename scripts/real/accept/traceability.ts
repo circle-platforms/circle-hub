@@ -101,7 +101,7 @@ export default function scenario(gold: TraceGold): Scenario {
         pagerState,
         () => [
           {
-            tool: 'hub_start_run',
+            tool: 'mcp__hub__start_run',
             input: {
               pack,
               inputs: {

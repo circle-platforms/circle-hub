@@ -222,7 +222,7 @@ test('refresh-guards dry-run changes nothing; --apply updates guards and keeps s
     const home = makeHome(dir, 'skills', join('带 空格', 'home'));
     const settingsBefore = readFileSync(join(home, 'settings.json'), 'utf8');
     const secretsBefore = readFileSync(join(home, 'secrets.json'), 'utf8');
-    const hooksJsonBefore = readFileSync(join(home, 'hooks.json'), 'utf8');
+    const settingsJsonBefore = readFileSync(join(home, 'settings.json'), 'utf8');
     const libBefore = readFileSync(join(home, 'hooks', 'guard-lib.ts'), 'utf8');
 
     writeFileSync(join(home, 'hooks', 'guard-lib.ts'), `${libBefore}\n// stale marker\n`);
@@ -238,7 +238,7 @@ test('refresh-guards dry-run changes nothing; --apply updates guards and keeps s
     assert.match(lines.join('\n'), /核对通过/);
     assert.equal(readFileSync(join(home, 'settings.json'), 'utf8'), settingsBefore);
     assert.equal(readFileSync(join(home, 'secrets.json'), 'utf8'), secretsBefore);
-    assert.equal(readFileSync(join(home, 'hooks.json'), 'utf8'), hooksJsonBefore);
+    assert.equal(readFileSync(join(home, 'settings.json'), 'utf8'), settingsJsonBefore);
     assert.doesNotMatch(readFileSync(join(home, 'hooks', 'guard-lib.ts'), 'utf8'), /stale marker/);
     assert.equal(runPreflight(home).ok, true);
     assert.ok(lines.some((line) => line.includes('已备份 hooks/')));
@@ -315,6 +315,30 @@ test('preflight discovers plumb tools under tools/ and validates skills-profile 
     assert.ok(report.results.some((r) => /fidelity-plumb\.ts/.test(r.name) && r.want === 'allow' && r.ok));
     assert.ok(report.results.some((r) => /cmd-select-plumb\.ts/.test(r.name) && r.want === 'allow' && r.ok));
     assert.ok(report.results.some((r) => /cmd-verify-plumb\.ts/.test(r.name) && r.want === 'allow' && r.ok));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('preflight validates settings.json hooks.PreToolUse and custom mcpServers key', async () => {
+  const { readdirSync } = await import('node:fs');
+  const { spawnSync } = await import('node:child_process');
+  const dir = scratch('custom-hub-pretooluse');
+  try {
+    const home = makeHome(dir, 'ops', 'home');
+    assert.equal(existsSync(join(home, 'hooks.json')), false);
+    const settingsPath = join(home, 'settings.json');
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    assert.equal(Array.isArray(settings.hooks?.PreToolUse), true);
+    settings.mcpServers = { CustomHub: settings.mcpServers.hub };
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    const genName = readdirSync(join(home, 'hooks')).find((f) => f.endsWith('-gen.mjs'));
+    assert.ok(genName, 'expected *-gen.mjs in hooks/');
+    const regen = spawnSync(process.execPath, [join(home, 'hooks', genName)], { cwd: join(home, 'work'), encoding: 'utf8', timeout: 5000 });
+    assert.equal(regen.status, 0, regen.stderr);
+    const report = runPreflight(home);
+    assert.equal(report.ok, true, report.mismatches.map((m) => `${m.name} want=${m.want} got=${m.got} ${m.reason ?? ''}`).join('\n'));
+    assert.ok(report.results.some((r) => r.name === '必拒：释放预订' && r.want === 'deny' && r.ok));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -64,7 +64,7 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
     calls.push(tools); results = [];
     for (const call of tools) {
       const token = trace(); let text: string; let isError = false;
-      if (call.tool === 'hub_upload_file') {
+      if (call.tool === 'mcp__hub__upload_file') {
         const name = String(call.input.file_path); assert.equal(isAbsolute(name), false); assert.equal(call.input.media_type, 'application/json');
         const bytes = readFileSync(join(work, name)); const sha = sha256Of(bytes); const tree = JSON.parse(bytes.toString()) as MindTree;
         const match = /^gap-doc([0-9]+)-([abdef])(?:-(.*))?$/.exec(String(tree.root.data.id)); const single = /^gap-doc([0-9]+)-c([0-9]+)$/.exec(String(tree.root.data.id));
@@ -73,7 +73,7 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
         const reported = options.badUpload ? 'f'.repeat(64) : sha; accepted.set(reported, info);
         const value = UploadFileOutput.parse({ call_result: 'ok', trace: token, errors: [], acceptance: 'accepted', reference: `src:${reported}`, sha256: reported, size: bytes.length, media_type: 'application/json', structure: { parser: 'kityminder@1', summary: { nodes: parseMindMap(tree).nodes.length } } });
         text = resultText('upload_file', value);
-      } else if (call.tool === 'hub_start_run') {
+      } else if (call.tool === 'mcp__hub__start_run') {
         const parsed = StartRunInput.safeParse(call.input); const docs = parsed.success ? (parsed.data.inputs.documents as { reference: string }[]) : [];
         const copies = docs.map(doc => accepted.get(doc.reference?.slice(4)));
         if (!parsed.success || options.refuseStart || copies.some(copy => !copy) || new Set(copies.map(copy => copy?.tree.root.data.id)).size !== copies.length) {
@@ -88,17 +88,17 @@ function drive(scenario: ReturnType<typeof build>, answerText?: (file: string) =
           text = startText(options.dropRows ? [] : options.dropSingleRow && copies.some(c=>c?.kind==='c') ? items.filter(item=>item.id!==uploadIdOf(copies.find(c=>c?.kind==='c' && c.document===0)!.sha)) : items, run, record, token);
         }
       } else {
-        assert.equal(call.tool, 'hub_get_nodes'); const reference = String(call.input.reference); const summary = full.get(reference);
+        assert.equal(call.tool, 'mcp__hub__get_nodes'); const reference = String(call.input.reference); const summary = full.get(reference);
         if (summary === undefined) { isError = true; text = resultText('get_nodes', { call_result: 'error', trace: token, errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用' }] }); }
         else {
           text = resultText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: token, errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: JSON.stringify(summary) } }), { paging: true });
           if (options.corruptSummaryLength) text = `内容 ${reference}：模型可读\n原文（1 个字符）：\n${summary}\n追踪 ${token}`;
         }
       }
-      if (call.tool === 'hub_get_nodes' && !isError && text.split('\n').some(line=>line.startsWith('用例 '))) rawSummaryReads++;
+      if (call.tool === 'mcp__hub__get_nodes' && !isError && text.split('\n').some(line=>line.startsWith('用例 '))) rawSummaryReads++;
       results.push({ id: `tool-${seq}`, text: (options.prelude ?? '') + text, isError });
     }
-    if (tools.every(call => call.tool === 'hub_upload_file')) results.reverse();
+    if (tools.every(call => call.tool === 'mcp__hub__upload_file')) results.reverse();
   }
   throw new Error('synthetic scenario did not finish');
 }
@@ -173,7 +173,7 @@ test('a wrong summary character count names the missing full text and reference-
   assert.ok(result.checks.some(check => !check.ok));
   const report = JSON.stringify(scenario.sections);
   assert.match(report, /缺少与原文声明 1 个字符一致的完整摘要（实际 \d+ 个字符）/);
-  assert.match(report, /下一步.*rec:[a-f0-9]{64}#\/items\/\d+\/summary.*hub_get_nodes 重读/);
+  assert.match(report, /下一步.*rec:[a-f0-9]{64}#\/items\/\d+\/summary.*mcp__hub__get_nodes 重读/);
 });
 test('a refused start records the batch as unknown, and the scenario still finishes', () => {
   const { gold } = goldOf(); const scenario = build(gold); const result = drive(scenario, undefined, { refuseStart: true });
@@ -261,7 +261,7 @@ test('review 1: start_run uses the actual strict reference binding contract', as
   let results: Turn['toolResults'] = [];
   for (let index = 0; index < 10; index++) {
     const reply = scenario.respond(turn(index, results)) as Array<{ tool: string; input: Record<string, unknown> }>;
-    const start = reply.find(call => call.tool === 'hub_start_run');
+    const start = reply.find(call => call.tool === 'mcp__hub__start_run');
     if (start) { assert.equal(StartRunInput.safeParse(start.input).success, true); return; }
     results = reply.map((call, i) => ({ id: `upload-${i}`, text: uploadText(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))), isError: false }));
   }
@@ -279,8 +279,8 @@ test('review 3: every mixed-document run has distinct root ids with a batch of f
   const result = drive(scenario, file => `用例 ${outerCaseNodes(JSON.parse(readFileSync(join(dir, 'work', file), 'utf8'))).length} 个；24 个模板类别都已覆盖`);
   const shas = new Map<string, string>();
   for (const batch of result.calls) {
-    for (const call of batch) if (call.tool === 'hub_upload_file') { const bytes = readFileSync(join(dir, 'work', String(call.input.file_path)), 'utf8'); shas.set(sha256Of(bytes), String(JSON.parse(bytes).root.data.id)); }
-    for (const call of batch) if (call.tool === 'hub_start_run') {
+    for (const call of batch) if (call.tool === 'mcp__hub__upload_file') { const bytes = readFileSync(join(dir, 'work', String(call.input.file_path)), 'utf8'); shas.set(sha256Of(bytes), String(JSON.parse(bytes).root.data.id)); }
+    for (const call of batch) if (call.tool === 'mcp__hub__start_run') {
       const docs = (call.input.inputs as { documents: { reference: string }[] }).documents;
       const roots = docs.map(d => shas.get(d.reference.slice(4))); assert.equal(new Set(roots).size, roots.length);
     }
@@ -299,7 +299,7 @@ test('review 6: every clipped answer is consumed before the next full-summary re
   const shas = uploads.map(call => sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path)))));
   const full = new Map<string, string>();
   const start = scenario.respond(turn(1, shas.map((sha, i) => ({ id: `u${i}`, text: uploadText(sha), isError: false })))) as any[];
-  assert.equal(start[0].tool, 'hub_start_run');
+  assert.equal(start[0].tool, 'mcp__hub__start_run');
   const rows = shas.map((sha, i) => {
     const reference = `rec:${'a'.repeat(64)}#/items/${i}`;
     full.set(`${reference}/summary`, `用例 ${2} 个；24 个模板类别都已覆盖`);
@@ -307,7 +307,7 @@ test('review 6: every clipped answer is consumed before the next full-summary re
   });
   let reply = scenario.respond(turn(2, [{ id: 'run', text: startText(rows, 1, `rec:${'a'.repeat(64)}`), isError: false }])) as any[];
   let index = 3; let reads = 0;
-  while (reply[0]?.tool === 'hub_get_nodes') {
+  while (reply[0]?.tool === 'mcp__hub__get_nodes') {
     const reference = String(reply[0].input.reference); reads++;
     reply = scenario.respond(turn(index++, [{ id: 'full', text: resultText('get_nodes', GetNodesOutput.parse({ call_result: 'ok', trace: String(index).padStart(32, '0'), errors: [], content: { reference, read_tier: 'model_readable', readable: true, text: JSON.stringify(full.get(reference)) } })), isError: false }])) as any[];
   }
@@ -354,8 +354,8 @@ test('review 10: a later refusal cannot erase failed upload evidence or bind tho
     const reply = scenario.respond(turn(index, results)) as any[];
     if (reply[0]?.text === '检查完成。') break;
     results = reply.map((call, i) => {
-      if (call.tool === 'hub_upload_file') { failed.add(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))); return { id: `u${i}`, text: uploadText('f'.repeat(64)), isError: false }; }
-      if (call.tool === 'hub_start_run') bound.push(...call.input.inputs.documents.map((d: { reference: string }) => d.reference.slice(4)));
+      if (call.tool === 'mcp__hub__upload_file') { failed.add(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))); return { id: `u${i}`, text: uploadText('f'.repeat(64)), isError: false }; }
+      if (call.tool === 'mcp__hub__start_run') bound.push(...call.input.inputs.documents.map((d: { reference: string }) => d.reference.slice(4)));
       return { id: `r${i}`, text: '调用结果：出错', isError: true };
     });
   }
@@ -369,8 +369,8 @@ test('review 9: absent Hub outputs cannot pass any result-dependent check', () =
   for (let index = 0; index < 100; index++) {
     const reply = scenario.respond(turn(index, results)) as any[]; if (reply[0]?.text === '检查完成。') break;
     results = reply.map((call, i) => {
-      if (call.tool === 'hub_upload_file') return { id: `u${i}`, text: uploadText(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))), isError: false };
-      if (call.tool === 'hub_start_run') starts++;
+      if (call.tool === 'mcp__hub__upload_file') return { id: `u${i}`, text: uploadText(sha256Of(readFileSync(join(dir, 'work', String(call.input.file_path))))), isError: false };
+      if (call.tool === 'mcp__hub__start_run') starts++;
       return { id: `r${i}`, text: '调用结果：出错', isError: true };
     });
   }
