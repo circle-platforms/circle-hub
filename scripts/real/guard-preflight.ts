@@ -113,11 +113,13 @@ export function invokeInstalledHook(
   };
 }
 
+// Placeholders must satisfy guard `run_[a-z0-9]+` but must not be protected-prefix+26-char
+// internal IDs (address-id-check); only APPROVED_PUBLIC_RUN_ID / run_0{26} are auto-allowed there.
 const SYNTHETIC: Record<string, string> = {
-  脚本编写编号: 'run_01aaaaaaaaaaaaaaaaaaaaaaaa',
-  用例重组编号: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb',
-  脚本合并编号: 'run_01cccccccccccccccccccccccc',
-  合并或上机编号: 'run_01cccccccccccccccccccccccc',
+  脚本编写编号: 'run_syntheticplan',
+  用例重组编号: 'run_syntheticrecomp',
+  脚本合并编号: 'run_syntheticverify',
+  合并或上机编号: 'run_syntheticverify',
   脚本编写目录: 'case-compile-run',
   上一轮脚本编写目录: 'prev-case-compile-run',
   新脚本编写目录: 'case-compile-run',
@@ -331,7 +333,7 @@ function syntheticOptionValues(env: GuardEnvironment, tool: DiscoveredTool): Rec
         values[option.name] = env.urlPlaceholder;
         break;
       case 'run':
-        values[option.name] = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
+        values[option.name] = 'run_syntheticplan';
         break;
       case 'int':
         values[option.name] = '30';
@@ -452,7 +454,7 @@ export function fixedDenyCases(guard: InstalledGuard): HookCase[] {
     deny('必拒：令牌写成明文', {
       tool_name: 'execute',
       tool_input: {
-        command: `node ${script} --hub %HUB_URL% --run run_01aaaaaaaaaaaaaaaaaaaaaaaa --out run-out <<'EOF'\nsometoken\nEOF`,
+        command: `node ${script} --hub %HUB_URL% --run run_syntheticplan --out run-out <<'EOF'\nsometoken\nEOF`,
       },
     }),
     deny('必拒：读凭据文件', { tool_name: 'read_file', tool_input: { file_path: join(home, 'secrets.json') } }),
