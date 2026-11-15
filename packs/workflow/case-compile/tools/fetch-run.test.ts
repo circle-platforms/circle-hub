@@ -7,7 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { main } from './fetch-run.ts';
+import { main as importedMain } from './fetch-run.ts';
+import { readSourceBytes } from '../functions/source-materials.ts';
+
+const main: typeof importedMain = (argv, token, retry) => importedMain(argv, token, { ...retry, sourceCacheDirectory: false });
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 const OTHER = 'run_01bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -17,7 +20,7 @@ const originals = { contract: Buffer.from('{"contract":1}'), profile: Buffer.fro
 interface Exported { schema: string; run_reference?: string; accepted_result_reference?: string | null; run: { run: string; sources: unknown[] }; result: { run: string; acceptance: string }; submission: { run: string; items: unknown[] } }
 async function hub(change: (sources: Map<string, Buffer>) => void = () => {}, alter: (exported: Exported) => void = () => {}) {
   const sources = new Map(Object.values(originals).map((bytes) => [sha(bytes), bytes] as const)); change(sources);
-  const exported: Exported = { schema: 'run-export@1', run: { run: RUN, sources: Object.entries(originals).map(([slot, bytes]) => ({ slot, role: 'expected', reference: `src:${sha(bytes)}` })) }, result: { run: RUN, acceptance: 'accepted' }, submission: { run: RUN, items: [] } };
+  const exported: Exported = { schema: 'run-export@1', run: { run: RUN, sources: Object.entries(originals).map(([slot, bytes]) => ({ slot, media_type: 'application/json', role: 'expected', reference: `src:${sha(bytes)}` })) }, result: { run: RUN, acceptance: 'accepted' }, submission: { run: RUN, items: [] } };
   alter(exported);
   let requests = 0;
   const server = createServer((request, response) => {
@@ -42,7 +45,7 @@ async function stderrOf(run: () => Promise<number>): Promise<{ code: number; tex
 test('fetches the run, result, submission and the three bound originals with the token from standard input', async (t) => {
   const h = await hub(); t.after(h.close); const out = await mkdtemp(join(tmpdir(), 'cc-fetch-'));
   assert.equal(await main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN), 0);
-  for (const [slot, bytes] of Object.entries(originals)) assert.deepEqual(await readFile(join(out, `${slot}.json`)), bytes);
+  for (const [slot, bytes] of Object.entries(originals)) assert.deepEqual(Buffer.from(await readSourceBytes(out, slot)), bytes);
   assert.deepEqual(JSON.parse(await readFile(join(out, 'submission.json'), 'utf8')), { run: RUN, items: [] });
   assert.equal(JSON.parse(await readFile(join(out, 'run.json'), 'utf8')).run, RUN);
   assert.equal(await main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN), 1, 'existing files are never overwritten');
@@ -104,11 +107,11 @@ test('a source that fails its digest leaves no file behind, and a directory that
   const h = await hub((sources) => { const keys = [...sources.keys()]; sources.set(keys[2], Buffer.from('changed')); }); t.after(h.close);
   const out = join(await mkdtemp(join(tmpdir(), 'cc-fetch-')), 'fresh');
   const failed = await stderrOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
-  assert.equal(failed.code, 1); assert.match(failed.text, /测试环境清单与脚本编写时的原件不一致/); assert.equal(existsSync(out), false);
+  assert.equal(failed.code, 1); assert.match(failed.text, /来源槽 inventory 的字节与脚本编写时的原件不一致/); assert.equal(existsSync(out), false);
   const good = await hub(); t.after(good.close); const taken = await mkdtemp(join(tmpdir(), 'cc-fetch-'));
   await writeFile(join(taken, 'profile.json'), 'kept');
   const refused = await stderrOf(() => main(['--hub', good.url, '--run', RUN, '--out', taken], async () => TOKEN));
-  assert.equal(refused.code, 1); assert.match(refused.text, /已有 profile\.json/);
+  assert.equal(refused.code, 1); assert.match(refused.text, /输出位置不是空的普通目录/);
   assert.deepEqual(await readdir(taken), ['profile.json']); assert.equal(await readFile(join(taken, 'profile.json'), 'utf8'), 'kept');
 });
 
@@ -132,7 +135,7 @@ test('retries 503 Retry-After and ECONNREFUSED transparently before succeeding o
   const sources = new Map(Object.values(originals).map((bytes) => [sha(bytes), bytes] as const));
   const exported: Exported = {
     schema: 'run-export@1',
-    run: { run: RUN, sources: Object.entries(originals).map(([slot, bytes]) => ({ slot, role: 'expected', reference: `src:${sha(bytes)}` })) },
+    run: { run: RUN, sources: Object.entries(originals).map(([slot, bytes]) => ({ slot, media_type: 'application/json', role: 'expected', reference: `src:${sha(bytes)}` })) },
     result: { run: RUN, acceptance: 'accepted' },
     submission: { run: RUN, items: [] },
   };
@@ -174,5 +177,5 @@ test('retries 503 Retry-After and ECONNREFUSED transparently before succeeding o
   assert.equal(pauses.length, 2);
   assert.equal(pauses[0], 5_000);
   assert.ok(pauses[1] > 0);
-  for (const [slot, bytes] of Object.entries(originals)) assert.deepEqual(await readFile(join(out, `${slot}.json`)), bytes);
+  for (const [slot, bytes] of Object.entries(originals)) assert.deepEqual(Buffer.from(await readSourceBytes(out, slot)), bytes);
 });
