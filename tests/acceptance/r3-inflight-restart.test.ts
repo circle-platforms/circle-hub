@@ -93,6 +93,8 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   assert.equal(requests.length,2);assert.equal(requests[0],originalRequest);assert.notEqual(requests[1],originalRequest);
   assert.equal(syntheticLedger.size,2);assert.equal(syntheticLedger.get(String(requests[1]))?.state,'started','new attempt is not forced into the first request fixture outcome');
   assert.ok(notes.some(note=>note.job===job&&note.outcome==='proven_not_executed'&&note.text.includes(labelOf('effect_outcome','proven_not_executed'))),'reply must preserve the previous job conclusion');
+  assert.ok(notes.find(note=>note.job===job)!.text.includes('服务重启后核对到原请求尚未开始'));
+  assert.doesNotMatch(notes.find(note=>note.job===job)!.text,/本次结果仍有缺失事实/);
   const newAttempt=notes.find(note=>note.job!==undefined&&note.job!==job);assert.ok(newAttempt?.job);
   assert.ok(newAttempt.text.includes('已再次')&&newAttempt.text.includes('开始上机验证'),'reply must say the Hub started another attempt');
   assert.equal((await completed(c,newAttempt.job)).outcome,'effective');

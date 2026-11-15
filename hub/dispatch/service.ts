@@ -299,7 +299,7 @@ export class DispatchService {
         if(!intent){
           const gate=await this.journal.append(binding,'gate','validate','completed',{allow_submit:false},[],'dispatch.gate:'+job);
           if(!gate.created&&gate.body.detail.allow_submit===true){await this.recoveryUnknown(binding,'原提交准入已通过，但没有完整意图，缺少可核对的原请求身份');return;}
-          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'原样重交，Hub 会再试一次'},[], 'dispatch.recovery.no_intent:'+job);
+          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',member_missing_facts:[{fact:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'原样重交，Hub 会再试一次'}],next_action:'原样重交，Hub 会再试一次'},[], 'dispatch.recovery.no_intent:'+job);
           return;
         }
         const detail=intent.body.detail,lease=detail.remote_lease;
@@ -347,9 +347,10 @@ export class DispatchService {
           const outcome:EffectOutcome=decision.rejected?'target_rejected':'proven_not_executed';
           await this.answerRequests(binding,'reconciled','read_back','completed',{recovery:true,outcome,reached_device:false,unfreeze:true},[response.source],openRequests(current.tail).map(event=>'rec:'+event.digest));
           const cleanup=await this.recoveryRelease(binding,client,cached.lease);
+          const reason=decision.rejected?'原请求被目标明确拒收，本次上机验证没有执行':'服务重启后核对到原请求尚未开始，本次上机验证没有执行';
           await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome,unfreeze:true,recovery:true,
-            ...(cleanup.length?{member_missing_facts:cleanup}:{}),
-            public_reason:decision.rejected?'原请求被目标明确拒收，本次上机验证没有执行':'服务重启后核对到原请求尚未开始，本次上机验证没有执行',
+            member_missing_facts:[{fact:reason,next_action:'原样重交，Hub 会再试一次'},...cleanup],
+            public_reason:reason,
             next_action:'原样重交，Hub 会再试一次'},[response.source],'dispatch.recovery.complete:'+intent.digest);
           return;
         }else if(decision.remoteId!==undefined){
