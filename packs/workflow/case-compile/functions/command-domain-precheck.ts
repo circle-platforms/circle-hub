@@ -5,7 +5,7 @@ import { parseManifest } from './manifest.ts';
 import { parseProfile } from './profile.ts';
 import { readSlots } from './slots.ts';
 import { deviceCommandLines, planCommands } from './plan-commands.ts';
-import { commandDefinitions, runnerRule } from './command-obligations.ts';
+import { commandDefinitions, runnerRule, type CatalogCommandDefinition } from './command-obligations.ts';
 import { commandIdentity, compileGrammar } from './generated/skills/command-tools/command-check/grammar.ts';
 import { readCommandPolicy, within } from './generated/skills/command-tools/command-check/command-policy.ts';
 import { identityOf } from './typed-contract.ts';
@@ -73,15 +73,16 @@ export function commandDomainPrecheck(input: PrecheckInputs): CommandDomainRepor
     const rule = cleanup.rules[matched.rule];
     row.rule = { index: matched.rule, source: cleanup.source, sha256: cleanup.sha256, line: rule.line, pinned: cleanup.pinned };
     if (!rule.probe) { row.gaps.push(gap(`/cleanup/rules/${matched.rule}/probe`, '该域没有显式只读探测映射', '由规则发布者在权威声明中给出冻结命令引用和完整命令，不从前缀造 show 命令')); continue; }
-    row.query = queryFor(rule.probe, operation.object, grammar, input.catalog, policy, contract.contract.digest, cleanup.source, cleanup.sha256, matched.rule, row.gaps);
+    row.query = queryFor(rule.probe, operation.object, grammar, definitions, policy, contract.contract.digest, cleanup.source, cleanup.sha256, matched.rule, row.gaps);
   }
   return report;
 }
-function queryFor(probe: CommandDomainProbe, object: string, grammar: ReturnType<typeof compileGrammar>, catalog: Record<string, unknown>, policy: ReturnType<typeof readCommandPolicy>, contract: string, source: string, sha256: string, rule: number, gaps: DisclosureGap[]): ReadOnlyQuery | null {
+function queryFor(probe: CommandDomainProbe, object: string, grammar: ReturnType<typeof compileGrammar>, definitions: readonly CatalogCommandDefinition[], policy: ReturnType<typeof readCommandPolicy>, contract: string, source: string, sha256: string, rule: number, gaps: DisclosureGap[]): ReadOnlyQuery | null {
   const identity = identityOf(commandIdentity(grammar, probe.command));
-  const entries = Array.isArray(catalog.authority_entries) ? catalog.authority_entries : Array.isArray(catalog.entries) ? catalog.entries : [];
-  const declared = entries.filter(isRecord).find(entry => entry.reference === probe.reference && Array.isArray(entry.words) && '/commands/' + entry.words.map(encodeURIComponent).join('/') === identity?.path);
-  if (!identity || !declared || !policy?.read_only.some(path => within(identity.path, path))) {
+  // Resolve the exact catalog reference through the same frozen declarations used by the full grammar.
+  const bound = definitions.filter(entry => entry.reference === probe.reference && entry.path === identity?.path);
+  const declaredIdentity = identityOf(commandIdentity(compileGrammar(bound), probe.command));
+  if (!identity || !declaredIdentity || JSON.stringify(identity) !== JSON.stringify(declaredIdentity) || !policy?.read_only.some(path => within(identity.path, path))) {
     gaps.push(gap(`/cleanup/rules/${rule}/probe`, '探测命令引用、完整参数或只读策略未被同一冻结命令树核对', '补齐合法的完整查询及其只读声明；不执行当前探测')); return null;
   }
   return { object, command: probe.command, reference: probe.reference, identity, mapping: { contract_sha256: contract, pointer: `/cleanup/rules/${rule}/probe`, cleanup_source: source, cleanup_sha256: sha256 } };
