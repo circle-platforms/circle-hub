@@ -150,15 +150,27 @@ function nativeFailure(error: unknown): CallFailure | null {
   if (typeof code === 'string' && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','EHOSTUNREACH','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code)) return new CallFailure('temporarily_unavailable', `连接操作失败（${String(code)}）`, '由运行者检查当前连接目标与服务状态后重试同一请求');
   return null;
 }
-/** Adapts typed refusal data to the existing CLI wire text. */
-export function formatCallError(error: unknown, options?: { category?: CallErrorCategory; fallbackNextStep?: string }): string {
+/** A null category means no structured refusal classification was established. */
+export interface CallFailureData extends CallFailureFields {
+  category: CallErrorCode | null;
+  fact: string;
+  next_action: string;
+}
+export interface CallFailureOptions { category?: CallErrorCategory; fallbackNextStep?: string }
+export function callFailureData(error: unknown, options?: CallFailureOptions): CallFailureData {
   let failure = error instanceof CallFailure ? error : nativeFailure(error);
   if (!failure && options?.category) {
     const entry = Object.entries(CALL_ERROR_CATEGORY_LABEL).find(([,label]) => label === options.category);
     if (entry && options.fallbackNextStep) failure = new CallFailure(entry[0] as CallErrorCode, error instanceof Error ? error.message : '调用失败', options.fallbackNextStep);
   }
-  failure ??= new CallFailure('temporarily_unavailable', '调用未完成，缺少结构化错误原因', '请维护者定位本次拒绝点并补齐错误类别、事实和下一步；不据此改写输入内容或判断业务结论');
-  return labelOf('call_error_category', failure.category) + '：' + sentence(failure.fact) + sentence(failure.next_action) + (failure.path ? `位置：${failure.path}。` : '') + (failure.legal_form ? `合法写法：${failure.legal_form}。` : '');
+  return failure ?? { category: null, fact: '调用未完成，缺少结构化错误原因', next_action: '请维护者定位本次拒绝点并补齐错误类别、事实和下一步；不据此改写输入内容或判断业务结论' };
+}
+/** Adapts structured refusal data to the existing CLI wire text. */
+export function formatCallError(error: unknown, options?: CallFailureOptions): string {
+  const failure = callFailureData(error, options);
+  // The legacy CLI label means the caller cannot proceed; null is never a network or transient attribution.
+  const category = failure.category ?? 'temporarily_unavailable';
+  return labelOf('call_error_category', category) + '：' + sentence(failure.fact) + sentence(failure.next_action) + (failure.path ? `位置：${failure.path}。` : '') + (failure.legal_form ? `合法写法：${failure.legal_form}。` : '');
 }
 
 /**
