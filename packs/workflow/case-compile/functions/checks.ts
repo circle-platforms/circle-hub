@@ -53,19 +53,43 @@ function typedPrerequisites(s: CheckSubject, slots: PlanSlots, covered?: RunnerC
   if(gaps0.length)return [{verdict:'unknown',reason:'missing_input',missing:gaps0.join('；'),statement:gaps0.join('；'),grounds:[],tier:'blocking',item:s.item}];
   // Model identity proposals belong to commands_known, not shared contract prerequisites.
   const plan=withoutModelIdentities(slots);
-  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services,covered);
+  const localCovered = covered ?? [];
+  const gaps = typedAuthorityGaps(s.contract!, s.profile!, plan,s.command_identities,s.command_catalog,s.case_texts,s.manifest_sha256,s.bed_services,localCovered);
   if (!gaps.length) return null;
-  const missing = authorityRecovery(gaps);
-  if(gaps.some(g=>g.verdict==='refute')){const first=gaps.find(gap=>gap.verdict==='refute')!;const pointer=blockMeta(slots)&&first.pointer.startsWith('/blocks/')?'/data'+first.pointer:'/data';return [refute(s,'method_forbidden',missing,pointer,{problems:gaps,obligations:gaps.flatMap(gap=>gap.obligation?[gap.obligation]:[])})];}
-  return [{ verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, data: { problems: gaps } }];
+  const cleanup = s.contract!.cleanup;
+  const cleanupText = runnerCleanupText(s.contract!, localCovered);
+  const cleanupData = cleanup && localCovered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, ...(cleanup.order ? { order: cleanup.order } : {}), covered: localCovered } } : {};
+  const refuteGaps = gaps.filter((gap) => gap.verdict === 'refute');
+  const unknownGaps = gaps.filter((gap) => gap.verdict !== 'refute');
+  // Separate independent block-runtime capability unknowns from downstream command refutes so executor capability
+  // omissions are not mislabeled as method_forbidden, while secondary non-block unknowns (e.g. missing inverse rule on
+  // an already out-of-scope flat step) stay inside the single refute outcome as expected by author contracts.
+  if (refuteGaps.length && !unknownGaps.some((gap) => gap.document === 'blocks')) {
+    const first = refuteGaps[0]!;
+    const pointer = blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
+    return [refute(s, 'method_forbidden', authorityRecovery(gaps) + cleanupText, pointer, { problems: gaps, obligations: gaps.flatMap((gap) => (gap.obligation ? [gap.obligation] : [])), ...cleanupData })];
+  }
+  const outcomes: Outcome[] = [];
+  if (refuteGaps.length) {
+    const first = refuteGaps[0]!;
+    const pointer = blockMeta(slots) && first.pointer.startsWith('/blocks/') ? '/data' + first.pointer : '/data';
+    outcomes.push(refute(s, 'method_forbidden', authorityRecovery(refuteGaps) + cleanupText, pointer, { problems: refuteGaps, obligations: refuteGaps.flatMap((gap) => (gap.obligation ? [gap.obligation] : [])), ...cleanupData }));
+  }
+  if (unknownGaps.length) {
+    const missing = authorityRecovery(unknownGaps) + (refuteGaps.length ? '' : cleanupText);
+    outcomes.push({ verdict: 'unknown', reason: 'missing_input', missing, statement: missing, grounds: s.location ? [s.location] : [], tier: TIER, item: s.item, data: { problems: unknownGaps, ...cleanupData } });
+  }
+  return outcomes;
 }
 /** What the runner's own cleanup discharges (decision 112), with its source, rule and how far its digest is pinned. */
 function runnerCleanupText(contract: RuntimeContract, covered: readonly RunnerCovered[]): string {
   const c = contract.cleanup;
   if (!c || covered.length === 0) return '';
-  const listed = covered.slice(0, 5).map((row) => `${row.object} 的“${row.line}”（规则 ${row.rule + 1}${row.source_line !== null ? `，${c.source} 第 ${row.source_line} 行` : ''}，前缀“${row.prefix}”）`).join('、');
+  const listed = covered.slice(0, 5).map((row) => `${row.object} 的“${row.line}”（规则 ${row.rule + 1}${row.source_line !== null ? `，${c.source} 第 ${row.source_line} 行` : ''}，前缀“${row.prefix}”${row.clears?.length ? `，触发 ${row.clears.map((cmd) => `“${cmd}”`).join('、')}` : ''}）`).join('、');
   const pinned = c.pinned ? '原合约的源文件摘要表记了同一摘要' : '原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对';
-  return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：每个用例开始前和整本结束时按发过的命令行逐条比前缀、第一条命中即用；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
+  const tailText = c.order?.tail.length ? `；${c.order.tail.map((t) => `“${t}”`).join('、')} 放在收尾末尾` : '';
+  const beforeText = c.order?.before.length ? `；顺序约束：${c.order.before.map(([a, b]) => `“${a}”先于“${b}”`).join('、')}` : '';
+  return `；其中 ${covered.length} 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 ${c.source}@${c.sha256.slice(0, 12)}：自第 2 条用例开始前及整本关闭连接时，按清配对象（${c.objects.join('、')}）上 cmd_config 发出的命令行逐条比前缀、第一条命中即用${tailText}${beforeText}；${pinned}）：${listed}${covered.length > 5 ? ` 等 ${covered.length} 条` : ''}`;
 }
 /** How device commands are authorised (decision 114): by the locked command tree except the declared destructive commands. */
 function destructiveText(contract: RuntimeContract): string {
@@ -100,7 +124,7 @@ export function checkContractShape(input: unknown): Outcome[] {
     if(out.length===beforeStep)try { encodeG(step,gOptions(step.object,step.method,s.contract!,s.profile!)); } catch(error) { if(error instanceof GSyntaxError)out.push(refute(s,'param_value',`G 写法 ${error.rule}：${error.message}；修正该步骤后自动重核`,at+'/G')); else throw error; }
   }
   const cleanup = s.contract!.cleanup;
-  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，${read.slots.steps.some(cellInput)?'参数角色、签名和单格回填格式已核对；单格实际值在上机时取得':'参数角色、签名和值规则均已核对'}${runnerCleanupText(s.contract!, covered)}${destructiveText(s.contract!)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, covered } } : {}) })];
+  return out.length ? out : [support(s, `${read.slots.steps.length} 步调用符合启用合约，${read.slots.steps.some(cellInput)?'参数角色、签名和单格回填格式已核对；单格实际值在上机时取得':'参数角色、签名和值规则均已核对'}${runnerCleanupText(s.contract!, covered)}${destructiveText(s.contract!)}`, { runtime_version: s.contract!.runtimeVersion, contract_sha256: s.contract!.pinned.identity, ...(cleanup && covered.length ? { runner_cleanup: { source: cleanup.source, sha256: cleanup.sha256, pinned: cleanup.pinned, ...(cleanup.order ? { order: cleanup.order } : {}), covered } } : {}) })];
 }
 export function checkAddresses(input: unknown): Outcome[] {
   const s = subjectOf(input); const missing = prerequisites(s); if (missing) return missing;
@@ -259,7 +283,8 @@ export function checkExpectedSources(input: unknown): Outcome[] {
 
 export function checkCommandsKnown(input:unknown):Outcome[]{
  const s=subjectOf(input),missing=prerequisites(s);if(missing)return missing;const read=slotsOf(s);if(read.errors)return read.errors;
- const gaps=typedPrerequisites(s,read.slots);if(gaps)return gaps;
+ const covered:RunnerCovered[]=[];
+ const gaps=typedPrerequisites(s,read.slots,covered);if(gaps)return gaps;
  const resolved=planCommands(s.contract!,s.profile!,read.slots,s.command_catalog);
  const declarations=resolved.problems.filter(problem=>problem.pointer==='/command_identities');
  if(declarations.length)return declarations.map(problem=>refute(s,'slots_invalid',problem.message+'；删除可选 command_identities，由 Hub 从 steps 解析；或按 Hub 回执修正声明','/data/command_identities'));

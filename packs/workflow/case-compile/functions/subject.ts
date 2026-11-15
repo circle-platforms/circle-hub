@@ -77,16 +77,20 @@ export function planSubject(input: unknown): PlanSubject {
 }
 export function commandSubject(input:unknown):unknown{return planSubject(input);}
 export function quoteSubject(input: unknown): unknown {
-  const subject = planSubject(input); const outcomes = checkContractShape({subject}); const gap = outcomes.find(v => v.verdict === 'unknown'); if (gap) return { item: subject.item, location: subject.location, missing: gap.missing, reason: gap.reason }; const blocked=outcomes.filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {blocked}; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
+  const subject = planSubject(input); const outcomes = checkContractShape({subject}); const blocked=outcomes.filter(v=>v.verdict==='refute'&&v.pointer&&v.code).map(v=>({check:'contract_shape',pointer:v.pointer!,code:v.code!}));if(blocked.length)return {blocked}; const gap = outcomes.find(v => v.verdict === 'unknown'); if (gap) return { item: subject.item, location: subject.location, missing: gap.missing, reason: gap.reason }; const read = readSlots(subject.data); const contract = parseRuntimeContract(subject.contract); const beds = parseManifest(subject.manifest);
   const profile = contract.ok && beds.ok ? parseProfile(subject.profile, contract.contract, beds.beds) : null;
   // quote@1 has no required option: an explicit missing-field record produces missing_input, never a fictitious quote.
   if (!read.ok || !contract.ok || !beds.ok || !profile?.ok) return { item: subject.item, quotes: [{}], unreadable: true };
   // An expectation taken from a frozen accepted criterion cites the declaration, which quote@1 cannot read as a source:
   // what has to be verbatim in an expected source of this run is the declaration's own grounds (W10 step two, B03 R[3]).
-  const quotes = read.slots.expects.flatMap((v) => {
-    const criterion = citedCriterion(subject.criteria, v.quote.reference);
-    return criterion === null || criterion.new !== v.quote.text ? [v.quote] : criterion.grounds.map((ground) => ({ reference: ground.reference, text: ground.quote }));
-  });
+  const stepQuotes = read.slots.steps.flatMap((step) => step.precondition_source ? [step.precondition_source] : []);
+  const quotes = [
+    ...read.slots.expects.flatMap((v) => {
+      const criterion = citedCriterion(subject.criteria, v.quote.reference);
+      return criterion === null || criterion.new !== v.quote.text ? [v.quote] : criterion.grounds.map((ground) => ({ reference: ground.reference, text: ground.quote }));
+    }),
+    ...stepQuotes,
+  ];
   if(read.slots.blocks.length){
     const context=read.slots.block_context;
     for(const list of [context?.preconditions,context?.causal_links,context?.responders])for(const row of Array.isArray(list)?list:[])if(isRecord(row.quote)&&typeof row.quote.reference==='string'&&typeof row.quote.text==='string')quotes.push({reference:row.quote.reference,text:row.quote.text});

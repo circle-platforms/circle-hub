@@ -11,9 +11,9 @@ tools: read_file, write_file, edit_file, ls, glob, grep
 3. 形状参照：输出 JSON **只写精简格式**（参照主技能 `recompose/SKILL.md` 与 `<技能目录>/tables/recompose-format.json`），顶层仅允许 `item`、`method`（必填 `{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}`）及可选 `slots`/`states`/`adapted`/`concretizations`/`unknowns`；**严禁写**完整记录结构的 `schema`/`case`/`contract`/`atoms`/`expectation_slots`/`coverage`/`ledgers`/`handling`（`submit-records.ts` 会自动补齐外层结构），严格写到任务指定的路径。
 
 ## 内容铁律
-1. 原文步骤与期望不重写、不删减、不自行编造原始用例未写的新对象或新动作；等价改写须写明 `equivalence_reason` 与 `equivalence_refs`。
+1. 原文步骤与期望不重写、不删减、不替换作者的被测对象、被测动作或边界条件，也不凭空增设无来源的新测试目标；等价改写或补全须写明 `equivalence_reason` 与 `equivalence_refs`。
 2. 命令必须在同一构建 `knowledge/` 锁定的命令树中完整解析，不用缩写；写入 `adapted.commands` 或 `slots` 的每条命令都必须是**具体可执行的完整命令行**（按目录 `words` 逐词抄写，所有必填 `<argN:...>` 与选用的可选 `[...]` 参数一律换成合规具体字面值：字符串用双引号如 `"web1"`、整数写十进制数、合法关键字/枚举直接写词、未选用的可选 `[...]` 直接省略，严禁保留 `<argN:...>`、`[...]`、`...` 或 `<中文>`）。若命令语法必填 IP 字段且原句/规则未定具体值，使用 RFC 5737/3849 文档保留地址（如 `192.0.2.10` 或 `2001:db8::1`）并在 `unknowns` 写明按命令语法必填暂用测试保留地址、待脚本编写按测试环境替换。正例：`sdns service ip "web1" 192.0.2.10`；反例：`sdns listener <arg1:ipv4/ipv6> [<arg2:int ...>]` 或带 `<源IP>` 尖括号写法。
-3. 从 `knowledge/` 查全功能前置（如默认关闭、依赖对象、监听前提），写入 `states`（`missing_prerequisite` + `prerequisites`）。
+3. 从 `knowledge/`（含同构建手册正文、跨章说明与配置示例）查全使作者命令成立所需的功能前置（如默认关闭、依赖对象、监听前提、多端本端与对端对称配置），写入 `states`（`missing_prerequisite` + `prerequisites` + `reason`）；仅当原始用例明确测“前置不存在/未配置”的反向场景时记明该测试条件而不补成必配前提。
 4. 原始用例要求的取值或写法被同构建手册和命令树明确排除、期望却是成功时（非测非法输入），不得私自改写，必须在回报中带出 `autoid`、标题、原句、构建号、手册原话及引用交主代理汇总询问；已有使用者明确决定则写入 `states.reason`（以“使用者决定：”开头）并置 `state="settled"`，`concretizations.decided_by="使用者"`。
 
 ## 返回格式

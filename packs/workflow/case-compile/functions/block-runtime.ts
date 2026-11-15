@@ -35,14 +35,15 @@ export function blockRuntimeGaps(contract:RuntimeContract,profile:RuntimeProfile
  const cap=runtimeBlocks(contract),document=sourceDocument(contract),runtime=isRecord(document?.runtime)?document.runtime:{};
  if(profile.block_model!==true||!cap){note('/blocks','缺已发布 block-runtime 能力及 profile 的显式启用；下一步：执行器维护者只读核对实现、补声明并重新发布合约/profile，不能改冻结输入绕过');return gaps;}
  const outputs=Array.isArray(cap.output_methods)?cap.output_methods:[];
+ let obsGap=false;const noteObs=(pointer:string,message:string)=>{obsGap=true;note(pointer,message);};
  for(const [index,step]of slots.steps.entries()){
   const at=step.origin??'/steps/'+index,call=profile.allowed.find(value=>value.object===step.object&&value.method===step.method);
-  if(step.output&&!outputs.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method&&row.output===TABLE.raw_output))note(at,'缺该调用产生完整原文输出的运行器声明；下一步：维护者补 output_methods 后重新发布，不从方法名猜输出');
+  if(step.output&&!outputs.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method&&row.output===TABLE.raw_output))noteObs(at,'缺该调用产生完整原文输出的运行器声明；下一步：维护者补 output_methods 后重新发布，不从方法名猜输出');
   if(step.save_as&&(contract.objects.includes(step.save_as)||Array.isArray(cap.reserved_registers)&&cap.reserved_registers.includes(step.save_as)))note(at,'捕获寄存器与运行器对象或保留命名冲突',true);
-  if(step.save_as&&!Array.isArray(cap.reserved_registers))note(at,'缺运行器保留寄存器闭集；下一步：维护者按实现声明完整命名空间，不按前缀猜测');
-  if(step.save_as&&cap.capture_registers!==true)note(at,'缺 H 列原文捕获能力；下一步：执行器维护者实现并声明 capture_registers 后重开运行');
-  if(cellInput(step)&&cap.cell_inputs!==true)note(at,'缺普通单格输入的执行器声明；下一步：发布新取格入口对应的执行器规则');
-  if(step.block_kind==='SELECT_CELL'&&(!Array.isArray(cap.cell_methods)||!cap.cell_methods.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method)||!outputs.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method&&row.output==='cell_text')))note(at,'取格方法及单格返回没有由本次执行器规则明确登记');
+  if(step.save_as&&!Array.isArray(cap.reserved_registers))noteObs(at,'缺运行器保留寄存器闭集；下一步：维护者按实现声明完整命名空间，不按前缀猜测');
+  if(step.save_as&&cap.capture_registers!==true)noteObs(at,'缺 H 列原文捕获能力；下一步：执行器维护者实现并声明 capture_registers 后重开运行');
+  if(cellInput(step)&&cap.cell_inputs!==true)noteObs(at,'缺普通单格输入的执行器声明；下一步：发布新取格入口对应的执行器规则');
+  if(step.block_kind==='SELECT_CELL'&&(!Array.isArray(cap.cell_methods)||!cap.cell_methods.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method)||!outputs.some((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method&&row.output==='cell_text')))noteObs(at,'取格方法及单格返回没有由本次执行器规则明确登记');
   if(step.block_kind==='SLEEP'&&(!call||!Object.values(call.parameters).length||Object.values(call.parameters).some(role=>role!=='wait')))note(at,'SLEEP 必须精确对应本轮允许的 wait 调用',true);
   if(step.restore_for!==undefined){
    const registrations=Array.isArray(cap.restore_methods)?cap.restore_methods:[],registration=registrations.find((row:any)=>isRecord(row)&&row.object===step.object&&row.method===step.method);
@@ -53,6 +54,11 @@ export function blockRuntimeGaps(contract:RuntimeContract,profile:RuntimeProfile
    else if(Object.hasOwn(step.keywords,registration.root_parameter)&&step.keywords[registration.root_parameter]!==catalog.root)note(at,'捕获还原的守卫没有绑定本次冻结命令树根',true);
    const target=slots.steps[(step.restore_for??0)-1];if(!target||target.cleanup||target.object!==step.object||!profile.allowed.some(call=>call.object===target.object&&call.method===target.method&&Object.values(call.parameters).includes('device_cli')))note(at,'恢复必须指向本设备的业务配置，不能指等待、观察或别的设备',true);
   }
+ }
+ if(obsGap){
+  const cellMethods=Array.isArray(cap.cell_methods)?cap.cell_methods.filter((row:unknown):row is Record<string,unknown>=>isRecord(row)&&typeof row.object==='string'&&typeof row.method==='string'):[];
+  if(cap.cell_inputs!==true&&cellMethods.length===0)note('/blocks','本次执行器规则未登记取格（无 cell_inputs / cell_methods）；不要改用 SELECT_CELL 或 input_register 绕过；要单格回填须等维护者发布取格入口后再开新运行');
+  else note('/blocks',`本次执行器规则取格登记：cell_inputs=${cap.cell_inputs===true?'已声明':'未声明'}；已登记 cell_methods：${cellMethods.length?cellMethods.map(row=>`${row.object}.${row.method}`).join('、'):'无'}`);
  }
  for(const [index,expect]of slots.expects.entries()){
   const at=expect.origin??'/expects/'+index;

@@ -104,3 +104,65 @@ test('a verdict is merged only for the plan it answered, with the digest the too
   assert.match(returned.attention[0].message, /审计判作者步骤 a2 的场景被改了.*判断错误，原因编写模型的问题，下一步由编写模型修改这条自动化用例，再交给独立模型核对/);
   assert.equal((await w.planOf()).slots.plan[0].data.fidelity.steps[0].verdict, 'changed', 'the verdict is merged as the auditor gave it');
 });
+
+test('fidelityBrief populates added_precondition exemptions from sources.states, plan.precondition_source, and block_context.preconditions while hiding worker prose', () => {
+  const recWithStates = {
+    ...RECORD,
+    sources: {
+      governing: [],
+      candidates: [],
+      states: [
+        { atom: 'a2', state: 'missing_prerequisite', reason: '手册要求本端与对端均需先配置 peer', prerequisites: ['配置 apv0 synconfig peer', '配置 apv0 synconfig challenge'] },
+        { atom: 'a3', state: 'settled', reason: '已确定', prerequisites: [] },
+      ],
+    },
+  };
+  const plan = structuredClone(goodData());
+  (plan.steps[0] as unknown as Record<string, unknown>).description = '编写自述：不应出现在 brief 中';
+  (plan.steps[0] as unknown as Record<string, unknown>).precondition_source = { reference: 'knowledge:manual#synconfig-ex1', text: 'Example: configure peer and challenge on local and peer APV' };
+  const briefSourced = fidelityBrief('doc-1:c-1', recWithStates, plan)!;
+  assert.equal(briefSourced.mechanical.exemptions.length, 2);
+  assert.equal(briefSourced.mechanical.exemptions[0]!.kind, 'added_precondition');
+  assert.equal(briefSourced.mechanical.exemptions[0]!.origin, 'record.sources.states');
+  assert.deepEqual(briefSourced.mechanical.exemptions[0]!.prerequisites, ['配置 apv0 synconfig peer', '配置 apv0 synconfig challenge']);
+  assert.equal(briefSourced.mechanical.exemptions[1]!.kind, 'added_precondition');
+  assert.equal(briefSourced.mechanical.exemptions[1]!.origin, 'plan.precondition_source');
+  assert.deepEqual(briefSourced.mechanical.exemptions[1]!.step_indices, [1]);
+  assert.equal(briefSourced.mechanical.exemptions[1]!.reference, 'knowledge:manual#synconfig-ex1');
+  assert.ok(briefSourced.mechanical.note.includes('mechanical.exemptions 列出了 2 条前置步骤豁免依据'));
+  assert.ok(briefSourced.rules.some((r) => r.includes('added_precondition') && r.includes('recomposition.adapted 不是步骤白名单') && r.includes('前置不存在')));
+  assert.equal(JSON.stringify(briefSourced.blocks).includes('编写自述'), false, 'step.description never leaks to fidelity audit');
+
+  // Positive (block mode): block_context.preconditions (state=present) also populates exemptions.
+  const blockPlanData = {
+    bucket: 'bed-1',
+    blocks: [
+      { id: 'prep_peer', kind: 'CONFIG', call: { object: 'apv0', method: 'cmd_config', args: ['synconfig peer 192.0.2.2'], keywords: {} }, description: '隐藏描述' },
+      { id: 'main_step', kind: 'CONFIG', call: { object: 'apv1', method: 'cmd_config', args: ['synconfig peer 192.0.2.1'], keywords: {} } },
+    ],
+    steps: [],
+    expects: [],
+    replacements: [],
+    block_context: {
+      preconditions: [
+        { id: 'p1', state: 'present', for: 'main_step', established_by: ['prep_peer'], quote: { reference: 'knowledge:manual#synconfig-peer', text: 'Both peers must declare synconfig peer' } },
+        { id: 'p2', state: 'absent', for: 'main_step', established_by: [], quote: { reference: 'knowledge:manual#missing', text: 'ignored when absent' } },
+      ],
+      causal_links: [],
+      responders: [],
+    },
+  };
+  const briefBlocks = fidelityBrief('doc-1:c-1', RECORD, blockPlanData)!;
+  assert.equal(briefBlocks.mechanical.exemptions.length, 1);
+  assert.equal(briefBlocks.mechanical.exemptions[0]!.origin, 'block_context.preconditions');
+  assert.deepEqual(briefBlocks.mechanical.exemptions[0]!.step_indices, [1]);
+  assert.deepEqual(briefBlocks.mechanical.exemptions[0]!.established_by, ['prep_peer']);
+
+  // Negative: extra unauthored step with worker description only (no sources.states & no precondition_source) yields zero exemptions.
+  const unsourcedPlan = structuredClone(goodData());
+  (unsourcedPlan.steps[0] as unknown as Record<string, unknown>).description = '擅自添加但自称前置';
+  const briefUnsourced = fidelityBrief('doc-1:c-1', RECORD, unsourcedPlan)!;
+  assert.deepEqual(briefUnsourced.mechanical.exemptions, []);
+  assert.ok(briefUnsourced.mechanical.note.includes('mechanical.exemptions 为空'));
+  assert.equal(JSON.stringify(briefUnsourced).includes('擅自添加但自称前置'), false);
+});

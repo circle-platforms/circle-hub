@@ -3,7 +3,7 @@ import {cellInput} from './cell-selection.ts';
 import {isRecord} from './text.ts';
 import {isCommandTemplate} from './cell-commands.ts';
 import {blockGraphGaps} from './block-checks.ts';
-import {blockRuntimeGaps,assertionTarget,assertionCells} from './block-runtime.ts';
+import {blockRuntimeGaps,assertionTarget,assertionCells,runtimeBlocks} from './block-runtime.ts';
 import {prepareRestores} from './block-restore.ts';
 import {commandObligations,definitionKey,type RunnerCovered} from './command-obligations.ts';
 import {within} from './generated/skills/command-tools/command-check/command-policy.ts';
@@ -22,8 +22,10 @@ export function replacedIdentity(identity:CommandIdentity,slots:PlanSlots):Comma
  const out=structuredClone(identity);for(const p of out.parameters)if(p.parsed.kind==='address'&&(p.parsed.value.kind==='ipv4'||p.parsed.value.kind==='ipv6')){const original=p.parsed.value.value;const replacement=slots.replacements.find(r=>addressKey(r.case)===addressKey(original));if(replacement){p.parsed.value.value=replacement.bed;p.raw=replacement.bed;}}return out;
 }
 export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimeProfile, slots: PlanSlots, known?:unknown,catalog?:unknown,caseTexts:readonly string[]=[],manifestSha?:string,services?:unknown,covered?:RunnerCovered[]): AuthorityGap[] {
- const blockGaps=blockRuntimeGaps(contract,profile,slots,catalog);if(blockGaps.length)return blockGaps;
- const gaps:AuthorityGap[]=[];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
+ const blockGaps=blockRuntimeGaps(contract,profile,slots,catalog);
+ const meta=blockMeta(slots);
+ if(blockGaps.length&&(meta?.deferred.length||!runtimeBlocks(contract)||profile.block_model!==true))return blockGaps;
+ const gaps:AuthorityGap[]=[...blockGaps];const note=(pointer:string,message:string,verdict:Verdict='unknown')=>gaps.push({document:'contract',pointer,message,verdict});
  const resolution=planCommands(contract,profile,slots,catalog);gaps.push(...resolution.problems);gaps.push(...prepareRestores(contract,profile,slots,catalog,resolution.byLine,manifestSha));gaps.push(...blockGraphGaps(contract,profile,slots,catalog,resolution.byLine,services));const knownIds=Array.isArray(known)?known.map(identityOf):known===undefined?[]:null;
  const keys=new Set((knownIds??[]).filter((i):i is CommandIdentity=>i!==null).map(i=>definitionKey(replacedIdentity(i,slots))));
  const usage=new Map<string,{budget:number;count:number}>();
@@ -56,7 +58,7 @@ export function typedAuthorityGaps(contract: RuntimeContract, profile: RuntimePr
  }
  for(const [i,expect]of slots.expects.entries()){
   const target=assertionTarget(contract,profile,expect),entry=target?.entry,a=entry?.authority,name=target?Object.keys(target.call.parameters).find(name=>target.call.parameters[name]==='literal_assertion'):null;
-  if(!a||!name||!a.parameters[name])note(entry?.sourcePointer??'/entries','断言方法缺类型、角色或效果依据');
+  if(!a||!name||!a.parameters[name]){if(!meta||target)note(entry?.sourcePointer??'/entries','断言方法缺类型、角色或效果依据');}
   else{effectUse(a,`/expects/${i}`);if(a.parameters[name].role!=='literal_assertion')note(`/expects/${i}`,'断言角色不等于原合约声明','refute');if(!expect.register){const problem=valueProblem(a.parameters[name].type,assertionCells(expect,target!).g);if(problem)note(`/expects/${i}/text`,problem,'refute');}if(expect.count!==undefined&&target){const countName=Object.keys(target.call.parameters).find(name=>target.call.parameters[name]==='checkpoint_count');if(countName&&a.parameters[countName]){const problem=valueProblem(a.parameters[countName].type,expect.count);if(problem)note(`/expects/${i}/count`,problem,'refute');}}}
  }
  const discharged:RunnerCovered[]=[];

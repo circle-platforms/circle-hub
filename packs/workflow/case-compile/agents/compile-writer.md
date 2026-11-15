@@ -13,17 +13,22 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 
 ## 编写核心守则
 1. 先完整读 `items/<序号>.json`（列有命令、手册对各参数的说明、配置恢复方法、同级命令写法与末尾待填计划）和 `briefs/<序号>.md`，再按需本地搜索 `knowledge/`、`inventory`、`profile`、`contract.json`；不逐条读 Hub，不抄另一条用例的资料或上一次上机输出。
-2. 每条原始用例都照原意写：命令须由对应构建命令树完整解析（不接受缩写、前缀、字形或大小写折叠，不从散文捞命令）；原始用例的命令可改参数、不可删命令，作者没写的对象或动作不自己加。
+2. 每条原始用例都照原意写，并明确区分**场景保真底线**与**前置步骤补齐职责**：命令须由对应构建命令树完整解析（不接受缩写、前缀、字形或大小写折叠，不从散文捞命令）；原始用例的命令可改参数、不可删命令。**不增设无来源的被测对象或测试目标，不替换作者写的对象、条件或限制**；但 **`adapted` 与原始步骤只是等价动作描述，不是步骤白名单——按测试环境、协议前提和手册依存绑定并补齐运行条件属于编写职责**：
+- 强制补齐有来源的前置步骤：（1）对重组记录 `sources.states` 里列出的每条 `missing_prerequisite`（或非空 `prerequisites`），以及（2）对同构建 `knowledge/` 手册正文与配置示例明确要求使作者命令或触发动作生效的前提（如全局开关、监听前提、本端与对端对称配对配置、依赖对象等，即使重组未列出也须补齐），**必须**在触发动作前补入相应前置步骤；
+- 来源标注与配对逆清理：每条新增前置步骤须在步 `description` 注明来源（`sources.states` 条目或 `knowledge/` 手册条文/示例）；若该前置未在重组 `sources.states` 列出而出自 `knowledge/` 手册或示例，应在扁平步骤写 `precondition_source: { "reference": "<知识引文引用>", "text": "<手册或示例逐字原文>" }`（`blocks` 模式写入 `block_context.preconditions` 附 `established_by` 与 `quote`），由 Hub 原文校验并列入保真核对 `mechanical.exemptions`（`added_precondition`）豁免，同时按下方两类清理边界在末尾写配对 `cleanup: true` 逆操作（命中 `contract.cleanup` 自动清理或存盘 `write memory` 时禁写 `cleanup: true`）；绝不能把非授权的无来源步骤硬塞进计划。
 3. 执行器规则关掉的动作不能作为排除理由：先按同一构建手册和命令树用已开放设备方法完成原要求并说明对应关系。执行器规则缺类型、用途、效果或允许范围时记入给主代理的缺资料说明；不用确认标记绕过，不从 help 散文推断，不复制默认值、内部内容、认证候选或脱敏凭据。
 
 ### 按测试环境改写、前置与清理
 - 接口和地址来自测试环境清单。不得选用承载监听或触发通路的接口与地址，发起与目标须同网段或有声明路由；更改接口地址后在清理时恢复原地址。只在执行器规则标明为地址的位置换地址，不扫描全文找 IP。原始用例的外部地址保留并说明，自己改出的外部地址不用。
-- 要查询的记录先在步骤前部创建，配置先写入再查询，前置操作都在触发前。原始用例要测前置不存在时，保留这个场景，不用补配置把它改掉。
+- 要查询的记录先在步骤前部创建，配置先写入再查询，触发前按 `sources.states` 与手册/示例补齐全部运行前置与配对清理。仅当原始用例明确要测“前置不存在/未配置”的反向场景时保留该无配置前提，不补前置把它改掉。
 - 设备上的配置和观察都用执行器规则为该设备声明的方法。要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限；等设备回到提示符再继续，不用固定等待猜时长。
 - 参数取值：写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值。只有设备执行时才产生的值，要在同一条自动化用例里先取出再用；手册允许指定名字时，由生成器指定，本条先创建，再配置、查询和清理，全部使用同一个名字。不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西。
 - 期望优先选设备实际输出里可核对的文字，如应答状态码、应答条数、表项计数、存在或不存在的关键行。原始用例的期望逐字保留；改用模型判断时，`text` 必须是设备执行后实际会输出、能在设备输出里逐字找到的一行原文（例如 `SDNS Query Statistics Summary`），对应原始期望及选择理由写入 `rationale`。命令自身含有的文字（回显在输出开头）及功能失效时也会出现的文字，均不能判断功能正确。
 - 原始用例说“不存在”“无残留”“不再包含”时，不把这句话当设备输出去找，也不删掉这项检查；检查设备输出里没有对应记录。要求删除成功时，删除后再查询，指向这次查询的设备输出，不另立判定标准、不请评审员复核。不能把“查询一个不存在的名字”当成“访问成功”。顺序步骤在对应查询的 `expects` 写 `op:"not_found"`，`text` 使用原始期望的具体原文或本条先配置再按已声明逆操作撤销的名字，`after` 指向对应查询。
 - 清理段在每条自动化用例末尾，同一设备按改动逆序排列，恢复原地址。查询类步骤不需要清理；执行器已声明会清理的可以省略。按产品给出的恢复方法，只恢复主体结束后仍生效的配置，不从命令名字猜用途。
+  - 两类清理边界（不混用）：
+    1. 运行器自动清理（`contract.cleanup`，对清配对象经 `cmd_config` 发出的匹配命令，如 `lib/apv/clear.py` 共 130 条前缀规则）：自第 2 条用例开始前及整本关闭连接时按发过的命令行逐条比前缀、第一条命中即用；其中包含 **存盘**（前缀 `write mem`，如 `write memory`，运行器清配置并在收尾末尾执行 `write memory`）及已纳入规则的设备配置前缀。该类命令若用例本身需要可在主步骤正文（`main`）正常发出，**严禁写入 `cleanup: true`**（将运行器收尾清理或存盘写入 `cleanup: true` 会被 `case-compile.method_forbidden` 拒绝）；若用例不需要保存或验证存盘，也不必主动在正文加 `write memory`。
+    2. 计划手写 `cleanup: true`：除「只读查询（`command_policy.read_only`）」「正文中已用声明逆操作净抵消」及「命中 `contract.cleanup` 清配对象与前缀的运行器自动清理命令」外，其余主体结束后仍生效的改配步骤（含非清配对象或未命中规则的命令），必须按同设备改动逆序在 `cleanup: true` 写出产品声明的逆操作；未命中运行器自动清理且缺唯一逆操作声明的命令不可臆测恢复，应上报由产品包补声明。
 - Excel 行序为前置、被测动作、查询判断、清理，本条结束前完成，每步写一句说明。设备序号核对清单，禁越界。
 
 ### 工具填写规则与数据结构
@@ -32,13 +37,13 @@ tools: read_file, write_file, edit_file, ls, glob, grep, execute
 ```text
 每条文件: {item,handling,slots}；plan.data.bucket=<测试环境>
 地址替换: replacements=[{case,bed},...]，一一对应，只用于类型确认的地址位置
-顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description},...]；expects 至少一项
+顺序步骤: blocks=[]；steps=[{object,method,args,keywords,description,precondition_source?},...]；expects 至少一项；手册/示例新增且未列于 sources.states 的前置与逆清理写 precondition_source:{reference,text}
 设备 method: contract.output_methods 给该设备声明的方法；args 为文字；keywords 为文字或安全非负整数
 期望: {text,quote:{reference,text},after}；after 从 1 开始指产生输出的命令（不指等待）；禁 steps 中 literal_assertion
 未写 basis: text 是地址替换后引文的精确片段；model_judgment 须写设备实际可逐字输出的一行原文及 rationale
 quote: 本条原始用例期望原句及来源，不引用标题、步骤或其他用例
 length placeholder: {{domain:N}}、{{domain:N|前缀|后缀}}、{{name:N}}；长命令读窗: keywords.timeout <= max_wait_seconds
-清理: steps 末尾连续 cleanup:true；需确认命令: keywords.prompt 写给定提示符，下一步同对象同方法写应答
+清理: steps 末尾连续 cleanup:true（仅放非只读、正文未净抵消且未入 contract.cleanup 的同设备逆序逆操作；存盘 write memory 等运行器收尾命令禁写 cleanup:true）；需确认命令: keywords.prompt 写给定提示符，下一步同对象同方法写应答
 command_scope 与逐条 commands 同时存在时取交集；不以 command_identities 替代完整命令树解析
 ```
 
