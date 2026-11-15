@@ -4,7 +4,7 @@
 
 ## 现行
 
-- [十分钟上手](quickstart.md)：从零初始化数据根、建团队与成员、发布并分配首个工作流、连接 Circle 与首次运行。
+- [十分钟上手](quickstart.md)（[English](quickstart.en.md)）：从零初始化 → 一份部署定义 `apply` → 连接 Circle → 第一次运行；逐条 CLI 见附节。
 - [管理员手册](admin-guide.md)：建成员与分团队权限、发布并生效通用技能/工作流、登记自动化测试环境及基线、升级和降级边界。
 - [成员手册](member-guide.md)：首次登录改密、接入全新 Circle MCP、查看可用能力、预订测试环境（`test-bed`）与用例编译（`case-compile`）。
 - [改一个工作流或技能怎么做](edit-pack.md)：改工作流/技能文字或规则后的版本号升级、重算清单与摘要、内嵌依赖联动及上线步骤。
