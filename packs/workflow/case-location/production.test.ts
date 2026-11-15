@@ -318,7 +318,7 @@ describe('a production run of case-location', { skip }, () => {
 
   it('binds only its own line when another product line is active: no other names, no other knowledge, no other runs', async () => {
     await publishProduct(hub, { id: 'acme', title: '合成的另一条产品线', names: ['Acme', 'Widget'] });
-    const [summary] = (await createWorkflowStore(hub.registry).summaries(hub.alice)).filter((s) => s.id === 'case-location');
+    const [summary] = (await createWorkflowStore(hub.registry).summaries(hub.alice, { includeAdminDefault: false })).filter((s) => s.id === 'case-location');
     assert.deepEqual(summary.products, ['FAMX', 'FAMY']);
     assert.deepEqual([...(await createPacksPort(hub.registry).readableProducts(hub.alice))], ['famx']);
     const other = await hub.service.startRun(hub.alice, { pack: 'case-location', product: 'Acme', inputs: { documents: [external('24001')] } }, call());
