@@ -483,6 +483,26 @@ describe('submit_result text', () => {
     assert.equal(SubmitResultOutput.safeParse({ ...accepted, step_name: '   ' }).success, false);
   });
 
+  test('recompose acceptance: title from fields, no repeated slot judgment or quote lines, no evidence restating quotes', () => {
+const list=[{...items(1)[0],fields:{case_id:'253651793153361064',title:'253 字符域名 DNS 解析正常'},label:'253651793153361064'}];
+const quoteA='引文 “253 字符域名 DNS 解析正常” 与所引片段逐字一致';
+const quoteB='引文 “解析正确返回地址” 与所引片段逐字一致';
+const check='重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写';
+const result=resultWith({delivered:[{item:list[0].id,label:list[0].label,location:list[0].location,requirements:[{requirement:'record',layers:[{layer:'static',terminal:'judgment'}],status:'satisfied',claims:[
+ claim(list[0].id,'record','模型的重组判断'),
+ claim(list[0].id,'record','模型的重组判断'),
+ {...fact(list[0].id,'record',check),warrant:{producer:'function',id:'recompose-check@1'}},
+ fact(list[0].id,'record',quoteA),
+ fact(list[0].id,'record',quoteB),
+ fact(list[0].id,'record',quoteA),
+]}]}]});
+const text=toolText('submit_result',submitAnswer(result),{items:list});
+assert.match(text,/原始用例 253651793153361064 253 字符域名 DNS 解析正常：重组结构和原文全集已核对；原文、改写、具体取值、重新绑定四类记录已核对；来源状态与缺口是模型判断，交给脚本编写；引文 “253 字符域名 DNS 解析正常” 与所引片段逐字一致；引文 “解析正确返回地址” 与所引片段逐字一致；状态未确认；判断正确；决定者/);
+assert.equal(text.split('模型的重组判断').length-1,0);
+assert.equal(text.split(quoteA).length-1,1);
+assert.doesNotMatch(text,/证据|标题未知|四账|编写阶段/);
+});
+
   for (const n of SIZES) {
     test(`${n} items: the receipt and counts first, each requirement's state, the errors, then every problem, then the details`, () => {
 const list=items(n),result=resultOf(list,{claims:2});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD,items:list});withinBudget(text,'all conclusions');assert.equal(itemIdsOf(text).length,n);assert.match(text,/原始用例 CASE-0 合成用例 0.*状态未确认；判断正确/);if(n>9)assert.match(text,/原始用例 CASE-9 合成用例 9.*状态未知/);assert.doesNotMatch(text,/回执：|分区：|本层不适用|追踪|doc7:n|rec:/);assert.equal(answer.result?.run,RUN);
@@ -617,7 +637,7 @@ const packs=Array.from({length:300},(_,i)=>packOf(i));const answer=ListTaskPacks
 });
 
   test('every pack is in the index whatever the offset, then the declared run context, then the details (decision 113)', () => {
-const index=[0,1,2].map(i=>({pack:packOf(i).pack,title:packOf(i).title,kind:'workflow' as const}));const context={leases:[],observations:[{label:'合成设备',build:'Toy_1_0_7',base:'Toy_1_0_7',observed_at:'2026-01-02T00:00:00.000Z',packs:['toy-pack-1@1.0.1']}]};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[packOf(2)],index,context,trace:TRACE});const text=toolText('list_task_packs',answer,{packList:{offset:2}});assert.deepEqual(linesOf(text).slice(1,4),index.map(row=>row.title));assert.match(text,/测试环境 合成设备，构建 Toy_1_0_7；读取时间 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);assert.doesNotMatch(text,/2026-01-02T|run_|租约/);
+const index=[0,1,2].map(i=>({pack:packOf(i).pack,title:packOf(i).title,kind:'workflow' as const}));const context={leases:[],observations:[{label:'合成设备',build:'Toy_1_0_7',base:'Toy_1_0_7',observed_at:'2026-01-02T00:00:00.000Z',packs:['toy-pack-1@1.0.1']}]};const answer=ListTaskPacksOutput.parse({call_result:'ok',errors:[],packs:[packOf(2)],index,context,trace:TRACE});const text=toolText('list_task_packs',answer,{packList:{offset:2}});assert.deepEqual(linesOf(text).slice(1,4),index.map(row=>row.title));assert.match(text,/测试环境 合成设备，构建 Toy_1_0_7；读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）/);assert.doesNotMatch(text,/2026-01-02T|run_|租约/);
 });
 
   test('a knowledge view input is shown in the form its parser requires, not as a bare number', () => {
@@ -808,11 +828,12 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
     ...base,
     dispatch: [
       { text: '上机验证没有发出：预检条件不满足；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次' },
-      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）；稍后逐字原样重交上机验证时的那次提交读进展，结束后同样的答复带结果引用' },
+      { job: H('3'), executor: 'synthetic-executor', text: 'Hub 已再次按工作流的规定自动开始上机验证（执行器 synthetic-executor）；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用' },
     ],
   }), { items: items(1) });
   assert.match(many, /上机验证没有发出：预检条件不满足/);
-  assert.match(many, /Hub 已再次按任务包的效果行开始上机验证（执行器 synthetic-executor）/);
+  assert.match(many, /Hub 已再次按工作流的规定自动开始上机验证（执行器 synthetic-executor）/);
+  assert.doesNotMatch(many, /任务包|下一步由使用者继续读取设备输出/);
   assert.equal(linesOf(many).filter(line => line.includes('上机验证')).length >= 2, true);
 });
 
@@ -916,4 +937,188 @@ test('booking rewrite does not wipe occupied or expired call-error categories', 
   const expiredLine = linesOf(expired).find((line) => line.startsWith('不存在：')) ?? '';
   assert.equal(expiredLine, '不存在：当前账户的原预订已过期；本运行没有覆盖测试环境 合成环境 的完整预订。先预订整个测试环境后重新核验。');
   assert.doesNotMatch(expiredLine, /脚本合并正确|没有带着测试环境的预订|状态已确认|判断错误|决定者程序/);
+});
+
+test('booking no-command devices stay one plain line; in-flight and Excel rows skip reason words (Boss 20:53)', () => {
+  const at = '2026-11-14T09:35:00.000Z';
+  const list = [{ ...items(1)[0], fields: { case_id: '253651793153361064', title: '253 字符域名 DNS 解析正常' } }];
+  const run = runOf(list);
+  run.device_observations = [
+    {
+      statement: { text: 'apv0 装的是 Toy', data: { label: 'apv0', build: 'Toy', inventory: H('e'), device: '/d/0' } },
+      qualifier: { nature: 'fact', provenance: 'observed', marks: [], collected_at: at },
+      grounds: [`src:${H('d')}`],
+      warrant: { producer: 'function', id: 'dispatch.version_probe@1' },
+      validity: { status: 'valid', bound: [H('e')], premises: [] },
+    },
+    {
+      statement: {
+        text: 'clientc、clientd、cliente、console、routera、routerb、server213、server231、server232 共 9 台不接收命令，未读取构建版本',
+        data: { missing: 'x', kind: 'no_command_devices' },
+      },
+      qualifier: { nature: 'fact', provenance: 'projected', marks: [], collected_at: at },
+      grounds: [],
+      warrant: { producer: 'function', id: 'runs.observe_devices@1' },
+      validity: { status: 'valid', bound: [], premises: [] },
+    },
+  ];
+  const booking = toolText('start_run', startAnswer(run));
+  assert.match(booking, /测试环境 apv0，构建 Toy，读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）；状态已确认；决定者程序/);
+  assert.match(booking, /^clientc、clientd、cliente、console、routera、routerb、server213、server231、server232 共 9 台不接收命令，未读取构建版本$/m);
+  assert.doesNotMatch(booking, /不接收命令.*状态未知|没有绑定同一份清单/);
+
+  const inFlightItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'awaiting_step',
+    requirements: [{
+      requirement: 'structure',
+      status: 'pending',
+      layers: [{ layer: 'dynamic', terminal: 'incomplete', reason: 'awaiting_step' }],
+      claims: [],
+    }],
+  };
+  const inFlight = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [inFlightItem] })), { items: list });
+  assert.match(inFlight, /^原始用例 253651793153361064 253 字符域名 DNS 解析正常：上机验证还在进行，还没有设备输出；状态未知；下一步由模型在上机验证结束后读取设备输出；决定者程序$/m);
+  assert.doesNotMatch(inFlight, /原因缺资料|原因还没查清|下一步使用者/);
+
+  const excelItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'missing_input',
+    requirements: [{
+      requirement: 'workbook_verified',
+      status: 'pending',
+      layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap' }],
+      claims: [{
+        statement: { text: '缺自动化用例 Excel', verdict: 'unknown', reason: 'missing_input' },
+        qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
+        grounds: [],
+        warrant: { producer: 'function', id: 'case-compile.workbook@1' },
+        validity: { status: 'valid', bound: [], premises: [] },
+      }],
+    }],
+  };
+  const excel = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [excelItem] })), { items: list });
+  assert.match(excel, /^原始用例 253651793153361064 253 字符域名 DNS 解析正常：还没有确认结论；状态未知；下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查；决定者程序$/m);
+  assert.doesNotMatch(excel, /原因缺资料|下一步使用者补齐资料/);
+
+  const started = toolText('submit_result', SubmitResultOutput.parse({
+    ...submitAnswer(resultOf(items(1))),
+    dispatch: [{ text: 'Hub 已按工作流的规定自动开始上机验证；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用' }],
+  }), { items: items(1) });
+  assert.match(started, /^Hub 已按工作流的规定自动开始上机验证；下一步由模型稍后把这次脚本合并原样再交一次，读取进展；上机验证结束后，同样的答复里带设备输出的引用$/m);
+  assert.doesNotMatch(started, /任务包|状态未知；原因还没查清；下一步由使用者继续读取设备输出/);
+});
+
+test('recompose refusal: one next actor, verbatim（×N）, determined-error branch (Boss 06:48)', () => {
+  const list = [{ ...items(1)[0], fields: { case_id: '253651793153361064', title: '标题未知' }, label: '标题未知' }];
+  const fact = '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产';
+  const identical = Array.from({ length: 5 }, () => ({
+    code: 'missing_input',
+    message: fact,
+    fix: '补齐点名的事实后重交；不能补齐的按具名请求处理；运行者用 upload_file 补齐点名的运行输入',
+    path: '/items/0',
+    item: list[0].id,
+    requirement: 'record',
+    rounds_left: 2,
+  }));
+  const shape = {
+    code: 'SUBMISSION_SCHEMA_VIOLATION',
+    message: '来源状态缺完整 action/object/owner/due 出口；写明缺的事实、由谁在何时补，再重交',
+    fix: '写明缺的事实、由谁在何时补，再重交',
+    path: '/items/0',
+    item: list[0].id,
+    requirement: 'record',
+    rounds_left: 2,
+  };
+  const refused = ValidationResult.parse({
+    ...resultOf(items(1)),
+    acceptance: 'not_accepted',
+    errors: [...identical, shape],
+    partitions: { delivered: [], rejected: [], quarantined: [], incomplete: [] },
+    cross_item: [],
+  });
+  const text = toolText('submit_result', submitAnswer(refused), { items: list });
+  assert.match(text, /^脚本合并有错误。$/m);
+  assert.match(text, /^原始用例 253651793153361064 标题未知：$/m);
+  assert.match(text, /^- 改写后的命令没有锁定目录的完整语法身份（×5）$/m);
+  assert.equal(linesOf(text).filter((line) => line.includes('改写后的命令没有锁定目录的完整语法身份')).length, 1);
+  assert.equal(linesOf(text).filter((line) => line.includes('还可以重交 2 次')).length, 1);
+  assert.equal(linesOf(text).filter((line) => line.includes('决定者程序')).length, 1);
+  assert.match(text, /下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(text, /产品包作者|下一步使用者补齐资料|运行者用 upload_file/);
+  assert.match(text, /参数无效：来源状态缺完整 action\/object\/owner\/due 出口；写明缺的事实、由谁在何时补，再重交/);
+  assert.doesNotMatch(text, /再重交。写明缺的事实/);
+
+  // Near-identical facts must NOT merge (only verbatim equality).
+  const near = toolText('submit_result', submitAnswer(ValidationResult.parse({
+    ...refused,
+    errors: [
+      { ...identical[0], message: '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产' },
+      { ...identical[0], message: '改写后的命令没有锁定目录的完整语法身份（命令 sdns listener）；等待产品包作者在重新提交之前补事实并重产' },
+    ],
+  })), { items: list });
+  assert.doesNotMatch(near, /（×/);
+  assert.equal(linesOf(near).filter((line) => line.startsWith('- ')).length, 2);
+
+  // Accepted unknown record gap: name the missing fact; next actor is the model.
+  const unknownItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'missing_input',
+    requirements: [{
+      requirement: 'record',
+      status: 'pending',
+      layers: [{
+        layer: 'static',
+        terminal: 'unchecked',
+        reason: 'missing_input',
+        missing: '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产',
+        attribution: 'data_gap',
+        exit: { action: 'request', request_kind: 'clarification', audience: { user: 'usr_' + '1'.repeat(26) }, due: '2026-01-04T00:00:00.000Z' },
+      }],
+      claims: [{
+        statement: { text: '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产', verdict: 'unknown', reason: 'missing_input' },
+        qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
+        grounds: [],
+        warrant: { producer: 'function', id: 'recompose-check@1' },
+        validity: { status: 'valid', bound: [], premises: [] },
+      }],
+    }],
+  };
+  const acceptedUnknown = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [unknownItem] })), { items: list });
+  assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；状态未知；原因缺资料；下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(acceptedUnknown, /产品包作者|下一步使用者补齐资料|还没有确认结论/);
+
+  // Pack-marked determined error (data.determination === 'error'): render as 判断错误, not 状态未知 (Boss 06:48 b).
+  const determinedItem: ItemResult = {
+    item: list[0].id,
+    label: list[0].label,
+    location: list[0].location,
+    reason: 'check_error',
+    requirements: [{
+      requirement: 'record',
+      status: 'pending',
+      layers: [{ layer: 'static', terminal: 'unchecked', reason: 'check_error', attribution: 'producer_error' }],
+      claims: [{
+        statement: {
+          text: '改写后的命令没有锁定目录的完整语法身份',
+          verdict: 'unknown',
+          reason: 'check_error',
+          data: { determination: 'error' },
+        },
+        qualifier: { nature: 'unknown', provenance: 'projected', marks: [] },
+        grounds: [],
+        warrant: { producer: 'function', id: 'recompose-check@1' },
+        validity: { status: 'valid', bound: [], premises: [] },
+      }],
+    }],
+  };
+  const determined = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [determinedItem] })), { items: list });
+  assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因编写模型的问题；下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(determined, /状态未知；原因缺资料/);
 });
