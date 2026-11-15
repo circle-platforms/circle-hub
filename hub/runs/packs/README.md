@@ -362,3 +362,19 @@ platform lock's conservative policy. Failed stage writes clean their partial tre
 Private check/publication waiting is bounded too: two queued per member, eight overall. The existing one-per-member,
 two-overall execution bound stays. Overflow never starts the publisher's directory read, validators or extractor; callers release the
 unpacked upload in their existing awaited `finally`. No new refusal code or permission rule is introduced.
+
+## Workflow availability and assignments (owner decisions, 2026-11-15)
+
+`Registry.canUse` is the single administrator-default boundary: a current enabled administrator may use a published,
+non-retired team workflow without an assignment. Personal namespaces retain their existing owner/share checks; installed
+skills retain their existing rule. `Authorizations.packsFor`, assignment records, recipients and resource assignments
+remain assignment facts. Default workflow availability creates no grant and grants no business-system resource access.
+
+`WorkflowStore.summaries` requires an explicit `includeAdminDefault` choice. Availability readers request it; start-run
+and submit-result annotation derivation uses the original assignment projection. Both reuse the same summary loader.
+The list renderer receives only the two projections' difference in its internal layout context, without adding output
+contract fields or changing pack-authored descriptions. With no default-only workflow, member text remains byte-identical.
+
+The current permission-role rules and B04 R[2] are authoritative. The model's `changes42` records the earlier resource
+policy; `changes73` already records the owner's 2026-11-13 team rule removing administrator access to unassigned resources.
+This implementation changes neither that history nor the model version or generated contracts.
