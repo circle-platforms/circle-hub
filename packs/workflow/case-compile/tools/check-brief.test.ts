@@ -109,9 +109,11 @@ const ITEM_WITH_STATES = {
           { id: 'a1', kind: 'action', text: 'widget on', reference: `src:${digest(8)}/kityminder@1/n/s-1` },
           { id: 'a2', kind: 'expectation', text: '部件开启', reference: `src:${digest(8)}/kityminder@1/n/e-1` },
         ],
-        adjudication: {
+        sources: {
+          candidates: [],
+          governing: [],
           states: [
-            { atom: 'a1', state: 'settled', adjudicated_by: null, reason: '使用者决定：保留开启步骤', exit: null },
+            { atom: 'a1', state: 'settled', adjudicated_by: null, reason: '使用者决定：保留开启步骤', exit: null, prerequisites: null },
           ],
         },
         ledgers: { adapted: [] },
