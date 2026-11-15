@@ -1,3 +1,4 @@
+import {NOT_EXECUTED_NEXT,TARGET_REJECTED_NEXT,TARGET_REJECTED_REASON,NOT_EXECUTED_REASON,RECOVERED_NOT_EXECUTED_REASON,RECOVERED_NOT_SENT_REASON} from './nonexecution-text.ts';
 import { isAdmin } from '../records/api.ts';
 import {captureResponse} from './capture.ts';
 import {currentDispatch,recoveryQuery,recoveryWait} from './recovery.ts';
@@ -285,7 +286,7 @@ export class DispatchService {
     while(!signal.aborted){
       const unlock=await this.options.records.store.tryHold(job,error=>lostObservation.abort(error));
       if(!unlock){await recoveryWait(delay,signal,this.options.sleep);continue;}
-      let binding:JobBinding|undefined;
+      let binding:JobBinding|undefined;let readFailed=false;
       try{
         if(signal.aborted)return;
         const events=await this.journal.events(job),current=currentDispatch(events);
@@ -299,7 +300,7 @@ export class DispatchService {
         if(!intent){
           const gate=await this.journal.append(binding,'gate','validate','completed',{allow_submit:false},[],'dispatch.gate:'+job);
           if(!gate.created&&gate.body.detail.allow_submit===true){await this.recoveryUnknown(binding,'原提交准入已通过，但没有完整意图，缺少可核对的原请求身份');return;}
-          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:'服务重启后确认尚未写入派发意图，本次没有提交',member_missing_facts:[{fact:'服务重启后确认尚未写入派发意图，本次没有提交',next_action:'原样重交，Hub 会再试一次'}],next_action:'原样重交，Hub 会再试一次'},[], 'dispatch.recovery.no_intent:'+job);
+          await this.journal.append(binding,'complete','validate','completed',{done:true,outcome:'not_dispatched',submit_invoked:false,recovery:true,public_reason:RECOVERED_NOT_SENT_REASON,member_missing_facts:[{fact:RECOVERED_NOT_SENT_REASON,next_action:NOT_EXECUTED_NEXT}],next_action:NOT_EXECUTED_NEXT},[], 'dispatch.recovery.no_intent:'+job);
           return;
         }
         const detail=intent.body.detail,lease=detail.remote_lease;
@@ -347,11 +348,12 @@ export class DispatchService {
           const outcome:EffectOutcome=decision.rejected?'target_rejected':'proven_not_executed';
           await this.answerRequests(binding,'reconciled','read_back','completed',{recovery:true,outcome,reached_device:false,unfreeze:true},[response.source],openRequests(current.tail).map(event=>'rec:'+event.digest));
           const cleanup=await this.recoveryRelease(binding,client,cached.lease);
-          const reason=decision.rejected?'原请求被目标明确拒收，本次上机验证没有执行':'服务重启后核对到原请求尚未开始，本次上机验证没有执行';
+          const reason=decision.rejected?TARGET_REJECTED_REASON:RECOVERED_NOT_EXECUTED_REASON;
+          const nextAction=decision.rejected?TARGET_REJECTED_NEXT:NOT_EXECUTED_NEXT;
           await this.journal.append(binding,'complete','read_back','completed',{done:true,outcome,unfreeze:true,recovery:true,
-            member_missing_facts:[{fact:reason,next_action:'原样重交，Hub 会再试一次'},...cleanup],
+            member_missing_facts:[{fact:reason,next_action:nextAction},...cleanup],
             public_reason:reason,
-            next_action:'原样重交，Hub 会再试一次'},[response.source],'dispatch.recovery.complete:'+intent.digest);
+            next_action:nextAction},[response.source],'dispatch.recovery.complete:'+intent.digest);
           return;
         }else if(decision.remoteId!==undefined){
           const prior=receiptOf(current.tail);
@@ -372,15 +374,17 @@ export class DispatchService {
         }
       }catch(error){
         if(signal.aborted)return;
-        if(binding)try{await this.recoveryUnknown(binding,'原请求、状态或结果只读尚未取得；缺少原身份下的完整回答');}
-        catch{const reservation=(await this.journal.events(job)).find(event=>event.body.detail.phase==='reservation');if(reservation)await this.recoveryUnavailable(reservation,'原固定执行器原件或必需读取证据不可用，无法安全接回');}
-        else throw error;
-        return;
+        if(!binding)throw error;
+        readFailed=true;return;
       }finally{
         try{await unlock();}
         finally{
           const original=binding??cached?.binding;
-          if(lostObservation.signal.aborted&&!this.#shutdown.signal.aborted&&original&&!currentDispatch(await this.journal.events(job)).finished)await this.recoveryUnknown(original,'原作业观察锁连接已中断，本次接回停止；需重新取得观察锁后只读核对');
+          if(!this.#shutdown.signal.aborted&&original&&(lostObservation.signal.aborted||readFailed)&&!currentDispatch(await this.journal.events(job)).finished){
+            const reason=lostObservation.signal.aborted?'原作业观察锁连接已中断，本次接回停止；需重新取得观察锁后只读核对':'原请求、状态或结果只读尚未取得；缺少原身份下的完整回答';
+            try{await this.recoveryUnknown(original,reason);}
+            catch{const reservation=(await this.journal.events(job)).find(event=>event.body.detail.phase==='reservation');if(reservation)await this.recoveryUnavailable(reservation,'原固定执行器原件或必需读取证据不可用，无法安全接回');}
+          }
         }
       }
       await recoveryWait(delay,signal,this.options.sleep);
@@ -1138,13 +1142,13 @@ export class DispatchService {
     if(certified && identityBound && found===true && identity && reported==='target_rejected' && mapped(d.receipt.stages,at(value,r.stage))==='target_rejected' && at(value,r.reached_device)===false) {
       await this.answerRequests(binding,'rejection','read_back','completed',{outcome:'target_rejected',acceptance:'not_accepted',stage:at(value,r.stage),reached_device:false,unfreeze:true},[response.source]);
       await stop();await this.release(binding,client,lease);
-      await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'target_rejected',unfreeze:true,next_action:'原请求记录明确拒收且未触达设备；修正拒收前提后可用新的请求尝试派发'});
+      await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'target_rejected',unfreeze:true,public_reason:TARGET_REJECTED_REASON,member_missing_facts:[{fact:TARGET_REJECTED_REASON,next_action:TARGET_REJECTED_NEXT}],next_action:TARGET_REJECTED_NEXT});
       return this.status(by,binding.job);
     }
     if (certified && identityBound && (found === true && identity && reported === 'proven_not_executed' && at(value,r.reached_device) === false)) {
       await this.answerRequests(binding,'reconciled','read_back','completed',{outcome:'proven_not_executed',unfreeze:true,reached_device:false},[response.source]);
       await stop(); await this.release(binding,client,lease);
-      await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'proven_not_executed',unfreeze:true,next_action:'原请求记录证明未执行；修正前提后可开启新的请求尝试'});
+      await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'proven_not_executed',unfreeze:true,public_reason:NOT_EXECUTED_REASON,member_missing_facts:[{fact:NOT_EXECUTED_REASON,next_action:NOT_EXECUTED_NEXT}],next_action:NOT_EXECUTED_NEXT});
       return this.status(by,binding.job);
     }
     const missing:string[]=[];
@@ -1189,7 +1193,7 @@ export class DispatchService {
     if (mapped(d.receipt.map,at(answer.value,d.receipt.acceptance)) !== 'not_accepted' || !d.receipt.stage || !d.receipt.reached_device || mapped(d.receipt.stages,at(answer.value,d.receipt.stage)) !== 'target_rejected' || at(answer.value,d.receipt.reached_device) !== false || !await this.certified(binding,d,client,'request_journal')) return false;
     await this.answerRequests(binding,'rejection','read_back','completed',{outcome:'target_rejected',acceptance:'not_accepted',stage:at(answer.value,d.receipt.stage),reached_device:false,unfreeze:true},[answer.source]);
     await this.release(binding,client,lease);
-    await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'target_rejected',unfreeze:true,next_action:'按拒绝阶段补齐事实后，可用新的请求尝试派发；不要重发原请求'});
+    await this.answerRequests(binding,'complete','read_back','completed',{done:true,outcome:'target_rejected',unfreeze:true,public_reason:TARGET_REJECTED_REASON,member_missing_facts:[{fact:TARGET_REJECTED_REASON,next_action:TARGET_REJECTED_NEXT}],next_action:TARGET_REJECTED_NEXT});
     return true;
   }
 

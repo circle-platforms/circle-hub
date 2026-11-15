@@ -1,3 +1,4 @@
+import { NOT_EXECUTED_NEXT as RETRY, TARGET_REJECTED_NEXT } from './nonexecution-text.ts';
 import { isAdmin } from '../records/api.ts';
 // Decision 105 (W03, D06): an accepted run whose pack declares a hub_template effect row is dispatched by the Hub, and
 // the jobs bound to the run are reported to the runner, so repeating the same submission reads their progress.
@@ -121,7 +122,6 @@ export async function runInFlight(records: Pick<RecordsKit, 'store' | 'principal
 }
 
 const NO_MORE = '这次上机验证不会再做上机验证：能在自动化用例、自动化用例 Excel 或预订上改的，改好后重新开始上机验证；其余等管理员处理';
-const RETRY = '原样重交，Hub 会再试一次';
 
 /**
  * A job after which a repeat of the same ready submission dispatches again (issue 142): it ended, no administrator has
@@ -154,7 +154,7 @@ function nextStep(job: Pick<RunJob, 'status' | 'ended' | 'boundary_refused'>, ad
   }
   if (status.report_pending) return `目标报告还没取全，Hub 会自动补读；${REREAD}`;
   if (status.outcome === 'not_dispatched') return job.boundary_refused ? `按原因补齐（例如预订整个自动化测试环境）后${RETRY}` : status.not_sent ? `什么都没有发到目标；原因消除后${RETRY}` : NO_MORE;
-  if (status.outcome === 'target_rejected') return `目标没有接收，也没有执行；按拒绝的原因修正后${RETRY}`;
+  if (status.outcome === 'target_rejected') return `目标没有接收，也没有执行；${TARGET_REJECTED_NEXT}`;
   if (status.outcome === 'proven_not_executed') return `已证明目标没有执行；${RETRY}`;
   if (status.missing_fact) return '部分条目没有判定，缺的事实写在结果引用对应的行里；要管理员补的 Hub 已记下';
   return status.device_return ? '读设备返回，读完再判断' : '读结果引用看逐条结论';
