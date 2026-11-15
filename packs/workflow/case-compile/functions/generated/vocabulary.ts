@@ -31,7 +31,11 @@ export const PRODUCER_KIND = ['function', 'model', 'human'] as const;
 export type ProducerKind = (typeof PRODUCER_KIND)[number];
 export const PRODUCER_KIND_LABEL = { 'function': '程序', 'model': '模型', 'human': '使用者' } as const satisfies Record<ProducerKind, string>;
 export function isProducerKind(value: unknown): value is ProducerKind { return typeof value === 'string' && (PRODUCER_KIND as readonly string[]).includes(value); }
-export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; dynamic_terminal: DynamicTerminal; acceptance: Acceptance; item_handling: ItemHandling; attribution: Attribution; exit_action: ExitAction; producer_kind: ProducerKind; }
+export const CALL_ERROR_CATEGORY = ['invalid_parameters', 'permission_denied', 'not_found', 'occupied', 'temporarily_unavailable'] as const;
+export type CallErrorCategory = (typeof CALL_ERROR_CATEGORY)[number];
+export const CALL_ERROR_CATEGORY_LABEL = { 'invalid_parameters': '参数无效', 'permission_denied': '无权限', 'not_found': '不存在', 'occupied': '已被占用', 'temporarily_unavailable': '暂时不可用' } as const satisfies Record<CallErrorCategory, string>;
+export function isCallErrorCategory(value: unknown): value is CallErrorCategory { return typeof value === 'string' && (CALL_ERROR_CATEGORY as readonly string[]).includes(value); }
+export interface AxisValues { expectation_basis: ExpectationBasis; qualifier_mark: QualifierMark; dynamic_terminal: DynamicTerminal; acceptance: Acceptance; item_handling: ItemHandling; attribution: Attribution; exit_action: ExitAction; producer_kind: ProducerKind; call_error_category: CallErrorCategory; }
 export type AxisName = keyof AxisValues;
-const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL, dynamic_terminal: DYNAMIC_TERMINAL_LABEL, acceptance: ACCEPTANCE_LABEL, item_handling: ITEM_HANDLING_LABEL, attribution: ATTRIBUTION_LABEL, exit_action: EXIT_ACTION_LABEL, producer_kind: PRODUCER_KIND_LABEL };
+const LABELS: { [A in AxisName]: Record<AxisValues[A], string> } = { expectation_basis: EXPECTATION_BASIS_LABEL, qualifier_mark: QUALIFIER_MARK_LABEL, dynamic_terminal: DYNAMIC_TERMINAL_LABEL, acceptance: ACCEPTANCE_LABEL, item_handling: ITEM_HANDLING_LABEL, attribution: ATTRIBUTION_LABEL, exit_action: EXIT_ACTION_LABEL, producer_kind: PRODUCER_KIND_LABEL, call_error_category: CALL_ERROR_CATEGORY_LABEL };
 export function labelOf<A extends AxisName>(axis: A, code: AxisValues[A]): string { return LABELS[axis][code]; }
