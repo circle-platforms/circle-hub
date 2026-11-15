@@ -155,7 +155,7 @@ function nativeFailure(error: unknown): CallFailure | null {
     if (status === 400 || status === 422) return new CallFailure('invalid_parameters', `Hub 返回 HTTP ${status}`, '按服务端结构化错误中的位置和合法取值修正请求后重试');
     if (status === 408 || status === 429 || status >= 500 && status <= 599) return new CallFailure('temporarily_unavailable', `Hub 返回 HTTP ${status}`, '按服务端重试时刻重试同一请求；仍失败时请运行者检查服务状态');
   }
-  if (['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','EHOSTUNREACH','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(String(code))) return new CallFailure('temporarily_unavailable', `连接操作失败（${String(code)}）`, '由运行者检查当前连接目标与服务状态后重试同一请求');
+  if (typeof code === 'string' && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','EHOSTUNREACH','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code)) return new CallFailure('temporarily_unavailable', `连接操作失败（${String(code)}）`, '由运行者检查当前连接目标与服务状态后重试同一请求');
   return null;
 }
 /** Adapts typed refusal data to the existing CLI wire text. */
