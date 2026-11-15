@@ -12,14 +12,15 @@ function fixture(): PrecheckInputs {
   contract.contract_sha256 = runtimeDigest(contract);
   const catalog: any = structuredClone(COMMAND_CATALOG);
   catalog.policy.read_only = ['/commands/inspect'];
-  catalog.entries.push({ words: ['inspect', 'widget'], reference: PROBE, signatures: [{ id: `src:${ROOT}/xml@1/x/inspect`, reference: `src:${ROOT}/xml@1/x/inspect`, params: [] }] });
+  const xml = 'b'.repeat(64);
+  catalog.entries.push({ words: ['inspect', 'widget'], reference: PROBE, signatures: [{ id: `src:${xml}/xml@1/x/inspect`, reference: `src:${xml}/xml@1/x/inspect`, params: [] }] });
   return { root: ROOT, contract, profile: structuredClone(PROFILE_DOC), inventory: structuredClone(MANIFEST_DOC), catalog, plan: goodData() };
 }
 
 test('optional probe declarations preserve old contracts and reject undeclared shape or non-read-only claims', () => {
   assert.ok(parseRuntimeContract(CONTRACT_DOC).ok);
   assert.ok(parseRuntimeContract(fixture().contract).ok);
-  for (const extra of [{ write: true }, { read_only: false }, { reference: 'free prose' }, { command: 'inspect widget\nother' }]) {
+  for (const extra of [{ write: true }, { read_only: false }, { reference: 'free prose' }, { command: 'inspect widget\nother' }, { command: 'inspect\u001bwidget' }, { reference: `tree:${ROOT}/commands/inspect/widget@bad` }]) {
     const input = fixture(), contract = input.contract as any;
     Object.assign(contract.cleanup.rules[0].probe, extra); contract.contract_sha256 = runtimeDigest(contract);
     const parsed = parseRuntimeContract(contract); assert.equal(parsed.ok, false);
@@ -30,7 +31,7 @@ test('precheck derives actual plan command identities and a declared query witho
   const report = commandDomainPrecheck(fixture());
   assert.deepEqual(report.gaps, []); assert.equal(report.rows.length, 1, JSON.stringify(report));
   const row = report.rows[0]; assert.deepEqual(row.gaps, []); assert.equal(row.operation.identity?.path, '/commands/widget/health/interval');
-  assert.equal(row.query?.reference, PROBE); assert.deepEqual(row.query?.identity.parameters, []);
+  assert.equal(row.query?.reference, PROBE); assert.deepEqual(row.query?.identity.parameters, []); assert.equal(row.query?.identity.tree_root, 'b'.repeat(64), 'the command XML source identity remains distinct from the knowledge root');
   assert.equal(row.rule?.pinned, false); assert.equal(report.disclosure_only, true);
   assert.ok(!('verified' in report)); assert.ok(!('allowed' in report)); assert.ok(!('state' in row));
 });
@@ -47,15 +48,20 @@ test('read failures, hash mismatch and truncation only add disclosure gaps; dupl
   const input = fixture(); (input.plan as any).steps.push(structuredClone((input.plan as any).steps[0]));
   const report = commandDomainPrecheck(input); const bytes = Buffer.from('synthetic observation'), hash = createHash('sha256').update(bytes).digest('hex');
   let calls = 0;
-  const observed = await collectCommandDomainObservations(report, { read: async () => { calls++; return { reference: 'src:' + hash, sha256: hash, bytes, complete: true }; } });
+  const observed = await collectCommandDomainObservations(input, { read: async () => { calls++; return { reference: 'src:' + hash, sha256: hash, bytes, complete: true }; } });
   assert.equal(calls, 1); assert.equal(observed.rows.filter(r => r.observation).length, 2); assert.ok(observed.rows.every(r => !r.gaps.length));
-  const truncated = await collectCommandDomainObservations(report, { read: async () => ({ reference: 'src:' + hash, sha256: hash, bytes, complete: false }) });
+  const truncated = await collectCommandDomainObservations(input, { read: async () => ({ reference: 'src:' + hash, sha256: hash, bytes, complete: false }) });
   assert.ok(truncated.rows.every(r => r.gaps.some(g => g.missing.includes('不完整'))));
-  const wrong = await collectCommandDomainObservations(report, { read: async () => ({ reference: 'src:' + '0'.repeat(64), sha256: hash, bytes, complete: true }) });
+  const wrong = await collectCommandDomainObservations(input, { read: async () => ({ reference: 'src:' + '0'.repeat(64), sha256: hash, bytes, complete: true }) });
   assert.ok(wrong.rows.every(r => !r.observation && r.gaps.length));
-  const failed = await collectCommandDomainObservations(report, { read: () => { throw new Error('synthetic failure'); } });
+  const failed = await collectCommandDomainObservations(input, { read: () => { throw new Error('synthetic failure'); } });
+  const malformed = await collectCommandDomainObservations(input, { read: async () => ({ reference: 'src:' + hash, sha256: hash, bytes, complete: 1 } as any) });
+  assert.ok(malformed.rows.every(r => !r.observation && r.gaps.length));
   assert.ok(failed.rows.every(r => !r.observation && r.gaps.length)); assert.ok(!('verified' in failed));
   assert.deepEqual(report.rows.map(r => r.observation), [undefined, undefined]);
+  let forgedReads = 0; const forged = structuredClone(report) as any; forged.rows[0].query.command = 'clear everything';
+  const rejected = await collectCommandDomainObservations(forged, { read: async () => { forgedReads++; throw Error('must not read'); } });
+  assert.equal(forgedReads, 0); assert.ok(rejected.gaps.length);
 });
 
 test('offline CLI writes a private disclosure even when mappings are missing and prints only counts/digest', async () => {
@@ -71,5 +77,8 @@ test('offline CLI writes a private disclosure even when mappings are missing and
     assert.doesNotMatch(lines.join(''), /widget|inspect|fixture|command_domain|source:/); assert.equal(JSON.parse(lines[0]).missing, 1);
     assert.equal(await main(['--input', 'input.json', '--out', 'report.json'], () => {}, directory), 1, 'never overwrite');
     assert.equal(await main(['--input', 'input.json', '--out', '../escape.json'], () => {}, directory), 1);
+    await writeFile(join(directory, 'broken.json'), Buffer.from([0xff]));
+    const rejected: string[] = []; assert.equal(await main(['--input', 'broken.json', '--out', 'broken-report.json'], line => rejected.push(line), directory), 1);
+    assert.match(rejected[0], /参数无效.*UTF-8 JSON/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
