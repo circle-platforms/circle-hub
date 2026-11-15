@@ -324,6 +324,8 @@ export const ResolveReferenceOutput = Envelope.extend({
 
 export const SubmitResultInput = Submission;
 export const SubmitResultOutput = Envelope.safeExtend({
+  /** Producer-filled when the checked requirements resolve to exactly one workflow step (Codex C56 / Boss 07:00). */
+  step_name: z.string().min(1).refine(value => value.trim().length > 0, 'a name is not whitespace').optional().describe('The declared user-facing step name only when the nonempty set of requirements actually checked by this submission explicitly resolves to one workflow step; absent for missing declarations, multiple steps or an unproven checked scope'),
   record: referenceUriOf('rec').optional().describe('Immutable validation result record reference for machine readers'),
   withdrawn_grounds:z.array(Ground).optional().describe("Live withdrawal qualifier, outside the immutable historical result"),
   withdrawn_grounds_hidden_count:z.number().int().nonnegative().optional().describe('Count of currently unreadable withdrawn grounds, without their identities'),

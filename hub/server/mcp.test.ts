@@ -590,7 +590,8 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(accepted.structuredContent.acceptance, 'accepted');
     SubmitResultOutput.parse(accepted.structuredContent);
     assert.deepEqual(accepted.structuredContent.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 });
-    assert.equal(accepted.content[0].text?.split('\n')[0], '脚本合并已核对。');
+    // No step_name until the workflow declares a unique checked step (Boss 07:00 / C56).
+    assert.equal(accepted.content[0].text?.split('\n')[0], '核对已完成。');
     const repeat = await client.call('submit_result', submission);
     assert.deepEqual((repeat.structuredContent.result as { submission: string }).submission, (accepted.structuredContent.result as { submission: string }).submission);
 
@@ -599,7 +600,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(refused.structuredContent.acceptance, 'not_accepted');
     assert.equal(firstError(refused).code, 'QUOTE_MISMATCH');
     assert.ok(refused.structuredContent.result, 'a submission refused against a run it may use carries its result');
-    assert.match(refused.content[0].text ?? '', /^脚本合并有错误。/);
+    assert.match(refused.content[0].text ?? '', /^核对有错误。/);
 
     const malformed = await client.call('submit_result', { ...submission, run: 'run_123' });
     assert.equal(malformed.isError, true);
@@ -703,7 +704,6 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
       const started = await startRun(client, reference);
       const text = started.content[0].text ?? '';
       const summary = started.structuredContent.run as { items: Array<{ id: string; label: string; summary: string; location: string }>; slots: { sha256: string; schema: { properties: Record<string, unknown> } } };
-      // start_run pending lines still use 「，」 before the summary; itemConclusion uses 「：」(决定 20:32)
       for (const i of [0, 49, 50, 59]) assert.ok(text.split('\n').includes(`原始用例 合成用例 ${i}，摘要 ${i}；状态未知；原因缺资料；下一步由模型按说明核对原始用例；决定者程序`), `original case ${i} keeps its summary`);
       assert.ok(summary.items.every((item) => item.location === reference), 'every machine-readable item keeps its location');
       assert.deepEqual(summary.items.map((item) => [item.id, item.label, item.summary]), Array.from({ length: 60 }, (_, i) => [`doc-9:n${i}`, `合成用例 ${i}`, `摘要 ${i}`]));
@@ -723,9 +723,9 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     const runId = (short.structuredContent.run as { run: string }).run;
     const submitted = await client.call('submit_result', { run: runId, model: 'scripted-model@test', items: [{ item: 'doc-1:n1', handling: 'handled', slots: { findings: [{ text: '期望结果缺失' }] } }] });
     const lines = (submitted.content[0].text ?? '').split('\n');
-    const finding = lines.findIndex((line) => line.startsWith('原始用例 合成用例一：期望结果缺失'));
+    const finding = lines.findIndex((line) => line.startsWith('原始用例 合成用例一，期望结果缺失'));
     assert.ok(finding > 0, 'the original case conclusion is in the content');
-    assert.equal(lines[finding], '原始用例 合成用例一：期望结果缺失；状态未确认；判断正确；决定者模型');
+    assert.equal(lines[finding], '原始用例 合成用例一，期望结果缺失；状态未确认；判断正确；决定者模型');
     const result = submitted.structuredContent.result as { partitions: { delivered: Array<{ requirements: Array<{ requirement: string; claims: Array<{ statement: { text: string }; warrant: { producer: string; id: string } }> }> }> } };
     assert.deepEqual(result.partitions.delivered[0].requirements.find((requirement) => requirement.requirement === 'findings')!.claims[0].warrant, { producer: 'model', id: 'scripted-model@test' });
     const stored = server.fakes.runs.runs.get(runId)!.latest!.record;
@@ -755,7 +755,7 @@ function callAfter(text: string, marker: string): Record<string, unknown> | null
   return at < 0 ? null : jsonAt(note, at + `${marker}get_nodes `.length);
 }
 
-const itemLabels = (text: string): string[] => text.split('\n').flatMap((line) => line.startsWith('原始用例 ') ? [line.slice('原始用例 '.length, line.search(/[：，]/))] : []);
+const itemLabels = (text: string): string[] => text.split('\n').flatMap((line) => line.startsWith('原始用例 ') ? [line.slice('原始用例 '.length, line.indexOf('，'))] : []);
 
 describe('paging through the server', () => {
   test('a source read by reference comes whole in one answer; a foreign cursor is refused at /cursor', async () => {
@@ -876,14 +876,14 @@ describe('start_run with the engine\'s detail', () => {
       const production = other.fakes.runs.runs.get(run)!.production!;
       assert.deepEqual(started.structuredContent.result, { reference: production.reference, counts: production.counts });
       const lines = (started.content[0].text ?? '').split('\n');
-      assert.equal(lines[1], '原始用例 合成用例一：已按要求核对；状态已确认；判断正确；决定者程序');
+      assert.equal(lines[1], '原始用例 合成用例一，已按要求核对；状态已确认；判断正确；决定者程序');
       assert.deepEqual(production.counts, { delivered: 3, rejected: 0, quarantined: 0, incomplete: 0, unknown: 0 });
       assert.deepEqual(production.result.partitions.delivered.map((item) => item.requirements.map((requirement) => [requirement.requirement, requirement.status, requirement.layers.map((layer) => [layer.layer, layer.terminal, layer.tier])])), [
         [['structure', 'satisfied', [['static', 'pass', undefined]]]],
         [['structure', 'unsatisfied', [['static', 'violation', 'blocking']]]],
         [['structure', 'satisfied', [['static', 'pass', undefined]]]],
       ]);
-      const problem = lines.findIndex((line) => line.startsWith('原始用例 合成用例二：'));
+      const problem = lines.findIndex((line) => line.startsWith('原始用例 合成用例二，'));
       assert.equal(problem, 2, 'the error stays with its original case in order');
       assert.match(lines[problem], /状态已确认；判断错误；原因原始用例的问题；下一步/);
       assert.deepEqual(itemLabels(lines.join('\n')), ['合成用例一', '合成用例二', '合成用例三']);
@@ -891,7 +891,7 @@ describe('start_run with the engine\'s detail', () => {
       const read = await client.call('get_nodes', { reference: production.reference });
       assert.equal(read.isError, false, 'the whole result is readable by its reference');
       assert.deepEqual(itemLabels(read.content[0].text ?? ''), ['合成用例一', '合成用例二', '合成用例三']);
-      assert.match(read.content[0].text ?? '', /原始用例 合成用例二：[^\n]*状态已确认；判断错误；原因原始用例的问题/);
+      assert.match(read.content[0].text ?? '', /原始用例 合成用例二，[^\n]*状态已确认；判断错误；原因原始用例的问题/);
       await client.close();
     } finally {
       await other.close();
@@ -1295,7 +1295,7 @@ describe('the isError matrix and output schemas', () => {
 });
 
 describe('call log, trace and session', () => {
-  test('one line per call with the trace id, the session id, the run and the receipt; never the argument content', async () => {
+  test('one line per call with trace, session, receipt and safe structure but never free text or upload content', async () => {
     const user = await person(['review']);
     const client = await connect(user, { sessionId: 'sess-log-1', traceparent: TRACEPARENT });
     const marker = 'MARKER-UPLOAD-7f3a91';
@@ -1314,7 +1314,11 @@ describe('call log, trace and session', () => {
       assert.equal(line.session, 'sess-log-1');
       assert.match(line.args_digest, /^[0-9a-f]{64}$/);
       assert.ok(line.args_size >= 0);
-      assert.equal(line.args_preview, null);
+      if (['upload_file','start_run','submit_result','get_nodes'].includes(line.tool)) {
+        assert.ok(line.args_preview,'known tool records safe request structure');
+        const summary=JSON.parse(line.args_preview);assert.equal(summary.schema,'mcp-request-summary@1');
+        assert.ok(!line.args_preview.includes('MARKER-PARAM-9c1d')&&!line.args_preview.includes('MARKER-SUBMIT-2b8e'));
+      } else assert.equal(line.args_preview,null);
     }
     const startLine = lines.find((line) => line.tool === 'start_run')!;
     assert.equal(startLine.run, runId);
