@@ -131,12 +131,13 @@ test('every published client skill and helper passes the manifest gate with all 
       if(existsSync(manifest)){
         const pack=JSON.parse(readFileSync(manifest,'utf8'));
         if(pack.schema==='pack@1'&&Array.isArray(pack.files)&&pack.files.some((file:{path:string})=>file.path.startsWith('tools/')&&/\.[cm]?[jt]sx?$/.test(file.path)))directories.push(child);
-      }else walk(child);
+      }
+      walk(child);
     }
   };
   walk(join(repository,'packs'));
   const ids=directories.map(directory=>JSON.parse(readFileSync(join(directory,'pack.json'),'utf8')).id);
-  for(const required of ['case-compile','knowledge-contribution'])assert.ok(ids.includes(required),`missing published client scripts for ${required}; merge the required layout and skill packages before claiming coverage`);
+  for (const required of ['case-compile','recompose','knowledge-contribution'])assert.ok(ids.includes(required),`missing published client scripts for ${required}; merge the required layout and skill packages before claiming coverage`);
   const reviewed=[];
   for(const directory of directories.sort()){
     const pack=JSON.parse(readFileSync(join(directory,'pack.json'),'utf8'));const result=scanSkillPack(directory);
@@ -144,4 +145,53 @@ test('every published client skill and helper passes the manifest gate with all 
     t.diagnostic(`${pack.id}: ${result.files} script/helper/hook sources; ${result.reviewed.length} reviewed call sites`);
   }
   assert.deepEqual(reviewed,REVIEWED_SKILL_CALLS,'every registered call site must still occur exactly once in a scanned published package');
+});
+
+test('scanSkillPack validates pure-data .cli.json declarations via AST without regex or execution', () => {
+  const f = fixture();
+  try {
+    // Valid pack with CLI script + helper module.
+    f.write({
+      'tools/run.ts': `if (import.meta.main) console.log(process.argv.slice(2));\n`,
+      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: ['%HUB_TOKEN%'] }),
+      'tools/helper.ts': `export const helperValue = 1;\n`,
+    });
+    assert.deepEqual(scanSkillPack(f.dir, []).issues, []);
+
+    // Adding a second CLI entrypoint without .cli.json in a .cli.json pack fails static audit.
+    f.write({
+      'tools/run.ts': `if (import.meta.main) console.log(process.argv.slice(2));\n`,
+      'tools/run.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+      'tools/extra.ts': `console.log(process.argv[2] ?? 'ok');\n`,
+    });
+    assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('tools/extra.ts')));
+
+    // Invalid schema, extra key, or non-placeholder entry rejected.
+    for (const badJson of [
+      '{not-json',
+      JSON.stringify({ schema: 'wrong@1', stdin: [] }),
+      JSON.stringify({ schema: 'tool-cli@1', stdin: [], extra: true }),
+      JSON.stringify({ schema: 'tool-cli@1', stdin: ['raw-secret'] }),
+    ]) {
+      f.write({
+        'tools/run.ts': `console.log(process.argv.length);\n`,
+        'tools/run.cli.json': badJson,
+      });
+      assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration'), badJson);
+    }
+
+    // A declared entry need not have a particular source-code spelling.
+    f.write({
+      'tools/orphan.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+    });
+    assert.ok(scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('orphan.cli.json')));
+
+    f.write({
+      'tools/helper.ts': `export const helperOnly = 42;\n`,
+      'tools/helper.cli.json': JSON.stringify({ schema: 'tool-cli@1', stdin: [] }),
+    });
+    assert.ok(!scanSkillPack(f.dir, []).issues.some((i) => i.operation === 'cli-declaration' && i.file.endsWith('helper.cli.json')));
+  } finally {
+    f.close();
+  }
 });

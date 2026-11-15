@@ -1,0 +1,74 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%HUB_TOKEN%"
+  ],
+  "options": [
+    {
+      "name": "hub",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%HUB_URL%",
+      "type": "hub"
+    },
+    {
+      "name": "run",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<脚本编写编号>",
+      "type": "run"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<新目录>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<脚本编写编号>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<新目录>",
+          "optional": false
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "hub",
+          "placeholder": "%HUB_URL%",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<run id>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<directory>",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

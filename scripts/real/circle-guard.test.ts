@@ -155,7 +155,7 @@ test('guard-offline A/D: single-quote grammar, space-in-home, 3-line fixes, and 
       assert.ok(!h.allowedText().includes('authoring-brief.ts'));
       assert.ok(!h.allowedText().includes('rework-inputs.ts'));
       assert.ok(!h.allowedText().includes('workspace-path.ts'));
-      h.assertRefused3(h.exec(`node '${h.skillPath('case-compile', 'tools/authoring-brief.ts')}'`), /辅助库|未声明|可执行的工具/);
+      h.assertRefused3(h.exec(`node '${h.skillPath('case-compile', 'tools/authoring-brief.ts')}'`), /可执行身份未知/);
     } finally {
       h.close();
     }
@@ -176,7 +176,7 @@ test('guard-offline B/C: virtual readOnly files, ALLOWED.md access, shell altern
       h.assertAllowed(h.call('read_file', { file_path: 'hooks/ALLOWED.md' }, { paths: [h.allowedPath] }));
       h.assertRefused3(h.exec(`cat ${virtualLog}`), /read_file|cat|只放行技能目录里的脚本/, /read_file/);
       h.assertRefused3(h.exec('ls -la'), /只放行技能目录里的脚本/, /ls/);
-      h.assertRefused3(h.exec('sed -i s/a/b/ x.txt'), /只放行技能目录里的脚本/, /edit_file/);
+      h.assertRefused3(h.exec('sed -i s/a/b/ x.txt'), /只放行技能目录里的脚本/, h === hOps ? /先 read_file.*edit_file/ : /没有放行编辑能力/);
     }
     // write_file works in workdir on ops, denied on virtual paths / ALLOWED.md / outside work, and denied everywhere on skills.
     hOps.assertAllowed(hOps.call('write_file', { file_path: 'out/a.md' }, { paths: [join(hOps.workdir, 'out/a.md')] }));
@@ -297,10 +297,11 @@ test('ops sibling ^work-ops trust, execute key hygiene, skills/ symlink, globWit
     const localCli = join(localDir, 'run.ts');
     const localLib = join(localDir, 'helper.ts');
     writeFileSync(localCli, "// node demo/tools/run.ts --out <文件路径>\nconst idx = process.argv.indexOf('--out');\n");
+    writeFileSync(join(localDir,'run.cli.json'),JSON.stringify({schema:'tool-cli@2',stdin:[],options:[{name:'out',type:'path',required:true,kind:'string',multiple:false,placeholder:null}]}));
     writeFileSync(localLib, 'export const HELPER = 1;\n');
     hOps.assertAllowed(hOps.exec(`node ${localCli} --out out.json`));
     hOps.assertRefused3(hOps.exec(`node ${localCli} --out ../outside.json`), /不在工作目录/);
-    hOps.assertRefused3(hOps.exec(`node ${localLib}`), /未声明|辅助库/);
+    hOps.assertRefused3(hOps.exec(`node ${localLib}`), /可执行身份未知/);
 
     // 6. --schemas output produces valid JSON schema entries without hub property.
     const schemasOut = spawnSync(process.execPath, [hOps.gen, '--schemas'], { cwd: hOps.workdir, encoding: 'utf8', timeout: 5000 });
@@ -392,3 +393,79 @@ test('every command-form second line across all execute refusals passes replay, 
     }
   }
 });
+
+test('helper-rename regression: renaming readTokenFromStdin never changes guard decisions or ALLOWED.md', () => {
+  const h = createGuardHarness('ops');
+  try {
+    const allowedBefore = h.allowedText();
+    const fetchPath = h.skillPath('case-compile', 'tools/fetch-run.ts');
+    const retryPath = join(dirname_safe(fetchPath), '..', 'functions', 'hub-retry.ts');
+    const checkPlanPath = h.skillPath('case-compile', 'tools/check-plan.ts');
+
+    const ccSrc = join(REPO_ROOT, 'packs/workflow/case-compile');
+    cpSync(join(ccSrc, 'functions'), join(h.skillPath('case-compile'), 'functions'), { recursive: true });
+    writeFileSync(fetchPath, readFileSync(fetchPath, 'utf8').replaceAll('readTokenFromStdin', 'customSecretPipe'));
+    writeFileSync(retryPath, readFileSync(retryPath, 'utf8').replaceAll('readTokenFromStdin', 'customSecretPipe'));
+    // Add misleading helper name into a zero-stdin tool whose .cli.json declares [].
+    writeFileSync(
+      checkPlanPath,
+      `${readFileSync(checkPlanPath, 'utf8')}\n// synthetic distraction: readTokenFromStdin readKeys\n`,
+    );
+
+    const regen = spawnSync(process.execPath, [h.gen], {
+      cwd: h.workdir,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(regen.status, 0, regen.stderr);
+    assert.equal(h.allowedText(), allowedBefore);
+
+    const fCmd = `'${fetchPath}'`;
+    h.assertRefused3(h.exec(`node ${fCmd} --hub ${HUB_URL} --run ${RUN_ID} --out run-out`), /声明从标准输入读令牌/);
+    h.assertAllowed(h.exec(`node ${fCmd} --hub ${HUB_URL} --run ${RUN_ID} --out run-out <<'EOF'\n%HUB_TOKEN%\nEOF`));
+
+    const cpCmd = `'${checkPlanPath}'`;
+    h.assertAllowed(h.exec(`node ${cpCmd} --file plans/0.json`));
+    h.assertRefused3(h.exec(`node ${cpCmd} --file plans/0.json <<'EOF'\n%HUB_TOKEN%\nEOF`), /声明不读标准输入/);
+  } finally {
+    h.close();
+  }
+});
+
+test('epistemic refusal when a tool or command has no pure-data stdin declaration', () => {
+  const h = createGuardHarness('ops');
+  try {
+    // 1. Delete check-plan.cli.json -> undeclared tool called with <<'EOF' must refuse epistemically.
+    const cpPath = h.skillPath('case-compile', 'tools/check-plan.ts');
+    rmSync(join(h.skillPath('case-compile', 'tools'), 'check-plan.cli.json'));
+    const regen = spawnSync(process.execPath, [h.gen], {
+      cwd: h.workdir,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(regen.status, 0, regen.stderr);
+
+    const refusedTool = h.exec(`node '${cpPath}' --file plans/0.json <<'EOF'\n%HUB_TOKEN%\nEOF`);
+    h.assertRefused3(refusedTool, /没有在已声明的可执行工具清单里找到/);
+    assert.ok(!String(refusedTool.reason).includes('不读标准输入'), `must not assert 不读标准输入: ${refusedTool.reason}`);
+    assert.ok(!String(refusedTool.reason).includes('这次可以这样写：'), `must not blindly suggest stripping EOF: ${refusedTool.reason}`);
+    // Without heredoc, undeclared tool stays runnable instead of inventing a token requirement.
+    h.assertRefused3(h.exec(`node '${cpPath}' --file plans/0.json`), /缺少明确|未声明|身份未知/);
+
+    // 2. Remove declaration.commands[0].stdin -> simple command called with <<'EOF' refuses epistemically.
+    const declPath = join(h.home, 'hooks', 'ops-allow.declaration.json');
+    const decl = JSON.parse(readFileSync(declPath, 'utf8')) as { commands: Array<Record<string, unknown>> };
+    delete decl.commands[0].stdin;
+    writeFileSync(declPath, JSON.stringify(decl, null, 2));
+    const refusedSleep = h.exec("sleep 10 <<'EOF'\n%HUB_TOKEN%\nEOF");
+    h.assertRefused3(refusedSleep, /here-doc（<<'EOF'）.*没有找到 sleep 读标准输入的声明/);
+    assert.ok(!String(refusedSleep.reason).includes('不读标准输入'), `must not assert 不读标准输入: ${refusedSleep.reason}`);
+    assert.ok(!String(refusedSleep.reason).includes('这次可以这样写：'), `must not suggest sleep 10 stripping EOF: ${refusedSleep.reason}`);
+  } finally {
+    h.close();
+  }
+});
+
+function dirname_safe(p: string): string {
+  return join(p, '..');
+}

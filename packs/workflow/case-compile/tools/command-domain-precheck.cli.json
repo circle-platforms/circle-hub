@@ -1,0 +1,22 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "input",
+      "type": "path",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    },
+    {
+      "name": "out",
+      "type": "path",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null
+    }
+  ]
+}
