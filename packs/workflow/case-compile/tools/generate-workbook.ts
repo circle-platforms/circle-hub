@@ -18,7 +18,8 @@ import { parseProfile } from '../functions/profile.ts';
 import { readSlots } from '../functions/slots.ts';
 import { generateWorkbookSet, GENERATOR, type GenerationInput } from '../functions/generate.ts';
 import { CONFLICT_FIX, conflictText, movedText, volumeOrder, volumeProblems } from '../functions/channels.ts';
-import { readBytes, jsonBytes, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { readSubmittedFileBytes, parseSubmittedJson } from '../functions/hub-retry.ts';
 function record(value: unknown, message: string): Record<string, unknown> { if (!isRecord(value)) throw new CallFailure('invalid_parameters', message, "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿"); return value; }
 /** One case of the run (the run's only item). */
 export function satisfiedRecipe(input: { run: unknown; result: unknown; submission: unknown; contract: Uint8Array; profile: Uint8Array; inventory: Uint8Array }): GenerationInput { const all = satisfiedRecipes(input); if (all.length !== 1) throw new CallFailure('invalid_parameters', '本次只生成一条已核对正确的自动化用例', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿"); return all[0]; }
@@ -66,9 +67,9 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
     const required = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === template.key);
     if (required.length !== 1 || !isRecord(required[0]) || required[0].status !== 'satisfied') throw new CallFailure('invalid_parameters', '自动化用例尚未全部核对正确；请改好错误或补齐资料后再生成自动化用例 Excel', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
   }
-  const contract = parseRuntimeContract(jsonBytes(input.contract,'contract')); const inventory = parseManifest(jsonBytes(input.inventory,'inventory'));
+  const contract = parseRuntimeContract(parseSubmittedJson('contract', '来源槽 contract', input.contract, '重新核对后生成工作簿')); const inventory = parseManifest(parseSubmittedJson('inventory', '来源槽 inventory', input.inventory, '重新核对后生成工作簿'));
   if (!contract.ok || !inventory.ok) throw new CallFailure('invalid_parameters', '执行器规则或测试环境清单无法读取', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
-  const profile = parseProfile(jsonBytes(input.profile,'profile'), contract.contract, inventory.beds); if (!profile.ok) throw new CallFailure('invalid_parameters', '测试环境配置不完整', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
+  const profile = parseProfile(parseSubmittedJson('profile', '来源槽 profile', input.profile, '重新核对后生成工作簿'), contract.contract, inventory.beds); if (!profile.ok) throw new CallFailure('invalid_parameters', '测试环境配置不完整', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
   const identity = itemResult.requirements.filter((v) => isRecord(v) && v.requirement === 'contract_methods').flatMap((v) => isRecord(v) && Array.isArray(v.claims) ? v.claims : []).find((v) => isRecord(v) && isRecord(v.statement) && v.statement.verdict === 'support' && isRecord(v.statement.data) && v.statement.data.runtime_version === contract.contract.runtimeVersion && v.statement.data.contract_sha256 === contract.contract.pinned.identity);
   if (!identity) throw new CallFailure('invalid_parameters', '缺少本次执行器规则的核对结果', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
   const slots = record(submitted.slots, '缺少自动化用例'); if (!Array.isArray(slots.plan) || slots.plan.length !== 1) throw new CallFailure('invalid_parameters', '自动化用例必须只交一份', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
@@ -87,7 +88,7 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
  */
 export function passReviewInputs(input: Parameters<typeof satisfiedRecipes>[0]): { markers: string[]; assertions: Map<string, string[]> } {
   let markers: string[] = [];
-  try { const parsed = parseRuntimeContract(jsonBytes(input.contract, 'contract')); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { /* a contract that does not parse declares no markers */ }
+  try { const parsed = parseRuntimeContract(parseSubmittedJson('contract', '来源槽 contract', input.contract, '重新核对后生成工作簿')); if (parsed.ok && parsed.contract.failureMarkers) markers = parsed.contract.failureMarkers.lines; } catch { /* a contract that does not parse declares no markers */ }
   if (!markers.length) return { markers, assertions: new Map() };
   return { markers, assertions: new Map(satisfiedRecipes(input).map((recipe) => [String(recipe.fields.autoid), recipe.slots.expects.map((expect) => expect.text).filter((text): text is string => typeof text === 'string' && text.length > 0)])) };
 }
@@ -99,9 +100,9 @@ export async function main(argv: string[]): Promise<number> {
     const directory = dirname(runPath);
     const hasManifest = await lstat(join(directory, 'sources.json')).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error; });
     if (hasManifest && (['contract', 'profile', 'inventory'] as const).some(slot => args[slot] !== undefined)) throw new CallFailure('invalid_parameters', '本次下载已有来源清单，不能另指三份来源文件', '去掉 --contract、--profile、--inventory，按 sources.json 的已核验指针读取本次来源');
-    const sourceBytes = (slot: 'contract' | 'profile' | 'inventory') => { const path = args[slot]; return !hasManifest && path !== undefined ? readBytes(path, slot) : readSourceBytes(directory, slot); };
-    const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(runPath,'run'), readBytes(resultPath,'result'), readBytes(submissionPath,'submission'), sourceBytes('contract'), sourceBytes('profile'), sourceBytes('inventory')]);
-    const recipes = satisfiedRecipes({ run: jsonBytes(run,'run'), result: jsonBytes(result,'result'), submission: jsonBytes(submission,'submission'), contract, profile, inventory });
+    const sourceBytes = (slot: 'contract' | 'profile' | 'inventory') => { const path = args[slot]; return !hasManifest && path !== undefined ? readSubmittedFileBytes(path, slot) : readSourceBytes(directory, slot); };
+    const [run, result, submission, contract, profile, inventory] = await Promise.all([readSubmittedFileBytes(runPath,'run'), readSubmittedFileBytes(resultPath,'result'), readSubmittedFileBytes(submissionPath,'submission'), sourceBytes('contract'), sourceBytes('profile'), sourceBytes('inventory')]);
+    const recipes = satisfiedRecipes({ run: parseSubmittedJson('run', runPath, run, '重新核对后生成工作簿'), result: parseSubmittedJson('result', resultPath, result, '重新核对后生成工作簿'), submission: parseSubmittedJson('submission', submissionPath, submission, '重新核对后生成工作簿'), contract, profile, inventory });
     const forbidden = volumeProblems(recipes);
     if (forbidden.length) throw new CallFailure('invalid_parameters', `${forbidden.map(conflictText).join('；')}。未生成自动化用例 Excel。${CONFLICT_FIX}`, "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
     const bytes = generateWorkbookSet(recipes); await writeFile(outputPath, bytes, { flag: 'wx', mode: 0o600 });
