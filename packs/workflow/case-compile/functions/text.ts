@@ -138,23 +138,15 @@ export function failCall(category: CallErrorCode, fact: string, next_action: str
   throw new CallFailure(category, fact, next_action, fields);
 }
 const sentence = (text: string): string => text.trim().replace(/[。．.!！;；]+$/u, '') + '。';
-/** Only native structured HTTP/FS codes select a recovery action. */
+/** Only native structured filesystem and connection codes select a recovery action. */
 function nativeFailure(error: unknown): CallFailure | null {
   if (!(error instanceof Error)) return null;
-  const fields = error as Error & { code?: unknown; status?: unknown; path?: unknown };
+  const fields = error as Error & { code?: unknown; path?: unknown };
   const path = typeof fields.path === 'string' ? fields.path : undefined;
   const code = fields.code;
-  const status = fields.status;
   if (code === 'ENOENT' || code === 'ENOTDIR') return new CallFailure('not_found', `文件位置不存在或不是目录${path ? '：' + path : ''}`, '按本次文件参数核对位置，提供存在的普通文件或目录后重试', { path });
   if (code === 'EACCES' || code === 'EPERM') return new CallFailure('permission_denied', `本机文件操作被系统权限拒绝${path ? '：' + path : ''}`, '由运行者核对该位置的系统权限，再按同一参数重试', { path });
   if (code === 'EEXIST' || code === 'EBUSY') return new CallFailure('occupied', `本机目标位置已存在或被占用${path ? '：' + path : ''}`, '另选未占用位置，或由运行者核对原位置后重试', { path });
-  if (typeof status === 'number') {
-    if (status === 401 || status === 403) return new CallFailure('permission_denied', `Hub 返回 HTTP ${status}`, '核对本次调用身份与读取权限，再按原请求重试');
-    if (status === 404 || status === 410) return new CallFailure('not_found', `Hub 返回 HTTP ${status}`, '核对本次对象标识及可读来源清单后重试');
-    if (status === 409 || status === 423) return new CallFailure('occupied', `Hub 返回 HTTP ${status}`, '核对本次对象的冲突或占用状态，按服务端结构化说明重试');
-    if (status === 400 || status === 422) return new CallFailure('invalid_parameters', `Hub 返回 HTTP ${status}`, '按服务端结构化错误中的位置和合法取值修正请求后重试');
-    if (status === 408 || status === 429 || status >= 500 && status <= 599) return new CallFailure('temporarily_unavailable', `Hub 返回 HTTP ${status}`, '按服务端重试时刻重试同一请求；仍失败时请运行者检查服务状态');
-  }
   if (typeof code === 'string' && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ENOTFOUND','EHOSTUNREACH','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code)) return new CallFailure('temporarily_unavailable', `连接操作失败（${String(code)}）`, '由运行者检查当前连接目标与服务状态后重试同一请求');
   return null;
 }
@@ -165,7 +157,7 @@ export function formatCallError(error: unknown, options?: { category?: CallError
     const entry = Object.entries(CALL_ERROR_CATEGORY_LABEL).find(([,label]) => label === options.category);
     if (entry && options.fallbackNextStep) failure = new CallFailure(entry[0] as CallErrorCode, error instanceof Error ? error.message : '调用失败', options.fallbackNextStep);
   }
-  failure ??= new CallFailure('temporarily_unavailable', '工具内部出错，缺少结构化错误原因', '请维护者定位本次拒绝点并补齐错误类别、事实和下一步；不据此改写输入内容或判断业务结论');
+  failure ??= new CallFailure('temporarily_unavailable', '调用未完成，缺少结构化错误原因', '请维护者定位本次拒绝点并补齐错误类别、事实和下一步；不据此改写输入内容或判断业务结论');
   return labelOf('call_error_category', failure.category) + '：' + sentence(failure.fact) + sentence(failure.next_action) + (failure.path ? `位置：${failure.path}。` : '') + (failure.legal_form ? `合法写法：${failure.legal_form}。` : '');
 }
 
