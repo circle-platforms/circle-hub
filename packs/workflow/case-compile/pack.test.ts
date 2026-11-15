@@ -334,7 +334,7 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
 
   // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
   assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));
-  assert.ok(fidelityDoc.includes("task-brief.ts --role '保真核对'"));
+  assert.ok(fidelityDoc.includes("task-brief.ts' --role '保真核对'"));
 
   // P2: recomposer & recompose/SKILL.md teach executable CLI rules + RFC test IP + positive & negative examples
   assert.ok(!recomposer.includes('保持命令树可解析原值'));
