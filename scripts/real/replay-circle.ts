@@ -6,13 +6,14 @@ import { ReplayError, requireFact, sha } from './replay/types.ts';
 export async function main(argv: string[], out: (line: string) => void = console.log): Promise<number> {
   try {
     const [command, ...args] = argv;
-    const allowed: Record<string, string[]> = { capture: ['home', 'session', 'circle-app', 'out', 'guard-context'], inspect: ['bundle', 'source-sha'], run: ['bundle', 'circle-app', 'out', 'timeout-ms', 'pace', 'speed', 'source-sha'], compare: ['bundle', 'circle-app', 'out', 'candidate-guard', 'guard-timeout-ms', 'timeout-ms', 'source-sha'] };
+    const allowed: Record<string, string[]> = { capture: ['home', 'session', 'circle-app', 'out', 'guard-context'], inspect: ['bundle', 'source-sha'], run: ['bundle', 'circle-app', 'out', 'timeout-ms', 'pace', 'speed', 'source-sha'], compare: ['bundle', 'circle-app', 'out', 'candidate-guard', 'guard-timeout-ms', 'timeout-ms', 'source-sha', 'survey', 'mirror-base'] };
     requireFact(command in allowed, '子命令必须是 capture、inspect、run 或 compare');
     const values = new Map<string, string>();
-    for (let i = 0; i < args.length; i += 2) {
+    const flags = new Set(['survey']);
+    for (let i = 0; i < args.length; i++) {
       const key = args[i].slice(2);
-      requireFact(args[i].startsWith('--') && allowed[command].includes(key) && args[i + 1] !== undefined && !values.has(key), '参数缺失、重复或不支持');
-      values.set(key, args[i + 1]);
+      requireFact(args[i].startsWith('--') && allowed[command].includes(key) && !values.has(key) && (flags.has(key) || args[i + 1] !== undefined), '参数缺失、重复或不支持');
+      values.set(key, flags.has(key) ? 'true' : args[++i]);
     }
     const need = (key: string) => { const v = values.get(key); requireFact(v && v.length > 0, '缺少必要参数'); return v; };
     const number = (key: string, defaultValue: number) => { const raw = values.get(key); const n = raw === undefined ? defaultValue : Number(raw); requireFact(Number.isFinite(n) && n > 0, '运行限额和速度必须为正数'); return n; };
@@ -28,13 +29,13 @@ export async function main(argv: string[], out: (line: string) => void = console
       requireFact(sha(safeFile(bundle, 'source.json')) === need('source-sha'), '回放包根摘要不符');
     const b = inspectBundle(bundle);
     if (command === 'inspect') {
-      out(JSON.stringify({ counts: b.counts, sha256: sha(safeFile(bundle, 'source.json')), missing: b.gaps.map(g => ({ fact: g.fact, next: g.next, blocking: g.blocking ?? false })) }));
+      out(JSON.stringify({ counts: b.counts, sha256: sha(safeFile(bundle, 'source.json')), guardContext: Boolean(b.source.indexHashes['guard-contexts.json']), missing: b.gaps.map(g => ({ fact: g.fact, next: g.next, blocking: g.blocking ?? false })) }));
       return b.gaps.some(g => g.blocking) ? 2 : 0;
     }
     const common = { bundle, app: need('circle-app'), out: need('out'), timeoutMs: number('timeout-ms', 120000) };
     if (command === 'compare') {
-      const r = await compareReplay({ ...common, guard: need('candidate-guard'), guardTimeoutMs: number('guard-timeout-ms', 10000) });
-      out(JSON.stringify({ status: r.status, counts: { compared: r.compared, attempted: r.attempted }, sha256: sha(safeFile(common.out, 'report.json')) }));
+      const r = await compareReplay({ ...common, guard: values.get('candidate-guard'), guardTimeoutMs: number('guard-timeout-ms', 10000), survey: values.has('survey'), mirrorBase: values.get('mirror-base') });
+      out(JSON.stringify({ status: r.status, mode: r.mode, counts: { compared: r.compared, attempted: r.attempted, matched: r.matched, mismatched: r.mismatched, unknown: r.unknown }, sha256: sha(safeFile(common.out, 'report.json')) }));
       return r.exit;
     }
     const pace = values.get('pace') ?? 'fast';

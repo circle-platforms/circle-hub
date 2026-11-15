@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { backgroundIds, canonical, keyOf, ReplayError, requireFact, sha, type Bundle, type Gap, type Message, type SessionRow, type ToolPair } from './types.ts';
+import { backgroundIds, canonical, keyOf, refusedBeforeHook, ReplayError, requireFact, sha, type Bundle, type Gap, type Message, type SessionRow, type ToolPair } from './types.ts';
 import { appFingerprint } from './bundle.ts';
 export interface ReplayReport {
   schema: 'circle-replay-report@1';
@@ -71,6 +71,12 @@ export async function play(bundle: Bundle, app: string, options: PlayOptions = {
       call: string;
     }[] = [];
     report.coverage.invocationOrder = invocationOrder;
+    // The calls the Harness actually put to the before_tool hook: a call refused earlier (invalid arguments) never reaches it.
+    const hookOrder: {
+      session: string;
+      call: string;
+    }[] = [];
+    report.coverage.hookOrder = hookOrder;
     const observedCalls = new Set<string>();
     const jobs = new Set<string>(), fileStates = new Map<string, string>();
     const contextGaps = new Set<string>();
@@ -246,6 +252,11 @@ export async function play(bundle: Bundle, app: string, options: PlayOptions = {
             throw fatal;
           align(s);
           const p = selectedPair(s, request.toolName, request.toolInput, hooked, tools);
+          // The stand-in tool of a name this build does not own accepts any arguments, so the Harness asks the hook for a call that
+          // Circle refused before any hook in the history. That call has no recorded decision and is not counted as one.
+          if (refusedBeforeHook(p.call, p.message))
+            return { decision: 'none', reason: '', context: '', outcomes: [], notices: [] };
+          hookOrder.push({ session: sid, call: p.call.id });
           if (p.denied) {
             actual.denials++;
             return { decision: 'deny', reason: p.denied.reason ?? '', context: '', outcomes: [], notices: [p.denied] };
