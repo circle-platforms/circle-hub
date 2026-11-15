@@ -88,7 +88,9 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<路径...>",
-      "type": "path"
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
     },
     {
       "name": "prior-returns",
@@ -96,7 +98,9 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<目录...>",
-      "type": "path"
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
     },
     {
       "name": "prior-answers",
@@ -104,7 +108,9 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<路径...>",
-      "type": "path"
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
     },
     {
       "name": "prior-notes",
@@ -112,7 +118,9 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<路径...>|--brief-json",
-      "type": "path"
+      "type": "path",
+      "separator": ",",
+      "trimValues": true
     },
     {
       "name": "batch",

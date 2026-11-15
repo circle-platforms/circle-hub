@@ -25,6 +25,11 @@ test('declared CLI identity and argument type override misleading source and pla
     assert.ok(refused.refusal?.fact); assert.ok(refused.refusal?.next_action);
     const labels = JSON.parse(readFileSync(join(home, 'hooks/ops-allow.declaration.json'), 'utf8')).errorLabels;
     assert.ok(refused.reason?.includes(labels.invalid_parameters));
+    const pathCli = { ...cli, options: [{ ...cli.options[0], type: 'path', separator: ',', trimValues: true }] };
+    writeFileSync(join(tools, 'entry.cli.json'), JSON.stringify(pathCli));
+    assert.deepEqual(await decideRaw(env, payload(`node '${file}' --sentence 'one.json, two.json'`)), {});
+    const escape = await decideRaw(env, payload(`node '${file}' --sentence 'one.json, ../../outside'`));
+    assert.equal(escape.decision, 'deny'); assert.equal(escape.refusal?.category, 'permission_denied'); assert.match(escape.refusal?.fact ?? '', /不在工作目录/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

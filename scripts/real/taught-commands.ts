@@ -2,8 +2,6 @@
 // Used by guard-preflight and (when merged) circle-guard regression tests — one grammar for
 // both unquoted legacy docs (`node <技能目录>/tools/…`) and single-quoted docs
 // (`node '<技能目录>/tools/…'`).
-import { join } from 'node:path';
-import { quote } from './guard-lib.ts';
 
 export type TaughtKind = 'shell' | 'text' | 'inline';
 
@@ -74,8 +72,6 @@ export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
 
 const META_QUOTED = "node '<技能目录>/tools/<脚本>.ts' --选项 值";
 const META_BARE = 'node <技能目录>/tools/<脚本>.ts --选项 值';
-/** Prose note glued to <<'EOF' in ```text``` summaries (legacy docs); not a runnable delimiter. */
-const HEREDOC_PROSE_NOTE = /[ \t]*<<'EOF'（[^）]*）\s*$/;
 
 function splitAlternativesOutsideAngles(text: string): string[] {
   const parts: string[] = [];
@@ -98,7 +94,7 @@ function splitAlternativesOutsideAngles(text: string): string[] {
  * Structurally extracts taught `node` CLI commands from markdown:
  * fenced `sh`/`bash`/`shell` (including same-line `<<'EOF'`), `text` fences with optional
  * `label: ` prefix, and inline backticked `node …` spans.
- * Soft on malformed heredocs (skips) so preflight can run against imperfect installed docs.
+ * Malformed heredocs remain literal input so the installed guard can reject them.
  */
 export function extractTaughtCommands(markdown: string, sourceLabel: string): TaughtCommand[] {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
@@ -109,14 +105,6 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
     firstLine: string,
     startIndex: number,
   ): { command: string; heredocLines: string[] | null; nextIndex: number } | null => {
-    // Legacy text-summary form: `… <<'EOF'（接两行 %HUB_TOKEN% 与 EOF…）` — treat as token heredoc.
-    if (HEREDOC_PROSE_NOTE.test(firstLine)) {
-      return {
-        command: firstLine.replace(HEREDOC_PROSE_NOTE, ''),
-        heredocLines: ['%HUB_TOKEN%'],
-        nextIndex: startIndex,
-      };
-    }
     if (!/<<'EOF'\s*$/.test(firstLine)) {
       return { command: firstLine, heredocLines: null, nextIndex: startIndex };
     }
@@ -127,12 +115,13 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
       body.push(lines[j]!);
       j += 1;
     }
-    if (lines[j] !== 'EOF') return null;
+    if (lines[j] !== 'EOF') return { command: firstLine, heredocLines: null, nextIndex: startIndex };
     return { command: head, heredocLines: body, nextIndex: j };
   };
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i]!;
+    const source = `${sourceLabel}:${i + 1}`;
     if (fence === '') {
       const open = /^```([^\s`]*)/.exec(line);
       if (open) {
@@ -146,7 +135,7 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
         if (span === 'node -e') continue;
         const isMetaTemplate = span === META_QUOTED || span === META_BARE;
         out.push({
-          source: `${sourceLabel}:${i + 1}`,
+          source,
           kind: 'inline',
           raw: span,
           isMetaTemplate,
@@ -170,7 +159,7 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
       if (!read) continue;
       i = read.nextIndex;
       out.push({
-        source: `${sourceLabel}:${i + 1}`,
+        source,
         kind: 'shell',
         raw: read.command,
         heredocLines: read.heredocLines,
@@ -184,7 +173,7 @@ export function extractTaughtCommands(markdown: string, sourceLabel: string): Ta
       if (!read) continue;
       i = read.nextIndex;
       out.push({
-        source: `${sourceLabel}:${i + 1}`,
+        source,
         kind: 'text',
         raw: read.command,
         heredocLines: read.heredocLines,
@@ -200,10 +189,9 @@ export function bindSkillDirectory(command: string, skillDir: string): string {
 }
 
 function resolvePlaceholderValue(name: string, extra: Record<string, string>): string | null {
-  const trimmed = name.trim();
-  if (Object.hasOwn(extra, trimmed)) return extra[trimmed]!;
-  if (Object.hasOwn(TAUGHT_PLACEHOLDERS, trimmed)) return TAUGHT_PLACEHOLDERS[trimmed]!;
-  if (trimmed === 'HUB_URL') return '%HUB_URL%';
+  if (Object.hasOwn(extra, name)) return extra[name]!;
+  if (Object.hasOwn(TAUGHT_PLACEHOLDERS, name)) return TAUGHT_PLACEHOLDERS[name]!;
+  if (name === 'HUB_URL') return '%HUB_URL%';
   return null;
 }
 
@@ -289,12 +277,7 @@ export interface InstantiateOptions {
  */
 export function instantiateTaughtCommand(entry: TaughtCommand, options: InstantiateOptions): string[] {
   let command = entry.raw;
-  if (entry.isMetaTemplate) {
-    const recompose = (options.skillName ?? '').includes('recompose');
-    command = recompose
-      ? "node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>'"
-      : "node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>'";
-  }
+  if (entry.isMetaTemplate) return [];
 
   command = bindSkillDirectory(command, options.skillDir);
   if (command.includes('<技能目录>')) {

@@ -2,7 +2,7 @@
 // Does not read credential values, does not change the home, and does not contact the Hub.
 //   node scripts/real/guard-preflight.ts --home <dir>
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, lstatSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, lstatSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { discoverTools, environment, quote, writeCommand, type DiscoveredTool, type GuardEnvironment } from './guard-lib.ts';
 import { extractTaughtCommands, instantiateTaughtCommand } from './taught-commands.ts';
@@ -42,6 +42,7 @@ export interface InstalledGuard {
 }
 
 function readJson(path: string): unknown {
+  if (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()) throw new Error('预检元数据必须是普通文件');
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
@@ -144,17 +145,17 @@ export function extractDocCommands(docPath: string, text: string): Array<{ sourc
 function listSkillDocFiles(skillDir: string): string[] {
   const out: string[] = [];
   const skillMd = join(skillDir, 'SKILL.md');
-  if (existsSync(skillMd)) out.push(skillMd);
+  if (existsSync(skillMd) && lstatSync(skillMd).isFile() && !lstatSync(skillMd).isSymbolicLink()) out.push(skillMd);
   const agents = join(skillDir, 'agents');
-  if (existsSync(agents) && statSync(agents).isDirectory()) {
+  if (existsSync(agents) && lstatSync(agents).isDirectory() && !lstatSync(agents).isSymbolicLink()) {
     for (const name of readdirSync(agents)) {
-      if (name.endsWith('.md')) out.push(join(agents, name));
+      if (name.endsWith('.md') && lstatSync(join(agents, name)).isFile() && !lstatSync(join(agents, name)).isSymbolicLink()) out.push(join(agents, name));
     }
   }
   const tools = join(skillDir, 'tools');
-  if (existsSync(tools) && statSync(tools).isDirectory()) {
+  if (existsSync(tools) && lstatSync(tools).isDirectory() && !lstatSync(tools).isSymbolicLink()) {
     for (const name of readdirSync(tools)) {
-      if (name.endsWith('.md')) out.push(join(tools, name));
+      if (name.endsWith('.md') && lstatSync(join(tools, name)).isFile() && !lstatSync(join(tools, name)).isSymbolicLink()) out.push(join(tools, name));
     }
   }
   return out;
@@ -207,7 +208,7 @@ function docAllowCommands(env: GuardEnvironment): Array<{ name: string; command:
   if (!env.skillsRootValid) return out;
   let skills: string[] = [];
   try {
-    skills = readdirSync(env.skills).filter((name) => existsSync(join(env.skills, name, 'SKILL.md')));
+    skills = readdirSync(env.skills).filter((name) => lstatSync(join(env.skills, name)).isDirectory() && !lstatSync(join(env.skills, name)).isSymbolicLink() && existsSync(join(env.skills, name, 'SKILL.md')));
   } catch {
     return out;
   }
@@ -221,7 +222,7 @@ function docAllowCommands(env: GuardEnvironment): Array<{ name: string; command:
           const command = finalizeNodeCommand(
             concrete.replaceAll('%HUB_URL%', env.urlPlaceholder).replaceAll('%JEV_MODEL%', 'synthetic-model'),
           );
-          out.push({ name: `文档 ${rel}: ${taught.raw.slice(0, 80)}`, command });
+          out.push({ name: `文档 ${taught.source}: ${taught.raw.slice(0, 80)}`, command });
         }
       }
     }

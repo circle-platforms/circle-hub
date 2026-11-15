@@ -10,3 +10,10 @@ test('placeholder expansion never repairs bare values containing spaces or colla
   const [bare]=expandTaughtPlaceholders('node x.ts --file <synthetic>',{synthetic:'a b.json'});assert.equal(bare,'node x.ts --file a b.json');
   const [quoted]=expandTaughtPlaceholders("node x.ts --file '<synthetic>'",{synthetic:'a  b.json'});assert.equal(quoted,"node x.ts --file 'a  b.json'");
 });
+test('unknown placeholders and malformed heredoc prose are never converted into invented valid commands', async () => {
+  const { extractTaughtCommands, instantiateTaughtCommand } = await import('./taught-commands.ts');
+  assert.equal(expandTaughtPlaceholders('node x.ts --file <unknown>')[0], 'node x.ts --file <unknown>');
+  const [taught] = extractTaughtCommands("```text\nnode '<技能目录>/tools/x.ts' --file a <<'EOF'（接两行）\n```", 'synthetic.md');
+  assert.ok(taught);
+  assert.equal(instantiateTaughtCommand(taught, { skillDir: '/synthetic' })[0], "node '/synthetic/tools/x.ts' --file a <<'EOF'（接两行）");
+});

@@ -101,6 +101,8 @@ export interface ToolOption {
   multiple: boolean;
   placeholder: string | null;
   type: 'hub' | 'run' | 'int' | 'text' | 'path';
+  separator?: ',';
+  trimValues?: boolean;
 }
 
 export interface ToolForm {
@@ -538,7 +540,7 @@ export function parseToolCliDeclaration(parsed: unknown): CliDeclaration {
   const options: ToolOption[] = [];
   const names = new Set<string>();
   for (const row of parsed.options) {
-    if (!isRecord(row) || Object.keys(row).some(key => !['name', 'required', 'kind', 'multiple', 'placeholder', 'type'].includes(key)) || typeof row.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.name) || names.has(row.name) || typeof row.required !== 'boolean' || !['string', 'boolean'].includes(String(row.kind)) || typeof row.multiple !== 'boolean' || row.placeholder !== null && typeof row.placeholder !== 'string' || !['hub', 'run', 'int', 'text', 'path'].includes(String(row.type))) throw new GuardRefusal('机读参数声明含无效字段、类型或重复名称', 'temporarily_unavailable');
+    if (!isRecord(row) || Object.keys(row).some(key => !['name', 'required', 'kind', 'multiple', 'placeholder', 'type', 'separator', 'trimValues'].includes(key)) || typeof row.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.name) || names.has(row.name) || typeof row.required !== 'boolean' || !['string', 'boolean'].includes(String(row.kind)) || typeof row.multiple !== 'boolean' || row.placeholder !== null && typeof row.placeholder !== 'string' || !['hub', 'run', 'int', 'text', 'path'].includes(String(row.type)) || row.separator !== undefined && row.separator !== ',' || row.trimValues !== undefined && typeof row.trimValues !== 'boolean') throw new GuardRefusal('机读参数声明含无效字段、类型或重复名称', 'temporarily_unavailable');
     names.add(row.name); options.push(row as unknown as ToolOption);
   }
   const forms: ToolForm[] = [];
@@ -558,7 +560,7 @@ function describeTool(env: GuardEnvironment, base: { id: string; file: string; c
   const cli = readToolCliDeclaration(base.cliFile);
   return {
     id: base.id, file: base.file, skill: base.skill,
-    subcommands: base.subcommands ?? null,
+    subcommands: base.subcommands ?? (cli.subcommandStdin === null ? null : Object.keys(cli.subcommandStdin)),
     subcommandStdin: base.subcommandStdin ? parseSubcommandStdinMap(base.subcommandStdin) : cli.subcommandStdin,
     stdinLines: cli.stdinLines ?? (base.stdin !== undefined ? parsePlaceholderList(base.stdin) : null),
     options: cli.options ?? [], restricted: true, forms: cli.forms,
@@ -769,14 +771,14 @@ const allowed = (env: GuardEnvironment): HookDecision =>
 const resolvedTarget = (env: GuardEnvironment, value: string, cwd = env.work ?? env.cwd): string =>
   canonical(path.isAbsolute(value) ? value : path.join(cwd, value));
 
-function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: string): string | null {
+function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: string, category: (value: CallErrorCategory) => void): string | null {
+  const pieces = (option.separator ? value.split(option.separator) : [value]).map(piece => option.trimValues ? piece.trim() : piece);
   switch (option.type) {
     case 'hub':
       if (value === env.urlPlaceholder || env.hubs.includes(value)) return null;
       return `--${option.name} 后面是 ${JSON.stringify(clip(value, 80))}，这个配置里 Hub 的地址是 ${env.hub || '（设置文件里没有）'}，要写 ${env.urlPlaceholder}`;
     case 'run': {
-      const parts = value.split(',');
-      if (parts.length && parts.every((part) => /^run_[a-z0-9]+$/.test(part))) return null;
+      if (pieces.length && pieces.every((part) => /^run_[a-z0-9]+$/.test(part))) return null;
       return `--${option.name} 后面是 ${JSON.stringify(clip(value))}，要写运行编号（形如 run_…）`;
     }
     case 'int':
@@ -792,9 +794,9 @@ function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: stri
         return `令牌 ${env.tokenPlaceholder} 只能放在 here-doc 里，不能写在 --${option.name} 的值里`;
       }
       if (value === '' || /[\0\r\n]/.test(value)) return `--${option.name} 的值是空的或含换行`;
-      const pieces = option.name.startsWith('prior-') ? value.split(',').filter((p) => p !== '' && p !== '-') : [value];
       for (const piece of pieces) {
         if (!env.work || !inside(resolvedTarget(env, piece), env.work)) {
+          category('permission_denied');
           return `--${option.name} 的路径 ${JSON.stringify(clip(piece, 90))} 不在工作目录 ${env.work} 里`;
         }
       }
@@ -1247,7 +1249,7 @@ function scriptCandidates(tools: DiscoveredTool[], word: string): DiscoveredTool
 
 type ExecuteValidation =
   | { ok: true; physicalScript?: string }
-  | { ok: false; what: string; how: string };
+  | { ok: false; what: string; how: string; category?: CallErrorCategory };
 
 function installedToolsAdvice(
   env: GuardEnvironment,
@@ -1322,6 +1324,7 @@ function validateExecuteCommand(
     const prefix = parsed.problem ? `这个目录只放行技能目录里的脚本（${parsed.problem}）；` : '这个目录只放行技能目录里的脚本；';
     return {
       ok: false,
+      category: 'permission_denied',
       what: `${prefix}execute 只运行“node 加已装脚本”${asList(d.commands).length ? `（或 ${asList(d.commands).map((c) => c.name).join('、')}）` : ''}，看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}。`,
       how: shellHint(env, parsed.words, command) ?? installedToolsAdvice(env, tools),
     };
@@ -1338,6 +1341,7 @@ function validateExecuteCommand(
   }
 
   const problems: string[] = parsed.problem ? [parsed.problem] : [];
+  let failureCategory: CallErrorCategory = 'invalid_parameters';
 
   // Strict lexical & canonical containment for script path (rejects relative paths, '..', '%', non-.ts, symlinks, and APFS case mismatches).
   if (!path.isAbsolute(second) || second.split(/[\\/]/).includes('..') || second.includes('%') || !second.endsWith('.ts')) {
@@ -1365,6 +1369,7 @@ function validateExecuteCommand(
   } catch {
     return {
       ok: false,
+      category: 'not_found',
       what: `缺少已安装技能脚本的实际路径 ${JSON.stringify(clip(second, 90))}。`,
       how: '这次可以这样做：请集成者安装并运行 local-tools verify --digest 或 pack-files.ts --verify-install 后按真实路径重试。',
     };
@@ -1393,6 +1398,7 @@ function validateExecuteCommand(
   if (!inSkills && !inLocalTools) {
     return {
       ok: false,
+      category: 'permission_denied',
       what: `这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 指向已装技能目录之外或经过了软链接/别名。`,
       how: installedToolsAdvice(env, tools),
     };
@@ -1403,6 +1409,7 @@ function validateExecuteCommand(
     const sameDir = tools.filter((candidate) => path.dirname(candidate.file) === path.dirname(physicalScript));
     return {
       ok: false,
+      category: 'temporarily_unavailable',
       what: `这个目录只放行技能目录里的脚本；没有在已声明的可执行工具清单里找到 ${JSON.stringify(clip(second, 90))}（可执行身份未知；请在发布清单中补齐对应 .cli.json 声明并重新安装）。`,
       how: installedToolsAdvice(env, tools, { preferred: sameDir.length ? sameDir : tools }),
     };
@@ -1484,7 +1491,10 @@ function validateExecuteCommand(
     }
 
     if (!option) {
-      if (!tool.optionsDeclared) problems.push('缺少机读参数声明，参数类型未知；请补齐 tool-cli@2 声明，不从源码或占位符文字猜测');
+      if (!tool.optionsDeclared) {
+        failureCategory = 'temporarily_unavailable';
+        problems.push('缺少机读参数声明，参数类型未知；请补齐 tool-cli@2 声明，不从源码或占位符文字猜测');
+      }
       else problems.push(`这个脚本没有 --${name} 选项（它的选项：${tool.options.map((o) => `--${o.name}`).join(' ') || '无'}）`);
       continue;
     }
@@ -1500,7 +1510,7 @@ function validateExecuteCommand(
       problems.push(`--${name} 后面没有值`);
       continue;
     }
-    const bad = checkOptionValue(env, option, value);
+    const bad = checkOptionValue(env, option, value, category => { failureCategory = category; });
     if (bad) {
       problems.push(bad);
       if (option.type !== 'hub') continue;
@@ -1520,7 +1530,10 @@ function validateExecuteCommand(
   }
 
   const tokenBad = tokenProblem(env, tool, subcommand, parsed.heredoc);
-  if (tokenBad) problems.push(tokenBad.message);
+  if (tokenBad) {
+    problems.push(tokenBad.message);
+    if (!tokenBad.canSuggestRewrite) failureCategory = 'temporarily_unavailable';
+  }
 
   if (!problems.length) {
     return { ok: true, physicalScript };
@@ -1554,6 +1567,7 @@ function validateExecuteCommand(
   const prefix = parsed.problem && problems.includes(parsed.problem) ? '这个目录只放行技能目录里的脚本；' : '';
   return {
     ok: false,
+    category: failureCategory,
     what: `${prefix}${problems.slice(0, 2).join('；')}${problems.length > 2 ? `（另有 ${problems.length - 2} 处）` : ''}。`,
     how,
   };
@@ -1584,7 +1598,7 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
   const tools = discoverTools(env);
   const verdict = validateExecuteCommand(env, tools, args.command, true);
   if (!verdict.ok) {
-    return refuse(env, verdict.what, verdict.how, 'invalid_parameters', '/tool_input/command');
+    return refuse(env, verdict.what, verdict.how, verdict.category ?? 'invalid_parameters', '/tool_input/command');
   }
   return verdict.physicalScript
     ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw)
