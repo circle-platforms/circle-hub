@@ -58,3 +58,38 @@ test('machine declarations reject invalid fields, duplicate options and undeclar
   ]) assert.throws(() => parseToolCliDeclaration(bad));
   assert.equal(parseToolCliDeclaration(cli).options?.[0]?.type, 'text');
 });
+
+function releasedToolsFixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'guard-released-paths-'));
+  const home = join(dir, 'home'); const { workdir } = writeHome({ home, profile: 'ops', hubUrl: 'http://127.0.0.1:7420/mcp' }, endpoint, 'synthetic');
+  const tools = join(home, 'skills', 'case-compile', 'tools'); mkdirSync(tools, { recursive: true }); writeFileSync(join(tools, '..', 'SKILL.md'), '# Synthetic\n');
+  for (const name of ['generate-workbook', 'normalize-mindmap']) {
+    writeFileSync(join(tools, `${name}.ts`), 'export const syntheticEntry = true;');
+    writeFileSync(join(tools, `${name}.cli.json`), readFileSync(new URL(`../../packs/workflow/case-compile/tools/${name}.cli.json`, import.meta.url)));
+  }
+  const env = environment(home, workdir, 'ops-allow.declaration.json');
+  return { dir, home, workdir, tools, call: (command: string) => decideRaw(env, JSON.stringify({ event: 'before_tool', cwd: workdir, tool_name: 'execute', tool_input: { command } })), close: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('workbook CLI allows source-manifest mode without three legacy source overrides', async () => {
+  const f = releasedToolsFixture();
+  try {
+    const result = await f.call(`node '${join(f.tools, 'generate-workbook.ts')}' --run inputs/run.json --result inputs/result.json --submission inputs/submission.json --out delivery.xlsx`);
+    assert.deepEqual(result, {});
+  } finally { f.close(); }
+});
+
+test('all declared local workbook inputs and mindmap input enforce workspace containment', async () => {
+  const f = releasedToolsFixture();
+  try {
+    const workbook = join(f.tools, 'generate-workbook.ts');
+    const baseline = { run: 'inputs/run.json', result: 'inputs/result.json', submission: 'inputs/submission.json', contract: 'inputs/contract.json', profile: 'inputs/profile.json', inventory: 'inputs/inventory.json', out: 'delivery.xlsx' };
+    for (const option of Object.keys(baseline)) {
+      const values = { ...baseline, [option]: join(f.dir, 'outside') };
+      const result = await f.call(`node '${workbook}' ${Object.entries(values).map(([key, value]) => `--${key} '${value}'`).join(' ')}`);
+      assert.equal(result.decision, 'deny', option); assert.equal(result.refusal?.category, 'permission_denied', option);
+    }
+    const normalized = await f.call(`node '${join(f.tools, 'normalize-mindmap.ts')}' --in '${join(f.dir, 'outside')}' --out inputs/normalized.json`);
+    assert.equal(normalized.decision, 'deny'); assert.equal(normalized.refusal?.category, 'permission_denied');
+  } finally { f.close(); }
+});

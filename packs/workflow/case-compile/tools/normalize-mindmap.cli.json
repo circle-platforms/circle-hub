@@ -8,7 +8,7 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<导出文件>",
-      "type": "text"
+      "type": "path"
     },
     {
       "name": "out",

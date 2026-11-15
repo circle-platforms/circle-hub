@@ -16,7 +16,7 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<新目录>/result.json",
-      "type": "text"
+      "type": "path"
     },
     {
       "name": "submission",
@@ -24,31 +24,31 @@
       "kind": "string",
       "multiple": false,
       "placeholder": "<新目录>/submission.json",
-      "type": "text"
+      "type": "path"
     },
     {
       "name": "contract",
-      "required": true,
+      "required": false,
       "kind": "string",
       "multiple": false,
       "placeholder": "<新目录>/contract.json",
-      "type": "text"
+      "type": "path"
     },
     {
       "name": "profile",
-      "required": true,
+      "required": false,
       "kind": "string",
       "multiple": false,
       "placeholder": "<新目录>/profile.json",
-      "type": "text"
+      "type": "path"
     },
     {
       "name": "inventory",
-      "required": true,
+      "required": false,
       "kind": "string",
       "multiple": false,
       "placeholder": "<新目录>/inventory.json",
-      "type": "text"
+      "type": "path"
     },
     {
       "name": "out",
@@ -81,17 +81,17 @@
         {
           "name": "contract",
           "placeholder": "<新目录>/contract.json",
-          "optional": false
+          "optional": true
         },
         {
           "name": "profile",
           "placeholder": "<新目录>/profile.json",
-          "optional": false
+          "optional": true
         },
         {
           "name": "inventory",
           "placeholder": "<新目录>/inventory.json",
-          "optional": false
+          "optional": true
         },
         {
           "name": "out",
