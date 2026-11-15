@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
+import { HUB_TOOLS, INTERNAL_TOOLS_ALLOWED, PLUMB_KEY_SECRET, SERVER_NAME, TOKEN_SECRET, circleEndpoint, endpointFrom, firstLineOf, main, parseArgs, writeHome, type Endpoint } from './circle-home.ts';
 import { parseEnvText } from './lib/env-file.ts';
 
 // Invented content: section names follow the owner's file layout, every value is made up.
@@ -857,5 +857,72 @@ test('the case-compile, recompose and jev skill commands, filled in as Circle ha
       // Internal helper module under tools/ cannot be executed directly.
       assert.equal(decide(`node ${ccSkill.includes(' ') ? `'${ccSkill}/tools/authoring-brief.ts'` : `${ccSkill}/tools/authoring-brief.ts`}`).decision, 'deny');
     }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('--plumb-key-stdin reads only the first line into 0600 secrets.json and omits both key and exact length from receipts', () => {
+  assert.equal(firstLineOf('first-only\r\nignored-second\n'), 'first-only');
+  assert.equal(firstLineOf('\nsecond'), '');
+  assert.equal(firstLineOf(''), '');
+
+  const dir = scratch();
+  try {
+    const envFile = join(dir, 'synthetic.env');
+    writeFileSync(envFile, ENV);
+    const home = join(dir, 'ops-home');
+    const argv = ['--plumb-key-stdin', '--env-file', envFile, '--home', home, '--provider', 'qwen', '--profile', 'ops'];
+    assert.equal(parseArgs(argv).plumbKeyStdin, true);
+    assert.equal(parseArgs(['--env-file', envFile, '--home', home, '--provider', 'qwen']).plumbKeyStdin, undefined);
+
+    const fakeKey = 'synthetic-plumb-key-stdin-val';
+    const lines: string[] = [];
+    const code = main(argv, { HUB_REAL_TOKEN: 'synthetic-token' }, (line) => lines.push(line), () => `${fakeKey}\nignored-line\n`);
+    assert.equal(code, 0, lines.join('\n'));
+    const shown = lines.join('\n');
+    assert.match(shown, new RegExp(`${PLUMB_KEY_SECRET}.*已写入.*长度为 0：否`));
+    assert.ok(!shown.includes('/secrets PLUMB_API_KEY'));
+    assert.ok(!shown.includes(fakeKey), 'receipt must not print the Plumb key');
+    assert.ok(!shown.includes('ignored-line'), 'receipt must not print subsequent stdin lines');
+    assert.ok(!shown.includes(String(fakeKey.length)), 'receipt must not expose numeric length of the Plumb key');
+
+    const secretsPath = join(home, 'secrets.json');
+    assert.equal(statSync(secretsPath).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse(readFileSync(secretsPath, 'utf8')), {
+      secrets: { HUB_TOKEN: 'synthetic-token', [PLUMB_KEY_SECRET]: fakeKey },
+    });
+    assert.ok(!readFileSync(join(home, 'settings.json'), 'utf8').includes(fakeKey));
+    assert.ok(!readFileSync(join(home, 'credentials.json'), 'utf8').includes(fakeKey));
+
+    // Empty stdin records PLUMB_API_KEY as empty and reports zero length status cleanly.
+    const emptyHome = join(dir, 'empty-home');
+    lines.length = 0;
+    const emptyCode = main(['--env-file', envFile, '--home', emptyHome, '--provider', 'qwen', '--plumb-key-stdin'], { HUB_REAL_TOKEN: 'synthetic-token' }, (line) => lines.push(line), () => '\n');
+    assert.equal(emptyCode, 0, lines.join('\n'));
+    const emptyShown = lines.join('\n');
+    assert.match(emptyShown, new RegExp(`${PLUMB_KEY_SECRET}.*已写入.*长度为 0：是`));
+    assert.equal(statSync(join(emptyHome, 'secrets.json')).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse(readFileSync(join(emptyHome, 'secrets.json'), 'utf8')), {
+      secrets: { HUB_TOKEN: 'synthetic-token', [PLUMB_KEY_SECRET]: '' },
+    });
+
+    // End-to-end CLI stdin pipe via node process execution.
+    const cliHome = join(dir, 'cli-home');
+    const cliKey = 'synthetic-plumb-cli-piped-key';
+    const cli = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./circle-home.ts', import.meta.url)), '--env-file', envFile, '--home', cliHome, '--provider', 'qwen', '--profile', 'skills', '--plumb-key-stdin'],
+      { input: `${cliKey}\r\nsecond-line\n`, env: { ...process.env, HUB_REAL_TOKEN: 'synthetic-token' }, encoding: 'utf8', timeout: 10000 },
+    );
+    assert.equal(cli.status, 0, cli.stderr);
+    const cliOut = `${cli.stdout}\n${cli.stderr}`;
+    assert.match(cli.stdout, new RegExp(`${PLUMB_KEY_SECRET}.*已写入.*长度为 0：否`));
+    assert.ok(!cliOut.includes('/secrets PLUMB_API_KEY'));
+    assert.ok(!cliOut.includes(cliKey));
+    assert.ok(!cliOut.includes('second-line'));
+    assert.ok(!cliOut.includes(String(cliKey.length)));
+    assert.equal(statSync(join(cliHome, 'secrets.json')).mode & 0o777, 0o600);
+    assert.deepEqual(JSON.parse(readFileSync(join(cliHome, 'secrets.json'), 'utf8')), {
+      secrets: { HUB_TOKEN: 'synthetic-token', [PLUMB_KEY_SECRET]: cliKey },
+    });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

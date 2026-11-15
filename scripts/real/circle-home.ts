@@ -3,9 +3,10 @@
 // as a protected file, and a hook that lets only the Hub's tools run. The environment file and the owner's Circle folder are
 // read here, at run time. Values reach only the 0600 files of the new folder; the screen shows names, presence and lengths.
 // The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
+// With --plumb-key-stdin, PLUMB_API_KEY is read from the first line of stdin and written only to 0600 secrets.json.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
 //        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>] [--profile review|skills|ops] [--jev-model <id>]
-//        [--plumb-url <url>] [--plumb-model <id>] [--plumb-ca-file <file>]
+//        [--plumb-url <url>] [--plumb-model <id>] [--plumb-ca-file <file>] [--plumb-key-stdin]
 // Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
 //   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
 import { createHash } from 'node:crypto';
@@ -31,6 +32,7 @@ export interface Options {
   plumbUrl?: string;
   plumbModel?: string;
   plumbCaFile?: string;
+  plumbKeyStdin?: boolean;
   /** Written into settings.json as models.<model>.context_window: Circle compacts the conversation at 85% of the
    * window (its src/context_middleware.ts), and a scripted model cannot write the summary compaction asks for. Only
    * accept-circle.ts passes this. */
@@ -39,6 +41,7 @@ export interface Options {
 
 export const SERVER_NAME = 'hub';
 export const TOKEN_SECRET = 'HUB_TOKEN';
+export const PLUMB_KEY_SECRET = 'PLUMB_API_KEY';
 /** The Hub's tool names as Circle shows them: mcp__<server key>__<tool>. */
 export const HUB_TOOLS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
 /** Circle's own planning tool has no effect outside the conversation; every other built-in tool stays denied. */
@@ -620,7 +623,11 @@ export interface Written {
   workdir: string;
 }
 
-export function writeHome(options: Options, endpoint: Endpoint, token: string): Written {
+export interface WriteHomeSecrets {
+  plumbApiKey?: string;
+}
+
+export function writeHome(options: Options, endpoint: Endpoint, token: string, extraSecrets?: WriteHomeSecrets): Written {
   const profile = options.profile ?? 'review';
   if (profile !== 'review' && profile !== 'skills' && profile !== 'ops') throw new Error('--profile 只能是 review、skills 或 ops');
   const home = resolve(options.home);
@@ -687,7 +694,11 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
     )}\n`,
   );
   writePrivate(join(home, 'credentials.json'), `${JSON.stringify({ api_key: endpoint.apiKey })}\n`);
-  writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets: { [TOKEN_SECRET]: token } })}\n`);
+  const secrets: Record<string, string> = {
+    [TOKEN_SECRET]: token,
+    ...(extraSecrets?.plumbApiKey === undefined ? {} : { [PLUMB_KEY_SECRET]: extraSecrets.plumbApiKey }),
+  };
+  writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets })}\n`);
 
   if (!isGuarded) {
     writePrivate(hook, HOOK);
@@ -703,11 +714,17 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
 
 export function parseArgs(argv: string[]): Options & { envFile: string; provider: 'glm' | 'qwen' } {
   const values = new Map<string, string>();
-  for (let i = 0; i < argv.length; i += 2) {
+  let plumbKeyStdin = false;
+  for (let i = 0; i < argv.length; i++) {
     const key = argv[i];
+    if (key === '--plumb-key-stdin') {
+      plumbKeyStdin = true;
+      continue;
+    }
     const value = argv[i + 1];
     if (!key?.startsWith('--') || value === undefined) throw new Error(`参数不对：${key ?? ''}`);
     values.set(key.slice(2), value);
+    i += 1;
   }
   const need = (name: string): string => {
     const v = values.get(name);
@@ -731,6 +748,7 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
     plumbUrl: values.get('plumb-url'),
     plumbModel: values.get('plumb-model'),
     plumbCaFile: values.get('plumb-ca-file'),
+    ...(plumbKeyStdin ? { plumbKeyStdin } : {}),
   };
 }
 
@@ -753,7 +771,17 @@ export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: b
   return { home, apply };
 }
 
-export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string) => void): number {
+/** Extracts the first line of stdin without altering key bytes other than the line ending. */
+export function firstLineOf(raw: string): string {
+  return raw.split(/\r?\n/, 1)[0] ?? '';
+}
+
+export function main(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  out: (line: string) => void,
+  readStdin: () => string = () => readFileSync(0, 'utf8'),
+): number {
   try {
     if (argv[0] === 'refresh-guards') {
       const options = parseRefreshGuardsArgs(argv.slice(1));
@@ -765,11 +793,15 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     const options = parseArgs(argv);
     const token = env.HUB_REAL_TOKEN;
     if (!token) throw new Error('环境变量 HUB_REAL_TOKEN 没有设置（中枢令牌只从环境变量读，不进命令行）');
+    const plumbApiKey = options.plumbKeyStdin ? firstLineOf(readStdin()) : undefined;
     const endpoint = endpointFrom(readEnvFile(options.envFile), options.provider, options.model, options.section);
-    const written = writeHome(options, endpoint, token);
+    const written = writeHome(options, endpoint, token, plumbApiKey === undefined ? undefined : { plumbApiKey });
     out(`已写入专用 Circle 目录（${written.files.length} 个文件，权限 0600）`);
     out(`模型：${endpoint.model}，协议 ${endpoint.protocol}，密钥长度 ${endpoint.apiKey.length}，来源 ${endpoint.sources.join('、')}`);
     out(`中枢令牌：已存为密钥 ${TOKEN_SECRET}，长度 ${token.length}`);
+    if (plumbApiKey !== undefined) {
+      out(`Plumb 密钥：${PLUMB_KEY_SECRET} 已写入，长度为 0：${plumbApiKey.length === 0 ? '是' : '否'}`);
+    }
     const guarded = options.profile === 'skills' || options.profile === 'ops';
     out(
       guarded
@@ -783,7 +815,7 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
       out(`变量 PLUMB_MODEL：${options.plumbModel === undefined ? '未配置' : `已配置，长度 ${options.plumbModel.length}`}`);
       out(`证书 trust_cert_files：${options.plumbCaFile === undefined ? '未配置' : `已配置，长度 ${options.plumbCaFile.length}`}`);
       out('所有者下一步：/secrets JEV_API_KEY（脚本不读取或保存该密钥）');
-      out('所有者下一步：/secrets PLUMB_API_KEY（脚本不读取或保存该密钥）');
+      if (plumbApiKey === undefined) out('所有者下一步：/secrets PLUMB_API_KEY（脚本不读取或保存该密钥）');
       if (options.jevModel === undefined) out('所有者下一步：/variables JEV_MODEL');
       if (options.plumbUrl === undefined) out('所有者下一步：/variables PLUMB_URL');
       if (options.plumbModel === undefined) out('所有者下一步：/variables PLUMB_MODEL');
