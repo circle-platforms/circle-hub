@@ -59,18 +59,18 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
   const result = await withRequestPermissions(records.artifacts, c.owner, () => service.dispatch(c.admin, c.run, c.executor.id));
   if(mode==='broken-port'){
     assert.ok(reborrows>0,'the negative control actually attempts a second client lease');
-    assert.equal(result.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.includes('send_blob'),false);
+    assert.equal(result.dispatch_attempt!.error_code,'ENVIRONMENT_PERMISSION_UNAVAILABLE');assert.equal(c.calls.includes('send_blob'),false);
     return;
   }
   assert.equal(reborrows, 0, 'no query in the held intent transaction may rent a second client');
   assert.ok(transactionChecks > 0, 'the final check must remain fresh and run inside the intent transaction');
   if (revoke) {
-    assert.equal(result.error_code, 'SOURCE_NOT_PERMITTED');
-    assert.equal(result.outcome, 'not_dispatched');
+    assert.equal(result.dispatch_attempt!.error_code, 'SOURCE_NOT_PERMITTED');
+    assert.equal(result.dispatch_attempt!.outcome, 'not_dispatched');assert.equal(result.dispatch_attempt!.not_sent,true);
     assert.equal(c.calls.includes('send_blob'), false);
     assert.ok(!(await service.journal.events(result.job)).some(event => event.body.detail.phase === 'intent'));
   } else {
-    assert.equal(result.outcome, 'effective');
+    assert.equal(result.dispatch_attempt!.outcome, 'effective');
     assert.equal(c.calls.filter(call => call === 'send_blob').length, 1);
   }
 });

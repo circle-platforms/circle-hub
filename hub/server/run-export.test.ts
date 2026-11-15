@@ -72,6 +72,7 @@ test("the run's jobs come with each item's verdict, and what a job returned is d
   const job = { job: 'j1', verification_run: RUN, plan_run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', items: ['case-1', 'case-2'], sha256: 'c'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'f'.repeat(64)}`, device_return: `src:${sha(deviceReturn)}`, rows: [{ item: 'case-1', dynamic_terminal: 'pass' }, { item: 'case-2', dynamic_terminal: 'fail', evidence: { log: `src:${sha(log)}` } }] };
   const d = deps(false) as unknown as { runs: Record<string, unknown>; records: { artifacts: Record<string, unknown> } };
   d.runs.exportJobs = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run, jobs: [job] } : null;
+  d.runs.exportScopedJobs = async (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN ? { run, jobs: [{ job: job.job, job_facts: { scope: { job: job.job }, result: job.result, device_return: job.device_return }, rows: job.rows }] } : null;
   d.records.artifacts.source = async (principal: { id: string }, wanted: string) => principal.id !== 'u_runner' ? null : wanted === sha(deviceReturn) ? { bytes: deviceReturn } : wanted === sha(log) ? { bytes: log } : null;
   const s = await serve(d as unknown as ServerDeps); t.after(s.close);
   const answer = await fetch(`${s.origin}/run-export/${RUN}/jobs`, { headers: { authorization: 'Bearer runner-token' } });
@@ -108,7 +109,7 @@ test("a run's job outputs are found with one listing of its jobs, not one per fi
   const job = { job: 'j1', verification_run: RUN, plan_run: 'run_01bbbbbbbbbbbbbbbbbbbbbbbb', items: [], sha256: 'c'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: null, device_return: null, rows: files.map((file, i) => row(`case-${i}`, file)) };
   const d = deps(false) as unknown as { runs: Record<string, unknown>; records: { artifacts: Record<string, unknown> } };
   let listings = 0, rows = job.rows;
-  d.runs.exportJobs = async (principal: { id: string }, run: string) => { listings++; return principal.id === 'u_runner' && run === RUN ? { run, jobs: [{ ...job, rows }] } : null; };
+  d.runs.exportScopedJobs = async (principal: { id: string }, run: string) => { listings++; return principal.id === 'u_runner' && run === RUN ? { run, jobs: [{ job: job.job, job_facts: { scope: { job: job.job } }, rows }] } : null; };
   const all = [...files, later];
   d.records.artifacts.source = async (_principal: unknown, wanted: string) => { const found = all.find((file) => sha(file) === wanted); return found ? { bytes: found } : null; };
   const s = await serve(d as unknown as ServerDeps); t.after(s.close);
@@ -163,4 +164,43 @@ test('the run\'s locked knowledge root comes as one batch, kept by the process a
 test('a run that locked no root, or a Hub without the batch read, answers the knowledge route as absent', async (t) => {
   const s = await serve(deps()); t.after(s.close);
   assert.equal((await fetch(`${s.origin}/run-export/${RUN}/knowledge`, { headers: { authorization: 'Bearer runner-token' } })).status, 404);
+});
+
+test('run job export versions keep the old wire contract and expose scoped facts only through the explicit new route', async (t) => {
+  const job = 'a'.repeat(64);
+  const report = Buffer.from('合成第一轮报告');
+  const original = Buffer.from('合成第一轮设备原文');
+  const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+  const metadata = { job, verification_run: RUN, plan_run: RUN, items: ['case-1'], sha256: 'b'.repeat(64), ended: 'done' as const, rows: null };
+  const v1 = { ...metadata, outcome: 'not_dispatched', frozen: false, result: `src:${digest(report)}`, device_return: `src:${digest(original)}` };
+  const v2 = {
+    ...metadata,
+    job_facts: { scope: { job }, frozen: false, result: v1.result, device_return: v1.device_return },
+    dispatch_attempt: { scope: { operation: 'dispatch', job, round: 2 }, outcome: 'not_dispatched', not_sent: true },
+  };
+  const d = deps(false) as unknown as { runs: Record<string, unknown>; records: { artifacts: Record<string, unknown> } };
+  const visible = (principal: { id: string }, run: string) => principal.id === 'u_runner' && run === RUN;
+  d.runs.exportJobs = async (principal: { id: string }, run: string) => visible(principal, run) ? { run, jobs: [v1] } : null;
+  d.runs.exportScopedJobs = async (principal: { id: string }, run: string) => visible(principal, run) ? { run, jobs: [v2] } : null;
+  d.records.artifacts.source = async (principal: { id: string }, sha: string) => {
+    if (principal.id !== 'u_runner') return null;
+    const bytes = [report, original].find(value => digest(value) === sha);
+    return bytes ? { bytes } : null;
+  };
+  const s = await serve(d as unknown as ServerDeps); t.after(s.close);
+  const headers = { authorization: 'Bearer runner-token' };
+  const old = await fetch(`${s.origin}/run-export/${RUN}/jobs`, { headers });
+  assert.equal(old.status, 200);
+  assert.deepEqual(await old.json(), { schema: 'run-jobs@1', run: RUN, jobs: [v1] });
+  const scoped = await fetch(`${s.origin}/run-export/${RUN}/jobs/2`, { headers });
+  assert.equal(scoped.status, 200);
+  assert.deepEqual(await scoped.json(), { schema: 'run-jobs@2', run: RUN, jobs: [v2] });
+  for (const bytes of [report, original]) {
+    const answer = await fetch(`${s.origin}/run-export/${RUN}/sources/${digest(bytes)}`, { headers });
+    assert.equal(answer.status, 200, 'an unsent second round does not erase a downloadable earlier report or device return');
+    assert.deepEqual(Buffer.from(await answer.arrayBuffer()), bytes);
+  }
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs/2`)).status, 401);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs/2`, { headers: { authorization: 'Bearer other-token' } })).status, 404);
+  assert.equal((await fetch(`${s.origin}/run-export/${RUN}/jobs/3`, { headers })).status, 404);
 });

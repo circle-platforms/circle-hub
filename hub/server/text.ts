@@ -3,7 +3,6 @@ import { registrationIncompletePresentation } from './env-bootstrap-capture.ts';
 // Reader-facing text; the original tool data stays in structuredContent.
 // Reader-facing text; the original tool data stays in structuredContent.
 import { createHash } from 'node:crypto';
-import type { DispatchNote } from '../dispatch/api.ts';
 import { viewIdExample } from '../knowledge/api.ts';
 import { z } from 'zod';
 import { CHECK_TIER, DYNAMIC_TERMINAL, LAYER, PARTITION, REQUIREMENT_STATUS, STATIC_TERMINAL, UNSATISFIED_REASON, axisLabel, labelOf, isReason, isKnowledgeEntryStatus, type KnowledgeEntryStatus, type Layer, type Partition, type Reason, type SourceRole } from '../../contracts/generated/vocabulary.ts';
@@ -913,173 +912,6 @@ function resolveText(v: ResolveOut, context: TextContext): string {
 
 // ---------------------------------------------------------------- submit_result
 
-/** Five call-error category heads (owner 2026-11-14): no status/judgment/decider chain after these. */
-const CALL_ERROR_HEAD = /^(参数无效|无权限|不存在|已被占用|暂时不可用)：/;
-
-/**
- * Member next steps aligned with formatReleaseRefusal (hub/dispatch/refusal-text.ts).
- * Used when accepted/reasons dropped the self-serve path and left only「联系管理员…」.
- */
-const RELEASE_IDENTITY_MEMBER_NEXT =
-  '先确认预订的是哪个测试环境，用它对应的运行环境配置重新做脚本编写和脚本合并，再发起上机验证；预订和配置都没错时，请管理员核对执行器的声明';
-const RELEASE_RESULT_MEMBER_NEXT =
-  '按脚本合并返回的错误逐条改正，脚本合并正确后再发起上机验证';
-const RELEASE_GENERIC_MEMBER_NEXT =
-  '能在自动化用例 Excel 或预订上改的，改正后再发起上机验证；其余请管理员按放行条件逐条对照处理';
-const RELEASE_IDENTITY_ADMIN_NEXT =
-  '按执行器声明的测试环境和清单重新做脚本编写和脚本合并，再发起上机验证；或者登记一个和这次核对一致的执行器';
-const RELEASE_RESULT_ADMIN_NEXT =
-  '按脚本合并返回的错误逐条改正，脚本合并正确后再发起上机验证';
-const RELEASE_GENERIC_ADMIN_NEXT =
-  '按上面的错误补齐后，再发起上机验证';
-
-function noteBlob(note: DispatchNote): string {
-  return [note.text, note.next_action ?? '', ...(note.missing_facts ?? []).flatMap((row) => [row.fact, row.next_action])].join('\0');
-}
-
-function releaseIdentityNote(blob: string): boolean {
-  return /目标或清单摘要与当前执行器声明不一致|核验目标与清单等于执行器声明/.test(blob);
-}
-
-function releaseResultNote(blob: string): boolean {
-  return /核验结果没有未消除错误|脚本合并的结果里还有错误/.test(blob);
-}
-
-/** True when the note is a release-gate refusal that lost the self-serve next step. */
-function releaseRefusalNeedsNext(blob: string, message: string): boolean {
-  if (/先确认预订|按脚本合并返回的错误逐条改正|现在可以做：/.test(message)) return false;
-  return releaseIdentityNote(blob) || releaseResultNote(blob)
-    || /联系管理员核对当前环境的清单绑定|联系管理员查看具体放行条件|上机前的放行条件尚未满足|放行条件/.test(blob);
-}
-
-function releaseNextByRole(note: DispatchNote, role: CallerRole): string | null {
-  const blob = noteBlob(note);
-  // Already carries formatReleaseRefusal self-serve / diagnosed next — leave it.
-  if (/先确认预订|按脚本合并返回的错误逐条改正|现在可以做：/.test(note.text)) return null;
-  if (!releaseRefusalNeedsNext(blob, note.text) && !releaseIdentityNote(blob) && !releaseResultNote(blob)) return null;
-  if (releaseIdentityNote(blob)) {
-    if (role === 'admin') {
-      const explain = note.executor
-        ? `。逐条对照：circle-hub job explain-release --executor ${note.executor}`
-        : '';
-      // 【问题】DispatchNote 无 run id，拼不出完整的 explain-release --run …；有 executor 时仍给管理命令半句。
-      return RELEASE_IDENTITY_ADMIN_NEXT + explain;
-    }
-    return RELEASE_IDENTITY_MEMBER_NEXT;
-  }
-  if (releaseResultNote(blob)) {
-    if (role === 'admin') {
-      const explain = note.executor
-        ? `。逐条对照：circle-hub job explain-release --executor ${note.executor}`
-        : '';
-      return RELEASE_RESULT_ADMIN_NEXT + explain;
-    }
-    return RELEASE_RESULT_MEMBER_NEXT;
-  }
-  if (role === 'admin') {
-    const explain = note.executor
-      ? `。逐条对照：circle-hub job explain-release --executor ${note.executor}`
-      : '';
-    return RELEASE_GENERIC_ADMIN_NEXT + explain;
-  }
-  return RELEASE_GENERIC_MEMBER_NEXT;
-}
-
-/** Split `<类别词>：<事实>。<下一步>。` (formatCallError / callErrorLine); last sentence is the next step when ≥2. */
-function splitCallErrorProse(message: string): { category: string; fact: string; next: string } | null {
-  const matched = message.trim().match(/^(参数无效|无权限|不存在|已被占用|暂时不可用)：(.+)$/s);
-  if (!matched) return null;
-  const body = matched[2].trim();
-  const sentences = body.match(/[^。！？]+[。！？]/gu);
-  if (sentences && sentences.length >= 2) {
-    const next = sentences[sentences.length - 1].replace(/[。！？]$/u, '').trim();
-    const fact = sentences.slice(0, -1).join('').replace(/[。！？]$/u, '').trim();
-    return { category: matched[1], fact, next };
-  }
-  return { category: matched[1], fact: body.replace(/[。！？]$/u, '').trim(), next: '' };
-}
-
-/**
- * Decision 155 puts three dispatch outcomes in `dispatch[].text`. Reader wording is usually owned by hub/dispatch;
- * this exit still (Boss 15:02): (1) never appends a conclusion chain onto five-category call-error prose;
- * (2) restores formatReleaseRefusal member/admin next steps when accepted/reasons dropped them;
- * (3) does not let the booking rewrite cover an existing occupied/absent/expired category sentence.
- */
-function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
-  if (note.error_code === 'SOURCE_NOT_PERMITTED' && 'call_error_reason' in note && note.call_error_reason === 'environment_registration_incomplete') {
-    const incomplete = registrationIncompletePresentation({
-      code: note.error_code, call_error_reason: note.call_error_reason,
-      object_kind: 'test_environment', message: '',
-    }, role, role === 'admin' ? note.executor : undefined);
-    if (incomplete) return callErrorLine(incomplete.category, incomplete.fact, incomplete.next);
-  }
-  const message = note.text;
-  const callError = CALL_ERROR_HEAD.test(message.trim());
-
-  // Booking rewrite: only when the note is not already a five-category call-error sentence (E1 must not wipe 已被占用/不存在).
-  if (
-    !callError
-    && note.submission_verified === true
-    && note.outcome === 'not_dispatched'
-    && note.frozen !== true
-    && note.booking?.coverage_complete === false
-  ) {
-    const count = note.booking.declared_device_count;
-    const devices = typeof count === 'number' && Number.isInteger(count) && count >= 0 ? `共 ${count} 台设备` : '设备数量尚未核对';
-    return `脚本合并正确（已确认）；本次没有上机验证，因为这次运行没有带着测试环境的预订；测试环境：${note.booking.target}（${devices}）；下一步：先预订整个测试环境，再从脚本编写重开并核验合并。`;
-  }
-  if (note.result !== undefined) {
-    return '设备输出已取回；状态未知；原因还没查清；下一步由模型核对设备输出。';
-  }
-
-  // Five-category call errors: keep `<类别词>：<事实>。<下一步>。` — no 状态/判断/决定者 chain.
-  if (callError) {
-    const parts = splitCallErrorProse(message);
-    if (parts === null) return message;
-    const better = releaseNextByRole(note, role);
-    const next = better
-      ?? (parts.next.length > 0 ? parts.next : undefined)
-      ?? (note.missing_facts?.length ? note.missing_facts.map((row) => row.next_action).join('；') : note.next_action)
-      ?? undefined;
-    return callErrorLine(parts.category, parts.fact, next);
-  }
-
-  // In-progress dispatch notes already say what is waiting and who acts next — no reason-word chain (Boss 20:53).
-  if (
-    message.includes('下一步由模型稍后把这次脚本合并原样再交一次，读取进展')
-    || /已按工作流的规定自动开始上机验证/.test(message)
-    || message.includes('正在做上机验证前的核对')
-    || (message.includes('上机验证还在进行') && !message.includes('上机验证结果未知'))
-  ) {
-    return message;
-  }
-
-  // Owner 2026-11-12: unanswered stays 「上机验证结果未知」. Match the dispatch package's reader wording.
-  if (message.includes('上机验证结果未知') || /不要重交，也不要另开/.test(message)) {
-    return `${message}；状态未知；原因还没查清；决定者程序`;
-  }
-  if (
-    message.includes('上机验证没有发出') ||
-    message.includes('什么都没有发到目标') ||
-    message.includes('目标没有接收') ||
-    /目标在“.+”阶段拒绝/.test(message) ||
-    message.includes('已证明目标没有执行')
-  ) {
-    // C14: when release refusal already names the错误 and next step, do not append「原因还没查清」.
-    const diagnosed = message.includes('放行条件里有 ') || message.includes('还没有核对');
-    const better = releaseNextByRole(note, role);
-    let body = message;
-    if (better && !/现在可以做：|先确认预订|按脚本合并返回的错误逐条改正/.test(message)) {
-      body = /下一步/.test(message)
-        ? message.replace(/下一步：[^；]*/u, `下一步：${better}`)
-        : `${message.replace(/[。；]?$/u, '')}。现在可以做：${better}`;
-    }
-    return diagnosed
-      ? `${body}；状态已确认；判断错误；决定者程序`
-      : `${body}；状态已确认；判断错误；原因还没查清；决定者程序`;
-  }
-  return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
-}
 
 function submitText(v: SubmitOut, context: TextContext): string {
   const role = callerRole(context);
@@ -1097,7 +929,12 @@ function submitText(v: SubmitOut, context: TextContext): string {
       lines.push(`${original ? caseName(original, original.label) : '资料未保存'}，${rejected.reason}；状态已确认；判断错误；原因缺资料；下一步由使用者补齐资料。`);
     }
   }
-  for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note, role));
+  // Source-qualified notes keep their scopes; only the exact incomplete-registration tuple gets its role-specific command.
+  for (const note of v.dispatch ?? []) {
+    const admission = note.run_facts?.admission_error ?? note.job_facts?.admission_error;
+    const incomplete = admission && registrationIncompletePresentation(admission, role, role === 'admin' ? note.executor : undefined);
+    lines.push(incomplete ? callErrorLine(incomplete.category, incomplete.fact, incomplete.next) : note.text);
+  }
   lines.push(...submitErrorBlocks(v.errors, context, represented));
   return lines.join('\n');
 }

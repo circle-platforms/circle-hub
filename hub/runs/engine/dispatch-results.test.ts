@@ -20,7 +20,7 @@ test('unknown dispatch quarantines only its bound item, reconciles without sendi
   const run=(await h.service.startRun(h.alice,{pack:'toy-review',product:'Meadow',version:'10.6.1',build:'Rel_MEADOW_10_6_1_7',inputs:{map:{reference:map}}},h.call())).run!;
   const submitted=await h.service.submitResult(h.alice,{run:run.run,model:'synthetic',items:run.items.map(i=>({item:i.id,handling:'handled',slots:{findings:[]}})),cross_item:[{nature:'judgment',statement:'合成等级',grounds:[],code:'draft_level',rank:'P4'}]},h.call('observed-session'));
   assert.equal(submitted.acceptance,'accepted');
-  const job:RunJob={job:'a'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:run.items[0].id,items:[run.items[0].id],sha256:'b'.repeat(64),status:{job:'a'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:4,missing_fact:'原作业缺完整回执'},ended:'unknown',boundary_refused:false};
+  const job:RunJob={job:'a'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:run.items[0].id,items:[run.items[0].id],sha256:'b'.repeat(64),status:{job:'a'.repeat(64),events:4,job_facts:{scope:{job:'a'.repeat(64)},phase:'unknown',frozen:true},dispatch_attempt:{scope:{operation:'dispatch',job:'a'.repeat(64),round:1},outcome:'unknown'}},ended:'unknown',boundary_refused:false};
   let reconciles=0;
   const service=createRunsService({parsers:createTestParserRegistry(),records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external,dispatch:{jobs:async()=>[structuredClone(job)],reconcile:async()=>{reconciles++;return job.status;}}});
   await service.maintain();
@@ -30,7 +30,8 @@ test('unknown dispatch quarantines only its bound item, reconciles without sendi
   assert.equal(reconciles,1);
   await service.maintain();assert.equal(reconciles,1,'one automatic reconciliation per observed journal state');
   const artifact=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:job.job,sha256:job.sha256,rows:[{item:run.items[0].id,dynamic_terminal:'pass',accepted_as_fact:false,qualifier:{nature:'judgment',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},missing_facts:[]}]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
-  job.status={...job.status,phase:'complete',outcome:'effective',frozen:false,events:7,result:`src:${artifact.body.sha256}`};
+  job.status={...job.status,events:7,job_facts:{...job.status.job_facts,phase:'complete',frozen:false,result:`src:${artifact.body.sha256}`},dispatch_attempt:{scope:{operation:'dispatch',job:job.job,round:1},outcome:'effective'}};
+  job.ended='done';
   await service.maintain();
   const refreshed=(await service.getRun(h.alice,run.run))!.latest!.result;
   assert.equal(refreshed.partitions.quarantined.length,0);
@@ -40,19 +41,19 @@ test('unknown dispatch quarantines only its bound item, reconciles without sendi
   assert.ok(requirement.claims.some(c=>c.warrant.id==='dispatch@1'&&c.qualifier.nature==='judgment'));
   assert.equal(quarantined.partitions.quarantined.length,1,'the previous receipt is unchanged');
   const failed=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:job.job,sha256:job.sha256,rows:[{item:run.items[0].id,dynamic_terminal:'fail',accepted_as_fact:false,qualifier:{nature:'judgment',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},missing_facts:[]}]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
-  job.status={...job.status,events:8,result:`src:${failed.body.sha256}`};
+  job.status={...job.status,events:8,job_facts:{...job.status.job_facts,result:`src:${failed.body.sha256}`}};
   await service.maintain();
   const failure=(await service.getRun(h.alice,run.run))!.latest!.result;
   const failedLayer=Object.values(failure.partitions).flat().find(i=>i.item===run.items[0].id)!.requirements.find(r=>r.requirement==='catalog')!.layers.find(l=>l.layer==='dynamic')!;
   assert.equal(failedLayer.terminal,'fail');assert.equal(failedLayer.code,undefined,'an observed failure needs no invented violation code');
   const request=(await service.listRequests!(h.alice,run.run)).find(q=>q.job===job.job)!;
-  job.status={...job.status,phase:'unknown',outcome:'unknown',events:9,frozen:true,result:undefined,disposition:'mark_failed',decided_by:h.alice.id,decided_at:'2026-10-22T08:02:00.000Z'};
+  job.status={...job.status,events:9,job_facts:{...job.status.job_facts,phase:'unknown',frozen:true,result:undefined,disposition:'mark_failed',decided_by:h.alice.id,decided_at:'2026-10-22T08:02:00.000Z'},dispatch_attempt:{scope:{operation:'dispatch',job:job.job,round:1},outcome:'unknown'}};
   job.management_exit={action:'request',request_kind:request.kind,audience:{user:request.audience},due:request.due};
   await service.maintain();
   const disposed=(await service.getRun(h.alice,run.run))!.latest!.result;
   const rejected=disposed.partitions.rejected.find(i=>i.item===run.items[0].id)!;
   assert.equal(rejected.code,'EFFECT_UNKNOWN_DISPOSED');assert.equal(disposed.partitions.quarantined.length,0);
-  assert.equal(job.status.frozen,true,'management disposition never changes the physical safety freeze');
+  assert.equal(job.status.job_facts.frozen,true,'management disposition never changes the physical safety freeze');
   const unresolved=rejected.requirements.find(r=>r.requirement==='catalog')!.layers.find(l=>l.layer==='dynamic')!;
   assert.equal(unresolved.terminal,'no_verdict');assert.deepEqual(unresolved.exit,job.management_exit);
   assert.ok((await service.listRequests!(h.alice,run.run)).find(q=>q.record===request.record)!.answered_by);
@@ -73,13 +74,13 @@ test('dispatch recomputation keeps an unruled static judgment unmet for a fact-o
   assert.ok(result.cross_item.some(claim=>claim.qualifier.marks.includes('decision_shape_unruled')));
   const record=(await h.service.getRun(h.alice,run.run))!.run;
   const ctx=createEngineContext({records:h.kit,workflows:h.workflows,packs:h.packs,knowledge:h.knowledge,external:h.external});
-  const job:RunJob={job:'c'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:item,items:[item],sha256:'d'.repeat(64),status:{job:'c'.repeat(64),phase:'unknown',outcome:'unknown',frozen:true,events:1,missing_fact:'合成作业缺少完整观察'},ended:'unknown',boundary_refused:false};
+  const job:RunJob={job:'c'.repeat(64),verification_run:run.run,plan_run:run.run,verification_item:item,items:[item],sha256:'d'.repeat(64),status:{job:'c'.repeat(64),events:1,job_facts:{scope:{job:'c'.repeat(64)},phase:'unknown',frozen:true},dispatch_attempt:{scope:{operation:'dispatch',job:'c'.repeat(64),round:1},outcome:'unknown'}},ended:'unknown',boundary_refused:false};
   const pending=structuredClone(result);
   assert.equal(await applyDispatchResults(ctx,record,pending,[job]),true);
   assert.equal(requirementOf(pending).layers.find(layer=>layer.layer==='dynamic')!.terminal,'no_verdict');
   assert.deepEqual([requirementOf(pending).status,requirementOf(pending).unsatisfied_reason],['unsatisfied','outcome_mismatch']);
   const artifact=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:job.job,sha256:job.sha256,rows:[{item,dynamic_terminal:'pass',accepted_as_fact:false,qualifier:{nature:'judgment',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},missing_facts:[]}]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
-  job.status={...job.status,phase:'complete',outcome:'effective',frozen:false,events:2,result:`src:${artifact.body.sha256}`};
+  job.status={...job.status,events:2,job_facts:{...job.status.job_facts,phase:'complete',frozen:false,result:`src:${artifact.body.sha256}`},dispatch_attempt:{scope:{operation:'dispatch',job:job.job,round:1},outcome:'effective'}};
   const observed=structuredClone(result);
   await applyDispatchResults(ctx,record,observed,[job]);
   assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='static')!.terminal,'judgment');
@@ -102,7 +103,7 @@ test('a meeting intermittent carries no attribution and a missing one is unattri
   const ctx = createEngineContext({ records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external });
   const project = async (rounds: Array<{ round: number; terminal: string; meets: boolean | null; early_stop?: boolean }>, digest: string) => {
     const artifact = await h.kit.artifacts.ingest({ bytes: canonicalBytes({ job: digest, sha256: 'e'.repeat(64), rows: [{ item, dynamic_terminal: rounds.find(round => round.terminal === 'pass' || round.terminal === 'fail')?.terminal ?? 'not_run', accepted_as_fact: false, qualifier: { nature: 'judgment', marks: ['target_reported', 'report_for_dispatch', 'local_ops_not_excluded'] }, missing_facts: [] }], rounds }), mediaType: 'application/json', origin: { generated: { generator: 'dispatch@1', inputs: [] } }, author: { user: null }, provenanceType: 'projected', visibility: { readers: [h.alice.id], admins: true, packs: [], shareable: false } });
-    const job: RunJob = { job: digest, verification_run: started.run, plan_run: started.run, verification_item: item, items: [item], sha256: 'e'.repeat(64), status: { job: digest, phase: 'complete', outcome: 'effective', frozen: false, events: 4, result: `src:${artifact.body.sha256}` }, ended: 'done', boundary_refused: false };
+    const job: RunJob = { job: digest, verification_run: started.run, plan_run: started.run, verification_item: item, items: [item], sha256: 'e'.repeat(64), status: { job: digest, events: 4, job_facts:{scope:{job:digest},phase:'complete',frozen:false,result:`src:${artifact.body.sha256}`},dispatch_attempt:{scope:{operation:'dispatch',job:digest,round:1},outcome:'effective'} }, ended: 'done', boundary_refused: false };
     return job;
   };
   const early = structuredClone(result);
@@ -136,11 +137,14 @@ test('the runner exports the jobs of its run, with verdicts only from the dispat
   const forged = await ingest({ job: id, sha256: workbook, rows, note: 'not the dispatch service' }, 'synthetic@1');
   const otherWorkbook = await ingest({ job: id, sha256: 'a'.repeat(64), rows }, 'dispatch@1');
   let result = `src:${own.body.sha256}`;
-  const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, phase: 'complete', outcome: 'effective', frozen: false, events: 3, result, device_return: deviceReturn }, ended: 'done', boundary_refused: false });
+  let events=2;
+  const job = (): RunJob => ({ job: id, record: 'b'.repeat(64), verification_run: run.run, plan_run: run.run, verification_item: item, items: [item], sha256: workbook, status: { job: id, events, job_facts:{scope:{job:id},phase:'complete',frozen:false,result,device_return:deviceReturn},dispatch_attempt:{scope:{operation:'dispatch',job:id,round:1},outcome:'effective'} }, ended: 'done', boundary_refused: false });
+  await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read_back',run:run.run,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:new Date().toISOString(),ended_at:new Date().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{job:id,phase:'complete',done:true,outcome:'effective'}},index:[{key:'dispatch.job',value:id}]});
+  await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:run.run,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:new Date().toISOString(),ended_at:new Date().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{job:id,phase:'result',reference:result,device_return:deviceReturn}},index:[{key:'dispatch.job',value:id}]});
   const service = createRunsService({ parsers: createTestParserRegistry(), records: h.kit, workflows: h.workflows, packs: h.packs, knowledge: h.knowledge, external: h.external, dispatch: { jobs: async () => [job()], reconcile: async () => job().status } });
   const exported = await service.exportJobs!(h.alice, run.run);
   assert.deepEqual(exported, { run: run.run, jobs: [{ job: id, verification_run: run.run, plan_run: run.run, items: [item], sha256: workbook, ended: 'done', outcome: 'effective', frozen: false, result, device_return: deviceReturn, rows: [{ item, dynamic_terminal: 'fail', evidence: { log } }] }] });
   assert.ok(!('record' in exported!.jobs[0]), 'the administrative proof stays out');
-  for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
+  for (const stranger of [forged, otherWorkbook]) { result = `src:${stranger.body.sha256}`; events++; await h.kit.store.put({kind:'action',schema:'action@1',provenance:'observed',body:{action:'read',run:run.run,item:null,inputs:[],component:'dispatch@1',lease:null,started_at:new Date().toISOString(),ended_at:new Date().toISOString(),result:'completed',error_code:null,acceptance:null,codes:[],detail:{job:id,phase:'result',reference:result,device_return:deviceReturn}},index:[{key:'dispatch.job',value:id}]}); assert.equal((await service.exportJobs!(h.alice, run.run))!.jobs[0].rows, null); }
   assert.equal(await service.exportJobs!({ id: 'u_01aaaaaaaaaaaaaaaaaaaaaaaa', name: '合成路人', role: 'user' }, run.run), null);
 });

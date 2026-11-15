@@ -5,7 +5,7 @@ import { setup } from './testing/context.ts';
 test('normal lifecycle stores intent before the one submission, observes twice, stores result and releases', async t => {
   const c = await setup(); t.after(() => c.close());
   const outcome = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(outcome.outcome, 'effective');
+  assert.equal(outcome.dispatch_attempt!.outcome, 'effective');
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
   assert.ok(c.calls.indexOf('inspect_slot') < c.calls.indexOf('send_blob'));
   assert.ok(c.calls.indexOf('close_slot') > c.calls.indexOf('read_blob'));
@@ -15,7 +15,7 @@ test('normal lifecycle stores intent before the one submission, observes twice, 
   assert.equal(intent.body.detail.initiated_by, c.admin.id);
   assert.equal(intent.body.detail.on_behalf_of, c.owner.id);
   assert.equal(intent.body.detail.effect_class, 'job'); assert.equal(intent.body.detail.retry_safety, 'unsafe');
-  assert.match(outcome.result!, /^src:[a-f0-9]{64}$/);
+  assert.match(outcome.job_facts.result!, /^src:[a-f0-9]{64}$/);
   assert.ok(events.findIndex(e => e.body.detail.phase === 'intent') < events.findIndex(e => e.body.detail.phase === 'receipt'));
   assert.ok(c.sawIntentAtSubmit);
   assert.equal((await import('../records/api.ts')).sha256Hex(c.submitted[0]), c.payload.body.sha256);
@@ -25,7 +25,22 @@ test('normal lifecycle stores intent before the one submission, observes twice, 
 test('preflight refuses unmet package requirements, incorrect manifest, wrong lineage and short expiry without submitting', async t => {
   for (const mode of ['wrong-package', 'manifest', 'requirement', 'lineage', 'expiry']) {
     const c = await setup({ mode }); t.after(() => c.close());
-    assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+    const refused = await c.service.dispatch(c.admin,c.run,c.executor.id);
+    assert.equal(refused.job_facts.operation, 'dispatch');
+    if (mode === 'lineage' || mode === 'expiry') {
+      assert.equal(refused.dispatch_attempt!.scope.operation, 'dispatch');
+      assert.equal(refused.dispatch_attempt!.scope.job, refused.job);
+      assert.equal(refused.dispatch_attempt!.error_code, 'LEASE_UNAVAILABLE');
+      assert.equal(refused.dispatch_attempt!.outcome, 'not_dispatched');
+      assert.equal(refused.dispatch_attempt!.not_sent, true);
+    } else {
+      assert.equal(refused.dispatch_attempt, undefined);
+      const code = mode === 'manifest' ? 'EFFECT_PARAMETER_OUT_OF_RANGE' : 'EFFECT_RELEASE_UNMET';
+      assert.equal(refused.job_facts.admission_error?.code, code);
+      const refusal = (await c.service.journal.events(refused.job)).find(event => event.body.detail.phase === 'boundary_refused');
+      assert.equal(refusal?.body.error_code, code);
+      assert.equal(refusal?.body.detail.boundary_clause, mode === 'manifest' ? 2 : 3);
+    }
     assert.equal(c.calls.filter(name => name === 'send_blob').length, 0);
   }
 });
@@ -34,7 +49,7 @@ test('busy or failed read-only checks never write an intent and release only an 
   for (const mode of ['busy', 'build', 'seats']) {
     const c = await setup({ mode }); t.after(() => c.close());
     const outcome = await c.service.dispatch(c.admin, c.run, c.executor.id);
-    assert.equal(outcome.outcome, 'not_dispatched'); assert.equal(outcome.frozen, false);
+    assert.equal(outcome.dispatch_attempt!.outcome, 'not_dispatched'); assert.equal(outcome.job_facts.frozen, false);
     assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
     assert.equal(c.calls.includes('close_slot'), mode !== 'busy');
     assert.ok(!(await c.service.journal.events(outcome.job)).some(e => e.body.detail.phase === 'intent'));
@@ -49,7 +64,7 @@ test('intent storage failure rolls back the business key and never submits', asy
     return put(input, tx);
   };
   const outcome = await c.service.dispatch(c.admin, c.run, c.executor.id);
-  assert.equal(outcome.outcome, 'not_dispatched');
+  assert.equal(outcome.dispatch_attempt!.outcome, 'not_dispatched');
   assert.equal(await c.kit.store.getByKey('action', `dispatch.bytes:${c.payload.body.sha256}:${c.detail.run.predecessor}:1`), null);
   assert.equal(c.calls.filter(n => n === 'send_blob').length, 0);
   assert.ok(c.calls.includes('close_slot'));
@@ -60,7 +75,9 @@ test('plan_run must equal the verification predecessor and cannot be omitted', a
     const c = await setup(); t.after(() => c.close());
     const proof = c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any;
     proof.plan_run = value;
-    assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+    const refused = await c.service.dispatch(c.admin,c.run,c.executor.id);
+    assert.equal(refused.dispatch_attempt, undefined);assert.equal(refused.job_facts.operation, 'dispatch');
+    assert.equal(refused.job_facts.admission_error?.code, 'EFFECT_RELEASE_UNMET');
     assert.equal(c.calls.includes('send_blob'), false);
   }
 });
@@ -77,13 +94,13 @@ test('wrapped artifact storage proves raw precheck bytes are committed before co
   };
   const conditions = (c.service as any).conditions.bind(c.service);
   (c.service as any).conditions = (...args: unknown[]) => { assert.equal(committed, true); return conditions(...args); };
-  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).dispatch_attempt!.outcome, 'effective');
 });
 
 test('dispatch uses the latest accepted validation without relabeling an unrelated rejected submission', async t => {
   const c = await setup(); t.after(() => c.close());
   c.detail.submissions.push({ record: 'f'.repeat(64), received_at: c.now().toISOString(), acceptance: 'not_accepted', errors: [], result: null });
-  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).dispatch_attempt!.outcome, 'effective');
 });
 
 test('proof selects the declared function and ignores catalog and quote facts in the same requirement', async t => {
@@ -91,7 +108,7 @@ test('proof selects the declared function and ignores catalog and quote facts in
   const row = c.detail.latest!.result.partitions.delivered[0].requirements[0];
   const proof = row.claims[0];
   for (const id of ['catalog@1', 'quote@1']) row.claims.push({ ...structuredClone(proof), warrant: { ...proof.warrant, id }, statement: { verdict: 'support', text: '合成独立核对事实', data: { other: id } } });
-  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).outcome, 'effective');
+  assert.equal((await c.service.dispatch(c.admin, c.run, c.executor.id)).dispatch_attempt!.outcome, 'effective');
   assert.equal(c.calls.filter(name => name === 'send_blob').length, 1);
 });
 
@@ -99,7 +116,9 @@ test('proof selects the declared function and ignores catalog and quote facts in
 test('a different function cannot substitute for the declared verification function', async t => {
   const c = await setup(); t.after(() => c.close());
   c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].warrant.id = 'synthetic.other@1';
-  assert.equal((await c.service.dispatch(c.admin,c.run,c.executor.id)).outcome,'not_dispatched');
+  const refused = await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(refused.dispatch_attempt, undefined);assert.equal(refused.job_facts.operation, 'dispatch');
+  assert.equal(refused.job_facts.admission_error?.code, 'EFFECT_RELEASE_UNMET');
   assert.equal(c.calls.includes('send_blob'), false);
 });
 
@@ -108,6 +127,6 @@ test('verification support expiring during prechecks is rechecked before committ
   c=await setup({alter:(name,value)=>{if(name==='inspect_slot')c.clock.ms+=2000;return value;}});t.after(()=>c.close());
   c.detail.latest!.result.partitions.delivered[0].requirements[0].claims[0].validity.expires_at=new Date(c.clock.ms+1000).toISOString();
   const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
+  assert.equal(state.dispatch_attempt!.outcome,'not_dispatched');assert.equal(c.calls.filter(n=>n==='send_blob').length,0);
   assert.equal((await c.service.journal.events(state.job)).some(e=>e.body.detail.phase==='intent'),false);
 });

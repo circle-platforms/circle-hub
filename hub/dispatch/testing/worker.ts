@@ -26,7 +26,7 @@ try {
     workflows: { byDigest: async () => ({ pack: { id: 'synthetic-workflow', version: '1.0.0', digest: detail.run.pack_digest }, requirements: [{ key: 'workbook_verified', required: true, target: 'item', accepted_producer: 'fact' }],readJson:async()=>document } as unknown as LoadedWorkflow) }, now });
   if (process.send) { process.send({ ready: true }); await new Promise(resolve => process.once('message', resolve)); }
   const result = await service.dispatch(input.admin, detail.run.run, input.executor);
-  process.stdout.write(JSON.stringify({ job: result.job, outcome: result.outcome, frozen: result.frozen }));
-  process.exitCode = result.outcome === 'effective' ? 0 : 1;
+  process.stdout.write(JSON.stringify(result));
+  process.exitCode = result.dispatch_attempt?.outcome === 'effective' ? 0 : 1;
 } catch { process.stdout.write(JSON.stringify({ stopped: true })); process.exitCode = 1; }
 finally { await db.end(); await kit.close(); process.disconnect?.(); }

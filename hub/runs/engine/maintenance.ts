@@ -3,7 +3,7 @@ import {ENGINE_COMPONENT} from './deps.ts';
 import { abandonDecision,finishAbandon } from './management.ts';
 import { canSeeRun } from './readers.ts';
 import { recheckProduction } from './start.ts';
-import { applyDispatchResults } from './dispatch-results.ts';
+import { applyDispatchResults, dispatchFinalized, dispatchUncertain } from './dispatch-results.ts';
 import { parseReference } from '../../refs/api.ts';
 import { submitResult, roundsUsedOf } from './submit.ts';
 import { isObject, receivedDigest } from './util.ts';
@@ -308,8 +308,7 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
   const actions=await actionsOf(ctx.deps.records.store,run.run);
   for(const job of jobs){
     const prior=[...actions].reverse().find(a=>a.body.detail.reconciled_job===job.job);
-    const finalized=job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon');
-    const uncertain=!finalized&&(job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch'||job.status.outcome==='issued');
+    const uncertain=dispatchUncertain(job,true);
     if(!uncertain||prior?.body.detail.events_after===job.status.events)continue;
     const at=ctx.now().toISOString();
     let events=job.status.events;
@@ -325,11 +324,11 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
       const at=ctx.now().toISOString();
       // Journal intent records contain operational secrets. Their references stay behind an administrator-only artifact.
       const proof=await ctx.deps.records.artifacts.ingest({bytes:canonicalBytes({job:job.job,record:job.record??null,events:job.status.events}),mediaType:'application/json',origin:{generated:{generator:'runs.engine@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[],admins:true,packs:[],shareable:false}});
-      observed=await putAction(ctx.deps.records.store,{action:'read',run:run.run,inputs:['src:'+proof.body.sha256],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{dispatch_request_snapshot:requestSnapshot,job:job.job,outcome:job.status.outcome,frozen:job.status.frozen,...(job.status.disposition?{disposition:job.status.disposition}:{}),...(job.status.decided_by?{decided_by:job.status.decided_by}:{}),...(job.status.decided_at?{decided_at:job.status.decided_at}:{})}});
+      observed=await putAction(ctx.deps.records.store,{action:'read',run:run.run,inputs:['src:'+proof.body.sha256],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{dispatch_request_snapshot:requestSnapshot,job:job.job,job_facts:{scope:job.status.job_facts.scope,frozen:job.status.job_facts.frozen,result:job.status.job_facts.result??null},...(job.status.dispatch_attempt?{dispatch_attempt:{scope:job.status.dispatch_attempt.scope,outcome:job.status.dispatch_attempt.outcome}}:{}),...(job.status.job_facts.disposition?{disposition:job.status.job_facts.disposition}:{}),...(job.status.job_facts.decided_by?{decided_by:job.status.job_facts.decided_by}:{}),...(job.status.job_facts.decided_at?{decided_at:job.status.job_facts.decided_at}:{})}});
     }
-    if((job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch')&&!(job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon')))await putRequest(ctx,{run:run.run,job:job.job,kind:'disposition',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:observed.digest,code:'integrity_unproven',...(job.verification_run===run.run?{item:job.verification_item}:{}),missing:'作业 '+job.job+' 的原效果结局尚未证明；管理员记录保留核对所需事实',next_action:'管理员用 circle-hub job resume '+job.job+' 核对原请求和原作业；仍无结论时重证基线，以本运行为 predecessor 重跑，原效果和冻结/解除记录不改写，不重交原请求'});
+    if(dispatchUncertain(job))await putRequest(ctx,{run:run.run,job:job.job,kind:'disposition',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:observed.digest,code:'integrity_unproven',...(job.verification_run===run.run?{item:job.verification_item}:{}),missing:'作业 '+job.job+' 的原效果结局尚未证明；管理员记录保留核对所需事实',next_action:'管理员用 circle-hub job resume '+job.job+' 核对原请求和原作业；仍无结论时重证基线，以本运行为 predecessor 重跑，原效果和冻结/解除记录不改写，不重交原请求'});
   }
-  if(await abandonDecision(ctx,run.run)){for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon'))){const witness=(await actionsOf(ctx.deps.records.store,run.run)).find(a=>a.body.detail.dispatch_request_snapshot===dispatchSnapshot([job]));if(witness)await answerRequest(ctx,request.record,witness.digest);}}return;}
+  if(await abandonDecision(ctx,run.run)){for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(dispatchFinalized(job)||job.ended==='done'&&!dispatchUncertain(job,true))){const witness=(await actionsOf(ctx.deps.records.store,run.run)).find(a=>a.body.detail.dispatch_request_snapshot===dispatchSnapshot([job]));if(witness)await answerRequest(ctx,request.record,witness.digest);}}return;}
   const signature=dispatchSnapshot(jobs);
   if(actions.some(a=>a.body.detail.dispatch_snapshot===signature))return;
   await ctx.lock(`submit:${run.run}`,async()=>{
@@ -343,7 +342,7 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     if(!await applyDispatchResults(ctx,run,result,jobs))return;
     await recordResultRequests(ctx,run,result);
     const saved=await saveResult(ctx.deps.records.store,result,at);
-    for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon')))await answerRequest(ctx,request.record,saved.digest);}
+    for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(dispatchFinalized(job)||job.ended==='done'&&!dispatchUncertain(job,true)))await answerRequest(ctx,request.record,saved.digest);}
     await putAction(ctx.deps.records.store,{action:'validate',run:run.run,inputs:[`rec:${latest.digest}`],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{dispatch_snapshot:signature,result:saved.digest}});
   });
 }
@@ -358,7 +357,7 @@ async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRec
 
 /** Cache identity contains only the safe status fields used by the projection, never remote error text or lease material. */
 function dispatchSnapshot(jobs:import('../../dispatch/api.ts').RunJob[]):string{
-  return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,outcome:j.status.outcome,frozen:j.status.frozen,events:j.status.events,result:j.status.result??null,disposition:j.status.disposition??null,decided_by:j.status.decided_by??null,decided_at:j.status.decided_at??null})));
+  return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,ended:j.ended,events:j.status.events,job_facts:{scope:j.status.job_facts.scope,frozen:j.status.job_facts.frozen,awaiting_disposition:j.status.job_facts.awaiting_disposition,result:j.status.job_facts.result??null,disposition:j.status.job_facts.disposition??null,decided_by:j.status.job_facts.decided_by??null,decided_at:j.status.job_facts.decided_at??null,rounds:(j.status.job_facts.rounds??[]).map(round=>({round:round.round,terminal:round.terminal,reason:round.reason,dispatch_attempt:round.dispatch_attempt?{scope:round.dispatch_attempt.scope,outcome:round.dispatch_attempt.outcome}:null}))},dispatch_attempt:j.status.dispatch_attempt?{scope:j.status.dispatch_attempt.scope,outcome:j.status.dispatch_attempt.outcome}:null})));
 }
 
 /** Replay the same frozen work, with its recorded observer, after trusted transient parent exhaustion. */

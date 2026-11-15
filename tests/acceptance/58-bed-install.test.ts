@@ -126,11 +126,18 @@ describe('scenario 58: installing a build on a whole booked bed from the publish
     assert.equal(run.result.acceptance, 'accepted', JSON.stringify(run.result.errors));
     assert.ok(run.result.result!.partitions.delivered.every((item) => item.requirements.every((requirement) => requirement.status === 'satisfied')), JSON.stringify(run.result.result));
     const note = run.result.dispatch?.[0]; assert.match(note?.text ?? '', /已按工作流的规定自动开始上机验证/, JSON.stringify(run.result.dispatch));
+    assert.ok(note?.job, JSON.stringify(run.result.dispatch));
+    assert.equal(note.job_facts?.scope.job, note.job);
+    assert.equal(note.job_facts?.reservation_recorded, true, 'reservation alone does not assert a physical dispatch');
     const state = await settled(run.run, note);
-    assert.equal(state.outcome, 'effective'); assert.equal(state.frozen, false);
+    assert.equal(state.job_facts.scope.job, state.job);
+    assert.equal(state.dispatch_attempt?.scope.job, state.job);
+    assert.equal(state.dispatch_attempt?.scope.operation, 'dispatch');
+    assert.equal(state.dispatch_attempt?.outcome, 'effective'); assert.equal(state.job_facts.frozen, false);
+    assert.equal(state.job_facts.awaiting_disposition, false);
     assert.equal(sent.length, 1); assert.deepEqual(JSON.parse(sent[0].toString()), REQUEST, 'the gateway receives exactly the checked request bytes');
     assert.deepEqual(latest!.ids, CASES, 'the dispatched items are the profile\'s upgrade cases');
-    const source = await bed.hub.records.artifacts.source(bed.user.principal, state.result!.slice(4)); assert.ok(source?.bytes);
+    const source = await bed.hub.records.artifacts.source(bed.user.principal, state.job_facts.result!.slice(4)); assert.ok(source?.bytes);
     const report = JSON.parse(Buffer.from(source.bytes).toString()) as { rows: Array<{ item: string; reported_terminal: string }> };
     assert.deepEqual(report.rows.map((row) => [row.item, row.reported_terminal]), CASES.map((id) => [id, 'pass']));
     // Repeating the same submission reads the job; it never installs again.
@@ -149,7 +156,9 @@ describe('scenario 58: installing a build on a whole booked bed from the publish
     assert.equal(again.result.acceptance, 'accepted', JSON.stringify(again.result.errors));
     const refused = again.result.dispatch?.[0];
     assert.equal(refused?.job, undefined, JSON.stringify(again.result.dispatch));
-    assert.match(refused?.text ?? '', /^参数无效：这份产物已经派发过，作业已结束；同一份字节只派发一次/);
+    assert.equal(refused?.run_facts?.scope.run, again.run);
+    assert.equal(refused?.run_facts?.admission_error?.code, 'IDEMPOTENCY_MISMATCH');
+    assert.match(refused?.text ?? '', /^参数无效：本次运行的准入核对：这份产物已经派发过，作业已结束；同一份字节只派发一次/);
     assert.doesNotMatch(refused?.text ?? '', /[0-9a-f]{64}|circle-hub|exe_|usr_/);
     assert.doesNotMatch(refused?.text ?? '', /等管理员/);
     assert.equal(sent.length, 1);

@@ -21,7 +21,7 @@ import { runById, submissionByDigest, successorsOf } from './store.ts';
 import { latestSubmittedResult } from './predecessor-defaults.ts';
 import { resultReadableBy } from './grounds.ts';
 import { recReference } from '../../refs/api.ts';
-import { exportedJobs } from './dispatch-results.ts';
+import { exportedJobs, exportedScopedJobs } from './dispatch-results.ts';
 import { refused, startRun, type StartRunAnswer, type StartRunDetail } from './start.ts';
 import { backfillCitations } from './store.ts';
 import { summarizeStored, summarizeStoredResults } from './result-summary.ts';
@@ -171,6 +171,13 @@ export function createRunsService(deps: RunsEngineDeps): RunsEngine {
         const detail = await getRun(current, user, run);
         if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
         return { run, jobs: await exportedJobs(current, run) };
+      }));
+    },
+    exportScopedJobs(user, run) {
+      return withRequestPermissions(ctx.deps.records.artifacts, user, () => withQueryReads(ctx, async current => {
+        const detail = await getRun(current, user, run);
+        if (!detail || (user.role !== 'admin' && detail.run.runner !== user.id)) return null;
+        return { run, jobs: await exportedScopedJobs(current, run, user) };
       }));
     },
     exportSuccessors(user, run) {

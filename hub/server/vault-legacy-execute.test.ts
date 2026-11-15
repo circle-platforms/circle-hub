@@ -28,10 +28,15 @@ test('copied legacy v1 ciphertext and authenticated metadata execute under a new
     await fresh.registry.update(fresh.admin, fresh.executor.id, { ...fresh.executor.source, credential: '${secret:' + name + '}' });
     await fresh.freezeExecutor();
     const state = await fresh.service.dispatch(fresh.admin, fresh.run, fresh.executor.id);
-    assert.equal(state.outcome, 'effective');
+    const events = await fresh.service.journal.events(state.job);
+    const intents = events.filter(event => event.body.detail.phase === 'intent');
+    assert.equal(intents.length, 1);
+    assert.equal(intents[0].body.detail.round, 1);
+    assert.equal(typeof intents[0].body.detail.request_id, 'string');
+    assert.deepEqual(state.dispatch_attempt?.scope, { operation: 'dispatch', job: state.job, round: 1, request_id: intents[0].body.detail.request_id });
+    assert.equal(state.dispatch_attempt?.outcome, 'effective');
     assert.equal(fresh.submitted.length, 1);
     assert.ok(fresh.endpoint.calls.every(call => call.headers.authorization === 'Bearer ' + value));
-    const events = await fresh.service.journal.events(state.job);
     const used = events.find(event => event.body.detail.phase === 'credential_used');
     assert.deepEqual(used?.body.detail.variables, [{ kind: 'secret', at: fresh.executor.id + '#/credential', name, version: 1, sealed_sha256: createHash('sha256').update(original).digest('hex') }]);
     assert.deepEqual(used?.body.inputs, []);

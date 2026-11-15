@@ -387,7 +387,10 @@ describe('scenario 25: test-bed search, facts and acquire through the real Hub',
     assert.ok(after.released&&after.fencing>before.fencing);
     assert.equal((await stored(booking)).digest,booked.digest,'the original booking is immutable');
     const refusedDispatch=await dispatcher.dispatch(admin.principal,verification,executor.id);
-    assert.equal(refusedDispatch.outcome,'not_dispatched');assert.match(refusedDispatch.missing_fact!,/血缘/);
+    assert.equal(refusedDispatch.job_facts.scope.job,refusedDispatch.job);
+    const refusalAttempt=refusedDispatch.dispatch_attempt;assert.ok(refusalAttempt,JSON.stringify(refusedDispatch));
+    assert.equal(refusalAttempt.scope.operation,'dispatch');assert.equal(refusalAttempt.scope.job,refusedDispatch.job);
+    assert.equal(refusalAttempt.outcome,'not_dispatched');assert.equal(refusalAttempt.not_sent,true);assert.match(refusalAttempt.missing_fact!,/血缘/);
     const dispatchEvents=await dispatcher.journal.events(refusedDispatch.job);const refusal=dispatchEvents.find(event=>event.body.detail.phase==='boundary_refused')!;
     assert.equal(refusal.body.detail.boundary_clause,5);assert.equal(refusal.body.error_code,'LEASE_UNAVAILABLE');assert.equal(dispatchEvents.some(event=>event.body.detail.phase==='intent'),false);
     assert.ok((await bed.hub.leases.actionLog('bed/owned/')).some(row=>row.op==='force_release'&&row.by===a.user.id&&row.reason===reason));

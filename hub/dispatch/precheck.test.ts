@@ -8,16 +8,17 @@ test('standalone precheck acquires, reads and releases without an intent or subm
   const c = await setup(); t.after(() => c.close());
   const state = await c.service.precheck(c.admin, c.executor.id);
   const events = await c.service.journal.events(state.job);
+  assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.readonly_verified,true);
   assert.ok(events.some(e => e.body.detail.readonly_verified === true));
   assert.ok(c.calls.includes('open_slot') && c.calls.includes('inspect_slot') && c.calls.includes('close_slot'));
   assert.equal(c.calls.includes('send_blob'), false);
   assert.equal(events.some(e => e.body.detail.phase === 'intent'), false);
 });
 
-test('failed read-only precheck releases the lease and records not-dispatched, never unknown', async t => {
+test('failed read-only precheck releases the lease and records read-only failure without a dispatch attempt', async t => {
   const c = await setup({ mode: 'seats' }); t.after(() => c.close());
   const state = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(state.outcome, 'not_dispatched'); assert.equal(state.frozen, false);
+  assert.equal(state.dispatch_attempt,undefined);assert.equal(state.job_facts.readonly_verified,false);assert.equal(state.job_facts.frozen,false);
   assert.ok(c.calls.includes('close_slot'));
   assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.readonly_verified === false));
 });
@@ -54,7 +55,7 @@ test('multiple registered read-only sources are checked in order; a cache mismat
     await c.freezeExecutor();
     const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
     assert.ok(c.calls.indexOf('peek_cache') > c.calls.indexOf('inspect_slot'));
-    assert.equal(state.outcome, mismatch ? 'not_dispatched' : 'effective');
+    assert.equal(state.dispatch_attempt!.outcome, mismatch ? 'not_dispatched' : 'effective');
     assert.equal(c.calls.includes('send_blob'), !mismatch);
   }
 });
@@ -73,7 +74,7 @@ test('capture-only cached sources can bootstrap expectations but never make disp
     await c.freezeExecutor();
   const state = await c.service.precheck(c.admin, c.executor.id);
   assert.ok(c.calls.includes('inspect_slot')); assert.ok(c.calls.includes('peek_cache'));
-  assert.match(state.next_action!, /转换脚本.*update/);
+  assert.match(state.job_facts.next_action!, /转换脚本.*update/);
   assert.ok((await c.service.journal.events(state.job)).some(e => e.body.detail.registration_ready === false));
   await assert.rejects(c.service.dispatch(c.admin, c.run, c.executor.id));
 });
@@ -82,8 +83,11 @@ test('overprivileged credentials produce a concrete reason in both precheck and 
   const c=await setup({extraTools:['synthetic_admin_reset']});t.after(()=>c.close());
   await c.registry.update(c.admin,c.executor.id,{...c.executor.definition,refused_tools:['synthetic_admin_reset']});
     await c.freezeExecutor();
-  for(const state of [await c.service.precheck(c.admin,c.executor.id),await c.service.dispatch(c.admin,c.run,c.executor.id)]) {
-    assert.equal(state.outcome,'not_dispatched');assert.match(state.reason!,/密钥权限超出运行权限/);
-  }
+  const precheck=await c.service.precheck(c.admin,c.executor.id);
+  assert.equal(precheck.dispatch_attempt,undefined);assert.equal(precheck.job_facts.readonly_verified,false);
+  assert.match(precheck.job_facts.reason!,/密钥权限超出运行权限/);
+  const dispatched=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(dispatched.dispatch_attempt!.outcome,'not_dispatched');
+  assert.match(dispatched.dispatch_attempt!.reason!,/密钥权限超出运行权限/);
   assert.equal(c.calls.length,0);
 });

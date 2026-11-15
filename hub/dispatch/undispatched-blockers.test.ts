@@ -8,7 +8,7 @@ test('a clause-six refusal without an intent does not block a new verification r
  const c=await setup();t.after(()=>c.close());const policy=c.detail.run.policy,executors=c.detail.run.executors;
  c.detail.run.executors='f'.repeat(64);
  const refused=await c.service.dispatch(c.admin,c.run,c.executor.id);
- assert.equal(refused.phase,'boundary_refused');assert.equal(refused.outcome,'not_dispatched');assert.equal(refused.frozen,false);
+ assert.equal(refused.job_facts.phase,'boundary_refused');assert.equal(refused.dispatch_attempt!.outcome,'not_dispatched');assert.equal(refused.dispatch_attempt!.not_sent,true);assert.equal(refused.job_facts.frozen,false);
  const history=await c.service.journal.events(refused.job);assert.ok(!history.some(event=>event.body.detail.phase==='intent'));
  assert.equal(history.at(-1)!.body.detail.boundary_clause,6);
  const next=structuredClone(c.detail),run=newId('run');next.run.run=run;next.run.policy=policy;next.run.executors=executors;next.run.predecessor=c.run;
@@ -16,11 +16,11 @@ test('a clause-six refusal without an intent does not block a new verification r
  (next.latest!.result.partitions.delivered[0].requirements[0].claims[0].statement.data as any).plan_run=c.run;
  const read=c.runs.getRun;c.runs.getRun=async(by,id)=>id===run?next:read(by,id);
  const result=await c.service.dispatch(c.admin,run,c.executor.id);
- assert.equal(result.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
- assert.equal((await c.service.status(c.admin,refused.job)).outcome,'not_dispatched');
+ assert.equal(result.dispatch_attempt!.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+ assert.equal((await c.service.status(c.admin,refused.job)).dispatch_attempt!.outcome,'not_dispatched');
 });
 const binding=(job:string)=>({job,executor:'synthetic_executor',resources:['synthetic/seat'],scope:{target:'synthetic_target',origin:'https://executor.invalid'}});
-const event=(job:string,detail:Record<string,unknown>,index=0)=>({digest:String(index).padStart(64,'0'),body:{detail:{job,...detail}}}) as unknown as Event;
+const event=(job:string,detail:Record<string,unknown>,index=0)=>({digest:String(index).padStart(64,'0'),body:{inputs:[],detail:{job,...detail}}}) as unknown as Event;
 const scenarios:Array<[string,Record<string,unknown>[],boolean]>=[
  ['boundary refusal',[{phase:'boundary_refused',done:true,outcome:'not_dispatched',submit_invoked:false}],false],
  ['any terminal proving no invocation',[{phase:'synthetic_terminal',done:true,outcome:'not_dispatched',submit_invoked:false}],false],

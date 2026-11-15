@@ -16,7 +16,7 @@ let pg: TemporaryPostgres; let h: Harness;
 before(async () => { pg = await startPostgres(); h = await openHarness(pg); for (let at = 0; at < 3; at++) await storeQuietRun(h); });
 after(async () => { await h?.close(); await pg?.stop(); });
 
-const jobOf = (job: string, run: string): RunJob => ({ job, verification_run: run, plan_run: run, verification_item: 'case-a', items: ['case-a'], sha256: 'b'.repeat(64), status: { job, phase: 'result', outcome: 'effective', frozen: false, events: 1 }, ended: 'done', boundary_refused: false } as unknown as RunJob);
+const jobOf = (job: string, run: string): RunJob => ({ job, verification_run: run, plan_run: run, verification_item: 'case-a', items: ['case-a'], sha256: 'b'.repeat(64), status: { job, events:1, job_facts:{scope:{job},phase:'result',frozen:false},dispatch_attempt:{scope:{operation:'dispatch',job,round:1},outcome:'effective'} }, ended: 'done', boundary_refused: false } as unknown as RunJob);
 
 /** The engine with a dispatch port that counts; `offers` says whether it has the one reading, `jobs` answers for a run. */
 function counted(offers: boolean, jobs: (run: string, reservations?: RunReservations) => RunJob[] = () => [], reservations: () => Promise<RunReservations> = async () => new Map()) {

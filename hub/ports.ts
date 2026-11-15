@@ -1,3 +1,4 @@
+import type { ScopedDispatchFacts } from '../contracts/api.ts';
 import type {ProtocolCode} from '../contracts/generated/protocol.ts';
 import type {SourceAbsent} from '../contracts/src/resources.ts';
 // Interfaces between packages that are built at the same time. A package that provides a port exports a factory returning it
@@ -276,12 +277,18 @@ export interface RunStatistics {
 /** One dispatch job of a run as its runner may download it: what was dispatched, how it ended and each item's verdict. */
 /** A run started from another, reduced to what places it in a lineage: its pack, start, parameters and bound references. */
 export interface ExportedSuccessor { run: string; pack: string; started_at: string; predecessor: string | null; parameters: Record<string, unknown>; sources: Array<{ slot: string | null; reference: string }> }
-export interface ExportedJob {
+export interface ExportedJobV1 {
   job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean;
   /** The result projection and the word-for-word device return, as references; null when the job has none (yet). */
   result: string | null; device_return: string | null;
   /** Null until the result projection is the dispatch service's own and covers every item of the job exactly once. */
   rows: Array<{ item: string; dynamic_terminal: import('../contracts/generated/vocabulary.ts').DynamicTerminal; evidence?: { log?: string; sessions?: Record<string, string> } }> | null;
+}
+
+/** Canonical scoped export; no version-one effect aliases belong on this object. */
+export interface ExportedJobV2 extends ScopedDispatchFacts {
+  job:string; verification_run:string; plan_run:string; items:string[]; sha256:string; ended:'done'|'unknown'|null;
+  rows:ExportedJobV1['rows'];
 }
 
 export interface RunsService {
@@ -309,7 +316,8 @@ export interface RunsService {
   exportRun?(user: Principal, run: string): Promise<{ run: RunDetail['run']; run_reference: string; accepted_result_reference: string | null; result: ValidationResult | null; submission: unknown | null } | null>;
   /** Decision 160 (relay): the jobs the run was dispatched in, each item's verdict from the checked result projection and the
    * references of what the target returned; same readers as exportRun. */
-  exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  exportJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJobV1[] } | null>;
+  exportScopedJobs?(user: Principal, run: string): Promise<{ run: string; jobs: ExportedJobV2[] } | null>;
   /** The runs started with `run` as predecessor that the reader may export, as the run lineage a client tool walks (decision 162). */
   exportSuccessors?(user: Principal, run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
   /** Own runs for a user, every run for an admin, newest first. */

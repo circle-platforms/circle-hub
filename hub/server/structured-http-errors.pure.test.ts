@@ -218,3 +218,29 @@ test('the locked SDK malformed RPC envelope is a confirmed pre-handler parse ref
   assert.equal(error.data.call_error_category,'invalid_parameters');
   assert.equal(error.data.call_not_executed,true);
 });
+
+test('the verified baseline console-session boundary stays denied and carries structured facts on both machine entries', async () => {
+  const base=deps('ready');
+  const consoleDeps: ServerDeps={...base,records:{...base.records,principals:{
+    ...base.records.principals,
+    authenticateAccessToken:async()=>null,
+  }}};
+  const mcp=exchange('POST','/mcp','{}',{'content-type':'application/json',authorization:'Bearer '+TOKEN});
+  await handleMcp(mcp.request,mcp.response,{deps:consoleDeps,serverVersion:'synthetic',log() {},budget:new BodyBudget(1024)},1024);
+  const rpc=await mcp.read();
+  assert.equal(rpc.status,403);
+  assert.match(rpc.json().error.message,/控制台登录凭证不能用于此入口/);
+  const rpcData=HttpCallErrorData.parse(rpc.json().error.data);
+  assert.equal(rpcData.code,'CALL_AUTHENTICATION_REQUIRED');
+  assert.equal(rpcData.call_error_category,'permission_denied');
+  assert.equal(rpcData.call_not_executed,true);
+  const exported=exchange('GET','/run-export/'+RUN,'',{authorization:'Bearer '+TOKEN});
+  await handleRunExport(exported.request,exported.response,consoleDeps,()=>{});
+  const http=await exported.read();
+  assert.equal(http.status,403);
+  const error=HttpErrorEnvelope.parse(http.json()).error;
+  assert.match(error.message,/控制台登录凭证不能用于此入口/);
+  assert.equal(error.code,'CALL_AUTHENTICATION_REQUIRED');
+  assert.equal(error.call_error_category,'permission_denied');
+  assert.equal(error.call_not_executed,true);
+});

@@ -1,3 +1,4 @@
+import type { DispatchAttemptScope, DispatchJobFacts } from '../../contracts/api.ts';
 import {EffectRecord} from '../../contracts/src/resources.ts';
 import {isEffectOutcome} from '../../contracts/generated/vocabulary.ts';
 import type { ActionBody, Principal, RecordsKit, StoredRecord, Transaction } from '../records/api.ts';
@@ -5,7 +6,7 @@ import type { ActionKind, ActionResult } from '../../contracts/generated/vocabul
 import { newId, sha256Hex, canonicalBytes } from '../records/api.ts';
 import type { HolderSnapshot } from '../leases/api.ts';
 import type { VerifiedInput } from './proof.ts';
-export interface JobBinding { run?:string; job: string; initiated_by: string; acting_by?: string; executor: string; executor_digest: string; executor_source_digest?:string; variables?:import('../../contracts/src/variables.ts').OrdinaryVariableUse[]; target_key: string; scope?: {target:string;origin:string}; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
+export interface JobBinding { operation?:DispatchJobFacts['operation']; attempt_scope?:DispatchAttemptScope; run?:string; job: string; initiated_by: string; acting_by?: string; executor: string; executor_digest: string; executor_source_digest?:string; variables?:import('../../contracts/src/variables.ts').OrdinaryVariableUse[]; target_key: string; scope?: {target:string;origin:string}; input: VerifiedInput | null; user: string; resources: string[]; fences?: HolderSnapshot[]; context?: Record<string, unknown>; }
 export type Event = StoredRecord<ActionBody>;
 export class Journal {
   readonly records: RecordsKit;
@@ -62,9 +63,15 @@ export class Journal {
   private async effect(binding:JobBinding,event:Event,tx?:Transaction):Promise<void>{
     await this.records.store.withTransaction(async transaction=>{
       await this.records.store.lock(`dispatch.effect:${binding.job}`,transaction);
-      const previous=(await this.records.store.findMany<EffectRecord>({kind:'effect',key:'effect.job',values:[binding.job]},transaction)).at(-1);
-      const intent=eventOf(await this.events(binding.job,transaction),'intent');
-      const detail=event.body.detail,values=intent?.body.detail??{};
+      const events=await this.events(binding.job,transaction);
+      const detail=event.body.detail;
+      const linked=[...events].reverse().find(candidate => candidate.body.detail.phase==='intent' && event.body.inputs.includes(`rec:${candidate.digest}`));
+      const intent=linked ?? (Object.hasOwn(detail,'round')
+        ? [...events].reverse().find(candidate => candidate.body.detail.phase==='intent' && candidate.body.detail.round===detail.round)
+        : eventOf(events,'intent'));
+      const values=intent?.body.detail??{};
+      const previous=(await this.records.store.findMany<EffectRecord>({kind:'effect',key:'effect.job',values:[binding.job]},transaction))
+        .findLast(record => record.body.intent_key === (values.intent_key ?? null) && record.body.request_id === (values.request_id ?? null));
       const definitionBytes=await this.records.objects.get(binding.executor_digest);if(!definitionBytes)throw new Error('缺少固定执行器原件；请恢复后对账');
       const d=JSON.parse(new TextDecoder().decode(definitionBytes));
       const write=d.calls.submit.write;
@@ -115,16 +122,59 @@ export function holdsPhysicalTarget(events:readonly Event[]):boolean{
  const terminal=events.findLastIndex(event=>event.body.detail.done===true);
  if(terminal<0||lastIntent>terminal)return true;
  const end=events[terminal].body.detail;
- // A confirmed disposition releases the reservation without asserting that its old effect never happened.
+ if(events.slice(terminal+1).some(event=>event.body.detail.outcome==='unknown'||event.body.detail.phase==='round_context'))return true;
+ // A confirmed disposition releases this reservation, never a later unresolved use.
  if(end.effect_mark==='disposed'&&end.disposition==='mark_failed'&&end.risk_confirmed===true&&end.unfreeze===true)return false;
- if(events.slice(terminal+1).some(event=>event.body.detail.outcome==='unknown'))return true;
- if(!isEffectOutcome(end.outcome)||end.outcome==='unknown'||end.outcome==='issued')return true;
- if(end.outcome==='not_dispatched')return !(end.submit_invoked===false||end.phase==='boundary_refused'||lastIntent<0);
- return false;
+ const intents=events.filter(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');
+ const activeContext=events.findLastIndex(event=>event.body.detail.phase==='round_context');
+ if(activeContext>terminal)return true;
+ if(!intents.length){
+   if(!isEffectOutcome(end.outcome)||end.outcome==='unknown'||end.outcome==='issued')return true;
+   return end.outcome==='not_dispatched'&&end.not_sent!==true&&end.submit_invoked!==false;
+ }
+ return intents.some(intent=>{
+   const start=events.indexOf(intent);
+   const next=events.findIndex((event,index)=>index>start&&(
+     event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'
+     ||(event.body.detail.phase==='round_context'||event.body.detail.phase==='round_refused')&&!event.body.inputs.includes(`rec:${intent.digest}`)
+   ));
+   const own=events.slice(start+1,next<0?undefined:next);
+   const accepted=own.some(event=>event.body.detail.phase==='receipt'&&event.body.detail.acceptance==='accepted');
+   const submitted=own.filter(event=>event.body.detail.phase==='submit.response');
+   const terminalForIntent=own.findLast(event=>{
+     const d=event.body.detail;
+     const linked=event.body.inputs.includes(`rec:${intent.digest}`);
+     const observedRound=d.phase==='round'&&typeof intent.body.detail.round==='number'&&d.round===intent.body.detail.round;
+     // A sole legacy intent can have a terminal without a rec link; this does not
+     // infer or publish a round and must never lend its summary to another intent.
+     const soleIntentTerminal=intents.length===1&&d.phase==='complete'&&d.done===true;
+     if(!(linked||observedRound||soleIntentTerminal))return false;
+     if(d.outcome==='effective'||d.outcome==='target_rejected'||d.outcome==='proven_not_executed')return true;
+     return d.outcome==='not_dispatched'&&(d.not_sent===true||d.submit_invoked===false)
+       &&!accepted&&submitted.every(response=>response.body.detail.request_bytes_written===0);
+   });
+   if(!terminalForIntent)return true;
+   return own.slice(own.indexOf(terminalForIntent)+1).some(event=>event.body.detail.outcome==='unknown');
+ });
+}
+/** Administrative risk consent changes control, never the unresolved physical outcome. */
+export function isConservativelyFrozen(events:readonly Event[],missingReceipt:boolean):boolean {
+ if(isFrozen(events))return true;
+ const decision=eventOf(events,'dispose');
+ const consent=decision?.body.detail;
+ const decisionIndex=decision?events.indexOf(decision):-1;
+ const released=consent?.disposition==='mark_failed'&&consent.risk_confirmed===true&&consent.unfreeze===true&&consent.done===true&&consent.effect_mark==='disposed'
+   &&!events.slice(decisionIndex+1).some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent'||event.body.detail.phase==='round_context'||event.body.detail.outcome==='unknown');
+ const unscopedTerminal=!events.some(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent')&&isDone(events)&&holdsPhysicalTarget(events);
+ return (missingReceipt||unscopedTerminal)&&!released;
 }
 export const isDone = (events: readonly Event[]) => events.some(e => e.body.detail.done === true);
 export const eventOf = (events: readonly Event[], phase: string) => [...events].reverse().find(e => e.body.detail.phase === phase);
 export const digestOfValue = (value: unknown) => sha256Hex(canonicalBytes(value));
 
 /** A recovered observation supplies identity without inventing a historical receipt. */
-export function receiptOf(events:readonly Event[]):Event|undefined {return eventOf(events,'receipt') ?? [...events].reverse().find(e=>e.body.detail.phase==='reconciled' && e.body.detail.acceptance==='accepted' && e.body.detail.remote_id!==undefined);}
+export function receiptOf(events:readonly Event[]):Event|undefined {
+ const intent=events.findLastIndex(event=>event.body.detail.phase==='intent'||event.body.detail.phase==='probe_intent');
+ const own=events.slice(intent+1);
+ return eventOf(own,'receipt') ?? [...own].reverse().find(e=>e.body.detail.phase==='reconciled' && e.body.detail.acceptance==='accepted' && e.body.detail.remote_id!==undefined);
+}

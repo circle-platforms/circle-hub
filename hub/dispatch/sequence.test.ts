@@ -9,7 +9,7 @@ import {Journal,digestOfValue} from './journal.ts';
  test('per-executor dispatch ordinals are signed, durable and never reset with a new service journal',async t=>{
   const c=await setup();t.after(()=>c.close());
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.outcome,'effective');
+  assert.equal(result.dispatch_attempt!.outcome,'effective');
   const events=await c.service.journal.events(result.job);
   const intent=events.find(event=>event.body.detail.phase==='intent')!;
   const wire=c.endpoint.calls.find(call=>call.params.name==='send_blob')!.params.arguments as Record<string,unknown>;
@@ -33,7 +33,7 @@ import {Journal,digestOfValue} from './journal.ts';
     return event;
   });
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.outcome,'not_dispatched');
+  assert.equal(result.dispatch_attempt!.outcome,'not_dispatched');
   assert.equal(c.calls.filter(name=>name==='send_blob').length,0);
   assert.ok((await c.service.journal.events(result.job)).some(event=>event.body.detail.next_action));
  });
@@ -41,7 +41,7 @@ import {Journal,digestOfValue} from './journal.ts';
  for(const skew of [-7*3600000,7*3600000])test(`target wall-clock skew ${skew} never gates issuer dispatch`,async t=>{
   const c=await setupJournal({clockLagMs:skew});t.after(()=>c.close());
   const result=await c.service.dispatch(c.admin,c.run,c.executor.id);
-  assert.equal(result.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
+  assert.equal(result.dispatch_attempt!.outcome,'effective');assert.equal(c.calls.filter(name=>name==='send_blob').length,1);
  });
 
 test('request protocol binds sequence and scope exactly once without requiring a deadline',()=>{
