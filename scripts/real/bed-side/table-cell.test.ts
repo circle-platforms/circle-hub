@@ -19,8 +19,9 @@ function python(code: string, value: unknown, args: string[] = []) {
   return JSON.parse(result.stdout);
 }
 function select(output: string, conditions: string[], options: Record<string, unknown>) {
-  return python(`from table_cell import table_cell,CellSelectionError
+  return python(`from table_cell import table_cell,CellSelectionError,CELL_VALUE_POLICY
 p=json.load(sys.stdin)
+p['options']['value_policy']=CELL_VALUE_POLICY
 try: print(json.dumps({'value':table_cell(p['output'],*p['conditions'],**p['options'])}))
 except CellSelectionError as error: print(json.dumps({'error':str(error)}))
 `, { output, conditions, options: { separator: '+', columns: 3, column: 3, ...options } });
@@ -209,6 +210,7 @@ test('the exported rule covers actual framework and component files, retains clo
     assert.deepEqual(entry.signature.required, ['output', 'separator', 'columns', 'column']);
     assert.equal(entry.signature.parameters.find((item: { name: string }) => item.name === 'conditions').kind, 'var_positional');
     assert.equal(entry.parameter_roles.output, 'cell_source');
+    assert.deepEqual(entry.cell_effect.value_policy, {schema:'ascii-cell-value@1',characters:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+:-',min_length:1,max_length:128});
     assert.equal(readFileSync(join(f.framework, 'lib/test_xlsx.py'), 'utf8'), FRAMEWORK);
   } finally { f.close(); }
 });
@@ -244,6 +246,12 @@ test('Hub declarations restore the actual new original, inherit unchanged source
     assert.equal(hub.runtime.block_model.cell_inputs, true);
     assert.deepEqual(hub.runtime.block_model.cell_methods, [{ object: 'Device_0', method: 'table_cell' }]);
     const added = hub.entries.find((item: { f: string }) => item.f === 'table_cell');
+    const originalCell = f.document.entries.find((item: { f: string }) => item.f === 'table_cell');
+    assert.deepEqual(added.cell_effect.value_policy, originalCell.cell_effect.value_policy);
+    assert.equal(added.cell_effect.value_policy.schema, 'ascii-cell-value@1');
+    assert.equal(added.cell_effect.value_policy.min_length, 1);
+    assert.equal(added.cell_effect.value_policy.max_length, 128);
+    assert.equal(added.cell_effect.value_policy.characters, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+:-');
     assert.deepEqual(added.typed_authority.effects, ['cell_selection']);
     assert.equal(hub.effects.cell_selection.budget, 256);
     assert.deepEqual(hub.effects.cell_selection.roles, ['cell_source', 'cell_selection']);
@@ -319,11 +327,13 @@ framework=Framework()
 class Gateway:
     def __init__(self,cfg):
         self.cfg=cfg;self.state=object();self.handlers={'case_submit':self.case_submit}
+    def audit(self,event,**fields):
+        self.cfg.route_audit.append({'event':event,**fields});return True
     def case_submit(self,caller,args):
         frozen=gates.freeze(args['data'])
         stage=framework.stage_case(self.cfg,'synthetic','case',frozen,'synthetic-sha',args['task'])
         framework.launch_run(self.cfg,args['task'],'synthetic','case','synthetic-build',7)
-        return {'ok':True,**stage}
+        return {'ok':True,'task_id':args['task'],**stage}
     def call(self,caller,name,args):
         self.cfg.audit.append({'tool':name,'args':args})
         if name=='case_status': return {'task_id':args['task_id'],'state':'done'}
@@ -343,18 +353,20 @@ from cell_gateway import service_namespace
 from types import SimpleNamespace
 from pathlib import Path
 p=json.load(sys.stdin);module=load_module('synthetic_gateway',p['fake'])
-cfg=SimpleNamespace(apv_src=Path(p['framework']),staging_parent=Path(p['root']),trace=[],commands=[],audit=[],output='sample+private+00888\\nsample+public+00123')
+cfg=SimpleNamespace(apv_src=Path(p['framework']),staging_parent=Path(p['root']),trace=[],commands=[],audit=[],route_audit=[],output='sample+private+00888\\nsample+public+00123')
 base=module.Gateway(cfg);private=private_gateway(base,module.framework,module.gates,p['contract']);router=Gateway(base,private)
 service=load_module('synthetic_service',p['service']);namespace=service_namespace(service);rpc=namespace['handle_rpc']
-new=rpc(router,None,{'method':'tools/call','name':'case_submit_cell','arguments':{'task':'new','data':{**p['data'],'pin':p['pin']}}})
-old=router.call(None,'case_submit',{'task':'old','data':{'pin':'old-pin'}})
-poll=router.call(None,'case_status',{'task_id':'new'})
+caller=SimpleNamespace(subject='synthetic')
+new=rpc(router,caller,{'method':'tools/call','name':'case_submit_cell','arguments':{'task':'new','data':{**p['data'],'pin':p['pin']}}})
+route_audit_after_new=list(cfg.route_audit)
+old=router.call(caller,'case_submit',{'task':'old','data':{'pin':'old-pin'}})
+poll=router.call(caller,'case_status',{'task_id':'new'})
 def unknown(target):
-    try: target.call(None,'synthetic-missing',{'same':'arguments'})
+    try: target.call(caller,'synthetic-missing',{'same':'arguments'})
     except Exception as error: return {'type':type(error).__name__,'args':error.args}
 old_unknown=unknown(base);wrapped_unknown=unknown(router)
 directory=Path(new['staging_dir'])
-print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':json.loads((directory/'excel_contract.json').read_text())['contract_sha256'],'config':json.loads((directory/'cell-runtime.json').read_text()),'old_entry':(Path(old['staging_dir'])/'test_xlsx.py').read_text(),'old_pin':module.PINNED_CONTRACT_SHA256,'poll':poll,'trace':cfg.trace,'same_state':private.state is base.state,'commands':cfg.commands,'selected':cfg.result['registers']['picked'],'tools':rpc(router,None,{'method':'tools/list'}),'old_tools':service.handle_rpc(router,None,{'method':'tools/list'}),'new_specs':namespace['TOOL_SPECS'],'old_specs':service.TOOL_SPECS,'old_unknown':old_unknown,'wrapped_unknown':wrapped_unknown,'audit':cfg.audit}))
+print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':json.loads((directory/'excel_contract.json').read_text())['contract_sha256'],'config':json.loads((directory/'cell-runtime.json').read_text()),'route_audit':cfg.route_audit,'route_audit_after_new':route_audit_after_new,'old_marker_exists':(Path(old['staging_dir'])/'cell-runtime.json').exists(),'old_entry':(Path(old['staging_dir'])/'test_xlsx.py').read_text(),'old_pin':module.PINNED_CONTRACT_SHA256,'poll':poll,'trace':cfg.trace,'same_state':private.state is base.state,'commands':cfg.commands,'selected':cfg.result['registers']['picked'],'tools':rpc(router,None,{'method':'tools/list'}),'old_tools':service.handle_rpc(router,None,{'method':'tools/list'}),'new_specs':namespace['TOOL_SPECS'],'old_specs':service.TOOL_SPECS,'old_unknown':old_unknown,'wrapped_unknown':wrapped_unknown,'audit':cfg.audit}))
 `, { fake, service, data, framework: f.framework, root: f.root, contract: f.exported, pin: f.document.contract_sha256 });
     assert.equal(result.new_entry, readFileSync(join(COMPONENT, 'test_xlsx.py'), 'utf8'));
     assert.equal(result.new_rule, f.document.contract_sha256);
@@ -364,6 +376,14 @@ print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':
     assert.deepEqual(result.poll, { task_id: 'new', state: 'done' });
     assert.deepEqual(result.trace, [{ task: 'new', fd: 7, build: 'synthetic-build' }, { task: 'old', fd: 7, build: 'synthetic-build' }]);
     assert.equal(result.config.framework_root, f.framework);
+    assert.equal(result.config.submission_tool, 'case_submit_cell');
+    assert.equal(result.old_marker_exists, false);
+    assert.deepEqual(result.route_audit, [
+      {event:'cell_route_requested',tool:'case_submit_cell',subject:'synthetic'},
+      {event:'cell_route_task',tool:'case_submit_cell',task_id:'new'},
+      {event:'cell_route_result',tool:'case_submit_cell',subject:'synthetic',task_id:'new',response_ok:true,replayed:null},
+    ]);
+    assert.deepEqual(result.route_audit, result.route_audit_after_new, 'old submit, polling and unknown delegation add no private route events');
     assert.deepEqual(result.commands, ['observe', 'use 00123']);
     assert.equal(result.selected, '00123');
     assert.deepEqual(result.tools, ['case_submit', 'case_submit_cell']);
@@ -376,4 +396,55 @@ print(json.dumps({'new_entry':(directory/'test_xlsx.py').read_text(),'new_rule':
     assert.deepEqual(result.audit.map((row: {tool:string})=>row.tool),['case_submit','case_submit','case_status','synthetic-missing','synthetic-missing']);
     assert.deepEqual(result.audit[3],result.audit[4]);
   } finally { f.close(); }
+});
+
+
+test('the declared cell value policy accepts safe ASCII and rejects unsafe character classes and length', () => {
+  const result = python(`from table_cell import checked_cell_value,CellSelectionError,CELL_VALUE_POLICY
+p=json.load(sys.stdin);accepted=[];refused=[]
+for value in p['safe']:
+    accepted.append(checked_cell_value(value,CELL_VALUE_POLICY))
+for value in p['unsafe']:
+    try: checked_cell_value(value,CELL_VALUE_POLICY);refused.append(None)
+    except CellSelectionError as error: refused.append(str(error))
+print(json.dumps({'accepted':accepted,'refused':refused}))
+`, {safe:['00123','Kzone.example.+900+00123+ksk+DEMO+2048','part:rest','x'.repeat(128)],unsafe:['',' ','a b','\n','\r','\t','\x00','\x1f','\x7f','"',"'",';','|','\\','非ASCII','x'.repeat(129)]});
+  assert.deepEqual(result.accepted,['00123','Kzone.example.+900+00123+ksk+DEMO+2048','part:rest','x'.repeat(128)]);
+  assert.equal(result.refused.length,16);
+  for (const error of result.refused) assert.match(error,/取不到.*位置/);
+  assert.match(result.refused[0],/长度/);assert.match(result.refused[2],/空白字符/);
+  assert.match(result.refused[3],/控制字符/);assert.match(result.refused[9],/引号字符/);
+  assert.match(result.refused[11],/非允许符号/);assert.match(result.refused[14],/非ASCII字符/);assert.match(result.refused[15],/长度/);
+});
+
+test('runtime rejects unsafe selected cells before the subsequent command without changing the raw observation', () => {
+  const f=fixture();
+  try {
+    const file=workbook(f);
+    for (const value of [' ','a b','\n','\r','\t','\x00','\x1f','\x7f','"',"'",';','|','\\','非ASCII','x'.repeat(129)]) {
+      const result=python(FLOW,{framework:f.framework,contract:f.exported,workbook:file,output:'sample+public+'+value});
+      assert.deepEqual(result.calls,['observe'], JSON.stringify({value,result}));
+      assert.match(result.error,/取不到/);
+    }
+  } finally {f.close();}
+});
+
+test('rehashed rule policy injection still fails against the source-verified component declaration', () => {
+  const f=fixture();
+  try {
+    const file=workbook(f);
+    for (const mutation of ['characters','length','missing','source']) {
+      const document=structuredClone(f.document);
+      const cell=document.entries.find((row:{f:string})=>row.f==='table_cell');
+      if(mutation==='characters')cell.cell_effect.value_policy.characters+=';|"\\';
+      if(mutation==='length')cell.cell_effect.value_policy.max_length=4096;
+      if(mutation==='missing')delete cell.cell_effect.value_policy;
+      if(mutation==='source')delete document.source_hashes['cell-runtime/table_cell.py'];
+      const {contract_sha256:_old,...body}=document;document.contract_sha256=sha(canonical(body));
+      const policyFile=join(f.root,'tampered-policy.json');writeFileSync(policyFile,JSON.stringify(document));
+      const result=python(FLOW,{framework:f.framework,contract:policyFile,workbook:file,output:'sample+public+00123'});
+      assert.deepEqual(result.calls,[]);
+      assert.match(result.error,/策略|完整来源摘要/);
+    }
+  } finally {f.close();}
 });

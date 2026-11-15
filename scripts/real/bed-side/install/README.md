@@ -31,13 +31,13 @@ node -e 'const fs=require("node:fs");const [base,out,...names]=process.argv.slic
 ## 只读预检、安装和紧急撤回
 
 ```sh
-python3 "$BUNDLE_DIRECTORY/install/installer.py" preflight --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY"
+sudo "$SERVICE_PYTHON" "$BUNDLE_DIRECTORY/install/installer.py" preflight --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY"
 # 预检只读并结束。部署者审核输出及另行完成 Hub 一侧实时预检后，才调用 install。
-python3 "$BUNDLE_DIRECTORY/install/installer.py" install --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY" --timeout 30 --stable-seconds 10
+sudo "$SERVICE_PYTHON" "$BUNDLE_DIRECTORY/install/installer.py" install --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY" --timeout 30 --stable-seconds 10
 # status 只读，不要求安装包、观测器或服务已运行。
-python3 "$INSTALLER_FILE" status --unit "$SERVICE_UNIT"
+sudo "$SERVICE_PYTHON" "$INSTALLER_FILE" status --unit "$SERVICE_UNIT"
 # 紧急撤回不要求服务已启动、不要求观测器或完整安装包。
-python3 "$INSTALLER_FILE" rollback --unit "$SERVICE_UNIT" --timeout 30 --stable-seconds 10
+sudo "$SERVICE_PYTHON" "$INSTALLER_FILE" rollback --unit "$SERVICE_UNIT" --timeout 30 --stable-seconds 10
 ```
 
 路径从 systemctl show 的现行启动命令、WorkingDirectory、FragmentPath 发现；不转储配置、不执行 show 的输出。仅支持明确的 Python 原网关入口或本组件入口，未知格式停止，不猜目录。仅新增本次 drop-in，不重写原 unit；drop-in 中持久化必要运行路径已获 Boss 批准。
@@ -55,6 +55,14 @@ python3 "$INSTALLER_FILE" rollback --unit "$SERVICE_UNIT" --timeout 30 --stable-
 每次安装使用新的 `--release` 发布名（传给打包器），包括上次失败后的重试。已有版本目录不会被覆盖或自动清理；它可能仍被任务、回执或历史引用使用，后清理由部署者确认。
 
 主机安装/撤回由具备权限的运维身份运行：须能读取服务配置及状态，创建独立版本和本次 unit drop-in、将规则属主改为服务 User，并执行 systemctl daemon-reload/restart。通常使用该主机批准的 root/sudo 管理身份；不用普通 Hub 成员身份代替主机权限，也不在命令里携带 Hub 密钥。status 不执行修改，但能否读完整事实仍取决于主机权限；未知如实保留。预检后由 Boss 审阅，再执行 install；本地开发者不代替运维运行这些主机命令。
+
+按已交回的主机事实，安装器和观测器统一使用**从现行ExecStart发现的服务专用解释器**（已报为3.12），不依赖登录PATH中的python3（已报为3.8）选解释器。框架原格式导出仍使用配置里的py38；服务及Hub格式导出沿服务解释器。完整路径只在主机内存中发现，不写死在材料里。status/rollback可用单独保留的安装器文件，不要求bundle。
+
+建议整次安装/撤回在批准的sudo管理身份下运行，避免中途提权失败使自动撤回失去权限。不需要root的复制/独立目录创建/纯文件导出也在该事务内执行；必须root的步骤是unit目录写入、chown、daemon-reload/restart。这样新版本目录和五个代码文件归root，普通服务账户不能自行清理，后清理须另行由管理身份执行；runtime状态目录和两份规则单独赋给服务User，runtime为0700。现有配置、两行Environment和WorkingDirectory符号链接不改。运维使用已有口令通道，不假设sudo -n可用，不在命令或日志中写口令。
+
+观测对所有主进程外进程一视同仁：短命读取/探测辅助进程也会使jobs非零，不把它猜成“可忽略的非作业”。重启会打断这类在途读取，安装前由运维停止持续调用方并保持窗口，再按当前事实重跑预检；不按进程名字豁免、不伪造空闲。
+
+包装状态在版本目录runtime/status.json；装后必须是当前MainPID的mode=cell。mode=original表示服务已降级只提供旧工具，缺失或旧PID状态为未知，均不满足安装成功。status显示配置入口和组件状态是两件事，wrapped不代表已启用取值。
 
 ## 只读观测的边界
 

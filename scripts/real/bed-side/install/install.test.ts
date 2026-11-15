@@ -9,6 +9,8 @@ import importlib.util,json,os,pwd,sys,tempfile,shutil
 from pathlib import Path
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('synthetic_installer',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+import ast
+ast.parse(Path(sys.argv[1]).read_text(),feature_version=(3,8))
 class Fixture:
  def __init__(self,fail=None):
   self.root=Path(tempfile.mkdtemp(prefix='synthetic-cell-install-'));self.fail=fail;self.failed=False;self.calls=[];self.requests=[];self.now=0;self.sleeps=0;self.pid=42;self.restarts=0;self.on_sleep=None;self.reset_restart_counter=False;self.active='active';self.sub='running';self.loaded=[];self.chowns=[]
@@ -35,10 +37,14 @@ class Fixture:
  def wrap(self):
   self.parent.mkdir(exist_ok=True)
   self.effective=[sys.executable,str(self.version/'entry.py'),'serve','--gateway-root',str(self.gateway),'--config',str(self.config),'--contract',str(self.version/'excel-contract.json')]
-  self.drop.write_text(m.dropin_text(self.effective));self.loaded=[self.drop];self.version.mkdir(parents=True,exist_ok=True);(self.version/'keep').write_text('retained')
+  self.drop.write_text(m.dropin_text(self.effective));self.loaded=[self.drop];self.version.mkdir(parents=True,exist_ok=True);(self.version/'keep').write_text('retained');self.write_state()
+ def write_state(self):
+  runtime=self.version/'runtime';runtime.mkdir(exist_ok=True,mode=0o700)
+  (runtime/'status.json').write_text(json.dumps({'schema':'value-pick-state@1','pid':self.pid,'mode':'original' if self.fail=='degraded' else 'cell','reason':'synthetic component unavailable' if self.fail=='degraded' else None,'recorded_at':'2026-11-15T00:00:00Z'}))
  def facts(self,request):
-  tools=['case_submit','lease_status']+(['case_submit_cell'] if request['phase']=='postcheck' else [])
-  return {'schema':'value-pick-observation@1','verified':True,'jobs':0,'leased':False,'bed_busy':False,'version':'0.4.7','tools':tools,'task_inventory_sha256':'b'*64,'request_records_sha256':'c'*64}
+  state=json.loads((self.version/'runtime/status.json').read_text()) if request.get('component_root') else None
+  tools=['case_submit','lease_status']+(['case_submit_cell'] if state and state['mode']=='cell' else [])
+  return {'schema':'value-pick-observation@1','component_state':state,'verified':True,'jobs':0,'leased':False,'bed_busy':False,'version':'0.4.7','tools':tools,'task_inventory_sha256':'b'*64,'request_records_sha256':'c'*64}
  def run(self,argv,timeout=30,input=None):
   self.calls.append((list(argv),timeout))
   if argv[0]==self.engine.systemctl:
@@ -56,7 +62,9 @@ class Fixture:
     if self.reset_restart_counter:self.restarts=0
     if self.fail=='restart' and self.drop.exists() and not self.failed:self.failed=True;self.active='failed';self.sub='failed';raise m.InstallFailure('command','synthetic_restart_failure')
     if self.fail=='rollback_restart' and not self.drop.exists():self.active='failed';self.sub='failed';raise m.InstallFailure('command','synthetic_rollback_restart_failure')
-    self.active='failed' if self.fail=='timeout' and self.drop.exists() else 'active';self.sub='failed' if self.active=='failed' else 'running';return ''
+    self.active='failed' if self.fail=='timeout' and self.drop.exists() else 'active';self.sub='failed' if self.active=='failed' else 'running'
+    if self.drop.exists():self.write_state()
+    return ''
    raise AssertionError('unknown fake systemctl operation')
   if len(argv)>1 and argv[1]==str(self.bundle/'install/observe.py'):
    assert argv[0]==sys.executable
@@ -96,7 +104,9 @@ assert answer['ok'] and f.fragment.read_text()=='ORIGINAL UNIT BYTES'
 assert f.version.stat().st_mode&0o777==0o755 and f.version.parent.stat().st_mode&0o777==0o755
 for name in m.FILES:assert (f.version/name).stat().st_mode&0o777==0o644
 for name in ['excel-contract.json','hub-contract.json']:assert (f.version/name).stat().st_mode&0o777==0o600
-assert len(f.chowns)==2
+assert len(f.chowns)==3
+assert (f.version/'runtime').stat().st_mode&0o777==0o700
+assert any(Path(args[0])==f.version/'runtime' for args in f.chowns)
 assert any(r['phase']=='postcheck' and r['component_root']==str(f.version) for r in f.requests)
 assert f.drop.read_text()==m.dropin_text(f.effective)
 `));
@@ -217,7 +227,7 @@ f.plan['component_sha256']['cell_gateway.py']=m.sha(f.bundle/'bed-side/cell_gate
 state=f.root/'state';state.mkdir();(state/'tasks').mkdir();(state/'bed.lock').write_text('')
 staging=f.root/'staging';staging.mkdir();proc=f.root/'proc';cg=f.root/'cgroup'
 f.config.write_text(f.config.read_text()+'staging_parent="'+str(staging)+'"\n[state]\ndir="'+str(state)+'"\n')
-(proc/'42').mkdir(parents=True);(proc/'42/cgroup').write_text('0::/synthetic.slice\n')
+(proc/'42').mkdir(parents=True);(proc/'42/cgroup').write_text('0::/synthetic.slice\n');(proc/'42/cmdline').write_bytes(('\0'.join(f.original)+'\0').encode())
 (proc/'sys/kernel/random').mkdir(parents=True);(proc/'sys/kernel/random/boot_id').write_text('synthetic-boot\n')
 (cg/'synthetic.slice').mkdir(parents=True);(cg/'cgroup.controllers').write_text('cpu\n');(cg/'synthetic.slice/cgroup.procs').write_text('42\n')
 with sqlite3.connect(state/'state.db') as db:db.executescript('CREATE TABLE lease(bed TEXT,released INTEGER,clock_epoch TEXT,monotonic_deadline REAL);CREATE TABLE tasks(task_id TEXT);')
@@ -233,7 +243,9 @@ def combined(argv,timeout=30,input=None):
    return {'MainPID':'42','ControlGroup':'/synthetic.slice','WorkingDirectory':str(f.gateway),'ExecStart':original_run([f.engine.systemctl,'show',unit,'--property=ExecStart','--value'])}
   facts=obs.observe(request,proc_root=proc,cgroup_root=cg,properties=properties)
   return json.dumps(facts)
- return original_run(argv,timeout=timeout,input=input)
+ result=original_run(argv,timeout=timeout,input=input)
+ if argv[0]==f.engine.systemctl and argv[1]=='restart':(proc/'42/cmdline').write_bytes(('\0'.join(f.effective)+'\0').encode())
+ return result
 f.engine.runner=combined
 answer=f.engine.install(f.bundle,f.unit)
 assert answer['ok']
@@ -322,4 +334,26 @@ f.engine.runner=raced
 try:f.engine.install(f.bundle,f.unit);raise AssertionError('must reject first nonzero count')
 except m.InstallFailure as e:assert e.stage=='restart' and e.reason=='service_not_stable' and e.rollback['ok']
 assert not f.drop.exists()
+`));
+
+test('a running degraded wrapper cannot satisfy installation postcheck and is automatically rolled back',()=>check(`
+f.fail='degraded'
+try:f.engine.install(f.bundle,f.unit);raise AssertionError('must reject degraded mode')
+except m.InstallFailure as e:assert e.stage=='postcheck' and e.reason=='component_not_cell' and e.rollback['ok']
+assert not f.drop.exists() and f.effective==f.original
+`));
+
+test('status distinguishes current degraded mode from a stale cell state and zero MainPID without inventing a running mode',()=>check(`
+f.wrap();f.fail='degraded';f.write_state()
+answer=f.engine.status(f.unit)
+assert answer['ok'] and answer['entry']=='wrapped' and answer['component_state_current'] is True
+assert answer['component_state']['mode']=='original'
+f.fail=None;f.write_state();file=f.version/'runtime/status.json';state=json.loads(file.read_text());state['pid']=43;file.write_text(json.dumps(state))
+answer=f.engine.status(f.unit)
+assert not answer['ok'] and answer['entry']=='wrapped' and answer['component_state_current'] is False and answer['component_state'] is None
+f.write_state();f.pid=0;f.active='failed';f.sub='failed'
+answer=f.engine.status(f.unit)
+assert not answer['ok'] and answer['entry']=='wrapped' and answer['component_state_current'] is False and answer['component_state'] is None
+file.unlink();f.pid=42
+assert f.engine.status(f.unit)['component_state_current'] is False
 `));

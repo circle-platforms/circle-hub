@@ -4,7 +4,6 @@ import argparse
 import json
 from pathlib import Path
 
-from cell_runtime import contract_digest, export_contract, export_hub_contract, run
 
 
 def main():
@@ -29,6 +28,8 @@ def main():
     service.add_argument('--config', required=True)
     service.add_argument('--contract', required=True)
     args = parser.parse_args()
+    if args.command != 'serve':
+        from cell_runtime import contract_digest, export_contract, export_hub_contract, run
     if args.command in ('export-contract', 'export-hub-contract'):
         document = (export_contract(args.framework_root, args.base_contract, args.objects)
                     if args.command == 'export-contract'

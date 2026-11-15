@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix='synthetic-observe-') as tmp:
     original=[sys.executable,'-m','gateway.cexg','serve','--config',str(config)]
     wrapped=[sys.executable,str(component/'entry.py'),'serve','--gateway-root',str(gw),'--config',str(config),'--contract',str(component/'excel-contract.json')]
     launch=list(original)
+    write(proc/str(main)/'cmdline','\0'.join(original)+'\0')
     def properties(unit):
         import shlex
         return {'MainPID':str(main),'ControlGroup':group,'WorkingDirectory':str(gw),'ExecStart':'{ path='+sys.executable+' ; argv[]='+shlex.join(launch)+' ; ignore_errors=no ; }'}
@@ -58,7 +59,9 @@ with tempfile.TemporaryDirectory(prefix='synthetic-observe-') as tmp:
     if mode=='wrong-schema':
         with sqlite3.connect(state/'state.db') as c:c.execute('DROP TABLE lease');c.execute('CREATE TABLE lease(expires_at REAL)')
     if mode=='phase':
-        launch[:]=wrapped;request['phase']='postcheck'
+        launch[:]=wrapped
+        write(proc/str(main)/'cmdline','\0'.join(wrapped)+'\0')
+        write(component/'runtime/status.json',json.dumps({'schema':'value-pick-state@1','pid':main,'mode':'cell','reason':None,'recorded_at':'2026-11-15T00:00:00Z'}));request['phase']='postcheck'
     if mode=='wrong-phase':request['phase']='postcheck'
     if mode=='config':config.write_text(p['text'].replace('STATE',str(state)).replace('STAGING',str(staging)))
     if mode=='lease':
@@ -96,6 +99,21 @@ with tempfile.TemporaryDirectory(prefix='synthetic-observe-') as tmp:
         f=write(state/'tasks/synthetic-task.log','first');write(state/'tasks/synthetic-task.alive')
         rows=m.inventory(state/'tasks');extra['byte_hash']=next(row[-1] for row in rows if row[0]=='synthetic-task.log')==hashlib.sha256(b'first').hexdigest()
         before=run()['task_inventory_sha256'];f.write_text('other');extra['changed_bytes']=run()['task_inventory_sha256']!=before
+    if mode in ('cell','degraded','missing-status','missing-state-pid','stale-state','invalid-state','state-symlink','zero-mainpid','pending-reload'):
+        launch[:]=wrapped
+        request['phase']='postcheck'
+        if mode=='pending-reload':
+            request['phase']='restart'
+        else:
+            write(proc/str(main)/'cmdline','\0'.join(wrapped)+'\0')
+            state_document={'schema':'value-pick-state@1','pid':main,'mode':'original' if mode=='degraded' else 'cell','reason':'synthetic component unavailable' if mode=='degraded' else None,'recorded_at':'2026-11-15T00:00:00Z'}
+            if mode=='stale-state':state_document['pid']=main+1
+            if mode=='missing-state-pid':state_document.pop('pid')
+            if mode=='invalid-state':state_document['recorded_at']='2026-11-15T00:00:00+05:00'
+            if mode=='state-symlink':
+                target=write(root/'synthetic-state.json',json.dumps(state_document));(component/'runtime').mkdir();(component/'runtime/status.json').symlink_to(target)
+            elif mode!='missing-status':write(component/'runtime/status.json',json.dumps(state_document))
+            if mode=='zero-mainpid':main=0
     def snapshot():
         rows=[]
         for f in root.rglob('*'):
@@ -127,6 +145,8 @@ with tempfile.TemporaryDirectory(prefix='synthetic-observe-') as tmp:
         base={'gateway_root':gw,'config':config,'component':None}
         first=ctrl.observe(bundle,plan,'test.service',base,'preflight')
         launch[:]=wrapped
+        write(proc/str(main)/'cmdline','\0'.join(wrapped)+'\0')
+        write(component/'runtime/status.json',json.dumps({'schema':'value-pick-state@1','pid':main,'mode':'cell','reason':None,'recorded_at':'2026-11-15T00:00:00Z'}))
         second=ctrl.observe(bundle,plan,'test.service',{**base,'component':component},'postcheck')
         ctrl.stage='postcheck'
         from_guard=ctrl.guard(bundle,{'plan':plan,'launch':base,'facts':first},'test.service')
@@ -179,7 +199,7 @@ test('normal staged symlinks are hashed without following shared or missing targ
 test('critical regular task files carry byte hashes and changed bytes alter the inventory', () => {
   const r = run('bytes'); assert.equal(r.byte_hash, true); assert.equal(r.changed_bytes, true); assert.equal(r.facts.verified, true); assert.equal(r.unchanged, true);
 });
-test('postcheck derives wrapper tools from actual current ExecStart', () => {
+test('postcheck derives wrapper tools from the current MainPID and its recorded component state', () => {
   assert.deepEqual(run('phase').facts.tools, ['case_submit', 'case_submit_cell', 'lease_status']);
   const wrong = run('wrong-phase'); assert.equal(wrong.facts.tools, null); assert.equal(wrong.facts.verified, false);
 });
@@ -197,5 +217,23 @@ test('the stdin entry returns only unknown facts for malformed JSON without insp
   const result = spawnSync('python3', ['-B', observer], {input: '{', encoding: 'utf8', env: {PATH: process.env.PATH ?? '', PYTHONDONTWRITEBYTECODE: '1'}});
   assert.equal(result.status, 0); assert.equal(result.stderr, '');
   const facts = JSON.parse(result.stdout); assert.equal(facts.verified, false); assert.equal(facts.jobs, null); assert.equal(facts.leased, null);
-  assert.deepEqual(Object.keys(facts).sort(), ['schema','jobs','leased','bed_busy','version','tools','task_inventory_sha256','request_records_sha256','verified'].sort());
+  assert.deepEqual(Object.keys(facts).sort(), ['schema','jobs','leased','bed_busy','version','tools','component_state','task_inventory_sha256','request_records_sha256','verified'].sort());
+});
+
+test('current component state selects cell tools or a truthful original-only degraded observation', () => {
+  const cell=run('cell'); assert.equal(cell.facts.verified,true); assert.equal(cell.facts.component_state.mode,'cell');
+  assert.deepEqual(cell.facts.tools,['case_submit','case_submit_cell','lease_status']);
+  const degraded=run('degraded'); assert.equal(degraded.facts.verified,true); assert.equal(degraded.facts.component_state.mode,'original');
+  assert.deepEqual(degraded.facts.tools,['case_submit','lease_status']); assert.equal(degraded.unchanged,true);
+});
+
+test('missing stale non-UTC or symlinked state and a missing positive current PID stay unknown', () => {
+  for(const mode of ['missing-status','missing-state-pid','stale-state','invalid-state','state-symlink','zero-mainpid']) {
+    const r=run(mode); assert.equal(r.facts.verified,false,mode); assert.equal(r.facts.component_state,null,mode); assert.equal(r.facts.tools,null,mode); assert.equal(r.unchanged,true,mode);
+  }
+});
+
+test('a loaded future ExecStart does not pretend the still-original MainPID has a wrapper state', () => {
+  const r=run('pending-reload'); assert.equal(r.facts.verified,true); assert.equal(r.facts.component_state,null);
+  assert.deepEqual(r.facts.tools,['case_submit','lease_status']); assert.equal(r.unchanged,true);
 });

@@ -11,7 +11,7 @@ import sys
 import types
 from pathlib import Path
 
-from table_cell import CELL_EFFECT, PARAMETER_ROLES, PARAMETER_TYPES, table_cell
+from table_cell import CELL_EFFECT, CELL_VALUE_POLICY, PARAMETER_ROLES, PARAMETER_TYPES, checked_value_policy, table_cell
 
 COMPONENT_ROOT = Path(__file__).resolve().parent
 COMPONENT_FILES = ('entry.py', 'cell_runtime.py', 'cell_gateway.py',
@@ -97,7 +97,7 @@ def export_contract(framework_root, base_contract, objects):
         raise ValueError('取格对象须来自原规则已声明且启用的对象')
     for name in COMPONENT_FILES:
         sources[SOURCE_PREFIX + name] = file_digest(COMPONENT_ROOT / name)
-    public_method = CellDevice(None).table_cell
+    public_method = CellDevice(None, None).table_cell
     signature = inspect.signature(public_method)
     parameters = []
     for parameter in signature.parameters.values():
@@ -252,6 +252,9 @@ def read_contract(path, framework_root, entry_path=None):
     if (document['runtime']['runner_source'] != runner
             or document['runtime']['runner_sha256'] != document['source_hashes'].get(runner)):
         raise ValueError('独立入口的源文件身份不一致')
+    for name in COMPONENT_FILES:
+        if SOURCE_PREFIX + name not in document['source_hashes']:
+            raise ValueError('取格规则缺少本组件的完整来源摘要')
     framework = Path(framework_root).resolve()
     for source, expected in document['source_hashes'].items():
         own = source.startswith(SOURCE_PREFIX)
@@ -264,12 +267,18 @@ def read_contract(path, framework_root, entry_path=None):
             location = Path(entry_path)
         if file_digest(location) != expected:
             raise ValueError('独立入口实际加载文件与执行器规则不一致：' + source)
+    for entry in document['entries']:
+        if entry['f'] == 'table_cell' and entry['status'] == 'enabled':
+            policy = checked_value_policy(entry.get('cell_effect', {}).get('value_policy'))
+            if entry.get('source', {}).get('path') != CELL_METHOD_SOURCE or policy != CELL_VALUE_POLICY:
+                raise ValueError('取格值策略与完整性已核的组件来源声明不一致')
     return document
 
 
 class CellDevice:
-    def __init__(self, device):
+    def __init__(self, device, value_policy):
         self._device = device
+        self._value_policy = value_policy
 
     def __getattr__(self, name):
         return getattr(self._device, name)
@@ -277,7 +286,8 @@ class CellDevice:
     def table_cell(self, output, *conditions, separator, columns, column,
                    format='delimited', header=0, row=0) -> str:
         return table_cell(output, *conditions, separator=separator, columns=columns,
-                          column=column, format=format, header=header, row=row)
+                          column=column, format=format, header=header, row=row,
+                          value_policy=self._value_policy)
 
 
 class Runtime:
@@ -285,8 +295,14 @@ class Runtime:
         self.framework_root = Path(framework_root).resolve()
         self.contract_path = Path(contract_path).resolve()
         self.contract = read_contract(self.contract_path, self.framework_root, entry_path)
-        self.objects = {item['e'] for item in self.contract['entries']
-                        if item['f'] == 'table_cell' and item['status'] == 'enabled'}
+        self.value_policies = {}
+        for item in self.contract['entries']:
+            if item['f'] != 'table_cell' or item['status'] != 'enabled':
+                continue
+            if item['e'] in self.value_policies or item.get('source', {}).get('path') != CELL_METHOD_SOURCE:
+                raise ValueError('取格方法身份重复或不是当前组件的明确来源')
+            self.value_policies[item['e']] = checked_value_policy(item.get('cell_effect', {}).get('value_policy'))
+        self.objects = set(self.value_policies)
         sys.path.insert(0, str(self.framework_root))
         base = load_module('_circle_cell_runner', self.framework_root / 'lib/test_xlsx.py')
         if (self.contract['runtime']['minimum_version'] != base.EXCEL_FUNCTION_CONTRACT_VERSION
@@ -303,10 +319,13 @@ class Runtime:
 
             def getfixturevalue(self, name):
                 value = request.getfixturevalue(name)
-                return CellDevice(value) if name in runtime.objects else value
+                return CellDevice(value, runtime.value_policies[name]) if name in runtime.objects else value
 
         def wrapped_factory(*args, **kwargs):
-            return CellDevice(factory(*args, **kwargs))
+            policies = list(runtime.value_policies.values())
+            if not policies or any(value != policies[0] for value in policies[1:]):
+                raise ValueError('设备工厂的对象尚未明确，不能在不同取格值策略之间猜选')
+            return CellDevice(factory(*args, **kwargs), policies[0])
 
         return self.namespace['test_xlsx'](
             Request(), wrapped_factory, logger, configer, check_point, db, str(workbook))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import datetime, timedelta
 import errno
 import fcntl
 import hashlib
@@ -22,6 +23,24 @@ from contextlib import closing
 
 class Unknown(Exception):
     pass
+
+
+def read_component_state(component):
+    file = Path(component) / 'runtime/status.json'
+    if file.is_symlink() or not file.is_file():
+        raise Unknown('state_missing_or_not_regular')
+    state = json.loads(file.read_text(encoding='utf8'))
+    if not isinstance(state, dict) or set(state) != {'schema', 'mode', 'reason', 'recorded_at', 'pid'} or state['schema'] != 'value-pick-state@1' or state['mode'] not in ('cell', 'original') or not (state['reason'] is None or isinstance(state['reason'], str)):
+        raise Unknown('state_shape_invalid')
+    if type(state['pid']) is not int or state['pid'] <= 0:
+        raise Unknown('state_pid_invalid')
+    raw = state['recorded_at']
+    if not isinstance(raw, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?(?:Z|\+00:00)', raw):
+        raise Unknown('state_time_not_utc')
+    when = datetime.fromisoformat(raw[:-1] + '+00:00' if raw.endswith('Z') else raw)
+    if when.utcoffset() != timedelta(0):
+        raise Unknown('state_time_not_utc')
+    return state
 
 
 def regular(path):
@@ -287,7 +306,7 @@ def config_paths(config):
 
 def observe(request, *, proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgroup'), properties=system_properties):
     facts = dict(schema='value-pick-observation@1', jobs=None, leased=None, bed_busy=None,
-                 version=None, tools=None, task_inventory_sha256=None, request_records_sha256=None, verified=False)
+                 version=None, tools=None, component_state=None, task_inventory_sha256=None, request_records_sha256=None, verified=False)
     required = {'operation', 'unit', 'phase', 'gateway_root', 'config_path'}
     if not isinstance(request, dict) or request.get('operation') != 'observe' or request.get('phase') not in ('original', 'wrapped', 'preflight', 'copy_version', 'export_original', 'export_typed', 'dropin', 'reload', 'restart', 'postcheck'):
         return facts
@@ -312,15 +331,30 @@ def observe(request, *, proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgrou
             return None
     values = attempt(lambda: properties(request['unit']))
     def declarations_now():
-        component = current_component(values, root, config)
+        # ExecStart changes at daemon-reload, before the old process is restarted. Read the actual MainPID argv.
+        main = int(values['MainPID'])
+        if main <= 0:
+            raise Unknown('main_process_unknown')
+        command = proc_root / str(main) / 'cmdline'
+        regular(command)
+        argv = command.read_bytes().rstrip(b'\0').decode('utf-8').split('\0')
+        if not argv or not argv[0]:
+            raise Unknown('main_command_unknown')
+        actual = dict(values)
+        actual['ExecStart'] = '{ path=' + argv[0] + ' ; argv[]=' + shlex.join(argv) + ' ; ignore_errors=no ; }'
+        component = current_component(actual, root, config)
         if 'component_root' in request and Path(request['component_root']) != component:
             raise Unknown('component_source_mismatch')
         if request['phase'] in ('wrapped', 'postcheck') and component is None:
             raise Unknown('phase_source_mismatch')
-        return static_declarations(root, 'wrapped' if component else 'original', component)
+        state = read_component_state(component) if component is not None else None
+        if state is not None and state['pid'] != main:
+            raise Unknown('state_pid_stale')
+        version, tools = static_declarations(root, 'wrapped' if state is not None and state['mode'] == 'cell' else 'original', component)
+        return version, tools, state
     declarations = attempt(declarations_now) if values else None
     if declarations:
-        facts['version'], facts['tools'] = declarations
+        facts['version'], facts['tools'], facts['component_state'] = declarations
     pids = attempt(lambda: cgroup_processes(request['unit'], proc_root, cgroup_root, lambda _unit: values))
     boot = attempt(lambda: (proc_root / 'sys/kernel/random/boot_id').read_text().strip())
     lease = attempt(lambda: lease_and_tasks(state, boot, time.monotonic())) if boot else None
@@ -333,7 +367,7 @@ def observe(request, *, proc_root=Path('/proc'), cgroup_root=Path('/sys/fs/cgrou
     facts['bed_busy'] = attempt(lambda: held_lock(state / 'bed.lock'))
     facts['task_inventory_sha256'] = attempt(lambda: digest([inventory(state / 'tasks'), inventory(staging)]))
     facts['request_records_sha256'] = attempt(lambda: request_inventory(state))
-    facts['verified'] = all(facts[key] is not None for key in facts if key not in ('schema', 'verified'))
+    facts['verified'] = all(facts[key] is not None for key in facts if key not in ('schema', 'verified', 'component_state'))
     return facts
 
 
@@ -342,7 +376,7 @@ def main():
         value = observe(json.load(sys.stdin))
     except Exception:
         value = dict(schema='value-pick-observation@1', jobs=None, leased=None, bed_busy=None,
-                     version=None, tools=None, task_inventory_sha256=None, request_records_sha256=None, verified=False)
+                     version=None, tools=None, component_state=None, task_inventory_sha256=None, request_records_sha256=None, verified=False)
     print(json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False))
 
 

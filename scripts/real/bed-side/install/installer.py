@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+from datetime import datetime, timedelta
 import hashlib
 import json
 import os
@@ -93,6 +94,24 @@ def framework_paths(config):
     if set(values) != {'apv_src', 'py38'}:
         raise InstallFailure('discover', 'framework_metadata_missing')
     return values
+
+
+def read_component_state(component):
+    file = Path(component) / 'runtime/status.json'
+    if file.is_symlink() or not file.is_file():
+        raise InstallFailure('component_state', 'state_missing_or_not_regular')
+    state = json.loads(file.read_text(encoding='utf8'))
+    if not isinstance(state, dict) or set(state) != {'schema', 'mode', 'reason', 'recorded_at', 'pid'} or state['schema'] != 'value-pick-state@1' or state['mode'] not in ('cell', 'original') or not (state['reason'] is None or isinstance(state['reason'], str)):
+        raise InstallFailure('component_state', 'state_shape_invalid')
+    if type(state['pid']) is not int or state['pid'] <= 0:
+        raise InstallFailure('component_state', 'state_pid_invalid')
+    raw = state['recorded_at']
+    if not isinstance(raw, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?(?:Z|\+00:00)', raw):
+        raise InstallFailure('component_state', 'state_time_not_utc')
+    when = datetime.fromisoformat(raw[:-1] + '+00:00' if raw.endswith('Z') else raw)
+    if when.utcoffset() != timedelta(0):
+        raise InstallFailure('component_state', 'state_time_not_utc')
+    return state
 
 
 class Installer:
@@ -188,13 +207,23 @@ class Installer:
             launch = self.launch(unit)
         except Exception:
             pass
-        result = {'ok': launch is not None, 'stage': 'status', 'entry': 'unknown', 'release': None,
+        result = {'ok': launch is not None, 'stage': 'status', 'entry': 'unknown', 'release': None, 'component_state': None, 'component_state_current': None,
                   'own_dropin': {'present': None, 'count': None, 'releases': None, 'content_matches': None},
                   'before': before, 'idle_checked': False, 'observer_required': False}
         if launch is not None:
             result['entry'] = 'wrapped' if launch['component'] is not None else 'original'
             if launch['component'] is not None:
                 result['release'] = launch['component'].name
+                try:
+                    state = read_component_state(launch['component'])
+                    current = self.number(unit, 'MainPID')
+                    if current is None or current <= 0 or state['pid'] != current:
+                        raise InstallFailure('component_state', 'state_pid_stale_or_unknown')
+                    result['component_state'] = state
+                    result['component_state_current'] = True
+                except Exception:
+                    result['component_state_current'] = False
+                    result['ok'] = False
         try:
             owned = self.own_dropins(unit)
             result['own_dropin'].update(present=bool(owned), count=len(owned), releases=sorted({p.name[len(PREFIX):-5] for p in owned if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', p.name[len(PREFIX):-5])}))
@@ -288,6 +317,10 @@ class Installer:
         dropin = fragment.parent / (unit + '.d') / (PREFIX + plan['release'] + '.conf')
         if version.exists() or version.is_symlink() or dropin.exists() or dropin.is_symlink():
             raise InstallFailure('preflight', 'destination_exists')
+        user = self.show(unit, 'User')
+        if not user or self.show(unit, 'DynamicUser') != 'no':
+            raise InstallFailure(self.stage, 'service_identity_unsupported')
+        account = pwd.getpwnam(user)
         # Before activation, failures leave only the new version directory; old unit/contracts are untouched.
         self.stage = 'copy_version'; self.guard(bundle, state, unit)
         if not version.parent.exists():
@@ -296,15 +329,13 @@ class Installer:
         for name in FILES:
             shutil.copyfile(Path(bundle) / 'bed-side' / name, version / name)
             os.chmod(version / name, 0o644)
+        runtime = version / 'runtime'
+        runtime.mkdir(mode=0o700); os.chmod(runtime, 0o700); os.chown(runtime, account.pw_uid, account.pw_gid)
         self.stage = 'export_original'; self.guard(bundle, state, unit)
         objects = [v for obj in plan['objects'] for v in ('--object', obj)]
         self.call([state['framework']['py38'], '-B', version / 'entry.py', 'export-contract', '--framework-root', state['framework']['apv_src'], '--base-contract', state['base'], *objects, '--out', version / 'excel-contract.json'])
         self.stage = 'export_typed'; self.guard(bundle, state, unit)
         self.call([launch['python'], '-B', version / 'entry.py', 'export-hub-contract', '--original', version / 'excel-contract.json', '--base-hub-contract', state['typed'], '--out', version / 'hub-contract.json'])
-        user = self.show(unit, 'User')
-        if not user or self.show(unit, 'DynamicUser') != 'no':
-            raise InstallFailure(self.stage, 'service_identity_unsupported')
-        account = pwd.getpwnam(user)
         for file in (version / 'excel-contract.json', version / 'hub-contract.json'):
             os.chown(file, account.pw_uid, account.pw_gid); os.chmod(file, 0o600)
         argv = [str(launch['python']), str(version / 'entry.py'), 'serve', '--gateway-root', str(launch['gateway_root']), '--config', str(launch['config']), '--contract', str(version / 'excel-contract.json')]
@@ -333,6 +364,8 @@ class Installer:
                 raise InstallFailure(self.stage, 'service_not_stable')
             self.stage = 'postcheck'
             after = self.guard(bundle, state, unit)
+            if not isinstance(after.get('component_state'), dict) or after['component_state'].get('mode') != 'cell':
+                raise InstallFailure(self.stage, 'component_not_cell')
             if set(after['tools']) != set(state['facts']['tools']) | {'case_submit_cell'}:
                 raise InstallFailure(self.stage, 'tools_changed')
             return {'ok': True, 'stage': 'installed', 'component_sha256': plan['component_sha256']}
