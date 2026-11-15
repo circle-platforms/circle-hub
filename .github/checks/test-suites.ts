@@ -36,6 +36,7 @@ export const NOT_RUN: readonly NotRunEntry[] = [
     'scripts/real/replay/guard-compare.test.ts',
     'scripts/real/replay/guard.test.ts',
     'scripts/real/replay/native.test.ts',
+    'scripts/real/replay/protocol.test.ts',
     'scripts/real/replay/validation.test.ts',
     'scripts/real/review-circle.test.ts',
     'scripts/real/score-injection.test.ts',

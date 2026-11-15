@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { capture, inspectBundle } from './bundle.ts';
@@ -241,6 +241,175 @@ test('the inspect command says whether a bundle carries a guard context', async 
     const withContext: string[] = [];
     assert.equal(await main(['inspect', '--bundle', bundle], line => withContext.push(line)), 0);
     assert.equal(JSON.parse(withContext.join('')).guardContext, true);
+  }
+  finally {
+    f.close();
+  }
+});
+
+// ---- a candidate Circle 1.18 guard: spoken to in the fields of 1.18, heard as 1.18 hears a hook, in a folder of its own files
+const HOOKS = 'home/hooks';
+/** Cases whose guard sits in a folder under a home, as a guard of the real ops home does. */
+function folderCases(b: Bundle, change: (c: GuardCase) => GuardCase | undefined = c => c): GuardCase[] {
+  return parallelCases(b, c => change({ ...c, entry: `${HOOKS}/guard.mjs` })).filter((c): c is GuardCase => c !== undefined);
+}
+const folderContext = (cases: GuardCase[], extra: Partial<GuardContextInput> = {}): GuardContextInput => ({ schema: 'circle-replay-guard-context@1', sets: { g: { [`${HOOKS}/guard.mjs`]: guard, [`${HOOKS}/stale.txt`]: 'a file of the baseline guard', 'home/settings.json': '{"variables":{}}' } }, cases, ...extra });
+const answer = (decision: 'allow' | 'deny' | 'ask', reason?: string) => `process.stdout.write(${JSON.stringify(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, ...(reason === undefined ? {} : { permissionDecisionReason: reason }) } }))});`;
+/** A 1.18 guard that checks what it is told and denies, in its own words, what it finds wrong or the one command it refuses. */
+const checking118 = `import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+let raw = '';
+for await (const c of process.stdin) raw += c;
+const i = JSON.parse(raw);
+const problems = [];
+if (i.hook_event_name !== 'PreToolUse') problems.push('event');
+if (i.session_id !== 's0') problems.push('session ' + i.session_id);
+if (typeof i.tool_use_id !== 'string') problems.push('call id');
+if (i.permission_mode !== 'bypassPermissions') problems.push('mode');
+if (!Array.isArray(i.paths)) problems.push('paths');
+if (i.event !== undefined || i.hook !== undefined || i.source !== undefined) problems.push('fields of the format before');
+// the two calls made inside a subagent carry its own session as the agent's; the others carry no agent
+const agent = { c1: 's1', c2: 's2' }[i.tool_use_id];
+if (i.agent_id !== agent) problems.push('agent ' + i.agent_id);
+if (agent && (i.agent_type !== 'general-purpose' || process.env.CIRCLE_AGENT_ID !== agent)) problems.push('agent type or environment');
+if (!agent && (i.agent_type !== undefined || process.env.CIRCLE_AGENT_ID !== undefined)) problems.push('a root call with an agent');
+if (process.env.CIRCLE_SESSION_ID !== 's0' || !process.env.CIRCLE_PROJECT_DIR) problems.push('environment');
+const own = readdirSync(fileURLToPath(new URL('.', import.meta.url))).sort().join(',');
+if (own !== 'guard.mjs') problems.push('folder ' + own);
+const say = (reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } }));
+if (problems.length) say('wrong: ' + problems.join(', '));
+else if (i.tool_input.command === 'NEVER_EXECUTE_ME') say('refused in other words');
+else process.stdout.write('{}');
+`;
+test('a candidate Circle 1.18 guard is given PreToolUse fields, the agent of a subagent call and a folder of its own, and is compared by decision', installed, async () => {
+  const f = parallelFixture(app);
+  try {
+    const { bundle } = guarded(f, 's0', b => folderContext(folderCases(b)));
+    mkdirSync(join(f.dir, 'candidate'));
+    writeFileSync(join(f.dir, 'candidate', 'guard.mjs'), checking118);
+    const r = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'candidate'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'c118'), survey: true });
+    assert.equal(r.exit, 0, JSON.stringify(r));
+    assert.deepEqual([r.matched, r.mismatched, r.unknown, r.reasonChanged], [5, 0, 0, 1]);
+    assert.deepEqual([r.candidate?.protocol, r.candidate?.form, r.candidate?.hook?.onFailure], ['1.18', 'folder', 'block']);
+    assert.deepEqual(r.roles, { candidate: { match: 5, mismatch: 0, unknown: 0 } });
+    const calls = readFileSync(join(f.dir, 'c118', 'calls.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    assert.deepEqual(calls.map((c: { expectedKind: string; actualKind: string }) => `${c.expectedKind}>${c.actualKind}`).sort(), ['deny>deny', 'go>go', 'go>go', 'go>go', 'go>go']);
+    // by the words of the reason, the same guard differs on the refusal
+    const exact = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'candidate'), protocol: '1.18', out: join(f.dir, 'c118-exact'), survey: true });
+    assert.deepEqual([exact.exit, exact.mismatched], [1, 1]);
+    // the seen input is the one of Circle 1.18 for a call in a subagent
+    const seen = JSON.parse(readFileSync(join(f.dir, 'c118', `guard-${calls.find((c: { tool: string; session: string }) => c.tool === 'read_file').index}`, 'input.json'), 'utf8'));
+    assert.deepEqual([seen.session_id, seen.agent_id, seen.agent_type, seen.hook_event_name, seen.tool_use_id], ['s0', 's1', 'general-purpose', 'PreToolUse', 'c1']);
+  }
+  finally {
+    f.close();
+  }
+});
+test('the tools of the hub get the names of Circle 1.18, and the cases marked for another guard get the candidate only when asked', installed, async () => {
+  const f = fixture(app, [{ id: 'root', messages: [user('u', 'synthetic'), assistant('a', '', [call('x', 'hub_start_run', { pack: 'synthetic' }), call('y', 'execute', { command: 'ls' })]), result('o1', 'hub_start_run', 'x', 'synthetic result'), result('o2', 'execute', 'y', 'synthetic output'), assistant('done', 'done')] }]);
+  try {
+    // the candidate allows the hub's tool by its 1.18 name only, and refuses everything else it does not know
+    const server = `let raw='';for await(const c of process.stdin)raw+=c;const i=JSON.parse(raw);process.stdout.write(i.tool_name==='mcp__hub__start_run'||i.tool_name==='execute'?'{}':JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'deny',permissionDecisionReason:'unknown tool '+i.tool_name}}));`;
+    const { bundle } = guarded(f, 'root', b => ({ schema: 'circle-replay-guard-context@1', sets: { g: { [`${HOOKS}/guard.mjs`]: guard } }, cases: [...b.pairs.values()].map(p => ({ session: 'root', call: p.call.id, input: { event: 'before_tool', tool_name: p.call.name, tool_input: p.call.args }, entry: `${HOOKS}/guard.mjs`, set: 'g', ...(p.call.id === 'y' ? { candidate: false } : {}), baseline: none, provenance: 'scripted' as const })) }));
+    mkdirSync(join(f.dir, 'server'));
+    writeFileSync(join(f.dir, 'server', 'guard.mjs'), server);
+    const named = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'server'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'named'), survey: true });
+    assert.equal(named.exit, 0, JSON.stringify(named));
+    assert.deepEqual(named.roles, { candidate: { match: 1, mismatch: 0, unknown: 0 }, reference: { match: 1, mismatch: 0, unknown: 0 } });
+    const calls = readFileSync(join(f.dir, 'named', 'calls.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    assert.equal(calls.find((c: { tool: string }) => c.tool === 'hub_start_run').candidateTool, 'mcp__hub__start_run');
+    // another server key names no tool of this session: the 1.17.0 name reaches the candidate and is refused
+    const other = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'server'), protocol: '1.18', mcpServer: 'other', decisionOnly: true, out: join(f.dir, 'other'), survey: true });
+    assert.deepEqual([other.exit, other.mismatched], [1, 1]);
+    // the call marked for another guard runs the candidate when all cases are asked for
+    const everywhere = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'server'), protocol: '1.18', allCases: true, decisionOnly: true, out: join(f.dir, 'everywhere'), survey: true });
+    assert.deepEqual(everywhere.roles, { candidate: { match: 2, mismatch: 0, unknown: 0 } });
+  }
+  finally {
+    f.close();
+  }
+});
+test('a failure of the candidate hook denies when its settings say so, and lets the call go ahead when they do not', installed, async () => {
+  const f = parallelFixture(app);
+  try {
+    const { bundle } = guarded(f, 's0', b => folderContext(folderCases(b)));
+    mkdirSync(join(f.dir, 'crash'));
+    writeFileSync(join(f.dir, 'crash', 'guard.mjs'), "throw new Error('synthetic crash');");
+    const settings = (onFailure?: string) => JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', name: 'synthetic guard', command: "node 'home/hooks/guard.mjs'", ...(onFailure ? { onFailure } : {}) }] }] } });
+    writeFileSync(join(f.dir, 'blocks.json'), settings('block'));
+    writeFileSync(join(f.dir, 'goes-on.json'), settings());
+    const blocks = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'crash'), candidateSettings: join(f.dir, 'blocks.json'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'blocks'), survey: true });
+    // every call is refused: the four that were let through differ, the refused one agrees
+    assert.deepEqual([blocks.exit, blocks.mismatched, blocks.matched, blocks.failedHooks], [1, 4, 1, 5]);
+    assert.deepEqual(blocks.candidate?.hook, { name: 'synthetic guard', onFailure: 'block', source: 'settings' });
+    // carrying on lets every call through: only the recorded refusal differs
+    const goesOn = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'crash'), candidateSettings: join(f.dir, 'goes-on.json'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'goes-on'), survey: true });
+    assert.deepEqual([goesOn.exit, goesOn.mismatched, goesOn.matched, goesOn.failedHooks], [1, 1, 4, 5]);
+    // the option says what the settings do not; it also overrides them
+    const option = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'crash'), protocol: '1.18', onFailure: 'continue', decisionOnly: true, out: join(f.dir, 'option'), survey: true });
+    assert.deepEqual([option.mismatched, option.candidate?.hook?.source], [1, 'option']);
+  }
+  finally {
+    f.close();
+  }
+});
+test('the settings of a candidate replace the settings beside its folder, with the recorded prefix written as the private one', installed, async () => {
+  const base = realpathSync(tmpdir());
+  const from = '/' + 'q'.repeat(base.length + 12);
+  const f = fixture(app, [{ id: 'root', messages: [user('u', 'synthetic'), assistant('a', '', [call('x', 'execute', { command: 'ls' })]), result('r', 'execute', 'x', 'synthetic output'), assistant('done', 'done')] }]);
+  try {
+    // the guard has no opinion when the settings it reads name the folder it was started in, and refuses when they do not
+    const reads = "import { readFileSync } from 'node:fs';let raw='';for await(const c of process.stdin)raw+=c;const i=JSON.parse(raw);const settings=JSON.parse(readFileSync(new URL('../settings.json', import.meta.url),'utf8'));process.stdout.write(settings.trusted_folders?.[0]===i.cwd?'{}':JSON.stringify({hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'deny',permissionDecisionReason:'settings say '+settings.trusted_folders?.[0]}}));";
+    const { bundle } = guarded(f, 'root', () => ({ schema: 'circle-replay-guard-context@1', mirror: from, sets: { g: { [`${HOOKS}/guard.mjs`]: guard, 'home/settings.json': '{}' } }, cases: [{ session: 'root', call: 'x', input: { event: 'before_tool', session_id: 'root', tool_name: 'execute', tool_input: { command: 'ls' }, cwd: `${from}/work` }, entry: `${HOOKS}/guard.mjs`, set: 'g', baseline: none, provenance: 'scripted' }] }));
+    mkdirSync(join(f.dir, 'reads'));
+    writeFileSync(join(f.dir, 'reads', 'guard.mjs'), reads);
+    writeFileSync(join(f.dir, 'settings.json'), JSON.stringify({ trusted_folders: [`${from}/work`] }));
+    const ok = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'reads'), candidateSettings: join(f.dir, 'settings.json'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'with'), mirrorBase: base });
+    assert.equal(ok.exit, 0, JSON.stringify(ok));
+    const without = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'reads'), protocol: '1.18', decisionOnly: true, out: join(f.dir, 'without'), mirrorBase: base });
+    assert.deepEqual([without.exit, without.mismatched], [1, 1]);
+  }
+  finally {
+    f.close();
+  }
+});
+test('options for a candidate that is not there, or do not fit it, are refused before anything runs', installed, async () => {
+  const f = parallelFixture(app);
+  try {
+    const { bundle } = guarded(f, 's0', b => folderContext(folderCases(b)));
+    mkdirSync(join(f.dir, 'folder'));
+    writeFileSync(join(f.dir, 'folder', 'guard.mjs'), 'process.stdout.write("{}");');
+    writeFileSync(join(f.dir, 'one.mjs'), 'process.stdout.write("{}");');
+    const refused = async (name: string, options: Partial<Parameters<typeof compareReplay>[0]>) => {
+      const r = await compareReplay({ bundle, app: f.app, out: join(f.dir, name), ...options });
+      assert.deepEqual([r.exit, r.attempted], [1, 0], `${name}: ${JSON.stringify(r.firstDifference)}`);
+    };
+    await refused('protocol-alone', { protocol: '1.18' });
+    await refused('entry-alone', { candidateEntry: 'guard.mjs' });
+    await refused('settings-alone', { candidateSettings: join(f.dir, 'one.mjs') });
+    await refused('unknown-protocol', { guard: join(f.dir, 'folder'), protocol: '2.0' as '1.18' });
+    await refused('entry-of-a-file', { guard: join(f.dir, 'one.mjs'), candidateEntry: 'guard.mjs' });
+    await refused('replace-of-a-folder', { guard: join(f.dir, 'folder'), replace: `${HOOKS}/guard.mjs` });
+    await refused('no-entry-in-the-folder', { guard: join(f.dir, 'folder'), candidateEntry: 'missing.mjs' });
+  }
+  finally {
+    f.close();
+  }
+});
+test('the compare command takes several candidate paths and the options of a 1.18 candidate', installed, async () => {
+  const f = parallelFixture(app);
+  try {
+    const { bundle } = guarded(f, 's0', b => folderContext(folderCases(b)));
+    writeFileSync(join(f.dir, 'guard.mjs'), checking118);
+    writeFileSync(join(f.dir, 'notes.txt'), 'a second file of the candidate folder');
+    const lines: string[] = [];
+    // the guard checks its folder holds only guard.mjs: the second file must show up and be refused by that check
+    const code = await main(['compare', '--bundle', bundle, '--circle-app', f.app, '--candidate-guard', join(f.dir, 'guard.mjs'), '--candidate-guard', join(f.dir, 'notes.txt'), '--candidate-protocol', '1.18', '--mcp-server', 'hub', '--permission-mode', 'bypassPermissions', '--on-failure', 'block', '--decision-only', '--candidate-all-cases', '--survey', '--out', join(f.dir, 'cli')], line => lines.push(line));
+    assert.equal(code, 1);
+    assert.deepEqual(JSON.parse(lines.join('')).counts, { compared: 5, attempted: 5, matched: 1, mismatched: 4, unknown: 0 });
+    const bad = await main(['compare', '--bundle', bundle, '--circle-app', f.app, '--candidate-protocol', '3', '--out', join(f.dir, 'cli-bad')], () => { });
+    assert.equal(bad, 1);
+    assert.equal(await main(['compare', '--bundle', bundle, '--circle-app', f.app, '--on-failure', 'sometimes', '--out', join(f.dir, 'cli-bad2')], () => { }), 1);
   }
   finally {
     f.close();

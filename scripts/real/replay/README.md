@@ -8,6 +8,7 @@ node scripts/real/replay-circle.ts inspect --bundle "$BUNDLE_DIR" --source-sha "
 node scripts/real/replay-circle.ts run --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --out "$RESULT_DIR"
 node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --out "$COMPARE_DIR" --survey
 node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --candidate-guard "$GUARD" --out "$COMPARE_DIR" --survey
+node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --candidate-guard "$GUARD_FOLDER" --candidate-settings "$SETTINGS" --candidate-protocol 1.18 --decision-only --candidate-all-cases --out "$COMPARE_DIR" --survey
 ```
 
 所有位置显式传入；输出必须是不存在的 Git 外目录，不能位于源 Home、源工作目录或应用目录。捕获后的 `source.json` 摘要可通过 `--source-sha` 锁定；包内摘要检测内容损坏，外部保存的根摘要用于绑定所选版本，摘要本身不是来源认证。
@@ -48,7 +49,14 @@ node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "
 
 **沙盒之外的读取。** 沙盒只含上下文给出的文件。守卫尝试读取其他路径时，权限模型拒绝，预加载器把这些路径从文件描述符 3 报告出来，报告记 `outsideReads` 数量及摘要。读取了沙盒之外之后出现的差异不说明守卫有变化，记为未知（`outside-read`）；读取了沙盒之外但决定一致的算相符，另计 `matchedWithOutsideReads`。
 
-比较目录含 `report.json`（计数、按角色和依据分的计数、第一个不符、第一个未知，不含原文）、`calls.jsonl`（逐调用的结果与摘要）、`candidate-source.bin`，以及每次尝试的 `guard-<序号>/`（实际 stdin、stdout、stderr 和回执，私有）。报告分别列出 attempted（已启动）和 compared（给出了可比较决定）；超时等没有决定的尝试不算已比较。同一包、同一候选重复运行，两份 `report.json` 逐字节相同。不同权限或旧文件状态无法在沙盒还原时，应补齐上下文，不放宽限制来追求通过。
+**候选是 Circle 1.18 的钩子。** 候选的守卫文件可以是多个：`--candidate-guard` 可重复，也可给一个目录；给了不止一个文件或一个目录，这些文件就是候选自己的守卫文件夹，替换每条记录守卫入口所在的文件夹（基线的其他文件不留），入口用 `--candidate-entry` 指定，默认与记录的入口同名。`--candidate-settings` 的文件替换守卫文件夹旁边的 `settings.json`（其中的历史前缀同样换成私有前缀）。`--candidate-protocol 1.18` 让候选按 Circle 1.18.0-local.2 的 PreToolUse 钩子协议收发，依据是该 Circle 的 `src/hooks.ts` 和 `docs/hooks.md`：
+
+- 输入：`session_id`（对话的根会话，子代理里也是它）、`cwd`、`permission_mode`（默认 `bypassPermissions`，即自动模式，`--permission-mode` 可改）、`hook_event_name: "PreToolUse"`、子代理里的 `agent_id`（该调用所在会话）和 `agent_type`（派出它的 task 调用的 `subagent_type`）、`tool_name`、`tool_input`、`tool_use_id`、`paths`。1.17.0 叫 `hub_<工具>` 的 MCP 工具，按 `--mcp-server`（默认 `hub`）改叫 `mcp__hub__<工具>`。环境里另有 `CIRCLE_PROJECT_DIR`、`CIRCLE_SESSION_ID` 和子代理里的 `CIRCLE_AGENT_ID`。
+- 输出：退出码 2 加标准错误为拒绝；退出码 0 时标准输出的 JSON 里 `hookSpecificOutput.permissionDecision`（`allow`、`deny`、`ask`，`defer` 被忽略）和 `permissionDecisionReason` 决定；`hookEventName` 不符、字段类型不对、`{` 开头却不是 JSON 对象都算钩子失败。失败时按钩子登记的 `onFailure` 处理：`block` 拒绝该调用，不写则放行。登记取自 `--candidate-settings` 里运行该入口的 PreToolUse 钩子，`--on-failure` 可覆盖，都没有时按 `block`。此读法与候选 Circle 自己的 `interpretHookRun` 和 `combineOutcomes` 逐项对过（`protocol.test.ts`，用 `CIRCLE_HUB_REPLAY_CIRCLE_CANDIDATE` 指向候选 Circle 目录时运行）。
+- `--decision-only`：候选按决定的种类（拒绝、询问、放行或无意见）与记录比较，不比原因文字；种类相同而文字不同的拒绝记入 `reasonChanged`。基线（没有候选、或记录标了 `candidate: false` 的）仍按 1.17.0 的读法逐字比较。
+- `--candidate-all-cases`：记录标了 `candidate: false` 的（由另一套守卫决定的）也运行候选；一般与 `--decision-only` 合用。
+
+比较目录含 `report.json`（计数、按角色和依据分的计数、第一个不符、第一个未知，不含原文）、`calls.jsonl`（逐调用的结果与摘要）、候选文件（单个文件是 `candidate-source.bin`，文件夹在 `candidate/`）以及每次尝试的 `guard-<序号>/`（实际 stdin、stdout、stderr 和回执，私有）。报告分别列出 attempted（已启动）和 compared（给出了可比较决定）；超时等没有决定的尝试不算已比较。同一包、同一候选重复运行，两份 `report.json` 逐字节相同。不同权限或旧文件状态无法在沙盒还原时，应补齐上下文，不放宽限制来追求通过。
 
 ## 开发验证
 

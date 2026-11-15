@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writePrivate } from './bundle.ts';
+import type { Interpret } from './protocol.ts';
 import { ReplayError, requireFact, sha } from './types.ts';
 
 /** A file of a guard context: UTF-8 text, or base64 for bytes that are not text (a session table, an image). */
@@ -71,6 +72,8 @@ export interface SandboxOptions {
   /** One file replaced by the candidate's bytes. */
   replace?: { name: string; bytes: Uint8Array };
   mirror?: { from: string; base?: string };
+  /** Text files in which the recorded prefix is written as the private one (a settings file that names a folder). Only with a mirror. */
+  mapped?: string[];
 }
 export class GuardSandbox {
   readonly root: string;
@@ -88,7 +91,9 @@ export class GuardSandbox {
         names.add(options.replace.name);
       for (const name of names) {
         requireFact(safeName(name), '守卫文件路径无效');
-        const bytes = options.replace?.name === name ? options.replace.bytes : guardFileBytes(options.files[name]);
+        let bytes = options.replace?.name === name ? options.replace.bytes : guardFileBytes(options.files[name]);
+        if (this.mirror && options.mapped?.includes(name))
+          bytes = Buffer.from(toMirror(Buffer.from(bytes).toString('utf8'), this.mirror), 'utf8');
         mkdirSync(dirname(join(this.root, name)), { recursive: true, mode: 0o700 });
         writeFileSync(join(this.root, name), bytes, { mode: 0o600 });
       }
@@ -114,7 +119,7 @@ export class GuardSandbox {
 }
 
 /** What Circle 1.17.0 makes of a gating hook's exit code and output (`interpretOutput` for before_tool). A failed hook denies. */
-export function interpretGuardOutput(exitCode: number | null, stdout: string, stderr: string): { decision: 'allow' | 'deny' | 'ask' | 'none'; reason: string; failed: boolean } {
+export const interpretGuardOutput: Interpret = (exitCode, stdout, stderr) => {
   const text = stdout.trim();
   let parsed: Record<string, unknown> | undefined;
   let invalid = false;
@@ -142,7 +147,7 @@ export function interpretGuardOutput(exitCode: number | null, stdout: string, st
   if (decision)
     return { decision, reason: reason || (decision === 'deny' ? 'hook denied' : ''), failed: false };
   return { decision: 'none', reason: '', failed: false };
-}
+};
 
 export interface GuardRun {
   decision: 'allow' | 'deny' | 'ask' | 'none';
@@ -154,6 +159,16 @@ export interface GuardRun {
   stderrSha256: string;
   /** Paths the guard tried to read that the sandbox does not hold. The process saw an access error for each. */
   outsideReads: string[];
+  /** The answer rewrote the call's input (Circle 1.18). */
+  rewritten?: boolean;
+  /** The answer used fields of an older format. */
+  legacy?: boolean;
+}
+export interface RunGuardOptions {
+  /** Variables Circle adds to the hook's environment. */
+  env?: Record<string, string>;
+  /** How the hook's exit code and output are read; Circle 1.17.0's reading by default. */
+  interpret?: Interpret;
 }
 const PRELOAD = fileURLToPath(new URL('./guard-preload.mjs', import.meta.url));
 const OUTPUT_LIMIT = 1048576;
@@ -161,12 +176,12 @@ const OUTPUT_LIMIT = 1048576;
  * Runs one guard entry once and keeps the evidence of the attempt (input, output, receipt) in `evidence`. A run that cannot give a
  * decision at all (injected limit, forbidden operation, no process) throws a ReplayError with exit 2 and a `cause`.
  */
-export function runGuard(sandbox: GuardSandbox, entry: string, input: Record<string, unknown>, timeoutMs: number, evidence: string): Promise<GuardRun> {
+export function runGuard(sandbox: GuardSandbox, entry: string, input: Record<string, unknown>, timeoutMs: number, evidence: string, options: RunGuardOptions = {}): Promise<GuardRun> {
   requireFact(safeName(entry), '守卫入口路径无效');
   const stdin = JSON.stringify(input);
   writePrivate(evidence, 'input.json', stdin);
   return new Promise((resolve, reject) => {
-    const env: Record<string, string> = { CIRCLE_NO_UPDATE_CHECK: '1', CIRCLE_NO_MODELS_REFRESH: '1' };
+    const env: Record<string, string> = { CIRCLE_NO_UPDATE_CHECK: '1', CIRCLE_NO_MODELS_REFRESH: '1', ...options.env };
     if (!sandbox.mirror)
       env.CIRCLE_HOME = sandbox.root;
     const cwd = sandbox.mirror && typeof input.cwd === 'string' ? input.cwd : join(sandbox.root, 'work');
@@ -203,8 +218,8 @@ export function runGuard(sandbox: GuardSandbox, entry: string, input: Record<str
       writePrivate(evidence, 'receipt.json', JSON.stringify({ exitCode: code, failure: failed ?? (forbidden ? 'forbidden-operation' : null), inputSha256: sha(stdin), stdoutSha256: sha(out), stderrSha256: sha(err), outsideReads: outside }));
       if (failed || forbidden)
         return reject(new ReplayError(failed ? '候选守卫达到注入限额或输出上限，没有给出决定' : '候选守卫尝试了不允许的网络、进程或文件写入操作', 2, { cause: failed ?? 'forbidden-operation' }));
-      const outcome = interpretGuardOutput(code, out, err);
-      resolve({ decision: outcome.decision, reason: outcome.reason, failed: outcome.failed, exitCode: code, stdoutSha256: sha(out), stderrSha256: sha(err), outsideReads: outside });
+      const outcome = (options.interpret ?? interpretGuardOutput)(code, out, err);
+      resolve({ decision: outcome.decision, reason: outcome.reason, failed: outcome.failed, exitCode: code, stdoutSha256: sha(out), stderrSha256: sha(err), outsideReads: outside, ...(outcome.rewritten ? { rewritten: true } : {}), ...(outcome.legacy ? { legacy: true } : {}) });
     });
   });
 }
