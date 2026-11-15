@@ -241,16 +241,16 @@ test('--wait gives up at its limit, and sooner when the run shows no job at all,
   const never = await hub(running, []); t.after(never.close);
   const late = clock(), slow = await run(never.url, join(dir, 'a'), ['--wait', '50'], late);
   assert.equal(slow.code, 1);
-  assert.match(slow.stderr, /等了 50 秒，上机验证还没有结束；设备输出尚未保存，请用同一命令继续等待/);
+  assert.match(slow.stderr, /等了 50 秒，上机验证还没有结束，设备输出尚未保存。用同一命令继续等待/);
   assert.deepEqual(late.pauses, [POLL_MS, POLL_MS, 10_000], 'the last pause ends at the limit');
   const none = await hub(undispatched, []); t.after(none.close);
   const idle = clock(), absent = await run(none.url, join(dir, 'b'), ['--wait', '3600'], idle);
   assert.equal(absent.code, 1);
-  assert.match(absent.stderr, /尚未开始上机验证。请原样再做一次脚本合并，查看 Hub 的上机验证说明/);
+  assert.match(absent.stderr, /尚未开始上机验证，设备输出尚未保存。原样再做一次脚本合并，查看 Hub 的上机验证说明/);
   assert.equal(idle.pauses.reduce((sum, ms) => sum + ms, 0), UNDISPATCHED_MS);
   await assert.rejects(readFile(join(dir, 'a', 'index.json')));
-  for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 写最多等多少秒/, value);
-  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数写法/);
+  for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 不在允许范围内。填写 1 到 86400 的整数秒数后重试/, value);
+  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数缺值、重复或未声明。使用 --hub/);
   // Without --wait a run that was never dispatched is refused at once, as before.
   assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
 });

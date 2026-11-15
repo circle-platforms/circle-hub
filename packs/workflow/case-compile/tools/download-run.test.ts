@@ -7,8 +7,11 @@ import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { main } from './download-run.ts';
+import { main as importedMain } from './download-run.ts';
+import { readSourceManifest } from '../functions/source-materials.ts';
 import { main as recomposeMain } from '../recompose/tools/download-run.ts';
+
+const main: typeof importedMain = (argv, token, brief, retry) => importedMain(argv, token, brief, { ...retry, sourceCacheDirectory: false });
 
 const RUN = 'run_01aaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN = 'synthetic-token-1234';
@@ -64,21 +67,21 @@ test('a run with nothing submitted yet lands on disk: the record, one file per i
   assert.equal(JSON.parse(record).run, RUN); assert.ok(record.split('\n').length > 50, 'indented, so a file reader goes line by line');
   assert.deepEqual(await readdir(join(out, 'items')), Array.from({ length: 12 }, (_, index) => `${String(index).padStart(2, '0')}.json`));
   assert.equal(JSON.parse(await readFile(join(out, 'items', '07.json'), 'utf8')).fields.atoms[0].content, '合成意图 7');
-  assert.deepEqual(await readFile(join(out, 'sources', sha(mindmap))), mindmap);
-  assert.deepEqual(await readFile(join(out, 'sources', sha(contract))), contract);
+  assert.deepEqual(await readFile(join(out, 'sources', 'subject')), mindmap);
+  assert.deepEqual(await readFile(join(out, 'sources', 'contract.json')), contract);
   const bindings = JSON.parse(await readFile(join(out, 'sources.json'), 'utf8'));
   assert.equal(bindings.length, 5);
-  assert.deepEqual(bindings[1], { slot: null, role: 'expected', reference: `src:${sha(mindmap)}/kityminder@1/n/abc123`, label: null, media_type: null, file: `sources/${sha(mindmap)}` });
-  assert.deepEqual(bindings[3], { slot: 'profile', role: 'expected', reference: `src:${sha(secret)}`, label: null, media_type: null, file: null, withheld: '你的读取层级不给这份原件的字节' });
+  assert.deepEqual(bindings[1], { slot: null, role: 'expected', reference: `src:${sha(mindmap)}/kityminder@1/n/abc123`, label: null, media_type: null, file: 'sources/subject', sha256: sha(mindmap) });
+  assert.deepEqual(bindings[3], { slot: 'profile', role: 'expected', reference: `src:${sha(secret)}`, label: null, media_type: null, file: null, sha256: sha(secret), withheld: '你的读取层级不给这份原件的字节' });
   assert.equal(bindings[4].file, null, 'a record reference has no original to download');
   const again = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
-  assert.equal(again.code, 1); assert.match(again.stderr, /已有文件.*不覆盖/);
+  assert.equal(again.code, 1); assert.match(again.stderr, /输出位置不是空的普通目录/);
 });
 
 test('bytes that do not match the bound digest write nothing at all', async (t) => {
   const h = await hub({ tamper: true }); t.after(h.close); const out = join(await mkdtemp(join(tmpdir(), 'cc-download-')), 'run');
   const { code, stderr } = await outputOf(() => main(['--hub', h.url, '--run', RUN, '--out', out], async () => TOKEN));
-  assert.equal(code, 1); assert.match(stderr, /字节与运行绑定的摘要不符，什么都没有写入/);
+  assert.equal(code, 1); assert.match(stderr, /来源字节与运行绑定摘要不一致/);
   await assert.rejects(readdir(out), 'the directory is not even made');
 });
 
