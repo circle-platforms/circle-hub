@@ -168,5 +168,5 @@ test('the reading of a hook answer is the candidate Circle\'s own reading', { sk
           assert.equal(Boolean(mine.rewritten), batch.updatedInput !== undefined, label);
           compared++;
         }
-  assert.ok(compared > 1000);
+  assert.equal(compared, 3 * 5 * outputs.length * stderrs.length);
 });
