@@ -33,16 +33,28 @@ node -e 'const fs=require("node:fs");const [base,out,...names]=process.argv.slic
 ```sh
 python3 "$BUNDLE_DIRECTORY/install/installer.py" preflight --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY"
 # 预检只读并结束。部署者审核输出及另行完成 Hub 一侧实时预检后，才调用 install。
-python3 "$BUNDLE_DIRECTORY/install/installer.py" install --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY" --timeout 30
+python3 "$BUNDLE_DIRECTORY/install/installer.py" install --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY" --timeout 30 --stable-seconds 10
+# status 只读，不要求安装包、观测器或服务已运行。
+python3 "$INSTALLER_FILE" status --unit "$SERVICE_UNIT"
 # 紧急撤回不要求服务已启动、不要求观测器或完整安装包。
-python3 "$BUNDLE_DIRECTORY/install/installer.py" rollback --unit "$SERVICE_UNIT" --timeout 30
+python3 "$INSTALLER_FILE" rollback --unit "$SERVICE_UNIT" --timeout 30 --stable-seconds 10
 ```
 
 路径从 systemctl show 的现行启动命令、WorkingDirectory、FragmentPath 发现；不转储配置、不执行 show 的输出。仅支持明确的 Python 原网关入口或本组件入口，未知格式停止，不猜目录。仅新增本次 drop-in，不重写原 unit；drop-in 中持久化必要运行路径已获 Boss 批准。
 
 安装写入前逐步核无作业、无有效预订、床锁空闲、版本与摘要。复制到独立版本目录、导出规则、加入 drop-in 后重启；新入口未能在给定时限进入运行或装后核对失败，自动尝试撤回，并同时报告原失败阶段和恢复状态。若原服务本身也起不来，报告恢复失败而不是宣称成功；保留组件/规则和任务，不清锁、不杀 runner。
 
+重启前记录 NRestarts；显式重启后的首次采样必须为0，不能把清零后已经发生的自动重启同旧基线比较而误判成功。进入运行后还须通过稳定观察（默认10秒），期间状态持续为 active/running、主进程号不变、NRestarts不增加。计数未知或不能证明稳定时拒绝通过，安装触发自动撤回；撤回后的原入口也用同一标准核对。合成测试注入时钟，不靠真实等待或绝对耗时上限判定。
+
 撤回只在本次 drop-in 可唯一认出且内容逐字相符时删除它，再 reload/restart，核恢复为原入口且运行。没有服务运行、观测器或空闲前提。内容不符或存在多份候选时拒绝删除，不影响其它 drop-in。目录后清理由部署者另行确认，没有自动删除组件或任务的功能。
+
+## 运维约束
+
+包装入口仍安装时，更换网关版本或改变发布目录/符号链接的指向之前，必须先撤回到原入口；更新完成并核对原入口后，再以新的发布名重新生成规则并安装。包装入口启动会核规则声明的来源摘要，来源变化会拒绝启动；不能先替换底层文件再期望旧包装继续运行。
+
+每次安装使用新的 `--release` 发布名（传给打包器），包括上次失败后的重试。已有版本目录不会被覆盖或自动清理；它可能仍被任务、回执或历史引用使用，后清理由部署者确认。
+
+主机安装/撤回由具备权限的运维身份运行：须能读取服务配置及状态，创建独立版本和本次 unit drop-in、将规则属主改为服务 User，并执行 systemctl daemon-reload/restart。通常使用该主机批准的 root/sudo 管理身份；不用普通 Hub 成员身份代替主机权限，也不在命令里携带 Hub 密钥。status 不执行修改，但能否读完整事实仍取决于主机权限；未知如实保留。预检后由 Boss 审阅，再执行 install；本地开发者不代替运维运行这些主机命令。
 
 ## 只读观测的边界
 

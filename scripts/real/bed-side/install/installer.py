@@ -97,9 +97,12 @@ def framework_paths(config):
 
 class Installer:
     def __init__(self, systemctl='systemctl', runner=run_process, clock=time.monotonic,
-                 sleep=time.sleep, timeout=30):
+                 sleep=time.sleep, timeout=30, stable_seconds=10):
         if not isinstance(timeout, (int, float)) or not 0 < timeout <= 3600:
             raise InstallFailure('arguments', 'timeout_invalid')
+        if not isinstance(stable_seconds, (int, float)) or not 0 < stable_seconds <= 3600:
+            raise InstallFailure('arguments', 'stable_seconds_invalid')
+        self.stable_seconds = stable_seconds
         self.systemctl, self.runner, self.clock, self.sleep = systemctl, runner, clock, sleep
         self.timeout, self.stage = timeout, 'arguments'
 
@@ -116,14 +119,91 @@ class Installer:
     def launch(self, unit):
         return parse_launch(self.show(unit, 'ExecStart'), self.show(unit, 'WorkingDirectory'))
 
-    def running(self, unit):
-        deadline = self.clock() + self.timeout
+    def number(self, unit, property):
+        try:
+            raw = self.show(unit, property)
+            return int(raw) if re.fullmatch(r'[0-9]+', raw) else None
+        except Exception:
+            return None
+
+    def running(self, unit, restart_baseline):
+        # Observe start transitions, then a full stable interval; an automatic restart never gets another chance.
+        if restart_baseline is None:
+            return False
+        deadline, previous = self.clock() + self.timeout, restart_baseline
+        first_sample = True
         while True:
-            if self.show(unit, 'ActiveState') == 'active' and self.show(unit, 'SubState') == 'running':
-                return True
+            count = self.number(unit, 'NRestarts')
+            # An explicit restart resets this counter; a nonzero first sample already witnessed an auto restart.
+            if count is None or (first_sample and count != 0) or count > previous:
+                return False
+            first_sample = False
+            previous = count
+            active, sub = self.show(unit, 'ActiveState'), self.show(unit, 'SubState')
+            if active == 'active' and sub == 'running':
+                pid = self.number(unit, 'MainPID')
+                if pid is None or pid <= 0:
+                    return False
+                break
             if self.clock() >= deadline:
                 return False
             self.sleep(min(.2, max(0, deadline - self.clock())))
+        stable_until = self.clock() + self.stable_seconds
+        while self.clock() < stable_until:
+            self.sleep(min(.2, max(0, stable_until - self.clock())))
+            count = self.number(unit, 'NRestarts')
+            if count is None or count > previous:
+                return False
+            previous = count
+            if self.show(unit, 'ActiveState') != 'active' or self.show(unit, 'SubState') != 'running' or self.number(unit, 'MainPID') != pid:
+                return False
+        return True
+
+    def own_dropins(self, unit, release=None):
+        paths = {safe_path(p) for p in self.show(unit, 'DropInPaths').split()}
+        directory = safe_path(self.show(unit, 'FragmentPath')).parent / (unit + '.d')
+        if directory.is_symlink():
+            raise InstallFailure('identify', 'dropin_directory_symlink')
+        paths.update(directory.glob(PREFIX + '*.conf'))
+        return [p for p in paths if p.name.startswith(PREFIX) and p.name.endswith('.conf') and (release is None or p.name == PREFIX + release + '.conf')]
+
+    def expected_dropin(self, launch, tag):
+        component = launch['gateway_root'].parent / 'cell-runtime-releases' / tag
+        if launch['component'] is not None and launch['component'] != component:
+            raise InstallFailure('identify', 'component_identity_mismatch')
+        argv = [str(launch['python']), str(component / 'entry.py'), 'serve', '--gateway-root', str(launch['gateway_root']), '--config', str(launch['config']), '--contract', str(component / 'excel-contract.json')]
+        return dropin_text(argv)
+
+    def status(self, unit):
+        # Read-only and independent of bundle/checker/config contents. Never disclose discovered paths.
+        self.unit(unit)
+        before = {'active': None, 'sub': None}
+        for field, property in (('active', 'ActiveState'), ('sub', 'SubState')):
+            try:
+                before[field] = self.show(unit, property) or None
+            except Exception:
+                pass
+        launch = None
+        try:
+            launch = self.launch(unit)
+        except Exception:
+            pass
+        result = {'ok': launch is not None, 'stage': 'status', 'entry': 'unknown', 'release': None,
+                  'own_dropin': {'present': None, 'count': None, 'releases': None, 'content_matches': None},
+                  'before': before, 'idle_checked': False, 'observer_required': False}
+        if launch is not None:
+            result['entry'] = 'wrapped' if launch['component'] is not None else 'original'
+            if launch['component'] is not None:
+                result['release'] = launch['component'].name
+        try:
+            owned = self.own_dropins(unit)
+            result['own_dropin'].update(present=bool(owned), count=len(owned), releases=sorted({p.name[len(PREFIX):-5] for p in owned if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', p.name[len(PREFIX):-5])}))
+            if len(owned) == 1 and launch is not None:
+                tag = owned[0].name[len(PREFIX):-5]
+                result['own_dropin']['content_matches'] = not owned[0].is_symlink() and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', tag) is not None and owned[0].read_text(encoding='utf8') == self.expected_dropin(launch, tag)
+        except Exception:
+            result['ok'] = False
+        return result
 
     def observe(self, bundle, plan, unit, launch, phase):
         checker = Path(bundle) / 'install/observe.py'
@@ -247,9 +327,10 @@ class Installer:
             self.stage = 'reload'; self.guard(bundle, state, unit)
             self.call([self.systemctl, 'daemon-reload'])
             self.stage = 'restart'; self.guard(bundle, state, unit)
+            restart_baseline = self.number(unit, 'NRestarts')
             self.call([self.systemctl, 'restart', unit])
-            if not self.running(unit):
-                raise InstallFailure(self.stage, 'service_timeout')
+            if not self.running(unit, restart_baseline):
+                raise InstallFailure(self.stage, 'service_not_stable')
             self.stage = 'postcheck'
             after = self.guard(bundle, state, unit)
             if set(after['tools']) != set(state['facts']['tools']) | {'case_submit_cell'}:
@@ -274,31 +355,23 @@ class Installer:
         removed, stage = False, 'rollback_identify'
         try:
             launch = self.launch(unit)
-            paths = {safe_path(p) for p in self.show(unit, 'DropInPaths').split()}
-            directory = safe_path(self.show(unit, 'FragmentPath')).parent / (unit + '.d')
-            if directory.is_symlink():
-                raise InstallFailure(stage, 'dropin_directory_symlink')
-            paths.update(directory.glob(PREFIX + '*.conf'))
-            owned = [p for p in paths if p.name.startswith(PREFIX) and p.name.endswith('.conf') and (release is None or p.name == PREFIX + release + '.conf')]
+            owned = self.own_dropins(unit, release)
             if len(owned) != 1:
                 raise InstallFailure(stage, 'own_dropin_not_unique')
             own = owned[0]
             tag = own.name[len(PREFIX):-5]
             if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', tag) or release is not None and tag != release:
                 raise InstallFailure(stage, 'release_mismatch')
-            component = launch['gateway_root'].parent / 'cell-runtime-releases' / tag
-            if launch['component'] is not None and launch['component'] != component:
-                raise InstallFailure(stage, 'component_identity_mismatch')
-            # After a failed daemon-reload the original launch is still effective: derive the same intended bytes.
-            argv = [str(launch['python']), str(component / 'entry.py'), 'serve', '--gateway-root', str(launch['gateway_root']), '--config', str(launch['config']), '--contract', str(component / 'excel-contract.json')]
-            if own.is_symlink() or not own.is_file() or own.read_text(encoding='utf8') != dropin_text(argv):
+            if own.is_symlink() or not own.is_file() or own.read_text(encoding='utf8') != self.expected_dropin(launch, tag):
                 raise InstallFailure(stage, 'own_dropin_content_mismatch')
             stage = 'rollback_remove'; own.unlink(); removed = True
             stage = 'rollback_reload'; self.call([self.systemctl, 'daemon-reload'])
-            stage = 'rollback_restart'; self.call([self.systemctl, 'restart', unit])
+            stage = 'rollback_restart'
+            restart_baseline = self.number(unit, 'NRestarts')
+            self.call([self.systemctl, 'restart', unit])
             stage = 'rollback_wait'
-            if not self.running(unit):
-                raise InstallFailure(stage, 'service_timeout')
+            if not self.running(unit, restart_baseline):
+                raise InstallFailure(stage, 'service_not_stable')
             stage = 'rollback_verify'
             if self.launch(unit)['component'] is not None:
                 raise InstallFailure(stage, 'original_entry_not_restored')
@@ -310,15 +383,18 @@ class Installer:
 
 def main():
     parser = argparse.ArgumentParser(description='Controlled cell-component installation; preflight is read-only')
-    parser.add_argument('operation', choices=['preflight', 'install', 'rollback'])
+    parser.add_argument('operation', choices=['preflight', 'install', 'rollback', 'status'])
     parser.add_argument('--unit', required=True)
     parser.add_argument('--bundle', type=Path)
     parser.add_argument('--release')
     parser.add_argument('--timeout', type=float, default=30)
+    parser.add_argument('--stable-seconds', type=float, default=10)
     args = parser.parse_args()
-    installer = Installer(timeout=args.timeout)
+    installer = Installer(timeout=args.timeout, stable_seconds=args.stable_seconds)
     try:
-        if args.operation == 'rollback':
+        if args.operation == 'status':
+            answer = installer.status(args.unit)
+        elif args.operation == 'rollback':
             answer = installer.rollback(args.unit, args.release)
         elif args.bundle is None:
             raise InstallFailure('arguments', 'bundle_required')

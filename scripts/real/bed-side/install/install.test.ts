@@ -11,7 +11,7 @@ from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('synthetic_installer',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class Fixture:
  def __init__(self,fail=None):
-  self.root=Path(tempfile.mkdtemp(prefix='synthetic-cell-install-'));self.fail=fail;self.failed=False;self.calls=[];self.requests=[];self.now=0;self.sleeps=0;self.active='active';self.sub='running';self.loaded=[];self.chowns=[]
+  self.root=Path(tempfile.mkdtemp(prefix='synthetic-cell-install-'));self.fail=fail;self.failed=False;self.calls=[];self.requests=[];self.now=0;self.sleeps=0;self.pid=42;self.restarts=0;self.on_sleep=None;self.reset_restart_counter=False;self.active='active';self.sub='running';self.loaded=[];self.chowns=[]
   self.unit='synthetic.service';self.gateway=self.root/'release/gateway-source';self.gateway.mkdir(parents=True)
   self.framework=self.root/'framework';(self.framework/'lib').mkdir(parents=True)
   (self.framework/'lib/excel_contract.json').write_text(json.dumps({'objects':[{'e':'SYNTHETIC','status':'enabled'}]}))
@@ -26,10 +26,12 @@ class Fixture:
   self.plan={'release':'synthetic','source_commit':'a'*40,'component_sha256':{n:m.sha(self.bundle/'bed-side'/n) for n in m.FILES},'checker_sha256':m.sha(self.bundle/'install/observe.py'),'base_hub_sha256':m.sha(self.bundle/'base-hub-contract.json'),'installer_sha256':m.sha(Path(sys.argv[1])),'objects':['SYNTHETIC'],'missing_requirements':[]}
   self.write_plan()
   self.version=self.gateway.parent/'cell-runtime-releases/synthetic'
-  self.engine=m.Installer(systemctl=str(self.root/'fake-systemctl'),runner=self.run,clock=lambda:self.now,sleep=self.sleep,timeout=.5)
+  self.engine=m.Installer(systemctl=str(self.root/'fake-systemctl'),runner=self.run,clock=lambda:self.now,sleep=self.sleep,timeout=.5,stable_seconds=.4)
   self.patcher=patch.object(m.os,'chown',side_effect=lambda *args:self.chowns.append(args));self.patcher.start()
  def write_plan(self):(self.bundle/'install-plan.json').write_text(json.dumps(self.plan))
- def sleep(self,n):self.sleeps+=1;self.now+=n
+ def sleep(self,n):
+  self.sleeps+=1;self.now+=n
+  if self.on_sleep:self.on_sleep()
  def wrap(self):
   self.parent.mkdir(exist_ok=True)
   self.effective=[sys.executable,str(self.version/'entry.py'),'serve','--gateway-root',str(self.gateway),'--config',str(self.config),'--contract',str(self.version/'excel-contract.json')]
@@ -42,7 +44,7 @@ class Fixture:
   if argv[0]==self.engine.systemctl:
    if argv[1]=='show':
     key=argv[3].split('=',1)[1]
-    values={'ExecStart':'{ path='+self.effective[0]+' ; argv[]='+' '.join(self.effective)+' ; ignore_errors=no ; pid=1 ; }','WorkingDirectory':str(self.gateway),'FragmentPath':str(self.fragment),'DropInPaths':' '.join(str(p) for p in self.loaded),'ActiveState':self.active,'SubState':self.sub,'User':pwd.getpwuid(os.getuid()).pw_name,'DynamicUser':'no'}
+    values={'ExecStart':'{ path='+self.effective[0]+' ; argv[]='+' '.join(self.effective)+' ; ignore_errors=no ; pid=1 ; }','WorkingDirectory':str(self.gateway),'FragmentPath':str(self.fragment),'DropInPaths':' '.join(str(p) for p in self.loaded),'ActiveState':self.active,'SubState':self.sub,'User':pwd.getpwuid(os.getuid()).pw_name,'DynamicUser':'no','NRestarts':str(self.restarts),'MainPID':str(self.pid)}
     return values[key]
    if argv[1]=='daemon-reload':
     if self.fail=='reload' and self.drop.exists() and not self.failed:self.failed=True;raise m.InstallFailure('command','synthetic_reload_failure')
@@ -50,6 +52,8 @@ class Fixture:
     self.effective=self.drop.read_text().split('ExecStart=')[-1].strip().split() if self.drop.exists() else list(self.original)
     return ''
    if argv[1]=='restart':
+    self.pid=42
+    if self.reset_restart_counter:self.restarts=0
     if self.fail=='restart' and self.drop.exists() and not self.failed:self.failed=True;self.active='failed';self.sub='failed';raise m.InstallFailure('command','synthetic_restart_failure')
     if self.fail=='rollback_restart' and not self.drop.exists():self.active='failed';self.sub='failed';raise m.InstallFailure('command','synthetic_rollback_restart_failure')
     self.active='failed' if self.fail=='timeout' and self.drop.exists() else 'active';self.sub='failed' if self.active=='failed' else 'running';return ''
@@ -81,7 +85,7 @@ after={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p
 assert before==after and state['facts']['jobs']==0
 assert f.requests and all(r['phase']=='preflight' for r in f.requests)
 assert not any(a[1] in ['restart','daemon-reload'] for a,t in f.calls)
-assert m.Installer().timeout==30
+assert m.Installer().timeout==30 and m.Installer().stable_seconds==10
 `));
 
 test('install preserves original unit, uses grouped observation phases and produces service-readable new files under umask077',()=>check(`
@@ -138,7 +142,7 @@ assert not f.drop.exists() and f.effective==f.original
 test('bounded startup wait uses an injected clock and automatically rolls back without wall-clock assertions',()=>check(`
 f.fail='timeout'
 try:f.engine.install(f.bundle,f.unit);raise AssertionError('must fail')
-except m.InstallFailure as e:assert e.reason=='service_timeout' and e.rollback['ok']
+except m.InstallFailure as e:assert e.reason=='service_not_stable' and e.rollback['ok']
 assert f.sleeps>0 and all(t==.5 for a,t in f.calls)
 assert not f.drop.exists()
 `));
@@ -235,4 +239,87 @@ answer=f.engine.install(f.bundle,f.unit)
 assert answer['ok']
 post=[r for r in seen if r['phase']=='postcheck'];assert len(post)==1 and post[0]['component_root']==str(f.version)
 assert f.drop.exists()
+`));
+
+test('PID flapping or a non-running sample during the stable interval automatically rolls installation back',()=>check(`
+for change in ['pid','status']:
+ fired=[False]
+ def flap():
+  if f.drop.exists() and not fired[0]:
+   fired[0]=True
+   if change=='pid':f.pid=43
+   else:f.active='activating';f.sub='auto-restart'
+ f.on_sleep=flap
+ try:f.engine.install(f.bundle,f.unit);raise AssertionError('must fail')
+ except m.InstallFailure as e:assert e.stage=='restart' and e.rollback['ok'] and e.rollback['restored']
+ assert fired[0] and not f.drop.exists()
+ f.on_sleep=None
+ if f.version.exists():shutil.rmtree(f.version)
+`));
+
+test('adjacent restart increases are rejected even after explicit restart resets a higher old baseline',()=>check(`
+f.restarts=10;f.reset_restart_counter=True;fired=[False]
+def increment():
+ if f.drop.exists() and not fired[0]:fired[0]=True;f.restarts=1
+f.on_sleep=increment
+try:f.engine.install(f.bundle,f.unit);raise AssertionError('must fail')
+except m.InstallFailure as e:assert e.stage=='restart' and e.rollback['ok']
+assert fired[0] and not f.drop.exists()
+`));
+
+test('restart increases during startup transitions cannot be hidden by a later running state, and unknown PID or counters cannot prove stability',()=>check(`
+f.active='activating';f.sub='start';f.restarts=0
+def increment_while_starting():f.restarts=1;f.active='active';f.sub='running'
+f.on_sleep=increment_while_starting
+assert f.engine.running(f.unit,0) is False
+f.on_sleep=None;f.active='active';f.sub='running';f.restarts='unknown'
+assert f.engine.running(f.unit,0) is False
+f.restarts=0;f.pid=0
+assert f.engine.running(f.unit,0) is False
+f.pid=42
+assert f.engine.running(f.unit,None) is False
+`));
+
+test('rollback verifies the original entry with the same stability rule and reports a flapping restoration as unsuccessful',()=>check(`
+f.wrap();fired=[False]
+def original_flap():
+ if not f.drop.exists() and not fired[0]:fired[0]=True;f.pid=99
+f.on_sleep=original_flap
+answer=f.engine.rollback(f.unit)
+assert fired[0] and answer['removed'] and not answer['restored'] and not answer['ok']
+assert answer['stage']=='rollback_wait' and f.effective==f.original
+`));
+
+test('status identifies original or wrapped release and its exact drop-in without bundle, checker, service actions or filesystem writes',()=>check(`
+shutil.rmtree(f.bundle);f.config.unlink()
+before={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+answer=f.engine.status(f.unit)
+assert answer['ok'] and answer['entry']=='original' and answer['release'] is None
+assert answer['own_dropin']['present'] is False and answer['observer_required'] is False and answer['idle_checked'] is False
+assert before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+f.wrap();f.active='failed';f.sub='failed'
+before={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+answer=f.engine.status(f.unit)
+assert answer['entry']=='wrapped' and answer['release']=='synthetic' and answer['own_dropin']['content_matches'] is True
+assert answer['before']=={'active':'failed','sub':'failed'}
+assert answer['own_dropin']['releases']==['synthetic']
+assert before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+f.effective=list(f.original);f.loaded=[]
+pending=f.engine.status(f.unit)
+assert pending['entry']=='original' and pending['release'] is None and pending['own_dropin']['present'] is True
+assert pending['own_dropin']['releases']==['synthetic'] and pending['own_dropin']['content_matches'] is True
+assert f.requests==[] and all(argv[1]=='show' for argv,t in f.calls)
+assert str(f.root) not in json.dumps(answer)
+`));
+
+for (const first of [1,10]) test(`first post-restart count ${first} cannot pass against old baseline 10`,()=>check(`
+f.restarts=10;original_run=f.run
+def raced(argv,timeout=30,input=None):
+ result=original_run(argv,timeout=timeout,input=input)
+ if argv[0]==f.engine.systemctl and argv[1]=='restart':f.restarts=${first} if f.drop.exists() else 0
+ return result
+f.engine.runner=raced
+try:f.engine.install(f.bundle,f.unit);raise AssertionError('must reject first nonzero count')
+except m.InstallFailure as e:assert e.stage=='restart' and e.reason=='service_not_stable' and e.rollback['ok']
+assert not f.drop.exists()
 `));
