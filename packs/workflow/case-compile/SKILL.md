@@ -1,19 +1,17 @@
 ---
 name: case-compile
-description: 把原始用例写成自动化用例，交给 Hub 核对，生成自动化用例 Excel 后上机验证并分析错误。需要这份原始用例在敏捷平台上的文档号。
+description: 把原始用例编成自动化用例，经 Hub 核对、生成 Excel 后上机并分析错误。需要敏捷平台文档号。
 ---
 
 # 自动化用例
 
-原始用例先做用例重组，再做脚本编写、脚本合并、上机验证和失败分析。模型写自动化用例，Hub 核对并重算，不生成内容、不调用模型。
+依次为用例重组、脚本编写、脚本合并、上机验证、失败分析。模型编写，Hub 只核对重算，不生成内容或调用模型。
 
-接到使用者范围说明时，主代理须先在工作目录写入 `scope.md`（首行标明 `# 使用者原话，由主会话记录`，正文逐字抄录范围原话，后续变更也逐字追加，不改写或缩减；若一开始只点做部分用例，从首次 `recompose` 起即传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 用同一原话且首次开运行时定死）；若单条用例范围不同，可用 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只向子代理传入全局原文与本案分节；未写 `scope.md` 不得派发任何子代理。各阶段派发子代理前，**统一且只用** `task-brief.ts` 把完整任务说明写入 `--task-file <任务文件路径>`，再把标准输出那段极短派发提示原样传给 `task`（`subagent_type` 使用输出的角色名）的 `description` 参数，不把完整任务说明重打进对话、不删改或手写简报：
+主代理先在工作目录写 `scope.md`：首行 `# 使用者原话，由主会话记录`，正文逐字抄录范围，变更逐字追加，不改写或缩减。首次只做部分用例时，从首次 `recompose` 起传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 同原话，首次开运行时定死。单条范围可按 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只传全局原文与本案分节；未写范围不得派发。各阶段只用 `task-brief.ts` 经 `--task-file` 写任务，标准输出的短派发提示原样传给 `task.description`，`subagent_type` 用输出角色名；不重打、删改或手写简报。
 
-```text
-node '<技能目录>/tools/task-brief.ts' --role '<用例重组|脚本编写|保真核对|失败分析>' --case <用例或范围> --brief <简报或输入路径> --out <目标路径> --task-file <任务文件路径> [--scope scope.md] [--note '<补充>'] [--round <轮次> --run <运行目录> --item <条目JSON> --prior-plans <路径...> --prior-returns <目录...> --prior-answers <路径...> --prior-notes <路径...>|--brief-json <结构简报JSON>]
-```
+任务参数：`--role` 取用例重组、脚本编写、保真核对或失败分析；`--case` 为用例或范围，`--brief` 为输入，`--out` 为目标，`--task-file` 为任务文件。可选 `--scope`、`--note`；返工加 `--round`、`--run`、`--item`、`--prior-plans`、`--prior-returns`、`--prior-answers`、`--prior-notes`，或 `--brief-json`。路径和值均单引号引用。
 
-合法派发示例（路径以当前工作目录为基准；先写完对应简报）：
+已备好简报后，在工作目录运行：
 
 ```sh
 node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成用例 A' --brief 'briefs/0.md' --out 'plans/0.json' --task-file 'tasks/0.md'
@@ -21,11 +19,11 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 本地工具在 `<技能目录>`（优先用安装工具，否则按 Hub 命令**装进当前主目录的 `skills` 目录**；装在别处时验收主目录的守卫会拒绝执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。触发本地脚本与 Hub 工具时，`execute` 使用本文列出的实际工具命令，技能脚本路径和值分别用单引号引用，每条命令只占一行（禁 `=`）；列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令把 `node` 命令行与 `<<'EOF'` 写在同一行（空格隔开，切勿在 `<<'EOF'` 前换行），下一行只写 `%HUB_TOKEN%`，再一行只写 `EOF`，令牌不落盘。
 
-每条结论只写一句，带原始用例 ID 加标题、结论、状态和判断。状态只用未确认、已确认、未知；模型的判断是未确认。判断只用正确或错误，未知不替它写正确或错误。错误或未知才写原因和下一步。原因只用本包 `functions/generated/vocabulary.ts` 中 `attribution` 轴经 `labelOf` 生成的中文标签，机器字段保留同源代码；不另列词表、不自造同义标签。证据和决定者放最后；决定者只用程序、模型、使用者。内部引用和工具参数留在机器可读部分，不转述给使用者。
+逐条一句，带原始用例 ID、标题、结论、状态和判断。状态只用未确认、已确认、未知；模型的判断是未确认。判断只用正确或错误，未知不替它写正确或错误。错误或未知才写原因和下一步。原因只用本包 `functions/generated/vocabulary.ts` 中 `attribution` 轴经 `labelOf` 生成的中文标签，机器字段用同源代码，禁另列词表或自造标签。证据和决定者放最后；决定者只用程序、模型、使用者。内部引用、工具参数只进机读部分。
 
 ## 1. 用例重组
 
-先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理原始用例（使用者一开始只点做部分用例时，从第一次 `recompose` 起传相同 `parameters.scope`，完整脑图仍下载作上下文；单条或分批经 `tools/task-brief.ts --role '用例重组' --task-file <文件>` 写入任务文件后按同法派发；提交 Hub 前先跑 `recompose` 技能的 `tools/check-record.ts` 离线自检），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
+先用 test-bed 取得整个测试环境的使用权，设备清单要写全；刚安装构建后仍持有的可以沿用。按 recompose 技能处理原始用例（完整脑图仍下载作上下文；单条或分批经 `tools/task-brief.ts --role '用例重组' --task-file <文件>` 写入任务文件后按同法派发；提交 Hub 前先跑 `recompose` 技能的 `tools/check-record.ts` 离线自检），写出要点、改写后的步骤、具体取值和缺的资料，脚本编写与脚本合并都使用这份重组后的用例和同一构建的手册和命令树。同脑图同构建已有核对正确的重组（含新会话）直接沿用，不再重跑；确实跳过时在最终报告说明原因。
 
 原始用例要求的取值或写法被手册排除、期望却是成功时，先让使用者决定，不照写上机，也不自行改掉；原始用例本来要测非法输入时照写。主代理把整份原始用例的这类问题攒齐问一次，带 ID、标题、原句和构建号及手册原话。重组时使用者已决定的照做，不再问。尚未决定的先排除，并按 `tools/delivery.md` 写原因和下一步。
 
@@ -39,7 +37,7 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 ### 主会话参数与本地工具命令
 
-以下参数供主会话调用 Hub 与工具填写，不放进使用者答复：
+以下参数只供主会话调用，不进使用者答复：
 
 ```text
 start_run: pack=case-compile; predecessor=<test-bed acquire run>
@@ -55,33 +53,39 @@ profile: device_count 只读预检及可选 fold_newlines
   inputs.recomposition_result={"run":"<重组运行编号>"}（Hub 解析成已接收的结果）
 本地导出: tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>
 上传中性文件名，说明写两边摘要和“客户端规整”，不改内容或编号
-下载: node '<技能目录>/tools/download-run.ts' --hub %HUB_URL% --run <脚本编写编号> --out <新目录> <<'EOF'（接两行 %HUB_TOKEN% 与 EOF，切勿在 <<'EOF' 前换行）
-本地读取: items/<序号>.json、sources.json、sources/<摘要>、knowledge/、briefs/<序号>.md
+下载命令见下方
+本地读取: items/<序号>.json、briefs/<序号>.md、knowledge/；来源文件按sources.json的file指针读取，不猜名字
+```
+
+```sh
+node '<技能目录>/tools/download-run.ts' --hub %HUB_URL% --run '<脚本编写编号>' --out '<新目录>' <<'EOF'
+%HUB_TOKEN%
+EOF
 ```
 
 各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`（无在途上机验证任务）、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接把改好的计划重交当前 `plan_run`（复用未改文件与未改 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开 `plan_run`（上机返工 `predecessor` 填原 `test-bed` 预订号并用 `carry-plans.ts` 结转未改自动化用例，详见 `tools/delivery.md`），并重生成上传与新开合并；始终禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
 ```text
 start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
 ```
-第 2 轮及以上返工派发 `脚本编写` 或 `失败分析` 前，统一经 `task-brief.ts --round <n> --task-file <文件>` 传入同案 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（多轮按 `1..n-1` 英文逗号分隔、缺轮写 `-`，单轮直接传路径）；`task-brief.ts` 会写入任务文件（超 1800 字符逐字长行不折行并提示行号），并在传入运行目录或 `--run`/`--brief briefs/<序号>.md` 时在内存中自动拼入同案 `compile-brief@1`（含执行器失败标志、测试环境与前置）与精简机械规则拒收 `{code, path, message, fix}`、区分“末尾 12,000 字符截断 / 输出无法唯一定位 / 未找到命令”的报错步设备逐字摘录、未确认的失败分析结论（`confidence: "hypothesis"`；`notes.json` 缺 `round` 时标为轮次未记录且不冒充第 1 轮），并对总篇幅按固定顺序截断披露；禁止手写摘要、传整批 `submission.json` 或跨用例拼接；`保真核对` 继续严格盲审，只传 `.brief.json`。
+第 2 轮及以上返工派发 `脚本编写` 或 `失败分析` 前，统一经 `task-brief.ts --round <n> --task-file <文件>` 传入同案 `--prior-plans`/`--prior-returns`/`--prior-answers`/`--prior-notes`（多轮按 `1..n-1` 英文逗号分隔、缺轮写 `-`，单轮直接传路径）；`task-brief.ts` 会写入任务文件（超 1800 字符逐字长行不折行并提示行号），并在传入运行目录或 `--run`/`--brief briefs/<序号>.md` 时在内存中自动拼入同案 `compile-brief@1`（含执行器失败标志、测试环境与前置）与精简机械规则拒收 `{code, path, message, fix}`、区分“末尾 12,000 字符截断 / 输出无法唯一定位 / 未找到命令”的报错步设备逐字摘录、未确认的失败分析结论（`confidence: "hypothesis"`；`notes.json` 缺 `round` 时标为轮次未记录且不冒充第 1 轮），总篇幅按固定顺序截断披露；禁手写摘要、传整批 `submission.json` 或跨用例拼接；`保真核对` 继续严格盲审，只传 `.brief.json`。
 
 ## 3. 脚本合并
 
-先把全部自动化用例写好，再按下面顺序走完场景保真审计并一次提交给 Hub（缺审、摘要过期或格式错会在本地退出，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后从第 1 步重算核对资料并重新审计；不要把 Hub 已接收内容当成全部正确。只有缺少自动化用例 Excel 时可以继续生成，其他检查都要正确。检查写成步骤符合执行器规则、期望能在原始用例里找到原句、命令在手册和命令树里、地址在测试环境里、没改掉原始用例的场景、自动化用例 Excel 和自动化用例一致、自动化用例本身写对了。
+全部自动化用例写好后，按序完成保真审计，一次提交 Hub（缺审、摘要过期或格式错会在本地退出，不占修复次数）。按说明改错并自动重交，最多重交 2 次；改计划后从第 1 步重算并重审；Hub 已接收不代表全部正确。只有缺少自动化用例 Excel 时可以继续生成，其他检查都要正确。检查写成步骤符合执行器规则、期望能在原始用例里找到原句、命令在手册和命令树里、地址在测试环境里、没改掉原始用例的场景、自动化用例 Excel 和自动化用例一致、自动化用例本身写对了。
 
 ```sh
-node '<技能目录>/tools/check-plan.ts' --file <计划或判断JSON> [--brief <核对文件>]
-node '<技能目录>/tools/fidelity-brief.ts' --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
-# 对每份 to_audit/*.brief.json 运行 task-brief.ts --role '保真核对' --task-file <文件>（或用 --batch 核对目录），将短输出按同法前台并行 task（每批最多 6 个）写同名 .verdict.json
-node '<技能目录>/tools/fidelity-apply.ts' --run <脚本编写目录>/run.json --plans <自动化用例目录> --briefs <核对目录>
+node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>'
+node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --out '<核对目录>'
+# 判断文件自检还可加 --brief 指向对应核对文件。对每份 to_audit/*.brief.json 运行 task-brief.ts --role '保真核对' --task-file <文件>（或用 --batch 核对目录），将短输出按同法前台并行 task（每批最多 6 个）写同名 .verdict.json
+node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>'
 # 确认工具输出为正确（ready=true）后再提交；命令行与 <<'EOF' 在同一行，切勿前换行
-node '<技能目录>/tools/submit-plans.ts' --hub %HUB_URL% --run <脚本编写编号> --model <模型> --plans <自动化用例目录> <<'EOF'
+node '<技能目录>/tools/submit-plans.ts' --hub %HUB_URL% --run '<脚本编写编号>' --model '<模型>' --plans '<自动化用例目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
-node '<技能目录>/tools/fetch-run.ts' --hub %HUB_URL% --run <脚本编写编号> --out <新目录> <<'EOF'
+node '<技能目录>/tools/fetch-run.ts' --hub %HUB_URL% --run '<脚本编写编号>' --out '<新目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
-node '<技能目录>/tools/generate-workbook.ts' --run <新目录>/run.json --result <新目录>/result.json --submission <新目录>/submission.json --out <新目录>/case.xlsx
+node '<技能目录>/tools/generate-workbook.ts' --run '<新目录>/run.json' --result '<新目录>/result.json' --submission '<新目录>/submission.json' --out '<新目录>/case.xlsx'
 ```
 
 submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。上机返工改用例后，用 `carry-plans.ts` 结转未改自动化用例并回第 2 节 `start_run`（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run` 核对，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
@@ -103,7 +107,7 @@ Hub 上机前核对 Excel、构建、设备数、测试环境使用权及前后�
 脚本合并核对正确且仍持有整个测试环境时，Hub 开始上机验证。只说明已按合成执行器规则或发布的执行器规则核对，不证明在真实设备上跑得通。状态未知就写明缺什么，并继续补资料或重新核对，不拿未知结束。
 
 ```sh
-node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run <合并或上机编号> --out <新目录> --wait 3600 <<'EOF'
+node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run '<合并或上机编号>' --out '<新目录>' --wait 3600 <<'EOF'
 %HUB_TOKEN%
 EOF
 ```
