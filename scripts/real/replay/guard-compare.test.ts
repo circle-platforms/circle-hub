@@ -421,3 +421,32 @@ test('the compare command takes several candidate paths and the options of a 1.1
     f.close();
   }
 });
+
+test('a candidate comes with the skills it was written for, which replace the installed ones', installed, async () => {
+  const f = parallelFixture(app);
+  try {
+    // the guard sees the skills beside its folder: it lets a call go when they are the candidate's, and refuses every call otherwise
+    const lists = "import { readdirSync } from 'node:fs';import { fileURLToPath } from 'node:url';let raw='';for await(const c of process.stdin)raw+=c;const i=JSON.parse(raw);const skills=readdirSync(fileURLToPath(new URL('../skills', import.meta.url))).sort().join(',');process.stdout.write(skills!=='new'||i.tool_input.command==='NEVER_EXECUTE_ME'?JSON.stringify({decision:'deny',reason:'skills '+skills}):'{}');";
+    const { bundle } = guarded(f, 's0', b => { const context = folderContext(folderCases(b)); context.sets!.g['home/skills/old/SKILL.md'] = 'installed in the recorded session'; return context; });
+    mkdirSync(join(f.dir, 'guard'));
+    writeFileSync(join(f.dir, 'guard', 'guard.mjs'), lists);
+    mkdirSync(join(f.dir, 'skills', 'new', 'tools'), { recursive: true });
+    writeFileSync(join(f.dir, 'skills', 'new', 'SKILL.md'), 'a skill of the candidate');
+    writeFileSync(join(f.dir, 'skills', 'new', 'tools', 'tool.cli.json'), '{}');
+    const own = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'guard'), candidateSkills: join(f.dir, 'skills'), decisionOnly: true, out: join(f.dir, 'with-skills'), survey: true });
+    assert.equal(own.exit, 0, JSON.stringify(own));
+    assert.deepEqual([own.candidate?.skills?.files, own.matched], [2, 5]);
+    // without them the installed skills of the recorded session are what the guard finds
+    const installedOnes = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'guard'), decisionOnly: true, out: join(f.dir, 'without-skills'), survey: true });
+    assert.deepEqual([installedOnes.exit, installedOnes.mismatched, installedOnes.candidate?.skills], [1, 4, undefined]);
+    // an empty folder is refused, and so are skills without a candidate
+    mkdirSync(join(f.dir, 'empty'));
+    const refused = await compareReplay({ bundle, app: f.app, guard: join(f.dir, 'guard'), candidateSkills: join(f.dir, 'empty'), out: join(f.dir, 'empty-skills') });
+    assert.deepEqual([refused.exit, refused.attempted], [1, 0]);
+    const alone = await compareReplay({ bundle, app: f.app, candidateSkills: join(f.dir, 'skills'), out: join(f.dir, 'skills-alone') });
+    assert.deepEqual([alone.exit, alone.attempted], [1, 0]);
+  }
+  finally {
+    f.close();
+  }
+});

@@ -83,33 +83,39 @@ export interface Candidate {
   /** A file: its name and bytes, as given. A folder: the relative names of its files. */
   files: Map<string, Buffer>;
 }
+/** Every regular file under a directory, by relative name; a symbolic link is refused. */
+export function readTree(root: string, into = new Map<string, Buffer>()): Map<string, Buffer> {
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      requireFact(!entry.isSymbolicLink(), '候选文件夹里不能有符号链接', { name: entry.name });
+      const name = `${prefix}${entry.name}`;
+      if (entry.isDirectory())
+        walk(join(dir, entry.name), `${name}/`);
+      else if (entry.isFile()) {
+        requireFact(safeName(name) && !into.has(name), '候选文件名无效或重复', { name });
+        into.set(name, readFileSync(join(dir, entry.name)));
+      }
+    }
+  };
+  walk(root, '');
+  return into;
+}
 /** Reads the candidate's paths: a single regular file is a file; several paths, or a directory, are a folder of files (no symbolic links). */
 export function readCandidate(paths: string[]): Candidate {
   requireFact(paths.length > 0, '候选路径缺失');
   const files = new Map<string, Buffer>();
-  const add = (name: string, bytes: Buffer) => {
-    requireFact(safeName(name) && !files.has(name), '候选文件名无效或重复', { name });
-    files.set(name, bytes);
-  };
-  const walk = (dir: string, prefix: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      requireFact(!entry.isSymbolicLink(), '候选文件夹里不能有符号链接', { name: entry.name });
-      if (entry.isDirectory())
-        walk(join(dir, entry.name), `${prefix}${entry.name}/`);
-      else if (entry.isFile())
-        add(`${prefix}${entry.name}`, readFileSync(join(dir, entry.name)));
-    }
-  };
   let folder = paths.length > 1;
   for (const path of paths) {
     const info = lstatSync(path);
     requireFact(!info.isSymbolicLink() && (info.isFile() || info.isDirectory()), '候选路径必须是普通文件或目录');
     if (info.isDirectory()) {
       folder = true;
-      walk(path, '');
+      readTree(path, files);
     }
-    else
-      add(basename(path), readFileSync(path));
+    else {
+      requireFact(safeName(basename(path)) && !files.has(basename(path)), '候选文件名无效或重复', { name: basename(path) });
+      files.set(basename(path), readFileSync(path));
+    }
   }
   return { mode: folder ? 'folder' : 'file', files };
 }
@@ -125,6 +131,8 @@ export interface CompareOptions {
   candidateEntry?: string;
   /** A file that replaces the settings.json beside the guard's folder (in the folder's parent), for the candidate's runs. */
   candidateSettings?: string;
+  /** A directory that replaces the skills beside the guard's folder (`skills` in the folder's parent), for the candidate's runs: a guard that reads declarations the installed skills carry comes with the skills it was written for. */
+  candidateSkills?: string;
   /** How the candidate is spoken to and heard: Circle 1.17.0's before_tool (default) or Circle 1.18.0-local.2's PreToolUse. */
   protocol?: '1.17.0' | '1.18';
   /** 1.18: the MCP server whose tools 1.17.0 named `<server>_<tool>` and 1.18 names `mcp__<server>__<tool>`. */
@@ -207,6 +215,7 @@ export interface CompareReport {
     files: Record<string, string>;
     entry?: string;
     settingsSha256?: string;
+    skills?: { files: number; sha256: string };
     hook?: { name: string; onFailure: string; source: string };
   };
   candidateSha256?: string;
@@ -243,10 +252,12 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
       const candidate = guardPaths.length ? readCandidate(guardPaths) : undefined;
       const protocol = options.protocol ?? '1.17.0';
       requireFact(protocol === '1.17.0' || protocol === '1.18', '候选协议只能是 1.17.0 或 1.18');
-      requireFact(candidate !== undefined || (options.replace === undefined && options.candidateEntry === undefined && options.candidateSettings === undefined && protocol === '1.17.0' && !options.allCases), '候选选项需要候选文件');
+      requireFact(candidate !== undefined || (options.replace === undefined && options.candidateEntry === undefined && options.candidateSettings === undefined && options.candidateSkills === undefined && protocol === '1.17.0' && !options.allCases), '候选选项需要候选文件');
       requireFact(candidate?.mode === 'folder' || options.candidateEntry === undefined, '入口选项只用于候选文件夹');
       requireFact(candidate?.mode !== 'folder' || options.replace === undefined, '替换选项只用于单个候选文件');
       const settingsBytes = options.candidateSettings === undefined ? undefined : readFileSync(options.candidateSettings);
+      const skillFiles = options.candidateSkills === undefined ? undefined : readTree(options.candidateSkills);
+      requireFact(skillFiles === undefined || skillFiles.size > 0, '候选技能目录是空的');
       if (candidate) {
         const files = Object.fromEntries([...candidate.files].map(([name, bytes]) => [name, sha(bytes)]));
         if (candidate.mode === 'file') {
@@ -264,7 +275,7 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
         }
         if (settingsBytes)
           writePrivate(out, 'candidate-settings.json', settingsBytes);
-        report.candidate = { protocol, form: candidate.mode, files, ...(settingsBytes ? { settingsSha256: sha(settingsBytes) } : {}) };
+        report.candidate = { protocol, form: candidate.mode, files, ...(settingsBytes ? { settingsSha256: sha(settingsBytes) } : {}), ...(skillFiles ? { skills: { files: skillFiles.size, sha256: sha(canonical(Object.fromEntries([...skillFiles].map(([name, bytes]) => [name, sha(bytes)])))) } } : {}) };
       }
       const contextBytes = safeFile(b.directory, 'guard-contexts.json');
       report.contextSha256 = sha(contextBytes);
@@ -303,36 +314,55 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
       if (!order.length)
         throw new ReplayError('没有任何调用交给过守卫，无法比较', 2);
       const timeout = options.guardTimeoutMs ?? 10000;
-      /** The files, entry and mapped text files a case's guard runs with. */
+      /** A file as a context holds it: text when it is text, base64 otherwise. */
+      const asFile = (bytes: Buffer): GuardFile => { const text = bytes.toString('utf8'); return Buffer.from(text, 'utf8').equals(bytes) ? text : asBase64(bytes); };
+      const candidateSkillFiles: Record<string, GuardFile> | undefined = skillFiles && Object.fromEntries([...skillFiles].map(([name, bytes]) => [name, asFile(bytes)]));
+      /** What a case's guard runs as, before its files are put together: which file is replaced and which one starts it. */
+      const shape = (c: GuardCase, candidateRuns: boolean) => {
+        if (!candidateRuns || !candidate)
+          return { entry: c.entry, name: '' };
+        if (candidate.mode === 'file')
+          return { entry: c.entry, name: options.replace ?? c.replace ?? c.entry };
+        return { entry: `${posix.dirname(c.entry)}/${options.candidateEntry ?? posix.basename(c.entry)}`, name: 'folder' };
+      };
+      /** The files and mapped text files a case's guard runs with. */
       const prepare = (c: GuardCase, candidateRuns: boolean) => {
         const base = filesOf(c);
         if (!candidateRuns || !candidate)
-          return { files: base, entry: c.entry, replace: undefined, mapped: [] as string[], name: '' };
+          return { files: base, replace: undefined, mapped: [] as string[] };
         const dir = posix.dirname(c.entry);
         const home = posix.dirname(dir);
         const settingsName = home === '.' ? 'settings.json' : `${home}/settings.json`;
-        if (candidate.mode === 'file') {
-          const name = options.replace ?? c.replace ?? c.entry;
-          const files = settingsBytes ? { ...base, [settingsName]: settingsBytes.toString('utf8') } : base;
-          return { files, entry: c.entry, replace: { name, bytes: candidate.files.values().next().value as Buffer }, mapped: settingsBytes ? [settingsName] : [], name };
+        const skillsPrefix = home === '.' ? 'skills/' : `${home}/skills/`;
+        let files: Record<string, GuardFile> = base;
+        let replace: { name: string; bytes: Buffer } | undefined;
+        if (candidate.mode === 'file')
+          replace = { name: options.replace ?? c.replace ?? c.entry, bytes: candidate.files.values().next().value as Buffer };
+        else {
+          files = Object.fromEntries(Object.entries(base).filter(([name]) => !name.startsWith(`${dir}/`)));
+          for (const [name, bytes] of candidate.files)
+            files[`${dir}/${name}`] = asBase64(bytes);
         }
-        const files: Record<string, GuardFile> = Object.fromEntries(Object.entries(base).filter(([name]) => !name.startsWith(`${dir}/`)));
-        for (const [name, bytes] of candidate.files)
-          files[`${dir}/${name}`] = asBase64(bytes);
+        if (candidateSkillFiles) {
+          files = Object.fromEntries(Object.entries(files).filter(([name]) => !name.startsWith(skillsPrefix)));
+          for (const [name, file] of Object.entries(candidateSkillFiles))
+            files[`${skillsPrefix}${name}`] = file;
+        }
         if (settingsBytes)
-          files[settingsName] = settingsBytes.toString('utf8');
-        return { files, entry: `${dir}/${options.candidateEntry ?? posix.basename(c.entry)}`, replace: undefined, mapped: settingsBytes ? [settingsName] : [], name: 'folder' };
+          files = { ...files, [settingsName]: settingsBytes.toString('utf8') };
+        return { files, replace, mapped: settingsBytes ? [settingsName] : [] };
       };
       const sandboxFor = (c: GuardCase, candidateRuns: boolean) => {
-        const prepared = prepare(c, candidateRuns);
-        const key = c.set !== undefined ? JSON.stringify([c.set, candidateRuns, prepared.name]) : undefined;
+        const { entry, name } = shape(c, candidateRuns);
+        const key = c.set !== undefined ? JSON.stringify([c.set, candidateRuns, name]) : undefined;
         const known = key === undefined ? undefined : sandboxes.get(key);
         if (known)
-          return { sandbox: known, entry: prepared.entry, shared: true };
+          return { sandbox: known, entry, shared: true };
+        const prepared = prepare(c, candidateRuns);
         const sandbox = new GuardSandbox({ files: prepared.files, replace: prepared.replace, mapped: prepared.mapped, mirror: context.mirror ? { from: context.mirror, base: options.mirrorBase } : undefined });
         if (key !== undefined)
           sandboxes.set(key, sandbox);
-        return { sandbox, entry: prepared.entry, shared: key !== undefined };
+        return { sandbox, entry, shared: key !== undefined };
       };
       const evaluate = async (index: number): Promise<CallRecord> => {
         const { session, call } = order[index];

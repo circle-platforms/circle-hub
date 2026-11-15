@@ -87,9 +87,9 @@ test('the tools of an MCP server are named as Circle 1.18 names them', () => {
 });
 test('the guard hook is found in the candidate settings by the file it runs', () => {
   const settings = (hooks: unknown) => JSON.stringify({ hooks: { PreToolUse: hooks } });
-  const guard = { type: 'command', name: 'ops tools guard', command: "node '/home/hooks/ops-allow.mjs'", timeout: 600, onFailure: 'block' };
+  const guard = { type: 'command', name: 'ops tools guard', command: "node '/srv/hooks/ops-allow.mjs'", timeout: 600, onFailure: 'block' };
   assert.deepEqual(hookRegistration(settings([{ hooks: [guard, { type: 'command', command: 'node other.mjs' }] }]), 'ops-allow.mjs'), { name: 'ops tools guard', onFailure: 'block', timeoutSeconds: 600 });
-  assert.deepEqual(hookRegistration(settings([{ hooks: [{ type: 'command', command: 'node', args: ['/home/hooks/ops-allow.mjs'] }] }]), 'ops-allow.mjs'), { name: 'node', onFailure: 'continue' });
+  assert.deepEqual(hookRegistration(settings([{ hooks: [{ type: 'command', command: 'node', args: ['/srv/hooks/ops-allow.mjs'] }] }]), 'ops-allow.mjs'), { name: 'node', onFailure: 'continue' });
   assert.equal(hookRegistration(settings([{ hooks: [guard, guard] }]), 'ops-allow.mjs'), undefined, 'two hooks run the file');
   assert.equal(hookRegistration(settings([{ hooks: [guard] }]), 'another.mjs'), undefined);
   assert.equal(hookRegistration('not json', 'ops-allow.mjs'), undefined);

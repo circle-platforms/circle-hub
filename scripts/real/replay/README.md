@@ -9,6 +9,7 @@ node scripts/real/replay-circle.ts run --bundle "$BUNDLE_DIR" --circle-app "$CIR
 node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --out "$COMPARE_DIR" --survey
 node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --candidate-guard "$GUARD" --out "$COMPARE_DIR" --survey
 node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --candidate-guard "$GUARD_FOLDER" --candidate-settings "$SETTINGS" --candidate-protocol 1.18 --decision-only --candidate-all-cases --out "$COMPARE_DIR" --survey
+node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "$CIRCLE_APP" --candidate-guard "$GUARD_FOLDER" --candidate-settings "$SETTINGS" --candidate-skills "$SKILLS_FOLDER" --decision-only --candidate-all-cases --out "$COMPARE_DIR" --survey
 ```
 
 所有位置显式传入；输出必须是不存在的 Git 外目录，不能位于源 Home、源工作目录或应用目录。捕获后的 `source.json` 摘要可通过 `--source-sha` 锁定；包内摘要检测内容损坏，外部保存的根摘要用于绑定所选版本，摘要本身不是来源认证。
@@ -48,6 +49,8 @@ node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --circle-app "
 **等长前缀。** 守卫的判断和消息取决于绝对路径的文字，包括空格切词和按长度截断。`mirror` 指定的历史前缀在守卫看来换成了一个长度相同、只含普通字符的私有目录（默认建在 `/tmp` 的真实路径下，`--mirror-base` 可改），输入里整段出现的该前缀同样替换，守卫的原因文字再换回历史前缀后才与记录比较，因此截断位置和切词都与历史相同。前缀太短而放不下随机字符时返回未知。上下文的文件路径相对该前缀。
 
 **沙盒之外的读取。** 沙盒只含上下文给出的文件。守卫尝试读取其他路径时，权限模型拒绝，预加载器把这些路径从文件描述符 3 报告出来，报告记 `outsideReads` 数量及摘要。读取了沙盒之外之后出现的差异不说明守卫有变化，记为未知（`outside-read`）；读取了沙盒之外但决定一致的算相符，另计 `matchedWithOutsideReads`。
+
+**候选带着它写给的技能。** 守卫会读已装技能随附的文件（例如每个可执行脚本旁的 `<工具>.cli.json` 声明）时，只换守卫文件，守卫在记录里那套旧技能上找不到这些文件，会把本来放行的调用拒绝，这是方法造成的差异，不是守卫的变化。`--candidate-skills` 给一个目录，它的全部文件（不能有符号链接）替换每条记录守卫入口所在主目录（守卫文件夹的上一级）下的整个 `skills`，记录里的其他文件不变；目录由使用者准备，例如把候选提交自己的技能包按其清单装好、逐个文件核对大小和 SHA-256；回放工具只按字节使用它，不核对清单。它与候选协议无关，1.17.0 和 1.18 的候选都能用，要有候选守卫文件才能用；报告的 `candidate.skills` 记文件数和按文件名排序的摘要。不给时仍用记录里的技能。
 
 **候选是 Circle 1.18 的钩子。** 候选的守卫文件可以是多个：`--candidate-guard` 可重复，也可给一个目录；给了不止一个文件或一个目录，这些文件就是候选自己的守卫文件夹，替换每条记录守卫入口所在的文件夹（基线的其他文件不留），入口用 `--candidate-entry` 指定，默认与记录的入口同名。`--candidate-settings` 的文件替换守卫文件夹旁边的 `settings.json`（其中的历史前缀同样换成私有前缀）。`--candidate-protocol 1.18` 让候选按 Circle 1.18.0-local.2 的 PreToolUse 钩子协议收发，依据是该 Circle 的 `src/hooks.ts` 和 `docs/hooks.md`：
 
