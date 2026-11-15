@@ -1,0 +1,57 @@
+# 通用取值的受控安装材料
+
+这些程序只供部署者审阅后，在已授权的主机上运行。开发测试使用合成 systemctl、目录、SQLite 和锁；不连接 Hub、网关、跳板机或设备。无凭据参数，不读取环境文件或密钥库。
+
+## 五个运行文件和安装包
+
+运行文件从明确的完整 Git 提交读取，不从工作树猜版本：entry.py、cell_gateway.py、cell_runtime.py、table_cell.py、test_xlsx.py。安装器、只读观测器分别计算摘要；它们的来源字节与五个运行文件的来源分开记录。生成包并不执行安装。
+
+```sh
+node scripts/real/bed-side/install/build-bundle.mjs \
+  --repo "$SOURCE_REPOSITORY" --commit "$FULL_RUNTIME_COMMIT" \
+  --out "$NEW_BUNDLE_DIRECTORY" \
+  --base-hub-contract "$BASE_HUB_RULE_FILE" --objects-file "$OBJECTS_JSON_FILE"
+```
+
+不提供后两个文件时只能生成明确标记 missing_requirements 的未就绪材料，安装预检会拒绝。生成器不覆盖既有输出目录。
+
+由运维使用第二实例现有的管理员 CLI 上下文，确认**当前执行器实际绑定的规则原件**及其 SHA256。执行器定义摘要不是规则原件摘要；不能取同名的最新记录代替实际绑定。
+
+```sh
+circle-hub original list --external "$KNOWN_RULE_EXTERNAL_PREFIX" --limit 100
+circle-hub original export "$RULE_ORIGINAL_SHA256" --out "$BASE_HUB_RULE_FILE"
+```
+
+original list 只列 read 来源的原件，external 是前缀筛选；查不到不等于原件不存在。导出的文件须确为当前 runtime-contract@2 类型化规则，保留原字节与身份。对象名单是另一个 JSON 字符串数组，取同一规则 objects 里已启用、且管理员明确决定向新执行器开放的 e（或 name）；不凭设备名字猜、不默认开放全部。当前没有独立的 objects export CLI。可由部署者对导出的同一文件做以下纯本地筛选（命令未在真实资料上执行）：
+
+```sh
+node -e 'const fs=require("node:fs");const [base,out,...names]=process.argv.slice(1);const d=JSON.parse(fs.readFileSync(base,"utf8"));const enabled=new Set(d.objects.filter(x=>x.status==="enabled").map(x=>x.e??x.name));if(!names.length||new Set(names).size!==names.length||names.some(x=>!enabled.has(x)))throw Error("Object selection does not match the enabled rule objects");fs.writeFileSync(out,JSON.stringify(names,null,2)+"\n",{flag:"wx",mode:0o600});' "$BASE_HUB_RULE_FILE" "$OBJECTS_JSON_FILE" "$APPROVED_OBJECT_NAME"
+```
+
+## 只读预检、安装和紧急撤回
+
+```sh
+python3 "$BUNDLE_DIRECTORY/install/installer.py" preflight --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY"
+# 预检只读并结束。部署者审核输出及另行完成 Hub 一侧实时预检后，才调用 install。
+python3 "$BUNDLE_DIRECTORY/install/installer.py" install --unit "$SERVICE_UNIT" --bundle "$BUNDLE_DIRECTORY" --timeout 30
+# 紧急撤回不要求服务已启动、不要求观测器或完整安装包。
+python3 "$BUNDLE_DIRECTORY/install/installer.py" rollback --unit "$SERVICE_UNIT" --timeout 30
+```
+
+路径从 systemctl show 的现行启动命令、WorkingDirectory、FragmentPath 发现；不转储配置、不执行 show 的输出。仅支持明确的 Python 原网关入口或本组件入口，未知格式停止，不猜目录。仅新增本次 drop-in，不重写原 unit；drop-in 中持久化必要运行路径已获 Boss 批准。
+
+安装写入前逐步核无作业、无有效预订、床锁空闲、版本与摘要。复制到独立版本目录、导出规则、加入 drop-in 后重启；新入口未能在给定时限进入运行或装后核对失败，自动尝试撤回，并同时报告原失败阶段和恢复状态。若原服务本身也起不来，报告恢复失败而不是宣称成功；保留组件/规则和任务，不清锁、不杀 runner。
+
+撤回只在本次 drop-in 可唯一认出且内容逐字相符时删除它，再 reload/restart，核恢复为原入口且运行。没有服务运行、观测器或空闲前提。内容不符或存在多份候选时拒绝删除，不影响其它 drop-in。目录后清理由部署者另行确认，没有自动删除组件或任务的功能。
+
+## 只读观测的边界
+
+observe.py 不导入网关/框架模块、不调用网络接口。控制组中主进程之外的进程和任务存活锁用来证明“是否为零”；非零数可能重叠，不当作去重的业务作业总数。状态库以 SQLite 只读方式取租约事实，使用 boot identity 和 monotonic deadline 的原网关语义；缺文件、不可读、未知形状均返回未知，安装拒绝。
+
+版本和工具清单来自源码静态声明，不是实际在线工具可用的证明。Hub 一侧的实时工具及预订核对由运维另做。目录清单包含文件字节与符号链接本身，不跟随链接去修改共享框架。请求历史摘要以持久请求事实为对象；启动审计队列投递的正常消耗不当作请求历史丢失。无全局停收闸，仍需运维维护批准的停收窗口；“此刻空闲”不能证明后面没有新请求。
+
+## 导出及薄入口
+
+export-contract 与 export-hub-contract 只读规则及已声明来源，核摘要，不执行框架/fixture/网关模块。任务 test_xlsx.py 只是薄入口，实际逐行函数仍来自原框架的 lib/test_xlsx.py，在私有全局字典中使用新规则。服务启动和任务构造核规则声明的来源；来源变化拒绝，不静默套用旧身份。运行真正用例时仍会使用原设备工厂，这与只读导出是两条路径。
+
+主机 Python 和 systemd 的实际版本、路径形状、权限、真实设备输出与安装/撤回效果仍由运维确认；本机合成通过不等于已部署。
