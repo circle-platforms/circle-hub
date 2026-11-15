@@ -59,12 +59,12 @@ test('T1b #11 readonly sed receives a read alternative rather than an edit opera
 });
 test('T1b #11 unrelated unavailable tools do not receive an invented Hub detour', async()=>{
   const f=fixture();try{
-    const unavailable=await f.call('delete',{path:'owned.txt'});
+    const unavailable=await f.call('unregistered_fixture_tool',{path:'owned.txt'});
     assert.equal(unavailable.decision,'deny');assert.match(unavailable.reason!,/未提供等价工具|缺少.*能力/);
     assert.doesNotMatch(unavailable.reason!,/hub_list_task_packs/);
   }finally{f.close();}
 });
-test('T1b #12 writer teaching quotes paths; percent escapes and undeclared delete are not path aliases or permissions', async()=>{
+test('T1b #12 writer teaching quotes paths; safe double quotes and workspace delete follow T5 while percent escapes stay literal', async()=>{
   const writer=renderAgentDefinition(resolveSubagentRole('plan')!);
   assert.ok(writer.includes("node '<技能目录>/tools/check-plan.ts' --file '<计划JSON相对路径>'"));
   const f=fixture();try{
@@ -72,14 +72,10 @@ test('T1b #12 writer teaching quotes paths; percent escapes and undeclared delet
     const command=`node '${f.file}' --out 'out/有 空格.json' <<'EOF'\n%HUB_TOKEN%\nEOF`;
     assert.deepEqual(await f.call('execute',{command}),{});
     const doubleQuoted = await f.call('execute',{command:command.replace(`'${f.file}'`, `"${f.file}"`)});
-    assert.equal(doubleQuoted.decision,'deny');
-    const suggestion = doubleQuoted.reason!.split('\n').slice(1,-1).join('\n');
-    assert.ok(suggestion.startsWith('这次可以这样写：'));
-    const replacement = suggestion.slice('这次可以这样写：'.length);
-    assert.ok(replacement.includes('out/有 空格.json'));
-    assert.deepEqual(await f.call('execute',{command:replacement}),{});
+    assert.deepEqual(doubleQuoted,{},'owner T5 permits safe double quotes');
     const encodedPath = command.replace(f.file, f.file.replaceAll(' ','%20'));
     assert.equal((await f.call('execute',{command:encodedPath})).decision,'deny');
-    assert.equal((await f.call('delete',{path:'out/有 空格.json'})).decision,'deny');
+    assert.deepEqual(await f.call('delete',{file_path:'out/有 空格.json'}),{});
+    assert.equal((await f.call('delete',{file_path:'../outside.json'})).decision,'deny');
   }finally{f.close();}
 });
