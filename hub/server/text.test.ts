@@ -997,7 +997,7 @@ test('booking no-command devices stay one plain line; in-flight and Excel rows s
   assert.doesNotMatch(started, /任务包|状态未知；原因还没查清；下一步由使用者继续读取设备输出/);
 });
 
-test('recompose refusal: one next actor, verbatim（×N）, determined-error branch (Boss 06:48)', () => {
+test('recompose refusal preserves producer facts and guidance with verbatim grouping', () => {
   const list = [{ ...items(1)[0], fields: { case_id: '253651793153361064', title: '标题未知' }, label: '标题未知' }];
   const fact = '改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产';
   const identical = Array.from({ length: 5 }, () => ({
@@ -1028,12 +1028,12 @@ test('recompose refusal: one next actor, verbatim（×N）, determined-error bra
   const text = toolText('submit_result', submitAnswer(refused), { items: list });
   assert.match(text, /^脚本合并有错误。$/m);
   assert.match(text, /^原始用例 253651793153361064 标题未知：$/m);
-  assert.match(text, /^- 改写后的命令没有锁定目录的完整语法身份（×5）$/m);
+  assert.match(text, /^- 改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产（×5）$/m);
   assert.equal(linesOf(text).filter((line) => line.includes('改写后的命令没有锁定目录的完整语法身份')).length, 1);
   assert.equal(linesOf(text).filter((line) => line.includes('还可以重交 2 次')).length, 1);
   assert.equal(linesOf(text).filter((line) => line.includes('决定者程序')).length, 1);
-  assert.match(text, /下一步由模型改正重组记录后重交/);
-  assert.doesNotMatch(text, /产品包作者|下一步使用者补齐资料|运行者用 upload_file/);
+  assert.match(text, /补齐点名的事实后重交；不能补齐的按具名请求处理；运行者用 upload_file 补齐点名的运行输入/);
+  assert.doesNotMatch(text, /下一步由模型改正重组记录后重交/);
   assert.match(text, /参数无效：来源状态缺完整 action\/object\/owner\/due 出口；写明缺的事实、由谁在何时补，再重交/);
   assert.doesNotMatch(text, /再重交。写明缺的事实/);
 
@@ -1075,8 +1075,8 @@ test('recompose refusal: one next actor, verbatim（×N）, determined-error bra
     }],
   };
   const acceptedUnknown = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [unknownItem] })), { items: list });
-  assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；状态未知；原因缺资料；下一步由模型改正重组记录后重交/);
-  assert.doesNotMatch(acceptedUnknown, /产品包作者|下一步使用者补齐资料|还没有确认结论/);
+  assert.match(acceptedUnknown, /改写后的命令没有锁定目录的完整语法身份；等待产品包作者在重新提交之前补事实并重产；状态未知；原因缺资料；下一步由模型改正重组记录后重交/);
+  assert.doesNotMatch(acceptedUnknown, /还没有确认结论/);
 
   // Pack-marked determined error (data.determination === 'error'): render as 判断错误, not 状态未知 (Boss 06:48 b).
   const determinedItem: ItemResult = {
