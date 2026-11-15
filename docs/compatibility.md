@@ -52,7 +52,7 @@
 
 ## 历史
 
-- 2026-11-15：C60/C66在独立分支临时登记模型90（基89），新增http-call-error-data@1与http-error-envelope@1；JSON-RPC保留标准数值error.code，新增error.data中的协议码、五类调用错误类别或null及可选call_not_executed:true，只有抛出处已证明本次调用未进入业务时才填；未给不等于已执行或未执行。运行导出失败返回结构化JSON，成功内容与权限同形边界保留；ProtocolError已有missing/request_id改为由真实请求填值，另加可选audience/due/next_action/items，不解析fix或正文、不补默认。六工具输入与模型描述保持；接口供客户端改读机器字段，本分支未发布、未部署，数据库与起服务验证待全套释放后补。
+- 2026-11-15：C60/C66在独立分支临时登记模型90（基89），新增http-call-error-data@1与http-error-envelope@1；JSON-RPC保留标准数值error.code及既有error.data.trace追踪号，新增error.data中的协议码、五类调用错误类别或null及可选call_not_executed:true，只有抛出处已证明本次调用未进入业务时才填；未给不等于已执行或未执行。运行导出失败返回结构化JSON，成功内容与权限同形边界保留；ProtocolError已有missing/request_id改为由真实请求填值，另加可选audience/due/next_action/items，不解析fix或正文、不补默认。六工具输入与模型描述保持；接口供客户端改读机器字段，本分支未发布、未部署，数据库与起服务验证待全套释放后补。
 
 - 2026-11-15：C56/C57新增可选workflow.json.steps:[{id,name}]与要求项step引用，模型在此独立分支临时登记为89（基于88）；submit_result新增可选step_name，只有实际核对集合明确对应冻结包的唯一阶段时才提供。未声明、跨阶段或范围不可证明时不填，由呈现层用「核对已完成。」「核对有错误。」；不是新调度图，不改旧包/运行、六工具输入或模型描述。包声明归包作者，核心不写具体步骤名；此分支未发布、未部署，呈现层接线另交Cursor。
 
