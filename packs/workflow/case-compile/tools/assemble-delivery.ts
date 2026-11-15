@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
-import { bearerFrom, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
+import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -18,11 +18,18 @@ function options(argv: string[]): Record<string, string> {
   const values: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 2) {
     const key = argv[i]?.startsWith('--') ? argv[i].slice(2) : '';
+    if (key === 'scope') {
+      throw new Error('参数无效：交付时不允许从本地 --scope 文件收窄范围（按范围交付须在开运行时传入 parameters.scope 锚定到 Hub 运行记录）。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
+    }
     if (!Object.hasOwn(OPTIONS, key) || !argv[i + 1] || Object.hasOwn(values, key)) throw new Error('参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次');
     values[key] = argv[i + 1];
   }
   const missing = Object.entries(OPTIONS).filter(([key, required]) => required && !values[key]).map(([key]) => '--' + key);
-  if (missing.length) throw new Error(`缺少参数：${missing.join('、')}`);
+  if (missing.length) {
+    throw new Error(
+      `参数无效：缺少参数：${missing.join('、')}${missing.includes('--notes') ? '（--notes 为模型手写的说明 JSON 文件路径）' : ''}。参数写法：--hub --runs --notes --out 必填，--recompose --name 可选，每个只写一次`,
+    );
+  }
   return values;
 }
 const json = (value: unknown) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
@@ -30,6 +37,20 @@ const decode = (bytes: Uint8Array) => new TextDecoder('utf-8', { fatal: true }).
 function localTime(date: Date): string { const p = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}`; }
 const autoidOf = (item: unknown): string | null => isRecord(item) && isRecord(item.fields) && typeof item.fields.autoid === 'string' ? item.fields.autoid : null;
 function excludedOf(run: Record<string, unknown>): string[] { const p = run.parameters; return isRecord(p) && Array.isArray(p.exclude) ? p.exclude.filter((v): v is string => typeof v === 'string') : []; }
+interface FrozenScope { words: string; cases: string[] }
+function frozenScopeOf(run: Record<string, unknown>, label: string): FrozenScope | null {
+  const p = run.parameters;
+  if (!isRecord(p) || p.scope === undefined) return null;
+  if (Array.isArray(p.exclude) && p.exclude.length > 0) {
+    throw new Error(`参数无效：Hub 运行记录 ${label} 同时写入了 parameters.scope 与 parameters.exclude，二者互斥。请重新用 start_run 单独使用其中一项后重试`);
+  }
+  const raw = p.scope;
+  if (!isRecord(raw) || Object.keys(raw).some((k) => k !== 'words' && k !== 'cases') || typeof raw.words !== 'string' || !raw.words.trim() || !Array.isArray(raw.cases) || !raw.cases.length || raw.cases.some((v) => typeof v !== 'string' || !v) || new Set(raw.cases).size !== raw.cases.length) {
+    throw new Error(`参数无效：Hub 运行记录 ${label} 中的 parameters.scope 不完整或格式无效。请重新用 start_run 按规范传入 parameters.scope 并完成上机验证后重试`);
+  }
+  return { words: raw.words.trim(), cases: [...(raw.cases as string[])] };
+}
+const canonicalScopeKey = (scope: FrozenScope | null): string => (scope === null ? 'null' : JSON.stringify({ words: scope.words, cases: [...scope.cases].sort() }));
 /** A plan run's original of a case: its title and steps with their expectations, as the run froze them. */
 function planOriginal(item: Record<string, unknown>): Original | null {
   const f = item.fields;
@@ -74,7 +95,10 @@ function parseSuccessors(value: unknown, run: string): Array<{ run: string; pack
 }
 /** The answer the model gives the person, made here so it holds the counts and paths and nothing else. */
 export function replyText(out: string, totals: Record<string, number>, files: string[], cases: CaseOutcome[] = [], input?: ReportInput): string {
-  return [`交付目录 ${out}`, ...(input ? cases.map((outcome) => caseConclusion(input, outcome)) : [`共 ${totals.cases} 条原始用例。`]), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
+  const scopeLine = input?.scope
+    ? [`范围：本次共 ${input.assembly.totals.cases} / ${input.scope.totalCases} 条原始用例，另有 ${input.scope.outOfScope.length} 条未纳入本次范围（详见交付报告）。`]
+    : [];
+  return [`交付目录 ${out}`, ...scopeLine, ...(input ? cases.map((outcome) => caseConclusion(input, outcome)) : [`共 ${totals.cases} 条原始用例。`]), ...files.map((name) => `- ${join(out, name)}`)].join('\n');
 }
 
 /**
@@ -158,17 +182,17 @@ async function citedStatements(origin: string, bearer: string, cited: ReadonlySe
   return statements;
 }
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, now: () => Date = () => new Date(), retry?: RetryControl): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, now: () => Date = () => new Date(), retry?: RetryControl): Promise<number> {
   try {
     const args = options(argv);
     const runs = args.runs.split(',').map((v) => v.trim()).filter(Boolean);
     if (!runs.length || runs.some((run) => !RUN_ID.test(run)) || (args.recompose !== undefined && !RUN_ID.test(args.recompose))) throw new Error('--runs 请按上机验证的先后顺序填写编号，以逗号分隔；--recompose 请填写用例重组的编号');
     // The notes are a file the model writes and edits by hand: a break in it is named with its place and the text around it, as
     // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
-    const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readBytes(args.notes, 'notes'));
+    const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
     await emptyOrAbsent(args.out);
     const origin = hubOrigin(args.hub);
-    const bearer = await bearerFrom(readToken);
+    const bearer = await requireBearerToken(readToken);
 
     const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/jobs`, bearer, retry))), run);
     const successorsOf = async (run: string) => parseSuccessors(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/successors`, bearer, retry))), run);
@@ -218,12 +242,51 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     }
     for (const d of dispatches) await planOf(d.plan_run);
 
-    // The document's cases: the recomposition run's, or else every case and exclusion the plan runs name, in first-seen order.
+    // Every verification run and its plan run must carry the exact same frozen Hub parameters.scope; midway scope changes
+    // require a fresh start_run rather than merging runs from different scopes.
+    const scopedRuns: Array<{ run: string; scope: FrozenScope | null; key: string }> = [];
+    for (const d of dispatches) {
+      const planScope = frozenScopeOf(plans.get(d.plan_run)!.run, d.plan_run);
+      scopedRuns.push({ run: d.plan_run, scope: planScope, key: canonicalScopeKey(planScope) });
+      const verifRecord = await runOf(d.run);
+      if (verifRecord) {
+        const verifScope = frozenScopeOf(verifRecord, d.run);
+        scopedRuns.push({ run: d.run, scope: verifScope, key: canonicalScopeKey(verifScope) });
+      }
+    }
+    const distinctScopes = new Map<string, string>();
+    for (const entry of scopedRuns) {
+      if (!distinctScopes.has(entry.key)) distinctScopes.set(entry.key, entry.run);
+    }
+    if (distinctScopes.size > 1) {
+      const summary = [...distinctScopes.entries()]
+        .map(([encoded, run]) => {
+          if (encoded === 'null') return `${run}（未设 parameters.scope）`;
+          const parsed = JSON.parse(encoded) as { words: string; cases: string[] };
+          return `${run}（scope="${parsed.words}"，[${parsed.cases.join('、')}]）`;
+        })
+        .join(' 与 ');
+      throw new Error(`参数无效：所选运行的冻结 parameters.scope 不一致（${summary}），不能合并交付。中途改范围须用 start_run 重开运行；请只选择相同 parameters.scope 的上机验证后重试`);
+    }
+    const activeScope = scopedRuns[0]?.scope ?? null;
+
+    // The document's cases: the recomposition run's, or else every case, exclusion and frozen out-of-scope entry from plan runs.
     const originals: Record<string, Original> = {}; let population: string[] = [];
     if (args.recompose) {
       const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${args.recompose}/run`, bearer, retry)));
       if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== args.recompose || !Array.isArray(exported.run.items)) throw new Error('Hub 返回的重组后的用例不完整或与本次用例重组不符');
       for (const item of exported.run.items) { const read = isRecord(item) ? atomOriginal(item) : null; if (!read) throw new Error('重组后的用例缺少原始用例 ID 或原句'); population.push(read.autoid); originals[read.autoid] = read.original; }
+      if (activeScope) {
+        const rGroups = Array.isArray(exported.run.groups) ? exported.run.groups : [];
+        const rScope = rGroups.find((g): g is Record<string, unknown> => isRecord(g) && g.kind === 'recompose-scope@1' && isRecord(g.scope))?.scope as Record<string, unknown> | undefined;
+        const rOut = rScope && Array.isArray(rScope.out_of_scope) ? rScope.out_of_scope : [];
+        for (const entry of rOut) {
+          if (!isRecord(entry) || typeof entry.autoid !== 'string' || !entry.autoid) continue;
+          const titleText = typeof entry.title === 'string' ? entry.title : '';
+          if (!originals[entry.autoid] && titleText) originals[entry.autoid] = { title: titleText, lines: [] };
+          if (!population.includes(entry.autoid)) population.push(entry.autoid);
+        }
+      }
     }
     const excluded = [...new Set([...plans.values()].flatMap((p) => excludedOf(p.run)))];
     for (const d of dispatches) for (const item of (plans.get(d.plan_run)!.run.items as unknown[]) ?? []) {
@@ -231,8 +294,43 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
       const original = planOriginal(item); if (original) originals[autoid] = original;
       if (!args.recompose && !population.includes(autoid)) population.push(autoid);
     }
+    if (activeScope) {
+      for (const p of plans.values()) {
+        const groups = Array.isArray(p.run.groups) ? p.run.groups : [];
+        const gScope = groups.find((g): g is Record<string, unknown> => isRecord(g) && g.kind === 'case-compile' && isRecord(g.scope))?.scope as Record<string, unknown> | undefined;
+        const groupOut = gScope && Array.isArray(gScope.out_of_scope) ? gScope.out_of_scope : [];
+        for (const entry of groupOut) {
+          if (!isRecord(entry) || typeof entry.autoid !== 'string' || !entry.autoid) continue;
+          const titleText = typeof entry.title === 'string' ? entry.title : '';
+          if (!originals[entry.autoid] && titleText) originals[entry.autoid] = { title: titleText, lines: [] };
+          if (!population.includes(entry.autoid)) population.push(entry.autoid);
+        }
+      }
+    }
     if (!args.recompose) for (const autoid of excluded) if (!population.includes(autoid)) population.push(autoid);
     population = population.filter((v, k, all) => all.indexOf(v) === k);
+
+    if (activeScope) {
+      const missingFromDoc = activeScope.cases.filter((autoid) => !population.includes(autoid));
+      if (missingFromDoc.length) {
+        throw new Error(`参数无效：Hub 运行记录中的 parameters.scope 包含不在本次文档原始用例里的编号：${missingFromDoc.join('、')}。请核对运行参数与文档后重试`);
+      }
+      const allowed = new Set(activeScope.cases);
+      for (const d of dispatches) {
+        const extra = d.items.filter((autoid) => !allowed.has(autoid));
+        if (extra.length) {
+          throw new Error(`参数无效：上机验证 ${d.run} 包含未纳入本次 parameters.scope 的原始用例 ${extra.join('、')}。请核对运行范围并重新用 start_run 编写与上机后重试`);
+        }
+      }
+    }
+    const scopeSet = activeScope ? new Set(activeScope.cases) : null;
+    const inScope = scopeSet ? population.filter((autoid) => scopeSet.has(autoid)) : population;
+    const outOfScopeCases: OutOfScopeCase[] = scopeSet
+      ? population.filter((autoid) => !scopeSet.has(autoid)).map((autoid) => ({ autoid, title: originals[autoid]?.title ?? '标题未知' }))
+      : [];
+    const scopeSummary: ScopeSummary | undefined = activeScope
+      ? { words: activeScope.words, cases: activeScope.cases, outOfScope: outOfScopeCases, totalCases: population.length }
+      : undefined;
 
     const inputsOf = (plan: RunInputs) => ({ run: plan.run, result: plan.result, submission: plan.submission, contract: plan.originals.contract, profile: plan.originals.profile, inventory: plan.originals.inventory });
     const recipesOf = (plan: RunInputs) => satisfiedRecipes(inputsOf(plan));
@@ -265,7 +363,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     // into no verdict and the line that did it (in run 20 the tool only listed the passes that stood, and the model had to find
     // the missing one and its line by itself).
     const assembly = (() => {
-      try { return assemble(population, dispatches); } catch (error) {
+      try { return assemble(inScope, dispatches); } catch (error) {
         if (!(error instanceof Error) || !hits.size) throw error;
         const told = [...hits.entries()].slice(-5).map(([key, hit]) => `原始用例 ${key.split('\u0000')[1]} ${originals[key.split('\u0000')[1]]?.title ?? '标题未知'} 的设备输出里有一行“${hit.line.length > 160 ? `${hit.line.slice(0, 160)}…` : hit.line}”`);
         throw new Error(`${error.message}。核对设备输出后，以下原始用例状态未知，执行失败原话没有被自动化用例检查：${told.join('；')}。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，再把自动化用例 Excel 一起做上机验证`);
@@ -357,10 +455,16 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (unproven.length) throw new Error(unproven.join('；'));
     assembly.cases = settled.cases;
     const lastPlan = plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run)!.run;
-    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast } };
+    const input: ReportInput = { name: args.name ?? basename(resolve(args.out)), generatedAt: localTime(now()), build: typeof lastPlan.build === 'string' ? lastPlan.build : null, assembly, notes, originals, excluded, files: { pass: passFile, unsuccessful: unsuccessfulFile }, logs, passAudit: { markers: markerCount, read, downgraded: hits.size, wordless }, placedLast: { pass: passLast, unsuccessful: unsuccessfulLast }, ...(scopeSummary ? { scope: scopeSummary } : {}) };
     outputs.push({ name: 'delivery_report.md', bytes: Buffer.from(deliveryReport(input)) }, { name: 'unsuccessful_cases.md', bytes: Buffer.from(unsuccessfulReport(input)) });
     const summary = {
       schema: 'case-delivery@1', generator: GENERATOR, name: input.name, generated_at: now().toISOString(), build: input.build, totals: assembly.totals,
+      ...(scopeSummary ? {
+        scope: { source: 'hub_run_parameters', words: scopeSummary.words, cases: scopeSummary.cases },
+        in_scope_total: inScope.length,
+        out_of_scope_total: scopeSummary.outOfScope.length,
+        out_of_scope: scopeSummary.outOfScope,
+      } : {}),
       dispatches: dispatches.map((d) => ({ run: d.run, job: d.job, plan_run: d.plan_run, sha256: d.sha256, items: d.items })),
       added_runs: added,
       pass_audit: { markers: markerCount, read, downgraded: [...hits.entries()].map(([key, hit]) => { const [run, item] = key.split('\u0000'); return { run, item, where: hit.where, line: hit.line }; }), wordless },
@@ -377,7 +481,15 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
-    process.stdout.write(JSON.stringify({ out, totals: assembly.totals, files, runs: dispatches.map((d) => d.run), added_runs: added, reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input) }) + '\n');
+    process.stdout.write(JSON.stringify({
+      out,
+      totals: assembly.totals,
+      ...(scopeSummary ? { scope: { source: 'hub_run_parameters', words: scopeSummary.words, cases: scopeSummary.cases }, in_scope_total: inScope.length, out_of_scope_total: scopeSummary.outOfScope.length } : {}),
+      files,
+      runs: dispatches.map((d) => d.run),
+      added_runs: added,
+      reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input),
+    }) + '\n');
     return 0;
   } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
 }

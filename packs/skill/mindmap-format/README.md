@@ -24,30 +24,24 @@
 
 其余 xml/html/markdown/json/text/xlsx 仍为过渡内置实现，按 B5 照此模板迁移，不代表决定 72 的最终分层已全部完成。测试用的 hub/testing/parsers.ts 显式加载纯格式夹具，仅供单元测试；生产程序集不导入它，也不自动安装本包。
 
-## 旧运行兼容
+## 运行与历史引用解析
 
-`src:<摘要>/kityminder@1/n/<节点>` 与 `i/...` 地址不变。有 skills 锁的运行按该摘要复核。A1 前没有保存摘要的运行不能从当前安装版本补造历史：管理员首先以 `circle-hub skill bind-legacy kityminder@1 mindmap-format@1.0.2` 追加迁移时点声明；已获授权的逐运行显式声明仍可用 `circle-hub pack bind-skills <运行> --skill mindmap-format@1.0.2 --reason <理由>` 单独追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重新绑定。复核会披露“管理员事后声明”，不声称当时执行过该包。未绑定时说明缺失事实及补绑定出口。管理员可声明绑定已撤回但仍保留发布记录和原包的归档版本；这不会重新安装或启用它。
+`src:<摘要>/kityminder@1/n/<节点>` 与 `i/...` 地址不变。有 `skills` 锁的运行按该摘要复核；已获授权的逐运行显式声明可用 `circle-hub pack bind-skills <运行> --skill mindmap-format@1.0.2 --reason <理由>` 追加。绑定记录引用原运行记录与包发布记录，保留账号与理由；原运行和原结果不改，不能重新绑定。单独引用的解析直接使用管理员当前已安装的 `mindmap-format` 包版本，不再使用全局事后绑定命令或迁移声明。包升级、卸载、撤回不会替换运行已锁定的摘要；原包不可读取时返回未知及恢复出口。
 
 ## 验证范围
 
-合成格式向量覆盖节点、属性、位置别名、NUL、深度与节点限额。hub/refs/skills.test.ts 用临时 PostgreSQL 与合成包覆盖安装、权限、依赖、沙箱解析、运行锁、历史追加绑定、升级与卸载；不接触真实系统。通过这些测试不证明真实手册或脑图已验证。
-
-## 迁移时点声明命令
-
-管理员执行 `circle-hub skill bind-legacy kityminder@1 mindmap-format@1.0.2`。命令从已发布版本解析摘要并显示；要求 skill.json 中该 parser 的 migration_test 指向已执行的等价测试名。追加记录包含解析器、包与摘要、操作者、时间、测试名、当时的记录序号和“迁移时点事后声明”标签。每个 parser@version 只能绑定一次，不改绑、不安装包，也不改变任何旧运行、结果或原件。
-
-迁移声明只为时点之前已记录且没有 skills 锁的旧运行补充明确声明的复核解释器；新运行自己的锁优先，时点之后的无锁运行不能借它补造历史。不带运行号的旧解析器引用使用同一固定映射，并披露事后声明；未声明时给出缺失事实与 bind-legacy 出口。有单独运行追加绑定的，仍按此前管理员为该运行声明的摘要复核。包升级、卸载、撤回不会替换已绑定摘要；原包不可读取时返回未知及恢复出口。
+合成格式向量覆盖节点、属性、位置别名、NUL、深度与节点限额。hub/refs/skills.test.ts 用临时 PostgreSQL 与合成包覆盖安装、权限、依赖、沙箱解析、运行锁、独立解析、升级与卸载；不接触真实系统。通过这些测试不证明真实手册或脑图已验证。
 
 `testing/baseline` 保存迁移前核心 7bfca782 的七个文件的原始字节和 SHA 清单，只作测试数据，不进发布清单。测试在临时目录重建原模块，不能用搬迁后的实现充当基线。迁移测试枚举 Git 跟踪的所有非存档 JSON（以原解析器是否接受为结构判据），比较全部可读脑图及其嵌套文档的模型与摘要字节；另含大图生成夹具。原有解析器向量也逐项与基线比较。完整计数由测试输出；本轮为 610 份 JSON、147 个文档实例、47 个文件及 1 个生成大图夹具；不把非脑图 JSON 当漏测脑图。
 
 ## B5：每个解析器的迁移清单
 
-1. 新建 `packs/skill/<format>/{pack.json,skill.json,SKILL.md,README.md,api.ts,functions/}`；skill.json 写原 parser@version、媒体类型、限额、沙箱函数及 migration_test。保留旧选择器、位置别名与引文语义，不引入新的正文分类规则。
+1. 新建 `packs/skill/<format>/{pack.json,skill.json,SKILL.md,README.md,api.ts,functions/}`；`skill.json` 写原 `parser@version`、媒体类型、限额与沙箱函数。保留旧选择器、位置别名与引文语义，不引入新的正文分类规则。
 2. 在新包 `testing/baseline/` 冻结搬迁前核心实现及必需依赖的原字节，记录来源提交和逐文件 SHA。以 `testing/baseline.ts` 的临时重建方式加载；不得拿新实现比较自己，不导入 foundation/references 或真实业务文件。
 3. 移动原解析器向量到包内测试；新增 `functions/migration.test.ts`，枚举仓库全部适用夹具与样例，并覆盖生成的大型/边界夹具。模型与摘要逐字节相等，旧选择器与错误语义保持；不删旧断言。
 4. 用 `functions/parse.ts` 的通用文档传输形状接沙箱。格式算法及依赖在包内，核心只恢复通用定位接口、核原件摘要、引用语法和逐字引文。需要协议码或闭集快照时在 `tools/gen-contracts.ts` 加生成目标，运行生成器；不手抄词表，不给扫描加例外。
 5. 从 `hub/refs/parsers/index.ts` 的过渡默认集合和 `hub/refs/api.ts` 移除该格式的实现/领域类型导出；消费方类型改从技能包公开 API 取，异步读取继续走 `parseDocument` / `recognizeAsync`。原 `src:…/parser@version/…` 写法不改。为实际消费工作包补 dependencies，修各包签名工具保留依赖字段。若多个解析器接受同一媒体类型（例如专用结构与通用 JSON），B5 必须保留原来的专用先行/通用兜底关系，以显式声明和结构测试实现顺序，不按产品名或正文词判断。
-6. 测试床显式发布、安装技能包；用 `hub/testing/skills.ts` 的方式注入真实管理注册表。纯单元测试才用 `hub/testing/parsers.ts` 夹具，生产程序集不得导入它。生产环境由管理员安装，并执行该解析器的 `skill bind-legacy`，不做启动自动安装或自动补历史锁。
+6. 测试床显式发布、安装技能包；用 `hub/testing/skills.ts` 的方式注入真实管理注册表。纯单元测试才用 `hub/testing/parsers.ts` 夹具，生产程序集不得导入它。生产环境由管理员安装技能包，不做启动自动安装或事后全局补历史锁。
 7. 必补测试：无包/缺依赖有缺失事实及出口；普通用户不能安装/绑定、技能不按用户分配；新运行和结果冻结摘要；升级/卸载/撤回后旧引用仍按原摘要；迁移前未绑定、绑定后、时点后的无锁运行；不带运行号的旧引用；旧运行与旧结果字节不改；权限不扩大、坏摘要不降级；沙箱与限额；同文档并发引用只解析一次，结束不留模型；读取触发的投影保持文档级常数调用次数。
 8. 运行 typecheck、gen-contracts --check、原格式/迁移/注册表/引用测试及受影响包和验收测试，并发不超过 2。改已发布包同提交升版重签；新技能包独立发布，记录合成测试计数与尚未验证的真实范围。
 
@@ -70,4 +64,6 @@ fragments 的 JSON 估算超过 4 MiB 就不随解析输出，由 locate 按需�
 ## 模块 case-structure（决定 153、154）
 
 `functions/modules/case-structure/` 是可复用模块：按树位置和声明字段读出用例、前置、动作和期望，不按文字判断角色。工作流在 `pack.json` 的 `embeds` 写 `{"pack":"mindmap-format","version":"<版本>","module":"case-structure"}`，`npm run gen:contracts` 把它生成到 `functions/generated/skills/mindmap-format/case-structure/`。只在这里改模块，不改生成的副本；改了要升本包版本，再改 `embeds` 并重签工作流。模块里的 import 不能离开这个文件夹。
+
+当前 1.0.26 移除 `skill.json` 中历史保留的 `migration_test` 字段并清理旧 `bind-legacy` 说明，解析算法与接口不变。
 

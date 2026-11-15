@@ -8,11 +8,13 @@
 node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
 ```
 
-2. 用 task 开新子代理，可以一次看多条。任务只写下面这句话并换入文件路径，不补充编写理由、设备输出、手册或期望结论。
+2. 用 `task-brief.ts` 为 `to_audit` 中每份 `.brief.json` 生成独立盲审任务文件（或一次批量生成整目录；工具会自动隔离编写简报、历史轮次与设备日志），再将生成的短派发提示交给前台并行 `task`（`subagent_type="general-purpose"`，严禁用 `background`，每批最多 6 个）：
 
-```text
-核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>。每份按文件里的 rules 独立判断，把结果 JSON 写到它旁边，文件名里的 .brief.json 换成 .verdict.json，不写别的文件，回答只说写了哪几份。
+```sh
+node <技能目录>/tools/task-brief.ts --role '保真核对' --batch <核对目录> --task-dir <核对任务目录>
 ```
+
+（单条重审可用 `node <技能目录>/tools/task-brief.ts --role '保真核对' --case <autoid> --brief <核对目录>/<前缀>.<8位摘要>.brief.json --out <核对目录>/<前缀>.<8位摘要>.verdict.json --task-file <任务文件路径>`；不得附带编写理由、设备输出、手册或期望结论。）
 
 3. 让工具把判断写回自动化用例。工具会确认判断的仍是当前自动化用例，写好后才做脚本合并。
 

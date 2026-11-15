@@ -1,6 +1,8 @@
-// A published pack version is the digest of its manifest. Once that version is in git, a later change to the manifest
-// or to a file it lists has to carry a new version in the same commit. The baseline is the newest commit whose pack.json
-// version differs from its parent. This reads only git; it does not ask Hub whether the version was published.
+// A published pack version is frozen at the baseline commit: its manifest digest and listed bytes cannot move while keeping
+// the same version. The baseline is the nearest ancestor commit with a `release/*` tag, or when none exists, the merge-base
+// with the default branch. Commits after that baseline with a new version are not compared against each other as long as the
+// final manifest and on-disk listed files match.
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -8,6 +10,8 @@ import { digestOf } from '../../hub/records/digest.ts';
 
 interface ListedFile {
   path: string;
+  sha256: string;
+  size: number;
 }
 
 interface ManifestText {
@@ -39,7 +43,12 @@ function manifestFrom(text: string, path: string): ManifestText {
     if (typeof file !== 'object' || file === null || typeof (file as { path?: unknown }).path !== 'string') {
       throw new Error(`${path}: files[${index}] has no path`);
     }
-    return { path: (file as { path: string }).path };
+    const sha256 = (file as { sha256?: unknown }).sha256;
+    const size = (file as { size?: unknown }).size;
+    if (typeof sha256 !== 'string' || typeof size !== 'number') {
+      throw new Error(`${path}: files[${index}] has invalid sha256 or size`);
+    }
+    return { path: (file as { path: string }).path, sha256, size };
   });
   return { version, files: listed, value };
 }
@@ -62,59 +71,73 @@ function shallowBoundaries(root: string): Set<string> | null {
   return new Set(hashes);
 }
 
-function commitParents(root: string, rev: string, path: string): string[] {
-  const line = git(root, ['rev-list', '--parents', '-n', '1', rev])?.trim();
-  if (!line) throw new Error(`${path}: failed to read parents of ${rev.slice(0, 12)}`);
-  const parts = line.split(/\s+/);
-  if (parts[0] !== rev) throw new Error(`${path}: unexpected parent output for ${rev.slice(0, 12)}`);
-  return parts.slice(1);
+function defaultBranchRef(root: string, headRev: string): string {
+  const originHead = git(root, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'])?.trim();
+  const remoteDefault = originHead?.startsWith('refs/remotes/origin/')
+    ? originHead.slice('refs/remotes/origin/'.length)
+    : null;
+  const names = [...new Set([...(remoteDefault ? [remoteDefault] : []), 'main', 'master'])];
+  for (const name of names) {
+    const remoteRef = `refs/remotes/origin/${name}`;
+    const localRef = `refs/heads/${name}`;
+    const remoteCommit = git(root, ['rev-parse', '--verify', '--quiet', `${remoteRef}^{commit}`])?.trim() ?? null;
+    const localCommit = git(root, ['rev-parse', '--verify', '--quiet', `${localRef}^{commit}`])?.trim() ?? null;
+    if (!remoteCommit && !localCommit) continue;
+    if (remoteCommit && !localCommit) return remoteRef;
+    if (localCommit && !remoteCommit) return localRef;
+    if (localCommit === headRev) return remoteRef;
+    const remoteBase = git(root, ['merge-base', headRev, remoteCommit!])?.trim();
+    const localBase = git(root, ['merge-base', headRev, localCommit!])?.trim();
+    if (remoteBase && localBase) {
+      if (git(root, ['merge-base', '--is-ancestor', localBase, remoteBase]) !== null) return remoteRef;
+      return localRef;
+    }
+    return remoteBase ? remoteRef : localRef;
+  }
+  const branches = git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads/'])?.trim().split('\n').filter(Boolean) ?? [];
+  if (branches.length === 1) return branches[0];
+  throw new Error('cannot determine published baseline: no release/* tag or default branch found');
 }
 
-function parentHasVersion(root: string, parent: string, path: string, version: string): boolean {
-  if (git(root, ['cat-file', '-e', `${parent}^{tree}`]) === null) {
-    throw new Error(`${path}: missing tree object for parent commit ${parent.slice(0, 12)}`);
-  }
-  const text = show(root, parent, path);
-  if (text === null) return false;
-  try {
-    return manifestFrom(text, path).version === version;
-  } catch {
-    return false;
-  }
-}
-
-/** Newest commit that introduced the version recorded at `head` for this manifest. */
-export function versionCommit(root: string, path: string, head = 'HEAD'): string {
-  const headText = show(root, head, path);
-  if (headText === null) throw new Error(`${path}: no manifest at ${head}`);
-  const current = manifestFrom(headText, path).version;
+/**
+ * Nearest ancestor commit tagged `release/*` for `head`, falling back to merge-base with the default branch.
+ * Fails closed across shallow boundaries that cut off tag discovery or hide closer merge ancestors.
+ */
+export function publishedBaseline(root: string, head = 'HEAD'): string {
+  const headRev = git(root, ['rev-parse', '--verify', `${head}^{commit}`])?.trim();
+  if (!headRev) throw new Error(`cannot resolve commit ${head}`);
   const shallow = shallowBoundaries(root);
-  const log = git(root, ['log', '--no-follow', '--format=%H', head, '--', path]);
-  if (log === null) throw new Error(`${path}: git log failed at ${head}`);
-  const commits = log.trim().split('\n').filter(Boolean);
-  if (commits.length === 0) throw new Error(`${path}: no commit records pack.json`);
-  for (const rev of commits) {
-    const text = show(root, rev, path);
-    if (text === null) continue;
-    let version: string;
-    try {
-      version = manifestFrom(text, path).version;
-    } catch {
-      continue;
+  const tag = git(root, ['describe', '--tags', '--match', 'release/*', '--abbrev=0', headRev])?.trim();
+  if (tag) {
+    const taggedCommit = git(root, ['rev-parse', '--verify', `refs/tags/${tag}^{commit}`])?.trim();
+    if (!taggedCommit) throw new Error(`cannot resolve tag refs/tags/${tag}`);
+    if (git(root, ['cat-file', '-e', `${taggedCommit}^{tree}`]) === null) {
+      throw new Error(`shallow boundary: missing tree object for baseline commit ${taggedCommit.slice(0, 12)}`);
     }
-    if (version !== current) continue;
-    const parents = commitParents(root, rev, path);
-    if (parents.length === 0) {
-      if (shallow?.has(rev)) {
-        throw new Error(`${path}: cannot verify when version ${current} was introduced because commit ${rev.slice(0, 12)} is at a shallow boundary`);
+    if (shallow !== null) {
+      const aboveBaseline = git(root, ['rev-list', headRev, `^${taggedCommit}`])?.trim().split('\n').filter(Boolean) ?? [];
+      for (const rev of aboveBaseline) {
+        if (shallow.has(rev)) {
+          throw new Error(`shallow boundary ${rev.slice(0, 12)} prevents verifying nearest release/* tag from ${headRev.slice(0, 12)}`);
+        }
       }
-      return rev;
     }
-    // Evaluate every parent instead of short-circuiting so missing trees on any merge parent still fail closed.
-    const parentMatches = parents.map((parent) => parentHasVersion(root, parent, path, current));
-    if (!parentMatches.some(Boolean)) return rev;
+    return taggedCommit;
   }
-  throw new Error(`${path}: could not find commit introducing version ${current} in reachable git history`);
+  if (shallow !== null) {
+    const reachable = git(root, ['rev-list', headRev])?.trim().split('\n').filter(Boolean) ?? [];
+    for (const rev of reachable) {
+      if (shallow.has(rev)) {
+        throw new Error(`shallow boundary ${rev.slice(0, 12)} ends history before any release/* tag`);
+      }
+    }
+  }
+  const defaultRef = defaultBranchRef(root, headRev);
+  const mergeBase = git(root, ['merge-base', headRev, defaultRef])?.trim();
+  if (!mergeBase) {
+    throw new Error(`cannot determine published baseline: ${headRev.slice(0, 12)} shares no common ancestor with ${defaultRef}`);
+  }
+  return mergeBase;
 }
 
 function blob(root: string, spec: string): string | null {
@@ -126,47 +149,78 @@ function formatManifestError(path: string, error: unknown): string {
   return message.startsWith(`${path}:`) ? message : `${path}: ${message}`;
 }
 
-/** Packs whose listed bytes or manifest digest moved since the commit that set the current version. */
+function onDiskMismatches(root: string, directory: string, files: readonly ListedFile[]): string[] {
+  const mismatched: string[] = [];
+  for (const file of files) {
+    const fullPath = join(root, directory, file.path);
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(fullPath);
+    } catch {
+      mismatched.push(file.path);
+      continue;
+    }
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    if (sha256 !== file.sha256 || bytes.byteLength !== file.size) {
+      mismatched.push(file.path);
+    }
+  }
+  return mismatched;
+}
+
+/**
+ * Packs whose on-disk manifest/bytes diverge from the published baseline at the same version,
+ * or whose manifest digest/listed-file checksums do not match disk.
+ */
 export function versionReuseProblems(root: string): string[] {
   const listed = git(root, ['ls-files', '-z', '--', 'packs/**/pack.json']);
   if (listed === null) return ['git file list failed'];
+  const paths = listed.split('\0').filter(Boolean);
+  if (paths.length === 0) return [];
+  let baseline: string;
+  try {
+    baseline = publishedBaseline(root);
+  } catch (error) {
+    return [error instanceof Error ? error.message : String(error)];
+  }
   const problems: string[] = [];
-  for (const path of listed.split('\0').filter(Boolean)) {
-    const head = show(root, 'HEAD', path);
-    if (head === null) continue;
+  for (const path of paths) {
     let onDisk: ManifestText;
-    let committed: ManifestText;
     try {
       onDisk = manifestFrom(readFileSync(join(root, path), 'utf8'), path);
-      committed = manifestFrom(head, path);
     } catch (error) {
       problems.push(formatManifestError(path, error));
       continue;
     }
-    if (onDisk.version !== committed.version) continue;
-    let baseline: string;
-    try {
-      baseline = versionCommit(root, path);
-    } catch (error) {
-      problems.push(error instanceof Error ? error.message : String(error));
-      continue;
-    }
-    const baseText = show(root, baseline, path);
-    if (baseText === null) {
-      problems.push(`${path}: version ${onDisk.version} has no manifest at ${baseline.slice(0, 12)}`);
-      continue;
-    }
-    const base = manifestFrom(baseText, path);
-    const changed: string[] = [];
-    if (digestOf(onDisk.value) !== digestOf(base.value)) changed.push('manifest digest');
     const directory = dirname(path);
-    for (const file of onDisk.files) {
-      const relative = `${directory}/${file.path}`;
-      const now = git(root, ['hash-object', join(root, relative)])?.trim() ?? null;
-      const then = blob(root, `${baseline}:${relative}`);
-      if (now === null || then === null || now !== then) changed.push(file.path);
+    const baseText = show(root, baseline, path);
+    if (baseText !== null) {
+      let base: ManifestText;
+      try {
+        base = manifestFrom(baseText, path);
+      } catch (error) {
+        problems.push(formatManifestError(path, error));
+        continue;
+      }
+      if (onDisk.version === base.version) {
+        const changed: string[] = [];
+        if (digestOf(onDisk.value) !== digestOf(base.value)) changed.push('manifest digest');
+        for (const file of onDisk.files) {
+          const relative = `${directory}/${file.path}`;
+          const now = git(root, ['hash-object', join(root, relative)])?.trim() ?? null;
+          const then = blob(root, `${baseline}:${relative}`);
+          if (now === null || then === null || now !== then) changed.push(file.path);
+        }
+        if (changed.length > 0) {
+          problems.push(`${path}: version ${onDisk.version} is unchanged since ${baseline.slice(0, 12)} but ${changed.join(', ')} changed`);
+          continue;
+        }
+      }
     }
-    if (changed.length > 0) problems.push(`${path}: version ${onDisk.version} is unchanged since ${baseline.slice(0, 12)} but ${changed.join(', ')} changed`);
+    const stale = onDiskMismatches(root, directory, onDisk.files);
+    if (stale.length > 0) {
+      problems.push(`${path}: manifest checksums do not match disk for ${stale.join(', ')}`);
+    }
   }
   return problems;
 }

@@ -1,6 +1,6 @@
 // Reference text (B03): strict canonical parse and format of src, tree, entry and rec references, and the codecs of
 // selectors (src), paths (tree) and JSON Pointers (rec). The grammar follows REFERENCE_FORMS in contracts/generated/protocol.ts.
-import { PROTOCOL_CODES, type ProtocolCode } from './generated/protocol.ts';
+import type { ProtocolCode } from './generated/protocol.ts';
 import { isWhiteSpace } from './text-decoding.ts';
 
 
@@ -18,7 +18,7 @@ const MAX_LOOSE_LENGTH = MAX_REFERENCE_LENGTH + 1024;
 /** Malformed reference text. Carries the registered code a caller sees for a reference that cannot be resolved. */
 export class ReferenceSyntaxError extends Error {
   readonly code: ProtocolCode = 'REFERENCE_UNRESOLVED';
-  readonly fix: string = PROTOCOL_CODES.REFERENCE_UNRESOLVED.fix;
+  readonly fix: string = '';
   readonly input: string;
   /** UTF-16 index in `input` where the problem starts. */
   readonly position: number;

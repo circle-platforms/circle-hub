@@ -9,8 +9,8 @@
 import { realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { argumentsOf, bearerFrom, hubOrigin, RUN_ID, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { downloadRunRetrying, getRetrying, type RetryControl } from '../functions/hub-retry.ts';
+import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { downloadRunRetrying, getRetrying, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 import { writeBriefs } from './authoring-brief.ts';
 import { formatCallError, isRecord } from '../functions/text.ts';
 
@@ -21,12 +21,12 @@ async function saveRunReference(origin: string, bearer: string, run: string, out
   return exported.run_reference;
 }
 
-export async function main(argv: string[], readToken: () => Promise<string> = tokenFromStdin, brief: (directory: string) => Promise<{ briefs: number }> = writeBriefs, retry?: RetryControl): Promise<number> {
+export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, brief: (directory: string) => Promise<{ briefs: number }> = writeBriefs, retry?: RetryControl): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
     if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
     const origin = hubOrigin(args.hub);
-    const bearer = await bearerFrom(readToken);
+    const bearer = await requireBearerToken(readToken);
     const { files, ...report } = await downloadRunRetrying(origin, bearer, args.run, args.out, retry);
     const runReference = await saveRunReference(origin, bearer, args.run, args.out, retry);
     // The run is on disk by now: a brief that cannot be written is said, and is no reason to call the download failed.

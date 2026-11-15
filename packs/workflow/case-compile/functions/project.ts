@@ -1,5 +1,7 @@
 import {analyzeStructure,type StructureCase} from './generated/skills/mindmap-format/case-structure/index.ts';
 import {admittedRecomposition, recompositionProblem} from './recomposition.ts';
+import {acceptsPack, envelope} from './recompose-evidence.ts';
+import RECOMPOSE_FORMAT from '../tables/recompose-format.json' with { type: 'json' };
 // Project the automatable cases of one document (or the one case named by autoid) and freeze the original runner contract,
 // profile, manifest and lease view. Every check recomputes from these inputs; malformed documents refuse the whole run with
 // all problem pointers.
@@ -119,8 +121,41 @@ export function projectItems(input: unknown): unknown {
     const unknown=(excludeAsked as string[]).filter(value=>!numbered.has(value));
     if(unknown.length)return refusal('autoid_not_found',`exclude 里的 ${unknown.slice(0,5).join('、')} 在按规则取到的用例里找不到`,'核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/exclude');
   }
+  // A scoped run freezes {words, cases} onto the Hub run record at start_run so assemble-delivery verifies every run matches
+  // and discloses omitted cases cleanly instead of blocking closure (mutually exclusive with autoid and exclude).
+  const scopeAsked = parameters.scope;
+  let frozenScope: { words: string; cases: string[] } | null = null;
+  let scoped: Set<string> | null = null;
+  if (scopeAsked !== undefined) {
+    if (!whole) return refusal('invalid_parameter', 'parameters.scope 只用于整份文档按范围编译，不能与 parameters.autoid 同时使用', '按范围编译时不填 autoid；只编一条时不填 scope', [], '/parameters/scope');
+    if (excludeAsked !== undefined) return refusal('invalid_parameter', 'parameters.scope 与 parameters.exclude 不能同时使用', '只用 parameters.scope 列出纳入本次范围的 autoid，或改用 parameters.exclude，不要同时填写', [], '/parameters/scope');
+    if (!isRecord(scopeAsked) || Object.keys(scopeAsked).some((key) => key !== 'words' && key !== 'cases')) {
+      return refusal('invalid_parameter', 'parameters.scope 只允许 words 与 cases 两个字段', '写成 {"words":"<范围原话>","cases":["<autoid>",...]}', [], '/parameters/scope');
+    }
+    if (typeof scopeAsked.words !== 'string' || scopeAsked.words.trim().length === 0 || scopeAsked.words.length > 4000) {
+      return refusal('invalid_parameter', 'parameters.scope.words 不能为空且长度不超过 4000 字', '在 scope.words 填入本次范围说明原文', [], '/parameters/scope/words');
+    }
+    if (!Array.isArray(scopeAsked.cases) || scopeAsked.cases.length === 0 || scopeAsked.cases.length > DISPATCH.max_items || scopeAsked.cases.some((value) => typeof value !== 'string' || !autoidShape.test(value)) || new Set(scopeAsked.cases).size !== scopeAsked.cases.length) {
+      return refusal('invalid_parameter', `parameters.scope.cases 必须是不重复的 autoid 文字列表（1 至 ${DISPATCH.max_items} 条），每个符合配置形状`, '写成 ["<autoid>", ...]，从用例原文复制 autoid', [], '/parameters/scope/cases');
+    }
+    const numbered = new Set(ruled.map((c) => c.autoid).filter((value): value is string => value !== null && autoidShape.test(value)));
+    const unknown = (scopeAsked.cases as string[]).filter((value) => !numbered.has(value));
+    if (unknown.length) return refusal('autoid_not_found', `scope.cases 里的 ${unknown.slice(0, 5).join('、')} 在按规则取到的用例里找不到`, '核对文档、case_rule 和 autoid 原文后重新开始运行', [], '/parameters/scope/cases');
+    frozenScope = { words: scopeAsked.words.trim(), cases: [...(scopeAsked.cases as string[])] };
+    scoped = new Set(frozenScope.cases);
+  }
   const excluded=new Set<string>(Array.isArray(excludeAsked)?excludeAsked as string[]:[]);
-  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid)&&!excluded.has(c.autoid):c.autoid===parameters.autoid).map(c=>{
+  const outOfScopeCases = scoped
+    ? ruled
+      .filter((c) => c.autoid !== null && autoidShape.test(c.autoid) && !scoped.has(c.autoid))
+      .map((c) => {
+        const raw = (subject.model as any).nodes[c.node];
+        const old = c.selector ? extraction.cases.find((v) => v.selector === c.selector) : extraction.cases.filter((v) => v.id === c.id).length === 1 ? extraction.cases.find((v) => v.id === c.id) : undefined;
+        const title = old?.title ?? (isRecord(raw) && typeof raw.text === 'string' ? raw.text : '');
+        return { autoid: c.autoid as string, title };
+      })
+    : [];
+  const selected=ruled.filter(c=>whole?c.autoid!==null&&autoidShape.test(c.autoid)&&!excluded.has(c.autoid)&&(!scoped||scoped.has(c.autoid)):c.autoid===parameters.autoid).map(c=>{
     // The earlier extraction of the same node, by selector: a pasted case keeps the node id of the case it was copied from,
     // the parser then addresses both by position, so only the selector names one node. A model without selectors falls
     // back to a node id that names exactly one case.
@@ -149,13 +184,60 @@ export function projectItems(input: unknown): unknown {
   if (extraction.candidates > 0) warnings.push({ code: 'case-compile.candidate_only', message: `${extraction.candidates} 个节点只靠标记识别，case_rule 为 tagged 时不是用例（要取用请加标签，或改用默认规则）` });
   const context = isRecord(params.context) ? params.context : {};
   const frozenLeases = isRecord(context.leases) ? (context.leases as unknown as FrozenLeases) : { now: new Date(0).toISOString(), entries: [] };
+  const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const recompositionRun=slotOf(inputs,'recomposition_run'),recompositionResult=slotOf(inputs,'recomposition_result');
   const recompositionRequested=!!recompositionRun||!!recompositionResult||parameters.pipeline==='recomposed';
   // Decision 155: a whole mind map goes through recomposition, as in InfoTest. Skipping it has to be said out loud.
   if (!recompositionRequested && selected.length > 1 && parameters.pipeline !== 'legacy') return refusal('invalid_parameter', '整份脑图要先走重组：缺重组记录，写手拿不到改写后的步骤和缺口', '先用 recompose 工作流重组这份脑图，再绑定 recomposition_run 和 recomposition_result；确实要跳过时写 parameters.pipeline=legacy，并在最终报告里说明', [], '/parameters/pipeline');
   if (parameters.pipeline === 'recomposed' && selected.length > 1 && (!recompositionRun || !recompositionResult)) return refusal('invalid_parameter', '整份脑图写了 recomposed，却没有绑定重组记录', '绑定 recomposition_run 和 recomposition_result；还没重组就先用 recompose 工作流', [], '/inputs');
+  // Fail-closed subset check: selected cases for case-compile must stay within the bound recomposition_run's frozen items.
+  const recompRunEnv = recompositionRun ? envelope(recompositionRun, 'run') : null;
+  if (
+    recompRunEnv &&
+    acceptsPack(recompRunEnv.body.pack, RECOMPOSE_FORMAT.packs.stage) &&
+    (!context.product || recompRunEnv.body.product === context.product) &&
+    (!context.root || recompRunEnv.body.root === context.root) &&
+    (!context.product_pack_digest || recompRunEnv.body.product_pack_digest === context.product_pack_digest)
+  ) {
+    const recompItems = Array.isArray(recompRunEnv.body.items) ? recompRunEnv.body.items : [];
+    const recompGroup = Array.isArray(recompRunEnv.body.groups)
+      ? recompRunEnv.body.groups.find((g: unknown) => isRecord(g) && g.kind === 'recompose-scope@1')
+      : undefined;
+    const recompScope = isRecord(recompGroup) && isRecord(recompGroup.scope) ? recompGroup.scope : null;
+    const sourceRef = 'src:' + sha256;
+    const sameMindmap =
+      recompItems.some((item: unknown) => isRecord(item) && isRecord(item.fields) && item.fields.source_ref === sourceRef) ||
+      (isRecord(recompGroup) && recompGroup.source_ref === sourceRef);
+    if (sameMindmap || recompScope !== null) {
+      const scopedAutoids = recompScope && Array.isArray(recompScope.cases) ? recompScope.cases : null;
+      const uncovered = selected.filter(
+        (found) =>
+          !recompItems.some(
+            (item: unknown) =>
+              isRecord(item) &&
+              isRecord(item.fields) &&
+              item.fields.source_ref === sourceRef &&
+              item.fields.node === (found.selector ?? '') &&
+              (!scopedAutoids || (found.autoid !== null && scopedAutoids.includes(found.autoid))),
+          ),
+      );
+      if (uncovered.length > 0) {
+        const missingIds = uncovered.map((c) => c.autoid).filter(Boolean).slice(0, 5).join('、') || uncovered.slice(0, 5).map((c) => c.selector ?? c.id).join('、');
+        const pointer = frozenScope ? '/parameters/scope/cases' : parameters.autoid !== undefined ? '/parameters/autoid' : '/inputs/recomposition_run';
+        const scopeDesc = recompScope
+          ? `超出了绑定重组运行 ${recompRunEnv.body.run} 的冻结范围（仅含 ${scopedAutoids ? scopedAutoids.length : recompItems.length} 条${sameMindmap ? '' : '，或脑图原件已变更'}）`
+          : `不在绑定重组运行 ${recompRunEnv.body.run} 的冻结条目内`;
+        return refusal(
+          'invalid_parameter',
+          `所选用例（${missingIds}${uncovered.length > 5 ? ` 等 ${uncovered.length} 条` : ''}）${scopeDesc}，不能开始脚本编写`,
+          `请缩小本次 case-compile 范围使其成为重组运行 ${recompRunEnv.body.run} 已冻结条目的子集，或扩大范围并用 start_run 重开一次 recompose 重组运行（同步更新 recomposition_run 与 recomposition_result）后再开 case-compile`,
+          [],
+          pointer,
+        );
+      }
+    }
+  }
   const proofOf = (selector: string | null | undefined) => recompositionRequested ? admittedRecomposition(recompositionRun, recompositionResult, context, 'src:' + sha256, selector ?? '') : null;
-  const sha256 = typeof subject.sha256 === 'string' ? subject.sha256 : '';
   const items = selected.map((found) => ({
     id: `${documentId}:${(nodeIdCount.get(found.id) ?? 0) > 1 && found.selector ? found.selector : found.id}`,
     label: found.title.slice(0, MAX_TITLE),
@@ -207,9 +289,13 @@ export function projectItems(input: unknown): unknown {
       const data = (catalogs[0] as any).statement.data;
       planSet.push({ item: item.id, fields: { autoid: item.fields.autoid, title: item.fields.title, path: item.fields.path, priority: item.fields.priority, steps: item.fields.steps.map((step: { text: string }) => ({ text: step.text })), source_atoms: item.fields.source_atoms, expected_nodes: item.fields.expected_nodes }, plan: (plans[0] as any).statement.data, command_catalog: data.command_catalog ?? null, ...(item.fields.command_identities !== undefined ? { command_identities: item.fields.command_identities } : {}) });
     }
+    if (frozenScope && (accepted.partitions.delivered as unknown[]).length !== items.length) {
+      return refusal('workbook_context', '本次脚本合并运行的 parameters.scope 与所核对脚本编写运行的范围不一致', '脚本合并运行与脚本编写运行必须传入相同的 parameters.scope；若需更换范围，请重新用 start_run 开启新的脚本编写运行', [], '/parameters/scope');
+    }
   }
   const skipped = whole && unnumbered.size > 0 ? `；另有 ${unnumbered.size} 个用例没有 autoid，不编译（要编译请作者补 autoid 后重新上传）` : '';
-  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）${skipped}。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
+  const scopeNote = frozenScope ? `（按开运行 scope 纳入 ${items.length} 条，另有 ${outOfScopeCases.length} 条未纳入本次范围）` : '';
+  const message = `文档 ${documentId} 选出 ${items.length} 个用例（${extraction.ruleSummary}）${scopeNote}${skipped}。配置声明决定核对依据：${profileRead.profile.synthetic ? '按合成合约核对' : '按发布的运行器合约核对'}，身份 ${contractRead.contract.pinned.identity.slice(0, 12)}；不证明在真实设备上跑得通。`;
   return {
     items,
     groups: [
@@ -218,6 +304,7 @@ export function projectItems(input: unknown): unknown {
         projection_report:structure,
         recomposition_requested:recompositionRequested,
         criteria_review:{result:slotOf(inputs,'criteria_review')??null,run:slotOf(inputs,'criteria_review_run')??null},
+        ...(frozenScope ? { scope: { words: frozenScope.words, cases: frozenScope.cases, out_of_scope: outOfScopeCases } } : {}),
         contract: contractSlot.model,
         manifest: inventorySlot.model,
         profile: profileSlot.model,

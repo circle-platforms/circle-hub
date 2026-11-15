@@ -161,6 +161,36 @@
       }
     },
     {
+      "name": "scope",
+      "description": "按范围编译时必传，开运行时冻结进运行记录（不可与 exclude 或 autoid 同用）：{\"words\":\"<范围原话>\",\"cases\":[\"<autoid>\",...]}。脚本编写运行与脚本合并运行须传相同 scope；组交付时只从 Hub 读取并逐运行核对一致，未纳入用例按原句披露、不阻塞其余用例；中途改范围须用 start_run 重开运行",
+      "required": false,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "words",
+          "cases"
+        ],
+        "properties": {
+          "words": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "cases": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "plan_run",
       "description": "绑定 workbook 时必填：已满足的计划运行号，作为说明行来源；同时作 predecessor，二者一致由派发核对",
       "required": false,
