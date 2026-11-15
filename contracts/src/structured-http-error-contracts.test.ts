@@ -37,12 +37,12 @@ test('HTTP envelope keeps message and structured facts at error level without pr
   assert.equal(HttpErrorEnvelope.safeParse({error,status:403}).success,false);
 });
 
-test('privacy unknown stays null and an existing confirmed authorization reason remains optional', () => {
+test('privacy unknown stays null and a consistent authorization example validates shape, not semantic proof', () => {
   const unknown = {code:'SOURCE_UNAVAILABLE',call_error_category:null};
   assert.deepEqual(HttpCallErrorData.parse(unknown),unknown);
   assert.equal(callErrorCategory('SOURCE_UNAVAILABLE'),null);
   assert.equal(callErrorCategory('SOURCE_NOT_PERMITTED'),'permission_denied');
-  assert.equal(HttpCallErrorData.parse({code:'SOURCE_NOT_PERMITTED',call_error_category:'permission_denied',call_error_reason:'environment_registration_incomplete'}).call_error_reason,'environment_registration_incomplete');
+  assert.equal(HttpCallErrorData.parse({code:'SOURCE_NOT_PERMITTED',call_error_category:'permission_denied',call_error_reason:'environment_unassigned'}).call_error_reason,'environment_unassigned');
   assert.equal(HttpCallErrorData.parse(unknown).call_error_reason,undefined);
 });
 
