@@ -75,10 +75,10 @@ export function readBlockSlots(value:Record<string,unknown>):{ok:true;slots:Plan
    if(block.table.separator===''&&block.table.columns!==1)issue(at+'/table','没有分隔符时只能声明单列');
    if(typeof block.column==='number'&&block.column>block.table.columns)issue(at+'/column','取值列超出声明列数');
    for(const [conditionIndex,condition]of (block.select.where??[]).entries())if(condition.column>block.table.columns)issue(at+'/select/where/'+conditionIndex+'/column','选行列超出声明列数');
-   const step:PlanStep={...block.call,...cellArguments({table:block.table,column:block.column,select:block.select}),id,origin:at+'/call',block_kind:block.kind,description:'按声明的行列结构取一格',input_register:block.from,cell_input:true,save_as:block.register};
+   const step:PlanStep={...block.call,...cellArguments({table:block.table,column:block.column,select:block.select}),id,origin:at+'/call',block_kind:block.kind,description:'按声明的行列结构取一格',input_register:block.from,cell_input:true,save_as:block.register,...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
    steps.push(step);meta.steps.set(id,steps.length);capture(block.register,id,steps.length,at+'/register',step.object,true);continue;
   }
-  const call=block.call as PlanStep,step:PlanStep={...call,args:[...call.args],keywords:{...call.keywords},id,origin:at+'/call',block_kind:block.kind,...(block.cleanup===true||block.kind==='RESTORE_FROM'?{cleanup:true}:{})};
+  const call=block.call as PlanStep,step:PlanStep={...call,args:[...call.args],keywords:{...call.keywords},id,origin:at+'/call',block_kind:block.kind,...(block.cleanup===true||block.kind==='RESTORE_FROM'?{cleanup:true}:{}),...(Array.isArray(block.author_step_refs)?{author_step_refs:block.author_step_refs}:{})};
   const output=block.kind==='OBSERVE_ASSERT'||block.kind==='OBSERVE_ONLY'||block.kind==='CAPTURE'||block.kind==='EXPECT_FROM'||block.kind==='STEP'&&block.output!==undefined;
   if(output){step.output=true;if(block.kind==='STEP'&&block.output!==id)issue(at+'/output','STEP 的 output 必须是本块 id');}
   steps.push(step);meta.steps.set(id,steps.length);

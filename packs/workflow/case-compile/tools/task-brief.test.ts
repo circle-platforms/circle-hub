@@ -10,6 +10,7 @@ import {
   renderAgentDefinition,
   resolveSubagentRole,
   SUBAGENT_ROLES,
+  subagentTypeFor,
 } from '../functions/subagent-roles.ts';
 import { ATTRIBUTION, labelOf } from '../functions/generated/vocabulary.ts';
 import { CONTRACT_DOC } from '../functions/test-support.ts';
@@ -47,18 +48,24 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       note: '先查前置配置',
     });
     assert.ok(!writerBrief.includes("已知缺陷"));
-    assert.ok(writerBrief.includes('subagent_type="compile-writer"'));
+    assert.ok(!writerBrief.includes('general-purpose'));
+    assert.ok(!writerBrief.includes('Circle 1.17.0'));
+    assert.ok(writerBrief.includes('subagent_type="case-compile:compile-writer"'));
     assert.ok(writerBrief.includes('compile-writer'));
     assert.ok(writerBrief.includes(scopeVerbatim));
     assert.ok(writerBrief.includes('使用者原话，由主会话记录'));
-    assert.ok(writerBrief.includes(`技能目录（明确只读资源）：${packDir}`));
+    assert.ok(writerBrief.includes(`技能目录（只读）：${packDir}`));
+    assert.ok(writerBrief.includes(`${packDir}/slots.schema.json`));
+    assert.ok(writerBrief.includes(`${packDir}/examples/submit-result.json`));
+    assert.ok(writerBrief.includes(`${packDir}/tables/blocks-format.json`));
+    assert.ok(writerBrief.includes(`${packDir}/tools/delivery.md`));
     assert.ok(writerBrief.includes(`node '${packDir}/tools/check-plan.ts' --file`));
     assert.ok(!writerBrief.includes('<技能目录>'));
     assert.ok(writerRole.body.includes('按测试环境改写、前置与清理'));
     assert.ok(!writerBrief.includes(writerRole.body));
     assert.ok(writerBrief.includes('本轮补充：先查前置配置'));
 
-    // Also accepts English keys and agent names identically.
+    // Also accepts English keys, agent names, and pack-qualified names identically.
     const writerByKey = await buildTaskBrief({
       role: 'plan',
       caseRef: 'case-101',
@@ -69,11 +76,13 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
       note: '先查前置配置',
     });
     assert.equal(writerByKey, writerBrief);
+    assert.equal(resolveSubagentRole('case-compile:compile-writer')?.key, 'plan');
+    assert.equal(subagentTypeFor(writerRole), 'case-compile:compile-writer');
     // Legacy alias `写计划` is rejected; callers must use `脚本编写` (or `plan` / `compile-writer`).
     assert.equal(resolveSubagentRole('写计划'), null);
     assert.equal(resolveSubagentRole('脚本编写')?.stageLabel, '脚本编写');
     assert.ok(!writerBrief.includes('写计划'));
-    assert.equal(renderAgentDefinition(writerRole).includes('<技能目录>'), true);
+    assert.equal(renderAgentDefinition(writerRole).includes('<技能目录>'), false);
 
     // Attributor brief points to index.json, session transcripts, and log.txt.
     const attrBrief = await buildTaskBrief({
@@ -247,14 +256,16 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
       { cwd: workDir, encoding: 'utf8' },
     );
     assert.equal(run.status, 0, run.stderr);
-    assert.ok(run.stdout.includes('compile-fidelity'));
+    assert.ok(run.stdout.includes('subagent_type="case-compile:compile-fidelity"'));
+    assert.ok(!run.stdout.includes('general-purpose'));
+    assert.ok(!run.stdout.includes('Circle 1.17.0'));
     assert.ok(run.stdout.includes('audit/case-201.abcdef12.task.md'));
     assert.ok(!run.stdout.includes(scope));
     assert.ok(run.stdout.length <= 500);
     const taskContent = await readFile(join(workDir, 'audit/case-201.abcdef12.task.md'), 'utf8');
-    assert.ok(taskContent.includes('compile-fidelity'));
+    assert.ok(taskContent.includes('case-compile:compile-fidelity'));
     assert.ok(taskContent.includes(scope));
-    assert.ok(taskContent.includes(`技能目录（明确只读资源）：${packDir}`));
+    assert.ok(taskContent.includes(`技能目录（只读）：${packDir}`));
     assert.ok(!taskContent.includes('<技能目录>'));
     assert.ok(taskContent.includes(`node '${packDir}/tools/check-plan.ts' --file 'audit/case-201.abcdef12.verdict.json' --brief 'audit/case-201.abcdef12.brief.json'`));
 
@@ -921,6 +932,9 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
     // Short stdout dispatch notice stays compact and leaks zero case content or long verbatim chunks.
     assert.ok(written.dispatchPrompt.length <= 500, `dispatchPrompt too long: ${written.dispatchPrompt.length}`);
     assert.ok(!written.dispatchPrompt.includes("已知缺陷"));
+    assert.ok(written.dispatchPrompt.includes('subagent_type="case-compile:compile-writer"'));
+    assert.ok(!written.dispatchPrompt.includes('general-purpose'));
+    assert.ok(!written.dispatchPrompt.includes('Circle 1.17.0'));
     assert.ok(written.dispatchPrompt.includes('briefs/0.task.md'));
     assert.ok(written.dispatchPrompt.includes(`共 ${written.lineCount} 行`));
     assert.ok(written.dispatchPrompt.includes('plans/0.json'));

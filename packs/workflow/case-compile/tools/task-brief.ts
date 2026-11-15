@@ -16,10 +16,17 @@ import {
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { detectCaseHeadingMarkers, escapeRegExp, extractScopeUserRulings } from '../functions/scope.ts';
-import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
+import {
+  renderTaskBrief,
+  resolveSubagentRole,
+  subagentTypeFor,
+  type ResolvedRoleReference,
+  type SubagentRoleSpec,
+} from '../functions/subagent-roles.ts';
 import { isRecord, parseCliOptions } from '../functions/text.ts';
 import {
   buildSingleCaseStructuredBrief,
+  loadPlumbCandidates,
   loadRunStructuredContext,
   type RunStructuredContext,
 } from './authoring-brief.ts';
@@ -414,6 +421,23 @@ async function resolveOptionalRunContext(
   return null;
 }
 
+async function readVerifiedRoleReferences(
+  packReal: string,
+  role: SubagentRoleSpec,
+): Promise<ResolvedRoleReference[]> {
+  const resolved: ResolvedRoleReference[] = [];
+  for (const ref of role.referenceFiles) {
+    const fullPath = join(packReal, ref.relPath);
+    const st = await lstat(fullPath).catch(() => null);
+    if (!st || !st.isFile() || st.isSymbolicLink()) {
+      throw new Error(`不存在：找不到技能包参考文件 ${ref.relPath}（期望路径 ${fullPath}）。请重新安装或核对技能包目录后再派发`);
+    }
+    await readFile(fullPath, 'utf8');
+    resolved.push({ label: ref.label, relPath: ref.relPath, fullPath });
+  }
+  return resolved;
+}
+
 /**
  * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
  * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
@@ -533,13 +557,17 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
       : round > 1
         ? 'rework_device'
         : 'initial';
+    const idx = inferItemIndex(briefPath, options.itemPath, siblingItem);
+    const siblingItemId = isRecord(siblingItem) && typeof siblingItem.id === 'string' ? siblingItem.id : undefined;
+    const plumbCandidates = await loadPlumbCandidates(runCtx.directory, idx, siblingItemId);
     const built = buildSingleCaseStructuredBrief({
       ctx: runCtx,
       item: siblingItem,
-      index: inferItemIndex(briefPath, options.itemPath, siblingItem),
+      index: idx,
       round,
       mode: inferredMode,
       targetPlanPath: outPath,
+      ...(plumbCandidates ? { plumbCandidates } : {}),
       ...(priorRounds ? { priorRounds } : {}),
       ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
     });
@@ -560,14 +588,15 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
 
   const siblingFields = isRecord(siblingItem) && isRecord(siblingItem.fields) ? siblingItem.fields : {};
   const caseTitle = [compileBrief?.identity.title, siblingFields.title, isRecord(siblingItem) ? siblingItem.label : undefined].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-
+  const resolvedReferences = await readVerifiedRoleReferences(packReal, role);
   let brief = renderTaskBrief({
-    ...(caseTitle === undefined ? {} : {caseTitle}),
+    ...(caseTitle === undefined ? {} : { caseTitle }),
     role,
     caseRef,
     briefPath,
     outPath,
     skillDir: packReal,
+    resolvedReferences,
     scopeText,
     note: options.note,
     round,
@@ -599,7 +628,7 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
 /**
  * Validates the subagent role, workspace-contained paths, verbatim (and case-filtered) `scope.md`,
  * in-memory `compile-brief@1` context (when run data exists for plan/attribute roles),
- * and any round 2+ single-case prior history, then renders transient task input for the installed named role.
+ * and any round 2+ single-case prior history, then renders a self-contained pack subagent task brief.
  */
 export async function buildTaskBrief(options: BuildTaskBriefOptions): Promise<string> {
   return (await buildTaskBriefWithMeta(options)).brief;
@@ -686,9 +715,9 @@ export function formatTaskBriefFileContent(rawBrief: string): {
   };
 }
 
-/** Fixed short dispatch notice emitted to stdout (`~350-450` chars, zero case content). */
+/** Fixed short dispatch notice emitted to stdout (`~200-350` chars, zero case content). */
 export function renderTaskDispatchPrompt(params: {
-  roleAgentName: string;
+  subagentType: string;
   roleStageLabel: string;
   caseRef: string;
   round: number;
@@ -702,7 +731,7 @@ export function renderTaskDispatchPrompt(params: {
     ? `；含 ${params.longLineCount} 行超 ${VERBATIM_LINE_DISCLOSURE_THRESHOLD} 字符逐字行，见文件开头行号提示`
     : '';
   return [
-    `请以 \`subagent_type="${params.roleAgentName}"\`（角色 \`${params.roleAgentName}\`）执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
+    `请以 \`subagent_type="${params.subagentType}"\` 执行 \`${params.caseRef}\` 第 ${params.round} 轮${params.roleStageLabel}。`,
     `- 任务文件：${params.taskFile}（共 ${params.lineCount} 行${longHint}）`,
     `- 目标输出：${params.outPath}`,
     `用 \`read_file\` 完整读完 \`${params.taskFile}\` 后按要求只写 \`${params.outPath}\`，完工简复路径。`,
@@ -726,7 +755,7 @@ async function stageTaskBrief(options: WriteTaskBriefOptions): Promise<{
   const formatted = formatTaskBriefFileContent(meta.brief);
   const bytes = Buffer.from(formatted.content, 'utf8');
   const dispatchPrompt = renderTaskDispatchPrompt({
-    roleAgentName: meta.role.agentName,
+    subagentType: subagentTypeFor(meta.role),
     roleStageLabel: meta.role.stageLabel,
     caseRef: meta.caseRef,
     round: meta.round,
@@ -950,6 +979,7 @@ export async function main(argv: string[]): Promise<number> {
           {
             schema: 'task-brief-batch@1',
             role: firstRole.agentName,
+            subagent_type: subagentTypeFor(firstRole),
             skill_dir: DEFAULT_PACK_ROOT,
             written: stagedList.length,
             tasks: stagedList.map((s, index) => ({

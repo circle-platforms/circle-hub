@@ -15,7 +15,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.21.0');
+  assert.equal(manifest.version, '3.21.1');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();
@@ -23,7 +23,7 @@ test('version 2.0 manifest lists exactly the published files and excludes develo
   assert.ok(files.includes('functions/subagent-roles.ts'));
   assert.ok(files.includes('tables/runtime-profile-format.json'));
   assert.ok(files.includes('tools/task-brief.ts'));
-  assert.ok(files.includes('tools/install-agents.ts'));
+  assert.ok(!files.includes('tools/install-agents.ts'));
   assert.ok(files.includes('tools/workspace-path.ts'));
   for (const agent of ['compile-recomposer.md', 'compile-writer.md', 'compile-fidelity.md', 'compile-attributor.md']) {
     assert.ok(files.includes(`agents/${agent}`), agent);
@@ -90,7 +90,7 @@ test('the client skill and the closing procedure carry the reference rules on pa
     caseRef: 'case-1',
     briefPath: 'briefs/1.md',
     outPath: 'plans/1.json',
-    skillDir: '<技能目录>',
+    skillDir: '/synthetic/skills/case-compile',
     scopeText: '全部用例',
   });
   for (const phrase of [
@@ -148,20 +148,18 @@ test('the recompose skill raises an author step the manual excludes to the user 
   ]) assert.ok(recompose.includes(phrase), phrase);
 });
 
-test('the client skill dispatches installed named subagents via task-brief and scope.md while role specs keep writer rules', () => {
+test('the client skill dispatches case-compile:compile-* subagents via task-brief and scope.md while role specs keep writer rules', () => {
   const skill = read('SKILL.md'), writer = read('agents/compile-writer.md');
   assert.ok(skill.includes('scope.md'));
   assert.ok(skill.includes('task-brief.ts'));
-  assert.ok(skill.includes('subagent_type="compile-writer"'));
-  assert.ok(skill.includes('角色名'));
+  assert.ok(skill.includes('case-compile:compile-writer'));
   assert.ok(!skill.includes('general-purpose'));
-  assert.ok(skill.includes('再启动新 Circle 会话'));
   assert.ok(skill.includes('装进当前主目录的 `skills` 目录'));
   assert.ok(skill.includes('前台方式并列多个 `task`'));
   assert.ok(skill.includes('严禁用 `background`'));
   assert.ok(skill.includes('每批最多 6 个'));
   assert.ok(skill.includes('单独重派'));
-  assert.ok(skill.includes('install-agents.ts'));
+  assert.ok(!skill.includes('install-agents.ts'));
   assert.ok(!skill.includes('.circle/agents'));
   for (const phrase of ['按测试环境改写、前置与清理', '不得选用承载监听或触发通路的接口', '恢复原地址', '要查询的记录先在步骤前部创建', '应答状态码、应答条数', '按改动逆序排列', '查询类步骤不需要清理']) assert.ok(writer.includes(phrase), phrase);
   const plan = json('requirements.json').requirements.find((r: any) => r.key === 'plan');
@@ -194,6 +192,7 @@ test('bundled subagent definitions match single-source role specs and exclude mo
     assert.deepEqual(meta.get('tools')?.split(',').map((v) => v.trim()), expected[role.agentName], role.agentName);
     assert.ok(!role.tools.includes('question') && !role.tools.includes('task'), role.agentName);
     assert.ok(match[2].includes('本子代理只承担'), role.agentName);
+    assert.ok(!raw.includes('<技能目录>'), `${role.agentName}: bundled agent must not contain <技能目录>`);
   }
 });
 test('the preserved undeclared example still seeds the queried record, asserts mechanically and cleans up in reverse', () => {
@@ -329,8 +328,9 @@ test('P1.3 & P2: role specs enforce exact tool schemas/execute boundaries, fidel
   assert.ok(attributor.includes('严禁调用'), 'attributor must ban execute even if exposed');
   assert.ok(!writer.includes('严禁调用 execute'), 'writer must keep check-plan.ts execute permission');
   assert.ok(!fidelityAgent.includes('严禁调用 execute'), 'fidelity must keep check-plan.ts execute permission');
-  assert.ok(writer.includes("node '<技能目录>/tools/check-plan.ts' --file '<计划JSON相对路径>'"));
-  assert.ok(fidelityAgent.includes("node '<技能目录>/tools/check-plan.ts' --file '<verdict相对路径>' --brief '<brief相对路径>'"));
+  assert.ok(writer.includes('check-plan.ts --file'));
+  assert.ok(fidelityAgent.includes('check-plan.ts --file'));
+  assert.ok(!writer.includes('<技能目录>') && !fidelityAgent.includes('<技能目录>'));
 
   // fidelity.md aligned with task-brief.ts (removes outdated manual multi-file prompt)
   assert.ok(!fidelityDoc.includes('核对这些自动化用例是否改掉原始用例的场景：<文件路径，逐个列出>'));

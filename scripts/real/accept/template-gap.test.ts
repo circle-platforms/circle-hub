@@ -37,7 +37,7 @@ const index = { external: 'knowledge:index:synthetic:Synthetic_build?kind=case&k
 for (const flags of [{ build: 'Synthetic_build' }, { build: 'Synthetic_build', case_index: true }, { build: 'Synthetic_build', case_index: false }]) {
   test(`binds the exact document index ${JSON.stringify(flags)}`, async () => {
     assert.deepEqual(await scenario({ ...gold, product: 'synthetic', ...flags }).respond(firstTurn), [{
-      tool: 'hub_start_run', input: { pack: 'template-gap', product: 'synthetic', build: 'Synthetic_build', inputs: {
+      tool: 'mcp__hub__start_run', input: { pack: 'template-gap', product: 'synthetic', build: 'Synthetic_build', inputs: {
         documents: { external: 'agile:mindmap:synthetic-document' }, case_index: index,
       } },
     }]);
@@ -46,7 +46,7 @@ for (const flags of [{ build: 'Synthetic_build' }, { build: 'Synthetic_build', c
 
 test('keeps document-only gold compatible without binding an index', async () => {
   for (const flags of [{}, { case_index: false }]) assert.deepEqual(await scenario({ ...gold, ...flags }).respond(firstTurn), [{
-    tool: 'hub_start_run', input: { pack: 'template-gap', inputs: { documents: { external: 'agile:mindmap:synthetic-document' } } },
+    tool: 'mcp__hub__start_run', input: { pack: 'template-gap', inputs: { documents: { external: 'agile:mindmap:synthetic-document' } } },
   }]);
 });
 

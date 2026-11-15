@@ -66,7 +66,7 @@ test('T1b #11 unrelated unavailable tools do not receive an invented Hub detour'
 });
 test('T1b #12 writer teaching quotes paths; percent escapes and undeclared delete are not path aliases or permissions', async()=>{
   const writer=renderAgentDefinition(resolveSubagentRole('plan')!);
-  assert.ok(writer.includes("node '<技能目录>/tools/check-plan.ts' --file '<计划JSON相对路径>'"));
+  assert.ok(!writer.includes('<技能目录>') && writer.includes('check-plan.ts --file'), 'B7: agent definition leaves path injection to task-brief');
   const f=fixture();try{
     writeFileSync(f.file,'export function reader(){}\n');
     const command=`node '${f.file}' --out 'out/有 空格.json' <<'EOF'\n%HUB_TOKEN%\nEOF`;

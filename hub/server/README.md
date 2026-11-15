@@ -156,7 +156,7 @@ session, so use network restrictions or the explicitly configured TLS proxy. A t
 not authentication of a particular process. The proxy must terminate TLS, preserve the declared HTTPS authority, and
 never forward plaintext client traffic under that authority; the Hub does not inspect TLS on its HTTP backend socket.
 
-For a Circle MCP connection, select transport `streamable_http`, use this service's `/mcp` endpoint, and ensure the URL's
+For a Circle MCP connection, use Streamable HTTP (`"type": "http"` in `mcpServers`), use this service's `/mcp` endpoint, and ensure the URL's
 host exactly matches the deployment's allowed-host declaration (and its HTTPS proxy origin, when applicable). MCP still
 requires a valid Bearer token on every request; a client gets one through the MCP standard authorization (below) or from
 an administrator (`circle-hub token issue`). `/healthz` and the authorization's metadata and endpoints are unauthenticated.

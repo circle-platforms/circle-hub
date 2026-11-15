@@ -7,7 +7,7 @@ description: 把原始用例编成自动化用例，经 Hub 核对、生成 Exce
 
 依次为用例重组、脚本编写、脚本合并、上机验证、失败分析。模型编写，Hub 只核对重算，不生成内容或调用模型。
 
-主代理先在工作目录写 `scope.md`：首行 `# 使用者原话，由主会话记录`，正文逐字抄录范围，变更逐字追加，不改写或缩减。首次只做部分用例时，从首次 `recompose` 起传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 同原话，首次开运行时定死。单条范围可按 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只传全局原文与本案分节；未写范围不得派发。各阶段只用 `task-brief.ts` 经 `--task-file` 写任务，标准输出的短派发提示原样传给 `task.description`，`subagent_type` 用输出角色名；不重打、删改或手写简报。
+主代理先在工作目录写 `scope.md`：首行 `# 使用者原话，由主会话记录`，正文逐字抄录范围，变更逐字追加，不改写或缩减。首次只做部分用例时，从首次 `recompose` 起传同一 `parameters.scope`，`scope.md` 与 `parameters.scope.words` 同原话，首次开运行时定死。单条范围可按 `## <autoid>` 或 `## <item_id>` 分节，`task-brief.ts` 只传全局原文与本案分节；未写范围不得派发。各阶段只用 `task-brief.ts` 经 `--task-file` 写任务，标准输出的短派发提示原样传给 `task.description`，`subagent_type` 用输出的 `case-compile:compile-*`；不重打、删改或手写简报。
 
 任务参数：`--role` 取用例重组、脚本编写、保真核对或失败分析；`--case` 为用例或范围，`--brief` 为输入，`--out` 为目标，`--task-file` 为任务文件。可选 `--scope`、`--note`；返工加 `--round`、`--run`、`--item`、`--prior-plans`、`--prior-returns`、`--prior-answers`、`--prior-notes`，或 `--brief-json`。路径和值均单引号引用。
 
@@ -17,7 +17,7 @@ description: 把原始用例编成自动化用例，经 Hub 核对、生成 Exce
 node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成用例 A' --brief 'briefs/0.md' --out 'plans/0.json' --task-file 'tasks/0.md'
 ```
 
-本地工具在 `<技能目录>`（优先用安装工具，否则按 Hub 命令**装进当前主目录的 `skills` 目录**；装在别处时验收主目录的守卫会拒绝执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。触发本地脚本与 Hub 工具时，`execute` 使用本文列出的实际工具命令，技能脚本路径和值分别用单引号引用，每条命令只占一行（禁 `=`）；列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令把 `node` 命令行与 `<<'EOF'` 写在同一行（空格隔开，切勿在 `<<'EOF'` 前换行），下一行只写 `%HUB_TOKEN%`，再一行只写 `EOF`，令牌不落盘。
+本地工具在 `<技能目录>`（用安装工具或按 Hub 命令**装进当前主目录的 `skills` 目录**，别处守卫拒执行）。文件工具限工作目录相对路径（`.`）及只读 `<技能目录>`，写入禁出工作目录（禁 `/tmp`）。触发本地脚本与 Hub 工具时，`execute` 使用本文列出的实际工具命令，技能脚本路径和值分别用单引号引用，每条命令只占一行（禁 `=`）；列目录用 `ls`，找文件用 `glob`，搜文本用 `grep`。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端展开；需令牌的命令把 `node` 命令行与 `<<'EOF'` 写在同一行（空格隔开，切勿在 `<<'EOF'` 前换行），下一行只写 `%HUB_TOKEN%`，再一行只写 `EOF`，令牌不落盘。
 
 逐条一句，带原始用例 ID、标题、结论、状态和判断。状态只用未确认、已确认、未知；模型的判断是未确认。判断只用正确或错误，未知不替它写正确或错误。错误或未知才写原因和下一步。原因只用本包 `functions/generated/vocabulary.ts` 中 `attribution` 轴经 `labelOf` 生成的中文标签，机器字段用同源代码，禁另列词表或自造标签。证据和决定者放最后；决定者只用程序、模型、使用者。内部引用、工具参数只进机读部分。
 
@@ -31,9 +31,9 @@ node '<技能目录>/tools/task-brief.ts' --role '脚本编写' --case '合成�
 
 ## 2. 脚本编写
 
-先把资料整份下载到工作目录，再读每条原始用例及对应文件。手册和命令树在本地读和搜，引用照抄，不逐条、逐页读 Hub。每条原始用例对应的 `items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数约束、配置恢复方法、同级命令写法与待填自动化用例。派发子代理前先 `ls` 核对真实文件名（总数 `<10` 条时为 `0.md`、`0.json` 而非 `00.md`），确认 `download-run` / `fidelity-brief` / 计划或返回文件均已落盘且输出目录就绪后再调 `task-brief.ts` 与 `task`；严禁未写完 `plans/*.json` 就跑 `fidelity-brief.ts` 或派发下游子代理。
+先整份下载资料到工作目录再读每条原始用例，本地读搜 `knowledge/` 并照抄引用，不逐页读 Hub。`items/<序号>.json` 与 `briefs/<序号>.md` 列有命令、参数、恢复法与待填计划。派发前先 `ls` 核对实名（`<10` 条为 `0.md` 非 `00.md`），文件落盘后再调 `task-brief.ts`；未写完 `plans/*.json` 禁跑 `fidelity-plumb.ts` / `fidelity-brief.ts` 或下游。
 
-一条原始用例一个子代理，同时派出：装了 `case-writers` 扩展用 `write_case_plans`；否则每条跑 `tools/task-brief.ts --role '脚本编写' --task-file <文件>` 写盘并将短提示原样传参，**在同一条消息里以前台方式并列多个 `task` 调用（`subagent_type="compile-writer"`，严禁用 `background`；后台最多同时 4 个且第 5 个直接报错）**，不合并用例，**每批最多 6 个**，失败或超时的条目单独重派、不整批重来。单条编写、清理分工（存盘等自动清理禁入 `cleanup:true`）、`adapted` 不是步骤白名单（白名单外的前置须补 `sources.states` 来源或手册/示例前置，附 `precondition_source` 引文与配对逆清理，不改“前置不存在”测试）与语法由已安装的 `compile-writer` 定义提供；受限结构在 `<技能目录>/slots.schema.json`，示例 `<技能目录>/examples/submit-result.json`，分块 `<技能目录>/tables/blocks-format.json`；只在答案会改变做法、资料里又查不到时问使用者，设备的问题还是原始用例的问题，需要使用者决定，能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
+一条原始用例一个子代理：装了 `case-writers` 用 `write_case_plans`，否则 `task-brief.ts --role '脚本编写'` 写盘并原样传提示，**同条消息以前台方式并列多个 `task`（`subagent_type="case-compile:compile-writer"`，严禁用 `background`）**，不合并、**每批最多 6 个**，失败项单独重派。清理分工（存盘禁入 `cleanup:true`）、`adapted` 不是步骤白名单（补 `sources.states` 或手册/示例前置，附 `precondition_source` 与配对清理，不改“前置不存在”测试）与语法由包内定义与 `task-brief.ts` 注入；受限结构/示例/分块在 `<技能目录>/slots.schema.json`、`examples/submit-result.json`、`tables/blocks-format.json`。只在答案会改变做法、资料里又查不到时问使用者（设备的问题还是原始用例的问题，需要使用者决定），能查清的自己查并在报告说明。子代理不问使用者：定不了的写进给主代理的报告。
 
 每条原始用例都照原意写，按同构建手册、命令树与已声明执行器规则完成，不用确认标记绕过，也不从 help 散文推断或复制内部内容。执行器规则缺类型、用途、效果或允许范围时，按 Hub 点名的资料找维护者补齐并向使用者说明谁在补什么，缺资料的原始用例先排除、其余继续。只读自检单个计划或目录跑 `tools/check-plan.ts`。
 
@@ -65,7 +65,9 @@ node '<技能目录>/tools/download-run.ts' --hub %HUB_URL% --run '<脚本编写
 EOF
 ```
 
-各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`（无在途上机验证任务）、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接把改好的计划重交当前 `plan_run`（复用未改文件与未改 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开 `plan_run`（上机返工 `predecessor` 填原 `test-bed` 预订号并用 `carry-plans.ts` 结转未改自动化用例，详见 `tools/delivery.md`），并重生成上传与新开合并；始终禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
+（编写前可先跑下方 `cmd-select-plumb.ts`。）
+
+各计划无手写 `data.fidelity`、已展开定长占位且 `check-plan.ts` 自检为 `ok: true` 后再合并。**同运行重交与重开边界**：同一 `plan_run` 尚未进入 `merge_run`、无在途上机、`scope`/`exclude`/`inputs` 未变且 `rounds_left>0` 时，可直接重交当前 `plan_run`（复用未改计划与 `data.fidelity`）；仅 `rounds_left=0`、已进 `merge_run` 或 `scope`/`exclude`/`inputs` 变化时才 `start_run` 新开（上机返工 `predecessor` 填原预订号并用 `carry-plans.ts` 结转，见 `tools/delivery.md`）并重生成上传与新开合并；禁止把改过的计划直接交进 `merge_run`。单行 `start_run` 模板（无排除删 `parameters.exclude`）：
 ```text
 start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predecessor":"<test-bed预订号>","inputs":{"subject":<原subject输入>,"contract":<原contract输入>,"inventory":<原inventory输入>,"profile":<原profile输入>,"recomposition_run":{"reference":"<run_reference>"},"recomposition_result":{"run":"<重组运行编号>"}},"parameters":{"exclude":["<排除autoid>"]}}
 ```
@@ -73,14 +75,23 @@ start_run {"pack":"case-compile","product":"<产品>","build":"<构建>","predec
 
 ## 3. 脚本合并
 
-先把全部自动化用例写好，再按下面顺序走完场景保真审计并一次提交给 Hub（缺审、摘要过期或格式错会在本地退出，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后从第 1 步重算核对资料并重新审计；不要把 Hub 已接收当全部正确；仅缺自动化用例 Excel 时继续生成，其余检查须全对。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；检查步骤合规则、期望在原句、命令在树、地址在环境、场景保住及自动化用例 Excel 与自动化用例一致。
+写完后依次跑命令核验、Plumb 场景保真审计再一次提交给 Hub（缺审、过期或格式错在本地拦截，不占修复次数）。按说明改错并自动重交，最多重交 2 次；重改计划后重跑审计；不要把 Hub 已接收当全部正确；仅缺自动化用例 Excel 时继续生成，其余检查须全对。保真核对依 `mechanical.exemptions` 豁免有来源前置及配对 `cleanup:true` 清理（不改被测场景与“前置不存在”测试）；核对步骤、期望原句、命令树、环境地址、场景保住及 Excel 一致。
 
 ```sh
-node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>'
+node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>' [--brief '<核对文件>']
+node '<技能目录>/tools/cmd-select-plumb.ts' --run '<脚本编写目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
+%PLUMB_API_KEY%
+EOF
+node '<技能目录>/tools/cmd-verify-plumb.ts' --plans '<自动化用例目录>' --run '<脚本编写目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
+%PLUMB_API_KEY%
+EOF
+node '<技能目录>/tools/fidelity-plumb.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>' --base-url %PLUMB_URL% --key-stdin <<'EOF'
+%PLUMB_API_KEY%
+EOF
+# 无 Plumb 时跑 fidelity-brief.ts 与 task-brief.ts --role '保真核对' 写 .verdict.json
 node '<技能目录>/tools/fidelity-brief.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --out '<核对目录>'
-# 判断文件自检还可加 --brief 指向对应核对文件。对每份 to_audit/*.brief.json 运行 task-brief.ts --role '保真核对' --task-file <文件>（或用 --batch 核对目录），将短输出按同法前台并行 task（每批最多 6 个）写同名 .verdict.json
 node '<技能目录>/tools/fidelity-apply.ts' --run '<脚本编写目录>/run.json' --plans '<自动化用例目录>' --briefs '<核对目录>'
-# 确认工具输出为正确（ready=true）后再提交；命令行与 <<'EOF' 在同一行，切勿前换行
+# ready=true 后再提交（命令行与 <<'EOF' 同行）
 node '<技能目录>/tools/submit-plans.ts' --hub %HUB_URL% --run '<脚本编写编号>' --model '<模型>' --plans '<自动化用例目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
@@ -90,7 +101,7 @@ EOF
 node '<技能目录>/tools/generate-workbook.ts' --run '<新目录>/run.json' --result '<新目录>/result.json' --submission '<新目录>/submission.json' --out '<新目录>/case.xlsx'
 ```
 
-submit-plans 与 fetch-run 从标准输入取令牌，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具指出的步骤和执行器规则修正，重取正确的自动化用例，不猜另一种解析写法。原始文件上传后，Hub 再核自动化用例 Excel 与自动化用例一致。上机返工改用例后，用 `carry-plans.ts` 结转未改自动化用例并回第 2 节 `start_run`（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run` 核对，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
+submit-plans 与 fetch-run 从标准输入取 %HUB_TOKEN%，Plumb 脚本用 --key-stdin 传入 %PLUMB_API_KEY%，fidelity-brief、fidelity-apply 与生成工具只读本地文件。文件不覆盖；按工具提示修正，不猜另一种写法。原始文件上传后，Hub 再核对。上机返工后用 `carry-plans.ts` 结转并回第 2 节（`predecessor` 填原 `test-bed` 预订号）新开 `plan_run`，重生成上传并新开 `merge_run`；禁交已进 `merge_run` 的旧运行或当前 `merge_run`。
 
 ```text
 首次只有 workbook_verified 缺文件可继续；其他必需项的结论须为正确（`satisfied`）
@@ -114,12 +125,10 @@ node '<技能目录>/tools/download-returns.ts' --hub %HUB_URL% --run '<合并�
 EOF
 ```
 
-tools/delivery.md 下载命令带 `--wait 3600` 时**必须用 `background` 启动**（Circle 前台 `execute` 上限 600 秒会直接拒收），等后台退出通知、不 `sleep` 轮询；若到时限仍未完成，工具不写文件并退出 1，直接按同一命令重试继续等待。设备只能经 Hub 上机验证或 `test-bed` 动作到达，严禁用终端工具（`terminal_connect`/`telnet`/`ssh`）或脚本直连设备。完成后只停在报告，不释放 test-bed 预订；要继续修正重跑，可复用同一个预订。仅在使用者要求释放或收尾释放时照抄 `test-bed` 请求（`predecessor` 与 `parameters.booking` 同写原预订号）：`{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
+tools/delivery.md 带 `--wait 3600` 的下载**必须 `background` 启动**（前台上限 600 秒会拒收），等后台通知不 `sleep`；超时未完不写盘并退出 1，按同命令续等。设备只经 Hub 或 `test-bed` 到达，严禁终端工具直连（`terminal_connect`/`telnet`/`ssh`）。完成后停在报告，不释放 `test-bed` 预订（返工可复用）；仅使用者要求或收尾时发 `{"pack":"test-bed","inputs":{"inventory":{"external":"doc:doc:bed-topology"}},"predecessor":"<预订号>","parameters":{"action":"release","booking":"<同一预订号>"}}`。
 
 ## 5. 失败分析
 
 每条原始用例最多编写并上机 3 轮；第 3 轮仍未写对即停止上机验证、写结论并组交付目录，严禁第 4 轮。完整读 `index.json`（含 `execution_refused`、`syntax_rejected`）、逐条会话与 `log.txt` 互校（可用 `tools/task-brief.ts --role '失败分析' --round <n>` 写盘派只读子代理，在 `notes.json` 记 `"round"` 且不改计划）后再写原因与下一步。先核版本一致、配置生效与手册及示例前置（含对端配对）是否漏写，查多案同症共因。上轮改过再跑仍出同句设备报错即证伪上轮假设，必须换向；设备点出所缺且手册/示例支持未试假设时，尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮，按收尾规矩写结论（没有结构化归因时原因写还没查清），把未试的假设和试法写进下一步，交使用者决定（无任何来源支持才归“缺资料”）。确认返工：未进 `merge_run` 且 `rounds_left>0`、`scope`/`exclude`/`inputs` 未变直接重交当前 `plan_run`；否则先用 `carry-plans.ts` 结转未改案并按第 2 节 `start_run` 重走第 2～3 节。
 
 排除这些且无未试手册/示例假设后才判设备的问题（期望忠实实现、前置全有、观察方法/对象正确且命令未被拒绝）；说不清写状态未知、原因还没查清，加只读观察再验。设备输出只助排错，不抄进期望；点名的命令或配置先在同构建手册和命令树读到再改。时序、等待推测是未确认判断，不符即换解释。
-
-运行前由运行者执行本包的 `tools/install-agents.ts` 安装四个角色定义，再启动新 Circle 会话；不要依赖旧会话隐式发现新定义。任务工具输出的角色名为本次派发唯一类型。

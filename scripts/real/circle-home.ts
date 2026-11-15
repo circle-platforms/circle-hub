@@ -4,8 +4,10 @@ import { CALL_ERROR_CATEGORY, labelOf } from '../../contracts/generated/vocabula
 // as a protected file, and a hook that lets only the Hub's tools run. The environment file and the owner's Circle folder are
 // read here, at run time. Values reach only the 0600 files of the new folder; the screen shows names, presence and lengths.
 // The Hub token comes from the environment variable HUB_REAL_TOKEN, never from a command line.
+// With --plumb-key-stdin, PLUMB_API_KEY is read from the first line of stdin and written only to 0600 secrets.json.
 //   node scripts/real/circle-home.ts --env-file <file> --home <dir> --provider glm|qwen [--model <id>] [--section <text>]
 //        [--hub-url http://127.0.0.1:7420/mcp] [--workdir <dir>] [--profile review|skills|ops] [--jev-model <id>]
+//        [--plumb-url <url>] [--plumb-model <id>] [--plumb-ca-file <file>] [--plumb-key-stdin]
 // Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
 //   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
 import { createHash } from 'node:crypto';
@@ -29,6 +31,10 @@ export interface Options {
   workdir?: string;
   profile?: Profile;
   jevModel?: string;
+  plumbUrl?: string;
+  plumbModel?: string;
+  plumbCaFile?: string;
+  plumbKeyStdin?: boolean;
   /** Written into settings.json as models.<model>.context_window: Circle compacts the conversation at 85% of the
    * window (its src/context_middleware.ts), and a scripted model cannot write the summary compaction asks for. Only
    * accept-circle.ts passes this. */
@@ -37,7 +43,8 @@ export interface Options {
 
 export const SERVER_NAME = 'hub';
 export const TOKEN_SECRET = 'HUB_TOKEN';
-/** The Hub's tool names as Circle shows them: <server name>_<tool>. */
+export const PLUMB_KEY_SECRET = 'PLUMB_API_KEY';
+/** The Hub's tool names as Circle shows them: mcp__<server key>__<tool>. */
 export const HUB_TOOLS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
 /** Circle's own planning tool has no effect outside the conversation; every other built-in tool stays denied. */
 export const INTERNAL_TOOLS_ALLOWED = ['write_todos'] as const;
@@ -116,27 +123,73 @@ export function circleEndpoint(dir: string, options: { model?: string; warn?: (l
 }
 
 const HOOK = `// Lets only the Hub's tools (and Circle's own todo list) run in this Circle folder; every other tool call is denied.
-const allowed = new Set(${JSON.stringify([...HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`), ...INTERNAL_TOOLS_ALLOWED])});
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HUB_TOOLS = new Set(${JSON.stringify([...HUB_TOOLS])});
+const INTERNAL_TOOLS = new Set(${JSON.stringify([...INTERNAL_TOOLS_ALLOWED])});
+const DEFAULT_SERVER = ${JSON.stringify(SERVER_NAME)};
+const HOME = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function configuredHubServers() {
+  const servers = new Set([DEFAULT_SERVER.toLowerCase()]);
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(HOME, 'settings.json'), 'utf8'));
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.mcpServers && typeof raw.mcpServers === 'object' && !Array.isArray(raw.mcpServers)) {
+      for (const [key, entry] of Object.entries(raw.mcpServers)) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        if (key.toLowerCase() === DEFAULT_SERVER.toLowerCase() || entry.placeholders?.url === 'HUB_URL') {
+          servers.add(key.replace(/[^A-Za-z0-9_-]/g, '_').toLowerCase());
+        }
+      }
+    }
+  } catch {
+    // Keep the default server key when settings.json cannot be read.
+  }
+  return servers;
+}
+
+function isAllowedTool(tool, servers) {
+  if (INTERNAL_TOOLS.has(tool)) return true;
+  if (!tool.startsWith('mcp__')) return false;
+  const rest = tool.slice('mcp__'.length);
+  const sep = rest.indexOf('__');
+  if (sep <= 0) return false;
+  const server = rest.slice(0, sep).toLowerCase();
+  const name = rest.slice(sep + 2);
+  return servers.has(server) && HUB_TOOLS.has(name);
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;
 let tool = '';
+let preToolUse = false;
 try {
-  tool = String(JSON.parse(input).tool_name ?? '');
+  const parsed = JSON.parse(input);
+  tool = String(parsed?.tool_name ?? '');
+  preToolUse = parsed?.hook_event_name === 'PreToolUse';
 } catch {
   // Unreadable input is a deny below.
 }
-const decision = allowed.has(tool)
-  ? { decision: 'allow', reason: 'a Hub tool' }
-  : { decision: 'deny', reason: 'only the Hub tools may run in this folder' };
-process.stdout.write(JSON.stringify(decision));
+const ok = isAllowedTool(tool, configuredHubServers());
+const decision = ok ? 'allow' : 'deny';
+const reason = ok ? 'a Hub tool' : 'only the Hub tools may run in this folder';
+process.stdout.write(
+  JSON.stringify(
+    preToolUse
+      ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: decision, permissionDecisionReason: reason } }
+      : { decision, reason },
+  ),
+);
 `;
 
-const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`);
+const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => `mcp__${SERVER_NAME}__${t}`);
 
 const BOOKING_STAYS_RULE = {
   id: 'booking-stays',
-  tool: 'hub_start_run',
+  tool: `mcp__${SERVER_NAME}__start_run`,
   match: [
     { path: 'pack', equalsBefore: '@', normalize: 'lower' as const, value: 'test-bed' },
     { path: 'parameters.action', normalize: 'lower' as const, in: ['release', 'force_release', 'unregister', 'register'] },
@@ -160,14 +213,18 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
     version: 1,
     errorLabels: Object.fromEntries(CALL_ERROR_CATEGORY.map(code => [code, labelOf('call_error_category', code)])) as Record<(typeof CALL_ERROR_CATEGORY)[number], string>,
     about:
-      'Data for the Circle home before_tool guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
+      'Data for the Circle home PreToolUse guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
     allowReply: isOps ? 'silent' : 'explicit',
     allowLocalTools: isOps,
     hub: {
       server: SERVER_NAME,
       urlVariable: 'HUB_URL',
       tokenPlaceholder: `%${TOKEN_SECRET}%`,
-      allowedPlaceholders: [`%${TOKEN_SECRET}%`, '%JEV_API_KEY%'],
+      allowedPlaceholders: [`%${TOKEN_SECRET}%`, '%JEV_API_KEY%', '%PLUMB_API_KEY%'],
+    },
+    plumb: {
+      urlVariable: 'PLUMB_URL',
+      urlPlaceholder: '%PLUMB_URL%',
     },
     workFolders: {
       settingsKey: 'trusted_folders',
@@ -247,6 +304,29 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
           submit: [],
         },
       },
+      {
+        path: 'plumb/tools/plumb.ts',
+        subcommands: ['models', 'status', 'wake', 'judge', 'ask'],
+        subcommandStdin: {
+          models: ['%PLUMB_API_KEY%'],
+          status: ['%PLUMB_API_KEY%'],
+          wake: ['%PLUMB_API_KEY%'],
+          judge: ['%PLUMB_API_KEY%'],
+          ask: ['%PLUMB_API_KEY%'],
+        },
+      },
+      {
+        path: 'case-compile/tools/cmd-select-plumb.ts',
+        stdin: ['%PLUMB_API_KEY%'],
+      },
+      {
+        path: 'case-compile/tools/cmd-verify-plumb.ts',
+        stdin: ['%PLUMB_API_KEY%'],
+      },
+      {
+        path: 'case-compile/tools/fidelity-plumb.ts',
+        stdin: ['%PLUMB_API_KEY%'],
+      },
     ],
     shellAlternatives: {
       cat: 'read_file',
@@ -309,13 +389,11 @@ if (process.argv.includes('--schemas')) {
 }
 
 /** Generated files owned by the guard installer; excludes credentials and mutable derived rules. */
-export function guardBundle(home: string, profile: 'skills' | 'ops'): GuardBundle {
+export function guardBundle(_home: string, profile: 'skills' | 'ops'): GuardBundle {
   const decl = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
   const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
   const entry = profile === 'ops' ? 'ops-allow.mjs' : 'skills-only.mjs';
-  const argument = `'${join(resolve(home), 'hooks', entry).replaceAll("'", `'\\''`)}'`;
   return {
-    'hooks.json': `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: `${profile} tools guard`, command: `node ${argument}`, timeout_ms: 600000 }] } }, null, 2)}\n`,
     [`hooks/${entry}`]: renderGuardEntry(decl),
     'hooks/guard-lib.ts': readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8'),
     [`hooks/${decl}`]: `${JSON.stringify(profileDeclaration(profile), null, 2)}\n`,
@@ -398,7 +476,7 @@ export function planGuardFiles(profile: 'skills' | 'ops'): Array<{ relative: str
   return Object.entries(guardBundle('', profile)).filter(([relative]) => relative !== 'hooks.json').map(([relative, content]) => ({ relative, content }));
 }
 
-/** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills/hooks.json untouched. */
+/** Writes only the unified guard files under hooks/ (entry, guard-lib, declaration, gen, ALLOWED.md). Leaves settings/credentials/secrets/skills untouched. */
 export function writeGuardFiles(homeRaw: string, workdirRaw: string, profile: 'skills' | 'ops'): string[] {
   const home = resolve(homeRaw);
   const workdir = resolve(workdirRaw);
@@ -457,7 +535,7 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; basel
   };
   emit(`只更新守卫：${home}（${profile}）`);
   emit(`工作目录：${workdir}`);
-  emit(`入口保持：hooks/${hookName}（不改 hooks.json / settings / credentials / secrets / skills）`);
+  emit(`入口保持：hooks/${hookName}（不改 settings / credentials / secrets / skills）`);
   for (const change of changes) {
     emit(`- ${change.status === 'same' ? '不变' : change.status === 'add' ? '新增' : '将改'} ${change.relative}`);
   }
@@ -481,7 +559,10 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; basel
     return { home, profile, workdir, apply: true, changes, preflightOk: false, restored: false, lines };
   }
 
-  const bundle = {...guardBundle(home, profile), 'hooks.json': readFileSync(join(home, 'hooks.json'), 'utf8')};
+  const bundle =
+    installed.hookFormat === 'before_tool' && existsSync(join(home, 'hooks.json'))
+      ? { ...guardBundle(home, profile), 'hooks.json': readFileSync(join(home, 'hooks.json'), 'utf8') }
+      : guardBundle(home, profile);
   assertInstallationBaseline(home, profile, bundle, options.baseline);
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -538,7 +619,11 @@ export interface Written {
   workdir: string;
 }
 
-export function writeHome(options: Options, endpoint: Endpoint, token: string): Written {
+export interface WriteHomeSecrets {
+  plumbApiKey?: string;
+}
+
+export function writeHome(options: Options, endpoint: Endpoint, token: string, extraSecrets?: WriteHomeSecrets): Written {
   const profile = options.profile ?? 'review';
   if (profile !== 'review' && profile !== 'skills' && profile !== 'ops') throw new Error('--profile 只能是 review、skills 或 ops');
   const home = resolve(options.home);
@@ -562,46 +647,82 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
         auth: { protocol: endpoint.protocol, base_url: endpoint.baseUrl, model: endpoint.model, api_key_ref: 'api_key' },
         trusted_folders: [workdir],
         default_mode: 'auto',
-        mcp_servers: [
-          { name: SERVER_NAME, url: options.hubUrl, transport: 'streamable_http', headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` } },
-        ],
+        mcpServers: {
+          [SERVER_NAME]: {
+            type: 'http',
+            url: options.hubUrl,
+            headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` },
+            placeholders: { url: 'HUB_URL', token: TOKEN_SECRET },
+          },
+        },
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  name: profile === 'review' ? 'hub tools only' : `${profile} tools guard`,
+                  command: `node ${hookArgument}`,
+                  timeout: isGuarded ? 600 : 10,
+                  onFailure: 'block',
+                },
+              ],
+            },
+          ],
+        },
         ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
         ...(options.contextWindow === undefined ? {} : { models: { [endpoint.model]: { context_window: options.contextWindow } } }),
+        ...(options.plumbCaFile === undefined ? {} : { trust_cert_files: [options.plumbCaFile] }),
         update_check: false,
-        ...(isGuarded ? { variables: { HUB_URL: options.hubUrl, ...(options.jevModel === undefined ? {} : { JEV_MODEL: options.jevModel }) } } : {}),
+        ...(isGuarded
+          ? {
+              variables: {
+                HUB_URL: options.hubUrl,
+                ...(options.jevModel === undefined ? {} : { JEV_MODEL: options.jevModel }),
+                ...(options.plumbUrl === undefined ? {} : { PLUMB_URL: options.plumbUrl }),
+                ...(options.plumbModel === undefined ? {} : { PLUMB_MODEL: options.plumbModel }),
+              },
+            }
+          : {}),
       },
       null,
       2,
     )}\n`,
   );
   writePrivate(join(home, 'credentials.json'), `${JSON.stringify({ api_key: endpoint.apiKey })}\n`);
-  writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets: { [TOKEN_SECRET]: token } })}\n`);
-  writePrivate(
-    join(home, 'hooks.json'),
-    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: profile === 'review' ? 'hub tools only' : `${profile} tools guard`, command: `node ${hookArgument}`, timeout_ms: isGuarded ? 600000 : 10000 }] } }, null, 2)}\n`,
-  );
+  const secrets: Record<string, string> = {
+    [TOKEN_SECRET]: token,
+    ...(extraSecrets?.plumbApiKey === undefined ? {} : { [PLUMB_KEY_SECRET]: extraSecrets.plumbApiKey }),
+  };
+  writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets })}\n`);
 
   if (!isGuarded) {
     writePrivate(hook, HOOK);
-    return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', `hooks/${hookName}`], workdir };
+    return { files: ['settings.json', 'credentials.json', 'secrets.json', `hooks/${hookName}`], workdir };
   }
 
   const guardFiles = writeGuardFiles(home, workdir, profile);
   recordInstallation(home, profile, guardBundle(home, profile));
   guardFiles.push('hooks/guard-installation.json');
   return {
-    files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', ...guardFiles],
+    files: ['settings.json', 'credentials.json', 'secrets.json', ...guardFiles],
     workdir,
   };
 }
 
 export function parseArgs(argv: string[]): Options & { envFile: string; provider: 'glm' | 'qwen' } {
   const values = new Map<string, string>();
-  for (let i = 0; i < argv.length; i += 2) {
+  let plumbKeyStdin = false;
+  for (let i = 0; i < argv.length; i++) {
     const key = argv[i];
+    if (key === '--plumb-key-stdin') {
+      plumbKeyStdin = true;
+      continue;
+    }
     const value = argv[i + 1];
     if (!key?.startsWith('--') || value === undefined) throw new Error(`参数不对：${key ?? ''}`);
     values.set(key.slice(2), value);
+    i += 1;
   }
   const need = (name: string): string => {
     const v = values.get(name);
@@ -622,6 +743,10 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
     workdir: values.get('workdir'),
     profile,
     jevModel: values.get('jev-model'),
+    plumbUrl: values.get('plumb-url'),
+    plumbModel: values.get('plumb-model'),
+    plumbCaFile: values.get('plumb-ca-file'),
+    ...(plumbKeyStdin ? { plumbKeyStdin } : {}),
   };
 }
 
@@ -646,7 +771,17 @@ export function parseRefreshGuardsArgs(argv: string[]): { home: string; apply: b
   return { home, apply, ...(baseline ? {baseline} : {}) };
 }
 
-export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string) => void): number {
+/** Extracts the first line of stdin without altering key bytes other than the line ending. */
+export function firstLineOf(raw: string): string {
+  return raw.split(/\r?\n/, 1)[0] ?? '';
+}
+
+export function main(
+  argv: string[],
+  env: NodeJS.ProcessEnv,
+  out: (line: string) => void,
+  readStdin: () => string = () => readFileSync(0, 'utf8'),
+): number {
   if (argv[0] === 'guard') return guardMain(argv.slice(1), out);
   try {
     if (argv[0] === 'refresh-guards') {
@@ -659,11 +794,15 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     const options = parseArgs(argv);
     const token = env.HUB_REAL_TOKEN;
     if (!token) throw new Error('环境变量 HUB_REAL_TOKEN 没有设置（中枢令牌只从环境变量读，不进命令行）');
+    const plumbApiKey = options.plumbKeyStdin ? firstLineOf(readStdin()) : undefined;
     const endpoint = endpointFrom(readEnvFile(options.envFile), options.provider, options.model, options.section);
-    const written = writeHome(options, endpoint, token);
+    const written = writeHome(options, endpoint, token, plumbApiKey === undefined ? undefined : { plumbApiKey });
     out(`已写入专用 Circle 目录（${written.files.length} 个文件，权限 0600）`);
     out(`模型：${endpoint.model}，协议 ${endpoint.protocol}，密钥长度 ${endpoint.apiKey.length}，来源 ${endpoint.sources.join('、')}`);
     out(`中枢令牌：已存为密钥 ${TOKEN_SECRET}，长度 ${token.length}`);
+    if (plumbApiKey !== undefined) {
+      out(`Plumb 密钥：${PLUMB_KEY_SECRET} 已写入，长度为 0：${plumbApiKey.length === 0 ? '是' : '否'}`);
+    }
     const guarded = options.profile === 'skills' || options.profile === 'ops';
     out(
       guarded
@@ -673,8 +812,14 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
     if (guarded) {
       out('技能目录：已建立，权限 0700；变量 HUB_URL：已配置');
       out(`变量 JEV_MODEL：${options.jevModel === undefined ? '未配置' : `已配置，长度 ${options.jevModel.length}`}`);
+      out(`变量 PLUMB_URL：${options.plumbUrl === undefined ? '未配置' : `已配置，长度 ${options.plumbUrl.length}`}`);
+      out(`变量 PLUMB_MODEL：${options.plumbModel === undefined ? '未配置' : `已配置，长度 ${options.plumbModel.length}`}`);
+      out(`证书 trust_cert_files：${options.plumbCaFile === undefined ? '未配置' : `已配置，长度 ${options.plumbCaFile.length}`}`);
       out('所有者下一步：/secrets JEV_API_KEY（脚本不读取或保存该密钥）');
+      if (plumbApiKey === undefined) out('所有者下一步：/secrets PLUMB_API_KEY（脚本不读取或保存该密钥）');
       if (options.jevModel === undefined) out('所有者下一步：/variables JEV_MODEL');
+      if (options.plumbUrl === undefined) out('所有者下一步：/variables PLUMB_URL');
+      if (options.plumbModel === undefined) out('所有者下一步：/variables PLUMB_MODEL');
       const genScript = options.profile === 'ops' ? 'hooks/ops-allow-gen.mjs' : 'hooks/guard-gen.mjs';
       out(`技能装进 skills/ 后分别核对：local-tools verify --digest、pack-files.ts --verify-install、node ${genScript}`);
       out('再运行 circle-home.ts guard update / verify（显式传 --home、--workdir 和 --profile）；这两个入口不读取凭据。更新前停止会话，更新后重新加载 Hook 配置。');

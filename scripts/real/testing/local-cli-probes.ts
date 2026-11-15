@@ -158,7 +158,6 @@ async function fixtureInvocations(
         '--out', join(work, 'out.xlsx'),
       ],
     },
-    'tools/install-agents.ts': { argv: ['--out', 'agents-out'], cwd: work },
     'tools/normalize-mindmap.ts': { argv: ['--in', mmIn, '--out', join(work, 'mm-out.json')] },
     'tools/seal-recompose.ts': { argv: ['--run', sealRun, '--parts', sealParts, '--model', 'synthetic-model', '--out', join(work, 'sealed.json')] },
     'tools/task-brief.ts': { argv: ['--role', '脚本编写', '--case', 'case-101', '--brief', 'writer-brief.md', '--out', 'writer-plan.json', '--task-file', 'writer-task.md'], cwd: work },

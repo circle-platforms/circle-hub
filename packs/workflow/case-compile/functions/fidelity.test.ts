@@ -102,3 +102,66 @@ test('pure verdict and embedded envelope share validation while identity is writ
   assert.deepEqual(embedFidelity(brief,pure),full);
   assert.ok(fidelityJudgmentProblems(brief,full).problems.some(p=>p.code==='fidelity_shape'));
 });
+
+test('optional author_step_refs, model_disclosure and model_judgment are supported cleanly while preserving digest without them', () => {
+  const plainBrief = fidelityBrief('doc-1:c-1', RECORD, plan())!;
+  const annotatedPlan = plan();
+  (annotatedPlan.steps as Array<Record<string, unknown>>)[0]!.author_step_refs = ['a2'];
+  const annotatedBrief = fidelityBrief('doc-1:c-1', RECORD, annotatedPlan)!;
+  assert.notEqual(annotatedBrief.brief_sha256, plainBrief.brief_sha256);
+  assert.deepEqual((annotatedBrief.blocks[0] as Record<string, unknown>).author_step_refs, ['a2']);
+
+  const pureWithMeta = {
+    disclosure: verdict(annotatedBrief, [['a2', 'preserved', [1]], ['a3', 'preserved', [2]]]).disclosure,
+    model_disclosure: {
+      status: '未确认',
+      decided_by: '模型',
+      model_version: 'plumb-27b-0.5.0',
+      request_sha256: 'a'.repeat(64),
+      review_required_steps: [],
+    },
+    steps: [
+      {
+        n: 'a2',
+        verdict: 'preserved',
+        step_indices: [1],
+        rationale: '第 1 步覆盖作者步骤 a2',
+        model_judgment: {
+          status: '未确认',
+          decided_by: '模型',
+          model_version: 'plumb-27b-0.5.0',
+          task: 'sequence',
+          choice: '保持',
+          confidence: 0.94,
+          gate: { action: 'pass' },
+          request_sha256: 'b'.repeat(64),
+        },
+      },
+      {
+        n: 'a3',
+        verdict: 'preserved',
+        step_indices: [2],
+        rationale: '第 2 步覆盖作者步骤 a3',
+      },
+    ],
+  };
+  assert.deepEqual(fidelityJudgmentProblems(annotatedBrief, pureWithMeta).problems, []);
+  const okWithMeta = embedFidelity(annotatedBrief, pureWithMeta);
+  assert.equal(okWithMeta.brief_sha256, annotatedBrief.brief_sha256);
+  assert.deepEqual(fidelityProblems(annotatedBrief, okWithMeta).problems, []);
+
+  const badStatus = { ...okWithMeta, model_disclosure: { status: '已确认', decided_by: '模型', model_version: 'plumb-27b-0.5.0' } };
+  assert.deepEqual(fidelityProblems(annotatedBrief, badStatus).problems.map((p) => p.code), ['fidelity_shape']);
+
+  const badConf = {
+    ...okWithMeta,
+    steps: [
+      {
+        ...(pureWithMeta.steps[0] as Record<string, unknown>),
+        model_judgment: { status: '未确认', decided_by: '模型', model_version: 'plumb-27b-0.5.0', task: 'sequence', choice: '保持', confidence: 1.5 },
+      },
+      pureWithMeta.steps[1],
+    ],
+  };
+  assert.deepEqual(fidelityProblems(annotatedBrief, badConf).problems.map((p) => p.code), ['fidelity_shape']);
+});

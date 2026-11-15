@@ -42,6 +42,10 @@ export interface GuardDeclaration {
     tokenPlaceholder?: string;
     allowedPlaceholders?: string[];
   };
+  plumb?: {
+    urlVariable?: string;
+    urlPlaceholder?: string;
+  };
   workFolders?: {
     settingsKey?: string;
     siblingsOfHome?: string;
@@ -76,6 +80,10 @@ export interface GuardEnvironment {
   declarationError: string | null;
   hubs: string[];
   hub: string;
+  hubServers: string[];
+  primaryHubServer: string;
+  plumbs: string[];
+  plumb: string;
   cwd: string;
   work: string | null;
   skills: string;
@@ -83,6 +91,7 @@ export interface GuardEnvironment {
   skillsRootValid: boolean;
   allowedFile: string;
   urlPlaceholder: string;
+  plumbUrlPlaceholder: string;
   tokenPlaceholder: string;
   allowedPlaceholders: string[];
 }
@@ -92,6 +101,11 @@ export interface HookDecision {
   refusal?: RefusalData;
   decision?: 'allow' | 'deny' | 'ask';
   reason?: string;
+  hookSpecificOutput?: {
+    hookEventName: 'PreToolUse';
+    permissionDecision: 'allow' | 'deny' | 'ask';
+    permissionDecisionReason?: string;
+  };
 }
 
 export interface ToolOption {
@@ -100,7 +114,7 @@ export interface ToolOption {
   kind: 'string' | 'boolean';
   multiple: boolean;
   placeholder: string | null;
-  type: 'hub' | 'run' | 'int' | 'text' | 'path';
+  type: 'hub' | 'plumb' | 'run' | 'int' | 'text' | 'path';
   separator?: ',';
   trimValues?: boolean;
 }
@@ -230,13 +244,46 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
   const urlVar = hubCfg.urlVariable ?? 'HUB_URL';
   const serverName = hubCfg.server ?? 'hub';
   const hubs: string[] = [];
+  const configuredServers: string[] = [];
+  const addHubUrl = (value: unknown) => {
+    if (typeof value === 'string' && value !== '' && !hubs.includes(value)) hubs.push(value);
+  };
+  const addServerKey = (value: string) => {
+    if (value !== '' && !configuredServers.includes(value)) configuredServers.push(value);
+  };
   const vars = isRecord(settings.variables) ? settings.variables : {};
-  const variable = vars[urlVar];
-  if (typeof variable === 'string' && variable !== '') hubs.push(variable);
-  const server = unknownList(settings.mcp_servers).find(
-    (entry): entry is Record<string, unknown> => isRecord(entry) && entry.name === serverName,
-  );
-  if (typeof server?.url === 'string' && server.url !== '' && !hubs.includes(server.url)) hubs.push(server.url);
+  addHubUrl(vars[urlVar]);
+  if (isRecord(settings.mcpServers)) {
+    for (const [key, entry] of Object.entries(settings.mcpServers)) {
+      if (!isRecord(entry)) continue;
+      const matched =
+        key.toLowerCase() === serverName.toLowerCase() ||
+        (isRecord(entry.placeholders) && entry.placeholders.url === urlVar) ||
+        (typeof entry.url === 'string' && hubs.includes(entry.url));
+      if (!matched) continue;
+      addServerKey(key);
+      addHubUrl(entry.url);
+    }
+  }
+  for (const entry of unknownList(settings.mcp_servers)) {
+    if (!isRecord(entry) || typeof entry.name !== 'string') continue;
+    const matched =
+      entry.name.toLowerCase() === serverName.toLowerCase() ||
+      (isRecord(entry.placeholders) && entry.placeholders.url === urlVar) ||
+      (typeof entry.url === 'string' && hubs.includes(entry.url));
+    if (!matched) continue;
+    addServerKey(entry.name);
+    addHubUrl(entry.url);
+  }
+  const primaryHubServer = configuredServers[0] ?? serverName;
+  const hubServers = [...new Set([...configuredServers, serverName])];
+
+  const plumbCfg = declaration.plumb ?? {};
+  const plumbUrlVar = plumbCfg.urlVariable ?? 'PLUMB_URL';
+  const plumbUrlPlaceholder = plumbCfg.urlPlaceholder ?? `%${plumbUrlVar}%`;
+  const plumbs: string[] = [];
+  const plumbVariable = vars[plumbUrlVar];
+  if (typeof plumbVariable === 'string' && plumbVariable !== '') plumbs.push(plumbVariable);
 
   const cwdReal = bestEffortReal(cwd);
   const foldersKey = declaration.workFolders?.settingsKey ?? 'trusted_folders';
@@ -293,6 +340,10 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
     declarationError,
     hubs,
     hub: hubs[0] ?? '',
+    hubServers,
+    primaryHubServer,
+    plumbs,
+    plumb: plumbs[0] ?? '',
     cwd: cwdReal,
     work,
     skills,
@@ -300,6 +351,7 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
     skillsRootValid,
     allowedFile: path.join(homeReal, 'hooks', 'ALLOWED.md'),
     urlPlaceholder: `%${urlVar}%`,
+    plumbUrlPlaceholder,
     tokenPlaceholder,
     allowedPlaceholders,
   };
@@ -532,7 +584,7 @@ export function parseToolCliDeclaration(parsed: unknown): CliDeclaration {
   const options: ToolOption[] = [];
   const names = new Set<string>();
   for (const row of parsed.options) {
-    if (!isRecord(row) || Object.keys(row).some(key => !['name', 'required', 'kind', 'multiple', 'placeholder', 'type', 'separator', 'trimValues'].includes(key)) || typeof row.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.name) || names.has(row.name) || typeof row.required !== 'boolean' || !['string', 'boolean'].includes(String(row.kind)) || typeof row.multiple !== 'boolean' || row.placeholder !== null && typeof row.placeholder !== 'string' || !['hub', 'run', 'int', 'text', 'path'].includes(String(row.type)) || row.separator !== undefined && row.separator !== ',' || row.trimValues !== undefined && typeof row.trimValues !== 'boolean') throw new GuardRefusal('机读参数声明含无效字段、类型或重复名称', 'temporarily_unavailable');
+    if (!isRecord(row) || Object.keys(row).some(key => !['name', 'required', 'kind', 'multiple', 'placeholder', 'type', 'separator', 'trimValues'].includes(key)) || typeof row.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.name) || names.has(row.name) || typeof row.required !== 'boolean' || !['string', 'boolean'].includes(String(row.kind)) || typeof row.multiple !== 'boolean' || row.placeholder !== null && typeof row.placeholder !== 'string' || !['hub', 'plumb', 'run', 'int', 'text', 'path'].includes(String(row.type)) || row.separator !== undefined && row.separator !== ',' || row.trimValues !== undefined && typeof row.trimValues !== 'boolean') throw new GuardRefusal('机读参数声明含无效字段、类型或重复名称', 'temporarily_unavailable');
     names.add(row.name); options.push(row as unknown as ToolOption);
   }
   const forms: ToolForm[] = [];
@@ -623,20 +675,6 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         }
       };
 
-      const topEntries = listNames(dir, () => true);
-      for (const entry of topEntries) {
-        const full = path.join(dir, entry);
-        let stat: fs.Stats;
-        try {
-          stat = fs.lstatSync(full);
-        } catch {
-          continue;
-        }
-        if (stat.isSymbolicLink() || !stat.isDirectory() || entry === 'node_modules') continue;
-        if (entry === 'tools') walkToolsDir(full, 'tools');
-        else walkToolsDir(full, entry);
-      }
-
       for (const script of asList(env.declaration.scripts)) {
         if (!script.path.startsWith(`${skill}/`)) continue;
         const lexical = path.join(env.skills, script.path);
@@ -655,6 +693,20 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
             }),
           );
         }
+      }
+
+      const topEntries = listNames(dir, () => true);
+      for (const entry of topEntries) {
+        const full = path.join(dir, entry);
+        let stat: fs.Stats;
+        try {
+          stat = fs.lstatSync(full);
+        } catch {
+          continue;
+        }
+        if (stat.isSymbolicLink() || !stat.isDirectory() || entry === 'node_modules') continue;
+        if (entry === 'tools') walkToolsDir(full, 'tools');
+        else walkToolsDir(full, entry);
       }
     }
   }
@@ -716,7 +768,7 @@ export function writeCommand(
 
   for (const option of listed) {
     if (option.kind === 'boolean') {
-      if (booleans.has(option.name)) parts.push(`--${option.name}`);
+      if (booleans.has(option.name) || option.required) parts.push(`--${option.name}`);
       else if (all) parts.push(`[--${option.name}]`);
       continue;
     }
@@ -730,9 +782,11 @@ export function writeCommand(
       ? quote(values[option.name] as string)
       : option.type === 'hub'
         ? env.urlPlaceholder
-        : option.placeholder
-          ? quote(option.placeholder)
-          : quote('<值>');
+        : option.type === 'plumb'
+          ? env.plumbUrlPlaceholder
+          : option.placeholder
+            ? quote(option.placeholder)
+            : quote('<值>');
     parts.push(!given && !option.required ? `[--${option.name} ${rawVal}]` : `--${option.name} ${rawVal}`);
   }
   let line = parts.join(' ');
@@ -744,15 +798,73 @@ export function writeCommand(
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Refusal formatting & path/glob verification (fusing skillsGuard + ops-allow security boundaries).
 
-function refuse(env: GuardEnvironment, fact: string, next_action: string, category: CallErrorCategory, path?: string): HookDecision {
-  const refusal: RefusalData = { category, fact, next_action, ...(path ? { path } : {}) };
+const formatDecision = (
+  decision: 'allow' | 'deny' | 'ask',
+  reason: string,
+  preToolUse: boolean,
+  refusal?: RefusalData,
+): HookDecision =>
+  preToolUse
+    ? {
+        ...(refusal ? { refusal } : {}),
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: decision,
+          permissionDecisionReason: reason,
+        },
+      }
+    : { ...(refusal ? { refusal } : {}), decision, reason };
+
+function refuse(
+  env: GuardEnvironment,
+  fact: string,
+  next_action: string,
+  category: CallErrorCategory = 'permission_denied',
+  options?: { path?: string; preToolUse?: boolean },
+): HookDecision {
+  const refusal: RefusalData = { category, fact, next_action, ...(options?.path ? { path: options.path } : {}) };
   const label = env.declaration.errorLabels?.[category];
-  const reason = label ? `${label}：${fact}\n${next_action}\n规则全文：${env.allowedFile}（用 read_file 读）` : '守卫缺少生成的错误类别词表；请运行者更新声明后重试';
-  return { decision: 'deny', reason, refusal };
+  const reason = label
+    ? `${label}：${fact}\n${next_action}\n规则全文：${env.allowedFile}（用 read_file 读）`
+    : '守卫缺少生成的错误类别词表；请运行者更新声明后重试';
+  return formatDecision('deny', reason, options?.preToolUse ?? false, label ? refusal : undefined);
 }
 
-const allowed = (env: GuardEnvironment): HookDecision =>
-  env.declaration.allowReply === 'explicit' ? { decision: 'allow', reason: '本目录允许的工具' } : {};
+const allowed = (env: GuardEnvironment, preToolUse = false): HookDecision =>
+  env.declaration.allowReply === 'explicit' ? formatDecision('allow', '本目录允许的工具', preToolUse) : {};
+
+const normalizeMcpPart = (name: string): string => name.replace(/[^A-Za-z0-9_-]/g, '_');
+
+const hubToolForEnv = (env: GuardEnvironment, tool: string): string =>
+  `mcp__${normalizeMcpPart(env.primaryHubServer)}__${tool}`;
+
+const resolveAllowName = (env: GuardEnvironment, name: string): string => {
+  const declPrefix = `mcp__${normalizeMcpPart(env.declaration.hub?.server ?? 'hub')}__`;
+  return name.startsWith(declPrefix) ? hubToolForEnv(env, name.slice(declPrefix.length)) : name;
+};
+
+function toolMatchesSpec(spec: string, actual: string, env: GuardEnvironment): boolean {
+  if (spec === actual) return true;
+  const declServer = env.declaration.hub?.server ?? 'hub';
+  const declPrefix = `mcp__${normalizeMcpPart(declServer)}__`;
+  if (!spec.startsWith(declPrefix)) return false;
+  const toolPart = spec.slice(declPrefix.length);
+  if (actual.startsWith('mcp__')) {
+    const rest = actual.slice('mcp__'.length);
+    const sep = rest.indexOf('__');
+    if (sep > 0) {
+      const actualKey = rest.slice(0, sep);
+      const actualTool = rest.slice(sep + 2);
+      if (
+        actualTool === toolPart &&
+        env.hubServers.some((key) => normalizeMcpPart(key).toLowerCase() === actualKey.toLowerCase())
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 const resolvedTarget = (env: GuardEnvironment, value: string, cwd = env.work ?? env.cwd): string =>
   canonical(path.isAbsolute(value) ? value : path.join(cwd, value));
@@ -763,6 +875,9 @@ function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: stri
     case 'hub':
       if (value === env.urlPlaceholder || env.hubs.includes(value)) return null;
       return `--${option.name} 后面是 ${JSON.stringify(clip(value, 80))}，这个配置里 Hub 的地址是 ${env.hub || '（设置文件里没有）'}，要写 ${env.urlPlaceholder}`;
+    case 'plumb':
+      if (value === env.plumbUrlPlaceholder || env.plumbs.includes(value)) return null;
+      return `--${option.name} 后面是 ${JSON.stringify(clip(value, 80))}，这个配置里 Plumb 的地址是 ${env.plumb || '（设置文件里没有）'}，要写 ${env.plumbUrlPlaceholder}`;
     case 'run': {
       if (pieces.length && pieces.every((part) => /^run_[a-z0-9]+$/.test(part))) return null;
       return `--${option.name} 后面是 ${JSON.stringify(clip(value))}，要写运行编号（形如 run_…）`;
@@ -1106,11 +1221,21 @@ async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd:
       try {
         const reply: unknown = JSON.parse(stdout.trim());
         if (!isRecord(reply)) throw new Error('not an object');
-        if (reply.decision !== undefined && !['allow', 'deny', 'ask'].includes(String(reply.decision))) throw new Error('invalid decision');
-        const word = typeof reply.decision === 'string' ? reply.decision : '';
+        const specific = isRecord(reply.hookSpecificOutput) ? reply.hookSpecificOutput : null;
+        const rawDecision = specific !== null ? specific.permissionDecision : reply.decision;
+        if (rawDecision !== undefined && (typeof rawDecision !== 'string' || !['allow', 'deny', 'ask'].includes(rawDecision))) {
+          throw new Error('invalid decision');
+        }
+        const word = typeof rawDecision === 'string' ? rawDecision : '';
         const decision: 'allow' | 'ask' | 'deny' = word === 'deny' || word === 'ask' ? word : 'allow';
         const reason =
-          (typeof reply.reason === 'string' ? reply.reason.trim() : typeof reply.context === 'string' ? reply.context.trim() : '') ||
+          (typeof specific?.permissionDecisionReason === 'string'
+            ? specific.permissionDecisionReason.trim()
+            : typeof reply.reason === 'string'
+              ? reply.reason.trim()
+              : typeof reply.context === 'string'
+                ? reply.context.trim()
+                : '') ||
           (decision === 'ask'
             ? '需要确认；请核对本次工具调用后明确允许或拒绝'
             : decision === 'deny'
@@ -1129,8 +1254,9 @@ async function runDelegatedSkillHooks(
   script: string,
   input: Record<string, unknown>,
   raw: string,
+  preToolUse: boolean,
 ): Promise<HookDecision> {
-  if (!inside(script, env.skills)) return allowed(env);
+  if (!inside(script, env.skills)) return allowed(env, preToolUse);
   const skill = skillDirectoryOf(script, env.skills);
   const file = path.join(skill, 'hooks.json');
   const who = `技能 ${JSON.stringify(path.relative(env.skills, skill) || '.')}`;
@@ -1141,7 +1267,7 @@ async function runDelegatedSkillHooks(
   } catch {
     throw new GuardRefusal(`${who} 的 hooks.json 元数据不可读；${recover}`);
   }
-  if (!present) return allowed(env);
+  if (!present) return allowed(env, preToolUse);
   let real: string;
   try {
     real = canonical(file);
@@ -1196,7 +1322,8 @@ async function runDelegatedSkillHooks(
       throw new GuardRefusal(`${identity} 的匹配检查未完成；${error instanceof GuardRefusal ? error.message : recover}`);
     }
     if (!selected) continue;
-    const outcome = await runDelegatedHook(hook, raw, String(input.cwd));
+    const delegatedInput = input.event === 'before_tool' ? raw : JSON.stringify({ ...input, event: 'before_tool' });
+    const outcome = await runDelegatedHook(hook, delegatedInput, String(input.cwd));
     outcome.reason = `${identity}：${outcome.reason}`;
     if (!matched || (outcome.decision === 'deny' && strictest.decision !== 'deny') || (outcome.decision === 'ask' && strictest.decision === 'allow')) {
       strictest = outcome;
@@ -1205,9 +1332,15 @@ async function runDelegatedSkillHooks(
     }
     matched = true;
   }
-  if (!matched || strictest.decision === 'allow') return allowed(env);
-  if (strictest.decision === 'ask') return { decision: 'ask', reason: strictest.reason };
-  return refuse(env, `${strictest.reason}`, `这次可以这样做：${recover}`, strictest.failed ? 'temporarily_unavailable' : 'permission_denied');
+  if (!matched || strictest.decision === 'allow') return allowed(env, preToolUse);
+  if (strictest.decision === 'ask') return formatDecision('ask', strictest.reason, preToolUse);
+  return refuse(
+    env,
+    `${strictest.reason}`,
+    `这次可以这样做：${recover}`,
+    strictest.failed ? 'temporarily_unavailable' : 'permission_denied',
+    { preToolUse },
+  );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -1215,11 +1348,13 @@ async function runDelegatedSkillHooks(
 
 const ALLOWED_EXECUTE_KEYS = new Set(['command', 'background', 'timeout', 'description']);
 
-function notTrusted(env: GuardEnvironment): HookDecision {
+function notTrusted(env: GuardEnvironment, preToolUse: boolean): HookDecision {
   return refuse(
     env,
     `这次会话的工作目录 ${env.cwd} 不在这个配置信任的文件夹里（settings.json 的 trusted_folders），守卫不知道该放行哪个目录。`,
-    '这次可以这样做：请使用者把这个文件夹加入信任，或在已信任的工作目录里开会话。', 'permission_denied'
+    '这次可以这样做：请使用者把这个文件夹加入信任，或在已信任的工作目录里开会话。',
+    'permission_denied',
+    { preToolUse },
   );
 }
 
@@ -1499,9 +1634,10 @@ function validateExecuteCommand(
     const bad = checkOptionValue(env, option, value, category => { failureCategory = category; });
     if (bad) {
       problems.push(bad);
-      if (option.type !== 'hub') continue;
+      if (option.type !== 'hub' && option.type !== 'plumb') continue;
     }
-    const recorded = option.type === 'hub' ? env.urlPlaceholder : value;
+    const recorded =
+      option.type === 'hub' ? env.urlPlaceholder : option.type === 'plumb' ? env.plumbUrlPlaceholder : value;
     if (option.multiple) {
       const arr = Array.isArray(values[name]) ? (values[name] as string[]) : [];
       arr.push(recorded);
@@ -1559,8 +1695,13 @@ function validateExecuteCommand(
   };
 }
 
-async function executeDecision(env: GuardEnvironment, input: Record<string, unknown>, raw: string): Promise<HookDecision> {
-  if (env.work === null) return notTrusted(env);
+async function executeDecision(
+  env: GuardEnvironment,
+  input: Record<string, unknown>,
+  raw: string,
+  preToolUse: boolean,
+): Promise<HookDecision> {
+  if (env.work === null) return notTrusted(env, preToolUse);
   const args = input.tool_input as Record<string, unknown>;
   if (
     Object.keys(args).some((key) => !ALLOWED_EXECUTE_KEYS.has(key)) ||
@@ -1568,31 +1709,48 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
     (args.timeout !== undefined && (typeof args.timeout !== 'number' || !Number.isFinite(args.timeout))) ||
     (args.description !== undefined && typeof args.description !== 'string')
   ) {
-    return refuse(env, 'execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。', '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。', 'invalid_parameters', '/tool_input/command');
+    return refuse(
+      env,
+      'execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。',
+      '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。',
+      'invalid_parameters',
+      { path: '/tool_input/command', preToolUse },
+    );
   }
   if (typeof args.command !== 'string') {
-    return refuse(env, 'execute 缺少 command 文字；请补齐字符串命令后重试。', '这次可以这样做：提供完整的单行 node 脚本命令后重试。', 'invalid_parameters', '/tool_input/command');
+    return refuse(
+      env,
+      'execute 缺少 command 文字；请补齐字符串命令后重试。',
+      '这次可以这样做：提供完整的单行 node 脚本命令后重试。',
+      'invalid_parameters',
+      { path: '/tool_input/command', preToolUse },
+    );
   }
   if (!env.skillsRootValid) {
     return refuse(
       env,
       `skills 目录根 ${env.skillsRaw} 已改变（是软链接）或缺失。`,
-      '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。', 'invalid_parameters', '/tool_input/command'
+      '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。',
+      'invalid_parameters',
+      { path: '/tool_input/command', preToolUse },
     );
   }
 
   const tools = discoverTools(env);
   const verdict = validateExecuteCommand(env, tools, args.command, true);
   if (!verdict.ok) {
-    return refuse(env, verdict.what, verdict.how, verdict.category ?? 'invalid_parameters', '/tool_input/command');
+    return refuse(env, verdict.what, verdict.how, verdict.category ?? 'invalid_parameters', {
+      path: '/tool_input/command',
+      preToolUse,
+    });
   }
   return verdict.physicalScript
-    ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw)
-    : allowed(env);
+    ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw, preToolUse)
+    : allowed(env, preToolUse);
 }
 
-function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): HookDecision {
-  if (env.work === null) return notTrusted(env);
+function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, preToolUse: boolean): HookDecision {
+  if (env.work === null) return notTrusted(env, preToolUse);
   const tool = String(input.tool_name);
   const args = input.tool_input as Record<string, unknown>;
   const d = env.declaration;
@@ -1619,7 +1777,10 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
   if (Array.isArray(input.paths)) {
     for (const p of input.paths) {
       if (typeof p !== 'string' || !p.length) {
-        return refuse(env, `${tool} 含空路径或非文字路径。`, `${how} 补齐后重试。`, 'invalid_parameters', '/tool_input');
+        return refuse(env, `${tool} 含空路径或非文字路径。`, `${how} 补齐后重试。`, 'invalid_parameters', {
+          path: '/tool_input',
+          preToolUse,
+        });
       }
       paths.push(p);
     }
@@ -1628,7 +1789,10 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
   for (const key of ['file_path', 'filePath', 'path']) {
     if (key in args && args[key] !== undefined) {
       if (typeof args[key] !== 'string' || !args[key]) {
-        return refuse(env, `${tool} 的 ${key} 必须是有效路径文字。`, `${how} 补齐后重试。`, 'invalid_parameters', '/tool_input');
+        return refuse(env, `${tool} 的 ${key} 必须是有效路径文字。`, `${how} 补齐后重试。`, 'invalid_parameters', {
+          path: '/tool_input',
+          preToolUse,
+        });
       }
       argPaths.push(args[key] as string);
     }
@@ -1649,7 +1813,9 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
         return refuse(
           env,
           `glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合工作目录相对安全文法（或越出${where}）。`,
-          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不用绝对根外路径、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。', 'invalid_parameters', '/tool_input'
+          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不用绝对根外路径、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。',
+          'invalid_parameters',
+          { path: '/tool_input', preToolUse },
         );
       }
       globAbsPrefix = canonPrefix;
@@ -1659,7 +1825,9 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
         return refuse(
           env,
           `glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合本主目录的安全文法。`,
-          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不许 .、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。', 'invalid_parameters', '/tool_input'
+          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不许 .、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。',
+          'invalid_parameters',
+          { path: '/tool_input', preToolUse },
         );
       }
       globRelPattern = rawPattern;
@@ -1669,18 +1837,23 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
     return refuse(
       env,
       `grep 的 glob ${JSON.stringify(clip(args.glob, 80))} 不符合安全文法。`,
-      '这次可以这样做：只用 / 分隔的非空相对段（含字母、数字、_、-、.、*，不用 .. 或扩展文法）后重试。', 'invalid_parameters', '/tool_input'
+      '这次可以这样做：只用 / 分隔的非空相对段（含字母、数字、_、-、.、*，不用 .. 或扩展文法）后重试。',
+      'invalid_parameters',
+      { path: '/tool_input', preToolUse },
     );
   }
 
   const allTargets = [...new Set([...paths, ...argPaths])];
   if (!allTargets.length && globAbsPrefix === null && !(tool === 'glob' && globRelPattern !== null && paths.length === 0 && argPaths.length === 0 && env.work)) {
-    return refuse(env, `${tool} 缺少路径，没有检查目标。`, `这次可以这样做：请填写工作目录内的 path 或 file_path 后重试（当前目录写 .）。`, 'invalid_parameters', '/tool_input');
+    return refuse(env, `${tool} 缺少路径，没有检查目标。`, `这次可以这样做：请填写工作目录内的 path 或 file_path 后重试（当前目录写 .）。`, 'invalid_parameters', {
+      path: '/tool_input',
+      preToolUse,
+    });
   }
   if (!allTargets.length && globAbsPrefix === null && tool === 'glob' && globRelPattern !== null) {
     // `glob { pattern: 'records/*.json' }` with omitted `path` and empty `paths` defaults to `env.work`.
     globWithin(env.work, globRelPattern, env.work);
-    return allowed(env);
+    return allowed(env, preToolUse);
   }
 
   for (const p of allTargets) {
@@ -1689,7 +1862,10 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
     if (!isWrite && readable.includes(target)) continue;
     const owningRoot = matchRoot(target);
     if (!owningRoot) {
-      return refuse(env, `${tool} 的路径 ${JSON.stringify(clip(p, 100))} 不在${where}里。`, how, 'permission_denied', '/tool_input');
+      return refuse(env, `${tool} 的路径 ${JSON.stringify(clip(p, 100))} 不在${where}里。`, how, 'permission_denied', {
+        path: '/tool_input',
+        preToolUse,
+      });
     }
     if (tool === 'glob' && globRelPattern !== null) {
       globWithin(globAbsPrefix ?? target, globRelPattern, globAbsPrefix ? matchRoot(globAbsPrefix) ?? owningRoot : owningRoot);
@@ -1699,11 +1875,11 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
     const owningRoot = matchRoot(globAbsPrefix)!;
     globWithin(globAbsPrefix, globRelPattern, owningRoot);
   }
-  return allowed(env);
+  return allowed(env, preToolUse);
 }
 
-function ruleMatches(rule: GuardRule, tool: string, args: Record<string, unknown>): boolean {
-  if (rule.tool !== tool) return false;
+function ruleMatches(rule: GuardRule, tool: string, args: Record<string, unknown>, env: GuardEnvironment): boolean {
+  if (!toolMatchesSpec(rule.tool, tool, env)) return false;
   let parameters: unknown = args.parameters ?? {};
   if (typeof parameters === 'string') {
     try {
@@ -1750,53 +1926,79 @@ export async function defaultIsSubagent(home: string, id: string): Promise<boole
   }
 }
 
-/** Evaluates one Circle `before_tool` stdin payload against the loaded environment & declaration. */
+/** Evaluates one Circle `PreToolUse` (or `before_tool`) stdin payload against the loaded environment & declaration. */
 export async function decideRaw(
   env: GuardEnvironment,
   raw: string,
   opts: { isSubagent?: (id: string) => Promise<boolean> } = {},
 ): Promise<HookDecision> {
+  let input: unknown;
+  let validJson = false;
+  try {
+    input = JSON.parse(raw);
+    validJson = true;
+  } catch {
+    // Handled fail-closed immediately below.
+  }
+  const preToolUse = validJson && isRecord(input) && input.hook_event_name === 'PreToolUse';
   if (env.declarationError) {
     return refuse(
       env,
       `守卫的声明文件读不了（${clip(env.declarationError, 80)}）。`,
-      '这次可以这样做：告诉主代理修好声明文件；修好以前所有调用都会被拒。', 'temporarily_unavailable'
+      '这次可以这样做：告诉主代理修好声明文件；修好以前所有调用都会被拒。',
+      'temporarily_unavailable',
+      { preToolUse },
     );
   }
-  let input: unknown;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    return refuse(env, '守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。', '这次可以这样做：请宿主用完整的 before_tool JSON 对象重新发起调用。', 'invalid_parameters');
+  if (!validJson) {
+    return refuse(
+      env,
+      '守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。',
+      '这次可以这样做：请宿主用完整的 PreToolUse JSON 对象重新发起调用。',
+      'invalid_parameters',
+      { preToolUse: false },
+    );
   }
-  if (!isRecord(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !isRecord(input.tool_input)) {
-    return refuse(env, '调用信息缺少 before_tool、tool_name 或 tool_input 对象。', '这次可以这样做：请宿主补齐完整字段后重试。', 'invalid_parameters');
+  const hasKnownEvent = isRecord(input) && (input.hook_event_name === 'PreToolUse' || input.event === 'before_tool');
+  if (!isRecord(input) || !hasKnownEvent || typeof input.tool_name !== 'string' || !isRecord(input.tool_input)) {
+    return refuse(
+      env,
+      '调用信息缺少 PreToolUse、tool_name 或 tool_input 对象。',
+      '这次可以这样做：请宿主补齐完整字段后重试。',
+      'invalid_parameters',
+      { preToolUse },
+    );
   }
   if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some((file) => typeof file !== 'string'))) {
-    return refuse(env, '工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。', 'invalid_parameters');
+    return refuse(env, '工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。', 'invalid_parameters', {
+      preToolUse,
+    });
   }
   if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) {
-    return refuse(env, '调用缺少绝对工作目录 cwd。', '这次可以这样做：请在已信任的专用工作目录重新发起调用。', 'invalid_parameters');
+    return refuse(env, '调用缺少绝对工作目录 cwd。', '这次可以这样做：请在已信任的专用工作目录重新发起调用。', 'invalid_parameters', {
+      preToolUse,
+    });
   }
 
   const tool = input.tool_name;
   const args = input.tool_input as Record<string, unknown>;
+  const agentId = typeof input.agent_id === 'string' ? input.agent_id.trim() : '';
   const session = typeof input.session_id === 'string' ? input.session_id : '';
   const isSubagent = opts.isSubagent ?? ((id: string) => defaultIsSubagent(env.home, id));
 
   try {
     const d = env.declaration;
     for (const rule of asList(d.rules)) {
-      if (!ruleMatches(rule, tool, args)) continue;
-      if (rule.session === 'subagent' && !(await isSubagent(session))) continue;
-      return refuse(env, rule.what, rule.how, 'permission_denied');
+      if (!ruleMatches(rule, tool, args, env)) continue;
+      if (rule.session === 'subagent' && agentId === '' && !(await isSubagent(session))) continue;
+      return refuse(env, rule.what, rule.how, 'permission_denied', { preToolUse });
     }
 
-    const everyAllowed = new Set(Object.values(d.allow ?? {}).flat());
-    if (everyAllowed.has(tool)) return allowed(env);
+    const everyAllowed = Object.values(d.allow ?? {}).flat();
+    if (everyAllowed.some((spec) => toolMatchesSpec(spec, tool, env))) return allowed(env, preToolUse);
 
     if (asList(d.files?.read).includes(tool) || asList(d.files?.write).includes(tool)) {
-      return filesDecision(env, input);
+      return filesDecision(env, input, preToolUse);
     }
 
     if (tool === (d.skillTool ?? 'skill')) {
@@ -1804,43 +2006,43 @@ export async function decideRaw(
       const installed = env.skillsRootValid
         ? listNames(env.skills, (entry) => existsLstat(path.join(env.skills, entry, 'SKILL.md')))
         : [];
-      if (d.skillRequiresInstalled === false && name === '') return allowed(env);
+      if (d.skillRequiresInstalled === false && name === '') return allowed(env, preToolUse);
       return name !== '' && installed.includes(name)
-        ? allowed(env)
+        ? allowed(env, preToolUse)
         : refuse(
             env,
             `skill ${JSON.stringify(clip(name || '（空）'))} 不是已装技能。`,
-            `这次可以这样做：已装技能有 ${installed.join('、') || '（没有）'}。`, 'not_found'
+            `这次可以这样做：已装技能有 ${installed.join('、') || '（没有）'}。`,
+            'not_found',
+            { preToolUse },
           );
     }
 
     if (tool === (d.executeTool ?? 'execute')) {
-      return await executeDecision(env, input, raw);
+      return await executeDecision(env, input, raw, preToolUse);
     }
 
     for (const [prefix, why] of Object.entries(d.denyPrefix ?? {})) {
       if (tool.startsWith(prefix)) {
-        return refuse(
-          env,
-          `${tool}。${why}。`,
-          unavailableAdvice(env), 'permission_denied'
-        );
+        return refuse(env, `${tool}。${why}。`, unavailableAdvice(env), 'permission_denied', { preToolUse });
       }
     }
 
-    return refuse(
-      env,
-      `${tool || '这个工具'} 不在这个配置放行的工具里。`,
-      unavailableAdvice(env), 'permission_denied'
-    );
+    return refuse(env, `${tool || '这个工具'} 不在这个配置放行的工具里。`, unavailableAdvice(env), 'permission_denied', {
+      preToolUse,
+    });
   } catch (error) {
     if (error instanceof GuardRefusal) {
-      return refuse(env, `${error.message}`, '这次可以这样做：按上述核对要求修正路径或安装状态后重试。', error.category);
+      return refuse(env, `${error.message}`, '这次可以这样做：按上述核对要求修正路径或安装状态后重试。', error.category, {
+        preToolUse,
+      });
     }
     return refuse(
       env,
       `守卫自己出错了（${error instanceof Error ? error.message : String(error)}）。`,
-      '这次可以这样做：告诉主代理检查守卫配置与安装后重试。', 'temporarily_unavailable'
+      '这次可以这样做：告诉主代理检查守卫配置与安装后重试。',
+      'temporarily_unavailable',
+      { preToolUse },
     );
   }
 }
@@ -1864,7 +2066,9 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
     '## 工具',
     '',
   ];
-  for (const [label, names] of Object.entries(d.allow ?? {})) lines.push(`- ${label}：${names.join('、')}`);
+  for (const [label, names] of Object.entries(d.allow ?? {})) {
+    lines.push(`- ${label}：${names.map((name) => resolveAllowName(env, name)).join('、')}`);
+  }
   const fileNotes = [`${readList.join('、')} 可读工作目录${d.files?.readRoots?.includes('skills') !== false ? '和已装技能目录（技能目录只读）' : ''}`];
   if (writeList.length) fileNotes.push(`${writeList.join('、')} 只写工作目录`);
   else fileNotes.push('本目录禁止写文件');
@@ -1877,6 +2081,7 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   lines.push(`一条命令一行，形式：\`node '<技能目录>/tools/<脚本>.ts' --选项 值 …\`。`, '');
   lines.push(`- 引号与路径写法（唯一规则）：只含英文数字与 \`_./:%=@,+-\` 的路径或值可不加引号；**只要含空格（如路径中的 \`Application Support\`）、中文或 \`<\`/\`>\` 等字符，统一用英文单引号 \`'…'\` 包住**。不用英文双引号 \`"\`，不写反斜杠转义（\`\\ \`）或续行（\`\\\`），不写紧连引号 \`'a'b\`。`);
   lines.push(`- \`--hub\` 的值写 \`${env.urlPlaceholder}\`（客户端会展开成这个配置的 Hub 地址），写成配置里的 Hub 地址本身也行，别的主机不行。`);
+  lines.push(`- \`--base-url\` 的值写 \`${env.plumbUrlPlaceholder}\`（客户端会展开成这个配置的 Plumb 地址），写成配置里的 Plumb 地址本身也行，别的主机不行。`);
   lines.push('- 选项写成 `--名字 值`，中间空格；不用 `--名字=值`（脚本和守卫都不认）。');
   lines.push('- 路径类的值必须在工作目录里。');
   lines.push(
@@ -1944,7 +2149,7 @@ export function buildToolSchemas(env: GuardEnvironment): unknown[] {
     .map((tool) => {
       const properties: Record<string, unknown> = {};
       for (const option of tool.options) {
-        if (option.type === 'hub') continue;
+        if (option.type === 'hub' || option.type === 'plumb') continue;
         if (option.kind === 'boolean') properties[option.name] = { type: 'boolean' };
         else if (option.type === 'run') properties[option.name] = { type: 'string', pattern: '^run_[a-z0-9]+(,run_[a-z0-9]+)*$' };
         else if (option.type === 'int') properties[option.name] = { type: 'integer', minimum: 1 };
@@ -1963,7 +2168,7 @@ export function buildToolSchemas(env: GuardEnvironment): unknown[] {
         inputSchema: {
           type: 'object',
           properties,
-          required: tool.options.filter((o) => o.required && o.type !== 'hub').map((o) => o.name),
+          required: tool.options.filter((o) => o.required && o.type !== 'hub' && o.type !== 'plumb').map((o) => o.name),
           additionalProperties: false,
         },
       };

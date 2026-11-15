@@ -5,7 +5,7 @@ import {isExpectationBasis,type ExpectationBasis} from './generated/vocabulary.t
 // Restricted authored plan slots. This module verifies structure and never generates an execution artifact.
 import { isRecord } from './text.ts';
 export type KeywordValue = string | number;
-export interface PlanStep { description?:string;id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;cell_input?:boolean;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean;precondition_source?:{reference:string;text:string}; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
+export interface PlanStep { description?:string;id?:string;origin?:string;block_kind?:string;output?:boolean;save_as?:string;input_register?:string;cell_input?:boolean;restore_for?:number;restore_target?:{tree_root:string;path:string;leading_parameters:unknown[];bed:string;manifest_sha256:string};cleanup?:boolean;precondition_source?:{reference:string;text:string};author_step_refs?:string[]; object: string; method: string; args: string[]; keywords: Record<string, KeywordValue> }
 export interface PlanExpect {id?:string;origin?:string;op?:'not_found';operator?:string;output?:string;register?:string;actual_register?:string;comparison?:string;count?:number;expectation?:string;criterion?:string;basis?:ExpectationBasis;rationale?:string; text: string; quote: { reference: string; text: string }; after: number }
 export interface Replacement { case: string; bed: string }
 export interface PlanSlots { recomposition?:{receipt:string;case_id:string;slots:Array<{slot:string;assertions:string[]}>;rebindings:Array<{slot:string;from:string;to:string;authority?:string;source_of_value?:string}>}; command_identities?:unknown; bucket: string; blocks: Array<Record<string,any>>;block_context?:Record<string,any>;criteria?:Array<Record<string,any>>;obligations?:Array<Record<string,any>>; steps: PlanStep[]; expects: PlanExpect[]; replacements: Replacement[] }
@@ -28,7 +28,7 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
   for (const [i, raw] of (Array.isArray(value.steps) ? value.steps : []).entries()) {
     const at = `/steps/${i}`;
     if (!isRecord(raw)) { issue(at, '步骤不是对象'); continue; }
-    keys(raw, ['object', 'method', 'args', 'keywords','cleanup','description','precondition_source'], at);
+    keys(raw, ['object', 'method', 'args', 'keywords','cleanup','description','precondition_source','author_step_refs'], at);
     if(raw.cleanup!==undefined&&typeof raw.cleanup!=='boolean')issue(at+'/cleanup','cleanup 必须是显式布尔声明');
     if(raw.description!==undefined&&(typeof raw.description!=='string'||!raw.description.trim()||raw.description!==raw.description.trim()||/[\r\n]/.test(raw.description)||raw.description.startsWith('=')))issue(at+'/description','description 是这一步的一句单行描述，写进工作簿 D 列');
     let preconditionSource: { reference: string; text: string } | undefined;
@@ -40,10 +40,18 @@ export function readSlots(value: unknown): { ok: true; slots: PlanSlots } | { ok
         preconditionSource = { reference: raw.precondition_source.reference, text: raw.precondition_source.text };
       }
     }
+    let authorStepRefs: string[] | undefined;
+    if (raw.author_step_refs !== undefined) {
+      if (!Array.isArray(raw.author_step_refs) || !raw.author_step_refs.length || raw.author_step_refs.length > 32 || raw.author_step_refs.some((v) => typeof v !== 'string' || !v.trim() || [...v].length > 64)) {
+        issue(`${at}/author_step_refs`, 'author_step_refs 必须是 1..32 条非空作者步骤编号');
+      } else {
+        authorStepRefs = raw.author_step_refs.map((v) => String(v));
+      }
+    }
     for (const field of ['object', 'method']) if (typeof raw[field] !== 'string' || !raw[field]) issue(`${at}/${field}`, '缺少对象或方法原名');
     if (!Array.isArray(raw.args) || raw.args.some((v) => typeof v !== 'string')) issue(`${at}/args`, 'args 必须是文字列表，没有位置参数写 []');
     if (!isRecord(raw.keywords) || Object.values(raw.keywords).some((v) => typeof v !== 'string' && !(typeof v === 'number' && Number.isSafeInteger(v) && v >= 0))) issue(`${at}/keywords`, 'keywords 必须是参数名到文字或安全非负整数的映射，没有关键字写 {}');
-    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({...(typeof raw.cleanup==='boolean'?{cleanup:raw.cleanup}:{}),...(typeof raw.description==='string'?{description:raw.description}:{}),...(preconditionSource?{precondition_source:preconditionSource}:{}),object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, KeywordValue> });
+    if (typeof raw.object === 'string' && typeof raw.method === 'string' && Array.isArray(raw.args) && isRecord(raw.keywords)) steps.push({...(typeof raw.cleanup==='boolean'?{cleanup:raw.cleanup}:{}),...(typeof raw.description==='string'?{description:raw.description}:{}),...(preconditionSource?{precondition_source:preconditionSource}:{}),...(authorStepRefs?{author_step_refs:authorStepRefs}:{}),object: raw.object, method: raw.method, args: raw.args as string[], keywords: raw.keywords as Record<string, KeywordValue> });
   }
   const expects: PlanExpect[] = [];
   if (!Array.isArray(value.expects)) issue('/expects', 'expects 必须是数组');

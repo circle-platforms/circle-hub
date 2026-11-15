@@ -2,8 +2,9 @@
 import { fork } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { knowledgeFiles } from '../../../packs/workflow/case-compile/functions/generated/skills/run-tools/hub-client/index.ts';
 import type { CliProbe } from '../verify-tool-cli.ts';
 
 export const REMOTE_CASE_COMPILE_TOOLS = ['tools/assemble-delivery.ts', 'tools/download-returns.ts', 'tools/download-run.ts', 'tools/fetch-run.ts', 'tools/submit-plans.ts'] as const;
@@ -14,6 +15,7 @@ export const NO_DISPATCH_STDERR = '暂时不可用：尚未上机验证，或设
 export interface RemoteCliReceipt { method: string; path: string; authorized: boolean }
 export interface RemoteCliProbes {
   caseCompile: Record<string, CliProbe[]>;
+  plumbCaseCompile: Record<string, CliProbe[]>;
   recompose: Record<string, CliProbe[]>;
   receipts(): Promise<RemoteCliReceipt[]>;
   close(): Promise<void>;
@@ -50,6 +52,42 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
     child.send({ token, run: RUN, receipt, routes });
   });
   const probe = (argv: string[], complete: CliProbe['complete'] = { status: 0 }): CliProbe[] => [{ argv, cwd: workRoot, subcommand: null, stdinValues: [token], complete, empty: { status: 1, stdout: '', stderr: EMPTY_TOKEN_STDERR } }];
+  const plumbDir = join(workRoot, 'plumb-run');
+  const plumbKnowledgeRoot = 'a'.repeat(64);
+  const kNodes = [
+    { path: '/', children: ['commands'], statements: [] as Array<[string, string]> },
+    { path: '/commands', children: ['ip'], statements: [] as Array<[string, string]> },
+    { path: '/commands/ip', children: ['address'], statements: [] as Array<[string, string]> },
+    { path: '/commands/ip/address', children: [], statements: [['definition', 'ip address <ip:ipv4> <mask:ipv4>\n  配置接口 IPv4 地址']] as Array<[string, string]> },
+  ].map((row, idx) => ({
+    path: row.path, reference: `tree:${plumbKnowledgeRoot}${row.path}`, name: row.path.split('/').at(-1),
+    level: row.children.length ? 'branch' : 'leaf', digest: String(idx + 1).padStart(64, '0'),
+    children: row.children.map((c, j) => ({ name: c, path: `${row.path === '/' ? '' : row.path}/${c}`, digest: String(idx * 100 + j).padStart(64, '0') })),
+    entries: row.statements.map(([kind, statement], k) => ({ entry: String(k + 100).padStart(64, 'a'), kind, statement, reference: `tree:${plumbKnowledgeRoot}${row.path}@${String(k + 100).padStart(64, 'a')}` })),
+  }));
+  const kBytes = Buffer.from([{ schema: 'run-knowledge@1', run: RUN, root: plumbKnowledgeRoot, composition: null, nodes: kNodes.length, entries: 1 }, ...kNodes].map((n) => JSON.stringify(n)).join('\n') + '\n');
+  for (const { name, bytes } of knowledgeFiles(kBytes, RUN).outputs) {
+    await mkdir(dirname(join(plumbDir, name)), { recursive: true });
+    await writeFile(join(plumbDir, name), bytes);
+  }
+  const plumbItem = {
+    id: 'doc:plumb-1',
+    fields: {
+      autoid: '990000000000000201',
+      title: '配置接口 IP 地址',
+      path: ['网络', '接口'],
+      steps: [{ text: '配置接口 eth0 地址 ip address 192.0.2.10/24' }],
+      recomposition: { record: { schema: 'recompose-record@1', contract: { intent: { text: '配置接口地址' } }, atoms: [{ id: '1', kind: 'action', text: '配置接口 eth0 地址 192.0.2.10/24' }], ledgers: { original: [], adapted: [], rebindings: [] } } },
+    },
+  };
+  await mkdir(join(plumbDir, 'items'), { recursive: true });
+  await writeFile(join(plumbDir, 'items', '00.json'), JSON.stringify(plumbItem));
+  await writeFile(join(plumbDir, 'run.json'), JSON.stringify({ run: RUN, product: 'synth-switch', version: '1.0', build: 'b1', items: [plumbItem] }));
+  const plumbPlans = join(workRoot, 'plumb-plans');
+  await mkdir(plumbPlans, { recursive: true });
+  await writeFile(join(plumbPlans, '00.json'), JSON.stringify({ item: plumbItem.id, handling: 'handled', slots: { plan: [{ text: 'plan 0', quotes: [], data: { bucket: 'bed-0', blocks: [], replacements: [], steps: [{ object: 'dut0', method: 'cmd_config', args: ['ip address 192.0.2.10/24'], keywords: {}, author_step_refs: ['1'] }], expects: [] } }] } }));
+  const plumbBriefs = join(workRoot, 'plumb-briefs');
+  const plumbProbe = (argv: string[]): CliProbe[] => [{ argv, cwd: workRoot, subcommand: null, stdinValues: [token], complete: { status: 0 }, empty: { status: 1, stdout: '' } }];
   return {
     caseCompile: {
       'tools/assemble-delivery.ts': probe(['--hub', origin + '/mcp', '--runs', EMPTY, '--notes', notes, '--out', join(workRoot, 'delivery')], { status: 1, stdout: '', stderr: NO_DISPATCH_STDERR }),
@@ -57,6 +95,11 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
       'tools/download-run.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'compile-download')]),
       'tools/fetch-run.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'fetched')]),
       'tools/submit-plans.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--model', 'synthetic-model', '--plans', plans]),
+    },
+    plumbCaseCompile: {
+      'tools/cmd-select-plumb.ts': plumbProbe(['--run', plumbDir, '--base-url', origin, '--no-cache', '--key-stdin']),
+      'tools/cmd-verify-plumb.ts': plumbProbe(['--plans', plumbPlans, '--run', plumbDir, '--base-url', origin, '--no-cache', '--key-stdin']),
+      'tools/fidelity-plumb.ts': plumbProbe(['--run', join(plumbDir, 'run.json'), '--plans', plumbPlans, '--briefs', plumbBriefs, '--base-url', origin, '--no-cache', '--key-stdin']),
     },
     recompose: {
       'tools/download-run.ts': probe(['--hub', origin + '/mcp', '--run', RUN, '--out', join(workRoot, 'recompose-download')]),

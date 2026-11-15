@@ -1,0 +1,169 @@
+// CLI and pack validation tests for packs/skill/plumb (safety scan + hub/runs/packs validatePack).
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { readPackDirectory, validatePack } from '../../../../hub/runs/api.ts';
+import { stagePack } from '../../../workflow/case-review/packaging.ts';
+import { scanSkillPack } from '../../../../scripts/real/skill-script-safety.ts';
+import { runPlumbCli } from './plumb.ts';
+
+const PACK_DIR = fileURLToPath(new URL('../', import.meta.url));
+
+describe('plumb CLI wrapper and security hygiene', async () => {
+  const workDir = await mkdtemp(join(tmpdir(), 'plumb-cli-test-'));
+  let statusCalls = 0;
+
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      if (req.method === 'GET' && url.pathname === '/v1/models') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ default_model: 'plumb-27b-0.5.0', models: [{ id: 'plumb-27b-0.5.0', released: false }] }));
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/v1/status') {
+        statusCalls += 1;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: statusCalls >= 2 ? 'ready' : 'waking', serving_version: 'plumb-27b-0.5.0' }));
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/v1/judge') {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          request_id: 'cli_req_1',
+          status: '未确认',
+          decided_by: '模型',
+          model_version: 'plumb-27b-0.5.0',
+          task: String(body.task ?? 'choice'),
+          answer: { type: 'choice', choice: 'ip address', confidence: 0.91, probabilities: { 'ip address': 0.91, none: 0.09 } },
+          gate: { action: 'review', calibrated: false },
+        }));
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/v1/keys/requests') {
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ request_id: 'kr_001', claim_code: 'claim_secret_001', status: 'pending' }));
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/v1/keys/requests/kr_001') {
+        const code = req.headers['x-claim-code'];
+        if (code !== 'claim_secret_001') {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { code: 'invalid_claim_code', message: 'bad code' } }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ key_id: 'k_1', api_key: 'plumb_sk_claimed_1234', status: 'active' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end('{}');
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it('refuses CLI --api-key, --claim-code, equals-joined options, and empty stdin', async () => {
+    const errors: string[] = [];
+    const code1 = await runPlumbCli(['models', '--base-url', baseUrl, '--api-key', 'plumb_sk_bad'], { stderr: (l) => errors.push(l) });
+    assert.equal(code1, 1);
+    assert.match(errors[0], /禁止通过命令行参数 --api-key 传入密钥/);
+
+    errors.length = 0;
+    const code2 = await runPlumbCli(['claim-key', '--request-id', 'kr_1', '--claim-code', 'c1'], { stderr: (l) => errors.push(l) });
+    assert.equal(code2, 1);
+    assert.match(errors[0], /禁止通过命令行参数 --claim-code 传入/);
+
+    errors.length = 0;
+    const code3 = await runPlumbCli(['models', `--base-url=${baseUrl}`], { stderr: (l) => errors.push(l) });
+    assert.equal(code3, 1);
+    assert.match(errors[0], /不允许使用 = 连接/);
+
+    errors.length = 0;
+    const code4 = await runPlumbCli(['models', '--base-url', baseUrl, '--key-stdin'], { stdinText: '\n', stderr: (l) => errors.push(l) });
+    assert.equal(code4, 1);
+    assert.match(errors[0], /标准输入首行为空/);
+  });
+
+  it('runs models, judge with --node-file/--candidates-file, and claim-key cleanly while writing --out audit', async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const codeM = await runPlumbCli(['models', '--base-url', baseUrl, '--key-stdin'], {
+      stdinText: 'plumb_sk_cli_secret_8888\n',
+      stdout: (l) => stdout.push(l),
+      stderr: (l) => stderr.push(l),
+    });
+    assert.equal(codeM, 0, stderr.join('\n'));
+    assert.equal(JSON.parse(stdout[0]).default_model, 'plumb-27b-0.5.0');
+
+    const nodeFile = join(workDir, 'node.json');
+    const candsFile = join(workDir, 'cands.json');
+    const auditFile = join(workDir, 'audit.jsonl');
+    const resultOut = join(workDir, 'result.json');
+    await writeFile(nodeFile, JSON.stringify({ line: 10, module: 'net', path: 'net/ip', title: 'set ip' }));
+    await writeFile(candsFile, JSON.stringify([{ name: 'ip address', text: 'ip address <ip> <mask>' }, 'none']));
+
+    stdout.length = 0;
+    const codeJ = await runPlumbCli([
+      'judge',
+      '--base-url', baseUrl,
+      '--task', 'choice',
+      '--node-file', nodeFile,
+      '--candidates-file', candsFile,
+      '--out', auditFile,
+      '--result-out', resultOut,
+      '--key-stdin',
+    ], {
+      stdinText: 'plumb_sk_cli_secret_8888\n',
+      stdout: (l) => stdout.push(l),
+      stderr: (l) => stderr.push(l),
+    });
+    assert.equal(codeJ, 0, stderr.join('\n'));
+    const parsedOut = JSON.parse(await readFile(resultOut, 'utf8')) as Record<string, unknown>;
+    assert.equal(parsedOut.status, '未确认');
+    assert.equal(parsedOut.decided_by, '模型');
+    assert.ok(!(await readFile(auditFile, 'utf8')).includes('cli_secret_8888'));
+
+    stdout.length = 0;
+    const codeClaim = await runPlumbCli([
+      'claim-key',
+      '--base-url', baseUrl,
+      '--request-id', 'kr_001',
+      '--claim-code-stdin',
+    ], {
+      stdinText: 'claim_secret_001\n',
+      stdout: (l) => stdout.push(l),
+      stderr: (l) => stderr.push(l),
+    });
+    assert.equal(codeClaim, 0, stderr.join('\n'));
+    assert.equal(JSON.parse(stdout[0]).key_id, 'k_1');
+  });
+
+  it('passes static skill-script safety scan and hub/runs/packs validatePack on staged copy', async () => {
+    const safety = scanSkillPack(PACK_DIR);
+    assert.deepEqual(safety.issues, [], JSON.stringify(safety.issues));
+    assert.ok(safety.files >= 6);
+    const stagedDir = join(workDir, 'staged-plumb');
+    await stagePack(PACK_DIR, stagedDir);
+    const readRes = await readPackDirectory(stagedDir);
+    assert.equal(readRes.ok, true, JSON.stringify(readRes));
+    if (!readRes.ok) throw new Error('unreachable');
+    const validation = await validatePack(readRes.pack);
+    assert.equal(validation.ok, true, JSON.stringify(validation));
+  });
+});

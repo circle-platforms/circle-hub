@@ -70,6 +70,8 @@ export const TAUGHT_PLACEHOLDERS: Record<string, string> = {
   会话号: 'sess-synthetic',
   '原件 SHA-256': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   'Hub MCP 地址': '%HUB_URL%',
+  CA证书: 'certs/plumb-ca.pem',
+  请求JSON: 'plumb-req.json',
   令牌文件: 'token.txt',
   值: 'synthetic',
 };

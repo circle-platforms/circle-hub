@@ -393,6 +393,26 @@ export interface CompileBriefAtom {
   quote_ref: string;
 }
 
+export interface PlumbBriefCandidateStep {
+  step_index: number;
+  step_text: string;
+  recalled_count: number;
+  selected: { command: string; path: string; definition: string } | null;
+  none_selected: boolean;
+  review_required: boolean;
+  rejected: boolean;
+  note?: string;
+  candidates: Array<{ command: string; path: string; summary: string }>;
+}
+
+export interface PlumbBriefCandidates {
+  status: '未确认';
+  decided_by: '模型';
+  model_version: string | null;
+  source_file?: string;
+  steps: PlumbBriefCandidateStep[];
+}
+
 export interface CompileBriefV1 {
   schema: typeof COMPILE_BRIEF_SCHEMA;
   brief_sha256: string;
@@ -474,6 +494,7 @@ export interface CompileBriefV1 {
         manual_file: string;
         search_note: string;
       };
+      plumb_candidates?: PlumbBriefCandidates;
     };
     prerequisites: {
       status: 'extracted' | 'partial_recompose_only' | 'none_declared_or_found_in_recompose' | 'recompose_states_unreadable';
@@ -601,6 +622,7 @@ export interface BuildCompileBriefInput {
   unrecordedAttribution?: PriorAttributionItem | null;
   scopeRulings?: ReadonlyArray<{target: string; ruling: string}>;
   scopeRulingsSource?: string;
+  plumbCandidates?: PlumbBriefCandidates;
   createdAt?: string;
 }
 
@@ -917,6 +939,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
           manual_file: 'knowledge/manual.txt',
           search_note: '简报只收录重组直接点到的节点；未收录章节须用 grep 检索上述本地文件。',
         },
+        ...(input.plumbCandidates ? { plumb_candidates: input.plumbCandidates } : {}),
       },
       prerequisites: prerequisitesBlock,
       bed_facts: {
@@ -1097,6 +1120,12 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
     for (const n of includedOthers) {
       if (isRecord(n) && Array.isArray(n.node_block) && Buffer.byteLength(n.node_block.join('\n')) > QUOTED_BYTES) {
         problems.push(`referenced_other_nodes 单块字节数超过 ${QUOTED_BYTES}`);
+      }
+    }
+    if (cmdManual.plumb_candidates !== undefined) {
+      const pc = isRecord(cmdManual.plumb_candidates) ? cmdManual.plumb_candidates : null;
+      if (!pc || pc.status !== '未确认' || pc.decided_by !== '模型' || !Array.isArray(pc.steps)) {
+        problems.push('commands_and_manual.plumb_candidates 必须标明 status=未确认、decided_by=模型 且含 steps 数组');
       }
     }
   }
@@ -1415,6 +1444,20 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
       for (const row of cmd.parameters) out.push(`· ${row.statement}`, `  引用 ${row.reference}`);
     }
     out.push(`逆操作（${cmd.inverse.kind}：${cmd.inverse.detail}）：`, ...cmd.inverse.node_block);
+  }
+
+  const pc = materials.commands_and_manual.plumb_candidates;
+  if (pc && pc.steps.length > 0) {
+    out.push(
+      '',
+      `## Plumb 预筛命令候选（状态：${pc.status}，决定者：${pc.decided_by}${pc.model_version ? `，模型：${pc.model_version}` : ''}）`,
+      '以下候选仅供参考与检索起步，编写前仍须按锁定命令树语法与手册参数说明核对。',
+    );
+    for (const st of pc.steps) {
+      const sel = st.selected ? `${st.selected.command} (${st.selected.path})` : (st.none_selected ? '都不是' : '无');
+      const warn = st.rejected ? ' [落入 reject 区]' : st.review_required ? ' [需人工复核：Plumb choice 落入 review 区]' : '';
+      out.push(`- 步骤 ${st.step_index}（${st.step_text}）：推荐 \`${sel}\`${warn}${st.selected?.definition ? `；语法：${st.selected.definition.split('\n')[0]}` : ''}`);
+    }
   }
 
   if (materials.bed_facts.plan_envelope) {

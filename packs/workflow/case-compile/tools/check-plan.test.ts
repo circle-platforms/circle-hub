@@ -303,6 +303,18 @@ test('verdict mode checks .verdict.json standalone and against --brief for fidel
     const changedRes = await runCli(['--file', changedPath, '--brief', briefPath]);
     assert.equal(changedRes.code, 1);
     assert.equal(JSON.parse(changedRes.stdout).problems[0].code, 'scenario_changed');
+
+    const withPlumbMetaPath = join(dir, 'with-meta.verdict.json');
+    await writeFile(withPlumbMetaPath, JSON.stringify({
+      ...validVerdict,
+      model_disclosure: { status: '未确认', decided_by: '模型', model_version: 'plumb-27b-0.5.0' },
+      steps: [
+        { ...validVerdict.steps[0], model_judgment: { status: '未确认', decided_by: '模型', model_version: 'plumb-27b-0.5.0', task: 'sequence', choice: '保持', confidence: 0.92 } },
+        validVerdict.steps[1],
+      ],
+    }));
+    assert.equal((await runCli(['--file', withPlumbMetaPath])).code, 0);
+    assert.equal((await runCli(['--file', withPlumbMetaPath, '--brief', briefPath])).code, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

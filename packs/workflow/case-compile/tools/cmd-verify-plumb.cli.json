@@ -1,0 +1,171 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [
+    "%PLUMB_API_KEY%"
+  ],
+  "options": [
+    {
+      "name": "file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<计划或判断JSON>",
+      "type": "path"
+    },
+    {
+      "name": "plans",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<自动化用例目录>",
+      "type": "path"
+    },
+    {
+      "name": "run",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<脚本编写目录>",
+      "type": "path"
+    },
+    {
+      "name": "knowledge",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "base-url",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "%PLUMB_URL%",
+      "type": "plumb"
+    },
+    {
+      "name": "item",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "context-mode",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "model",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<模型>",
+      "type": "text"
+    },
+    {
+      "name": "ca-file",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<CA证书>",
+      "type": "path"
+    },
+    {
+      "name": "ca-sha256",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "cache-dir",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "audit-out",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "out",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": null,
+      "type": "path"
+    },
+    {
+      "name": "strict-review",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "key-stdin",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "no-cache",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    },
+    {
+      "name": "allow-insecure-http",
+      "required": false,
+      "kind": "boolean",
+      "multiple": false,
+      "placeholder": null,
+      "type": "text"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "plans",
+          "placeholder": "<自动化用例目录>",
+          "optional": false
+        },
+        {
+          "name": "run",
+          "placeholder": "<脚本编写目录>",
+          "optional": false
+        },
+        {
+          "name": "base-url",
+          "placeholder": "%PLUMB_URL%",
+          "optional": false
+        },
+        {
+          "name": "key-stdin",
+          "placeholder": null,
+          "optional": true
+        }
+      ]
+    }
+  ]
+}

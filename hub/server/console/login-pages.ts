@@ -220,7 +220,7 @@ export async function setup(request: IncomingMessage, response: ServerResponse, 
 <p class="notice">下面是这位管理员的访问令牌，只用于连接客户端，不能登录控制台；只显示这一次：现在复制，保存到只有本人能读的地方。离开这页后不再显示；遗失后由管理员重新签发。</p>
 ${pre(outcome.token)}
 <h2>在客户端中连接这个 Hub</h2>
-<h2 class="ch-section-label">${tooltip('MCP 标准连接确认', '下面是 mcp_servers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。首次连接时登录控制台并确认身份。')}</h2>
+<h2 class="ch-section-label">${tooltip('MCP 标准连接确认', '下面是 mcpServers 格式的条目；其他客户端按各自的格式填写同一 MCP 地址。首次连接时登录控制台并确认身份。')}</h2>
 <pre class="ch-quote"><code>${circleEntry(mcpOrigin(request, secure), false)}</code></pre>
 <h2 class="ch-section-label">${tooltip('兼容连接方式', '客户端不支持 MCP 标准连接确认时，把令牌保存为客户端的密钥 CIRCLE_HUB_TOKEN，再采用下方配置。')}</h2>
 <pre class="ch-quote"><code>${circleEntry(mcpOrigin(request, secure))}</code></pre>

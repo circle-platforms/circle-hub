@@ -74,7 +74,8 @@ test('assigned member sees team-a content without internal ids', async () => {
   assert.match(text, /测试环境使用权限尚未接线/);
   assert.match(text, /连接新的客户端/);
   assert.match(text, /确认码/);
-  assert.match(text, /&quot;name&quot;: &quot;Hub&quot;/);
+  assert.match(text, /&quot;mcpServers&quot;:/);
+  assert.match(text, /&quot;Hub&quot;:/);
   assert.doesNotMatch(text.replace(/href="[^"]*"/g, ''), INTERNAL_ID);
 });
 

@@ -334,7 +334,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
     if (pendingGetNodes !== null && turn.toolResults.length > 0) {
       const read = readSummary(turn.toolResults[0]?.text ?? '', pendingGetNodes.reference);
       const full = read.summary;
-      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, `${turn.toolResults.some(result => result.isError) ? '缺少成功的摘要读取结果' : read.missing}；下一步用已记录的引用 ${pendingGetNodes.reference} 调用 hub_get_nodes 重读，核对原文字符数与全文一致后重跑本场景`);
+      if (turn.toolResults.some(result => result.isError) || full === null) unknown.set(pendingGetNodes.key, `${turn.toolResults.some(result => result.isError) ? '缺少成功的摘要读取结果' : read.missing}；下一步用已记录的引用 ${pendingGetNodes.reference} 调用 mcp__hub__get_nodes 重读，核对原文字符数与全文一致后重跑本场景`);
       else {
         const parsed = parseSummary(full, categories);
         if (!parsed.valid) unknown.set(pendingGetNodes.key, '全文缺少可解析的用例数或完整类别集合；下一步重读已保存的全文引用并核对完整计数与类别集合，仍不符交集成者修正读取解析');
@@ -342,7 +342,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       }
       pendingGetNodes = null;
     }
-    // Truncated summaries: read the full text first (one hub_get_nodes per reply keeps the flow simple).
+    // Truncated summaries: read the full text first (one mcp__hub__get_nodes per reply keeps the flow simple).
     const [truncatedKey, reference] = [...truncated.entries()][0] ?? [];
     if (truncatedKey !== undefined && reference !== undefined) {
       truncated.delete(truncatedKey);
@@ -351,7 +351,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         // The clip names the full text's reference; the summary is read at that reference's /summary (a reference
         // that already ends in /summary is used as it is).
         const normalized = reference.endsWith('/summary') ? reference : `${reference}/summary`;
-        return [{ tool: 'hub_get_nodes', input: { reference: normalized } }];
+        return [{ tool: 'mcp__hub__get_nodes', input: { reference: normalized } }];
       }
     }
     // Advance: upload the next batch, start the next run, or close the phase.
@@ -364,7 +364,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
         return batchNow.map((p) => {
           const sha = writeCopy(p);
           uploaded.set(p.key, sha); uploadVerdicts.set(p.key, false);
-          return { tool: 'hub_upload_file', input: { file_path: p.name, media_type: 'application/json' } };
+          return { tool: 'mcp__hub__upload_file', input: { file_path: p.name, media_type: 'application/json' } };
         });
       }
       if (queuedRuns.length === 0 && phaseUploaded.length > 0 && phaseRunsQueued < phaseUploaded.length) {
@@ -376,7 +376,7 @@ export default function scenario(gold: GapCircleGold): Scenario {
       if (queuedRuns.length > 0) {
         openRun = queuedRuns.shift() ?? null;
         runsOfPhase[phase - 1]! += 1;
-        return [{ tool: 'hub_start_run', input: { pack: 'template-gap', inputs: { documents: openRun!.map(({ sha }) => ({ reference: `src:${sha}` })) } } }];
+        return [{ tool: 'mcp__hub__start_run', input: { pack: 'template-gap', inputs: { documents: openRun!.map(({ sha }) => ({ reference: `src:${sha}` })) } } }];
       }
       if (phase < 3) {
         phase += 1;

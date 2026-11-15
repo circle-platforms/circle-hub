@@ -42,12 +42,12 @@ nav_order: 3
    - **邀请码（MCP 标准连接确认，推荐）**：适合支持标准 MCP 授权的客户端（例如 Circle）。提交后在结果页得到：
      - 成员控制台**初始密码**（仅显示一次；无过期倒计时，但首次登录 `/console/login` 必须到 `/console/password` 改密，改密后当前会话失效须用新密码重登）；
      - 24 小时有效的**一次性邀请码**（仅显示一次，用过一次即作废）；
-     - 一段 `mcp_servers` 示例片段。
-     - **发给 Circle 成员时的注意**：当前版本在添加成员结果页、成员 `/console/settings#mine` 与成员首页 `/console/me` 的「连接新的客户端」卡片中，均已直接给出带 `"name": "Hub"`、`"transport": "streamable_http"` 与 `"placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }` 的 `mcp_servers` 示例，且管理结果页已将 `usr_…`/`tm_…`/`exe_…`/`res_…` 等内部编号脱敏替换为显示名称。如果成员使用 **Circle 桌面版**，可直接使用 Hub 连接卡片自动写入配置；如果使用 **Circle 终端版**，指引成员按[成员手册](member-guide.md)启用内置 `hub` 扩展并写入带 `placeholders` 的片段即可，确保后续运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正常展开。
+     - 一段 `mcpServers` 示例片段。
+     - **发给 Circle 成员时的注意**：当前版本在添加成员结果页、成员 `/console/settings#mine` 与成员首页 `/console/me` 的「连接新的客户端」卡片中，均已直接给出以 `"Hub"` 为键、包含 `"type": "http"` 与 `"placeholders": { "url": "HUB_URL", "token": "HUB_TOKEN" }` 的 `mcpServers` 对象示例，且管理结果页已将 `usr_…`/`tm_…`/`exe_…`/`res_…` 等内部编号脱敏替换为显示名称。如果成员使用 **Circle 桌面版**，可直接使用 Hub 连接卡片自动写入配置；如果使用 **Circle 终端版**，指引成员使用 `/hub <Hub地址>` 或按[成员手册](member-guide.md)在 `settings.json` 写入带 `placeholders` 的 `mcpServers` 片段即可，确保后续运行技能本地工具时 `%HUB_URL%`、`%HUB_TOKEN%` 正常展开。
    - **访问令牌**：仅在客户端不支持标准 MCP 连接确认时选用（填「令牌标签」方便区分多台设备），提交后同样仅显示一次完整令牌。
 4. 把初始密码、MCP 地址、一次性邀请码及上述连接提示发给成员本人（实测建议先写入权限设为 `0600` 的临时交接文件，成员登录改密后再删除，切勿写进仓库、群公共日志或命令行参数历史）；同时按客户端类型附带实测避坑提示：
    - **Circle 桌面版**：提醒成员仅打开「启用 Hub 界面」（桌面端另有一个 `启用 hub` 开关，勿开混），并在首次弹出「新版本说明」弹窗时先关闭；
-   - **Circle 终端版**：终端版当前**没有一条自动写配置的交互命令**（等后续客户端支持），务必明确指引成员先 `/extensions enable hub`，再按[成员手册](member-guide.md)手改 `settings.json` 写入不带 `headers` 的 `mcp_servers` 条目，然后 `/reload` 与 `/mcp` 完成网页 4 次授权动作（否则敲 `/hub` 会报错 `Unknown command` 并卡在配置步骤）。
+   - **Circle 终端版**：新版 Circle 终端可直接运行 **`/hub <Hub地址>`** 写入连接配置（不再需要 `/extensions enable hub`），也可按[成员手册](member-guide.md)在 `settings.json` 的 `mcpServers` 下写入不带 `headers` 的 `"Hub"` 条目（`"type": "http"`），然后 `/reload` 与 `/mcp` 完成网页 4 次授权动作。
 
 ### 2. 邀请码过期、补发令牌、停用或改密
 

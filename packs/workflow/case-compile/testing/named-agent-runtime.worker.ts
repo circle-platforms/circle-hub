@@ -1,13 +1,12 @@
 // Installed Circle runtime acceptance using only a synthetic home, scripted responses and no integrations.
 import assert from 'node:assert/strict';
 import { parentPort, workerData } from 'node:worker_threads';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stage } from '../pack-files.ts';
-import { installAgents } from '../tools/install-agents.ts';
-import { SUBAGENT_ROLES } from '../functions/subagent-roles.ts';
+import { SUBAGENT_ROLES, subagentTypeFor } from '../functions/subagent-roles.ts';
 
 if (parentPort) {
   const root = mkdtempSync(join(tmpdir(), 'cc-named-runtime-'));
@@ -16,8 +15,9 @@ if (parentPort) {
   try {
     const home = join(root, 'home'), workspace = join(root, 'work'), userHome = join(root, 'user');
     for (const dir of [home, workspace, userHome]) mkdirSync(dir, { mode: 0o700 });
-    const skill = realpathSync(await stage(join(root, 'skill with spaces')));
-    await installAgents({ cwd: workspace, packRoot: skill });
+    const skillsRoot = join(userHome, '.agents', 'skills');
+    mkdirSync(skillsRoot, { recursive: true, mode: 0o700 });
+    await stage(join(skillsRoot, 'case-compile'));
     const load = (name: string) => import(pathToFileURL(join(workerData.app, 'dist', `${name}.js`)).href);
     const [{ AgentRuntime }, { defaultSettings }, { emptyUsage }] = await Promise.all(['runtime', 'settings', 'types'].map(load));
     const observed = new Map<string, { tools: string[]; system: string }>();
@@ -27,7 +27,7 @@ if (parentPort) {
       async complete(request: any) {
         const first = request.messages.find((m: any) => m.role === 'user' && !m.internal)?.content;
         if (first === 'synthetic root') {
-          const tool_calls = parentStep++ === 0 ? SUBAGENT_ROLES.map(role => ({ id: role.agentName, name: 'task', args: { subagent_type: role.agentName, description: JSON.stringify({ role: role.agentName }) } })) : [];
+          const tool_calls = parentStep++ === 0 ? SUBAGENT_ROLES.map(role => ({ id: role.agentName, name: 'task', args: { subagent_type: subagentTypeFor(role), description: JSON.stringify({ role: role.agentName }) } })) : [];
           return { message: { id: `parent-${parentStep}`, role: 'assistant', content: tool_calls.length ? '' : 'synthetic complete', tool_calls, completion: { reason: tool_calls.length ? 'tool_calls' : 'stop' } }, usage: emptyUsage() };
         }
         const input = JSON.parse(first);
@@ -44,7 +44,7 @@ if (parentPort) {
     for (const role of SUBAGENT_ROLES) {
       const actual = observed.get(role.agentName)!;
       assert.deepEqual(actual.tools, [...role.tools].sort(), role.agentName);
-      assert.ok(actual.system.includes(role.body.split('<技能目录>').join(skill).trim()), role.agentName);
+      assert.ok(actual.system.includes(role.body.trim()), role.agentName);
       assert.ok(!actual.system.includes('<技能目录>'), role.agentName);
     }
     const failed = runtime.harness.messages.filter((m: any) => m.role === 'tool' && m.status === 'error');

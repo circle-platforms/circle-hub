@@ -18,6 +18,8 @@ const ENDPOINT: Endpoint = {
 };
 const HUB_URL = 'https://127.0.0.1:7420/mcp';
 const ALT_HUB_URL = 'https://192.0.2.50:7420/mcp';
+const PLUMB_URL = 'https://192.0.2.60:8443';
+const ALT_PLUMB_URL = 'https://192.0.2.61:8443';
 const RUN_ID = 'run_01arz3ndektsv4rrffq69g5fav';
 const RUN_ID_2 = 'run_01000000000000000000000000';
 
@@ -34,6 +36,12 @@ function installRealSkillSubsets(home: string) {
   writeFileSync(join(rcDst, 'SKILL.md'), readFileSync(join(rcSrc, 'SKILL.md'), 'utf8'));
   cpSync(join(rcSrc, 'tools'), join(rcDst, 'tools'), { recursive: true });
 
+  const plumbSrc = join(REPO_ROOT, 'packs/skill/plumb');
+  const plumbDst = join(home, 'skills/plumb');
+  mkdirSync(join(plumbDst, 'tools'), { recursive: true });
+  writeFileSync(join(plumbDst, 'SKILL.md'), readFileSync(join(plumbSrc, 'SKILL.md'), 'utf8'));
+  cpSync(join(plumbSrc, 'tools'), join(plumbDst, 'tools'), { recursive: true });
+
   const kcTools = join(REPO_ROOT, 'packs/workflow/knowledge-contribution/tools');
   for (const name of ['jev', 'operation-capture']) {
     cpSync(join(kcTools, name), join(home, 'skills', name), { recursive: true });
@@ -43,7 +51,7 @@ function installRealSkillSubsets(home: string) {
 function createGuardHarness(profile: Exclude<Profile, 'review'>, opts: { homeName?: string; withSkills?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'circle-guard-test-'));
   const home = join(dir, opts.homeName ?? 'home');
-  const written = writeHome({ home, profile, hubUrl: HUB_URL }, ENDPOINT, 'synthetic-hub-token');
+  const written = writeHome({ home, profile, hubUrl: HUB_URL, plumbUrl: PLUMB_URL, plumbModel: 'plumb-27b-0.5.0' }, ENDPOINT, 'synthetic-hub-token');
   if (opts.withSkills !== false) installRealSkillSubsets(home);
   const hook = join(home, written.files.find((f) => f === 'hooks/ops-allow.mjs' || f === 'hooks/skills-only.mjs')!);
   const gen = join(home, written.files.find((f) => f.endsWith('-gen.mjs'))!);
@@ -221,17 +229,101 @@ test('test-bed booking stays rule blocks release/force_release/unregister/regist
     try {
       for (const action of ['release', 'force_release', 'unregister', 'register', 'Release', 'FORCE_RELEASE']) {
         for (const pack of ['test-bed', 'test-bed@1.3.3', 'TEST-BED@2.0.0']) {
-          h.assertRefused3(h.call('hub_start_run', { pack, parameters: { action } }), /释放或变更测试环境的预订登记/, /预订保持原样/);
+          h.assertRefused3(h.call('mcp__hub__start_run', { pack, parameters: { action } }), /释放或变更测试环境的预订登记/, /预订保持原样/);
           h.assertRefused3(
-            h.call('hub_start_run', { pack, parameters: JSON.stringify({ action }) }),
+            h.call('mcp__hub__start_run', { pack, parameters: JSON.stringify({ action }) }),
             /释放或变更测试环境的预订登记/,
           );
         }
       }
       for (const action of ['search', 'facts', 'help', 'acquire', 'extend']) {
-        h.assertAllowed(h.call('hub_start_run', { pack: 'test-bed@1.3.3', parameters: { action } }));
+        h.assertAllowed(h.call('mcp__hub__start_run', { pack: 'test-bed@1.3.3', parameters: { action } }));
       }
-      h.assertAllowed(h.call('hub_start_run', { pack: 'other-pack@1.0.0', parameters: { action: 'release' } }));
+      h.assertAllowed(h.call('mcp__hub__start_run', { pack: 'other-pack@1.0.0', parameters: { action: 'release' } }));
+    } finally {
+      h.close();
+    }
+  }
+});
+
+test('PreToolUse schema, case-insensitive/custom mcpServers key, agent_id subagent detection, and virtualReadOnly without paths[]', () => {
+  const virtualLog = '/large_tool_results/0123456789abcdef01234567.txt';
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile, { withSkills: false });
+    try {
+      const callPre = (payload: Record<string, unknown>) => {
+        const child = spawnSync(process.execPath, [h.hook], {
+          cwd: h.workdir,
+          input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: h.workdir, ...payload }),
+          encoding: 'utf8',
+          timeout: 5000,
+        });
+        assert.equal(child.status, 0, child.stderr);
+        return JSON.parse(child.stdout) as {
+          hookSpecificOutput?: { hookEventName?: string; permissionDecision?: string; permissionDecisionReason?: string };
+        };
+      };
+      const assertPreAllowed = (out: ReturnType<typeof callPre>, label: string) => {
+        if (profile === 'ops') {
+          assert.deepEqual(out, {}, label);
+        } else {
+          assert.equal(out.hookSpecificOutput?.hookEventName, 'PreToolUse', label);
+          assert.equal(out.hookSpecificOutput?.permissionDecision, 'allow', label);
+        }
+      };
+      const assertPreDenied = (out: ReturnType<typeof callPre>, pattern: RegExp, label: string) => {
+        assert.equal(out.hookSpecificOutput?.hookEventName, 'PreToolUse', label);
+        assert.equal(out.hookSpecificOutput?.permissionDecision, 'deny', label);
+        assert.match(String(out.hookSpecificOutput?.permissionDecisionReason ?? ''), pattern, label);
+      };
+
+      // M1 + M2: case-insensitive mcp__Hub__start_run allowed vs test-bed release denied vs legacy/other denied.
+      assertPreAllowed(
+        callPre({ tool_name: 'mcp__Hub__start_run', tool_input: { pack: 'other-pack@1.0.0', parameters: { action: 'release' } } }),
+        `${profile}: mcp__Hub__start_run allow`,
+      );
+      assertPreDenied(
+        callPre({ tool_name: 'mcp__Hub__start_run', tool_input: { pack: 'test-bed@1.3.3', parameters: { action: 'release' } } }),
+        /释放或变更测试环境的预订登记/,
+        `${profile}: mcp__Hub__start_run booking stays`,
+      );
+      assertPreDenied(callPre({ tool_name: 'mcp__hubx__start_run', tool_input: {} }), /不在这个配置放行的工具里/, `${profile}: mcp__hubx__ deny`);
+      assertPreDenied(callPre({ tool_name: 'hub_start_run', tool_input: {} }), /ALLOWED\.md/, `${profile}: flat hub_start_run deny`);
+
+      // B1: ops has the subagent `question` rule (agent_id blocks subagents without circle.sqlite); skills denies `question` unconditionally.
+      const emptyAgentRes = callPre({ tool_name: 'question', tool_input: { questions: [] }, agent_id: '' });
+      const subAgentRes = callPre({ tool_name: 'question', tool_input: { questions: [] }, agent_id: 'sub_agent_01' });
+      if (profile === 'ops') {
+        assertPreAllowed(emptyAgentRes, `${profile}: empty agent_id`);
+        assertPreDenied(subAgentRes, /子代理不向使用者提问/, `${profile}: non-empty agent_id`);
+      } else {
+        assertPreDenied(emptyAgentRes, /不在这个配置放行的工具里/, `${profile}: empty agent_id`);
+        assertPreDenied(subAgentRes, /不在这个配置放行的工具里/, `${profile}: non-empty agent_id`);
+      }
+
+      // B5: read_file & grep on /large_tool_results/<24-hex>.txt under PreToolUse (with and without paths[]).
+      assertPreAllowed(callPre({ tool_name: 'read_file', tool_input: { file_path: virtualLog } }), `${profile}: read_file virtual no paths`);
+      assertPreAllowed(callPre({ tool_name: 'read_file', tool_input: { file_path: virtualLog }, paths: [virtualLog] }), `${profile}: read_file virtual with paths`);
+      assertPreAllowed(callPre({ tool_name: 'grep', tool_input: { path: virtualLog, pattern: 'err' } }), `${profile}: grep virtual no paths`);
+      assertPreDenied(callPre({ tool_name: 'read_file', tool_input: { file_path: '/large_tool_results/not24hex.txt' } }), /不在工作目录/, `${profile}: bad virtual read`);
+      assertPreDenied(callPre({ tool_name: 'write_file', tool_input: { file_path: virtualLog, content: 'x' } }), /不允许|不在工作目录|禁止|不在这个配置放行的工具里/, `${profile}: write_file virtual deny`);
+
+      // Custom mcpServers server key (configured with placeholders.url === 'HUB_URL') via ALLOWED.md regeneration.
+      const settingsPath = join(h.home, 'settings.json');
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+      settings.mcpServers = { customHub: settings.mcpServers.hub };
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      const regen = spawnSync(process.execPath, [h.gen], { cwd: h.workdir, encoding: 'utf8', timeout: 5000 });
+      assert.equal(regen.status, 0, regen.stderr);
+      assertPreAllowed(
+        callPre({ tool_name: 'mcp__CustomHub__start_run', tool_input: { pack: 'test-bed@1.3.3', parameters: { action: 'facts' } } }),
+        `${profile}: customHub facts allow`,
+      );
+      assertPreDenied(
+        callPre({ tool_name: 'mcp__CustomHub__start_run', tool_input: { pack: 'test-bed@1.3.3', parameters: { action: 'release' } } }),
+        /释放或变更测试环境的预订登记/,
+        `${profile}: customHub release deny`,
+      );
     } finally {
       h.close();
     }
@@ -469,3 +561,32 @@ test('epistemic refusal when a tool or command has no pure-data stdin declaratio
 function dirname_safe(p: string): string {
   return join(p, '..');
 }
+
+test('plumb skill and case-compile plumb scripts enforce host-pinning, subcommands, and %PLUMB_API_KEY% stdin across ops and skills', () => {
+  for (const profile of ['ops', 'skills'] as const) {
+    const h = createGuardHarness(profile);
+    try {
+      const plumbCli = `'${h.skillPath('plumb', 'tools/plumb.ts')}'`;
+      const selectPlumb = `'${h.skillPath('case-compile', 'tools/cmd-select-plumb.ts')}'`;
+      const verifyPlumb = `'${h.skillPath('case-compile', 'tools/cmd-verify-plumb.ts')}'`;
+      const fidelityPlumb = `'${h.skillPath('case-compile', 'tools/fidelity-plumb.ts')}'`;
+
+      h.assertAllowed(h.exec(`node ${plumbCli} models --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${plumbCli} wake --base-url ${PLUMB_URL} --wait --timeout-sec 720 --model plumb-27b-0.5.0 --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertRefused3(h.exec(`node ${plumbCli} request-key --name x --purpose y --base-url %PLUMB_URL% <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在放行的/);
+      h.assertRefused3(h.exec(`node ${plumbCli} models --base-url ${ALT_PLUMB_URL} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /Plumb 的地址/);
+      h.assertRefused3(h.exec(`node ${plumbCli} models --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
+
+      h.assertAllowed(h.exec(`node ${selectPlumb} --run run-dir --base-url %PLUMB_URL% --no-cache --strict-review --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${verifyPlumb} --plans plans --run run-dir --base-url ${PLUMB_URL} --context-mode node --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+      h.assertAllowed(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --ca-sha256 ${'a'.repeat(64)} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`));
+
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url ${ALT_PLUMB_URL} --key-stdin <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /Plumb 的地址/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin`), /标准输入读令牌/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin <<'EOF'\n%HUB_TOKEN%\nEOF`), /%PLUMB_API_KEY%/);
+      h.assertRefused3(h.exec(`node ${fidelityPlumb} --run run-dir/run.json --plans plans --briefs briefs --base-url %PLUMB_URL% --key-stdin --ca-file ../outside.pem <<'EOF'\n%PLUMB_API_KEY%\nEOF`), /不在工作目录/);
+    } finally {
+      h.close();
+    }
+  }
+});

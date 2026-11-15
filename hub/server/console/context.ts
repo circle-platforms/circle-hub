@@ -57,18 +57,25 @@ export function neutralPage(ctx: PageContext): PageResult {
 }
 
 /**
- * The Circle settings entry for this Hub. Name and placeholders match Circle's `/hub` instructions so %HUB_URL% and
+ * The Circle settings entry for this Hub. Server key and placeholders match Circle's `/hub` instructions so %HUB_URL% and
  * %HUB_TOKEN% expand (findings / N7). Without headers the client opens the MCP standard authorization page; with a
  * token the value stays a Circle secret for clients that do not use that flow.
  */
 export function circleEntry(origin: string, token = true): string {
   const entry = {
-    name: 'Hub',
+    type: 'http',
     url: `${origin}/mcp`,
-    transport: 'streamable_http',
     placeholders: { url: 'HUB_URL', token: 'HUB_TOKEN' },
   };
-  return JSON.stringify({ mcp_servers: [token ? { ...entry, headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } } : entry] }, null, 2);
+  return JSON.stringify(
+    {
+      mcpServers: {
+        Hub: token ? { ...entry, headers: { Authorization: 'Bearer ${secret:CIRCLE_HUB_TOKEN}' } } : entry,
+      },
+    },
+    null,
+    2,
+  );
 }
 
 /** The origin a browser reached this console on: the scheme of the channel and the Host it sent. */
