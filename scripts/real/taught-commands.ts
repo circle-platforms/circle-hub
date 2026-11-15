@@ -284,8 +284,6 @@ export function instantiateTaughtCommand(entry: TaughtCommand, options: Instanti
     // Unbound skill dir (e.g. prose that only mentions the placeholder) — not a runnable example.
     return [];
   }
-  // Bare `node '<…>.ts'` / `node …ts` with no args is a prose mention, not an execute example.
-  if (/^node (?:'[^']+\.ts'|\S+\.ts)$/.test(command.trim())) return [];
 
   return expandTaughtPlaceholders(command, options.placeholders ?? {}).map((concrete) => {
     if (entry.heredocLines && !concrete.includes("<<'EOF'")) {
