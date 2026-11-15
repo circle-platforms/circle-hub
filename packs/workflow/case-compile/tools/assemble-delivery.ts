@@ -3,6 +3,8 @@ import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
+import { runtimeBlocks } from '../functions/block-runtime.ts';
+import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
 import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, noteUserFacingProblems, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
@@ -135,6 +137,163 @@ export function missingFactOf(exported: unknown, run: string, id: string): Missi
   }
   return null;
 }
+
+const DYNAMIC_BACKFILL_RE = /(?:动态填入|动态取值|动态回填|运行时生成|随机生成|执行后.*?(?:获取|提取|填入|回填)|(?:记录阶段|静态).*?(?:无法|不能)写死)/;
+const GUARDED_RESTORE_RE = /(?:捕获还原|按原文恢复|按执行前.*恢复|保存原配置.*恢复)/;
+const FOUND_TIMES_RE = /(?:found_times|出现次数.*?(?:不支持|未声明)|次数断言.*?(?:不支持|未声明))/;
+const ROOT_SHELL_RE = /(?:root\s*shell|Linux\s*shell.*?(?:未开|未开放|不支持))/i;
+
+function partitionEntriesOf(exported: unknown, run: string, id: string): Array<Record<string, unknown>> {
+  if (!isRecord(exported) || exported.schema !== 'run-export@1' || !isRecord(exported.run) || exported.run.run !== run || !isRecord(exported.result) || exported.result.run !== run || !isRecord(exported.result.partitions)) return [];
+  const matches: Array<Record<string, unknown>> = [];
+  for (const entries of Object.values(exported.result.partitions)) {
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (isRecord(entry) && entry.item === id && Array.isArray(entry.requirements)) matches.push(entry);
+    }
+  }
+  return matches;
+}
+
+function isDeliveredPlanEntry(exported: unknown, run: string, id: string): boolean {
+  return partitionEntriesOf(exported, run, id).some((entry) =>
+    entry.skip_reason === undefined
+    && Array.isArray(entry.requirements)
+    && entry.requirements.length > 0
+    && entry.requirements.every((r) => !isRecord(r) || r.requirement === 'workbook_verified' || r.status === 'satisfied'),
+  );
+}
+
+function isDeclaredSkipEntry(exported: unknown, run: string, id: string): boolean {
+  return partitionEntriesOf(exported, run, id).some((entry) =>
+    entry.skip_reason !== undefined
+    || (Array.isArray(entry.requirements)
+      && entry.requirements.some((r) => isRecord(r) && Array.isArray(r.layers) && r.layers.some((l) => isRecord(l) && l.reason === 'declared_skip'))),
+  );
+}
+
+function parseJsonOrNull(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasUnopenedMethod(profile: Record<string, unknown>, predicate: (row: Record<string, unknown>) => boolean): boolean {
+  return Array.isArray(profile.unopened) && profile.unopened.some((row) => isRecord(row) && predicate(row));
+}
+
+function sourceRefOf(run: Record<string, unknown>, slot: string): string | null {
+  if (!Array.isArray(run.sources)) return null;
+  const hit = run.sources.find((s) => isRecord(s) && s.slot === slot && typeof s.reference === 'string');
+  return isRecord(hit) ? hit.reference as string : null;
+}
+
+/**
+ * Re-verifies a `declared_skip` entry strictly at the Hub delivery boundary against SHA-256-checked frozen `contract`,
+ * `profile`, and Hub-frozen `item.fields.recomposition.record`. Free-text `skip_reason` is never accepted as proof;
+ * ungrounded skips (such as run 20's bare declared skip) continue to return null.
+ */
+export function verifiedSkipFactOf(inputs: {
+  run: string;
+  item: Record<string, unknown>;
+  exported: unknown;
+  contractBytes: Uint8Array;
+  profileBytes: Uint8Array;
+  latestContractBytes?: Uint8Array;
+  latestProfileBytes?: Uint8Array;
+}): MissingFact | null {
+  const { run, item, exported, contractBytes, profileBytes, latestContractBytes, latestProfileBytes } = inputs;
+  if (typeof item.id !== 'string' || isDeliveredPlanEntry(exported, run, item.id) || !isDeclaredSkipEntry(exported, run, item.id)) return null;
+  const fields = isRecord(item.fields) ? item.fields : null;
+  const recomp = fields && isRecord(fields.recomposition) && isRecord(fields.recomposition.record) ? fields.recomposition.record : null;
+  if (!recomp) return null;
+
+  const parsePair = (cBytes: Uint8Array, pBytes: Uint8Array) => {
+    const rawContract = parseJsonOrNull(decode(cBytes));
+    const parsedContract = rawContract ? parseRuntimeContract(rawContract) : null;
+    const rawProfile = parseJsonOrNull(decode(pBytes));
+    if (!rawContract || !parsedContract?.ok || !rawProfile) return null;
+    return { rawContract, blockCap: runtimeBlocks(parsedContract.contract), rawProfile };
+  };
+  const holderCap = parsePair(contractBytes, profileBytes);
+  if (!holderCap) return null;
+  const latestCap = latestContractBytes && latestProfileBytes ? parsePair(latestContractBytes, latestProfileBytes) : null;
+  if (latestContractBytes && latestProfileBytes && !latestCap) return null;
+
+  const unknowns = Array.isArray(recomp.unknowns) ? recomp.unknowns.filter(isRecord) : [];
+  const adapted = isRecord(recomp.ledgers) && Array.isArray(recomp.ledgers.adapted) ? recomp.ledgers.adapted.filter(isRecord) : [];
+  const states = isRecord(recomp.sources) && Array.isArray(recomp.sources.states) ? recomp.sources.states.filter(isRecord) : [];
+
+  const textMatches = (pattern: RegExp): boolean =>
+    unknowns.some((u) => pattern.test([u.missing, u.next_action].filter((v): v is string => typeof v === 'string').join(' ')))
+    || adapted.some((a) => typeof a.equivalence_reason === 'string' && pattern.test(a.equivalence_reason));
+  const stateMatches = (pattern: RegExp): boolean =>
+    states.some((s) => pattern.test([
+      typeof s.reason === 'string' ? s.reason : '',
+      ...(Array.isArray(s.prerequisites) ? s.prerequisites.filter((p): p is string => typeof p === 'string') : []),
+    ].join(' ')));
+
+  const lacksCellBackfill = (pair: NonNullable<typeof holderCap>) =>
+    pair.rawProfile.block_model !== true
+    || !pair.blockCap
+    || pair.blockCap.capture_registers !== true
+    || (pair.blockCap.cell_inputs !== true && (!Array.isArray(pair.blockCap.cell_methods) || pair.blockCap.cell_methods.length === 0));
+
+  if (textMatches(DYNAMIC_BACKFILL_RE) && lacksCellBackfill(holderCap) && (!latestCap || lacksCellBackfill(latestCap))) {
+    return {
+      kind: 'data_gap',
+      plan_run: run,
+      requirement: 'contract_methods',
+      missing: '按冻结的执行器合约与运行环境配置核对，本次执行器未登记单格提取与动态回填能力，而重组记录确认该用例参数须在执行后动态提取并填入；须由执行器维护者补齐能力声明并重新发布后重开运行',
+    };
+  }
+
+  const lacksRestore = (pair: NonNullable<typeof holderCap>) =>
+    pair.rawProfile.block_model !== true
+    || !pair.blockCap
+    || pair.blockCap.capture_registers !== true
+    || pair.blockCap.restore_registers !== true
+    || !Array.isArray(pair.blockCap.restore_methods)
+    || pair.blockCap.restore_methods.length === 0;
+
+  if ((textMatches(GUARDED_RESTORE_RE) || stateMatches(GUARDED_RESTORE_RE)) && lacksRestore(holderCap) && (!latestCap || lacksRestore(latestCap))) {
+    return {
+      kind: 'data_gap',
+      plan_run: run,
+      requirement: 'contract_methods',
+      missing: '按冻结的执行器合约与运行环境配置核对，本次执行器未登记捕获后按原文恢复配置的安全还原能力，而重组记录确认该用例须按执行前原配置恢复；须由执行器维护者补齐能力声明并重新发布后重开运行',
+    };
+  }
+
+  const lacksFoundTimes = (pair: NonNullable<typeof holderCap>) => {
+    const rt = isRecord(pair.rawContract.runtime) ? pair.rawContract.runtime : null;
+    return !rt || rt.found_times_supported !== true || hasUnopenedMethod(pair.rawProfile, (row) => row.method === 'found_times');
+  };
+  if (textMatches(FOUND_TIMES_RE) && lacksFoundTimes(holderCap) && (!latestCap || lacksFoundTimes(latestCap))) {
+    return {
+      kind: 'data_gap',
+      plan_run: run,
+      requirement: 'contract_methods',
+      missing: '按冻结的执行器合约与运行环境配置核对，本次执行器未开放次数检查能力，而重组记录确认该用例需要按次数检查；须由执行器维护者补齐能力声明并重新发布后重开运行',
+    };
+  }
+
+  const lacksRootShell = (pair: NonNullable<typeof holderCap>) =>
+    hasUnopenedMethod(pair.rawProfile, (row) => row.method === 'cmd' && Array.isArray(row.parameters) && row.parameters.some((p) => isRecord(p) && typeof p.missing === 'string' && /root\s*shell/i.test(p.missing)));
+  const hasAdaptedCommands = adapted.some((a) => Array.isArray(a.commands) && a.commands.length > 0);
+  if (textMatches(ROOT_SHELL_RE) && !hasAdaptedCommands && lacksRootShell(holderCap) && (!latestCap || lacksRootShell(latestCap))) {
+    return {
+      kind: 'data_gap',
+      plan_run: run,
+      requirement: 'contract_methods',
+      missing: '按冻结的运行环境配置核对，本次执行器未开放主机 shell 对应角色与检查能力，而重组记录确认该用例无设备命令替代写法；须由运行环境与执行器维护者补齐声明并重新发布后重开运行',
+    };
+  }
+
+  return null;
+}
 /** The slots a round counts: the plan as authored, without the audit verdict it carries (auditing the same plan again is no new round). */
 function withoutAudit(slots: unknown): unknown {
   if (!isRecord(slots)) return slots;
@@ -215,10 +374,20 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     // the second), so the walk climbs while the predecessor is a run of this compilation and starts below the first one that is not.
     for (const d of given.values()) {
       let current = (await planOf(d.plan_run)).run as Record<string, unknown>;
-      for (let hops = 0; typeof current.predecessor === 'string' && hops < 200; hops++) {
+      if (typeof current.run === 'string') {
+        planRuns.set(current.run, typeof current.started_at === 'string' ? current.started_at : '');
+      }
+      for (let hops = 0; ; hops++) {
+        if (typeof current.predecessor !== 'string' || hops >= 200) {
+          if (typeof current.run === 'string') roots.add(current.run);
+          break;
+        }
         const up = await runOf(current.predecessor);
         if (!ours(up, key)) { roots.add(current.predecessor); break; }
         current = up!;
+        if (typeof current.run === 'string') {
+          planRuns.set(current.run, typeof current.started_at === 'string' ? current.started_at : '');
+        }
       }
     }
     // Down: every case-compile run of this compilation under those roots; the verification runs among them are the dispatches.
@@ -230,6 +399,19 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
         if (typeof next.parameters.plan_run === 'string') started.set(next.run, next.started_at); else planRuns.set(next.run, next.started_at);
         queue.push(next.run);
       }
+    }
+    if (args.recompose && !visited.has(args.recompose)) {
+      try {
+        const extraQueue = [args.recompose];
+        while (extraQueue.length) {
+          const run = extraQueue.shift()!; if (visited.has(run)) continue; visited.add(run);
+          for (const next of await successorsOf(run)) {
+            if (next.pack.split('@')[0] !== 'case-compile' || lineageKeyOf(next.sources) !== key) continue;
+            if (typeof next.parameters.plan_run === 'string') started.set(next.run, next.started_at); else planRuns.set(next.run, next.started_at);
+            extraQueue.push(next.run);
+          }
+        }
+      } catch { /* mock or external recompose runs may not expose successors */ }
     }
     for (const run of given.keys()) if (!started.has(run)) { const exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry))); started.set(run, isRecord(exported) && isRecord(exported.run) && typeof exported.run.started_at === 'string' ? exported.run.started_at : ''); }
     const dispatches: Dispatch[] = [], added: string[] = [];
@@ -431,15 +613,28 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       statements: await citedStatements(origin, bearer, new Set(Object.values(notes.cases).flatMap((note) => (note.author_conflict ? [note.author_conflict.reference] : []))), dispatches.map((d) => d.plan_run), (run) => plans.get(run)?.run.root, retry),
     };
     const closed = closeFailed(assembly.cases, notes, rounds, authored, deviceTexts, conflictGround);
-    // The reference engine's exits for a case it could not compile: only what its own checks recorded certifies one. A case never
-    // dispatched is looked up in the latest plan run of this compilation that holds it and has an accepted result: a plan run
+    // The reference engine's exits for a case it could not compile: only what its own checks recorded — or a declared_skip whose
+    // missing runtime capability is re-verified at delivery against that run's Hub-frozen inputs — certifies one. A plan run
     // opened but never answered judged no plan (closeUnrun in functions/delivery.ts).
     const facts: Record<string, MissingFact> = {};
     const unrun = closed.cases.filter((c) => c.status === 'unrun').map((c) => c.autoid);
     if (unrun.length) {
+      const batchScopeKey = distinctScopes.size === 1 ? [...distinctScopes.keys()][0] : null;
+      const latestPlan = dispatches.length ? plans.get((assembly.pass ?? dispatches.at(-1)!).plan_run) : undefined;
       const latestFirst = [...planRuns.keys()].sort((a, b) => (planRuns.get(a)! > planRuns.get(b)! ? -1 : planRuns.get(a)! < planRuns.get(b)! ? 1 : a > b ? -1 : 1));
       const itemsOf = new Map<string, unknown[]>();
-      for (const run of latestFirst) { try { const record = await runOf(run); itemsOf.set(run, Array.isArray(record?.items) ? record.items : []); } catch { itemsOf.set(run, []); } }
+      for (const run of latestFirst) {
+        try {
+          const record = await runOf(run);
+          if (record && batchScopeKey !== null && canonicalScopeKey(frozenScopeOf(record, run)) !== batchScopeKey) {
+            itemsOf.set(run, []);
+            continue;
+          }
+          itemsOf.set(run, Array.isArray(record?.items) ? record.items : []);
+        } catch {
+          itemsOf.set(run, []);
+        }
+      }
       const answered = new Map<string, unknown>();
       for (const autoid of unrun) {
         for (const holder of latestFirst.filter((run) => itemsOf.get(run)!.some((item) => autoidOf(item) === autoid))) {
@@ -448,7 +643,27 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
           if (!answered.has(holder)) { let exported: unknown = null; try { exported = JSON.parse(decode(await getRetrying(`${origin}/run-export/${holder}`, bearer, retry))); } catch { /* no accepted submission */ } answered.set(holder, exported); }
           const exported = answered.get(holder);
           if (!isRecord(exported) || !isRecord(exported.result)) continue; // never answered: no plan was judged there
-          const fact = missingFactOf(exported, holder, item.id); if (fact) facts[autoid] = fact;
+          const direct = missingFactOf(exported, holder, item.id);
+          if (direct) { facts[autoid] = direct; break; }
+          if (isDeliveredPlanEntry(exported, holder, item.id)) break;
+          if (isDeclaredSkipEntry(exported, holder, item.id)) {
+            const fields = isRecord(item.fields) ? item.fields : null;
+            if (fields && isRecord(fields.recomposition) && isRecord(fields.recomposition.record)) {
+              const holderPlan = await planOf(holder);
+              const verified = verifiedSkipFactOf({
+                run: holder,
+                item,
+                exported,
+                contractBytes: holderPlan.originals.contract,
+                profileBytes: holderPlan.originals.profile,
+                latestContractBytes: latestPlan?.originals.contract,
+                latestProfileBytes: latestPlan?.originals.profile,
+              });
+              if (verified) { facts[autoid] = verified; break; }
+              if (latestPlan && (sourceRefOf(holderPlan.run, 'contract') !== sourceRefOf(latestPlan.run, 'contract') || sourceRefOf(holderPlan.run, 'profile') !== sourceRefOf(latestPlan.run, 'profile'))) break;
+            }
+            continue;
+          }
           break;
         }
       }

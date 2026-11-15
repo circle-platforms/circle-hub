@@ -788,8 +788,8 @@
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "d435f4df6832ecd14265d491c1db33f88fbec4ce3a7f75ee6d0d6ee0892b54a5",
-      "size": 43028
+      "sha256": "2264eabd46060752491208e02d2447079faad7ce67d512a911e3bbc5a1443b60",
+      "size": 54653
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -838,8 +838,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "fcd5676b8801786a758f2cd025b8269a827e6736cf54e883966cf466b678feeb",
-      "size": 14954
+      "sha256": "9e8b28f0f73cb4f063446376e50a113f5c2d2d869d6b28a3b1c3dd9381a9116c",
+      "size": 15094
     },
     {
       "path": "tools/download-returns.cli.json",

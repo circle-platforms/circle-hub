@@ -12,7 +12,7 @@ import { CONTRACT_DOC, MANIFEST_DOC, PROFILE_DOC } from '../functions/test-suppo
 import { signTypedRuntime } from '../testing/typed-fixtures.ts';
 import { planRunFixture } from '../testing/plan-run.ts';
 import { satisfiedRecipes } from './generate-workbook.ts';
-import { main, planDigest } from './assemble-delivery.ts';
+import { main, planDigest, verifiedSkipFactOf } from './assemble-delivery.ts';
 import { assemble, timeline } from '../functions/delivery.ts';
 
 const TOKEN = 'synthetic-token-1234';
@@ -980,4 +980,323 @@ test('assemble-delivery replays round-29 real-shape notes (batch+round envelope,
   const c3Start = report.indexOf(`## 原始用例 ${CASES[3]}`);
   assert.ok(c2Start > 0 && c3Start > c2Start);
   assert.ok(!report.slice(c2Start).includes('**证据，设备输出**'), 'unrun cases must never emit 设备输出 label');
+});
+
+test('verifiedSkipFactOf certifies runtime backfill, restore, found_times, and shell capability gaps from frozen inputs and rejects ungrounded or resolved skips', () => {
+  const baseDoc = structuredClone(CONTRACT_DOC) as Record<string, any>;
+  baseDoc.runtime = {
+    ...baseDoc.runtime,
+    checkpoint_two_argument: true,
+    block_model: {
+      schema: 'case-compile.block-runtime@1',
+      default_assertion: { object: 'widget-check', method: 'literal' },
+      capture_registers: true,
+    },
+  };
+  const noCellContract = Buffer.from(JSON.stringify(signTypedRuntime(baseDoc)));
+  const blockProfile = Buffer.from(JSON.stringify({ ...PROFILE_DOC, block_model: true }));
+
+  const upgradedDoc = structuredClone(baseDoc);
+  upgradedDoc.runtime.block_model.cell_inputs = true;
+  upgradedDoc.runtime.block_model.cell_methods = [{ object: 'widget-seat', method: 'configure' }];
+  const withCellContract = Buffer.from(JSON.stringify(signTypedRuntime(upgradedDoc)));
+
+  const skippedExport = (run: string, id: string) => ({
+    schema: 'run-export@1',
+    run: { run },
+    result: {
+      run,
+      partitions: {
+        incomplete: [{
+          item: id,
+          reason: 'repair_exhausted',
+          skip_reason: '合成声明跳过：缺取格声明',
+          requirements: [
+            { requirement: 'plan', status: 'pending', layers: [{ layer: 'static', reason: 'repair_exhausted' }] },
+            { requirement: 'contract_methods', status: 'pending', layers: [{ layer: 'static', reason: 'declared_skip' }] },
+          ],
+        }],
+      },
+    },
+  });
+
+  const dynItem = {
+    id: 'n/0',
+    fields: {
+      autoid: CASES[3],
+      recomposition: {
+        record: {
+          unknowns: [{
+            audience: '编写模型',
+            due: '脚本编写之前',
+            missing: '合成参数是前步运行时生成且含随机编号的名称，记录阶段无法写死具体值',
+            next_action: '编写模型在前步执行后查询输出并动态填入后步命令',
+          }],
+        },
+      },
+    },
+  };
+
+  // Positive: frozen contract lacks cell backfill and frozen recomposition requires dynamic backfill.
+  const certified = verifiedSkipFactOf({
+    run: GAP,
+    item: dynItem,
+    exported: skippedExport(GAP, 'n/0'),
+    contractBytes: noCellContract,
+    profileBytes: blockProfile,
+  });
+  assert.ok(certified && certified.kind === 'data_gap' && certified.plan_run === GAP);
+  assert.match(certified.missing, /单格提取与动态回填能力/);
+
+  // Negative 1: bare declared skip without recomposition record stays null.
+  assert.equal(verifiedSkipFactOf({
+    run: GAP,
+    item: { id: 'n/0', fields: { autoid: CASES[3] } },
+    exported: skippedExport(GAP, 'n/0'),
+    contractBytes: noCellContract,
+    profileBytes: blockProfile,
+  }), null);
+
+  // Negative 2: static-only recomposition unknown stays null even when contract lacks cell_inputs.
+  assert.equal(verifiedSkipFactOf({
+    run: GAP,
+    item: {
+      id: 'n/0',
+      fields: {
+        autoid: CASES[3],
+        recomposition: {
+          record: {
+            unknowns: [{
+              audience: '编写模型',
+              due: '脚本编写之前',
+              missing: '对端设备地址待按测试环境替换',
+              next_action: '编写模型按测试环境配置写入具体地址',
+            }],
+          },
+        },
+      },
+    },
+    exported: skippedExport(GAP, 'n/0'),
+    contractBytes: noCellContract,
+    profileBytes: blockProfile,
+  }), null);
+
+  // Negative 3: upgraded latest contract with cell_inputs/cell_methods supersedes old capability gap.
+  assert.equal(verifiedSkipFactOf({
+    run: GAP,
+    item: dynItem,
+    exported: skippedExport(GAP, 'n/0'),
+    contractBytes: noCellContract,
+    profileBytes: blockProfile,
+    latestContractBytes: withCellContract,
+    latestProfileBytes: blockProfile,
+  }), null);
+});
+
+test('assemble-delivery recognizes Hub-verified declared_skip in an earlier plan run via lineage while preserving wrong-manual-root author_conflict refusal', async (t) => {
+  const baseDoc = structuredClone(CONTRACT_DOC) as Record<string, any>;
+  baseDoc.runtime = {
+    ...baseDoc.runtime,
+    checkpoint_two_argument: true,
+    block_model: { schema: 'case-compile.block-runtime@1', default_assertion: { object: 'widget-check', method: 'literal' }, capture_registers: true },
+  };
+  const dynContract = Buffer.from(JSON.stringify(signTypedRuntime(baseDoc)));
+  const dynProfile = Buffer.from(JSON.stringify({ ...PROFILE_DOC, block_model: true }));
+
+  const P1 = 'run_01p1p1p1p1p1p1p1p1p1p1p1p1';
+  const P2 = 'run_01p2p2p2p2p2p2p2p2p2p2p2p2';
+  const M1 = 'run_01m1m1m1m1m1m1m1m1m1m1m1m1';
+  const dynRecomp = {
+    unknowns: [{
+      audience: '编写模型',
+      due: '脚本编写之前',
+      missing: '合成命令必填参数为前步执行时随机生成的名称，记录阶段无法写死具体值',
+      next_action: '编写模型在前步后查询输出并动态填入后步命令',
+    }],
+    ledgers: {
+      adapted: [{
+        atom: 'a2',
+        commands: ['widget health interval 60'],
+        equivalence_reason: '该参数由运行时生成，无法在记录阶段写成具体字面值，须由编写模型动态取值',
+      }],
+    },
+  };
+
+  // Build plan1 (excluded CASES[2], holds CASES[0] + CASES[1], with CASES[1] skipped on verified capability gap)
+  // and plan2 (excluded CASES[1] + CASES[2], dispatches CASES[0] -> M1).
+  const p1Base = planRunFixture({ run: P1, autoids: [CASES[0], CASES[1]], exclude: [CASES[2]], contract: dynContract, profile: dynProfile, inventory, predecessor: BOOKING, recomposed: RECOMPOSED });
+  p1Base.record.items[1] = {
+    ...p1Base.record.items[1],
+    fields: { ...p1Base.record.items[1].fields, recomposition: { record: dynRecomp } } as typeof p1Base.record.items[1]['fields'],
+  };
+  const p1Delivered0 = p1Base.result.partitions.delivered[0];
+  (p1Base.result as Record<string, unknown>).rounds = { max: 2, used: 0 };
+  (p1Base.result.partitions as Record<string, unknown>) = {
+    delivered: [p1Delivered0],
+    incomplete: [{
+      item: `case-${CASES[1]}`,
+      reason: 'repair_exhausted',
+      skip_reason: '合成声明跳过：缺单格提取与动态回填能力',
+      requirements: [
+        { requirement: 'plan', status: 'pending', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'repair_exhausted', attribution: 'producer_error', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-16T00:00:00.000Z', request_kind: 'repair' }, missing: '缺少产物' }] },
+        { requirement: 'contract_methods', status: 'pending', layers: [{ layer: 'static', terminal: 'incomplete', reason: 'declared_skip', attribution: 'unattributed', exit: { action: 'request', audience: { user: 'usr_synthetic' }, due: '2026-11-16T00:00:00.000Z', request_kind: 'repair' }, missing: '模型声明跳过' }] },
+      ],
+    }],
+  };
+
+  const p2 = planRunFixture({ run: P2, autoids: [CASES[0]], exclude: [CASES[1], CASES[2]], contract: dynContract, profile: dynProfile, inventory, predecessor: P1, recomposed: RECOMPOSED });
+  const m1Jobs = [job('c', M1, P2, [CASES[0]], p2.workbook, ['pass'])];
+  const m1Record = { run: M1, pack: 'case-compile@9.9.9', started_at: '2026-11-08T01:02:00.000Z', predecessor: P2, parameters: { plan_run: P2 }, sources: p2.record.sources };
+  const recomposeThree = { run: RECOMPOSE, items: CASES.slice(0, 3).map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
+
+  const records: Record<string, any> = {
+    [BOOKING]: { run: BOOKING, pack: 'test-bed@1.0.0', started_at: '2026-11-08T00:00:00.000Z', predecessor: null, parameters: {}, sources: [] },
+    [P1]: { ...p1Base.record, started_at: '2026-11-08T00:10:00.000Z', predecessor: BOOKING },
+    [P2]: { ...p2.record, started_at: '2026-11-08T01:00:00.000Z', predecessor: P1 },
+    [M1]: m1Record,
+  };
+  const exportsByRun: Record<string, any> = {
+    [P1]: { run: records[P1], result: p1Base.result, submission: p1Base.submission },
+    [P2]: { run: records[P2], result: p2.result, submission: p2.submission },
+  };
+  const blobs = new Map([dynContract, dynProfile, inventory, log].map((b) => [sha256(b), b]));
+  const successors: Record<string, unknown[]> = {};
+  for (const r of Object.values(records)) {
+    if (typeof r.predecessor === 'string') (successors[r.predecessor] ??= []).push({ run: r.run, pack: r.pack, started_at: r.started_at, predecessor: r.predecessor, parameters: r.parameters, sources: r.sources });
+  }
+
+  const srv = createServer((req, res) => {
+    const url = req.url ?? '';
+    if (req.headers.authorization !== `Bearer ${TOKEN}`) { res.statusCode = 401; res.end(); return; }
+    if (url === `/run-export/${M1}/jobs`) { res.end(JSON.stringify({ schema: 'run-jobs@1', run: M1, jobs: m1Jobs })); return; }
+    const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url);
+    if (next) { res.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
+    const whole = /^\/run-export\/(run_\w+)$/.exec(url);
+    if (whole && exportsByRun[whole[1]]) { res.end(JSON.stringify({ schema: 'run-export@1', ...exportsByRun[whole[1]] })); return; }
+    if (url === `/run-export/${RECOMPOSE}/run`) { res.end(JSON.stringify({ schema: 'run-export@1', run: recomposeThree })); return; }
+    const know = /^\/run-export\/(run_\w+)\/knowledge$/.exec(url);
+    if (know && records[know[1]]) {
+      const body = lockedRoot(know[1], ROOT);
+      res.setHeader('content-digest', `sha-256=:${Buffer.from(sha256(body), 'hex').toString('base64')}:`);
+      res.end(body); return;
+    }
+    const alone = /^\/run-export\/(run_\w+)\/run$/.exec(url);
+    if (alone && records[alone[1]]) { res.end(JSON.stringify({ schema: 'run-export@1', run: records[alone[1]] })); return; }
+    const src = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url);
+    if (src && blobs.has(src[1])) { res.end(blobs.get(src[1])); return; }
+    res.statusCode = 404; res.end('没有\n');
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => new Promise<void>((r) => srv.close(() => r())));
+  const hubUrl = `http://127.0.0.1:${(srv.address() as { port: number }).port}/mcp`;
+
+  // 1) Wrong manual root on CASES[2] must STILL refuse (pointing only to CASES[2], never failing CASES[1]).
+  const badNotesPath = await notes({
+    [CASES[1]]: { judged: '缺少执行器单格回填能力，未做上机验证。', remedy: '请执行器维护者补齐能力声明后重开运行并上机验证。决定者：程序。' },
+    [CASES[2]]: {
+      judged: '原始用例动作被锁定手册排除，未做上机验证。',
+      remedy: '由用例作者或使用者裁定后重跑。',
+      author_conflict: { author: '合成动作', manual: '特殊字符仅支持“._-”', reference: `tree:${'f'.repeat(64)}/manual/wrong@${'1'.repeat(64)}` },
+    },
+  });
+  const badOut = join(await mkdtemp(join(tmpdir(), 'cc-r30-bad-')), 'out');
+  const refused = await run({ url: hubUrl }, badNotesPath, badOut, M1);
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, new RegExp(`用例 ${CASES[2]} 判断原始用例的问题时，所选手册不属于脚本编写时使用的手册和命令树`));
+  assert.ok(!refused.stderr.includes(CASES[1]), `CASES[1] must already be resolved via P1: ${refused.stderr}`);
+  await assert.rejects(readdir(badOut));
+
+  // 2) Correct manual root on CASES[2]: assemble-delivery succeeds directly with M1 alone, closing CASES[1] on P1.
+  const goodNotesPath = await notes({
+    [CASES[1]]: { judged: '缺少执行器单格回填能力，未做上机验证。', remedy: '请执行器维护者补齐能力声明后重开运行并上机验证。决定者：程序。' },
+    [CASES[2]]: {
+      judged: '原始用例动作被锁定手册排除，未做上机验证。',
+      remedy: '由用例作者或使用者裁定后重跑。',
+      evidence: MANUAL,
+      author_conflict: { ...CONFLICT, author: '合成动作' },
+    },
+  });
+  const okOut = join(await mkdtemp(join(tmpdir(), 'cc-r30-ok-')), 'out');
+  const delivered = await run({ url: hubUrl }, goodNotesPath, okOut, M1);
+  assert.equal(delivered.code, 0, delivered.stderr);
+  const summary = JSON.parse(await readFile(join(okOut, 'delivery.json'), 'utf8'));
+  assert.deepEqual(summary.totals, { cases: 3, delivered: 1, failed: 0, unsettled: 0, unrun: 2 });
+  assert.equal(summary.cases[1].closing, 'missing_fact');
+  assert.equal(summary.cases[1].missing.plan_run, P1);
+  assert.equal(summary.cases[2].closing, 'author_conflict');
+  const report = await readFile(join(okOut, 'delivery_report.md'), 'utf8');
+  assert.match(report, /原始用例 990000000000000102 合成意图 2，缺少脚本编写所需的资料，状态未知。原因缺资料/);
+  assert.match(report, /按冻结的执行器合约与运行环境配置核对，本次执行器未登记单格提取与动态回填能力/);
+});
+
+test('assemble-delivery discovers earlier gap runs whose predecessor is the recomposition run or null root', async (t) => {
+  const P0 = 'run_01p0p0p0p0p0p0p0p0p0p0p0p0';
+  const P1 = 'run_01p1a1a1a1a1a1a1a1a1a1a1a1';
+  const M1 = 'run_01m1a1a1a1a1a1a1a1a1a1a1a1';
+  // Scenario: P0 holds CASES[3] data_gap under predecessor=RECOMPOSE (while M1/P1 sit under BOOKING -> queue must also walk RECOMPOSE successors),
+  // and P1 has predecessor=null (while M1 names P1 -> upward walk seeds P1 into roots & planRuns).
+  const p0 = planRunFixture({ run: P0, autoids: [CASES[3]], exclude: [], contract, profile, inventory, predecessor: RECOMPOSE, recomposed: RECOMPOSED });
+  for (const r of p0.result.partitions.delivered[0].requirements as Array<Record<string, unknown>>) {
+    if (r.requirement === 'contract_methods') {
+      Object.assign(r, { status: 'pending', claims: [], layers: [{ layer: 'static', terminal: 'unchecked', reason: 'missing_input', attribution: 'data_gap', exit: { action: 'request', audience: { user: 'usr_syn' }, due: '2026-11-16T00:00:00.000Z', request_kind: 'clarification' }, missing: GAP_WORDS }] });
+    }
+  }
+  const p1 = planRunFixture({ run: P1, autoids: [CASES[0], CASES[2]], exclude: [CASES[1], CASES[3]], contract, profile, inventory, predecessor: BOOKING, recomposed: RECOMPOSED });
+  (p1.record as Record<string, unknown>).predecessor = null;
+  const m1Jobs = [job('d', M1, P1, [CASES[0], CASES[2]], p1.workbook, ['pass', 'pass'])];
+  const m1Record = { run: M1, pack: 'case-compile@9.9.9', started_at: '2026-11-08T02:00:00.000Z', predecessor: P1, parameters: { plan_run: P1 }, sources: p1.record.sources };
+  const records: Record<string, any> = {
+    [P0]: { ...p0.record, started_at: '2026-11-08T00:05:00.000Z', predecessor: RECOMPOSE },
+    [P1]: { ...p1.record, started_at: '2026-11-08T01:00:00.000Z', predecessor: null },
+    [M1]: m1Record,
+  };
+  const exportsByRun: Record<string, any> = {
+    [P0]: { run: records[P0], result: p0.result, submission: p0.submission },
+    [P1]: { run: records[P1], result: p1.result, submission: p1.submission },
+  };
+  const successors: Record<string, unknown[]> = {
+    [RECOMPOSE]: [{ run: P0, pack: records[P0].pack, started_at: records[P0].started_at, parameters: records[P0].parameters, sources: records[P0].sources }],
+    [P1]: [{ run: M1, pack: m1Record.pack, started_at: m1Record.started_at, parameters: m1Record.parameters, sources: m1Record.sources }],
+  };
+  const blobs = new Map([contract, profile, inventory].map((b) => [sha256(b), b]));
+  const srv = createServer((req, res) => {
+    const url = req.url ?? '';
+    if (req.headers.authorization !== `Bearer ${TOKEN}`) { res.statusCode = 401; res.end(); return; }
+    if (url === `/run-export/${M1}/jobs`) { res.end(JSON.stringify({ schema: 'run-jobs@1', run: M1, jobs: m1Jobs })); return; }
+    const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url);
+    if (next) { res.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
+    const whole = /^\/run-export\/(run_\w+)$/.exec(url);
+    if (whole && exportsByRun[whole[1]]) { res.end(JSON.stringify({ schema: 'run-export@1', ...exportsByRun[whole[1]] })); return; }
+    if (url === `/run-export/${RECOMPOSE}/run`) { res.end(JSON.stringify({ schema: 'run-export@1', run: recomposed })); return; }
+    const know = /^\/run-export\/(run_\w+)\/knowledge$/.exec(url);
+    if (know && records[know[1]]) {
+      const body = lockedRoot(know[1], ROOT);
+      res.setHeader('content-digest', `sha-256=:${Buffer.from(sha256(body), 'hex').toString('base64')}:`);
+      res.end(body); return;
+    }
+    const alone = /^\/run-export\/(run_\w+)\/run$/.exec(url);
+    if (alone && records[alone[1]]) { res.end(JSON.stringify({ schema: 'run-export@1', run: records[alone[1]] })); return; }
+    const src = /^\/run-export\/run_\w+\/sources\/([0-9a-f]{64})$/.exec(url);
+    if (src && blobs.has(src[1])) { res.end(blobs.get(src[1])); return; }
+    res.statusCode = 404; res.end('没有\n');
+  });
+  await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => new Promise<void>((r) => srv.close(() => r())));
+  const hubUrl = `http://127.0.0.1:${(srv.address() as { port: number }).port}/mcp`;
+
+  const notesPath = await notes({
+    [CASES[1]]: {
+      judged: '原始用例动作被锁定手册排除，未做上机验证。',
+      remedy: '等用例作者确认后重跑。',
+      author_conflict: { ...CONFLICT, author: '合成动作' },
+    },
+    [CASES[3]]: { judged: '缺少执行器声明事实，未做上机验证。', remedy: '请维护者补齐声明后重跑。决定者：程序。', evidence: GAP_WORDS },
+  });
+
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-recomp-pred-')), 'out');
+  const res = await run({ url: hubUrl }, notesPath, out, M1);
+  assert.equal(res.code, 0, res.stderr);
+  const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
+  assert.equal(summary.cases[3].closing, 'missing_fact');
+  assert.equal(summary.cases[3].missing.plan_run, P0);
 });
