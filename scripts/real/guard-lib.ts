@@ -562,6 +562,111 @@ function readToolCliDeclaration(cliPath: string | null): { stdinLines: string[] 
   return { stdinLines, subcommandStdin };
 }
 
+function skipQuotedOrComment(source: string, index: number): number {
+  const ch = source[index];
+  if (ch === "'" || ch === '"') {
+    let i = index + 1;
+    while (i < source.length) {
+      if (source[i] === '\\') {
+        i += 2;
+        continue;
+      }
+      if (source[i] === ch) return i + 1;
+      i += 1;
+    }
+    return source.length;
+  }
+  if (ch === '/' && source[index + 1] === '/') {
+    const nl = source.indexOf('\n', index + 2);
+    return nl === -1 ? source.length : nl + 1;
+  }
+  if (ch === '/' && source[index + 1] === '*') {
+    const end = source.indexOf('*/', index + 2);
+    return end === -1 ? source.length : end + 2;
+  }
+  if (ch === '`') {
+    let i = index + 1;
+    while (i < source.length) {
+      if (source[i] === '\\') {
+        i += 2;
+        continue;
+      }
+      if (source[i] === '`') return i + 1;
+      if (source[i] === '$' && source[i + 1] === '{') {
+        const close = findMatchingBrace(source, i + 1);
+        i = close === -1 ? source.length : close + 1;
+        continue;
+      }
+      i += 1;
+    }
+    return source.length;
+  }
+  return index;
+}
+
+function findMatchingBrace(source: string, openIndex: number): number {
+  let depth = 0;
+  let i = openIndex;
+  while (i < source.length) {
+    const next = skipQuotedOrComment(source, i);
+    if (next !== i) {
+      i = next;
+      continue;
+    }
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+    i += 1;
+  }
+  return -1;
+}
+
+function extractParseArgsOptionsBlocks(source: string): string[] {
+  const blocks: string[] = [];
+  for (const match of source.matchAll(/\bparseArgs\s*\(\s*\{/g)) {
+    const callBrace = match.index + match[0].length - 1;
+    const callEnd = findMatchingBrace(source, callBrace);
+    if (callEnd === -1) continue;
+    let depth = 1;
+    let i = callBrace + 1;
+    while (i < callEnd) {
+      const next = skipQuotedOrComment(source, i);
+      if (next !== i) {
+        i = next;
+        continue;
+      }
+      const ch = source[i];
+      if (ch === '{') {
+        depth += 1;
+        i += 1;
+        continue;
+      }
+      if (ch === '}') {
+        depth -= 1;
+        i += 1;
+        continue;
+      }
+      if (depth === 1 && source.startsWith('options', i)) {
+        const prev = i > 0 ? source[i - 1] : '';
+        const optOpenMatch = /^\s*:\s*\{/.exec(source.slice(i + 7));
+        if (!/[A-Za-z0-9_$]/.test(prev) && optOpenMatch) {
+          const optOpen = i + 7 + optOpenMatch[0].length - 1;
+          const optEnd = findMatchingBrace(source, optOpen);
+          if (optEnd !== -1 && optEnd < callEnd) {
+            blocks.push(source.slice(optOpen + 1, optEnd));
+            i = optEnd + 1;
+            continue;
+          }
+        }
+      }
+      i += 1;
+    }
+  }
+  return blocks;
+}
+
 function describeTool(
   env: GuardEnvironment,
   base: {
@@ -607,10 +712,9 @@ function describeTool(
     }
   }
 
-  // 3. node:util parseArgs({ ..., options: { ... } })
-  const parseMatch = /parseArgs\(\s*\{[\s\S]*?\boptions\s*:\s*\{([\s\S]*?)\}\s*\}/.exec(source);
-  if (parseMatch) {
-    for (const m of parseMatch[1].matchAll(/['"]?([a-z][a-z0-9-]*)['"]?\s*:\s*\{([^}]*)\}/g)) {
+  // 3. node:util parseArgs({ ..., options: { ... } }) using balanced braces so the final option is kept
+  for (const optionsBlock of extractParseArgsOptionsBlocks(source)) {
+    for (const m of optionsBlock.matchAll(/['"]?([a-z][a-z0-9-]*)['"]?\s*:\s*\{([^}]*)\}/g)) {
       const attrs = m[2];
       const kind = /type\s*:\s*['"]boolean['"]/.test(attrs) ? 'boolean' : 'string';
       const multiple = /multiple\s*:\s*true/.test(attrs);
@@ -729,11 +833,11 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
           }
           if (!stat.isFile() || !entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
           if (path.basename(subDir) !== 'tools') continue;
-          const real = trySafeFile(full, env.skills, env.skillsRaw);
+          const real = trySafeFile(full, env.skills, env.skills);
           if (!real) continue;
           const source = readText(real);
           if (isInternalHelperModule(source)) continue;
-          const cliFile = trySafeFile(`${full.slice(0, -3)}.cli.json`, env.skills, env.skillsRaw);
+          const cliFile = trySafeFile(`${full.slice(0, -3)}.cli.json`, env.skills, env.skills);
           add(describeTool(env, { id: `${skill}/${rel}`, file: real, cliFile, skill, docText }));
         }
       };
@@ -755,9 +859,9 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
       for (const script of asList(env.declaration.scripts)) {
         if (!script.path.startsWith(`${skill}/`)) continue;
         const lexical = path.join(env.skills, script.path);
-        const real = trySafeFile(lexical, env.skills, env.skillsRaw);
+        const real = trySafeFile(lexical, env.skills, env.skills);
         if (real) {
-          const cliFile = real.endsWith('.ts') ? trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.skills, env.skillsRaw) : null;
+          const cliFile = real.endsWith('.ts') ? trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.skills, env.skills) : null;
           add(
             describeTool(env, {
               id: script.path,

@@ -14,7 +14,7 @@ description: 在用户明确开启共享的客户端会话里，由工具后钩�
 用户先准备仅供采集使用的 Hub 令牌文件：一行令牌、普通单链接文件、权限 0600。令牌不写在命令、提案或仓库里。用 `/session` 查会话号，然后由用户确认执行：
 
 ```sh
-node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地址> --token-file <令牌文件>
+node '<技能目录>/operation.ts' enable --session '<会话号>' --hub '<Hub MCP 地址>' --token-file '<令牌文件>'
 ```
 
 明文 HTTP 只许本机回环假 Hub。状态保存在客户端 home 的 `operation-capture/` 下，不写工作区。`CIRCLE_HOME` 未设置时按客户端默认 home；去空白、`~` 展开和 realpath 与客户端一致。技能须安装在该 home 的 `skills/operation-capture/`；通用安装根是 `~/.agents/skills/operation-capture/`，因为客户端不向钩子提供技能目录。
@@ -24,11 +24,11 @@ node <技能目录>/operation.ts enable --session <会话号> --hub <Hub MCP 地
 随时核对或停止：
 
 ```sh
-node <技能目录>/operation.ts status --session <会话号>
-node <技能目录>/operation.ts verify --session <会话号>
-node <技能目录>/operation.ts flush --session <会话号>
-node <技能目录>/operation.ts recover --session <会话号>
-node <技能目录>/operation.ts disable --session <会话号>
+node '<技能目录>/operation.ts' status --session '<会话号>'
+node '<技能目录>/operation.ts' verify --session '<会话号>'
+node '<技能目录>/operation.ts' flush --session '<会话号>'
+node '<技能目录>/operation.ts' recover --session '<会话号>'
+node '<技能目录>/operation.ts' disable --session '<会话号>'
 ```
 
 `disable` 会等待进行中的采集、上传或整合完成，返回后不再执行这些动作；待传记录只有重新开启后才重试。`recover` 把未登记输出和不完整清单尾部移到本地 `recovery/` 并显示数量，这些无法证明完整的片段只保全、不上传。清单被改、原件被改或有未登记文件时先运行它核查，不能自动重建链掩盖变化。能重写整个状态目录并重算全部摘要的人可伪造自洽链，本技能没有外部信任锚。
@@ -38,8 +38,8 @@ node <技能目录>/operation.ts disable --session <会话号>
 `list` 只列元数据、摘要和上传引用；`read` 才输出本地原件，且该原件必须已有上传回执：
 
 ```sh
-node <技能目录>/operation.ts list --session <会话号>
-node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-256>
+node '<技能目录>/operation.ts' list --session '<会话号>'
+node '<技能目录>/operation.ts' read --session '<会话号>' --sha '<原件 SHA-256>'
 ```
 
 只从 `read` 的实际字节逐字抄引文，不从会话转述抄。每条整合记录只引一份原件；步骤涉及多份原件时拆成多条。
@@ -76,7 +76,7 @@ node <技能目录>/operation.ts read --session <会话号> --sha <原件 SHA-25
 产品由操作者选择；只有操作者已给构建目标时才加 `--build`，它只用于 `start_run` 锁定，绝不写进提案或回注条目。`--model` 是当前整合模型的确切身份，不是产品版本。
 
 ```sh
-node <技能目录>/operation.ts submit --session <会话号> --proposals <提案.json> --product <产品> [--build <操作者给定构建>] --model <整合模型身份>
+node '<技能目录>/operation.ts' submit --session '<会话号>' --proposals '<提案.json>' --product '<产品>' [--build '<操作者给定构建>'] --model '<整合模型身份>'
 ```
 
 脚本核验整份清单和全部引文，上传普通工作清单，开 `knowledge-contribution` 回注运行，再从运行回答取 `product/root` 形成 `code=assertion` 和对应的 `fed-*@1` 结构。Hub 自己填写版本、对象、上传者和时间。未受理时按原回执修正，退出码非零；不得把未入层条目说成已回注。回执追加保留，不覆盖。
