@@ -44,7 +44,7 @@ export async function migrateRecords(config: Pick<RecordsConfig, 'database'>, op
 /**
  * Opens the records kit: creates the data directories (0700), connects to PostgreSQL, applies pending migrations (refusing to
  * start on an unknown or altered applied migration) and wires every store. With `migrate: false` (a runtime role that may
- * not change the schema) it only verifies that exactly this program's migrations are applied. Call close() to release the pool.
+ * not change the schema) it only verifies that exactly this program's migrations are applied. Call close() to release both bounded pools.
  */
 export async function openRecords(config: RecordsConfig, options: OpenRecordsOptions = {}): Promise<RecordsKit> {
   if (!isAbsolute(config.dataDir) || !isAbsolute(config.logDir)) throw new TypeError('dataDir and logDir must be absolute paths');
@@ -59,7 +59,8 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     await db.end().catch(() => {});
     throw error;
   }
-  const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now });
+  const observationPool = createPool(config.database, options.maxConnections ?? 10);
+  const store = new PgRecordStore(db, { maxRecordBytes: config.limits.maxRecordBytes, now }, observationPool);
   const objects = new FileObjectStore(objectsDir, db, { maxBytes: config.limits.maxUploadBytes, now,personalPayloads:store.personalPayloads });
   store.personalPayloads.beforePurge=(owner,by,tx)=>preserveTeamAttributions(store,objects,owner,by,tx,now);
   const authorizations = new RecordAuthorizations(db, store, now, objects);
@@ -89,7 +90,7 @@ export async function openRecords(config: RecordsConfig, options: OpenRecordsOpt
     authorizations,
     pointers: new PgPointers(db, store, now),
     callLog: new PgCallLog(db, store, config.logDir, now),
-    poolStats: () => db.stats(),
-    close: () => (closed ??= db.end()),
+    poolStats: () => db.stats([observationPool]),
+    close: () => (closed ??= Promise.all([db.end(), observationPool.end()]).then(() => undefined)),
   };
 }
