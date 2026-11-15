@@ -53,7 +53,7 @@ const RESULT_FILL: Readonly<Record<CallResult, string>> = { ok: 'fill-pass', err
 async function statistics(ctx:PageContext,now:number,daysCount:number,query:Parameters<PageContext['deps']['records']['callLog']['query']>[1]):Promise<{figures:Html;charts:Html}>{
  let found:Page<CallLogLine>;try{found=query?.userId===''?{items:[],next:null}:await ctx.deps.records.callLog.query(ctx.principal,{...query,limit:STATS_LIMIT,cursor:null});}catch{return {figures:card({title:'统计'},errorLine('统计暂不可用')),charts:html``};}
  const items=found.items,scope=found.next?`所选时段最近 ${STATS_LIMIT} 次调用`:'所选时段',errors=items.filter(line=>line.call_result!=='ok').length,refused=items.filter(line=>line.acceptance==='not_accepted').length;
- const kpis=html`<section class="ch-stats">${kpi('工具调用',items.length,{note:scope})}${kpi('核对',items.filter(line=>line.tool==='submit_result').length,{note:'其中未核对 '+refused+' 次'})}${kpi('调用出错',errors)}${kpi(ctx.admin?'成员':'本人',new Set(items.map(line=>line.user).filter(Boolean)).size)}</section>`;
+ const kpis=html`<section class="ch-stats">${kpi('工具调用',items.length,{note:scope})}${kpi('核对',items.filter(line=>line.tool==='submit_result').length,{note:'其中核对有错误 '+refused+' 次'})}${kpi('调用出错',errors)}${kpi(ctx.admin?'成员':'本人',new Set(items.map(line=>line.user).filter(Boolean)).size)}</section>`;
  const end=query?.to?Date.parse(query.to):now,start=query?.from?Date.parse(query.from):end-daysCount*86400000;
  const first=new Date(start);first.setHours(0,0,0,0);const dayCount=Math.max(1,Math.ceil((end-first.getTime())/86400000)),long=dayCount>31,n=long?31:dayCount;
  const tools=TOOLS.map(tool=>tool.name);

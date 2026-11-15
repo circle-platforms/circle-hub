@@ -282,7 +282,7 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
 
 /** What a validation result says in one line: its management disposition or commentary status, then the counts by classification. */
 function resultHeadline(result: ValidationResult, commentary = false): string {
-  return `${isAbandonedResult(result)?'管理放弃（不是目标侧正确）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
+  return `${isAbandonedResult(result)?'管理放弃（不代表目标正确）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
 }
 /** The tab of the task page the address asks for; `?view=record` is the old address of the last one. */
 function taskTabOf(ctx: PageContext): TaskTab {
@@ -417,7 +417,7 @@ ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / �
         await submissionContent(ctx, s.record, run.run, { full, href: whole, received: s.received_at }),
       ]);
     }
-    const submissions = table(['核对记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '核对内容（未经平台验证）'], submissionRows, '没有核对记录');
+    const submissions = table(['提交记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交记录');
     const paging = detail.history === undefined ? html`` : html`<p class="ch-meta">本页列出 ${detail.submissions.length} 次提交，每页最多 ${detail.history.limit} 次，较早的在上${detail.history.pinned === undefined ? '' : '；第一行是当前结果对应的提交'}；撤回提示按本页列出的结果、当前结果和生产结果判断。${detail.history.next === null ? '' : html` ${link(base, '查看更早的提交', { tab: 'process', older: detail.history.next })}`}${before === null ? '' : html` ${link(base, '回到最近的提交', { tab: 'process' })}`}</p>`;
     const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false, cursor:param(ctx,'call_cursor')??null });
     // The first page of the call log is the waterfall's too; a later page is not.
