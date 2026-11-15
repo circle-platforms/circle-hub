@@ -68,7 +68,7 @@ test('abandoned runs remain unclassified as the model declares rather than recei
 test('disposed effects remain qualified conclusions rather than call categories',()=>{
   assert.equal(callErrorCategoryOf('EFFECT_UNKNOWN_DISPOSED'),null);
   const text=toolText('submit_result',SubmitResultOutput.parse({call_result:'error',acceptance:'not_accepted',errors:[{code:'EFFECT_UNKNOWN_DISPOSED',message:PROTOCOL_CODES.EFFECT_UNKNOWN_DISPOSED.when,fix:PROTOCOL_CODES.EFFECT_UNKNOWN_DISPOSED.fix}],trace:TRACE}));
-  assert.match(text,/效果原结局仍未证明，运行者已具名选择标记失败处置/);assert.match(text,/决定者程序/);assert.doesNotMatch(text,/^不存在：|^参数无效：|^无权限：/m);
+  assert.match(text,/效果原结局仍未证明，运行者已具名选择标记失败处置/);assert.match(text,/原效果结局与冻结\/解除许可仍按原记录，不把处置当作已证明未执行/);assert.doesNotMatch(text,/状态已确认|判断错误|^不存在：|^参数无效：|^无权限：/m);
 });
 test('explicit caller identity fills action placeholders without reading an identity out of prose',()=>{
   const text=callErrorNext('SUBMISSION_SCHEMA_VIOLATION','admin','请 <当前账户的名字> 核对这个参数','poison prose','合成成员');assert.match(text,/合成成员/);assert.doesNotMatch(text,/<当前账户的名字>/);assertCommandsRegistered(text);

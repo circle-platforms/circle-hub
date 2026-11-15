@@ -350,13 +350,12 @@ function submitErrorBlocks(
           lines.push(`- ${factOnly}${mark}`);
         }
       }
-      const next = unique[0]?.row.category !== null
-        ? (unique[0].row.fix && unique[0].row.fix.trim().length > 0 ? unique[0].row.fix.trim() : '由使用者核对输入资料')
-        : (unique[0]?.row.fix ?? '由模型改正重组记录后重交');
-      lines.push(asSentence(next.startsWith('下一步') ? next : `下一步${next}`));
+      const nextSteps = [...new Set(group.rows.map(row => row.fix?.trim()).filter((fix): fix is string => Boolean(fix)))];
+      if (nextSteps.length === 0) nextSteps.push('缺少来源声明的下一步处理资料');
+      for (const next of nextSteps) lines.push(asSentence(next.startsWith('下一步') ? next : `下一步${next}`));
       if (roundsLeft !== undefined) lines.push(asSentence(`还可以重交 ${roundsLeft} 次`));
-      // Call-error-only blocks stay without「决定者程序」; any conclusion-style row keeps it once per case.
-      if (unique.some(({ row }) => row.category === null)) lines.push('决定者程序。');
+      const conclusions = group.rows.filter(row => row.category === null);
+      if (conclusions.length > 0 && conclusions.every(row => unknownError(row.error))) lines.push('决定者程序。');
       continue;
     }
 
