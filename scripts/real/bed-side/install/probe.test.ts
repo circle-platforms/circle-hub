@@ -67,7 +67,9 @@ with tempfile.TemporaryDirectory(prefix='synthetic-mcp-probe-') as tmp:
         assert created.returncode==0
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(str(cert),str(key));server.socket=context.wrap_socket(server.socket,server_side=True)
     serve(server)
-    host=p.get('host','::' if p.get('ipv6') else str(ipaddress.ip_address(0)))
+    unspecified=ipaddress.ip_address(0)
+    assert unspecified.is_unspecified
+    host=p.get('host','::' if p.get('ipv6') else str(unspecified))
     config=root/'gateway.toml'
     text='[listen]\nhost="'+host+'"\nport='+str(server.server_port)+'\n'
     if p.get('tls'):text+='tls_cert="SYNTHETIC_DO_NOT_OPEN_CERT"\ntls_key="SYNTHETIC_DO_NOT_OPEN_KEY"\n'
