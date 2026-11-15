@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { readSourceManifest } from '../functions/source-materials.ts';
 import { CallFailure } from '../functions/text.ts';
 // 只读装配单条或批量子代理任务说明写入 `--task-file`（或 `--batch` 批量写盘，不折叠逐字超长行并披露行号），stdout 只输出极短派发提示给 `task` 工具：
@@ -15,7 +16,7 @@ import {
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
 import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
 import { renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { isRecord, parseCliOptions } from '../functions/text.ts';
 import {
   buildSingleCaseStructuredBrief,
   loadRunStructuredContext,
@@ -988,7 +989,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(`${written.dispatchPrompt}\n`);
     return 0;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }

@@ -268,7 +268,7 @@ test('--wait gives up at its limit, and sooner when the run shows no job at all,
   assert.equal(idle.pauses.reduce((sum, ms) => sum + ms, 0), UNDISPATCHED_MS);
   await assert.rejects(readFile(join(dir, 'a', 'index.json')));
   for (const value of ['0', 'abc', '86401', '-5']) assert.match((await run(never.url, join(dir, 'c'), ['--wait', value], clock())).stderr, /--wait 不在允许范围内。填写 1 到 86400 的整数秒数后重试/, value);
-  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数缺值、重复或未声明。使用 --hub/);
+  assert.match((await run(never.url, join(dir, 'c'), ['--poll', '1'], clock())).stderr, /参数无效：未知选项 --poll。只允许 --hub/);
   // Without --wait a run that was never dispatched is refused at once, as before.
   assert.match((await run(none.url, join(dir, 'd'))).stderr, /尚未开始上机验证/);
 });

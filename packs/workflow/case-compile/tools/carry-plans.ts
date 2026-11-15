@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // Safely carries unchanged case-compile plan files and valid fidelity artifacts from a superseded plan run
@@ -11,7 +12,7 @@ import { canonicalJson } from '../functions/canonical-json.ts';
 import { fidelityBrief, fidelityProblems, fidelityJudgmentProblems } from '../functions/fidelity.ts';
 import { RUN_ID } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { planDataOf } from '../functions/subject.ts';
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { isRecord, parseCliOptions } from '../functions/text.ts';
 import { briefFile, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 import {
@@ -529,7 +530,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
     process.stdout.write(JSON.stringify(manifest, null, 2) + '\n');
     return 0;
   } catch (error) {
-    process.stderr.write(formatCallError(error) + '\n');
+    process.stderr.write(formatClientCallError(error) + '\n');
     return 1;
   }
 }

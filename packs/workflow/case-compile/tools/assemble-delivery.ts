@@ -1,14 +1,15 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { realpathSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatCallError, isRecord, failCall, CallFailure } from '../functions/text.ts';
+import { isRecord, failCall, CallFailure } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
 import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
+import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
 import { parsedPlanFile } from './submit-plans.ts';
@@ -520,6 +521,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       reply: replyText(out, assembly.totals, Object.keys(files), assembly.cases, input),
     }) + '\n');
     return 0;
-  } catch (error) { process.stderr.write(formatCallError(error instanceof RetryExhaustedError ? new CallFailure('temporarily_unavailable', `读取 Hub 达到重试上限，已等待 ${error.waitedMs / 1000} 秒并尝试 ${error.attempts} 次${error.code ? `（${error.code}）` : error.status ? `（HTTP ${error.status}）` : ''}`, '请运行者核对 --hub 地址与服务可用性，恢复后用同一命令重试') : error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

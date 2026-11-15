@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 import { realpathSync } from 'node:fs';
@@ -10,7 +11,7 @@ import { planDataOf } from '../functions/subject.ts';
 import { isRecord } from '../functions/text.ts';
 import { readSubmittedItemFiles, readTokenFromStdin, requireBearerToken, getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
 import { hubOrigin, RUN_ID } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { formatCallError, parseCliOptions } from '../functions/text.ts';
+import { parseCliOptions } from '../functions/text.ts';
 
 export async function planItems(directory: string): Promise<Array<{ [key: string]: unknown }>> {
   return readSubmittedItemFiles(directory, {
@@ -130,6 +131,6 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     const skipped = items.filter((item) => item.handling === 'skipped').map((item) => held.get(String(item.item))!.label);
     if (skipped.length) process.stdout.write(SKIPPED_NOTE(skipped));
     return failed ? 1 : 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

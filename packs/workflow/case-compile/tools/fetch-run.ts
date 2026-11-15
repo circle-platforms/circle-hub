@@ -8,11 +8,12 @@
 //   %HUB_TOKEN%
 //   EOF
 import { realpathSync } from 'node:fs';
-import { lstat, mkdir, rm } from 'node:fs/promises';
+import { lstat, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { formatCallError, isRecord, failCall } from '../functions/text.ts';
-import { argumentsOf, hubOrigin, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { isRecord, failCall, parseCliOptions } from '../functions/text.ts';
+import { RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { getRetrying, downloadRetryControl, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 
 import { assertEmptySourceOutput, sourceMaterialNames, type SourceMaterial } from '../functions/source-materials.ts';
@@ -47,9 +48,9 @@ export async function fetchRunInputs(origin: string, bearer: string, run: string
 }
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['hub', 'run', 'out']);
+    const args = parseCliOptions(argv, { hub: true, run: true, out: true }, 'fetch-run.ts --hub <MCP地址> --run <运行编号> --out <新的空目录>') as Record<string, string>;
     if (!RUN_ID.test(args.run)) failCall('invalid_parameters', '--run 不是声明格式的运行编号', '请使用本次用例重组或脚本编写的编号后重试');
-    const origin = hubOrigin(args.hub);
+    const origin = parseHubOrigin(args.hub);
     await assertEmptySourceOutput(args.out);
     const bearer = await requireBearerToken(readToken);
     // Every original is fetched and checked before anything is written, and a failed write removes what this call wrote, so
@@ -73,9 +74,9 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     await mkdir(join(args.out, 'sources'), { mode: 0o700 });
     const files: Record<string, string> = {}; const written: string[] = [];
     try {
-      for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); }
+      for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); written.push(path); files[name] = sha256(bytes); }
     } catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     process.stdout.write(JSON.stringify({ run: args.run, ...(fetched.run_reference !== undefined ? { run_reference: fetched.run_reference } : {}), ...(fetched.accepted_result_reference !== undefined ? { accepted_result_reference: fetched.accepted_result_reference } : {}), files }) + '\n'); return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));

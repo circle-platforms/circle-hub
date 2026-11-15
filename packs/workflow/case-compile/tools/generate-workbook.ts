@@ -1,3 +1,4 @@
+import { formatClientCallError } from '../functions/client-cli.ts';
 import { CallFailure } from '../functions/text.ts';
 import { readSourceBytes } from '../functions/source-materials.ts';
 import { planStateOf } from '../functions/plan-state.ts';
@@ -9,7 +10,7 @@ import { lstat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import REQUIREMENTS from '../requirements.json' with { type: 'json' };
-import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
+import { isRecord, parseCliOptions } from '../functions/text.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { parseManifest } from '../functions/manifest.ts';
@@ -106,6 +107,6 @@ export async function main(argv: string[]): Promise<number> {
     const bytes = generateWorkbookSet(recipes); await writeFile(outputPath, bytes, { flag: 'wx', mode: 0o600 });
     const moved = volumeOrder(recipes).moved, titles = new Map(recipes.map((recipe) => [recipe.fields.autoid, recipe.fields.title] as const));
     process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length, ...(moved.length ? { moved_tail: moved, moved_text: movedText(moved, titles) } : {}) }) + '\n'); return 0;
-  } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }
+  } catch (error) { process.stderr.write(formatClientCallError(error) + '\n'); return 1; }
 }
 if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) process.exitCode = await main(process.argv.slice(2));
