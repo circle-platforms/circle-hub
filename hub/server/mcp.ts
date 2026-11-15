@@ -220,8 +220,8 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
 
 /** Exact SDK machine codes and source entry evidence only; never HTTP status or error prose. */
 export function sdkCallErrorData(numericCode: number, handlerEntered: boolean, knownInvalidRequestGate = false): HttpCallErrorData {
-  if (!handlerEntered && (numericCode === -32602 || knownInvalidRequestGate)) return httpCallErrorData('CALL_REQUEST_INVALID', true);
-  if (!handlerEntered && numericCode === -32601) return httpCallErrorData('CALL_METHOD_UNSUPPORTED', true);
+  if (numericCode === -32602 || knownInvalidRequestGate) return httpCallErrorData('CALL_REQUEST_INVALID', handlerEntered ? undefined : true);
+  if (numericCode === -32601) return httpCallErrorData('CALL_METHOD_UNSUPPORTED', handlerEntered ? undefined : true);
   return httpCallErrorData('CALL_INTERNAL_UNAVAILABLE');
 }
 
