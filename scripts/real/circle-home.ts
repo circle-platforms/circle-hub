@@ -30,10 +30,15 @@ export interface Options {
 
 export const SERVER_NAME = 'hub';
 export const TOKEN_SECRET = 'HUB_TOKEN';
-/** The Hub's tool names as Circle shows them: <server name>_<tool>. */
+/** The Hub's tool names without the Circle MCP prefix. */
 export const HUB_TOOLS = ['list_task_packs', 'upload_file', 'start_run', 'get_nodes', 'resolve_reference', 'submit_result'] as const;
 /** Circle's own planning tool has no effect outside the conversation; every other built-in tool stays denied. */
 export const INTERNAL_TOOLS_ALLOWED = ['write_todos'] as const;
+
+/** Circle MCP tool name: `mcp__<server>__<tool>` (server name case preserved). */
+export function mcpTool(tool: string, server: string = SERVER_NAME): string {
+  return `mcp__${server}__${tool}`;
+}
 
 const SECTION_OF = { glm: 'GLM', qwen: '千问' } as const;
 const MODEL_SECTION_OF = { glm: 'glm', qwen: 'qwen' } as const;
@@ -109,27 +114,36 @@ export function circleEndpoint(dir: string, options: { model?: string; warn?: (l
 }
 
 const HOOK = `// Lets only the Hub's tools (and Circle's own todo list) run in this Circle folder; every other tool call is denied.
-const allowed = new Set(${JSON.stringify([...HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`), ...INTERNAL_TOOLS_ALLOWED])});
+const allowed = new Set(${JSON.stringify([...HUB_TOOLS.map((t) => mcpTool(t)), ...INTERNAL_TOOLS_ALLOWED])});
 let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;
 let tool = '';
 try {
-  tool = String(JSON.parse(input).tool_name ?? '');
+  const parsed = JSON.parse(input);
+  tool = String(parsed.tool_name ?? '');
+  if (parsed.hook_event_name !== 'PreToolUse') tool = '';
 } catch {
   // Unreadable input is a deny below.
 }
 const decision = allowed.has(tool)
-  ? { decision: 'allow', reason: 'a Hub tool' }
-  : { decision: 'deny', reason: 'only the Hub tools may run in this folder' };
+  ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: 'a Hub tool' } }
+  : {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'only the Hub tools may run in this folder',
+      },
+      systemMessage: 'only the Hub tools may run in this folder',
+    };
 process.stdout.write(JSON.stringify(decision));
 `;
 
-const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => `${SERVER_NAME}_${t}`);
+const HUB_PREFIXED_TOOLS = HUB_TOOLS.map((t) => mcpTool(t));
 
 const BOOKING_STAYS_RULE = {
   id: 'booking-stays',
-  tool: 'hub_start_run',
+  tool: mcpTool('start_run'),
   match: [
     { path: 'pack', equalsBefore: '@', normalize: 'lower' as const, value: 'test-bed' },
     { path: 'parameters.action', normalize: 'lower' as const, in: ['release', 'force_release', 'unregister', 'register'] },
@@ -138,21 +152,13 @@ const BOOKING_STAYS_RULE = {
   how: '这次可以这样做：作业都有终态后直接报告结果，预订保持原样，不调用释放或注销动作。',
 };
 
-const SUBAGENT_ASKS_NOBODY_RULE = {
-  id: 'subagent-asks-nobody',
-  tool: 'question',
-  session: 'subagent' as const,
-  what: '不允许：子代理不向使用者提问，这类问题使用者答不了，要自己按资料定。',
-  how: '这次可以这样做：能在锁定的命令树、手册、执行器规则、条目和编写简报里查到的，查了就定，并在给主代理的报告里写明定了什么、依据在哪一行；资料里确实没有的，把缺的事实和建议的处理写进报告，交回派给你任务的主代理。',
-};
-
 /** Builds the unified guard declaration data for `skills` (strict read-only sandbox) or `ops` (full workflow orchestration). */
 export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration {
   const isOps = profile === 'ops';
   return {
     version: 1,
     about:
-      'Data for the Circle home before_tool guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
+      'Data for the Circle home PreToolUse guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
     allowReply: isOps ? 'silent' : 'explicit',
     allowLocalTools: isOps,
     hub: {
@@ -276,7 +282,8 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       mv: 'write_file',
       sed: 'edit_file',
     },
-    rules: isOps ? [BOOKING_STAYS_RULE, SUBAGENT_ASKS_NOBODY_RULE] : [BOOKING_STAYS_RULE],
+    // Subagents no longer receive `question` (Circle agents.md); the former subagent-asks-nobody rule is gone.
+    rules: [BOOKING_STAYS_RULE],
   };
 }
 
@@ -348,7 +355,15 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   }
   const hookName = profile === 'ops' ? 'ops-allow.mjs' : profile === 'skills' ? 'skills-only.mjs' : 'hub-only.mjs';
   const hook = join(home, 'hooks', hookName);
-  const hookArgument = profile === 'review' ? JSON.stringify(hook) : `'${hook.replaceAll("'", `'\\''`)}'`;
+  const hookTimeoutSec = isGuarded ? 600 : 10;
+  const preToolUseHook = {
+    type: 'command',
+    command: 'node',
+    args: [hook],
+    name: profile === 'review' ? 'hub tools only' : `${profile} tools guard`,
+    timeout: hookTimeoutSec,
+    onFailure: 'block',
+  };
 
   writePrivate(
     join(home, 'settings.json'),
@@ -359,9 +374,16 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
         auth: { protocol: endpoint.protocol, base_url: endpoint.baseUrl, model: endpoint.model, api_key_ref: 'api_key' },
         trusted_folders: [workdir],
         default_mode: 'auto',
-        mcp_servers: [
-          { name: SERVER_NAME, url: options.hubUrl, transport: 'streamable_http', headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` } },
-        ],
+        mcpServers: {
+          [SERVER_NAME]: {
+            type: 'http',
+            url: options.hubUrl,
+            headers: { Authorization: `Bearer \${secret:${TOKEN_SECRET}}` },
+          },
+        },
+        hooks: {
+          PreToolUse: [{ hooks: [preToolUseHook] }],
+        },
         ...(options.envFile === undefined ? {} : { credential_files: [basename(options.envFile)] }),
         ...(options.contextWindow === undefined ? {} : { models: { [endpoint.model]: { context_window: options.contextWindow } } }),
         update_check: false,
@@ -373,14 +395,10 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
   );
   writePrivate(join(home, 'credentials.json'), `${JSON.stringify({ api_key: endpoint.apiKey })}\n`);
   writePrivate(join(home, 'secrets.json'), `${JSON.stringify({ secrets: { [TOKEN_SECRET]: token } })}\n`);
-  writePrivate(
-    join(home, 'hooks.json'),
-    `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: profile === 'review' ? 'hub tools only' : `${profile} tools guard`, command: `node ${hookArgument}`, timeout_ms: isGuarded ? 600000 : 10000 }] } }, null, 2)}\n`,
-  );
 
   if (!isGuarded) {
     writePrivate(hook, HOOK);
-    return { files: ['settings.json', 'credentials.json', 'secrets.json', 'hooks.json', `hooks/${hookName}`], workdir };
+    return { files: ['settings.json', 'credentials.json', 'secrets.json', `hooks/${hookName}`], workdir };
   }
 
   const declName = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
@@ -398,7 +416,6 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
       'settings.json',
       'credentials.json',
       'secrets.json',
-      'hooks.json',
       `hooks/${hookName}`,
       'hooks/guard-lib.ts',
       `hooks/${declName}`,

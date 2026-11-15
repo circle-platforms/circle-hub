@@ -1,4 +1,4 @@
-// Unified declaration-driven before_tool guard engine for Circle homes (skills & ops profiles).
+// Unified declaration-driven PreToolUse guard engine for Circle homes (skills & ops profiles).
 // Self-contained standalone Node 24 TypeScript module (copied into `<home>/hooks/guard-lib.ts` with no checkout dependency).
 // Enforces one single command & quoting grammar across docs, ALLOWED.md, and runtime checks: bare `[A-Za-z0-9_./:%=@,+-]+` or single-quoted `'...'`.
 import { spawn, execFile } from 'node:child_process';
@@ -86,9 +86,26 @@ export interface GuardEnvironment {
   allowedPlaceholders: string[];
 }
 
+/** Circle PreToolUse hook reply (no legacy top-level decision/reason). */
 export interface HookDecision {
-  decision?: 'allow' | 'deny' | 'ask';
-  reason?: string;
+  hookSpecificOutput?: {
+    hookEventName: 'PreToolUse';
+    permissionDecision: 'allow' | 'deny' | 'ask' | 'defer';
+    permissionDecisionReason?: string;
+  };
+  systemMessage?: string;
+}
+
+/** Reads permissionDecision from a PreToolUse reply; silent `{}` means allow with no word. */
+export function permissionDecision(d: HookDecision): 'allow' | 'deny' | 'ask' | undefined {
+  const word = d.hookSpecificOutput?.permissionDecision;
+  if (word === 'allow' || word === 'deny' || word === 'ask') return word;
+  return undefined;
+}
+
+/** Reads permissionDecisionReason from a PreToolUse reply. */
+export function permissionReason(d: HookDecision): string {
+  return d.hookSpecificOutput?.permissionDecisionReason ?? '';
 }
 
 export interface ToolOption {
@@ -232,9 +249,8 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
   const vars = isRecord(settings.variables) ? settings.variables : {};
   const variable = vars[urlVar];
   if (typeof variable === 'string' && variable !== '') hubs.push(variable);
-  const server = unknownList(settings.mcp_servers).find(
-    (entry): entry is Record<string, unknown> => isRecord(entry) && entry.name === serverName,
-  );
+  const mcpServers = isRecord(settings.mcpServers) ? settings.mcpServers : {};
+  const server = isRecord(mcpServers[serverName]) ? mcpServers[serverName] : undefined;
   if (typeof server?.url === 'string' && server.url !== '' && !hubs.includes(server.url)) hubs.push(server.url);
 
   const cwdReal = bestEffortReal(cwd);
@@ -802,13 +818,36 @@ export function writeCommand(
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Refusal formatting & path/glob verification (fusing skillsGuard + ops-allow security boundaries).
 
-const refuse = (env: GuardEnvironment, what: string, how: string): HookDecision => ({
-  decision: 'deny',
-  reason: [what, how, `规则全文：${env.allowedFile}（用 read_file 读）`].filter(Boolean).join('\n'),
-});
+const refuse = (env: GuardEnvironment, what: string, how: string): HookDecision => {
+  const permissionDecisionReason = [what, how, `规则全文：${env.allowedFile}（用 read_file 读）`].filter(Boolean).join('\n');
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason,
+    },
+    systemMessage: what,
+  };
+};
 
 const allowed = (env: GuardEnvironment): HookDecision =>
-  env.declaration.allowReply === 'explicit' ? { decision: 'allow', reason: '本目录允许的工具' } : {};
+  env.declaration.allowReply === 'explicit'
+    ? {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason: '本目录允许的工具',
+        },
+      }
+    : {};
+
+const ask = (reason: string): HookDecision => ({
+  hookSpecificOutput: {
+    hookEventName: 'PreToolUse',
+    permissionDecision: 'ask',
+    permissionDecisionReason: reason,
+  },
+});
 
 const resolvedTarget = (env: GuardEnvironment, value: string, cwd = env.work ?? env.cwd): string =>
   canonical(path.isAbsolute(value) ? value : path.join(cwd, value));
@@ -1031,9 +1070,25 @@ function hookMatches(hook: Record<string, unknown>, input: Record<string, unknow
   );
 }
 
+/**
+ * Pack skill hooks.json still speak Circle 1.17 (`event: before_tool`).
+ * The home guard speaks PreToolUse only; translate at this delegation boundary without changing pack files.
+ */
+function rawForSkillHook(raw: string): string {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.event !== undefined) return raw;
+    if (parsed.hook_event_name === 'PreToolUse') return JSON.stringify({ ...parsed, event: 'before_tool' });
+  } catch {
+    // Pass the original bytes through.
+  }
+  return raw;
+}
+
 async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd: string): Promise<{ decision: 'allow' | 'ask' | 'deny'; reason: string }> {
   const setting = typeof hook.timeout_ms === 'number' && Number.isFinite(hook.timeout_ms) ? hook.timeout_ms : 30000;
   const timeout = Math.max(100, Math.min(600000, Math.floor(setting)));
+  const skillRaw = rawForSkillHook(raw);
   return new Promise((done) => {
     const child = spawn(hook.command as string, {
       cwd,
@@ -1090,7 +1145,7 @@ async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd:
     });
     child.stderr.resume();
     child.stdin.on('error', () => {});
-    child.stdin.end(raw);
+    child.stdin.end(skillRaw);
     child.once('error', () => finish({ decision: 'deny', reason: '技能钩子启动失败；请核对工作目录和安装并运行 verify 后重试' }));
     child.once('close', (code) => {
       if (failureReason !== null) {
@@ -1203,7 +1258,7 @@ async function runDelegatedSkillHooks(
     matched = true;
   }
   if (!matched || strictest.decision === 'allow') return allowed(env);
-  if (strictest.decision === 'ask') return { decision: 'ask', reason: strictest.reason };
+  if (strictest.decision === 'ask') return ask(strictest.reason);
   return refuse(env, `不允许：${strictest.reason}`, `这次可以这样做：${recover}`);
 }
 
@@ -1699,32 +1754,19 @@ function ruleMatches(rule: GuardRule, tool: string, args: Record<string, unknown
   return true;
 }
 
-/** Default Circle SQLite subagent check: returns true only when `sessions.parent_id` is non-empty for `id`. */
-export async function defaultIsSubagent(home: string, id: string): Promise<boolean> {
-  if (!/^[A-Za-z0-9_.-]{1,80}$/.test(id)) return false;
-  const origWarn = process.emitWarning;
-  process.emitWarning = () => {};
-  try {
-    const { DatabaseSync } = await import('node:sqlite');
-    const db = new DatabaseSync(path.join(home, 'circle.sqlite'), { readOnly: true });
-    try {
-      const row = db.prepare('select parent_id from sessions where id = ?').get(id) as { parent_id?: unknown } | undefined;
-      return typeof row?.parent_id === 'string' && row.parent_id !== '';
-    } finally {
-      db.close();
-    }
-  } catch {
-    return false;
-  } finally {
-    process.emitWarning = origWarn;
-  }
+/**
+ * Subagent recognition for declaration rules with `session: 'subagent'`.
+ * New Circle puts the subagent's id in `agent_id` (session_id is always the conversation).
+ */
+export function isSubagentPayload(input: Record<string, unknown>): boolean {
+  return typeof input.agent_id === 'string' && input.agent_id !== '';
 }
 
-/** Evaluates one Circle `before_tool` stdin payload against the loaded environment & declaration. */
+/** Evaluates one Circle PreToolUse stdin payload against the loaded environment & declaration. */
 export async function decideRaw(
   env: GuardEnvironment,
   raw: string,
-  opts: { isSubagent?: (id: string) => Promise<boolean> } = {},
+  opts: { isSubagent?: (agentId: string) => Promise<boolean> } = {},
 ): Promise<HookDecision> {
   if (env.declarationError) {
     return refuse(
@@ -1737,10 +1779,15 @@ export async function decideRaw(
   try {
     input = JSON.parse(raw);
   } catch {
-    return refuse(env, '不允许：守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。', '这次可以这样做：请宿主用完整的 before_tool JSON 对象重新发起调用。');
+    return refuse(env, '不允许：守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。', '这次可以这样做：请宿主用完整的 PreToolUse JSON 对象重新发起调用。');
   }
-  if (!isRecord(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !isRecord(input.tool_input)) {
-    return refuse(env, '不允许：调用信息缺少 before_tool、tool_name 或 tool_input 对象。', '这次可以这样做：请宿主补齐完整字段后重试。');
+  if (
+    !isRecord(input) ||
+    input.hook_event_name !== 'PreToolUse' ||
+    typeof input.tool_name !== 'string' ||
+    !isRecord(input.tool_input)
+  ) {
+    return refuse(env, '不允许：调用信息缺少 PreToolUse、tool_name 或 tool_input 对象。', '这次可以这样做：请宿主补齐完整字段后重试。');
   }
   if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some((file) => typeof file !== 'string'))) {
     return refuse(env, '不允许：工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。');
@@ -1751,14 +1798,15 @@ export async function decideRaw(
 
   const tool = input.tool_name;
   const args = input.tool_input as Record<string, unknown>;
-  const session = typeof input.session_id === 'string' ? input.session_id : '';
-  const isSubagent = opts.isSubagent ?? ((id: string) => defaultIsSubagent(env.home, id));
+  const agentId = typeof input.agent_id === 'string' ? input.agent_id : '';
+  const subagent =
+    opts.isSubagent !== undefined ? await opts.isSubagent(agentId) : isSubagentPayload(input);
 
   try {
     const d = env.declaration;
     for (const rule of asList(d.rules)) {
       if (!ruleMatches(rule, tool, args)) continue;
-      if (rule.session === 'subagent' && !(await isSubagent(session))) continue;
+      if (rule.session === 'subagent' && !subagent) continue;
       return refuse(env, rule.what, rule.how);
     }
 
@@ -1793,7 +1841,7 @@ export async function decideRaw(
         return refuse(
           env,
           `不允许：${tool}。${why}。`,
-          '这次可以这样做：要查资料或操作设备，用 hub_list_task_packs 列出可用的工作流，再用 Hub 的工具。',
+          '这次可以这样做：要查资料或操作设备，用 mcp__hub__list_task_packs 列出可用的工作流，再用 Hub 的工具。',
         );
       }
     }
@@ -1801,7 +1849,7 @@ export async function decideRaw(
     return refuse(
       env,
       `不允许：${tool || '这个工具'} 不在这个配置放行的工具里。`,
-      '这次可以这样做：放行的工具见规则全文；要查资料或操作设备，先用 hub_list_task_packs。',
+      '这次可以这样做：放行的工具见规则全文；要查资料或操作设备，先用 mcp__hub__list_task_packs。',
     );
   } catch (error) {
     if (error instanceof GuardRefusal) {

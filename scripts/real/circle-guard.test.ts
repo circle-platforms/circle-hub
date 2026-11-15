@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { writeHome, type Endpoint, type Profile } from './circle-home.ts';
@@ -58,18 +57,18 @@ function createGuardHarness(profile: Exclude<Profile, 'review'>, opts: { homeNam
       timeout: 5000,
     });
     assert.equal(child.status, 0, child.stderr);
-    return JSON.parse(child.stdout) as { decision?: 'allow' | 'deny' | 'ask'; reason?: string };
+    return JSON.parse(child.stdout) as import('./guard-lib.ts').HookDecision;
   };
 
-  const call = (tool_name: string, tool_input: Record<string, unknown>, extra: { cwd?: string; paths?: string[]; session_id?: string } = {}) =>
+  const call = (tool_name: string, tool_input: Record<string, unknown>, extra: { cwd?: string; paths?: string[]; agent_id?: string } = {}) =>
     runHook(
       {
-        event: 'before_tool',
+        hook_event_name: 'PreToolUse',
         cwd: extra.cwd ?? written.workdir,
         tool_name,
         tool_input,
         paths: extra.paths ?? [],
-        ...(extra.session_id !== undefined ? { session_id: extra.session_id } : {}),
+        ...(extra.agent_id !== undefined ? { agent_id: extra.agent_id } : {}),
       },
       extra.cwd ?? written.workdir,
     );
@@ -77,20 +76,21 @@ function createGuardHarness(profile: Exclude<Profile, 'review'>, opts: { homeNam
   const exec = (command: string, extra: { cwd?: string; fields?: Record<string, unknown> } = {}) =>
     call('execute', { command, ...(extra.fields ?? {}) }, { cwd: extra.cwd });
 
-  const assertAllowed = (res: { decision?: string; reason?: string }, msg?: string) => {
+  const assertAllowed = (res: import('./guard-lib.ts').HookDecision, msg?: string) => {
     if (profile === 'ops') assert.deepEqual(res, {}, msg);
-    else assert.equal(res.decision, 'allow', msg);
+    else assert.equal(res.hookSpecificOutput?.permissionDecision, 'allow', msg);
   };
 
-  const assertRefused3 = (res: { decision?: string; reason?: string }, whatPattern: RegExp, howPattern?: RegExp) => {
-    assert.equal(res.decision, 'deny');
-    const lines = String(res.reason ?? '').split('\n');
-    assert.ok(lines.length >= 3, `expected at least 3 lines, got:\n${res.reason}`);
+  const assertRefused3 = (res: import('./guard-lib.ts').HookDecision, whatPattern: RegExp, howPattern?: RegExp) => {
+    assert.equal(res.hookSpecificOutput?.permissionDecision, 'deny');
+    const lines = String(res.hookSpecificOutput?.permissionDecisionReason ?? '').split('\n');
+    const reason = res.hookSpecificOutput?.permissionDecisionReason ?? '';
+    assert.ok(lines.length >= 3, `expected at least 3 lines, got:\n${reason}`);
     assert.match(lines[0], whatPattern, `line 1: ${lines[0]}`);
     const how = lines.slice(1, -1).join('\n');
     if (howPattern) assert.match(how, howPattern, `how: ${how}`);
     assert.match(lines[lines.length - 1], /^规则全文：.*ALLOWED\.md（用 read_file 读）$/, `last line: ${lines[lines.length - 1]}`);
-    if (!how.includes("<<'EOF'")) assert.equal(lines.length, 3, `expected exact 3-line refusal without heredoc, got:\n${res.reason}`);
+    if (!how.includes("<<'EOF'")) assert.equal(lines.length, 3, `expected exact 3-line refusal without heredoc, got:\n${reason}`);
   };
 
   return {
@@ -221,38 +221,46 @@ test('test-bed booking stays rule blocks release/force_release/unregister/regist
     try {
       for (const action of ['release', 'force_release', 'unregister', 'register', 'Release', 'FORCE_RELEASE']) {
         for (const pack of ['test-bed', 'test-bed@1.3.3', 'TEST-BED@2.0.0']) {
-          h.assertRefused3(h.call('hub_start_run', { pack, parameters: { action } }), /释放或变更测试环境的预订登记/, /预订保持原样/);
+          h.assertRefused3(h.call('mcp__hub__start_run', { pack, parameters: { action } }), /释放或变更测试环境的预订登记/, /预订保持原样/);
           h.assertRefused3(
-            h.call('hub_start_run', { pack, parameters: JSON.stringify({ action }) }),
+            h.call('mcp__hub__start_run', { pack, parameters: JSON.stringify({ action }) }),
             /释放或变更测试环境的预订登记/,
           );
         }
       }
       for (const action of ['search', 'facts', 'help', 'acquire', 'extend']) {
-        h.assertAllowed(h.call('hub_start_run', { pack: 'test-bed@1.3.3', parameters: { action } }));
+        h.assertAllowed(h.call('mcp__hub__start_run', { pack: 'test-bed@1.3.3', parameters: { action } }));
       }
-      h.assertAllowed(h.call('hub_start_run', { pack: 'other-pack@1.0.0', parameters: { action: 'release' } }));
+      h.assertAllowed(h.call('mcp__hub__start_run', { pack: 'other-pack@1.0.0', parameters: { action: 'release' } }));
     } finally {
       h.close();
     }
   }
 });
 
-test('SQLite circle.sqlite subagent lookup blocks subagent question while allowing main session', () => {
+test('agent_id marks a subagent for session:subagent rules; main session question stays allowed', () => {
   const h = createGuardHarness('ops', { withSkills: false });
   try {
-    const db = new DatabaseSync(join(h.home, 'circle.sqlite'));
-    try {
-      db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, parent_id TEXT)');
-      db.prepare('INSERT INTO sessions (id, parent_id) VALUES (?, ?)').run('sess_main_01', null);
-      db.prepare('INSERT INTO sessions (id, parent_id) VALUES (?, ?)').run('sess_sub_01', 'sess_main_01');
-    } finally {
-      db.close();
-    }
+    // Default declaration no longer carries subagent-asks-nobody (subagents have no question tool).
+    h.assertAllowed(h.call('question', { questions: [] }));
+    h.assertAllowed(h.call('question', { questions: [] }, { agent_id: 'agent_sub_01' }));
 
-    h.assertAllowed(h.call('question', { questions: [] }, { session_id: 'sess_main_01' }));
-    h.assertAllowed(h.call('question', { questions: [] }, { session_id: "bad'id;--" }));
-    h.assertRefused3(h.call('question', { questions: [] }, { session_id: 'sess_sub_01' }), /子代理不向使用者提问/, /给主代理的报告/);
+    // Inject a session:subagent rule to prove agent_id recognition without SQLite.
+    const declPath = join(h.home, 'hooks', 'ops-allow.declaration.json');
+    const decl = JSON.parse(readFileSync(declPath, 'utf8'));
+    decl.rules = [
+      ...(decl.rules ?? []),
+      {
+        id: 'synthetic-subagent-blocks-question',
+        tool: 'question',
+        session: 'subagent',
+        what: '不允许：合成子代理规则拦住提问。',
+        how: '这次可以这样做：主会话提问不受影响。',
+      },
+    ];
+    writeFileSync(declPath, JSON.stringify(decl, null, 2));
+    h.assertAllowed(h.call('question', { questions: [] }));
+    h.assertRefused3(h.call('question', { questions: [] }, { agent_id: 'agent_sub_01' }), /合成子代理规则拦住提问/, /主会话提问不受影响/);
   } finally {
     h.close();
   }
@@ -282,7 +290,7 @@ test('ops sibling ^work-ops trust, execute key hygiene, skills/ symlink, globWit
     // 3. Delegated skill hooks.json works under ops (ask stays ask even though normal allow is {}).
     const jev = hOps.skillPath('jev', 'jev.ts');
     const jevAsk = hOps.exec(`node ${jev} ask --hub ${HUB_URL} --model synthetic-jev --input ask.json --send case --out jev-out <<'EOF'\n%JEV_API_KEY%\n%HUB_TOKEN%\nEOF`);
-    assert.equal(jevAsk.decision, 'ask');
+    assert.equal(jevAsk.hookSpecificOutput?.permissionDecision, 'ask');
 
     // 4. globWithin on ops catches directory symlink traversal inside workdir.
     const outside = join(hOps.dir, 'outside');
@@ -331,10 +339,11 @@ test('every command-form second line across all execute refusals passes replay, 
       const outside = `'${join(h.dir, 'outside.ts')}'`;
       writeFileSync(join(h.dir, 'outside.ts'), 'export {};\n');
 
-      const verifyRefusalSecondLine = (label: string, res: { decision?: string; reason?: string }, expectCommandForm: boolean) => {
-        assert.equal(res.decision, 'deny', `${label}: expected deny, got ${JSON.stringify(res)}`);
-        const lines = String(res.reason ?? '').split('\n');
-        assert.ok(lines.length >= 3, `${label}: expected >= 3 lines, got:\n${res.reason}`);
+      const verifyRefusalSecondLine = (label: string, res: import('./guard-lib.ts').HookDecision, expectCommandForm: boolean) => {
+        assert.equal(res.hookSpecificOutput?.permissionDecision, 'deny', `${label}: expected deny, got ${JSON.stringify(res)}`);
+        const reason = res.hookSpecificOutput?.permissionDecisionReason ?? '';
+        const lines = reason.split('\n');
+        assert.ok(lines.length >= 3, `${label}: expected >= 3 lines, got:\n${reason}`);
         assert.match(lines[lines.length - 1], /^规则全文：.*ALLOWED\.md（用 read_file 读）$/, `${label}: line 3`);
         const how = lines.slice(1, -1).join('\n');
         assert.doesNotMatch(how, /<技能目录>|<脚本>/, `${label}: second line must not emit fake angle-bracket template:\n${how}`);
@@ -352,7 +361,7 @@ test('every command-form second line across all execute refusals passes replay, 
       // Undeclared internal helper: must list actual installed declared scripts instead of a copyable template.
       const undeclaredRes = h.exec(`node ${undeclared}`);
       verifyRefusalSecondLine('undeclared helper', undeclaredRes, false);
-      const undeclaredHow = String(undeclaredRes.reason ?? '').split('\n').slice(1, -1).join('\n');
+      const undeclaredHow = String(undeclaredRes.hookSpecificOutput?.permissionDecisionReason ?? '').split('\n').slice(1, -1).join('\n');
       assert.match(undeclaredHow, /已装.*脚本|assemble-delivery\.ts|task-brief\.ts/, `undeclared helper should list installed scripts:\n${undeclaredHow}`);
 
       // Outside skills / missing file / non-interpreter / node -e / ambiguous or incomplete relative path.
