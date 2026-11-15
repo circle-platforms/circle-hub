@@ -130,7 +130,7 @@ export async function runInFlight(records: Pick<RecordsKit, 'store' | 'principal
 
 const NO_MORE = '这次上机验证不会再做上机验证：能在自动化用例、自动化用例 Excel 或预订上改的，改好后重新开始上机验证；其余等管理员处理';
 const RETRY = '原样重交，Hub 会再试一次';
-const RECOVERY_RESTART = '本次上机验证没有执行；原样重交只读本次结局。要再上机，请明确发起新的核验并重新预订，不重发原请求';
+const RECOVERY_RESTART = '当前恢复核对的原请求没有执行；原样重交只读该请求结局。要再上机，请明确发起新的核验并重新预订，不重发原请求';
 
 /** Only a current-intent recovery conclusion closes automatic retry; never infer it from prose or an older round. */
 export function recoveredWithoutExecution(events: readonly Event[]): boolean {
