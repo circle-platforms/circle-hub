@@ -292,18 +292,16 @@ function errorList(errors: readonly ProtocolError[], limits: Limits, shared: boo
 
 const fixFirst = (): string => '改正上面列出的问题后再调用，其余问题会在下一次回答里列出';
 
-/** The answer of a protocol error: the codes, every error with its fix, the trace. */
+/** The answer of a protocol error: the codes, one shared fix per code and every error's own location, the trace. */
 function errorText(v: { errors: ProtocolError[]; trace: string }): string {
   const codes = new Clip();
   const head = codes.field(`${labelOf('call_result', 'error')}：${[...new Set(v.errors.map((e) => e.code))].join('、')}`, CLIP.line, '错误代码的超出部分');
-  const list = errorList(v.errors, CLIP, false);
-  return fit(
-    [
-      { priority: 0, head: [head], omitted: codes.omitted },
-      { priority: 1, head: ['错误与修正：'], entries: list.entries, unit: '错误', measure: '个', more: fixFirst },
-    ],
-    { tail: [traceLine(v.trace)] },
-  ).text;
+  const shared = v.errors.length > 1;
+  const list = errorList(v.errors, CLIP, shared);
+  const blocks: Block[] = [{ priority: 0, head: [head], omitted: codes.omitted }];
+  if (list.summary !== null) blocks.push({ priority: 1, head: [list.summary.head], entries: list.summary.entries, unit: '错误代码', measure: '个', more: fixFirst });
+  blocks.push({ priority: 1, head: [shared ? '错误（逐条）：' : '错误与修正：'], entries: list.entries, unit: '错误', measure: '个', more: fixFirst });
+  return fit(blocks, { tail: [traceLine(v.trace)] }).text;
 }
 
 /** A value of a structure summary or of entry data on one line: scalars as they are, anything else as compact JSON. */
@@ -494,7 +492,11 @@ function uploadText(v: UploadOut): string {
   if (v.size !== undefined) head.push(`大小 ${v.size} 字节${v.media_type ? `，媒体类型 ${oneLine(v.media_type)}` : ''}`);
   if (v.sha256 !== undefined) head.push(`sha256 ${v.sha256}`);
   const blocks: Block[] = [{ priority: 0, head }];
-  if (v.errors.length > 0) blocks.push({ priority: 1, head: ['错误与修正：'], entries: errorList(v.errors, CLIP, false).entries, unit: '错误', measure: '个', more: fixFirst });
+  if (v.errors.length > 0) {
+    const list = errorList(v.errors, CLIP, v.errors.length > 1);
+    if (list.summary !== null) blocks.push({ priority: 1, head: [list.summary.head], entries: list.summary.entries, unit: '错误代码', measure: '个', more: fixFirst });
+    blocks.push({ priority: 1, head: [v.errors.length > 1 ? '错误（逐条）：' : '错误与修正：'], entries: list.entries, unit: '错误', measure: '个', more: fixFirst });
+  }
   if (v.acceptance === 'accepted') {
     if (v.structure === undefined) blocks.push({ priority: 1, head: ['没有核心解析器认出这份文件'] });
     else {

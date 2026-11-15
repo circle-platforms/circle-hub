@@ -23,7 +23,7 @@ describe('the pack files', () => {
   it('pack.json lists exactly the pack files with their digests (run pack-files.ts --write after a change)', async () => {
     assert.equal(text('pack.json'), manifestText(await computeManifest()));
     const manifest = PackManifest.parse(json('pack.json'));
-    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['bed-install', '1.0.4', 'workflow']);
+    assert.deepEqual([manifest.id, manifest.version, manifest.kind], ['bed-install', '1.0.5', 'workflow']);
     const files = await packFiles();
     assert.ok(files.includes('functions/install.ts') && files.includes('policies/install.json') && files.includes('samples/negative/install-booking-missing.json') && files.includes('examples/bed-install-profile.json'));
     assert.ok(!files.some((f) => f.endsWith('.test.ts') || f === 'README.md' || f === 'pack-files.ts'));
@@ -40,6 +40,9 @@ describe('the pack files', () => {
     assert.deepEqual(workflow.parameters.map((p) => [p.name, p.required]), [['bed', true]]);
     const file = RequirementsFile.parse(json('requirements.json'));
     assert.deepEqual(file.requirements.map((r) => [r.key, r.accepted_producer, r.checks]), [['reason', 'judgment', []], ['install', 'fact', ['install', 'dispatch_policy']]]);
+    const executable = file.requirements.find((r) => r.key === 'install')!;
+    assert.deepEqual(executable.layers, ['static', 'dynamic']);
+    assert.equal(executable.observation, 'dispatch@1');
     assert.deepEqual(file.effects?.map((row) => [row.id, row.trigger, row.release, row.parameters, row.budget.count]), [
       ['install_build', 'hub_template', { requirements: ['reason', 'install'], artifact: 'install' }, { policy: 'policies/install.json', check: 'dispatch_policy' }, 1],
     ]);

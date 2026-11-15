@@ -32,7 +32,7 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
   if (!Array.isArray(run.items) || !run.items.length || !Array.isArray(submission.items) || submission.items.length !== run.items.length) throw new Error('提交没有覆盖本运行的全部用例；整份工作簿要全部用例的计划都满足后再生成');
   const errors=result.errors as unknown[];
   const ids=new Set(run.items.map((value)=>isRecord(value)?value.id:undefined));
-  if(errors.some(error=>!isRecord(error)||error.requirement!=='workbook_verified'||error.code!=='missing_input'||!ids.has(error.item)))throw new Error('计划仍有工作簿缺输入以外的错误，先修复计划再生成');
+  if(errors.some(error=>!isRecord(error)||error.requirement!=='workbook_verified'||!(error.code==='missing_input'||error.code==='no_check')||!ids.has(error.item)))throw new Error('计划仍有工作簿缺输入以外的错误，先修复计划再生成');
   const coverage = record(result.coverage, '缺少核对覆盖范围'); if (coverage.complete !== true || coverage.total !== run.items.length || coverage.examined !== run.items.length) throw new Error('结果没有完整核对本运行的全部用例');
   return run.items.map((value) => {
   const item = record(value, '条目不合式'); const submittedRows = (submission.items as unknown[]).filter((row) => isRecord(row) && row.item === item.id); if (submittedRows.length !== 1) throw new Error(`提交没有唯一覆盖用例 ${String(item.id)}`); const submitted = record(submittedRows[0], '提交条目不合式');
@@ -43,7 +43,7 @@ export function satisfiedRecipes(input: { run: unknown; result: unknown; submiss
 
   if (!Array.isArray(run.requirements) || !Array.isArray(itemResult.requirements)) throw new Error('缺少完整的计划要求项状态');
   const workbook=itemResult.requirements.find((value:unknown)=>isRecord(value)&&value.requirement==='workbook_verified');
-  const onlyMissingWorkbook=isRecord(workbook)&&workbook.status==='pending'&&Array.isArray(workbook.layers)&&workbook.layers.length===1&&workbook.layers.every((layer:unknown)=>isRecord(layer)&&layer.layer==='static'&&layer.terminal==='unchecked'&&layer.reason==='missing_input'&&(layer.gaps===undefined||Array.isArray(layer.gaps)&&layer.gaps.every((gap:unknown)=>isRecord(gap)&&gap.reason==='missing_input')));
+  const onlyMissingWorkbook=isRecord(workbook)&&workbook.status==='pending'&&Array.isArray(workbook.layers)&&workbook.layers.filter((layer:unknown)=>isRecord(layer)&&layer.layer==='static').every((layer:unknown)=>isRecord(layer)&&layer.terminal==='unchecked'&&layer.reason==='missing_input'&&(layer.gaps===undefined||Array.isArray(layer.gaps)&&layer.gaps.every((gap:unknown)=>isRecord(gap)&&gap.reason==='missing_input')))&&workbook.layers.filter((layer:unknown)=>isRecord(layer)&&layer.layer==='dynamic').every((layer:unknown)=>isRecord(layer)&&layer.terminal==='not_run'&&layer.reason==='no_check');
   if(errors.length&&!onlyMissingWorkbook)throw new Error('工作簿要求项不是生成前缺输入，不把未核验或反驳当成可生成');
   if(isRecord(workbook)&&Array.isArray(workbook.layers)&&workbook.layers.some((layer:unknown)=>isRecord(layer)&&(layer.terminal==='violation'||layer.terminal==='fail')))throw new Error('工作簿已有确定反驳，不能用缺输入绕过');
 

@@ -5,6 +5,7 @@ import type { RunDetail, RunsService, WorkflowStore } from '../ports.ts';
 import type { Claim } from '../../contracts/src/claim.ts';
 import { canonicalize, isSha256 } from '../records/api.ts';
 import { at, type ExecutorDefinition } from './definition.ts';
+import { releaseStatus } from './release-requirements.ts';
 export type VerificationPort = Pick<RunsService, 'getRun'>;
 export interface VerifiedInput {
   judgments?:Claim[];
@@ -52,7 +53,7 @@ export async function inspectInput(by:Principal,id:string,d:ExecutorDefinition,r
   add('run.items.dynamic','多条目核验运行的任务包没有派发观察的动态层',workflow?!dynamicObserved:null,[f('workflow.requirements.dynamic_dispatch',false,dynamicObserved,workflow?!dynamicObserved:null)]);
  }
  for(const [index,requirement] of required.entries()){
-  const values=requirement.target==='item'?result?.partitions.delivered.map(item=>item.requirements.find(row=>row.requirement===requirement.key)?.status):result?.cross_item.filter(claim=>claim.requirement===requirement.key);
+  const values=requirement.target==='item'?result?.partitions.delivered.map(item=>{const found=item.requirements.find(row=>row.requirement===requirement.key),projection=detail!.run.items.find(projected=>projected.id===item.item);return found&&projection?releaseStatus(requirement,found,projection):found?.status;}):result?.cross_item.filter(claim=>claim.requirement===requirement.key);
   const pass=!!values?.length&&(requirement.target==='item'?values.every(value=>value==='satisfied'):(values as Claim[]).every(claim=>validClaim(claim,now)));
   const fields=[f('workflow.requirements.'+workflow!.requirements.indexOf(requirement)+'.key',requirement.key,requirement.key,true)];
   if(requirement.target==='item'&&result)for(const [itemIndex,item]of result.partitions.delivered.entries()){

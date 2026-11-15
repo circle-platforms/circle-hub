@@ -1,4 +1,8 @@
-# case-compile 3.9.18
+# case-compile 3.9.20
+
+## 3.9.20：上机结果进入要求项
+
+`workbook_verified` 同时声明静态层和 `dispatch@1` 动态观察层。首次派发只要求静态事实满足，避免动态未运行形成自锁；派发后，逐条动态终态、轮次分布和要求项状态由现有维护汇总追加为新结果，旧结果不改写。客户端生成器也只接受这一过渡状态，其他错误、反驳或其他要求项的未决不放宽。共享目标的报告仍保留判断性质，不因显示为通过就满足只接受事实的要求项。包与生成器身份同步为 `case-compile@3.9.20`，旧运行和旧结果不重写。
 
 The client authors a plan for every case of the run and generates one XLSX for all of them. The Hub verifies the plans, independently interprets the core xlsx@1 model, and recomputes the exact artifact with the same generator. It calls no model and never emits an execution artifact itself. Synthetic acceptance proves these boundaries, not compatibility or success on a real runner/device.
 
@@ -60,7 +64,7 @@ node packs/workflow/case-compile/pack-files.ts --check
 node --test --test-concurrency=1 packs/workflow/case-review/packs.test.ts
 ```
 
-Tests use synthetic contracts/profiles/resources and temporary loopback PostgreSQL. They exercise byte repeatability, core-parser reading, independent row reading, all required structural counterexamples, raw-byte mismatch, offline CLI provenance checks and published tools execution. Production tests prove plan-success/workbook-missing, script generation from that exact result, and all-satisfied successor verification with compact receipt data. Publishing checks all author samples in the real temporary registry. Missing sandbox-exec is a skip, never a pass.
+Tests use synthetic contracts/profiles/resources and temporary loopback PostgreSQL. They exercise byte repeatability, core-parser reading, independent row reading, all required structural counterexamples, raw-byte mismatch, offline CLI provenance checks and published tools execution. Production tests prove plan-success/workbook-missing, script generation from that exact result, static-satisfied successor verification with compact receipt data, and the dynamic layer waiting for its dispatch observation. Publishing checks all author samples in the real temporary registry. Missing sandbox-exec is a skip, never a pass.
 
 The repository vocabulary scan has existing out-of-package matches in knowledge, submit and tools on this baseline. This package adds no exception/baseline or handwritten vocabulary axis. Real runner data, models, devices, persistent deployment, keys and owner configuration were not accessed.
 

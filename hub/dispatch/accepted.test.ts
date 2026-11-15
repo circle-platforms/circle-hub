@@ -167,7 +167,8 @@ for (const [mode, reason] of [['busy', /原因：目标拒绝了提交之前的�
     assert.equal(c.calls.includes('send_blob'), false);
     // A submission that is not ready only reads: it starts nothing.
     const read = await acceptedDispatch(c.kit, c.service, c.run, false);
-    assert.equal(read.length, 2); assert.match(read[1].text, /什么都没有发到目标；原因消除后原样重交，Hub 会再试一次/);
+    assert.equal(read.length, 2);
+    assert.equal(read.filter((note) => /什么都没有发到目标；原因消除后原样重交，Hub 会再试一次/.test(note.text)).length, 1, 'the shared retry instruction appears once across both job notes');
   });
 }
 

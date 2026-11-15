@@ -152,7 +152,12 @@ test('a product publication, genuine independent adjudication and append-only re
         assert.equal(verifiedStart.answer.call_result, 'ok', JSON.stringify(verifiedStart.answer.errors));
         const verified = await h.service.submitResult(h.alice, planSubmission(verifiedStart.answer.run!), call());
         assert.equal(verified.acceptance, 'accepted', JSON.stringify(verified.errors));
-        assert.ok(Object.values(verified.result!.partitions).flat().every(i => i.requirements.every(r => r.status === 'satisfied')), JSON.stringify(verified.result));
+        for (const item of Object.values(verified.result!.partitions).flat()) {
+            assert.ok(item.requirements.filter(r => r.requirement !== 'workbook_verified').every(r => r.status === 'satisfied'), JSON.stringify(verified.result));
+            const waiting = item.requirements.find(r => r.requirement === 'workbook_verified')!;
+            assert.equal(waiting.status, 'pending');
+            assert.deepEqual(waiting.layers.map(layer => [layer.layer, layer.terminal]), [['static', 'pass'], ['dynamic', 'not_run']]);
+        }
         // Incremental candidates always retain the full task set; empty yet-unjudged slots do not spend repair rounds.
         const multi = { root: { data: { id: 'part-root', text: 'ORBIT / COMET synthetic parts' }, children: [JSON.parse(fixtureText('author-pass.km.json')).root.children[0], JSON.parse(fixtureText('author-underdetermined.km.json')).root.children[0]] } }, multiBytes = JSON.stringify(multi), multiRef = 'src:' + sha(multiBytes), multiExternal = 'agile:mindmap:synthetic-parts';
         put(multiExternal, multiBytes);

@@ -18,6 +18,27 @@ for(const clause of [1,2,3,4,5,6,7,8])test(`the real dispatch refuses clause ${c
  assert.equal(refusal?.body.action,'dispatch');assert.equal(refusal?.body.detail.boundary_clause,clause);
  const effects=await c.kit.store.findMany({kind:'effect',key:'effect.job',values:[state.job]});assert.equal(effects.length,1);
 });
+test('a dynamic requirement opens for its first dispatch on static facts and closes again on its observed outcome',async t=>{
+ const c=await setup();t.after(()=>c.close());
+ const byDigest=c.workflows.byDigest;c.workflows.byDigest=async()=>{const loaded=await byDigest();Object.assign(loaded!.requirements[0]!,{layers:['static','dynamic'],observation:'dispatch@1'});return loaded;};
+ const result=c.detail.latest!.result.partitions.delivered[0].requirements[0];
+ Object.assign(result,{status:'pending',layers:[{layer:'static',terminal:'pass'},{layer:'dynamic',terminal:'not_run',reason:'no_check'}]});
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'effective',state.missing_fact);
+ const {prepareEffectGate}=await import('./effect-gate.ts');
+ const gate=await prepareEffectGate({records:c.kit,runs:c.runs,workflows:c.workflows,by:c.admin,run:c.run,executor:c.executor.id,definition:c.executor.definition,resolved_digest:c.executor.resolved_digest,now:c.now});
+ for(const [terminal,status,reason] of [['fail','unsatisfied','outcome_mismatch'],['pass','unsatisfied','no_producer']] as const){
+  Object.assign(result,{status,unsatisfied_reason:reason,layers:[{layer:'static',terminal:'pass'},{layer:'dynamic',terminal}]});
+  const inspected=await gate.inspectRelease(c.effectDocument.effects[0]);assert.equal(inspected.input,undefined,`${terminal} must not release another effect`);
+ }
+});
+
+test('a dynamic-only requirement cannot open its first dispatch with an empty static premise',async t=>{
+ const c=await setup();t.after(()=>c.close());
+ const byDigest=c.workflows.byDigest;c.workflows.byDigest=async()=>{const loaded=await byDigest();Object.assign(loaded!.requirements[0]!,{layers:['dynamic'],observation:'dispatch@1'});return loaded;};
+ Object.assign(c.detail.latest!.result.partitions.delivered[0].requirements[0],{status:'pending',layers:[{layer:'dynamic',terminal:'not_run',reason:'no_check'}]});
+ const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'not_dispatched');assert.equal(c.calls.includes('send_blob'),false);
+});
+
 test('a successful dispatch stores its allowed row and one budget allocation with immutable effect snapshots',async t=>{
  const c=await setup();t.after(()=>c.close());const state=await c.service.dispatch(c.admin,c.run,c.executor.id);assert.equal(state.outcome,'effective');
  const intent=(await c.service.journal.events(state.job)).find(e=>e.body.detail.phase==='intent')!;assert.equal(intent.body.detail.effect_row,'submit_verified');

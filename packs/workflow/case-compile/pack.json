@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.9.19",
+  "version": "3.9.20",
   "kind": "workflow",
   "dependencies": [
     {
@@ -296,8 +296,8 @@
     },
     {
       "path": "requirements.json",
-      "sha256": "fa65512a9c46636f59b29880847607ae84c58b0a35df3a64d97df40d37b4beac",
-      "size": 11360
+      "sha256": "49dc6337bcf8bc54d98b2d3e769989ea280701de209827e433faa0d6b4d8ba1e",
+      "size": 11555
     },
     {
       "path": "samples/negative/quote.json",
@@ -371,7 +371,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "14cd22db7bfce9f0d7af6a73a8f3777f8f42164103e8ade41f2dc7072abb5a7f",
+      "sha256": "fcb491b0df61e8754eef70323e702f95c0996f64c613a1fea99f972ea121617b",
       "size": 39780
     },
     {
@@ -411,7 +411,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "8f4a83183cbbf385ef400fde5e2645b9dd7be2a650268ebe5b2384381d0c9f99",
+      "sha256": "54ce12df7229d6749408db0f12ee620b763079f045dbb3e9b2387ae2199d6a8b",
       "size": 39784
     },
     {
@@ -486,7 +486,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "6aab94ce24d2fb776b8d506d7db4f6013c22900f686fedb152dfe0ec59cb2a8f",
+      "sha256": "a60d91ea922ca0ca6c85761fd6b35d33fa574882e7837bec74243d1e33e490df",
       "size": 39734
     },
     {
@@ -526,7 +526,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "c640e70d00777388455058053fb0c4fb2d2891b6a114de760698a8cacf18fc46",
+      "sha256": "dbdd70ece85a79aaa6e401374f1ef068ecadfd671c9630580c8e20d111ab6cc2",
       "size": 39738
     },
     {
@@ -626,7 +626,7 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "ad968410afd32c5567b1632258ef47bcd6a61e31e666addda2b93642ada0b883",
+      "sha256": "30d018bc52357de762b9edc5c990903677d80437d1a9674a19eb2de9f465b462",
       "size": 556
     },
     {
@@ -641,8 +641,8 @@
     },
     {
       "path": "tools/generate-workbook.ts",
-      "sha256": "4ee5b1c08ad2fc7064dbdb9c383734313f18cf25b9d47b420c36fe53c7939458",
-      "size": 11438
+      "sha256": "18184db5282168e52ec72ec458bd2e634df81f7e59d6fa22bc31be373af87cad",
+      "size": 11657
     },
     {
       "path": "tools/normalize-mindmap.ts",

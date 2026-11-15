@@ -18,6 +18,7 @@ import { ExecutorRegistry, ExecutorAccessError, ExecutorCredentialError, lockExe
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, HttpReplyError, IncompleteReplyError, InvocationDefinitionError, ResponseStorageError, RpcReplyError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
 import { probeValues, type BuildKnowledge, type SeatEcho } from './probes.ts';
+import { BOOKING_PROBE_KEY, bookingProbeKey, replayBookingProbes } from './probe-replay.ts';
 import { DeviceObservation } from '../../contracts/src/pack.ts';
 import {requestIdentity,sameRequestIdentity} from './request-identity.ts';
 import {PrecheckFactError,precheckFailure} from './precheck-failure.ts';
@@ -1103,12 +1104,13 @@ export class DispatchService {
     if (!d.probes) return false;
     const { assessProbes } = await import('./probes.ts');
     // What the version probe saw before a dispatch is also the device's latest observation (decision 112).
-    const observed = d.manifest_sha256 ? (echo: SeatEcho) => this.recordObservation({ inventory: d.manifest_sha256!, ...echo, run: null, job: binding.job, executor: binding.executor, product: d.precheck_context?.product }).then(() => undefined) : undefined;
-    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed);
+    const observed = d.manifest_sha256 ? (echo: SeatEcho) => this.recordObservation({ inventory: d.manifest_sha256!, ...echo, run: null, job: binding.job, executor: binding.executor, executorDigest: binding.executor_digest, product: d.precheck_context?.product }).then(() => undefined) : undefined;
+    const replayed = binding.input ? await replayBookingProbes(this.options.records, { ancestors: binding.input.ancestors, user: binding.user, executor: binding.executor, executorDigest: binding.executor_digest }, d) : null;
+    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed,replayed??undefined);
   }
 
   /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
-  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> {
+  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; executorDigest?: string; checks?: { version: string; interfaces: string }; product: unknown }): Promise<DeviceObservation> {
     const now = this.now().toISOString();
     const build = input.values.length === 1 ? input.values[0]! : null;
     // The echoed name is resolved to its knowledge-base build (aliases followed), so a reader compares builds, not spellings.
@@ -1119,8 +1121,8 @@ export class DispatchService {
     });
     await this.options.records.store.put<ActionBody>({
       kind: 'action', schema: 'action@1', provenance: 'observed', created_at: now,
-      body: { action: 'validate', run: input.run, item: null, inputs: [input.reference], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, observation } },
-      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' }],
+      body: { action: 'validate', run: input.run, item: null, inputs: [...new Set([input.reference, ...(input.checks ? [input.checks.interfaces] : [])])], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, ...(input.executorDigest ? { executor_digest: input.executorDigest } : {}), observation, ...(input.checks ? { probe_references: input.checks } : {}) } },
+      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' }, ...(input.run !== null && input.checks ? [{ key: BOOKING_PROBE_KEY, value: bookingProbeKey(input.run, input.executor, input.inventory, input.device) }] : [])],
     });
     return observation;
   }
@@ -1140,9 +1142,9 @@ export class DispatchService {
   }
 
   /**
-   * Looks at the installed build of devices a booking was just granted (decision 112): for each enabled executor bound to the
-   * same inventory, the version-probe seats that point at a requested device are probed read-only inside one short gateway
-   * lease; nothing is dispatched. Each observation is recorded and returned; what could not be looked at is said in `missing`.
+   * Looks at a booking's devices (decision 112): for each enabled executor bound to the same inventory, the matching seats'
+   * version and interface probes run read-only inside one short gateway lease; nothing is dispatched. Original responses are
+   * bound to the booking for later replay, and what could not be looked at is said in `missing`.
    */
   async observeDevices(by: Principal, run: string, targets: ReadonlyArray<{ inventory: string; device: string; label: string }>): Promise<{ observed: DeviceObservation[]; missing: string | null }> {
     const pending = new Map(targets.map((t) => [`${t.inventory}#${t.device}`, t]));
@@ -1185,8 +1187,9 @@ export class DispatchService {
       const out: DeviceObservation[] = [];
       for (const seat of seats) {
         const response = await client.declaredRead(d.probes!.call, { ...context, command: seat.version.command, seat_index: seat.index }, `observe.${seat.index}.version`);
+        const interfaces = await client.declaredRead(d.probes!.call, { ...context, command: seat.interfaces.command, seat_index: seat.index }, `observe.${seat.index}.interfaces`);
         const label = targets.get(`${d.manifest_sha256}#${seat.manifest.device}`)?.label ?? seat.seat;
-        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product }));
+        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, executorDigest: registered.resolved_digest, checks: { version: response.source, interfaces: interfaces.source }, product: d.precheck_context?.product }));
       }
       return out;
     } finally {

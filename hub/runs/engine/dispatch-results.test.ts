@@ -81,7 +81,13 @@ test('dispatch recomputation keeps an unruled static judgment unmet for a fact-o
   const artifact=await h.kit.artifacts.ingest({bytes:canonicalBytes({job:job.job,sha256:job.sha256,rows:[{item,dynamic_terminal:'pass',accepted_as_fact:false,qualifier:{nature:'judgment',marks:['target_reported','report_for_dispatch','local_ops_not_excluded']},missing_facts:[]}]}),mediaType:'application/json',origin:{generated:{generator:'dispatch@1',inputs:[]}},author:{user:null},provenanceType:'projected',visibility:{readers:[h.alice.id],admins:true,packs:[],shareable:false}});
   job.status={...job.status,phase:'complete',outcome:'effective',frozen:false,events:2,result:`src:${artifact.body.sha256}`};
   const observed=structuredClone(result);
+  const { requirementCounts } = await import('../../server/text.ts');
+  const before = requirementCounts(observed, record.requirements);
   await applyDispatchResults(ctx,record,observed,[job]);
+  const after = requirementCounts(observed, record.requirements);
+  assert.notDeepEqual(before, after, 'the same static submission has a different summary once device observations arrive');
+  assert.match(before.join('\n'), /动态：○ 未运行/);
+  assert.match(after.join('\n'), /动态：✓ 通过/);
   assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='static')!.terminal,'judgment');
   assert.equal(requirementOf(observed).layers.find(layer=>layer.layer==='dynamic')!.terminal,'pass');
   assert.equal(requirementOf(observed).status,'unsatisfied');

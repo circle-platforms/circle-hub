@@ -151,6 +151,16 @@ test('an unknown pack is absent and an unassigned pack is not permitted (D05 R[3
   assert.deepEqual(theirs.errors.map((e) => [e.code, e.path]), [['SOURCE_ABSENT', '/predecessor']]);
 });
 
+test('a misspelled pack names the correct visible workflow in the first refusal', { skip }, async () => {
+  const near = await h.service.startRun(h.alice, { pack: 'toy-reveiw', inputs: {} }, h.call());
+  assert.deepEqual(near.errors.map((e) => [e.code, e.path]), [['SOURCE_ABSENT', '/pack']]);
+  assert.match(near.errors[0]!.fix ?? '', /toy-review@1\.0\.0/);
+  const { toolText } = await import('../../server/text.ts');
+  assert.match(toolText('start_run', near), /toy-review@1\.0\.0/);
+  const unrelated = await h.service.startRun(h.alice, { pack: 'no-such-pack', inputs: {} }, h.call());
+  assert.match(unrelated.errors[0]!.fix ?? '', /可用任务包：.*toy-review@1\.0\.0/);
+});
+
 test('inputs: required slots, unknown slots, accepted types, readable references, whole sources', { skip }, async () => {
   const start = (inputs: Record<string, unknown>) => h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: inputs as never }, h.call());
   const missing = await start({});

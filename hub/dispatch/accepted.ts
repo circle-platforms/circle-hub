@@ -15,11 +15,29 @@ export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
 export const MAX_NOTES = 16, MAX_NOTE_TEXT = 800;
 const clip = (text: string) => text.length <= MAX_NOTE_TEXT ? text : `${text.slice(0, MAX_NOTE_TEXT - 1)}…`;
+type Noted = DispatchNote & { next?: string };
+
+/** Keep the newest occurrence of each job, and say an identical next action once across those occurrences. */
+export function consolidateDispatchNotes(notes: readonly Noted[]): DispatchNote[] {
+  const byJob = new Map<string, Noted>();
+  for (const note of notes) byJob.set(note.job ?? `\0${note.text}`, note);
+  const seen = new Set<string>();
+  return [...byJob.values()].map((note) => {
+    const { next, ...base } = note;
+    if (next === undefined) return base;
+    const suffix = `；下一步：${next}`;
+    const repeated = seen.has(next);
+    seen.add(next);
+    return repeated && base.text.endsWith(suffix) ? { ...base, text: base.text.slice(0, -suffix.length) } : base;
+  });
+}
+
 /** The newest notes within the limit, after one line that counts the older jobs left out. */
-function capped(notes: DispatchNote[]): DispatchNote[] {
-  if (notes.length <= MAX_NOTES) return notes;
-  const kept = notes.slice(-(MAX_NOTES - 1));
-  return [{ text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept];
+function capped(notes: Noted[]): DispatchNote[] {
+  const unique = consolidateDispatchNotes(notes);
+  if (unique.length <= MAX_NOTES) return unique;
+  const kept = unique.slice(-(MAX_NOTES - 1));
+  return [{ text: `这个运行另有 ${unique.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept];
 }
 // the reference compile skill reads a running task's status by its id and never resubmits it; here the progress read is the same submission.
 const PROGRESS = '稍后逐字原样重交派发时的那次提交读进展';
@@ -118,7 +136,7 @@ function details(status: JobStatus): string[] {
 }
 
 /** The runner's note on one job of the run; `retried` when the answer that carries it dispatches again after it. */
-export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false): DispatchNote {
+export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false): Noted {
   const { status } = job;
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '派发结果未确认' : '进行中';
   const parts = [`作业 ${job.job}：${state}（阶段 ${status.phase}）`, `${labelOf('effect_outcome', status.outcome)}`];
@@ -130,6 +148,7 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
     ? `派发前核对的结论 ${status.result}（逐台设备的版本和接口核对，不是用例在设备上的结果：用例还没有发到设备）`
     : `结果引用 ${status.result}（每个派发条目一行，读它看逐条结论；没有通过的条目在 evidence 里列出目标报告的日志和各设备会话，读它们找原因）`);
   if (status.reason) parts.push(`原因：${status.reason}`);
-  parts.push(...details(status), retried ? '这次重交 Hub 已再试，见后面的条目' : `下一步：${nextStep(job, admin)}`);
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), text: clip(parts.join('；')) };
+  const next = retried ? undefined : nextStep(job, admin);
+  parts.push(...details(status), retried ? '这次重交 Hub 已再试，见后面的条目' : `下一步：${next}`);
+  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...(next === undefined ? {} : { next }), text: clip(parts.join('；')) };
 }

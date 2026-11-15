@@ -276,20 +276,21 @@ async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<Reque
     }
     if(!available)continue;
     const staleSource=(result:ValidationResult)=>[...result.cross_item,...Object.values(result.partitions).flat().flatMap(i=>i.requirements.flatMap(r=>r.claims))].some(claim=>{const rows=claim.statement.data?.unread_sources;return Array.isArray(rows)&&rows.some(row=>isObject(row)&&typeof row.reference==='string'&&request.sources!.includes(row.reference));});
-    const at=ctx.now().toISOString();
-    const observed=await putAction(ctx.deps.records.store,{action:'read',run:run.run,inputs:[...new Set(proofInputs)],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{request:request.record,sources_available:true}});
-    if(await abandonDecision(ctx,run.run)){await answerRequest(ctx,request.record,observed.digest);continue;}
+    const inputs=[...new Set(proofInputs)],uniqueKey='runs.source-recovery:'+digestOf({request:request.record,source:request.source,inputs});
+    if(await ctx.deps.records.store.getByKey('action',uniqueKey))continue;
+    const prove=()=>putAction(ctx.deps.records.store,{action:'read',run:run.run,inputs,startedAt:ctx.now().toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{request:request.record,sources_available:true},uniqueKey});
+    if(await abandonDecision(ctx,run.run)){const observed=await prove();await answerRequest(ctx,request.record,observed.digest);continue;}
+    let refreshed:ValidationResult|null=null;
     const submission=await submissionByDigest(ctx.deps.records.store,run.run,request.source);
     if(!submission){
-      if(request.source===stored.digest&&run.requirements.every(r=>r.accepted_producer==='fact')){const refreshed=await recheckProduction(ctx,stored,{id:runner.id,name:runner.name,role:runner.role},randomBytes(16).toString('hex'));if(refreshed&&!staleSource(refreshed.result))await answerRequest(ctx,request.record,observed.digest);}
-      continue;
+      if(request.source===stored.digest&&run.requirements.every(r=>r.accepted_producer==='fact'))refreshed=(await recheckProduction(ctx,stored,{id:runner.id,name:runner.name,role:runner.role},randomBytes(16).toString('hex')))?.result??null;
+    }else if(isObject(submission.body)&&!isVerbatimObject(submission)){
+      const action=await actionOfSubmission(ctx.deps.records.store,submission.digest);
+      const session=typeof action?.body.detail.session==='string'?action.body.detail.session:null;
+      if(session!==null||!run.requirements.some(r=>r.accepted_producer==='independent_judgment'))refreshed=(await submitResult(ctx,{id:runner.id,name:runner.name,role:runner.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:session},true)).result??null;
     }
-    if(!isObject(submission.body)||isVerbatimObject(submission))continue;
-    const action=await actionOfSubmission(ctx.deps.records.store,submission.digest);
-    const session=typeof action?.body.detail.session==='string'?action.body.detail.session:null;
-    if(session===null&&run.requirements.some(r=>r.accepted_producer==='independent_judgment'))continue;
-    const response=await submitResult(ctx,{id:runner.id,name:runner.name,role:runner.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:session},true);
-    if(response.result?.acceptance==='accepted'&&!staleSource(response.result)){
+    const observed=await prove();
+    if(refreshed?.acceptance==='accepted'&&!staleSource(refreshed)){
       const result=await latestAccepted(ctx.deps.records.store,run.run);
       if(result)await answerRequest(ctx,request.record,observed.digest);
     }

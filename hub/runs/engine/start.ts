@@ -430,14 +430,40 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
  * Why the caller cannot use this pack (D05 R[3], decision 112): no such pack or only withdrawn versions, a pack not assigned to
  * the caller, or a pack that is not a workflow pack. A disabled account stays the neutral answer (the identity class).
  */
+function nameDistance(left: string, right: string): number {
+  const a = [...left], b = [...right];
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+async function packNameFix(ctx: EngineContext, user: Principal, input: string, space?: string): Promise<string> {
+  const LIST = '用 list_task_packs 看你能用的任务包';
+  const summaries = await ctx.deps.workflows.summaries(user);
+  const usable = summaries.filter((pack) => pack.kind === 'workflow' && (space === undefined || (pack.space ?? 'team') === space));
+  if (usable.length === 0) return LIST;
+  const bare = input.split('@')[0];
+  const ranked = usable.map((pack) => ({ pack, distance: Math.min(nameDistance(input, pack.pack), nameDistance(bare, pack.id)) }))
+    .sort((a, b) => a.distance - b.distance || a.pack.pack.localeCompare(b.pack.pack));
+  const names = [...new Set(usable.map((pack) => pack.pack))];
+  const list = `可用任务包：${names.slice(0, 5).join('、')}${names.length > 5 ? ` 等 ${names.length} 个` : ''}`;
+  const best = ranked[0]!;
+  const suggestion = best.distance <= 2 && (ranked.length === 1 || ranked[1]!.distance > best.distance) ? `是否要改用 ${best.pack.pack}？` : '';
+  return `${suggestion}${list}；也可用 list_task_packs 核对`;
+}
+
 async function packMissing(ctx: EngineContext, user: Principal, pack: string, found: LoadedWorkflow | null, space?: string): Promise<Refusal> {
   const LIST = '用 list_task_packs 看你能用的任务包';
-  if (found !== null) return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${found.pack.kind === 'skill' ? '技能包' : '产品或系统包'}，不是任务包`, { path: '/pack', fix: LIST })]);
+  if (found !== null) return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${found.pack.kind === 'skill' ? '技能包' : '产品或系统包'}，不是任务包`, { path: '/pack', fix: await packNameFix(ctx, user, pack, space) })]);
   const absence = await ctx.deps.workflows.absence?.(user, pack, space) ?? null;
   const note = absence === null ? `pack ${pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack` : `pack ${pack} is ${absence} for ${user.id}${space ? ` in space ${space}` : ''}`;
   // Another account's personal workflow is answered neutrally whether it is missing, ungranted or withdrawn (D05 R[3], T01 R[1]).
   if (space !== undefined && space !== 'team' && space !== user.id) return unavailable('/pack', note);
-  if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${LIST}` })], note);
+  if (absence === 'unknown') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack}`, { path: '/pack', fix: `核对任务包名；${await packNameFix(ctx, user, pack, space)}` })], note);
   if (absence === 'withdrawn') return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有任务包 ${pack} 的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);
   if (absence === 'unassigned') return new Refusal([protocolError('SOURCE_NOT_PERMITTED', `任务包 ${pack} 存在，没有分配给你`, { path: '/pack', fix: `请管理员把它分配给你；${LIST}` })], note);
   // A skill pack is installed for the whole Hub, never assigned to one user (decision 113).

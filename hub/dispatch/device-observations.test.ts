@@ -14,6 +14,10 @@ async function bound(build: (seat: number) => string) {
   } });
   const manifest = await c.kit.artifacts.ingest({ bytes: canonicalBytes({ id: 'synthetic-bed', devices: [1, 2].map((n) => ({ interfaces: [{ address: `192.0.2.${n}/24` }] })) }), mediaType: 'application/json', origin: { upload: { session: 'synthetic' } }, author: { user: c.admin.id }, provenanceType: 'declared', visibility: { readers: [c.owner.id, c.admin.id], admins: true, packs: [], shareable: false } });
   await c.registry.update(c.admin, c.executor.id, { ...c.executor.definition, manifest_sha256: manifest.body.sha256, allowed_tools: [...c.executor.definition.allowed_tools, 'inspect_seat'], probes });
+  c.effectDocument.effects[0].parameters.values.manifest_sha256 = [manifest.body.sha256];
+  c.detail.run.sources.find((source) => source.slot === 'synthetic-manifest')!.reference = `src:${manifest.body.sha256}`;
+  const result = c.detail.latest!.result.partitions.delivered[0].requirements[0] as any;
+  result.claims[0]!.statement.data.bed.manifest_sha256 = manifest.body.sha256;
   await c.freezeExecutor();
   return { c, inventory: manifest.body.sha256 };
 }
@@ -49,4 +53,46 @@ test('an echo with no single build is an observation with a null build and the r
   const result = await c.service.observeDevices(c.owner, 'run_synthetic', [{ inventory, device: '/devices/0', label: 'bed/synthetic-0' }]);
   assert.equal(result.observed[0]?.build, null);
   assert.equal(result.observed[0]?.note, '版本探针的回显里没有抽到构建');
+});
+
+
+test('a complete booking observation serves every probe round without another device call or a freshened timestamp', async (t) => {
+  const { c, inventory } = await bound(() => 'synthetic-build');
+  t.after(() => c.close());
+  const booking = c.detail.run.predecessor!;
+  await c.service.observeDevices(c.owner, booking, [
+    { inventory, device: '/devices/0', label: 'bed/synthetic-0' },
+    { inventory, device: '/devices/1', label: 'bed/synthetic-1' },
+  ]);
+  const before = (await c.service.latestDeviceObservations()).map((row) => row.observed_at);
+  c.detail.run.requirements = [{ key: 'workbook_verified', name: '合成核验', description: '合成', layers: ['static', 'dynamic'], done_rule: 'gating', accepted_producer: 'fact', repair_rounds: 0, rules: [], run_interpreters: [], repetition: { count: 2, aggregation: 'all', basis: 'explicit', declared: { count: true, aggregation: true, k: false }, fresh_context: true } }];
+  (c.effectDocument.effects[0] as { repetition?: number }).repetition = 2;
+  c.calls.length = 0;
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.deepEqual(state.rounds?.map((row) => row.round), [1, 2]);
+  assert.equal(c.calls.filter((name) => name === 'inspect_seat').length, 0, 'both rounds replay the complete booking responses');
+  assert.equal(c.calls.filter((name) => name === 'send_blob').length, 2, 'only the actual effects are sent');
+  const probes = (await c.service.journal.events(state.job)).filter((event) => event.body.detail.phase === 'device_probe');
+  assert.equal(probes.length, 8, 'four replayed assessments per round');
+  assert.ok(probes.every((event) => event.body.detail.reused_booking_run === booking));
+  assert.deepEqual((await c.service.latestDeviceObservations()).map((row) => row.observed_at), before, 'a replay never pretends the device was read again');
+});
+
+test('a changed executor definition invalidates the booking replay and probes every seat again', async (t) => {
+  const { c, inventory } = await bound(() => 'synthetic-build');
+  t.after(() => c.close());
+  await c.service.observeDevices(c.owner, c.detail.run.predecessor!, [
+    { inventory, device: '/devices/0', label: 'bed/synthetic-0' },
+    { inventory, device: '/devices/1', label: 'bed/synthetic-1' },
+  ]);
+  const current = (await c.registry.get(c.executor.id))!.definition;
+  await c.registry.update(c.admin, c.executor.id, { ...current, poll_ms: current.poll_ms + 1 });
+  await c.freezeExecutor();
+  c.calls.length = 0;
+  const state = await c.service.dispatch(c.admin, c.run, c.executor.id);
+  assert.equal(state.outcome, 'effective', JSON.stringify(state));
+  assert.equal(c.calls.filter((name) => name === 'inspect_seat').length, 4, 'version and interface reads happen on both seats');
+  const probes = (await c.service.journal.events(state.job)).filter((event) => event.body.detail.phase === 'device_probe');
+  assert.ok(probes.every((event) => event.body.detail.reused_booking_run === undefined));
 });

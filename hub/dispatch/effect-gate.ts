@@ -9,6 +9,7 @@ import {at,type ExecutorDefinition} from './definition.ts';
 import {inspectInput,type VerificationPort,type VerifiedInput} from './proof.ts';
 import {boundaryPolicy,policyAllows} from './policy.ts';
 import {checkEffectBoundary,deny,durationBudget,EffectBoundaryError,type BoundaryContext} from './boundary.ts';
+import {releaseStatus} from './release-requirements.ts';
 const equal=(a:unknown,b:unknown)=>a!==undefined&&b!==undefined&&canonicalize(a)===canonicalize(b);
 export function effectParameters(input:VerifiedInput):Record<string,unknown>{return {target:input.target,manifest_sha256:input.manifest_sha256,build:input.build,sha256:input.sha256,items:input.items,generator:input.generator};}
 export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationPort;workflows:Pick<WorkflowStore,'byDigest'>;recheck?:EffectCheckReplay;by:Principal;run:string;executor:string;definition:ExecutorDefinition;resolved_digest:string;now:()=>Date}){
@@ -48,7 +49,7 @@ export async function prepareEffectGate(o:{records:RecordsKit;runs:VerificationP
      const requirement=workflow?.requirements.find(requirement=>requirement.key===key);
      trace.check('release.requirements.'+index+'.declared','效果行的放行要求项在冻结包中声明',!!requirement,[releaseField('row.release.requirements.'+index,key,requirement?.key,!!requirement)]);
      if(requirement?.target==='item'){
-       const statuses=latest?.latest?.result.partitions.delivered.map(item=>{const position=item.requirements.findIndex(requirement=>requirement.requirement===key);return {position,status:item.requirements[position]?.status};});
+       const statuses=latest?.latest?.result.partitions.delivered.map(item=>{const position=item.requirements.findIndex(requirement=>requirement.requirement===key),result=item.requirements[position],projection=latest!.run.items.find(projected=>projected.id===item.item);return {position,status:result&&projection?releaseStatus(requirement,result,projection):result?.status};});
        trace.check('release.requirements.'+index+'.satisfied','当前交付条目的放行要求项全部满足',statuses?statuses.every(value=>value.status==='satisfied'):null,statuses?.map((value,item)=>releaseField('latest.partitions.delivered.'+item+'.requirements'+(value.position>=0?'.'+value.position+'.status':''),'satisfied',value.status,value.status==='satisfied'))??[]);
      }else{
        const values=latest?.latest?.result.cross_item.filter(claim=>claim.requirement===key);

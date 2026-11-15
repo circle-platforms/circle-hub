@@ -74,6 +74,10 @@ test('the client generator permits only the explicit pre-generation workbook gap
   const workbook=result.partitions.delivered[0].requirements.find((r:any)=>r.requirement==='workbook_verified');
   workbook.status='pending';workbook.layers=[{layer:'static',terminal:'unchecked',reason:'missing_input'}];
   assert.equal(satisfiedRecipe(value).plan_run,value.run.run);
+  workbook.layers=[{layer:'static',terminal:'unchecked',reason:'missing_input'},{layer:'dynamic',terminal:'not_run',reason:'no_check'}];
+  result.errors=[{code:'missing_input',message:'生成前尚未绑定工作簿',requirement:'workbook_verified',item:'fixture-case'},{code:'no_check',message:'动态层尚未运行',requirement:'workbook_verified',item:'fixture-case'}];
+  assert.equal(satisfiedRecipe(value).plan_run,value.run.run,'the declared dynamic layer may wait for dispatch while the client generates the workbook');
+  workbook.layers=[{layer:'static',terminal:'unchecked',reason:'missing_input'}];
   for(const error of [
     {code:'check_error',requirement:'workbook_verified',item:'fixture-case'},
     {code:'case-compile.workbook_invalid',requirement:'workbook_verified',item:'fixture-case'},

@@ -524,15 +524,19 @@ describe('start_run text', () => {
     assert.equal(continued[0], `第 ${shownSteps + 1} 步：逐条核对用例里的命令与参数。`);
   });
 
-  test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
+  test('an error answer names its codes, says one shared fix once and keeps every error location', () => {
     const errors: ProtocolError[] = Array.from({ length: 20 }, (_, i) => ({ code: 'SUBMISSION_SCHEMA_VIOLATION', message: `参数 ${i} 不对：${'很长的说明'.repeat(1000)}`, fix: '按输入模式改正', path: `/inputs/s${i}` }));
     const text = toolText('start_run', StartRunOutput.parse({ call_result: 'error', errors, trace: TRACE }));
     withinBudget(text, 'error answer');
     assert.equal(linesOf(text)[0], '出错：SUBMISSION_SCHEMA_VIOLATION');
-    for (let i = 0; i < 20; i++) assert.ok(linesOf(text).some((l) => l.startsWith(`- SUBMISSION_SCHEMA_VIOLATION：参数 ${i} 不对：`) && l.endsWith(`修正：按输入模式改正；位置 /inputs/s${i}`)), `error ${i} keeps its fix and path`);
+    assert.equal(text.match(/修正：按输入模式改正/g)?.length, 1, 'the same fix is not repeated for every error');
+    assert.ok(linesOf(text).includes('  SUBMISSION_SCHEMA_VIOLATION 20 个；修正：按输入模式改正'));
+    for (let i = 0; i < 20; i++) assert.ok(linesOf(text).some((l) => l.startsWith(`- SUBMISSION_SCHEMA_VIOLATION：参数 ${i} 不对：`) && l.endsWith(`位置 /inputs/s${i}`)), `error ${i} keeps its path`);
     assert.match(noteOf(text)!, /错误说明的超出部分（20 处）/);
     const short = toolText('start_run', StartRunOutput.parse({ call_result: 'error', errors: [{ code: 'SOURCE_UNAVAILABLE', message: '对你不可用', fix: '无' }], trace: TRACE }));
     assert.equal(short, ['出错：SOURCE_UNAVAILABLE', '错误与修正：', '- SOURCE_UNAVAILABLE：对你不可用；修正：无', `追踪 ${TRACE}`].join('\n'));
+    const upload = toolText('upload_file', UploadFileOutput.parse({ call_result: 'error', acceptance: 'not_accepted', errors: errors.slice(0, 2), trace: TRACE }));
+    assert.equal(upload.match(/修正：按输入模式改正/g)?.length, 1, 'upload errors share their fix once too');
   });
 
   test('requirement facts say the accepted producer only: no producer kind the contracts do not give', () => {
