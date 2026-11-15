@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- `submit_result` lead sentence: when the optional output field `step_name` is present, the first line is「<步骤名>已核对。」/「<步骤名>有错误。」(trimmed); otherwise the neutral「核对已完成。」/「核对有错误。」(C56). Until the workflow step-name producer lands, every lead stays neutral. Intermediate commit `c257ec306a` briefly dropped surrounding `text-next` submit tests; `c155957c4a` restored them with the neutral-lead asserts.
+
 - Advance local `case-compile` to `3.20.2` (keeping standalone `recompose@1.2.5` and `recompose-authority` / `recompose-adjudication@1.1.9` unchanged): export generated `acceptance` and `item_handling` vocabulary axes into `packs/workflow/case-compile/functions/generated/vocabulary.ts` via `tools/gen-contracts.ts`, replace the two handwritten axis checks in `functions/rework-history.ts` (`parseAcceptanceField` / `HubAnswerNotices` separating `acceptanceParsed: boolean` and `acceptance: Acceptance | null` instead of mixing `'unknown'` into `Acceptance`) and `tools/check-plan.ts` (`isItemHandling` / `ITEM_HANDLING`), add regression tests, and refresh `tables/workbook-format.json`, four synthetic workbook samples, version tests, and `pack.json`; nothing is published or deployed.
 
 - Advance local `case-compile` to `3.20.1`, standalone `recompose` to `1.2.5`, and shared `recompose-authority` / `recompose-adjudication` to `1.1.9` (updating embedded `mindmap-format` `case-structure` metadata across `case-compile` and `recompose` from `1.0.24` to `1.0.25` with unchanged embedded bytes to match `packs/skill/mindmap-format@1.0.25`; retaining `MODEL_VERSION = 81`'s `agents/` pack-file allowance and leaving other packs unchanged):

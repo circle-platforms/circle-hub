@@ -590,7 +590,7 @@ describe('start_run, get_nodes, resolve_reference, submit_result', () => {
     assert.equal(accepted.structuredContent.acceptance, 'accepted');
     SubmitResultOutput.parse(accepted.structuredContent);
     assert.deepEqual(accepted.structuredContent.counts, { delivered: 2, rejected: 0, quarantined: 0, incomplete: 1, unknown: 1 });
-    // No step_name until the workflow declares a unique checked step (Boss 07:00 / C56).
+    // No step_name until the workflow declares a unique checked step (C56; answers-cursor.md 11-15 07:00).
     assert.equal(accepted.content[0].text?.split('\n')[0], '核对已完成。');
     const repeat = await client.call('submit_result', submission);
     assert.deepEqual((repeat.structuredContent.result as { submission: string }).submission, (accepted.structuredContent.result as { submission: string }).submission);

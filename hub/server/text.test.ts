@@ -467,10 +467,12 @@ const list=items(62),result=resultOf(list,{production:true});const answer=startA
 // ---------------------------------------------------------------- submit_result
 
 describe('submit_result text', () => {
-  test('lead sentence uses step_name when present, else the neutral form (Boss 07:00 / C56)', () => {
+  // Lead-form cases: c257ec306a briefly dropped the surrounding text-next submit tests; c155957c4a restored them with neutral-lead asserts.
+  test('lead sentence uses step_name when present, else the neutral form (C56; answers-cursor.md 11-15 07:00)', () => {
     const accepted = submitAnswer(resultOf(items(1)));
     assert.equal(toolText('submit_result', accepted).split('\n')[0], '核对已完成。');
     assert.equal(toolText('submit_result', SubmitResultOutput.parse({ ...accepted, step_name: '用例重组' })).split('\n')[0], '用例重组已核对。');
+    assert.equal(toolText('submit_result', SubmitResultOutput.parse({ ...accepted, step_name: ' 用例重组 \n' })).split('\n')[0], '用例重组已核对。');
     const refused = submitAnswer(ValidationResult.parse({
       ...resultOf(items(1)),
       acceptance: 'not_accepted',

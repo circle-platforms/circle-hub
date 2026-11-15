@@ -1070,11 +1070,12 @@ function dispatchNoteLine(note: DispatchNote, role: CallerRole): string {
   return `${message}；状态未知；原因还没查清；下一步由使用者继续读取设备输出；决定者程序`;
 }
 
-/** Lead sentence for submit_result: only the producer-supplied step_name, else the neutral form (Boss 07:00 / C56). */
+/** Lead sentence for submit_result: only the producer-supplied step_name (trimmed), else the neutral form (C56; answers-cursor.md 11-15 07:00). */
 function submitLead(v: Pick<SubmitOut, 'acceptance' | 'step_name'>): string {
-  const name = typeof v.step_name === 'string' && v.step_name.trim().length > 0 ? v.step_name : null;
-  if (v.acceptance === 'accepted') return name ? `${name}已核对。` : '核对已完成。';
-  return name ? `${name}有错误。` : '核对有错误。';
+  const name = typeof v.step_name === 'string' ? v.step_name.trim() : '';
+  const labeled = name.length > 0 ? name : null;
+  if (v.acceptance === 'accepted') return labeled ? `${labeled}已核对。` : '核对已完成。';
+  return labeled ? `${labeled}有错误。` : '核对有错误。';
 }
 
 function submitText(v: SubmitOut, context: TextContext): string {
