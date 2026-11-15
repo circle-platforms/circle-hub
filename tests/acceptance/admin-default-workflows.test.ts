@@ -51,6 +51,9 @@ before(async()=>{
   const external=syntheticWorkflow(effectFlow,'合成外读与作业工作流');
   const workflow=external.files['workflow.json'] as {inputs:unknown[]};
   workflow.inputs.push({slot:'outside',role:'expected',description:'合成外部来源',accepts:['tracker:item'],required:false,many:false});
+  const checks=external.files['checks.json'] as {checks:Array<{id:string;table?:string}>};
+  checks.checks.find(check=>check.id==='titles')!.table='policies/titles.json';
+  external.files['policies/titles.json']=external.files['tables/titles.json'];delete external.files['tables/titles.json'];
   const requirements=external.files['requirements.json'] as {effects?:unknown[]};
   requirements.effects=[{id:'synthetic_submit',resource_kind:'executor',action:'submit',effect_class:'job',parameters:{values:{mode:['synthetic']}},release:{requirements:['titles'],artifact:'titles'},trigger:'hub_template',budget:{count:1,duration_ms:10000},deadline_ms:60000,optional:false,policy_checks:['titles']}];
   for(const spec of [regular,external,syntheticWorkflow(retiredFlow,'合成已退役工作流'),systemPack({id:'synthetic-default-system'})])await hub.publishPack((await writePack(join(scratch.path,spec.id),spec)).dir);
