@@ -156,6 +156,7 @@ export type ProtocolError = z.infer<typeof ProtocolError>;
 
 /** Structured transport facts; only the rejecting source can establish that no handler executed. */
 export const HttpCallErrorData = z.strictObject({
+  trace: TraceId.optional(),
   code: z.enum(PROTOCOL_CODE_NAMES),
   call_error_category: CallErrorCategorySchema.nullable(),
   call_error_reason: CallErrorReasonSchema.optional(),

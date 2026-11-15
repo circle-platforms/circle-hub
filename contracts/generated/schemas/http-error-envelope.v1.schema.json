@@ -5,6 +5,10 @@
     "error": {
       "type": "object",
       "properties": {
+        "trace": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
         "code": {
           "type": "string",
           "enum": [
