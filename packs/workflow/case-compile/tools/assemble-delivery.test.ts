@@ -61,7 +61,12 @@ function gapRun(kind: 'recorded' | 'exhausted' | 'skipped' | 'skipped-spent' | '
   return { plan: p, submitted: kind !== 'unsubmitted' };
 }
 const recomposed = { run: RECOMPOSE, items: CASES.map((autoid, k) => ({ id: `n/${k}`, fields: { case_id: autoid, atoms: [{ id: 'a1', kind: 'intent', content: `合成意图 ${k + 1}`, after: [] }, { id: 'a2', kind: 'action', content: '合成动作', after: [] }, { id: 'a3', kind: 'expectation', content: '合成期望', after: ['a2'] }] } })) };
-const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({ job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })) });
+const job = (id: string, run: string, plan: string, items: string[], workbook: Uint8Array, verdicts: string[]) => ({
+  job: id.repeat(64), verification_run: run, plan_run: plan, items, sha256: sha256(workbook), ended: 'done',
+  job_facts: { scope: { job: id.repeat(64) }, frozen: false, result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}`, rounds: [{ round: 1, dispatch_attempt: { scope: { operation: 'dispatch', job: id.repeat(64), round: 1 }, outcome: 'effective', result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}` } }] },
+  dispatch_attempt: { scope: { operation: 'dispatch', job: id.repeat(64), round: 1 }, outcome: 'effective', result: `src:${'9'.repeat(64)}`, device_return: `src:${'8'.repeat(64)}` },
+  rows: items.map((item, k) => ({ item, dynamic_terminal: verdicts[k], ...(verdicts[k] === 'fail' ? { evidence: { log: `src:${sha256(log)}` } } : {}) })),
+});
 
 /** A synthetic Hub: the verification runs in `order` (default: every one, in insertion order) stand in the lineage booking → plan run → verification run, each started after the one before. */
 async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workbook, extraJobs: Record<string, unknown[]> = {}, extraPlans: Record<string, ReturnType<typeof planRun>> = {}, order?: string[], chain = false, extraOriginals: Uint8Array[] = [], gap: Gap = 'recorded', knowledge: 'served' | 'absent' | 'tampered' | 'other-root' = 'served') {
@@ -89,7 +94,7 @@ async function hub(finalVerdicts = ['pass', 'pass'], finalWorkbook = plan2.workb
   const server = createServer((request, response) => {
     const url = request.url ?? '';
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
-    const jobsOf = /^\/run-export\/(run_\w+)\/jobs$/.exec(url); if (jobsOf && jobs[jobsOf[1]]) { response.end(JSON.stringify({ schema: 'run-jobs@1', run: jobsOf[1], jobs: jobs[jobsOf[1]] })); return; }
+    const jobsOf = /^\/run-export\/(run_\w+)\/jobs\/2$/.exec(url); if (jobsOf && jobs[jobsOf[1]]) { response.end(JSON.stringify({ schema: 'run-jobs@2', run: jobsOf[1], jobs: jobs[jobsOf[1]] })); return; }
     const next = /^\/run-export\/(run_\w+)\/successors$/.exec(url); if (next) { response.end(JSON.stringify({ schema: 'run-successors@1', run: next[1], successors: successors[next[1]] ?? [] })); return; }
     const whole = /^\/run-export\/(run_\w+)$/.exec(url); if (whole && plans[whole[1]]) { const p = plans[whole[1]]; response.end(JSON.stringify({ schema: 'run-export@1', run: records[whole[1]] ?? p.record, result: p.result, submission: p.submission })); return; }
     if (whole && records[whole[1]]) { response.statusCode = 409; response.end('这个运行还没有已受理的提交\n'); return; }
@@ -252,7 +257,12 @@ test('the verification runs the model left out are found in the Hub lineage, and
 test('a verification run whose job ended before anything went to the bed is no run of the cases, and the lineage skips it', async (t) => {
   // Run 16: a Hub fault stopped a job in its pre-dispatch device probe; it ended as not dispatched, and the run was verified again.
   const STUCK = 'run_01ssssssssssssssssssssssss';
-  const notSent = { job: 'c'.repeat(64), verification_run: STUCK, plan_run: PLAN2, items: [CASES[0], CASES[2]], sha256: sha256(plan2.workbook), ended: 'done', outcome: 'not_dispatched', frozen: false, result: null, device_return: null, rows: null };
+  const notSent = {
+    job: 'c'.repeat(64), verification_run: STUCK, plan_run: PLAN2, items: [CASES[0], CASES[2]], sha256: sha256(plan2.workbook), ended: 'done',
+    job_facts: { scope: { job: 'c'.repeat(64) }, frozen: false, rounds: [{ round: 1, dispatch_attempt: { scope: { operation: 'dispatch', job: 'c'.repeat(64), round: 1 }, outcome: 'not_dispatched', not_sent: true } }] },
+    dispatch_attempt: { scope: { operation: 'dispatch', job: 'c'.repeat(64), round: 1 }, outcome: 'not_dispatched', not_sent: true },
+    rows: null,
+  };
   const h = await hub(undefined, undefined, { [STUCK]: [notSent] }, {}, [WHOLE, STUCK, FINAL]);
   t.after(() => h.close());
   const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'delivery');

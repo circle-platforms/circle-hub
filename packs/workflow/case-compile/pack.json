@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.20.3",
+  "version": "3.20.4",
   "kind": "workflow",
   "dependencies": [
     {
@@ -213,8 +213,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "aa5c06367b33d0c7a4076f3735255c43408cc3dbc109c782be0d698aeb78424c",
-      "size": 47729
+      "sha256": "0835266cb9b52043a3e5bbf87f5db4861167bae6e055d33db63b445db6469045",
+      "size": 51233
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -503,7 +503,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "85e5911c59fbd6297a9115e71c31b4ef54b51bf30a3eb59b01ea60588a5a8685",
+      "sha256": "dac82a4e80d962431641c9b6f4c6cf05014169b2588070188f6fa6b1e74dd7c1",
       "size": 202654
     },
     {
@@ -548,7 +548,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "6c1375c3d4ba609cee1cc89600199c11f7cded44b81082d52c7238972ac98fb1",
+      "sha256": "12084c523c08b5655ad50538a0af54279d3e00ebcd7f9700937808b435ac9cdd",
       "size": 202658
     },
     {
@@ -633,7 +633,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "43233b56b6aafc64939b9ceb94321287c09256aea4d3da6fc2e1e34be0183907",
+      "sha256": "fef144c9d8530022208fb96278d15bfbde0e53c674b9451386a6f3bbaea7a5ce",
       "size": 202608
     },
     {
@@ -678,7 +678,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "97e35be931775d7e49e1b66a1da00e36c93982245fbb39c306989ffacde6cd5c",
+      "sha256": "d6520b10a65af3ff45742057239ddf36da701545d1aa1e35f8865268cc398089",
       "size": 202612
     },
     {
@@ -773,13 +773,13 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "14cc664e7e5c5d3b93e6f163a12a1a6dff09245e9b8b3cf1a570d9fe37880a62",
+      "sha256": "80d6764884c923d4bb8246d3204544e7618c2a43b1d5ace48ac088900b18d3bf",
       "size": 406
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "45867bf29051910f7bdd3101a9f9824463a69f0b452a2d82d358f9db34b58416",
-      "size": 35282
+      "sha256": "ff8720c1c89836bfb62a0ae2dd3eca634ba7bd770eeece55eccf19d6547e40e0",
+      "size": 35329
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -813,8 +813,8 @@
     },
     {
       "path": "tools/download-returns.ts",
-      "sha256": "b64d1542ca01f2accea409e52d2fc3e008fbcae498002f26ce31a4baab325d6c",
-      "size": 14770
+      "sha256": "b146ddb982785746fdc70bd6d37350e4933350da4c258f18c2ab055f64b6495a",
+      "size": 14792
     },
     {
       "path": "tools/download-run.ts",

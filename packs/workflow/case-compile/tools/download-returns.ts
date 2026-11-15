@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { mkdir, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { executionRefusals, failureLine, parseRunJobs, syntaxRejections, type ExecutionRefusal, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
+import { deviceReturnRef, executionRefusals, failureLine, parseRunJobs, syntaxRejections, type ExecutionRefusal, type RowAudit, type SyntaxRejection } from '../functions/delivery.ts';
 import { bearerFrom, hubOrigin, HubReplyError, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import {
   getOnce,
@@ -49,7 +49,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     if (taken.length) throw new Error(`--out 目录 ${args.out} 里已有文件（${taken.slice(0, 3).join('、')}），不覆盖；另选一个新目录`);
     const origin = hubOrigin(args.hub), bearer = await bearerFrom(readToken);
     const readRetry: RetryControl = { ...retry, timing };
-    const jobsUrl = `${origin}/run-export/${args.run}/jobs`;
+    const jobsUrl = `${origin}/run-export/${args.run}/jobs/2`;
     const started = timing.now(), deadline = started + wait * 1000;
     const initialBudget = wait ? Math.min(retry?.maxWaitMs ?? READ_RETRY_BUDGET_MS, wait * 1000) : retry?.maxWaitMs;
     const parsed = (bytes: Uint8Array) => { const answer = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); return { answer, own: parseRunJobs(answer, args.run).filter((job) => job.verification_run === args.run) }; };
@@ -145,7 +145,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const passReview = { markers: null as number | null, read: 0, downgraded: 0, wordless: 0, unread: [] as string[] };
     for (const job of jobs) {
       const folder = job.job.slice(0, 12);
-      const deviceReturn = await piece(job.device_return, join(folder, 'device-return.txt'));
+      const deviceReturn = await piece(deviceReturnRef(job), join(folder, 'device-return.txt'));
       const rows: Array<Record<string, unknown>> = [];
       // The declared failure lines are read for every job that has rows: a pass is reviewed against them and a row's sessions are
       // searched for the commands the device answered with one.

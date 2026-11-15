@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { argumentsOf, Configuration, parseJobReply, continuation, runCases, reportLines, verification, checkedRunId } from './device-run.ts';
+import { argumentsOf, assertEffectiveJob, Configuration, parseJobReply, continuation, runCases, reportLines, verification, checkedRunId } from './device-run.ts';
 const hash = 'a'.repeat(64); const run = 'run_00000000000000000000000000'; const exe = 'exe_00000000000000000000000000';
 test('arguments require an explicit executor and reject duplicates unknown flags and missing values', () => {
   assert.equal(argumentsOf(['--config', 'fixture.json', '--out', 'stage', '--executor', exe])['--executor'], exe);
@@ -12,11 +12,24 @@ test('configuration permits only administrator CLI and explicit staged files', (
   const config = { cli: { command: 'circle-hub' }, definition: 'executor.json', selection: 'auto-cases.json', contract: 'runtime-contract.json', inventory: 'test-bed-manifest.json', profile: 'runtime-profile.json' };
   assert.ok(Configuration.safeParse(config).success); assert.ok(!Configuration.safeParse({ ...config, token: 'synthetic' }).success);
 });
-test('job reply parser requires a complete final state and preserves result reference', () => {
-  const s = parseJobReply(`阶段已预留；作业摘要 ${hash}\n阶段 complete；码 effective（已生效）；作业摘要 ${hash}；冻结 0；动作 12\n结果引用 src:${hash}`);
-  assert.equal(s.job, hash); assert.equal(s.frozen, false); assert.equal(s.result, `src:${hash}`);
+test('job reply parser requires a complete final state and preserves scoped result references', () => {
+  const s = parseJobReply(`阶段已预留；作业摘要 ${hash}\n作业摘要 ${hash}；作业阶段 complete；冻结 0；动作 12\n第1轮正式派发：已生效\n第1轮正式派发结果引用 src:${hash}\n作业报告引用 src:${hash}`);
+  assert.equal(s.job, hash);
+  assert.equal(s.job_facts.frozen, false);
+  assert.equal(s.job_facts.result, `src:${hash}`);
+  assert.deepEqual(s.dispatch_attempt, { scope: { operation: 'dispatch', job: hash, round: 1 }, outcome: 'effective', result: `src:${hash}` });
+  const fromJson = parseJobReply(JSON.stringify({
+    job: hash,
+    events: 4,
+    job_facts: { scope: { job: hash }, phase: 'complete', frozen: false, result: `src:${hash}` },
+    dispatch_attempt: { scope: { operation: 'dispatch', job: hash, round: 1 }, outcome: 'effective', result: `src:${hash}` },
+  }));
+  assert.equal(assertEffectiveJob(fromJson), `src:${hash}`);
+  assert.throws(() => assertEffectiveJob({ job: hash, events: 4, job_facts: { scope: { job: hash }, frozen: false, awaiting_disposition: true, result: `src:${hash}` }, dispatch_attempt: { scope: { operation: 'dispatch', job: hash, round: 1 }, outcome: 'effective' } }));
+  assert.throws(() => assertEffectiveJob({ job: hash, events: 4, job_facts: { scope: { job: hash }, frozen: false, result: `src:${hash}` }, dispatch_attempt: { scope: { operation: 'dispatch', job: hash, round: 2 }, outcome: 'not_dispatched' } }));
   assert.throws(() => parseJobReply(`阶段已预留；作业摘要 ${hash}`));
-  assert.throws(() => parseJobReply(`阶段 complete；码 invented；作业摘要 ${hash}；冻结 0；动作 1`));
+  assert.throws(() => parseJobReply(`作业摘要 ${hash}；作业阶段 complete；冻结 0；动作 1\n第1轮正式派发：不存在的结局`));
+  assert.throws(() => parseJobReply(JSON.stringify({ job: hash, events: 1, job_facts: { scope: { job: 'b'.repeat(64) }, frozen: false } })));
 });
 test('continuation needs both exact human confirmation and a changed definition digest', () => {
   assert.throws(() => continuation(hash, hash, '已用首例证据更新认证'));
@@ -28,7 +41,15 @@ function fixture(answers = ['确认派发', '确认派发'], frozen = false, reu
   const ports = {
     async prepare(id: string) { calls.push(`prepare:${id}`); return { run: id, sha256: hash, booking: reuse ? 'booking' : `booking-${id}` }; },
     async confirm() { calls.push('confirm'); return answers.shift() ?? ''; },
-    async dispatch() { calls.push('dispatch'); return { job: hash, phase: 'complete', outcome: frozen ? 'unknown' as const : 'effective' as const, frozen, result: frozen ? undefined : `src:${hash}`, events: 12 }; },
+    async dispatch() {
+      calls.push('dispatch');
+      return {
+        job: hash,
+        events: 12,
+        job_facts: { scope: { job: hash }, phase: 'complete', frozen, ...(frozen ? {} : { result: `src:${hash}` }) },
+        dispatch_attempt: { scope: { operation: 'dispatch' as const, job: hash, round: 1 }, outcome: frozen ? 'unknown' as const : 'effective' as const, ...(frozen ? {} : { result: `src:${hash}` }) },
+      };
+    },
     async result() { calls.push('result'); },
     async release(booking: string) { calls.push(`release:${booking}`); },
     async save(id: string) { calls.push('save'); completed.push(id); },

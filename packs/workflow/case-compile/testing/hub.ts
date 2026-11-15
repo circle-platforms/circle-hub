@@ -25,6 +25,7 @@ import {
 } from '../../../../hub/runs/api.ts';
 import type { TemporaryPostgres } from '../../../../hub/testing/postgres.ts';
 import { openTestRecords, type TestRecordsKit } from '../../../../hub/testing/records.ts';
+import { ExecutorRegistry, MemberEnvironments } from '../../../../hub/dispatch/api.ts';
 import { LeaseService } from '../../../../hub/leases/service.ts';
 import { createPool, Database } from '../../../../hub/records/db.ts';
 import { stage } from '../pack-files.ts';
@@ -187,6 +188,8 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
     const external = new FakeExternal(kit.artifacts);
     const logs: AdminLogEntry[] = [];
     const knowledge=new FakeKnowledge();
+    const leases = new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now(), catalog: kit.testEnvironments });
+    const environments = new MemberEnvironments(kit, new ExecutorRegistry(kit), leases);
     const service = createRunsService({
       parsers,
       records: kit,
@@ -194,7 +197,11 @@ export async function openHub(postgres: TemporaryPostgres): Promise<Hub> {
       packs: createPacksPort(registry),
       knowledge,
       external,
-      leases: new LeaseService(new Database(createPool(kit.database, 2)), { now: async () => now() }),
+      leases,
+      environmentAccess: {
+        inheritance: (tx) => kit.testEnvironments.inheritance(tx),
+        authorizeKeys: (actor, keys, tx) => environments.authorizeKeys(actor, keys, tx),
+      },
       // This private synthetic database has no dispatch service or jobs.
       leaseJobs: async () => [],
       now,

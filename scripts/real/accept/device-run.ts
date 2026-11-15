@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, renameSync, existsSync, appendFileSync } f
 import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
-import { EffectOutcomeSchema, DynamicTerminalSchema, labelOf } from '../../../contracts/generated/vocabulary.ts';
+import { EFFECT_OUTCOME, EffectOutcomeSchema, DynamicTerminalSchema, type EffectOutcome, labelOf } from '../../../contracts/generated/vocabulary.ts';
 import { canonicalBytes, sha256Hex, parseStrictJson } from '../../../hub/records/api.ts';
 import { ExecutorDefinition, ExecutorSource, resolveExecutorValues, type JobStatus } from '../../../hub/dispatch/api.ts';
 import {referencesIn} from '../../../contracts/src/variables.ts';
@@ -29,13 +29,86 @@ export function argumentsOf(argv: string[]) {
   for (let i = 0; i < argv.length; i += 2) { requireFact(!Object.hasOwn(entries, argv[i]), '参数重复；每项只填一次'); entries[argv[i]] = argv[i + 1]; }
   const result = parsed.safeParse(entries); requireFact(result.success, '参数缺失、未知或执行器编号不合式；请核对用法'); return result.data;
 }
+const OUTCOME_BY_LABEL = new Map<string, EffectOutcome>(EFFECT_OUTCOME.map((code) => [labelOf('effect_outcome', code), code]));
 export function parseJobReply(reply: string): JobStatus {
-  const rows = [...reply.matchAll(/阶段 ([a-z_]+)；码 ([a-z_]+)[^\n]*?作业摘要 ([a-f0-9]{64})；冻结 ([01])；动作 (\d+)/g)];
+  if (reply.trimStart().startsWith('{')) {
+    const parsed = parseStrictJson(reply);
+    requireFact(
+      object(parsed) &&
+        hash.safeParse(parsed.job).success &&
+        typeof parsed.events === 'number' &&
+        Number.isInteger(parsed.events) &&
+        parsed.events >= 0 &&
+        object(parsed.job_facts) &&
+        object(parsed.job_facts.scope) &&
+        parsed.job_facts.scope.job === parsed.job,
+      '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发',
+    );
+    requireFact(parsed.job_facts.frozen === undefined || typeof parsed.job_facts.frozen === 'boolean', '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发');
+    if (parsed.job_facts.result !== undefined) {
+      requireFact(/^src:[a-f0-9]{64}$/.test(String(parsed.job_facts.result)), '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发');
+    }
+    if (parsed.dispatch_attempt !== undefined) {
+      requireFact(
+        object(parsed.dispatch_attempt) &&
+          object(parsed.dispatch_attempt.scope) &&
+          parsed.dispatch_attempt.scope.job === parsed.job &&
+          (parsed.dispatch_attempt.scope.operation === 'dispatch' || parsed.dispatch_attempt.scope.operation === 'conformance'),
+        '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发',
+      );
+      if (parsed.dispatch_attempt.outcome !== undefined) {
+        requireFact(EffectOutcomeSchema.safeParse(parsed.dispatch_attempt.outcome).success, '作业码不认识；请管理员查询原作业，不能重发');
+      }
+      if (parsed.dispatch_attempt.result !== undefined) {
+        requireFact(/^src:[a-f0-9]{64}$/.test(String(parsed.dispatch_attempt.result)), '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发');
+      }
+    }
+    return parsed as unknown as JobStatus;
+  }
+  const rows = [...reply.matchAll(/作业摘要 ([a-f0-9]{64})；作业阶段 ([^\n；]+)；冻结 ([01]|未核对)；动作 (\d+)/g)];
   requireFact(rows.length === 1, '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发');
-  const [, phase, outcome, job, frozen, events] = rows[0];
-  const parsed = EffectOutcomeSchema.safeParse(outcome); requireFact(parsed.success, '作业码不认识；请管理员查询原作业，不能重发');
-  const result = /结果引用 (src:[a-f0-9]{64})/.exec(reply)?.[1];
-  return { job, phase, outcome: parsed.data, frozen: frozen === '1', events: Number(events), ...(result ? { result } : {}) };
+  const [, job, phase, frozenText, events] = rows[0];
+  const attemptRows = [...reply.matchAll(/^(?:第(\d+)轮正式派发|一致性探测)：([^\n；。]+)$/gm)];
+  requireFact(attemptRows.length <= 1, '缺少唯一完整作业回执；保留检查点，请管理员按作业摘要查询和对账，不能重发');
+  let dispatchAttempt: JobStatus['dispatch_attempt'];
+  if (attemptRows.length === 1) {
+    const [full, roundText, label] = attemptRows[0];
+    let outcome: EffectOutcome | undefined;
+    if (label !== '尚无可核对的结局') {
+      outcome = OUTCOME_BY_LABEL.get(label);
+      requireFact(outcome !== undefined, '作业码不认识；请管理员查询原作业，不能重发');
+    }
+    const attemptResult = /^(?:第\d+轮正式派发|一致性探测)结果引用 (src:[a-f0-9]{64})$/m.exec(reply)?.[1];
+    const scope = roundText ? { operation: 'dispatch' as const, job, round: Number(roundText) } : { operation: 'conformance' as const, job };
+    if (full) {
+      dispatchAttempt = { scope, ...(outcome !== undefined ? { outcome } : {}), ...(attemptResult ? { result: attemptResult } : {}) };
+    }
+  }
+  const jobResult = /^作业报告引用 (src:[a-f0-9]{64})$/m.exec(reply)?.[1];
+  return {
+    job,
+    events: Number(events),
+    job_facts: {
+      scope: { job },
+      ...(phase !== '未记录' ? { phase } : {}),
+      ...(frozenText === '未核对' ? {} : { frozen: frozenText === '1' }),
+      ...(jobResult ? { result: jobResult } : {}),
+    },
+    ...(dispatchAttempt ? { dispatch_attempt: dispatchAttempt } : {}),
+  } as JobStatus;
+}
+export function assertEffectiveJob(status: JobStatus): string {
+  const outcome = status.dispatch_attempt?.outcome;
+  const uncertain =
+    status.job_facts.frozen !== false ||
+    status.job_facts.awaiting_disposition === true ||
+    status.job_facts.report_pending === true ||
+    outcome === 'unknown' ||
+    outcome === 'issued' ||
+    outcome === 'read_back_mismatch';
+  requireFact(!uncertain, `派发未知或冻结；请管理员先对账 circle-hub job dispose ${status.job} --reconcile <远端作业编号>，不能重发、释放或继续下一例`);
+  requireFact((outcome === 'effective' || outcome === 'read_back_consistent') && !!status.job_facts.result, '未取得完整终态结果；请管理员读取原作业状态和结果，不能继续下一例');
+  return status.job_facts.result;
 }
 export function continuation(previous: string, current: string, answer: string): string {
   requireFact(hash.safeParse(previous).success && hash.safeParse(current).success && current !== previous, '执行器定义摘要未改变；请集成者用首例结果更新归属认证，再导出定义重跑');
@@ -105,8 +178,7 @@ export async function runCases(ids: string[], priorBookings: string[], p: CasePo
     requireFact(!bookings.has(prepared.booking), '每个用例必须自己占自动化测试环境，不能复用上一例谱系；请 Circle 释放后重新占用并完成计划与核验');
     requireFact(await p.confirm(id, prepared.sha256) === '确认派发', '没有输入“确认派发”，本例未派发；请核对后重跑');
     const state = await p.dispatch(prepared);
-    requireFact(!state.frozen && state.outcome !== 'unknown', `派发未知或冻结；请管理员先对账 circle-hub job dispose ${state.job} --reconcile <远端作业编号>，不能重发、释放或继续下一例`);
-    requireFact(state.outcome === 'effective' && !!state.result, '未取得完整终态结果；请管理员读取原作业状态和结果，不能继续下一例');
+    assertEffectiveJob(state);
     await p.result(state); await p.release(prepared.booking); await p.save(id, prepared, state); bookings.add(prepared.booking);
   }
 }
@@ -193,11 +265,12 @@ export async function main(argv: string[]): Promise<number> {
       return parseStrictJson(original.toString('utf8'));
     };
     const printResult = async (status: JobStatus) => {
-      requireFact(status.result, '缺结果源引用；请管理员只读补取原作业结果');
-      const report = await readResult(status.result);
+      const reference = status.job_facts.result;
+      requireFact(reference, '缺结果源引用；请管理员只读补取原作业结果');
+      const report = await readResult(reference);
       requireFact(object(report) && report.job === status.job && report.sha256 === state.pending?.sha256 && Array.isArray(report.rows) && report.rows.length === 1 && object(report.rows[0]) && report.rows[0].item === state.pending?.autoid, '结果原件身份、摘要或用例编号不等于本例派发；请管理员对账，暂停下一例');
       for (const line of reportLines(report)) process.stdout.write(line + '\n');
-      say('本例结果', { job: status.job, reference: status.result });
+      say('本例结果', { job: status.job, reference });
     };
     const batchSummary = async (stage: string) => {
       const results: unknown[] = [];
@@ -216,12 +289,12 @@ export async function main(argv: string[]): Promise<number> {
       const listed = await cli(['lease', 'list', '--prefix', `bed/${checked.definition.target}/`]); requireFact(listed.code === 0, '无法核对释放后的租约；请管理员读取原租约记录，暂停下一例');
       requireFact(!listed.stdout.split('\n').some(line => line.split('\t')[1] === booking), '本例仍持有设备；请 Circle 完成释放并补取记录，暂停下一例');
     };
-    const finish = async (id: string, prepared: PreparedCase, status: JobStatus) => { state.completed.push({ autoid: id, booking: prepared.booking, job: status.job, sha256: prepared.sha256, result: status.result! }); delete state.pending; save(); };
+    const finish = async (id: string, prepared: PreparedCase, status: JobStatus) => { state.completed.push({ autoid: id, booking: prepared.booking, job: status.job, sha256: prepared.sha256, result: assertEffectiveJob(status) }); delete state.pending; save(); };
     const pause = () => { say('首例后停止', { reference: state.completed[0].result, next_action: '集成者用首例证据认证结果归属并 executor update；导出新定义后以同一配置、暂存目录及 --executor 重跑', note: '人工确认，不是机械核对认证字段；首例无判定；未排除本地操作' }); };
     if (state.pending) {
       requireFact(state.pending.job, '派发检查点缺作业摘要；请管理员从私有命令回执或审计找原作业后对账，不能重发');
-      const reply = await cli(['job', 'resume', state.pending.job]); const status = parseJobReply(reply.stdout);
-      requireFact(!status.frozen && status.outcome === 'effective' && status.result, `原作业未取得可信终态；请管理员对账 circle-hub job dispose ${state.pending.job} --reconcile <远端作业编号>，不能重发或释放`);
+      const reply = await cli(['job', 'resume', state.pending.job, '--json']); const status = parseJobReply(reply.stdout);
+      assertEffectiveJob(status);
       await printResult(status); await release(state.pending.booking); await finish(state.pending.autoid, state.pending, status);
       if (state.completed.length === 1) { pause(); return 0; }
     }
@@ -251,8 +324,8 @@ export async function main(argv: string[]): Promise<number> {
         state.pending = { autoid: ids[state.completed.length], ...prepared }; save();
         const reply = await cli(['job', 'dispatch', '--run', prepared.run, '--executor', args['--executor']], stdout => { const job = /作业摘要 ([a-f0-9]{64})/.exec(stdout)?.[1]; if (job && state.pending && state.pending.job !== job) { state.pending.job = job; save(); } });
         const dispatched = parseJobReply(reply.stdout); requireFact(dispatched.job === state.pending?.job, '派发回执作业号与先存的检查点不同；请管理员对账');
-        const current = await cli(['job', 'status', dispatched.job]); requireFact(current.code === 0 || dispatched.frozen, '作业状态读取失败；请管理员查询原作业，不能重发');
-        const status = parseJobReply(current.stdout); requireFact(status.job === dispatched.job, '状态回答不是原作业；请管理员核对审计，不能重发'); say('派发回执', { code: status.outcome, frozen: status.frozen, job: status.job, reference: status.result }); return status;
+        const current = await cli(['job', 'status', dispatched.job, '--json']); requireFact(current.code === 0 || dispatched.job_facts.frozen === true, '作业状态读取失败；请管理员查询原作业，不能重发');
+        const status = parseJobReply(current.stdout); requireFact(status.job === dispatched.job, '状态回答不是原作业；请管理员核对审计，不能重发'); say('派发回执', { code: status.dispatch_attempt?.outcome, frozen: status.job_facts.frozen, job: status.job, reference: status.job_facts.result }); return status;
       }, result: printResult, release, save: finish,
     });
     if (state.completed.length === 1) pause(); else await batchSummary('批次结束');

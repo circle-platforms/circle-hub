@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, isNotDispatchedJob, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type ReportInput, type RowAudit } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { bearerFrom, hubOrigin, HubReplyError, readBytes, RUN_ID, sha256, tokenFromStdin, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
@@ -170,7 +170,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     const origin = hubOrigin(args.hub);
     const bearer = await bearerFrom(readToken);
 
-    const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/jobs`, bearer, retry))), run);
+    const jobsOf = async (run: string) => parseRunJobs(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/jobs/2`, bearer, retry))), run);
     const successorsOf = async (run: string) => parseSuccessors(JSON.parse(decode(await getRetrying(`${origin}/run-export/${run}/successors`, bearer, retry))), run);
     const plans = new Map<string, RunInputs>();
     const planOf = async (run: string) => { if (!plans.has(run)) plans.set(run, await fetchRunInputs(origin, bearer, run, retry)); return plans.get(run)!; };
@@ -211,9 +211,10 @@ export async function main(argv: string[], readToken: () => Promise<string> = to
     for (const run of [...started.keys()].sort((a, b) => (started.get(a)! < started.get(b)! ? -1 : started.get(a)! > started.get(b)! ? 1 : a < b ? -1 : 1))) {
       if (given.has(run)) { dispatches.push(given.get(run)!); continue; }
       const jobs = await jobsOf(run);
-      // Verified but never sent to the bed: no job, or only jobs that ended before anything went out (not_dispatched, as when a
-      // pre-dispatch check failed); like the reference engine, a dispatch that never reached the bed is not a run of the cases.
-      if (!jobs.some((job) => job.verification_run === run && !(job.ended === 'done' && job.outcome === 'not_dispatched'))) continue;
+      // Verified but never sent to the bed: no job, or only jobs that ended before any round went out (not_dispatched
+      // across the whole job, not merely an unsent later round after an earlier round executed); like the reference engine,
+      // a dispatch that never reached the bed is not a run of the cases.
+      if (!jobs.some((job) => job.verification_run === run && !isNotDispatchedJob(job))) continue;
       dispatches.push(settledDispatch(run, jobs)); added.push(run);
     }
     for (const d of dispatches) await planOf(d.plan_run);

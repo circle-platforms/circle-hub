@@ -14,7 +14,11 @@ export type Status = keyof typeof STATUS;
 /** Why a reported pass is not taken as one: the device output it came with and the line in it (see failureLine). */
 export interface RowAudit { where: string; line: string }
 export interface JobRow { item: string; dynamic_terminal: string; evidence?: { log?: string; sessions?: Record<string, string> }; audit?: RowAudit }
-export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; outcome: string; frozen: boolean; result: string | null; device_return: string | null; rows: JobRow[] | null }
+export interface JobAttemptScope { operation: 'dispatch' | 'conformance'; job: string; round?: number; request_id?: string }
+export interface JobAttemptFacts { scope: JobAttemptScope; outcome?: string; not_sent?: boolean; result?: string; device_return?: string; [key: string]: unknown }
+export interface JobRoundFacts { round: number; terminal?: string; dispatch_attempt?: JobAttemptFacts; [key: string]: unknown }
+export interface JobFacts { scope: { job: string }; operation?: string; frozen?: boolean; result?: string; device_return?: string; awaiting_disposition?: boolean; disposition?: string; admission_error?: unknown; rounds?: JobRoundFacts[]; [key: string]: unknown }
+export interface ExportedJob { job: string; verification_run: string; plan_run: string; items: string[]; sha256: string; ended: 'done' | 'unknown' | null; job_facts: JobFacts; dispatch_attempt?: JobAttemptFacts; rows: JobRow[] | null }
 /** One dispatch that settled: the run it verified, the plan run it was generated from, the workbook digest and each item's verdict. */
 export interface Dispatch { run: string; job: string; plan_run: string; sha256: string; items: string[]; rows: JobRow[] }
 /** A product-defect candidate (InfoTest fail_attribution.py defect_candidate): how to reproduce it, the author's expected text and the device's actual words. */
@@ -31,11 +35,57 @@ const RUN = /^run_[0-9a-z]{26}$/;
 const NOTE_MAX = 4000;
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === 'string' && v.length > 0);
 
-/** The Hub's run-jobs@1 answer for `run`, checked for shape; anything else is refused rather than guessed at. */
+const UNSETTLED_OUTCOMES = new Set(['unknown', 'issued', 'read_back_mismatch']);
+function validAttempt(attempt: unknown, job: string): boolean {
+  if (!isRecord(attempt) || !isRecord(attempt.scope) || attempt.scope.job !== job) return false;
+  if (attempt.scope.operation !== 'dispatch' && attempt.scope.operation !== 'conformance') return false;
+  if (attempt.outcome !== undefined && typeof attempt.outcome !== 'string') return false;
+  return true;
+}
+
+/** Whether a scoped job is frozen or waiting on an unsettled dispatch/read-back outcome. */
+export const isFrozenJob = (job: ExportedJob): boolean =>
+  job.job_facts.frozen === true ||
+  job.job_facts.awaiting_disposition === true ||
+  job.ended === 'unknown' ||
+  (job.dispatch_attempt?.outcome !== undefined && UNSETTLED_OUTCOMES.has(job.dispatch_attempt.outcome));
+
+/** Whether a whole job ended without sending any dispatch attempt to the bed. */
+export function isNotDispatchedJob(job: ExportedJob): boolean {
+  if (job.ended !== 'done' || isFrozenJob(job) || job.job_facts.result || job.rows !== null) return false;
+  const rounds = job.job_facts.rounds;
+  if (Array.isArray(rounds)) {
+    return rounds.length > 0 && rounds.every((round, index) =>
+      round.round === index + 1 &&
+      round.dispatch_attempt?.scope.operation === 'dispatch' &&
+      round.dispatch_attempt.outcome === 'not_dispatched' &&
+      !round.dispatch_attempt.result,
+    );
+  }
+  if (!job.dispatch_attempt) return Boolean(job.job_facts.admission_error);
+  return job.dispatch_attempt.scope.operation === 'dispatch' &&
+    job.dispatch_attempt.outcome === 'not_dispatched' &&
+    !job.dispatch_attempt.result;
+}
+
+/** Canonical job-level raw device return reference, falling back to the single attempt when projected alone. */
+export const deviceReturnRef = (job: ExportedJob): string | null =>
+  typeof job.job_facts.device_return === 'string'
+    ? job.job_facts.device_return
+    : typeof job.dispatch_attempt?.device_return === 'string'
+      ? job.dispatch_attempt.device_return
+      : null;
+
+/** The Hub's run-jobs@2 answer for `run`, checked for shape; anything else is refused rather than guessed at. */
 export function parseRunJobs(value: unknown, run: string): ExportedJob[] {
-  if (!isRecord(value) || value.schema !== 'run-jobs@1' || value.run !== run || !Array.isArray(value.jobs)) throw new Error(`Hub 返回的上机验证信息不完整或不属于本次上机验证`);
+  if (!isRecord(value) || value.schema !== 'run-jobs@2' || value.run !== run || !Array.isArray(value.jobs)) throw new Error(`Hub 返回的上机验证信息不完整或不属于本次上机验证`);
   return value.jobs.map((job) => {
-    if (!isRecord(job) || typeof job.job !== 'string' || !RUN.test(String(job.verification_run)) || !RUN.test(String(job.plan_run)) || !strings(job.items) || !SHA.test(String(job.sha256)) || typeof job.frozen !== 'boolean' || typeof job.outcome !== 'string') throw new Error(`Hub 返回的上机验证信息不完整`);
+    if (!isRecord(job) || typeof job.job !== 'string' || !RUN.test(String(job.verification_run)) || !RUN.test(String(job.plan_run)) || !strings(job.items) || !SHA.test(String(job.sha256)) || (job.ended !== 'done' && job.ended !== 'unknown' && job.ended !== null)) throw new Error(`Hub 返回的上机验证信息不完整`);
+    const jobId = job.job;
+    if (!isRecord(job.job_facts) || !isRecord(job.job_facts.scope) || job.job_facts.scope.job !== jobId) throw new Error(`Hub 返回的上机验证信息不完整`);
+    if (job.job_facts.frozen !== undefined && typeof job.job_facts.frozen !== 'boolean') throw new Error(`Hub 返回的上机验证信息不完整`);
+    if (job.dispatch_attempt !== undefined && !validAttempt(job.dispatch_attempt, jobId)) throw new Error(`Hub 返回的上机验证信息不完整`);
+    if (job.job_facts.rounds !== undefined && (!Array.isArray(job.job_facts.rounds) || job.job_facts.rounds.some((round) => !isRecord(round) || typeof round.round !== 'number' || (round.dispatch_attempt !== undefined && !validAttempt(round.dispatch_attempt, jobId))))) throw new Error(`Hub 返回的上机验证信息不完整`);
     if (job.rows !== null && (!Array.isArray(job.rows) || job.rows.some((row) => !isRecord(row) || typeof row.item !== 'string' || typeof row.dynamic_terminal !== 'string'))) throw new Error(`Hub 返回的原始用例结论不完整`);
     return job as unknown as ExportedJob;
   });
@@ -44,12 +94,12 @@ export function parseRunJobs(value: unknown, run: string): ExportedJob[] {
 /** The dispatch of a verification run that counts: its latest job that ended with a verdict for every item. */
 export function settledDispatch(run: string, jobs: ExportedJob[]): Dispatch {
   const own = jobs.filter((job) => job.verification_run === run);
-  const settled = own.filter((job) => job.ended === 'done' && !job.frozen && job.rows !== null);
+  const settled = own.filter((job) => job.ended === 'done' && !isFrozenJob(job) && job.rows !== null);
   const job = settled.at(-1);
   if (!job) {
     const open = own.find((j) => j.ended === null);
     if (open) throw new Error(`上机验证还没有结束，请等结束后生成交付报告`);
-    const frozen = own.find((j) => j.frozen || j.ended === 'unknown');
+    const frozen = own.find((j) => isFrozenJob(j));
     if (frozen) throw new Error(`上机验证状态未知，原因还没查清；下一步由使用者联系管理员处理，再生成交付报告`);
     throw new Error(`尚未上机验证，或设备输出缺少逐条结论；--runs 请只选择已结束的上机验证`);
   }

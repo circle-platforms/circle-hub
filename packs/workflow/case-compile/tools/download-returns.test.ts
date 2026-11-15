@@ -17,7 +17,10 @@ const deviceReturn = text('作业的设备返回。逐条结论：\n990000000000
 const session = text('seat# configure widget\nFailed to run the synthetic command\nseat#\n'), held = text('合成会话：被扣住的一段\n');
 const ref = (bytes: Uint8Array) => `src:${sha256(bytes)}`;
 function jobs(sessionBytes: Uint8Array = session) {
-  return { schema: 'run-jobs@1', run: RUN, jobs: [{ job: 'c'.repeat(64), verification_run: RUN, plan_run: PLAN, items: ['990000000000000301', '990000000000000302'], sha256: 'd'.repeat(64), ended: 'done', outcome: 'effective', frozen: false, result: `src:${'9'.repeat(64)}`, device_return: ref(deviceReturn),
+  const jobId = 'c'.repeat(64);
+  return { schema: 'run-jobs@2', run: RUN, jobs: [{ job: jobId, verification_run: RUN, plan_run: PLAN, items: ['990000000000000301', '990000000000000302'], sha256: 'd'.repeat(64), ended: 'done',
+    job_facts: { scope: { job: jobId }, frozen: false, result: `src:${'9'.repeat(64)}`, device_return: ref(deviceReturn), rounds: [{ round: 1, dispatch_attempt: { scope: { operation: 'dispatch', job: jobId, round: 1 }, outcome: 'effective', result: `src:${'9'.repeat(64)}`, device_return: ref(deviceReturn) } }] },
+    dispatch_attempt: { scope: { operation: 'dispatch', job: jobId, round: 1 }, outcome: 'effective', result: `src:${'9'.repeat(64)}`, device_return: ref(deviceReturn) },
     rows: [{ item: '990000000000000301', dynamic_terminal: 'fail', evidence: { log: ref(log), sessions: { 'dev-a.txt': ref(sessionBytes), '../escape.txt': ref(held) } } }, { item: '990000000000000302', dynamic_terminal: 'pass' }] }] };
 }
 async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[] = [], plan?: { record: unknown; result: unknown; submission: unknown }) {
@@ -25,7 +28,7 @@ async function hub(answer: unknown, served: Uint8Array[], forbidden: Uint8Array[
   const server = createServer((request, response) => {
     if (request.headers.authorization !== `Bearer ${TOKEN}`) { response.statusCode = 401; response.end(); return; }
     const url = request.url ?? '';
-    if (url === `/run-export/${RUN}/jobs`) {
+    if (url === `/run-export/${RUN}/jobs/2`) {
       // A function answers each read in turn (a job that ends while it is waited for); null stands for the Hub being unavailable once.
       const now = typeof answer === 'function' ? (answer as () => unknown)() : answer;
       if (now === null) { response.statusCode = 503; response.end('稍后\n'); return; }
@@ -209,7 +212,7 @@ test('bytes that do not match their digest, a run never dispatched and a directo
   const dir = await mkdtemp(join(tmpdir(), 'cc-returns-'));
   const wrong = await run(forged.url, join(dir, 'a'));
   assert.equal(wrong.code, 1);
-  const none = await hub({ schema: 'run-jobs@1', run: RUN, jobs: [] }, []); t.after(none.close);
+  const none = await hub({ schema: 'run-jobs@2', run: RUN, jobs: [] }, []); t.after(none.close);
   assert.match((await run(none.url, join(dir, 'b'))).stderr, /尚未开始上机验证/);
   const used = join(dir, 'c'); await writeFile(join(dir, 'c-marker'), 'x');
   const fine = await hub(jobs(), [deviceReturn, log, session, held]); t.after(fine.close);
@@ -219,8 +222,8 @@ test('bytes that do not match their digest, a run never dispatched and a directo
 
 // The wait is the program's (the reference engine's run tool returns when the bed has finished): started in the background, the
 // tool exits when the job has ended and the client tells the model, which neither sleeps nor repeats the submission.
-const running = () => { const answer = jobs(); return { ...answer, jobs: answer.jobs.map((job) => ({ ...job, ended: null, rows: null, device_return: null })) }; };
-const undispatched = { schema: 'run-jobs@1', run: RUN, jobs: [] };
+const running = () => { const answer = jobs(); return { ...answer, jobs: answer.jobs.map((job) => ({ ...job, ended: null, rows: null, job_facts: { scope: { job: job.job }, frozen: false }, dispatch_attempt: { scope: { operation: 'dispatch', job: job.job, round: 1 }, outcome: 'issued' } })) }; };
+const undispatched = { schema: 'run-jobs@2', run: RUN, jobs: [] };
 
 test('--wait reads the job list until every job of the run has ended, through a failed read, and then writes the returns', async (t) => {
   const answers: unknown[] = [running(), null, running(), jobs()];

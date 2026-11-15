@@ -1,3 +1,7 @@
+# case-compile 3.20.4
+
+本地修正 3.20.4（2026-11-15）：随 Hub C49 按范围分层的作业读取迁移至 `run-jobs@2`（`GET /run-export/<run>/jobs/2`）与带作用域的 `JobStatus`：`functions/delivery.ts` 按 `job_facts` 与 `dispatch_attempt`（含多轮次 `rounds`）解析与判断全作业未派发（`isNotDispatchedJob`）及整作业设备返回引用（`deviceReturnRef`），不再将仅后续某轮 `not_dispatched` 误判为整作业未执行，并继续拒绝接受 `run-jobs@1`；`tools/assemble-delivery.ts` 与 `tools/download-returns.ts` 改读 `/run-export/<run>/jobs/2`；同步升级 `case-compile` 至 `3.20.4` 并刷新生成器身份、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与 `pack.json`（子包 `recompose` / `recompose-authority` / `recompose-adjudication` 未变）；另为包测试支架 `testing/hub.ts` 补接 `catalog: kit.testEnvironments` 与 `environmentAccess` 以匹配 C49 之前的租约与环境权限检查。
+
 # case-compile 3.20.3
 
 本地修正 3.20.3（2026-11-14）：随合约协议生成拆分与格式技能包仅镜像自身声明子集（`mindmap-format` 1.0.26、`workbook-format` 1.0.24、`html-format` 1.0.23、`xml-format` 1.0.24），同步内嵌 `mindmap-format` `case-structure` 版本为 `1.0.26`（内嵌模块字节不变）、独立子包 `recompose` 为 `1.2.6` 及共享证据模块所属 `recompose-authority` / `recompose-adjudication` 为 `1.1.10`（同步 `functions/recompose-evidence.ts` 接受 `1.2.6` 与 `1.1.10`），刷新生成器身份、四份合成工作簿样例、`pack.test.ts`/`publish.test.ts`/`tools/install-agents.test.ts` 与四个包清单，未发布或部署。
@@ -803,7 +807,7 @@ answer for the person (directory, counts, paths), which `tools/delivery.md` has 
 from the plan run of the final verification and refused unless it is byte for byte the workbook that verification dispatched and
 every item of it passed; `unsuccessful_cases.xlsx` holds the cases with a plan that did not pass, from the plan of the latest
 dispatch that held them all; `delivery_report.md`, `unsuccessful_cases.md` and `delivery.json` account for every case of the
-document. Verdicts come from the Hub's `GET /run-export/<run>/jobs`; the model writes only how each case not delivered was
+document. Verdicts come from the Hub's `GET /run-export/<run>/jobs/2`; the model writes only how each case not delivered was
 judged and its fix or trade-off. `tools/delivery.md` holds the closing steps (at most two rework rounds, a final verification of
 the pass volume, the answer with counts and paths only), so SKILL.md only points to it.
 
