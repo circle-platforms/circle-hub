@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
@@ -49,10 +50,11 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     assert.ok(writerBrief.includes('compile-writer'));
     assert.ok(writerBrief.includes(scopeVerbatim));
     assert.ok(writerBrief.includes('使用者原话，由主会话记录'));
-    assert.ok(writerBrief.includes(`技能目录：${packDir}`));
-    assert.ok(writerBrief.includes(`node ${packDir}/tools/check-plan.ts --file`));
+    assert.ok(writerBrief.includes(`技能目录（明确只读资源）：${packDir}`));
+    assert.ok(writerBrief.includes(`node '${packDir}/tools/check-plan.ts' --file`));
     assert.ok(!writerBrief.includes('<技能目录>'));
-    assert.ok(writerBrief.includes('按测试环境改写、前置与清理'));
+    assert.ok(writerRole.body.includes('按测试环境改写、前置与清理'));
+    assert.ok(!writerBrief.includes(writerRole.body));
     assert.ok(writerBrief.includes('本轮补充：先查前置配置'));
 
     // Also accepts English keys and agent names identically.
@@ -83,9 +85,9 @@ test('single-source roles drive both bundled agents/*.md and rendered task brief
     });
     assert.ok(attrBrief.includes('compile-attributor'));
     assert.ok(attrBrief.includes('index.json'));
-    assert.ok(attrBrief.includes('apv_*.txt'));
-    assert.ok(attrBrief.includes('log.txt'));
-    assert.ok(attrBrief.includes('本轮严禁工具与动作：execute'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('apv_*.txt'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.body.includes('log.txt'));
+    assert.ok(SUBAGENT_ROLES.find(role => role.key === 'attribute')!.forbiddenTools.includes('execute'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -251,9 +253,9 @@ test('staged task-brief CLI resolves installed skill dir from import.meta.url an
     const taskContent = await readFile(join(workDir, 'audit/case-201.abcdef12.task.md'), 'utf8');
     assert.ok(taskContent.includes('compile-fidelity'));
     assert.ok(taskContent.includes(scope));
-    assert.ok(taskContent.includes(`技能目录：${packDir}`));
+    assert.ok(taskContent.includes(`技能目录（明确只读资源）：${packDir}`));
     assert.ok(!taskContent.includes('<技能目录>'));
-    assert.ok(taskContent.includes('node ' + packDir + '/tools/check-plan.ts --file <verdict相对路径> --brief <brief相对路径>'));
+    assert.ok(taskContent.includes(`node '${packDir}/tools/check-plan.ts' --file 'audit/case-201.abcdef12.verdict.json' --brief 'audit/case-201.abcdef12.brief.json'`));
 
     // Invalid option format exits non-zero with formatted stderr.
     const errChunks: string[] = [];
@@ -562,7 +564,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     };
     await writeFile(join(workDir, 'run', 'sources', 'contract.json'), JSON.stringify(signTypedRuntime(contractWithMarker)));
     await writeFile(join(workDir, 'run', 'sources.json'), JSON.stringify([
-      { slot: 'contract', file: 'sources/contract.json' },
+      { slot: 'contract', file: 'sources/contract.json', reference: 'src:' + createHash('sha256').update(await readFile(join(workDir, 'run', 'sources', 'contract.json'))).digest('hex') },
     ]));
 
     // D3: reject whole-batch submission.json and wrong-shape answer/notes files
@@ -683,6 +685,9 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     });
     assert.ok(r3Unified.length < 80_000, `D1: multi-line 1.2MB answer must not bloat brief (got ${r3Unified.length})`);
     assert.ok(r3Unified.includes('INVALID_PARAM'));
+    assert.ok(r3Unified.includes('本次已核验的来源文件'));
+    assert.ok(r3Unified.includes('run/sources/contract.json'));
+    assert.ok(!r3Unified.includes('run/contract.json'));
     assert.ok(!r3Unified.includes('B_ERR') && !r3Unified.includes('PPPPPP'));
     assert.ok(r3Unified.includes('连续 2 轮命中同类错误'), 'D8: contract failure_markers loaded via task-brief.ts drove streak detection');
     assert.ok(r3Unified.includes('最后一次机会') && !r3Unified.includes('FINAL attempt'));
@@ -990,7 +995,7 @@ test('writeTaskBrief wraps explanatory prose below 1600 chars, preserves a 5000-
   }
 });
 
-test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and supports --batch generation for plans and fidelity briefs', async () => {
+test('task-brief dispatches named roles using workspace paths and supports batches without repeating installed instructions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cc-task-brief-batch-'));
   try {
     const packDir = realpathSync(await stage(join(root, 'skill')));

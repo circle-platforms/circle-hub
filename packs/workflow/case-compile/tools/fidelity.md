@@ -8,7 +8,7 @@
 node <技能目录>/tools/fidelity-brief.ts --run <脚本编写目录>/run.json --plans <自动化用例目录> --out <核对目录>
 ```
 
-2. 用 `task-brief.ts` 为 `to_audit` 中每份 `.brief.json` 生成独立盲审任务文件（或一次批量生成整目录；工具会自动隔离编写简报、历史轮次与设备日志），再将生成的短派发提示交给前台并行 `task`（`subagent_type="general-purpose"`，严禁用 `background`，每批最多 6 个）：
+2. 用 `task-brief.ts` 为 `to_audit` 中每份 `.brief.json` 生成独立盲审任务文件（或一次批量生成整目录；工具会自动隔离编写简报、历史轮次与设备日志），再将生成的短派发提示交给前台并行 `task`（`subagent_type="compile-fidelity"`，严禁用 `background`，每批最多 6 个）：
 
 ```sh
 node <技能目录>/tools/task-brief.ts --role '保真核对' --batch <核对目录> --task-dir <核对任务目录>

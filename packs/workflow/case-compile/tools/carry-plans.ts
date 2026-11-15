@@ -1,3 +1,4 @@
+import { CallFailure } from '../functions/text.ts';
 import { planStateOf } from '../functions/plan-state.ts';
 // Safely carries unchanged case-compile plan files and valid fidelity artifacts from a superseded plan run
 // to a newly opened plan run under five fail-closed gates and post-write byte-for-byte SHA-256 verification.
@@ -74,7 +75,7 @@ function parseCommaList(raw: string | undefined, flag: string): Set<string> {
   if (raw === undefined) return new Set();
   const tokens = raw.split(',').map((s) => s.trim());
   if (!tokens.length || tokens.some((s) => !s)) {
-    throw new Error(`参数无效：${flag} 必须是英文逗号分隔的非空标识列表`);
+    throw new CallFailure('invalid_parameters', `参数无效：${flag} 必须是英文逗号分隔的非空标识列表`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   return new Set(tokens);
 }
@@ -83,20 +84,20 @@ function optionalStringField(obj: Record<string, unknown>, key: string): string 
   const val = obj[key];
   if (val === undefined || val === null) return null;
   if (typeof val !== 'string' || !val.trim()) {
-    throw new Error(`参数无效：run.json 字段 ${key} 格式无效`);
+    throw new CallFailure('invalid_parameters', `参数无效：run.json 字段 ${key} 格式无效`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   return val;
 }
 
 function sharedSourcesOf(raw: unknown): Array<{ slot: string; reference: string }> {
   if (raw === undefined) return [];
-  if (!Array.isArray(raw)) throw new Error('参数无效：run.json 字段 sources 必须是数组');
+  if (!Array.isArray(raw)) throw new CallFailure('invalid_parameters', '参数无效：run.json 字段 sources 必须是数组', "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   const picked: Array<{ slot: string; reference: string }> = [];
   for (const row of raw) {
     if (!isRecord(row)) continue;
     if (typeof row.slot === 'string' && (SHARED_SLOTS as readonly string[]).includes(row.slot)) {
       if (typeof row.reference !== 'string' || !row.reference) {
-        throw new Error(`参数无效：run.json sources 槽位 ${row.slot} 缺少 reference`);
+        throw new CallFailure('invalid_parameters', `参数无效：run.json sources 槽位 ${row.slot} 缺少 reference`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
       picked.push({ slot: row.slot, reference: row.reference });
     }
@@ -108,7 +109,7 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
   const file = resolveExistingFileInsideCwd(cwd, join(dirRel, 'run.json'), `${label}/run.json`);
   const raw = parsedPlanFile(`${label}/run.json`, await readFile(file.canonical));
   if (!isRecord(raw) || typeof raw.run !== 'string' || !RUN_ID.test(raw.run) || !Array.isArray(raw.items)) {
-    throw new Error(`参数无效：${label}/run.json 不是有效的运行记录`);
+    throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 不是有效的运行记录`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   const params = isRecord(raw.parameters) ? raw.parameters : {};
   const excluded = new Set<string>(
@@ -117,7 +118,7 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
   let scopeCases: Set<string> | null = null;
   if (params.scope !== undefined) {
     if (excluded.size > 0) {
-      throw new Error(`参数无效：${label}/run.json 同时存在 parameters.scope 与 parameters.exclude`);
+      throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 同时存在 parameters.scope 与 parameters.exclude`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
     if (
       !isRecord(params.scope) ||
@@ -125,7 +126,7 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
       !params.scope.cases.length ||
       params.scope.cases.some((c) => typeof c !== 'string' || !c)
     ) {
-      throw new Error(`参数无效：${label}/run.json 的 parameters.scope 无效`);
+      throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 的 parameters.scope 无效`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
     scopeCases = new Set(params.scope.cases as string[]);
   }
@@ -134,10 +135,10 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
   const seenAutoids = new Set<string>();
   for (const item of raw.items) {
     if (!isRecord(item) || typeof item.id !== 'string' || !item.id) {
-      throw new Error(`参数无效：${label}/run.json 中存在缺少 id 的条目`);
+      throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 中存在缺少 id 的条目`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
     if (byId.has(item.id)) {
-      throw new Error(`参数无效：${label}/run.json 存在重复条目 ${item.id}`);
+      throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 存在重复条目 ${item.id}`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
     const fields = isRecord(item.fields) ? item.fields : {};
     const autoid =
@@ -148,7 +149,7 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
           : null;
     if (autoid) {
       if (seenAutoids.has(autoid)) {
-        throw new Error(`参数无效：${label}/run.json 存在重复 autoid ${autoid}`);
+        throw new CallFailure('invalid_parameters', `参数无效：${label}/run.json 存在重复 autoid ${autoid}`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
       seenAutoids.add(autoid);
     }
@@ -171,19 +172,19 @@ async function readRunRecord(cwd: ResolvedCwd, dirRel: string, label: string): P
 
 function assertCompatibleRuns(source: ParsedRun, target: ParsedRun): void {
   if (source.run === target.run) {
-    throw new Error(`参数无效：--source 与 --target 指向同一个运行 ${source.run}，同一运行直接重交即可，无需结转`);
+    throw new CallFailure('invalid_parameters', `参数无效：--source 与 --target 指向同一个运行 ${source.run}，同一运行直接重交即可，无需结转`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   if (source.product !== target.product) {
-    throw new Error(`参数无效：--source（product=${source.product ?? '无'}）与 --target（product=${target.product ?? '无'}）产品不一致，拒绝结转`);
+    throw new CallFailure('invalid_parameters', `参数无效：--source（product=${source.product ?? '无'}）与 --target（product=${target.product ?? '无'}）产品不一致，拒绝结转`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   if (source.build !== target.build) {
-    throw new Error(`参数无效：--source（build=${source.build ?? '无'}）与 --target（build=${target.build ?? '无'}）构建不一致，拒绝结转`);
+    throw new CallFailure('invalid_parameters', `参数无效：--source（build=${source.build ?? '无'}）与 --target（build=${target.build ?? '无'}）构建不一致，拒绝结转`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   if (source.root !== target.root) {
-    throw new Error(`参数无效：--source（root=${source.root ?? '无'}）与 --target（root=${target.root ?? '无'}）知识根不一致，拒绝结转`);
+    throw new CallFailure('invalid_parameters', `参数无效：--source（root=${source.root ?? '无'}）与 --target（root=${target.root ?? '无'}）知识根不一致，拒绝结转`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   if (canonicalJson(source.sources) !== canonicalJson(target.sources)) {
-    throw new Error('参数无效：--source 与 --target 绑定的输入（subject/contract/inventory/profile）不一致，拒绝结转');
+    throw new CallFailure('invalid_parameters', '参数无效：--source 与 --target 绑定的输入（subject/contract/inventory/profile）不一致，拒绝结转', "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
 }
 
@@ -263,7 +264,7 @@ async function stageWrite(
   const relArg = join(dirRelative, fileName);
   const target = resolveInsideCwd(cwd, relArg, '输出目标');
   if (stagedPaths.has(target.canonical)) {
-    throw new Error(`已被占用：两个条目要写同一个输出文件 ${target.relative}。请核对来源条目后重试`);
+    throw new CallFailure('occupied', `已被占用：两个条目要写同一个输出文件 ${target.relative}。请核对来源条目后重试`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   stagedPaths.add(target.canonical);
   const existing = await lstat(target.lexical).catch((error: NodeJS.ErrnoException) => {
@@ -271,7 +272,7 @@ async function stageWrite(
     throw error;
   });
   if (existing !== null) {
-    throw new Error(`已被占用：输出文件 ${target.relative} 已存在，不覆盖。请另选新目录或清理后再结转`);
+    throw new CallFailure('occupied', `已被占用：输出文件 ${target.relative} 已存在，不覆盖。请另选新目录或清理后再结转`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
   }
   return {
     canonical: target.canonical,
@@ -290,7 +291,7 @@ async function resolveDestDir(cwd: ResolvedCwd, arg: string, label: string): Pro
   });
   if (st !== null) {
     if (st.isSymbolicLink() || !st.isDirectory()) {
-      throw new Error(`参数无效：${label} ${arg} 必须是普通目录且不能是符号链接`);
+      throw new CallFailure('invalid_parameters', `参数无效：${label} ${arg} 必须是普通目录且不能是符号链接`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
   }
   return { canonical: checked.canonical, relative: checked.relative };
@@ -305,21 +306,21 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
   try {
     const args = parseCliOptions(argv, OPTIONS, USAGE);
     if ((args.briefs !== undefined) !== (args['source-briefs'] !== undefined)) {
-      throw new Error('参数无效：传入 --briefs 与 --source-briefs 时必须成对提供');
+      throw new CallFailure('invalid_parameters', '参数无效：传入 --briefs 与 --source-briefs 时必须成对提供', "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
 
     const cwd = resolveCwdRoots();
     const sourceDir = resolveExistingDirInsideCwd(cwd, args.source!, '--source');
     const targetDir = resolveExistingDirInsideCwd(cwd, args.target!, '--target');
     if (sourceDir.canonical === targetDir.canonical) {
-      throw new Error('参数无效：--source 与 --target 不能是同一个目录');
+      throw new CallFailure('invalid_parameters', '参数无效：--source 与 --target 不能是同一个目录', "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
 
     const sourcePlansArg = args['source-plans'] ?? join(sourceDir.relative, 'plans');
     const sourcePlans = resolveExistingDirInsideCwd(cwd, sourcePlansArg, '--source-plans');
     const destPlans = await resolveDestDir(cwd, args.plans!, '--plans');
     if (sourcePlans.canonical === destPlans.canonical) {
-      throw new Error('参数无效：--source-plans 与 --plans 不能是同一个目录');
+      throw new CallFailure('invalid_parameters', '参数无效：--source-plans 与 --plans 不能是同一个目录', "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
 
     const sourceBriefs = args['source-briefs']
@@ -327,7 +328,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
       : null;
     const destBriefs = args.briefs ? await resolveDestDir(cwd, args.briefs, '--briefs') : null;
     if (sourceBriefs && destBriefs && sourceBriefs.canonical === destBriefs.canonical) {
-      throw new Error('参数无效：--source-briefs 与 --briefs 不能是同一个目录');
+      throw new CallFailure('invalid_parameters', '参数无效：--source-briefs 与 --briefs 不能是同一个目录', "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
 
     const sourceRun = await readRunRecord(cwd, sourceDir.relative, '--source');
@@ -340,7 +341,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
 
     const names = (await readdir(sourcePlans.canonical)).filter((n) => n.endsWith('.json')).sort();
     if (!names.length) {
-      throw new Error(`不存在：${sourcePlans.relative} 中没有任何自动化用例 .json 文件`);
+      throw new CallFailure('not_found', `不存在：${sourcePlans.relative} 中没有任何自动化用例 .json 文件`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
     }
 
     const seenSourceItems = new Set<string>();
@@ -372,10 +373,10 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
       const rawBytes = Buffer.from(await readFile(srcFile.canonical));
       const parsed = parsedPlanFile(fileName, rawBytes);
       if (!isRecord(parsed) || typeof parsed.item !== 'string' || !parsed.item || typeof parsed.handling !== 'string') {
-        throw new Error(`参数无效：${srcFile.relative} 不是合法的单条自动化用例 JSON`);
+        throw new CallFailure('invalid_parameters', `参数无效：${srcFile.relative} 不是合法的单条自动化用例 JSON`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
       if (seenSourceItems.has(parsed.item)) {
-        throw new Error(`参数无效：--source-plans 中条目 ${parsed.item} 存在多份自动化用例文件。请只保留一份后重试`);
+        throw new CallFailure('invalid_parameters', `参数无效：--source-plans 中条目 ${parsed.item} 存在多份自动化用例文件。请只保留一份后重试`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
       seenSourceItems.add(parsed.item);
 
@@ -386,11 +387,11 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
         continue;
       }
       if (sourceItem && sourceItem.autoid !== targetItem.autoid) {
-        throw new Error(`参数无效：条目 ${parsed.item} 在源/目标运行间的 autoid 不一致`);
+        throw new CallFailure('invalid_parameters', `参数无效：条目 ${parsed.item} 在源/目标运行间的 autoid 不一致`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
       const key = targetItem.autoid ?? targetItem.id;
 
-      if (excluded.has(key) || excluded.has(targetItem.id)) {
+      if (excluded.has(key) || !planStateOf(parsed, excluded).process && parsed.handling !== 'skipped') {
         skipped.excluded.push(key);
         continue;
       }
@@ -407,7 +408,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
         continue;
       }
 
-      if (parsed.handling === 'skipped') {
+      if (!planStateOf(parsed).process) {
         const planWrite = await stageWrite(cwd, destPlans.relative, destPlans.canonical, fileName, rawBytes, stagedPaths);
         records.push({ item: parsed.item, autoid: targetItem.autoid, sourceFile: srcFile.relative, planWrite, fidelity: 'not_needed' });
         plannedWrites.push(planWrite);
@@ -493,7 +494,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
       await writeExclusive(write.canonical, write.bytes);
       const st = await lstat(write.canonical);
       if (st.isSymbolicLink() || !st.isFile()) {
-        throw new Error(`暂时不可用：写入后重读发现 ${write.relative} 不是普通文件。请检查目标磁盘与目录状态后重试`);
+        throw new CallFailure('temporarily_unavailable', `暂时不可用：写入后重读发现 ${write.relative} 不是普通文件。请检查目标磁盘与目录状态后重试`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
       const diskBytes = await readBack(write.canonical);
       if (
@@ -501,7 +502,7 @@ export async function main(argv: string[], io: CarryIo = {}): Promise<number> {
         Buffer.compare(Buffer.from(diskBytes), write.bytes) !== 0 ||
         sha256Hex(diskBytes) !== write.sha256
       ) {
-        throw new Error(`暂时不可用：写入后重读 ${write.relative} 的字节或 SHA-256 与预期不符。请检查目标磁盘与目录状态后重试`);
+        throw new CallFailure('temporarily_unavailable', `暂时不可用：写入后重读 ${write.relative} 的字节或 SHA-256 与预期不符。请检查目标磁盘与目录状态后重试`, "请核对源目标运行的身份、范围和计划对应关系，修正后重试 carry-plans.ts");
       }
     }
 
