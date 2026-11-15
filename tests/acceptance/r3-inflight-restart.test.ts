@@ -150,3 +150,31 @@ test('R3-9 pending not-yet-started requests renew the original lease across inje
   assert.equal(sends(c),submitted);assert.equal(submitted,1);
   await worker.close();
 });
+
+// Callback-wiring simulation only: the real PostgreSQL connection is not severed in this case.
+// EventEmitter/socket error handling is separately owned and tested by records.
+test('R3-10 real observation lock forwards loss before submit and releases without reacquisition or retransmission',{timeout:60000},async t=>{
+  const c=await journal(t);
+  const tryHold=c.kit.store.tryHold.bind(c.kit.store);
+  let loss:((error:Error)=>void)|undefined,registered=false,triggered=false;
+  c.kit.store.tryHold=async(key,onLost?: (error:Error)=>void)=>{
+    const unlock=await tryHold(key,onLost);
+    if(unlock&&key.startsWith('dispatch.observation:')){loss=onLost;registered=typeof onLost==='function';}
+    return unlock;
+  };
+  rewriteReply(c,'inspect_slot',value=>{
+    if(!triggered){triggered=true;loss?.(new Error('synthetic observation connection loss callback'));}
+    return value;
+  });
+  const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
+  assert.equal(registered,true,'normal dispatch must register the real observation-lock loss callback');
+  assert.equal(triggered,true,'loss is injected only after the precheck request reaches the synthetic endpoint');
+  assert.equal(sends(c),0,'loss before the submit boundary cannot send a payload');
+  assert.equal(c.calls.filter(name=>name==='open_slot').length,1,'the existing acquisition is not repeated');
+  assert.equal(c.rows.size,0,'no remote request or task was created');
+  const events=await c.service.journal.events(state.job);
+  assert.equal(events.some(event=>event.body.detail.phase==='intent'),false,'precheck loss precedes an admitted submit intent');
+  assert.notEqual(state.outcome,'effective');
+  await observationLockFree(c,state.job);
+  const unlock=await tryHold('dispatch.observation:'+state.job);assert.ok(unlock,'the original observer finally releases its actual lock');await unlock();
+});
