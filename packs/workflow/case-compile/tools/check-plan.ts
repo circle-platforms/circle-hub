@@ -8,11 +8,8 @@ import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BRIEF_SCHEMA,
-  FIDELITY_VERDICTS,
-  fidelityProblems,
   fidelityJudgmentProblems,
   type FidelityBrief,
-  type FidelityRow,
 } from '../functions/fidelity.ts';
 import { describeExpansions, expandValue } from '../functions/length-literals.ts';
 import { isItemHandling, ITEM_HANDLING, type ItemHandling } from '../functions/generated/vocabulary.ts';
@@ -166,89 +163,6 @@ function checkPlanObject(file: string, parsed: unknown): PlanCheckResult {
     },
     problems,
   };
-}
-
-function checkStandaloneVerdict(verdict: unknown): { problems: CheckProblem[]; rows: FidelityRow[] } {
-  const problems: CheckProblem[] = [];
-  const rows: FidelityRow[] = [];
-  if (!isRecord(verdict)) {
-    return { problems: [{ code: 'fidelity_shape', pointer: '', message: '判断文件顶层必须是 JSON 对象' }], rows };
-  }
-  for (const key of Object.keys(verdict)) {
-    if (!['steps', 'disclosure'].includes(key)) {
-      problems.push({
-        code: 'fidelity_shape',
-        pointer: `/${key}`,
-        message: '多余字段；.verdict.json 恰好写 steps、disclosure 两项',
-      });
-    }
-  }
-  if (typeof verdict.disclosure !== 'string' || !verdict.disclosure.trim()) {
-    problems.push({ code: 'fidelity_shape', pointer: '/disclosure', message: 'disclosure 必须是非空中文说明' });
-  }
-  if (!Array.isArray(verdict.steps) || !verdict.steps.length) {
-    problems.push({ code: 'fidelity_shape', pointer: '/steps', message: 'steps 必须是非空数组' });
-    return { problems, rows };
-  }
-  const seen = new Set<string>();
-  for (const [index, raw] of verdict.steps.entries()) {
-    const at = `/steps/${index}`;
-    if (!isRecord(raw) || Object.keys(raw).sort().join() !== 'n,rationale,step_indices,verdict') {
-      problems.push({
-        code: 'fidelity_shape',
-        pointer: at,
-        message: '每行恰好写 n、verdict、step_indices、rationale 四个字段',
-      });
-      continue;
-    }
-    if (typeof raw.n !== 'string' || !raw.n.trim()) {
-      problems.push({ code: 'fidelity_shape', pointer: `${at}/n`, message: 'n 必须是非空作者步骤号' });
-    } else if (seen.has(raw.n)) {
-      problems.push({ code: 'fidelity_shape', pointer: `${at}/n`, message: `作者步骤 ${raw.n} 判了两次` });
-    } else {
-      seen.add(raw.n);
-    }
-    if (!(FIDELITY_VERDICTS as readonly unknown[]).includes(raw.verdict)) {
-      problems.push({
-        code: 'fidelity_shape',
-        pointer: `${at}/verdict`,
-        message: `verdict 只能是 ${FIDELITY_VERDICTS.join('、')}`,
-      });
-    }
-    if (
-      !Array.isArray(raw.step_indices) ||
-      raw.step_indices.some((v) => typeof v !== 'number' || !Number.isSafeInteger(v) || v < 0)
-    ) {
-      problems.push({
-        code: 'fidelity_shape',
-        pointer: `${at}/step_indices`,
-        message: 'step_indices 必须是非负整数数组',
-      });
-    } else if (raw.verdict === 'preserved' && !raw.step_indices.length) {
-      problems.push({
-        code: 'author_step_unbound',
-        pointer: `${at}/step_indices`,
-        message: `作者步骤 ${String(raw.n)} 判 preserved 时 step_indices 不能为空`,
-      });
-    }
-    if (typeof raw.rationale !== 'string' || !raw.rationale.trim()) {
-      problems.push({ code: 'fidelity_shape', pointer: `${at}/rationale`, message: 'rationale 必须是非空说明' });
-    }
-    if (
-      typeof raw.n === 'string' &&
-      (FIDELITY_VERDICTS as readonly unknown[]).includes(raw.verdict) &&
-      Array.isArray(raw.step_indices) &&
-      typeof raw.rationale === 'string'
-    ) {
-      rows.push({
-        n: raw.n,
-        verdict: raw.verdict as FidelityRow['verdict'],
-        step_indices: raw.step_indices as number[],
-        rationale: raw.rationale.trim(),
-      });
-    }
-  }
-  return { problems, rows };
 }
 
 function isBriefObject(value: unknown): value is FidelityBrief {
@@ -430,7 +344,7 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
 
-      const checked = checkStandaloneVerdict(parsed);
+      const checked = fidelityJudgmentProblems(null, parsed);
       const ok = checked.problems.length === 0;
       process.stdout.write(
         JSON.stringify({
