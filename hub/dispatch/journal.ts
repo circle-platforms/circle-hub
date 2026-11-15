@@ -68,7 +68,7 @@ export class Journal {
       const previous=(await this.records.store.findMany<EffectRecord>({kind:'effect',key:'effect.job',values:[binding.job]},transaction)).at(-1);
       const intent=eventOf(await this.events(binding.job,transaction),'intent');
       const detail=event.body.detail,values=intent?.body.detail??{};
-      const definitionBytes=await this.records.objects.get(binding.executor_digest);if(!definitionBytes)throw new Error('缺少固定执行器原件；请恢复后对账');
+      const definitionBytes=await this.records.objects.get(binding.executor_digest,transaction);if(!definitionBytes)throw new Error('缺少固定执行器原件；请恢复后对账');
       const d=JSON.parse(new TextDecoder().decode(definitionBytes));
       const write=d.calls.submit.write;
       const outcome=isEffectOutcome(detail.outcome)?detail.outcome:event.body.detail.phase==='intent'?'issued':previous?.body.outcome??'issued';
