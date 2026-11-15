@@ -1103,6 +1103,6 @@ test('recompose refusal: one next actor, verbatim（×N）, determined-error bra
     }],
   };
   const determined = toolText('submit_result', submitAnswer(resultWith({ delivered: [], rejected: [], quarantined: [], incomplete: [determinedItem] })), { items: list });
-  assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因编写模型的问题；下一步由模型改正重组记录后重交/);
+  assert.match(determined, /改写后的命令没有锁定目录的完整语法身份；状态已确认；判断错误；原因生产者错误；下一步由模型改正重组记录后重交/);
   assert.doesNotMatch(determined, /状态未知；原因缺资料/);
 });

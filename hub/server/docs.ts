@@ -9,7 +9,6 @@ import { isAdmin } from '../records/api.ts';
 // input type (`accepts: ["doc:doc"]` on an input slot) and answers only that run's user; everyone else, and every
 // CLI user who is not an admin, gets the same answer as for a doc that does not exist.
 import { labelOf } from '../../contracts/generated/vocabulary.ts';
-import { ExternalObjectId } from '../../contracts/src/reference.ts';
 import { RunId } from '../../contracts/src/common.ts';
 import type { RunRecord } from '../../contracts/src/run.ts';
 import type { ExternalRead, ExternalReadContext, ExternalReaderPort, WorkflowStore } from '../ports.ts';
@@ -172,18 +171,36 @@ export function createDocs(deps: DocsDeps): Docs {
     return out;
   }
 
-  async function read(id: string, context: ExternalReadContext): Promise<ExternalRead> {
+  async function read(id: string, context: ExternalReadContext, includeOptions = true): Promise<ExternalRead> {
     const startedAt = now().toISOString();
     const bare = id.includes('@') ? id.slice(0, id.indexOf('@')) : id;
     const parsed = parseDocId(id);
-    if (parsed === null) return { ok: false, id: bare, reason: '不是命名文档的标识', inputError: { message: '不是命名文档的标识', fix: '按 doc:doc:<名字> 或 doc:doc:<名字>@<摘要> 写' } };
+    if (parsed === null) return { ok: false, id: bare, reason: '不是命名文档的标识', inputError: { code: 'SUBMISSION_SCHEMA_VIOLATION', message: '不是命名文档的标识', fix: '按 doc:doc:<名字> 或 doc:doc:<名字>@<摘要> 写' } };
     // Not found or no permission (D05 R[3], decision 112): whether the document exists is checked first; the reason is
     // also kept for the admin note.
     const neutral = `账号 ${context.principal.id} 读命名文档 ${parsed.name}`;
     const principal = context.principal;
     const storedRun=context.run&&RunId.safeParse(context.run).success?(await records.store.find<Pick<RunRecord,'runner'|'pack_digest'|'pack_space'>>({key:'runs.id',value:context.run,kind:'run',limit:1})).items[0]:undefined;
     if(storedRun?.body.pack_space&&storedRun.body.pack_space!=='team')return {ok:false,id:bare,reason:`个人工作流不能读取命名文档；${neutral}`};
-    const absent = (message: string): ExternalRead => ({ ok: false, id: bare, reason: `${message}；${neutral}`, inputError: { code: 'SOURCE_ABSENT', message, fix: '核对文档名；命名文档由管理员发布（circle-hub doc put）' } });
+    const absent = async (message: string): Promise<ExternalRead> => {
+      const options: string[] = [];
+      let complete = true;
+      if (includeOptions) {
+        const pointers = await records.pointers.list('doc:');
+        const candidates = pointers.slice(0, 100);
+        complete = candidates.length === pointers.length;
+        for (const pointer of candidates) {
+          const candidate = docIdOf(pointer.name.slice('doc:'.length));
+          if ((await read(candidate, context, false)).ok) options.push(candidate);
+        }
+      }
+      const total = options.length;
+      return { ok: false, id: bare, reason: `${message}；${neutral}`, inputError: {
+        code: 'SOURCE_ABSENT', message,
+        fix: '从本次核验可读的命名文档名称中选择；需要发布新文档时由管理员执行 circle-hub doc put',
+        ...(includeOptions ? { options: options.slice(0, 20), options_coverage: { examined: Math.min(total, 20), ...(complete ? { total } : {}), complete: complete && total <= 20, ...(!complete || total > 20 ? { note: '仅列出本次已经核验可读的部分名称' } : {}) } } : {}),
+      } };
+    };
     const forbidden = (why: string): ExternalRead => ({ ok: false, id: bare, reason: `${why}；${neutral}`, inputError: { code: 'SOURCE_NOT_PERMITTED', message: `命名文档 ${parsed.name} 存在，你没有读取权限：${why}`, fix: '经你自己的、工作流声明了命名文档输入的运行读取它；没有这样的工作流时请管理员分配' } });
     const lost = (message: string): ExternalRead => ({ ok: false, id: bare, reason: message, inputError: { code: 'SOURCE_INTEGRITY_UNPROVEN', message, fix: '请管理员从备份恢复这份命名文档后重读' } });
     const pointer = await records.pointers.get(docPointerName(parsed.name));
@@ -286,7 +303,7 @@ export function createDocs(deps: DocsDeps): Docs {
     },
     show,
     reader: {
-      accepts: async (id: string) => typeof id === 'string' && parseDocId(id) !== null && ExternalObjectId.safeParse(id).success,
+      accepts: async (id: string) => typeof id === 'string' && id.startsWith('doc:doc:'),
       read,
     },
   };

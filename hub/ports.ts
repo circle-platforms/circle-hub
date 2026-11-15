@@ -193,7 +193,7 @@ export type ExternalRead =
 /** What a reader of the system is told of an object held for review (D05 R[3]): that it exists, and when that was read. */
 
 /** A caller-input problem of a read, with the claim fields its answer carries (D05 R[8]): grounds, qualifier, the missing fact. */
-export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses'>;
+export type InputError = { code?:ProtocolCode; message: string; fix: string } & Pick<ProtocolError, 'grounds' | 'warrant' | 'provenance' | 'collected_at' | 'coverage' | 'missing' | 'hypotheses' | 'options' | 'options_coverage'>;
 
 export interface ExternalReaderPort {
   /** Whether some enabled resource declares this external object type (`system:type:id`). */

@@ -293,6 +293,15 @@ describe('runs over named documents', () => {
       const call = { traceId: '4bf92f3577b34da6a3ce929d0e0e4736', sessionId: null, adminNote: () => {} };
       const answer = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:topology' } } }, call);
       assert.ok(answer.run !== undefined, JSON.stringify(answer.errors ?? []).slice(0, 400));
+      const malformedInput = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:synthetic.json' } } }, call);
+      assert.equal(malformedInput.call_result, 'error');
+      assert.ok(malformedInput.errors.some(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.path === '/inputs/spec' && error.message === '不是命名文档的标识'));
+      assert.ok(malformedInput.errors.every(error => !error.message.includes('没有能读')));
+      const absentInput = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:synthetic-missing' } } }, call);
+      const absentError = absentInput.errors.find(error => error.code === 'SOURCE_ABSENT');
+      assert.ok(absentError);
+      assert.deepEqual(absentError.options, ['doc:doc:topology']);
+      assert.deepEqual(absentError.options_coverage, { examined: 1, total: 1, complete: true });
       const run1 = answer.run.run;
       const frozen = answer.run.sources.find((s) => typeof s.external === 'string' && s.external.startsWith('doc:doc:topology@'));
       assert.ok(frozen, 'the doc input froze with its digest');
@@ -325,4 +334,42 @@ describe('runs over named documents', () => {
       await kit.close();
     }
   });
+});
+
+test('absent named documents list only names the current caller can actually read', async (t) => {
+  const { kit, docs, admin, user } = await world(); t.after(() => kit.close());
+  await docs.put(admin, 'synthetic-visible', docJson([]));
+  const allowed = await docs.reader.read('doc:doc:synthetic-missing', { principal: admin, purpose: 'synthetic options' });
+  assert.equal(allowed.ok, false);
+  if (!allowed.ok) {
+    assert.deepEqual(allowed.inputError?.options, ['doc:doc:synthetic-visible']);
+    assert.deepEqual(allowed.inputError?.options_coverage, { examined: 1, total: 1, complete: true });
+  }
+  const denied = await docs.reader.read('doc:doc:synthetic-missing', { principal: user, purpose: 'synthetic options' });
+  assert.equal(denied.ok, false);
+  if (!denied.ok) assert.deepEqual(denied.inputError?.options, []);
+});
+
+test('a routed named document with malformed name reaches the precise reader diagnostic', async (t) => {
+  const { kit, docs, admin } = await world(); t.after(() => kit.close());
+  assert.equal(await docs.reader.accepts('doc:doc:synthetic.json'), true);
+  const read = await docs.reader.read('doc:doc:synthetic.json', { principal: admin, purpose: 'synthetic malformed name' });
+  assert.equal(read.ok, false);
+  if (!read.ok) {
+    assert.equal(read.inputError?.code, 'SUBMISSION_SCHEMA_VIOLATION');
+    assert.match(read.inputError!.message, /不是命名文档的标识/);
+    assert.match(read.inputError!.fix, /doc:doc:/);
+  }
+});
+
+test('readable named document options disclose their capped coverage', async (t) => {
+  const { kit, docs, admin } = await world(); t.after(() => kit.close());
+  for (let i = 0; i < 21; i++) await docs.put(admin, 'synthetic-option-' + i, docJson([]));
+  const answer = await docs.reader.read('doc:doc:synthetic-missing', { principal: admin, purpose: 'synthetic option coverage' });
+  assert.equal(answer.ok, false);
+  if (!answer.ok) {
+    assert.equal(answer.inputError?.options?.length, 20);
+    assert.deepEqual(answer.inputError?.options_coverage, { examined: 20, total: 21, complete: false, note: '仅列出本次已经核验可读的部分名称' });
+    for (const option of answer.inputError!.options!) assert.equal((await docs.reader.read(option, { principal: admin, purpose: 'synthetic option proof' })).ok, true);
+  }
 });

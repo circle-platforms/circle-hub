@@ -1,6 +1,6 @@
 /**
  * D3: next-step (fix) wording by caller role. Contract PROTOCOL_CODES.*.fix stays the member line;
- * administrators get registry-backed commands / console paths — never an imperative「请管理员…」to self.
+ * Administrators get registry-backed commands only when the error code establishes the action.
  */
 import { PROTOCOL_CODES } from '../../contracts/generated/protocol.ts';
 import type { PermissionRole } from '../../contracts/generated/vocabulary.ts';
@@ -16,8 +16,6 @@ export function fillCallerAccountName(text: string, callerName: string | undefin
   if (callerName === undefined || callerName.length === 0) return text;
   return text.replaceAll('<当前账户的名字>', callerName);
 }
-
-const ASK_ADMIN = /请管理员|由管理员|联系管理员|请对象的主人或管理员|或请主人、管理员|并由管理员|或由管理员|请内容的主人分享，或请管理员|仍失败时由资源管理员|由资源管理员|或 Hub 管理员|或系统包负责人|或联系管理员/;
 
 /** Top-level `circle-hub <name>` must appear in COMMAND_METADATA. */
 export function registeredCommandName(name: string): string {
@@ -62,8 +60,6 @@ function memberDefault(code: string, memberFix: string | undefined): string | un
 
 function adminForCode(code: string): string | undefined {
   switch (code) {
-    case 'SOURCE_NOT_PERMITTED':
-      return `请执行 circle-hub pack assign <当前账户的名字> <工作流> 为该账户分配，或在控制台「团队」页为所在团队分配`;
     case 'LEASE_UNAVAILABLE':
       return `请等待释放后重试，或改订其他测试环境；需要强制释放时执行 circle-hub lease release <键> --reason <理由>，或在控制台「连接」页操作`;
     case 'SOURCE_INTEGRITY_UNPROVEN':
@@ -99,39 +95,9 @@ function adminForCode(code: string): string | undefined {
   }
 }
 
-/** Rewrite a member-oriented fix that still says「请管理员…」when the caller is an administrator. */
-function rewriteAskAdmin(fix: string): string {
-  return fix
-    .replaceAll('请对象的主人或管理员分享读取权限，工作流和通用技能请管理员分配', '由对象的主人分享读取权限，或你分配工作流和通用技能')
-    .replaceAll('或请主人、管理员按既有带理由释放规则处理', '或你按既有带理由释放规则处理')
-    .replaceAll('请内容的主人分享，或请管理员按管理员记录恢复读取', '请内容的主人分享，或你按管理员记录恢复读取')
-    .replaceAll('仍失败时由资源管理员恢复读取', '仍失败时由你恢复读取')
-    .replaceAll('由资源管理员调整声明或缩小读取范围', '由你调整声明或缩小读取范围')
-    .replaceAll('由资源管理员核对来源给出的 Location 与路由声明', '由你核对来源给出的 Location 与路由声明')
-    .replaceAll('由资源管理员修复应答／修订、系统包负责人修复规划／投影或 Hub 管理员恢复存储', '由你修复应答／修订、规划／投影或恢复存储')
-    .replaceAll('或由管理员补身份映射与覆盖确切内容的分享许可', '或你补身份映射与覆盖确切内容的分享许可')
-    .replaceAll('或由管理员调整单篇限额', '或你调整单篇限额')
-    .replaceAll('或请管理员调整空间字节与篇数限额', '或你调整空间字节与篇数限额')
-    .replaceAll('或联系管理员调整索引限额', '或你调整索引限额')
-    .replaceAll('并由管理员分配', '并由你分配')
-    .replaceAll('由管理员补身份映射', '由你补身份映射')
-    .replaceAll('由管理员核对并重新启用原团队记忆后', '由你核对并重新启用原团队记忆后')
-    .replaceAll('请管理员调整容量后重试', '由你调整容量后重试')
-    .replaceAll('请管理员从备份恢复原件并重验摘要，恢复后按原引用重读', '由你从备份恢复原件并重验摘要，恢复后按原引用重读')
-    .replaceAll('请管理员把它分配给你', '由你把它分配给该成员')
-    .replaceAll('请管理员给你分配', '由你分配')
-    .replaceAll('需要哪个请管理员分配', '需要哪个由你分配')
-    .replaceAll('请管理员分配', '由你分配')
-    .replaceAll('请管理员核对读取权限', '由你核对读取权限')
-    .replaceAll('请管理员核对保存的结果后重新读取', '由你核对保存的结果后重新读取')
-    .replaceAll('或请管理员检查', '或由你检查')
-    .replaceAll('请联系管理员', '由你处理')
-    .replaceAll('请管理员', '由你');
-}
-
 /**
  * Fix string for this caller. Member (default): contract / provided fix. Admin: registry-backed next steps;
- * never imperative「请管理员…」pointing at self.
+ * Unmapped or ambiguous codes preserve the producer fix verbatim.
  */
 export function fixByRole(code: string, role: CallerRole, memberFix?: string, callerName?: string): string | undefined {
   const member = memberDefault(code, memberFix);
@@ -142,11 +108,7 @@ export function fixByRole(code: string, role: CallerRole, memberFix?: string, ca
     assertRegisteredNames(filled);
     return filled;
   }
-  if (member === undefined) return undefined;
-  if (!ASK_ADMIN.test(member)) return member;
-  const rewritten = fillCallerAccountName(rewriteAskAdmin(member), callerName);
-  assertRegisteredNames(rewritten);
-  return rewritten;
+  return member;
 }
 
 /** Hardcoded reader lines in text.ts that still say「请管理员…」when the caller is a member. */
