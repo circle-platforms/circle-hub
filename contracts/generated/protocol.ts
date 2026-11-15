@@ -93,6 +93,14 @@ export const PROTOCOL_CODES = {
   SYNC_RATE_LIMITED: { when: '同步请求过于频繁', fix: '等待答复中的重试时间后重试' },
   SYNC_PURGE_CONFIRMATION_REQUIRED: { when: '清除 Hub 上的私人空间需要本人在控制台确认', fix: '10 分钟内在 Hub 控制台的同步方式中确认这次清除，再用同一请求重试' },
   GROUNDS_PURGED: { when: '运行引用的私人原文已随所有者清除 Hub 上的私人空间而清除', fix: '由原文所有者重新上传后重新运行；原有回执和摘要保留' },
+  CALL_AUTHENTICATION_REQUIRED: { when: 'HTTP调用缺少有效身份认证，尚未进入业务处理器', fix: '请使用有效账户完成认证后重试' },
+  CALL_ORIGIN_REFUSED: { when: 'HTTP调用的来源被入口来源规则拒绝，尚未进入业务处理器', fix: '请使用管理员允许的调用来源' },
+  CALL_METHOD_UNSUPPORTED: { when: 'HTTP调用的方法不受该入口支持，尚未进入业务处理器', fix: '请使用该入口支持的HTTP方法' },
+  CALL_MEDIA_TYPE_UNSUPPORTED: { when: 'HTTP调用的媒体类型不受该入口支持，尚未进入业务处理器', fix: '请使用该入口支持的内容类型' },
+  CALL_REQUEST_INVALID: { when: 'HTTP入口实际核对请求无效，尚未进入业务处理器；不从任意业务错误或状态推断', fix: '请按该入口的请求格式改正后重试' },
+  CALL_BUSY: { when: '入口因重启或请求体预算暂不受理；具体事实由抛出处message给出，不以此码推断执行状态', fix: '请稍后重试' },
+  CALL_INTERNAL_UNAVAILABLE: { when: '内部调用异常而暂不可用；业务效应未知，不能标记call_not_executed', fix: '请联系管理员按调用记录核对处理结果' },
+  RUN_EXPORT_NOT_READY: { when: '运行导出缺少已受理结果这一实际前提；不是来源读取超时或隐私未知', fix: '请先完成提交并取得已受理结果后再导出' },
 } as const satisfies Record<ProtocolCode, { readonly when: string; readonly fix: string }>;
 
 /** Formats caller-supplied facts and actions; never classifies a message or invents missing facts. */

@@ -18,7 +18,7 @@ import * as deploymentSchemas from './deployment.ts';
 import * as tokenSchemas from './tokens.ts';
 import * as resultSummarySchemas from './result-summary.ts';
 import { Claim } from './claim.ts';
-import { SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
+import { HttpCallErrorData, HttpErrorEnvelope, SchemaId, TeamId, TeamAssignmentSubject, ResourceAssignmentSubject } from './common.ts';
 import { CallErrorReasonSchema } from '../generated/vocabulary.ts';
 import { DispatchOutcomeFactsSchema } from '../generated/shared-interfaces.ts';
 import { RecordEnvelope } from './records.ts';
@@ -65,6 +65,8 @@ function registry(parts: Record<string, Record<string, z.ZodType>>): Record<stri
 
 export const SCHEMA_REGISTRY: Record<string, z.ZodType> = registry({
   'index.ts': {
+    'http-call-error-data@1': HttpCallErrorData,
+    'http-error-envelope@1': HttpErrorEnvelope,
     'dispatch-outcome@1': DispatchOutcomeFactsSchema,
     'call-error-reason@1': CallErrorReasonSchema,
     'team-id@1': TeamId,
