@@ -457,7 +457,7 @@ async function answer(
           const unsupportedProtocol = protocol !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(protocol) && !isInitializeRequest(parsed);
           const malformed = !JSONRPCMessageSchema.safeParse(parsed).success;
           // Only the known SDK gates, witnessed before any business handler, establish a refused request.
-          const invalidRequest = !handlerEntered && (envelope.error.code === -32000 && (unsupportedAccept || unsupportedProtocol) || envelope.error.code === -32600 && malformed);
+          const invalidRequest = !handlerEntered && (envelope.error.code === -32000 && (unsupportedAccept || unsupportedProtocol) || envelope.error.code === -32700 && malformed);
           envelope.error.data = sdkCallErrorData(typeof envelope.error.code === 'number' ? envelope.error.code : -32603, handlerEntered, invalidRequest);
           text = JSON.stringify(envelope);
         }
