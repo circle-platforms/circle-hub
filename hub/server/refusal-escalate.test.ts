@@ -138,7 +138,7 @@ test('with synthetic identity facts, 2nd/3rd escalate; /items omits useless whol
     inputSchema: published.inputSchema,
   });
   assert.equal(second[0].fix, `${base.fix}。这是一小时内第 2 次同样的错误。`);
-  assert.doesNotMatch(second[0].fix!, /完整的正确写法/);
+  assert.doesNotMatch(second[0].fix!, /经输入格式核验的示例（需替换占位值）/);
 
   priors.set(key, 2);
   const third = await escalateProtocolErrors({
@@ -150,7 +150,7 @@ test('with synthetic identity facts, 2nd/3rd escalate; /items omits useless whol
     inputSchema: published.inputSchema,
   });
   assert.equal(third[0].fix, `${base.fix}。这是一小时内第 3 次同样的错误。`);
-  assert.doesNotMatch(third[0].fix!, /完整的正确写法|照原样重试不会成功/);
+  assert.doesNotMatch(third[0].fix!, /经输入格式核验的示例（需替换占位值）|照原样重试不会成功/);
 });
 
 test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替代路径)', () => {
@@ -165,7 +165,7 @@ test('tiers: 1 keeps disclosure, 2 adds example, 3+ adds category close (no 替�
   assert.equal(second.tier, 2);
   assert.match(second.countLabel, /这是一小时内第 2 次同样的错误/);
   assert.ok(second.fixSuffix?.includes(second.countLabel));
-  assert.ok(second.fixSuffix?.includes('完整的正确写法：'));
+  assert.ok(second.fixSuffix?.includes('经输入格式核验的示例（需替换占位值）：'));
   assert.ok(second.fixSuffix?.includes(second.exampleJson!));
   assert.equal(second.categoryClose, null);
   assert.doesNotMatch(second.fixSuffix!, FORBIDDEN_CALL_ERROR);
@@ -201,7 +201,7 @@ test('1st / 2nd / 3rd composed prose uses D2 first sentence then escalation', ()
   const second = formatCategoryCallError({ category, message, fix: secondFix });
   assert.match(second, /^参数无效：/);
   assert.match(second, /这是一小时内第 2 次同样的错误/);
-  assert.match(second, /完整的正确写法：/);
+  assert.match(second, /经输入格式核验的示例（需替换占位值）：/);
   assert.ok(second.includes(example));
   assert.doesNotMatch(second, FORBIDDEN_CALL_ERROR);
 
@@ -216,21 +216,24 @@ test('1st / 2nd / 3rd composed prose uses D2 first sentence then escalation', ()
 
 test('categoryCloseOf covers the five categories', () => {
   assert.match(categoryCloseOf('参数无效')!, /照原样重试不会成功/);
-  assert.match(categoryCloseOf('无权限')!, /这不是写法问题/);
-  assert.match(categoryCloseOf('不存在')!, /请先用列表工具核对名称/);
-  assert.match(categoryCloseOf('已被占用')!, /请等待持有者释放/);
+  assert.match(categoryCloseOf('无权限')!, /未给出对象和授权方式时/);
+  assert.match(categoryCloseOf('不存在')!, /可读名称和列表覆盖范围/);
+  assert.match(categoryCloseOf('已被占用')!, /具体冲突对象和处置方式/);
   assert.match(categoryCloseOf('暂时不可用', 30)!, /请等待 30 秒/);
+  assert.match(categoryCloseOf('暂时不可用')!, /未给出重试时刻/);
+  assert.doesNotMatch(categoryCloseOf('无权限')!, /pack assign|联系管理员分配/);
+  assert.doesNotMatch(categoryCloseOf('已被占用')!, /测试环境/);
 });
 
-test('factOfCallError strips a leading category word so format does not double it', () => {
-  assert.equal(factOfCallError('参数无效：/pack 是必填的字符串，这次没有给出', '参数无效'), '/pack 是必填的字符串，这次没有给出');
+test('factOfCallError preserves producer text even when it contains category words', () => {
+  assert.equal(factOfCallError('参数无效：/pack 是必填的字符串，这次没有给出', '参数无效'), '参数无效：/pack 是必填的字符串，这次没有给出');
   assert.equal(
     formatCategoryCallError({
       category: '参数无效',
       message: '参数无效：/pack 是必填的字符串，这次没有给出',
       fix: '请在 /pack 写 list_task_packs 返回的编号',
     }),
-    '参数无效：/pack 是必填的字符串，这次没有给出。请在 /pack 写 list_task_packs 返回的编号。',
+    '参数无效：参数无效：/pack 是必填的字符串，这次没有给出。请在 /pack 写 list_task_packs 返回的编号。',
   );
 });
 
@@ -336,8 +339,8 @@ test('escalateProtocolErrors with path facts syncs 1st / 2nd / 3rd shapes', asyn
     inputSchema: published.inputSchema,
   });
   assert.match(second[0].fix!, /这是一小时内第 2 次同样的错误/);
-  assert.match(second[0].fix!, /完整的正确写法：/);
-  const exampleMatch = /完整的正确写法：(\{.*\})/.exec(second[0].fix!);
+  assert.match(second[0].fix!, /经输入格式核验的示例（需替换占位值）：/);
+  const exampleMatch = /经输入格式核验的示例（需替换占位值）：(\{.*\})/.exec(second[0].fix!);
   assert.ok(exampleMatch);
   assert.equal(StartRunInput.safeParse(JSON.parse(exampleMatch![1])).success, true);
   assert.doesNotMatch(second[0].fix!, FORBIDDEN_CALL_ERROR);
@@ -375,5 +378,5 @@ test('fixByRole keeps an admin fix that already carries the D5 escalation suffix
   const parts = buildEscalation({ occurrence: 2, exampleJson: null, category: '无权限' });
   const escalated = `${mapped}。${parts.fixSuffix}。`;
   assert.ok(/这是一小时内第 2 次同样的错误/.test(escalated));
-  assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'admin'), mapped);
+  assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'admin', escalated), escalated);
 });
