@@ -21,6 +21,7 @@ import { bedFacts, triggerTypesOf, type BedFacts } from '../functions/bed.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
+import type { RunnerCleanup } from '../functions/runtime-contract.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { isRecord } from '../functions/text.ts';
 import { writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
@@ -87,10 +88,11 @@ export async function writeBriefs(directory: string): Promise<BriefReport> {
   // The bed a plan's bucket must name is the one the run's bound profile selects.
   const groups = isRecord(run) && Array.isArray(run.groups) ? run.groups.filter(isRecord) : [];
   const bed = groups.map((group) => (isRecord(group.profile) && typeof group.profile.bed === 'string' ? group.profile.bed : null)).find((value) => value !== null) ?? null;
+  const runnerCleanup = (await loadOptionalBoundSources(directory, bed)).runnerCleanup;
   const present = new Set(await readdir(join(directory, 'briefs')).catch(() => [] as string[]));
   for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
     const index = name.slice(0, -'.json'.length);
-    const brief = authoringBrief(parsed(`items/${name}`, await readFile(join(directory, 'items', name), 'utf8')), index, knowledge, policy, bed);
+    const brief = authoringBrief(parsed(`items/${name}`, await readFile(join(directory, 'items', name), 'utf8')), index, knowledge, policy, bed, runnerCleanup);
     if (!brief) { report.without_record++; continue; }
     if (present.has(`${index}.md`)) { report.kept++; continue; }
     await mkdir(join(directory, 'briefs'), { recursive: true, mode: 0o700 });
@@ -129,6 +131,7 @@ export interface RunStructuredContext {
   bedFactsData: BedFacts | null;
   triggerTypes: string[];
   failureMarkers: string[];
+  runnerCleanup: RunnerCleanup | null;
 }
 
 export interface StructuredBriefReport {
@@ -148,21 +151,23 @@ async function loadOptionalBoundSources(
   bedFactsData: BedFacts | null;
   triggerTypes: string[];
   failureMarkers: string[];
+  runnerCleanup: RunnerCleanup | null;
 }> {
   let rawSources: unknown;
   try {
     rawSources = parsed('sources.json', await readFile(join(directory, 'sources.json'), 'utf8'));
   } catch {
-    return { bedFactsData: null, triggerTypes: [], failureMarkers: [] };
+    return { bedFactsData: null, triggerTypes: [], failureMarkers: [], runnerCleanup: null };
   }
-  if (!Array.isArray(rawSources)) return { bedFactsData: null, triggerTypes: [], failureMarkers: [] };
+  if (!Array.isArray(rawSources)) return { bedFactsData: null, triggerTypes: [], failureMarkers: [], runnerCleanup: null };
 
+  const root = realpathSync(directory);
   const readSlotJson = async (slot: string): Promise<unknown> => {
     const row = rawSources.find((v) => isRecord(v) && v.slot === slot && typeof v.file === 'string');
     if (!isRecord(row) || typeof row.file !== 'string') return null;
     try {
-      const target = resolve(directory, row.file);
-      if (!isInsideRoot(target, realpathSync(directory))) return null;
+      const target = resolve(root, row.file);
+      if (!isInsideRoot(target, root)) return null;
       return parsed(row.file, await readFile(target, 'utf8'));
     } catch {
       return null;
@@ -192,6 +197,7 @@ async function loadOptionalBoundSources(
     bedFactsData,
     triggerTypes: [...triggerSet].sort(),
     failureMarkers,
+    runnerCleanup: contract?.cleanup ?? null,
   };
 }
 
@@ -210,7 +216,7 @@ export async function loadRunStructuredContext(directory: string): Promise<RunSt
   const bedHint =
     groups.map((g) => (isRecord(g.profile) && typeof g.profile.bed === 'string' ? g.profile.bed : null)).find((v) => v !== null) ?? null;
 
-  const { bedFactsData, triggerTypes, failureMarkers } = await loadOptionalBoundSources(directory, bedHint);
+  const { bedFactsData, triggerTypes, failureMarkers, runnerCleanup } = await loadOptionalBoundSources(directory, bedHint);
   const params = isRecord(runRec.parameters) ? runRec.parameters : {};
   const exclusions = Array.isArray(params.exclude) ? params.exclude.filter((v): v is string => typeof v === 'string') : [];
   const runMeta = {
@@ -229,6 +235,7 @@ export async function loadRunStructuredContext(directory: string): Promise<RunSt
     bedFactsData,
     triggerTypes,
     failureMarkers,
+    runnerCleanup,
   };
 }
 
@@ -254,6 +261,7 @@ export function buildSingleCaseStructuredBrief(params: {
     bedFacts: params.ctx.bedFactsData,
     triggerTypes: params.ctx.triggerTypes,
     executionFailureMarkers: params.ctx.failureMarkers,
+    runnerCleanup: params.ctx.runnerCleanup,
     round: params.round,
     mode,
     ...(params.targetPlanPath !== undefined ? { targetPlanPath: params.targetPlanPath } : {}),

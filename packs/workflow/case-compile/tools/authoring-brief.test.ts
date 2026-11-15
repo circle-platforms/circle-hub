@@ -241,3 +241,52 @@ test('a run that brought no knowledge root gets no briefs and no briefs director
   assert.deepEqual(await writeBriefs(directory), { briefs: 0, kept: 0, without_record: 0 });
   assert.deepEqual((await readdir(directory)).sort(), ['items', 'run.json']);
 });
+
+test('authoringBrief and writeBriefs disclose contract.cleanup rules and ban writing them into cleanup:true', async () => {
+  const { CONTRACT_DOC } = await import('../functions/test-support.ts');
+  const { parseRuntimeContract, runtimeDigest } = await import('../functions/runtime-contract.ts');
+  const directory = await downloaded([ITEM]);
+  const demoNode = { path: '/commands/demo', children: [{ name: 'save', path: '/commands/demo/save' }], entries: [] };
+  const saveNode = { path: '/commands/demo/save', children: [], entries: [{ kind: 'definition', statement: 'demo save', reference: `tree:${ROOT}/commands/demo/save@` + 'e'.repeat(64) }] };
+  const knowledge = (await readKnowledge(directory))!;
+  knowledge.nodes.get('/commands')!.children.push({ name: 'demo', path: '/commands/demo' });
+  knowledge.nodes.set('/commands/demo', demoNode);
+  knowledge.nodes.set('/commands/demo/save', saveNode);
+  const saveItem = {
+    id: 'doc-1:c-save',
+    fields: {
+      title: '运行器收尾命令披露',
+      recomposition: { receipt: 'rec:save', record: { atoms: [], ledgers: { adapted: [{ commands: ['demo save', 'widget health pool1 1'] }] } } },
+    },
+  };
+  const contractDoc = structuredClone(CONTRACT_DOC) as Record<string, any>;
+  contractDoc.cleanup = {
+    source: 'lib/demo/clear.py',
+    sha256: 'e'.repeat(64),
+    objects: ['widget-seat'],
+    order: { rule_match: 'first_hit', tail: ['demo save'], before: [['clear a', 'clear b']] },
+    rules: [{ prefixes: ['demo save'], clears: ['demo save'], line: 120 }],
+  };
+  contractDoc.contract_sha256 = runtimeDigest(contractDoc);
+  await writeFile(join(directory, 'sources.json'), JSON.stringify([{ slot: 'contract', file: 'contract.json' }]));
+  await writeFile(join(directory, 'contract.json'), JSON.stringify(contractDoc));
+  await writeFile(join(directory, 'items', '00.json'), JSON.stringify(saveItem));
+  const rawNodes = (await readFile(join(directory, 'knowledge', 'nodes.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
+  const cmdsRoot = rawNodes.find((n: any) => n.path === '/commands');
+  cmdsRoot.children.push({ name: 'demo', path: '/commands/demo' });
+  await writeFile(join(directory, 'knowledge', 'nodes.jsonl'), [...rawNodes, demoNode, saveNode].map((n) => JSON.stringify(n)).join('\n') + '\n');
+  const parsed = parseRuntimeContract(contractDoc);
+  assert.ok(parsed.ok && parsed.contract.cleanup);
+  const withPolicy = authoringBrief(saveItem, '00', knowledge, policyOf(POLICY), 'bed-a', parsed.contract.cleanup)!;
+  assert.match(withPolicy.text, /执行器自动清理（lib\/demo\/clear\.py@eeeeeeeeeeee）：对清配对象 widget-seat，自第 2 条用例开始前及整本关闭连接时/);
+  assert.match(withPolicy.text, /以下动作放收尾末尾：demo save/);
+  assert.match(withPolicy.text, /另受运行器自动清理涵盖（清配对象 widget-seat 命中规则 1（lib\/demo\/clear\.py 第 120 行），前缀“demo save”，触发清理命令 “demo save”，收尾阶段末尾执行），在清配对象上可省略 cleanup:true，禁止把运行器收尾清理或保存命令写入 cleanup:true/);
+  const noRulePolicy = { schema: 'command-policy@1' as const, read_only: [], inverse_rules: [], inverse_alternatives: [] };
+  const withoutInverse = authoringBrief(saveItem, '00', knowledge, policyOf(noRulePolicy), 'bed-a', parsed.contract.cleanup)!;
+  assert.match(withoutInverse.text, /执行器收尾（无需手写 cleanup:true）：清配对象 widget-seat 命中规则 1（lib\/demo\/clear\.py 第 120 行），前缀“demo save”，触发清理命令 “demo save”，收尾阶段末尾执行；禁止写入 cleanup:true（需在用例过程内执行时只写进 main）/);
+  assert.doesNotMatch(withoutInverse.text, /### demo save[\s\S]*产品没有为这条命令声明唯一的逆操作规则/);
+  assert.deepEqual(await writeBriefs(directory), { briefs: 1, kept: 0, without_record: 0 });
+  const written = await readFile(join(directory, 'briefs', '00.md'), 'utf8');
+  assert.match(written, /执行器自动清理（lib\/demo\/clear\.py@eeeeeeeeeeee）/);
+  assert.match(written, /禁止把运行器收尾清理或保存命令写入 cleanup:true/);
+});

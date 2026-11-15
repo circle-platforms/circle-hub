@@ -24,6 +24,7 @@
 // cannot pass as a plan.
 import { createHash } from 'node:crypto';
 import type { BedFacts } from './bed.ts';
+import type { RunnerCleanup } from './runtime-contract.ts';
 import { canonicalJson } from './canonical-json.ts';
 import {
   analyzeRoundHistory,
@@ -225,7 +226,35 @@ function collectKnowledgeSets(
   return { commands, others, missing };
 }
 
-export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null, bed: string | null = null): AuthoringBrief | null {
+interface RunnerCleanupBriefHit {
+  rule: number;
+  prefix: string;
+  clears?: string[];
+  line: number | null;
+  inTail: boolean;
+}
+function runnerCleanupMatch(cleanup: RunnerCleanup | null | undefined, cmdWords: string): RunnerCleanupBriefHit | null {
+  if (!cleanup) return null;
+  for (const [rule, row] of cleanup.rules.entries()) {
+    const prefix = row.prefixes.find((p) => cmdWords === p || cmdWords.startsWith(p));
+    if (prefix === undefined) continue;
+    const inTail = Boolean(cleanup.order?.tail.some((t) => row.clears?.includes(t) || t.startsWith(prefix)));
+    return { rule, prefix, ...(row.clears ? { clears: row.clears } : {}), line: row.line, inTail };
+  }
+  return null;
+}
+function runnerCleanupSummaryText(cleanup: RunnerCleanup): string {
+  const tailText = cleanup.order?.tail.length ? `；以下动作放收尾末尾：${cleanup.order.tail.join('、')}` : '';
+  const beforeText = cleanup.order?.before.length ? `；顺序约束：${cleanup.order.before.map(([a, b]) => `${a} 先于 ${b}`).join('、')}` : '';
+  return `执行器自动清理（${cleanup.source}@${cleanup.sha256.slice(0, 12)}）：对清配对象 ${cleanup.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按 cmd_config 发过的命令行逐条比前缀、第一条命中即用（共 ${cleanup.rules.length} 条规则${tailText}${beforeText}）。未命中规则或不在清配对象列表上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作；已被运行器收尾规则涵盖的清理或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`;
+}
+function runnerCleanupRuleNote(cleanup: RunnerCleanup, hit: RunnerCleanupBriefHit): string {
+  const clearsText = hit.clears?.length ? `，触发清理命令 ${hit.clears.map((c) => `“${c}”`).join('、')}` : '';
+  const tailText = hit.inTail ? '，收尾阶段末尾执行' : '';
+  return `清配对象 ${cleanup.objects.join('、')} 命中规则 ${hit.rule + 1}${hit.line !== null ? `（${cleanup.source} 第 ${hit.line} 行）` : ''}，前缀“${hit.prefix}”${clearsText}${tailText}`;
+}
+
+export function authoringBrief(item: unknown, index: string, knowledge: BriefKnowledge, policy: BriefPolicy | null, bed: string | null = null, runnerCleanup: RunnerCleanup | null = null): AuthoringBrief | null {
   const fields = isRecord(item) && isRecord(item.fields) ? item.fields : null;
   const recomposition = fields && isRecord(fields.recomposition) ? fields.recomposition : null;
   const record = recomposition && isRecord(recomposition.record) ? recomposition.record : null;
@@ -250,6 +279,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   if (policy) out.push(`产品声明的命令规则（run.json 的 command_policy）：只读前缀 ${policy.read_only.join('、') || '无'}；互逆取值 ${policy.inverse_alternatives.map((pair) => pair.join('/')).join('、') || '无'}。`
     + (policy.inverse_alternatives.length ? '核验认逆操作的顺序：命令的枚举参数取了互逆取值之一时，逆操作是同一条命令取另一个值；命令的末词是互逆取值之一、同级又有另一个取值的命令时，逆操作是那条同级命令；都不是时按前缀规则。' : ''));
   else out.push('run.json 里没有产品声明的命令规则（command_policy），下面不列逆操作和只读命令。');
+  if (runnerCleanup) out.push(runnerCleanupSummaryText(runnerCleanup));
   out.push('', `## 重组记录点到的命令（${commands.length} 条）`);
   if (!commands.length) out.push('', '重组记录没有点到命令树里的命令；要用的命令到 knowledge/ 里搜。');
   for (const path of commands) {
@@ -260,24 +290,31 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
       out.push(`手册对这条命令各参数的说明（${stated.length} 行，原文）：`);
       for (const row of stated) out.push(`· ${row.statement}`, `  引用 ${row.reference}`);
     }
+    const runnerHit = runnerCleanupMatch(runnerCleanup, words(path));
     if (policy) {
       if (policy.read_only.some((prefix) => within(path, canonicalPath(prefix)))) out.push('这条命令在产品声明的只读前缀下。');
       else {
         const paired = pairedSibling(policy, knowledge, path), inverse = paired ? null : inverseOf(policy, path);
-        if (paired) out.push(`逆操作（产品声明的互逆取值 ${paired.pair.join('/')}：同级的另一条命令）：`, ...block(paired.node));
-        else if (!inverse) out.push('逆操作：产品没有为这条命令声明唯一的逆操作规则。');
-        else {
+        const alsoRunner = runnerHit ? `；另受运行器自动清理涵盖（${runnerCleanupRuleNote(runnerCleanup!, runnerHit)}），在清配对象上可省略 cleanup:true，禁止把运行器收尾清理或保存命令写入 cleanup:true` : '';
+        if (paired) out.push(`逆操作（产品声明的互逆取值 ${paired.pair.join('/')}：同级的另一条命令${alsoRunner}）：`, ...block(paired.node));
+        else if (inverse) {
           const carried = inverse.rule.leading_parameters === undefined ? '' : `，逆操作带这条命令的前 ${inverse.rule.leading_parameters} 个参数`;
           const target = knowledge.nodes.get(inverse.path);
-          out.push(`逆操作（产品规则 ${inverse.rule.source_prefix} → ${inverse.rule.inverse_prefix}${carried}）：`);
+          out.push(`逆操作（产品规则 ${inverse.rule.source_prefix} → ${inverse.rule.inverse_prefix}${carried}${alsoRunner}）：`);
           if (target?.entries.length) out.push(...block(target));
           else out.push(`按这条规则算出的 ${decodeURI(inverse.path)} 不在锁定命令树里。`);
+        } else if (runnerHit) {
+          out.push(`执行器收尾（无需手写 cleanup:true）：${runnerCleanupRuleNote(runnerCleanup!, runnerHit)}；禁止写入 cleanup:true（需在用例过程内执行时只写进 main）。`);
+        } else {
+          out.push('逆操作：产品没有为这条命令声明唯一的逆操作规则。');
         }
         for (const prefix of policy.read_only) {
           const form = readOnlyForm(knowledge, canonicalPath(prefix), path);
           if (form) out.push(`只读前缀 ${prefix} 下同样的词走到的命令：`, ...block(form));
         }
       }
+    } else if (runnerHit) {
+      out.push(`执行器收尾（无需手写 cleanup:true）：${runnerCleanupRuleNote(runnerCleanup!, runnerHit)}；禁止写入 cleanup:true（需在用例过程内执行时只写进 main）。`);
     }
     const parent = knowledge.nodes.get(path.slice(0, path.lastIndexOf('/')));
     const siblings = (parent?.children ?? []).filter((child) => canonicalPath(child.path) !== path).map((child) => knowledge.nodes.get(canonicalPath(child.path))).filter((sibling): sibling is BriefNode => sibling !== undefined);
@@ -300,7 +337,7 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
   const envelope = planEnvelope(item, bed);
   if (envelope) out.push('', '## 这条用例的计划文件外壳',
     '',
-    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由编写模型填写：text 写一句话说明这份计划，steps 和 expects 照技能说明写，每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。写完只是草稿，交 Hub 前由主会话走完保真核对（按 SKILL.md 第 3 节依次跑 fidelity-brief → 新开子代理核对 → fidelity-apply 写入 data.fidelity）。`,
+    `一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 {text, quotes, data}，计划内容都在 data 里（data 的结构以技能目录的 slots.schema.json 为准，完整的样子见技能目录 examples/submit-result.json）。下面已经填好的都抄自本运行的冻结内容：条目号、期望原句及其引用、${bed === null ? '' : 'bucket（本运行配置选定的自动化测试环境）、'}重组回执、用例号和期望的判断依据；空着的由编写模型填写：text 写一句话说明这份计划，steps 和 expects 照技能说明写（adapted 与原始步骤不是步骤白名单；除重组 sources.states 列出的 missing_prerequisite 外，同构建手册正文或示例明确要求的运行前提及配对 cleanup:true 逆清理也必须补齐，在扁平步骤附可选 precondition_source: {reference, text} 或 blocks 模式写入 block_context.preconditions 逐字引用 knowledge/ 供 Hub 核对并列入保真豁免），每个判断依据的 assertions 列出对应的断言（平面计划是 expects 从 1 起的序号，写成字符串）。空着的不填会被拒。写完只是草稿，交 Hub 前由主会话走完保真核对（按 SKILL.md 第 3 节依次跑 fidelity-brief → 新开子代理核对 → fidelity-apply 写入 data.fidelity）。`,
     '',
     '原始用例要求不存在、无残留或删除后查不到时，顺序步骤在对应查询的 expects 写 op:"not_found"，text 使用原始期望的具体原文，或本条配置后按已声明逆操作撤销的名字，after 指向对应查询；不写描述句，不另立判定标准或发起复核。分块写法的常量仍用 OBSERVE_ASSERT/op=not_found，literal 写不应出现的记录；动态值在本条先 CAPTURE，再用 EXPECT_FROM/op=not_found，expected_from 指该捕获，执行器须声明寄存器的字面否定方法，不抄旧设备输出。quote 保留原始期望。要求删除成功时，删除后再查询，指向这次查询的设备输出；这项检查不填 criterion，不为它写 criteria 或发起 criteria_review/criteria_review_run。',
     '',
@@ -316,6 +353,10 @@ export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
   'Hub 当前尚未提供按 autoid 查询历次上机验证与 apv_cmds 的只读接口。';
 export const PREREQ_SCAN_REASON =
   '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+/** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
+export const PREREQ_STATES_UNREADABLE_REASON =
+  '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组回执形状后再开编写。';
+export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
 
 export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';
 
@@ -369,13 +410,20 @@ export interface CompileBriefV1 {
     commands_and_manual: {
       policy_present: boolean;
       declared_policy: BriefPolicy | null;
+      runner_cleanup?: {
+        source: string;
+        sha256: string;
+        objects: string[];
+        rule_count: number;
+        order?: RunnerCleanup['order'];
+      };
       named_commands: Array<{
         path: string;
         words: string;
         node_block: string[];
         parameters: BriefParameter[];
         inverse: {
-          kind: 'paired_sibling' | 'prefix_rule' | 'read_only' | 'none_declared';
+          kind: 'paired_sibling' | 'prefix_rule' | 'read_only' | 'runner_cleanup' | 'none_declared';
           detail: string;
           node_block: string[];
         };
@@ -402,8 +450,14 @@ export interface CompileBriefV1 {
       };
     };
     prerequisites: {
-      status: 'extracted' | 'partial_recompose_only' | 'none_declared_or_found_in_recompose';
-      from_recompose_states: Array<{ atom: string; reason: string; prerequisites: string[] }>;
+      status: 'extracted' | 'partial_recompose_only' | 'none_declared_or_found_in_recompose' | 'recompose_states_unreadable';
+      from_recompose_states: Array<{
+        atom: string;
+        reason: string;
+        prerequisites: string[];
+        state: string;
+        origin: typeof RECOMPOSE_STATES_ORIGIN;
+      }>;
       from_product_catalog: string[];
       ancestor_command_hints: string[];
       manual_scan_required: boolean;
@@ -511,6 +565,7 @@ export interface BuildCompileBriefInput {
   triggerTypes?: readonly string[];
   forbiddenCombinations?: readonly string[];
   executionFailureMarkers?: readonly string[];
+  runnerCleanup?: RunnerCleanup | null;
   round?: number;
   attemptLimit?: number;
   mode?: CompileBriefMode;
@@ -586,6 +641,10 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
     };
     const readOnlyForms: Array<{ prefix: string; node_block: string[] }> = [];
 
+    const runnerHit = runnerCleanupMatch(input.runnerCleanup, cmdWords);
+    const runnerNote = runnerHit
+      ? `；另受运行器自动清理涵盖（${runnerCleanupRuleNote(input.runnerCleanup!, runnerHit)}），在清配对象上可省略 cleanup:true，禁止把运行器收尾清理或保存命令写入 cleanup:true`
+      : '';
     if (policy) {
       if (policy.read_only.some((prefix) => within(path, canonicalPath(prefix)))) {
         inverse = { kind: 'read_only', detail: '这条命令在产品声明的只读前缀下。', node_block: [] };
@@ -595,7 +654,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
         if (paired) {
           inverse = {
             kind: 'paired_sibling',
-            detail: `产品声明的互逆取值 ${paired.pair.join('/')}：同级的另一条命令`,
+            detail: `产品声明的互逆取值 ${paired.pair.join('/')}：同级的另一条命令${runnerNote}`,
             node_block: nodeBlock(paired.node),
           };
         } else if (invRule) {
@@ -606,8 +665,14 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
           const target = input.knowledge.nodes.get(invRule.path);
           inverse = {
             kind: 'prefix_rule',
-            detail: `产品规则 ${invRule.rule.source_prefix} → ${invRule.rule.inverse_prefix}${carried}`,
+            detail: `产品规则 ${invRule.rule.source_prefix} → ${invRule.rule.inverse_prefix}${carried}${runnerNote}`,
             node_block: target?.entries.length ? nodeBlock(target) : [],
+          };
+        } else if (runnerHit) {
+          inverse = {
+            kind: 'runner_cleanup',
+            detail: `${runnerCleanupRuleNote(input.runnerCleanup!, runnerHit)}；不要求手写 cleanup:true，禁止把运行器收尾清理或保存命令放入 cleanup:true（需在用例过程内执行时只写进 main）。`,
+            node_block: [],
           };
         }
         for (const prefix of policy.read_only) {
@@ -615,6 +680,12 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
           if (form) readOnlyForms.push({ prefix, node_block: nodeBlock(form) });
         }
       }
+    } else if (runnerHit) {
+      inverse = {
+        kind: 'runner_cleanup',
+        detail: `${runnerCleanupRuleNote(input.runnerCleanup!, runnerHit)}；不要求手写 cleanup:true，禁止把运行器收尾清理或保存命令放入 cleanup:true（需在用例过程内执行时只写进 main）。`,
+        node_block: [],
+      };
     }
 
     const parent = input.knowledge.nodes.get(path.slice(0, path.lastIndexOf('/')));
@@ -683,26 +754,51 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       text: typeof slot.text === 'string' ? slot.text : '',
     }));
 
-  // Extract prerequisites & user rulings declared on recomposition states (no ungrounded fabrication).
-  const statesSource =
-    isRecord(record.adjudication) && Array.isArray(record.adjudication.states)
-      ? record.adjudication.states
-      : Array.isArray(record.states)
-        ? record.states
-        : [];
-  const fromRecomposeStates: Array<{ atom: string; reason: string; prerequisites: string[] }> = [];
+  // Prerequisites and user rulings live on record.sources.states (recompose-record@1):
+  // submit-records writes that array; recompose/SKILL says a settled ruling's reason starts with
+  // 「使用者决定：」; recompose-adjudication only validates separate decision review items and sets
+  // sources.states[].adjudicated_by to a rec: digest — it never writes record.adjudication.states
+  // (that key is absent from recompose-record@1 and from all plan*-run items in work-ops-run29).
+  const sources = isRecord(record.sources) ? record.sources : null;
+  const statesReadable = sources !== null && Array.isArray(sources.states);
+  const statesSource: unknown[] = sources !== null && Array.isArray(sources.states) ? sources.states : [];
+  const fromRecomposeStates: Array<{
+    atom: string;
+    reason: string;
+    prerequisites: string[];
+    state: string;
+    origin: typeof RECOMPOSE_STATES_ORIGIN;
+  }> = [];
   const userRulings: Array<{ source: string; target: string; ruling: string }> = [];
   for (const st of statesSource.filter(isRecord)) {
     const atom = typeof st.atom === 'string' ? st.atom : '';
     const reason = typeof st.reason === 'string' ? st.reason : '';
+    const state = typeof st.state === 'string' ? st.state : '';
     const prereqs = Array.isArray(st.prerequisites) ? st.prerequisites.filter((p): p is string => typeof p === 'string' && p.length > 0) : [];
-    if (st.state === 'missing_prerequisite' || prereqs.length > 0) {
-      fromRecomposeStates.push({ atom, reason, prerequisites: prereqs });
+    if (state === 'missing_prerequisite' || prereqs.length > 0) {
+      fromRecomposeStates.push({ atom, reason, prerequisites: prereqs, state, origin: RECOMPOSE_STATES_ORIGIN });
     }
-    if (st.state === 'settled' && reason.startsWith('使用者决定：')) {
-      userRulings.push({ source: 'recompose_state', target: atom, ruling: reason });
+    if (state === 'settled' && reason.startsWith('使用者决定：')) {
+      userRulings.push({ source: RECOMPOSE_STATES_ORIGIN, target: atom, ruling: reason });
     }
   }
+  const prerequisitesBlock: CompileBriefV1['materials']['prerequisites'] = !statesReadable
+    ? {
+        status: 'recompose_states_unreadable',
+        from_recompose_states: [],
+        from_product_catalog: [],
+        ancestor_command_hints: [],
+        manual_scan_required: true,
+        scan_reason: PREREQ_STATES_UNREADABLE_REASON,
+      }
+    : {
+        status: fromRecomposeStates.length > 0 ? 'partial_recompose_only' : 'none_declared_or_found_in_recompose',
+        from_recompose_states: fromRecomposeStates,
+        from_product_catalog: [],
+        ancestor_command_hints: [],
+        manual_scan_required: true,
+        scan_reason: PREREQ_SCAN_REASON,
+      };
 
   const allGateRefusals = priorRounds.flatMap((r) => r.gateRefusals);
   const allAcceptedNotices = priorRounds.flatMap((r) => r.acceptedNotices ?? []);
@@ -773,6 +869,17 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
       commands_and_manual: {
         policy_present: policy !== null,
         declared_policy: policy,
+        ...(input.runnerCleanup
+          ? {
+              runner_cleanup: {
+                source: input.runnerCleanup.source,
+                sha256: input.runnerCleanup.sha256,
+                objects: [...input.runnerCleanup.objects],
+                rule_count: input.runnerCleanup.rules.length,
+                ...(input.runnerCleanup.order ? { order: input.runnerCleanup.order } : {}),
+              },
+            }
+          : {}),
         named_commands: namedCommands,
         referenced_other_nodes: referencedOtherNodes,
         missing_paths: missing.map((p) => decodeURI(p)),
@@ -782,14 +889,7 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
           search_note: '简报只收录重组直接点到的节点；未收录章节须用 grep 检索上述本地文件。',
         },
       },
-      prerequisites: {
-        status: fromRecomposeStates.length > 0 ? 'partial_recompose_only' : 'none_declared_or_found_in_recompose',
-        from_recompose_states: fromRecomposeStates,
-        from_product_catalog: [],
-        ancestor_command_hints: [],
-        manual_scan_required: true,
-        scan_reason: PREREQ_SCAN_REASON,
-      },
+      prerequisites: prerequisitesBlock,
       bed_facts: {
         bed_name: bedName,
         facts_status: input.bedFacts ? 'extracted_from_frozen_manifest' : 'manifest_unavailable',
@@ -978,8 +1078,14 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
   } else {
     const hasRecomp = Array.isArray(prereqs.from_recompose_states) && prereqs.from_recompose_states.length > 0;
     const hasCatalog = Array.isArray(prereqs.from_product_catalog) && prereqs.from_product_catalog.length > 0;
-    if (!hasRecomp && !hasCatalog && (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true)) {
-      problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
+    if (!hasRecomp && !hasCatalog) {
+      if (prereqs.status === 'recompose_states_unreadable') {
+        if (prereqs.manual_scan_required !== true || typeof prereqs.scan_reason !== 'string' || !prereqs.scan_reason.includes('sources.states')) {
+          problems.push('读不到 sources.states 时 prerequisites.status 必须为 recompose_states_unreadable，且 scan_reason 须写明该路径');
+        }
+      } else if (prereqs.status !== 'none_declared_or_found_in_recompose' || prereqs.manual_scan_required !== true) {
+        problems.push('前置为空时 prerequisites.status 必须为 none_declared_or_found_in_recompose 且 manual_scan_required === true');
+      }
     }
   }
 
@@ -1052,7 +1158,10 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
   out.push('## 前置条件与历史可用性（诚实披露）');
   out.push(`- 前置检查状态（${materials.prerequisites.status}）：${materials.prerequisites.scan_reason}`);
   for (const pre of materials.prerequisites.from_recompose_states) {
-    out.push(`  · 重组状态 ${pre.atom}：${pre.reason}${pre.prerequisites.length ? `（${pre.prerequisites.join('、')}）` : ''}`);
+    const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
+    const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
+    out.push(`  · 出处 ${origin}${stateLabel}，原子 ${pre.atom}：${pre.reason}`);
+    for (const line of pre.prerequisites) out.push(`    - ${line}`);
   }
   out.push(
     `- 同用例历史上机记录（prior_device_history.status=${priorHistory.status}）：${priorHistory.unavailable_reason ?? priorHistory.disclaimer}`,
@@ -1103,6 +1212,14 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
   }
 
   out.push('', `## 重组记录点到的命令（${materials.commands_and_manual.named_commands.length} 条）`);
+  const rc = materials.commands_and_manual.runner_cleanup;
+  if (rc) {
+    const tailText = rc.order?.tail.length ? `；以下动作放收尾末尾：${rc.order.tail.join('、')}` : '';
+    const beforeText = rc.order?.before.length ? `；顺序约束：${rc.order.before.map(([a, b]) => `${a} 先于 ${b}`).join('、')}` : '';
+    out.push(
+      `- 执行器自动清理（${rc.source}@${rc.sha256.slice(0, 12)}）：对清配对象 ${rc.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按 cmd_config 命令行逐条比前缀、第一条命中即用（共 ${rc.rule_count} 条规则${tailText}${beforeText}）；未命中规则或不在清配对象上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作，已被运行器收尾规则涵盖的清理或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`,
+    );
+  }
   for (const cmd of materials.commands_and_manual.named_commands) {
     out.push('', `### ${cmd.words}`, ...cmd.node_block);
     if (cmd.parameters.length > 0) {

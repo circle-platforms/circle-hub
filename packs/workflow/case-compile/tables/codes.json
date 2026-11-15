@@ -10,8 +10,8 @@
     },
     {
       "code": "case-compile.method_forbidden",
-      "when": "组合不是合约启用条目",
-      "fix": "只用合约启用且非内部、非认证候选的组合"
+      "when": "组合不是合约启用条目，或计划未满足位置约束/清理义务（如把执行器收尾自动清理或保存写入了 cleanup:true）",
+      "fix": "只用合约启用且非内部、非认证候选的组合；cleanup:true 只放由本用例自行配置且未被执行器自动清理覆盖的同设备逆序逆操作，由执行器收尾执行的保存或整模块清理从 cleanup:true 删除（需在用例中保存时改放主步骤 main）"
     },
     {
       "code": "case-compile.param_arity",

@@ -31,6 +31,7 @@ Hub 按同样规则重算并核对每条原始步骤都有对应内容、判断�
 结果写同名 .verdict.json，完整格式以每份 rules 为准
 fidelity-apply: ready=true 才能继续；attention 指出要处理的内容
 结果写回 data.fidelity，摘要由工具填写，不手写
+若 `.brief.json` 的 `mechanical.exemptions` 列出 `added_precondition`（来自重组 `sources.states` 或 Hub 原文校验的锁定手册引文 `plan.precondition_source` / `block_context.preconditions`），核对有来源前置步骤及配对 `cleanup:true` 逆清理时按简报内置 `rules` 予以豁免，仍严禁读 `plans/`、`knowledge/` 或附带编写说明/设备输出。
 内部引用和字段只用于工具，不放进使用者答复
 ```
 

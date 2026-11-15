@@ -372,7 +372,7 @@ test('recompose parameters.scope filters items & seal batch while retaining full
       kind: 'run',
       body: {
         run: 'run_recompose_scoped',
-        pack: 'recompose@1.2.6',
+        pack: 'recompose@1.2.7',
         product: 'orbit',
         root: 'r'.repeat(64),
         product_pack_digest: 'p'.repeat(64),
@@ -391,7 +391,7 @@ test('recompose parameters.scope filters items & seal batch while retaining full
         schema: 'validation@1',
         run: 'run_recompose_scoped',
         acceptance: 'accepted',
-        locks: { pack: 'recompose@1.2.6', pack_digest: 'd'.repeat(64) },
+        locks: { pack: 'recompose@1.2.7', pack_digest: 'd'.repeat(64) },
         partitions: {},
       },
     },

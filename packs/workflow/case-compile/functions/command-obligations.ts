@@ -12,11 +12,19 @@ import type {PlanSlots} from './slots.ts';
 import type {AuthorityGap} from './typed-authority.ts';
 import type {RunnerCleanup} from './runtime-contract.ts';
 /** A configuration command the runner's own cleanup clears (decision 112), with the rule that covers it. */
-export interface RunnerCovered {pointer:string;object:string;line:string;rule:number;prefix:string;source_line:number|null}
+export interface RunnerCovered {pointer:string;object:string;line:string;rule:number;prefix:string;clears?:string[];source_line:number|null}
 /** The first rule whose prefix starts the sent line, as the runner tests it; null when no rule covers the line. */
-export function runnerRule(cleanup:RunnerCleanup|undefined,object:string,line:string):{rule:number;prefix:string;source_line:number|null}|null{
+export function runnerRule(cleanup:RunnerCleanup|undefined,object:string,line:string):{rule:number;prefix:string;clears?:string[];source_line:number|null}|null{
  if(!cleanup||!cleanup.objects.includes(object))return null;
- for(const [rule,row]of cleanup.rules.entries()){const prefix=row.prefixes.find(p=>line.startsWith(p));if(prefix!==undefined)return {rule,prefix,source_line:row.line};}
+ for(const [rule,row]of cleanup.rules.entries()){const prefix=row.prefixes.find(p=>line.startsWith(p));if(prefix!==undefined)return {rule,prefix,...(row.clears?{clears:row.clears}:{}),source_line:row.line};}
+ return null;
+}
+/** Matches an unconsumed cleanup step that belongs to the runner's teardown rules (by sent-line prefix or declared clear action). */
+function runnerCleanupAction(cleanup:RunnerCleanup|undefined,object:string,line:string):{rule:number;prefix:string;clears?:string[];source_line:number|null}|null{
+ if(!line)return null;
+ const byPrefix=runnerRule(cleanup,object,line);if(byPrefix)return byPrefix;
+ if(!cleanup||!cleanup.objects.includes(object))return null;
+ for(const [rule,row]of cleanup.rules.entries())if(row.clears?.includes(line))return {rule,prefix:row.prefixes[0],clears:row.clears,source_line:row.line};
  return null;
 }
 export const definitionKey=(identity:Pick<CommandIdentity,'tree_root'|'path'|'signature'>)=>JSON.stringify([identity.tree_root,identity.path,identity.signature]);
@@ -222,7 +230,17 @@ type Problem={pointer:string;message:string;verdict:Extract<Verdict,'unknown'|'r
    const k=own.findIndex((step,index)=>!taken.has(index)&&inverseProblem(operation,step)===null);
    if(k>=0)taken.add(k);else runnerOwned.push({pointer:operation.pointer,object:operation.object,line:operation.line,...rule});
   }
-  const rest=own.filter((_,index)=>!taken.has(index));
+  const rest:typeof own=[];
+  for(const step of own.filter((_,index)=>!taken.has(index))){
+   const owned=runnerCleanupAction(runner,step.object,step.line);
+   if(owned&&!ordered.some(operation=>inverseProblem(operation,step)===null)){
+    const clearsText=owned.clears?.length?`，清理命令 ${owned.clears.map(c=>`“${c}”`).join('、')}`:'';
+    const tailText=runner!.order?.tail.some(t=>t===step.line||owned.clears?.includes(t))?'，收尾阶段末尾执行':'';
+    note(step.pointer,`清理段中的“${step.line}”不能放在 cleanup:true：这一步由执行器在收尾时做（规则 ${owned.rule+1}${owned.source_line!==null?`，${runner!.source} 第 ${owned.source_line} 行`:''}，前缀“${owned.prefix}”${clearsText}${tailText}），若用例过程本身需要执行则写在主步骤 main 中，cleanup:true 中删掉这步`);
+    continue;
+   }
+   rest.push(step);
+  }
   let next=0;
   for(const operation of ordered){
    if(next<rest.length&&inverseProblem(operation,rest[next])===null){next++;continue;}

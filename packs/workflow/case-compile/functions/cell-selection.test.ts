@@ -149,3 +149,66 @@ test('literal JSON without an input keeps its existing G representation',()=>{
  const input=recipe(),step={object:'device0',method:'command',args:['{"field":"value"}'],keywords:{}};
  assert.deepEqual(bindArguments(runtimeMethod(input.contract,step.object,step.method)!,step,'/steps/0').problems,[]);const decoded=decodeG(encodeG(step));assert.deepEqual(decoded.args,step.args);assert.deepEqual(Object.entries(decoded.keywords),[]);
 });
+
+test('observation or capture unknowns disclose frozen cell capabilities once per reply',()=>{
+ const resign=(base:{contractDoc:Record<string,any>;profileDoc:Record<string,any>},mutate:(doc:Record<string,any>)=>void)=>{
+  const doc=structuredClone(base.contractDoc) as Record<string,any>;mutate(doc);
+  const contract=signTypedRuntime(doc),profile=structuredClone(base.profileDoc) as Record<string,any>;
+  profile.runtime.contract_sha256=contract.original.contract_sha256;profile.workbook.template=(profileDocument(contract as Parameters<typeof profileDocument>[0]) as Record<string,any>).workbook.template;
+  return {contract,profile};
+ };
+ // Case A: neither cell_inputs nor cell_methods registered -> single exact DNSSEC disclosure even with multiple observation unknowns.
+ const bare=fixture(),noCell=resign(bare,doc=>{doc.runtime.block_model.output_methods=[];doc.runtime.block_model.capture_registers=false;delete doc.runtime.block_model.cell_inputs;delete doc.runtime.block_model.cell_methods;});
+ const [bareOutcome]=checkContractShape(bare.subject(positiveBlocks().CAPTURE,noCell));
+ assert.equal(bareOutcome?.verdict,'unknown',JSON.stringify(bareOutcome));
+ const bareProblems=(bareOutcome as any).data.problems as Array<{pointer:string;message:string;verdict:string}>;
+ const dnssecText='本次执行器规则未登记取格（无 cell_inputs / cell_methods）；不要改用 SELECT_CELL 或 input_register 绕过；要单格回填须等维护者发布取格入口后再开新运行';
+ assert.equal(bareProblems.filter(p=>p.message===dnssecText).length,1,JSON.stringify(bareProblems));
+ assert.ok(bareProblems.some(p=>p.pointer==='/blocks'&&p.verdict==='unknown'&&p.message===dnssecText));
+
+ // Case B: cell_inputs and cell_methods registered while capture_registers is missing -> discloses exact registered capabilities once.
+ const cell=recipe(),partial=resign(cell,doc=>{doc.runtime.block_model.capture_registers=false;});
+ const [partialOutcome]=checkContractShape(cell.subject(cell.slots,partial));
+ assert.equal(partialOutcome?.verdict,'unknown',JSON.stringify(partialOutcome));
+ const partialProblems=(partialOutcome as any).data.problems as Array<{pointer:string;message:string;verdict:string}>;
+ assert.equal(partialProblems.filter(p=>p.message.includes('本次执行器规则取格登记')).length,1,JSON.stringify(partialProblems));
+ assert.ok(partialProblems.some(p=>p.pointer==='/blocks'&&p.message==='本次执行器规则取格登记：cell_inputs=已声明；已登记 cell_methods：device0.table_cell'));
+ assert.ok(!partialProblems.some(p=>p.message.includes('无 cell_inputs / cell_methods')));
+
+ // Case C (negative): non-observation expectation unknown does not emit cell capability disclosure.
+ const noObs=resign(bare,doc=>{doc.runtime.found_times_supported=false;});
+ const timesPlan=structuredClone(positiveBlocks().OBSERVE_ASSERT);
+ (timesPlan.blocks[0] as Record<string,any>).assertions[0].op='found_times';
+ (timesPlan.blocks[0] as Record<string,any>).assertions[0].count=2;
+ const [noObsOutcome]=checkContractShape(bare.subject(timesPlan,noObs));
+ assert.equal(noObsOutcome?.verdict,'unknown',JSON.stringify(noObsOutcome));
+ const noObsProblems=(noObsOutcome as any).data.problems as Array<{message:string}>;
+ assert.ok(!noObsProblems.some(p=>p.message.includes('取格')),JSON.stringify(noObsProblems));
+});
+
+test('checks separate unknown block gaps from downstream refutes instead of bundling them into method_forbidden',()=>{
+ const bare=fixture(),doc=structuredClone(bare.contractDoc) as Record<string,any>;
+ doc.runtime.block_model.capture_registers=false;
+ const contract=signTypedRuntime(doc),profile=structuredClone(bare.profileDoc) as Record<string,any>;
+ profile.runtime.contract_sha256=contract.original.contract_sha256;profile.workbook.template=(profileDocument(contract as Parameters<typeof profileDocument>[0]) as Record<string,any>).workbook.template;
+ const mixed=structuredClone(positiveBlocks().CONFIG);
+ mixed.blocks.unshift(structuredClone(positiveBlocks().CAPTURE.blocks[0]));
+ mixed.blocks.pop();
+ const outcomes=checkContractShape(bare.subject(mixed,{contract,profile}));
+ assert.equal(outcomes.length,2,JSON.stringify(outcomes));
+ const refused=outcomes.find(o=>o.verdict==='refute'),unknown=outcomes.find(o=>o.verdict==='unknown');
+ assert.ok(refused&&refused.code==='case-compile.method_forbidden',JSON.stringify(outcomes));
+ assert.ok(unknown&&unknown.reason==='missing_input',JSON.stringify(outcomes));
+ const refuteProblems=(refused as any).data.problems as Array<{verdict:string}>;
+ const unknownProblems=(unknown as any).data.problems as Array<{verdict:string;message:string}>;
+ assert.ok(refuteProblems.length>=1&&refuteProblems.every(p=>p.verdict==='refute'),JSON.stringify(refuteProblems));
+ assert.ok(unknownProblems.length>=1&&unknownProblems.every(p=>p.verdict!=='refute'),JSON.stringify(unknownProblems));
+ assert.ok(unknownProblems.some(p=>p.message.includes('本次执行器规则未登记取格（无 cell_inputs / cell_methods）')),JSON.stringify(unknownProblems));
+
+ // Negative control: disabled block_model still returns unknown early without continuing to commandObligations refutes.
+ const disabledProfile=structuredClone(profile);disabledProfile.block_model=false;
+ const earlyOutcomes=checkContractShape(bare.subject(mixed,{contract,profile:disabledProfile}));
+ assert.equal(earlyOutcomes.length,1,JSON.stringify(earlyOutcomes));
+ assert.equal(earlyOutcomes[0]?.verdict,'unknown');
+ assert.equal(earlyOutcomes[0]?.reason,'missing_input');
+});

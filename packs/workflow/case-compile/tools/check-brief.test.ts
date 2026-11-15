@@ -109,9 +109,11 @@ const ITEM_WITH_STATES = {
           { id: 'a1', kind: 'action', text: 'widget on', reference: `src:${digest(8)}/kityminder@1/n/s-1` },
           { id: 'a2', kind: 'expectation', text: '部件开启', reference: `src:${digest(8)}/kityminder@1/n/e-1` },
         ],
-        adjudication: {
+        sources: {
+          candidates: [],
+          governing: [],
           states: [
-            { atom: 'a1', state: 'settled', adjudicated_by: null, reason: '使用者决定：保留开启步骤', exit: null },
+            { atom: 'a1', state: 'settled', adjudicated_by: null, reason: '使用者决定：保留开启步骤', exit: null, prerequisites: null },
           ],
         },
         ledgers: { adapted: [] },
@@ -333,6 +335,80 @@ test('validateCompileBrief rejects tampered SHA, mutated atoms, missing hypothes
     } finally {
       process.stderr.write = origErr;
     }
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
+});
+
+test('buildCompileBrief and renderCompileBriefMd disclose contract.cleanup for runner-covered commands', async () => {
+  const { CONTRACT_DOC } = await import('../functions/test-support.ts');
+  const { parseRuntimeContract, runtimeDigest } = await import('../functions/runtime-contract.ts');
+  const { loadRunStructuredContext, buildSingleCaseStructuredBrief } = await import('./authoring-brief.ts');
+  const { renderCompileBriefMd, validateCompileBrief } = await import('../functions/authoring-brief.ts');
+  const workDir = await mkdtemp(join(tmpdir(), 'cc-brief-cleanup-'));
+  try {
+    await mkdir(join(workDir, 'knowledge'), { recursive: true });
+    await mkdir(join(workDir, 'items'), { recursive: true });
+    const root = 'b'.repeat(64);
+    const saveNode = {
+      path: '/commands/demo/save',
+      children: [],
+      entries: [{ kind: 'definition', statement: 'demo save', reference: `tree:${root}/commands/demo/save@${'f'.repeat(64)}` }],
+    };
+    await writeFile(
+      join(workDir, 'knowledge', 'nodes.jsonl'),
+      [
+        JSON.stringify({ schema: 'run-knowledge@1', root, composition: 'c'.repeat(64) }),
+        JSON.stringify({ path: '/', children: [{ name: 'commands', path: '/commands' }], entries: [] }),
+        JSON.stringify({ path: '/commands', children: [{ name: 'demo', path: '/commands/demo' }], entries: [] }),
+        JSON.stringify({ path: '/commands/demo', children: [{ name: 'save', path: '/commands/demo/save' }], entries: [] }),
+        JSON.stringify(saveNode),
+      ].join('\n') + '\n',
+    );
+    await writeFile(join(workDir, 'knowledge', 'commands.txt'), '# /commands/demo/save\ndemo save\n');
+    const contractDoc = structuredClone(CONTRACT_DOC) as Record<string, any>;
+    contractDoc.cleanup = {
+      source: 'lib/demo/clear.py',
+      sha256: 'd'.repeat(64),
+      objects: ['widget-seat'],
+      order: { rule_match: 'first_hit', tail: ['demo save'], before: [['clear a', 'clear b']] },
+      rules: [{ prefixes: ['demo save'], clears: ['demo save'], line: 120 }],
+    };
+    contractDoc.contract_sha256 = runtimeDigest(contractDoc);
+    assert.equal(parseRuntimeContract(contractDoc).ok, true);
+    await writeFile(join(workDir, 'sources.json'), JSON.stringify([{ slot: 'contract', file: 'contract.json' }]));
+    await writeFile(join(workDir, 'contract.json'), JSON.stringify(contractDoc));
+    await writeFile(
+      join(workDir, 'run.json'),
+      JSON.stringify({ run: 'run_1', command_policy: { schema: 'command-policy@1', read_only: [], inverse_rules: [], inverse_alternatives: [] } }),
+    );
+    const item = {
+      id: 'item-save-1',
+      fields: {
+        autoid: 'case-save-1',
+        title: '保存配置测试',
+        recomposition: {
+          receipt: 'rec:1',
+          record: {
+            schema: 'recompose-record@1',
+            case: { id: 'case-save-1', title: '保存配置测试', atoms: [{ id: 'a1', text: '保存配置 demo save', quote_ref: 'src:1' }] },
+            atoms: [{ id: 'a1', text: '保存配置 demo save', quote_ref: 'src:1' }],
+            ledgers: { adapted: [{ atom: 'a1', action: 'keep', text: '保存配置', commands: ['demo save'] }] },
+          },
+        },
+      },
+    };
+    const ctx = await loadRunStructuredContext(workDir);
+    assert.ok(ctx?.runnerCleanup, 'loadRunStructuredContext must extract contract.cleanup');
+    const compiled = buildSingleCaseStructuredBrief({ ctx, item, index: '00', round: 1 })!;
+    assert.ok(validateCompileBrief(compiled, item).ok);
+    assert.equal(compiled.materials.commands_and_manual.runner_cleanup?.objects[0], 'widget-seat');
+    const cmd = compiled.materials.commands_and_manual.named_commands.find((c) => c.words === 'demo save');
+    assert.equal(cmd?.inverse.kind, 'runner_cleanup');
+    assert.match(cmd!.inverse.detail, /禁止把运行器收尾清理或保存命令放入 cleanup:true/);
+    const md = renderCompileBriefMd(compiled);
+    assert.match(md, /执行器自动清理（lib\/demo\/clear\.py@dddddddddddd）/);
+    assert.match(md, /逆操作（runner_cleanup：/);
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }

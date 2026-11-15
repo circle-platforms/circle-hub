@@ -1047,3 +1047,39 @@ test('P1.3: task-brief embeds resolved skillDir at head of dispatchPrompt and su
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('req1 & req2: authoring, recomposition, fidelity, and attribution rules align with InfoTest without unqualified blockers', async () => {
+  const skill = await readFile(new URL('../SKILL.md', import.meta.url), 'utf8');
+  const recomposeSkill = await readFile(new URL('../recompose/SKILL.md', import.meta.url), 'utf8');
+  const deliveryDoc = await readFile(new URL('./delivery.md', import.meta.url), 'utf8');
+  const fidelityDoc = await readFile(new URL('./fidelity.md', import.meta.url), 'utf8');
+  const roleByKey = (key: string) => renderAgentDefinition(SUBAGENT_ROLES.find((r) => r.key === key)!);
+  const recomposer = roleByKey('recompose');
+  const writer = roleByKey('plan');
+  const fidelity = roleByKey('fidelity');
+  const attributor = roleByKey('attribute');
+
+  // Positive Req 1: adapted is not a whitelist; sourced prerequisites + inverse cleanups must be added without altering negative tests.
+  assert.ok(skill.length <= 9630, `SKILL.md length ${skill.length} exceeds 9630`);
+  assert.ok(writer.includes('adapted` 与原始步骤只是等价动作描述，不是步骤白名单') && writer.includes('precondition_source'));
+  assert.ok(writer.includes('sources.states') && writer.includes('原始用例明确要测“前置不存在/未配置”的反向场景时保留该无配置前提'));
+  assert.ok(recomposer.includes('不替换作者的被测对象、被测动作或边界条件') && recomposer.includes('配置示例'));
+  assert.ok(recomposeSkill.includes('states`（`missing_prerequisite`') && recomposeSkill.includes('配置示例'));
+  assert.ok(fidelity.includes('mechanical.exemptions') && fidelity.includes('added_precondition') && fidelity.includes('无 `mechanical.exemptions` 依据'));
+  assert.ok(fidelityDoc.includes('added_precondition'));
+
+  // Negative Req 1: unqualified legacy phrase must not reappear in authoring/recompose prompts or skills.
+  for (const [label, text] of [['compile-writer', writer], ['compile-recomposer', recomposer], ['SKILL.md', skill], ['recompose/SKILL.md', recomposeSkill]] as const) {
+    assert.equal(text.includes('作者没写的对象或动作不自己加'), false, `${label} still has unqualified blocker`);
+    assert.equal(text.includes('不能加原始用例没写的对象或动作'), false, `${label} still has unqualified blocker`);
+  }
+
+  // Positive Req 2: repeated same error falsifies prior direction; device-named missing + manual/example hypothesis must be tried; 缺资料 only when no source supports any hypothesis.
+  for (const [label, text] of [['compile-attributor', attributor], ['delivery.md', deliveryDoc], ['SKILL.md', skill]] as const) {
+    assert.ok(text.includes('证伪上一轮假设') || text.includes('证伪上轮假设') || text.includes('假设已证伪'), `${label} missing falsification rule`);
+    assert.ok(text.includes('缺资料'), `${label} missing 缺资料 narrow rule`);
+  }
+  assert.ok(attributor.includes('严禁借“缺资料”或“只剩 1 次上机机会”拦住不试'));
+  assert.ok(attributor.includes('只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”'));
+  assert.ok(deliveryDoc.includes('即使“剩一次机会”也必须继续修改重测'));
+});

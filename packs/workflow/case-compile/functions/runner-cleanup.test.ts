@@ -13,12 +13,17 @@ type Value = ReturnType<typeof fixture>;
 type Doc = Record<string, any>;
 
 /** The fixture with a runner cleanup declaration; `pin` also records the source digest in the original contract. */
-function declared(value: Value, rules: Array<{ prefixes: string[]; line?: number }>, options: { objects?: string[]; pin?: string } = {}): Value {
+function declared(
+  value: Value,
+  rules: Array<{ prefixes: string[]; clears?: string[]; line?: number }>,
+  options: { objects?: string[]; pin?: string; order?: { rule_match: 'first_hit'; tail: string[]; before: Array<[string, string]> } } = {},
+): Value {
   const doc = value.subject.contract as Doc;
-  doc.cleanup = { source: SOURCE, sha256: SHA, objects: options.objects ?? ['widget-seat'], rules };
+  doc.cleanup = { source: SOURCE, sha256: SHA, objects: options.objects ?? ['widget-seat'], ...(options.order ? { order: options.order } : {}), rules };
   if (options.pin !== undefined) {
     doc.source_hashes = { ...doc.source_hashes, [SOURCE]: options.pin };
     doc.original.contract_sha256 = runtimeDigest(stripAdditions(doc)!);
+    value.subject.profile = structuredClone(value.subject.profile) as typeof value.subject.profile;
     (value.subject.profile as Doc).runtime.contract_sha256 = doc.original.contract_sha256;
   }
   doc.contract_sha256 = runtimeDigest(doc);
@@ -33,7 +38,7 @@ test('a configuration command a runner rule covers needs no inverse, and the con
   assert.deepEqual(verdicts(checkCommandsKnown(value)), ['support'], JSON.stringify(checkCommandsKnown(value)));
   const [shape] = checkContractShape(value);
   assert.equal(shape?.verdict, 'support', JSON.stringify(shape));
-  assert.match(shape!.statement, /其中 1 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 fixture\/runner-cleanup-rules@cccccccccccc：每个用例开始前和整本结束时按发过的命令行逐条比前缀、第一条命中即用；原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对）/);
+  assert.match(shape!.statement, /其中 1 条配置命令由运行器自己的清理收尾，不要求逆命令（规则 fixture\/runner-cleanup-rules@cccccccccccc：自第 2 条用例开始前及整本关闭连接时，按清配对象（widget-seat）上 cmd_config 发出的命令行逐条比前缀、第一条命中即用；原合约的源文件摘要表里没有这个文件，摘要只是 Hub 侧声明，跳转机上的字节未核对）/);
   assert.match(shape!.statement, /widget-seat 的“demo pool add one 10”（规则 2，fixture\/runner-cleanup-rules 第 9 行，前缀“demo pool”）/);
   const data = (shape as { data?: { runner_cleanup?: { pinned: boolean; covered: unknown[] } } }).data;
   assert.equal(data?.runner_cleanup?.pinned, false);
@@ -83,4 +88,47 @@ test('the declaration is a closed @2 addition: pinned by the original source dig
   (extra.subject.contract as Doc).contract_sha256 = runtimeDigest(extra.subject.contract as Doc);
   const closed = parseRuntimeContract(extra.subject.contract);
   assert.ok(!closed.ok && closed.problems.some((p) => p.pointer === '/cleanup'), 'clear commands are never declared');
+});
+
+test('optional clears and order are validated, disclosed when present, and refuse runner-owned save/cleanup steps placed in cleanup:true', () => {
+  const order = { rule_match: 'first_hit' as const, tail: ['demo mode manual'], before: [['clear demo a', 'clear demo b'] as [string, string]] };
+  const rules = [{ prefixes: ['demo pool'], clears: ['clear demo pool'], line: 17 }, { prefixes: ['demo mode'], clears: ['demo mode manual'], line: 120 }];
+  const parsed = parseRuntimeContract(declared(fixture(['demo mode auto']), rules, { order }).subject.contract);
+  assert.ok(parsed.ok, JSON.stringify(parsed));
+  assert.deepEqual(parsed.contract.cleanup?.order, order);
+  assert.deepEqual(parsed.contract.cleanup?.rules[1]?.clears, ['demo mode manual']);
+
+  const badOrder = declared(fixture(['demo mode auto']), rules, { order });
+  (badOrder.subject.contract as Doc).cleanup.order = { rule_match: 'last_hit', tail: [], before: [] };
+  (badOrder.subject.contract as Doc).contract_sha256 = runtimeDigest(badOrder.subject.contract as Doc);
+  assert.equal(parseRuntimeContract(badOrder.subject.contract).ok, false);
+
+  // Used in main: accepted without inverse and discloses triggers + ordering.
+  const inMain = declared(fixture(['demo mode auto', 'demo mode manual']), rules, { order });
+  const [okShape] = checkContractShape(inMain);
+  assert.equal(okShape?.verdict, 'support', JSON.stringify(okShape));
+  assert.match(okShape!.statement, /触发 “demo mode manual”/);
+  assert.match(okShape!.statement, /“demo mode manual” 放在收尾末尾/);
+  assert.match(okShape!.statement, /顺序约束：“clear demo a”先于“clear demo b”/);
+
+  // Placed in cleanup:true (both with another uncovered command or alone): refused naming runner teardown, and preserves runner_cleanup disclosure.
+  for (const plan of [
+    ['demo pool add one 10', cleanup('demo mode manual')],
+    ['demo pool add one 10', 'demo relay enable', cleanup('demo mode manual'), cleanup('demo relay disable')],
+  ]) {
+    const refused = declared(fixture(plan), rules, { order });
+    const rows = checkCommandsKnown(refused);
+    assert.ok(rows.some((r) => r.verdict === 'refute' && r.statement.includes('这一步由执行器在收尾时做') && r.statement.includes('收尾阶段末尾执行')), JSON.stringify(rows));
+    const [shapeRow] = checkContractShape(refused);
+    assert.equal(shapeRow?.verdict, 'refute', JSON.stringify(shapeRow));
+    assert.match(shapeRow!.statement, /其中 1 条配置命令由运行器自己的清理收尾/);
+    assert.equal((shapeRow as { data?: { runner_cleanup?: { covered: unknown[] } } }).data?.runner_cleanup?.covered.length, 1);
+  }
+
+  // When an uncovered unknown gap occurs alongside a runner-covered command, runner_cleanup disclosure is still included.
+  const withUnknown = declared(fixture(['demo pool add one 10', 'demo lamp bright']), [{ prefixes: ['demo pool'], clears: ['clear demo pool'], line: 17 }]);
+  const [unknownRow] = checkContractShape(withUnknown);
+  assert.equal(unknownRow?.verdict, 'unknown', JSON.stringify(unknownRow));
+  assert.match(unknownRow!.statement, /其中 1 条配置命令由运行器自己的清理收尾/);
+  assert.equal((unknownRow as { data?: { runner_cleanup?: { covered: unknown[] } } }).data?.runner_cleanup?.covered.length, 1);
 });

@@ -402,7 +402,8 @@
       "minLength": 1
     },
     "cleanup": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "true 将步骤标为末尾清理段；仅放置非只读、正文未净抵消且未命中 contract.cleanup 运行器自动清理的改配步骤，按产品声明逆序执行对应逆操作，不能从文字猜测；存盘 write memory 等由执行器在收尾时做的命令禁止标为 cleanup:true"
     },
     "payload": {
       "type": "object",

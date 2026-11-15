@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -322,6 +322,59 @@ test('invalid CLI invocations fail with closed category format and never leak to
       assert.equal(res.code, 1);
       assert.match(res.stderr, /^(参数无效|不存在|无权限|已被占用|暂时不可用)：.+\n$/);
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('check-plan accepts valid precondition_source on flat steps and rejects malformed precondition_source', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cc-check-precond-'));
+  try {
+    const validPath = join(dir, 'valid.json');
+    await writeFile(
+      validPath,
+      JSON.stringify({
+        item: 'doc:v',
+        handling: 'handled',
+        slots: {
+          plan: [
+            {
+              text: '带手动手册前置引文',
+              quotes: [{ reference: 'agile:mindmap:doc#e1', text: '期望响应' }],
+              data: {
+                bucket: 'bed-1',
+                blocks: [],
+                steps: [
+                  {
+                    object: 'apv0',
+                    method: 'cmd_config',
+                    args: ['synconfig peer 192.0.2.2'],
+                    keywords: {},
+                    description: '根据手册示例补齐本端对端地址',
+                    precondition_source: {
+                      reference: 'knowledge:manual#synconfig',
+                      text: 'Configure peer IP on both nodes before running synconfig',
+                    },
+                  },
+                ],
+                expects: [{ text: '期望响应', quote: { reference: 'agile:mindmap:doc#e1', text: '期望响应' }, after: 1 }],
+                replacements: [],
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const validRes = await runCli(['--file', validPath]);
+    assert.equal(validRes.code, 0, validRes.stdout + validRes.stderr);
+
+    const invalidPath = join(dir, 'invalid.json');
+    const badJson = JSON.parse(await readFile(validPath, 'utf8'));
+    badJson.slots.plan[0].data.steps[0].precondition_source = { reference: 'knowledge:manual#synconfig', text: '' };
+    await writeFile(invalidPath, JSON.stringify(badJson));
+    const invalidRes = await runCli(['--file', invalidPath]);
+    assert.equal(invalidRes.code, 1);
+    assert.ok(JSON.parse(invalidRes.stdout).problems.some((p: { pointer: string }) => p.pointer.includes('/precondition_source')));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

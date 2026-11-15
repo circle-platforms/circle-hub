@@ -15,7 +15,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值",
+      "basis": "核对原始运行器签名、合约启用与本轮允许的交集、显式值和命令拒绝表；不复制默认值；同时核对并披露 contract.cleanup（清配对象上命中规则含 write mem 等的正用步骤免写逆操作，cleanup:true 段禁止放入运行器收尾执行的清理/存盘命令）",
       "catalog": "commands@1",
       "catalog_select": {
         "module": "functions/subject.ts",
@@ -53,7 +53,7 @@
       },
       "judges": "artifact_under_verification",
       "tier": "blocking",
-      "basis": "计划设备命令由锁定 /commands 完整语法逐词解析为 CommandIdentity，再核类型、角色与效果授权；用例明确声明身份时额外核一致性，缺声明不限制计划解析",
+      "basis": "计划设备命令由锁定 /commands 完整语法逐词解析为 CommandIdentity，再核类型、角色与效果授权；用例明确声明身份时额外核一致性，缺声明不限制计划解析（清理校验以 contract.cleanup 为准：清配对象上命中规则含 write mem 的正用步骤记为 runnerOwned 放行，cleanup:true 段禁止出现由执行器收尾执行的清理或存盘命令）",
       "function": {
         "module": "functions/checks.ts",
         "export": "checkCommandsKnown"
