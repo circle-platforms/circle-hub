@@ -98,10 +98,10 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (attempt.reserved) {
     open.delete(run);
     const { job, executor } = attempt.reserved;
-    return answer([{ run_facts, job, job_facts: { scope: { job }, reservation_recorded: true }, ...(administrative ? { executor } : {}), text: clip(`本次运行${earlier.length ? '已再次' : '已'}为上机验证预留作业；${REREAD}，结束后同样的答复带结果引用`) }]);
+    return answer([{ run_facts, job, job_facts: { scope: { job }, reservation_recorded: true }, ...(administrative ? { executor } : {}), text: clip(`Hub ${earlier.length ? '已再次' : '已'}按工作流的规定自动开始上机验证；${REREAD}，之后同样的答复带进展或可读的结果引用`) }]);
   }
   const settled = attempt.settled;
-  if (!settled) return answer([{ run_facts, text: `本次运行正在做上机验证前核对；${REREAD}` }]);
+  if (!settled) return answer([{ run_facts, text: `Hub 正在做上机验证前的核对；${REREAD}` }]);
   if (attempt.uncertain || settled.job_status_unavailable === true) {
     const next = administrative ? `circle-hub run show ${run} --json` : '不要重新发送或另开运行；联系管理员只读核对原作业';
     return answer([{ run_facts: { ...run_facts, missing_facts: [{ fact: '本次运行的派发处理未取得可核对的作业记录', next_action: next }], next_action: next }, text: clip(`本次运行的派发处理已结束，但作业事实尚未确认；下一步：${next}`) }]);
