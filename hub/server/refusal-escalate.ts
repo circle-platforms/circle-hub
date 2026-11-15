@@ -15,6 +15,13 @@ import {
 export { isPackScopedCode } from './error-reasons.ts';
 
 export const ESCALATION_WINDOW_MS = 60 * 60 * 1000;
+/** Versioned component deciding the repeated-call recommendation, carried by ErrorClaimFields.warrant. */
+export const REFUSAL_ESCALATION_WARRANT = 'refusal-escalate@1';
+/** Declared producer identity only; refusal prose does not establish escalation. */
+export function isEscalatedError(error: ProtocolError): boolean {
+  return error.warrant === REFUSAL_ESCALATION_WARRANT;
+}
+
 
 /**
  * Codes that never escalate (Boss 12:45 / 18:09):
@@ -331,11 +338,13 @@ export function formatCategoryCallError(options: {
 
 
 export function withEscalatedFix(error: ProtocolError, parts: EscalationParts): ProtocolError {
-  if (parts.fixSuffix === null) return error;
+  if (parts.fixSuffix === null || isEscalatedError(error)) return error;
+  // A source warrant is part of the original claim; this protocol has no slot for a second warrant.
+  if (error.warrant !== undefined) return error;
   const base = typeof error.fix === 'string' && error.fix.length > 0 ? error.fix : '缺少本次拒绝的具体下一步，请维护者补齐后按原请求核对';
   // Independent sentences: base already ends with 。 or we add one, then escalation sentences.
   const head = /[。！？]$/.test(base.trim()) ? base.trim() : `${base.trim()}。`;
-  return { ...error, fix: `${head}${parts.fixSuffix}。` };
+  return { ...error, warrant: REFUSAL_ESCALATION_WARRANT, fix: `${head}${parts.fixSuffix}。` };
 }
 
 export async function occurrenceOf(options: {
