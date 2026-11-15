@@ -1,4 +1,5 @@
 import {isReason} from '../../../contracts/generated/vocabulary.ts';
+import { createRequestErrorBindings } from './request-error-fields.ts';
 import { isAbandonedResult } from './management.ts';
 // Run-specific B07 routing. Shared storage is owned by hub/requests.
 import { ReferenceUri } from '../../../contracts/src/reference.ts';
@@ -28,6 +29,7 @@ export async function requestsOf(ctx:EngineContext,by:Principal,run?:string,opti
 }
 export async function recordResultRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,roundsUsed:ReadonlyMap<string,number>=new Map(),input?:unknown):Promise<void>{
   if(isAbandonedResult(result))return;
+  const requestErrors=createRequestErrorBindings();
   for(const error of result.errors){
     if(error.rounds_left!==0||!error.requirement||error.code!=='repair_exhausted'&&(run.requirements.find(r=>r.key===error.requirement)?.repair_rounds??0)===0)continue;
     if(result.acceptance==='accepted'&&Object.values(result.partitions).flat().some(item=>(!error.item||item.item===error.item)&&item.requirements.some(r=>r.requirement===error.requirement&&r.layers.some(l=>l.exit!==undefined))))continue;
@@ -35,8 +37,9 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
     if(!runner)throw new Error('修复请求缺少具名运行者');
     const request=await putRequest(ctx,{run:run.run,kind:'repair',audience:runner,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing:'缺少修复后的完整提交：'+error.message,next_action:'用 submit_result 对同一运行重交完整的新提交，仍可取代本次结果；需要换输入或规则时用 start_run 以本运行为 predecessor 开新修订',source:result.submission,code:error.code,...(error.item?{item:error.item}:{}),requirement:error.requirement});
     error.fix=`${error.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`;
+    requestErrors.bind(error,request);
   }
-  if(result.acceptance!=='accepted')return;
+  if(result.acceptance!=='accepted'){requestErrors.apply();return;}
   const workflow=await ctx.deps.workflows.byDigest(run.pack_digest,run.pack_space);
   for(const error of [...result.errors]) {
     const template=workflow?.requirements.find(t=>t.key===error.requirement);
@@ -46,6 +49,7 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
     if(!audience)throw new Error('请求缺少具名运行者');
     const request=await putRequest(ctx,{run:run.run,kind:row.action==='unknown'?'judgment':'repair',audience,due:new Date(ctx.now().getTime()+86400000).toISOString(),missing:error.message,next_action:'由作者以外的账号以本运行为 predecessor 用 start_run 开复核运行，或用 submit_result 重交完整修复',source:result.submission,code:error.code,...(error.item?{item:error.item}:{}),...(error.requirement?{requirement:error.requirement}:{})});
     error.fix=`${error.fix??''}；请求 rec:${request.digest}：${request.body.next_action}`;
+    requestErrors.bind(error,request);
     if(row.action==='unknown') {
       const hypothesis=await hypothesisFor(ctx,request,error.message);
       error.fix=(error.fix??'')+'；假设集 rec:'+hypothesis;
@@ -73,7 +77,8 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
     const path=claim.pointer?.startsWith('/cross_item/')?claim.pointer:'/cross_item';
     const prior=result.errors.find(e=>e.requirement===claim.requirement&&e.path===path&&e.message===request.body.missing);
     const problem={code:request.body.code,message:request.body.missing,requirement:claim.requirement,path,rounds_left,fix:'请求 rec:'+request.digest+'：'+request.body.next_action};
-    if(prior)Object.assign(prior,problem);else result.errors.push(problem);
+    if(prior){Object.assign(prior,problem);requestErrors.bind(prior,request);}
+    else {result.errors.push(problem);requestErrors.bind(problem,request);}
     if(row?.action==='unknown'){const hypothesis=await hypothesisFor(ctx,request,claim.statement.text);const problem=result.errors.find(e=>e.requirement===claim.requirement&&e.path===path&&e.message===request.body.missing)!;problem.fix=(problem.fix??'')+'；假设集 rec:'+hypothesis;}
   }
   const disposed=new Set(result.partitions.rejected.filter(i=>i.code==='EFFECT_UNKNOWN_DISPOSED').map(i=>i.item));
@@ -106,10 +111,11 @@ export async function recordResultRequests(ctx:EngineContext,run:RunRecord,resul
       const hint=`缺失事实：${gap.missing}；请求 rec:${request.digest}，受众 ${request.body.audience}，期限 ${request.body.due}：${next_action}`;
       const rounds_left=Math.max(0,(run.requirements.find(r=>r.key===requirement.requirement)?.repair_rounds??0)-(roundsUsed.get(requirement.requirement)??0));
       const path=requestPath(input,item.item);
-      if(error){error.path??=path;error.rounds_left??=rounds_left;if(!error.fix?.includes('rec:'+request.digest))error.fix=`${error.fix??''}；${hint}`;}
-      else result.errors.push({code:gap.reason,message:gap.missing,item:item.item,requirement:requirement.requirement,path,rounds_left,fix:hint});
+      if(error){error.path??=path;error.rounds_left??=rounds_left;if(!error.fix?.includes('rec:'+request.digest))error.fix=`${error.fix??''}；${hint}`;requestErrors.bind(error,request);}
+      else {const problem={code:gap.reason,message:gap.missing,item:item.item,requirement:requirement.requirement,path,rounds_left,fix:hint};result.errors.push(problem);requestErrors.bind(problem,request);}
     }
   }
+  requestErrors.apply();
 }
 export async function answerRepairedRequests(ctx:EngineContext,run:RunRecord,result:ValidationResult,record:string):Promise<void>{
   if(result.acceptance!=='accepted')return;
