@@ -65,7 +65,11 @@ function rewriteReply(c:Context,tool:string,rewrite:(value:Record<string,unknown
 test('R3-1 SIGKILL after committed reservation without intent converges without sending',{timeout:60000},async t=>{
   const c=await journal(t);
   const first=await child(t,c,'dispatch','reservation'),point=await first.wait('checkpoint');assert.ok(point.job);await first.kill();
-  const worker=await recover(t,c,point.job);const status=await completed(c,point.job);assert.equal(status.outcome,'not_dispatched');assert.equal(sends(c),0);assert.equal(c.rows.size,0);await worker.close();
+  const worker=await recover(t,c,point.job);const status=await completed(c,point.job);assert.equal(status.outcome,'not_dispatched');assert.equal(sends(c),0);assert.equal(c.rows.size,0);
+  const closed=(await c.service.journal.events(point.job)).findLast(event=>event.body.detail.phase==='complete'&&event.body.detail.done===true);assert.ok(closed);
+  assert.equal(closed.body.detail.public_reason,'服务重启后核对到这次上机验证的请求还没有发出，本次上机验证没有执行');
+  assert.equal(closed.body.detail.next_action,'原样重交，Hub 会再试一次');
+  await worker.close();
 });
 
 // Boss 2026-11-15 15:19: recovery never submits; certified nonexecution uses the normal ready/retriable rule on the next caller submission.
@@ -80,9 +84,20 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   original.state='not_started';original.touched=false;delete original.key;
   const beforeRecovery=sends(c);
   const worker=await recover(t,c,job);
-  assert.equal((await completed(c,job)).outcome,'proven_not_executed');
+  const recoveredState=await completed(c,job);assert.equal(recoveredState.outcome,'proven_not_executed');
   const recoveredSends=sends(c);assert.equal(recoveredSends,1,'automatic recovery itself submits neither the old request nor a new request');
   await worker.close();
+  // Boss15:58: compare real production completions, not a constant against itself.
+  const normalProven=await journal(t,{lost:true,stopped:true});
+  const normalProvenState=await normalProven.service.dispatch(normalProven.admin,normalProven.run,normalProven.executor.id);
+  assert.equal(normalProvenState.outcome,'proven_not_executed');assert.equal(sends(normalProven),1);
+  const normalProvenEnd=(await normalProven.service.journal.events(normalProvenState.job)).findLast(event=>event.body.detail.phase==='complete'&&event.body.detail.done===true);
+  const recoveredProvenEnd=(await c.service.journal.events(job)).findLast(event=>event.body.detail.phase==='complete'&&event.body.detail.done===true);
+  assert.ok(normalProvenEnd&&recoveredProvenEnd);
+  assert.equal(normalProvenEnd.body.detail.next_action,'原样重交，Hub 会再试一次');
+  assert.equal(recoveredProvenEnd.body.detail.next_action,normalProvenEnd.body.detail.next_action);
+  assert.equal(recoveredState.next_action,normalProvenState.next_action);assert.equal(recoveredState.next_action,normalProvenEnd.body.detail.next_action);
+  await normalProven.service.close();
   let starts=0;const dispatch=c.service.dispatchAccepted.bind(c.service);
   c.service.dispatchAccepted=(...args)=>{starts++;return dispatch(...args);};
   const acquired=c.calls.filter(name=>name==='open_slot').length;
@@ -103,6 +118,23 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   assert.ok(reread.some(note=>note.job===newAttempt.job));assert.equal(starts,1);
   assert.equal(sends(c),2,'subsequent caller resubmission reads progress instead of adding another submit');
   assert.equal(c.calls.filter(name=>name==='open_slot').length,acquired+1);
+  const normalRejected=await journal(t,{lost:true,rejected:true});
+  const normalRejectedState=await normalRejected.service.dispatch(normalRejected.admin,normalRejected.run,normalRejected.executor.id);
+  assert.equal(normalRejectedState.outcome,'target_rejected');assert.equal(sends(normalRejected),1);
+  const rejectedHolder:{current?:ChildProcess}={};
+  const recoveredRejected=await journal(t,{lost:true,rejected:true,onSubmit:async()=>{rejectedHolder.current!.kill('SIGKILL');}});
+  const rejectedJob=await admittedAndKilled(t,recoveredRejected,rejectedHolder);
+  const rejectedBefore=sends(recoveredRejected),rejectedWorker=await recover(t,recoveredRejected,rejectedJob);
+  const recoveredRejectedState=await completed(recoveredRejected,rejectedJob);
+  assert.equal(recoveredRejectedState.outcome,'target_rejected');assert.equal(sends(recoveredRejected),rejectedBefore);assert.equal(rejectedBefore,1,'recovery of refusal never submits again');
+  const normalRejectedEnd=(await normalRejected.service.journal.events(normalRejectedState.job)).findLast(event=>event.body.detail.phase==='complete'&&event.body.detail.done===true);
+  const recoveredRejectedEnd=(await recoveredRejected.service.journal.events(rejectedJob)).findLast(event=>event.body.detail.phase==='complete'&&event.body.detail.done===true);
+  assert.ok(normalRejectedEnd&&recoveredRejectedEnd);
+  assert.equal(normalRejectedEnd.body.detail.next_action,'按拒绝的原因修正后原样重交，Hub 会再试一次');
+  assert.equal(recoveredRejectedEnd.body.detail.next_action,normalRejectedEnd.body.detail.next_action);
+  assert.equal(recoveredRejectedState.next_action,normalRejectedState.next_action);assert.equal(recoveredRejectedState.next_action,normalRejectedEnd.body.detail.next_action);
+  assert.notEqual(recoveredRejectedState.next_action,recoveredState.next_action,'refusal retains its required correction step');
+  await rejectedWorker.close();await normalRejected.service.close();
   t.diagnostic(JSON.stringify({scenario:'R3-2',recovery_submit_total:recoveredSends,recovery_added_submits:recoveredSends-beforeRecovery,after_ready_submit_total:retrySends,ready_added_submits:retrySends-recoveredSends,after_reread_submit_total:sends(c),reread_added_submits:sends(c)-retrySends,distinct_requests:new Set(requests).size,request_changed:requests[0]!==requests[1],previous_note:notes.find(note=>note.job===job)!.text,new_attempt_note:newAttempt.text,automatic_starts:starts}));
 });
 
