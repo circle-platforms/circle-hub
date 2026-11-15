@@ -4,9 +4,9 @@ nav_order: 2
 
 # 十分钟上手
 
-本指南带你按当前版本的真实命令，在本地或临时实验目录从零启动一个 Circle Hub，建好团队与成员，发布并分配首个工作流，连接 Circle 并跑通第一次运行。
+本指南按当前版本的真实命令，在本地或临时实验目录从零启动一个 Circle Hub：安装并建好管理员 → 用一份部署定义 `apply` → 连接 Circle → 跑通第一次运行。
 
-> 本文全部命令均针对当前 `circle-hub` 实现在临时合成数据根上实敲验证。
+> 本文全部命令均针对当前 `circle-hub` 实现在临时合成数据根上实敲验证；文中的最小定义文件与 `docs/examples/quickstart-deployment.json` **同一份字节**（由测试核对）。
 >
 > - 支持平台：**macOS 与 Linux（arm64 / x64）**，Node 24；不支持 Windows。
 > - 只使用合成测试数据、回环地址 `127.0.0.1` 与文档示例网段 `192.0.2.0/24`；绝不在文档、测试或命令行参数中写入真实账号、密钥值或真实业务地址。
@@ -16,7 +16,7 @@ nav_order: 2
 
 ## 第一步：初始化数据根、主密钥与管理员
 
-生产单机发行版可使用仓库根目录的 [install.sh](https://github.com/circle-platforms/circle-hub/blob/main/install.sh) 一键下载并初始化；如果在仓库工作树中快速体验或搭建临时实验实例，按下面 5 条命令初始化（所有路径建议使用较短的数据根，因为嵌入式 PostgreSQL 套接字 `<数据根>/run/.s.PGSQL.5432` 受操作系统路径长度上限限制，约 103 字节）：
+生产单机发行版可使用仓库根目录的 [install.sh](https://github.com/circle-platforms/circle-hub/blob/main/install.sh) 一键下载并初始化；如果在仓库工作树中快速体验或搭建临时实验实例，按下面命令初始化（所有路径建议使用较短的数据根，因为嵌入式 PostgreSQL 套接字 `<数据根>/run/.s.PGSQL.5432` 受操作系统路径长度上限限制，约 103 字节）：
 
 ```bash
 export CIRCLE_HUB_DATA_DIR=/tmp/ch-quickstart/d
@@ -39,9 +39,127 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
 
 ---
 
-## 第二步：建团队与成员
+## 第二步：写一份部署定义并 `apply`
 
-先建一个团队，再建成员并加入团队：
+服务已在跑、首位管理员已建好之后，用**一份部署定义**代替逐条 `pack grant-publish` / `pack publish` / `pack assign` / `doc put`：
+
+1. 检入的最小定义文件（合成名字，可直接用）：仓库内 [`docs/examples/quickstart-deployment.json`](examples/quickstart-deployment.json)。相对该文件的 `directory` 指向仓库里的 `packs/workflow/test-bed`；`schema` 必须是 `deployment@2`（见 `contracts/src/deployment.ts`）。
+2. 在仓库根目录执行：
+
+```bash
+./bin/circle-hub apply docs/examples/quickstart-deployment.json
+```
+
+相同项会跳过；有差异只列字段路径、不覆盖，并返回非零退出码。若管理员还没有发布权，发布前会自动授予（不必先 `pack grant-publish`）。`knowledgeSync: []` 表示明确无知识同步目标，避免「尚未声明」提示。
+
+该文件的完整内容如下（须与 `docs/examples/quickstart-deployment.json` 字节一致）：
+
+```json
+{
+  "schema": "deployment@2",
+  "packs": [
+    {
+      "ref": "test-bed@1.3.3",
+      "directory": "../../packs/workflow/test-bed"
+    }
+  ],
+  "workflowAssignments": [
+    {
+      "pack": "test-bed",
+      "user": "admin"
+    }
+  ],
+  "documents": [
+    {
+      "name": "bed-topology",
+      "sha256": "65b61e85e8f94afd36035cead54ef6cd29c579089aee3056ad387192af8cc45a",
+      "size": 1228,
+      "bytesBase64": "ewogICJzY2hlbWEiOiAidGVzdC1iZWQtbWFuaWZlc3RAMSIsCiAgImJlZHMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogImJlZC1hIiwKICAgICAgImRldmljZXMiOiBbCiAgICAgICAgeyAibmFtZSI6ICJhZmFteDAiLCAidHlwZSI6ICJsb2FkLWJhbGFuY2VyIiwgInByb2R1Y3QiOiAiZmFteCIsICJpcHY0IjogWyIxOTIuMC4yLjEwLzI2IiwgIjE5Mi4wLjIuNzQvMjYiXSwgImlwdjYiOiBbIjIwMDE6ZGI4OjE6OjEwLzY0Il0sICJpbnN0YWxsZWQiOiB7ICJidWlsZCI6ICJSZWxfRkFNWF8xMF82XzFfOCIgfSB9LAogICAgICAgIHsgIm5hbWUiOiAicm91dGVyMCIsICJ0eXBlIjogInJvdXRlciIsICJpcHY0IjogWyIxOTIuMC4yLjEvMjYiXSwgImlwdjYiOiBbXSB9LAogICAgICAgIHsgIm5hbWUiOiAiY2xpZW50MCIsICJ0eXBlIjogImNsaWVudCIsICJpcHY0IjogWyIxOTIuMC4yLjgwLzI2Il0sICJpcHY2IjogW10gfSwKICAgICAgICB7ICJuYW1lIjogInNlcnZlcjAiLCAidHlwZSI6ICJzZXJ2ZXIiLCAiaXB2NCI6IFsiMTkyLjAuMi45MC8yNiJdLCAiaXB2NiI6IFtdIH0sCiAgICAgICAgeyAibmFtZSI6ICJjb25zb2xlMCIsICJ0eXBlIjogImNvbnNvbGUiLCAiaXB2NCI6IFsiMTkyLjAuMi4xNDAvMjYiXSwgImlwdjYiOiBbXSB9CiAgICAgIF0sCiAgICAgICJzZXJ2aWNlcyI6IFt7ICJob3N0IjogInNlcnZlcjAiLCAiaXAiOiAiMTkyLjAuMi45MCIsICJwcm90byI6ICJ0Y3AiLCAicG9ydCI6IDgwIH1dLAogICAgICAicmVzZXJ2ZWQiOiBbIjE5Mi4wLjIuMS0xOTIuMC4yLjkiLCAiMTkyLjAuMi42NS0xOTIuMC4yLjY5Il0KICAgIH0sCiAgICB7CiAgICAgICJuYW1lIjogImJlZC1iIiwKICAgICAgImRldmljZXMiOiBbCiAgICAgICAgeyAibmFtZSI6ICJhZmFteDEiLCAidHlwZSI6ICJsb2FkLWJhbGFuY2VyIiwgInByb2R1Y3QiOiAiZmFteSIsICJpcHY0IjogWyIxOTIuMC4yLjEzMC8yNiIsICIxOTIuMC4yLjE5NC8yNiJdLCAiaXB2NiI6IFtdLCAiaW5zdGFsbGVkIjogeyAiYnVpbGQiOiAiUmVsX0ZBTVlfMTBfNl8xXzgiLCAiYmFzZSI6ICJSZWxfRkFNWF8xMF82XzFfOCIgfSB9LAogICAgICAgIHsgIm5hbWUiOiAiY2xpZW50MSIsICJ0eXBlIjogImNsaWVudCIsICJpcHY0IjogWyIxOTIuMC4yLjE1MC8yNiJdLCAiaXB2NiI6IFtdIH0KICAgICAgXSwKICAgICAgInNlcnZpY2VzIjogW10sCiAgICAgICJyZXNlcnZlZCI6IFtdCiAgICB9CiAgXQp9Cg==",
+      "mediaType": "application/json",
+      "fileName": "bed-topology.json"
+    }
+  ],
+  "knowledgeSync": []
+}
+```
+
+字段要点（与代码一致）：
+
+| 字段 | 作用 |
+|---|---|
+| `packs[].ref` + `directory` | 首次发布：`directory` 相对**定义文件所在目录**；已发布且摘要一致则跳过 |
+| `workflowAssignments` | `pack` 写包 ID（不带 `@版本`）；`user` 或 `team` 写精确名字 |
+| `documents` | 命名文档：`bytesBase64` / `size` / `sha256` 必须一致；引用为 `doc:doc:<name>` |
+| `knowledgeSync` | 可选；无目标时写 `[]` |
+
+从已有实例迁到新机：在源实例 `circle-hub export` 得到定义（**不含**密钥与令牌、packs 通常**无** `directory`）；在新机 `init-admin` 后为每个要发布的包装上 `directory`，再 `apply`；成员密码仍须另办。
+
+清零或重建后的正式三步：`reset --scope all` → `init-admin` → `apply`（清空账户且未 `--keep-config` 时不得在 `reset` 上同时带 `--definition`）。详见[重置和重建](reset.md)。
+
+---
+
+## 第三步：启动服务并连接 Circle
+
+```bash
+unset CIRCLE_HUB_TOKEN
+./bin/circle-hub serve
+```
+
+确认端口：
+
+```bash
+curl -sS http://127.0.0.1:7420/healthz
+# 期望返回：{"status":"ok","release":null}
+```
+
+控制台：`http://127.0.0.1:7420/console/`（`init-admin` 的初始密码，首次登录改密）。
+
+连接 Circle（**推荐普通 MCP 授权，不必手签 Bearer 令牌**）：
+
+1. **桌面**：设置 → 能力 → 扩展 → Hub，填写 Hub 地址，在打开的页面用管理员用户名和密码登录（若显示一次性码，按提示输入）。
+2. **终端**：在 Circle 数据目录的 `settings.json` 增加无 `Authorization` 头的条目，例如  
+   `{"name":"Hub","url":"http://127.0.0.1:7420/mcp","transport":"streamable_http","placeholders":{"url":"HUB_URL","token":"HUB_TOKEN"}}`  
+   （**不要**写 `Authorization` 头，否则不会走登录），然后 `/mcp` 或 `/mcp reload`，按提示登录。
+3. **邀请成员（可选）**：`./bin/circle-hub user invite <账户名>` 生成 24 小时邀请码，成员在授权页输入。
+4. **脚本排查仍可用令牌**：`./bin/circle-hub token issue <账户名> --label "circle-local" --raw`，请求头 `Authorization: Bearer <令牌>`。
+
+---
+
+## 第四步：第一次运行
+
+Hub 提供 6 个标准 MCP 工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result`。对已分配到 `test-bed` 的账户（本最小定义里是 `admin`）：
+
+1. **`list_task_packs`**（`{}`）：看到 `test-bed@…`（`pack: "test-bed"`）。
+2. **`start_run`** 对命名清单做事实计算：
+
+```json
+{
+  "pack": "test-bed",
+  "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
+  "parameters": { "action": "facts" }
+}
+```
+
+`test-bed` 仅含事实要求项，开始运行时由 Hub 直接核算，返回 `run.run`（`run_…`）与结果引用 `result.reference`（`rec:<sha256>`）及分区计数。
+
+3. **`get_nodes`** / **`resolve_reference`** 读完整结论或原文。
+
+管理员也可在终端：`./bin/circle-hub run list`、`run show <run_…>`、`status`。
+
+临时实验结束：
+
+```bash
+./bin/circle-hub db stop
+chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
+```
+
+---
+
+## 附节：逐条做（不经 apply）
+
+若你想逐步敲命令理解每一步，或定义文件暂时用不上，下面保留原先的分条路径（事实不删）。**主路径请仍用上面的 `apply`。**
+
+### A. 建团队与成员
 
 ```bash
 ./bin/circle-hub team create 研发一组
@@ -53,232 +171,52 @@ mkdir -p "$CIRCLE_HUB_DATA_DIR"
 ./bin/circle-hub team show <团队ID>
 ```
 
-需要注意界面与概念分工：
+- **团队（`tm_…`）**：管理员在网页控制台 `/console/team` 管理；权限取并集。
+- **公共空间**：全员共享的团队知识与存储空间（内部默认空间 ID 仍为 `team`）。
 
-- **团队（`tm_…`）**：由管理员新建并在网页控制台 `/console/team` 的「团队」页签下管理成员、工作流与业务系统分配。一个成员可同时属于多个团队，权限取并集；删除团队会一并撤回该团队名下的所有分配。普通成员在控制台只能看到自己所属团队的名字。
-- **公共空间**：全员共享的团队知识与存储空间（内部默认空间 ID 仍为 `team`，控制台容量行标注为「公共空间」，与团队列表相互独立）。
+### B. 授发布权、发布、分配、登记命名文档
 
----
-
-## 第三步：发布、启用并分配任务包
-
-### 1. 给发布人授发布权
-
-即便是 `init-admin` 建出的首位 `admin`，首次发布任务包前也要先授予发布权：
+即便是 `init-admin` 的首位 `admin`，**不经 apply** 时首次发布前仍要授发布权（`canPublish` 无管理员豁免；apply 发布前会自动授）：
 
 ```bash
 ./bin/circle-hub pack grant-publish admin
-```
-
-源码包目录通常包含 `README.md`、`*.test.ts` 或打包脚本等非运行文件，发布时加上 `--stage` 由 CLI 导出干净临时副本再校验入库；不放心时先加 `--dry-run` 预检。
-
-### 2. 零外部依赖的最小可跑路径（推荐首试 `test-bed`）
-
-工作流 `test-bed`（自动化测试环境）只读取管理员发布的命名文档清单，不需要先接入外部服务器，最适合十分钟内跑通首轮运行：
-
-```bash
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage --dry-run
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage
-./bin/circle-hub pack assign test-bed --team=<团队ID>
+./bin/circle-hub pack assign test-bed --user=admin
+# 或：./bin/circle-hub pack assign test-bed --team=<团队ID>
 ./bin/circle-hub doc put bed-topology packs/workflow/test-bed/examples/bed-topology.json
 ./bin/circle-hub doc list
 ```
 
-- `pack assign` 也支持按单个账户分配（`./bin/circle-hub pack assign alice test-bed`），日常建议直接按团队 `--team=<团队ID>` 分配。
-- `doc put` 发布 `bed-topology` 后，引用为 `doc:doc:bed-topology`。
-
-### 3. 按需接入其它三种包（通用技能 / 产品包 / 业务系统）
-
-当后续工作流依赖技能、产品知识或外部系统时，按各自发布后的生效动作补齐：
+### C. 按需接入其它包（技能 / 产品 / 业务系统）
 
 | 包类型 | 发布命令 | 发布后必须做的生效动作 |
 |---|---|---|
-| 通用技能（`skill`） | `./bin/circle-hub pack publish packs/skill/mindmap-format --stage` | 安装精确版本：`./bin/circle-hub pack install mindmap-format@1.0.24` |
-| 产品知识来源（`product`） | `./bin/circle-hub pack publish packs/product/famx --stage` | 全 Hub 启用：`./bin/circle-hub pack activate famx`（如需构建知识树另见 `knowledge sync --product famx`） |
-| 业务系统接入（`system`） | `./bin/circle-hub pack publish packs/system/plm --stage` | 实例化资源、写入密钥并开放给团队或全体成员（见下文） |
+| 通用技能（`skill`） | `./bin/circle-hub pack publish packs/skill/mindmap-format --stage` | `./bin/circle-hub pack install mindmap-format@…` |
+| 产品知识来源（`product`） | `./bin/circle-hub pack publish packs/product/famx --stage` | `./bin/circle-hub pack activate famx` |
+| 业务系统接入（`system`） | `./bin/circle-hub pack publish packs/system/plm --stage` | 实例化资源、写入密钥并 `resource assign` |
 
-以 `plm` 系统包为例，配置合成测试资源与命名密钥时必须遵守三条约束：
-1. **命名密钥独立存放在 `vault/`，且必须给全凭据与角色**：`secret set` 与 `resource add` 没有先后顺序要求（密钥库不再核对已登记的使用者；先建资源时若密钥尚未写入，命令只会提示用 `secret set` 补齐），按密钥名称绑定即可；同时必须给全系统包 `system.json` 声明的所有角色与凭据项（`plm` 声明了 `plm-oauth` 与 `plm-api` 两个角色，且 `password` 要求摘要规则 `sha512_base64`，写入 `SYNTH_PLM_PASS` 时需显式传入 `--digest SYNTH_PLM_PASS=sha512_base64`，未传 `--digest` 时默认规则为 `plain`）。
-2. **密钥名必须以大写字母开头**，只含大写字母、数字和下划线（`^[A-Z][A-Z0-9_]{0,63}$`）。
-3. **新建业务系统默认不向成员开放**，必须显式分配 `--team=<团队ID>` 或 `--all`。
+业务系统约束：密钥名 `^[A-Z][A-Z0-9_]{0,63}$`；新建默认不向成员开放；合成地址用 `192.0.2.0/24`。示例：
 
 ```bash
-# 使用文档示例网段 192.0.2.0/24 与大写命名密钥
 ./bin/circle-hub resource add plm --name synth-plm --environment test \
   --origin plm-oauth=http://192.0.2.10:8080 \
   --origin plm-api=http://192.0.2.11:8080 \
   --allow-plaintext plm-oauth --allow-plaintext plm-api \
   --credential username=SYNTH_PLM_USER \
   --credential password=SYNTH_PLM_PASS
-
-# 记下上一步输出的 res_… 编号供下方 assign/show 使用，再从标准输入喂入密钥值（也可先写密钥再建资源）
 printf '%s\n' '<合成账号>' | ./bin/circle-hub secret set --name SYNTH_PLM_USER --reason "quickstart synthetic verification"
 printf '%s\n' '<合成口令>' | ./bin/circle-hub secret set --name SYNTH_PLM_PASS --digest SYNTH_PLM_PASS=sha512_base64 --reason "quickstart synthetic verification"
-
 ./bin/circle-hub resource assign <资源ID> --team=<团队ID>
-./bin/circle-hub resource list
-./bin/circle-hub resource show <资源ID>
 ```
 
-全部装配完后，用 `./bin/circle-hub pack list` 核对包状态、所有者与分配情况。
-
----
-
-## 第四步：启动服务并连接 Circle
-
-在终端启动 Hub（如需后台常驻，生产单机见系统服务命令 `circle-hub service`）：
-
-```bash
-unset CIRCLE_HUB_TOKEN
-./bin/circle-hub serve
-```
-
-在另一个终端确认端口就绪：
-
-```bash
-curl -sS http://127.0.0.1:7420/healthz
-# 期望返回：{"status":"ok","release":null}
-
-curl -sS http://127.0.0.1:7420/.well-known/oauth-protected-resource/mcp
-```
-
-此时网页控制台可访问 `http://127.0.0.1:7420/console/`（使用 `init-admin` 输出的管理员初始密码登录，首次登录按提示改密）。
-
-给成员 `alice` 接入客户端有两种方式：
-
-1. **普通 MCP 连接（Circle 标准方式，推荐）**：
-   管理员生成一次有效 24 小时的邀请码：
-   ```bash
-   ./bin/circle-hub user invite alice
-   ```
-   在 Circle 中按普通 MCP 服务器接入 `http://127.0.0.1:7420/mcp`（若 Hub 开启了内置 HTTPS，则填对应 `https://…/mcp` 并让客户端信任根证书），浏览器弹出授权页时输入该邀请码即可；Circle 不带任何 Hub 专属界面。
-2. **个人访问令牌（脚本或排查时直接带 Bearer 头调用）**：
-   ```bash
-   ./bin/circle-hub token issue alice --label "circle-local" --raw
-   ```
-   标准输出仅打印一次令牌，调用 `POST http://127.0.0.1:7420/mcp` 时放到请求头 `Authorization: Bearer <令牌>`。
-
----
-
-## 第五步：跑通第一次运行并核对结果
-
-Hub 提供 6 个标准 MCP 工具：`list_task_packs`、`upload_file`、`start_run`、`get_nodes`、`resolve_reference`、`submit_result`。对成员 `alice` 来说：
-
-1. 调用 **`list_task_packs`**（参数 `{}`）：看到已分配的 `test-bed@1.3.2`（`pack: "test-bed"`）。
-2. 调用 **`get_nodes`** 读取工作流说明：
-   ```json
-   { "pack": "test-bed" }
-   ```
-3. 如果某工作流需要上传本地文件，调用 **`upload_file`**：注意 `file_path` 传的是**文件字节的 RFC 4648 base64 字符串**（带填充、不换行），`name` 填展示文件名（如 `note.json`），可选 `media_type`；返回只读引用 `src:<sha256>`。
-4. 调用 **`start_run`** 对命名清单执行 `test-bed` 的事实计算 `facts`：
-   ```json
-   {
-     "pack": "test-bed",
-     "inputs": { "inventory": { "external": "doc:doc:bed-topology" } },
-     "parameters": { "action": "facts" }
-   }
-   ```
-   `test-bed` 仅包含事实检查项，会在开始运行时由 Hub 直接完成核算，返回 `run.run`（形如 `run_…`）以及校验结果记录引用 `result.reference`（形如 `rec:<sha256>`）和分区计数（`delivered: 2, rejected: 0, unknown: 0`）。
-5. 调用 **`get_nodes`** 读取完整结论，或用 **`resolve_reference`** 核对原文/值：
-   ```json
-   { "reference": "rec:<上一步返回的摘要>" }
-   ```
-   ```json
-   { "run": "<上一步返回的 run_…>", "text": "afamx0" }
-   ```
-
-管理员也可在终端随时检查运行与健康状态：
-
-```bash
-./bin/circle-hub run list
-./bin/circle-hub run show <run_…>
-./bin/circle-hub status
-```
-
-如果是临时实验，结束时停止服务并清理实验数据根（已发布包在 `<数据根>/packs/` 下为只读权限，删除前需先补回写权限）：
-
-```bash
-./bin/circle-hub db stop
-chmod -R u+w /tmp/ch-quickstart/d && rm -rf /tmp/ch-quickstart
-```
-
----
-
-## 用部署定义文件一次配好
-
-如果你不想逐条执行建账号、建团队、发布包、登记资源与做分配的命令，可以用一份声明式的部署定义文件（`schema: "deployment@1"`，定义在 `contracts/src/deployment.ts`）统一描述整套部署结构。
-
-### 定义文件包含哪些顶层字段
-
-除了必填的 `"schema": "deployment@1"`，其余顶层字段均可选（数组字段默认 `[]`，其中常用配置项包括）：
-
-- `accounts`：账号列表（`{ name, role: "admin" | "user", disabled?: false }`，新建条目省略 `id`；若指定 `id` 则必须与已有记录精确匹配）。
-- `teams`：团队列表（`{ name, members?: [...] }`，`members` 填账号名；注：当前 `export` 在此字段可能输出内部 `usr_…` 编号）。
-- `packs`：包列表（`{ ref: "<id>@<x.y.z>", directory?: "<包目录>", install?: false, dependsOn?: [...] }`；按依赖顺序写入，首次发布可提供 `directory`，复用已发布包时可省略 `directory`，此时要求该版本已存在，且若清单或文件摘要不一致会拒绝覆盖）。
-- `resources`：业务系统资源列表（`{ definition: { system_pack: "<id>@<x.y.z>", name, environment, origins, allow_plaintext?, credentials?, settings?, limits? }, enabled?: true }`；注意在 `deployment@1` 中，`credentials` 直接写大写密钥名如 `"SYNTH_PLM_USER"`，不带 `${secret:...}` 外壳）。
-- `executors`：执行器列表（按 `target` 唯一标识，凭据字段使用 `${secret:<NAME>}` 引用格式）。
-- `workflowAssignments`：工作流分配（`{ pack: "<包ID>", team: "<团队名>" }` 或 `{ pack: "<包ID>", user: "<用户名>" }`；`pack` 写包 ID，不带 `@版本号`）。
-- `resourceAssignments`：资源分配（`{ resource: "<资源名>", team: "<团队名>" }` 或 `{ resource: "<资源名>", all: true }`）。
-- `knowledgeSources`：启用为知识源的包 ID 列表（`PackId[]`）。
-- `knowledgeSync`、`variables`、`documents`、`leaseRegistrations`：可选声明知识同步目标（`{ product, line }`）、普通变量、命名文档当前修订版与租约登记前缀（`prefix`、`owner`）；`missingConfiguration` 记录待人工确认的缺项提示。
-
-### 最小合成示例（`deployment@1`）
-
-```json
-{
-  "schema": "deployment@1",
-  "accounts": [
-    { "name": "synth-member", "role": "user" }
-  ],
-  "teams": [
-    { "name": "synth-team", "members": ["synth-member"] }
-  ],
-  "packs": [
-    { "ref": "plm@1.3.11", "directory": "./packs/system/plm" },
-    { "ref": "test-bed@1.3.2", "directory": "./packs/workflow/test-bed", "install": true }
-  ],
-  "resources": [
-    {
-      "definition": {
-        "system_pack": "plm@1.3.11",
-        "name": "synth-plm",
-        "environment": "test",
-        "origins": {
-          "plm-oauth": "http://192.0.2.10:8080",
-          "plm-api": "http://192.0.2.11:8080"
-        },
-        "allow_plaintext": ["plm-oauth", "plm-api"],
-        "credentials": {
-          "username": "SYNTH_PLM_USER",
-          "password": "SYNTH_PLM_PASS"
-        }
-      },
-      "enabled": true
-    }
-  ],
-  "workflowAssignments": [
-    { "pack": "test-bed", "team": "synth-team" }
-  ],
-  "resourceAssignments": [
-    { "resource": "synth-plm", "team": "synth-team" }
-  ]
-}
-```
-
-### `apply` 与 `export` 的行为差异与重建恢复路径
-
-- **应用（`apply`）不盲目覆盖差异**：匹配到同 `id` 或同名的已有条目且内容完全一致时，直接计为「相同跳过」；若存在不同，只会逐条输出存在差异的字段路径（例如 `<section>[<index>] 与现状不同：<fields>；未覆盖`；注：当前差异提示按数组下标输出，尚未附带实体名字，且遇到部分项差异时已生效的前序创建操作不会自动整文件回滚）并返回非零退出码。
-- **空库与重建后的三步恢复路径**：在空库或刚清空账户初始化后，若尚未建立管理员就直接执行 `circle-hub apply <定义.json>`，命令会在触碰任何配置前拒绝并提示先完成首次管理员初始化。清零或重建后请按以下三步顺序恢复：
-  1. `./bin/circle-hub reset --scope all`（所有**会清空账户**且未带 `--keep-config` 的重置都会在触碰数据库之前拒绝同时传入 `--definition`；若处于兼容基线且只想保留现有账号与配置重建，改用 `--keep-config`，流程会自动导出并在新库恢复，无需再走首次设置与 `init-admin`）
-  2. `./bin/circle-hub init-admin <账户名> --password-stdin`（或在 `/console/setup` 完成首次设置；`init-admin` 只检查数据库里是否已有管理员，并在无管理员时自动以原子方式替换上一个库遗留的 `operator-token` 文件，无需人工删除旧令牌文件）
-  3. `./bin/circle-hub apply <部署定义.json>`
-- **导出（`export`）不含任何真实密钥**：`export` 只导出结构定义、分配关系与引用到的密钥名（资源凭据只含大写密钥名，执行器只含 `${secret:<NAME>}`），从不读取 `vault/` 密文、密码散列或明文令牌（注：当前 `export` 在 `teams[].members` 中仍输出 `usr_…` 内部编号且未发布包缺 `directory`，跨库恢复请同步核对 [重置和重建 — 重建之后要补登记的东西](reset.md#重建之后要补登记的东西)）。因此在跨环境重装并 `apply` 后，仍需按密钥名补写（或沿用原有保留下来的）`vault/` 密钥值。
+部署定义里对应字段为 `resources` / `resourceAssignments` / `executors`（`deployment@2`；资源凭据用 `${secret:NAME}` 引用，见 `contracts/src/deployment.ts`）。`apply` 行为：同名且内容相同则跳过；有差异只列路径、不覆盖。`export` 不含密钥值与令牌。
 
 ---
 
 ## 下一步阅读
 
-- 需要重置数据、保留配置重建或处理版本更新后的「需要重建」状态：[重置和重建](reset.md)
-- 需要修改工作流文案、规则或通用技能并重新上线：[改一个工作流或技能怎么做](edit-pack.md)
-- 了解 7 项用例工作流的详细参数与报告规范：[Hub r4 使用指南：七项用例能力](hub-r4-guide.md)
+- 需要重置数据、保留配置重建或处理「需要重建」：[重置和重建](reset.md)
+- 需要修改工作流或通用技能并重新上线：[改一个工作流或技能怎么做](edit-pack.md)
+- 七项用例能力参数与报告：[Hub r4 使用指南：七项用例能力](hub-r4-guide.md)
 - 跨机部署到 Linux 系统级服务：[Linux 单机迁移与运行](hub-linux-deploy.md)

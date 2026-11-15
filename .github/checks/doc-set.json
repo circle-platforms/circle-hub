@@ -40,6 +40,7 @@
     "docs/member-guide.md",
     "docs/protocols/knowledge-sync-v1.md",
     "docs/protocols/knowledge-sync-v1.zh-CN.md",
+    "docs/quickstart.en.md",
     "docs/quickstart.md",
     "docs/reset.md"
   ],
@@ -73,7 +74,8 @@
     "docs/design/circle-design-system/components/Tooltip/preview.html",
     "docs/design/circle-design-system/components/WorkbenchShell/preview.html",
     "docs/design/circle-design-system/components/bundle.css",
-    "docs/design/circle-design-system/tokens.json"
+    "docs/design/circle-design-system/tokens.json",
+    "docs/examples/quickstart-deployment.json"
   ],
   "historical": [],
   "reserved": [

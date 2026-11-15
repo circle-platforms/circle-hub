@@ -144,6 +144,8 @@ test('a macOS dry run plans init with HTTPS, key, tls and a bundle deploy with t
   assert.match(out, /tls init/);
   assert.match(out, /deploy --bundle \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit> --node \/srv\/synthetic-hub\/runtime\/bundles\/circle-hub-0\.3\.0-darwin-arm64-<commit>\/node\/bin\/node/);
   assert.match(out, /https:\/\/127\.0\.0\.1:7443\/console\//);
+  assert.match(out, /部署定义样例：\/srv\/synthetic-hub\/current\/docs\/examples\/quickstart-deployment\.json/);
+  assert.match(out, /下一步：circle-hub apply "\/srv\/synthetic-hub\/current\/docs\/examples\/quickstart-deployment\.json"/);
   assert.doesNotMatch(out, /useradd|apparmor_parser/, 'no Linux step on macOS');
 });
 
@@ -157,6 +159,19 @@ test('a Linux dry run plans the service account, lingering, the sandbox tools, t
   assert.match(out, /CIRCLE_HUB_ALLOWED_HOSTS=192\.0\.2\.20,hub\.example/);
   assert.match(out, /--https-port 7443 --https-host 192\.0\.2\.20/);
   assert.match(out, /https:\/\/192\.0\.2\.20:7443\/console\//);
+  assert.match(out, /部署定义样例：\/var\/lib\/circle-hub\/current\/docs\/examples\/quickstart-deployment\.json/);
+  assert.match(out, /下一步：circle-hub apply "\/var\/lib\/circle-hub\/current\/docs\/examples\/quickstart-deployment\.json"/);
+});
+
+test('the release bundle already carries the quickstart deployment definition via git archive of the commit', async () => {
+  // tools/build-bundle.ts archives the whole commit into app/; deploy copies app/ to <data>/current/. No separate copy step.
+  const example = fileURLToPath(new URL('../../docs/examples/quickstart-deployment.json', import.meta.url));
+  assert.equal(JSON.parse(await readFile(example, 'utf8')).schema, 'deployment@2');
+  const listed = spawnSync('git', ['-C', fileURLToPath(new URL('../..', import.meta.url)), 'ls-files', '--', 'docs/examples/quickstart-deployment.json'], { encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.stdout.trim(), 'docs/examples/quickstart-deployment.json');
+  const source = await readFile(SCRIPT, 'utf8');
+  assert.match(source, /QUICKSTART_DEFINITION="\$\{DATA\}\/current\/docs\/examples\/quickstart-deployment\.json"/);
 });
 
 test('other systems, other architectures and contradictory options are refused before anything happens', () => {
