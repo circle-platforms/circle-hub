@@ -37,7 +37,11 @@ async function begin(client:McpClient,pack:string,pack_space?:string){
   return client.call('start_run',{pack,...(pack_space?{pack_space}:{}),inputs:{target:{reference}}});
 }
 const defaultLabel='管理员默认可用（未分配给当前账户）';
-function lineAfterTitle(text:string,title:string){const lines=text.split('\n'),at=lines.indexOf(title);assert.ok(at>=0,'the actual list includes the declared title');return lines[at+1];}
+function lineAfterTitle(answer:{text:string;out:{packs:readonly {title:string;description:string}[]}},title:string){
+  const pack=answer.out.packs.find(pack=>pack.title===title);assert.ok(pack,'the actual detail list includes the declared pack');
+  const lines=answer.text.split('\n'),at=lines.indexOf(`${pack.title}，${pack.description}`);
+  assert.ok(at>=0,'locate the exact actual pack detail heading, not the earlier title-only index');return lines[at+1];
+}
 async function hasWorkflow(client:McpClient,id:string){const answer=await client.call('list_task_packs',{});assert.equal(answer.isError,false,answer.text);return answer.out.packs.some(pack=>pack.id===id&&pack.kind==='workflow');}
 
 before(async()=>{
@@ -81,8 +85,8 @@ test('enabled unassigned administrator can enumerate start and see the same publ
   assert.deepEqual(await hub.records.authorizations.packsFor(defaultAdmin.user.id),[]);
   assert.equal(await hasWorkflow(adminClient,flow),true);assert.equal(await hasWorkflow(adminClient,effectFlow),true);
   const listed=await adminClient.call('list_task_packs',{});
-  assert.equal(lineAfterTitle(listed.text,'合成管理员默认工作流'),defaultLabel);assert.equal(lineAfterTitle(listed.text,'合成外读与作业工作流'),defaultLabel);
-  assert.notEqual(lineAfterTitle(listed.text,'合成管理员本人私有工作流'),defaultLabel);assert.notEqual(lineAfterTitle(listed.text,'合成管理员本人私有工作流'),'已分配');
+  assert.equal(lineAfterTitle(listed,'合成管理员默认工作流'),defaultLabel);assert.equal(lineAfterTitle(listed,'合成外读与作业工作流'),defaultLabel);
+  assert.notEqual(lineAfterTitle(listed,'合成管理员本人私有工作流'),defaultLabel);assert.notEqual(lineAfterTitle(listed,'合成管理员本人私有工作流'),'已分配');
   assert.equal((await hub.deps.memberCapabilities(defaultAdmin.principal)).unassigned_workflows_count,0);
   assert.equal(listed.text.split('\n')[0],packListHead((listed.out.index??listed.out.packs).length),'header does not count listed defaults as unassigned');
   const available=await hub.hub.workflows.summaries(defaultAdmin.principal,{includeAdminDefault:true});
@@ -117,7 +121,7 @@ test('default external and hub-template workflows do not widen administrator MCP
   assert.equal(start.annotations?.openWorldHint,true);assert.equal(submit.annotations?.openWorldHint,true);assert.equal(submit.annotations?.destructiveHint,true);
   for(const [who,client] of [[member,memberClient],[assigned,assignedClient]] as const){const list=await client.call('list_task_packs',{});assert.equal(list.text,toolText('list_task_packs',list.out,{packList:{offset:0},caller:{role:'user',name:who.user.name}}),'ordinary member bytes retain the original rendering path');assert.equal(list.text.split('\n').includes(defaultLabel),false);assert.equal(list.text.split('\n').includes('已分配'),false);}
   await hub.assignPack(defaultAdmin.principal,flow);
-  const classified=await adminClient.call('list_task_packs',{});assert.equal(lineAfterTitle(classified.text,'合成管理员默认工作流'),'已分配');assert.equal(lineAfterTitle(classified.text,'合成外读与作业工作流'),defaultLabel);
+  const classified=await adminClient.call('list_task_packs',{});assert.equal(lineAfterTitle(classified,'合成管理员默认工作流'),'已分配');assert.equal(lineAfterTitle(classified,'合成外读与作业工作流'),defaultLabel);
   assert.deepEqual(annotations(await adminWire.listTools()),initialAnnotations,'explicit local-only workflow assignment does not make default external/effect workflows count toward hints');
 });
 
@@ -168,6 +172,6 @@ test('uninstalled skill gets no admin exception and installing it preserves the 
   for(const who of [defaultAdmin,member]){assert.equal(await hub.hub.registry.canUse(who.user.id,skill),false);assert.equal((await hub.deps.memberCapabilities(who.principal)).skills.some(pack=>pack.ref===skill+'@1.0.0'),false);}
   const uninstalled=await adminClient.call('list_task_packs',{});assert.equal(uninstalled.out.packs.some(pack=>pack.id===skill),false);
   await hub.hub.registry.install(hub.admin.principal,skill+'@1.0.0');
-  const skillList=await adminClient.call('list_task_packs',{});assert.notEqual(lineAfterTitle(skillList.text,'合成未安装技能'),defaultLabel);assert.notEqual(lineAfterTitle(skillList.text,'合成未安装技能'),'已分配');
+  const skillList=await adminClient.call('list_task_packs',{});assert.notEqual(lineAfterTitle(skillList,'合成未安装技能'),defaultLabel);assert.notEqual(lineAfterTitle(skillList,'合成未安装技能'),'已分配');
   for(const [who,client] of [[defaultAdmin,adminClient],[member,memberClient]] as const){assert.equal(await hub.hub.registry.canUse(who.user.id,skill),true);const list=await client.call('list_task_packs',{});assert.equal(list.out.packs.some(pack=>pack.id===skill&&pack.kind==='skill'),true);assert.ok((await hub.deps.memberCapabilities(who.principal)).skills.some(pack=>pack.ref===skill+'@1.0.0'));}
 });
