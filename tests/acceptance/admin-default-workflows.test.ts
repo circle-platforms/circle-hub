@@ -118,7 +118,8 @@ test('an administrator without resource assignment cannot read business data whi
   const before=businessReads,denied=await hub.hub.connectors.reader.read('tracker:item:synthetic-business-item',{principal:defaultAdmin.principal,purpose:'synthetic admin resource negative'});
   assert.equal(denied.ok,false);assert.equal(businessReads,before,'denied admin read never reaches the synthetic business endpoint');
   const wire=await adminClient.call('resolve_reference',{reference:'tracker:item:synthetic-business-item'});assert.equal(wire.isError,true);assert.equal(businessReads,before);
-  await hub.records.authorizations.assignResource(hub.admin.principal,resource.id,member.user.id);
+  const team=await hub.records.teams.create(hub.admin.principal,'合成业务资源读取团队');await hub.records.teams.add(hub.admin.principal,team.id,member.user.id);
+  await hub.records.authorizations.assignResource(hub.admin.principal,resource.id,team.id);
   const allowed=await hub.hub.connectors.reader.read('tracker:item:synthetic-business-item',{principal:member.principal,purpose:'synthetic explicitly assigned control'});assert.equal(allowed.ok,true);assert.ok(businessReads>before);
   assert.equal(await hub.records.authorizations.canUseResource(defaultAdmin.user.id,resource.id),false);
 });
