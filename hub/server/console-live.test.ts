@@ -366,11 +366,11 @@ describe('sessions', () => {
     const sessions = new SessionStore(() => now, { idleMs: 1_000, absoluteMs: 10_000 });
     const session = sessions.open('t'.repeat(43));
     now = 900;
-    assert.equal(sessions.peek(session.id)?.id, session.id);
+    assert.equal(sessions.peek(session.token)?.token, session.token);
     now = 1_100;
-    assert.equal(sessions.peek(session.id), null, 'idle since it was opened');
+    assert.equal(sessions.peek(session.token), null, 'idle since it was opened');
     assert.equal(sessions.peek(undefined), null);
-    assert.equal(sessions.get(session.id), null);
+    assert.equal(sessions.get(session.token), null);
   });
 
   test('the page fetches of the script and the stream never keep an unattended session open', async () => {

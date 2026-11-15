@@ -87,6 +87,17 @@ const principals = {
     const user = users.find((u) => u.id === id && !u.disabled);
     return user ? { id: user.id, name: user.name, role: user.role } : null;
   },
+  async authenticateConsoleSession(header: string | null | undefined) {
+    const token = String(header).replace(/^Bearer /, '');
+    if (!consoleTokens.has(token)) return null;
+    return this.authenticate(header);
+  },
+  async revokeTokenValue(token: string) {
+    if (!TOKENS.has(token)) return false;
+    TOKENS.delete(token);
+    consoleTokens.delete(token);
+    return true;
+  },
   async list() { return structuredClone(users); },
   async get(id: string) { return users.find((u) => u.id === id) ?? null; },
   async tokens() { return []; },
