@@ -42,7 +42,7 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
       const page:Page<StoredRecord<RunRecord>>=await listRunRecords(store,{}, {limit:200,cursor});
       for(const run of page.items){if(stop())return;
         if(following)noteVisit(following,run.body,started);
-        await visitRun(ctx,run,reservations);}
+        await visitRun(ctx,run,reservations,following?.watching);}
       cursor=page.next;
     }while(cursor!==null);
     if(following){following.fullAt=started;following.visits.clear();following.started.clear();}
@@ -53,7 +53,7 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
       const run=await runById(store,id);
       if(!run)continue;
       noteVisit(following,run.body,started);
-      await visitRun(ctx,run,reservations);
+      await visitRun(ctx,run,reservations,following.watching);
     }
     // What the visits wrote: its requests are swept now, as the sweeps always came after the visits; its runs are visited next.
     await noteChanges(ctx,following);
@@ -75,11 +75,11 @@ export async function maintainRuns(base:EngineContext,stop:()=>boolean=()=>false
   if(work)clearRequestWork(work);
 }
 /** Everything maintenance does for one run. */
-async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
+async function visitRun(ctx:EngineContext,run:StoredRecord<RunRecord>,reservations:PassReservations,watching?:Map<string,number>):Promise<void>{
   const stopped=await abandonDecision(ctx,run.body.run);
-  if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run,reservations);return;}
+  if(stopped){await recoverManagement(ctx,run,stopped);await reconcileDispatch(ctx,run,reservations,watching);return;}
   if(run.body.predecessor){const before=await runById(ctx.deps.records.store,run.body.predecessor);if(before)await answerSuccessorRequests(ctx,before.body,run);}
-  await reconcileDispatch(ctx,run,reservations);
+  await reconcileDispatch(ctx,run,reservations,watching);
   await rootUpdateRequest(ctx,run);
   await ctx.lock(`submit:${run.body.run}`,()=>legacyResultRequests(ctx,run));
   await recoverRun(ctx,run);
@@ -276,27 +276,28 @@ async function acceptedSourceRequests(ctx:EngineContext,listed:()=>Promise<Reque
     }
     if(!available)continue;
     const staleSource=(result:ValidationResult)=>[...result.cross_item,...Object.values(result.partitions).flat().flatMap(i=>i.requirements.flatMap(r=>r.claims))].some(claim=>{const rows=claim.statement.data?.unread_sources;return Array.isArray(rows)&&rows.some(row=>isObject(row)&&typeof row.reference==='string'&&request.sources!.includes(row.reference));});
-    const at=ctx.now().toISOString();
-    const observed=await putAction(ctx.deps.records.store,{action:'read',run:run.run,inputs:[...new Set(proofInputs)],startedAt:at,endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{request:request.record,sources_available:true}});
-    if(await abandonDecision(ctx,run.run)){await answerRequest(ctx,request.record,observed.digest);continue;}
+    const inputs=[...new Set(proofInputs)],uniqueKey='runs.source-recovery:'+digestOf({request:request.record,source:request.source,inputs});
+    if(await ctx.deps.records.store.getByKey('action',uniqueKey))continue;
+    const prove=()=>putAction(ctx.deps.records.store,{action:'read',run:run.run,inputs,startedAt:ctx.now().toISOString(),endedAt:ctx.now().toISOString(),acceptance:null,codes:[],detail:{request:request.record,sources_available:true},uniqueKey});
+    if(await abandonDecision(ctx,run.run)){const observed=await prove();await answerRequest(ctx,request.record,observed.digest);continue;}
+    let refreshed:ValidationResult|null=null;
     const submission=await submissionByDigest(ctx.deps.records.store,run.run,request.source);
     if(!submission){
-      if(request.source===stored.digest&&run.requirements.every(r=>r.accepted_producer==='fact')){const refreshed=await recheckProduction(ctx,stored,{id:runner.id,name:runner.name,role:runner.role},randomBytes(16).toString('hex'));if(refreshed&&!staleSource(refreshed.result))await answerRequest(ctx,request.record,observed.digest);}
-      continue;
+      if(request.source===stored.digest&&run.requirements.every(r=>r.accepted_producer==='fact'))refreshed=(await recheckProduction(ctx,stored,{id:runner.id,name:runner.name,role:runner.role},randomBytes(16).toString('hex')))?.result??null;
+    }else if(isObject(submission.body)&&!isVerbatimObject(submission)){
+      const action=await actionOfSubmission(ctx.deps.records.store,submission.digest);
+      const session=typeof action?.body.detail.session==='string'?action.body.detail.session:null;
+      if(session!==null||!run.requirements.some(r=>r.accepted_producer==='independent_judgment'))refreshed=(await submitResult(ctx,{id:runner.id,name:runner.name,role:runner.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:session},true)).result??null;
     }
-    if(!isObject(submission.body)||isVerbatimObject(submission))continue;
-    const action=await actionOfSubmission(ctx.deps.records.store,submission.digest);
-    const session=typeof action?.body.detail.session==='string'?action.body.detail.session:null;
-    if(session===null&&run.requirements.some(r=>r.accepted_producer==='independent_judgment'))continue;
-    const response=await submitResult(ctx,{id:runner.id,name:runner.name,role:runner.role},submission.body,{traceId:randomBytes(16).toString('hex'),sessionId:session},true);
-    if(response.result?.acceptance==='accepted'&&!staleSource(response.result)){
+    const observed=await prove();
+    if(refreshed?.acceptance==='accepted'&&!staleSource(refreshed)){
       const result=await latestAccepted(ctx.deps.records.store,run.run);
       if(result)await answerRequest(ctx,request.record,observed.digest);
     }
   }
 }
 
-async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations):Promise<void>{
+async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord>,reservations:PassReservations,watching?:Map<string,number>):Promise<void>{
   if(!ctx.deps.dispatch)return;
   const run=stored.body;
   const admin=(await ctx.deps.records.principals?.list?.())?.find(p=>p.role==='admin'&&!p.disabled);
@@ -310,7 +311,11 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     const prior=[...actions].reverse().find(a=>a.body.detail.reconciled_job===job.job);
     const finalized=job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon');
     const uncertain=!finalized&&(job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch'||job.status.outcome==='issued');
-    if(!uncertain||prior?.body.detail.events_after===job.status.events)continue;
+    // A job whose journal grew since the last visit has an observer that is writing it: taking it over would only find that out,
+    // and be marked as an attempt for that length of the journal. A round asks again when the journal stands still.
+    const growing=watching?.get(job.job)!==undefined&&watching.get(job.job)!==job.status.events;
+    if(watching){if(uncertain)watching.set(job.job,job.status.events);else watching.delete(job.job);}
+    if(!uncertain||growing||prior?.body.detail.events_after===job.status.events)continue;
     const at=ctx.now().toISOString();
     let events=job.status.events;
     try{events=(await ctx.deps.dispatch.reconcile(by,job.job)).events;}
@@ -319,8 +324,8 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
   }
   jobs=await ctx.deps.dispatch.jobs(by,run.run,reading);
   for(const job of jobs){
-    const requestSnapshot=dispatchSnapshot([job]);
-    let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot);
+    const requestSnapshot=dispatchState([job]),earlier=dispatchSnapshot([job]);
+    let observed=actions.find(a=>a.body.detail.dispatch_request_snapshot===requestSnapshot||a.body.detail.dispatch_request_snapshot===earlier);
     if(!observed){
       const at=ctx.now().toISOString();
       // Journal intent records contain operational secrets. Their references stay behind an administrator-only artifact.
@@ -329,12 +334,12 @@ async function reconcileDispatch(ctx:EngineContext,stored:StoredRecord<RunRecord
     }
     if((job.status.frozen||job.status.outcome==='unknown'||job.status.outcome==='read_back_mismatch')&&!(job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon')))await putRequest(ctx,{run:run.run,job:job.job,kind:'disposition',audience:admin.id,due:new Date(ctx.now().getTime()+86400000).toISOString(),source:observed.digest,code:'integrity_unproven',...(job.verification_run===run.run?{item:job.verification_item}:{}),missing:'作业 '+job.job+' 的原效果结局尚未证明；管理员记录保留核对所需事实',next_action:'管理员用 circle-hub job resume '+job.job+' 核对原请求和原作业；仍无结论时重证基线，以本运行为 predecessor 重跑，原效果和冻结/解除记录不改写，不重交原请求'});
   }
-  if(await abandonDecision(ctx,run.run)){for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon'))){const witness=(await actionsOf(ctx.deps.records.store,run.run)).find(a=>a.body.detail.dispatch_request_snapshot===dispatchSnapshot([job]));if(witness)await answerRequest(ctx,request.record,witness.digest);}}return;}
-  const signature=dispatchSnapshot(jobs);
-  if(actions.some(a=>a.body.detail.dispatch_snapshot===signature))return;
+  if(await abandonDecision(ctx,run.run)){for(const request of await requestRecords(ctx,run.run)){const job=jobs.find(j=>j.job===request.job);if(request.answered_by===null&&job&&(!job.status.frozen&&job.status.outcome!=='unknown'&&job.status.outcome!=='read_back_mismatch'&&job.status.outcome!=='issued'||job.status.decided_by&&job.status.decided_at&&(job.status.disposition==='mark_failed'||job.status.disposition==='abandon'))){const witness=(await actionsOf(ctx.deps.records.store,run.run)).find(a=>a.body.detail.dispatch_request_snapshot===dispatchState([job])||a.body.detail.dispatch_request_snapshot===dispatchSnapshot([job]));if(witness)await answerRequest(ctx,request.record,witness.digest);}}return;}
+  const signature=dispatchState(jobs),earlierSignature=dispatchSnapshot(jobs);
+  if(actions.some(a=>a.body.detail.dispatch_snapshot===signature||a.body.detail.dispatch_snapshot===earlierSignature))return;
   await ctx.lock(`submit:${run.run}`,async()=>{
     // A result is written from the jobs of this moment: a job reserved since the pass's reading is seen by the next pass.
-    if(reading&&dispatchSnapshot(await ctx.deps.dispatch!.jobs(by,run.run))!==signature)return;
+    if(reading&&dispatchState(await ctx.deps.dispatch!.jobs(by,run.run))!==signature)return;
     const latest=await latestAccepted(ctx.deps.records.store,run.run);
     if(!latest)return;
     const result=structuredClone(latest.body);
@@ -356,7 +361,16 @@ async function legacyResultRequests(ctx:EngineContext,stored:StoredRecord<RunRec
 }
 
 
-/** Cache identity contains only the safe status fields used by the projection, never remote error text or lease material. */
+/**
+ * What a result and a request depend on in a job: its state and the references it holds, never how many journal lines the job
+ * has. A job in flight writes lines of its own every few seconds; keyed by them every round would write another result of
+ * the same content, and the summary of it. The state is a function of safe status fields only, never remote error text or
+ * lease material.
+ */
+function dispatchState(jobs:import('../../dispatch/api.ts').RunJob[]):string{
+  return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,outcome:j.status.outcome,frozen:j.status.frozen,ended:j.ended,result:j.status.result??null,disposition:j.status.disposition??null,decided_by:j.status.decided_by??null,decided_at:j.status.decided_at??null})));
+}
+/** The key the records written before a state was keyed by: the job state with the journal's length. A record under it still counts as written. */
 function dispatchSnapshot(jobs:import('../../dispatch/api.ts').RunJob[]):string{
   return digestOf(jobs.map(j=>({job:j.job,verification_run:j.verification_run,plan_run:j.plan_run,verification_item:j.verification_item,items:j.items,sha256:j.sha256,outcome:j.status.outcome,frozen:j.status.frozen,events:j.status.events,result:j.status.result??null,disposition:j.status.disposition??null,decided_by:j.status.decided_by??null,decided_at:j.status.decided_at??null})));
 }

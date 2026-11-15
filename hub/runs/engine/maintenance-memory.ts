@@ -42,13 +42,15 @@ export interface MaintenanceMemory {
   sources: Map<string, string>;
   /** Pack versions a repair request of which is answered: a run newly started on one is told about its repair. */
   repaired: Set<string>;
+  /** The length of the journal of each job still waiting for a result, as the last visit read it: a journal that grew is being written by its observer. */
+  watching: Map<string, number>;
 }
 
 export function newMaintenanceMemory(): MaintenanceMemory {
   return {
     fullAt: null, log: null, arrived: [], accounts: null, visits: new Set(), started: new Set(),
     requests: { all: false, runs: new Set(), packs: new Set(), answered: new Set(), versions: new Set() },
-    deadlines: new Map(), due: new Map(), sources: new Map(), repaired: new Set(),
+    deadlines: new Map(), due: new Map(), sources: new Map(), repaired: new Set(), watching: new Map(),
   };
 }
 
