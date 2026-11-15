@@ -559,9 +559,17 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     }
   }
 
+  const siblingFields = isRecord(siblingItem) && isRecord(siblingItem.fields) ? siblingItem.fields : null;
+  const caseTitle = [
+    compileBrief?.identity.title,
+    siblingFields && typeof siblingFields.title === 'string' ? siblingFields.title : '',
+    isRecord(siblingItem) && typeof siblingItem.label === 'string' ? siblingItem.label : '',
+  ].find((v) => typeof v === 'string' && v.trim().length > 0)?.trim();
+
   const brief = renderTaskBrief({
     role,
     caseRef,
+    ...(caseTitle ? { caseTitle } : {}),
     briefPath,
     outPath,
     skillDir: packReal,

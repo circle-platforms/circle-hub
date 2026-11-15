@@ -268,3 +268,27 @@ export function parseCliOptions<K extends string>(
   return values;
 }
 
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+/** Formats a local UTC offset label matching hub telemetry (`UTC+8`, `UTC+09:30`). */
+export function toolZoneOf(d: Date = new Date()): string {
+  const m = -d.getTimezoneOffset();
+  const a = Math.abs(m);
+  const hours = Math.floor(a / 60);
+  const minutes = a % 60;
+  return minutes === 0 ? `UTC${m < 0 ? '-' : '+'}${hours}` : `UTC${m < 0 ? '-' : '+'}${pad2(hours)}:${pad2(minutes)}`;
+}
+
+/**
+ * Formats an instant timestamp into the tool-facing local minute label (`MM-DD HH:MM（UTC±N）`).
+ * Non-instant descriptive text (e.g. `脚本编写之前`) or date-only strings are returned trimmed unchanged.
+ */
+export function formatToolLocalMinute(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const d = new Date(trimmed);
+  if (!Number.isFinite(d.getTime())) return value;
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}（${toolZoneOf(d)}）`;
+}
+
+

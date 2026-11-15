@@ -491,6 +491,7 @@ const DOC_PLACEHOLDERS: Record<string, string> = {
   '计划或判断JSON': 'plans dir/plan 01.json',
   计划JSON相对路径: 'plans dir/plan 01.json',
   目标计划相对路径: 'plans dir/plan 01.json',
+  目标自动化用例相对路径: 'plans dir/case 01.json',
   verdict相对路径: 'audit dir/case_1.12345678.verdict.json',
   brief相对路径: 'audit dir/case_1.12345678.brief.json',
   核对文件: 'audit dir/case_1.12345678.brief.json',

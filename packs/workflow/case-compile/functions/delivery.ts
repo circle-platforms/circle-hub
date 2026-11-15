@@ -292,6 +292,33 @@ export const MAX_ROUNDS = 3;
 export const CLOSING = { authoring_failure: '模型未找到解决方案', device_defect: '声明与设备行为冲突（待仲裁）', missing_fact: '缺少 Hub 点名的事实（待补齐）', author_conflict: '用例作者的原句与手册冲突（待用例作者或使用者裁定）' } as const;
 export type Closing = keyof typeof CLOSING;
 export const REASONS = ['缺资料', '原始用例的问题', '编写模型的问题', '临时故障', '设备的问题', '还没查清'] as const;
+export type ReasonLabel = (typeof REASONS)[number];
+const REASON_LABEL_BY_CODE: Readonly<Record<string, ReasonLabel>> = {
+  data_gap: REASONS[0],
+  missing_fact: REASONS[0],
+  missing_data: REASONS[0],
+  author_input: REASONS[1],
+  author_conflict: REASONS[1],
+  author: REASONS[1],
+  producer_error: REASONS[2],
+  authoring_failure: REASONS[2],
+  model: REASONS[2],
+  transient: REASONS[3],
+  env: REASONS[3],
+  environment: REASONS[3],
+  target_side: REASONS[4],
+  device_defect: REASONS[4],
+  device: REASONS[4],
+  product: REASONS[4],
+  unattributed: REASONS[5],
+  unknown: REASONS[5],
+};
+/** Maps internal attribution/reason codes onto the closed six-value user-facing `REASONS` vocabulary. */
+export function reasonLabelOf(raw: string): ReasonLabel {
+  const trimmed = raw.trim();
+  if ((REASONS as readonly string[]).includes(trimmed)) return trimmed as ReasonLabel;
+  return REASON_LABEL_BY_CODE[trimmed.toLowerCase()] ?? REASONS[5];
+}
 export const OWNERS = ['程序', '模型', '使用者'] as const;
 export type Owner = typeof OWNERS[number];
 

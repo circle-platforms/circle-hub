@@ -31,6 +31,7 @@ export interface SubagentRoleSpec {
 export interface TaskBriefInput {
   role: SubagentRoleSpec;
   caseRef: string;
+  caseTitle?: string;
   briefPath: string;
   outPath: string;
   skillDir: string;
@@ -89,14 +90,14 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
 
 ## 固定执行边界
 1. 路径限制：文件工具限工作目录相对路径（\`.\`）与只读 \`<技能目录>\`；禁止读写 \`/tmp\` 或工作目录之外的路径。${toolUsageBoundary({ hasEdit: true, hasGrep: true, hasExecute: false })}
-2. 不接触 Hub、令牌与测试环境：不调用任何 Hub 工具、\`test-bed\`、\`question\` 或交付工具，不读取或写入令牌，也不预订或释放测试环境。需要询问使用者的条目，写入本条结果的 \`states\` / \`unknowns\` 并交由主代理汇总后统一发问。
+2. 不接触 Hub、令牌与测试环境：不调用任何 Hub 工具、\`test-bed\`、\`question\` 或交付工具，不读取或写入令牌，也不预订或释放测试环境。需要询问使用者的条目，写入本条结果的 \`states\` / \`unknowns\` 并提交主代理汇总后统一发问。
 3. 形状参照：输出 JSON **只写精简格式**（参照主技能 \`recompose/SKILL.md\` 与 \`<技能目录>/tables/recompose-format.json\`），顶层仅允许 \`item\`、\`method\`（必填 \`{"kind":"declared|recomposed|missing","text":"怎么验证","sources":["<引用>"],"basis":"为什么这样验证"}\`）及可选 \`slots\`/\`states\`/\`adapted\`/\`concretizations\`/\`unknowns\`；**严禁写**完整记录结构的 \`schema\`/\`case\`/\`contract\`/\`atoms\`/\`expectation_slots\`/\`coverage\`/\`ledgers\`/\`handling\`（\`submit-records.ts\` 会自动补齐外层结构），严格写到任务指定的路径。
 
 ## 内容铁律
 1. 原文步骤与期望不重写、不删减、不替换作者的被测对象、被测动作或边界条件，也不凭空增设无来源的新测试目标；等价改写或补全须写明 \`equivalence_reason\` 与 \`equivalence_refs\`。
 2. 命令必须在同一构建 \`knowledge/\` 锁定的命令树中完整解析，不用缩写；写入 \`adapted.commands\` 或 \`slots\` 的每条命令都必须是**具体可执行的完整命令行**（按目录 \`words\` 逐词抄写，所有必填 \`<argN:...>\` 与选用的可选 \`[...]\` 参数一律换成合规具体字面值：字符串用双引号如 \`"web1"\`、整数写十进制数、合法关键字/枚举直接写词、未选用的可选 \`[...]\` 直接省略，严禁保留 \`<argN:...>\`、\`[...]\`、\`...\` 或 \`<中文>\`）。若命令语法必填 IP 字段且原句/规则未定具体值，使用 RFC 5737/3849 文档保留地址（如 \`192.0.2.10\` 或 \`2001:db8::1\`）并在 \`unknowns\` 写明按命令语法必填暂用测试保留地址、待脚本编写按测试环境替换。正例：\`sdns service ip "web1" 192.0.2.10\`；反例：\`sdns listener <arg1:ipv4/ipv6> [<arg2:int ...>]\` 或带 \`<源IP>\` 尖括号写法。
-3. 从 \`knowledge/\`（含同构建手册正文、跨章说明与配置示例）查全使作者命令成立所需的功能前置（如默认关闭、依赖对象、监听前提、多端本端与对端对称配置），写入 \`states\`（\`missing_prerequisite\` + \`prerequisites\` + \`reason\`）；仅当原始用例明确测“前置不存在/未配置”的反向场景时记明该测试条件而不补成必配前提。
-4. 原始用例要求的取值或写法被同构建手册和命令树明确排除、期望却是成功时（非测非法输入），不得私自改写，必须在回报中带出 \`autoid\`、标题、原句、构建号、手册原话及引用交主代理汇总询问；已有使用者明确决定则写入 \`states.reason\`（以“使用者决定：”开头）并置 \`state="settled"\`，\`concretizations.decided_by="使用者"\`。
+3. 从 \`knowledge/\`（含同构建手册正文、跨章说明与配置示例）查全使作者命令成立所需的功能前置（如默认关闭、依赖对象、监听前置、多端本端与对端对称配置），写入 \`states\`（\`missing_prerequisite\` + \`prerequisites\` + \`reason\`）；仅当原始用例明确测“前置不存在/未配置”的反向场景时记明该测试条件而不补成必配前提。
+4. 原始用例要求的取值或写法被同构建手册和命令树明确排除、期望却是成功时（非测非法输入），不得私自改写，必须在回报中带出 \`autoid\`、标题、原句、构建号、手册原话及引用提交主代理汇总询问；已有使用者明确决定则写入 \`states.reason\`（以“使用者决定：”开头）并置 \`state="settled"\`，\`concretizations.decided_by="使用者"\`。
 
 ## 返回格式
 仅写入指定目标记录 JSON；最后向主代理回复一句结构化摘要（\`item\`/\`autoid\`、写入文件相对路径、是否包含须问使用者的不一致/缺口项），不输出长篇过程说明。`,
@@ -109,7 +110,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       '读取一条原始用例的下载资料与编写简报，在工作目录写出唯一对应的自动化用例 JSON 并用 check-plan.ts 本地自检。在 case-compile 脚本编写或返工阶段由主代理或 case-writers 按条派发。',
     tools: ['read_file', 'write_file', 'edit_file', 'ls', 'glob', 'grep', 'execute'],
     forbiddenTools: ['question', 'task', 'Hub MCP', 'test-bed', '未列出的其它命令', 'node -e'],
-    body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、提交 Hub、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
+    body: `本子代理只承担单条自动化用例（plan JSON）的编写与本地只读校验职责，不执行父会话提示词中用例重组、场景保真核对、脚本合并交 Hub 核对、生成自动化用例 Excel、环境预订/释放或询问使用者的任何动作。
 
 ## 固定本地执行规则
 1. 路径边界：文件工具仅限工作目录相对路径（\`.\`，禁止 \`/tmp\` 或工作目录之外路径）及只读 \`<技能目录>\`。只写任务书指定的目标 \`.json\` 一份文件。
@@ -121,26 +122,26 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
       executeRule:
         '`execute` 唯一允许形式：单行 `node \'<技能目录>/tools/check-plan.ts\' --file \'<计划JSON相对路径>\'`（空格隔开选项与值，禁止 `=`/`"`/`\\`，路径或值含空格、中文或 `<`/`>` 统一用 `\'…\'`）；严禁通过 `execute` 运行 `ls`/`cat`/`wc`/`grep`/`find`/`mkdir`/`cp`/`mv`/`rm`/`python3`/`node -e` 或 `task-brief.ts`。',
     })}
-4. 不碰令牌、不调 Hub、不调 \`test-bed\`；子代理不问使用者：定不了的问题或资料缺口按规则写进计划的 \`unmet\`/\`missing\`，在最终回复写给主代理的报告。
+4. 不碰令牌、不调 Hub、不调 \`test-bed\`；子代理不问使用者：定不了的问题或资料缺口按规则写进自动化用例的 \`unmet\`/\`missing\`，在最终回复写给主代理的报告。
 
 ## 编写核心守则
-1. 先完整读 \`items/<序号>.json\`（列有命令、手册对各参数的说明、配置恢复方法、同级命令写法与末尾待填计划）和 \`briefs/<序号>.md\`，再按需本地搜索 \`knowledge/\`、\`inventory\`、\`profile\`、\`contract.json\`；不逐条读 Hub，不抄另一条用例的资料或上一次上机输出。
+1. 先完整读 \`items/<序号>.json\`（列有命令、手册对各参数的说明、配置恢复方法、同级命令写法与末尾待填自动化用例）和 \`briefs/<序号>.md\`，再按需本地搜索 \`knowledge/\`、\`inventory\`、\`profile\`、\`contract.json\`；不逐条读 Hub，不抄另一条用例的资料或上一次上机验证的设备输出。
 2. 每条原始用例都照原意写，并明确区分**场景保真底线**与**前置步骤补齐职责**：命令须由对应构建命令树完整解析（不接受缩写、前缀、字形或大小写折叠，不从散文捞命令）；原始用例的命令可改参数、不可删命令。**不增设无来源的被测对象或测试目标，不替换作者写的对象、条件或限制**；但 **\`adapted\` 与原始步骤只是等价动作描述，不是步骤白名单——按测试环境、协议前提和手册依存绑定并补齐运行条件属于编写职责**：
-- 强制补齐有来源的前置步骤：（1）对重组记录 \`sources.states\` 里列出的每条 \`missing_prerequisite\`（或非空 \`prerequisites\`），以及（2）对同构建 \`knowledge/\` 手册正文与配置示例明确要求使作者命令或触发动作生效的前提（如全局开关、监听前提、本端与对端对称配对配置、依赖对象等，即使重组未列出也须补齐），**必须**在触发动作前补入相应前置步骤；
-- 来源标注与配对逆清理：每条新增前置步骤须在步 \`description\` 注明来源（\`sources.states\` 条目或 \`knowledge/\` 手册条文/示例）；若该前置未在重组 \`sources.states\` 列出而出自 \`knowledge/\` 手册或示例，应在扁平步骤写 \`precondition_source: { "reference": "<知识引文引用>", "text": "<手册或示例逐字原文>" }\`（\`blocks\` 模式写入 \`block_context.preconditions\` 附 \`established_by\` 与 \`quote\`），由 Hub 原文校验并列入保真核对 \`mechanical.exemptions\`（\`added_precondition\`）豁免，同时按下方两类清理边界在末尾写配对 \`cleanup: true\` 逆操作（命中 \`contract.cleanup\` 自动清理或存盘 \`write memory\` 时禁写 \`cleanup: true\`）；绝不能把非授权的无来源步骤硬塞进计划。
+- 强制补齐有来源的前置步骤：（1）对重组记录 \`sources.states\` 里列出的每条 \`missing_prerequisite\`（或非空 \`prerequisites\`），以及（2）对同构建 \`knowledge/\` 手册正文与配置示例明确要求使作者命令或触发动作生效的前提（如全局开关、监听前置、本端与对端对称配对配置、依赖对象等，即使重组未列出也须补齐），**必须**在触发动作前补入相应前置步骤；
+- 来源标注与配对逆清理：每条新增前置步骤须在步 \`description\` 注明来源（\`sources.states\` 条目或 \`knowledge/\` 手册条文/示例）；若该前置未在重组 \`sources.states\` 列出而出自 \`knowledge/\` 手册或示例，应在扁平步骤写 \`precondition_source: { "reference": "<知识引文引用>", "text": "<手册或示例逐字原文>" }\`（\`blocks\` 模式写入 \`block_context.preconditions\` 附 \`established_by\` 与 \`quote\`），由 Hub 原文校验并列入保真核对 \`mechanical.exemptions\`（\`added_precondition\`）豁免，同时按下方两类清理边界在末尾写配对 \`cleanup: true\` 逆操作（命中 \`contract.cleanup\` 自动清理或存盘 \`write memory\` 时禁写 \`cleanup: true\`）；绝不能把非授权的无来源步骤硬塞进自动化用例。
 3. 执行器规则关掉的动作不能作为排除理由：先按同一构建手册和命令树用已开放设备方法完成原要求并说明对应关系。执行器规则缺类型、用途、效果或允许范围时记入给主代理的缺资料说明；不用确认标记绕过，不从 help 散文推断，不复制默认值、内部内容、认证候选或脱敏凭据。
 
 ### 按测试环境改写、前置与清理
 - 接口和地址来自测试环境清单。不得选用承载监听或触发通路的接口与地址，发起与目标须同网段或有声明路由；更改接口地址后在清理时恢复原地址。只在执行器规则标明为地址的位置换地址，不扫描全文找 IP。原始用例的外部地址保留并说明，自己改出的外部地址不用。
 - 要查询的记录先在步骤前部创建，配置先写入再查询，触发前按 \`sources.states\` 与手册/示例补齐全部运行前置与配对清理。仅当原始用例明确要测“前置不存在/未配置”的反向场景时保留该无配置前提，不补前置把它改掉。
 - 设备上的配置和观察都用执行器规则为该设备声明的方法。要跑很久的设备命令，在那一步给足读取时间，秒数不超过测试环境上限；等设备回到提示符再继续，不用固定等待猜时长。
-- 参数取值：写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值。只有设备执行时才产生的值，要在同一条自动化用例里先取出再用；手册允许指定名字时，由生成器指定，本条先创建，再配置、查询和清理，全部使用同一个名字。不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西。
+- 参数取值：写进命令的每个值都要在手册对该参数的说明之内，包括长度、允许的字符、范围和可选值。只有设备执行时才产生的值，要在同一条自动化用例里先取出再用；手册允许指定名字时，由编写模型指定，本条先创建，再配置、查询和清理，全部使用同一个名字。不写死设备生成的名字，不从上一次上机验证的设备输出抄值，也不沿用设备上已有的东西。
 - 期望优先选设备实际输出里可核对的文字，如应答状态码、应答条数、表项计数、存在或不存在的关键行。原始用例的期望逐字保留；改用模型判断时，\`text\` 必须是设备执行后实际会输出、能在设备输出里逐字找到的一行原文（例如 \`SDNS Query Statistics Summary\`），对应原始期望及选择理由写入 \`rationale\`。命令自身含有的文字（回显在输出开头）及功能失效时也会出现的文字，均不能判断功能正确。
 - 原始用例说“不存在”“无残留”“不再包含”时，不把这句话当设备输出去找，也不删掉这项检查；检查设备输出里没有对应记录。要求删除成功时，删除后再查询，指向这次查询的设备输出，不另立判定标准、不请评审员复核。不能把“查询一个不存在的名字”当成“访问成功”。顺序步骤在对应查询的 \`expects\` 写 \`op:"not_found"\`，\`text\` 使用原始期望的具体原文或本条先配置再按已声明逆操作撤销的名字，\`after\` 指向对应查询。
 - 清理段在每条自动化用例末尾，同一设备按改动逆序排列，恢复原地址。查询类步骤不需要清理；执行器已声明会清理的可以省略。按产品给出的恢复方法，只恢复主体结束后仍生效的配置，不从命令名字猜用途。
   - 两类清理边界（不混用）：
-    1. 运行器自动清理（\`contract.cleanup\`，对清配对象经 \`cmd_config\` 发出的匹配命令，如 \`lib/apv/clear.py\` 前缀规则）：自第 2 条用例开始前及整本关闭连接时按发过的命令行逐条比前缀、第一条命中即用；其中包含 **存盘**（前缀 \`write mem\`，如 \`write memory\`，运行器清配置并在收尾末尾执行 \`write memory\`）及已纳入规则的设备配置前缀。该类命令若用例本身需要可在主步骤正文（\`main\`）正常发出，**严禁写入 \`cleanup: true\`**（将运行器收尾清理或存盘写入 \`cleanup: true\` 会被 \`case-compile.method_forbidden\` 拒绝）；若用例不需要保存或验证存盘，也不必主动在正文加 \`write memory\`。
-    2. 计划手写 \`cleanup: true\`：除「只读查询（\`command_policy.read_only\`）」「正文中已用声明逆操作净抵消」及「命中 \`contract.cleanup\` 清配对象与前缀的运行器自动清理命令」外，其余主体结束后仍生效的改配步骤（含非清配对象或未命中规则的命令），必须按同设备改动逆序在 \`cleanup: true\` 写出产品声明的逆操作；未命中运行器自动清理且缺唯一逆操作声明的命令不可臆测恢复，应上报由产品包补声明。
+    1. 运行器自动清理（\`contract.cleanup\`，对清配对象经 \`cmd_config\` 发出的匹配命令，如 \`lib/apv/clear.py\` 前缀规则）：运行器自动清理在两个时机执行：每条用例开始前（第 2 条起）与整次运行关闭连接时。执行方式是按本运行发过的命令行逐条比前缀，第一条命中即用；其中包含 **存盘**（前缀 \`write mem\`，如 \`write memory\`，运行器清配置并在收尾末尾执行 \`write memory\`）及已纳入规则的设备配置前缀。该类命令若用例本身需要可在主步骤正文（\`main\`）正常发出，**严禁写入 \`cleanup: true\`**（将运行器收尾清理或存盘写入 \`cleanup: true\` 会被 \`case-compile.method_forbidden\` 拒绝）；若用例不需要保存或验证存盘，也不必主动在正文加 \`write memory\`。
+    2. 自动化用例手写 \`cleanup: true\`：除「只读查询（\`command_policy.read_only\`）」「正文中已用声明逆操作净抵消」及「命中 \`contract.cleanup\` 清配对象与前缀的运行器自动清理命令」外，其余主体结束后仍生效的改配步骤（含非清配对象或未命中规则的命令），必须按同设备改动逆序在 \`cleanup: true\` 写出产品声明的逆操作；未命中运行器自动清理且缺唯一逆操作声明的命令不可臆测恢复，应上报由产品包内容维护者补声明。
 - Excel 行序为前置、被测动作、查询判断、清理，本条结束前完成，每步写一句说明。设备序号核对清单，禁越界。
 
 ### 工具填写规则与数据结构
@@ -163,14 +164,14 @@ command_scope 与逐条 commands 同时存在时取交集；不以 command_ident
 
 \`\`\`text
 组合步骤: blocks 非空，steps/expects=[]；每块唯一 id
-取一格: 先查 contract.json 的 runtime.block_model.cell_inputs 与 cell_methods（及对应 object/method 可用条目）；未声明按缺资料写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指原输出保存名，table 写 format/separator/columns/header，column 为列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}；数据行按声明字面分隔符与列数识别，取不到/零行/多行停止并带设备原话
+读取一格: 先查 contract.json 的 runtime.block_model.cell_inputs 与 cell_methods（及对应 object/method 可用条目）；未声明按缺资料写明执行器规则没有声明，不自造写法；已声明时 SELECT_CELL 的 from 指原输出保存名，table 写 format/separator/columns/header，column 为列号，select 写 row 或多列 where，register 另存；STEP/CONFIG 的 input_register 指单格名，首参数用 {}；数据行按声明字面分隔符与列数识别，取不到/零行/多行停止并带设备原话
 每条判断: 绑定 output、原始 expectation 引用和 quote；block_context.preconditions/causal_links/responders 写全（无写空表），主机观察写明谁应答；obligations 覆盖全部原始期望（判断 id 或 unmet+missing/next_action）
 否定结果: 常量用 OBSERVE_ASSERT/op=not_found，literal 写不应出现记录；动态值先 CAPTURE 再 EXPECT_FROM/op=not_found，expected_from 指捕获（需声明字面否定方法）；quote 保留原始期望，不填 criterion、不发起 criteria_review
-RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置块；仅用声明的 guarded restore；缺恢复能力记未知（不用普通命令加 {} 冒充，上面允许的 input_register 回填除外）；OBSERVE_DIST/MEMBER/EXIT 暂未提供，不自造正则或成功标记
+RESTORE_FROM: 改动前读取原文，末尾同设备逆序恢复，for 指配置块；仅用声明的 guarded restore；缺恢复能力记未知（不用普通命令加 {} 冒充，上面允许的 input_register 回填除外）；OBSERVE_DIST/MEMBER/EXIT 暂未提供，不自造正则或成功标记
 重组对应: plan.data.recomposition={receipt,case_id,slots:[{slot,assertions}],rebindings:[]}；receipt/case_id 取 fields.recomposition；quote 逐字等于对应原始期望；无对应判断记未知不省略；新增声明引文用 Hub 已确定声明且 quote.text 逐字复制
 \`\`\`
 
-写完（或返工改完）后，必须运行 \`node '<技能目录>/tools/check-plan.ts' --file '<目标计划相对路径>'\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项）。`,
+写完（或返工改完）后，必须运行 \`node '<技能目录>/tools/check-plan.ts' --file '<目标自动化用例相对路径>'\`，确认 \`ok: true\` 后结束并向主代理回复一行结果（原始用例 ID、写入路径、自检结果及任何未决/缺资料项；向使用者转述时禁止带出写入路径）。`,
   },
   {
     key: 'fidelity',
@@ -203,7 +204,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
       '失败分析专用子代理。读取单条用例最后一次设备输出、执行拒绝信息与同构建手册，按固定排错层序给出标为未确认的失败分析结论与修复方向。',
     tools: ['read_file', 'write_file', 'ls', 'glob', 'grep'],
     forbiddenTools: ['execute', 'question', 'task', 'Hub MCP', 'test-bed'],
-    body: `本子代理只承担上机失败原因定位与返工方向建议职责，不修改任何计划文件、不读取或写入令牌、不调 Hub、不预订或释放测试环境预订、不向使用者提问。
+    body: `本子代理只承担上机失败原因定位与返工方向建议职责，不修改任何自动化用例文件、不读取或写入令牌、不调 Hub、不预订或释放测试环境预订、不向使用者提问。
 
 ## 固定执行规则
 1. 所有文件读取与结果写入均使用工作目录相对路径（\`.\`，禁 \`/tmp\`）与只读 \`<技能目录>\`。${toolUsageBoundary({ hasEdit: false, hasGrep: true, hasExecute: false })}
@@ -212,11 +213,11 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
 ## 强制分析层序（对照 \`<技能目录>/tools/delivery.md\` 与主技能第 5 节）
 1. 先查 \`syntax_rejected\`（设备用脱字符 \`^\` 指出命令中的词）：此时命令尚未执行，优先核对该命令在当前设备提示符下同构建 \`knowledge/\` 中的完整语法或参数，先修命令写法/下发方法；此时严禁给出 \`defect_candidate\` 或 \`author_conflict\`。
 2. 再查 \`execution_refused\`、会话终端记录与执行器规则标明的命令失败原话：属于本条自动化用例自己的命令顺序、前置未生效或取值问题（例如先查前置创建命令是否同样失败）。
-3. 再核对运行构建一致性（\`run.json\` 锁定构建与实际设备返回版本）、配置是否真正生效、同构建手册跨章前置与配置示例（含本端与对端对称配对配置），以及多个原始用例的共同症状。再次失败时须确认上次修改已进入本次 Excel；已改而同一句设备输出仍出现，即证伪上一轮假设并必须更换不同机制/命令形式。当设备报错明确点出所缺对象、参数或条件，且同构建锁定手册正文或配置示例存在尚未试过的可行假设时：尚有轮次时，下一轮返工必须优先测试该假设，不得借“缺资料”或“剩一次机会”拦住不试；轮次已用完时不建议再开轮，把该假设与试法写进 remedy 交使用者决定。只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”。
+3. 再核对运行构建一致性（\`run.json\` 锁定构建与实际设备返回版本）、配置是否真正生效、同构建手册跨章前置与配置示例（含本端与对端对称配对配置），以及多个原始用例的共同症状。再次失败时须确认上次修改已进入本次 Excel；已改而同一句设备输出仍出现，即证伪上一轮假设并必须更换不同机制/命令形式。当设备报错明确点出所缺对象、参数或条件，且同构建锁定手册正文或配置示例存在尚未试过的可行假设时：尚有轮次时，下一轮返工必须优先测试该假设，不得借“缺资料”或“剩一次机会”拦住不试；轮次已用完时不建议再开轮，把该假设与试法写进 remedy 提交使用者决定。只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”。
 4. 最后才考虑设备问题：仅当原始期望已忠实实现、手册与示例前置全有、观察对象与方法正确且命令未被语法拒绝，且不存在未试过的手册/示例假设时，才可建议 \`defect_candidate\` 候选；拿不准就标为状态未知、原因“还没查清”，建议在被测命令前加只读观察。
 
 ## 强制输出约束
-每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、按 tools/delivery.md 写出结论判断（只用正确/错误或未知）与标准原因（六类：缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清）和处置建议、修复方向与逐字设备证据摘录，交主代理或编写者独立核对；凡有手册正文或示例支持的未试假设，必须在 \`remedy\` / \`fix_direction\` 给出具体待试改法（尚有轮次时供下一轮先试；轮次用完时作为下一步交使用者决定），不得以“缺资料”或“剩一次机会”为由省略该假设（“缺资料”仅限没有任何来源支持任何假设）；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
+每条失败分析结论必须显式标注 \`"confidence": "hypothesis"\`（模型假设、状态未确认），写明排查层序、按 tools/delivery.md 写出结论判断（只用正确/错误或未知）与标准原因（六类：缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题、还没查清）和处置建议、修复方向与逐字设备证据摘录，提交主代理或编写者独立核对；凡有手册正文或示例支持的未试假设，必须在 \`remedy\` / \`fix_direction\` 给出具体待试改法（尚有轮次时供下一轮先试；轮次用完时作为下一步提交使用者决定），不得以“缺资料”或“剩一次机会”为由省略该假设（“缺资料”仅限没有任何来源支持任何假设）；任何失败分析结论在改写重跑并经新一次上机证实前均不得当作已确认事实。`,
   },
 ];
 
@@ -295,6 +296,8 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
 
+  const cleanTitle = input.caseTitle?.trim();
+  const caseDisplay = cleanTitle && !caseRef.includes(cleanTitle) ? `${caseRef} ${cleanTitle}` : caseRef;
   const modeSummary = compileBrief
     ? `（模式：${BRIEF_MODE_LABELS[compileBrief.task.mode] ?? compileBrief.task.mode}（\`${compileBrief.task.mode}\`）；结构化简报已在内存中拼入）`
     : '';
@@ -305,7 +308,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '',
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
-    `- 原始用例 / 对象：${caseRef}`,
+    `- 原始用例 / 对象：${caseDisplay}`,
     `- 当前轮次：第 ${round} 轮${modeSummary}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
@@ -321,14 +324,15 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   if (compileBrief) {
     headSections.push(
       '',
-      '## 本轮结构化简报摘要与前置披露（来自 compile-brief@1）',
+      '## 本轮结构化简报摘要与前置披露（来自结构化简报 compile-brief@1；英文状态码与字段名仅供内部核对，禁止转述给使用者）',
       ...renderPrerequisiteLines(compileBrief.materials.prerequisites),
       ...renderPriorDeviceHistoryLines(compileBrief.prior_device_history),
       ...renderSupplementaryDisclosureLines(compileBrief),
     );
     if (compileBrief.task.user_rulings.length > 0) {
       for (const ur of compileBrief.task.user_rulings) {
-        headSections.push(...wrapProseLine(`- 已生效使用者裁定 [${ur.target}]：`, `${ur.ruling}（来源：${ur.source}）`));
+        const rulingBody = ur.ruling.replace(/^使用者决定[：:]\s*/, '');
+        headSections.push(...wrapProseLine(`- 已生效的使用者决定 [${ur.target}]：`, `${rulingBody}（来源：${ur.source}）`));
       }
     }
     headSections.push(...renderBedFactsLines(compileBrief.materials.bed_facts, { heading: false }));
@@ -342,7 +346,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const tailSections: string[] = [
     '',
     '## 本轮测试范围（使用者原话，由主会话记录）',
-    '（以下为主会话逐字抄录的使用者范围原文；执行中必须严格遵守，不得自行缩小、改写或删减原始期望；若原文与手册冲突或存在未决项，按角色规则写入目标字段或交主代理汇总，不得擅自决定或向使用者发问。）',
+    '（以下为主会话逐字抄录的使用者范围原文；执行中必须严格遵守，不得自行缩小、改写或删减原始期望；若原文与手册冲突或存在未决项，按角色规则写入目标字段或提交主代理汇总，不得擅自决定或向使用者发问。）',
     scopeBlock,
     '',
     '## 角色固定规则（与包内 agents 声明同源）',

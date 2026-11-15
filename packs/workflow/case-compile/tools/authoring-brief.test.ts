@@ -279,7 +279,7 @@ test('authoringBrief and writeBriefs disclose contract.cleanup rules and ban wri
   const parsed = parseRuntimeContract(contractDoc);
   assert.ok(parsed.ok && parsed.contract.cleanup);
   const withPolicy = authoringBrief(saveItem, '00', knowledge, policyOf(POLICY), 'bed-a', parsed.contract.cleanup)!;
-  assert.match(withPolicy.text, /执行器自动清理（lib\/demo\/clear\.py@eeeeeeeeeeee）：对清配对象 widget-seat，自第 2 条用例开始前及整本关闭连接时/);
+  assert.match(withPolicy.text, /执行器自动清理（lib\/demo\/clear\.py@eeeeeeeeeeee）：对清配对象 widget-seat，自第 2 条用例开始前及整次运行关闭连接时/);
   assert.match(withPolicy.text, /以下动作放收尾末尾：demo save/);
   assert.match(withPolicy.text, /另受运行器自动清理涵盖（清配对象 widget-seat 命中规则 1（lib\/demo\/clear\.py 第 120 行），前缀“demo save”，触发清理命令 “demo save”，收尾阶段末尾执行），在清配对象上可省略 cleanup:true，禁止把运行器收尾清理或保存命令写入 cleanup:true/);
   const noRulePolicy = { schema: 'command-policy@1' as const, read_only: [], inverse_rules: [], inverse_alternatives: [] };

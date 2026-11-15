@@ -43,8 +43,8 @@
     },
     {
       "path": "agents/compile-attributor.md",
-      "sha256": "d083b6539996c34dcc0350f6951cafe4e3fb5ea436280c9125ea6618c2d7617a",
-      "size": 4712
+      "sha256": "a0c268478abc228e0e213357a401dae83bc7e39a3a60fec63fd51d9edf2f7365",
+      "size": 4730
     },
     {
       "path": "agents/compile-fidelity.md",
@@ -53,13 +53,13 @@
     },
     {
       "path": "agents/compile-recomposer.md",
-      "sha256": "c006bf9675781d8b2de2a52c519b73c5e0af0e98c00010244a098ee35b28e6c9",
-      "size": 4749
+      "sha256": "0eff63101bb1a60d2ac01881bdf3a0e86259bd3d09b00ec39ce344793729c327",
+      "size": 4752
     },
     {
       "path": "agents/compile-writer.md",
-      "sha256": "7d970feac04bf12c30a788f790a7b5eab04e73f5d60f938ead0dac36b03e4008",
-      "size": 13507
+      "sha256": "c2f82f252c30cdb4142cbcf2296a8a3333d9c05c0d083bf0b5db08008c1a910b",
+      "size": 13745
     },
     {
       "path": "checks.json",
@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "7d0c236f08abe53f415352607fe8b2bcecb6a2e9636b67a94ffda99303c54b3a",
-      "size": 79848
+      "sha256": "4f1e53ff2d080dd75c31fee008085e6356bbc2256588820f697b3477d777c2a6",
+      "size": 81043
     },
     {
       "path": "functions/bed.ts",
@@ -213,8 +213,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "6f400721c6faadd6babf34bef858269dd7c929f9bdf18ad07abcc506e6c659bc",
-      "size": 59893
+      "sha256": "d72d9d8203609a743024dd281417f3fb37c249722ac94669d2189bbb23a3a7f9",
+      "size": 60837
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -388,8 +388,8 @@
     },
     {
       "path": "functions/subagent-roles.ts",
-      "sha256": "946fcc2eff5655c19948360bb09a744ed5501bb4de2a0b907833fd92072746a7",
-      "size": 35238
+      "sha256": "e99d5a8006b6cc260c30868ba317f6367ab59c20e183f4ca0e1931f70561caed",
+      "size": 35851
     },
     {
       "path": "functions/subject.ts",
@@ -398,8 +398,8 @@
     },
     {
       "path": "functions/text.ts",
-      "sha256": "703e46990c76a30c4c891b4d738ec6e416f1c74b4083119136183ec63ac474bd",
-      "size": 11779
+      "sha256": "3ffab38d9928c32c701acb7b9b5bae3c81d899266c99bbcbec57fd3107ca1e6f",
+      "size": 12836
     },
     {
       "path": "functions/typed-authority.ts",
@@ -883,8 +883,8 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "567b9ca76303dd852dadbf9e1541ffd1fbd98e153206cb8a55bc92b6e942259d",
-      "size": 44096
+      "sha256": "9773a867d5760fd55e3e12a8f1a0bebda4aaee08c87e640f6fa9465801f0024c",
+      "size": 44554
     },
     {
       "path": "tools/workspace-path.ts",

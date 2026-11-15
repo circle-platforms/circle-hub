@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto';
 import type { BedFacts } from './bed.ts';
 import type { RunnerCleanup } from './runtime-contract.ts';
 import { canonicalJson } from './canonical-json.ts';
+import { reasonLabelOf } from './delivery.ts';
 import {
   analyzeRoundHistory,
   consecutiveRepeatedGateCodes,
@@ -37,7 +38,7 @@ import {
   type PriorRoundRecord,
   type StreakAnalysis,
 } from './rework-history.ts';
-import { isRecord, wrapProseLine } from './text.ts';
+import { formatToolLocalMinute, isRecord, wrapProseLine } from './text.ts';
 
 /** `parameter` is on a manual table row that states one parameter of a command: the command forms the manual spells and the parameter's name (the product's producer records both from the row's place in the manual). */
 export interface BriefNode { path: string; children: Array<{ name: string; path: string }>; entries: Array<{ kind?: string; statement: string; reference: string; applicability?: string; parameter?: { commands: string[]; name: string } }> }
@@ -246,7 +247,7 @@ function runnerCleanupMatch(cleanup: RunnerCleanup | null | undefined, cmdWords:
 function runnerCleanupSummaryText(cleanup: RunnerCleanup): string {
   const tailText = cleanup.order?.tail.length ? `；以下动作放收尾末尾：${cleanup.order.tail.join('、')}` : '';
   const beforeText = cleanup.order?.before.length ? `；顺序约束：${cleanup.order.before.map(([a, b]) => `${a} 先于 ${b}`).join('、')}` : '';
-  return `执行器自动清理（${cleanup.source}@${cleanup.sha256.slice(0, 12)}）：对清配对象 ${cleanup.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按 cmd_config 发过的命令行逐条比前缀、第一条命中即用（共 ${cleanup.rules.length} 条规则${tailText}${beforeText}）。未命中规则或不在清配对象列表上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作；已被运行器收尾规则涵盖的清理或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`;
+  return `执行器自动清理（${cleanup.source}@${cleanup.sha256.slice(0, 12)}）：对清配对象 ${cleanup.objects.join('、')}，自第 2 条用例开始前及整次运行关闭连接时按 cmd_config 发过的命令行逐条比前缀、第一条命中即用（共 ${cleanup.rules.length} 条规则${tailText}${beforeText}）。未命中规则或不在清配对象列表上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作；已被运行器收尾规则涵盖的清理或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`;
 }
 function runnerCleanupRuleNote(cleanup: RunnerCleanup, hit: RunnerCleanupBriefHit): string {
   const clearsText = hit.clears?.length ? `，触发清理命令 ${hit.clears.map((c) => `“${c}”`).join('、')}` : '';
@@ -271,8 +272,8 @@ export function authoringBrief(item: unknown, index: string, knowledge: BriefKno
     '',
     '执行器规则关掉的动作不能作为排除原始用例的理由。按同一构建的手册和命令树，用该设备已开放的命令方法完成原来的效果，保留对象、动作和场景，并说明命令与原始步骤的对应关系；不修改执行器规则或测试环境配置。',
     'expects 使用 basis:"model_judgment" 时，text 必须是设备执行后实际会输出、能在设备输出里逐字找到的一行原文，例如 SDNS Query Statistics Summary，不写“输出含……”或“状态为……”等描述。对应原始用例哪句期望、为什么选择这段原文，写在 rationale 里。',
-    '只有上机时才产生的值，在本条自动化用例里先取出再用；手册允许指定名字时，由生成器指定，本条先创建，配置、查询和清理都使用同一个名字。可在这些命令里写相同的 {{name:N|前缀|后缀}}，前后缀取手册允许的字符并区分本条；fidelity-brief.ts 或 submit-plans.ts 展开并写回文件后，Hub 核对具体命令。不写死设备生成的名字，不抄旧设备输出，不沿用设备上已有的东西。CAPTURE 保存原文，EXPECT_FROM 用于检查，整段原文不直接插入普通参数；设备不允许命名时，须有执行器规则已支持的本条取值和引用方式，缺少时说明缺什么，不猜。',
-    '设备生成的值，在本条先保存设备输出，按表格列和选行条件取一格；后续命令用 {} 引用它。',
+    '只有上机时才产生的值，在本条自动化用例里先取出再用；手册允许指定名字时，由编写模型指定，本条先创建，配置、查询和清理都使用同一个名字。可在这些命令里写相同的 {{name:N|前缀|后缀}}，前后缀取手册允许的字符并区分本条；fidelity-brief.ts 或 submit-plans.ts 展开并写回文件后，Hub 核对具体命令。不写死设备生成的名字，不抄旧设备输出，不沿用设备上已有的东西。CAPTURE 保存原文，EXPECT_FROM 用于检查，整段原文不直接插入普通参数；设备不允许命名时，须有执行器规则已支持的本条取值和引用方式，缺少时说明缺什么，不猜。',
+    '设备生成的值，在本条先保存设备输出，按表格列和选行条件读取一格；后续命令用 {} 引用它。',
     '数据行按声明的字面分隔符和列数识别；取不到、零行或多行就停止并带设备原话说明，不猜值、不用上一次的输出。',
   ];
   // The order is the cleanup check's own (functions/command-obligations.ts, alternativeInverses then inverse_rules).
@@ -350,16 +351,29 @@ export const COMPILE_BRIEF_MAX_BYTES = 512 * 1024;
 export const PRIOR_DEVICE_HISTORY_DISCLAIMER =
   '以下为同一原始用例（同 autoid）此前已上机验证过的历史记录，仅作命令选型与设备交互参考，绝不作为当前构建功能正确或签发期望的依据。';
 export const PRIOR_DEVICE_HISTORY_UNAVAILABLE_REASON =
-  'Hub 当前尚未提供按 autoid 查询历次上机验证与 apv_cmds 的只读接口。';
+  'Hub 当前尚未提供按 autoid 查询历次上机验证与已执行设备命令（apv_cmds）的只读接口。';
 export const PREREQ_SCAN_REASON =
-  '重组记录与产品目录均未声明跨章节前置（如默认开关、监听前提、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+  '用例重组记录与产品目录均未声明跨章节前置（如默认开关、监听前置、全局依赖对象）；编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
 export const PREREQ_PARTIAL_RECOMPOSE_REASON =
-  '已从用例重组记录（record.sources.states）提取如下已知前置，产品目录尚未单列跨章节前置（如默认开关、监听前提、全局依赖对象）；除下列已提取前置外，编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
+  '已从用例重组记录（record.sources.states）提取运行前置，清单见下方各「来源」行；产品目录尚未声明跨章节前置（如默认开关、监听前置、全局依赖对象）。除下方已列前置外，编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。';
 /** Disclosed when the recompose record is present but `sources.states` is missing or not a list. */
 export const PREREQ_STATES_UNREADABLE_REASON =
-  '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组返回的记录形状后再开编写。';
+  '读不到用例重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对用例重组返回的记录形状后再开编写。';
 export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
 export const SCOPE_RULINGS_ORIGIN = 'scope.md' as const;
+
+const PREREQ_STATUS_LABELS: Readonly<Record<CompileBriefV1['materials']['prerequisites']['status'], string>> = {
+  extracted: '已全部提取',
+  partial_recompose_only: '部分仅来自用例重组记录',
+  none_declared_or_found_in_recompose: '未声明或未查见',
+  recompose_states_unreadable: '用例重组记录状态不可读',
+};
+
+const PRIOR_HISTORY_STATUS_LABELS: Readonly<Record<CompileBriefV1['prior_device_history']['status'], string>> = {
+  unavailable_from_hub: 'Hub 暂不提供',
+  none_found: '未查见',
+  available: '已查见',
+};
 
 /** Formats an entry from `recompose-record@1` `unknowns[]` without falling back to raw JSON when structured fields exist. */
 export function formatRecomposeUnknown(u: unknown): string {
@@ -376,8 +390,8 @@ export function formatRecomposeUnknown(u: unknown): string {
     const prefix = atom ? `[原子 ${atom}] ` : '';
     const details: string[] = [];
     if (nextAction) details.push(`下一步：${nextAction}`);
-    if (audience) details.push(`对象：${audience}`);
-    if (due) details.push(`截止：${due}`);
+    if (audience) details.push(`由谁办：${audience}`);
+    if (due) details.push(`截止：${formatToolLocalMinute(due)}`);
     if (body && details.length > 0) return `${prefix}${body}（${details.join('；')}）`;
     if (body) return `${prefix}${body}`;
     return `${prefix}${details.join('；')}`;
@@ -1189,21 +1203,22 @@ export function validateCompileBrief(value: unknown, expectedItem?: unknown): { 
 
 /** Renders prerequisite scan status plus every extracted item from `from_recompose_states`, catalog, and ancestor hints. */
 export function renderPrerequisiteLines(prereqs: CompileBriefV1['materials']['prerequisites']): string[] {
-  const out: string[] = [...wrapProseLine(`- 前置检查状态（${prereqs.status}）：`, prereqs.scan_reason)];
+  const statusLabel = `${PREREQ_STATUS_LABELS[prereqs.status]}，${prereqs.status}`;
+  const out: string[] = [...wrapProseLine(`- 前置检查状态（${statusLabel}）：`, prereqs.scan_reason)];
   for (const pre of prereqs.from_recompose_states) {
     const origin = pre.origin ?? RECOMPOSE_STATES_ORIGIN;
     const stateLabel = pre.state ? `，状态 ${pre.state}` : '';
-    const header = `  · 出处：用例重组记录（${origin}）${stateLabel}，原子 ${pre.atom}：`;
+    const header = `  · 来源：用例重组记录（${origin}）${stateLabel}，原子 ${pre.atom}：`;
     out.push(...wrapProseLine(header, pre.reason || '已声明运行前置'));
     for (const line of pre.prerequisites) {
       out.push(...wrapProseLine('    - ', line));
     }
   }
   for (const item of prereqs.from_product_catalog) {
-    out.push(...wrapProseLine('  · 出处：产品目录：', item));
+    out.push(...wrapProseLine('  · 来源：产品目录：', item));
   }
   for (const hint of prereqs.ancestor_command_hints) {
-    out.push(...wrapProseLine('  · 出处：命令祖先提示：', hint));
+    out.push(...wrapProseLine('  · 来源：命令祖先提示：', hint));
   }
   return out;
 }
@@ -1213,7 +1228,10 @@ export function renderPriorDeviceHistoryLines(
   priorHistory: CompileBriefV1['prior_device_history'],
   opts: { prefixKey?: string } = {},
 ): string[] {
-  const statusLabel = opts.prefixKey ? `${opts.prefixKey}=${priorHistory.status}` : priorHistory.status;
+  const statusZh = PRIOR_HISTORY_STATUS_LABELS[priorHistory.status];
+  const statusLabel = opts.prefixKey
+    ? `${statusZh}，${opts.prefixKey}=${priorHistory.status}`
+    : `${statusZh}，${priorHistory.status}`;
   if (priorHistory.status === 'unavailable_from_hub') {
     return wrapProseLine(
       `- 同用例历史上机记录（${statusLabel}）：`,
@@ -1238,10 +1256,12 @@ export function renderPriorDeviceHistoryLines(
   }
   for (const entry of priorHistory.entries) {
     const cmds = entry.apv_cmds.length > 0 ? entry.apv_cmds.join(' ; ') : '无';
-    const attr = entry.attribution ? `；归因（${entry.attribution.layer}）：${entry.attribution.summary}` : '';
+    const attr = entry.attribution
+      ? `；原因（${reasonLabelOf(entry.attribution.layer)}）：${entry.attribution.summary}`
+      : '';
     out.push(
       ...wrapProseLine(
-        `  · [运行 ${entry.verification_run} | 计划 ${entry.plan_run} | 构建 ${entry.build} | 结束 ${entry.ended_at} | 结论 ${entry.verdict}] 命令：`,
+        `  · [运行 ${entry.verification_run} | 脚本编写运行 ${entry.plan_run} | 构建 ${entry.build} | 结束 ${formatToolLocalMinute(entry.ended_at)} | 结论 ${entry.verdict}] 命令：`,
         `${cmds}${attr}`,
       ),
     );
@@ -1256,11 +1276,11 @@ export function renderBedFactsLines(
 ): string[] {
   const out: string[] = [];
   if (bf.facts_status === 'manifest_unavailable') {
-    if (opts.heading) out.push('## 测试环境事实（manifest_unavailable）');
+    if (opts.heading) out.push('## 测试环境事实（环境清单不可用，manifest_unavailable）');
     out.push(
       ...wrapProseLine(
-        `- 测试环境事实（${bf.bed_name ?? '未指定'} / manifest_unavailable）：`,
-        '当前运行目录未提供冻结环境清单或 profile 未选定可用测试环境，无法列出网段、监听候选与盲区；编写前须核对实际测试环境配置，禁止猜测地址。',
+        `- 测试环境事实（${bf.bed_name ?? '未指定'} / 环境清单不可用，manifest_unavailable）：`,
+        '当前运行目录没有冻结环境清单，或运行环境配置（profile）里没有选定可用测试环境；因此无法列出网段、监听候选与盲区。编写前须核对实际测试环境配置，禁止猜测地址。',
       ),
     );
   } else {
@@ -1317,13 +1337,13 @@ export function renderSupplementaryDisclosureLines(brief: CompileBriefV1): strin
   const out: string[] = [];
   const { unresolved_unknowns: unknowns, equivalence_notes: eqNotes } = brief.materials.original_case.recomposition;
   if (unknowns.length > 0) {
-    out.push(`- 重组未决项（unresolved_unknowns，共 ${unknowns.length} 条）：`);
+    out.push(`- 用例重组未决项（unresolved_unknowns，共 ${unknowns.length} 条）：`);
     for (const u of unknowns) {
       out.push(...wrapProseLine('  · ', u));
     }
   }
   if (eqNotes.length > 0) {
-    out.push(`- 重组等价替换说明（equivalence_notes，共 ${eqNotes.length} 条）：`);
+    out.push(`- 用例重组等价替换说明（equivalence_notes，共 ${eqNotes.length} 条）：`);
     for (const note of eqNotes) {
       out.push(...wrapProseLine('  · ', note));
     }
@@ -1334,7 +1354,7 @@ export function renderSupplementaryDisclosureLines(brief: CompileBriefV1): strin
   if (brief.materials.commands_and_manual.missing_paths.length > 0) {
     out.push(
       ...wrapProseLine(
-        '- 知识树未命中路径（须 grep 本地 knowledge/commands.txt 或 knowledge/manual.txt）：',
+        '- 手册和命令树未命中路径（须 grep 本地 knowledge/commands.txt 或 knowledge/manual.txt）：',
         brief.materials.commands_and_manual.missing_paths.join('、'),
       ),
     );
@@ -1360,8 +1380,11 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
   }
 
   if (task.user_rulings.length > 0) {
-    out.push('## 已生效使用者裁定');
-    for (const ur of task.user_rulings) out.push(...wrapProseLine(`- [${ur.target}]（${ur.source}）：`, ur.ruling));
+    out.push('## 已生效的使用者决定');
+    for (const ur of task.user_rulings) {
+      const rulingBody = ur.ruling.replace(/^使用者决定[：:]\s*/, '');
+      out.push(...wrapProseLine(`- [${ur.target}]（${ur.source}）：`, rulingBody));
+    }
     out.push('');
   }
 
@@ -1410,7 +1433,7 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
     const tailText = rc.order?.tail.length ? `；以下动作放收尾末尾：${rc.order.tail.join('、')}` : '';
     const beforeText = rc.order?.before.length ? `；顺序约束：${rc.order.before.map(([a, b]) => `${a} 先于 ${b}`).join('、')}` : '';
     out.push(
-      `- 执行器自动清理（${rc.source}@${rc.sha256.slice(0, 12)}）：对清配对象 ${rc.objects.join('、')}，自第 2 条用例开始前及整本关闭连接时按 cmd_config 命令行逐条比前缀、第一条命中即用（共 ${rc.rule_count} 条规则${tailText}${beforeText}）；未命中规则或不在清配对象上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作，已被运行器收尾规则涵盖的清理或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`,
+      `- 执行器自动清理（${rc.source}@${rc.sha256.slice(0, 12)}）：对清配对象 ${rc.objects.join('、')}，自第 2 条用例开始前及整次运行关闭连接时按 cmd_config 命令行逐条比前缀、第一条命中即用（共 ${rc.rule_count} 条规则${tailText}${beforeText}）；未命中规则或不在清配对象上的设备改动仍须在 cleanup:true 手写同设备逆序逆操作，已被运行器收尾规则涵盖的清理或保存命令禁止写入 cleanup:true（需在用例中执行时只写进 main）。`,
     );
   }
   for (const cmd of materials.commands_and_manual.named_commands) {

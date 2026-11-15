@@ -638,7 +638,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     assert.ok(r2OnlyNote.includes('A 要求校验 RSA 状态'));
     assert.ok(!r2OnlyNote.includes('B 专属秘密'));
     // D8: single-case in-memory compile-brief@1 automatically injected even without authoring-brief --round!
-    assert.ok(r2OnlyNote.includes('本轮结构化简报摘要与前置披露（来自 compile-brief@1）'));
+    assert.ok(r2OnlyNote.includes('本轮结构化简报摘要与前置披露（来自结构化简报 compile-brief@1'));
 
     // D1 & D8: round 3 via unified task-brief.ts with multi-line 1.2MB answer & contract failure marker across r1+r2
     const mkPlanFile = (rel: string, arg: string) => writeFile(join(workDir, rel), JSON.stringify({
@@ -704,6 +704,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
     // D9: reject scope file containing only other cases' sections and zero global content
     await writeFile(join(workDir, 'scope-other-only.md'), `# 使用者原话\n\n## ${CASE_B}（仅B）\n只写B的内容\n`, 'utf8');
     assert.ok(!r3Unified.includes('已生效使用者裁定'));
+    assert.ok(!r3Unified.includes('已生效的使用者决定'));
     await assert.rejects(
       buildTaskBrief({
         role: '脚本编写',
@@ -742,8 +743,8 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       cwd: workDir,
       packRoot: packDir,
     });
-    assert.ok(ruledBrief.includes(`- 已生效使用者裁定 [${CASE_A}]：使用者决定：全局保留原步骤校验逻辑`));
-    assert.ok(ruledBrief.includes(`- 已生效使用者裁定 [${CASE_A}]：使用者决定：本条改按新开关参数试跑`));
+    assert.ok(ruledBrief.includes(`- 已生效的使用者决定 [${CASE_A}]：全局保留原步骤校验逻辑`));
+    assert.ok(ruledBrief.includes(`- 已生效的使用者决定 [${CASE_A}]：本条改按新开关参数试跑`));
     assert.ok(!ruledBrief.includes('他条密文决定不应出现'));
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -1113,7 +1114,7 @@ test('req1 & req2: authoring, recomposition, fidelity, and attribution rules ali
   }
   assert.ok(attributor.includes('尚有轮次时，下一轮返工必须优先测试该假设，不得借“缺资料”或“剩一次机会”拦住不试'));
   assert.ok(attributor.includes('轮次已用完时不建议再开轮'));
-  assert.ok(attributor.includes('尚有轮次时供下一轮先试；轮次用完时作为下一步交使用者决定'));
+  assert.ok(attributor.includes('尚有轮次时供下一轮先试；轮次用完时作为下一步提交使用者决定'));
   assert.ok(attributor.includes('只有在锁定手册正文、示例、命令树与环境声明均没有任何来源支持任何未试假设时，才可归为“缺资料”'));
   assert.ok(skill.includes('尚有轮次就必须下一轮先试，不得以“缺资料”或“剩一次机会”为由不试；轮次用完不开第 4 轮'));
   assert.ok(skill.includes('完整读 `index.json`') && skill.includes('停止上机验证'));
@@ -1148,6 +1149,10 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
     // - unknowns with { atom, missing, next_action, audience, due }
     const itemSync = {
       id: 'synth-doc:sync-1',
+      label: '合成双机同步用例',
+      location: `/synth/${CASE_SYNC}`,
+      summary: '合成双机同步用例摘要',
+      digest: `sha256:${'a'.repeat(64)}`,
       fields: {
         autoid: CASE_SYNC,
         title: '合成双机同步用例',
@@ -1156,14 +1161,24 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
           receipt: `rec:${'c'.repeat(64)}`,
           record: {
             schema: 'recompose-record@1',
-            case: { id: 'synth-sync-case', title: '合成双机同步用例' },
+            case: { id: 'synth-doc:sync-1', source_ref: Q1, node: CASE_SYNC },
+            contract: {
+              intent: { text: '验证双机配置同步', quote_ref: Q1, verbatim: true },
+              method: { kind: 'recomposed', text: '主备协同前置与同步命令', sources: ['knowledge/manual.txt#sync'], basis: '合成对照' },
+              expectation: { text: '对端查询同步配置已生效', quote_ref: Q1, verbatim: true },
+            },
+            coverage: {
+              author_atoms: ['a1', 'a2', 'a3', 'a4'],
+              mapped: { a1: ['knowledge/synth/a1'], a2: ['knowledge/synth/a2'], a3: ['knowledge/synth/a3'], a4: ['knowledge/synth/a4'] },
+              unmapped: [],
+            },
             atoms: [
-              { id: 'a1', kind: 'action', text: '主设备配置边界参数', quote_ref: Q1 },
-              { id: 'a2', kind: 'action', text: '双机主备同步前置', quote_ref: Q1 },
-              { id: 'a3', kind: 'precondition', text: '功能许可前置', quote_ref: Q1 },
-              { id: 'a4', kind: 'action', text: '执行配置同步命令', quote_ref: Q1 },
+              { id: 'a1', kind: 'action', text: '主设备配置边界参数', quote_ref: Q1, span: [0, 10] },
+              { id: 'a2', kind: 'action', text: '双机主备同步前置', quote_ref: Q1, span: [11, 20] },
+              { id: 'a3', kind: 'expectation', text: '功能许可前置', quote_ref: Q1, span: [21, 30] },
+              { id: 'a4', kind: 'action', text: '执行配置同步命令', quote_ref: Q1, span: [31, 40] },
             ],
-            expectation_slots: [{ slot: 'e1', atom: 'a4', reference: Q1, text: '对端查询同步配置已生效' }],
+            expectation_slots: [{ slot: 'e1', atom: 'a4', knowledge_location: 'has_verification_knowledge', evidence: ['knowledge/commands/sync.md'], proposal: 'show ha sync' }],
             ledgers: {
               adapted: [
                 {
@@ -1172,11 +1187,16 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
                   text: '主设备执行 widget param set',
                   commands: ['widget param set boundary-253'],
                   equivalence_reason: '合成等价理由：原文未点名命令，选用 widget param set 覆盖边界取值',
+                  equivalence_refs: [],
+                  load_bearing: false,
+                  conditions: [],
                 },
               ],
               original: [],
               concretizations: [],
+              rebindings: [],
             },
+            status: 'complete',
             unknowns: [
               {
                 atom: 'a4',
@@ -1194,7 +1214,6 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
                   atom: 'a1',
                   state: 'settled',
                   reason: '合成无额外前置',
-                  prerequisites: null,
                   adjudicated_by: null,
                   exit: null,
                 },
@@ -1204,13 +1223,12 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
                   reason: '合成原因甲：运行器不会自动建立主备双机环境，须确认 HA 两台设备就绪',
                   prerequisites: ['合成前置 line-1：测试环境存在已配置 HA 的主备两台设备'],
                   adjudicated_by: null,
-                  exit: { owner: '编写模型', next: '补 HA 前置' },
+                  exit: { action: '补 HA 前置', object: 'synth-doc:sync-1#a2', owner: '编写模型', due: '脚本编写之前' },
                 },
                 {
                   atom: 'a3',
                   state: 'settled',
                   reason: '使用者决定：测试环境上对应功能许可已导入，不再作为缺口。',
-                  prerequisites: null,
                   adjudicated_by: null,
                   exit: null,
                 },
@@ -1225,7 +1243,7 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
                     '合成前置 line-5：若接口启用防火墙须放行 65519 端口',
                   ],
                   adjudicated_by: null,
-                  exit: { owner: '编写模型', next: '写入前四项前置步骤' },
+                  exit: { action: '写入前四项前置步骤', object: 'synth-doc:sync-1#a4', owner: '编写模型', due: '脚本编写之前' },
                 },
               ],
             },
@@ -1235,22 +1253,34 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
     };
     const itemNone = {
       id: 'synth-doc:none-1',
+      label: '合成真无前置用例',
+      location: `/synth/${CASE_NONE}`,
+      summary: '合成真无前置用例摘要',
+      digest: `sha256:${'b'.repeat(64)}`,
       fields: {
         autoid: CASE_NONE,
         title: '合成真无前置用例',
+        expected_nodes: [{ reference: Q1, text: '单独配置参数生效' }],
         recomposition: {
           receipt: `rec:${'d'.repeat(64)}`,
           record: {
             schema: 'recompose-record@1',
-            case: { id: 'synth-none-case', title: '合成真无前置用例' },
-            atoms: [{ id: 'a1', kind: 'action', text: '单独配置参数', quote_ref: Q1 }],
-            expectation_slots: [],
-            ledgers: { adapted: [], original: [], concretizations: [] },
+            case: { id: 'synth-doc:none-1', source_ref: Q1, node: CASE_NONE },
+            contract: {
+              intent: { text: '验证单独参数配置', quote_ref: Q1, verbatim: true },
+              method: { kind: 'declared', text: '单独配置参数', sources: [], basis: 'author_case' },
+              expectation: { text: '单独配置参数生效', quote_ref: Q1, verbatim: true },
+            },
+            coverage: { author_atoms: ['a1'], mapped: { a1: ['knowledge/synth/a1'] }, unmapped: [] },
+            atoms: [{ id: 'a1', kind: 'action', text: '单独配置参数', quote_ref: Q1, span: [0, 6] }],
+            expectation_slots: [{ slot: 'e1', atom: 'a1', knowledge_location: 'has_verification_knowledge', evidence: ['knowledge/commands/synth.md'], proposal: 'show param' }],
+            ledgers: { adapted: [], original: [], concretizations: [], rebindings: [] },
+            status: 'complete',
             unknowns: [],
             sources: {
               candidates: [],
               governing: [],
-              states: [{ atom: 'a1', state: 'settled', reason: '无前置', prerequisites: null }],
+              states: [{ atom: 'a1', state: 'settled', reason: '无前置', adjudicated_by: null, exit: null }],
             },
           },
         },
@@ -1311,25 +1341,25 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
     const task01 = await readFile(join(workDir, 'briefs', 'task-01.md'), 'utf8');
 
     // Prerequisites status + scan_reason must not claim "均未声明" when partial_recompose_only, and must print every atom + prerequisite verbatim.
-    assert.ok(task01.includes('前置检查状态（partial_recompose_only）：已从用例重组记录（record.sources.states）提取以下运行前置') || task01.includes('前置检查状态（partial_recompose_only）：已从用例重组记录（record.sources.states）提取如下已知前置'));
+    assert.ok(task01.includes('前置检查状态（部分仅来自用例重组记录，partial_recompose_only）：已从用例重组记录（record.sources.states）提取运行前置，清单见下方各「来源」行；产品目录尚未声明跨章节前置（如默认开关、监听前置、全局依赖对象）。除下方已列前置外，编写前仍须核对 knowledge/manual.txt 相关功能章概述与前置条件小节。'));
     assert.ok(!task01.includes('均未声明'));
     for (const expected of [
-      '出处：用例重组记录（record.sources.states），状态 missing_prerequisite，原子 a2',
+      '来源：用例重组记录（record.sources.states），状态 missing_prerequisite，原子 a2',
       '合成原因甲：运行器不会自动建立主备双机环境，须确认 HA 两台设备就绪',
       '合成前置 line-1：测试环境存在已配置 HA 的主备两台设备',
-      '出处：用例重组记录（record.sources.states），状态 missing_prerequisite，原子 a4',
+      '来源：用例重组记录（record.sources.states），状态 missing_prerequisite，原子 a4',
       '合成原因乙：执行同步前必须具备对端节点登记、关闭启动同步与相同校验码',
       '合成前置 line-2：两端对称登记 peer 节点 peer-2',
       '合成前置 line-3：两端关闭 bootup sync off',
       '合成前置 line-4：两端校验码保持一致',
       '合成前置 line-5：若接口启用防火墙须放行 65519 端口',
       // Unresolved unknowns formatted cleanly without raw JSON dump
-      '合成同步节点对端地址暂用保留地址 192.0.2.2（下一步：脚本编写时按冻结测试环境实际对端地址替换；对象：编写模型；截止：脚本编写之前）',
+      '合成同步节点对端地址暂用保留地址 192.0.2.2（下一步：脚本编写时按冻结测试环境实际对端地址替换；由谁办：编写模型；截止：脚本编写之前）',
       // Equivalence notes
       '合成等价理由：原文未点名命令，选用 widget param set 覆盖边界取值',
       // User rulings from both record.sources.states and scope.md
-      '- 已生效使用者裁定 [a3]：使用者决定：测试环境上对应功能许可已导入，不再作为缺口。（来源：record.sources.states）',
-      `- 已生效使用者裁定 [${CASE_SYNC}]：使用者决定：本条补充核对对端回显。（来源：scope.md）`,
+      '- 已生效的使用者决定 [a3]：测试环境上对应功能许可已导入，不再作为缺口。（来源：record.sources.states）',
+      `- 已生效的使用者决定 [${CASE_SYNC}]：本条补充核对对端回显。（来源：scope.md）`,
       // Bed facts with device@address, segments, unknowns device, and execution_failure_markers
       'dut0(load-balancer)@192.0.2.10',
       'dut0@192.0.2.10',
@@ -1337,6 +1367,10 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
       'server0@192.0.2.90(server0:80/tcp)',
       'aux0（设备没有任何接口地址，可达性未知）',
       'SYNTH_FAIL_M1',
+      `- 原始用例 / 对象：${CASE_SYNC} 合成双机同步用例`,
+      'Hub 暂不提供，unavailable_from_hub',
+      '用例重组未决项',
+      '用例重组等价替换说明',
     ]) {
       assert.ok(task01.includes(expected), `missing expected string in task-01.md: ${expected}`);
     }
@@ -1350,7 +1384,7 @@ test('Boss 15:02: task-brief CLI renders all from_recompose_states prerequisites
     );
     assert.equal(runNone.status, 0, runNone.stderr);
     const task02 = await readFile(join(workDir, 'briefs', 'task-02.md'), 'utf8');
-    assert.ok(task02.includes('前置检查状态（none_declared_or_found_in_recompose）：重组记录与产品目录均未声明'));
+    assert.ok(task02.includes('前置检查状态（未声明或未查见，none_declared_or_found_in_recompose）：用例重组记录与产品目录均未声明'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
