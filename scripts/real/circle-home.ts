@@ -1,3 +1,4 @@
+import { CALL_ERROR_CATEGORY, labelOf } from '../../contracts/generated/vocabulary.ts';
 // Sets up a dedicated Circle data folder for a real review run: a model endpoint taken from the owner's environment file or
 // read from the owner's Circle configuration (circleEndpoint), the Hub as an ordinary MCP server, the environment file's name
 // as a protected file, and a hook that lets only the Hub's tools run. The environment file and the owner's Circle folder are
@@ -8,7 +9,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
-import { environment, renderAllowed, type GuardDeclaration } from './guard-lib.ts';
+import { environment, renderAllowed, discoverTools, type GuardDeclaration } from './guard-lib.ts';
+import { recordInstallation, maintainInstallation, type GuardBundle } from './guard-installation.ts';
 
 export type Profile = 'review' | 'skills' | 'ops';
 
@@ -151,6 +153,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
   const isOps = profile === 'ops';
   return {
     version: 1,
+    errorLabels: Object.fromEntries(CALL_ERROR_CATEGORY.map(code => [code, labelOf('call_error_category', code)])) as Record<(typeof CALL_ERROR_CATEGORY)[number], string>,
     about:
       'Data for the Circle home before_tool guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
     allowReply: isOps ? 'silent' : 'explicit',
@@ -210,6 +213,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
             name: 'sleep',
             args: ['int'],
             max: 600,
+            stdin: [],
             note: '短等待，最多 600 秒；等上机结果不要 sleep，用 download-returns.ts 加 --wait 作后台命令（execute 的 background: true）',
           },
         ]
@@ -229,34 +233,15 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       {
         path: 'operation-capture/operation.ts',
         subcommands: ['list', 'read', 'status', 'verify', 'flush', 'submit'],
+        subcommandStdin: {
+          list: [],
+          read: [],
+          status: [],
+          verify: [],
+          flush: [],
+          submit: [],
+        },
       },
-    ],
-    optionTypes: {
-      hub: 'hub',
-      wait: 'int',
-      round: 'int',
-      limit: 'int',
-      'timeout-ms': 'int',
-      model: 'text',
-      role: 'text',
-      case: 'text',
-      note: 'text',
-      name: 'text',
-      product: 'text',
-      build: 'text',
-      root: 'text',
-      under: 'text',
-      send: 'text',
-      skip: 'text',
-      'base-url': 'text',
-      sha: 'text',
-      session: 'text',
-    },
-    placeholderTypes: [
-      { match: '^%HUB_URL%$|Hub', type: 'hub' },
-      { match: '秒数|seconds', type: 'int' },
-      { match: '编号|run id|run-id', type: 'run' },
-      { match: '.', type: 'path' },
     ],
     shellAlternatives: {
       cat: 'read_file',
@@ -268,13 +253,6 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
       find: 'glob',
       grep: 'grep',
       rg: 'grep',
-      echo: 'write_file',
-      tee: 'write_file',
-      touch: 'write_file',
-      mkdir: 'write_file',
-      cp: 'write_file',
-      mv: 'write_file',
-      sed: 'edit_file',
     },
     rules: isOps ? [BOOKING_STAYS_RULE, SUBAGENT_ASKS_NOBODY_RULE] : [BOOKING_STAYS_RULE],
   };
@@ -323,6 +301,60 @@ if (process.argv.includes('--schemas')) {
   process.stdout.write(\`\${env.allowedFile}\\n\`);
 }
 `;
+}
+
+/** Generated files owned by the guard installer; excludes credentials and mutable derived rules. */
+export function guardBundle(home: string, profile: 'skills' | 'ops'): GuardBundle {
+  const decl = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
+  const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
+  const entry = profile === 'ops' ? 'ops-allow.mjs' : 'skills-only.mjs';
+  const argument = `'${join(resolve(home), 'hooks', entry).replaceAll("'", `'\\''`)}'`;
+  return {
+    'hooks.json': `${JSON.stringify({ version: 1, hooks: { before_tool: [{ name: `${profile} tools guard`, command: `node ${argument}`, timeout_ms: 600000 }] } }, null, 2)}\n`,
+    [`hooks/${entry}`]: renderGuardEntry(decl),
+    'hooks/guard-lib.ts': readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8'),
+    [`hooks/${decl}`]: `${JSON.stringify(profileDeclaration(profile), null, 2)}\n`,
+    [`hooks/${gen}`]: renderGuardGen(decl, gen),
+  };
+}
+
+/** Guard maintenance deliberately bypasses endpoint and credential loading. */
+export function guardMain(argv: string[], out: (line: string) => void): number {
+  try {
+    const [mode, ...rest] = argv;
+    if (mode !== 'verify' && mode !== 'update') throw new Error('guard 子命令只能是 verify 或 update');
+    const values = new Map<string, string>();
+    for (let i = 0; i < rest.length; i += 2) {
+      if (!['--home', '--profile', '--workdir', '--baseline'].includes(rest[i]) || !rest[i + 1] || values.has(rest[i])) throw new Error('guard 参数无效或重复');
+      values.set(rest[i], rest[i + 1]);
+    }
+    const home = values.get('--home');
+    const profile = values.get('--profile');
+    const workdir = values.get('--workdir');
+    if (!home || !workdir || (profile !== 'skills' && profile !== 'ops')) throw new Error('需要 --home、--workdir 和 --profile skills|ops');
+    const decl = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
+    const env = environment(home, workdir, decl);
+    if (env.declarationError || !env.work) throw new Error('守卫声明或工作目录无效');
+    const nextEnv = { ...env, declaration: profileDeclaration(profile) };
+    let undeclared = 0;
+    for (const tool of discoverTools(nextEnv)) {
+      const missing = tool.subcommands?.length
+        ? tool.subcommands.some(sub => !Object.hasOwn(tool.subcommandStdin ?? {}, sub))
+        : tool.stdinLines === null;
+      if (missing && existsSync(tool.file.replace(/\.ts$/, '.cli.json'))) throw new Error(`工具的标准输入声明无效或不完整：${tool.id}`);
+      if (missing) undeclared += 1;
+    }
+    const gen = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
+    // Generate against the new declaration, while retaining the current trusted settings and work folder.
+    maintainInstallation(resolve(home), profile, guardBundle(home, profile), renderAllowed(nextEnv, `node hooks/${gen}`), mode, values.get('--baseline'));
+    out(mode === 'verify' ? '守卫、规则全文与本地技能字节快照一致；此校验不证明发布包摘要已核验' : '守卫已更新并记录本地技能字节快照；此记录不证明发布包摘要已核验，请重新加载会话 Hook 配置');
+    if (undeclared) out(`${undeclared} 个工具未声明标准输入；其标准输入协议仍未知，带 here-doc 调用将被拒绝，请补齐声明后使用标准输入`);
+    return 0;
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+    out(missing ? '校验失败：缺少安装文件或回执；旧 Home 需要集成者提供已审查的原版本回执 --baseline' : `校验失败：${(error as Error).message}`);
+    return 1;
+  }
 }
 
 function writePrivate(path: string, content: string): void {
@@ -385,13 +417,11 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
 
   const declName = profile === 'ops' ? 'ops-allow.declaration.json' : 'guard.declaration.json';
   const genName = profile === 'ops' ? 'ops-allow-gen.mjs' : 'guard-gen.mjs';
-  const guardLibSource = readFileSync(new URL('./guard-lib.ts', import.meta.url), 'utf8');
-  writePrivate(hook, renderGuardEntry(declName));
-  writePrivate(join(home, 'hooks', 'guard-lib.ts'), guardLibSource);
-  writePrivate(join(home, 'hooks', declName), `${JSON.stringify(profileDeclaration(profile), null, 2)}\n`);
-  writePrivate(join(home, 'hooks', genName), renderGuardGen(declName, genName));
+  const bundle = guardBundle(home, profile);
+  for (const [file, content] of Object.entries(bundle)) writePrivate(join(home, file), content);
   const allowedText = renderAllowed(environment(home, workdir, declName), `node hooks/${genName}`);
   writePrivate(join(home, 'hooks', 'ALLOWED.md'), allowedText);
+  recordInstallation(home, profile, bundle);
 
   return {
     files: [
@@ -404,6 +434,7 @@ export function writeHome(options: Options, endpoint: Endpoint, token: string): 
       `hooks/${declName}`,
       `hooks/${genName}`,
       'hooks/ALLOWED.md',
+      'hooks/guard-installation.json',
     ],
     workdir,
   };
@@ -440,6 +471,7 @@ export function parseArgs(argv: string[]): Options & { envFile: string; provider
 }
 
 export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string) => void): number {
+  if (argv[0] === 'guard') return guardMain(argv.slice(1), out);
   try {
     const options = parseArgs(argv);
     const token = env.HUB_REAL_TOKEN;
@@ -462,6 +494,7 @@ export function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: string)
       if (options.jevModel === undefined) out('所有者下一步：/variables JEV_MODEL');
       const genScript = options.profile === 'ops' ? 'hooks/ops-allow-gen.mjs' : 'hooks/guard-gen.mjs';
       out(`技能装进 skills/ 后分别核对：local-tools verify --digest、pack-files.ts --verify-install、node ${genScript}`);
+      out('再运行 circle-home.ts guard update / verify（显式传 --home、--workdir 和 --profile）；这两个入口不读取凭据。更新前停止会话，更新后重新加载 Hook 配置。');
     }
     return 0;
   } catch (error) {

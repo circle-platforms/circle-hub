@@ -1,3 +1,4 @@
+import type { CallErrorCategory } from '../../contracts/generated/vocabulary.ts';
 // Unified declaration-driven before_tool guard engine for Circle homes (skills & ops profiles).
 // Self-contained standalone Node 24 TypeScript module (copied into `<home>/hooks/guard-lib.ts` with no checkout dependency).
 // Enforces one single command & quoting grammar across docs, ALLOWED.md, and runtime checks: bare `[A-Za-z0-9_./:%=@,+-]+` or single-quoted `'...'`.
@@ -25,11 +26,13 @@ export interface GuardRule {
 export interface ScriptDeclaration {
   path: string;
   subcommands?: string[];
+  stdin?: string[];
   subcommandStdin?: Record<string, string[]>;
 }
 
 export interface GuardDeclaration {
   version: 1;
+  errorLabels?: Record<CallErrorCategory, string>;
   about?: string;
   allowReply?: 'explicit' | 'silent';
   allowLocalTools?: boolean;
@@ -59,10 +62,8 @@ export interface GuardDeclaration {
   denyPrefix?: Record<string, string>;
   equalsForm?: 'fix' | 'accept';
   interpreters?: string[];
-  commands?: Array<{ name: string; args?: string[]; max?: number; note?: string }>;
+  commands?: Array<{ name: string; args?: string[]; max?: number; stdin?: string[]; note?: string }>;
   scripts?: ScriptDeclaration[];
-  optionTypes?: Record<string, 'hub' | 'run' | 'int' | 'text' | 'path'>;
-  placeholderTypes?: Array<{ match: string; type: 'hub' | 'run' | 'int' | 'text' | 'path' }>;
   shellAlternatives?: Record<string, string>;
   rules?: GuardRule[];
 }
@@ -86,7 +87,9 @@ export interface GuardEnvironment {
   allowedPlaceholders: string[];
 }
 
+export interface RefusalData { category: CallErrorCategory; fact: string; next_action: string; path?: string; legal_form?: string }
 export interface HookDecision {
+  refusal?: RefusalData;
   decision?: 'allow' | 'deny' | 'ask';
   reason?: string;
 }
@@ -111,9 +114,10 @@ export interface DiscoveredTool {
   skill: string | null;
   subcommands: string[] | null;
   subcommandStdin: Record<string, string[]> | null;
+  stdinLines: string[] | null;
   options: ToolOption[];
   restricted: boolean;
-  stdinMode: 'none' | 'single' | 'keys';
+  optionsDeclared: boolean;
   forms: ToolForm[];
 }
 
@@ -124,7 +128,10 @@ export interface ParsedCommand {
   problem: string | null;
 }
 
-class GuardRefusal extends Error {}
+class GuardRefusal extends Error {
+  readonly category: CallErrorCategory;
+  constructor(fact: string, category: CallErrorCategory = 'permission_denied') { super(fact); this.category = category; }
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -481,141 +488,92 @@ export function parseCommand(command: string): ParsedCommand {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Local tool discovery: reads options, required flags, booleans, multiple flags, and stdin mode directly from each tool's source & docs.
+// Local tool discovery: reads options, required flags, booleans, and multiple flags from each tool's source & docs;
+// stdin declarations come strictly from pure-data sibling `<tool>.cli.json` or `declaration.scripts` (never via source regex).
 
-const PAIR = /(\[)?--([a-z][a-z0-9-]*)(?:\s+(?:'([^'\r\n]*)'|"([^"\r\n]*)"|(<[^>]*>[^\s\]]*|%[A-Za-z_]+%|[^\s\]<'">][^\s\]]*)))?(\])?/g;
-
-function usageOf(line: string, base: string, subcommands?: string[]): { positional: string | null; pairs: Array<{ name: string; placeholder: string | null; optional: boolean }> } | null {
-  const clean = line.replace(/`/g, '');
-  const match = new RegExp(`(?:^|[\\s:：'"])(?:node\\s+)?['"]?(?:<[^>]*>/)?(?:tools/)?${escapeRe(base)}['"]?(?=\\s|$)(.*)$`).exec(clean);
-  if (!match) return null;
-  const rest = match[1];
-  const pairs: Array<{ name: string; placeholder: string | null; optional: boolean }> = [];
-  for (const m of rest.matchAll(PAIR)) {
-    const placeholder = m[3] ?? m[4] ?? m[5] ?? null;
-    pairs.push({ name: m[2], placeholder, optional: m[1] === '[' });
+function parsePlaceholderList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || !/^%[A-Z][A-Z0-9_]*%$/.test(item)) return null;
+    out.push(item);
   }
-  let positional: string | null = null;
-  if (subcommands) {
-    const first = rest.trim().split(/\s+/)[0];
-    if (first && !first.startsWith('-') && !first.startsWith('<') && !first.startsWith('[')) positional = first;
-  }
-  if (!pairs.length && !positional) return null;
-  return { positional, pairs };
+  return out;
 }
 
-function typeOfOption(env: GuardEnvironment, name: string, placeholder: string | null): 'hub' | 'run' | 'int' | 'text' | 'path' {
-  const declared = env.declaration.optionTypes?.[name];
-  if (declared) return declared;
-  for (const rule of asList(env.declaration.placeholderTypes)) {
-    if (placeholder && new RegExp(rule.match, 'i').test(placeholder)) return rule.type;
+function parseSubcommandStdinMap(value: unknown): Record<string, string[]> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, string[]> = {};
+  for (const [sub, raw] of Object.entries(value)) {
+    const parsed = parsePlaceholderList(raw);
+    if (parsed === null) return null;
+    out[sub] = parsed;
   }
-  return 'path';
+  return out;
 }
 
-function isInternalHelperModule(source: string): boolean {
-  // Helper libraries under tools/ export symbols without a CLI entrypoint (`process.argv` / `import.meta.main`).
-  return /\bexport\b/.test(source) && !/(?:process\.argv|import\.meta\.main)/.test(source);
+interface CliDeclaration {
+  stdinLines: string[] | null;
+  subcommandStdin: Record<string, string[]> | null;
+  options: ToolOption[] | null;
+  forms: ToolForm[];
 }
-
-function describeTool(env: GuardEnvironment, base: { id: string; file: string; skill: string | null; docText: string; subcommands?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
-  const source = readText(base.file);
-  const name = path.basename(base.file);
-  const header = source.split('\n').slice(0, 40).filter((line) => line.startsWith('//')).map((line) => line.replace(/^\/\/\s?/, ''));
-  const usages = [...base.docText.split('\n'), ...header]
-    .map((line) => usageOf(line, name, base.subcommands))
-    .filter((u): u is NonNullable<typeof u> => u !== null);
-
-  const meta = new Map<string, { required: boolean; kind: 'string' | 'boolean'; multiple: boolean }>();
-  const ensure = (optName: string, defaults: { required: boolean; kind?: 'string' | 'boolean'; multiple?: boolean }) => {
-    const existing = meta.get(optName);
-    if (!existing) meta.set(optName, { required: defaults.required, kind: defaults.kind ?? 'string', multiple: defaults.multiple ?? false });
-    else {
-      if (defaults.required) existing.required = true;
-      if (defaults.kind) existing.kind = defaults.kind;
-      if (defaults.multiple) existing.multiple = true;
-    }
-  };
-
-  // 1. argumentsOf(argv, ['hub', 'run', ...])
-  const argMatch = /argumentsOf\(\s*argv\s*,\s*\[([^\]]*)\]/.exec(source);
-  if (argMatch) {
-    for (const m of argMatch[1].matchAll(/['"]([a-z][a-z0-9-]*)['"]/g)) ensure(m[1], { required: true });
+const emptyCli = (): CliDeclaration => ({ stdinLines: null, subcommandStdin: null, options: null, forms: [] });
+function readToolCliDeclaration(cliPath: string | null): CliDeclaration {
+  if (!cliPath) return emptyCli();
+  let parsed: unknown;
+  try { parsed = JSON.parse(fs.readFileSync(cliPath, 'utf8')); } catch { throw new GuardRefusal('工具的机读 CLI 声明不是有效 JSON；请重新安装正确声明', 'temporarily_unavailable'); }
+  return parseToolCliDeclaration(parsed);
+}
+export function parseToolCliDeclaration(parsed: unknown): CliDeclaration {
+  if (!isRecord(parsed) || !['tool-cli@1', 'tool-cli@2'].includes(String(parsed.schema))) throw new GuardRefusal('工具的机读 CLI 声明版本不支持', 'temporarily_unavailable');
+  const v2 = parsed.schema === 'tool-cli@2';
+  const keys = v2 ? ['schema', 'stdin', 'subcommands', 'options', 'forms'] : ['schema', 'stdin', 'subcommands'];
+  if (Object.keys(parsed).some(key => !keys.includes(key))) throw new GuardRefusal('工具的机读 CLI 声明含未声明字段', 'temporarily_unavailable');
+  const stdinLines = parsed.stdin === undefined ? null : parsePlaceholderList(parsed.stdin);
+  const subcommandStdin = parsed.subcommands === undefined ? null : parseSubcommandStdinMap(parsed.subcommands);
+  if (parsed.stdin !== undefined && stdinLines === null || parsed.subcommands !== undefined && subcommandStdin === null) throw new GuardRefusal('工具的标准输入声明无效', 'temporarily_unavailable');
+  if (!v2) return { stdinLines, subcommandStdin, options: null, forms: [] };
+  if (!Array.isArray(parsed.options)) throw new GuardRefusal('tool-cli@2 缺少参数声明', 'temporarily_unavailable');
+  const options: ToolOption[] = [];
+  const names = new Set<string>();
+  for (const row of parsed.options) {
+    if (!isRecord(row) || Object.keys(row).some(key => !['name', 'required', 'kind', 'multiple', 'placeholder', 'type'].includes(key)) || typeof row.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(row.name) || names.has(row.name) || typeof row.required !== 'boolean' || !['string', 'boolean'].includes(String(row.kind)) || typeof row.multiple !== 'boolean' || row.placeholder !== null && typeof row.placeholder !== 'string' || !['hub', 'run', 'int', 'text', 'path'].includes(String(row.type))) throw new GuardRefusal('机读参数声明含无效字段、类型或重复名称', 'temporarily_unavailable');
+    names.add(row.name); options.push(row as unknown as ToolOption);
   }
-
-  // 2. const OPTIONS [: Record<string, boolean>] = { ... } (supports single-quoted keys like `'task-file': true`)
-  const optTable = /(?:const|let)\s+OPTIONS(?:\s*:[^=]+)?\s*=\s*\{([^}]*)\}/.exec(source);
-  if (optTable) {
-    for (const m of optTable[1].matchAll(/['"]?([a-z][a-z0-9-]*)['"]?\s*:\s*(true|false)/g)) {
-      ensure(m[1], { required: m[2] === 'true' });
+  const forms: ToolForm[] = [];
+  if (parsed.forms !== undefined && !Array.isArray(parsed.forms)) throw new GuardRefusal('机读命令形式声明无效', 'temporarily_unavailable');
+  for (const row of (parsed.forms ?? []) as unknown[]) {
+    if (!isRecord(row) || Object.keys(row).some(key => !['positional', 'pairs'].includes(key)) || row.positional !== null && typeof row.positional !== 'string' || !Array.isArray(row.pairs)) throw new GuardRefusal('机读命令形式声明无效', 'temporarily_unavailable');
+    const pairNames = new Set<string>();
+    for (const pair of row.pairs) {
+      if (!isRecord(pair) || Object.keys(pair).some(key => !['name', 'optional', 'placeholder'].includes(key)) || typeof pair.name !== 'string' || pairNames.has(pair.name) || !names.has(pair.name) || typeof pair.optional !== 'boolean' || pair.placeholder !== null && typeof pair.placeholder !== 'string') throw new GuardRefusal('命令形式引用了未声明的参数', 'temporarily_unavailable');
+      pairNames.add(pair.name);
     }
+    forms.push(row as unknown as ToolForm);
   }
-
-  // 3. node:util parseArgs({ ..., options: { ... } })
-  const parseMatch = /parseArgs\(\s*\{[\s\S]*?\boptions\s*:\s*\{([\s\S]*?)\}\s*\}/.exec(source);
-  if (parseMatch) {
-    for (const m of parseMatch[1].matchAll(/['"]?([a-z][a-z0-9-]*)['"]?\s*:\s*\{([^}]*)\}/g)) {
-      const attrs = m[2];
-      const kind = /type\s*:\s*['"]boolean['"]/.test(attrs) ? 'boolean' : 'string';
-      const multiple = /multiple\s*:\s*true/.test(attrs);
-      ensure(m[1], { required: false, kind, multiple });
-    }
-  }
-
-  // 4. Explicit usage lines
-  const declared = meta.size > 0;
-  for (const usage of usages) {
-    for (const pair of usage.pairs) {
-      if (!meta.has(pair.name)) ensure(pair.name, { required: !pair.optional && !declared && !base.subcommands });
-    }
-  }
-
-  const placeholders = new Map<string, string>();
-  for (const usage of usages) {
-    for (const pair of usage.pairs) {
-      if (pair.placeholder && !placeholders.has(pair.name)) placeholders.set(pair.name, pair.placeholder);
-    }
-  }
-
-  const options: ToolOption[] = [...meta.entries()].map(([optionName, info]) => {
-    const placeholder = placeholders.get(optionName) ?? null;
-    return {
-      name: optionName,
-      required: info.required,
-      kind: info.kind,
-      multiple: info.multiple,
-      placeholder,
-      type: typeOfOption(env, optionName, placeholder),
-    };
-  });
-
-  const order = [...new Set(usages.flatMap((usage) => usage.pairs.map((pair) => pair.name)))];
-  options.sort((a, b) => {
-    const x = order.indexOf(a.name);
-    const y = order.indexOf(b.name);
-    return (x < 0 ? 99 : x) - (y < 0 ? 99 : y);
-  });
-
-  const tokenReads = source.match(/\b(?:tokenFromStdin|readTokenFromStdin)\b/g) ?? [];
-  const keyReads = source.match(/\breadKeys\b/g) ?? [];
-  const stdinMode: 'none' | 'single' | 'keys' =
-    keyReads.length >= 2 || /await\s+readKeys\(/.test(source)
-      ? 'keys'
-      : tokenReads.length >= 2 || /=\s*(?:tokenFromStdin|readTokenFromStdin)\b/.test(source)
-        ? 'single'
-        : 'none';
-
+  return { stdinLines, subcommandStdin, options, forms };
+}
+function describeTool(env: GuardEnvironment, base: { id: string; file: string; cliFile: string | null; skill: string | null; docText: string; subcommands?: string[]; stdin?: string[]; subcommandStdin?: Record<string, string[]> }): DiscoveredTool {
+  const cli = readToolCliDeclaration(base.cliFile);
   return {
-    id: base.id,
-    file: base.file,
-    skill: base.skill,
+    id: base.id, file: base.file, skill: base.skill,
     subcommands: base.subcommands ?? null,
-    subcommandStdin: base.subcommandStdin ?? null,
-    options,
-    restricted: declared || usages.length > 0 || base.subcommands !== undefined,
-    stdinMode,
-    forms: usages.map((usage) => ({ positional: usage.positional, pairs: usage.pairs })),
+    subcommandStdin: base.subcommandStdin ? parseSubcommandStdinMap(base.subcommandStdin) : cli.subcommandStdin,
+    stdinLines: cli.stdinLines ?? (base.stdin !== undefined ? parsePlaceholderList(base.stdin) : null),
+    options: cli.options ?? [], restricted: true, forms: cli.forms,
+    optionsDeclared: cli.options !== null,
   };
+}
+
+function declaredStdinFor(tool: DiscoveredTool, subcommand: string | null): string[] | null {
+  if (subcommand !== null) {
+    if (tool.subcommandStdin && Object.prototype.hasOwnProperty.call(tool.subcommandStdin, subcommand)) {
+      return parsePlaceholderList(tool.subcommandStdin[subcommand]);
+    }
+    return null;
+  }
+  return tool.stdinLines;
 }
 
 /** Discovers executable local tools inside installed skills (plus declared scripts / optional workdir local-tools), rejecting symlinked files. */
@@ -668,11 +626,11 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
           }
           if (!stat.isFile() || !entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
           if (path.basename(subDir) !== 'tools') continue;
-          const real = trySafeFile(full, env.skills, env.skillsRaw);
+          const real = trySafeFile(full, env.skills, env.skills);
           if (!real) continue;
-          const source = readText(real);
-          if (isInternalHelperModule(source)) continue;
-          add(describeTool(env, { id: `${skill}/${rel}`, file: real, skill, docText }));
+          const cliFile = trySafeFile(`${full.slice(0, -3)}.cli.json`, env.skills, env.skills);
+          if (!cliFile) continue;
+          add(describeTool(env, { id: `${skill}/${rel}`, file: real, cliFile, skill, docText }));
         }
       };
 
@@ -693,15 +651,18 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
       for (const script of asList(env.declaration.scripts)) {
         if (!script.path.startsWith(`${skill}/`)) continue;
         const lexical = path.join(env.skills, script.path);
-        const real = trySafeFile(lexical, env.skills, env.skillsRaw);
+        const real = trySafeFile(lexical, env.skills, env.skills);
         if (real) {
+          const cliFile = real.endsWith('.ts') ? trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.skills, env.skills) : null;
           add(
             describeTool(env, {
               id: script.path,
               file: real,
+              cliFile,
               skill,
               docText,
               subcommands: script.subcommands,
+              stdin: script.stdin,
               subcommandStdin: script.subcommandStdin,
             }),
           );
@@ -717,9 +678,9 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
         const lexical = path.join(root, pack, 'tools', file);
         const real = trySafeFile(lexical, env.work, env.work);
         if (!real) continue;
-        const source = readText(real);
-        if (isInternalHelperModule(source)) continue;
-        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, skill: null, docText: '' }));
+        const cliFile = trySafeFile(`${lexical.slice(0, -3)}.cli.json`, env.work, env.work);
+        if (!cliFile) continue;
+        add(describeTool(env, { id: `local-tools/${pack}/tools/${file}`, file: real, cliFile, skill: null, docText: '' }));
       }
     }
   }
@@ -733,8 +694,8 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
 /** Formats a single command word using bare safe ASCII or single quotes `'...'` (never double quotes or backslashes). */
 export const quote = (value: string): string => {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
-  const cleaned = value.replace(/[\r\n\0']/g, '');
-  return `'${cleaned}'`;
+  if (/[\r\n\0']/.test(value)) throw new GuardRefusal('这个值不能用允许的单引号文法无损表示；不生成改变原值的替代命令', 'invalid_parameters');
+  return `'${value}'`;
 };
 
 export function scriptLabel(env: GuardEnvironment, tool: DiscoveredTool): string {
@@ -787,14 +748,7 @@ export function writeCommand(
     parts.push(!given && !option.required ? `[--${option.name} ${rawVal}]` : `--${option.name} ${rawVal}`);
   }
   let line = parts.join(' ');
-  const expectedLines =
-    subcommand && tool.subcommandStdin?.[subcommand]
-      ? tool.subcommandStdin[subcommand]
-      : tool.stdinMode === 'single'
-        ? [env.tokenPlaceholder]
-        : tool.stdinMode === 'keys'
-          ? env.allowedPlaceholders
-          : null;
+  const expectedLines = declaredStdinFor(tool, subcommand ?? null);
   if (expectedLines?.length) line += ` <<'EOF'\n${expectedLines.join('\n')}\nEOF`;
   return line;
 }
@@ -802,10 +756,12 @@ export function writeCommand(
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Refusal formatting & path/glob verification (fusing skillsGuard + ops-allow security boundaries).
 
-const refuse = (env: GuardEnvironment, what: string, how: string): HookDecision => ({
-  decision: 'deny',
-  reason: [what, how, `规则全文：${env.allowedFile}（用 read_file 读）`].filter(Boolean).join('\n'),
-});
+function refuse(env: GuardEnvironment, fact: string, next_action: string, category: CallErrorCategory, path?: string): HookDecision {
+  const refusal: RefusalData = { category, fact, next_action, ...(path ? { path } : {}) };
+  const label = env.declaration.errorLabels?.[category];
+  const reason = label ? `${label}：${fact}\n${next_action}\n规则全文：${env.allowedFile}（用 read_file 读）` : '守卫缺少生成的错误类别词表；请运行者更新声明后重试';
+  return { decision: 'deny', reason, refusal };
+}
 
 const allowed = (env: GuardEnvironment): HookDecision =>
   env.declaration.allowReply === 'explicit' ? { decision: 'allow', reason: '本目录允许的工具' } : {};
@@ -847,50 +803,108 @@ function checkOptionValue(env: GuardEnvironment, option: ToolOption, value: stri
   }
 }
 
-function tokenProblem(env: GuardEnvironment, tool: DiscoveredTool, subcommand: string | null, heredoc: ParsedCommand['heredoc']): string | null {
-  const expectedLines =
-    subcommand && tool.subcommandStdin?.[subcommand]
-      ? tool.subcommandStdin[subcommand]
-      : tool.stdinMode === 'single'
-        ? [env.tokenPlaceholder]
-        : null;
-  const requiresStdin = expectedLines !== null || tool.stdinMode === 'keys';
+interface TokenProblem {
+  message: string;
+  canSuggestRewrite: boolean;
+}
+
+function tokenProblem(
+  env: GuardEnvironment,
+  tool: DiscoveredTool,
+  subcommand: string | null,
+  heredoc: ParsedCommand['heredoc'],
+): TokenProblem | null {
+  const target = subcommand ? `${tool.id} ${subcommand}` : tool.id;
+  const expectedLines = declaredStdinFor(tool, subcommand);
 
   if (!heredoc) {
-    return tool.restricted && requiresStdin ? '这个脚本从标准输入读令牌，命令后面少了令牌的 here-doc' : null;
+    if (expectedLines !== null && expectedLines.length > 0) {
+      return {
+        message: `这次命令末尾没有写 here-doc，但 ${target} 声明从标准输入读令牌（${expectedLines.length} 行：${expectedLines.join('、')}）`,
+        canSuggestRewrite: true,
+      };
+    }
+    return null;
   }
-  if (tool.restricted && !requiresStdin) {
-    return '这个脚本不读标准输入，命令后面不要写 here-doc';
+  if (expectedLines === null) {
+    return {
+      message: `这次命令末尾带了 here-doc（<<'${heredoc.delimiter}'），但没有找到 ${target} 读标准输入的声明`,
+      canSuggestRewrite: false,
+    };
+  }
+  if (expectedLines.length === 0) {
+    return {
+      message: `这次命令末尾带了 here-doc（<<'${heredoc.delimiter}'），但 ${target} 声明不读标准输入`,
+      canSuggestRewrite: true,
+    };
   }
   if (heredoc.delimiter === env.tokenPlaceholder || env.allowedPlaceholders.includes(heredoc.delimiter)) {
-    return `here-doc 的结束标记写成了 ${heredoc.delimiter}，令牌行被当成结束行，令牌是空的；结束标记写 EOF`;
+    return {
+      message: `这次命令把 here-doc 的结束标记写成了 ${heredoc.delimiter}，令牌行会被当成结束行，令牌是空的；结束标记写 EOF`,
+      canSuggestRewrite: true,
+    };
   }
-  if (!heredoc.closed) return `here-doc 没有结束行 ${heredoc.delimiter}`;
-  if (heredoc.after && heredoc.after.trim() !== '') return `here-doc 的结束行 ${heredoc.delimiter} 之后还有内容：${JSON.stringify(clip(heredoc.after, 30))}`;
-  if (!heredoc.body.length) return `here-doc 里缺少令牌占位符（例如 ${env.tokenPlaceholder}）`;
+  if (!heredoc.closed) {
+    return { message: `这次命令里的 here-doc 没有结束行 ${heredoc.delimiter}`, canSuggestRewrite: true };
+  }
+  if (heredoc.after && heredoc.after.trim() !== '') {
+    return {
+      message: `这次命令在 here-doc 结束行 ${heredoc.delimiter} 之后还有多余内容：${JSON.stringify(clip(heredoc.after, 30))}`,
+      canSuggestRewrite: true,
+    };
+  }
+  if (!heredoc.body.length) {
+    return {
+      message: `这次命令里的 here-doc 是空的，缺少声明的占位符（${expectedLines.join('、')}）`,
+      canSuggestRewrite: true,
+    };
+  }
   for (const row of heredoc.body) {
     if (!/^%[A-Z][A-Z0-9_]*%$/.test(row) || !env.allowedPlaceholders.includes(row)) {
-      return `here-doc 每一行只能写允许的客户端占位符（${env.allowedPlaceholders.join(' / ')}）`;
+      return {
+        message: `这次命令的 here-doc 写了 ${JSON.stringify(row)}，每行只能写允许的客户端占位符（${env.allowedPlaceholders.join(' / ')}）`,
+        canSuggestRewrite: true,
+      };
     }
   }
-  if (expectedLines) {
-    if (heredoc.body.length !== expectedLines.length || expectedLines.some((exp, idx) => heredoc.body[idx] !== exp)) {
-      return `here-doc 必须依次写 ${expectedLines.length} 行占位符：${expectedLines.join('、')}`;
-    }
+  if (heredoc.body.length !== expectedLines.length || expectedLines.some((exp, idx) => heredoc.body[idx] !== exp)) {
+    return {
+      message: `这次命令的 here-doc 写了 ${heredoc.body.length} 行（${heredoc.body.join('、')}），但 ${target} 声明依次读 ${expectedLines.length} 行（${expectedLines.join('、')}）`,
+      canSuggestRewrite: true,
+    };
   }
   return null;
 }
 
+function configuredTools(env: GuardEnvironment): Set<string> {
+  const d = env.declaration;
+  return new Set([...Object.values(d.allow ?? {}).flat(), ...asList(d.files?.read), ...asList(d.files?.write)]);
+}
+
+function unavailableAdvice(env: GuardEnvironment): string {
+  const read = configuredTools(env).has('read_file') ? '用 read_file 读取规则全文' : '请主代理核对规则全文';
+  return `这次可以这样做：未提供等价工具；${read}，按实际任务选择已放行工具；仍无法完成时向主代理报告缺少的能力。`;
+}
+
 function shellHint(env: GuardEnvironment, words: string[], command: string): string | null {
+  const available = configuredTools(env);
   const alternatives = env.declaration.shellAlternatives ?? {};
   const virtual = asList(env.declaration.files?.virtualReadOnly).map((pattern) => new RegExp(pattern));
   const seen = (command.match(/\/(?:large_tool_results|background_jobs)\/[A-Za-z0-9._/-]+/g) ?? []).find((candidate) =>
     virtual.some((re) => re.test(candidate)),
   );
-  if (seen) return `这次可以这样做：读 ${seen} 用 read_file（路径照写），在里面找内容用 grep，不用 shell。`;
-  const first = words[0] ?? '';
-  const alt = alternatives[path.basename(first)];
-  if (alt) return `这次可以这样做：${path.basename(first)} 的事用 ${alt} 做（路径写相对工作目录）；execute 只运行已装脚本。`;
+  if (seen && available.has('read_file')) return `这次可以这样做：读 ${seen} 用 read_file（路径照写）${available.has('grep') ? '，在里面找内容用 grep' : ''}，不用 shell。`;
+  const first = path.basename(words[0] ?? '');
+  // Only this exact sed address grammar establishes a read-only intent.
+  if (first === 'sed' && words.length === 4 && words[1] === '-n' && /^[1-9][0-9]*(?:,[1-9][0-9]*)?p$/.test(words[2])) {
+    return available.has('read_file') ? '这次可以这样做：只读查看文件请用 read_file；需要定位文字时使用规则全文里放行的搜索工具。' : unavailableAdvice(env);
+  }
+  if (first === 'sed') {
+    const hints = [available.has('read_file') ? '如需读取，使用 read_file' : '', available.has('edit_file') ? '如需修改已有文件，先 read_file 读取，再用 edit_file 修改明确片段' : '当前配置没有放行编辑能力'].filter(Boolean);
+    return `这次可以这样做：不能从这条 sed 命令确定等价操作；${hints.join('；')}。`;
+  }
+  const alt = alternatives[first];
+  if (alt && available.has(alt)) return `这次可以这样做：如需执行 ${alt} 提供的操作，请直接调用 ${alt}（路径写相对工作目录）；这不是原 shell 命令的等价改写。`;
   return null;
 }
 
@@ -1031,7 +1045,7 @@ function hookMatches(hook: Record<string, unknown>, input: Record<string, unknow
   );
 }
 
-async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd: string): Promise<{ decision: 'allow' | 'ask' | 'deny'; reason: string }> {
+async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd: string): Promise<{ decision: 'allow' | 'ask' | 'deny'; reason: string; failed?: boolean }> {
   const setting = typeof hook.timeout_ms === 'number' && Number.isFinite(hook.timeout_ms) ? hook.timeout_ms : 30000;
   const timeout = Math.max(100, Math.min(600000, Math.floor(setting)));
   return new Promise((done) => {
@@ -1074,7 +1088,7 @@ async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd:
     process.once('SIGTERM', interrupted);
     process.once('SIGINT', interrupted);
     const timer = setTimeout(() => stop('技能钩子超过配置时限，缺少完整决定；请修复耗时并运行 verify 核对安装后重试'), timeout);
-    const finish = (decision: { decision: 'allow' | 'ask' | 'deny'; reason: string }) => {
+    const finish = (decision: { decision: 'allow' | 'ask' | 'deny'; reason: string; failed?: boolean }) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -1091,20 +1105,21 @@ async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd:
     child.stderr.resume();
     child.stdin.on('error', () => {});
     child.stdin.end(raw);
-    child.once('error', () => finish({ decision: 'deny', reason: '技能钩子启动失败；请核对工作目录和安装并运行 verify 后重试' }));
+    child.once('error', () => finish({ decision: 'deny', failed: true, reason: '技能钩子启动失败；请核对工作目录和安装并运行 verify 后重试' }));
     child.once('close', (code) => {
       if (failureReason !== null) {
-        finish({ decision: 'deny', reason: failureReason });
+        finish({ decision: 'deny', failed: true, reason: failureReason });
         return;
       }
       if (code !== 0) {
-        finish({ decision: 'deny', reason: `技能钩子退出码 ${code ?? '未知'}，缺少允许决定；请修正参数或钩子安装并运行 verify 后重试` });
+        finish({ decision: 'deny', failed: true, reason: `技能钩子退出码 ${code ?? '未知'}，缺少允许决定；请修正参数或钩子安装并运行 verify 后重试` });
         return;
       }
       try {
         const reply: unknown = JSON.parse(stdout.trim());
         if (!isRecord(reply)) throw new Error('not an object');
-        const word = typeof reply.decision === 'string' ? reply.decision.trim() : '';
+        if (reply.decision !== undefined && !['allow', 'deny', 'ask'].includes(String(reply.decision))) throw new Error('invalid decision');
+        const word = typeof reply.decision === 'string' ? reply.decision : '';
         const decision: 'allow' | 'ask' | 'deny' = word === 'deny' || word === 'ask' ? word : 'allow';
         const reason =
           (typeof reply.reason === 'string' ? reply.reason.trim() : typeof reply.context === 'string' ? reply.context.trim() : '') ||
@@ -1115,7 +1130,7 @@ async function runDelegatedHook(hook: Record<string, unknown>, raw: string, cwd:
               : '允许本次调用');
         finish({ decision, reason });
       } catch {
-        finish({ decision: 'deny', reason: '技能钩子未输出 JSON 对象；请修复脚本输出并运行 verify 后重试' });
+        finish({ decision: 'deny', failed: true, reason: '技能钩子未输出 JSON 对象；请修复脚本输出并运行 verify 后重试' });
       }
     });
   });
@@ -1181,7 +1196,7 @@ async function runDelegatedSkillHooks(
     throw new GuardRefusal(`${who} 的 hooks.json.before_tool 缺少可执行的命令列表或超过上限；${recover}`);
   }
 
-  let strictest: { decision: 'allow' | 'ask' | 'deny'; reason: string } = { decision: 'allow', reason: '' };
+  let strictest: { decision: 'allow' | 'ask' | 'deny'; reason: string; failed?: boolean } = { decision: 'allow', reason: '' };
   let matched = false;
   for (const [index, hook] of (entries as Record<string, unknown>[]).entries()) {
     const named = typeof hook.name === 'string' && hook.name.trim() ? hook.name.trim() : `before_tool[${index + 1}]`;
@@ -1198,13 +1213,13 @@ async function runDelegatedSkillHooks(
     if (!matched || (outcome.decision === 'deny' && strictest.decision !== 'deny') || (outcome.decision === 'ask' && strictest.decision === 'allow')) {
       strictest = outcome;
     } else if (outcome.decision === strictest.decision && outcome.decision !== 'allow') {
-      strictest = { ...strictest, reason: `${strictest.reason}；${outcome.reason}` };
+      strictest = { ...strictest, reason: `${strictest.reason}；${outcome.reason}`, failed: strictest.failed || outcome.failed };
     }
     matched = true;
   }
   if (!matched || strictest.decision === 'allow') return allowed(env);
   if (strictest.decision === 'ask') return { decision: 'ask', reason: strictest.reason };
-  return refuse(env, `不允许：${strictest.reason}`, `这次可以这样做：${recover}`);
+  return refuse(env, `${strictest.reason}`, `这次可以这样做：${recover}`, strictest.failed ? 'temporarily_unavailable' : 'permission_denied');
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -1215,8 +1230,8 @@ const ALLOWED_EXECUTE_KEYS = new Set(['command', 'background', 'timeout', 'descr
 function notTrusted(env: GuardEnvironment): HookDecision {
   return refuse(
     env,
-    `不允许：这次会话的工作目录 ${env.cwd} 不在这个配置信任的文件夹里（settings.json 的 trusted_folders），守卫不知道该放行哪个目录。`,
-    '这次可以这样做：请使用者把这个文件夹加入信任，或在已信任的工作目录里开会话。',
+    `这次会话的工作目录 ${env.cwd} 不在这个配置信任的文件夹里（settings.json 的 trusted_folders），守卫不知道该放行哪个目录。`,
+    '这次可以这样做：请使用者把这个文件夹加入信任，或在已信任的工作目录里开会话。', 'permission_denied'
   );
 }
 
@@ -1261,7 +1276,7 @@ function validateExecuteCommand(
     const why = parsed.problem ?? '命令是空的';
     return {
       ok: false,
-      what: `不允许：这个目录只放行技能目录里的脚本；${why}。`,
+      what: `这个目录只放行技能目录里的脚本；${why}。`,
       how: shellHint(env, parsed.words, command) ?? installedToolsAdvice(env, tools),
     };
   }
@@ -1271,22 +1286,34 @@ function validateExecuteCommand(
   if (simple) {
     const value = parsed.words[1];
     const max = simple.max ?? 600;
-    const bad =
-      parsed.problem ??
-      (parsed.words.length !== 2 || !/^[1-9][0-9]{0,3}$/.test(value ?? '') || Number(value) > max
-        ? `${first} 只接受一个 1 到 ${max} 的整数`
-        : null) ??
-      (parsed.heredoc ? '这条命令不读标准输入' : null);
+    const simpleStdin = simple.stdin !== undefined ? parsePlaceholderList(simple.stdin) : null;
+    const argBad =
+      parsed.words.length !== 2 || !/^[1-9][0-9]{0,3}$/.test(value ?? '') || Number(value) > max
+        ? `这次看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}，${first} 声明只接受一个 1 到 ${max} 的整数`
+        : null;
+    const heredocBad = parsed.heredoc
+      ? simpleStdin === null
+        ? { message: `这次命令末尾带了 here-doc（<<'${parsed.heredoc.delimiter}'），但没有找到 ${first} 读标准输入的声明`, canSuggestRewrite: false }
+        : simpleStdin.length === 0
+          ? { message: `这次命令末尾带了 here-doc（<<'${parsed.heredoc.delimiter}'），但 ${first} 声明不读标准输入`, canSuggestRewrite: true }
+          : null
+      : simpleStdin !== null && simpleStdin.length > 0
+        ? { message: `这次命令末尾没有写 here-doc，但 ${first} 声明从标准输入读（${simpleStdin.join('、')}）`, canSuggestRewrite: true }
+        : null;
+    const bad = parsed.problem ?? argBad ?? heredocBad?.message ?? null;
     if (!bad) return { ok: true };
     const safeValue = Math.max(1, Math.min(/^[1-9][0-9]{0,3}$/.test(value ?? '') ? Number(value) : 30, max));
     const candidate = `${first} ${safeValue}`;
+    const canSuggestRewrite = heredocBad ? heredocBad.canSuggestRewrite : true;
     const how =
-      allowSuggestion && validateExecuteCommand(env, tools, candidate, false).ok
+      allowSuggestion && canSuggestRewrite && validateExecuteCommand(env, tools, candidate, false).ok
         ? `这次可以这样写：${candidate}`
-        : `这次可以这样做：请写 ${first} 加 1 到 ${max} 的整数后重试。`;
+        : simpleStdin === null && parsed.heredoc
+          ? `这次可以这样做：没有找到 ${first} 读标准输入的声明；请先在 declaration 中补齐声明后重试。`
+          : `这次可以这样做：请写 ${first} 加 1 到 ${max} 的整数后重试。`;
     return {
       ok: false,
-      what: `不允许：${bad}${simple.note ? `（${simple.note}）` : ''}。`,
+      what: `${bad}${simple.note ? `（${simple.note}）` : ''}。`,
       how,
     };
   }
@@ -1295,7 +1322,7 @@ function validateExecuteCommand(
     const prefix = parsed.problem ? `这个目录只放行技能目录里的脚本（${parsed.problem}）；` : '这个目录只放行技能目录里的脚本；';
     return {
       ok: false,
-      what: `不允许：${prefix}execute 只运行“node 加已装脚本”${asList(d.commands).length ? `（或 ${asList(d.commands).map((c) => c.name).join('、')}）` : ''}，看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}。`,
+      what: `${prefix}execute 只运行“node 加已装脚本”${asList(d.commands).length ? `（或 ${asList(d.commands).map((c) => c.name).join('、')}）` : ''}，看到的是 ${JSON.stringify(clip(command.replace(/\s+/g, ' '), 70))}。`,
       how: shellHint(env, parsed.words, command) ?? installedToolsAdvice(env, tools),
     };
   }
@@ -1303,7 +1330,7 @@ function validateExecuteCommand(
   if (second === undefined || second.startsWith('-')) {
     return {
       ok: false,
-      what: `不允许：这个目录只放行技能目录里的脚本；node 后面要直接写已装脚本的绝对路径，看到的是 ${JSON.stringify(second ?? '（空）')}。`,
+      what: `这个目录只放行技能目录里的脚本；node 后面要直接写已装脚本的绝对路径，看到的是 ${JSON.stringify(second ?? '（空）')}。`,
       how: /^(-e|-p|--eval|--print|--input-type.*)$/.test(second ?? '')
         ? '这次可以这样做：不能用 node 运行自己写的代码；读文件用 read_file，找内容用 grep，要写文件用 write_file。'
         : installedToolsAdvice(env, tools),
@@ -1326,7 +1353,7 @@ function validateExecuteCommand(
     }
     return {
       ok: false,
-      what: `不允许：这个目录只放行技能目录里的脚本；脚本路径 ${JSON.stringify(clip(second, 90))} 必须是已装技能脚本的真实绝对路径（不写相对路径、.. 或非 .ts）。`,
+      what: `这个目录只放行技能目录里的脚本；脚本路径 ${JSON.stringify(clip(second, 90))} 必须是已装技能脚本的真实绝对路径（不写相对路径、.. 或非 .ts）。`,
       how,
     };
   }
@@ -1338,7 +1365,7 @@ function validateExecuteCommand(
   } catch {
     return {
       ok: false,
-      what: `不允许：缺少已安装技能脚本的实际路径 ${JSON.stringify(clip(second, 90))}。`,
+      what: `缺少已安装技能脚本的实际路径 ${JSON.stringify(clip(second, 90))}。`,
       how: '这次可以这样做：请集成者安装并运行 local-tools verify --digest 或 pack-files.ts --verify-install 后按真实路径重试。',
     };
   }
@@ -1366,7 +1393,7 @@ function validateExecuteCommand(
   if (!inSkills && !inLocalTools) {
     return {
       ok: false,
-      what: `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 指向已装技能目录之外或经过了软链接/别名。`,
+      what: `这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 指向已装技能目录之外或经过了软链接/别名。`,
       how: installedToolsAdvice(env, tools),
     };
   }
@@ -1376,7 +1403,7 @@ function validateExecuteCommand(
     const sameDir = tools.filter((candidate) => path.dirname(candidate.file) === path.dirname(physicalScript));
     return {
       ok: false,
-      what: `不允许：这个目录只放行技能目录里的脚本；脚本 ${JSON.stringify(clip(second, 90))} 不是已声明的可执行工具（或仅是内部辅助库）。`,
+      what: `这个目录只放行技能目录里的脚本；没有在已声明的可执行工具清单里找到 ${JSON.stringify(clip(second, 90))}（可执行身份未知；请在发布清单中补齐对应 .cli.json 声明并重新安装）。`,
       how: installedToolsAdvice(env, tools, { preferred: sameDir.length ? sameDir : tools }),
     };
   }
@@ -1422,11 +1449,11 @@ function validateExecuteCommand(
       name = word.slice(2, eq);
       value = word.slice(eq + 1);
       equals = true;
-      option = optionsOf.get(name) ?? (tool.restricted ? null : { name, kind: 'string', multiple: false, type: 'path', placeholder: null, required: false });
+      option = optionsOf.get(name) ?? null;
       i++;
     } else {
       name = word.slice(2);
-      option = optionsOf.get(name) ?? (tool.restricted ? null : { name, kind: 'string', multiple: false, type: 'path', placeholder: null, required: false });
+      option = optionsOf.get(name) ?? null;
       if (option?.kind === 'boolean') {
         if (rest[i + 1] !== undefined && !rest[i + 1].startsWith('--')) {
           problems.push(`--${name} 是开关选项，后面不要跟值 ${JSON.stringify(clip(rest[i + 1]))}`);
@@ -1457,7 +1484,8 @@ function validateExecuteCommand(
     }
 
     if (!option) {
-      problems.push(`这个脚本没有 --${name} 选项（它的选项：${tool.options.map((o) => `--${o.name}`).join(' ') || '无'}）`);
+      if (!tool.optionsDeclared) problems.push('缺少机读参数声明，参数类型未知；请补齐 tool-cli@2 声明，不从源码或占位符文字猜测');
+      else problems.push(`这个脚本没有 --${name} 选项（它的选项：${tool.options.map((o) => `--${o.name}`).join(' ') || '无'}）`);
       continue;
     }
     if (seen.has(name) && !option.multiple) {
@@ -1492,7 +1520,7 @@ function validateExecuteCommand(
   }
 
   const tokenBad = tokenProblem(env, tool, subcommand, parsed.heredoc);
-  if (tokenBad) problems.push(tokenBad);
+  if (tokenBad) problems.push(tokenBad.message);
 
   if (!problems.length) {
     return { ok: true, physicalScript };
@@ -1514,8 +1542,10 @@ function validateExecuteCommand(
     (!tool.subcommands || fallbackSub !== undefined) &&
     fallbackRequired.every((req) => req.name in fixed || booleans.has(req.name));
 
-  let how = `这次可以这样做：请按规则全文（${env.allowedFile}）中 ${tool.id}${tool.subcommands ? `（可用子命令：${tool.subcommands.join('、')}）` : ''} 的完整写法补齐必填参数并修正值后重试。`;
-  if (allowSuggestion && allRequiredProvided) {
+  let how = tokenBad && !tokenBad.canSuggestRewrite
+    ? `这次可以这样做：没有找到 ${tool.id}${subcommand ? ` ${subcommand}` : ''} 读标准输入的声明，不猜测是否需要标准输入；请先补齐标准输入声明后按规则全文（${env.allowedFile}）重试。`
+    : `这次可以这样做：请按规则全文（${env.allowedFile}）中 ${tool.id}${tool.subcommands ? `（可用子命令：${tool.subcommands.join('、')}）` : ''} 的完整写法补齐必填参数并修正值后重试。`;
+  if (allowSuggestion && tool.optionsDeclared && allRequiredProvided && (!tokenBad || tokenBad.canSuggestRewrite)) {
     const candidate = writeCommand(env, tool, { subcommand: fallbackSub, values: fixed, booleans });
     if (validateExecuteCommand(env, tools, candidate, false).ok) {
       how = `这次可以这样写：${candidate}`;
@@ -1524,7 +1554,7 @@ function validateExecuteCommand(
   const prefix = parsed.problem && problems.includes(parsed.problem) ? '这个目录只放行技能目录里的脚本；' : '';
   return {
     ok: false,
-    what: `不允许：${prefix}${problems.slice(0, 2).join('；')}${problems.length > 2 ? `（另有 ${problems.length - 2} 处）` : ''}。`,
+    what: `${prefix}${problems.slice(0, 2).join('；')}${problems.length > 2 ? `（另有 ${problems.length - 2} 处）` : ''}。`,
     how,
   };
 }
@@ -1538,23 +1568,23 @@ async function executeDecision(env: GuardEnvironment, input: Record<string, unkn
     (args.timeout !== undefined && (typeof args.timeout !== 'number' || !Number.isFinite(args.timeout))) ||
     (args.description !== undefined && typeof args.description !== 'string')
   ) {
-    return refuse(env, '不允许：execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。', '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。');
+    return refuse(env, 'execute 参数形状无效；请只用 command、background 和 timeout 的正确类型重新调用。', '这次可以这样做：只传入合规的 command、background 和 timeout 字段后重试。', 'invalid_parameters', '/tool_input/command');
   }
   if (typeof args.command !== 'string') {
-    return refuse(env, '不允许：execute 缺少 command 文字；请补齐字符串命令后重试。', '这次可以这样做：提供完整的单行 node 脚本命令后重试。');
+    return refuse(env, 'execute 缺少 command 文字；请补齐字符串命令后重试。', '这次可以这样做：提供完整的单行 node 脚本命令后重试。', 'invalid_parameters', '/tool_input/command');
   }
   if (!env.skillsRootValid) {
     return refuse(
       env,
-      `不允许：skills 目录根 ${env.skillsRaw} 已改变（是软链接）或缺失。`,
-      '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。',
+      `skills 目录根 ${env.skillsRaw} 已改变（是软链接）或缺失。`,
+      '这次可以这样做：请集成者恢复专用主目录的真实 skills 目录并核对安装后重试。', 'invalid_parameters', '/tool_input/command'
     );
   }
 
   const tools = discoverTools(env);
   const verdict = validateExecuteCommand(env, tools, args.command, true);
   if (!verdict.ok) {
-    return refuse(env, verdict.what, verdict.how);
+    return refuse(env, verdict.what, verdict.how, 'invalid_parameters', '/tool_input/command');
   }
   return verdict.physicalScript
     ? runDelegatedSkillHooks(env, verdict.physicalScript, input, raw)
@@ -1589,7 +1619,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
   if (Array.isArray(input.paths)) {
     for (const p of input.paths) {
       if (typeof p !== 'string' || !p.length) {
-        return refuse(env, `不允许：${tool} 含空路径或非文字路径。`, `${how} 补齐后重试。`);
+        return refuse(env, `${tool} 含空路径或非文字路径。`, `${how} 补齐后重试。`, 'invalid_parameters', '/tool_input');
       }
       paths.push(p);
     }
@@ -1598,7 +1628,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
   for (const key of ['file_path', 'filePath', 'path']) {
     if (key in args && args[key] !== undefined) {
       if (typeof args[key] !== 'string' || !args[key]) {
-        return refuse(env, `不允许：${tool} 的 ${key} 必须是有效路径文字。`, `${how} 补齐后重试。`);
+        return refuse(env, `${tool} 的 ${key} 必须是有效路径文字。`, `${how} 补齐后重试。`, 'invalid_parameters', '/tool_input');
       }
       argPaths.push(args[key] as string);
     }
@@ -1618,8 +1648,8 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
       if (!owningRoot || (tail !== '' && !safeGlob(tail))) {
         return refuse(
           env,
-          `不允许：glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合工作目录相对安全文法（或越出${where}）。`,
-          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不用绝对根外路径、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。',
+          `glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合工作目录相对安全文法（或越出${where}）。`,
+          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不用绝对根外路径、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。', 'invalid_parameters', '/tool_input'
         );
       }
       globAbsPrefix = canonPrefix;
@@ -1628,8 +1658,8 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
       if (!safeGlob(rawPattern)) {
         return refuse(
           env,
-          `不允许：glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合本主目录的安全文法。`,
-          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不许 .、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。',
+          `glob 的 pattern ${JSON.stringify(clip(rawPattern, 80))} 不符合本主目录的安全文法。`,
+          '这次可以这样做：改用 / 分隔的非空相对段，每段只含英文字母、数字、_、-、.、*，** 须独占一段；不许 .、..、括号类、花括号、extglob 或转义，请拆成多次简单查询后重试。', 'invalid_parameters', '/tool_input'
         );
       }
       globRelPattern = rawPattern;
@@ -1638,14 +1668,14 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
   if (tool === 'grep' && args.glob !== undefined && !safeGlob(args.glob)) {
     return refuse(
       env,
-      `不允许：grep 的 glob ${JSON.stringify(clip(args.glob, 80))} 不符合安全文法。`,
-      '这次可以这样做：只用 / 分隔的非空相对段（含字母、数字、_、-、.、*，不用 .. 或扩展文法）后重试。',
+      `grep 的 glob ${JSON.stringify(clip(args.glob, 80))} 不符合安全文法。`,
+      '这次可以这样做：只用 / 分隔的非空相对段（含字母、数字、_、-、.、*，不用 .. 或扩展文法）后重试。', 'invalid_parameters', '/tool_input'
     );
   }
 
   const allTargets = [...new Set([...paths, ...argPaths])];
   if (!allTargets.length && globAbsPrefix === null && !(tool === 'glob' && globRelPattern !== null && paths.length === 0 && argPaths.length === 0 && env.work)) {
-    return refuse(env, `不允许：${tool} 缺少路径，没有检查目标。`, `这次可以这样做：请填写工作目录内的 path 或 file_path 后重试（当前目录写 .）。`);
+    return refuse(env, `${tool} 缺少路径，没有检查目标。`, `这次可以这样做：请填写工作目录内的 path 或 file_path 后重试（当前目录写 .）。`, 'invalid_parameters', '/tool_input');
   }
   if (!allTargets.length && globAbsPrefix === null && tool === 'glob' && globRelPattern !== null) {
     // `glob { pattern: 'records/*.json' }` with omitted `path` and empty `paths` defaults to `env.work`.
@@ -1659,7 +1689,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
     if (!isWrite && readable.includes(target)) continue;
     const owningRoot = matchRoot(target);
     if (!owningRoot) {
-      return refuse(env, `不允许：${tool} 的路径 ${JSON.stringify(clip(p, 100))} 不在${where}里。`, how);
+      return refuse(env, `${tool} 的路径 ${JSON.stringify(clip(p, 100))} 不在${where}里。`, how, 'permission_denied', '/tool_input');
     }
     if (tool === 'glob' && globRelPattern !== null) {
       globWithin(globAbsPrefix ?? target, globRelPattern, globAbsPrefix ? matchRoot(globAbsPrefix) ?? owningRoot : owningRoot);
@@ -1729,24 +1759,24 @@ export async function decideRaw(
   if (env.declarationError) {
     return refuse(
       env,
-      `不允许：守卫的声明文件读不了（${clip(env.declarationError, 80)}）。`,
-      '这次可以这样做：告诉主代理修好声明文件；修好以前所有调用都会被拒。',
+      `守卫的声明文件读不了（${clip(env.declarationError, 80)}）。`,
+      '这次可以这样做：告诉主代理修好声明文件；修好以前所有调用都会被拒。', 'temporarily_unavailable'
     );
   }
   let input: unknown;
   try {
     input = JSON.parse(raw);
   } catch {
-    return refuse(env, '不允许：守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。', '这次可以这样做：请宿主用完整的 before_tool JSON 对象重新发起调用。');
+    return refuse(env, '守卫读不懂 Circle 交来的调用信息（不是合法 JSON）。', '这次可以这样做：请宿主用完整的 before_tool JSON 对象重新发起调用。', 'invalid_parameters');
   }
   if (!isRecord(input) || input.event !== 'before_tool' || typeof input.tool_name !== 'string' || !isRecord(input.tool_input)) {
-    return refuse(env, '不允许：调用信息缺少 before_tool、tool_name 或 tool_input 对象。', '这次可以这样做：请宿主补齐完整字段后重试。');
+    return refuse(env, '调用信息缺少 before_tool、tool_name 或 tool_input 对象。', '这次可以这样做：请宿主补齐完整字段后重试。', 'invalid_parameters');
   }
   if (input.paths !== undefined && (!Array.isArray(input.paths) || input.paths.some((file) => typeof file !== 'string'))) {
-    return refuse(env, '不允许：工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。');
+    return refuse(env, '工具 paths 不是文字路径列表。', '这次可以这样做：请用工作目录内的完整路径重新发起调用。', 'invalid_parameters');
   }
   if (typeof input.cwd !== 'string' || !path.isAbsolute(input.cwd)) {
-    return refuse(env, '不允许：调用缺少绝对工作目录 cwd。', '这次可以这样做：请在已信任的专用工作目录重新发起调用。');
+    return refuse(env, '调用缺少绝对工作目录 cwd。', '这次可以这样做：请在已信任的专用工作目录重新发起调用。', 'invalid_parameters');
   }
 
   const tool = input.tool_name;
@@ -1759,7 +1789,7 @@ export async function decideRaw(
     for (const rule of asList(d.rules)) {
       if (!ruleMatches(rule, tool, args)) continue;
       if (rule.session === 'subagent' && !(await isSubagent(session))) continue;
-      return refuse(env, rule.what, rule.how);
+      return refuse(env, rule.what, rule.how, 'permission_denied');
     }
 
     const everyAllowed = new Set(Object.values(d.allow ?? {}).flat());
@@ -1779,8 +1809,8 @@ export async function decideRaw(
         ? allowed(env)
         : refuse(
             env,
-            `不允许：skill ${JSON.stringify(clip(name || '（空）'))} 不是已装技能。`,
-            `这次可以这样做：已装技能有 ${installed.join('、') || '（没有）'}。`,
+            `skill ${JSON.stringify(clip(name || '（空）'))} 不是已装技能。`,
+            `这次可以这样做：已装技能有 ${installed.join('、') || '（没有）'}。`, 'not_found'
           );
     }
 
@@ -1792,25 +1822,25 @@ export async function decideRaw(
       if (tool.startsWith(prefix)) {
         return refuse(
           env,
-          `不允许：${tool}。${why}。`,
-          '这次可以这样做：要查资料或操作设备，用 hub_list_task_packs 列出可用的工作流，再用 Hub 的工具。',
+          `${tool}。${why}。`,
+          unavailableAdvice(env), 'permission_denied'
         );
       }
     }
 
     return refuse(
       env,
-      `不允许：${tool || '这个工具'} 不在这个配置放行的工具里。`,
-      '这次可以这样做：放行的工具见规则全文；要查资料或操作设备，先用 hub_list_task_packs。',
+      `${tool || '这个工具'} 不在这个配置放行的工具里。`,
+      unavailableAdvice(env), 'permission_denied'
     );
   } catch (error) {
     if (error instanceof GuardRefusal) {
-      return refuse(env, `不允许：${error.message}`, '这次可以这样做：按上述核对要求修正路径或安装状态后重试。');
+      return refuse(env, `${error.message}`, '这次可以这样做：按上述核对要求修正路径或安装状态后重试。', error.category);
     }
     return refuse(
       env,
-      `不允许：守卫自己出错了（${error instanceof Error ? error.message : String(error)}）。`,
-      '这次可以这样做：告诉主代理检查守卫配置与安装后重试。',
+      `守卫自己出错了（${error instanceof Error ? error.message : String(error)}）。`,
+      '这次可以这样做：告诉主代理检查守卫配置与安装后重试。', 'temporarily_unavailable'
     );
   }
 }
@@ -1829,7 +1859,7 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   const lines: string[] = [
     '# 这个 Circle 配置放行什么',
     '',
-    `这份文件由 \`${genCommand}\` 生成，不要手改；要改规则，改对应的 declaration.json 后重新生成。守卫每次直接读 declaration.json 和已装脚本本身。`,
+    `这份文件由 \`${genCommand}\` 生成，不要手改；要改规则，改对应的 declaration.json 后重新生成。守卫每次读取声明和已安装的纯数据 CLI 清单，不从源码或说明文字推断参数类型。`,
     '',
     '## 工具',
     '',
@@ -1871,17 +1901,30 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
   for (const tool of tools) {
     if (tool.subcommands) {
       for (const sub of tool.subcommands) {
-        lines.push(`| ${tool.id} ${sub} | \`${writeCommand(env, tool, { subcommand: sub, all: true, label: true }).replace(/\n/g, ' ⏎ ')}\` |`);
+        const subStdin = declaredStdinFor(tool, sub);
+        const subSuffix = subStdin === null ? '（未声明标准输入，带 here-doc 将被拒绝）' : '';
+        lines.push(`| ${tool.id} ${sub} | \`${writeCommand(env, tool, { subcommand: sub, all: true, label: true }).replace(/\n/g, ' ⏎ ')}\`${subSuffix} |`);
       }
     } else {
+      const notes: string[] = [];
+      if (!tool.restricted) notes.push('选项没有声明，按通用规则检查');
+      if (tool.stdinLines === null) notes.push('未声明标准输入，带 here-doc 将被拒绝');
+      const suffix = notes.length ? `（${notes.join('；')}）` : '';
       lines.push(
-        `| ${tool.id} | \`${writeCommand(env, tool, { all: true, label: true }).replace(/\n/g, ' ⏎ ')}\`${tool.restricted ? '' : '（选项没有声明，按通用规则检查）'} |`,
+        `| ${tool.id} | \`${writeCommand(env, tool, { all: true, label: true }).replace(/\n/g, ' ⏎ ')}\`${suffix} |`,
       );
     }
   }
   lines.push('', '其中 `⏎` 表示换行；需要标准输入令牌的脚本，命令后紧接上面三行；方括号里的选项可省略。', '');
   for (const command of asList(d.commands)) {
-    lines.push(`- \`${command.name} <秒数>\`（最多 ${command.max ?? 600}）：${command.note ?? ''}`);
+    const commandStdin = command.stdin !== undefined ? parsePlaceholderList(command.stdin) : null;
+    const stdinNote =
+      commandStdin === null
+        ? '；未声明标准输入'
+        : commandStdin.length > 0
+          ? `；标准输入 ${commandStdin.join('、')}`
+          : '；不读标准输入';
+    lines.push(`- \`${command.name} <秒数>\`（最多 ${command.max ?? 600}${stdinNote}）：${command.note ?? ''}`);
   }
   if (asList(d.rules).length) {
     lines.push('', '## 例外与拦截规则', '');
@@ -1908,9 +1951,15 @@ export function buildToolSchemas(env: GuardEnvironment): unknown[] {
         else if (option.type === 'text') properties[option.name] = { type: 'string' };
         else properties[option.name] = { type: 'string', description: '工作目录里的路径' };
       }
+      const stdinNote =
+        tool.stdinLines === null
+          ? '（未声明是否读标准输入）'
+          : tool.stdinLines.length > 0
+            ? `；标准输入 ${tool.stdinLines.join('、')}，令牌由客户端从保存的凭据给脚本，模型不写`
+            : '';
       return {
         name: `${tool.skill ?? 'local'}__${path.basename(tool.file, '.ts')}`,
-        description: `运行 ${tool.id}${tool.stdinMode !== 'none' ? '；令牌由客户端从保存的凭据给脚本，模型不写' : ''}`,
+        description: `运行 ${tool.id}${stdinNote}`,
         inputSchema: {
           type: 'object',
           properties,

@@ -1,0 +1,39 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "in",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<导出文件>",
+      "type": "text"
+    },
+    {
+      "name": "out",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<规整文件>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "in",
+          "placeholder": "<导出文件>",
+          "optional": false
+        },
+        {
+          "name": "out",
+          "placeholder": "<规整文件>",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}

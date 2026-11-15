@@ -1,3 +1,4 @@
+import { parseToolCliDeclaration } from './guard-lib.ts';
 // Static admission check for digest-pinned client skills. Never imports or executes their code.
 import ts from 'typescript';
 import { builtinModules } from 'node:module';
@@ -189,11 +190,44 @@ export function clientSkillSources(files: ReadonlyMap<string, string>): Map<stri
   return new Map([...files].filter(([file]) => included.has(file)));
 }
 
+function hasCliEntrypointAst(file: string, text: string): boolean {
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  let hasExport = false;
+  let hasCliHook = false;
+  const visit = (node: ts.Node): void => {
+    if (hasCliHook) return;
+    if (
+      ts.isExportDeclaration(node) ||
+      ts.isExportAssignment(node) ||
+      (ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword))
+    ) {
+      hasExport = true;
+    }
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      ((ts.isIdentifier(node.expression) && node.expression.text === 'process' && node.name.text === 'argv') ||
+        (ts.isMetaProperty(node.expression) && node.name.text === 'main'))
+    ) {
+      hasCliHook = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return hasCliHook || !hasExport;
+}
+
+function validateCliJsonBytes(bytes: Buffer): string | null {
+  try { parseToolCliDeclaration(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))); return null; }
+  catch (error) { return error instanceof Error ? error.message : '工具声明 .cli.json 无效'; }
+}
+
 /** Reads the exact published bytes, including helpers and inline skill hooks; never follows a source link. */
 export function scanSkillPack(directory: string, reviews: readonly CallReview[] = REVIEWED_SKILL_CALLS): ScriptAudit {
   const root = realpathSync(directory), manifest = JSON.parse(readFileSync(join(root, 'pack.json'), 'utf8')) as { id?: unknown; kind?: unknown; files?: Array<{ path: string; size: number; sha256: string }> };
   if (typeof manifest.id !== 'string' || typeof manifest.kind !== 'string' || !Array.isArray(manifest.files)) throw new Error('缺少可核对的包清单；请提供已发布目录和 pack.json 后重跑');
   const files = new Map<string, string>(), paths = new Set<string>();
+  const cliDecls = new Set<string>(), cliIssues: ScriptIssue[] = [];
   for (const entry of manifest.files) {
     if (typeof entry.path !== 'string' || isAbsolute(entry.path) || entry.path.includes('\\') || entry.path.split('/').some(part => !part || part === '.' || part === '..') || paths.has(entry.path)) throw new Error('包清单含重复或越界路径；请重新取得已发布包后重跑');
     paths.add(entry.path); const target = resolve(root, entry.path);
@@ -202,6 +236,11 @@ export function scanSkillPack(directory: string, reviews: readonly CallReview[] 
     const bytes = readFileSync(target); if (bytes.length !== entry.size || digest(bytes) !== entry.sha256) throw new Error('包文件与清单摘要或长度不符；请重新取得原件后重跑，不扫描改过的副本');
     const file = `packs/${manifest.kind}/${manifest.id}/${entry.path}`;
     if (/\.[cm]?[jt]sx?$/.test(entry.path)) files.set(file, new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (entry.path.startsWith('tools/') && entry.path.endsWith('.cli.json')) {
+      cliDecls.add(entry.path);
+      const problem = validateCliJsonBytes(bytes);
+      if (problem) cliIssues.push({ file, line: 1, operation: 'cli-declaration', reason: problem });
+    }
     if (entry.path.endsWith('hooks.json')) {
       const hooks = JSON.parse(bytes.toString()).hooks;
       for (const [event, entries] of Object.entries(hooks ?? {})) {
@@ -214,7 +253,26 @@ export function scanSkillPack(directory: string, reviews: readonly CallReview[] 
       }
     }
   }
-  return scanSkillScripts(clientSkillSources(files), reviews);
+  for (const declPath of cliDecls) {
+    const toolPath = declPath.slice(0, -'.cli.json'.length) + '.ts';
+    if (!paths.has(toolPath)) {
+      cliIssues.push({ file: `packs/${manifest.kind}/${manifest.id}/${declPath}`, line: 1, operation: 'cli-declaration', reason: `找不到对应的工具脚本 ${toolPath}` });
+    }
+  }
+  if (cliDecls.size > 0) {
+    for (const rel of paths) {
+      if (!rel.startsWith('tools/') || !rel.endsWith('.ts') || rel.endsWith('.test.ts')) continue;
+      const full = `packs/${manifest.kind}/${manifest.id}/${rel}`;
+      if (!hasCliEntrypointAst(full, files.get(full) ?? '')) continue;
+      const expectedDecl = rel.slice(0, -'.ts'.length) + '.cli.json';
+      if (!cliDecls.has(expectedDecl)) {
+        cliIssues.push({ file: full, line: 1, operation: 'cli-declaration', reason: `缺少工具标准输入声明文件 ${expectedDecl}` });
+      }
+    }
+  }
+  const audit = scanSkillScripts(clientSkillSources(files), reviews);
+  if (cliIssues.length > 0) return { ...audit, issues: [...audit.issues, ...cliIssues] };
+  return audit;
 }
 
 if (import.meta.main) {

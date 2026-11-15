@@ -1,0 +1,54 @@
+{
+  "schema": "tool-cli@2",
+  "stdin": [],
+  "options": [
+    {
+      "name": "file",
+      "required": true,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<计划或判断JSON>",
+      "type": "path"
+    },
+    {
+      "name": "brief",
+      "required": false,
+      "kind": "string",
+      "multiple": false,
+      "placeholder": "<核对文件>",
+      "type": "path"
+    }
+  ],
+  "forms": [
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "file",
+          "placeholder": "<计划或判断JSON>",
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "<核对文件>",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "positional": null,
+      "pairs": [
+        {
+          "name": "file",
+          "placeholder": "<计划或判断JSON>",
+          "optional": false
+        },
+        {
+          "name": "brief",
+          "placeholder": "<核对文件>",
+          "optional": true
+        }
+      ]
+    }
+  ]
+}
