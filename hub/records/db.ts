@@ -172,8 +172,11 @@ export class Database {
     await this.pool.end();
   }
 
-  stats(): PoolStats {
-    return { limit: this.pool.options.max, total: this.pool.totalCount, idle: this.pool.idleCount, waiting: this.pool.waitingCount, connectionFailures };
+  stats(additionalPools: readonly pg.Pool[] = []): PoolStats {
+    const pools = [...new Set([this.pool, ...additionalPools])];
+    // Failures are process-global; include that counter once, not once per pool.
+    return { limit: pools.reduce((sum,pool)=>sum+pool.options.max,0), total: pools.reduce((sum,pool)=>sum+pool.totalCount,0),
+      idle: pools.reduce((sum,pool)=>sum+pool.idleCount,0), waiting: pools.reduce((sum,pool)=>sum+pool.waitingCount,0), connectionFailures };
   }
 }
 

@@ -1,6 +1,6 @@
 import {EffectRecord} from '../../contracts/src/resources.ts';
 import {isEffectOutcome} from '../../contracts/generated/vocabulary.ts';
-import type { ActionBody, Principal, RecordsKit, StoredRecord, Transaction } from '../records/api.ts';
+import type { ActionBody, Principal, RecordsKit, StoredRecord, Transaction,PutResult } from '../records/api.ts';
 import type { ActionKind, ActionResult } from '../../contracts/generated/vocabulary.ts';
 import { newId, sha256Hex, canonicalBytes } from '../records/api.ts';
 import type { HolderSnapshot } from '../leases/api.ts';
@@ -48,7 +48,10 @@ export class Journal {
     }
     return histories;
   }
-  async append(binding: JobBinding, phase: string, action: ActionKind, result: ActionResult, detail: Record<string, unknown> = {}, inputs: string[] = [], unique_key?: string, tx?: Transaction, errorCode:ActionBody['error_code']=null) {
+  async append(binding: JobBinding, phase: string, action: ActionKind, result: ActionResult, detail: Record<string, unknown> = {}, inputs: string[] = [], unique_key?: string, tx?: Transaction, errorCode:ActionBody['error_code']=null):Promise<PutResult<ActionBody>> {
+    if(!tx&&(phase==='intent'||isEffectOutcome(detail.outcome)||detail.effect_mark==='disposed')&&(binding.input||phase==='boundary_refused')){
+      return this.records.store.withTransaction(current=>this.append(binding,phase,action,result,detail,inputs,unique_key,current,errorCode));
+    }
     const time = this.now().toISOString();
     const event=await this.records.store.put<ActionBody>({ kind: 'action', schema: 'action@1', provenance: 'observed', created_at: time,
       body: { action, run: binding.input?.run ?? binding.run ?? null, item: binding.input?.item ?? null, inputs, component: 'dispatch@1', lease: binding.fences?.length ? { lease: binding.fences[0].lease, fencing: binding.fences[0].fencing } : null, started_at: typeof detail.started_at === 'string' ? detail.started_at : time, ended_at: typeof detail.ended_at === 'string' ? detail.ended_at : time, result,
@@ -81,9 +84,9 @@ export class Journal {
       await this.records.store.put({kind:'effect',schema:'effect@1',provenance:'observed',created_at:this.now().toISOString(),body,index:[{key:'effect.job',value:binding.job},...(body.run?[{key:'effect.run',value:body.run}]:[])],unique_key:`effect.action:${event.digest}`},transaction);
     },tx);
   }
-  async raw(binding: JobBinding, bytes: Uint8Array, operation: string, complete: boolean): Promise<{ reference: string; record: string }> {
-    const source = await this.records.artifacts.ingest({ bytes, mediaType: 'application/json', origin: { read: { object: `executor:${binding.executor}:${binding.job}:${operation}` } }, author: { user: null }, provenanceType: 'observed',
-      visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, readTier: 'function_bytes_only', name: complete ? 'response.json' : 'incomplete-response.json' });
+  async raw(binding: JobBinding, bytes: Uint8Array, operation: string, complete: boolean, tx:Transaction): Promise<{ reference: string; record: string }> {
+    const source = await this.records.artifacts.ingestObservedRead({ bytes, mediaType: 'application/json', origin: { read: { object: `executor:${binding.executor}:${binding.job}:${operation}` } }, author: { user: null }, provenanceType: 'observed',
+      visibility: { readers: [binding.user], admins: true, packs: [], shareable: false }, readTier: 'function_bytes_only', name: complete ? 'response.json' : 'incomplete-response.json' },tx);
     return { reference: `src:${source.body.sha256}`, record: `rec:${source.digest}` };
   }
   async binding(job: string): Promise<JobBinding> {

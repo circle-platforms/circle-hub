@@ -143,6 +143,21 @@ chain, on which the runtime role has SELECT, INSERT and DELETE. `Database.stats(
 the pool's counters; `createPool` uses a `pg.Client` subclass to count connections that could not be opened, because `pg.Pool` has
 no event for them.
 
+Observation session locks use a separate bounded pool, explicitly passed into `PgRecordStore` by `openRecords`.
+A held observation never borrows a main-pool connection: recovery can still read records and commit response captures
+when all observation slots are occupied. Both pools reuse `createPool` with the same database settings and existing
+`maxConnections` option. Each pool has that limit (default 10), so one opened records kit budgets at most **20 connections
+by default**, or twice its configured `maxConnections`; actual idle/open counts remain demand driven. `poolStats()` sums
+limit/total/idle/waiting across those two distinct pools and includes the process-global connection-failure counter once.
+`close()` ends both pools; callers first finish their operations and release held observation locks. The original two-key
+advisory-lock namespace is unchanged. Waiting for an observation-pool slot or a connection error is not same-key contention:
+only the database's explicit `locked=false` returns null; an unknown answer/error propagates, and failed sessions are discarded.
+
+Direct records-only stores may explicitly pass null (the factory default) instead of an observation pool. Their `tryHold`
+throws an unavailable-capability error, never falls back to the main pool and never manufactures null. Any caller that uses
+observation locks must inject a distinct pool with an explicit positive bound and arrange its lifetime; supplying the main
+pool is rejected. No new database table, scheduler, configuration key or unbounded per-lock client is introduced.
+
 Migration 31 adds `trace_spans.client_platform`, the platform a client declares at MCP `initialize` (decision 147, B08 F[14]),
 and the partial index `trace_spans_mcp_releases` for the p95 by release on the console's 运行状况 page. The platform is not in
 `ClientDeclaration`: the declaration a client's writes are bound to stays its name and version.

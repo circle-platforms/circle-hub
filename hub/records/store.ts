@@ -1,5 +1,6 @@
 import {verifiedReadValue} from './read-scope.ts';
 import {PgPersonalPayloads,personalRecordOwner,isPersonalPackRecord,captureRecordOwner} from './personal-payloads.ts';
+import type pg from 'pg';
 import { RecordsError } from './errors.ts';
 // Append-only logical records over PostgreSQL. Canonical text preserves every accepted JSON value, including U+0000.
 // Personal bodies use removable scoped payloads; immutable capsules retain their original logical digests.
@@ -40,8 +41,12 @@ export class PgRecordStore implements RecordStore {
   readonly #db: Database;
   readonly personalPayloads:PgPersonalPayloads;
   readonly #options: StoreOptions;
+  readonly #observationPool: pg.Pool | null;
 
-  constructor(db: Database, options: StoreOptions) {
+  constructor(db: Database, options: StoreOptions, observationPool: pg.Pool | null = null) {
+    if (observationPool === db.pool) throw new RecordsError('观察锁必须使用独立连接池');
+    if (observationPool && (!Number.isSafeInteger(observationPool.options.max) || observationPool.options.max < 1)) throw new RecordsError('观察锁连接池必须有明确的正整数上限');
+    this.#observationPool = observationPool;
     this.#db = db;
     this.#options = options;
     this.personalPayloads=new PgPersonalPayloads(db,(key,tx)=>this.lock(key,tx));
@@ -522,18 +527,22 @@ export class PgRecordStore implements RecordStore {
   /** Holds a session advisory lock until the returned function runs. Null means another live connection already holds it. */
   async tryHold(key: string): Promise<(() => Promise<void>) | null> {
     if (typeof key !== 'string' || !key.isWellFormed() || !key.length || key.includes('\0') || Buffer.byteLength(key, 'utf8') > 1000) throw new RecordsError('观察锁需要有效的非空键，至多 1000 UTF-8 字节且不含 NUL');
-    const client = await this.#db.pool.connect();
+    if (!this.#observationPool) throw new RecordsError('观察锁专用连接池尚未装配');
+    const client = await this.#observationPool.connect();
     const name = `dispatch.observation:${key}`;
     try {
       const result = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock($1, hashtext($2)) AS locked', [OBSERVATION_LOCK_SPACE, name]);
-      if (result.rows[0]?.locked !== true) { client.release(); return null; }
-    } catch (error) { client.release(); throw error; }
+      if (result.rows[0]?.locked === false) { client.release(); return null; }
+      if (result.rows[0]?.locked !== true) throw new RecordsError('观察锁结果未知，不能按已被持有处理');
+    } catch (error) { client.release(error instanceof Error ? error : new Error('观察锁读取失败')); throw error; }
     let done = false;
     return async () => {
       if (done) return;
       done = true;
+      let failure: Error | undefined;
       try { await client.query('SELECT pg_advisory_unlock($1, hashtext($2))', [OBSERVATION_LOCK_SPACE, name]); }
-      finally { client.release(); }
+      catch (error) { failure = error instanceof Error ? error : new Error('观察锁释放失败'); throw error; }
+      finally { client.release(failure); }
     };
   }
 
@@ -640,5 +649,5 @@ function validateUniqueKey(key: string): void {
   if (typeof key !== 'string' || key.length === 0 || !isIndexValue(key)) throw new TypeError('unique key must be 1..1000 UTF-8 bytes, well formed, without NUL');
 }
 
-/** Public factory for a store sharing a caller-owned database/transaction boundary. */
-export function createRecordStore(db: Database, options: StoreOptions): RecordStore { return new PgRecordStore(db, options); }
+/** Caller owns both pools. Without an explicit observation pool, tryHold throws rather than borrowing the main pool. */
+export function createRecordStore(db: Database, options: StoreOptions, observationPool: pg.Pool | null = null): RecordStore { return new PgRecordStore(db, options, observationPool); }

@@ -211,7 +211,7 @@ export class RpcClient {
     const bytes = new TextEncoder().encode(safe);
     const received_at = this.#now().toISOString();
     let source:string;
-    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { rpc_id: id, rpc_method: method, received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response,request_bytes_written:received.request_bytes_written });}
+    try {source = await this.#save(bytes, received.status, operation, received.complete && validEncoding, { ...(!notification?{rpc_id:id}:{}), rpc_method: method, received_sha256: sha256Hex(received.bytes), redacted: safe !== received.bytes.toString('utf8'), started_at, ended_at: received_at, stream_cut_at_response: received.stream_cut_at_response,request_bytes_written:received.request_bytes_written });}
     catch {throw new ResponseStorageError();}
     if(operation==='submit' && !received.complete && received.status===0 && received.request_bytes_written===0)throw new SubmissionNotSentError(source);
     if (!received.complete || !validEncoding) throw new IncompleteReplyError();

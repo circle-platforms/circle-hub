@@ -10,5 +10,7 @@ export function requestIdentity(value:unknown,fields:{epoch:string;since:string;
   return {epoch,since:Number.isFinite(since)?since:null,subject};
 }
 export function sameRequestIdentity(before:unknown,after:RequestIdentity|null):boolean {
-  return !!before && !!after && typeof before==='object' && 'epoch' in before && 'subject' in before && canonicalize({epoch:before.epoch,subject:before.subject})===canonicalize({epoch:after.epoch,subject:after.subject});
+  return !!before && !!after && typeof before==='object' && 'epoch' in before && 'since'in before&&'subject' in before &&
+    typeof before.since==='number'&&Number.isFinite(before.since)&&after.since!==null&&before.since===after.since&&
+    canonicalize({epoch:before.epoch,subject:before.subject})===canonicalize({epoch:after.epoch,subject:after.subject});
 }
