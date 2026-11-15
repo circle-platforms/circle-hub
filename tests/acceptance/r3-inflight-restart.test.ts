@@ -78,6 +78,7 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   const originalRequest=[...syntheticLedger.keys()][0];assert.ok(originalRequest);
   const original=syntheticLedger.get(originalRequest)!;
   original.state='not_started';original.touched=false;delete original.key;
+  const beforeRecovery=sends(c);
   const worker=await recover(t,c,job);
   assert.equal((await completed(c,job)).outcome,'proven_not_executed');
   const recoveredSends=sends(c);assert.equal(recoveredSends,1,'automatic recovery itself submits neither the old request nor a new request');
@@ -100,7 +101,7 @@ test('R3-2 certified not_started recovery permits exactly one new ready attempt 
   assert.ok(reread.some(note=>note.job===newAttempt.job));assert.equal(starts,1);
   assert.equal(sends(c),2,'subsequent caller resubmission reads progress instead of adding another submit');
   assert.equal(c.calls.filter(name=>name==='open_slot').length,acquired+1);
-  t.diagnostic(JSON.stringify({scenario:'R3-2',recovery_submits:recoveredSends,after_ready_submits:retrySends,after_reread_submits:sends(c),distinct_requests:new Set(requests).size,request_changed:requests[0]!==requests[1],previous_note:notes.find(note=>note.job===job)!.text,new_attempt_note:newAttempt.text,automatic_starts:starts}));
+  t.diagnostic(JSON.stringify({scenario:'R3-2',recovery_submit_total:recoveredSends,recovery_added_submits:recoveredSends-beforeRecovery,after_ready_submit_total:retrySends,ready_added_submits:retrySends-recoveredSends,after_reread_submit_total:sends(c),reread_added_submits:sends(c)-retrySends,distinct_requests:new Set(requests).size,request_changed:requests[0]!==requests[1],previous_note:notes.find(note=>note.job===job)!.text,new_attempt_note:newAttempt.text,automatic_starts:starts}));
 });
 
 test('R3-3 original started request with lost reply is recovered automatically, never manually resumed',{timeout:60000},async t=>{
