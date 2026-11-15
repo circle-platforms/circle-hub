@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {test} from 'node:test';
+import {test as nodeTest} from 'node:test';
+import {delimiter, resolve} from 'node:path';
+
+function selectPython(): {executable:string;version:string} | undefined {
+  const candidates = [process.env.CIRCLE_HUB_TEST_PYTHON, ...(process.env.PATH ?? '').split(delimiter).map(directory => resolve(directory || '.', 'python3'))];
+  for (const executable of new Set(candidates)) {
+    if (!executable) continue;
+    const version = spawnSync(executable, ['-I', '-c', 'import sys; print(".".join(map(str,sys.version_info[:3]))); sys.exit(0 if sys.version_info >= (3,11) else 1)'], {encoding:'utf8',timeout:5000});
+    if (version.status === 0) return {executable,version:version.stdout.trim()};
+  }
+  return undefined;
+}
+const interpreter = selectPython();
+const missingPython = 'Requires Python >=3.11 (stdlib tomllib): no usable CIRCLE_HUB_TEST_PYTHON or python3 on PATH; skipped, not passed';
+let reportedInterpreter=false;
+const test = (name:string, body:()=>void) => nodeTest(name,{skip:interpreter ? false : missingPython},context=>{
+  if (!reportedInterpreter && interpreter) {
+    context.diagnostic(`Python ${interpreter.version} via ${interpreter.executable===process.env.CIRCLE_HUB_TEST_PYTHON?'CIRCLE_HUB_TEST_PYTHON':'PATH'}`);
+    reportedInterpreter=true;
+  }
+  body();
+});
 
 const file = fileURLToPath(new URL('./probe.py', import.meta.url));
 const driver = String.raw`
@@ -102,7 +123,8 @@ with tempfile.TemporaryDirectory(prefix='synthetic-mcp-probe-') as tmp:
     print(json.dumps({'result':result,'calls':calls,'followed':followed,'stub_calls':stub_calls}))
 `;
 function check(options: Record<string, unknown> = {}) {
-  const child=spawnSync('python3',['-B','-c',driver,file],{input:JSON.stringify(options),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
+  if (!interpreter) throw new Error(missingPython);
+  const child=spawnSync(interpreter.executable,['-B','-c',driver,file],{input:JSON.stringify(options),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
   assert.equal(child.status,0,child.stderr||String(child.error));
   const result=JSON.parse(child.stdout);
   assert.deepEqual(Object.keys(result.result).sort(),['outcome','status']);
@@ -167,7 +189,8 @@ test('timeouts and connection refusal return bounded non-sensitive failures',()=
 
 
 function parseListener(config: string) {
-  const child=spawnSync('python3',['-B','-c',driver,file],{input:JSON.stringify({parse_only:true,config}),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
+  if (!interpreter) throw new Error(missingPython);
+  const child=spawnSync(interpreter.executable,['-B','-c',driver,file],{input:JSON.stringify({parse_only:true,config}),encoding:'utf8',env:{PATH:process.env.PATH??'',PYTHONDONTWRITEBYTECODE:'1'},maxBuffer:1024*1024});
   assert.equal(child.status,0,child.stderr||String(child.error));
   return JSON.parse(child.stdout).listen;
 }
