@@ -91,5 +91,7 @@ export async function readSourceBytes(directory: string, slot: string): Promise<
 export async function assertEmptySourceOutput(directory: string): Promise<void> {
   const info = await lstat(directory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return null; throw error; });
   if (!info) return;
-  if (!info.isDirectory() || info.isSymbolicLink() || (await readdir(directory)).length > 0) failCall('occupied', '输出位置不是空的普通目录', '另选新的空目录下载，不覆盖已有资料', { path: directory, legal_form: '--out <新的空目录>' });
+  if (!info.isDirectory() || info.isSymbolicLink()) failCall('occupied', '输出位置不是空的普通目录', '另选新的空目录下载，不覆盖已有资料', { path: directory, legal_form: '--out <新的空目录>' });
+  const names = await readdir(directory);
+  if (names.length > 0) failCall('occupied', `输出位置不是空的普通目录：目录内已有 ${names.slice(0, 20).join('、')}${names.length > 20 ? ` 等 ${names.length} 项` : ''}，不覆盖`, '另选新的空目录下载，不覆盖已有资料', { path: directory, legal_form: '--out <新的空目录>' });
 }

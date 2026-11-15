@@ -1,6 +1,6 @@
-import { formatClientCallError } from '../functions/client-cli.ts';
+import { formatClientCallError, parseHubOrigin } from '../functions/client-cli.ts';
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord, failCall, CallFailure } from '../functions/text.ts';
@@ -8,7 +8,7 @@ import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
 import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, caseBasisOf, REPORT_FILES, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
-import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { HubReplyError, RUN_ID, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, downloadRetryControl, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 import { fetchRunInputs, type RunInputs } from './fetch-run.ts';
 import { passReviewInputs, satisfiedRecipes } from './generate-workbook.ts';
@@ -197,7 +197,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     // submit-plans does for a case file (in run 20 the shared reader's answer told the model to export the run's input again).
     const notesValue = parsedPlanFile(`说明文件 ${basename(args.notes)}`, await readSubmittedFileBytes(args.notes, 'notes'));
     await emptyOrAbsent(args.out);
-    const origin = hubOrigin(args.hub);
+    const origin = parseHubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
     const sourceRetry = downloadRetryControl(args.out, retry);
 
@@ -508,7 +508,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     await emptyOrAbsent(args.out);
     await mkdir(args.out, { recursive: true, mode: 0o700 });
     const written: string[] = []; const files: Record<string, string> = {};
-    try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeNew(path, bytes); written.push(path); files[name] = sha256(bytes); } if (canonicalJson(Object.keys(files).sort()) !== canonicalJson(input.artifacts.slice().sort())) failCall('invalid_parameters', '实际写出的文件与报告清单不一致，交付目录已撤回', '请核对运行、范围、产物身份和原始输入，修正后重试'); }
+    try { for (const { name, bytes } of outputs) { const path = join(args.out, name); await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); written.push(path); files[name] = sha256(bytes); } if (canonicalJson(Object.keys(files).sort()) !== canonicalJson(input.artifacts.slice().sort())) failCall('invalid_parameters', '实际写出的文件与报告清单不一致，交付目录已撤回', '请核对运行、范围、产物身份和原始输入，修正后重试'); }
     catch (error) { await Promise.all(written.map((path) => rm(path, { force: true }))); throw error; }
     const out = resolve(args.out);
     process.stdout.write(JSON.stringify({

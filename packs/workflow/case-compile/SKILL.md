@@ -51,7 +51,7 @@ profile: device_count 只读预检及可选 fold_newlines
 沿用已核对正确的重组（同脑图同构建）:
   inputs.recomposition_run={"reference":"<run_reference>"}（取下载重组目录 references.json 或导出顶层 run_reference）
   inputs.recomposition_result={"run":"<重组运行编号>"}（Hub 解析成已接收的结果）
-本地导出: tools/normalize-mindmap.ts --in <导出文件> --out <规整文件>
+本地规整: node '<技能目录>/tools/normalize-mindmap.ts' --in '<导出文件>' --out '<规整文件>'
 上传中性文件名，说明写两边摘要和“客户端规整”，不改内容或编号
 下载命令见下方
 本地读取: items/<序号>.json、briefs/<序号>.md、knowledge/；来源文件按sources.json的file指针读取，不猜名字

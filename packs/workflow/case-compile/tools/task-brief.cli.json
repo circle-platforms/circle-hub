@@ -7,7 +7,7 @@
       "required": false,
       "kind": "string",
       "multiple": false,
-      "placeholder": "<任务文件路径>，再把标准输出那段极短派发提示原样传给",
+      "placeholder": "<任务文件路径>",
       "type": "path"
     },
     {
@@ -161,7 +161,7 @@
       "pairs": [
         {
           "name": "task-file",
-          "placeholder": "<任务文件路径>，再把标准输出那段极短派发提示原样传给",
+          "placeholder": "<任务文件路径>",
           "optional": false
         }
       ]

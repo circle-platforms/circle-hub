@@ -43,7 +43,7 @@ export async function buildRemoteCliProbes(stagedCaseDir: string, stagedRecompos
   await writeFile(join(plans, '01.json'), JSON.stringify({ item: item.id, handling: 'handled', slots: { plan: [{ text: '合成计划', quotes: [], data: {} }] } }));
   await writeFile(join(records, '01.json'), JSON.stringify({ item: item.id, method: { kind: 'declared', text: '合成方法', sources: ['synthetic-reference'], basis: '合成依据' } }));
   const notes = join(workRoot, 'notes.json'); await writeFile(notes, '{"cases":{}}');
-  const child = fork(fileURLToPath(new URL('./remote-cli-worker.ts', import.meta.url)), [], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { NODE_NO_WARNINGS: '1' } });
+  const child = fork(fileURLToPath(new URL('./remote-cli-worker.ts', import.meta.url)), [], { execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'], env: { NODE_NO_WARNINGS: '1' } });
   const origin = await new Promise<string>((resolve, reject) => {
     child.once('error', reject); child.once('exit', code => reject(new Error(`Synthetic CLI responder exited before ready: ${code}`)));
     child.once('message', value => resolve((value as { origin: string }).origin));

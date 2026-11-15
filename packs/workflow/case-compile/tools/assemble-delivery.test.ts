@@ -606,7 +606,10 @@ test('assemble-delivery retries 503 Retry-After and ECONNREFUSED on reads and st
   });
   assert.equal(failed.code, 1);
   assert.deepEqual(pauses2, [2_000, 4_000, 8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000]);
-  assert.match(failed.stderr, /^暂时不可用：读取 Hub 达到重试上限，已等待 60 秒并尝试 10 次（ECONNREFUSED）。请.*。$/m);
+  assert.match(failed.stderr, /^暂时不可用：/);
+  assert.match(failed.stderr, /ECONNREFUSED/);
+  assert.match(failed.stderr, /已等待 60 秒并尝试 10 次/);
+  assert.match(failed.stderr, /请等待 Hub 恢复或确认网络可达后用同一命令重试/);
   await assert.rejects(readdir(out2), 'nothing written when retry budget exhausted');
 });
 
