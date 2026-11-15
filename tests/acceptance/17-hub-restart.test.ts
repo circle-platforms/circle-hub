@@ -128,7 +128,7 @@ describe('scenario 17: hub process restart preserves runs and results', () => {
       assert.equal(readResult.isError, false);
       const storedResult=JSON.parse(readResult.out.content!.text!);
       assert.equal(storedResult.run,run1.run);
-      assert.ok(run1.items.every(item=>readResult.text.includes(`原始用例 ${item.label}，`)));
+      assert.ok(run1.items.every(item=>readResult.text.includes(`原始用例 ${item.label}：`)));
 
       // Console on restarted Hub
       const reconnectedConsole = await openConsole(

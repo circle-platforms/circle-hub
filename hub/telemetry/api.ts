@@ -34,6 +34,8 @@ export {
   type Usage,
 } from './usage.ts';
 export { BATCH_ROWS, FLUSH_MS, QUEUE_ROWS, TraceWriter, type StoredSpanRow, type WriterOptions, type WriterStats } from './writer.ts';
+/** Tool-return clock times (Hub process zone, month-day); console keeps browser-local formatting. */
+export { toolLocalMinute, toolZoneOf } from './tool-time.ts';
 
 /** How long close() waits for the last write; a process that is stopping does not wait for a database that is gone. */
 const CLOSE_WAIT_MS = 5000;

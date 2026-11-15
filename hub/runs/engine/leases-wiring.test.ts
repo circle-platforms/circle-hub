@@ -228,12 +228,12 @@ describe('device observations at a booking (decision 112)', () => {
     assert.deepEqual(observeCalls, [{ user: h.alice.id, run: run.run, targets: [{ inventory: 'e'.repeat(64), device: '/devices/0', label: 'meadow/obs/1' }] }], 'asked after the grant, for the device the projection named');
     const claim = run.device_observations?.[0];
     assert.ok(claim);
-    assert.equal(claim.statement.text, 'meadow/obs/1 装的是 synthetic-build-now（设备回显，观察于 2026-10-22T08:00:30.000Z）');
+    assert.match(claim.statement.text, /^meadow\/obs\/1 装的是 synthetic-build-now（设备回显，观察于 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?））$/);
     assert.equal(claim.qualifier.provenance, 'observed');
     assert.equal(claim.qualifier.collected_at, '2026-10-22T08:00:30.000Z');
     assert.deepEqual(claim.grounds, [`src:${'d'.repeat(64)}`]);
     const text = toolText('start_run', detail.answer);
-    assert.match(text, /测试环境 meadow\/obs\/1，构建 synthetic-build-now，读取时间 \d{4}-\d{2}-\d{2} \d{2}:\d{2}；状态已确认；决定者程序/);
+    assert.match(text, /测试环境 meadow\/obs\/1，构建 synthetic-build-now，读取时间 \d{2}-\d{2} \d{2}:\d{2}（UTC[+-]\d+(?::\d{2})?）；状态已确认；决定者程序/);
     assert.doesNotMatch(text, /2026-10-22T08:00:30\.000Z|设备回显|性质与依据等级/);
   });
 });
