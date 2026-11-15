@@ -1735,7 +1735,7 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>): H
   }
 
   for (const p of allTargets) {
-    if (isVirtual(p)) continue;
+    if (!isDelete && isVirtual(p)) continue;
     let target: string;
     try { target = resolvedTarget(env, p, String(input.cwd)); }
     catch (error) {

@@ -35,6 +35,9 @@ test('T5 a broad delete allow-list entry cannot remove the workspace boundary',a
   const f=fixture();try{
     f.env.declaration.allow={custom:['delete']};
     f.env.declaration.files!.write=[];
+    f.env.declaration.files!.virtualReadOnlyTools=['delete'];
+    f.env.declaration.files!.virtualReadOnly=['.*'];
+    assert.equal((await f.call('delete',{file_path:join(f.home,'skills/owned.json')})).decision,'deny');
     assert.notEqual((await f.call('delete',{file_path:'owned.json'})).decision,'deny');
     assert.equal((await f.call('delete',{file_path:join(f.root,'outside.json')})).decision,'deny');
   }finally{f.close();}
