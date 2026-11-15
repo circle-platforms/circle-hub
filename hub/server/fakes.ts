@@ -182,7 +182,7 @@ export class FakeWorkflows implements WorkflowStore {
     return pack === undefined ? null : loaded(pack);
   }
 
-  async summaries(user: Principal): Promise<PackSummary[]> {
+  async summaries(user: Principal, _options: { includeAdminDefault: boolean }): Promise<PackSummary[]> {
     const scripted = this.script.take('summaries');
     if (scripted !== undefined) return scripted.value as PackSummary[];
     return (await this.usable(user)).map((pack) => pack.summary!).filter((summary) => summary !== null);

@@ -522,7 +522,7 @@ export function readsExternalFor(summaries: readonly PackSummary[]): boolean {
  * cannot be loaded counts as reading outside (the cautious annotation), with the reason in the admin note.
  */
 export async function startRunReadsExternal(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}, listed?: readonly PackSummary[]): Promise<boolean> {
-  const summaries = listed ?? await deps.workflows.summaries(principal);
+  const summaries = listed ?? await deps.workflows.summaries(principal, { includeAdminDefault: false });
   if (readsExternalFor(summaries)) return true;
   for (const summary of summaries) {
     let loaded;
@@ -541,7 +541,7 @@ export async function startRunReadsExternal(deps: ServerDeps, principal: Princip
 /** D06 R[4], decision 105: submit_result makes the Hub dispatch for this caller when one of the caller's packs declares a
  * hub_template effect row; a pack that cannot be loaded counts as dispatching, so the hints stay conservative. */
 export async function submitDispatchesJobs(deps: ServerDeps, principal: Principal, note: (reason: string) => void = () => {}, listed?: readonly PackSummary[]): Promise<boolean> {
-  for (const summary of listed ?? await deps.workflows.summaries(principal)) {
+  for (const summary of listed ?? await deps.workflows.summaries(principal, { includeAdminDefault: false })) {
     let loaded;
     try {
       loaded = await deps.workflows.forUser(principal, summary.pack);
@@ -561,7 +561,7 @@ export function listTools(deps: ServerDeps, principal: Principal, note: (reason:
 }
 
 async function publishedTools(deps: ServerDeps, principal: Principal, note: (reason: string) => void): Promise<PublishedTool[]> {
-  const summaries = await deps.workflows.summaries(principal);
+  const summaries = await deps.workflows.summaries(principal, { includeAdminDefault: false });
   const external = await startRunReadsExternal(deps, principal, note, summaries);
   const dispatches = await submitDispatchesJobs(deps, principal, note, summaries);
   return TOOLS.map((tool) => {
@@ -626,7 +626,9 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   const parsed = ListTaskPacksInput.safeParse(args);
   if (!parsed.success) return { answer: errorAnswer('list_task_packs', schemaErrors('list_task_packs', parsed.error, args)) };
-  const summaries = await deps.workflows.summaries(call.principal);
+  const summaries = await deps.workflows.summaries(call.principal, { includeAdminDefault: true });
+  checkReadCancellation(call);
+  const assignedSummaries = await deps.workflows.summaries(call.principal, { includeAdminDefault: false });
   checkReadCancellation(call);
   const capabilities = await deps.memberCapabilities(call.principal, undefined, summaries);
   const available = [...capabilities.workflows, ...capabilities.skills];
@@ -637,6 +639,8 @@ const listTaskPacks: Handler = async (deps, call, args) => {
     if (available.some(item => item.ref === `${pack.id}@${pack.version}` &&
       (personal ? owner !== null && item.owner === owner.name : item.owner === undefined))) packs.push(pack);
   }
+  const assignedPublic = new Set(assignedSummaries.filter(pack => pack.kind === 'workflow' && (pack.space === undefined || pack.space === 'team')).map(pack => pack.pack));
+  const adminDefaultPacks = packs.filter(pack => pack.kind === 'workflow' && (pack.space === undefined || pack.space === 'team') && !assignedPublic.has(pack.pack)).map(pack => pack.pack);
   checkReadCancellation(call);
   const { kind, pack_id: packId, offset = 0 } = parsed.data;
   const filtered = packs.filter((pack) => (kind === undefined || pack.kind === kind) && (packId === undefined || pack.id === packId));
@@ -663,7 +667,7 @@ const listTaskPacks: Handler = async (deps, call, args) => {
   checkReadCancellation(call);
   return {
     answer: { call_result: 'ok', errors: [], member_capabilities: capabilities, packs: filtered.slice(offset), index, ...(context !== null ? { context } : {}) },
-    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}) } },
+    text: { packList: { offset, ...(kind === undefined ? {} : { kind }), ...(packId === undefined ? {} : { packId }), ...(contextUnread ? { contextUnread } : {}), ...(adminDefaultPacks.length ? { adminDefaultPacks } : {}) } },
   };
 };
 
@@ -842,7 +846,7 @@ export async function acceptedBy(deps: Pick<ServerDeps, 'workflows'>, principal:
   const sources = (answer.run as { sources?: ReadonlyArray<{ external?: unknown }> } | undefined)?.sources ?? [];
   const types = [...new Set(sources.flatMap((s) => typeof s.external === 'string' && ExternalObjectId.safeParse(s.external).success ? [s.external.slice(0, s.external.indexOf(':', s.external.indexOf(':') + 1))] : []))];
   if (types.length === 0) return [];
-  const packs = await deps.workflows.summaries(principal);
+  const packs = await deps.workflows.summaries(principal, { includeAdminDefault: true });
   return types.flatMap((type) => {
     const inputs = packs.flatMap((p) => p.inputs.filter((i) => i.accepts.includes(type)).map((i) => ({ pack: p.pack, slot: i.slot, role: i.role })));
     return inputs.length > 0 ? [{ type, inputs }] : [];

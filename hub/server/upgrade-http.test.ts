@@ -39,7 +39,7 @@ async function bed(t: TestContext, closeGraceMs = 5000, initiallyIdle = false) {
       store: {},
       callLog: { append: async (input: CallLogInput) => { calls.push(input); logged.resolve(); } },
     },
-    workflows: { summaries: () => { reads++; entered.resolve(); return blocked ? finish.promise : Promise.resolve([]); } },
+    workflows: { summaries: (_user: unknown, _options: { includeAdminDefault: boolean }) => { reads++; entered.resolve(); return blocked ? finish.promise : Promise.resolve([]); } },
     memberCapabilities: async (actor: Principal, account?: string, summaries?: readonly unknown[]) => {
       assert.deepEqual(actor, principal);
       assert.equal(account, undefined);

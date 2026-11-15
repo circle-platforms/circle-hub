@@ -124,7 +124,7 @@ function fakeWorkflows(declares: boolean): WorkflowStore {
   return {
     forUser: async () => null,
     byDigest: async () => loaded,
-    summaries: async () => [],
+    summaries: async (_user: unknown, _options: { includeAdminDefault: boolean }) => [],
   };
 }
 

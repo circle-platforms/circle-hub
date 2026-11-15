@@ -15,7 +15,7 @@ const packs = [
   pack('toy-cases', [{ slot: 'bugs', role: 'expected', accepts: ['toy:bug', 'toy:bug-list'] }, { slot: 'map', role: 'subject', accepts: ['application/json'] }]),
   pack('toy-other', [{ slot: 'story', role: 'expected', accepts: ['toy:story'] }]),
 ];
-const deps = { workflows: { summaries: async () => packs } } as unknown as Parameters<typeof acceptedBy>[0];
+const deps = { workflows: { summaries: async (_user: unknown, options: { includeAdminDefault: boolean }) => { assert.deepEqual(options, { includeAdminDefault: true }); return packs; } } } as unknown as Parameters<typeof acceptedBy>[0];
 const answer = (externals: Array<string | null>) => ({ call_result: 'ok', errors: [], run: { sources: externals.map((external) => ({ external })) } }) as unknown as Parameters<typeof acceptedBy>[2];
 
 test('every input of the reader’s packs whose accepts names the source type exactly', async () => {

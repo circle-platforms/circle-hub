@@ -126,7 +126,7 @@ export function fakeDeps(
     memberCapabilities: (by, userId, packSummaries) => memberCapabilities(records, {
       canUsePack: (target, pack) => records.authorizations.canUse(target.id, pack),
       publicWorkflowIds: async () => workflows.packs.filter(pack => pack.kind === 'workflow' && pack.summary !== null).map(pack => pack.id),
-      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target),
+      packs: target => packSummaries !== undefined ? Promise.resolve(packSummaries) : workflows.summaries(target, { includeAdminDefault: true }),
       connections: async target => (await fakes.resources.list(target)).map(item => ({
         id: item.id, name: item.name, systemPack: item.system_pack, environment: item.environment, enabled: item.enabled,
       })),

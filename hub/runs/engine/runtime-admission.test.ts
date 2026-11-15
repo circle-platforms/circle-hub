@@ -80,7 +80,7 @@ test('runtime admission reruns contrasting bound items and records observed sour
   assert.equal(resultItem(unresolved.result,'positive').requirements[0].layers[0].terminal,'unchecked');
   assert.ok(unresolved.result.errors.some(error=>error.fix?.includes('重开运行')));
  }
- const workflows={byDigest:async()=>workflow,forUser:async()=>workflow,summaries:async()=>[],ownerOf:async()=>h.admin.id};
+ const workflows={byDigest:async()=>workflow,forUser:async()=>workflow,summaries: async (_user: unknown, _options: { includeAdminDefault: boolean }) =>[],ownerOf:async()=>h.admin.id};
  const service=createRunsService({...ctx.deps,workflows});
  await putRun(h.kit.store,run,new Date().toISOString());
  const answer=await service.submitResult(h.alice,submission,h.call('synthetic'));

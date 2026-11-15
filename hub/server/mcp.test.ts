@@ -230,14 +230,14 @@ describe('list_task_packs', () => {
     const client = await connect(user); t.after(() => client.close());
     const original = server.fakes.workflows.summaries.bind(server.fakes.workflows);
     let reads = 0;
-    server.fakes.workflows.summaries = async by => {
+    server.fakes.workflows.summaries = async (by, options) => {
       reads += 1;
-      return [...await original(by), fakeWorkflowPack('hidden-pack', '不应泄露的候选', ['application/json']).summary!];
+      return [...await original(by, options), fakeWorkflowPack('hidden-pack', '不应泄露的候选', ['application/json']).summary!];
     };
     t.after(() => { server.fakes.workflows.summaries = original; });
     const result = await client.call('list_task_packs', {});
     assert.equal(result.isError, false);
-    assert.equal(reads, 1);
+    assert.equal(reads, 2, 'one explicit use projection and one assignment projection');
     const view = result.structuredContent.member_capabilities as import('../records/api.ts').MemberCapabilities;
     assert.deepEqual(view.teams, ['投影团队']);
     assert.equal(view.unassigned_workflows_count, 0);
