@@ -23,6 +23,7 @@ async function bed(t: TestContext, closeGraceMs = 5000, initiallyIdle = false) {
   let entered = Promise.withResolvers<void>();
   const finish = Promise.withResolvers<[]>(), logged = Promise.withResolvers<void>();
   const calls: CallLogInput[] = [], messages: string[] = [];
+  const projections:boolean[]=[];
   const secondRequest = Promise.withResolvers<void>();
   let reads = 0, active = 0, arrivals = 0, blocked = !initiallyIdle;
   const principal = { id: 'usr_' + '0'.repeat(26), name: '合成成员', role: 'user' as const };
@@ -39,7 +40,7 @@ async function bed(t: TestContext, closeGraceMs = 5000, initiallyIdle = false) {
       store: {},
       callLog: { append: async (input: CallLogInput) => { calls.push(input); logged.resolve(); } },
     },
-    workflows: { summaries: (_user: unknown, _options: { includeAdminDefault: boolean }) => { reads++; entered.resolve(); return blocked ? finish.promise : Promise.resolve([]); } },
+    workflows: { summaries: (_user: unknown, _options: { includeAdminDefault: boolean }) => { projections.push(_options.includeAdminDefault); reads++; entered.resolve(); return blocked ? finish.promise : Promise.resolve([]); } },
     memberCapabilities: async (actor: Principal, account?: string, summaries?: readonly unknown[]) => {
       assert.deepEqual(actor, principal);
       assert.equal(account, undefined);
@@ -61,7 +62,7 @@ async function bed(t: TestContext, closeGraceMs = 5000, initiallyIdle = false) {
   } });
   const info = await app.listen();
   t.after(async () => { finish.resolve([]); await app.close(); await rm(root, { recursive: true, force: true }); });
-  return { app, info, get entered() { return entered; }, finish, logged, secondRequest, calls, messages, reads: () => reads, active: () => active, block() { blocked = true; entered = Promise.withResolvers<void>(); } };
+  return { app, info, get entered() { return entered; }, finish, logged, secondRequest, calls, messages, reads: () => reads, projections:()=>[...projections], active: () => active, block() { blocked = true; entered = Promise.withResolvers<void>(); } };
 }
 
 function post(port: number, onChunk?: (chunk: string) => void): Promise<{ status: number; body: string }> {
@@ -90,7 +91,8 @@ test('an admitted request can finish during the shutdown grace and deliver its c
   assert.equal(reply.value.status, 200);
   assert.equal(JSON.parse(reply.value.body).result.isError, false);
   await closing;
-  assert.equal(w.reads(), 1);
+  assert.equal(w.reads(), 2, 'one admitted list reads exactly its use and assignment projections');
+  assert.deepEqual(w.projections(),[true,false]);
   assert.equal(w.calls.length, 1);
   await w.app.close();
 });
@@ -114,7 +116,8 @@ test('a pipelined call entering shutdown is refused before business with retry g
   w.finish.resolve([]);
   await ended.promise;
   await closing;
-  assert.equal(w.reads(), 1, 'the later call never reached its provider');
+  assert.equal(w.reads(), 2, 'the later call never reached either projection provider');
+  assert.deepEqual(w.projections(),[true,false]);
   assert.match(wire, /HTTP\/1\.1 503/);
   assert.match(wire, /retry-after: [1-9][0-9]*/i);
   assert.ok(wire.includes('Hub 正在重启，这次调用没有执行，稍后原样重试'));
