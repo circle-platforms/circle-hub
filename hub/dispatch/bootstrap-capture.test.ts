@@ -66,7 +66,8 @@ async function auditedCapture(c: Context, state: JobStatus, digest: string, phas
   assert.deepEqual(JSON.parse(Buffer.from(bytes).toString('utf8')).result.structuredContent.topology, { synthetic: true });
   const completion = events.find(event => event.body.detail.phase === 'complete');
   assert.ok(completion); assert.equal(completion.body.detail.registration_ready, false);
-  assert.equal(state.outcome, 'not_dispatched');
+  assert.equal(state.job_facts.operation, 'precheck');
+  assert.equal(state.dispatch_attempt, undefined, 'read-only capture never fabricates a dispatch attempt');
   assert.ok(c.calls.includes('open_slot') && c.calls.includes('inspect_slot') && c.calls.includes('close_slot'));
   assert.equal(c.calls.filter(name => name === 'open_slot').length, c.calls.filter(name => name === 'close_slot').length);
   for (const name of c.calls) assert.ok(['open_slot', 'touch_slot', 'inspect_slot', 'peek_cache', 'close_slot'].includes(name), name);
@@ -156,8 +157,8 @@ test('declaring resources closes bootstrap and an administrator still needs the 
   assert.equal(await c.kit.testEnvironments.canUse(c.admin, c.environment.id), false);
   const callCount = c.endpoint.calls.length;
   const refused = await c.service.precheck(c.admin, c.executor.id);
-  assert.equal(refused.outcome, 'not_dispatched');
-  assert.equal(refused.error_code, 'SOURCE_NOT_PERMITTED');
+  assert.equal(refused.dispatch_attempt, undefined, 'ordinary permission refusal has no dispatch attempt');
+  assert.equal(refused.job_facts.admission_error?.code, 'SOURCE_NOT_PERMITTED');
   assert.equal(c.endpoint.calls.length, callCount, 'an earlier bootstrap never grants another read after resources are declared');
   await noEffects(c, before, captured.job);
   await noEffects(c, before, refused.job);
@@ -206,8 +207,9 @@ test('a refused bootstrap read keeps the original and actor audit and releases i
   assert.equal(sha256Hex(bytes), reference.slice(4));
   assert.equal(JSON.parse(Buffer.from(bytes).toString('utf8')).result.isError, true);
   assert.ok(events.some(event => event.body.detail.phase === 'precheck.failure'));
-  assert.equal(state.outcome, 'not_dispatched');
-  assert.equal(state.frozen, false);
+  assert.equal(state.job_facts.operation, 'precheck');
+  assert.equal(state.dispatch_attempt, undefined, 'read-only capture never fabricates a dispatch attempt');
+  assert.equal(state.job_facts.frozen, false);
   assert.equal(c.calls.filter(name => name === 'open_slot').length, 1);
   assert.equal(c.calls.filter(name => name === 'close_slot').length, 1);
   await noEffects(c, before, state.job);
