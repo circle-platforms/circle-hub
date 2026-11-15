@@ -3521,7 +3521,8 @@
       ],
       "changes90": [
         "来源：主C60/C66授权（2026-11-15）；临时模型90基89。 HTTP错误公开为HttpErrorEnvelope.error:{message,...HttpCallErrorData}，data的code取生成ProtocolCode、call_error_category取现有五类或null，原因可选取既有call_error_reason，call_not_executed仅literal true且只能由source实际确认pre-handler拒绝；缺席未知，HTTP状态/message/内部异常不证明未执行。复用现有枚举/引用，不造记录种类。ProtocolError保留request_id原可选string、missing原字段及约束，新增可选audience:UserId、due:IsoTime、next_action:string、items:ItemId[]，不补默认；请求字段必须来自真实请求记录。",
-        "登记8个精准transport/export码。CALL_AUTHENTICATION_REQUIRED/CALL_ORIGIN_REFUSED权限；METHOD/MEDIA_TYPE/REQUEST_INVALID参数；CALL_BUSY/CALL_INTERNAL_UNAVAILABLE暂不可用；RUN_EXPORT_NOT_READY不存在。来源隐私未知继续SOURCE_UNAVAILABLE且category=null，已证明withheld用SOURCE_NOT_PERMITTED；不硬套来源超时，INTERNAL效应未知不标未执行。"
+        "登记8个精准transport/export码。CALL_AUTHENTICATION_REQUIRED/CALL_ORIGIN_REFUSED权限；METHOD/MEDIA_TYPE/REQUEST_INVALID参数；CALL_BUSY/CALL_INTERNAL_UNAVAILABLE暂不可用；RUN_EXPORT_NOT_READY不存在。来源隐私未知继续SOURCE_UNAVAILABLE且category=null，已证明withheld用SOURCE_NOT_PERMITTED；不硬套来源超时，INTERNAL效应未知不标未执行。",
+        "同批兼容事实：HttpCallErrorData新增可选trace:TraceId保留MCP internalError已有data.trace；SDK补齐code时必须保留该真实追踪值，不另造_meta或追踪别名，不补默认。来源：主C66兼容回归修复授权，模型90未发布同批追加，不升91。"
       ]
     },
     {
@@ -4707,7 +4708,8 @@
           "call_error_category": "现有call_error_category或null，必有",
           "call_error_reason": "既有原因，可选",
           "call_not_executed": "仅true，可选；仅实际pre-handler拒绝，不按status/message推断",
-          "message": "抛出处事实字符串，置于error内"
+          "message": "抛出处事实字符串，置于error内",
+          "trace": "既有TraceId，可选，保留源已有真实追踪值，不补默认"
         },
         "source": "来源：主C60/C66授权（2026-11-15）；临时模型90基89。"
       }

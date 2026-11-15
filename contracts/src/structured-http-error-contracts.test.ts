@@ -72,3 +72,17 @@ test('registry and public generated output schemas include transport and request
   const tools = JSON.parse(readFileSync(new URL('../generated/tools.json',import.meta.url),'utf8'));
   for (const tool of tools) assert.equal(tool.outputSchema.properties.errors.items.properties.audience.type,'string');
 });
+
+
+test('transport schemas preserve an existing internal-error trace without inventing one', () => {
+  const trace = '4bf92f3577b34da6a3ce929d0e0e4736';
+  const data = {code:'CALL_INTERNAL_UNAVAILABLE',call_error_category:'temporarily_unavailable',trace};
+  assert.deepEqual(HttpCallErrorData.parse(data),data);
+  const envelope = {error:{message:'合成内部错误',...data}};
+  assert.deepEqual(HttpErrorEnvelope.parse(envelope),envelope);
+  assert.equal(HttpCallErrorData.parse({code:data.code,call_error_category:data.call_error_category}).trace,undefined);
+  assert.equal(HttpCallErrorData.safeParse({...data,trace:'invalid-trace'}).success,false);
+  const schema = JSON.parse(readFileSync(new URL('../generated/schemas/http-error-envelope.v1.schema.json',import.meta.url),'utf8'));
+  assert.equal(schema.properties.error.properties.trace.type,'string');
+  assert.equal(schema.properties.error.required.includes('trace'),false);
+});
