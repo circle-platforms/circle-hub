@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { fidelityBrief } from '../functions/fidelity.ts';
 import { main, planItems } from './submit-plans.ts';
 
@@ -18,6 +18,8 @@ async function plans(files: Record<string, unknown>) {
 }
 let RUN_ITEMS = ['doc:a', 'doc:b'];
 let RUN_RECOMPOSITION: Record<string, unknown> | undefined;
+const servers = new Set<ReturnType<typeof createServer>>();
+after(async () => { for (const server of servers) { server.closeAllConnections(); await new Promise<void>(done => server.close(() => done())); } });
 async function hub(answer: unknown, status = 200) {
   const seen: Array<{ url?: string; authorization?: string; body: any }> = [];
   const server = createServer((request, response) => {
@@ -30,9 +32,10 @@ async function hub(answer: unknown, status = 200) {
       response.end(typeof answer === 'string' ? answer : JSON.stringify(answer));
     });
   });
+  servers.add(server);
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const { port } = server.address() as { port: number };
-  return { seen, url: `http://127.0.0.1:${port}/mcp`, close: () => new Promise((done) => server.close(done)) };
+  return { seen, url: `http://127.0.0.1:${port}/mcp`, close: () => { servers.delete(server); server.closeAllConnections(); return new Promise(done => server.close(done)); } };
 }
 async function run(url: string, directory: string, token = TOKEN, retry?: Parameters<typeof main>[2]) {
   const out: string[] = [], err: string[] = [];
@@ -73,7 +76,7 @@ test('a case handed in as skipped is answered with the closing rule after the Hu
   await stub.close();
   assert.equal(result.code, 0);
   assert.deepEqual(stub.seen[0].body.params.arguments.items, [item('doc:a'), skipped], 'the skip reaches the Hub as written');
-  assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n原始用例 990000000000000102 合成用例 2，还没有完成脚本编写，状态未知。原因缺资料，下一步由编写模型按原始用例继续编写；只有 Hub 确认缺资料，或最多重交的次数用完仍未核对正确，才能结束脚本编写。决定者程序。\n$/);
+  assert.match(result.out, /未完成 1（修复轮数用完 1）\n全文在 .+\n原始用例 990000000000000102 合成用例 2，还没有完成脚本编写，状态未知。原因缺资料，下一步由编写模型按原始用例继续编写；声明跳过不是已核验的不可编写结论；已有具名缺失事实出口时按出口处理，否则继续编写或补齐证据；计数只陈述已记录尝试，不证明失败归因。决定者程序。\n$/);
   // No skip, no note.
   const plain = await hub(said('受理'));
   assert.doesNotMatch((await run(plain.url, await plans({ '01.json': item('doc:a') }))).out, /还没有完成脚本编写/);
@@ -112,7 +115,7 @@ test('an HTTP failure and a protocol error say what happened', async () => {
   assert.match((await run(down.url, await plans({ '01.json': item('doc:a') }))).err, /Hub 答复 503/);
   await down.close();
   const refused = await hub({ jsonrpc: '2.0', id: 1, error: { code: -32603, message: '合成错误' } });
-  assert.match((await run(refused.url, await plans({ '01.json': item('doc:a') }))).err, /合成错误/);
+  assert.match((await run(refused.url, await plans({ '01.json': item('doc:a') }))).err, /JSON-RPC code -32603.*请核对原调用/);
   await refused.close();
 });
 
@@ -177,7 +180,7 @@ test('a final verification takes the same plan directory: files of items the run
   } finally { RUN_ITEMS = ['doc:a', 'doc:b']; }
 });
 
-test('a case file that is not valid JSON is named with the place and the text around it, and nothing is sent', async () => {
+test('invalid JSON is located by filename with explicit unknown offset, and nothing is sent', async () => {
   const good = JSON.stringify(item('doc:a'));
   const directory = await plans({ '01.json': good, '02.json': JSON.stringify(item('doc:b')).slice(0, -1) });
   const stub = await hub(said('受理'));
@@ -185,7 +188,7 @@ test('a case file that is not valid JSON is named with the place and the text ar
   await stub.close();
   assert.equal(result.code, 1);
   assert.equal(stub.seen.length, 0);
-  assert.match(result.err, /02\.json 不是合法的 JSON（[^）]*）；出错位置第 \d+ 个字符，附近原文：".*"。常见原因是括号或引号没有成对/);
+  assert.match(result.err, /02\.json 不是合法的 JSON.*具体字符位置未知.*JSON 结构.*位置：02\.json.*合法写法/);
   const bytes = await plans({ '01.json': Buffer.from([0x7b, 0xff, 0x7d]).toString('latin1') });
   await writeFile(join(bytes, '01.json'), Buffer.from([0x7b, 0xff, 0x7d]));
   const stub2 = await hub(said('受理'));

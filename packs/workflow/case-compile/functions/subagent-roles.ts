@@ -1,3 +1,4 @@
+import { CallFailure } from './text.ts';
 // Single-source declarations for case-compile subagent roles.
 // Both `agents/*.md` and `tools/task-brief.ts` render strictly from these definitions.
 import type { CompileBriefV1 } from './authoring-brief.ts';
@@ -20,6 +21,7 @@ export interface SubagentRoleSpec {
   tools: readonly string[];
   forbiddenTools: readonly string[];
   body: string;
+  localCheck?: { script: string; withBrief: boolean };
 }
 
 export interface TaskBriefInput {
@@ -97,6 +99,7 @@ export const SUBAGENT_ROLES: readonly SubagentRoleSpec[] = [
   },
   {
     key: 'plan',
+    localCheck: { script: 'check-plan.ts', withBrief: false },
     stageLabel: '脚本编写',
     agentName: 'compile-writer',
     description:
@@ -163,6 +166,7 @@ RESTORE_FROM: 改动前取原文，末尾同设备逆序恢复，for 指配置�
   },
   {
     key: 'fidelity',
+    localCheck: { script: 'check-plan.ts', withBrief: true },
     stageLabel: '保真核对',
     agentName: 'compile-fidelity',
     description:
@@ -242,8 +246,7 @@ export function renderAgentDefinition(role: SubagentRoleSpec): string {
 }
 
 /**
- * Renders a self-contained `description` string for Circle's built-in `general-purpose`
- * subagent (`task` tool), substituting the installed `<技能目录>` path and embedding
+ * Renders the per-task inputs for the installed named subagent, embedding
  * the verbatim user scope recorded by the main session.
  */
 export function renderTaskBrief(input: TaskBriefInput): string {
@@ -271,13 +274,14 @@ export function renderTaskBrief(input: TaskBriefInput): string {
   const unrecordedAttribution = input.unrecordedAttribution ?? unrecordedFromBrief;
 
   if (role.key === 'fidelity' && (compileBrief || priorRounds.length > 0 || streak || unrecordedAttribution)) {
-    throw new Error('参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史。请去掉 --prior-* 与 --brief-json 参数后重调');
+    throw new CallFailure('invalid_parameters', '参数无效：保真核对（compile-fidelity）必须严格盲审，禁止传入编写简报、历轮计划、设备输出、机械规则或失败分析历史。请去掉 --prior-* 与 --brief-json 参数后重调', "请核对角色输入、盲审隔离与当前轮次历史，再重新生成任务文件");
   }
   if (round >= 2 && (role.key === 'plan' || role.key === 'attribute') && priorRounds.length === 0 && !unrecordedAttribution) {
-    throw new Error(`参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`);
+    throw new CallFailure('invalid_parameters', `参数无效：第 ${round} 轮 ${role.stageLabel} 缺少上一轮计划、设备返还或机械规则/失败分析历史，禁止无历史重派。请补充 --prior-plans、--prior-returns 或 --prior-answers 后重调`, "请核对角色输入、盲审隔离与当前轮次历史，再重新生成任务文件");
   }
 
-  const resolvedBody = role.body.split(SKILL_DIR_PLACEHOLDER).join(skillDir);
+  const quote = (value: string) => { if (/[\r\n']/.test(value)) throw new CallFailure('invalid_parameters', '参数无效：自检路径含换行或单引号，不能生成守卫允许的命令', "请核对角色输入、盲审隔离与当前轮次历史，再重新生成任务文件"); return `'${value}'`; };
+  const check = role.localCheck ? `node ${quote(skillDir + '/tools/' + role.localCheck.script)} --file ${quote(outPath)}${role.localCheck.withBrief ? ' --brief ' + quote(briefPath) : ''}` : null;
   const scopeBlock = scopeText.replace(/\r\n/g, '\n').replace(/\n+$/, '');
   const trimmedNote = note?.trim() ? note.trim() : '无';
 
@@ -286,7 +290,7 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     : '';
   const headSections: string[] = [
     '',
-    `请以只读隔离的子代理身份执行本阶段单项任务，使用按名子代理（\`subagent_type="${role.agentName}"\`）（${role.stageLabel}）。`,
+    `请按命名角色的权限边界执行本阶段单项任务，使用按名子代理（\`subagent_type="${role.agentName}"\`）（${role.stageLabel}）。`,
     '',
     '## 本次任务参数',
     `- 角色标识：${role.agentName}（${role.stageLabel} / ${role.key}）`,
@@ -294,10 +298,10 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     `- 当前轮次：第 ${round} 轮${modeSummary}`,
     `- 输入 / 简报路径：${briefPath}`,
     `- 唯一目标输出路径：${outPath}`,
-    `- 技能目录：${skillDir}`,
+    `- 技能目录（明确只读资源）：${skillDir}`,
     ...wrapProseLine('- 本轮补充：', trimmedNote),
     '',
-    '## 工具与权限边界（general-purpose 收窄约束）',
+    '## 已安装角色的工具与权限边界',
     `- 本轮允许工具：${role.tools.join(', ')}`,
     `- 本轮严禁工具与动作：${role.forbiddenTools.join('、')}`,
     '- 严禁执行任何父会话上下文中的跨阶段动作或修改唯一目标输出路径之外的文件。',
@@ -334,8 +338,9 @@ export function renderTaskBrief(input: TaskBriefInput): string {
     '（以下为主会话逐字抄录的使用者范围原文；执行中必须严格遵守，不得自行缩小、改写或删减原始期望；若原文与手册冲突或存在未决项，按角色规则写入目标字段或交主代理汇总，不得擅自决定或向使用者发问。）',
     scopeBlock,
     '',
-    '## 角色固定规则（与包内 agents 声明同源）',
-    resolvedBody,
+    '## 本次执行',
+    `固定职责和工具范围来自已安装的 ${role.agentName} 系统定义；本文件仅提供本次参数。`,
+    ...(check ? ['写入后执行自检：', `\`${check}\``] : []),
     '',
   ];
 
