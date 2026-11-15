@@ -264,6 +264,36 @@ test('refresh-guards --apply restores the backup when post-install preflight fai
     assert.equal(result.restored, true);
     assert.match(readFileSync(libPath, 'utf8'), /before-apply/);
     assert.ok(result.backup && existsSync(result.backup));
+    assert.equal(existsSync(join(home, 'hooks.apply-in-progress')), false, 'marker cleared after controlled restore');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('refresh-guards --apply refuses when a prior apply left hooks.apply-in-progress', () => {
+  const dir = scratch('incomplete');
+  try {
+    const home = makeHome(dir, 'skills', 'home');
+    const libPath = join(home, 'hooks', 'guard-lib.ts');
+    const before = `${readFileSync(libPath, 'utf8')}\n// pristine-before-incomplete\n`;
+    writeFileSync(libPath, before);
+    const priorBackup = join(home, 'hooks.bak.prior-complete');
+    mkdirSync(priorBackup, { recursive: true });
+    writeFileSync(join(priorBackup, 'guard-lib.ts'), before);
+    writeFileSync(join(home, 'hooks.apply-in-progress'), `${priorBackup}\n`, { mode: 0o600 });
+    // Corrupt the live hooks so a mistaken re-apply would back up the bad state.
+    writeFileSync(libPath, `${before}\n// partial-write\n`);
+
+    const lines: string[] = [];
+    const result = refreshGuards(home, { apply: true, out: (line) => lines.push(line) });
+    assert.equal(result.preflightOk, false);
+    assert.equal(result.restored, false);
+    assert.equal(result.backup, undefined);
+    assert.match(lines.join('\n'), /上次刷新未完成/);
+    assert.match(lines.join('\n'), /恢复命令：/);
+    assert.ok(lines.some((line) => line.includes(priorBackup)));
+    assert.match(readFileSync(libPath, 'utf8'), /partial-write/, 'live hooks untouched when refusing');
+    assert.equal(existsSync(join(home, 'hooks.apply-in-progress')), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

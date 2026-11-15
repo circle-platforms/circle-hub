@@ -8,7 +8,7 @@
 // Refresh only the installed guard files of an existing skills/ops home (default dry-run; --apply writes after backup + preflight):
 //   node scripts/real/circle-home.ts refresh-guards --home <dir> [--apply]
 import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pick, readEnvFile, type EnvEntry } from './lib/env-file.ts';
@@ -451,11 +451,34 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?:
     return { home, profile, workdir, apply: false, changes, lines };
   }
 
+  // Incomplete prior --apply: refuse so a partial hooks/ is not treated as the pristine original (G3).
+  const marker = join(home, 'hooks.apply-in-progress');
+  if (existsSync(marker)) {
+    const priorBackup = readFileSync(marker, 'utf8').trim();
+    emit(`上次刷新未完成（存在 ${basename(marker)}）。请先用上一份完整备份恢复后再重试 --apply，不要继续覆盖。`);
+    if (priorBackup.length > 0) {
+      emit(`上一份完整备份：${priorBackup}`);
+      emit(`恢复命令：rm -rf "${join(home, 'hooks')}" && mv "${priorBackup}" "${join(home, 'hooks')}" && rm -f "${marker}"`);
+    } else {
+      emit(`标记文件没有记下备份路径；若主目录里仍有 hooks.bak.*，把它的内容换回 hooks/ 后删除 ${basename(marker)}，再重试。`);
+    }
+    return { home, profile, workdir, apply: true, changes, preflightOk: false, restored: false, lines };
+  }
+
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backup = join(home, `hooks.bak.${stamp}`);
   emit(`步骤：备份 hooks/ → ${basename(backup)}`);
   cpSync(join(home, 'hooks'), backup, { recursive: true });
   emit(`已备份 hooks/ → ${basename(backup)}`);
+  writePrivate(marker, `${backup}\n`);
+
+  const clearMarker = () => {
+    try {
+      if (existsSync(marker)) unlinkSync(marker);
+    } catch {
+      // Best effort: a leftover marker still blocks the next --apply.
+    }
+  };
 
   try {
     emit('步骤：写入守卫文件（逐文件先写临时再改名）');
@@ -466,9 +489,11 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?:
     if (!report.ok) {
       emit('步骤：核对未过，从备份恢复 hooks/');
       restoreHooksFromBackup(home, backup);
+      clearMarker();
       emit('核对未过：已从备份恢复 hooks/，主目录其余文件未动。');
       return { home, profile, workdir, apply: true, changes, backup, preflightOk: false, restored: true, lines };
     }
+    clearMarker();
     emit('核对通过：守卫已更新。');
     return { home, profile, workdir, apply: true, changes, backup, preflightOk: true, restored: false, lines };
   } catch (error) {
@@ -476,9 +501,10 @@ export function refreshGuards(homeRaw: string, options: { apply?: boolean; out?:
     if (existsSync(backup)) {
       try {
         restoreHooksFromBackup(home, backup);
+        clearMarker();
         emit(`失败并已从备份恢复：${(error as Error).message}`);
       } catch (restoreError) {
-        emit(`失败且恢复也出错：${(error as Error).message}；恢复错误：${(restoreError as Error).message}；备份在 ${basename(backup)}`);
+        emit(`失败且恢复也出错：${(error as Error).message}；恢复错误：${(restoreError as Error).message}；备份在 ${basename(backup)}；标记仍在 ${basename(marker)}`);
       }
     } else {
       emit(`失败且没有可用备份：${(error as Error).message}`);
