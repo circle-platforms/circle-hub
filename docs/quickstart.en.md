@@ -45,7 +45,7 @@ After the service can run and the first administrator exists, one definition rep
 ./bin/circle-hub apply docs/examples/quickstart-deployment.json
 ```
 
-Run from the repository root so `directory` (relative to the definition file) resolves to `packs/workflow/test-bed`. Schema must be `deployment@2` (`contracts/src/deployment.ts`). Identical rows are skipped; differences are listed without overwrite. If the administrator has no publish right yet, apply grants it before publishing. `knowledgeSync: []` means no sync targets on purpose.
+Run from the repository root so the path to this definition file resolves; inside the file, `directory` is relative to the definition file's own directory (not the current working directory) and points at `packs/workflow/test-bed`. Schema must be `deployment@2` (`contracts/src/deployment.ts`). Identical rows are skipped; differences are listed without overwrite. If the administrator has no publish right yet, apply grants it before publishing. `knowledgeSync: []` means no sync targets on purpose.
 
 Full file (must match `docs/examples/quickstart-deployment.json` byte-for-byte):
 
@@ -120,11 +120,11 @@ Use only if you need to see each CLI call. The main path remains `apply` above.
 ```bash
 ./bin/circle-hub pack grant-publish admin
 ./bin/circle-hub pack publish packs/workflow/test-bed --stage
-./bin/circle-hub pack assign test-bed --user=admin
+./bin/circle-hub pack assign admin test-bed
 ./bin/circle-hub doc put bed-topology packs/workflow/test-bed/examples/bed-topology.json
 ```
 
-Team/user setup, other pack kinds, and resource/secret examples stay in the [Chinese quickstart](quickstart.md#附节逐条做不经-apply) appendix (authoritative for those details).
+Team/user setup, other pack kinds, and resource/secret examples stay in the [Chinese quickstart](quickstart.md#附节逐条做不经-apply) appendix. This English page is an abridged companion; where the two differ, the [Chinese quickstart](quickstart.md) is authoritative.
 
 ---
 

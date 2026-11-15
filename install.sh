@@ -407,6 +407,7 @@ fi
 
 HOST_FOR_URL="${HTTPS_HOST:-127.0.0.1}"
 # Checked-in minimal deployment definition (docs/examples/quickstart-deployment.json); deploy copies app/ to current/.
+# Print the path only on first install (admin just created) and only when the release actually carries the file.
 QUICKSTART_DEFINITION="${DATA}/current/docs/examples/quickstart-deployment.json"
 say ""
 say "circle-hub 已安装。"
@@ -416,10 +417,13 @@ say "  证书颁发机构：${DATA}/tls/ca.crt（浏览器和 Circle 信任它�
 if [ "${HUB_INSTALL_ADMIN_CREATED}" = 1 ]; then
   say "  管理员用户名：${HUB_INSTALL_ADMIN_NAME}；使用设置的密码或上面仅显示一次的初始密码登录。"
 fi
-say "  部署定义样例：${QUICKSTART_DEFINITION}"
-say "  下一步：circle-hub apply \"${QUICKSTART_DEFINITION}\""
+# PATH tip before the apply command so macOS users do not hit "command not found" on the next line.
 if [ "${OS}" = darwin ]; then
   case ":${PATH}:" in *":${WRAPPER_DIR}:"*) ;; *) say "  把 ${WRAPPER_DIR} 加进 PATH 后就能直接用 circle-hub 命令" ;; esac
+fi
+if [ "${HUB_INSTALL_ADMIN_CREATED}" = 1 ] && as_hub test -f "${QUICKSTART_DEFINITION}"; then
+  say "  部署定义样例：${QUICKSTART_DEFINITION}"
+  say "  下一步：circle-hub apply \"${QUICKSTART_DEFINITION}\"（样例里的账户名是 admin；本次管理员是 ${HUB_INSTALL_ADMIN_NAME}，不一致时先改样例里的 user 再 apply）"
 fi
 if [ -z "${HTTPS_HOST}" ]; then
   say "  现在只能在本机访问。要让内网其他电脑访问，重新安装时加 --https-host <这台机器的内网 IP>（已有部署时要先改部署设置，见文档）。"
