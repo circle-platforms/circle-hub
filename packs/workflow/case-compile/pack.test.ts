@@ -15,7 +15,7 @@ const json = (path: string): any => JSON.parse(read(path));
 test('version 2.0 manifest lists exactly the published files and excludes development fixtures', async () => {
   const manifest = await computeManifest();
   assert.equal(PackManifest.safeParse(manifest).success, true);
-  assert.equal(manifest.version, '3.20.4');
+  assert.equal(manifest.version, '3.20.5');
   assert.equal(json('tables/workbook-format.json').generator, `case-compile@${manifest.version}`);
   assert.deepEqual(json('pack.json'), manifest);
   const files = await packFiles();

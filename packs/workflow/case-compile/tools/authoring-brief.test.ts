@@ -202,7 +202,8 @@ test('the brief ends with the envelope of the plan file: the Hub’s shape, the 
   const text = authoringBrief(ITEM, '00', knowledge, policyOf(POLICY), 'bed-a')!.text;
   assert.ok(text.endsWith('\n```json\n' + JSON.stringify(envelope, null, 2) + '\n```\n'));
   assert.match(text, /## 这条用例的计划文件外壳\n\n一个条目一份 JSON 文件。Hub 收的形状是：plan 槽是只有一条陈述的列表，陈述是 \{text, quotes, data\}/);
-  assert.ok(text.includes('bucket（本运行配置选定的自动化测试环境）、重组回执') && text.includes('空着的不填会被拒。'));
+  assert.ok(text.includes('bucket（本运行配置选定的自动化测试环境）、重组结果') && text.includes('空着的不填会被拒。'));
+  assert.doesNotMatch(text, /回执/);
   // Without a profile that names a bed the bucket is left to the writer and is not claimed as filled.
   const open = authoringBrief(ITEM, '00', knowledge, policyOf(POLICY))!.text;
   assert.ok(open.includes('"bucket": ""') && !open.includes('bucket（本运行配置选定的自动化测试环境）'));

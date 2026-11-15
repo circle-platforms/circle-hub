@@ -151,7 +151,7 @@ test('the pass volume is the dispatched final workbook, the unsuccessful volume 
   assert.match(report, /^# 交付报告 — 合成批\n> 生成 2026-11-08 /);
   assert.match(report, /自动化用例 Excel case\.xlsx 中的 2 条原始用例已一起完成上机验证，判断正确。/);
   assert.match(report, /第 1 次上机验证判断错误。/);
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步使用者核对/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步：使用者核对/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   assert.match(report, /## 原始用例 990000000000000104 合成意图 4/, 'a case never compiled takes its title from the recomposition');
   const long = await readFile(join(out, 'unsuccessful_cases.md'), 'utf8');
@@ -206,7 +206,7 @@ test('cases that last failed in different dispatches go into the unsuccessful vo
   const recipe = (inputs: ReturnType<typeof planRun>, plan: string, autoid: string) => satisfiedRecipes({ run: inputs.record, result: inputs.result, submission: inputs.submission, contract, profile, inventory }).find((r) => r.fields.autoid === autoid && r.plan_run === plan)!;
   assert.deepEqual(await readFile(join(out, 'unsuccessful_cases.xlsx')), Buffer.from(generateWorkbookSet([recipe(plan1, PLAN1, CASES[1]), recipe(plan3, PLAN3, CASES[2])], { merged: true })));
   assert.deepEqual(await readFile(join(out, 'case.xlsx')), Buffer.from(plan4.workbook));
-  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /使用各自最近一次上机验证的自动化用例，尚未一起做上机验证。/);
+  assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /另有 2 条仍有错误或未知的原始用例（990000000000000102、990000000000000103），unsuccessful_cases\.xlsx 放的是它们各自最近一次改写后的自动化用例，没有并入本次一起上机验证的那份 Excel。/);
 });
 
 test('a merged workbook names every plan run and refuses cases of another contract; the default stays one plan run', () => {
@@ -255,7 +255,7 @@ test('the verification runs the model left out are found in the Hub lineage, and
   const printed = JSON.parse(result.stdout);
   assert.deepEqual(printed.runs, [WHOLE, FINAL]);
   assert.deepEqual(printed.added_runs, [WHOLE]);
-  assert.equal(printed.reply, [`交付目录 ${out}`, '原始用例 990000000000000101 合成用例 101，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者程序。', '原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步使用者核对原始用例、手册和设备输出后决定是否修改原始用例。决定者模型。', '原始用例 990000000000000103 合成用例 103，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者程序。', '原始用例 990000000000000104 合成意图 4，缺少脚本编写所需的资料，状态未知。原因缺资料，下一步合成取舍：等补证。决定者程序。', ...['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map((name) => `- ${join(out, name)}`)].join('\n'));
+  assert.equal(printed.reply, [`交付目录 ${out}`, '原始用例 990000000000000101 合成用例 101，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者：程序。', '原始用例 990000000000000102 合成用例 102，模型判断原始用例的期望与设备输出不一致，状态未确认，判断错误。原因还没查清，下一步：使用者核对原始用例、手册和设备输出后决定是否修改原始用例。决定者：模型。', '原始用例 990000000000000103 合成用例 103，自动化用例 Excel 已完成上机验证，状态已确认，判断正确。决定者：程序。', '原始用例 990000000000000104 合成意图 4，缺少脚本编写所需的资料，状态未知。原因缺资料，下一步：合成取舍：等补证。决定者：程序。', ...['case.xlsx', 'unsuccessful_cases.xlsx', 'delivery_report.md', 'unsuccessful_cases.md', 'delivery.json'].map((name) => `- ${join(out, name)}`)].join('\n'));
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.added_runs, [WHOLE]);
   assert.match(await readFile(join(out, 'delivery_report.md'), 'utf8'), /第 1 次上机验证判断错误/);
@@ -309,7 +309,7 @@ test('a failed case goes back to authoring until three authored versions failed;
   const once = await hub(); t.after(once.close);
   const early = await run(once, await notes(judgedOnly), join(dir, 'a'));
   assert.equal(early.code, 1);
-  assert.match(early.stderr, /用例 990000000000000102 上机验证有错误，已重写自动化用例 1 次，最多重交 3 次，同一份自动化用例重新验证不算重写/);
+  assert.match(early.stderr, /用例 990000000000000102 上机验证有错误，已改写自动化用例 1 次，最多改写 3 次，同一份自动化用例重新做上机验证不算改写/);
   const unquoted = await run(once, await notes({ ...NOTES, [CASES[1]]: { ...NOTES[CASES[1]], defect_candidate: { ...CANDIDATE, expected: '作者没写过的期望', actual: '设备说一切正常' } } }), join(dir, 'b'));
   assert.equal(unquoted.code, 1);
   assert.match(unquoted.stderr, /用例 990000000000000102 判断设备的问题时，期望不是原始用例的原句；设备输出不是最近一次上机验证的原话/);
@@ -317,7 +317,7 @@ test('a failed case goes back to authoring until three authored versions failed;
 
   // A rerun of the same plan is not another authored round.
   const rerun = await hub(undefined, undefined, { [AGAIN]: [job('g', AGAIN, PLAN1, CASES.slice(0, 3), plan1.workbook, ['pass', 'fail', 'pass'])] }, {}, [WHOLE, AGAIN, FINAL]); t.after(rerun.close);
-  assert.match((await run(rerun, await notes(judgedOnly), join(dir, 'd'), `${WHOLE},${AGAIN},${FINAL}`)).stderr, /已重写自动化用例 1 次，最多重交 3 次/);
+  assert.match((await run(rerun, await notes(judgedOnly), join(dir, 'd'), `${WHOLE},${AGAIN},${FINAL}`)).stderr, /已改写自动化用例 1 次，最多改写 3 次/);
 
   // Three distinct plans of it failed: it closes as the model not finding a solution, and its judgement is reported as its own account.
   const plan7 = planRun(PLAN7, CASES.slice(0, 3), [CASES[3]], '2'), plan8 = planRun(PLAN8, CASES.slice(0, 3), [CASES[3]], '3');
@@ -329,10 +329,10 @@ test('a failed case goes back to authoring until three authored versions failed;
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual({ closing: summary.cases[1].closing, label: summary.cases[1].closing_label, rounds: summary.cases[1].rounds }, { closing: 'authoring_failure', label: '模型未找到解决方案', rounds: 3 });
   assert.deepEqual(summary.closings, { authoring_failure: 1, device_defect: 0, missing_fact: 1, author_conflict: 0 });
-  assert.match(JSON.parse(closed.stdout).reply, /自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误。原因编写模型的问题/);
+  assert.match(JSON.parse(closed.stdout).reply, /自动化用例尚未编写正确，已改写自动化用例 3 次，状态已确认，判断错误。原因编写模型的问题/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000102 合成用例 102，自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误/);
-  assert.match(report, /原因编写模型的问题，下一步合成取舍：本轮不返工。决定者程序。/);
+  assert.match(report, /原始用例 990000000000000102 合成用例 102，自动化用例尚未编写正确，已改写自动化用例 3 次，状态已确认，判断错误/);
+  assert.match(report, /原因编写模型的问题，下一步：合成取舍：本轮不返工。决定者：程序。/);
   assert.match(report, /模型说明，状态未确认。合成判断：环境缺前置/);
 
   // A verbatim defect candidate closes it after one round and is shown as a candidate for arbitration.
@@ -401,7 +401,7 @@ test('a pass the review dropped goes back to authoring like a failure, counts as
   const once = await hub(undefined, undefined, { [D1]: [jobOf('p', D1, P1, whole, p1.workbook, rows(whole, all, dropped))], [LAST]: last }, { [P1]: p1, [P4]: p4 }, [D1, LAST], false, [marked, clean, refused]); t.after(once.close);
   const early = await run(once, await notes(note), join(dir, 'a'), `${D1},${LAST}`);
   assert.equal(early.code, 1);
-  assert.match(early.stderr, /用例 990000000000000103 最近一次上机验证状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，改好自动化用例再一起做上机验证。已重写自动化用例 1 次，最多重交 3 次/);
+  assert.match(early.stderr, /用例 990000000000000103 最近一次上机验证状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行。下一步由编写模型检查这行设备输出，或改用不会执行失败的观察，改好自动化用例再一起做上机验证。已改写自动化用例 1 次，最多改写 3 次/);
 
   // Three authored versions, one failed and two with a dropped pass: it closes as the model not finding a solution.
   const failedFirst = rows(whole, ['pass', 'pass', 'fail'], dropped);
@@ -412,9 +412,9 @@ test('a pass the review dropped goes back to authoring like a failure, counts as
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.cases.map((c: { status: string }) => c.status), ['delivered', 'delivered', 'unsettled', 'unrun']);
   assert.deepEqual({ closing: summary.cases[2].closing, rounds: summary.cases[2].rounds, terminals: summary.cases[2].dispatches.map((d: { terminal: string }) => d.terminal) }, { closing: 'authoring_failure', rounds: 3, terminals: ['fail', 'no_verdict', 'no_verdict'] });
-  assert.match(JSON.parse(closed.stdout).reply, /自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误。原因编写模型的问题/);
+  assert.match(JSON.parse(closed.stdout).reply, /自动化用例尚未编写正确，已改写自动化用例 3 次，状态已确认，判断错误。原因编写模型的问题/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
-  assert.match(report, /原始用例 990000000000000103 合成用例 103，自动化用例尚未编写正确，已重写自动化用例 3 次，状态已确认，判断错误/);
+  assert.match(report, /原始用例 990000000000000103 合成用例 103，自动化用例尚未编写正确，已改写自动化用例 3 次，状态已确认，判断错误/);
   assert.match(report, /第 3 次上机验证状态未知，设备输出有执行失败原话“Failed to run the synthetic command”，自动化用例没有检查这一行/);
 });
 
@@ -442,7 +442,7 @@ test('a case never dispatched closes only on a fact the Hub recorded missing for
     const refusedOut = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
     const refused = await run(g, await notes(NOTES), refusedOut);
     assert.equal(refused.code, 1, gap);
-    assert.match(refused.stderr, new RegExp(`^不存在：用例 ${CASES[3]}尚未上机验证`), gap);
+    assert.match(refused.stderr, new RegExp(`^不存在：用例 ${CASES[3]}未做上机验证`), gap);
     assert.ok(!refused.stderr.startsWith('已被占用：'), `${gap}: unrun refusal must never use 已被占用: ${refused.stderr}`);
     await assert.rejects(readdir(refusedOut), `${gap}: nothing was written`);
   }
@@ -484,19 +484,19 @@ test("an author's step against the manual closes a failed case at its first roun
   const h = await hub(undefined, undefined, {}, {}, undefined, false, [], 'none'); t.after(h.close);
   const out = join(await mkdtemp(join(tmpdir(), 'cc-delivery-')), 'out');
   const written = await run(h, await notes({
-    [CASES[1]]: { judged: '合成判断：设备拒绝了作者给的名字', remedy: '合成取舍：等作者或用户裁定', evidence: '第 3 步断言没有命中', author_conflict: CONFLICT },
-    [CASES[3]]: { judged: '合成判断：重组时问过用户，选了先不编', remedy: '合成取舍：等作者裁定', author_conflict: { ...CONFLICT, author: '合成动作' } },
+    [CASES[1]]: { judged: '合成判断：设备拒绝了用例作者给的名字', remedy: '合成取舍：等用例作者或使用者裁定', evidence: '第 3 步断言没有命中', author_conflict: CONFLICT },
+    [CASES[3]]: { judged: '合成判断：用例重组时问过使用者，选了先不编写', remedy: '合成取舍：等用例作者裁定', author_conflict: { ...CONFLICT, author: '合成动作' } },
   }), out);
   assert.equal(written.code, 0, written.stderr);
   const summary = JSON.parse(await readFile(join(out, 'delivery.json'), 'utf8'));
   assert.deepEqual(summary.cases.map((c: { status: string; closing?: string }) => [c.status, c.closing ?? null]), [['delivered', null], ['failed', 'author_conflict'], ['delivered', null], ['unrun', 'author_conflict']]);
-  assert.deepEqual([summary.cases[1].closing_label, summary.cases[1].rounds, summary.cases[1].conflict], ['作者步骤与手册冲突（待作者或用户裁定）', 1, CONFLICT]);
+  assert.deepEqual([summary.cases[1].closing_label, summary.cases[1].rounds, summary.cases[1].conflict], ['用例作者的原句与手册冲突（待用例作者或使用者裁定）', 1, CONFLICT]);
   assert.deepEqual([summary.cases[3].rounds ?? null, summary.cases[3].conflict], [null, { ...CONFLICT, author: '合成动作' }]);
   assert.deepEqual(summary.closings, { authoring_failure: 0, device_defect: 0, missing_fact: 0, author_conflict: 2 });
   assert.match(JSON.parse(written.stdout).reply, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
   const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
   assert.match(report, /原始用例 990000000000000102 合成用例 102，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
-  assert.match(report, /下一步使用者核对原始用例、手册和设备输出后决定是否修改原始用例。决定者模型。/);
+  assert.match(report, /下一步：使用者核对原始用例、手册和设备输出后决定是否修改原始用例。决定者：模型。/);
   assert.match(report, /原始用例 990000000000000104 合成意图 4，模型判断原始用例与手册冲突，状态未确认，判断错误。原因原始用例的问题/);
   assert.match(report, /未做上机验证，这条原始用例未完成脚本编写。/);
   const quoted = (author: string) => `**证据，原始用例原句**，已按照规则核对原文。\n${fenced(author)}\n\n**证据，手册原话**，构建 ${plan1.record.build}，已按照规则核对原文。\n${fenced(CONFLICT.manual)}`;
@@ -722,7 +722,7 @@ test('assemble-delivery refuses one scoped run paired with an unscoped run, and 
   const outUnclosed = join(await mkdtemp(join(tmpdir(), 'cc-scope-unclosed-')), 'out');
   const blocked = await run(unclosed, await notes({ [CASES[1]]: NOTES[CASES[1]] }), outUnclosed, WHOLE);
   assert.equal(blocked.code, 1);
-  assert.match(blocked.stderr, new RegExp(`^不存在：用例 ${CASES[1]}尚未上机验证`));
+  assert.match(blocked.stderr, new RegExp(`^不存在：用例 ${CASES[1]}未做上机验证`));
   await assert.rejects(readdir(outUnclosed));
 
   // Dispatch containing an item outside the anchored scope is also refused.
@@ -789,4 +789,72 @@ test('assemble-delivery retains out_of_scope disclosure when both --recompose an
   assert.match(report, /未纳入本次范围的原始用例（2 条/);
   assert.match(report, new RegExp(`${CASES[2]} 合成意图 3|${CASES[2]} 合成标题 3`));
   assert.match(report, new RegExp(`${CASES[3]} 合成意图 4|${CASES[3]} 合成标题 4`));
+});
+
+test('assemble-delivery rejects user-facing leaks in notes before writing any output files', async (t) => {
+  const h = await hub();
+  t.after(h.close);
+  const badNotes = {
+    [CASES[1]]: {
+      judged: '在 2026-11-14T16:17:38.587Z 看到 parameters.exclude 引起 author_conflict，请用户联系产品侧在 notes/run29.notes.json 中重交并开新修订。',
+      remedy: '让相关方确认。决定者：使用者＋程序。',
+      evidence: '第 3 步断言没有命中',
+      defect_candidate: CANDIDATE,
+    },
+    [CASES[3]]: { judged: '待补资料，当前状态 settled。', remedy: '待补齐' },
+  };
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-leaks-out-')), 'out');
+  const blocked = await run(h, await notes(badNotes), out);
+  assert.equal(blocked.code, 1);
+  assert.match(blocked.stderr, /^参数无效：/);
+  assert.match(blocked.stderr, /直接写出了世界时/);
+  assert.match(blocked.stderr, /parameters\.exclude/);
+  assert.match(blocked.stderr, /包含内部工作文件路径/);
+  assert.match(blocked.stderr, /开新修订/);
+  assert.match(blocked.stderr, /使用了“用户”/);
+  assert.match(blocked.stderr, /不合规范/);
+  assert.match(blocked.stderr, /待补资料/);
+  await assert.rejects(readdir(out));
+});
+
+test('assemble-delivery enforces round-29 report formatting, unrun evidence heading, singular summary, F11 label, and F14 reason disclosure', async (t) => {
+  const h = await hub();
+  t.after(h.close);
+  const out = join(await mkdtemp(join(tmpdir(), 'cc-f14-out-')), 'out');
+  const cleanNotes = {
+    [CASES[1]]: {
+      judged: '上机验证未通过，第 3 步断言没有命中。',
+      remedy: '由环境维护者核对设备回显',
+      evidence: '第 3 步断言没有命中',
+      defect_candidate: CANDIDATE,
+    },
+    [CASES[3]]: {
+      judged: '错误：临时故障；等待执行器规则补齐。',
+      remedy: '由环境维护者与使用者补齐缺失资料后重新做脚本编写和脚本合并。决定者：使用者。',
+      evidence: GAP_WORDS,
+    },
+  };
+  const { code, stdout, stderr } = await run(h, await notes(cleanNotes), out);
+  assert.equal(code, 0, stderr);
+  const parsedOut = JSON.parse(stdout);
+  const report = await readFile(join(out, 'delivery_report.md'), 'utf8');
+  const longReport = await readFile(join(out, 'unsuccessful_cases.md'), 'utf8');
+
+  // F1, F2, F3 & F13
+  assert.ok(report.includes(`另有 1 条判断错误的原始用例（${CASES[1]}），unsuccessful_cases.xlsx 放的是它最近一次改写后的自动化用例`));
+  assert.ok(!report.includes('。。'), `double period in report: ${report}`);
+  assert.ok(!longReport.includes('。。'), `double period in long report: ${longReport}`);
+  assert.match(report, /下一步：由环境维护者与使用者补齐缺失资料后重新做脚本编写和脚本合并。决定者：使用者。/);
+  assert.match(report, /（模型自述原因是临时故障；按规则，Hub 已确认缺脚本编写所需资料，以程序规则记缺资料为准。）/);
+
+  // F5: unrun CASES[3] section must never contain **证据，设备输出**
+  const c4Start = report.indexOf(`## 原始用例 ${CASES[3]}`);
+  const c4Section = report.slice(c4Start);
+  assert.ok(!c4Section.includes('**证据，设备输出**'), `unrun section claimed device output: ${c4Section}`);
+  assert.ok(report.includes(`## 原始用例 ${CASES[1]}`));
+  const c2Section = report.slice(report.indexOf(`## 原始用例 ${CASES[1]}`), c4Start);
+  assert.ok(c2Section.includes('第 1 次上机验证判断错误。'));
+  assert.ok(c2Section.includes('**证据，设备输出**，已按照规则核对设备输出。'));
+  assert.match(parsedOut.reply, /下一步：/);
+  assert.match(parsedOut.reply, /决定者：/);
 });

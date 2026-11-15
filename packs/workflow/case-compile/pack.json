@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "case-compile",
-  "version": "3.20.4",
+  "version": "3.20.5",
   "kind": "workflow",
   "dependencies": [
     {
@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "095b6ea88639a77ac86e855a0207f96745b508f8b9dbdcc98839ce18decdb30c",
-      "size": 17378
+      "sha256": "d356a5bcb719644ee3cba2a49b63a8d0cb1f7eacd051c6f715b4a390736a1aff",
+      "size": 17689
     },
     {
       "path": "agents/compile-attributor.md",
@@ -133,7 +133,7 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "6e5379e2a7bba380720d53cc6412be17e34a05cd271d1d208c3a25da5c13dfbd",
+      "sha256": "4013101eef7b079b38b9472c40f2757c76d944d99bfcae16ba35d0d86e245be4",
       "size": 70809
     },
     {
@@ -213,8 +213,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "095c610212175ec55d831361c5fc74ed6c03cdc41b6a2c53501e9ae88b827a55",
-      "size": 48746
+      "sha256": "63ea3a0126317e16b1b2f2fd022557e56ff8ebbd515df8c9c1d52ba5a3734fe9",
+      "size": 59837
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -508,7 +508,7 @@
     },
     {
       "path": "samples/negative/typed-dispatch_policy.json",
-      "sha256": "dac82a4e80d962431641c9b6f4c6cf05014169b2588070188f6fa6b1e74dd7c1",
+      "sha256": "bbb85cf1de282d7d958c51db6d1ebbf5a2f40f79a78eff29b5492b082996119c",
       "size": 202654
     },
     {
@@ -553,7 +553,7 @@
     },
     {
       "path": "samples/negative/typed-workbook_verified.json",
-      "sha256": "12084c523c08b5655ad50538a0af54279d3e00ebcd7f9700937808b435ac9cdd",
+      "sha256": "9791429d98f63d1a2475c9d6416870a394580e40c2af16c67eb463c74a728435",
       "size": 202658
     },
     {
@@ -638,7 +638,7 @@
     },
     {
       "path": "samples/positive/typed-dispatch_policy.json",
-      "sha256": "fef144c9d8530022208fb96278d15bfbde0e53c674b9451386a6f3bbaea7a5ce",
+      "sha256": "d1271411a53c18ae4d72d1a7e35104d0f53cb7e2507a56883062e026a3ce27eb",
       "size": 202608
     },
     {
@@ -683,7 +683,7 @@
     },
     {
       "path": "samples/positive/typed-workbook_verified.json",
-      "sha256": "d6520b10a65af3ff45742057239ddf36da701545d1aa1e35f8865268cc398089",
+      "sha256": "6590528ced9b9bbab397d8e7a2d7fe9b734d5591c5435e74d1d94bd0f9aa742b",
       "size": 202612
     },
     {
@@ -778,13 +778,13 @@
     },
     {
       "path": "tables/workbook-format.json",
-      "sha256": "80d6764884c923d4bb8246d3204544e7618c2a43b1d5ace48ac088900b18d3bf",
+      "sha256": "07ffa564dfa9e76ed0ba533a844492673ba8c5a6f0afa7d0b35f48c7f94de1c7",
       "size": 406
     },
     {
       "path": "tools/assemble-delivery.ts",
-      "sha256": "b4af40fde587f5baf78dc416f2d3f3a886a344af638ab7f13e315076e558ab00",
-      "size": 42706
+      "sha256": "57b093ab0716229dbc46a2a77bc9bfeb0fa30fcbdf0aa90c960e67657242b818",
+      "size": 42953
     },
     {
       "path": "tools/authoring-brief.ts",
@@ -818,8 +818,8 @@
     },
     {
       "path": "tools/delivery.md",
-      "sha256": "3db892219539a67767a7a357b11adf299db8a37bc852916c5b4d0524f01547fd",
-      "size": 12464
+      "sha256": "63c6cd1e882b8998e9f69cb6af3fc6ab14e21756510d06375d8ad9863526cc24",
+      "size": 14918
     },
     {
       "path": "tools/download-returns.ts",

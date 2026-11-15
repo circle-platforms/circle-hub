@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { formatCallError, isRecord } from '../functions/text.ts';
 import { generateWorkbookSet, GENERATOR } from '../functions/generate.ts';
 import { volumeOrder, type MovedCase } from '../functions/channels.ts';
-import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
+import { assemble, auditKey, auditPasses, closeFailed, closeUnrun, caseConclusion, CLOSING, deliveryReport, evidenceProblems, failureLine, lockedStatements, noteUserFacingProblems, parseRunJobs, readNotes, reworked, settledDispatch, STATUS, terminalLabel, unsuccessfulReport, type CaseOutcome, type ConflictGround, type Dispatch, type MissingFact, type Original, type OutOfScopeCase, type ReportInput, type RowAudit, type ScopeSummary } from '../functions/delivery.ts';
 import { canonicalJson } from '../functions/canonical-json.ts';
 import { hubOrigin, HubReplyError, RUN_ID, sha256, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { fetchBytesRetrying, getRetrying, KNOWLEDGE_MAX_BYTES, KNOWLEDGE_TIMEOUT_MS, readSubmittedFileBytes, readTokenFromStdin, requireBearerToken, RetryExhaustedError, type RetryControl } from '../functions/hub-retry.ts';
@@ -319,7 +319,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
       for (const d of dispatches) {
         const extra = d.items.filter((autoid) => !allowed.has(autoid));
         if (extra.length) {
-          throw new Error(`参数无效：上机验证 ${d.run} 包含未纳入本次 parameters.scope 的原始用例 ${extra.join('、')}。请核对运行范围并重新用 start_run 编写与上机后重试`);
+          throw new Error(`参数无效：上机验证 ${d.run} 包含未纳入本次 parameters.scope 的原始用例 ${extra.join('、')}。请核对运行范围并重新用 start_run 做脚本编写和上机验证后重试`);
         }
       }
     }
@@ -371,6 +371,8 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     })();
     const undelivered = assembly.cases.filter((c) => c.status !== 'delivered').map((c) => c.autoid);
     const notes = readNotes(notesValue, undelivered);
+    const wordingProblems = noteUserFacingProblems(notes);
+    if (wordingProblems.length) throw new Error(`参数无效：${wordingProblems.join('；')}。请改好说明文件后重新生成交付目录`);
 
     const outputs: Array<{ name: string; bytes: Uint8Array }> = [];
     let passFile: { sha256: string } | null = null, unsuccessfulFile: { sha256: string } | null = null;
