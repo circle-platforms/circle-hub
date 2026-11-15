@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 import { downloadRunRetrying, getRetrying, readTokenFromStdin, requireBearerToken, type RetryControl } from '../functions/hub-retry.ts';
 import { writeBriefs } from './authoring-brief.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
+import { formatCallError, isRecord, failCall } from '../functions/text.ts';
 
 async function saveRunReference(origin: string, bearer: string, run: string, out: string, retry?: RetryControl): Promise<string | undefined> {
   const exported: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await getRetrying(`${origin}/run-export/${run}/run`, bearer, retry)));
@@ -24,7 +24,7 @@ async function saveRunReference(origin: string, bearer: string, run: string, out
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, brief: (directory: string) => Promise<{ briefs: number }> = writeBriefs, retry?: RetryControl): Promise<number> {
   try {
     const args = argumentsOf(argv, ['hub', 'run', 'out']);
-    if (!RUN_ID.test(args.run)) throw new Error('--run 请使用本次用例重组或脚本编写的编号');
+    if (!RUN_ID.test(args.run)) failCall('invalid_parameters', '--run 不是声明格式的运行编号', '请使用本次用例重组或脚本编写的编号后重试');
     const origin = hubOrigin(args.hub);
     const bearer = await requireBearerToken(readToken);
     const { files, ...report } = await downloadRunRetrying(origin, bearer, args.run, args.out, retry);
