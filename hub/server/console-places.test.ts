@@ -181,7 +181,9 @@ describe('tasks', () => {
     assert.match(detail.body, /data-task-tab="requirements"/);
     assert.doesNotMatch(detail.body, /data-timeline|<aside class="ch-inspector"/, 'the first tab draws no process and the page has no side pane');
     const process = await get(`/console/runs/${run}?tab=process`, session);
-    for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '核对', '调用日志']) assert.ok(process.body.includes(text), text);
+    for (const text of ['执行过程', '工具调用', 'Hub 校验', '提交结果', '启动任务', '调用日志']) assert.ok(process.body.includes(text), text);
+    // Section title from runs-pages.ts section('核对', …); not the bare substring (card hint already has 核对).
+    assert.match(process.body, /<h2 class="ch-section-label">核对<\/h2>/);
     assert.match(process.body, /<svg class="ch-chart" data-timeline/, 'bars are SVG attributes');
     assert.ok(process.body.indexOf('data-task-outcome') < process.body.indexOf('data-timeline'), 'the result stays above every tab');
     assert.match(process.body, /<a href="\/console\/runs\/[^"]+\?tab=process" aria-current="page">过程/);
