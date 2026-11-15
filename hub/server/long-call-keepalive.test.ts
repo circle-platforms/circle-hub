@@ -56,14 +56,14 @@ function callListTaskPacks(onChunk?: (chunks: readonly string[]) => void): Promi
 
 describe('long tool calls keep the connection alive', () => {
   test('a call that works longer than the threshold gets its head early, spaces while it works, then the JSON answer', { timeout: 30_000 }, async () => {
-    const workflows = server.deps.workflows as { summaries: (...args: unknown[]) => Promise<unknown> };
+    const workflows = server.deps.workflows;
     const original = workflows.summaries.bind(workflows);
     // The work ends only once the client holds the head and two spaces: a head kept back for the work could never come.
     let finish!: () => void;
     const spaced = new Promise<void>((done) => { finish = done; });
-    workflows.summaries = async (...args: unknown[]) => {
+    workflows.summaries = async (user, options) => {
       await spaced;
-      return original(...args);
+      return original(user, options);
     };
     try {
       const reply = await callListTaskPacks((chunks) => { if (chunks.filter((chunk) => /^ +$/.test(chunk)).length >= 2) finish(); });
@@ -89,11 +89,11 @@ describe('long tool calls keep the connection alive', () => {
   });
 
   test('the SDK client reads an answer that arrived after the keepalive spaces', async () => {
-    const workflows = server.deps.workflows as { summaries: (...args: unknown[]) => Promise<unknown> };
+    const workflows = server.deps.workflows;
     const original = workflows.summaries.bind(workflows);
-    workflows.summaries = async (...args: unknown[]) => {
+    workflows.summaries = async (user, options) => {
       await new Promise((resolve) => setTimeout(resolve, 900));
-      return original(...args);
+      return original(user, options);
     };
     const client = await server.client(server.admin.token);
     try {

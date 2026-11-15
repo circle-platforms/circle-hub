@@ -204,14 +204,20 @@ export function createWorkflowStore(registry: PackRegistry): WorkflowStore {
       const info = (space&&space!=='team'?await registry.personal?.byDigest(space,digest):await registry.byDigest(digest))??null;
       return info === null ? null : load(info);
     },
-    summaries(user: Principal): Promise<PackSummary[]> {
+    summaries(user: Principal, options: { includeAdminDefault: boolean }): Promise<PackSummary[]> {
      return withReadScope(async()=>{
       const account = await registry.account(user);
       if (account === null) return [];
       const active = await registry.activeProducts();
       const out: PackSummary[] = [];
       const skills=await registry.installedSkills();
-      for (const id of [...new Set([...(await registry.packsFor(account.id)),...skills.map(p=>p.info.id)])]) {
+      const ids = new Set([...(await registry.packsFor(account.id)), ...skills.map(p => p.info.id)]);
+      if (options.includeAdminDefault) {
+        for (const pack of await registry.listPacks()) {
+          if (pack.kind === 'workflow' && !ids.has(pack.id) && await registry.canUse(account.id, pack.id)) ids.add(pack.id);
+        }
+      }
+      for (const id of ids) {
         const installed=skills.find(p=>p.info.id===id);
         const info = installed?.info ?? await registry.latestVersion(id);
         if (info === null || info.kind !== 'workflow' && info.kind !== 'skill') continue;

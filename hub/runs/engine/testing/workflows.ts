@@ -91,9 +91,10 @@ export class FakeWorkflowStore implements WorkflowStore {
     return this.#byDigest.get(digest) ?? null;
   }
 
-  async summaries(user: Principal): Promise<PackSummary[]> {
+  async summaries(user: Principal, _options: { includeAdminDefault: boolean }): Promise<PackSummary[]> {
     const out: PackSummary[] = [];
     for (const [id, versions] of this.#versions) {
+      if (!this.#assigned.get(user.id)?.has(id)) continue;
       const latest = await this.forUser(user, id);
       if (latest === null || versions.length === 0) continue;
       const tools = localToolsOf({ id: latest.pack.id, version: latest.pack.version, digest: latest.pack.digest, manifest: latest.manifest });

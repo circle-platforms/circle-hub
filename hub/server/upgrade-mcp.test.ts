@@ -27,7 +27,7 @@ async function endpoint(t: TestContext) {
       principals: { authenticate: async (credential: string) => credential === `Bearer ${TOKEN}` ? { id: 'usr_' + '0'.repeat(26), name: '合成成员', role: 'user' } : null },
       callLog: { append: async (input: CallLogInput) => { calls.push(input); } },
     },
-    workflows: { summaries: async () => { reads++; return []; } },
+    workflows: { summaries: async (_user: unknown, _options: { includeAdminDefault: boolean }) => { reads++; return []; } },
   } as unknown as ServerDeps;
   const server = createServer((req, res) => { void handleMcp(req, res, {
     deps, serverVersion: 'synthetic', budget: new BodyBudget(1024 * 1024), log: () => {},

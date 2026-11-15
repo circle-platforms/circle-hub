@@ -139,8 +139,8 @@ export interface WorkflowStore {
   absence?(user: Principal, ref: string, space?: string): Promise<WorkflowAbsence | null>;
   /** The exact version a run froze, by pack digest. Answers even after a withdrawal, so that existing runs can be read and finished. */
   byDigest(digest: string, space?: string): Promise<LoadedWorkflow | null>;
-  /** list_task_packs: the packs the user may use, with their requirements and inputs. Product and system packs never appear. */
-  summaries(user: Principal): Promise<PackSummary[]>;
+  /** Explicit use-list or annotation projection; the admin default is eligibility, never an assignment. Product and system packs never appear. */
+  summaries(user: Principal, options: { includeAdminDefault: boolean }): Promise<PackSummary[]>;
 }
 
 // ---------------------------------------------------------------- external systems (provided by connectors)
