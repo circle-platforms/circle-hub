@@ -18,6 +18,9 @@ export { declaredFamily, effectiveSubmission, independenceGap, independenceOf, w
 export type { AuthorOrigin, ProducerOrigin } from './independence.ts';
 export { findSubschema, renderExpected, slotSchemaOf, specificFix } from './slots.ts';
 export { canSeeRun } from './readers.ts';
+// The nearest names to one that was asked for and is not there (a workflow, a named document).
+export { suggestNames, boundedDistance, LISTED_NAMES, MAX_EDITS } from './names.ts';
+export type { NameCandidate, NameSuggestion } from './names.ts';
 
 export type { RequestBody, RequestView } from './requests.ts';
 export { createRequestService } from './requests.ts';

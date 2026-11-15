@@ -42,6 +42,7 @@ import { bindInputs } from './inputs.ts';
 import { foreignArtifacts, packIdOf } from './lineage.ts';
 import { bindExpected, projectItems } from './projection.ts';
 import { canSeeRun, canViewRun, identityOf, runOfRecord, sourceReader } from './readers.ts';
+import { suggestNames, type NameCandidate } from './names.ts';
 import { reuseOffers } from './reuse.ts';
 import { issuesOf, packSchema, schemaProblems, slotSchemaOf } from './slots.ts';
 import {actionsOf,keyOwner,putAction,putRun,resultFor,runByClientKey,runById,runRecordDigest} from './store.ts';
@@ -462,6 +463,26 @@ export async function startRun(ctx: EngineContext, user: Principal, raw: unknown
 }
 
 /**
+ * A fact to say beside a refusal of the name asked for: the nearest name when it is plainly the one meant, else the first few
+ * workflows the caller may use. It is a fact of the refusal, not a next step: the reader says it as it is, the next step
+ * stays the one for an absent name. Only the caller's own list is read (list_task_packs gives the same), in the space the
+ * call asked for, so another account's personal workflow is never named. Empty when it names none.
+ */
+async function nameHint(ctx: EngineContext, user: Principal, asked: string, space?: string): Promise<string> {
+  let candidates: NameCandidate[];
+  try {
+    candidates = (await ctx.deps.workflows.summaries(user))
+      .filter((summary) => summary.kind === 'workflow' && (summary.space ?? 'team') === (space ?? 'team'))
+      .map((summary) => ({ shown: summary.pack, key: summary.id }));
+  } catch {
+    return '';
+  }
+  const { nearest, listed, total } = suggestNames(asked.includes('@') ? asked.slice(0, asked.indexOf('@')) : asked, candidates);
+  if (nearest !== null) return `当前账户可用的名称里最接近的是 ${nearest.shown}`;
+  return listed.length === 0 ? '' : `当前账户可用的工作流：${listed.join('、')}${total > listed.length ? ` 等 ${total} 个` : ''}`;
+}
+
+/**
  * Why the caller cannot use this pack (D05 R[3], decision 112): no such pack or only withdrawn versions, a pack not assigned to
  * the caller, or a pack that is not a workflow pack. A disabled account stays the neutral answer (the identity class).
  */
@@ -470,14 +491,16 @@ async function packMissing(ctx: EngineContext, user: Principal, pack: string, fo
   const id = pack.includes('@') ? pack.slice(0, pack.indexOf('@')) : pack;
   if (found !== null) {
     const kindWord = found.pack.kind === 'skill' ? '技能' : found.pack.kind === 'product' ? '产品知识来源' : found.pack.kind === 'system' ? '业务系统接入' : '工作流或技能';
-    return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${kindWord}，不是可启动的工作流`, { path: '/pack', fix: LIST })]);
+    const hint = await nameHint(ctx, user, pack, space);
+    return new Refusal([protocolError('SUBMISSION_SCHEMA_VIOLATION', `${pack} 是${kindWord}，不是可启动的工作流${hint === '' ? '' : `，${hint}`}`, { path: '/pack', fix: LIST })]);
   }
   const absence = await ctx.deps.workflows.absence?.(user, pack, space) ?? null;
   const note = absence === null ? `pack ${pack} is unknown, not assigned to ${user.id}, withdrawn or not a workflow pack` : `pack ${pack} is ${absence} for ${user.id}${space ? ` in space ${space}` : ''}`;
   // Another account's personal workflow is answered neutrally whether it is missing, ungranted or withdrawn (D05 R[3], T01 R[1]).
   if (space !== undefined && space !== 'team' && space !== user.id) return unavailable('/pack', note);
   if (absence === 'unknown') {
-    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能`, { path: '/pack', fix: `请核对名称；${LIST}` })], note);
+    const hint = await nameHint(ctx, user, pack, space);
+    return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能${hint === '' ? '' : `，${hint}`}`, { path: '/pack', fix: `请核对名称；${LIST}` })], note);
   }
   if (absence === 'withdrawn') {
     return new Refusal([protocolError('SOURCE_ABSENT', `Hub 里没有名为「${id}」的工作流或技能的可用版本（已退役）`, { path: '/pack', fix: LIST })], note);

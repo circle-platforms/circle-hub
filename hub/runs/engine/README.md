@@ -726,7 +726,13 @@ requests are looked at again when an `authorization` or `source_artifact` record
 availability is decided from. An authorization that lapses by its `expires_at` leaves no record: if that alone changes which
 record of a source decides, the next full pass sees it. Work a round took in stays in memory until it is done, so a round that
 stops or fails leaves it to the next one. A visit is recorded before it runs and is not repeated after a failure until
-something happens to the run, as before. An expired run with no accepted submission gets
+something happens to the run, as before. A round writes nothing about a state it has already written about: the recovery of
+a held source is tried once for each request, source and set of evidence it was made from (a new authorization or capture
+permits one more try), and the result and the proof of a dispatch job are written once for each state of the job (outcome,
+frozen, ended, result reference, disposition), never for each line its journal gains while it runs. A scheduled round leaves
+a job whose journal grew since its last visit to the observer that is writing it (`MaintenanceMemory.watching`), and takes it
+over once for each length the journal then stands at. Records written under the earlier key, which counted the journal's lines,
+still count. An expired run with no accepted submission gets
 one append-only Hub delivery containing every frozen item as not-covered/incomplete and a named disposition request.
 A late full submission remains possible. Old runs without deadlines are not assigned invented historical deadlines: a
 named disposition request asks their runner to open a dated successor. The console shows deadline and delivery state.

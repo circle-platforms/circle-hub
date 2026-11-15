@@ -6,6 +6,7 @@ import { type RegisteredExecutor } from './executors.ts';
 import { digestOfValue, newJob, type JobBinding } from './journal.ts';
 import { RpcClient, ToolReplyError, type Exchange } from './transport.ts';
 import { probeValues, type SeatEcho } from './probes.ts';
+import { BOOKING_PROBE_KEY, bookingProbeKey, leaseGeneration } from './probe-replay.ts';
 import { DeviceObservation, type DeviceHelpPosition, type DeviceHelpResult, type DeviceHelpTarget } from '../../contracts/src/pack.ts';
 import { capText, checkLine, readAnswer, type AskedLine } from './help.ts';
 import { canRetryRead } from './read-policy.ts';
@@ -31,7 +32,16 @@ interface DeviceContext extends Pick<DispatchService, 'now' | 'options' | 'regis
   saveText(binding: JobBinding, source: string, text: string, name: string): ReturnType<DispatchService['options']['records']['artifacts']['ingest']>;
 }
 
-export async function recordObservation(this: DeviceContext, input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> {
+/**
+ * One device observation to store. A booking's also keeps what a job under it may read again (see probe-replay.ts): the
+ * executor definition it was taken under, the reference of the whole version answer and the leases it was taken under.
+ */
+export interface ObservationInput extends SeatEcho {
+  inventory: string; run: string | null; job: string | null; executor: string; product: unknown;
+  booking?: { executorDigest: string; version: string; leases: string };
+}
+
+export async function recordObservation(this: DeviceContext, input: ObservationInput): Promise<DeviceObservation> {
     const now = this.now().toISOString();
     const build = input.values.length === 1 ? input.values[0]! : null;
     // The echoed name is resolved to its knowledge-base build (aliases followed), so a reader compares builds, not spellings.
@@ -42,8 +52,10 @@ export async function recordObservation(this: DeviceContext, input: SeatEcho & {
     });
     await this.options.records.store.put<ActionBody>({
       kind: 'action', schema: 'action@1', provenance: 'observed', created_at: now,
-      body: { action: 'validate', run: input.run, item: null, inputs: [input.reference], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, observation } },
-      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' }],
+      body: { action: 'validate', run: input.run, item: null, inputs: [input.reference], component: 'dispatch@1', lease: null, started_at: now, ended_at: now, result: 'completed', error_code: null, acceptance: null, codes: [], detail: { phase: 'device_observation', executor: input.executor, observation,
+        ...(input.booking ? { executor_digest: input.booking.executorDigest, probe_references: { version: input.booking.version }, lease_generation: input.booking.leases } : {}) } },
+      index: [{ key: OBSERVATION_KEY, value: `${input.inventory}#${input.device}` }, { key: 'dispatch.phase', value: 'device_observation' },
+        ...(input.run !== null && input.booking ? [{ key: BOOKING_PROBE_KEY, value: bookingProbeKey(input.run, input.executor, input.inventory, input.device) }] : [])],
     });
     return observation;
   }
@@ -103,10 +115,13 @@ export async function observeSeats(this: DeviceContext, by: Principal, run: stri
       stop = this.heartbeat(binding, d, client, lease).stop;
       const context = { ...this.context(binding), lease_id: lease.id, lease_token: lease.token };
       const out: DeviceObservation[] = [];
+      // The leases the booking holds as it is looked at: a job reads this answer again only while these are the leases. A lease
+      // that cannot be read now only means the observation is not kept for that; it is recorded all the same.
+      const leases = await this.options.leases.holderSnapshot(d.resources).then(leaseGeneration, () => null);
       for (const seat of seats) {
         const response = await client.declaredRead(d.probes!.call, { ...context, command: seat.version.command, seat_index: seat.index }, `observe.${seat.index}.version`);
         const label = targets.get(`${d.manifest_sha256}#${seat.manifest.device}`)?.label ?? seat.seat;
-        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product }));
+        out.push(await this.recordObservation({ inventory: d.manifest_sha256!, device: seat.manifest.device, label, values: probeValues(at(response.value, d.probes!.output), seat.version.pattern), reference: response.source, run, job: null, executor: registered.id, product: d.precheck_context?.product, ...(leases === null ? {} : { booking: { executorDigest: registered.resolved_digest, version: response.source, leases } }) }));
       }
       return out;
     } finally {

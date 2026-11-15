@@ -220,6 +220,14 @@ const D3_FACT_REWRITE = new Set([
  * When the fact already ends with the next-step sentence, do not print it twice (Boss 06:48 / round-29).
  */
 function callErrorLine(category: string, message: string, fix: string | undefined, roundsLeft?: number): string {
+  const { fact, next, rounds } = callErrorParts(category, message, fix, roundsLeft);
+  return `${category}：${fact}${next}${rounds}`;
+}
+
+/** The sentences of one call refusal: the fact, the next step (empty when the fact already says it) and the rounds left. */
+interface CallErrorParts { category: string; fact: string; next: string; rounds: string }
+
+function callErrorParts(category: string, message: string, fix: string | undefined, roundsLeft?: number): CallErrorParts {
   const factBody = message.replace(/^无权限：|^已被占用：|^暂时不可用：|^参数无效：|^不存在：/, '').trim();
   const fact = asSentence(factBody);
   const nextRaw = fix && fix.trim().length > 0 ? fix.trim() : '由使用者核对输入资料';
@@ -227,7 +235,31 @@ function callErrorLine(category: string, message: string, fix: string | undefine
   const factHasNext = nextRaw.length > 0 && (factBody.includes(nextRaw) || fact.includes(nextSentence));
   const next = factHasNext ? '' : nextSentence;
   const rounds = roundsLeft === undefined ? '' : asSentence(`还可以重交 ${roundsLeft} 次`);
-  return `${category}：${fact}${next}${rounds}`;
+  return { category, fact, next, rounds };
+}
+
+/**
+ * Refusals in the order they came. Refusals of one category that give the same next step and the same rounds left say them
+ * once, after their facts, at the place of the first of them, and every fact stays on a line of its own; a refusal alone keeps
+ * the one-sentence form, and a line already written stays as it is. Nothing is merged by what its words say, only by the
+ * next step being the same sentence.
+ */
+function callErrorLines(rows: readonly (CallErrorParts | string)[]): string[] {
+  const keyOf = (row: CallErrorParts): string => `${row.category}\0${row.next}\0${row.rounds}`;
+  const shared = new Map<string, CallErrorParts[]>();
+  for (const row of rows) if (typeof row !== 'string' && row.next !== '') shared.set(keyOf(row), [...(shared.get(keyOf(row)) ?? []), row]);
+  const lines: string[] = [];
+  const said = new Set<string>();
+  for (const row of rows) {
+    if (typeof row === 'string') { lines.push(row); continue; }
+    const group = row.next === '' ? undefined : shared.get(keyOf(row));
+    if (group === undefined || group.length < 2) { lines.push(`${row.category}：${row.fact}${row.next}${row.rounds}`); continue; }
+    if (said.has(keyOf(row))) continue;
+    said.add(keyOf(row));
+    lines.push(`${row.category}：`, ...group.map((member) => `- ${member.fact}`), row.next.startsWith('下一步') ? row.next : `下一步${row.next}`);
+    if (row.rounds !== '') lines.push(row.rounds);
+  }
+  return lines;
 }
 
 /**
@@ -327,7 +359,7 @@ function submitErrorBlocks(
     groups.set(key, group);
   }
 
-  const lines: string[] = [];
+  const lines: (CallErrorParts | string)[] = [];
   for (const group of groups.values()) {
     const byFact = new Map<string, { row: Row; count: number }>();
     for (const row of group.rows) {
@@ -366,13 +398,13 @@ function submitErrorBlocks(
         const next = row.escalated
           ? row.fix
           : (row.fix ?? '由使用者核对输入资料');
-        lines.push(callErrorLine(row.category, `${row.fact}${mark}`, next, roundsLeft));
+        lines.push(callErrorParts(row.category, `${row.fact}${mark}`, next, roundsLeft));
       } else {
         lines.push(conclusionErrorLine(row.error, `${row.fact}${mark}`, row.fix, { rounds: true }));
       }
     }
   }
-  return lines;
+  return callErrorLines(lines);
 }
 
 function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextContext = {}): string {
@@ -381,7 +413,7 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
   const allUnknown = v.errors.length > 0 && v.errors.every(unknownError);
   // Call refusals use the five-category sentence form: no 「这次核对有错误。」 lead (Boss 13:05).
   const lead = allUnknown ? '资料尚未取得。' : null;
-  const lines = v.errors.map((error) => {
+  const lines = v.errors.map((error): CallErrorParts | string => {
     // Preserve D5 escalation already merged into structured fix (do not let fixByRole drop it).
     const escalated = isEscalatedError(error);
     const fix = escalated ? error.fix : fixByRole(error.code, role, error.fix, account);
@@ -399,11 +431,11 @@ function errorText(v: { errors: ProtocolError[]; trace: string }, context: TextC
         : D3_FACT_REWRITE.has(error.code)
           ? callErrorNext(error.code, role, fix, error.message, account, error.path)
           : (fix ?? '由使用者核对输入资料');
-      return callErrorLine(category, fact, next, error.rounds_left);
+      return callErrorParts(category, fact, next, error.rounds_left);
     }
     return conclusionErrorLine(error, error.message, fix);
   });
-  return [lead, ...lines].filter((part): part is string => part !== null && part.length > 0).join('\n');
+  return [lead, ...callErrorLines(lines)].filter((part): part is string => part !== null && part.length > 0).join('\n');
 }
 
 // ---------------------------------------------------------------- page cursors (get_nodes with a reference)
@@ -1063,9 +1095,20 @@ function submitText(v: SubmitOut, context: TextContext): string {
       lines.push(`${original ? caseName(original, original.label) : '资料未保存'}，${rejected.reason}；状态已确认；判断错误；原因缺资料；下一步由使用者补齐资料。`);
     }
   }
-  for (const note of v.dispatch ?? []) lines.push(dispatchNoteLine(note, role));
+  lines.push(...sayOnce((v.dispatch ?? []).map((note) => dispatchNoteLine(note, role))));
   lines.push(...submitErrorBlocks(v.errors, context, represented));
   return lines.join('\n');
+}
+
+/**
+ * A line the reader would read twice is said once, with how many times it came: jobs of a run that ended the same way, with
+ * nothing in their note to tell them apart, are one fact of the run. Lines that differ at all stay as they are, in order; the
+ * notes themselves, each with its job, stay whole in the structured answer.
+ */
+function sayOnce(lines: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
+  return [...counts].map(([line, count]) => (count > 1 ? `${line}（×${count}）` : line));
 }
 
 // ---------------------------------------------------------------- entry point

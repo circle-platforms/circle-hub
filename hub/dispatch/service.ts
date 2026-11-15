@@ -26,6 +26,7 @@ import { ExecutorRegistry, ExecutorAccessError, lockExecutorConfiguration, conta
 import { Journal, digestOfValue, eventOf, receiptOf, openRequests, isDone, isFrozen, newJob, type JobBinding, type Event } from './journal.ts';
 import { RpcClient, CapabilityPolicyError, HttpReplyError, IncompleteReplyError, InvocationDefinitionError, ResponseStorageError, RpcReplyError, SubmissionNotSentError, ToolReplyError, object, type Exchange } from './transport.ts';
 import { type BuildKnowledge, type SeatEcho } from './probes.ts';
+import { leaseGeneration, leasesLive } from './probe-replay.ts';
 import { DeviceObservation, type DeviceHelpResult, type DeviceHelpTarget } from '../../contracts/src/pack.ts';
 import { type AskedLine } from './help.ts';
 import { requestIdentity, sameRequestIdentity } from './request-identity.ts';
@@ -1216,7 +1217,19 @@ export class DispatchService {
     const { assessProbes } = await import('./probes.ts');
     // What the version probe saw before a dispatch is also the device's latest observation (decision 112).
     const observed = d.manifest_sha256 ? (echo: SeatEcho) => this.recordObservation({ inventory: d.manifest_sha256!, ...echo, run: null, job: binding.job, executor: binding.executor, product: d.precheck_context?.product }).then(() => undefined) : undefined;
-    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed);
+    return assessProbes(this.options.records,this.options.knowledge,binding,d,client,context,this.journal,this.sleep,observed,await this.bookingReplay(binding,d));
+  }
+  /**
+   * What lets a job read again the version answers its booking kept (probe-replay.ts): the runs it continues, and the leases of
+   * the executor's resources as they are held now. None for a read that is no job's (the administrator's precheck) and when a
+   * lease is not held now; the job then reads every seat itself.
+   */
+  private async bookingReplay(binding: JobBinding, d: ExecutorDefinition): Promise<{ ancestors: readonly string[]; leases: string } | undefined> {
+    if (!binding.input) return undefined;
+    try {
+      const rows = await this.options.leases.holderSnapshot(d.resources);
+      return leasesLive(rows, this.now().getTime()) ? { ancestors: binding.input.ancestors, leases: leaseGeneration(rows) } : undefined;
+    } catch { return undefined; }
   }
 
   private deviceContext() { return {
@@ -1243,7 +1256,7 @@ export class DispatchService {
     };
   }
   /** Stores one device observation whole, found again newest first by its inventory and device pointer (decision 112). */
-  async recordObservation(input: SeatEcho & { inventory: string; run: string | null; job: string | null; executor: string; product: unknown }): Promise<DeviceObservation> { return deviceOperations.recordObservation.call(this.deviceContext(), input); }
+  async recordObservation(input: deviceOperations.ObservationInput): Promise<DeviceObservation> { return deviceOperations.recordObservation.call(this.deviceContext(), input); }
 
   /** The newest observation of every version-probe seat of every enabled executor (decision 112); a seat never looked at is absent. */
   async latestDeviceObservations(): Promise<DeviceObservation[]> { return deviceOperations.latestDeviceObservations.call(this.deviceContext()); }

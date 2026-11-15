@@ -414,8 +414,16 @@ const list=items(3000,i=>'合成用例 '+i+(i%97===0?' 长标题'.repeat(300):''
 const steps=Array.from({length:2000},(_,i)=>'第 '+(i+1)+' 步：逐条核对用例里的命令与参数。');const answer=startAnswer(runOf(items(5),{instructions:steps.join('\n')}));const text=toolText('start_run',answer);assert.equal(answer.run?.instructions,steps.join('\n'));assert.doesNotMatch(text,/第 \d+ 步/);assert.equal(itemIdsOf(text).length,5);
 });
 
-  test('an error answer names its codes and every fix within the budget, long messages shortened and named', () => {
-const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);assert.equal(linesOf(text).filter(line=>line.startsWith('参数无效：')).length,20);for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));assert.doesNotMatch(text,/^这次核对有错误。|状态已确认|判断错误|决定者程序|原因还没查清|原因缺资料|SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20);const unknown=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_UNAVAILABLE',message:'对你不可用',fix:'使用者请管理员核对权限'}],trace:TRACE}));assert.match(unknown,/^资料尚未取得。/);assert.match(unknown,/当前账户读不到这份资料；状态未知；原因缺资料；下一步由使用者联系管理员核对；决定者程序/);assert.doesNotMatch(unknown,/对你不可用|判断错误|这次核对有错误|参数无效|无权限/);
+  test('an error answer says a next step that several refusals share once and keeps every fact on a line of its own', () => {
+const errors:ProtocolError[]=Array.from({length:20},(_,i)=>({code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 '+i+' 不对：'+'很长的说明'.repeat(1000),fix:'使用者补齐资料',path:'/inputs/s'+i}));const answer=StartRunOutput.parse({call_result:'error',errors,trace:TRACE});const text=toolText('start_run',answer);
+assert.equal(linesOf(text).filter(line=>line==='参数无效：').length,1,'the category once');assert.equal(linesOf(text).filter(line=>line.startsWith('- 参数 ')).length,20,'every fact on a line of its own');for(let i=0;i<20;i++)assert.ok(text.includes('参数 '+i+' 不对：'));
+assert.equal(text.split('使用者补齐资料').length-1,1,'the next step the twenty share is said once');assert.equal(linesOf(text).at(-1),'下一步使用者补齐资料。');
+assert.doesNotMatch(text,/^这次核对有错误。|状态已确认|判断错误|决定者程序|原因还没查清|原因缺资料|SUBMISSION_SCHEMA_VIOLATION|\/inputs\/|追踪/);assert.equal(answer.errors.length,20,'the structured errors keep every fix');assert.ok(answer.errors.every(error=>error.fix==='使用者补齐资料'));
+const upload=toolText('upload_file',UploadFileOutput.parse({call_result:'error',acceptance:'not_accepted',errors:errors.slice(0,2),trace:TRACE}));assert.equal(upload.split('使用者补齐资料').length-1,1,'upload_file answers say it once too');
+const apart=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 a 不对',fix:'使用者补齐 a',path:'/inputs/a'},{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 b 不对',fix:'使用者补齐 b',path:'/inputs/b'}],trace:TRACE}));assert.equal(apart,'参数无效：参数 a 不对。使用者补齐 a。\n参数无效：参数 b 不对。使用者补齐 b。','next steps that differ stay with their facts');
+const rounds=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 a 不对',fix:'使用者补齐资料',path:'/inputs/a',rounds_left:2},{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 b 不对',fix:'使用者补齐资料',path:'/inputs/b',rounds_left:1},{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 c 不对',fix:'使用者补齐资料',path:'/inputs/c',rounds_left:2}],trace:TRACE}));assert.equal(rounds,'参数无效：\n- 参数 a 不对。\n- 参数 c 不对。\n下一步使用者补齐资料。\n还可以重交 2 次。\n参数无效：参数 b 不对。使用者补齐资料。还可以重交 1 次。','the rounds left are shared only by the refusals that have the same');
+const mixed=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 a 不对',fix:'使用者补齐资料',path:'/inputs/a'},{code:'SOURCE_ABSENT',message:'Hub 里没有名为「x」的工作流或技能',fix:'请核对名称',path:'/pack'},{code:'SUBMISSION_SCHEMA_VIOLATION',message:'参数 b 不对',fix:'使用者补齐资料',path:'/inputs/b'}],trace:TRACE}));assert.equal(mixed,'参数无效：\n- 参数 a 不对。\n- 参数 b 不对。\n下一步使用者补齐资料。\n不存在：Hub 里没有名为「x」的工作流或技能。请核对名称。','a category that differs is told apart');
+const short=toolText('start_run',StartRunOutput.parse({call_result:'error',errors:[{code:'SOURCE_UNAVAILABLE',message:'对你不可用',fix:'使用者请管理员核对权限'}],trace:TRACE}));assert.match(short,/^资料尚未取得。/);assert.match(short,/当前账户读不到这份资料；状态未知；原因缺资料；下一步由使用者联系管理员核对；决定者程序/);assert.doesNotMatch(short,/对你不可用|判断错误|这次核对有错误|参数无效|无权限/);
 });
 
   test('D1: call refusals use the five-category sentence form without a status string', () => {
@@ -523,9 +531,12 @@ const result=resultOf(items(1000));result.cross_item=[{statement:{text:'脚本�
 const result=resultOf(items(400));const first=toolText('submit_result',submitAnswer(result,TRACE),{items:items(400)});const again=toolText('submit_result',submitAnswer(result,TRACE_2),{items:items(400)});assert.equal(first,again);assert.doesNotMatch(again,/追踪/);assert.equal(result.trace,TRACE);
 });
 
-  test('a submission that is not accepted: per-code counts first, every error with its rounds left, the stored result for the rest', () => {
-const errors:ProtocolError[]=Array.from({length:600},(_,i)=>({code:'QUOTE_MISMATCH',message:'原句 '+i+' 与资料对不上',fix:'使用者按原文逐字引用',path:'/items/'+i,rounds_left:1}));const result=ValidationResult.parse({...resultOf(items(1)),acceptance:'not_accepted',errors,partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[]},cross_item:[]});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD});assert.equal(linesOf(text).filter(line=>line.includes('还可以重交 1 次')).length,600);assert.match(text,/参数无效：原句 0 与资料对不上。使用者按原文逐字引用。还可以重交 1 次。/);assert.doesNotMatch(text,/状态已确认|判断错误|决定者程序|原因还没查清|QUOTE_MISMATCH|\/items\/|rec:/);assert.equal(answer.errors.length,600);
+  test('a submission that is not accepted: every error on a line of its own, the next step and the rounds left they share said once', () => {
+const errors:ProtocolError[]=Array.from({length:600},(_,i)=>({code:'QUOTE_MISMATCH',message:'原句 '+i+' 与资料对不上',fix:'使用者按原文逐字引用',path:'/items/'+i,rounds_left:1}));const result=ValidationResult.parse({...resultOf(items(1)),acceptance:'not_accepted',errors,partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[]},cross_item:[]});const answer=submitAnswer(result);const text=toolText('submit_result',answer,{record:RESULT_RECORD});const lines=linesOf(text);
+assert.equal(lines.filter(line=>line.startsWith('- 原句 ')).length,600,'every error keeps its fact');assert.equal(lines.filter(line=>line==='参数无效：').length,1);assert.equal(text.split('使用者按原文逐字引用').length-1,1,'the next step 600 errors share is said once');assert.equal(lines.filter(line=>line==='还可以重交 1 次。').length,1);assert.ok(lines.includes('- 原句 0 与资料对不上。')&&lines.includes('- 原句 599 与资料对不上。'));assert.doesNotMatch(text,/状态已确认|判断错误|决定者程序|原因还没查清|QUOTE_MISMATCH|\/items\/|rec:/);assert.equal(answer.errors.length,600);assert.ok(answer.errors.every(error=>error.fix==='使用者按原文逐字引用'&&error.rounds_left===1),'the structured errors keep each fix and its rounds');
+const alone=toolText('submit_result',submitAnswer(ValidationResult.parse({...resultOf(items(1)),acceptance:'not_accepted',errors:errors.slice(0,1),partitions:{delivered:[],rejected:[],quarantined:[],incomplete:[]},cross_item:[]})),{record:RESULT_RECORD});assert.match(alone,/参数无效：原句 0 与资料对不上。使用者按原文逐字引用。还可以重交 1 次。/,'one refusal alone keeps the one-sentence form');
 });
+
 });
 
 // ---------------------------------------------------------------- get_nodes
@@ -837,6 +848,22 @@ test('submit_result keeps the three dispatch outcomes distinct under reader word
   assert.match(many, /Hub 已再次按工作流的规定自动开始上机验证（执行器 synthetic-executor）/);
   assert.doesNotMatch(many, /任务包|下一步由使用者继续读取设备输出/);
   assert.equal(linesOf(many).filter(line => line.includes('上机验证')).length >= 2, true);
+});
+
+test('jobs whose notes read the same are said once with how many, the others stay in order, and the structured notes stay whole', () => {
+  const base = submitAnswer(resultOf(items(1)));
+  const same = '上机验证没有发出：目标没有给出租约；下一步：什么都没有发到目标；原因消除后原样重交，Hub 会再试一次';
+  const other = '已结束；目标在“admission”阶段拒绝；下一步：目标没有接收，也没有执行；按拒绝的原因修正后原样重交，Hub 会再试一次';
+  const answer = SubmitResultOutput.parse({ ...base, dispatch: [{ job: H('1'), text: same }, { job: H('2'), text: other }, { job: H('3'), text: same }] });
+  const lines = linesOf(toolText('submit_result', answer, { items: items(1) }));
+  const told = lines.filter((line) => line.includes('目标没有给出租约') || line.includes('admission'));
+  assert.equal(told.length, 2, 'three jobs, two different things to read');
+  assert.ok(told[0].includes('目标没有给出租约') && told[0].endsWith('（×2）'), told[0]);
+  assert.ok(told[1].includes('admission') && !told[1].includes('（×'), told[1]);
+  assert.equal(lines.join('\n').split('什么都没有发到目标').length - 1, 1, 'the next step the two share is read once');
+  assert.deepEqual(answer.dispatch?.map((note) => [note.job, note.text]), [[H('1'), same], [H('2'), other], [H('3'), same]], 'the answer keeps a note for every job, whole');
+  const alone = linesOf(toolText('submit_result', SubmitResultOutput.parse({ ...base, dispatch: [{ job: H('1'), text: same }] }), { items: items(1) }));
+  assert.ok(alone.some((line) => line.includes('目标没有给出租约')) && !alone.some((line) => line.includes('（×')), 'one job is not counted');
 });
 
 test('dispatch call-error prose keeps category form and restores member release next steps', () => {

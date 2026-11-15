@@ -20,11 +20,40 @@ export const RESERVE_WAIT_MS = 60_000;
 /** The answer's limits (submit_result output schema): at most 16 notes, each at most 800 characters. */
 export const MAX_NOTES = 16, MAX_NOTE_TEXT = 800;
 const clip = (text: string) => text.length <= MAX_NOTE_TEXT ? text : `${text.slice(0, MAX_NOTE_TEXT - 1)}…`;
+/**
+ * A note with what the consolidation of notes needs: the next step its text says, and its text with that step pointed to
+ * instead of said. Neither goes out in an answer.
+ */
+export type Noted = DispatchNote & { next?: string; pointed?: string };
+
+/**
+ * Notes of one answer, in order: a next step that an earlier note already says is pointed to by the later notes that give the
+ * same one, so the reader reads it once. Only the next step is shortened, and only by the sentence being the same; a note
+ * keeps its job, its facts and its structured fields whole. Notes with the same text stay the same text, and the line they
+ * come out as is said once where the answer is written (hub/server/text.ts).
+ */
+export function consolidateDispatchNotes(notes: readonly Noted[]): DispatchNote[] {
+  const given = new Map<string, string>();
+  const said = new Set<string>();
+  return notes.map(({ next, pointed, ...note }) => {
+    const earlier = given.get(note.text);
+    if (earlier !== undefined) return { ...note, text: earlier };
+    let text = note.text;
+    if (next !== undefined && pointed !== undefined) {
+      if (said.has(next)) text = pointed;
+      else said.add(next);
+    }
+    given.set(note.text, text);
+    return { ...note, text };
+  });
+}
+
 /** The newest notes within the limit, after one line that counts the older jobs left out. */
-function capped(notes: DispatchNote[], run: string): DispatchNote[] {
-  if (notes.length <= MAX_NOTES) return notes.map(note=>({...note,run:note.run??run}));
+function capped(notes: Noted[], run: string): DispatchNote[] {
+  const whole = (kept: Noted[]) => consolidateDispatchNotes(kept).map(note => ({ ...note, run: note.run ?? run }));
+  if (notes.length <= MAX_NOTES) return whole(notes);
   const kept = notes.slice(-(MAX_NOTES - 1));
-  return [{ run, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...kept.map(note=>({...note,run:note.run??run}))];
+  return [{ run, text: `这个运行另有 ${notes.length - kept.length} 个更早的作业，这里只列最近 ${kept.length} 个` }, ...whole(kept)];
 }
 // Progress reread: the model repeats the same script-merge submission (Boss 20:53; no「任务包」「提交」).
 const REREAD = '下一步由模型稍后把这次脚本合并原样再交一次，读取进展';
@@ -41,11 +70,12 @@ async function callerAdmin(records: Pick<RecordsKit, 'principals'>, service: Dis
   if (!current || current.disabled || !await service.options.runs.getRun(current, run)) throw new Error('调用者或运行不可用');
   return isAdmin(current);
 }
-async function jobNote(service: DispatchService, job: RunJob, admin: string, retried: boolean, administrative: boolean): Promise<DispatchNote> {
-  const note = runnerNote(job, admin, retried, administrative);
+async function jobNote(service: DispatchService, job: RunJob, admin: string, retried: boolean, administrative: boolean): Promise<Noted> {
+  const note = runnerNoted(job, admin, retried, administrative);
   const report = await reportMissingFacts(service.options.records, job, administrative);
   const facts = [...note.missing_facts ?? [], ...report.missing_facts].slice(0, 16);
-  return { ...note, run:job.verification_run, ...(administrative&&job.executor?{executor:job.executor}:{}), ...(report.no_verdict !== undefined ? { no_verdict: report.no_verdict } : {}), missing_facts: facts, ...(report.no_verdict ? {text:clip(note.text+'；'+report.missing_facts.map(fact=>fact.fact).join('；'))} : {}) };
+  const added = report.no_verdict ? '；'+report.missing_facts.map(fact=>fact.fact).join('；') : '';
+  return { ...note, run:job.verification_run, ...(administrative&&job.executor?{executor:job.executor}:{}), ...(report.no_verdict !== undefined ? { no_verdict: report.no_verdict } : {}), missing_facts: facts, ...(report.no_verdict ? {text:clip(note.text+added), ...(note.pointed!==undefined?{pointed:clip(note.pointed+added)}:{})} : {}) };
 }
 
 type Settled = Awaited<ReturnType<DispatchService['dispatchAccepted']>>;
@@ -183,6 +213,12 @@ function invocationCategory(status: Pick<JobStatus,'error_code'|'call_error_cate
 
 /** The runner's note on one job of the run; `retried` when the answer that carries it dispatches again after it. */
 export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): DispatchNote {
+  const { next: _next, pointed: _pointed, ...note } = runnerNoted(job, admin, retried, administrative);
+  return note;
+}
+
+/** The same note with the next step its text says (see consolidateDispatchNotes). */
+export function runnerNoted(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'boundary_refused'>, admin: string, retried = false, administrative = false): Noted {
   const { status } = job;
   const diagnostics = statusDiagnostics(job, administrative);
   const state = job.ended === 'done' ? '已结束' : job.ended === 'unknown' ? '上机验证结果未知' : '进行中';
@@ -201,5 +237,6 @@ export function runnerNote(job: Pick<RunJob, 'job' | 'status' | 'ended' | 'bound
   const next = administrative ? diagnostics.next_action : job.ended==='unknown'||status.frozen||status.outcome==='unknown' ? nextStep(job, '') : diagnostics.missing_facts.length && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? diagnostics.missing_facts.map(fact=>fact.next_action).join('；') : nextStep(job, '');
   const action = retried ? '这次重交 Hub 已再试，见后面的条目'+(!administrative && (status.member_missing_facts?.length || status.failed_conditions?.length || status.failed_checks?.length) ? `；${next}` : '') : next;
   const category = job.ended==='done'&&status.outcome==='not_dispatched'&&!status.frozen ? invocationCategory(status) : null;
-  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: clip(category?formatCallError(category,parts.join('；'),action):[...parts,`下一步：${action}`].join('；')) };
+  const told = (step: string) => clip(category?formatCallError(category,parts.join('；'),step):[...parts,`下一步：${step}`].join('；'));
+  return { job: job.job, ...(status.result ? { result: status.result } : {}), ...diagnostics, text: told(action), next: action, pointed: told(category?'下一步同上':'同上') };
 }

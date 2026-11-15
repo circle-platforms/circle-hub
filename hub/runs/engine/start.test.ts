@@ -140,7 +140,7 @@ test('an unknown pack is absent and an unassigned pack is not permitted (D05 R[3
   const before = h.logs.length;
   const unknown = await h.service.startRun(h.alice, { pack: 'no-such-pack', inputs: {} }, h.call());
   const unassigned = await h.service.startRun(h.bob, { pack: 'toy-review', inputs: { map: { reference: map } } }, h.call());
-  assert.deepEqual(unknown.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有名为「no-such-pack」的工作流或技能']]);
+  assert.deepEqual(unknown.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有名为「no-such-pack」的工作流或技能，当前账户可用的工作流：toy-locate@1.0.0、toy-review@1.0.0、toy-verify@1.0.0']], 'no name is near: the first few the caller may use are said beside the fact');
   assert.equal(unknown.errors[0]!.fix, '请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看');
   assert.deepEqual(unassigned.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_NOT_PERMITTED', '/pack', '当前账户未获授权使用工作流「toy-review」']]);
   assert.equal(
@@ -153,6 +153,23 @@ test('an unknown pack is absent and an unassigned pack is not permitted (D05 R[3
   // a predecessor that does not exist is absent
   const theirs = await h.service.startRun(h.alice, { pack: 'toy-review', product: 'Meadow', inputs: { map: { reference: map } }, predecessor: 'run_01m5h9zh07x7amhg4bwmye5yhw' }, h.call());
   assert.deepEqual(theirs.errors.map((e) => [e.code, e.path]), [['SOURCE_ABSENT', '/predecessor']]);
+});
+
+test('a misspelled workflow name gets the nearest name the caller may use in the first refusal, and nobody gets a name they may not use', { skip }, async () => {
+  const near = await h.service.startRun(h.alice, { pack: 'toy-reveiw', inputs: {} }, h.call());
+  assert.deepEqual(near.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有名为「toy-reveiw」的工作流或技能，当前账户可用的名称里最接近的是 toy-review@1.0.0']]);
+  const { toolText } = await import('../../server/text.ts');
+  assert.equal(toolText('start_run', near), '不存在：Hub 里没有名为「toy-reveiw」的工作流或技能，当前账户可用的名称里最接近的是 toy-review@1.0.0。请核对名称。');
+  const wrongVersion = await h.service.startRun(h.alice, { pack: 'toy-review@9.9.9', inputs: {} }, h.call());
+  assert.match(wrongVersion.errors[0]!.message, /最接近的是 toy-review@1\.0\.0$/, 'the id is right and the version is not: the version that exists is named');
+  // Bob may use none of them: his refusal names none, as the list_task_packs he would read gives him none.
+  const unassigned = await h.service.startRun(h.bob, { pack: 'toy-reveiw', inputs: {} }, h.call());
+  assert.equal(unassigned.errors[0]!.message, 'Hub 里没有名为「toy-reveiw」的工作流或技能');
+  // Another account's personal space is answered neutrally, whatever it holds.
+  const theirs = await h.service.startRun(h.bob, { pack: 'toy-reveiw', pack_space: h.alice.id, inputs: {} }, h.call());
+  assert.deepEqual(theirs.errors.map((e) => e.code), ['SOURCE_UNAVAILABLE']);
+  assert.doesNotMatch(JSON.stringify(theirs), /toy-review|toy-locate|toy-verify/);
+  for (const answer of [near, wrongVersion, unassigned, theirs]) valid(answer);
 });
 
 test('inputs: required slots, unknown slots, accepted types, readable references, whole sources', { skip }, async () => {

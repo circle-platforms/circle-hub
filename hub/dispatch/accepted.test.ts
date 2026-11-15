@@ -232,6 +232,13 @@ for (const [mode, reason] of [['busy', /目标拒绝了提交之前的调用（�
     // A submission that is not ready only reads: it starts nothing.
     const read = await acceptedDispatch(c.kit, c.service, c.run, false);
     assert.equal(read.length, 2); assert.equal(read[1].not_sent,true); assert.match(read[1].next_action!,/核对|恢复/); assert.doesNotMatch(read[1].next_action!,/circle-hub/);
+    // The two jobs ended the same way and read the same to the runner: the notes stay two, one per job, and the answer's text says it once.
+    assert.notEqual(read[0].job, read[1].job); assert.equal(read[0].text, read[1].text);
+    const { toolText } = await import('../server/text.ts');
+    const text = toolText('submit_result', { call_result: 'ok', acceptance: 'accepted', errors: [], dispatch: read, trace: 'a'.repeat(32) } as never);
+    const shared = mode === 'busy' ? '原样重交原提交' : '补齐这项条件后重新核验';
+    assert.equal(text.split(shared).length - 1, 1, 'the shared next step is read once across both job notes');
+    assert.equal(text.split('\n').filter((line) => line.includes('上机验证已结束') && line.endsWith('（×2）')).length, 1, 'with how many jobs it is');
   });
 }
 

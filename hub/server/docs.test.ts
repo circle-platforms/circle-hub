@@ -295,7 +295,7 @@ describe('runs over named documents', () => {
       assert.ok(answer.run !== undefined, JSON.stringify(answer.errors ?? []).slice(0, 400));
       const malformedInput = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:synthetic.json' } } }, call);
       assert.equal(malformedInput.call_result, 'error');
-      assert.ok(malformedInput.errors.some(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.path === '/inputs/spec' && error.message === '不是命名文档的标识'));
+      assert.ok(malformedInput.errors.some(error => error.code === 'SUBMISSION_SCHEMA_VIOLATION' && error.path === '/inputs/spec' && error.message.includes('命名文档的名字「synthetic.json」不合法')));
       assert.ok(malformedInput.errors.every(error => !error.message.includes('没有能读')));
       const absentInput = await hub.runs.startRun(user, { pack: DOCS_PACK, inputs: { spec: { external: 'doc:doc:synthetic-missing' } } }, call);
       const absentError = absentInput.errors.find(error => error.code === 'SOURCE_ABSENT');
@@ -357,7 +357,7 @@ test('a routed named document with malformed name reaches the precise reader dia
   assert.equal(read.ok, false);
   if (!read.ok) {
     assert.equal(read.inputError?.code, 'SUBMISSION_SCHEMA_VIOLATION');
-    assert.match(read.inputError!.message, /不是命名文档的标识/);
+    assert.equal(read.inputError!.message, '命名文档的名字「synthetic.json」不合法：要写成小写字母开头的字母、数字或连字符，1 到 64 个字符');
     assert.match(read.inputError!.fix, /doc:doc:/);
   }
 });
