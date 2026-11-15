@@ -257,10 +257,11 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
         const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
         if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待执行结果中，不可重发' : '运行环境已冻结，不可重发');
         if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
-        steps.push({ name: '在测试环境上执行', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
+        // Admin-only timeline step (ctx.admin above): use 运行环境, same rule as other admin-only pages.
+        steps.push({ name: '在运行环境上执行', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }
     } catch {
-      steps.push({ name: '在测试环境上执行', sub: '执行记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
+      steps.push({ name: '在运行环境上执行', sub: '执行记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
     }
   }
 
