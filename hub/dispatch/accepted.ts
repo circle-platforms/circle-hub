@@ -75,15 +75,16 @@ export async function acceptedDispatch(records: Pick<RecordsKit, 'store' | 'prin
   if (!admin) return ready ? [{ run, text: 'Hub 没有在职管理员负责作业未知结果的处置，没有自动上机验证；等管理员开通账号' }] : [];
   const open = attemptsOf(service);
   const jobs = await readRunJobs(records, service, admin, run, { unbound: true });
-  const histories = jobs.length ? await service.journal.histories(jobs.map(job => job.job)) : new Map<string, Event[]>();
-  const recoveryClosed = new Set(jobs.filter(job => {
+  const mayRetry = ready && jobs.length > 0 && jobs.every(retriable);
+  const histories = mayRetry ? await service.journal.histories(jobs.map(job => job.job)) : new Map<string, Event[]>();
+  const recoveryClosed = new Set((mayRetry ? jobs : []).filter(job => {
     const history = histories.get(job.job);
     if (!history || history.length !== job.status.events) throw new Error('当前作业的恢复事实尚未核对完整，未重新派发；请稍后只读核对原作业');
     return recoveredWithoutExecution(history);
   }).map(job => job.job));
   // Every job of the run ended without an effect that could repeat (see `retriable`): a repeat of the ready submission
   // tries again, as the reference compile skill resubmits a workbook its gateway refused. Any other job is only read.
-  const retry = ready && jobs.length > 0 && jobs.every(job => retriable(job) && !recoveryClosed.has(job.job));
+  const retry = mayRetry && recoveryClosed.size === 0;
   if (jobs.length && !retry) { open.delete(run); return capped(await Promise.all(jobs.map(job => jobNote(service, job, admin.id, false, administrative, recoveryClosed.has(job.job)))),run); }
   if (!ready) return [];
   // What the earlier jobs came to is told beside the new attempt: the runner learns why the last one ended before it reads
