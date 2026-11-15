@@ -6,7 +6,7 @@ import {RunRecord} from '../../../contracts/src/run.ts';
 import type {RequirementTemplate} from '../../../contracts/src/pack.ts';
 import {digestOf} from '../../records/api.ts';
 import type {EngineContext} from './deps.ts';
-import {recordResultRequests} from './requests.ts';
+import {recordResultRequests,RequestBodySchema} from './requests.ts';
 
 function fixture(rows:RequirementTemplate['error_handling']=[]){
   const result=ValidationResult.parse(accepted),item=result.partitions.delivered[0],requirement=item.requirements[0];
@@ -30,14 +30,34 @@ test('a settled violation cannot absorb independent missing facts from its gaps'
   assert.ok(gaps.every(e=>e.path==='/items/1'&&e.rounds_left===3&&e.fix?.includes('请求 rec:')));
   assert.equal(requirement.layers[0].terminal,'violation');
   assert.deepEqual(writes.filter(w=>w.kind==='request').map(w=>w.body.code),['check_error','check_error']);
+  for(const error of gaps){
+    const row=writes.find(w=>w.kind==='request'&&RequestBodySchema.parse(w.body).missing===error.message);
+    assert.ok(row);
+    const request=RequestBodySchema.parse(row.body);
+    assert.equal(error.missing,request.missing);
+    assert.equal(error.request_id,'rec:'+digestOf(row.body));
+    assert.equal(error.audience,request.audience);
+    assert.equal(error.due,request.due);
+    assert.equal(error.next_action,request.next_action);
+    assert.deepEqual(error.items,[item.item]);
+    assert.ok(error.fix?.includes('rec:'+digestOf(row.body)));
+  }
+  assert.equal(result.errors.find(e=>e.code==='synthetic.violation')?.request_id,undefined,'a settled violation does not acquire another gap request');
+
 });
 
 test('an unknown without an earlier error names its real submission position and remaining rounds',async()=>{
-  const {ctx,run,result,requirement,exit,input}=fixture();
+  const {ctx,run,result,requirement,exit,input,writes}=fixture();
   requirement.layers=[{layer:'static',terminal:'unchecked',reason:'check_error',missing:'缺少合成检查结论',exit}];
   await recordResultRequests(ctx,run,result,new Map([[requirement.requirement,2]]),input);
   const error=result.errors.find(e=>e.requirement===requirement.requirement)!;
   assert.equal(error.path,'/items/1');assert.equal(error.rounds_left,3);
+  const row=writes.find(w=>w.kind==='request');assert.ok(row);
+  const request=RequestBodySchema.parse(row.body);
+  assert.equal(error.request_id,'rec:'+digestOf(row.body));
+  assert.equal(error.missing,request.missing);
+  assert.equal(error.next_action,request.next_action);
+
 });
 
 test('request projection uses exact-code priority before a same-named cause row',async()=>{

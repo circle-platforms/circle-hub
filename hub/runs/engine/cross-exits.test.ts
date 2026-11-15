@@ -5,7 +5,7 @@ import { ValidationResult } from '../../../contracts/src/validation.ts';
 import { Claim } from '../../../contracts/src/claim.ts';
 import { digestOf } from '../../records/api.ts';
 import type { EngineContext } from './deps.ts';
-import { recordResultRequests } from './requests.ts';
+import { RequestBodySchema, recordResultRequests } from './requests.ts';
 test('run-level unknown facts have a top-level missing request and a counted receipt error',async()=>{
   const writes:Array<{kind:string;body:Record<string,unknown>}>=[];
   const ctx={now:()=>new Date('2026-10-24T00:00:00.000Z'),deps:{records:{store:{find:async()=>({items:[],next:null}),put:async(input:{kind:string;body:Record<string,unknown>})=>{writes.push(input);return {...input,digest:digestOf(input.body)};}},principals:{get:async(id:string)=>({id,name:'合成人',role:id===ADMIN?'admin':'user',disabled:false}),list:async()=>[{id:ADMIN,name:'合成管理员',role:'admin',disabled:false}]}},workflows:{ownerOf:async()=>ADMIN,byDigest:async()=>({requirements:[{key:'overview',error_handling:[]}]})}}} as unknown as EngineContext;
@@ -17,4 +17,15 @@ test('run-level unknown facts have a top-level missing request and a counted rec
   assert.equal(request?.body.missing,'缺少整份合成文档的完整范围');
   assert.equal(request?.body.audience,USER);
   assert.ok(result.errors.some(e=>e.requirement==='overview'&&e.path==='/cross_item'&&e.rounds_left===1));
+  assert.ok(request);
+  const body=RequestBodySchema.parse(request.body);
+  const error=result.errors.find(e=>e.requirement==='overview'&&e.path==='/cross_item');assert.ok(error);
+  assert.equal(error.missing,body.missing);
+  assert.equal(error.request_id,'rec:'+digestOf(request.body));
+  assert.equal(error.audience,body.audience);
+  assert.equal(error.due,body.due);
+  assert.equal(error.next_action,body.next_action);
+  assert.equal(Object.hasOwn(error,'items'),false,'a cross-item claim without a declared set must not invent the run-wide items');
+  assert.ok(error.fix?.includes('rec:'+digestOf(request.body)));
+
 });
