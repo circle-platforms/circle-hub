@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { ProtocolError } from '../../../contracts/src/common.ts';
 import { createRequestErrorBindings, requestErrorFields } from './request-error-fields.ts';
 
 const request = (digest = 'a'.repeat(64), item?: string) => ({
   digest,
-  body: { run: 'run_synthetic', kind: 'repair' as const, audience: 'usr_synthetic', due: '2026-11-15T12:00:00.000Z',
+  body: { run: 'run_' + '0'.repeat(26), kind: 'repair' as const, audience: 'usr_' + '0'.repeat(26), due: '2026-11-15T12:00:00.000Z',
     missing: 'source-owned missing fact', next_action: 'source-owned next step', source: 'b'.repeat(64), code: 'missing_input',
     ...(item === undefined ? {} : { item }) },
 });
@@ -20,8 +21,10 @@ test('request error columns preserve the returned persisted request fields exact
 
 test('an existing error keeps its original fix and receives only its actual request', () => {
   const error = { code: 'missing_input', message: 'unrelated prose', fix: 'keep the original security instruction' };
+  const originalFixBytes = Buffer.from(error.fix, 'utf8');
   const bindings = createRequestErrorBindings(), actual = request();
   bindings.bind(error, actual); bindings.apply();
+  assert.deepEqual(Buffer.from(error.fix, 'utf8'), originalFixBytes);
   assert.deepEqual(error, { code: 'missing_input', message: 'unrelated prose', fix: 'keep the original security instruction', ...requestErrorFields(actual) });
 });
 
@@ -62,4 +65,25 @@ test('an error without actual request evidence keeps absent fields absent despit
   const error = { code: 'missing_input', message: 'item_hidden', fix: '请求 rec:guess 受众 usr_hidden 期限 tomorrow' };
   const bindings = createRequestErrorBindings(); bindings.apply();
   assert.deepEqual(error, { code: 'missing_input', message: 'item_hidden', fix: '请求 rec:guess 受众 usr_hidden 期限 tomorrow' });
+});
+
+
+test('deduplicated request columns use its persisted deadline instead of the new proposed deadline', async () => {
+  const persisted = request();
+  const proposed = { ...persisted.body, due: '2026-11-16T12:00:00.000Z' };
+  const write = async (_input: typeof proposed) => persisted;
+  const error = { code: 'missing_input', message: 'retry' }, bindings = createRequestErrorBindings();
+  const actual = await write(proposed); bindings.bind(error, actual); bindings.apply();
+  const typed = ProtocolError.parse(error);
+  assert.equal(typed.due, persisted.body.due); assert.notEqual(typed.due, proposed.due);
+  assert.equal(typed.request_id, `rec:${persisted.digest}`);
+  assert.equal(typed.next_action, persisted.body.next_action);
+});
+
+test('the declared ProtocolError accepts the copied source fields without an invented item scope', () => {
+  const actual = request(), fields = requestErrorFields(actual);
+  const typed: ProtocolError = { code: 'missing_input', message: 'source error', ...fields };
+  assert.deepEqual(ProtocolError.parse(typed), typed);
+  assert.equal(Object.hasOwn(typed, 'items'), false);
+  assert.equal(typed.audience, actual.body.audience);
 });
