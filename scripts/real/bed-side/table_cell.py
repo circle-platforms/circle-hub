@@ -20,12 +20,55 @@ PARAMETER_TYPES = {
     'columns': 'int', 'column': 'int', 'format': 'string',
     'header': 'int', 'row': 'int',
 }
+# Exported rule data, not a runtime fallback: Runtime binds the validated entry.
+CELL_VALUE_POLICY = {
+    'schema': 'ascii-cell-value@1',
+    'characters': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._+:-',
+    'min_length': 1,
+    'max_length': 128,
+}
 CELL_EFFECT = {'roles': ['cell_source', 'cell_selection'], 'budget': 256,
-               'device_calls': False}
+               'device_calls': False, 'value_policy': CELL_VALUE_POLICY}
+
+
+def checked_value_policy(policy):
+    if not isinstance(policy, dict) or set(policy) != {'schema', 'characters', 'min_length', 'max_length'} or policy['schema'] != 'ascii-cell-value@1':
+        raise CellSelectionError('取不到：取格方法缺少完整的值策略声明；位置：执行器规则')
+    chars = policy['characters']
+    minimum, maximum = policy['min_length'], policy['max_length']
+    if (not isinstance(chars, str) or not chars or len(set(chars)) != len(chars)
+            or any(not 33 <= ord(char) <= 126 for char in chars)
+            or type(minimum) is not int or type(maximum) is not int
+            or minimum < 1 or maximum < minimum):
+        raise CellSelectionError('取不到：取格值策略不符合ASCII字符集合与长度声明；位置：执行器规则')
+    return dict(policy)
+
+
+def checked_cell_value(value, policy):
+    rule = checked_value_policy(policy)
+    if not isinstance(value, str):
+        raise CellSelectionError('取不到：取格值不是文字；位置：取值列')
+    if not rule['min_length'] <= len(value) <= rule['max_length']:
+        raise CellSelectionError('取不到：取格值长度不在规则声明的%d到%d之间；位置：取值列' % (rule['min_length'], rule['max_length']))
+    for index, char in enumerate(value, 1):
+        if char in rule['characters']:
+            continue
+        if ord(char) < 32 or ord(char) == 127:
+            kind = '控制字符'
+        elif char.isspace():
+            kind = '空白字符'
+        elif ord(char) > 127:
+            kind = '非ASCII字符'
+        elif char in ('\"', "'"):
+            kind = '引号字符'
+        else:
+            kind = '非允许符号'
+        raise CellSelectionError('取不到：取格值含%s U+%04X；位置：取值列字符%d' % (kind, ord(char), index))
+    return value
 
 
 def table_cell(output, *conditions, separator, columns, column,
-               format='delimited', header=0, row=0) -> str:
+               format='delimited', header=0, row=0, value_policy=None) -> str:
     def fail(position, reason):
         raise CellSelectionError('取不到：%s；位置：%s\n设备原话：\n%s' % (
             reason, position, output))
@@ -84,4 +127,4 @@ def table_cell(output, *conditions, separator, columns, column,
     if len(selected) != 1:
         fail('数据行%d' % row if row else '等值条件',
              '选中%d行，必须恰好一行' % len(selected))
-    return selected[0][1][picked_column]
+    return checked_cell_value(selected[0][1][picked_column], value_policy)
