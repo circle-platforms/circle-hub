@@ -1,3 +1,4 @@
+import type { HttpCallErrorData } from '../../contracts/api.ts';
 import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { requestSummary } from './request-summary.ts';
 // POST /mcp: the streamable HTTP transport of the official SDK in stateless JSON mode, one Server and one JSON-RPC request per
@@ -214,6 +215,13 @@ async function logCall(options: McpOptions, principal: Principal, traceId: strin
       options.log(`调用日志写入失败（追踪 ${traceId}，工具 ${tool}）：${describeError(second)}`);
     }
   }
+}
+
+/** Exact SDK machine codes and source entry evidence only; never HTTP status or error prose. */
+export function sdkCallErrorData(numericCode: number, handlerEntered: boolean, knownInvalidRequestGate = false): HttpCallErrorData {
+  if (!handlerEntered && (numericCode === -32602 || knownInvalidRequestGate)) return httpCallErrorData('CALL_REQUEST_INVALID', true);
+  if (!handlerEntered && numericCode === -32601) return httpCallErrorData('CALL_METHOD_UNSUPPORTED', true);
+  return httpCallErrorData('CALL_INTERNAL_UNAVAILABLE');
 }
 
 export async function handleMcp(request: IncomingMessage, response: ServerResponse, options: McpOptions, limit: number): Promise<void> {
@@ -450,10 +458,7 @@ async function answer(
           const malformed = !JSONRPCMessageSchema.safeParse(parsed).success;
           // Only the known SDK gates, witnessed before any business handler, establish a refused request.
           const invalidRequest = !handlerEntered && (envelope.error.code === -32000 && (unsupportedAccept || unsupportedProtocol) || envelope.error.code === -32600 && malformed);
-          const unknownMethod = !handlerEntered && envelope.error.code === -32601;
-          envelope.error.data = invalidRequest ? httpCallErrorData('CALL_REQUEST_INVALID', true)
-            : unknownMethod ? httpCallErrorData('CALL_METHOD_UNSUPPORTED', true)
-            : httpCallErrorData('CALL_INTERNAL_UNAVAILABLE');
+          envelope.error.data = sdkCallErrorData(typeof envelope.error.code === 'number' ? envelope.error.code : -32603, handlerEntered, invalidRequest);
           text = JSON.stringify(envelope);
         }
       }
