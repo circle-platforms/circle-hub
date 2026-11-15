@@ -159,7 +159,7 @@ test('a misspelled workflow name gets the nearest name the caller may use in the
   const near = await h.service.startRun(h.alice, { pack: 'toy-reveiw', inputs: {} }, h.call());
   assert.deepEqual(near.errors.map((e) => [e.code, e.path, e.message]), [['SOURCE_ABSENT', '/pack', 'Hub 里没有名为「toy-reveiw」的工作流或技能，当前账户可用的名称里最接近的是 toy-review@1.0.0']]);
   const { toolText } = await import('../../server/text.ts');
-  assert.equal(toolText('start_run', near), '不存在：Hub 里没有名为「toy-reveiw」的工作流或技能，当前账户可用的名称里最接近的是 toy-review@1.0.0。请核对名称。');
+  assert.equal(toolText('start_run', near), '不存在：Hub 里没有名为「toy-reveiw」的工作流或技能，当前账户可用的名称里最接近的是 toy-review@1.0.0。请核对名称；当前账户可用的工作流和技能用 list_task_packs 查看。');
   const wrongVersion = await h.service.startRun(h.alice, { pack: 'toy-review@9.9.9', inputs: {} }, h.call());
   assert.match(wrongVersion.errors[0]!.message, /最接近的是 toy-review@1\.0\.0$/, 'the id is right and the version is not: the version that exists is named');
   // Bob may use none of them: his refusal names none, as the list_task_packs he would read gives him none.
