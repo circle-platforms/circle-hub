@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { parseToolCliDeclaration } from './guard-lib.ts';
 
 type Declaration = ReturnType<typeof parseToolCliDeclaration>;
-export interface CliProbeOutcome { status: number; stdout?: string }
+export interface CliProbeOutcome { status: number; stdout?: string; stderr?: string }
 export interface CliProbe {
   argv: string[];
   cwd: string;
@@ -94,13 +94,15 @@ export function verifyCliInvocations(
         assert.ok(!result.error, `synthetic invocation did not complete: ${tool}`);
         assert.equal(result.status, expected.status, `unexpected synthetic exit status: ${tool}`);
         if (expected.stdout !== undefined) assert.equal(result.stdout, expected.stdout, `unexpected synthetic output: ${tool}`);
+        if (expected.stderr !== undefined) assert.equal(result.stderr, expected.stderr, `unexpected synthetic error: ${tool}`);
       };
-      run(probe.stdinValues.length ? `${probe.stdinValues.join('\n')}\n` : '', probe.complete);
       if (stdin.length) {
         assert.ok(probe.empty, `missing explicit empty-stdin outcome: ${tool}`);
-        assert.notEqual(probe.empty.status, probe.complete.status, `empty stdin must distinguish this input contract: ${tool}`);
+        const distinct = probe.empty.status !== probe.complete.status || probe.empty.stdout !== undefined && probe.complete.stdout !== undefined && probe.empty.stdout !== probe.complete.stdout || probe.empty.stderr !== undefined && probe.complete.stderr !== undefined && probe.empty.stderr !== probe.complete.stderr;
+        assert.ok(distinct, `empty stdin must distinguish this input contract: ${tool}`);
         run('', probe.empty);
       }
+      run(probe.stdinValues.length ? `${probe.stdinValues.join('\n')}\n` : '', probe.complete);
     }
     for (const subcommand of Object.keys(declaration.subcommandStdin ?? {})) assert.ok(exercised.has(subcommand), `missing subcommand probe: ${tool} ${subcommand}`);
   }
