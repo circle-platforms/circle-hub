@@ -32,7 +32,7 @@ export async function personalPublishPage(ctx:PageContext,staging:PackStaging):P
  const stages=staging.list(ctx.principal.id).filter(stage=>stage.space===ctx.principal.id),selected=ctx.url.searchParams.get('stage'),stage=stages.find(stage=>stage.id===selected);
  if(selected&&!stage)return neutralPage(ctx);
  const inspector=stage?html`<div data-inspector-content><span class="ch-tag">发布内容</span><h2 class="ch-panel-title">等待发布中</h2><p>到期时间 ${when(new Date(stage.expires).toISOString())}</p>${technical(code(stage.pack+'@'+stage.version),'查看待发布版本')}<footer class="ch-inspector-actions">${personalPackForm(ctx,'discard',html`<input type="hidden" name="stage" value="${stage.id}">`,'放弃')}${personalPackForm(ctx,'publish',html`<input type="hidden" name="stage" value="${stage.id}">`,'确认发布')}</footer></div>`:undefined;
- const upload=card({title:'上传发布内容',hint:'上传含 pack.json 的 zip，校验通过后暂存 30 分钟，确认时再次校验；私人内容不能请求团队资源、租约或外部效果。'},personalPackForm(ctx,'stage',field('发布内容 zip',html`<input type="file" name="archive" accept=".zip,application/zip" required>`),'上传并校验',true));
+ const upload=card({title:'上传发布内容',hint:'上传含 pack.json 的 zip，校验正确后暂存 30 分钟，确认时再次校验；私人内容不能请求团队资源、租约或外部效果。'},personalPackForm(ctx,'stage',field('发布内容 zip',html`<input type="file" name="archive" accept=".zip,application/zip" required>`),'上传并校验',true));
  const listing=card({title:'等待发布中'},table(['发布内容','到期时间'],stages.map((item,index)=>[link(PERSONAL_PUBLISH,'待发布内容 '+(index+1),{stage:item.id}),when(new Date(item.expires).toISOString())]),'没有暂存的发布内容',undefined,{selected:stages.findIndex(item=>item.id===selected),hrefs:stages.map(item=>PERSONAL_PUBLISH+'?'+new URLSearchParams({stage:item.id}))}));
  return {status:200,body:page(ctx.chrome('发布我的工作流或通用技能',{active:'workflows',hint:'内容保存在 Hub 数据库和服务器备份中，仅本人及获分享权限者可用，管理员没有默认读权；沿用团队包的结构、沙箱、样例、引用与凭据校验'}),pageLayout(html`<section class="ch-section" aria-label="选择发布用途"><p>${packPurpose('workflow')}</p><p>${packPurpose('skill')}</p><p class="ch-meta">上传内容的类型由 pack.json 声明；接入具体业务系统请由管理员在连接页配置。</p></section>${upload}${listing}`,{inspector,detail:!!stage,back:link(PERSONAL_PUBLISH,'返回发布列表')}))};
 }
@@ -66,14 +66,14 @@ export async function performPersonalPackAction(ctx:PageContext,action:string,va
   if(action==='stage'){
     if(!upload)throw new RecordsError('请选择发布内容 zip');
     const unpacked=await unpackZip(upload.bytes);let kept=false;
-    try{const checked=await personal.check(ctx.principal,unpacked.dir);if(!checked.ok)throw new RecordsError('发布校验未通过：'+checked.problems.map(row=>row.rule).join('、'));const stage=await staging.add(ctx.principal.id,unpacked,ctx.principal.id);kept=stage!==null;if(!stage)throw new RecordsError('暂存未完成，请重新上传');}finally{if(!kept)await rm(unpacked.root,{recursive:true,force:true});}
+    try{const checked=await personal.check(ctx.principal,unpacked.dir);if(!checked.ok)throw new RecordsError('发布校验有错误：'+checked.problems.map(row=>row.rule).join('、'));const stage=await staging.add(ctx.principal.id,unpacked,ctx.principal.id);kept=stage!==null;if(!stage)throw new RecordsError('暂存未完成，请重新上传');}finally{if(!kept)await rm(unpacked.root,{recursive:true,force:true});}
     return PERSONAL_PUBLISH;
   }
   if(action==='publish'||action==='discard'){
     const opened=await staging.open(get('stage'),ctx.principal.id);if(opened?.stage.space!==ctx.principal.id)throw new AccessError('对象不存在或无权读取');
     const taken=await staging.take(get('stage'),ctx.principal.id);if(!taken)throw new AccessError('对象不存在或无权读取');
     const kind=taken.stage.kind&&isPackKind(taken.stage.kind)?taken.stage.kind:undefined;
-    try{if(action==='publish'){if((await stagedDigest(taken.dir))?.digest!==taken.stage.digest)throw new RecordsError('暂存内容发生变化，请重新上传并校验');const published=await personal.publish(ctx.principal,taken.dir);if(!published.ok)throw new RecordsError('发布校验未通过：'+published.problems.map(row=>row.rule).join('、'));}}finally{await taken.done();}
+    try{if(action==='publish'){if((await stagedDigest(taken.dir))?.digest!==taken.stage.digest)throw new RecordsError('暂存内容发生变化，请重新上传并校验');const published=await personal.publish(ctx.principal,taken.dir);if(!published.ok)throw new RecordsError('发布校验有错误：'+published.problems.map(row=>row.rule).join('、'));}}finally{await taken.done();}
     return (await personalPackReturn(ctx,taken.stage.pack,kind)).list;
   }
   const pack=get('pack');
@@ -84,7 +84,7 @@ export async function performPersonalPackAction(ctx:PageContext,action:string,va
     const member=get('member_id')||(get('member')?(await ctx.deps.records.principals.findByName(get('member')))?.id:null);
     await personal.grant(ctx.principal,pack,{audience,member:member??null,revoke:action==='revoke'});
   }else if(action==='retire')await personal.retire(ctx.principal,pack,get('version'));
-  else if(action==='promote'){const published=await personal.promote(ctx.principal,pack+'@'+get('version'));if(!published.ok)throw new RecordsError('发布校验未通过：'+published.problems.map(row=>row.rule).join('、'));return paths.detail;}
+  else if(action==='promote'){const published=await personal.promote(ctx.principal,pack+'@'+get('version'));if(!published.ok)throw new RecordsError('发布校验有错误：'+published.problems.map(row=>row.rule).join('、'));return paths.detail;}
   else throw new AccessError('对象不存在或无权读取');
   return paths.detail+'?space='+encodeURIComponent(ctx.principal.id);
 }

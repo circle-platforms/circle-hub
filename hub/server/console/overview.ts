@@ -140,7 +140,7 @@ ${tile(kpi(uiLabelOf('request_status','waiting')+'的请求', count(requests.len
   const daily=chart('每日任务数量',columns.map((column)=>({label:column.label,values:[column.all]})),[{label:'任务',column:'任务数',unit:'个任务'}],'bar',scope);
   const resultsTable=html`<details class="ch-tableview"><summary>按结果以表格查看</summary>${table(['日期',...shown.map(result=>uiLabelOf('task_result',result)),'结果暂不可用'],columns.map((column)=>[column.label,...column.parts,column.unread]))}</details>`;
   const checks=checkCounts(tasks),checkTotal=checks.reduce((sum,item)=>sum+item.value,0);
-  const checkCard=box({title:'检查项结果',meta:`共 ${count(checkTotal)} 项`,hint:scope+'全部结果中的检查项；等待判定中不计入通过，未知与检查未完成单独统计，不计入未通过。'},parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布'));
+  const checkCard=box({title:'检查项结果',meta:`共 ${count(checkTotal)} 项`,hint:scope+'全部结果中的检查项；等待判定中不计入正确，未知与检查未完成单独统计，不计入错误。'},parts(checks.map(item=>({label:item.label,value:item.value,className:item.fill})),'检查项结果分布'));
   const stuck=blockers(tasks);
   const stuckCard=stuck.length?box({title:'主要阻塞原因',hint:scope+'被退回或未完成的条目，按原因汇总'},comparisons('主要阻塞原因',stuck,undefined,{rows:'原因',column:'条目数',unit:'个条目'})):html``;
   const { resources, reads } = await step('read-systems', async () => {

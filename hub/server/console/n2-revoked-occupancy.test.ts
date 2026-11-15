@@ -52,7 +52,7 @@ test('occupied without assignment is marked 已无分配; assigned occupancy is 
 test('lease-release confirmation dialog follows bed-hold commandModal pattern', () => {
   const dialog = commands.leaseRelease(
     { id: 'exe_' + '2'.repeat(26), target: '合成实验室' },
-    '当前占用：作业 aaaaaaaaaaaa。',
+    '当前占用：执行 aaaaaaaaaaaa。',
   );
   assert.match(dialog.id, /lease-release/);
   assert.match(dialog.title, /强制释放预订/);
@@ -68,7 +68,7 @@ test('lease-release confirmation dialog follows bed-hold commandModal pattern', 
 test('lease-release confirmation offers held keys as a single choice instead of a blank placeholder', () => {
   const dialog = commands.leaseRelease(
     { id: 'exe_' + '3'.repeat(26), target: '合成实验室' },
-    '当前占用：作业 bbbbbbbbbbbb。',
+    '当前占用：执行 bbbbbbbbbbbb。',
     ['synthetic/zone/a', 'synthetic/zone/b'],
   );
   assert.ok(dialog.choices);

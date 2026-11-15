@@ -91,8 +91,8 @@ export function countText(citations: Pick<Citations, 'complete'>, count: number,
 export function citationsLine(citations: Citations): string {
   const count = countText(citations, citations.count, citations.capped);
   const head = `近 ${citations.days} 天被引用${citations.complete ? ` ${count}` : count}`;
-  if (citations.complete) return `${head}（按引用该节点或其条目的已受理提交计）`;
+  if (citations.complete) return `${head}（按引用该节点或其条目的已核对提交计）`;
   return citations.indexed_since === null
-    ? `近 ${citations.days} 天被引用：暂无统计（引用自本功能启用后受理的提交起统计）`
+    ? `近 ${citations.days} 天被引用：暂无统计（引用自本功能启用后已核对的提交起统计）`
     : `${head}（引用自 ${when(citations.indexed_since)} 起统计，更早的提交未计入）`;
 }

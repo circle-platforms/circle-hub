@@ -255,12 +255,12 @@ export async function taskSteps(ctx: PageContext, detail: RunDetail, calls: read
         // A job that holds its environment without an open disposition request has not been declared unconfirmed: its
         // result has not arrived yet (D03 R[1], R[7]: the target is frozen with the disposition request).
         const held = environment?.state?.holding?.find((holder) => holder.job === job.job);
-        if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待派发结果中，不可重发' : '运行环境已冻结，不可重发');
+        if (job.frozen) parts.push(held !== undefined && !held.frozen ? '等待执行结果中，不可重发' : '运行环境已冻结，不可重发');
         if (job.disposition !== undefined) parts.push(`处置：${uiLabelOf('disposition', job.disposition)}`);
-        steps.push({ name: '派发到运行环境', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
+        steps.push({ name: '在运行环境上执行', sub: parts.join(' · '), fill: job.outcome === 'unknown' ? 'fill-unknown' : 'fill-hub', dot: DISPATCH_DOT[job.outcome], start: at, end: at, point: true, depth: 0, dur: '' });
       }
     } catch {
-      steps.push({ name: '派发到运行环境', sub: '派发记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
+      steps.push({ name: '在运行环境上执行', sub: '执行记录暂不可用', fill: 'fill-unchecked', dot: 'idle', start: resultAt ?? Date.parse(run.started_at), end: resultAt ?? Date.parse(run.started_at), point: true, depth: 0, dur: '' });
     }
   }
 
@@ -293,7 +293,7 @@ export async function taskWaterfall(ctx: PageContext, detail: RunDetail, read?: 
   const waiting = steps.filter((s) => s.open === true).reduce((sum, s) => sum + (s.count ?? 1), 0);
   const total = calls.length === 0 ? null : Date.parse([...calls].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0].at) - Math.min(...calls.map((c) => Date.parse(c.at) - c.duration_ms));
   const summary=html`<div class="ch-stats">${kpi('工具调用',toolCalls)}${kpi('条目',detail.run.items.length)}${kpi('未决项',pending)}${kpi(uiLabelOf('request_status','waiting'),waiting)}${kpi('从第一次调用到最后一次',total===null?'暂无数据':duration(total))}</div>`;
-  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；调用间空档未由 Hub 观测，不代表客户端计算耗时或执行位置。等待回应中的右端是当前截至时间。派发标记按提交时间（缺失时按任务起点）定位，不表示派发完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
+  const process=card({title:'执行过程',hint:'工具调用跨度是 Hub 处理时间；调用间空档未由 Hub 观测，不代表客户端计算耗时或执行位置。等待回应中的右端是当前截至时间。执行标记按核对时间（缺失时按任务起点）定位，不表示执行完成时间。'},html`${summary}${timeline('执行过程',steps.map(s=>({label:s.name,detail:[s.sub,s.dur].filter(Boolean).join(' · '),start:s.start,end:s.end,point:s.point})),open?'截至 '+clock(now):clock(t0)+' 至 '+clock(t1))}${callsShown?'':html`<p class="ch-meta">调用记录暂不可用，只显示 Hub 校验与请求。</p>`}`);
   const slow=[...calls].sort((a,b)=>b.duration_ms-a.duration_ms).slice(0,3);
   const longest=slow.length?comparisons('耗时最长的调用',slow.map(line=>({label:toolName(line.tool),value:line.duration_ms})),undefined,{rows:'调用',column:'耗时（毫秒）',unit:'毫秒'}):'';
   return html`${process}${longest === '' ? '' : html`<div>${longest}</div>`}`;

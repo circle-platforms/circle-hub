@@ -40,8 +40,8 @@ function errorsTable(errors: readonly ProtocolError[]): Html {
 export function ruleWithdrawalNotice(detail:Pick<RunDetail,Extract<ValidityStatus,'rule_withdrawn'|'grounds_withdrawn'|'grounds_purged'>> & Pick<RunDetail,'grounds_withdrawn_hidden_count'>):Html{
   // Owner ruling 3 (issue 141): name the unavailable grounds and the registered reason.
   const purged=detail.grounds_purged?.length?html`<p class="notice" data-grounds-purged><strong>${uiLabelOf('validity_status','grounds_purged')}</strong>；${PROTOCOL_CODES.GROUNDS_PURGED.when}（${detail.grounds_purged.length} 项来源）。${PROTOCOL_CODES.GROUNDS_PURGED.fix}。</p>${detail.grounds_purged.map(row=>technical(code(row.reference),'查看不可用的引用'))}`:html``;
-  const grounds=detail.grounds_withdrawn?.length||detail.grounds_withdrawn_hidden_count?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；来源当前已撤回，原有回执保留。${detail.grounds_withdrawn_hidden_count?`另有 ${detail.grounds_withdrawn_hidden_count} 项来源不可读取。`:''}</p>`:html``;
-  return html`${grounds}${purged}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已退役）</strong>；下列回执展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
+  const grounds=detail.grounds_withdrawn?.length||detail.grounds_withdrawn_hidden_count?html`<p class="notice"><strong>${uiLabelOf('validity_status','grounds_withdrawn')}</strong>；来源当前已撤回，原有核对结果保留。${detail.grounds_withdrawn_hidden_count?`另有 ${detail.grounds_withdrawn_hidden_count} 项来源不可读取。`:''}</p>`:html``;
+  return html`${grounds}${purged}${detail.rule_withdrawn?html`<p class="notice"><strong>${uiLabelOf('validity_status','rule_withdrawn')}（版本已退役）</strong>；下列核对结果展示生成时的状态；原摘要、分区和要求项终态保持原样，这是当前读取时的限定。</p>`:html``}`;
 }
 
 export function claimBlock(claim: Claim): Html {
@@ -261,7 +261,7 @@ async function submissionContent(ctx: PageContext, digest: string, runId: string
 /** A visible run may precede its stored production result; ask for a reread before a new run. */
 export function missingProductionResult(detail:RunDetail):Html {
   return html`<p class="notice">没有找到 start_run 留下的校验结果记录（缺：submission 等于运行记录摘要的 validation_result）。这次任务开始于 ${detail.run.started_at}；如果任务刚开始，请刷新本页再看。刷新后仍缺，再用同样的输入重新开始一个新任务，使用新的 client_key，避免返回这次的旧任务。</p>
-${detail.latest===null?'':html`<p class="notice">已有后续受理的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
+${detail.latest===null?'':html`<p class="notice">已有后续已核对的模型评论，结果记录 ${technicalCode(detail.latest.record)}；任务页在“模型评论（判断）”中单列。这份评论不能补作生产结果。</p>`}`;
 }
 
 /** The query already authorized this run; this marker never grants access itself. */
@@ -282,7 +282,7 @@ async function runSharing(ctx: PageContext, run: RunRecord): Promise<Html> {
 
 /** What a validation result says in one line: its management disposition or commentary status, then the counts by classification. */
 function resultHeadline(result: ValidationResult, commentary = false): string {
-  return `${isAbandonedResult(result)?'管理放弃（不是目标通过）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
+  return `${isAbandonedResult(result)?'管理放弃（不是目标侧正确）；':commentary ? '模型声明的分区（判断，未采用）：' : ''}${result.system_input?'系统交付；'+countsText(partitionCountsOf(result.partitions),result.partitions,INTERFACE_LABELS):countsLine(result.acceptance, result.acceptance === 'accepted' ? result.partitions : undefined, INTERFACE_LABELS)}`;
 }
 /** The tab of the task page the address asks for; `?view=record` is the old address of the last one. */
 function taskTabOf(ctx: PageContext): TaskTab {
@@ -393,7 +393,7 @@ ${detail.management?section('管理处置',html`<p>目标已放弃；来源 ${li
   } else if (tab === 'items') {
     const results=primary===null?(factOnly?missingProductionResult(detail):html`<p class="empty">还没有校验结果</p>`):renderResult(primary,factOnly?'生产结果记录（start_run 计算）':'校验结果记录');
     const commentary=factOnly&&detail.latest!==null&&detail.latest.record!==primary?.record
-      ? section('模型评论（判断）',html`<p class="notice">后续受理的模型评论，以下判断不替代 start_run 计算的生产结果。</p>${renderResult(detail.latest,'模型评论结果记录',true)}${section('模型处理声明（未经平台验证）', await commentaryHandling(ctx, detail, detail.latest))}`):'';
+      ? section('模型评论（判断）',html`<p class="notice">后续已核对的模型评论，以下判断不替代 start_run 计算的生产结果。</p>${renderResult(detail.latest,'模型评论结果记录',true)}${section('模型处理声明（未经平台验证）', await commentaryHandling(ctx, detail, detail.latest))}`):'';
     body = html`<div class="ch-section" id="task-evidence">${section(axisUiLabel('partition'), results)}
 ${commentary}</div>`;
   } else if (tab === 'requests') {
@@ -417,13 +417,13 @@ ${run.criterion_changes?.length?section('判据变更声明',table(['声明 / �
         await submissionContent(ctx, s.record, run.run, { full, href: whole, received: s.received_at }),
       ]);
     }
-    const submissions = table(['提交记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '提交内容（未经平台验证）'], submissionRows, '没有提交');
+    const submissions = table(['核对记录', '收到时间', axisUiLabel('acceptance'), '错误', '校验结果', '核对内容（未经平台验证）'], submissionRows, '没有核对记录');
     const paging = detail.history === undefined ? html`` : html`<p class="ch-meta">本页列出 ${detail.submissions.length} 次提交，每页最多 ${detail.history.limit} 次，较早的在上${detail.history.pinned === undefined ? '' : '；第一行是当前结果对应的提交'}；撤回提示按本页列出的结果、当前结果和生产结果判断。${detail.history.next === null ? '' : html` ${link(base, '查看更早的提交', { tab: 'process', older: detail.history.next })}`}${before === null ? '' : html` ${link(base, '回到最近的提交', { tab: 'process' })}`}</p>`;
     const calls = await ctx.deps.records.callLog.query(ctx.principal, { runId: run.run, limit: 200, newestFirst: false, cursor:param(ctx,'call_cursor')??null });
     // The first page of the call log is the waterfall's too; a later page is not.
     const process = await taskWaterfall(ctx, detail, param(ctx, 'call_cursor') === undefined ? calls.items : undefined);
     body = html`${process}
-${section('提交与回执', html`${paging}${submissions}`)}
+${section('核对', html`${paging}${submissions}`)}
 ${section('调用日志',html`${callTable(calls.items, ctx.admin, await names(ctx, calls.items))}<p>分页：本页 ${calls.items.length} 条${typeof calls.next==='string'?html`；${link(base,'下一页',{tab:'process',call_cursor:calls.next})}`:''}</p>`)}`;
   } else if (tab === 'sources') {
     const sourcePanels=[];for(const source of run.sources)sourcePanels.push(await sourceBlock(ctx,source.reference));

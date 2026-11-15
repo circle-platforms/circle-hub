@@ -90,7 +90,7 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     const message=cleared?(body.code?PROTOCOL_CODES[body.code as keyof typeof PROTOCOL_CODES].when:''):body.message;
     rows.push([when(body.at), await ctx.userName(body.by), target, uiLabelOf('knowledge_share_status', body.status), body.code ?? '无', message, cleared?clearedPersonalFolder():origin?technicalCode(`tree:${origin.root}${origin.path}@${origin.entry}`):singleItemOrigin()]);
   }
-  cards.push(card({ title: '分享到公共空间记录', hint: ctx.admin ? '管理员可见全部分享到公共空间的安全回执；不包含私人原文或提交内容' : '仅显示本人分享到公共空间的安全回执，拒收后我的原条目保留' }, html`${rowsOrNote(['时间', '提交人', '公共空间文件夹', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的分享到公共空间记录')}${shares.next ? more(cursor, shares.next, '更早的分享到公共空间') : ''}`));
+  cards.push(card({ title: '分享到公共空间记录', hint: ctx.admin ? '管理员可见全部分享到公共空间的安全核对记录；不包含私人原文或分享内容' : '仅显示本人分享到公共空间的安全核对记录，拒收后我的原条目保留' }, html`${rowsOrNote(['时间', '分享人', '公共空间文件夹', '状态', '拒收码', '说明', '来源条目'], rows, '本页没有匹配的分享到公共空间记录')}${shares.next ? more(cursor, shares.next, '更早的分享到公共空间') : ''}`));
   const memoryShares=ctx.admin?await ctx.deps.records.store.list({kind:'memory_share',newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')}):await ctx.deps.records.store.find({kind:'memory_share',key:'memory.share.by',value:ctx.principal.id,newestFirst:true,limit:PAGE_SIZE,cursor:ctx.url.searchParams.get('memory_shares')});
   const memoryRows=[];
   for(const record of memoryShares.items){
@@ -98,6 +98,6 @@ export async function spaceRecords(ctx: PageContext, path: string, user?: string
     if(!ctx.admin&&body.by!==ctx.principal.id||!inFilter(body.by,body.at))continue;
     memoryRows.push([when(body.at),await ctx.userName(body.by),body.target_path?directory(body.target_path,true):'未记录',uiLabelOf('knowledge_share_status',body.status),body.code??'无',body.message,body.team_document?link('/console/knowledge',uiLabelOf('knowledge_view','memory'),{view:'memory',document:body.team_document,scope:'team'}):'无']);
   }
-  cards.push(card({title:uiLabelOf('knowledge_view','memory')+'分享到公共空间记录',hint:'只列安全回执，不显示私人记忆标题或正文'},html`${rowsOrNote(['时间','提交人','公共空间文件夹','状态','拒收码','说明','团队文档'], memoryRows, '本页没有匹配的分享到公共空间记录')}${memoryShares.next?more('memory_shares',memoryShares.next,'更早的分享到公共空间'):''}`));
+  cards.push(card({title:uiLabelOf('knowledge_view','memory')+'分享到公共空间记录',hint:'只列安全核对记录，不显示私人记忆标题或正文'},html`${rowsOrNote(['时间','分享人','公共空间文件夹','状态','拒收码','说明','团队文档'], memoryRows, '本页没有匹配的分享到公共空间记录')}${memoryShares.next?more('memory_shares',memoryShares.next,'更早的分享到公共空间'):''}`));
   return html`${cards}${await memoryRefusals(ctx,path,user,from,to)}`;
 }

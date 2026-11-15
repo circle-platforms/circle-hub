@@ -52,7 +52,7 @@ test('projected last_check shows time, confirmation word, and item rows', () => 
   });
   const cell = String(environmentCheckCell(v));
   assert.match(cell, /错误/);
-  assert.match(cell, /1 项未通过/);
+  assert.match(cell, /1 项错误/);
   const facts = environmentCheckFacts(v);
   assert.equal(facts[0]![0], '最近核对');
   assert.match(String(facts[0]![1]), /错误/);

@@ -60,7 +60,7 @@ export async function memoryPage(ctx:PageContext):Promise<PageResult>{
   const parsed=record?.kind==='memory_share'?MemoryShareBody.safeParse(record.body):null;
   if(!parsed?.success||parsed.data.by!==ctx.principal.id&&!ctx.admin)return neutralPage(ctx);
   const body=parsed.data;
-  result=card({title:uiLabelOf('knowledge_share_status',body.status),hint:'私人原文与分享保留；确认时重新检查，回执保留实际结果'},html`<p>${body.code??''} ${evidence(body.message)}</p>${body.team_document?link(location({scope:'team',document:body.team_document}),memoryLabel()+' · '+actionLabel('share')):''}`);
+  result=card({title:uiLabelOf('knowledge_share_status',body.status),hint:'私人原文与分享保留；确认时重新检查，核对记录保留实际结果'},html`<p>${body.code??''} ${evidence(body.message)}</p>${body.team_document?link(location({scope:'team',document:body.team_document}),memoryLabel()+' · '+actionLabel('share')):''}`);
  }
  let content:Html;
  if(document){

@@ -196,7 +196,7 @@ export function environmentCheckCell(view: ExecutorView): Html {
   if (check === null) return html`<span class="t-unknown">未知</span>`;
   const { text, tone } = checkPresentation(check);
   const failed = check.items.filter((item) => item.ok === false).length;
-  const note = failed > 0 ? `${failed} 项未通过` : check.items.some((item) => item.ok === null) ? '含未知项' : '各项已通过';
+  const note = failed > 0 ? `${failed} 项错误` : check.items.some((item) => item.ok === null) ? '含未知项' : '各项正确';
   return html`${when(check.at)}<div class="ch-meta">${chip(text, tone)} · ${note}</div>`;
 }
 
@@ -228,17 +228,17 @@ export function environmentState(view: ExecutorView): { code: EnvironmentState; 
   const state = view.state;
   if (!view.enabled) {
     const waiting = state?.holding?.filter((job) => job.frozen).length ?? 0;
-    return as('deactivated', 'unchecked', 'idle', waiting > 0 ? [`仍有 ${waiting} 个作业的派发结果未确认，等待处置中`] : []);
+    return as('deactivated', 'unchecked', 'idle', waiting > 0 ? [`仍有 ${waiting} 次执行的结果未确认，等待处置中`] : []);
   }
   if (state === undefined || !state.known.occupancy || state.holding === null) {
     return as('unknown', 'unknown', 'unknown', state !== undefined && state.missing.length > 0 ? [...state.missing] : ['占用与冻结状态暂不可读']);
   }
   const frozen = state.holding.filter((job) => job.frozen);
   const detail: string[] = [];
-  for (const job of frozen) detail.push(`作业 ${shortJob(job.job)} 的派发结果未确认，等待处置中`);
-  if (state.bed_hold !== null) detail.push(`作业 ${shortJob(state.bed_hold.job)} 结束后运行环境未恢复（${state.bed_hold.bed}），等待管理员确认中`);
+  for (const job of frozen) detail.push(`执行 ${shortJob(job.job)} 的结果未确认，等待处置中`);
+  if (state.bed_hold !== null) detail.push(`执行 ${shortJob(state.bed_hold.job)} 结束后运行环境未恢复（${state.bed_hold.bed}），等待管理员确认中`);
   if (frozen.length > 0 || state.bed_hold !== null) return as('frozen', 'fail', 'down', detail);
-  if (state.holding.length > 0) return as('in_use', 'judgment', 'info', state.holding.map((job) => `作业 ${shortJob(job.job)}（${axisUiLabel('effect_outcome')}：${uiLabelOf('effect_outcome', job.outcome)}）`));
+  if (state.holding.length > 0) return as('in_use', 'judgment', 'info', state.holding.map((job) => `执行 ${shortJob(job.job)}（${axisUiLabel('effect_outcome')}：${uiLabelOf('effect_outcome', job.outcome)}）`));
   return as('available', 'pass', 'ok', []);
 }
 
@@ -425,8 +425,8 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
  const period=reads===null?undefined:[...reads.values()][0];
  const systemFacts=html`<p class="ch-meta" data-tab-facts>已启用 ${count(resources.filter(resource=>resource.enabled).length)} 个，共 ${count(resources.length)} 个${period?html` · 统计时段 ${when(period.since)} 至 ${when(period.until)}`:''}</p>`;
  const orderedExecutors=executors===null?null:executorsByTarget(executors).flatMap((group)=>group.rows);
- const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 派发结果未确认':''}</div>`:'尚无派发':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
- const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入派发；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近派发','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
+ const environmentRows=(orderedExecutors??[]).map(executor=>{const state=environmentState(executor),latest=executor.state?.latest,calls=executor.calls_24h;let gateway=executor.endpoint;try{gateway=new URL(gateway).origin;}catch{/* Preserve the recorded endpoint. */}const flags=executor as AssignmentFlags;const revoked=environmentAssignmentsEnforced&&environmentIsOccupied(executor)&&environmentLacksAssignment(flags);return [link('/console/connections',executor.target,{environment:executor.id}),technicalCode(executor.id),executor.state?.known.version?executor.state.reported_version?technicalCode(executor.state.reported_version):'未上报':'未知',gateway,executor.resources.length,environmentCheckCell(executor),executor.state?.known.latest?latest?html`${latest.run?link('/console/runs/'+latest.run,when(latest.at)):when(latest.at)}<div class="ch-meta">${uiLabelOf('effect_outcome',latest.outcome)}${latest.frozen?' · 执行结果未确认':''}</div>`:'尚无执行':'未知',calls?calls.calls===0&&!calls.partial?'近 24 小时无调用':html`${calls.partial?'至少 ':''}${calls.calls} 次<div class="ch-meta">中位 ${calls.median_ms===null?'未知':duration(calls.median_ms)} · 最慢 ${calls.slowest_ms===null?'未知':duration(calls.slowest_ms)}</div>`:'暂不可用',html`${chip(state.text,state.tone)}${revoked?html` ${chip(NO_ASSIGNMENT_LABEL,'unchecked')}`:''}${state.detail.map(line=>html`<p class="ch-meta">${line}</p>`)}`];});
+ const environmentTable=!ctx.admin?html`<p class="ch-meta">运行环境仅管理员可见；已分配的测试环境在「我能做的事」。${link('/console/me','打开')}</p>`:executors===null?html`<p class="ch-meta">${executorsFailed?'运行环境列表暂不可用。':'这个 Hub 进程未接入在运行环境上执行；运行环境在运行 Hub 的服务器上以 circle-hub executor 登记。'}</p>`:table(['测试环境（按目标）','执行器','执行器版本','网关','资源','最近核对','最近执行','响应时间','状态'],environmentRows,{title:'尚无运行环境',text:'在运行 Hub 的服务器上以 circle-hub executor 登记后列在这里。'},undefined,{selected:orderedExecutors!.findIndex(executor=>executor.id===environmentId),hrefs:orderedExecutors!.map(executor=>href('/console/connections',{environment:executor.id}))});
  const readinessSection=html`<div class="ch-stack" data-environment-readiness>${readinessTargets.length?readinessCards.map(card=>card.body):ctx.deps.dispatch?.readiness?html`<p class="ch-meta">${ctx.admin?'尚无运行环境目标。':'尚无已分配的运行环境；请管理员分配后重读。'}</p>`:readinessUnknownNotice()}${!ctx.deps.dispatch?.readiness&&readinessTargets.length?html`<p class="ch-meta">上列目标的只读报告尚未接线；页面不作许可判断。</p>`:''}</div>`;
  const dialogs:CommandDialog[]=[];let inspector:Html;
  if(chosen){const toggle=commands.resourceToggle(chosen),relogin=commands.resourceResetLogin(chosen);dialogs.push(toggle,relogin);inspector=html`<div data-inspector-content><div class="ch-actions"><span class="ch-tag">业务系统</span>${chip(systemState(chosen).text,systemState(chosen).tone)}</div><h2 class="ch-panel-title">${chosen.name}</h2>${facts([['环境',isEnvironment(chosen.environment)?uiLabelOf('environment',chosen.environment):chosen.environment],['使用范围',audienceById.get(chosen.id)??'未知'],['访问方式','只读'],['访问地址',html`${Object.values(chosen.origins??{}).map(origin=>html`<p>${origin}</p>`)}`],['近 24 小时读取',reads===null?'暂不可用':readsText(reads.get(chosen.id))]])}${technical(html`${code(chosen.id)} ${code(chosen.system_pack)}`)}<footer class="ch-inspector-actions">${commandLink(toggle,chosen.enabled?'停用…':'启用…',chosen.enabled?'ch-btn ch-btn--danger':'ch-btn ch-btn--secondary')}${commandLink(relogin,'重新认证…')}</footer></div>`;
@@ -450,14 +450,14 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
     }));
   }
   if(environment.state?.bed_hold){const clear=commands.bedHoldClear(environment);dialogs.push(clear);actions.push(commandLink(clear,'确认已恢复…'));}
-  const frozen=environment.state?.holding?.find(job=>job.frozen);if(frozen){const dispose=commands.jobDispose(frozen.job);dialogs.push(dispose);actions.push(commandLink(dispose,'处置派发结果…','ch-btn ch-btn--danger'));if(frozen.run)actions.push(link('/console/runs/'+frozen.run,'查看任务'));}
+  const frozen=environment.state?.holding?.find(job=>job.frozen);if(frozen){const dispose=commands.jobDispose(frozen.job);dialogs.push(dispose);actions.push(commandLink(dispose,'处置执行结果…','ch-btn ch-btn--danger'));if(frozen.run)actions.push(link('/console/runs/'+frozen.run,'查看任务'));}
   const flags=environment as AssignmentFlags;
   let assignmentGone: boolean | null = environmentLacksAssignment(flags)
     ? true
     : (flags.assigned === true || flags.can_use === true || flags.canUse === true) ? false : null;
   const showRevoked = environmentAssignmentsEnforced && environmentIsOccupied(environment) && assignmentGone === true;
   if (showRevoked) {
-    const holders = (environment.state?.holding ?? []).map((job) => `作业 ${shortJob(job.job)}${job.frozen ? '（派发结果未确认）' : ''}`);
+    const holders = (environment.state?.holding ?? []).map((job) => `执行 ${shortJob(job.job)}${job.frozen ? '（结果未确认）' : ''}`);
     const detail = holders.length > 0
       ? `当前占用：${holders.join('、')}。`
       : '当前仍有占用记录。';
@@ -476,5 +476,5 @@ export async function connectionsPage(ctx:PageContext):Promise<PageResult>{
   :tab==='packs'?await packSources(ctx,'system',resources,{listings,bare:true})
   :liveModule('environments',['environment.status'],html`${executors?.length?html`<p class="ch-meta" data-tab-facts>${environmentNote(executors)}</p>`:''}${readinessSection}${box(null,environmentTable,{flush:true})}${ctx.admin?await environmentAdminForms(ctx,executors):''}`);
  const body=html`<div class="ch-stack" data-connections>${environmentAssignmentPreviewNotice(environmentAssignmentsEnforced)}${tabs}<div data-connection-tab="${tab}">${content}</div></div>`;
- return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境就绪为本地只读观察；占用与冻结取派发记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
+ return {status:200,body:page(ctx.chrome('连接',{active:'connections',hint:'业务系统只读访问，写操作尚未开放；运行环境就绪为本地只读观察；占用与冻结取执行记录；读取与响应时间接口仅提供近 24 小时，未推断更长时段。',actions:ctx.admin?html`${button('/console/operations/pack',`发布${uiLabelOf('pack_kind','system')}`,{params:{kind:'system'},icon:'upload'})}${button('/console/operations/system','接入业务系统',{primary:true,icon:'plus'})}`:html``}),pageLayout(body,{inspector:selected?liveModule('connection-inspector',['member.connected','system.added','system.status','environment.status'],html`${inspector}${dialogs.map(commandModal)}`):null,detail:selected,back:link('/console/connections','返回连接')}))};
 }

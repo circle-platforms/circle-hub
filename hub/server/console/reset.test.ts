@@ -94,7 +94,7 @@ test('renderRebuildPage is a pure document for the lightweight server', () => {
   assert.match(authorized, /action="\/console\/rebuild\/preview"/);
   assert.match(authorized, /action="\/console\/rebuild\/execute"/);
   assert.match(authorized, /name="actionId" value="action-1"/);
-  assert.match(authorized, /预检通过/);
+  assert.match(authorized, /预检正确/);
 
   const running = renderRebuildPage({
     authorized: true,

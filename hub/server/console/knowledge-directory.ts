@@ -69,7 +69,7 @@ export async function batchSharePage(ctx:PageContext):Promise<PageResult>{
  const safe=plans.every(plan=>plan.result.ok),target=plans[0]?.result.target_path??'';
  const confirm=postForm({action:'/console/knowledge/do/share-batch',csrf:ctx.csrf??'',fields:html`${fields}<input type="hidden" name="team_path" value="${target}">`,submit:'确认分享到公共空间',disabled:!safe});
  const body=html`<p>我的：保留不变 · ${uiLabelOf('knowledge_space_kind','personal')}</p><p>公共空间：${uiLabelOf('audience_scope','team')}</p><form method="get" action="/console/knowledge/share-batch">${fields}<label>公共空间文件夹<input name="team_path" value="${target}" maxlength="2000"></label>${submitButton('重新预检', { secondary: true })}</form>${plans.map(plan=>card({title:plan.title,hint:'检查停止后，其余项目保持未检查；确认时逐条重查并分别记录实际结果'},html`${checkTable(plan.result.checks)}${plan.result.duplicate?existingTeamLink(plan.result.duplicate):''}`))}${confirm}`;
- return {status:200,body:page(ctx.chrome('分享到公共空间预检',{active:'knowledge',hint:'预检不写入知识或回执；我的原条目保留，确认结果逐条进入分享到公共空间记录'}),await spaceLayout(ctx,body))};
+ return {status:200,body:page(ctx.chrome('分享到公共空间预检',{active:'knowledge',hint:'预检不写入知识或核对记录；我的原条目保留，确认结果逐条进入分享到公共空间记录'}),await spaceLayout(ctx,body))};
 }
 export async function shareBatch(ctx:PageContext,values:URLSearchParams|Map<string,string>):Promise<string>{
  const spaces=ctx.deps.knowledge.spaces;if(!spaces)throw new KnowledgeError('对象不存在或无权读取',{code:'SOURCE_UNAVAILABLE'});

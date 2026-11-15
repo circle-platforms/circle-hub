@@ -73,7 +73,7 @@ export async function authorizePage(request: IncomingMessage, response: ServerRe
       open.failures += 1;
       if (open.failures >= MAX_INVITATION_FAILURES) {
         store!.end(open.id);
-        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次未通过验证，该连接请求已结束。`));
+        return sendHtml(response, 410, expiredPage(`邀请码连续 ${MAX_INVITATION_FAILURES} 次验证错误，该连接请求已结束。`));
       }
       return show(400, invitationProblem(check.reason));
     }
