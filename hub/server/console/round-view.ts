@@ -1,13 +1,14 @@
 /**
- * Read-only console projection of one 脑图编译 round (Boss 22:25 first slice).
- * Clusters runs by predecessor lineage + subject src + product/version/build; conclusions use
- * hub/server/text.ts itemConclusion (same sentence as tool text). No new tables.
+ * Read-only console projection of one 脑图编译 round (Boss 22:25 first slice; 09:07 no pack names).
+ * Clusters by subject src + product/version/build and structural edges (predecessor / input refs);
+ * conclusions use hub/server/text.ts itemConclusion. No new tables.
  */
 import { PARTITION } from '../../../contracts/generated/vocabulary.ts';
+import { RunId } from '../../../contracts/src/common.ts';
 import type { ItemProjection, RunRecordView, SourceBinding } from '../../../contracts/src/run.ts';
 import type { ItemResult, ValidationResult } from '../../../contracts/src/validation.ts';
-import type { ExportedJob, ExportedSuccessor } from '../../ports.ts';
-import { caseName, itemConclusion } from '../text.ts';
+import type { ExportedJob, ExportedSuccessor, RunListing } from '../../ports.ts';
+import { itemConclusion } from '../text.ts';
 import { kpi, box } from './ui.ts';
 import { count } from './numbers.ts';
 import { time } from './format.ts';
@@ -16,12 +17,13 @@ import { NEUTRAL, neutralPage, type PageContext, type PageResult } from './conte
 import { RUN_ID, SHA256, param } from './params.ts';
 import { roundDevicePath, roundsPath, runPath } from './routes.ts';
 
-const COMPILE_PACK_PREFIXES = ['case-compile', 'recompose'] as const;
-const LINEAGE_CAP = 20;
+const LINEAGE_CAP = 40;
+const LIST_PAGE = 100;
 
 export const ROUND_EMPTY_ANCHOR = '请从任务页打开本轮，或在地址里写上运行编号。';
 export const ROUND_EMPTY_CASES = '这一轮还没有可读的原始用例。';
 export const ROUND_PARTIAL_RUNS = '这一轮里有部分运行当前账号读不到，表里只列可见的。';
+export const ROUND_UNLINKED = '这条运行归不进任何一轮：输入里的结果引用没法唯一反查到别的运行。';
 export const ROUND_NO_CONCLUSION = '这条原始用例还没有 Hub 核对结论。';
 export const ROUND_HUB_MISSING_FAILURE = 'Hub 没有';
 export const ROUND_HUB_MISSING_DELIVERY = 'Hub 没有';
@@ -29,14 +31,16 @@ export const ROUND_NO_DEVICE = '还没有设备输出';
 export const ROUND_DEVICE_UNREADABLE = '设备输出不可读';
 export const ROUND_DEVICE_TITLE = '设备输出';
 
-export function packNameOf(pack: string): string {
-  const at = pack.indexOf('@');
-  return at < 0 ? pack : pack.slice(0, at);
-}
+const REC_DIGEST = /^rec:([0-9a-f]{64})$/;
 
-export function isCompileWorkflowPack(pack: string): boolean {
-  const name = packNameOf(pack);
-  return COMPILE_PACK_PREFIXES.some((prefix) => name === prefix || name.startsWith(`${prefix}-`));
+/** Digests named as `rec:` in sources when the caller did not leave input_defaults. */
+export function recDigests(sources: readonly SourceBinding[]): string[] {
+  const out: string[] = [];
+  for (const row of sources) {
+    const matched = REC_DIGEST.exec(row.reference);
+    if (matched) out.push(matched[1]!);
+  }
+  return out;
 }
 
 export function subjectReference(sources: readonly SourceBinding[]): string | null {
@@ -44,11 +48,11 @@ export function subjectReference(sources: readonly SourceBinding[]): string | nu
   return subject?.reference ?? null;
 }
 
+/** Same mindmap bytes + product line + build (Boss 09:07); pack id is never consulted. */
 export function sameRoundKeys(
-  anchor: Pick<RunRecordView, 'product' | 'version' | 'build' | 'pack' | 'sources'>,
-  other: Pick<RunRecordView, 'product' | 'version' | 'build' | 'pack' | 'sources'>,
+  anchor: Pick<RunRecordView, 'product' | 'version' | 'build' | 'sources'>,
+  other: Pick<RunRecordView, 'product' | 'version' | 'build' | 'sources'>,
 ): boolean {
-  if (!isCompileWorkflowPack(other.pack)) return false;
   if ((anchor.product ?? null) !== (other.product ?? null)) return false;
   if ((anchor.version ?? null) !== (other.version ?? null)) return false;
   if ((anchor.build ?? null) !== (other.build ?? null)) return false;
@@ -56,6 +60,19 @@ export function sameRoundKeys(
   const b = subjectReference(other.sources);
   if (a === null || b === null) return false;
   return a === b;
+}
+
+/** Run ids this run names via predecessor, input_defaults, or parameters (not pack slot names). */
+export function outboundRunRefs(run: Pick<RunRecordView, 'predecessor' | 'input_defaults' | 'parameters'>): string[] {
+  const ids = new Set<string>();
+  if (typeof run.predecessor === 'string' && RunId.safeParse(run.predecessor).success) ids.add(run.predecessor);
+  for (const row of run.input_defaults ?? []) {
+    if (RunId.safeParse(row.predecessor).success) ids.add(row.predecessor);
+  }
+  for (const value of Object.values(run.parameters ?? {})) {
+    if (typeof value === 'string' && RunId.safeParse(value).success) ids.add(value);
+  }
+  return [...ids];
 }
 
 export function caseIdentity(item: ItemProjection): { id: string; title: string; label: string } {
@@ -157,55 +174,148 @@ export function buildRoundRows(input: {
   };
 }
 
+type RunReaderDetail = {
+  run: RunRecordView;
+  latest: { record?: string; result: ValidationResult } | null;
+  production: { record?: string; result: ValidationResult } | null;
+};
+
 type RunReader = {
-  getRun(user: PageContext['principal'], run: string): Promise<{ run: RunRecordView; latest: { result: ValidationResult } | null; production: { result: ValidationResult } | null } | null>;
+  getRun(user: PageContext['principal'], run: string): Promise<RunReaderDetail | null>;
   exportSuccessors?(user: PageContext['principal'], run: string): Promise<{ run: string; successors: ExportedSuccessor[] } | null>;
   exportJobs?(user: PageContext['principal'], run: string): Promise<{ run: string; jobs: ExportedJob[] } | null>;
+  listRuns?(user: PageContext['principal'], query?: { limit?: number; cursor?: string | null; requests?: boolean }): Promise<RunListing>;
 };
+
+export type RoundTree = {
+  anchor: RunRecordView;
+  runs: RunRecordView[];
+  skipped: number;
+  /** True when a `rec:` on the anchor could not be mapped to exactly one same-key run. */
+  unlinked: boolean;
+};
+
+function indexResultDigests(detail: RunReaderDetail, owners: Map<string, Set<string>>): void {
+  for (const record of [detail.latest?.record, detail.production?.record]) {
+    if (typeof record !== 'string' || !/^[0-9a-f]{64}$/.test(record)) continue;
+    const set = owners.get(record) ?? new Set<string>();
+    set.add(detail.run.run);
+    owners.set(record, set);
+  }
+}
 
 export async function collectRoundTree(
   runs: RunReader,
   user: PageContext['principal'],
   anchorId: string,
-): Promise<{ anchor: RunRecordView; runs: RunRecordView[]; skipped: number } | null> {
+): Promise<RoundTree | null> {
   const anchorDetail = await runs.getRun(user, anchorId);
   if (anchorDetail === null) return null;
   const anchor = anchorDetail.run;
-  if (!isCompileWorkflowPack(anchor.pack) || subjectReference(anchor.sources) === null) {
-    return { anchor, runs: [anchor], skipped: 0 };
+  if (subjectReference(anchor.sources) === null) {
+    return { anchor, runs: [anchor], skipped: 0, unlinked: false };
   }
-  const upward: RunRecordView[] = [anchor];
-  let at: string | undefined = anchor.predecessor;
-  let depth = 0;
-  while (at !== undefined && depth < LINEAGE_CAP) {
-    depth += 1;
-    const detail = await runs.getRun(user, at);
-    if (detail === null) break;
-    if (!sameRoundKeys(anchor, detail.run)) break;
-    upward.push(detail.run);
-    at = detail.run.predecessor;
-  }
-  const root = upward[upward.length - 1]!;
-  const byId = new Map<string, RunRecordView>(upward.map((row) => [row.run, row]));
-  const queue = [root.run];
+  const byId = new Map<string, RunRecordView>([[anchor.run, anchor]]);
+  const queue = [anchor.run];
   let skipped = 0;
-  while (queue.length) {
+  let steps = 0;
+  let unlinked = false;
+  const digestOwners = new Map<string, Set<string>>();
+  indexResultDigests(anchorDetail, digestOwners);
+
+  const admit = async (id: string): Promise<void> => {
+    if (byId.has(id) || !RunId.safeParse(id).success) return;
+    const detail = await runs.getRun(user, id);
+    if (detail === null) {
+      skipped += 1;
+      return;
+    }
+    if (!sameRoundKeys(anchor, detail.run)) return;
+    indexResultDigests(detail, digestOwners);
+    byId.set(detail.run.run, detail.run);
+    queue.push(detail.run.run);
+  };
+
+  while (queue.length && steps < LINEAGE_CAP * LINEAGE_CAP) {
+    steps += 1;
     const id = queue.shift()!;
+    const current = byId.get(id);
+    if (current === undefined) continue;
+    for (const ref of outboundRunRefs(current)) await admit(ref);
     const listed = runs.exportSuccessors ? await runs.exportSuccessors(user, id) : null;
-    for (const successor of listed?.successors ?? []) {
-      if (byId.has(successor.run)) continue;
-      const detail = await runs.getRun(user, successor.run);
-      if (detail === null) {
-        skipped += 1;
-        continue;
+    for (const successor of listed?.successors ?? []) await admit(successor.run);
+  }
+
+  // Reverse input refs + rec: owners among visible same-key runs.
+  const sameKey: RunRecordView[] = [];
+  if (runs.listRuns) {
+    let cursor: string | null | undefined = null;
+    let pages = 0;
+    while (pages < LINEAGE_CAP) {
+      pages += 1;
+      const listing: RunListing = await runs.listRuns(user, { limit: LIST_PAGE, cursor, requests: false });
+      for (const header of listing.items) {
+        const detail = await runs.getRun(user, header.run);
+        if (detail === null) {
+          if (!byId.has(header.run)) skipped += 1;
+          continue;
+        }
+        if (!sameRoundKeys(anchor, detail.run)) continue;
+        indexResultDigests(detail, digestOwners);
+        sameKey.push(detail.run);
+        if (byId.has(header.run)) continue;
+        const refs = outboundRunRefs(detail.run);
+        if (!refs.some((ref) => byId.has(ref))) continue;
+        byId.set(detail.run.run, detail.run);
+        queue.push(detail.run.run);
+        for (const ref of refs) await admit(ref);
       }
-      if (!sameRoundKeys(anchor, detail.run)) continue;
-      byId.set(detail.run.run, detail.run);
-      queue.push(detail.run.run);
+      if (listing.next === undefined || listing.next === null || listing.next === cursor) break;
+      cursor = listing.next;
     }
   }
+
+  // Resolve rec: edges: exactly one same-key owner → edge; zero or many → do not guess.
+  const resolveRecEdges = async (run: RunRecordView): Promise<void> => {
+    const named = outboundRunRefs(run);
+    for (const digest of recDigests(run.sources)) {
+      const owners = [...(digestOwners.get(digest) ?? [])].filter((id) => id !== run.run);
+      if (owners.length === 1) {
+        await admit(owners[0]!);
+        continue;
+      }
+      // Only when this run did not already name a RunId (no input_defaults / parameters).
+      if (named.length === 0) unlinked = true;
+    }
+  };
+
+  for (const run of [...byId.values(), ...sameKey]) await resolveRecEdges(run);
+
+  // Grow from any newly admitted nodes via ordinary outbound edges.
+  while (queue.length && steps < LINEAGE_CAP * LINEAGE_CAP) {
+    steps += 1;
+    const id = queue.shift()!;
+    const current = byId.get(id);
+    if (current === undefined) continue;
+    for (const ref of outboundRunRefs(current)) await admit(ref);
+  }
+
+  // Reverse once more after rec: admissions.
+  for (const run of sameKey) {
+    if (byId.has(run.run)) continue;
+    const refs = outboundRunRefs(run);
+    if (!refs.some((ref) => byId.has(ref))) continue;
+    byId.set(run.run, run);
+    for (const ref of refs) await admit(ref);
+  }
+
   const ordered = [...byId.values()].sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
-  return { anchor, runs: ordered, skipped };
+  // Anchor joins a multi-run round only when structural edges connect peers; lone + failed rec: → unlinked.
+  if (ordered.length === 1 && unlinked) {
+    return { anchor, runs: ordered, skipped, unlinked: true };
+  }
+  if (ordered.length > 1) unlinked = false;
+  return { anchor, runs: ordered, skipped, unlinked };
 }
 
 async function loadJobs(runs: RunReader, user: PageContext['principal'], tree: readonly RunRecordView[]): Promise<ExportedJob[]> {
@@ -270,6 +380,7 @@ ${kpi('上机验证批次数', count(totals.batches))}
 ${kpi('用时', duration)}
 `)}
 ${tree.skipped > 0 ? html`<p class="ch-meta">${ROUND_PARTIAL_RUNS}</p>` : ''}
+${tree.unlinked ? html`<p class="ch-meta">${ROUND_UNLINKED}</p>` : ''}
 ${definitionsBlock(tree)}
 `;
 
@@ -304,7 +415,7 @@ ${definitionsBlock(tree)}
 
 function definitionsBlock(tree: { anchor: RunRecordView; runs: RunRecordView[] }): Html {
   const subject = subjectReference(tree.anchor.sources) ?? '未记录';
-  return html`<p class="ch-meta">工作流族 · 产品 ${tree.anchor.product ?? '未指定'} · 版本 ${tree.anchor.version ?? '未指定'} · 构建 ${tree.anchor.build ?? '未指定'} · 脑图 ${subject} · 本轮可见任务 ${count(tree.runs.length)} · 开始 ${tree.runs[0] ? time(tree.runs[0].started_at) : '未知'}</p>`;
+  return html`<p class="ch-meta">产品 ${tree.anchor.product ?? '未指定'} · 版本 ${tree.anchor.version ?? '未指定'} · 构建 ${tree.anchor.build ?? '未指定'} · 脑图 ${subject} · 本轮可见任务 ${count(tree.runs.length)} · 开始 ${tree.runs[0] ? time(tree.runs[0].started_at) : '未知'}</p>`;
 }
 
 function durationText(from: number, to: number): string {

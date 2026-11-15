@@ -33,6 +33,7 @@ const NON_STANDALONE_GET_ROUTES: Readonly<Record<string, string>> = {
   faviconPath: 'checked in unauthenticated probes',
   // Parameterized detail, query-required, or interactive setup/OAuth flows.
   runPath: 'requires runId parameter',
+  roundDevicePath: 'requires run and sha256 query parameters',
   resultPath: 'requires runId parameter',
   workflowPath: 'requires pack id parameter',
   skillPath: 'requires pack id parameter',
