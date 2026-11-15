@@ -11,7 +11,11 @@ import {effectsDocument} from './effects.ts';
 
 async function main(){
 const input=JSON.parse(readFileSync(0,'utf8'));
-const now=()=>new Date(input.now);
+let clockMs=Date.parse(input.now);
+const now=()=>new Date(clockMs);
+// Synthetic child-only clock injection; exercise monotonic TTL scheduling without a real 30-second wait.
+const monotonicNow=performance.now.bind(performance);let monotonicOffset=0;
+Object.defineProperty(performance,'now',{value:()=>monotonicNow()+monotonicOffset,configurable:true});
 const kit=await openRecords(input.config,{migrate:false,keyProvider:new FileKeyProvider(join(input.config.dataDir,'test-vault.key')),now});
 const db=new Database(createPool(input.config.database,2));
 let checkpointReached=false;
@@ -51,6 +55,11 @@ try {
     if(input.checkpoint==='uncommitted-result'&&'read'in value.origin&&value.origin.read.object.endsWith(':result'))await checkpoint('uncommitted-result',{source:source.digest,sha256:source.body.sha256});
     return source;
   };
+  process.on('message',message=>{
+    if(message!==null&&typeof message==='object'&&'type'in message&&message.type==='advance-clock'&&'milliseconds'in message&&typeof message.milliseconds==='number'&&Number.isSafeInteger(message.milliseconds)&&message.milliseconds>0){
+      clockMs+=message.milliseconds;monotonicOffset+=message.milliseconds;notify({type:'clock-advanced'});
+    }
+  });
   const start=new Promise<void>(resolve=>process.once('message',()=>resolve()));
   notify({type:'ready'});await start;
   await service.initializeRecovery();

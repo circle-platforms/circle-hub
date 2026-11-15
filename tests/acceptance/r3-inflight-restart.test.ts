@@ -125,3 +125,28 @@ test('R3-8 SIGKILL after ingestObservedRead inside the shared transaction expose
   assert.equal(await c.kit.store.get(point.source),null);assert.equal((await c.service.journal.events(job)).filter(event=>event.body.detail.phase==='result.response').length,0);
   const worker=await recover(t,c,job);await completed(c,job);assert.equal(sends(c),1);assert.equal(tasks(c),1);assert.ok(c.calls.filter(name=>name==='read_blob').length>=2);await worker.close();
 });
+
+
+test('R3-9 pending not-yet-started requests renew the original lease across injected TTL without acquire or submit',{timeout:60000},async t=>{
+  const holder:{current?:ChildProcess}={};
+  const c=await journal(t,{pendingReads:100000,onSubmit:async()=>{holder.current!.kill('SIGKILL');}});
+  const job=await admittedAndKilled(t,c,holder),original=await intent(c);assert.ok(original);
+  const remote=original.body.detail.remote_lease as {id:unknown;token:unknown;ttl:number};
+  assert.ok(Number.isFinite(remote.ttl)&&remote.ttl>0);
+  const acquired=c.calls.filter(name=>name==='open_slot').length,submitted=sends(c);
+  const worker=await recover(t,c,job);
+  await eventual(()=>c.service.journal.events(job),events=>events.some(event=>event.body.detail.phase==='query_pending'&&event.body.detail.recovery===true));
+  const heartbeats=c.calls.filter(name=>name==='touch_slot').length;
+  const advance=Math.ceil(remote.ttl*2);c.clock.ms+=advance;
+  worker.process.send({type:'advance-clock',milliseconds:advance});await worker.wait('clock-advanced');
+  await eventual(async()=>c.calls.filter(name=>name==='touch_slot').length,count=>count>heartbeats);
+  const argumentsOfHeartbeat=c.endpoint.calls.filter(call=>call.params.name==='touch_slot').at(-1)!.params.arguments as Record<string,unknown>;
+  assert.ok(argumentsOfHeartbeat.ticket===remote.id&&argumentsOfHeartbeat.token===remote.token,'heartbeat must use the original lease identity without printing it');
+  const events=await c.service.journal.events(job);
+  assert.equal(events.some(event=>event.body.detail.phase==='complete'&&event.body.detail.done===true),false,'a pending request has no completed effect');
+  assert.equal(c.calls.filter(name=>name==='inspect_blob').length,0,'pending has no trusted remote task identity yet');
+  assert.equal(c.calls.filter(name=>name==='read_blob').length,0);
+  assert.equal(c.calls.filter(name=>name==='open_slot').length,acquired);
+  assert.equal(sends(c),submitted);assert.equal(submitted,1);
+  await worker.close();
+});
