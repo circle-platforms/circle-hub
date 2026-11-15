@@ -357,6 +357,7 @@ export const PREREQ_SCAN_REASON =
 export const PREREQ_STATES_UNREADABLE_REASON =
   '读不到重组记录的 sources.states（预期是数组）；不能据此断定没有前置。请核对重组返回的记录形状后再开编写。';
 export const RECOMPOSE_STATES_ORIGIN = 'record.sources.states' as const;
+export const SCOPE_RULINGS_ORIGIN = 'scope.md' as const;
 
 export type CompileBriefMode = 'initial' | 'rework_gate' | 'rework_device' | 'fidelity_fix';
 
@@ -573,6 +574,7 @@ export interface BuildCompileBriefInput {
   planExists?: boolean;
   priorRounds?: readonly PriorRoundRecord[];
   unrecordedAttribution?: PriorAttributionItem | null;
+  scopeRulings?: ReadonlyArray<{ target?: string; ruling: string }>;
   createdAt?: string;
 }
 
@@ -780,6 +782,20 @@ export function buildCompileBrief(input: BuildCompileBriefInput): CompileBriefV1
     }
     if (state === 'settled' && reason.startsWith('使用者决定：')) {
       userRulings.push({ source: RECOMPOSE_STATES_ORIGIN, target: atom, ruling: reason });
+    }
+  }
+  if (Array.isArray(input.scopeRulings)) {
+    const seenRulings = new Set(userRulings.map((r) => r.ruling));
+    const fallbackTarget = typeof fields.autoid === 'string' && fields.autoid ? fields.autoid : String(input.item.id ?? SCOPE_RULINGS_ORIGIN);
+    for (const sr of input.scopeRulings) {
+      if (!sr || typeof sr.ruling !== 'string' || !sr.ruling.startsWith('使用者决定：')) continue;
+      if (seenRulings.has(sr.ruling)) continue;
+      seenRulings.add(sr.ruling);
+      userRulings.push({
+        source: SCOPE_RULINGS_ORIGIN,
+        target: typeof sr.target === 'string' && sr.target ? sr.target : fallbackTarget,
+        ruling: sr.ruling,
+      });
     }
   }
   const prerequisitesBlock: CompileBriefV1['materials']['prerequisites'] = !statesReadable
@@ -1152,6 +1168,12 @@ export function renderCompileBriefMd(brief: CompileBriefV1): string {
   if (task.directives.length > 0) {
     out.push('## 本轮程序提示（确定性事实与约束）');
     for (const d of task.directives) out.push(`- ${d}`);
+    out.push('');
+  }
+
+  if (task.user_rulings.length > 0) {
+    out.push('## 已生效使用者裁定');
+    for (const ur of task.user_rulings) out.push(`- [${ur.target}]（${ur.source}）：${ur.ruling}`);
     out.push('');
   }
 

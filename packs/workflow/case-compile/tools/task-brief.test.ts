@@ -701,6 +701,7 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
 
     // D9: reject scope file containing only other cases' sections and zero global content
     await writeFile(join(workDir, 'scope-other-only.md'), `# 使用者原话\n\n## ${CASE_B}（仅B）\n只写B的内容\n`, 'utf8');
+    assert.ok(!r3Unified.includes('已生效使用者裁定'));
     await assert.rejects(
       buildTaskBrief({
         role: '脚本编写',
@@ -713,6 +714,35 @@ test('dry-run fixes: D1 multi-line answer, D3 submission rejection, D6 unrecorde
       }),
       /未找到当前用例/,
     );
+
+    // Block C (12:17): post-recompose UI rulings written verbatim as `使用者决定：...` in scope.md feed task.user_rulings
+    await writeFile(
+      join(workDir, 'scope-rulings.md'),
+      [
+        '# 使用者原话，由主会话记录',
+        '所有用例均须从同构建手册查清语法。',
+        '使用者决定：全局保留原步骤校验逻辑',
+        '',
+        `## ${CASE_A}（只测 A）`,
+        '- 使用者决定：本条改按新开关参数试跑',
+        '',
+        `## ${CASE_B}（只测 B）`,
+        '使用者决定：他条密文决定不应出现',
+      ].join('\n'),
+      'utf8',
+    );
+    const ruledBrief = await buildTaskBrief({
+      role: '脚本编写',
+      caseRef: CASE_A,
+      briefPath: 'run/briefs/00.md',
+      outPath: 'plans/00-ruled.json',
+      scopePath: 'scope-rulings.md',
+      cwd: workDir,
+      packRoot: packDir,
+    });
+    assert.ok(ruledBrief.includes(`- 已生效使用者裁定 [${CASE_A}]：使用者决定：全局保留原步骤校验逻辑`));
+    assert.ok(ruledBrief.includes(`- 已生效使用者裁定 [${CASE_A}]：使用者决定：本条改按新开关参数试跑`));
+    assert.ok(!ruledBrief.includes('他条密文决定不应出现'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

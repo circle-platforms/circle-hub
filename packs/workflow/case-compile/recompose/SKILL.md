@@ -96,4 +96,6 @@ EOF
 inputs.recomposition_result={"run":"<用例重组编号>"}（已有 accepted_result_reference 也可 {"reference":"<该值>"}）
 ```
 
+注：提交 `submit-records.ts` 前若使用者已有裁定，按上表回写条目 JSON（`state="settled"`、`states.reason="使用者决定：<原话>"`）并重过 `check-record.ts` 后提交；一旦提交封批则不再重开重组，后续界面裁定由主会话按 `case-compile` 技能写入 `scope.md`（另起行写 `使用者决定：<原话>`，单案放对应 `## <autoid>` 分节），`task-brief.ts` 会自动并入编写简报 `user_rulings`。
+
 后续脚本合并、上机验证和失败分析按 case-compile 技能做。

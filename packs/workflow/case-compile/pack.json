@@ -38,8 +38,8 @@
   "files": [
     {
       "path": "SKILL.md",
-      "sha256": "d356a5bcb719644ee3cba2a49b63a8d0cb1f7eacd051c6f715b4a390736a1aff",
-      "size": 17689
+      "sha256": "5a426c08726c227d39e82177407f97659bde31e39219706ec5832ba183a1bf3e",
+      "size": 17717
     },
     {
       "path": "agents/compile-attributor.md",
@@ -133,8 +133,8 @@
     },
     {
       "path": "functions/authoring-brief.ts",
-      "sha256": "4013101eef7b079b38b9472c40f2757c76d944d99bfcae16ba35d0d86e245be4",
-      "size": 70809
+      "sha256": "076af6f230e03420a7f5d2dba03b49e8249bd014d89c0460cb6d14a931da552d",
+      "size": 71826
     },
     {
       "path": "functions/bed.ts",
@@ -378,8 +378,8 @@
     },
     {
       "path": "functions/scope.ts",
-      "sha256": "3462bca2ad8319471c1c76f504de0243f46bf44224a8db804ab63eb1df456a6a",
-      "size": 1034
+      "sha256": "1a205725d07b3f0f36c1cd0045425f82914f618b90b13e747b4b8c8bc414a87d",
+      "size": 3396
     },
     {
       "path": "functions/slots.ts",
@@ -788,8 +788,8 @@
     },
     {
       "path": "tools/authoring-brief.ts",
-      "sha256": "693079c8d9d9645a0f0caa1d4acdfe9f86ac4530bf1ec8abcc3231e81d8ba4ff",
-      "size": 16511
+      "sha256": "beb31dadfbc4454c4276a0404f140d3ca882744eeeed1af0e63990c8ab34f39a",
+      "size": 17763
     },
     {
       "path": "tools/carry-plans.ts",
@@ -883,8 +883,8 @@
     },
     {
       "path": "tools/task-brief.ts",
-      "sha256": "af0055205eea552aeed5624c6a986c59f67113d3b9fba7acc132e15581b3a6b3",
-      "size": 44970
+      "sha256": "45e222fc26a9e4169aafeeeac557c5837b5d2553757f635ceb0e325131e95b77",
+      "size": 44026
     },
     {
       "path": "tools/workspace-path.ts",

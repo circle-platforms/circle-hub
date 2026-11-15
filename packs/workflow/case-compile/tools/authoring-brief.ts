@@ -2,7 +2,7 @@
 // `tools/download-run.ts` calls `writeBriefs`, and `tools/task-brief.ts` calls `loadRunStructuredContext` / `buildSingleCaseStructuredBrief`.
 // It reads local files only, decides nothing, and never overwrites an existing brief file.
 import { realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   authoringBrief,
@@ -21,6 +21,7 @@ import { bedFacts, triggerTypesOf, type BedFacts } from '../functions/bed.ts';
 import { parseManifest } from '../functions/manifest.ts';
 import { parseProfile } from '../functions/profile.ts';
 import { buildCaseIdSet, type PriorAttributionItem, type PriorRoundRecord } from '../functions/rework-history.ts';
+import { extractScopeUserRulings } from '../functions/scope.ts';
 import type { RunnerCleanup } from '../functions/runtime-contract.ts';
 import { parseRuntimeContract } from '../functions/runtime-contract.ts';
 import { isRecord } from '../functions/text.ts';
@@ -250,8 +251,20 @@ export function buildSingleCaseStructuredBrief(params: {
   planExists?: boolean;
   priorRounds?: readonly PriorRoundRecord[];
   unrecordedAttribution?: PriorAttributionItem | null;
+  scopeText?: string;
+  caseIds?: ReadonlySet<string>;
 }): CompileBriefV1 | null {
   const mode: CompileBriefMode = params.mode ?? (params.round > 1 ? 'rework_device' : 'initial');
+  const rulingIds = new Set([...(params.caseIds ?? []), ...buildCaseIdSet('', params.item)]);
+  const fields = isRecord(params.item) && isRecord(params.item.fields) ? params.item.fields : null;
+  const fallbackTarget = fields && typeof fields.autoid === 'string' && fields.autoid
+    ? fields.autoid
+    : isRecord(params.item) && typeof params.item.id === 'string' && params.item.id
+      ? params.item.id
+      : 'scope.md';
+  const scopeRulings = params.scopeText !== undefined
+    ? extractScopeUserRulings(params.scopeText, rulingIds, fallbackTarget)
+    : undefined;
   return buildCompileBrief({
     item: params.item,
     index: params.index,
@@ -268,6 +281,7 @@ export function buildSingleCaseStructuredBrief(params: {
     ...(params.planExists !== undefined ? { planExists: params.planExists } : {}),
     ...(params.priorRounds ? { priorRounds: params.priorRounds } : {}),
     ...(params.unrecordedAttribution ? { unrecordedAttribution: params.unrecordedAttribution } : {}),
+    ...(scopeRulings ? { scopeRulings } : {}),
   });
 }
 
@@ -307,6 +321,14 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
     kept: 0,
     without_record: 0,
   };
+
+  let optionalScopeText: string | undefined;
+  const scopeCandidate = join(cwd.canonical, 'scope.md');
+  const scopeStat = await lstat(scopeCandidate).catch(() => null);
+  if (scopeStat && scopeStat.isFile() && !scopeStat.isSymbolicLink() && scopeStat.size <= 16_384) {
+    const scopeBytes = await readFile(scopeCandidate);
+    if (!scopeBytes.includes(0)) optionalScopeText = scopeBytes.toString('utf8');
+  }
 
   const caseFilter = options.caseFilter?.trim();
   for (const name of (await readdir(join(directory, 'items'))).filter((value) => /^\d+\.json$/.test(value)).sort()) {
@@ -348,6 +370,7 @@ export async function writeStructuredBriefs(options: WriteStructuredBriefsOption
       mode,
       priorRounds,
       unrecordedAttribution,
+      ...(optionalScopeText !== undefined ? { scopeText: optionalScopeText, caseIds } : {}),
     });
     if (!compiled) {
       report.without_record++;

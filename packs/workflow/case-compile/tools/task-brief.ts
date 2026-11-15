@@ -11,7 +11,7 @@ import {
   type CompileBriefV1,
 } from '../functions/authoring-brief.ts';
 import { buildCaseIdSet, type PriorAttributionItem } from '../functions/rework-history.ts';
-import { detectCaseHeadingMarkers, escapeRegExp } from '../functions/scope.ts';
+import { classifyScopeHeading } from '../functions/scope.ts';
 import { CIRCLE_GENERAL_PURPOSE_NOTICE, renderTaskBrief, resolveSubagentRole } from '../functions/subagent-roles.ts';
 import { formatCallError, isRecord, parseCliOptions } from '../functions/text.ts';
 import {
@@ -141,28 +141,11 @@ export function extractCaseScopeText(
   let current: ScopeSection = { headingDepth: 0, caseTokens: [], lines: [] };
   let sawCaseSection = false;
 
-  const isGlobalHeading = (text: string): boolean => /^(?:全局|通用|整体|测试范围|使用者原话)/.test(text.trim());
-
-  const matchesCaseSet = (tokens: readonly string[], headingText: string): boolean => {
-    for (const tok of tokens) {
-      if (caseIds.has(tok)) return true;
-    }
-    for (const id of caseIds) {
-      if (id.length >= 2 && new RegExp(`(?:^|[\\s（(\\[：:、/])${escapeRegExp(id)}(?:$|[\\s）)\\]：:、/])`).test(headingText)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
   for (const line of lines) {
     const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
     if (headingMatch) {
       const depth = headingMatch[1].length;
-      const headingText = headingMatch[2].trim();
-      const detected = isGlobalHeading(headingText) ? [] : detectCaseHeadingMarkers(headingText);
-      const explicitMatch = detected.length > 0 || matchesCaseSet([], headingText);
-      const isCaseHeader = !isGlobalHeading(headingText) && (detected.length > 0 || matchesCaseSet(detected, headingText));
+      const { caseTokens, isCaseHeader } = classifyScopeHeading(headingMatch[2], caseIds);
 
       if (current.caseTokens.length > 0 && depth > current.headingDepth && !isCaseHeader) {
         // Subheading inside an active case-specific section belongs to that same case.
@@ -171,12 +154,9 @@ export function extractCaseScopeText(
       }
 
       if (current.lines.length > 0) sections.push(current);
-      if (isCaseHeader || explicitMatch) {
+      if (isCaseHeader) {
         sawCaseSection = true;
-        const matchedTokens = detected.length > 0
-          ? detected
-          : [...caseIds].filter((id) => headingText.includes(id));
-        current = { headingDepth: depth, caseTokens: matchedTokens, lines: [line] };
+        current = { headingDepth: depth, caseTokens, lines: [line] };
       } else {
         current = { headingDepth: depth, caseTokens: [], lines: [line] };
       }
@@ -548,6 +528,12 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
     );
   }
 
+  const allowAllScope = role.key === 'recompose' && /^(?:all|全部|整份|整批)$/i.test(caseRef);
+  const scopeText = extractCaseScopeText(rawScopeText, caseRef, caseIds, {
+    allowAll: allowAllScope,
+    scopeRelative: scopeResolved.relative,
+  });
+
   if (!compileBrief && runCtx && siblingItem !== undefined && (role.key === 'plan' || role.key === 'attribute')) {
     const inferredMode = options.priorAnswers && !options.priorReturns
       ? 'rework_gate'
@@ -561,6 +547,8 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
       round,
       mode: inferredMode,
       targetPlanPath: outPath,
+      scopeText,
+      caseIds,
       ...(priorRounds ? { priorRounds } : {}),
       ...(unrecordedAttribution ? { unrecordedAttribution } : {}),
     });
@@ -570,12 +558,6 @@ async function buildTaskBriefWithMeta(options: BuildTaskBriefOptions): Promise<{
       if (compileBrief.identity.autoid) caseIds.add(compileBrief.identity.autoid);
     }
   }
-
-  const allowAllScope = role.key === 'recompose' && /^(?:all|全部|整份|整批)$/i.test(caseRef);
-  const scopeText = extractCaseScopeText(rawScopeText, caseRef, caseIds, {
-    allowAll: allowAllScope,
-    scopeRelative: scopeResolved.relative,
-  });
 
   const brief = renderTaskBrief({
     role,

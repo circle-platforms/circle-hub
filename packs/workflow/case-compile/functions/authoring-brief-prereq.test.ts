@@ -2,8 +2,9 @@
 // not record.adjudication.states / record.states (wrong paths that silently yield none).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildCompileBrief, renderCompileBriefMd } from './authoring-brief.ts';
+import { buildCompileBrief, renderCompileBriefMd, SCOPE_RULINGS_ORIGIN } from './authoring-brief.ts';
 import type { BriefKnowledge } from './authoring-brief.ts';
+import { extractScopeUserRulings } from './scope.ts';
 
 const ROOT = 'a'.repeat(64);
 
@@ -219,4 +220,82 @@ test('buildCompileBrief does not take user rulings from record.adjudication.stat
   assert.ok(brief);
   assert.equal(brief!.task.user_rulings.length, 0);
   assert.doesNotMatch(JSON.stringify(brief!.task.user_rulings), /仅写在 adjudication/);
+});
+
+test('extractScopeUserRulings + buildCompileBrief lift post-recompose scope.md rulings without reading adjudication.states', () => {
+  const autoid = '990000000000000405';
+  const otherAutoid = '990000000000000406';
+  const scopeMd = [
+    '# 使用者原话，由主会话记录',
+    '只做 dnssec 两条；其余暂缓。',
+    '使用者决定：全局禁止改动默认区域文件',
+    '',
+    `## ${autoid}（单案决定）`,
+    '### 补充追问',
+    '- 使用者决定：保留原配置，本条按现有设备行为校验',
+    '这条只是普通范围说明，不算裁定前缀。',
+    '',
+    `## ${otherAutoid}`,
+    '使用者决定：其他用例决定不得串入当前用例',
+  ].join('\n');
+  const extracted = extractScopeUserRulings(scopeMd, new Set(['synth-doc:case-5', autoid]), autoid);
+  assert.deepEqual(extracted, [
+    { target: autoid, ruling: '使用者决定：全局禁止改动默认区域文件' },
+    { target: autoid, ruling: '使用者决定：保留原配置，本条按现有设备行为校验' },
+  ]);
+
+  const item = {
+    id: 'synth-doc:case-5',
+    fields: {
+      autoid,
+      title: '合成用例：重组后 scope.md 界面裁定并入 user_rulings',
+      recomposition: {
+        receipt: `rec:${'1'.repeat(64)}`,
+        record: {
+          schema: 'recompose-record@1',
+          case: { id: 'synth-case-5', title: '合成用例：重组后 scope.md 界面裁定并入 user_rulings' },
+          atoms: [{ id: 'a1', kind: 'intent', text: 'synthetic step', quote_ref: `src:${'2'.repeat(64)}/n/1` }],
+          expectation_slots: [],
+          ledgers: { adapted: [] },
+          unknowns: [],
+          sources: {
+            candidates: [],
+            governing: [],
+            states: [
+              // Already settled pre-submit with identical line -> deduplicated cleanly.
+              { atom: 'a1', state: 'settled', reason: '使用者决定：保留原配置，本条按现有设备行为校验', adjudicated_by: null, exit: null },
+            ],
+          },
+          adjudication: {
+            states: [{ atom: 'a2', state: 'settled', reason: '使用者决定：旧 adjudication 路径仍不得读取' }],
+          },
+        },
+      },
+    },
+  };
+  const brief = buildCompileBrief({
+    item,
+    index: '20',
+    knowledge: emptyKnowledge(),
+    policy: null,
+    round: 1,
+    mode: 'initial',
+    scopeRulings: extracted,
+  });
+  assert.ok(brief);
+  assert.equal(brief!.task.user_rulings.length, 2);
+  assert.deepEqual(brief!.task.user_rulings[0], {
+    source: 'record.sources.states',
+    target: 'a1',
+    ruling: '使用者决定：保留原配置，本条按现有设备行为校验',
+  });
+  assert.deepEqual(brief!.task.user_rulings[1], {
+    source: SCOPE_RULINGS_ORIGIN,
+    target: autoid,
+    ruling: '使用者决定：全局禁止改动默认区域文件',
+  });
+  const md = renderCompileBriefMd(brief!);
+  assert.ok(md.includes('## 已生效使用者裁定'));
+  assert.ok(md.includes('使用者决定：全局禁止改动默认区域文件'));
+  assert.doesNotMatch(JSON.stringify(brief!.task.user_rulings), /其他用例决定|旧 adjudication|普通范围说明/);
 });
