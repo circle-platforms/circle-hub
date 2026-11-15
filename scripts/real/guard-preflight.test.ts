@@ -81,6 +81,49 @@ test('preflight passes on a fresh ops home whose path has spaces and Chinese', (
   }
 });
 
+test('preflight accepts single-quoted skill-dir docs with spaced and Chinese placeholder values', () => {
+  const dir = scratch('quoted');
+  try {
+    const home = makeHome(dir, 'ops', join('Application Support', '验收主目录'));
+    const skillDir = join(home, 'skills', 'case-compile');
+    // Overlay the post-3d9 teaching shape without requiring that pack tip on this branch.
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      [
+        '# case-compile',
+        '',
+        '```sh',
+        "node '<技能目录>/tools/task-brief.ts' --role '<用例重组|脚本编写|保真核对|失败分析>' --case '<用例或范围>' --brief '<简报或输入路径>' --out '<目标路径>' --task-file '<任务文件路径>' [--note '<补充>']",
+        "node '<技能目录>/tools/check-plan.ts' --file '<计划或判断JSON>'",
+        "node '<技能目录>/tools/submit-plans.ts' --hub %HUB_URL% --run '<脚本编写编号>' --model '<模型>' --plans '<自动化用例目录>' <<'EOF'",
+        '%HUB_TOKEN%',
+        'EOF',
+        '```',
+        '',
+        "元模板：`node '<技能目录>/tools/<脚本>.ts' --选项 值`",
+        '',
+      ].join('\n'),
+    );
+    const report = runPreflight(home);
+    assert.equal(
+      report.mismatches.length,
+      0,
+      report.mismatches.map((m) => `${m.name} want=${m.want} got=${m.got} ${m.reason ?? ''}`).join('\n'),
+    );
+    assert.ok(
+      report.results.some((r) => r.kind === 'check' && r.want === 'allow' && r.ok && /task-brief/.test(r.name)),
+      'expected allow case from single-quoted task-brief teaching',
+    );
+    assert.ok(
+      report.results.some((r) => r.kind === 'check' && r.want === 'allow' && r.ok && /check-plan/.test(r.name)),
+      'expected meta-template expansion to check-plan',
+    );
+    assert.equal(report.ok, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('declaration limit uses the scripts[].subcommands list, not keywords', () => {
   const dir = scratch('decl');
   try {
