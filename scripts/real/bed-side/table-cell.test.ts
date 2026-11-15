@@ -149,6 +149,14 @@ test('contract export reads verified files without executing framework or device
     const rejected = spawnSync('python3', args, { encoding: 'utf8', env });
     assert.notEqual(rejected.status, 0);
     assert.match(rejected.stderr, /来源文件与实际内容不同/);
+    writeFileSync(join(f.framework, 'lib/test_xlsx.py'), poisonous);
+    (f.original.entries as Array<{ source: { path: string } }>)[0].source.path = 'lib/undeclared.py';
+    const { contract_sha256: prior, ...withoutIdentity } = f.original;
+    f.original.contract_sha256 = sha(canonical(withoutIdentity));
+    writeFileSync(base, JSON.stringify(f.original));
+    const missing = spawnSync('python3', args, { encoding: 'utf8', env });
+    assert.notEqual(missing.status, 0);
+    assert.match(missing.stderr, /方法来源未登记文件摘要/);
   } finally { f.close(); }
 });
 

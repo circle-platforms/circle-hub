@@ -84,6 +84,9 @@ def export_contract(framework_root, base_contract, objects):
     for relative in ('lib/test_xlsx.py', 'smoke_test/conftest.py'):
         if relative not in sources:
             raise ValueError('原规则缺少入口或设备工厂的来源声明')
+    for entry in verified_base['entries']:
+        if entry.get('source', {}).get('path') not in sources:
+            raise ValueError('原规则的方法来源未登记文件摘要')
     if (verified_base['runtime']['runner_source'] != 'lib/test_xlsx.py'
             or verified_base['runtime']['runner_sha256'] != sources['lib/test_xlsx.py']):
         raise ValueError('原规则的入口身份与来源声明不同')
