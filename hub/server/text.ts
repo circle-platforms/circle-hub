@@ -699,7 +699,7 @@ function itemConclusion(item: ItemResult, original: ItemProjection | undefined):
         : unknown
           ? (gapFacts.length > 0 ? gapFacts.join('；') : '还没有确认结论')
           : conclusionStatements(claims.map(claim => claim.statement.text)).join('；') || '已按要求核对';
-  const parts = [`${caseName(original, item.label)}${original ? '：' : '，'}${statement}`, `状态${status}`];
+  const parts = [`${caseName(original, item.label)}：${statement}`, `状态${status}`];
   if (judgment !== null) parts.push(`判断${judgment}`);
   if (excel) {
     parts.push('下一步由模型生成并上传自动化用例 Excel 后重新交给 Hub 检查');

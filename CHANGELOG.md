@@ -4,7 +4,7 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
-- Integrate the run30 workflow repairs on the production baseline while preserving sourced prerequisites, inverse cleanup, guard refresh recovery and immutable published package versions.
+- 在生产基线上整合 run30 工作流修复，保留有来源的前置与逆清理、守卫刷新恢复和已发布包版本不可变规则。
 
 - Advance local `case-compile` (`3.20.3` -> `3.20.4`), `recompose` (`1.2.6` -> `1.2.7`), and shared `recompose-authority` / `recompose-adjudication` (`1.1.10` -> `1.1.11`):
   - Align authoring, recomposition, and scenario fidelity with `InfoTest_Engine/main` (`ac898b68`, `compile-worker.md:44-45,70`, `scenario_fidelity.py`): clarify in `SKILL.md`, `recompose/SKILL.md`, `tools/fidelity.md`, and single-source `functions/subagent-roles.ts` (`agents/compile-*.md`) that `recomposition.adapted` / author steps are equivalent action descriptions rather than a step whitelist, keep author targets/bounds and `"前置不存在"` negative tests intact, and require adding runtime prerequisites from `sources.states` (`missing_prerequisite`) and locked manual wording/examples with paired `cleanup: true` inverse teardowns; add optional `steps[].precondition_source: { reference, text }` (`slots.schema.json`, `functions/slots.ts`, `tables/block-plan.schema.json`) routed into Hub `quote@1` via `functions/subject.ts` (`quoteSubject`) and surfaced in `functions/fidelity.ts` (`fidelityBrief`) as `mechanical.exemptions` (`added_precondition`, populated from `record.sources.states`, `plan.precondition_source`, and `block_context.preconditions` while isolating worker prose).
