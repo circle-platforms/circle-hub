@@ -8,6 +8,12 @@ The CLI reads the real bootstrap result and completion records plus their matchi
 
 This independent candidate is not deployed, and its two new sentences remain review candidates. ENV rollout additionally requires the package changes and version retirement ordered by C54; local synthetic checks do not establish an outcome on a real device.
 
+## Scoped dispatch readers and versioned run exports
+
+Model 87 groups run processing facts, job control/history and individual dispatch-attempt outcomes. CLI output and console status text identify the attempt's operation and round; missing scope or outcome stays unknown. Job reports do not become proof of the current attempt. Console occupancy uses the source's `awaiting_disposition` rather than treating every conservative no-resend freeze as an open disposition request. MCP text preserves the role-selected source sentence; diagnostic classification belongs to the source projection, not prose matching.
+
+`GET /run-export/<run>/jobs` keeps `run-jobs@1` and its existing fields and meanings for published consumers. `GET /run-export/<run>/jobs/2` returns `run-jobs@2` with canonical job and attempt facts. The sources route authorizes outputs through the scoped port, retaining an earlier report and raw device output when a later round was not sent. Both versions use the same run-reader permission boundary. Version 1 remains an isolated wire format until the complete published-version inventory, retirement records and active runs establish that no consumer still needs it; the retirement check is designed but not yet wired. This is an independent candidate, not deployment evidence.
+
 ## Sharing and personal publication (decision 134)
 
 The console has a share action on the owner's verified entry and `/console/knowledge/submissions` for the owner's merged
