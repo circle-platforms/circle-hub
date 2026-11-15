@@ -51,6 +51,58 @@ class Framework:
         return staged
 
 
+def check_private_pin(resolver, private_resolver, new_pin):
+    """Exercise only in-memory workbook data against the two loaded resolvers."""
+    namespace = resolver.__globals__
+    old_pin = namespace.get('PINNED_CONTRACT_SHA256')
+    headers = namespace.get('EXECUTION_HEADERS')
+    marker = namespace.get('CONTRACT_MARKER')
+    sheet_marker = namespace.get('EXECUTION_SHEET_MARKER')
+    version = namespace.get('RUNTIME_SCHEMA')
+    error_type = namespace.get('ExcelContractError')
+    if (not isinstance(old_pin, str) or not isinstance(new_pin, str)
+            or old_pin == new_pin
+            or not isinstance(headers, (tuple, list)) or len(headers) != 9
+            or not isinstance(marker, str) or not marker
+            or not isinstance(sheet_marker, str) or not sheet_marker
+            or not isinstance(version, str) or not version
+            or not isinstance(error_type, type) or not issubclass(error_type, Exception)):
+        raise ValueError('取值入口的规则钉自检缺少可核对的解析器声明')
+
+    def workbook(pin):
+        rows = [(marker, version, pin), tuple(headers)]
+
+        def iter_rows(*, min_col, max_col, values_only):
+            if values_only is not True:
+                raise ValueError('取值入口的规则钉自检不支持该工作簿读取方式')
+            return iter(tuple(row[min_col - 1:max_col]) for row in rows)
+
+        sheet = types.SimpleNamespace(title='PinSelfcheck', iter_rows=iter_rows)
+        destination = types.SimpleNamespace(destinations=[(sheet.title, '$A$2:$I$2')])
+        names = {sheet_marker: destination}
+        return types.SimpleNamespace(worksheets=[sheet], defined_names=names)
+
+    def accepts(function, pin):
+        book = workbook(pin)
+        sheet, layout = function(book, allow_legacy=False)
+        if sheet is not book.worksheets[0] or layout.header_row != 2:
+            raise ValueError('取值入口的规则钉自检未得到指定的执行表')
+
+    def rejects(function, pin):
+        try:
+            function(workbook(pin), allow_legacy=False)
+        except error_type:
+            return
+        raise ValueError('取值入口的规则钉自检未拒绝另一份规则身份')
+
+    accepts(private_resolver, new_pin)
+    rejects(private_resolver, old_pin)
+    accepts(resolver, old_pin)
+    rejects(resolver, new_pin)
+    if namespace.get('PINNED_CONTRACT_SHA256') != old_pin:
+        raise ValueError('取值入口的规则钉自检发现原解析器身份发生变化')
+
+
 def private_gateway(original, framework, gates, contract_path):
     from cell_runtime import copy_function, read_contract
     document = read_contract(contract_path, original.cfg.apv_src)
@@ -58,6 +110,7 @@ def private_gateway(original, framework, gates, contract_path):
     resolver_globals = dict(resolver.__globals__)
     resolver_globals['PINNED_CONTRACT_SHA256'] = document['contract_sha256']
     private_resolver = copy_function(resolver, resolver_globals)
+    check_private_pin(resolver, private_resolver, document['contract_sha256'])
     freeze_globals = dict(gates.freeze.__globals__)
     freeze_globals['resolve_execution_sheet'] = private_resolver
     private_gates = types.SimpleNamespace(**vars(gates))
