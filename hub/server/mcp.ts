@@ -1,3 +1,4 @@
+import type { ProtocolCode } from '../../contracts/generated/protocol.ts';
 import { requestSummary } from './request-summary.ts';
 // POST /mcp: the streamable HTTP transport of the official SDK in stateless JSON mode, one Server and one JSON-RPC request per
 // HTTP request. Batches are refused (MCP 2025-06-18 removed them; in a batch, requests sharing an id or a cancellation of a
@@ -17,7 +18,7 @@ import type { CallLogInput, Principal } from '../records/api.ts';
 import { addUsage, currentTrace, mcpStep, setTraceStatus, step, tracing, updateTrace } from '../telemetry/api.ts';
 import type { ServerDeps } from './api.ts';
 import type { DeclaredClients } from './declared-clients.ts';
-import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, type BodyBudget } from './http.ts';
+import { mediaTypeOf, readBody, sendRpcError, setCommonHeaders, httpCallErrorData, type BodyBudget } from './http.ts';
 import { clipNote, describeError, describeInternalError } from './notes.ts';
 import { newTraceId, sessionIdOf, traceContextFrom, traceIdFrom } from './trace.ts';
 import type { ClientDeclaration } from '../../contracts/src/spaces.ts';
@@ -229,7 +230,7 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     const challenge = ['Bearer realm="circle-hub"'];
     if (options.resourceMetadata !== undefined) challenge.push(`resource_metadata="${options.resourceMetadata(request)}"`);
     if (typeof authorization === 'string') challenge.push('error="invalid_token"');
-    sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': challenge.join(', '), connection: 'close' });
+    sendRpcError(response, 401, -32001, UNAUTHENTICATED, { 'www-authenticate': challenge.join(', '), connection: 'close' }, httpCallErrorData('CALL_AUTHENTICATION_REQUIRED', true));
     return;
   }
   const headerTrace = traceIdFrom(request.headers.traceparent);
@@ -245,10 +246,10 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     for (const state of states) await logCall(options, principal, traceId, sessionId, state);
   };
   /** A refusal before any handler ran: its call-log lines (one transport_failure line by default), then the JSON-RPC error. */
-  const refuse = async (status: number, code: number, message: string, reason: string, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
+  const refuse = async (status: number, code: number, message: string, reason: string, sourceCode: ProtocolCode, headers: Record<string, string> = {}, states?: CallState[]): Promise<void> => {
     setTraceStatus('warning', labelOf('call_result', 'transport_failure'));
     await logUnhandled(states ?? [transportState(reason, started)]);
-    sendRpcError(response, status, code, message, headers);
+    sendRpcError(response, status, code, message, headers, httpCallErrorData(sourceCode, true));
   };
 
   if (request.method !== 'POST') {
@@ -258,20 +259,20 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     if (request.method === 'DELETE') options.sessions?.closed(session);
     // A GET is the streamable HTTP client's probe for the optional server stream; the specification prescribes 405 for a
     // server without one, so it is the expected answer to every session, not a failed call, and gets no line.
-    if (request.method === 'GET') return sendRpcError(response, 405, -32000, message, { allow: 'POST' });
-    return refuse(405, -32000, message, `HTTP method ${clipNote(request.method, 20)} is not served (stateless JSON mode, no SSE stream)`, { allow: 'POST' });
+    if (request.method === 'GET') return sendRpcError(response, 405, -32000, message, { allow: 'POST' }, httpCallErrorData('CALL_METHOD_UNSUPPORTED', true));
+    return refuse(405, -32000, message, `HTTP method ${clipNote(request.method, 20)} is not served (stateless JSON mode, no SSE stream)`, 'CALL_METHOD_UNSUPPORTED', { allow: 'POST' });
   }
   if (mediaTypeOf(request) !== 'application/json') {
     request.resume();
-    return refuse(415, -32000, 'Content-Type 必须是 application/json', `media type ${clipNote(mediaTypeOf(request) || '(none)', 100)} is not application/json`);
+    return refuse(415, -32000, 'Content-Type 必须是 application/json', `media type ${clipNote(mediaTypeOf(request) || '(none)', 100)} is not application/json`, 'CALL_MEDIA_TYPE_UNSUPPORTED');
   }
   const hold = options.budget.hold();
   try {
     const body = await readBody(request, limit, hold);
     if (!body.ok) {
-      if (body.reason === 'too_large') return await refuse(413, -32000, `请求体超过上限 ${limit} 字节，没有读取`, `request body over ${limit} bytes`, { connection: 'close' });
+      if (body.reason === 'too_large') return await refuse(413, -32000, `请求体超过上限 ${limit} 字节，没有读取`, `request body over ${limit} bytes`, 'CALL_REQUEST_INVALID', { connection: 'close' });
       if (body.reason === 'busy') {
-        return await refuse(503, -32000, 'Hub 正忙：同时在处理的请求体已到上限，请稍后重试', `request bodies in flight reached the budget of ${options.budget.capacity} bytes`, { 'retry-after': '5', connection: 'close' });
+        return await refuse(503, -32000, 'Hub 正忙：同时在处理的请求体已到上限，请稍后重试', `request bodies in flight reached the budget of ${options.budget.capacity} bytes`, 'CALL_BUSY', { 'retry-after': '5', connection: 'close' });
       }
       // The client went away before its body was complete: nobody is left to answer.
       await logUnhandled([transportState('the request body was not received completely (aborted)', started)]);
@@ -282,18 +283,18 @@ export async function handleMcp(request: IncomingMessage, response: ServerRespon
     try {
       text = UTF8.decode(body.bytes);
     } catch {
-      return await refuse(400, -32700, 'Parse error: 请求体不是 UTF-8 编码的 JSON', 'request body is not UTF-8');
+      return await refuse(400, -32700, 'Parse error: 请求体不是 UTF-8 编码的 JSON', 'request body is not UTF-8', 'CALL_REQUEST_INVALID');
     }
     // The caller's own token in the body refuses all of it, before anything in it is handled or stored (issue #105).
     const token = bearerToken(authorization);
-    if (token !== null && text.includes(token)) return await refuse(400, -32602, TOKEN_IN_REQUEST, "the request body held the caller's own Hub token; nothing in it was handled or stored");
+    if (token !== null && text.includes(token)) return await refuse(400, -32602, TOKEN_IN_REQUEST, "the request body held the caller's own Hub token; nothing in it was handled or stored", 'CALL_REQUEST_INVALID');
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      return await refuse(400, -32700, 'Parse error: 请求体不是 JSON', 'request body is not JSON');
+      return await refuse(400, -32700, 'Parse error: 请求体不是 JSON', 'request body is not JSON', 'CALL_REQUEST_INVALID');
     }
-    if (Array.isArray(parsed)) return await refuse(400, -32600, BATCH_REFUSED, 'JSON-RPC batch refused', {}, batchStates(parsed, started));
+    if (Array.isArray(parsed)) return await refuse(400, -32600, BATCH_REFUSED, 'JSON-RPC batch refused', 'CALL_REQUEST_INVALID', {}, batchStates(parsed, started));
     // A tool call may name the client's trace in `_meta` too; a valid header stays first.
     const declared = headerTrace === null ? metaTraceContext(parsed) : null;
     if (declared !== null) updateTrace({ traceId: declared.traceId, parentSpanId: declared.parentSpanId });
@@ -330,6 +331,7 @@ async function answer(
   let pending = readCancellations.get(deps);
   if (!pending) { pending = new Map(); readCancellations.set(deps, pending); }
   const states: CallState[] = own === null ? [] : [own.state];
+  let handlerEntered = false;
   const stateFor = (requestId: string | number): CallState => {
     if (own !== null && own.key === idKey(requestId)) return own.state;
     // A request the body scan did not see (cannot happen with one message per body): logged under `mcp`.
@@ -349,6 +351,7 @@ async function answer(
   };
   /** Anything but an McpError becomes an internal error: its message is for the admin note, never for the caller. */
   const guarded = async <T>(state: CallState, run: () => Promise<T>): Promise<T> => {
+    handlerEntered = true;
     try {
       return await run();
     } catch (error) {
@@ -435,6 +438,26 @@ async function answer(
         }
       } catch { /* Preserve any SDK answer that is not the expected JSON refusal. */ }
     }
+    // Preserve the SDK numeric error and any source-selected data. Never infer effect state from its text/status.
+    try {
+      const envelope: unknown = JSON.parse(text);
+      if (isPlainObject(envelope) && isPlainObject(envelope.error)) {
+        const data = isPlainObject(envelope.error.data) ? envelope.error.data : {};
+        if (!Object.hasOwn(data, 'code')) {
+          const accept = webRequest.headers.get('accept');
+          const unsupportedAccept = !accept?.includes('application/json') || !accept.includes('text/event-stream');
+          const unsupportedProtocol = protocol !== null && !SUPPORTED_PROTOCOL_VERSIONS.includes(protocol) && !isInitializeRequest(parsed);
+          const malformed = !JSONRPCMessageSchema.safeParse(parsed).success;
+          // Only the known SDK gates, witnessed before any business handler, establish a refused request.
+          const invalidRequest = !handlerEntered && (envelope.error.code === -32000 && (unsupportedAccept || unsupportedProtocol) || envelope.error.code === -32600 && malformed);
+          const unknownMethod = !handlerEntered && envelope.error.code === -32601;
+          envelope.error.data = invalidRequest ? httpCallErrorData('CALL_REQUEST_INVALID', true)
+            : unknownMethod ? httpCallErrorData('CALL_METHOD_UNSUPPORTED', true)
+            : httpCallErrorData('CALL_INTERNAL_UNAVAILABLE');
+          text = JSON.stringify(envelope);
+        }
+      }
+    } catch { /* Preserve non-JSON SDK responses without inventing a machine classification. */ }
     if (reply.status >= 400) {
       // The transport refused the message before any handler ran (a missing Accept, a malformed message, a protocol version).
       const reason = `the transport answered HTTP ${reply.status}${transportDetail(text)}`;
