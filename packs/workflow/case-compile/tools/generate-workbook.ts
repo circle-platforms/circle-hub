@@ -5,7 +5,7 @@ import {blockReviewSources} from '../functions/block-review-identity.ts';
 import {selectedExpectedNodes} from '../functions/expected-nodes.ts';
 // Offline recipe verification and artifact generation. Every source is read from the explicitly named local file.
 import { realpathSync } from 'node:fs';
-import { lstat } from 'node:fs/promises';
+import { lstat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import REQUIREMENTS from '../requirements.json' with { type: 'json' };
@@ -17,7 +17,7 @@ import { parseProfile } from '../functions/profile.ts';
 import { readSlots } from '../functions/slots.ts';
 import { generateWorkbookSet, GENERATOR, type GenerationInput } from '../functions/generate.ts';
 import { CONFLICT_FIX, conflictText, movedText, volumeOrder, volumeProblems } from '../functions/channels.ts';
-import { readBytes, jsonBytes, writeNew, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { readBytes, jsonBytes, sha256 } from '../functions/generated/skills/run-tools/hub-client/index.ts';
 function record(value: unknown, message: string): Record<string, unknown> { if (!isRecord(value)) throw new CallFailure('invalid_parameters', message, "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿"); return value; }
 /** One case of the run (the run's only item). */
 export function satisfiedRecipe(input: { run: unknown; result: unknown; submission: unknown; contract: Uint8Array; profile: Uint8Array; inventory: Uint8Array }): GenerationInput { const all = satisfiedRecipes(input); if (all.length !== 1) throw new CallFailure('invalid_parameters', '本次只生成一条已核对正确的自动化用例', "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿"); return all[0]; }
@@ -93,15 +93,17 @@ export function passReviewInputs(input: Parameters<typeof satisfiedRecipes>[0]):
 export async function main(argv: string[]): Promise<number> {
   try {
     const args = parseCliOptions(argv, { run: true, result: true, submission: true, out: true, contract: false, profile: false, inventory: false }, 'node <技能目录>/tools/generate-workbook.ts --run <运行目录>/run.json --result <运行目录>/result.json --submission <运行目录>/submission.json --out <目标.xlsx>');
-    const directory = dirname(args.run);
+    // The CLI parser enforces the four required options above.
+    const runPath = args.run!, resultPath = args.result!, submissionPath = args.submission!, outputPath = args.out!;
+    const directory = dirname(runPath);
     const hasManifest = await lstat(join(directory, 'sources.json')).then(() => true, (error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return false; throw error; });
-    if (hasManifest && ['contract', 'profile', 'inventory'].some(slot => args[slot] !== undefined)) throw new CallFailure('invalid_parameters', '本次下载已有来源清单，不能另指三份来源文件', '去掉 --contract、--profile、--inventory，按 sources.json 的已核验指针读取本次来源');
-    const sourceBytes = (slot: 'contract' | 'profile' | 'inventory') => !hasManifest && args[slot] !== undefined ? readBytes(args[slot], slot) : readSourceBytes(directory, slot);
-    const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(args.run,'run'), readBytes(args.result,'result'), readBytes(args.submission,'submission'), sourceBytes('contract'), sourceBytes('profile'), sourceBytes('inventory')]);
+    if (hasManifest && (['contract', 'profile', 'inventory'] as const).some(slot => args[slot] !== undefined)) throw new CallFailure('invalid_parameters', '本次下载已有来源清单，不能另指三份来源文件', '去掉 --contract、--profile、--inventory，按 sources.json 的已核验指针读取本次来源');
+    const sourceBytes = (slot: 'contract' | 'profile' | 'inventory') => { const path = args[slot]; return !hasManifest && path !== undefined ? readBytes(path, slot) : readSourceBytes(directory, slot); };
+    const [run, result, submission, contract, profile, inventory] = await Promise.all([readBytes(runPath,'run'), readBytes(resultPath,'result'), readBytes(submissionPath,'submission'), sourceBytes('contract'), sourceBytes('profile'), sourceBytes('inventory')]);
     const recipes = satisfiedRecipes({ run: jsonBytes(run,'run'), result: jsonBytes(result,'result'), submission: jsonBytes(submission,'submission'), contract, profile, inventory });
     const forbidden = volumeProblems(recipes);
     if (forbidden.length) throw new CallFailure('invalid_parameters', `${forbidden.map(conflictText).join('；')}。未生成自动化用例 Excel。${CONFLICT_FIX}`, "请根据本次核验中的条目、要求项和错误位置修正计划，再重新核验和生成工作簿");
-    const bytes = generateWorkbookSet(recipes); await writeNew(args.out, bytes);
+    const bytes = generateWorkbookSet(recipes); await writeFile(outputPath, bytes, { flag: 'wx', mode: 0o600 });
     const moved = volumeOrder(recipes).moved, titles = new Map(recipes.map((recipe) => [recipe.fields.autoid, recipe.fields.title] as const));
     process.stdout.write(JSON.stringify({ sha256: sha256(bytes), generator: GENERATOR, bytes: bytes.length, ...(moved.length ? { moved_tail: moved, moved_text: movedText(moved, titles) } : {}) }) + '\n'); return 0;
   } catch (error) { process.stderr.write(formatCallError(error) + '\n'); return 1; }

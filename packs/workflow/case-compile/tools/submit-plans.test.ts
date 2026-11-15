@@ -382,3 +382,10 @@ test('planItems reports offending filename without saying re-export bytes, and e
   assert.match(emptyTok.err, /^参数无效：标准输入里没有令牌/);
   assert.match(emptyTok.err, /切勿在 <<'EOF' 前换行/);
 });
+
+test('a malformed Hub address is a parameter failure before reading files or a token', async () => {
+  const reply = await run('not a URL', 'not-an-existing-plan-directory');
+  assert.equal(reply.code, 1);
+  assert.match(reply.err, /^参数无效：--hub/);
+  assert.match(reply.err, /HTTP\(S\).*核对 Hub 地址/);
+});

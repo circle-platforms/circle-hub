@@ -9,8 +9,8 @@ import { describeExpansions, expandValue } from '../functions/length-literals.ts
 import { planDataOf } from '../functions/subject.ts';
 import { isRecord } from '../functions/text.ts';
 import { readSubmittedItemFiles, readTokenFromStdin, requireBearerToken, getRetrying, submitResultRetrying, type RetryControl } from '../functions/hub-retry.ts';
-import { argumentsOf, hubOrigin, RUN_ID, writeNew } from '../functions/generated/skills/run-tools/hub-client/index.ts';
-import { formatCallError } from '../functions/text.ts';
+import { hubOrigin, RUN_ID } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { formatCallError, parseCliOptions } from '../functions/text.ts';
 
 export async function planItems(directory: string): Promise<Array<{ [key: string]: unknown }>> {
   return readSubmittedItemFiles(directory, {
@@ -96,9 +96,14 @@ async function runItems(origin: string, bearer: string, run: string, retry?: Ret
 
 export async function main(argv: string[], readToken: () => Promise<string> = readTokenFromStdin, retry?: RetryControl): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['hub', 'run', 'model', 'plans']);
+    const parsedArgs = parseCliOptions(argv, { hub: true, run: true, model: true, plans: true }, 'node <技能目录>/tools/submit-plans.ts --hub <hub> --run <run> --model <model> --plans <plans>');
+    // Required options are checked by parseCliOptions.
+    const args = { hub: parsedArgs.hub!, run: parsedArgs.run!, model: parsedArgs.model!, plans: parsedArgs.plans! };
     if (!RUN_ID.test(args.run)) throw new CallFailure('invalid_parameters', '--run 请使用本次脚本编写的编号', "请依据本次错误的位置和说明修正计划或参数，再重试 submit-plans.ts");
-    const origin = hubOrigin(args.hub);
+    // hubOrigin is a pure URL/option validator; its expected rejection is a parameter failure.
+    let origin: string;
+    try { origin = hubOrigin(args.hub); }
+    catch { throw new CallFailure('invalid_parameters', '--hub 不是可用的 HTTP(S) Hub 地址', '核对 Hub 地址并重试；令牌仅从标准输入传入', { path: '--hub', legal_form: '--hub <HTTP(S) Hub 地址>' }); }
     const expanded = await expandPlanFiles(args.plans);
     if (expanded.length) process.stdout.write(`自动化用例的具体取值已写回文件：\n${expanded.join('\n')}\n`);
     const files = await planItems(args.plans);
@@ -119,7 +124,7 @@ export async function main(argv: string[], readToken: () => Promise<string> = re
     if (left.length) process.stdout.write(`另有 ${left.length} 份自动化用例不属于本次脚本编写，未做脚本合并\n`);
     const { text, failed } = await submitResultRetrying(origin, bearer, { run: args.run, model: args.model, items }, retry);
     const path = join(args.plans, `answer-${Date.now()}.txt`);
-    await writeNew(path, Buffer.from(text));
+    await writeFile(path, Buffer.from(text), { flag: 'wx', mode: 0o600 });
     const clipped = text.length > SHOWN_CHARS;
     process.stdout.write(`${items.length} 份自动化用例已交给 Hub 做脚本合并\n${text.slice(0, SHOWN_CHARS)}\n${clipped ? `Hub 答复共 ${text.length} 字符，全文在 ${path}，请分段读完\n` : `全文在 ${path}\n`}`);
     const skipped = items.filter((item) => item.handling === 'skipped').map((item) => held.get(String(item.item))!.label);

@@ -8,8 +8,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fidelityJudgmentProblems, embedFidelity } from '../functions/fidelity.ts';
-import { formatCallError, isRecord } from '../functions/text.ts';
-import { argumentsOf } from '../functions/generated/skills/run-tools/hub-client/index.ts';
+import { formatCallError, parseCliOptions, isRecord } from '../functions/text.ts';
 import { briefFile, planCases, verdictFile } from './fidelity-brief.ts';
 import { parsedPlanFile } from './submit-plans.ts';
 
@@ -22,7 +21,9 @@ function planData(value: Record<string, unknown>): Record<string, unknown> | nul
 
 export async function main(argv: string[]): Promise<number> {
   try {
-    const args = argumentsOf(argv, ['run', 'plans', 'briefs']);
+    const parsedArgs = parseCliOptions(argv, { run: true, plans: true, briefs: true }, 'node <技能目录>/tools/fidelity-apply.ts --run <run> --plans <plans> --briefs <briefs>');
+    // Required options are checked by parseCliOptions.
+    const args = { run: parsedArgs.run!, plans: parsedArgs.plans!, briefs: parsedArgs.briefs! };
     const { cases, skipped } = await planCases(args.run, args.plans);
     const merged: Array<Record<string, unknown>> = [], attention: Array<{ file: string; state: string; message: string }> = [];
     for (const { file, base, value, brief } of cases) {
