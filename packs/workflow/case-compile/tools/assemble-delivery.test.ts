@@ -858,3 +858,126 @@ test('assemble-delivery enforces round-29 report formatting, unrun evidence head
   assert.match(parsedOut.reply, /下一步：/);
   assert.match(parsedOut.reply, /决定者：/);
 });
+
+test('assemble-delivery replays round-29 real-shape notes (batch+round envelope, sparse dispatches, unrun conflict & missing_fact): dirty refuses with zero files; sanitized succeeds cleanly', async (t) => {
+  const [B2, B3, B4, F5, P1, P2, P3, P4, P5] = [
+    'run_01mmmmmmmmmmmmmmmmmmmmmm22',
+    'run_01mmmmmmmmmmmmmmmmmmmmmm33',
+    'run_01mmmmmmmmmmmmmmmmmmmmmm44',
+    'run_01mmmmmmmmmmmmmmmmmmmmmm55',
+    'run_01nnnnnnnnnnnnnnnnnnnnnn11',
+    'run_01nnnnnnnnnnnnnnnnnnnnnn22',
+    'run_01nnnnnnnnnnnnnnnnnnnnnn33',
+    'run_01nnnnnnnnnnnnnnnnnnnnnn44',
+    'run_01nnnnnnnnnnnnnnnnnnnnnn55',
+  ];
+  const p1 = planRun(P1, [CASES[0], CASES[1]], [CASES[2], CASES[3]]);
+  const p2 = planRun(P2, [CASES[0]], [CASES[1], CASES[2], CASES[3]]);
+  const p3 = planRun(P3, [CASES[0], CASES[1]], [CASES[2], CASES[3]], '2');
+  const p4 = planRun(P4, [CASES[0], CASES[1]], [CASES[2], CASES[3]], '3');
+  const p5 = planRun(P5, [CASES[0]], [CASES[1], CASES[2], CASES[3]]);
+  const h = await hub(
+    undefined,
+    p5.workbook,
+    {
+      [WHOLE]: [job('a', WHOLE, P1, [CASES[0], CASES[1]], p1.workbook, ['pass', 'fail'])],
+      [B2]: [job('b', B2, P2, [CASES[0]], p2.workbook, ['pass'])],
+      [B3]: [job('c', B3, P3, [CASES[0], CASES[1]], p3.workbook, ['pass', 'fail'])],
+      [B4]: [job('d', B4, P4, [CASES[0], CASES[1]], p4.workbook, ['pass', 'fail'])],
+      [F5]: [job('e', F5, P5, [CASES[0]], p5.workbook, ['pass'])],
+    },
+    { [P1]: p1, [P2]: p2, [P3]: p3, [P4]: p4, [P5]: p5 },
+    [WHOLE, B2, B3, B4, F5],
+  );
+  t.after(h.close);
+
+  const writeEnvelopeNotes = async (casesPayload: Record<string, unknown>) => {
+    const dir = await mkdtemp(join(tmpdir(), 'cc-r29-notes-'));
+    const path = join(dir, 'delivery-notes.json');
+    await writeFile(path, JSON.stringify({ round: 29, cases: casesPayload, batch: '合成第 29 轮交付汇总说明' }));
+    return path;
+  };
+  const baseRuns = `${WHOLE},${B2},${B3},${B4},${F5}`;
+
+  const dirtyNotes = {
+    [CASES[1]]: {
+      round: 3,
+      judged: `错误：缺资料。失败分析（notes/${CASES[1]}-round3.json，confidence=hypothesis）：3 轮上机均失败。`,
+      remedy: '交由产品侧确认并待补资料后决定是否重跑上机。决定者＝使用者（分批与存盘指示）＋程序（待补资料）。',
+      evidence: '第 3 步断言没有命中',
+    },
+    [CASES[2]]: {
+      round: 2,
+      judged: '使用者保留原始用例（由 parameters.exclude 排除），本条暂不上机。',
+      remedy: '不安排上机。决定者＝使用者（决定暂不上机）。',
+      evidence: '手册补充引文：特殊字符说明。',
+      author_conflict: { ...CONFLICT, author: '合成动作' },
+    },
+    [CASES[3]]: {
+      round: 2,
+      judged: '该条缺少所需事实，本条未上机。',
+      remedy: `已绑定请求 rec:${'4'.repeat(64)}，期限 2026-11-16T01:26:32Z；补齐 cell_inputs 后开新修订重交并上机。决定者＝程序（具名请求）。`,
+      evidence: GAP_WORDS,
+    },
+  };
+  const dirtyOut = join(await mkdtemp(join(tmpdir(), 'cc-r29-dirty-')), 'out');
+  const blocked = await run(h, await writeEnvelopeNotes(dirtyNotes), dirtyOut, baseRuns);
+  assert.equal(blocked.code, 1);
+  assert.match(blocked.stderr, /parameters\.exclude/);
+  assert.match(blocked.stderr, /rec:/);
+  assert.match(blocked.stderr, /2026-11-16T01:26:32Z/);
+  assert.match(blocked.stderr, /cell_inputs/);
+  assert.match(blocked.stderr, /开新修订/);
+  assert.match(blocked.stderr, /重交/);
+  assert.match(blocked.stderr, /notes\//);
+  assert.match(blocked.stderr, /confidence=hypothesis/);
+  assert.match(blocked.stderr, /产品侧/);
+  assert.match(blocked.stderr, /待补资料/);
+  assert.match(blocked.stderr, /被替代旧词「上机」/);
+  assert.match(blocked.stderr, /不合规范/);
+  await assert.rejects(readdir(dirtyOut));
+
+  const cleanNotes = {
+    [CASES[1]]: {
+      round: 3,
+      judged: '错误：缺资料。到上机房核对环境配置并完成 3 次改写后，上机验证仍未通过。',
+      remedy: '请产品包内容维护者与环境维护者补齐缺失资料后再定。决定者：使用者。',
+      evidence: '第 3 步断言没有命中',
+    },
+    [CASES[2]]: {
+      round: 2,
+      judged: '使用者已决定保留原始用例，未做上机验证；脚本编写与脚本合并均已排除本条。',
+      remedy: '等待用例作者确认原始用例与手册说明后再定。决定者：使用者。',
+      evidence: '手册补充引文：特殊字符说明。',
+      author_conflict: { ...CONFLICT, author: '合成动作' },
+    },
+    [CASES[3]]: {
+      round: 2,
+      judged: '缺少脚本编写所需事实，未做上机验证。',
+      remedy: '由执行器规则维护者补齐取格入口并在 2026-11-16 10:26 前重新生成规则，再重新做脚本编写和脚本合并并上机验证。决定者：程序。',
+      evidence: GAP_WORDS,
+    },
+  };
+  const cleanOut = join(await mkdtemp(join(tmpdir(), 'cc-r29-clean-')), 'out');
+  const delivered = await run(h, await writeEnvelopeNotes(cleanNotes), cleanOut, baseRuns);
+  assert.equal(delivered.code, 0, delivered.stderr);
+  assert.deepEqual((await readdir(cleanOut)).sort(), ['case.xlsx', 'delivery.json', 'delivery_report.md', 'unsuccessful_cases.md', 'unsuccessful_cases.xlsx']);
+
+  const report = await readFile(join(cleanOut, 'delivery_report.md'), 'utf8');
+  const longReport = await readFile(join(cleanOut, 'unsuccessful_cases.md'), 'utf8');
+  const reply = JSON.parse(delivered.stdout).reply as string;
+
+  for (const text of [report, longReport, reply]) {
+    assert.doesNotMatch(text, /rec:|usr_|run_|notes\/|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|。。|决定者＝/);
+    assert.doesNotMatch(text, /决定者：(程序|模型|使用者)。.*决定者：/);
+  }
+  assert.ok(report.includes('本条原始用例共上机验证 3 次：第 1 次上机验证判断错误；第 2 次上机验证判断错误；第 3 次上机验证判断错误。'));
+  assert.ok(!report.includes('第 4 次上机验证'));
+  assert.ok(report.includes('到上机房核对环境配置'));
+  assert.ok(report.includes('（模型自述原因是缺资料；按规则，改写 3 次后上机验证仍未正确，以程序规则记编写模型的问题为准。）'));
+
+  const c2Start = report.indexOf(`## 原始用例 ${CASES[2]}`);
+  const c3Start = report.indexOf(`## 原始用例 ${CASES[3]}`);
+  assert.ok(c2Start > 0 && c3Start > c2Start);
+  assert.ok(!report.slice(c2Start).includes('**证据，设备输出**'), 'unrun cases must never emit 设备输出 label');
+});

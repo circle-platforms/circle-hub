@@ -65,17 +65,20 @@ test('restore requires a pre-change capture, exact target and guarded executor c
  const document=structuredClone(f.contractDoc) as any;document.runtime.block_model.restore_methods=[];const contract=signTypedRuntime(document),subject=f.subject(positiveBlocks().RESTORE_FROM);subject.subject.contract=contract;subject.subject.profile={...f.profileDoc,runtime:{...f.profileDoc.runtime,contract_sha256:contract.original.contract_sha256}};assert.ok(checkContractShape(subject).some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('守卫')));
 });
 for(const kind of ['OBSERVE_DIST','OBSERVE_MEMBER','OBSERVE_EXIT'])test(kind+' is declared but remains unknown with a named capability exit',()=>{const data=plan([{kind,id:'deferred',payload:{}}]);const result=checkContractShape(f.subject(data));assert.ok(result.some(outcome=>outcome.verdict==='unknown'&&outcome.missing?.includes('下一步')));const absent=structuredClone(data);delete absent.blocks[0].payload;assert.equal(readSlots(absent).ok,false);const mixed=structuredClone(data);mixed.expects=[{text:'x',quote:quote(),after:1}];assert.equal(readSlots(mixed).ok,false);});
-test('F8 validation recovery messages preserve pointers and avoid internal schema refs or invented words',()=>{
- const leaked=/重新育苗|育苗|runtime-contract@2|command-policy@1|inverse_rules|冻结 profile|具名受众|派发工作簿/;
+test('F8 validation recovery messages preserve pointers in structured problems and render human locations in prose without internal refs or invented words',()=>{
+ const leaked=/重新育苗|育苗|runtime-contract@2|command-policy@1|inverse_rules|冻结 profile|具名受众|派发工作簿|\/blocks\/|\/steps\/|按指针|(?:blocks|catalog|contract)\//;
  const restoreParsed=readSlots(positiveBlocks().RESTORE_FROM);assert.ok(restoreParsed.ok);if(!restoreParsed.ok)return;
  const noRules={...f.catalog,policy:{...f.catalog.policy,inverse_rules:[]}};
  const gaps=typedAuthorityGaps(f.contract,f.profile,restoreParsed.slots,undefined,noRules,[],f.manifest_sha256);
  assert.ok(gaps.some(gap=>gap.message.includes('产品命令逆操作声明后，由管理员重新生成该构建的手册和命令树')));
  const unknownText=authorityRecovery([{document:'blocks',pointer:'/blocks/13/call',message:'合成缺事实',verdict:'unknown'}]);
- assert.ok(unknownText.includes('blocks/blocks/13/call'));
- assert.ok(unknownText.includes('重新生成该构建的手册和命令树')&&unknownText.includes('按现行执行器规则核对')&&unknownText.includes('已冻结的执行器配置')&&unknownText.includes('具名对象与期限')&&unknownText.includes('自动化用例 Excel'));
+ assert.ok(unknownText.includes('第 14 块的调用步骤：合成缺事实'));
+ assert.ok(unknownText.includes('按上述位置请求')&&unknownText.includes('重新生成该构建的手册和命令树')&&unknownText.includes('按现行执行器规则核对')&&unknownText.includes('已冻结的执行器配置')&&unknownText.includes('具名对象与期限')&&unknownText.includes('自动化用例 Excel'));
  assert.doesNotMatch(unknownText,leaked);
  const refuteText=authorityRecovery([{document:'blocks',pointer:'/blocks/3/call',message:'合成越权',verdict:'refute'}]);
- assert.ok(refuteText.includes('blocks/blocks/3/call')&&refuteText.includes('补齐作者命令、合法参数及逆序清理')&&refuteText.includes('自动化用例 Excel'));
+ assert.ok(refuteText.includes('第 4 块的调用步骤：合成越权')&&refuteText.includes('按上述位置和未完成义务补齐作者命令、合法参数及逆序清理')&&refuteText.includes('不得改动已冻结的执行器配置来绕过')&&refuteText.includes('自动化用例 Excel'));
  assert.doesNotMatch(refuteText,leaked);
+ const catalogArgText=authorityRecovery([{document:'catalog',pointer:'/steps/0/args/0',message:'命令树无匹配命令',verdict:'refute'}]);
+ assert.ok(catalogArgText.includes('产品命令手册・第 1 步第 1 个参数：命令树无匹配命令'));
+ assert.doesNotMatch(catalogArgText,leaked);
 });

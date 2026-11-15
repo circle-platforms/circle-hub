@@ -213,8 +213,8 @@
     },
     {
       "path": "functions/delivery.ts",
-      "sha256": "63ea3a0126317e16b1b2f2fd022557e56ff8ebbd515df8c9c1d52ba5a3734fe9",
-      "size": 59837
+      "sha256": "6f400721c6faadd6babf34bef858269dd7c929f9bdf18ad07abcc506e6c659bc",
+      "size": 59893
     },
     {
       "path": "functions/dispatch-policy.ts",
@@ -403,8 +403,8 @@
     },
     {
       "path": "functions/typed-authority.ts",
-      "sha256": "40f94aea84dc4b50aa45c5ed2176f8f442d0ecc7a9765cd57c961727d9d7908b",
-      "size": 14993
+      "sha256": "814afaecf42489dcf53cdfd2746cfb6ac7b04871cc43b4d51623195992802c49",
+      "size": 17789
     },
     {
       "path": "functions/typed-contract.ts",

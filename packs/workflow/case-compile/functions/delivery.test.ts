@@ -90,6 +90,7 @@ test('noteUserFacingProblems rejects internal identifiers, UTC timestamps, paths
     ['non-standard 待补资料', { judged: '当前状态是待补资料' }, /使用了非标准说法/],
     ['standalone 用户', { remedy: '请通知用户确认参数值' }, /使用了“用户”/],
     ['bare 上机', { judged: '上次上机结果不可用' }, /使用了被替代旧词「上机」/],
+    ['bare 上机机会', { remedy: '本条最后一次上机机会由使用者消耗。' }, /使用了被替代旧词「上机」/],
     ['owner placed in judged', { judged: '模型判定如此。决定者：模型。' }, /不应填写「决定者」/],
     ['owner placed in defect_candidate.repro', { defect_candidate: { repro: '执行步骤后检查。决定者：使用者。', expected: '预期输出', actual: '实际输出' } }, /不应填写「决定者」/],
     ['duplicate 决定者 in remedy', { remedy: '先由使用者核对。决定者：使用者。或再看决定者：程序。' }, /多次出现「决定者」/],
@@ -114,12 +115,12 @@ test('noteUserFacingProblems rejects internal identifiers, UTC timestamps, paths
   }
 });
 
-test('noteUserFacingProblems allows clean prose, allowed compounds like 用户名/多用户/上机验证, single owner in remedy, and exempt verbatim evidence fields', () => {
+test('noteUserFacingProblems allows clean prose, allowed compounds like 用户名/多用户/上机验证/上机房/换上机器/连接上机柜, single owner in remedy, and exempt verbatim evidence fields', () => {
   const longHex = 'a'.repeat(64);
   const notes: Notes = {
     cases: {
       c1: {
-        judged: '多用户场景下用户名认证失败；已查过上机验证和未做上机验证的记录，原因还没查清，待用例作者与使用者确认。',
+        judged: '多用户场景下用户名认证失败；到上机房换上机器并连接上机柜后已查过上机验证和未做上机验证的记录，原因还没查清，待用例作者与使用者确认。',
         remedy: '由编写模型对照环境维护者给出的设备配置再改写后上机验证。决定者：模型。',
         evidence: `2026-11-14T16:17:38.587Z run_01aaaaaaaaaaaaaaaaaaaaaaaa tree:${longHex}/x parameters.foo 用户 上机`,
         defect_candidate: {

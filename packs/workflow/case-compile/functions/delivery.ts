@@ -338,7 +338,7 @@ const USER_FACING_RULES: readonly UserFacingRule[] = [
     message: (where, hit) => `${where}使用了“${hit}”；面向操纵界面的人请统一写「使用者」（原需求提出人请写「用例作者」）`,
   },
   {
-    pattern: /上机(?!验证)/,
+    pattern: /上机(?!验证|房|器|柜|架|箱|位|构|制|关|场|型|组|身|械)/,
     message: (where) => `${where}使用了被替代旧词「上机」；请统一写为「上机验证」或「未做上机验证」`,
   },
 ];
