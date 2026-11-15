@@ -1,7 +1,7 @@
 {
   "schema": "pack@1",
   "id": "plumb",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "kind": "skill",
   "title": "Plumb 判断客户端",
   "description": "客户端侧 Plumb 推理网关与状态客户端，仅提供受 TLS 与主机锁定约束的只读/判别工具及内嵌客户端模块，不代 Hub 调用模型。",
@@ -18,13 +18,13 @@
     },
     {
       "path": "examples/match-single-cmd.json",
-      "sha256": "b1836f3e568e202e4f92f2199c8a3f79c40fd3d3581a972b482af5cf447f94da",
-      "size": 293
+      "sha256": "007e5b2e0c5eca8d48f5eb915b8eab48dd7d17bac835c53d81fb42ba366f08f7",
+      "size": 334
     },
     {
       "path": "examples/sequence-fidelity.json",
-      "sha256": "55f45d374e4678da3ea600561e250a64295804ba780c311cb5988bc10a12d368",
-      "size": 365
+      "sha256": "b5f2f8aa169d95367e6c06e8577cf207c2617e273acebd1f6eb7efdb5beb7106",
+      "size": 380
     },
     {
       "path": "functions/modules/plumb-client/cache.ts",

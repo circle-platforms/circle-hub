@@ -4,6 +4,8 @@ All notable changes to circle-hub are listed here, newest first. Repository rele
 
 ## Unreleased
 
+- 修正 `plumb` 技能包的请求示例并升至 `1.0.1`：`match-single-cmd.json` 把候选命令放进顶层 `command`（只写在 `state` 文字里时，Plumb 网关以 HTTP 400 拒绝），`sequence-fidelity.json` 补 `step_n: 2` 与 `[当前作者步骤 2]` 一致；新增 `examples.test.ts`，按网关的请求形状规则核对每个示例。未发布候选 `case-compile@3.21.1` 的 `embeds` 同步为 `plumb@1.0.1`，内嵌模块字节不变；`plumb@1.0.0` 已发布的字节不动。
+
 - 编写任务完整接收结构化前置与当前卡片决定；缺口说明使用可读位置和具体恢复动作，避免旧摘要误报与静默截断。模板准备命令使用显式参数/标准输入声明。
 
 - 在生产基线上整合 run30 工作流修复，保留有来源的前置与逆清理、守卫刷新恢复和已发布包版本不可变规则。
