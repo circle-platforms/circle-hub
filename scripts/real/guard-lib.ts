@@ -1,7 +1,7 @@
 import type { CallErrorCategory } from '../../contracts/generated/vocabulary.ts';
 // Unified declaration-driven before_tool guard engine for Circle homes (skills & ops profiles).
 // Self-contained standalone Node 24 TypeScript module (copied into `<home>/hooks/guard-lib.ts` with no checkout dependency).
-// Enforces one single command & quoting grammar across docs, ALLOWED.md, and runtime checks: bare `[A-Za-z0-9_./:%=@,+-]+` or single-quoted `'...'`.
+// Enforces one single command & quoting grammar across docs, ALLOWED.md, and runtime checks: bare `[A-Za-z0-9_./:%=@,+-]+`, safe double-quoted or single-quoted `'...'`.
 import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -137,8 +137,13 @@ export interface DiscoveredTool {
   forms: ToolForm[];
 }
 
+export interface CommandWordSpan { start: number; end: number; quoted: boolean }
+
 export interface ParsedCommand {
   words: string[];
+  header?: string;
+  wordSpans?: CommandWordSpan[];
+  syntaxRepairable?: boolean;
   heredoc: { delimiter: string; body: string[]; closed: boolean; after?: string } | null;
   lines: number;
   problem: string | null;
@@ -358,9 +363,9 @@ export function environment(home: string, cwd: string, declarationName = 'guard.
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Single command tokenizer: enforces ONE grammar across docs, ALLOWED.md, and runtime guard.
+// Single command tokenizer: enforces ONE literal-word grammar across docs, ALLOWED.md, and runtime guard.
 // Allowed on line 1: ASCII space/tab separators, bare `[A-Za-z0-9_./:%=@,+-]+`, single-quoted `'[^'\r\n]*'`, and optional trailing
-// single-quoted heredoc `<<'EOF'`. Rejected: double quotes, backslash escapes/continuations, unquoted non-ASCII/spaces, `\r`,
+// single-quoted heredoc `<<'EOF'`. Double-quoted words allow no dollar, backtick or backslash. Rejected: backslash escapes/continuations, unquoted non-ASCII/spaces, `\r`,
 // Unicode whitespace, shell chaining/redirection/expansion/glob metacharacters, or concatenated quotes (`'a'b`).
 
 const META_WORDS = new Map<string, string>([
@@ -383,12 +388,25 @@ const META_WORDS = new Map<string, string>([
 
 const BARE_TOKEN_CHAR = /^[A-Za-z0-9_./:%=@,+-]$/;
 
-/** Parses a CLI execute command under the unified single-quote grammar. */
+/** Locate shell input operators only outside literal quoted words. */
+function unquotedInputOperator(value: string): number {
+  let delimiter: string | null = null;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (delimiter !== null) { if (ch === delimiter) delimiter = null; continue; }
+    if (ch === "'" || ch === '"') { delimiter = ch; continue; }
+    if (ch === '<' && value[i + 1] === '<') return i;
+  }
+  return -1;
+}
+
+/** Parses a CLI execute command under the unified literal-word grammar. */
 export function parseCommand(command: string): ParsedCommand {
-  const out: ParsedCommand = { words: [], heredoc: null, lines: 1, problem: null };
+  const out: ParsedCommand = { words: [], wordSpans: [], syntaxRepairable: true, heredoc: null, lines: 1, problem: null };
   const text = String(command);
-  const fail = (message: string) => {
+  const fail = (message: string, repairable = true) => {
     out.problem ??= message;
+    if (!repairable) out.syntaxRepairable = false;
   };
 
   let header = text;
@@ -400,9 +418,9 @@ export function parseCommand(command: string): ParsedCommand {
     const tail = rawLines;
     // Check explicit here-doc head: `<cmd> <space/tab> <<'DELIM'<optional space/tab>`.
     const unquotedDelim = /^(.*?)[ \t]+<<([A-Za-z_][A-Za-z0-9_.%-]*)[ \t]*$/.exec(firstLine);
-    const quotedDelim = /^(.*?)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*$/.exec(firstLine);
+    const quotedDelim = unquotedInputOperator(firstLine) >= 0 ? /^(.*?)[ \t]+<<'([A-Za-z_][A-Za-z0-9_]*)'[ \t]*$/.exec(firstLine) : null;
     const badPlaceholderDelim = /^(.*?)[ \t]+<<(%[A-Za-z0-9_]+%)[ \t]*$/.exec(firstLine);
-    const badHeredoc = /(?:^|[ \t])<<<?/.exec(firstLine);
+    const badHeredoc = unquotedInputOperator(firstLine) >= 0;
     if (quotedDelim) {
       header = quotedDelim[1];
       const delimiter = quotedDelim[2];
@@ -432,8 +450,9 @@ export function parseCommand(command: string): ParsedCommand {
       fail('命令有多行，而多行只有“结尾接 `<<\'EOF\'` 的令牌 here-doc”这一种写法');
     }
   } else {
-    const trailingDelim = /^(.*?)[ \t]+<<(?:'([A-Za-z_][A-Za-z0-9_]*)'|(\S+))[ \t]*$/.exec(text);
-    if (text.includes('<<<')) {
+    const operator = unquotedInputOperator(text);
+    const trailingDelim = operator >= 0 ? /^(.*?)[ \t]+<<(?:'([A-Za-z_][A-Za-z0-9_]*)'|(\S+))[ \t]*$/.exec(text) : null;
+    if (operator >= 0 && text.slice(operator).startsWith('<<<')) {
       fail('命令里有“<<<”（here-string）；令牌要用 `<<\'EOF\'` here-doc 给');
     } else if (trailingDelim) {
       header = trailingDelim[1];
@@ -441,94 +460,45 @@ export function parseCommand(command: string): ParsedCommand {
     }
   }
 
+  out.header = header;
   let i = 0;
   while (i < header.length) {
-    while (i < header.length && (header[i] === ' ' || header[i] === '\t')) i++;
+    while (header[i] === ' ' || header[i] === '\t') i++;
     if (i >= header.length) break;
-    const ch = header[i];
-    if (ch === '\r') {
-      fail('命令行含回车符 `\\r`，只允许单行空格或制表符分隔');
-      break;
-    }
-    if (/\s/.test(ch)) {
-      fail('命令只认 ASCII 空格或制表符分隔参数，不认全角/不换行空白字符');
-      i++;
-      continue;
-    }
-    if (ch === "'") {
-      const end = header.indexOf("'", i + 1);
-      if (end < 0) {
-        fail('英文单引号没有配对');
-        break;
-      }
-      const piece = header.slice(i + 1, end);
-      if (/[\r\n]/.test(piece)) fail('单引号里不能有换行');
-      out.words.push(piece);
-      i = end + 1;
-      if (i < header.length && header[i] !== ' ' && header[i] !== '\t') {
-        fail('单引号结束后面必须接空格或换行，不许紧连引号内外文字');
-        while (i < header.length && header[i] !== ' ' && header[i] !== '\t') i++;
-      }
-      continue;
-    }
-    if (ch === '"') {
-      fail('不支持英文双引号 `"`，含空格或中文的值请统一改用英文单引号 `\'…\'`');
-      const end = header.indexOf('"', i + 1);
-      if (end < 0) break;
-      out.words.push(header.slice(i + 1, end));
-      i = end + 1;
-      while (i < header.length && header[i] !== ' ' && header[i] !== '\t') i++;
-      continue;
-    }
-    if (ch === '\\') {
-      fail('不支持反斜杠转义或续行，含空格的值请改用英文单引号 `\'…\'`');
-      i += header[i + 1] ? 2 : 1;
-      continue;
-    }
-    if (META_WORDS.has(ch)) {
-      fail(`命令里有 ${META_WORDS.get(ch)}`);
-      i++;
-      continue;
-    }
-    if (ch === '#' || ch === '~') {
-      fail(ch === '#' ? '命令里有注释符 `#`' : '命令里有 `~`（家目录展开）');
-      i++;
-      continue;
-    }
-    // Scan bare word cleanly so we give exact feedback if unquoted non-ASCII or embedded quotes appear.
-    let word = '';
-    let badBare = false;
+    const start = i;
+    let value = '', quoted = false, segments = 0;
     while (i < header.length && header[i] !== ' ' && header[i] !== '\t') {
-      const c = header[i];
-      if (c === '\r' || /\s/.test(c)) {
-        fail('命令只认 ASCII 空格或制表符分隔参数');
-        break;
-      }
-      if (c === "'" || c === '"') {
-        fail(c === '"' ? '不支持英文双引号 `"`，请改用英文单引号 `\'…\'`' : '单引号必须包住整段参数且与前后空格隔开');
-        badBare = true;
-        break;
-      }
-      if (c === '\\') {
-        fail('不支持反斜杠转义');
-        badBare = true;
-        i++;
+      const ch = header[i];
+      if (ch === "'" || ch === '"') {
+        if (segments++) fail('引号词不许紧连；必须与前后词用空格隔开，请把同一值完整引用');
+        quoted = true;
+        const end = header.indexOf(ch, i + 1);
+        if (end < 0) { fail(ch === "'" ? '英文单引号没有配对' : '英文双引号没有配对', false); i = header.length; break; }
+        const piece = header.slice(i + 1, end);
+        if (!piece.isWellFormed() || /[\r\n\0]/.test(piece)) fail('引号词里不能有换行或空字节', false);
+        if (ch === '"' && /[$`\\]/.test(piece)) fail('双引号词含 $、反引号或反斜杠；请用单引号保留字面值，不执行展开');
+        value += piece;
+        i = end + 1;
         continue;
       }
-      if (META_WORDS.has(c)) {
-        fail(`命令里有 ${META_WORDS.get(c)}`);
-        badBare = true;
-        i++;
-        continue;
+      if (segments && quoted) fail('引号词不许紧连；必须与前后词用空格隔开，请把同一值完整引用');
+      segments++;
+      while (i < header.length && header[i] !== ' ' && header[i] !== '\t' && header[i] !== "'" && header[i] !== '"') {
+        const c = header[i];
+        if (c === '\\') {
+          if (header[i + 1] === ' ') { fail('不放行反斜杠转义空格；请用单引号引用完整路径或值'); value += ' '; i += 2; continue; }
+          fail('不支持反斜杠转义或续行；请明确原值后完整引用', false); value += c; i++; continue;
+        }
+        if (c === '\0') fail('命令词含空字节', false);
+        else if (META_WORDS.has(c)) fail('命令里有 ' + META_WORDS.get(c), false);
+        else if (c === '#' || c === '~') fail(c === '#' ? '命令里有注释符 #' : '命令里有家目录展开 ~', false);
+        else if (/\s/.test(c)) fail('命令只认 ASCII 空格或制表符分隔参数', false);
+        else if (!BARE_TOKEN_CHAR.test(c)) fail('含中文或特殊字符的路径与值请用英文单引号完整引用');
+        value += c; i++;
       }
-      if (!BARE_TOKEN_CHAR.test(c)) {
-        fail('含空格、中文或特殊字符的脚本路径与参数值必须用英文单引号 `\'…\'` 包住');
-        badBare = true;
-      }
-      word += c;
-      i++;
     }
-    if (word !== '' || !badBare) out.words.push(word);
+    out.words.push(value);
+    out.wordSpans!.push({start, end:i, quoted});
   }
   return out;
 }
@@ -731,13 +701,13 @@ export function discoverTools(env: GuardEnvironment): DiscoveredTool[] {
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Writing canonical commands using the single unified quoting rule (`'...'` single quotes for values/paths with spaces/non-ASCII).
 
-/** Formats a single command word using bare safe ASCII or single quotes `'...'` (never double quotes or backslashes). */
+/** Prefer bare safe ASCII or single quotes; a static double-quoted word preserves an apostrophe when needed. */
 export const quote = (value: string): string => {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
-  if (/[\r\n\0']/.test(value)) throw new GuardRefusal('这个值不能用允许的单引号文法无损表示；不生成改变原值的替代命令', 'invalid_parameters');
-  return `'${value}'`;
+  if (value.includes("'") && !/[\r\n\0"$\x60\\]/.test(value)) return '"' + value + '"';
+  if (/[\r\n\0']/.test(value)) throw new GuardRefusal("这个值无法用允许的单引号或静态双引号无损表示；不生成改变原值的替代命令", "invalid_parameters");
+  return "'" + value + "'";
 };
-
 export function scriptLabel(env: GuardEnvironment, tool: DiscoveredTool): string {
   if (tool.skill) return `<技能目录>/${path.relative(path.join(env.skills, tool.skill), tool.file)}`;
   return env.work ? path.relative(env.work, tool.file) : tool.file;
@@ -984,9 +954,12 @@ function configuredTools(env: GuardEnvironment): Set<string> {
   return new Set([...Object.values(d.allow ?? {}).flat(), ...asList(d.files?.read), ...asList(d.files?.write)]);
 }
 
-function unavailableAdvice(env: GuardEnvironment): string {
+function unavailableAdvice(env: GuardEnvironment, tool = 'execute'): string {
   const read = configuredTools(env).has('read_file') ? '用 read_file 读取规则全文' : '请主代理核对规则全文';
-  return `这次可以这样做：未提供等价工具；${read}，按实际任务选择已放行工具；仍无法完成时向主代理报告缺少的能力。`;
+  if(tool==='skill_install')return `这次可以这样做：当前没有 skill_install 安装接口，未提供等价工具；把本次所需技能、版本和摘要交集成者安装并核验，之后用 skill 加载已安装技能；不在会话里改守卫或安装目录。`;
+  if(tool==='skill_list'&&configuredTools(env).has('ls'))return `这次可以这样做：当前没有 skill_list 接口；若只想查看本主目录已有技能，用 ls({path:${JSON.stringify(env.skills)}}) 列只读技能目录；这不等于查询远端全部技能。未提供等价工具时请说明要查哪一类资料。`;
+  if(tool==='skill_run')return `这次可以这样做：当前没有 skill_run 接口；先加载已安装技能并读其调用说明，再用 execute 运行明确声明的脚本及原任务参数。未提供等价工具，不替你猜缺少的运行编号、条目或输入。`;
+  return `这次可以这样做：${tool} 未提供等价工具；${read}，核对本次所需操作是否有已放行入口；没有时向主代理报告具体缺少的能力，不用无关工具绕行。`;
 }
 
 function shellHint(env: GuardEnvironment, words: string[], command: string): string | null {
@@ -998,6 +971,14 @@ function shellHint(env: GuardEnvironment, words: string[], command: string): str
   );
   if (seen && available.has('read_file')) return `这次可以这样做：读 ${seen} 用 read_file（路径照写）${available.has('grep') ? '，在里面找内容用 grep' : ''}，不用 shell。`;
   const first = path.basename(words[0] ?? '');
+  if(first==='cd') {
+    const listing=available.has('ls')?'列目录用 ls({path:"工作目录内的相对目录"})；':'';
+    return `这次可以这样做：cd 不会改变后续工具调用的会话工作目录；${listing}${available.has('read_file')?'读文件用 read_file；':''}后续文件工具的 file_path/path 和脚本参数直接写相对当前工作目录的完整位置。若确实要换到另一个工作目录，请主代理在该目录重新建立受信任会话，不用 cd 或合并命令绕过。`;
+  }
+  if(first==='wc') {
+    const reading=available.has('read_file')?'若只需阅读该文件，调用 read_file 并传 file_path；':'';
+    return `这次可以这样做：当前没有与 wc 等价的行数、字数或字节计数工具；${reading}如需精确统计，请主代理提供已声明的只读计数工具，再对这次指定文件运行。不要用临时 shell 或人工估数代替精确统计。`;
+  }
   // Only this exact sed address grammar establishes a read-only intent.
   if (first === 'sed' && words.length === 4 && words[1] === '-n' && /^[1-9][0-9]*(?:,[1-9][0-9]*)?p$/.test(words[2])) {
     return available.has('read_file') ? '这次可以这样做：只读查看文件请用 read_file；需要定位文字时使用规则全文里放行的搜索工具。' : unavailableAdvice(env);
@@ -1008,7 +989,7 @@ function shellHint(env: GuardEnvironment, words: string[], command: string): str
   }
   const alt = alternatives[first];
   if (alt && available.has(alt)) return `这次可以这样做：如需执行 ${alt} 提供的操作，请直接调用 ${alt}（路径写相对工作目录）；这不是原 shell 命令的等价改写。`;
-  return null;
+  return `这次可以这样做：${first || '这条调用'} 不是已声明的本地执行命令；${available.has('read_file')?'读已知文件用 read_file，':''}${available.has('glob')?'找文件用 glob，':''}${available.has('grep')?'找字面内容用 grep，':''}若这些操作都不能完成这次任务，请向主代理说明具体缺少的工具能力，不改用临时解释器或合并命令。`;
 }
 
 /** Narrow glob subset safe under Circle glob (follow:false): no '..', braces, brackets, extglobs, escapes, or escapes-of-dots. */
@@ -1372,6 +1353,54 @@ type ExecuteValidation =
   | { ok: true; physicalScript?: string }
   | { ok: false; what: string; how: string; category?: CallErrorCategory };
 
+function preserveHeredoc(parsed: ParsedCommand): string | null {
+  const here = parsed.heredoc;
+  if (!here) return '';
+  if (!here.closed || here.after?.trim()) return null;
+  return ` <<'${here.delimiter}'\n${here.body.join('\n')}\n${here.delimiter}`;
+}
+
+/** Suggestions bind an exact installed path, never a guessed suffix or whitespace-normalized path. */
+function quoteSplitScript(env: GuardEnvironment, tools: DiscoveredTool[], parsed: ParsedCommand): string | null {
+  const span = parsed.wordSpans?.[1], header = parsed.header;
+  if (!span || span.quoted || header === undefined || parsed.syntaxRepairable === false) return null;
+  const matches: Array<{file:string;end:number}> = [];
+  for (const tool of tools) {
+    const spellings = new Set([tool.file]);
+    if (inside(tool.file,env.skills)) spellings.add(path.join(env.skillsRaw,path.relative(env.skills,tool.file)));
+    for (const spelling of spellings) {
+      const end = span.start + spelling.length;
+      if (end <= span.end || header.slice(span.start,end) !== spelling || end < header.length && !/[ \t]/.test(header[end])) continue;
+      if (!matches.some(match=>match.file===tool.file&&match.end===end)) matches.push({file:tool.file,end});
+    }
+  }
+  if (matches.length !== 1) return null;
+  const tail=preserveHeredoc(parsed);if(tail===null)return null;
+  return `node ${quote(matches[0].file)}${header.slice(matches[0].end)}${tail}`;
+}
+
+/** Only a declared single path value can absorb contiguous unquoted words; original separator bytes stay intact. */
+function quoteSplitPathArguments(tool: DiscoveredTool, parsed: ParsedCommand): string | null {
+  const spans=parsed.wordSpans,header=parsed.header;
+  if(!spans||header===undefined||parsed.syntaxRepairable===false||!tool.optionsDeclared)return null;
+  const words=[...parsed.words];let changed=false;
+  for(let i=tool.subcommands?3:2;i<words.length;i++) {
+    const option=tool.options.find(o=>words[i]==='--'+o.name);
+    if(!option||option.type!=='path'||option.multiple||option.kind!=='string'||!spans[i+1]||spans[i+1].quoted)continue;
+    let end=i+1;
+    while(end+1<words.length&&!words[end+1].startsWith('--')&&!spans[end+1].quoted)end++;
+    if(end===i+1)continue;
+    const raw=header.slice(spans[i+1].start,spans[end].end);
+    if(/[\r\n\0'"$`;&|<>(){}*?\[\]#~]/.test(raw)||/\\(?! )/.test(raw))continue;
+    words[i+1]=raw.replaceAll('\\ ',' ');
+    for(let j=i+2;j<=end;j++)words[j]='';
+    changed=true;i=end;
+  }
+  if(!changed)return null;
+  const tail=preserveHeredoc(parsed);if(tail===null)return null;
+  return words.filter((word,index)=>word!==''||parsed.words[index]==='').map(quote).join(' ')+tail;
+}
+
 function installedToolsAdvice(
   env: GuardEnvironment,
   tools: DiscoveredTool[],
@@ -1379,11 +1408,11 @@ function installedToolsAdvice(
 ): string {
   const list = opts.preferred?.length ? opts.preferred : tools;
   if (!list.length) {
-    return `这次可以这样做：当前没有已装并声明的可执行脚本（仅放行 skills 目录内已声明工具），规则全文见 ${env.allowedFile}（用 read_file 读）。`;
+    return `这次可以这样做：这次调用没有可核对的已装执行入口；请先按所需技能安装并核验完整包和 CLI 声明，不把库文件当 CLI。当前没有已装并声明的可执行脚本；规则全文见 ${env.allowedFile}（用 read_file 读）。`;
   }
   const shown = list.slice(0, 8).map((tool) => tool.id);
   const more = list.length > 8 ? ` 等共 ${list.length} 个` : '';
-  return `这次可以这样做：${opts.prefix ?? '已装的可执行脚本有 '}${shown.join('、')}${more}；完整路径与写法见规则全文（${env.allowedFile}）。`;
+  return `这次可以这样做：先确认这次要调用的正式入口；没有 CLI 声明的文件不能直接执行，请按该技能的调用说明选择入口或由发布者补齐声明后重装核验。${opts.prefix ?? '已装的可执行脚本有 '}${shown.join('、')}${more}；完整路径与写法见规则全文（${env.allowedFile}）。`;
 }
 
 function validateExecuteCommand(
@@ -1468,7 +1497,12 @@ function validateExecuteCommand(
   if (!path.isAbsolute(second) || second.split(/[\\/]/).includes('..') || second.includes('%') || !second.endsWith('.ts')) {
     const hits = scriptCandidates(tools, second);
     let how = installedToolsAdvice(env, tools, hits.length ? { preferred: hits, prefix: '可能是这些已装脚本：' } : undefined);
-    if (allowSuggestion && hits.length === 1) {
+    const split=allowSuggestion?quoteSplitScript(env,tools,parsed):null;
+    if(split!==null) {
+      const checked=validateExecuteCommand(env,tools,split,true);
+      if(checked.ok)how=`这次可以这样写：${split}`;
+      else if(checked.how.startsWith('这次可以这样写：'))how=checked.how;
+    } else if (allowSuggestion && parsed.syntaxRepairable !== false && hits.length === 1) {
       const rebuilt =
         ['node', quote(hits[0].file), ...parsed.words.slice(2).map(quote)].join(' ') +
         (parsed.heredoc?.closed ? ` <<'EOF'\n${parsed.heredoc.body.join('\n')}\nEOF` : '');
@@ -1538,6 +1572,7 @@ function validateExecuteCommand(
 
   const values: Record<string, string | string[]> = {};
   const booleans = new Set<string>();
+  let preservesValues = true;
   let rest = parsed.words.slice(2);
   let subcommand: string | null = null;
   if (tool.subcommands) {
@@ -1563,6 +1598,7 @@ function validateExecuteCommand(
   for (let i = 0; i < rest.length; ) {
     const word = rest[i];
     if (!word.startsWith('--') || word === '--') {
+      preservesValues = false;
       problems.push(`多出一个 ${JSON.stringify(clip(word))}（选项要写成 --名字 值）`);
       i++;
       continue;
@@ -1584,6 +1620,7 @@ function validateExecuteCommand(
       option = optionsOf.get(name) ?? null;
       if (option?.kind === 'boolean') {
         if (rest[i + 1] !== undefined && !rest[i + 1].startsWith('--')) {
+          preservesValues = false;
           problems.push(`--${name} 是开关选项，后面不要跟值 ${JSON.stringify(clip(rest[i + 1]))}`);
           i += 2;
         } else {
@@ -1612,6 +1649,7 @@ function validateExecuteCommand(
     }
 
     if (!option) {
+      preservesValues = false;
       if (!tool.optionsDeclared) {
         failureCategory = 'temporarily_unavailable';
         problems.push('缺少机读参数声明，参数类型未知；请补齐 tool-cli@2 声明，不从源码或占位符文字猜测');
@@ -1620,6 +1658,7 @@ function validateExecuteCommand(
       continue;
     }
     if (seen.has(name) && !option.multiple) {
+      preservesValues = false;
       problems.push(`--${name} 写了两次`);
       continue;
     }
@@ -1634,7 +1673,7 @@ function validateExecuteCommand(
     const bad = checkOptionValue(env, option, value, category => { failureCategory = category; });
     if (bad) {
       problems.push(bad);
-      if (option.type !== 'hub' && option.type !== 'plumb') continue;
+      if (option.type !== 'hub' && option.type !== 'plumb') { preservesValues = false; continue; }
     }
     const recorded =
       option.type === 'hub' ? env.urlPlaceholder : option.type === 'plumb' ? env.plumbUrlPlaceholder : value;
@@ -1661,6 +1700,14 @@ function validateExecuteCommand(
     return { ok: true, physicalScript };
   }
 
+  const splitArguments=allowSuggestion?quoteSplitPathArguments(tool,parsed):null;
+  let splitAdvice: string | null=null;
+  if(splitArguments!==null) {
+    const checked=validateExecuteCommand(env,tools,splitArguments,true);
+    if(checked.ok)splitAdvice=`这次可以这样写：${splitArguments}`;
+    else if(checked.how.startsWith('这次可以这样写：'))splitAdvice=checked.how;
+  }
+
   const fixed: Record<string, string | string[]> = {};
   for (const option of tool.options) if (option.name in values) fixed[option.name] = values[option.name];
   const fallbackSub = subcommand && tool.subcommands?.includes(subcommand) ? subcommand : undefined;
@@ -1680,12 +1727,13 @@ function validateExecuteCommand(
   let how = tokenBad && !tokenBad.canSuggestRewrite
     ? `这次可以这样做：没有找到 ${tool.id}${subcommand ? ` ${subcommand}` : ''} 读标准输入的声明，不猜测是否需要标准输入；请先补齐标准输入声明后按规则全文（${env.allowedFile}）重试。`
     : `这次可以这样做：请按规则全文（${env.allowedFile}）中 ${tool.id}${tool.subcommands ? `（可用子命令：${tool.subcommands.join('、')}）` : ''} 的完整写法补齐必填参数并修正值后重试。`;
-  if (allowSuggestion && tool.optionsDeclared && allRequiredProvided && (!tokenBad || tokenBad.canSuggestRewrite)) {
+  if (allowSuggestion && preservesValues && parsed.syntaxRepairable !== false && tool.optionsDeclared && allRequiredProvided && (!tokenBad || tokenBad.canSuggestRewrite)) {
     const candidate = writeCommand(env, tool, { subcommand: fallbackSub, values: fixed, booleans });
     if (validateExecuteCommand(env, tools, candidate, false).ok) {
       how = `这次可以这样写：${candidate}`;
     }
   }
+  if(splitAdvice!==null)how=splitAdvice;
   const prefix = parsed.problem && problems.includes(parsed.problem) ? '这个目录只放行技能目录里的脚本；' : '';
   return {
     ok: false,
@@ -1754,7 +1802,8 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
   const tool = String(input.tool_name);
   const args = input.tool_input as Record<string, unknown>;
   const d = env.declaration;
-  const isWrite = asList(d.files?.write).includes(tool);
+  const isWrite = tool === 'delete' || asList(d.files?.write).includes(tool);
+  const isDelete = tool === 'delete' && isWrite;
 
   const rootKind = isWrite ? d.files?.writeRoots ?? ['work'] : d.files?.readRoots ?? ['work', 'skills'];
   const roots: string[] = [];
@@ -1762,7 +1811,9 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
   if (rootKind.includes('skills') && env.skillsRootValid) roots.push(env.skills);
 
   const where = isWrite || !rootKind.includes('skills') ? '工作目录' : '工作目录或已装技能目录';
-  const how = isWrite
+  const how = isDelete
+    ? `这次可以这样做：只能删除工作目录 ${env.work} 里的文件；请用该目录内的 file_path，不删除工作目录本身或目录树。`
+    : isWrite
     ? `这次可以这样做：路径写相对工作目录的位置，只能写工作目录 ${env.work} 里面的文件。`
     : `这次可以这样做：请改用工作目录 ${env.work} 内的相对路径（当前目录写 .${rootKind.includes('skills') ? `；已装技能目录 ${env.skills} 仅只读` : ''}）。`;
 
@@ -1857,8 +1908,13 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
   }
 
   for (const p of allTargets) {
-    if (isVirtual(p)) continue;
-    const target = resolvedTarget(env, p, String(input.cwd));
+    if (!isDelete && isVirtual(p)) continue;
+    let target: string;
+    try { target = resolvedTarget(env, p, String(input.cwd)); }
+    catch (error) {
+      if(!isDelete)throw error;
+      return refuse(env,`delete 的目标 ${JSON.stringify(clip(p,100))} 无法核对为工作目录内文件（${error instanceof Error ? error.message : '路径元数据不可用'}）。`,how,'permission_denied',{path:'/tool_input/file_path', preToolUse});
+    }
     if (!isWrite && readable.includes(target)) continue;
     const owningRoot = matchRoot(target);
     if (!owningRoot) {
@@ -1866,6 +1922,9 @@ function filesDecision(env: GuardEnvironment, input: Record<string, unknown>, pr
         path: '/tool_input',
         preToolUse,
       });
+    }
+    if(isDelete && (target===env.work || existsLstat(target)&&fs.lstatSync(target).isDirectory())) {
+      return refuse(env,`delete 的目标 ${JSON.stringify(clip(p,100))} 是目录；当前只放行文件删除。`,how,'permission_denied',{path:'/tool_input/file_path', preToolUse});
     }
     if (tool === 'glob' && globRelPattern !== null) {
       globWithin(globAbsPrefix ?? target, globRelPattern, globAbsPrefix ? matchRoot(globAbsPrefix) ?? owningRoot : owningRoot);
@@ -1995,6 +2054,8 @@ export async function decideRaw(
     }
 
     const everyAllowed = Object.values(d.allow ?? {}).flat();
+    // A delete grant never bypasses its workspace-only file boundary.
+    if (tool === 'delete' && (everyAllowed.some(spec => toolMatchesSpec(spec, tool, env)) || asList(d.files?.write).includes(tool))) return filesDecision(env, input, preToolUse);
     if (everyAllowed.some((spec) => toolMatchesSpec(spec, tool, env))) return allowed(env, preToolUse);
 
     if (asList(d.files?.read).includes(tool) || asList(d.files?.write).includes(tool)) {
@@ -2024,11 +2085,11 @@ export async function decideRaw(
 
     for (const [prefix, why] of Object.entries(d.denyPrefix ?? {})) {
       if (tool.startsWith(prefix)) {
-        return refuse(env, `${tool}。${why}。`, unavailableAdvice(env), 'permission_denied', { preToolUse });
+        return refuse(env, `${tool}。${why}。`, unavailableAdvice(env,tool), 'permission_denied', { preToolUse });
       }
     }
 
-    return refuse(env, `${tool || '这个工具'} 不在这个配置放行的工具里。`, unavailableAdvice(env), 'permission_denied', {
+    return refuse(env, `${tool || '这个工具'} 不在这个配置放行的工具里。`, unavailableAdvice(env,tool), 'permission_denied', {
       preToolUse,
     });
   } catch (error) {
@@ -2079,7 +2140,7 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
 
   lines.push('', '## 本地脚本怎么写', '');
   lines.push(`一条命令一行，形式：\`node '<技能目录>/tools/<脚本>.ts' --选项 值 …\`。`, '');
-  lines.push(`- 引号与路径写法（唯一规则）：只含英文数字与 \`_./:%=@,+-\` 的路径或值可不加引号；**只要含空格（如路径中的 \`Application Support\`）、中文或 \`<\`/\`>\` 等字符，统一用英文单引号 \`'…'\` 包住**。不用英文双引号 \`"\`，不写反斜杠转义（\`\\ \`）或续行（\`\\\`），不写紧连引号 \`'a'b\`。`);
+  lines.push("- 引号与路径写法：安全 ASCII 词可不加引号；路径或值含空格、中文等字符时优先用完整英文单引号。英文双引号词也放行，但词内不得含 $、反引号或反斜杠；二者都按字面值处理。不写转义空格、续行或紧连引号。");
   lines.push(`- \`--hub\` 的值写 \`${env.urlPlaceholder}\`（客户端会展开成这个配置的 Hub 地址），写成配置里的 Hub 地址本身也行，别的主机不行。`);
   lines.push(`- \`--base-url\` 的值写 \`${env.plumbUrlPlaceholder}\`（客户端会展开成这个配置的 Plumb 地址），写成配置里的 Plumb 地址本身也行，别的主机不行。`);
   lines.push('- 选项写成 `--名字 值`，中间空格；不用 `--名字=值`（脚本和守卫都不认）。');
@@ -2094,7 +2155,8 @@ export function renderAllowed(env: GuardEnvironment, genCommand = 'node hooks/gu
     '```',
     '',
   );
-  lines.push('- 不放行：`;` `&` `|` 反引号 `$` `"` `\\` 重定向 通配符 `~` `#`、多条合并成一行、别的主机、工作目录以外路径、软链接逃逸、内部辅助库或未声明脚本。', '');
+  lines.push('- 转义空格和裸空格路径仍拒绝；能唯一恢复时给出完整单引号命令。delete 仅允许工作目录内文件，不删目录或技能文件。');
+  lines.push('- 不放行未引用的命令连接/展开符：`;` `&` `|` 反引号 `$` `\\` 重定向 通配符 `~` `#`、多条合并成一行、别的主机、工作目录以外路径、软链接逃逸、内部辅助库或未声明脚本。', '');
 
   lines.push('### 已装脚本和标准写法', '');
   const example = tools.find((tool) => tool.skill && !tool.subcommands);

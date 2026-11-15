@@ -206,14 +206,14 @@ const SUBAGENT_ASKS_NOBODY_RULE = {
   how: '这次可以这样做：能在锁定的命令树、手册、执行器规则、条目和编写简报里查到的，查了就定，并在给主代理的报告里写明定了什么、依据在哪一行；资料里确实没有的，把缺的事实和建议的处理写进报告，交回派给你任务的主代理。',
 };
 
-/** Builds the unified guard declaration data for `skills` (strict read-only sandbox) or `ops` (full workflow orchestration). */
+/** Builds the skills/ops policies; both permit workspace file deletion, while direct writes remain ops-only. */
 export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration {
   const isOps = profile === 'ops';
   return {
     version: 1,
     errorLabels: Object.fromEntries(CALL_ERROR_CATEGORY.map(code => [code, labelOf('call_error_category', code)])) as Record<(typeof CALL_ERROR_CATEGORY)[number], string>,
     about:
-      'Data for the Circle home PreToolUse guard (powered by ./guard-lib.ts). Choices live here; local skill tool options are read from each tool source and skill docs under the single-quote grammar.',
+      'Data for the Circle home PreToolUse guard (powered by ./guard-lib.ts). Choices live here; local CLI options and stdin come from explicit manifests. Literal double-quoted words are allowed without dollar, backtick or backslash characters.',
     allowReply: isOps ? 'silent' : 'explicit',
     allowLocalTools: isOps,
     hub: {
@@ -254,7 +254,7 @@ export function profileDeclaration(profile: 'skills' | 'ops'): GuardDeclaration 
         },
     files: {
       read: ['read_file', 'ls', 'glob', 'grep'],
-      write: isOps ? ['write_file', 'edit_file'] : [],
+      write: isOps ? ['write_file', 'edit_file', 'delete'] : ['delete'],
       readRoots: ['work', 'skills'],
       writeRoots: ['work'],
       virtualReadOnly: ['^/large_tool_results/[0-9a-f]{24}\\.txt$', '^/background_jobs/[A-Za-z0-9._-]{1,80}/run-[0-9]{1,6}\\.log$'],

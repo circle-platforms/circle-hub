@@ -119,7 +119,7 @@ function createGuardHarness(profile: Exclude<Profile, 'review'>, opts: { homeNam
   };
 }
 
-test('guard-offline A/D: single-quote grammar, space-in-home, 3-line fixes, and refusal on double quotes & backslashes', () => {
+test('guard-offline A/D: literal quote grammar, space-in-home, and 3-line fixes without expansion or escaped-space permission', () => {
   for (const profile of ['ops', 'skills'] as const) {
     const h = createGuardHarness(profile, { homeName: 'Application Support/circle home' });
     try {
@@ -139,9 +139,9 @@ test('guard-offline A/D: single-quote grammar, space-in-home, 3-line fixes, and 
         /--prior-plans/,
       );
 
-      // Double quotes are uniformly refused with a 3-line refusal suggesting single-quoted command.
+      // Owner T5 permits literal double-quoted words; expansions remain a separate denial.
       const dbl = h.exec(`node "${h.skillPath('case-compile', 'tools/task-brief.ts')}" --role "脚本编写" --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md`);
-      h.assertRefused3(dbl, /不支持英文双引号/, /这次可以这样写：node '.*task-brief\.ts'.*--role '脚本编写'/);
+      h.assertAllowed(dbl);
 
       // Backslash escapes, bare non-ASCII, concatenated quotes, --opt=val are all refused cleanly.
       h.assertRefused3(h.exec(`node ${tb} --role '脚本编写' --case case-01 --brief briefs/0.md --out plans/0.json --task-file tasks/0.md --note foo\\ bar`), /反斜杠/);
@@ -463,12 +463,12 @@ test('every command-form second line across all execute refusals passes replay, 
       verifyRefusalSecondLine('unique relative complete check-record', h.exec('node recompose/tools/check-record.ts --file records --run recompose-run'), true);
 
       // Fixable syntax / quoting / --hub / heredoc mistakes -> second line is a concrete command that passes replay!
-      verifyRefusalSecondLine('double quotes', h.exec(`node "${h.skillPath('case-compile', 'tools/task-brief.ts')}" --role "脚本编写" --case c1 --brief b.md --out p.json --task-file t.md`), true);
+      h.assertAllowed(h.exec(`node "${h.skillPath('case-compile', 'tools/task-brief.ts')}" --role "脚本编写" --case c1 --brief b.md --out p.json --task-file t.md`));
       verifyRefusalSecondLine('bare Chinese', h.exec(`node ${tb} --role 脚本编写 --case c1 --brief b.md --out p.json --task-file t.md`), true);
       verifyRefusalSecondLine('backslash space', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --note foo\\ bar`), true);
       verifyRefusalSecondLine('adjacent quotes', h.exec(`node ${tb} --role '脚本''编写' --case c1 --brief b.md --out p.json --task-file t.md`), true);
       verifyRefusalSecondLine('equals option', h.exec(`node ${tb} --role '脚本编写' --case=c1 --brief b.md --out p.json --task-file t.md`), true);
-      verifyRefusalSecondLine('optional invalid prior-plans', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --prior-plans ../outside.json`), true);
+      verifyRefusalSecondLine('optional invalid prior-plans', h.exec(`node ${tb} --role '脚本编写' --case c1 --brief b.md --out p.json --task-file t.md --prior-plans ../outside.json`), false);
       verifyRefusalSecondLine('wrong hub url', h.exec(`node ${fr} --hub ${ALT_HUB_URL} --run ${RUN_ID} --out r <<'EOF'\n%HUB_TOKEN%\nEOF`), true);
       verifyRefusalSecondLine('missing heredoc', h.exec(`node ${ad} --hub ${HUB_URL} --runs ${RUN_ID} --notes n.json --out dist`), true);
       verifyRefusalSecondLine('unexpected heredoc', h.exec(`node ${cr} --file records <<'EOF'\n%HUB_TOKEN%\nEOF`), true);

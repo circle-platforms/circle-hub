@@ -52,6 +52,8 @@
 
 ## 历史
 
+- 2026-11-16：T5 守卫裁定（未部署）：统一声明守卫放行不含美元符、反引号或反斜杠的静态双引号词，与单引号保持字面值语义；含上述字符仍拒绝并在能保留原值时给单引号命令。标准 ops/skills 配置允许工作目录内文件的 delete，技能目录、目录外及目录树不放行。转义空格和裸空格路径仍拒；仅按已声明入口/参数的完整字面跨度生成单引号改法并重新过守卫，不丢参数来凑放行。cd/wc/技能接口拒绝给相关工具或能力缺口，不虚构等价操作。本批不改 before_tool 协议格式；Circle 1.18 协议适配另行整合。
+
 - 2026-11-16：将客户端侧 Plumb 方案（`plumb@1.0.0`）与 Circle 1.18 适配（T4，含 B2/B7 裁定）合并至 `hub-next-7`（T1/T1b），未发布工作流包 `case-compile` 推进至 `3.21.1`（`plumb@1.0.0`、`recompose@1.2.8`、`recompose-authority` / `recompose-adjudication@1.1.12`、`template-gap@1.2.24`、`knowledge-contribution@1.3.22` 版本不变）：按 B2 删除 Circle 1.17.0 `general-purpose` 兼容提醒；按 B7 改用 Circle 1.18 自动登记的 `case-compile:compile-*` 命名代理名、移除 `tools/install-agents.{ts,test.ts,cli.json}` 与定义正文 `<技能目录>` 占位符（保留 `task-brief.ts` 实际路径注入）；为 `plumb.ts` 与 3 个 `case-compile` Plumb 工具补齐 `tool-cli@2`（`.cli.json`）声明并在 `plumb/SKILL.md` 为含空格目录加单引号；在 `scripts/real/*` 合并保留 Circle 1.18 `mcpServers`、`PreToolUse` `hookSpecificOutput`、`mcp__<key>__*`、`/large_tool_results/`、`agent_id`、`--plumb-key-stdin` 及 `tool-cli@2` 原样教法守卫，仅新增 `--base-url` 的 `'plumb'` 选项类型支持。刷新工作簿格式表、四份合成样例与包清单；此批均未发布、未部署。
 
 - 2026-11-16：T1b 在未发布候选 case-compile 3.21.0 / recompose 1.2.8 上补齐任务材料：由 sources.states 已提取的前置逐项进入任务文件，解释由结构化条目生成；材料与范围不再被历史预算截断。scope.md 仅按明确全局或完整用例标题加使用者决定标记桥接；每次派发重算，记录实际来源路径，不改已封批文件或留住已撤销的卡片记录。原始时间戳与未声明的归因标签保留，不引入别名或关键词归因。template-gap 候选升至 1.2.24，prepare-claims 增加四文件参数、零 stdin 的 tool-cli@2 声明及命令原文引号。未发布、未部署。
