@@ -307,6 +307,41 @@ class Installer:
                 raise InstallFailure(phase, 'inventory_unknown')
         return facts
 
+    def probe_gateway(self, bundle, plan, launch):
+        probe = self.online_probe
+        if probe is None:
+            path = Path(bundle) / 'install/probe.py'
+            if path.is_symlink() or not path.is_file() or sha(path) != plan['probe_sha256']:
+                raise InstallFailure(self.stage, 'probe_identity_mismatch')
+            spec = importlib.util.spec_from_file_location('_cell_install_probe', str(path))
+            module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            probe = module.probe
+        live = probe(launch['config'], self.timeout)
+        if (not isinstance(live, dict) or set(live) != {'status', 'outcome'}
+                or live['status'] not in ('ok', 'error') or not isinstance(live['outcome'], str)
+                or not re.fullmatch(r'[a-z_]+', live['outcome'])):
+            raise InstallFailure(self.stage, 'online_probe_failed')
+        if live['status'] != 'ok':
+            raise InstallFailure(self.stage, 'online_probe_failed', details={'probe': live})
+        return live
+
+    def reject_rollback_progress(self, unit):
+        directory = safe_path(self.show(unit, 'FragmentPath')).parent / (unit + '.d')
+        if directory.is_symlink():
+            raise InstallFailure(self.stage, 'dropin_directory_symlink')
+        try: directory.lstat()
+        except FileNotFoundError: return
+        if not directory.is_dir():
+            raise InstallFailure(self.stage, 'dropin_directory_invalid')
+        markers = [p for p in directory.iterdir() if p.name.startswith('.value-pick-rollback-') and p.name.endswith('.json')]
+        if markers:
+            releases = sorted({p.name[len('.value-pick-rollback-'):-5] for p in markers
+                               if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', p.name[len('.value-pick-rollback-'):-5])})
+            raise InstallFailure(self.stage, 'rollback_progress_pending', details={
+                'rollback_releases': releases,
+                'next_action': '先停止本次安装；以 root 运行本安装器 rollback --unit <原服务单元> --release <原发布名> 继续原撤回。若标记身份校验失败，保留文件交管理员核对，不要手工删除标记或换发布名绕过',
+            })
+
     def preflight(self, bundle, unit):
         self.unit(unit)
         bundle = Path(bundle)
@@ -332,6 +367,7 @@ class Installer:
             raise InstallFailure(self.stage, 'base_typed_missing_or_mismatch')
         self.stage = 'discover'
         launch = self.launch(unit)
+        self.reject_rollback_progress(unit)
         if launch['component'] is not None:
             raise InstallFailure(self.stage, 'already_wrapped')
         paths = framework_paths(launch['config'])
@@ -345,8 +381,11 @@ class Installer:
         facts = self.observe(bundle, plan, unit, launch, self.stage)
         if self.show(unit, 'ActiveState') != 'active' or self.show(unit, 'SubState') != 'running':
             raise InstallFailure(self.stage, 'service_not_running')
+        self.stage = 'preflight_probe'
+        live = self.probe_gateway(bundle, plan, launch)
+        self.stage = 'preflight'
         return {'plan': plan, 'launch': launch, 'framework': paths, 'base': base,
-                'typed': typed, 'facts': facts}
+                'typed': typed, 'facts': facts, 'online_probe': live}
 
     def guard(self, bundle, state, unit):
         if self.progress is not None: self.progress(self.stage)
@@ -435,19 +474,8 @@ class Installer:
             if set(after['tools']) != set(state['facts']['tools']) | {'case_submit_cell'}:
                 raise InstallFailure(self.stage, 'tools_changed')
             self.stage = 'online_probe'
-            probe = self.online_probe
-            if probe is None:
-                path = Path(bundle) / 'install/probe.py'
-                if path.is_symlink() or sha(path) != plan['probe_sha256']:
-                    raise InstallFailure(self.stage,'probe_identity_mismatch')
-                spec = importlib.util.spec_from_file_location('_cell_install_probe',str(path))
-                module = importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-                probe = module.probe
-            live = probe(launch['config'],self.timeout)
-            if not isinstance(live,dict) or set(live) != {'status','outcome'} or live['status'] != 'ok':
-                raise InstallFailure(self.stage,'online_probe_failed',details={'probe':live})
-            if self.progress is not None: self.progress('installed')
-            return {'ok': True, 'stage': 'installed', 'component_sha256': plan['component_sha256'],'online_probe':live}
+            live = self.probe_gateway(bundle, plan, launch)
+            answer = {'ok': True, 'stage': 'installed', 'component_sha256': plan['component_sha256'], 'online_probe': live}
         except BaseException as error:
             failed = self.stage
             restored = None
@@ -458,6 +486,11 @@ class Installer:
                                 'restored':False,'resume_available':True,'reason':'interrupted'}
             reason = error.reason if isinstance(error, InstallFailure) else 'interrupted' if isinstance(error, (InstallationInterrupted, KeyboardInterrupt)) else 'connection_lost' if isinstance(error,BrokenPipeError) else 'operation_failed'
             raise InstallFailure(failed, reason, restored, error.details if isinstance(error, InstallFailure) else None) from None
+        # All installation checks succeeded. A final receipt failure cannot undo this healthy installation.
+        if self.progress is not None:
+            try: self.progress('installed')
+            except BaseException: answer['receipt_warning'] = 'installed_receipt_unavailable'
+        return answer
 
     def rollback(self, unit, release=None):
         # Persist only ownership hashes and progress, never configuration or discovered paths.

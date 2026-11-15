@@ -447,13 +447,13 @@ assert not f.drop.exists() and not any(a[1]=='restart' for a,t in f.calls)
 test('failed online postcheck rolls back instead of trusting static tools',()=>check(`
 seen=[]
 def offline(config,timeout):
- seen.append((config,timeout));return {'status':'error','outcome':'connection_or_response_failed'}
+ seen.append((config,timeout));return {'status':'ok','outcome':'authentication_required'} if len(seen)==1 else {'status':'error','outcome':'connection_or_response_failed'}
 f.engine.online_probe=offline
 try:f.engine.install(f.bundle,f.unit);raise AssertionError('must fail')
 except m.InstallFailure as e:
  assert e.stage=='online_probe' and e.reason=='online_probe_failed' and e.rollback['ok']
  assert e.details['probe']['outcome']=='connection_or_response_failed'
-assert len(seen)==1 and seen[0][0]==f.config and not f.drop.exists()
+assert len(seen)==2 and all(config==f.config for config,timeout in seen) and not f.drop.exists()
 `));
 
 test('request clock drift has a distinct failure without weakening inventory equality',()=>check(`
@@ -512,4 +512,61 @@ except m.InstallFailure as e:
  assert e.rollback['removed'] is None and f.drop.exists()
 f.engine.rollback=original
 assert f.engine.rollback(f.unit)['ok'] and not f.drop.exists()
+`));
+
+
+// Boss15:13 future-candidate follow-ups. UNRUN while the shared full-test.lock is active.
+test('a final installed progress receipt failure retains the already verified healthy installation',()=>check(`
+rollbacks=[];original=f.engine.rollback
+def watched(*args):rollbacks.append(args);return original(*args)
+def lost_final(phase):
+ if phase=='installed':raise BrokenPipeError('SYNTHETIC_PRIVATE_CONFIG_VALUE')
+f.engine.rollback=watched;f.engine.progress=lost_final
+answer=f.engine.install(f.bundle,f.unit)
+assert answer['ok'] and answer['stage']=='installed' and answer['receipt_warning']=='installed_receipt_unavailable'
+assert f.drop.exists() and rollbacks==[] and f.active=='active' and f.sub=='running'
+assert len([a for a,t in f.calls if a[1]=='restart'])==1
+assert str(f.root) not in json.dumps(answer) and 'SYNTHETIC_PRIVATE_CONFIG_VALUE' not in json.dumps(answer)
+`));
+
+test('preflight rejects rollback progress from an older release with actionable recovery guidance before any write',()=>check(`
+f.parent.mkdir();marker=f.parent/'.value-pick-rollback-older-release.json';marker.write_text('SYNTHETIC DO NOT PARSE OR DELETE')
+before={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+try:f.engine.preflight(f.bundle,f.unit);raise AssertionError('must refuse pending rollback')
+except m.InstallFailure as e:
+ assert e.reason=='rollback_progress_pending' and e.details['rollback_releases']==['older-release']
+ assert 'rollback --unit' in e.details['next_action'] and '--release' in e.details['next_action'] and 'root' in e.details['next_action']
+ assert str(f.root) not in json.dumps(e.report())
+assert before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+assert not f.version.exists() and not f.drop.exists()
+assert all(a[1]=='show' for a,t in f.calls)
+`));
+
+test('preflight probe failure rejects installation before copying exporting activating or restarting',()=>check(`
+for outcome in ['listen_config_unavailable','connection_or_response_failed','timeout']:
+ seen=[]
+ def failed(config,timeout):seen.append((config,timeout));return {'status':'error','outcome':outcome}
+ f.engine.online_probe=failed
+ before={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+ try:f.engine.install(f.bundle,f.unit);raise AssertionError('must refuse failed original gateway probe')
+ except m.InstallFailure as e:
+  assert e.stage=='preflight_probe' and e.reason=='online_probe_failed' and e.rollback is None
+  assert e.details['probe']=={'status':'error','outcome':outcome}
+  assert str(f.root) not in json.dumps(e.report())
+ assert len(seen)==1 and seen[0][0]==f.config
+ assert before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+ assert not f.version.exists() and not f.parent.exists()
+`));
+
+test('the original gateway and installed gateway share the same credential-free probe interface',()=>check(`
+seen=[]
+def healthy(config,timeout):seen.append((config,timeout));return {'status':'ok','outcome':'authentication_required'}
+f.engine.online_probe=healthy
+state=f.engine.preflight(f.bundle,f.unit)
+assert state['online_probe']=={'status':'ok','outcome':'authentication_required'} and len(seen)==1
+assert not f.version.exists() and not f.drop.exists()
+answer=f.engine.install(f.bundle,f.unit)
+assert answer['ok'] and len(seen)==3
+assert all(config==f.config and timeout==f.engine.timeout for config,timeout in seen)
+assert answer['online_probe']==state['online_probe']
 `));
