@@ -16,7 +16,7 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
   const records = await openRecords({ ...c.kit.config, database: c.kit.database }, { migrate: false, maxConnections: 1, keyProvider: c.kit.keyProvider, now: c.now });
   t.after(() => records.close());
   assert.ok(records.poolStats, 'the real fixture exposes pool statistics');
-  assert.equal(records.poolStats().limit, 1, 'the permission and intent kit really has one connection');
+  assert.equal(records.poolStats().limit, 2, 'the records kit has one main and one independent observation connection');
   // Keep the real observation advisory lock on a separate session: it lives for the whole job, not just its intent TX.
   records.store.tryHold=c.kit.store.tryHold.bind(c.kit.store);
   const scope = new AsyncLocalStorage<Transaction>();
@@ -26,6 +26,9 @@ for (const mode of ['assigned', 'revoked', 'broken-port'] as const) test(`single
   const originalQuery = Database.prototype.query;
   Database.prototype.query = function<R extends Row = Row>(this: Database, text: string, values: readonly unknown[] = [], tx?: Transaction): Promise<QueryResult<R>> {
     const held = scope.getStore();
+    if (held && tx === held && this.pool.options.database === c.kit.database.database) {
+      assert.equal(this.pool.options.max, 1, 'the actual pool serving this transaction must have exactly one connection');
+    }
     if (held && this.pool.options.max === 1 && this.pool.options.database === c.kit.database.database && tx !== held) {
       reborrows++;
       // Refuse the second lease deterministically instead of waiting for a pool timeout to imply a deadlock.

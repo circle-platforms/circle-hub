@@ -186,9 +186,9 @@ export class DispatchService {
   /** One cheap append watermark before listening; a new reservation is not mistaken for abandoned startup work. */
   async initializeRecovery():Promise<void>{
     await(this.#recoveryInit??=(async()=>{
-      try{this.#bootWatermark=await this.options.records.store.watermark?.()??null;}
-      catch{this.#bootWatermark=null;}
-    })());
+      if(!this.options.records.store.watermark)throw new Error('无法取得启动记录边界，尚不能安全恢复派发');
+      this.#bootWatermark=await this.options.records.store.watermark();
+    })().catch(error=>{this.#recoveryInit=null;throw error;}));
   }
   /** Startup and maintenance share this scanner; remote observation never holds the run-maintenance pass open. */
   async recoverPending():Promise<void>{
@@ -323,6 +323,16 @@ export class DispatchService {
         const response=await this.retryRead(binding,client,'query',context,Infinity);
         const decision=recoveryQuery(binding,intent,d,response.value);
         if(decision.missing.length){await this.recoveryUnknown(binding,decision.missing.join('；'),[response.source]);return;}
+        if(!decision.notExecuted&&!cached.heartbeatRejected&&(cached.heartbeatAt===null||performance.now()-cached.heartbeatAt>=((cached.confirmed?.ttl??cached.lease.ttl)/3))){
+            cached.heartbeatAt=performance.now();
+            if(!client.hasTool('heartbeat')){cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订续约工具不可用；仍继续读取原任务，不重新申请'});}
+            else try{
+              const started={at:this.now().getTime(),mono:performance.now()};
+              const heartbeat=await this.read(binding,client,'heartbeat',context),ttl=Number(at(heartbeat.value,d.lease.ttl_ms))*d.lease.ttl_scale_ms;
+              if(mapped(d.lease.map,at(heartbeat.value,d.lease.acceptance))!=='accepted'||!same(at(heartbeat.value,d.lease.id),cached.lease.id)||!same(at(heartbeat.value,d.lease.token),cached.lease.token)||!Number.isFinite(ttl)||ttl<3){cached.heartbeatRejected=true;throw new Error('原预订未获确认');}
+              cached.confirmed={...started,ttl};
+            }catch(error){if(signal.aborted)return;if(error instanceof ToolReplyError)cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订已过期、被拒绝或续约回答未取得；继续读原任务，不重新申请'});}
+          }
         if(decision.pending){
           await this.journal.append(binding,'query_pending','read','completed',{recovery:true,missing_fact:'原请求仍在处理中，尚无启动或未执行的明确事实',next_action:'继续查询同一请求，不重交'},[response.source]);
         }else if(decision.notExecuted){
@@ -342,16 +352,6 @@ export class DispatchService {
           const prior=receiptOf(current.tail);
           if(prior&&!same(prior.body.detail.remote_id,decision.remoteId)){await this.recoveryUnknown(binding,'原请求查回的任务身份与已保存回执不符',[response.source]);return;}
           if(!prior||isFrozen(current.tail))await this.answerRequests(binding,'reconciled','read_back','completed',{remote_id:decision.remoteId,acceptance:'accepted',outcome:'issued',reconciled:true,unfreeze:true,recovery:true},[response.source],openRequests(current.tail).map(event=>'rec:'+event.digest));
-          if(!cached.heartbeatRejected&&(cached.heartbeatAt===null||this.now().getTime()-cached.heartbeatAt>=((cached.confirmed?.ttl??delay)*1/3))){
-            cached.heartbeatAt=this.now().getTime();
-            if(!client.hasTool('heartbeat')){cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订续约工具不可用；仍继续读取原任务，不重新申请'});}
-            else try{
-              const started={at:this.now().getTime(),mono:performance.now()};
-              const heartbeat=await this.read(binding,client,'heartbeat',context),ttl=Number(at(heartbeat.value,d.lease.ttl_ms))*d.lease.ttl_scale_ms;
-              if(mapped(d.lease.map,at(heartbeat.value,d.lease.acceptance))!=='accepted'||!same(at(heartbeat.value,d.lease.id),cached.lease.id)||!same(at(heartbeat.value,d.lease.token),cached.lease.token)||!Number.isFinite(ttl)||ttl<3){cached.heartbeatRejected=true;throw new Error('原预订未获确认');}
-              cached.confirmed={...started,ttl};
-            }catch(error){if(signal.aborted)return;if(error instanceof ToolReplyError)cached.heartbeatRejected=true;await this.journal.append(binding,'heartbeat','lease','error',{op:'extend' satisfies LeaseOp,lease_interrupted:true,missing_fact:'原预订已过期、被拒绝或续约回答未取得；继续读原任务，不重新申请'});}
-          }
           let drift=true;try{drift=!this.sameFences(detail.fences as unknown as HolderSnapshot[],await this.options.leases.holderSnapshot(binding.resources));}catch{}
           const confirmed=cached.confirmed,continuous=!cached.heartbeatRejected&&!!confirmed&&Math.max(this.now().getTime()-confirmed.at,performance.now()-confirmed.mono,0)<confirmed.ttl;
           const previous=projectedResult(await this.journal.events(job))?.body.detail.execution_integrity;
@@ -660,6 +660,10 @@ export class DispatchService {
    * judged错误, discloses expectation/actual per the registry, and never claims「已记下」without an admin-visible record.
    */
   async dispatchAccepted(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; member_missing_facts?:Array<{fact:string;next_action:string}>; call_error_category?:CallErrorCategory|null; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
+    if(this.#shutdown.signal.aborted)throw new Error('服务正在停止，不接受新的派发');
+    return this.operation(this.dispatchAcceptedTracked(run,onReserved));
+  }
+  private async dispatchAcceptedTracked(run: string, onReserved?: (job: string, executor: string) => void): Promise<{ started: boolean; executor?: string; status?: JobStatus; reason?: string; member_missing_facts?:Array<{fact:string;next_action:string}>; call_error_category?:CallErrorCategory|null; checks?: ReleaseCheck[]; error_code?:BoundaryFailure['code']; outcome?:EffectOutcome }> {
     const admin = (await this.options.records.principals.list()).find((p) => isAdmin(p) && !p.disabled);
     if (!admin) return { started: false, reason: '没有在职管理员负责作业未知结果的处置，Hub 不自动派发；等管理员开通账号' };
     const detail = await this.options.runs.getRun(admin, run);
