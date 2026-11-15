@@ -369,7 +369,8 @@ test('withEscalatedFix preserves error facts and identifies the recommendation c
     { code: 'SOURCE_ABSENT', message: 'Hub 里没有名为「toy」的工作流或技能', fix: '请核对名称' },
     parts,
   );
-  assert.equal(error.warrant, REFUSAL_ESCALATION_WARRANT);
+  assert.equal(error.recommendation_warrant, REFUSAL_ESCALATION_WARRANT);
+  assert.equal(error.warrant, undefined);
   assert.equal(error.code, 'SOURCE_ABSENT');
   assert.equal(error.message, 'Hub 里没有名为「toy」的工作流或技能');
   assert.ok(error.fix?.startsWith('请核对名称。'));
@@ -385,24 +386,29 @@ test('fixByRole keeps an admin fix that already carries the D5 escalation suffix
   assert.equal(fixByRole('SOURCE_NOT_PERMITTED', 'admin', escalated), escalated);
 });
 
-test('escalation recognition uses the explicit component warrant and survives protocol serialization', () => {
+test('escalation recognition uses the independent recommendation warrant and survives protocol serialization', () => {
   const original = { code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成输入事实', fix: '合成修正步骤', path: '/pack' };
   const first = withEscalatedFix(original, buildEscalation({ occurrence: 1, exampleJson: null, category: '参数无效' }));
   assert.equal(first, original);
   assert.equal(isEscalatedError(first), false);
   const second = withEscalatedFix(original, buildEscalation({ occurrence: 2, exampleJson: null, category: '参数无效' }));
-  assert.equal(second.warrant, REFUSAL_ESCALATION_WARRANT);
+  assert.equal(second.recommendation_warrant, REFUSAL_ESCALATION_WARRANT);
+  assert.equal(second.warrant, undefined);
   const parsed = ProtocolError.parse(JSON.parse(JSON.stringify(second)));
   assert.equal(isEscalatedError(parsed), true);
   assert.equal(isEscalatedError({ ...original, message: '这是一小时内第 3 次同样的错误', fix: '这是一小时内第 9 次参数无效' }), false);
-  assert.equal(isEscalatedError({ ...original, warrant: REFUSAL_ESCALATION_WARRANT + '.other' }), false);
+  assert.equal(isEscalatedError({ ...original, recommendation_warrant: REFUSAL_ESCALATION_WARRANT + '.other' }), false);
+  assert.equal(isEscalatedError({ ...original, warrant: REFUSAL_ESCALATION_WARRANT }), false);
   assert.equal(withEscalatedFix(parsed, buildEscalation({ occurrence: 3, exampleJson: null, category: '参数无效' })), parsed);
 });
 
-test('a source warrant is retained when the existing protocol cannot carry a second component warrant', () => {
+test('the source warrant is retained independently when its recommendation is escalated', () => {
   const original = { code: 'SUBMISSION_SCHEMA_VIOLATION', message: '合成输入事实', fix: '合成修正步骤', path: '/pack', warrant: 'synthetic-source@1' };
   const answer = withEscalatedFix(original, buildEscalation({ occurrence: 2, exampleJson: null, category: '参数无效' }));
-  assert.equal(answer, original);
+  assert.notEqual(answer, original);
+  assert.equal(answer.recommendation_warrant, REFUSAL_ESCALATION_WARRANT);
   assert.equal(answer.warrant, 'synthetic-source@1');
-  assert.equal(isEscalatedError(answer), false);
+  assert.equal(isEscalatedError(answer), true);
+  assert.equal(ProtocolError.parse(JSON.parse(JSON.stringify(answer))).warrant, original.warrant);
+  assert.equal(Object.hasOwn(original, 'recommendation_warrant'), false);
 });

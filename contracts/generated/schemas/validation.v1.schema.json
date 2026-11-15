@@ -109,6 +109,11 @@
           "fix": {
             "type": "string"
           },
+          "recommendation_warrant": {
+            "description": "the versioned component deciding this recommendation, independent of the error claim warrant",
+            "type": "string",
+            "minLength": 1
+          },
           "path": {
             "description": "JSON Pointer into the call arguments; for submit_result, into the submission",
             "type": "string",
