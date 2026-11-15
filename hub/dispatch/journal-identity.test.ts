@@ -24,8 +24,8 @@ for(const identityChange of ['epoch','subject','since','missing'] as const) {
     const c=await setupJournal({lost:true,absent:true,identityChange});t.after(()=>c.close());
     const state=await c.service.dispatch(c.admin,c.run,c.executor.id);
     assert.equal(state.outcome,'unknown');assert.equal(state.frozen,true);
-    if(identityChange==='since'){assert.match(state.missing_fact!,/查空不证明未执行/);assert.match(state.next_action!,/不得重交/);}
-    else {assert.match(state.missing_fact!,/日志|主体/);assert.match(state.next_action!,/人工核对原投递事实/);}
+    assert.match(state.missing_fact!,/日志|主体/);assert.match(state.next_action!,/人工核对原投递事实/);
+    assert.match(state.next_action!,/不得重交/);
     await c.service.resume(c.admin,state.job);assert.equal(c.calls.filter(n=>n==='send_blob').length,1);
   });
 }

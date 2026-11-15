@@ -249,7 +249,7 @@ export class DispatchService {
   private async recoveryUnknown(binding:JobBinding,reason:string,sources:string[]=[]):Promise<void>{
     const current=currentDispatch(await this.journal.events(binding.job));
     if(openRequests(current.tail).some(event=>event.body.detail.missing_fact===reason))return;
-    await this.unknown(binding,reason,sources,{recovery:true,next_action:'恢复原身份和只读通道后，继续读取同一作业；不要重新提交尚未证明结局的请求'});
+    await this.unknown(binding,reason,sources,{recovery:true,next_action:'请管理员人工核对原投递事实和缺失项，恢复原身份及只读通道后继续读取同一作业；不得重交尚未证明结局的请求'});
   }
   /** The first committed, protocol-valid complete report of this intent is immutable evidence, not a new remote read. */
   private async capturedRecoveryResult(binding:JobBinding,intent:Event,d:ExecutorDefinition,remoteId:unknown):Promise<Exchange|undefined>{

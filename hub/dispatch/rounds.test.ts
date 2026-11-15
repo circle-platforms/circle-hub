@@ -169,7 +169,8 @@ test('an uncertified result ownership premise makes every round no_verdict', { t
 });
 
 test('resume reconciles the started round and a new dispatch continues at the next one', { timeout: 60000 }, async t => {
-  const c = await setup(); t.after(() => c.close());
+  const {setupJournal}=await import('./testing/journal.ts');
+  const c = await setupJournal(); t.after(() => c.close());
   install(c, policy(3, 'all'));
   const child = spawn(process.execPath, [fileURLToPath(new URL('./testing/worker.ts', import.meta.url))], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] });
   let output = ''; child.stdout!.on('data', chunk => { output += chunk; });
