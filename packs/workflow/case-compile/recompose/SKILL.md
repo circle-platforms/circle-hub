@@ -7,7 +7,7 @@ description: 把原始用例整理成重组后的用例，保留原意、原句�
 
 原始用例经过用例重组，得到重组后的用例，再交给脚本编写。这里搬运原文，不创作内容。Hub 已按脑图位置读出原始用例的意图、动作和期望，不调用模型。
 
-本地工具在客户端给出的 `<技能目录>`。命令与文件仅写工作目录相对路径（禁 `/tmp` 等外部目录）；`execute` 只运行单行 `node <技能目录>/tools/<脚本>.ts --选项 值`（空格隔开）。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端执行时展开；需令牌的工具不在命令行或文件写令牌，只在命令末尾接三行标准输入 `<<'EOF'` / `%HUB_TOKEN%` / `EOF`。
+本地工具在客户端给出的 `<技能目录>`。命令与文件仅写工作目录相对路径（禁 `/tmp` 等外部目录）；`execute` 只运行单行 `node '<技能目录>/tools/<脚本>.ts' --选项 '值'`（空格隔开）。`%HUB_URL%` 与 `%HUB_TOKEN%` 由客户端执行时展开；需令牌的工具不在命令行或文件写令牌，只在命令末尾接三行标准输入 `<<'EOF'` / `%HUB_TOKEN%` / `EOF`。
 
 每条原始用例只写一句结论，带 ID 加标题、结论、状态和判断。状态只用未确认、已确认、未知，模型的判断是未确认；判断只用正确或错误，未知不替它写判断。错误或未知才写原因和下一步。原因用缺资料、原始用例的问题、编写模型的问题、临时故障、设备的问题或还没查清。证据和决定者放最后；决定者用程序、模型、使用者。工具参数与内部引用留在机器可读部分。
 
@@ -25,7 +25,7 @@ parameters.scope: {"words":"<范围原话>","cases":["<autoid>",...]}（可选�
 ```
 
 ```sh
-node <技能目录>/tools/download-run.ts --hub %HUB_URL% --run <用例重组编号> --out <新目录> <<'EOF'
+node '<技能目录>/tools/download-run.ts' --hub %HUB_URL% --run '<用例重组编号>' --out '<新目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
 ```
@@ -82,9 +82,9 @@ unknowns: missing 写原始用例与手册不一致；next_action 写作者或�
 
 ```sh
 # 提交前先离线自检 UTF-8/JSON 语法、单一精简格式与 item 唯一/完整性（支持单文件或目录，不接触 Hub）
-node <技能目录>/tools/check-record.ts --file <重组后的用例目录> [--run <下载运行目录>]
+node '<技能目录>/tools/check-record.ts' --file '<重组后的用例目录>' [--run '<下载运行目录>']
 # 注意：命令行与 <<'EOF' 必须在同一行（空格隔开，切勿在 <<'EOF' 前换行）
-node <技能目录>/tools/submit-records.ts --hub %HUB_URL% --run <用例重组编号> --model <模型> --records <重组后的用例目录> <<'EOF'
+node '<技能目录>/tools/submit-records.ts' --hub %HUB_URL% --run '<用例重组编号>' --model '<模型>' --records '<重组后的用例目录>' <<'EOF'
 %HUB_TOKEN%
 EOF
 ```
