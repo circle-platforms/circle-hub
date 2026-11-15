@@ -13,7 +13,7 @@ import ast
 ast.parse(Path(sys.argv[1]).read_text(),feature_version=(3,8))
 class Fixture:
  def __init__(self,fail=None):
-  self.root=Path(tempfile.mkdtemp(prefix='synthetic-cell-install-'));self.fail=fail;self.failed=False;self.calls=[];self.requests=[];self.now=0;self.sleeps=0;self.pid=42;self.restarts=0;self.on_sleep=None;self.reset_restart_counter=False;self.active='active';self.sub='running';self.loaded=[];self.chowns=[]
+  self.root=Path(tempfile.mkdtemp(prefix='synthetic-cell-install-'));self.fail=fail;self.failed=False;self.calls=[];self.requests=[];self.now=0;self.sleeps=0;self.pid=42;self.restarts=0;self.on_sleep=None;self.reset_restart_counter=False;self.python_version_response='[3,12,13]';self.python_version_fails=False;self.active='active';self.sub='running';self.loaded=[];self.chowns=[]
   self.unit='synthetic.service';self.gateway=self.root/'release/gateway-source';self.gateway.mkdir(parents=True)
   self.framework=self.root/'framework';(self.framework/'lib').mkdir(parents=True)
   (self.framework/'lib/excel_contract.json').write_text(json.dumps({'objects':[{'e':'SYNTHETIC','status':'enabled'}]}))
@@ -49,6 +49,11 @@ class Fixture:
   return {'schema':'value-pick-observation@1','component_state':state,'verified':True,'jobs':0,'leased':False,'bed_busy':False,'version':'0.4.7','tools':tools,'task_inventory_sha256':'b'*64,'request_records_sha256':'c'*64,'request_clock_sha256':'d'*64,'diagnostics':['request_clock_included']}
  def run(self,argv,timeout=30,input=None):
   self.calls.append((list(argv),timeout))
+  if len(argv)==4 and argv[1:3]==['-I','-c']:
+   assert argv[0]==sys.executable and 'sys.version_info' in argv[3]
+   assert 'gateway' not in argv[3] and 'cell_runtime' not in argv[3] and '--config' not in argv
+   if self.python_version_fails:raise m.InstallFailure('command','synthetic_version_command_failed')
+   return self.python_version_response
   if argv[0]==self.engine.systemctl:
    if argv[1]=='show':
     key=argv[3].split('=',1)[1]
@@ -539,7 +544,7 @@ except m.InstallFailure as e:
  assert str(f.root) not in json.dumps(e.report())
 assert before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
 assert not f.version.exists() and not f.drop.exists()
-assert all(a[1]=='show' for a,t in f.calls)
+assert all(a[1]=='show' or a[1:3]==['-I','-c'] for a,t in f.calls)
 `));
 
 test('preflight probe failure rejects installation before copying exporting activating or restarting',()=>check(`
@@ -569,4 +574,45 @@ answer=f.engine.install(f.bundle,f.unit)
 assert answer['ok'] and len(seen)==3
 assert all(config==f.config and timeout==f.engine.timeout for config,timeout in seen)
 assert answer['online_probe']==state['online_probe']
+`));
+
+
+// Boss15:50 explicitly requires the discovered service interpreter floor; no gateway code is executed.
+test('preflight refuses discovered Python 3.9 and 3.10 before any copy export or activation',()=>check(`
+for version in [[3,9,21],[3,10,16]]:
+ f.python_version_response=json.dumps(version)
+ before={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+ try:f.engine.preflight(f.bundle,f.unit);raise AssertionError('must reject a service Python below 3.11')
+ except m.InstallFailure as e:
+  assert e.reason=='gateway_python_too_old' and '低于 Python 3.11' in e.report()['message']
+  assert str(f.root) not in json.dumps(e.report(),ensure_ascii=False) and 'Traceback' not in json.dumps(e.report())
+ assert before=={str(p.relative_to(f.root)):p.read_bytes() for p in f.root.rglob('*') if p.is_file()}
+ assert not f.version.exists() and not f.drop.exists()
+ assert not any('export-contract' in a or 'export-hub-contract' in a or a[1] in ['restart','daemon-reload'] for a,t in f.calls)
+`));
+
+test('preflight accepts discovered Python 3.11 and 3.12 using isolated version metadata only',()=>check(`
+for version in [[3,11,15],[3,12,13]]:
+ f.python_version_response=json.dumps(version);f.calls.clear()
+ state=f.engine.preflight(f.bundle,f.unit)
+ assert state['facts']['jobs']==0 and not f.version.exists()
+ metadata=[a for a,t in f.calls if a[1:3]==['-I','-c']]
+ assert len(metadata)==1 and metadata[0][0]==sys.executable
+ assert 'sys.version_info' in metadata[0][3] and str(f.config) not in metadata[0][3]
+`));
+
+test('malformed or unavailable service interpreter metadata yields a clear safe Chinese refusal',()=>check(`
+for response in ['SYNTHETIC_PRIVATE_CONFIG_VALUE','[3,12]','["3",12,13]','[3,12,true]','{"version":[3,12,13]}']:
+ f.python_version_response=response
+ try:f.engine.preflight(f.bundle,f.unit);raise AssertionError('must refuse unknown version metadata')
+ except m.InstallFailure as e:
+  text=json.dumps(e.report(),ensure_ascii=False)
+  assert e.reason=='gateway_python_version_unavailable' and '无法确认' in e.report()['message'] and 'Python 3.11' in e.report()['message']
+  assert 'SYNTHETIC_PRIVATE_CONFIG_VALUE' not in text and str(f.root) not in text and 'Traceback' not in text
+ assert not f.version.exists() and not f.drop.exists()
+f.python_version_fails=True
+try:f.engine.preflight(f.bundle,f.unit);raise AssertionError('must refuse failed version command')
+except m.InstallFailure as e:
+ assert e.reason=='gateway_python_version_unavailable' and '无法确认' in e.report()['message']
+ assert e.stage=='preflight_python' and e.rollback is None
 `));
