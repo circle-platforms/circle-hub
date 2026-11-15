@@ -38,6 +38,7 @@ export class RpcClient {
   readonly #now: () => Date;
   serverVersion: string | null = null;
   #schemas = new Map<string,Record<string,unknown>>();
+  readonly #reads = new Set<Promise<unknown>>();
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
@@ -66,7 +67,20 @@ export class RpcClient {
     };
     const own=scrub(text,0);return this.#redactor?.maskText(own)??own;
   }
-  async connect(): Promise<void> {
+  private trackRead<T>(run: () => Promise<T>): Promise<T> {
+    const pending = Promise.resolve().then(run);
+    this.#reads.add(pending);
+    pending.then(() => this.#reads.delete(pending), () => this.#reads.delete(pending));
+    return pending;
+  }
+  /** The parent stops scheduling first; wait for all admitted reads, including failed reads and their storage commits. */
+  async drainReads(): Promise<void> {
+    while (this.#reads.size) await Promise.allSettled([...this.#reads]);
+  }
+  connect(): Promise<void> {
+    return this.trackRead(() => this.connectRead());
+  }
+  private async connectRead(): Promise<void> {
     const init = await this.rpc('initialize', { protocolVersion: this.#protocol, capabilities: {}, clientInfo: { name: 'circle-hub', version: '1.0.0' } }, false, 30000, 'initialize', this.#signal);
     if (typeof init.value.protocolVersion !== 'string' || !SUPPORTED_PROTOCOL_VERSIONS.includes(init.value.protocolVersion)) throw new Error('目标协议版本不可用');
     this.serverVersion = object(init.value.serverInfo) && typeof init.value.serverInfo.version === 'string' ? init.value.serverInfo.version : null;
@@ -118,19 +132,28 @@ export class RpcClient {
     catch{throw new InvocationDefinitionError();}
     return args;
   }
-  async call(role: CallRole, context: Readonly<Record<string, unknown>>, timeoutMs?:number): Promise<Exchange> {
+  call(role: CallRole, context: Readonly<Record<string, unknown>>, timeoutMs?:number): Promise<Exchange> {
+    return role === 'submit' ? this.callRole(role, context, timeoutMs) : this.trackRead(() => this.callRole(role, context, timeoutMs));
+  }
+  private async callRole(role: CallRole, context: Readonly<Record<string, unknown>>, timeoutMs?:number): Promise<Exchange> {
     if (this.#recovery && role !== 'query' && role !== 'status' && role !== 'result' && role !== 'heartbeat' && role !== 'release') this.requireNormalMode();
     const declaration = this.definition.calls[role];
     if (!declaration) throw new Error('该生命周期调用未登记；请补齐定义');
     return this.invoke(declaration, context, role, timeoutMs ?? (role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms), role === 'query' || role === 'status' || role === 'result' || role === 'precheck');
   }
-  async precheckRead(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
+  precheckRead(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
+    return this.trackRead(() => this.precheckReadIo(index, context));
+  }
+  private async precheckReadIo(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
     this.requireNormalMode();
     const declaration = this.definition.precheck_reads[index];
     if (!declaration) throw new Error('只读核对没有登记');
     return this.invoke(declaration, context, `precheck.${index + 1}`, declaration.timeout_ms, true);
   }
-  async declaredRead(declaration: NonNullable<ExecutorDefinition['probes']>['call'], context: Readonly<Record<string,unknown>>, operation: string): Promise<Exchange> {
+  declaredRead(declaration: NonNullable<ExecutorDefinition['probes']>['call'], context: Readonly<Record<string,unknown>>, operation: string): Promise<Exchange> {
+    return this.trackRead(() => this.declaredReadIo(declaration, context, operation));
+  }
+  private async declaredReadIo(declaration: NonNullable<ExecutorDefinition['probes']>['call'], context: Readonly<Record<string,unknown>>, operation: string): Promise<Exchange> {
     this.requireNormalMode();
     return this.invoke(declaration,context,operation,declaration.timeout_ms, true);
   }
