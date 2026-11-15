@@ -75,7 +75,7 @@ node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --source-sha "
 node scripts/real/replay-circle.ts compare --bundle "$BUNDLE_DIR" --source-sha "$SOURCE_SHA" --circle-app "$CIRCLE_APP" --candidate-guard "$GUARD_LIB" --out "$CANDIDATE_DIR" --survey
 ```
 
-候选文件替换新守卫文件集里的守卫库；11-15 14:40:08 之前的 41 个决定由旧守卫文件作出，候选不适用，仍运行它们自己的文件，报告里算 `reference`。
+候选文件默认替换新守卫文件集里的守卫库（家目录下的 `hooks/guard-lib.ts`）；候选是入口脚本时，用 `--replace` 指定入口的相对路径。11-15 14:40:08 之前的 41 个决定由旧守卫文件作出，候选不适用，仍运行它们自己的文件，报告里算 `reference`。
 
 ### 边界
 

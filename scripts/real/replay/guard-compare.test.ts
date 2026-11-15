@@ -107,6 +107,34 @@ test('a difference found after the guard read outside its sandbox is not a misma
     f.close();
   }
 });
+test('the candidate can replace any file of the context, chosen when the comparison is started', installed, async () => {
+  const f = parallelFixture(app);
+  try {
+    const entry = "import { decide } from './lib.mjs';let raw='';for await(const c of process.stdin)raw+=c;process.stdout.write(JSON.stringify(decide(JSON.parse(raw))));";
+    const lib = "export const decide = p => p.tool_input.command === 'NEVER_EXECUTE_ME' ? { decision: 'deny', reason: 'synthetic refusal' } : {};";
+    const { bundle, file } = guarded(f, 's0', b => ({ schema: 'circle-replay-guard-context@1', sets: { g: { 'guard.mjs': entry, 'lib.mjs': lib } }, cases: parallelCases(b) }), lib);
+    const same = await compareReplay({ bundle, app: f.app, guard: file, replace: 'lib.mjs', out: join(f.dir, 'same') });
+    assert.equal(same.exit, 0, JSON.stringify(same));
+    assert.deepEqual(same.roles, { candidate: { match: 5, mismatch: 0, unknown: 0 } });
+    const cli: string[] = [];
+    assert.equal(await main(['compare', '--bundle', bundle, '--circle-app', f.app, '--candidate-guard', file!, '--replace', 'lib.mjs', '--out', join(f.dir, 'cli')], line => cli.push(line)), 0);
+    // the same file replaces the entry when nothing is chosen: a library prints nothing, so it has no opinion and only the recorded refusal differs
+    const asEntry = await compareReplay({ bundle, app: f.app, guard: file, out: join(f.dir, 'as-entry'), survey: true });
+    assert.deepEqual([asEntry.exit, asEntry.matched, asEntry.mismatched], [1, 4, 1]);
+    // a library that refuses everything differs on every call
+    writeFileSync(file!, "export const decide = () => ({ decision: 'deny', reason: 'changed' });");
+    const changed = await compareReplay({ bundle, app: f.app, guard: file, replace: 'lib.mjs', out: join(f.dir, 'changed'), survey: true });
+    assert.deepEqual([changed.exit, changed.mismatched, changed.matched], [1, 5, 0]);
+    // a name that is no file of the context is refused before anything runs; a replacement needs a candidate
+    const missing = await compareReplay({ bundle, app: f.app, guard: file, replace: 'nowhere.mjs', out: join(f.dir, 'missing') });
+    assert.deepEqual([missing.exit, missing.attempted], [1, 0]);
+    const orphan = await compareReplay({ bundle, app: f.app, replace: 'lib.mjs', out: join(f.dir, 'orphan') });
+    assert.deepEqual([orphan.exit, orphan.attempted], [1, 0]);
+  }
+  finally {
+    f.close();
+  }
+});
 test('arguments in a context are the recorded ones, or those with declared variables applied, and nothing else', installed, async () => {
   const sessions = (): FixtureSession[] => [{ id: 'root', messages: [user('u', 'synthetic'), assistant('a', '', [call('x', 'execute', { command: 'echo %HUB_URL% %OTHER%' })]), result('r', 'execute', 'x', 'synthetic output'), assistant('done', 'done')] }];
   const contextFor = (command: string) => (): GuardContextInput => ({ schema: 'circle-replay-guard-context@1', variables: { HUB_URL: 'http://192.0.2.7:7420' }, sets: { g: { 'guard.mjs': guard } }, cases: [{ session: 'root', call: 'x', input: { event: 'before_tool', session_id: 'root', tool_name: 'execute', tool_input: { command }, cwd: '/recorded/work' }, entry: 'guard.mjs', set: 'g', baseline: none, provenance: 'operator' }] });

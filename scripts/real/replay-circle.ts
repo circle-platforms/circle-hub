@@ -6,7 +6,7 @@ import { ReplayError, requireFact, sha } from './replay/types.ts';
 export async function main(argv: string[], out: (line: string) => void = console.log): Promise<number> {
   try {
     const [command, ...args] = argv;
-    const allowed: Record<string, string[]> = { capture: ['home', 'session', 'circle-app', 'out', 'guard-context'], inspect: ['bundle', 'source-sha'], run: ['bundle', 'circle-app', 'out', 'timeout-ms', 'pace', 'speed', 'source-sha'], compare: ['bundle', 'circle-app', 'out', 'candidate-guard', 'guard-timeout-ms', 'timeout-ms', 'source-sha', 'survey', 'mirror-base'] };
+    const allowed: Record<string, string[]> = { capture: ['home', 'session', 'circle-app', 'out', 'guard-context'], inspect: ['bundle', 'source-sha'], run: ['bundle', 'circle-app', 'out', 'timeout-ms', 'pace', 'speed', 'source-sha'], compare: ['bundle', 'circle-app', 'out', 'candidate-guard', 'guard-timeout-ms', 'timeout-ms', 'source-sha', 'survey', 'mirror-base', 'replace'] };
     requireFact(command in allowed, '子命令必须是 capture、inspect、run 或 compare');
     const values = new Map<string, string>();
     const flags = new Set(['survey']);
@@ -34,7 +34,7 @@ export async function main(argv: string[], out: (line: string) => void = console
     }
     const common = { bundle, app: need('circle-app'), out: need('out'), timeoutMs: number('timeout-ms', 120000) };
     if (command === 'compare') {
-      const r = await compareReplay({ ...common, guard: values.get('candidate-guard'), guardTimeoutMs: number('guard-timeout-ms', 10000), survey: values.has('survey'), mirrorBase: values.get('mirror-base') });
+      const r = await compareReplay({ ...common, guard: values.get('candidate-guard'), replace: values.get('replace'), guardTimeoutMs: number('guard-timeout-ms', 10000), survey: values.has('survey'), mirrorBase: values.get('mirror-base') });
       out(JSON.stringify({ status: r.status, mode: r.mode, counts: { compared: r.compared, attempted: r.attempted, matched: r.matched, mismatched: r.mismatched, unknown: r.unknown }, sha256: sha(safeFile(common.out, 'report.json')) }));
       return r.exit;
     }

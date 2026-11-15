@@ -81,6 +81,8 @@ export interface CompareOptions {
   app: string;
   /** The candidate guard file. Without it the context's own files run as recorded: the baseline check. */
   guard?: string;
+  /** The context file the candidate replaces, for every case it applies to. Without it each case names its own (`replace`, else its entry). */
+  replace?: string;
   out: string;
   timeoutMs?: number;
   guardTimeoutMs?: number;
@@ -161,13 +163,18 @@ export async function compareReplay(options: CompareOptions): Promise<CompareRep
       const context = JSON.parse(contextBytes.toString()) as GuardContextInput;
       validateGuardContext(context, b);
       const cases = new Map(context.cases.map(c => [keyOf(c.session, c.call), c]));
+      if (options.replace !== undefined) {
+        requireFact(options.guard !== undefined && safeName(options.replace), '候选替换目标需要候选文件和相对路径');
+        for (const c of context.cases)
+          requireFact(c.candidate === false || Object.hasOwn(c.set !== undefined ? context.sets![c.set] : c.files!, options.replace), '候选替换目标不在守卫上下文的文件里', { session: c.session, call: c.call });
+      }
       // Only calls the Harness put to the hook are judged: a call refused before that (invalid arguments) has no decision in the history.
       const order = (baseline.coverage.hookOrder ?? baseline.coverage.invocationOrder) as { session: string; call: string }[];
       if (!order.length)
         throw new ReplayError('没有任何调用交给过守卫，无法比较', 2);
       const timeout = options.guardTimeoutMs ?? 10000;
       const sandboxFor = (c: GuardCase, candidate: boolean) => {
-        const name = c.replace ?? c.entry;
+        const name = (candidate ? options.replace : undefined) ?? c.replace ?? c.entry;
         const key = c.set !== undefined ? JSON.stringify([c.set, name, candidate]) : undefined;
         const known = key === undefined ? undefined : sandboxes.get(key);
         if (known)
