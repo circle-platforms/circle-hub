@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { commandDomainPrecheck, collectCommandDomainObservations, type PrecheckInputs } from './command-domain-precheck.ts';
 import { parseRuntimeContract, runtimeDigest } from './runtime-contract.ts';
+import { commandDefinitions } from './command-obligations.ts';
 import { CONTRACT_DOC, PROFILE_DOC, MANIFEST_DOC, COMMAND_CATALOG, goodData } from './test-support.ts';
 
 const ROOT = 'f'.repeat(64), PROBE = `tree:${ROOT}/commands/inspect/widget`;
@@ -43,6 +44,45 @@ test('missing or mismatched mapping and incomplete catalog stay visible, not gue
   const notReadOnly = fixture(); (notReadOnly.catalog as any).policy.read_only = []; assert.equal(commandDomainPrecheck(notReadOnly).rows[0].query, null);
   const partial = fixture(); (partial.catalog as any).complete = false; assert.ok(commandDomainPrecheck(partial).gaps.some(g => g.pointer === '/catalog/complete'));
   const changedRoot = fixture(); changedRoot.root = 'a'.repeat(64); assert.equal(commandDomainPrecheck(changedRoot).rows.length, 0);
+});
+test('a foreign-root duplicate cannot borrow a frozen command identity to authorize a probe', async () => {
+  const input = fixture(), catalog = input.catalog as any, contract = input.contract as any;
+  const foreign = `tree:${'a'.repeat(64)}/commands/inspect/widget`;
+  catalog.entries.push({ words: ['inspect', 'widget'], reference: foreign, signatures: [] });
+  contract.cleanup.rules[0].probe.reference = foreign;
+  contract.contract_sha256 = runtimeDigest(contract);
+  let reads = 0;
+  const report = await collectCommandDomainObservations(input, { read: async () => { reads++; throw new Error('must not read'); } });
+  assert.equal(reads, 0);
+  assert.equal(report.rows[0].query, null);
+  assert.ok(report.rows[0].gaps.length);
+});
+test('a declared revision cannot borrow a signature belonging only to another catalog reference', async () => {
+  const input = fixture(), catalog = input.catalog as any, contract = input.contract as any;
+  const revision = `${PROBE}@${'d'.repeat(64)}`;
+  catalog.entries.push({ words: ['inspect', 'widget'], reference: revision, signatures: [] });
+  contract.cleanup.rules[0].probe.reference = revision;
+  contract.contract_sha256 = runtimeDigest(contract);
+  let reads = 0;
+  const report = await collectCommandDomainObservations(input, { read: async () => { reads++; throw new Error('must not read'); } });
+  assert.equal(reads, 0);
+  assert.equal(report.rows[0].query, null);
+  assert.ok(report.rows[0].gaps.length);
+});
+test('the shared catalog declarations retain only exact frozen references and complete hex revisions', () => {
+  const input = fixture(), catalog = input.catalog as any;
+  const entry = catalog.entries.find((row: any) => row.reference === PROBE);
+  const revision = `${PROBE}@${'d'.repeat(64)}`;
+  const invalid = [`${PROBE}@${'g'.repeat(64)}`, `${revision}extra`, `${revision}@${'d'.repeat(64)}`, `tree:${'a'.repeat(64)}/commands/inspect/widget`, `${PROBE}/other`];
+  catalog.entries.push(...[revision, ...invalid].map(reference => ({ ...entry, reference })));
+  const definitions = commandDefinitions(catalog);
+  assert.deepEqual(definitions.filter(row => row.path === '/commands/inspect/widget').map(row => row.reference), [PROBE, revision]);
+  const contract = input.contract as any;
+  contract.cleanup.rules[0].probe.reference = revision;
+  contract.contract_sha256 = runtimeDigest(contract);
+  const report = commandDomainPrecheck(input);
+  assert.equal(report.rows[0].query?.reference, revision);
+  assert.deepEqual(report.rows[0].gaps, []);
 });
 test('read failures, hash mismatch and truncation only add disclosure gaps; duplicate queries read once', async () => {
   const input = fixture(); (input.plan as any).steps.push(structuredClone((input.plan as any).steps[0]));
