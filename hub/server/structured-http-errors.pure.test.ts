@@ -9,7 +9,7 @@ import { HttpCallErrorData, HttpErrorEnvelope } from '../../contracts/api.ts';
 import { callErrorCategory } from '../../contracts/generated/protocol.ts';
 import { BodyBudget, httpCallErrorData, sendHttpError, sendRpcError } from './http.ts';
 import { parseTarget, sendMachineCallError } from './app.ts';
-import { handleMcp } from './mcp.ts';
+import { handleMcp, sdkCallErrorData } from './mcp.ts';
 import { handleRunExport } from './run-export.ts';
 import type { ServerDeps } from './api.ts';
 
@@ -155,4 +155,35 @@ test('SDK pre-handler refusal and a thrown business dependency have distinct eff
   assert.equal(HttpCallErrorData.parse(error.data).code, 'CALL_INTERNAL_UNAVAILABLE');
   assert.equal(Object.hasOwn(error.data, 'call_not_executed'), false);
   assert.doesNotMatch(JSON.stringify(error), /PRIVATE business failure/);
+});
+
+import { McpError } from '@modelcontextprotocol/sdk/types.js';
+
+test('actual SDK malformed tool parameters stay unknown when its schema layer returns internal error; entered invalid-params never implies non-entry', async () => {
+  let businessCalls = 0;
+  const counted = { ...deps(), runs: { submitResult: async () => { businessCalls++; throw new Error('must not run'); } } } as unknown as ServerDeps;
+  const body = JSON.stringify({jsonrpc: '2.0', id: 8, method: 'tools/call', params: {name: 42, arguments: {}}});
+  const refused = exchange('POST', '/mcp', body, { 'content-type': 'application/json', accept: 'application/json, text/event-stream' });
+  await handleMcp(refused.request, refused.response, { deps: counted, serverVersion: 'synthetic', log() {}, budget: new BodyBudget(1024) }, 1024);
+  const refusal = (await refused.read()).json().error;
+  assert.equal(refusal.code, -32603, 'this installed SDK converts its earlier schema parse failure to internal error');
+  assert.equal(businessCalls, 0);
+  assert.equal(HttpCallErrorData.parse(refusal.data).code, 'CALL_INTERNAL_UNAVAILABLE');
+  assert.equal(Object.hasOwn(refusal.data, 'call_not_executed'), false);
+
+  const entered = { ...deps(), workflows: { summaries: async () => { businessCalls++; throw new McpError(-32602, 'synthetic parameter failure after entry'); } } } as unknown as ServerDeps;
+  const failed = exchange('POST', '/mcp', JSON.stringify({jsonrpc: '2.0', id: 9, method: 'tools/list'}), { 'content-type': 'application/json', accept: 'application/json, text/event-stream' });
+  await handleMcp(failed.request, failed.response, { deps: entered, serverVersion: 'synthetic', log() {}, budget: new BodyBudget(1024) }, 1024);
+  const error = (await failed.read()).json().error;
+  assert.equal(error.code, -32602);
+  assert.equal(businessCalls, 1);
+  assert.equal(Object.hasOwn(HttpCallErrorData.parse(error.data), 'call_not_executed'), false);
+});
+
+
+test('exact SDK invalid-params code proves a refused call only with a source witness that no business guard entered', () => {
+  const sdkError = new McpError(-32602, 'arbitrary prose is not a classification source');
+  assert.deepEqual(sdkCallErrorData(sdkError.code, false), httpCallErrorData('CALL_REQUEST_INVALID', true));
+  assert.deepEqual(sdkCallErrorData(sdkError.code, true), httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'));
+  assert.deepEqual(sdkCallErrorData(-32603, false), httpCallErrorData('CALL_INTERNAL_UNAVAILABLE'));
 });
