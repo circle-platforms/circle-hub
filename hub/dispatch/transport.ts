@@ -26,9 +26,12 @@ export class IncompleteReplyError extends Error {constructor(){super('目标回�
 export class ResponseStorageError extends Error {constructor(){super('目标原件未能保存；先修复本地存储后重读');}}
 export class RpcReplyError extends Error {constructor(){super('目标的完整回答不符合 RPC 协议；修正接口后重读原作业');}}
 export class CapabilityPolicyError extends Error { constructor(){super('密钥权限超出运行权限；换成仅运行权限的密钥后重跑，未调用任何工具');} }
+export interface RpcClientOptions { recovery?: boolean; signal?: AbortSignal; }
 export class RpcClient {
   readonly definition: ExecutorDefinition;
   readonly #redactor:Redactor|undefined;
+  readonly #recovery: boolean;
+  readonly #signal: AbortSignal | undefined;
   readonly #secret: string;
   readonly #job: string;
   readonly #save: SaveResponse;
@@ -38,8 +41,10 @@ export class RpcClient {
   #id = 0;
   #session: string | undefined;
   #protocol = LATEST_PROTOCOL_VERSION;
-  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date(),redactor?:Redactor) {
+  constructor(definition: ExecutorDefinition, secret: string, job: string, save: SaveResponse, now: () => Date = () => new Date(),redactor?:Redactor, options?: RpcClientOptions) {
     this.#redactor=redactor;
+    this.#recovery=options?.recovery===true;
+    this.#signal=options?.signal;
     this.definition = definition; this.#secret = secret; this.#job = job; this.#save = save; this.#now = now;
     if (definition.actor && (job.length > definition.actor.max_length || /[\r\n]/.test(job) || !new RegExp(definition.actor.pattern).test(job))) throw new Error('代表身份不符合执行器声明；修正代表身份约束后再连接，尚未发请求');
     if (!secret || /[\r\n]/.test(secret)) throw new Error('执行器密钥缺失或无效');
@@ -62,15 +67,15 @@ export class RpcClient {
     const own=scrub(text,0);return this.#redactor?.maskText(own)??own;
   }
   async connect(): Promise<void> {
-    const init = await this.rpc('initialize', { protocolVersion: this.#protocol, capabilities: {}, clientInfo: { name: 'circle-hub', version: '1.0.0' } });
+    const init = await this.rpc('initialize', { protocolVersion: this.#protocol, capabilities: {}, clientInfo: { name: 'circle-hub', version: '1.0.0' } }, false, 30000, 'initialize', this.#signal);
     if (typeof init.value.protocolVersion !== 'string' || !SUPPORTED_PROTOCOL_VERSIONS.includes(init.value.protocolVersion)) throw new Error('目标协议版本不可用');
     this.serverVersion = object(init.value.serverInfo) && typeof init.value.serverInfo.version === 'string' ? init.value.serverInfo.version : null;
     this.#protocol = init.value.protocolVersion;
-    await this.rpc('notifications/initialized', {}, true);
+    await this.rpc('notifications/initialized', {}, true, 30000, 'notifications/initialized', this.#signal);
     const seen = new Set<string>(); let cursor: string | undefined;
     const visited = new Set<string>();
     do {
-      const page = await this.rpc('tools/list', cursor ? { cursor } : {});
+      const page = await this.rpc('tools/list', cursor ? { cursor } : {}, false, 30000, 'tools/list', this.#signal);
       if (!Array.isArray(page.value.tools)) throw new Error('目标工具清单无效');
       for (const tool of page.value.tools) if (object(tool) && typeof tool.name === 'string') {
         if (this.definition.refused_tools.includes(tool.name)) throw new CapabilityPolicyError();
@@ -82,9 +87,18 @@ export class RpcClient {
       if (next !== undefined && (typeof next !== 'string' || visited.has(next) || visited.size >= 100)) throw new Error('目标工具清单分页无效');
       cursor = typeof next === 'string' ? next : undefined; if (cursor) visited.add(cursor);
     } while (cursor);
-    if (this.definition.allowed_tools.some(name => !seen.has(name))) throw new Error('目标缺少允许清单中的工具；未提交');
+    const required = this.#recovery ? (['query', 'status', 'result'] as const).map(role => this.definition.calls[role]?.tool) : this.definition.allowed_tools;
+    if (required.some(name => !name || !seen.has(name))) throw new Error('目标缺少允许清单中的工具；未提交');
+  }
+  hasTool(role: CallRole): boolean {
+    const declaration = this.definition.calls[role];
+    return declaration !== undefined && this.definition.allowed_tools.includes(declaration.tool) && this.#schemas.has(declaration.tool);
+  }
+  private requireNormalMode(): void {
+    if (this.#recovery) throw new Error('恢复连接不能开始新的提交、预订或预检');
   }
   prepareSubmit(context:Readonly<Record<string,unknown>>):Record<string,unknown> {
+    this.requireNormalMode();
     return this.argumentsFor(this.definition.calls.submit,context);
   }
   private argumentsFor(declaration:ExecutorDefinition['calls']['submit'],context:Readonly<Record<string,unknown>>):Record<string,unknown> {
@@ -105,28 +119,31 @@ export class RpcClient {
     return args;
   }
   async call(role: CallRole, context: Readonly<Record<string, unknown>>, timeoutMs?:number): Promise<Exchange> {
+    if (this.#recovery && role !== 'query' && role !== 'status' && role !== 'result' && role !== 'heartbeat' && role !== 'release') this.requireNormalMode();
     const declaration = this.definition.calls[role];
     if (!declaration) throw new Error('该生命周期调用未登记；请补齐定义');
-    return this.invoke(declaration, context, role, timeoutMs ?? (role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms));
+    return this.invoke(declaration, context, role, timeoutMs ?? (role === 'submit' ? this.definition.submit_timeout_ms : declaration.timeout_ms), role === 'query' || role === 'status' || role === 'result' || role === 'precheck');
   }
   async precheckRead(index: number, context: Readonly<Record<string, unknown>>): Promise<Exchange> {
+    this.requireNormalMode();
     const declaration = this.definition.precheck_reads[index];
     if (!declaration) throw new Error('只读核对没有登记');
-    return this.invoke(declaration, context, `precheck.${index + 1}`, declaration.timeout_ms);
+    return this.invoke(declaration, context, `precheck.${index + 1}`, declaration.timeout_ms, true);
   }
   async declaredRead(declaration: NonNullable<ExecutorDefinition['probes']>['call'], context: Readonly<Record<string,unknown>>, operation: string): Promise<Exchange> {
-    return this.invoke(declaration,context,operation,declaration.timeout_ms);
+    this.requireNormalMode();
+    return this.invoke(declaration,context,operation,declaration.timeout_ms, true);
   }
-  private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number): Promise<Exchange> {
+  private async invoke(declaration: ExecutorDefinition['calls']['precheck'], context: Readonly<Record<string, unknown>>, operation: string, timeout: number, readIo = false): Promise<Exchange> {
     if (!this.definition.allowed_tools.includes(declaration.tool)) throw new Error('调用不在允许工具清单内');
-    const response = await this.rpc('tools/call', { name: declaration.tool, arguments: this.argumentsFor(declaration,context) }, false, timeout, operation);
+    const response = await this.rpc('tools/call', { name: declaration.tool, arguments: this.argumentsFor(declaration,context) }, false, timeout, operation, readIo ? this.#signal : undefined);
     if(response.value.isError===true && operation!=='submit') {
       let value:unknown;try{value=toolContent(response.value,true);}catch{}
       throw new ToolReplyError(value,response.source);
     }
     return { ...response,tool_error:response.value.isError===true, value: toolContent(response.value, operation === 'submit') };
   }
-  private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method): Promise<Exchange<Record<string, unknown>>> {
+  private async rpc(method: string, params: unknown, notification = false, timeout = 30000, operation: string = method, signal?: AbortSignal): Promise<Exchange<Record<string, unknown>>> {
     const id = ++this.#id;
     const started_at = this.#now().toISOString();
     const body = JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params });
@@ -135,10 +152,13 @@ export class RpcClient {
     const received = await new Promise<{ bytes: Buffer; status: number; session?: string; complete: boolean; stream_cut_at_response: boolean; request_bytes_written:number }>(resolve => {
       const chunks: Buffer[] = []; let length = 0; let status = 0; let session: string | undefined; let finished = false; let streamCut = false;let socket:{bytesWritten:number}|undefined;
       let timer: ReturnType<typeof setTimeout>;
+      let abort: (() => void) | undefined;
       const finish = (complete: boolean) => {
         if (finished) return; finished = true; clearTimeout(timer);
+        if (abort) signal?.removeEventListener('abort', abort);
         resolve({ bytes: Buffer.concat(chunks), status, session, complete, stream_cut_at_response: streamCut,request_bytes_written:socket?.bytesWritten ?? 0 });
       };
+      if (signal?.aborted) { finish(false); return; }
       const req = (u.protocol === 'https:' ? httpsRequest : httpRequest)(u, {
         method: 'POST', agent: false, ...(u.protocol === 'https:' ? { ca: this.definition.ca, rejectUnauthorized: true } : {}),
         headers: { authorization: `Bearer ${this.#secret}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...(this.definition.actor ? { [this.definition.actor.header]: this.#job } : {}),
@@ -158,7 +178,9 @@ export class RpcClient {
       timer = setTimeout(() => { finish(false); req.destroy(); }, timeout);
       req.on('socket',value=>{socket=value;});
       req.on('error', () => finish(false));
-      req.end(body);
+      abort = () => { finish(false); req.destroy(); };
+      signal?.addEventListener('abort', abort, {once: true});
+      if (signal?.aborted) abort(); else req.end(body);
     });
     let textInput: string; let validEncoding = true;
     try { textInput = new TextDecoder('utf-8', { fatal: true }).decode(received.bytes); } catch { textInput = received.bytes.toString('utf8'); validEncoding = false; }
